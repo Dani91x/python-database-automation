@@ -28,8 +28,8 @@ export function FixtureSelector({ currentFixtureId, onSelect }: FixtureSelectorP
             try {
                 const { data, error } = await supabase
                     .from('fixture_predictions')
-                    .select('fixture_id, raw_json, match_date')
-                    .order('match_date', { ascending: false });
+                    .select('fixture_id, raw_json, fixture_date')
+                    .order('fixture_date', { ascending: false });
 
                 if (error) throw error;
 
@@ -43,8 +43,8 @@ export function FixtureSelector({ currentFixtureId, onSelect }: FixtureSelectorP
                                 home: resp.teams?.home?.name || 'Home',
                                 away: resp.teams?.away?.name || 'Away',
                                 league: resp.league?.name || '',
-                                date: row.match_date
-                                    ? new Date(row.match_date).toLocaleDateString('it-IT', {
+                                date: row.fixture_date
+                                    ? new Date(row.fixture_date).toLocaleDateString('it-IT', {
                                         day: '2-digit',
                                         month: 'short',
                                         year: 'numeric',
@@ -109,8 +109,8 @@ export function FixtureSelector({ currentFixtureId, onSelect }: FixtureSelectorP
                                     setOpen(false);
                                 }}
                                 className={`w-full text-left px-4 py-3 transition-colors hover:bg-primary/10 border-b border-border/20 last:border-0 flex items-center justify-between gap-4 ${f.fixture_id === currentFixtureId
-                                        ? 'bg-primary/5 border-l-2 border-l-primary'
-                                        : ''
+                                    ? 'bg-primary/5 border-l-2 border-l-primary'
+                                    : ''
                                     }`}
                             >
                                 <div className="flex-1 min-w-0">

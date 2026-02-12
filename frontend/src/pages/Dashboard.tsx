@@ -28,7 +28,7 @@ export default function Dashboard() {
             const { data: fixtures, error } = await supabase
                 .from('fixture_predictions')
                 .select('raw_json, fixture_id')
-                .order('match_date', { ascending: false })
+                .order('fixture_date', { ascending: false })
                 .limit(1)
                 .single();
 
