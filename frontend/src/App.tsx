@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import LandingPage from "@/pages/LandingPage";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
+import CheckEmail from "@/pages/CheckEmail";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,6 +19,7 @@ function App() {
                 <BrowserRouter>
                     <Routes>
                         <Route path="/" element={<LandingPage />} />
+                        <Route path="/check-email" element={<CheckEmail />} />
                         <Route
                             path="/dashboard"
                             element={

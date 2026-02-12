@@ -7,6 +7,7 @@ import { PredictionsCard } from '@/components/dashboard/PredictionsCard';
 import { TeamPanel } from '@/components/dashboard/TeamPanel';
 import { ComparisonSection } from '@/components/dashboard/ComparisonSection';
 import { H2HSection } from '@/components/dashboard/H2HSection';
+import { FixtureSelector } from '@/components/dashboard/FixtureSelector';
 import { Button } from '@/components/ui/button';
 import { Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -16,10 +17,12 @@ import { toast } from 'sonner';
 export default function Dashboard() {
     const [data, setData] = useState<NormalizedData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null);
     const { user } = useAuth();
     const navigate = useNavigate();
 
-    const fetchData = async () => {
+    // Fetch latest fixture (initial load)
+    const fetchLatest = async () => {
         setLoading(true);
         try {
             const { data: fixtures, error } = await supabase
@@ -32,27 +35,54 @@ export default function Dashboard() {
             if (error) throw error;
 
             if (fixtures && fixtures.raw_json) {
-                const normalized = normalizePredictionJson(fixtures.raw_json, fixtures.fixture_id);
+                const fid = String(fixtures.fixture_id);
+                const normalized = normalizePredictionJson(fixtures.raw_json, fid);
                 setData(normalized);
+                setSelectedFixtureId(fid);
             } else {
                 toast("Nessun pronostico trovato. Uso dati demo.");
-                // Fallback to mock data
                 const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
                 setData(normalized);
+                setSelectedFixtureId('DEMO');
             }
         } catch (error: any) {
             console.error(error);
             toast.error("Errore caricamento — uso dati demo", { description: error.message });
-            // Fallback to mock data on error
             const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
             setData(normalized);
+            setSelectedFixtureId('DEMO');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Fetch a specific fixture by ID
+    const loadFixture = async (fixtureId: string) => {
+        setLoading(true);
+        try {
+            const { data: fixture, error } = await supabase
+                .from('fixture_predictions')
+                .select('raw_json, fixture_id')
+                .eq('fixture_id', fixtureId)
+                .single();
+
+            if (error) throw error;
+
+            if (fixture && fixture.raw_json) {
+                const normalized = normalizePredictionJson(fixture.raw_json, String(fixture.fixture_id));
+                setData(normalized);
+                setSelectedFixtureId(String(fixture.fixture_id));
+            }
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Errore caricamento partita", { description: error.message });
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData();
+        fetchLatest();
     }, []);
 
     const handleLogout = async () => {
@@ -63,18 +93,23 @@ export default function Dashboard() {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
-                <Loader2 className="w-12 h-12 text-brand-orange animate-spin" />
+                <Loader2 className="w-12 h-12 text-primary animate-spin" />
             </div>
         );
     }
 
     if (!data) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-background text-white">
-                <p>Nessun dato disponibile.</p>
-                <Button onClick={fetchData} variant="outline" className="mt-4" aria-label="Ricarica dati">
-                    <RefreshCw className="mr-2 h-4 w-4" /> Riprova
-                </Button>
+            <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground">
+                <div className="glass-card p-8 text-center">
+                    <h1 className="font-display text-2xl font-bold text-destructive mb-2">
+                        Nessun dato disponibile
+                    </h1>
+                    <p className="text-muted-foreground mb-4">Impossibile caricare i dati del pronostico.</p>
+                    <Button onClick={fetchLatest} variant="outline" className="mt-4" aria-label="Ricarica dati">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Riprova
+                    </Button>
+                </div>
             </div>
         );
     }
@@ -82,22 +117,16 @@ export default function Dashboard() {
     return (
         <div className="min-h-screen bg-background relative pb-24">
             {/* Grid pattern */}
-            <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.02]"
-                style={{
-                    backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-                                       linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-                    backgroundSize: '40px 40px',
-                }}
-            />
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
 
             {/* Navbar */}
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
                 <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-                    <div className="font-orbitron font-black text-xl tracking-tighter">
-                        AI <span className="text-brand-orange">TERMINAL</span>
+                    <div className="font-display font-black text-xl tracking-tighter">
+                        AI <span className="text-primary">TERMINAL</span>
                     </div>
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="sm" onClick={fetchData} className="text-muted-foreground hover:text-white" aria-label="Aggiorna dati">
+                        <Button variant="ghost" size="sm" onClick={fetchLatest} className="text-muted-foreground hover:text-white" aria-label="Aggiorna dati">
                             <RefreshCw className="w-4 h-4" />
                         </Button>
                         <span className="text-xs text-muted-foreground hidden md:inline-block">
@@ -112,6 +141,14 @@ export default function Dashboard() {
             </nav>
 
             <main className="container mx-auto px-4 py-8 max-w-7xl relative z-10">
+
+                {/* Fixture Selector */}
+                <div className="mb-8">
+                    <FixtureSelector
+                        currentFixtureId={selectedFixtureId || undefined}
+                        onSelect={loadFixture}
+                    />
+                </div>
 
                 <HeroMatch
                     home={data.home}

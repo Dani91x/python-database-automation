@@ -18,3 +18,6 @@ Thumbs.db
 # Project specific
 Appunti.txt/
 *.log
+node_modules/
+bun.lockb
+match-insights-hub-temp/
