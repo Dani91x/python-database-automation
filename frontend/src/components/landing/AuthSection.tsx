@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Lock, Mail, Phone, User as UserIcon, Send } from 'lucide-react';
+import { Loader2, Lock, Mail, Phone, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -309,6 +309,32 @@ export function AuthSection() {
                                                 </FormItem>
                                             )}
                                         />
+
+                                        <div className="flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    const email = loginForm.getValues('email');
+                                                    if (!email) {
+                                                        toast.error("Inserisci la tua email prima di richiedere il reset.");
+                                                        return;
+                                                    }
+                                                    try {
+                                                        await supabase.auth.resetPasswordForEmail(email, {
+                                                            redirectTo: window.location.origin + '/dashboard',
+                                                        });
+                                                        toast.success("Email di reset inviata!", {
+                                                            description: "Controlla la tua casella di posta."
+                                                        });
+                                                    } catch {
+                                                        toast.error("Errore nell'invio dell'email di reset.");
+                                                    }
+                                                }}
+                                                className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                                            >
+                                                Password dimenticata?
+                                            </button>
+                                        </div>
 
                                         <Button type="submit" className="w-full bg-brand-orange hover:bg-white text-black font-bold neon-glow" disabled={isLoading}>
                                             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Accedi"}

@@ -1,15 +1,54 @@
 import { NormalizedComparison } from "@/lib/normalize";
 import { Card } from "@/components/ui/card";
+import { motion } from "framer-motion";
+import { TrendingUp } from "lucide-react";
 
-export function ComparisonSection({ comparison }: { comparison: NormalizedComparison }) {
+function generateInsight(key: string, homeVal: number, awayVal: number): string | null {
+    if (homeVal === 0 && awayVal === 0) return null;
+    const diff = Math.abs(homeVal - awayVal);
+    if (diff < 5) return null;
+    const winner = homeVal > awayVal ? 'Home' : 'Away';
+    const pct = Math.max(homeVal, awayVal);
+
+    const labels: Record<string, string> = {
+        form: 'forma recente',
+        att: 'attacco',
+        def: 'difesa',
+        poissonDistribution: 'distribuzione Poisson',
+        h2h: 'testa a testa',
+        goals: 'gol',
+    };
+
+    return `${winner} ha un ${labels[key] || key} superiore al ${pct}%`;
+}
+
+export function ComparisonSection({ comparison, homeName, awayName }: {
+    comparison: NormalizedComparison;
+    homeName?: string;
+    awayName?: string;
+}) {
     const items = [
         { key: 'form', label: 'Forma Recente' },
         { key: 'att', label: 'Attacco' },
         { key: 'def', label: 'Difesa' },
-        { key: 'poissonDistribution', label: 'Poisson Dist.' },
+        { key: 'poissonDistribution', label: 'Dist. Poisson' },
         { key: 'h2h', label: 'Testa a Testa' },
         { key: 'goals', label: 'Goals' },
     ] as const;
+
+    const insights = items
+        .map(item => {
+            const data = comparison[item.key];
+            const raw = generateInsight(item.key, data.home, data.away);
+            if (!raw) return null;
+            return raw
+                .replace('Home', homeName || 'Home')
+                .replace('Away', awayName || 'Away');
+        })
+        .filter(Boolean);
+
+    // Total comparison
+    const totalData = comparison.total;
 
     return (
         <section className="mb-8">
@@ -20,37 +59,90 @@ export function ComparisonSection({ comparison }: { comparison: NormalizedCompar
 
             <Card className="glass-card p-6 md:p-10">
                 <div className="space-y-8">
-                    {items.map((item) => {
+                    {items.map((item, i) => {
                         const data = comparison[item.key];
-                        // Avoid division by zero
                         const total = (data.home + data.away) || 1;
                         const homePct = (data.home / total) * 100;
-                        const awayPct = (data.away / total) * 100; // or 100 - homePct
+                        const awayPct = (data.away / total) * 100;
 
                         return (
-                            <div key={item.key}>
+                            <motion.div
+                                key={item.key}
+                                initial={{ opacity: 0 }}
+                                whileInView={{ opacity: 1 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.4, delay: i * 0.05 }}
+                            >
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-widest mb-2 px-1">
                                     <span className="text-neon-cyan">{data.home}%</span>
                                     <span className="text-white opacity-50">{item.label}</span>
                                     <span className="text-neon-magenta">{data.away}%</span>
                                 </div>
                                 <div className="h-3 bg-black/40 rounded-full flex overflow-hidden relative">
-                                    {/* Center marker */}
                                     <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-white/20 z-10" />
-
-                                    <div
-                                        className="h-full bg-neon-cyan transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(0,240,255,0.3)]"
-                                        style={{ width: `${homePct}%` }}
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        whileInView={{ width: `${homePct}%` }}
+                                        viewport={{ once: true }}
+                                        transition={{ duration: 1, delay: i * 0.05, ease: 'easeOut' }}
+                                        className="h-full bg-neon-cyan shadow-[0_0_10px_rgba(0,240,255,0.3)]"
                                     />
-                                    <div
-                                        className="h-full bg-neon-magenta transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(255,0,110,0.3)]"
-                                        style={{ width: `${awayPct}%` }}
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        whileInView={{ width: `${awayPct}%` }}
+                                        viewport={{ once: true }}
+                                        transition={{ duration: 1, delay: i * 0.05, ease: 'easeOut' }}
+                                        className="h-full bg-neon-magenta shadow-[0_0_10px_rgba(255,0,110,0.3)]"
                                     />
                                 </div>
-                            </div>
+                            </motion.div>
                         );
                     })}
+
+                    {/* Total */}
+                    <div className="pt-4 border-t border-white/10">
+                        <div className="flex justify-between text-xs font-bold uppercase tracking-widest mb-2 px-1">
+                            <span className="text-neon-cyan font-mono">{totalData.home}%</span>
+                            <span className="text-white font-black">TOTALE</span>
+                            <span className="text-neon-magenta font-mono">{totalData.away}%</span>
+                        </div>
+                        <div className="h-4 bg-black/40 rounded-full flex overflow-hidden relative">
+                            <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-white/20 z-10" />
+                            <motion.div
+                                initial={{ width: 0 }}
+                                whileInView={{ width: `${(totalData.home / ((totalData.home + totalData.away) || 1)) * 100}%` }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 1.2, ease: 'easeOut' }}
+                                className="h-full bg-gradient-to-r from-neon-cyan to-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+                            />
+                            <motion.div
+                                initial={{ width: 0 }}
+                                whileInView={{ width: `${(totalData.away / ((totalData.home + totalData.away) || 1)) * 100}%` }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 1.2, ease: 'easeOut' }}
+                                className="h-full bg-gradient-to-r from-pink-500 to-neon-magenta shadow-[0_0_15px_rgba(255,0,110,0.4)]"
+                            />
+                        </div>
+                    </div>
                 </div>
+
+                {/* Insight automatici */}
+                {insights.length > 0 && (
+                    <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-2 mb-3 text-brand-orange">
+                            <TrendingUp className="w-4 h-4" />
+                            <span className="text-xs font-bold uppercase tracking-widest">Insight AI</span>
+                        </div>
+                        <ul className="space-y-1.5">
+                            {insights.map((insight, i) => (
+                                <li key={i} className="text-sm text-white/70 flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-brand-orange shrink-0" />
+                                    {insight}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </Card>
         </section>
     );

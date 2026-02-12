@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizePredictionJson, NormalizedData } from '@/lib/normalize';
+import { MOCK_RAW_JSON } from '@/lib/mockData';
 import { HeroMatch } from '@/components/dashboard/HeroMatch';
 import { PredictionsCard } from '@/components/dashboard/PredictionsCard';
 import { TeamPanel } from '@/components/dashboard/TeamPanel';
@@ -18,11 +19,9 @@ export default function Dashboard() {
     const { user } = useAuth();
     const navigate = useNavigate();
 
-    // Fetch Data Logic
     const fetchData = async () => {
         setLoading(true);
         try {
-            // 1. Cerchiamo l'ultimo pronostico disponibile
             const { data: fixtures, error } = await supabase
                 .from('fixture_predictions')
                 .select('raw_json, fixture_id')
@@ -36,12 +35,17 @@ export default function Dashboard() {
                 const normalized = normalizePredictionJson(fixtures.raw_json, fixtures.fixture_id);
                 setData(normalized);
             } else {
-                toast("Nessun pronostico trovato.");
+                toast("Nessun pronostico trovato. Uso dati demo.");
+                // Fallback to mock data
+                const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
+                setData(normalized);
             }
-
         } catch (error: any) {
             console.error(error);
-            toast.error("Errore caricamento dashboard", { description: error.message });
+            toast.error("Errore caricamento — uso dati demo", { description: error.message });
+            // Fallback to mock data on error
+            const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
+            setData(normalized);
         } finally {
             setLoading(false);
         }
@@ -68,7 +72,7 @@ export default function Dashboard() {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-background text-white">
                 <p>Nessun dato disponibile.</p>
-                <Button onClick={fetchData} variant="outline" className="mt-4">
+                <Button onClick={fetchData} variant="outline" className="mt-4" aria-label="Ricarica dati">
                     <RefreshCw className="mr-2 h-4 w-4" /> Riprova
                 </Button>
             </div>
@@ -77,17 +81,29 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-background relative pb-24">
-            {/* Navbar / Header */}
-            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
+            {/* Grid pattern */}
+            <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.02]"
+                style={{
+                    backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+                                       linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+                    backgroundSize: '40px 40px',
+                }}
+            />
+
+            {/* Navbar */}
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
                 <div className="container mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="font-orbitron font-black text-xl tracking-tighter">
                         AI <span className="text-brand-orange">TERMINAL</span>
                     </div>
                     <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="sm" onClick={fetchData} className="text-muted-foreground hover:text-white" aria-label="Aggiorna dati">
+                            <RefreshCw className="w-4 h-4" />
+                        </Button>
                         <span className="text-xs text-muted-foreground hidden md:inline-block">
-                            Logged in as {user?.email}
+                            {user?.email}
                         </span>
-                        <Button variant="ghost" size="sm" onClick={handleLogout} className="hover:bg-red-500/10 hover:text-red-500">
+                        <Button variant="ghost" size="sm" onClick={handleLogout} className="hover:bg-red-500/10 hover:text-red-500" aria-label="Logout">
                             <LogOut className="w-4 h-4 mr-2" />
                             Esci
                         </Button>
@@ -95,14 +111,14 @@ export default function Dashboard() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 py-8 max-w-7xl animate-fade-in-up">
+            <main className="container mx-auto px-4 py-8 max-w-7xl relative z-10">
 
                 <HeroMatch
                     home={data.home}
                     away={data.away}
                     league={data.league}
                     prediction={data.predictions}
-                    matchDate={undefined} // Se avessimo la data grezza
+                    matchDate={undefined}
                 />
 
                 <PredictionsCard
@@ -113,21 +129,24 @@ export default function Dashboard() {
 
                 <div className="flex flex-col xl:flex-row gap-8 mb-12">
                     <TeamPanel team={data.home} side="home" />
-
-                    {/* Comparison in Middle on Desktop? Or Full Width below? Let's clean layout */}
                     <div className="w-full xl:w-px xl:bg-white/5 xl:self-stretch hidden xl:block" />
-
                     <TeamPanel team={data.away} side="away" />
                 </div>
 
-                <ComparisonSection comparison={data.comparison} />
+                <ComparisonSection
+                    comparison={data.comparison}
+                    homeName={data.home.name}
+                    awayName={data.away.name}
+                />
 
                 <H2HSection h2h={data.h2h} />
 
             </main>
 
             <footer className="border-t border-white/5 py-8 text-center text-xs text-muted-foreground">
-                <p>Fixture ID: {data.fixtureId} • Neural Engine v4.0 Output • Generated at {new Date().toLocaleTimeString()}</p>
+                <p>
+                    Dati aggiornati • Fixture ID: {data.fixtureId} • {data.league.name} {data.league.season}
+                </p>
             </footer>
         </div>
     );

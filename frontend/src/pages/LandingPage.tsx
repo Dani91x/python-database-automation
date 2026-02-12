@@ -4,7 +4,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { StatsBar } from '@/components/landing/StatsBar';
 import { FeaturesGrid } from '@/components/landing/FeaturesGrid';
+import { DashboardPreview } from '@/components/landing/DashboardPreview';
+import { PricingCard } from '@/components/landing/PricingCard';
 import { AuthSection } from '@/components/landing/AuthSection';
+import { LandingFooter } from '@/components/landing/LandingFooter';
 import { Loader2 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -27,35 +30,42 @@ export default function LandingPage() {
 
     return (
         <div className="min-h-screen bg-background relative overflow-x-hidden">
-            {/* Global Background Elements */}
-            <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-50 mix-blend-overlay"></div>
+            {/* Grid Pattern Background */}
+            <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
+                style={{
+                    backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+                                       linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+                    backgroundSize: '40px 40px',
+                }}
+            />
+            {/* Radial gradient overlay */}
+            <div className="fixed inset-0 bg-gradient-radial from-transparent via-transparent to-background pointer-events-none z-0" />
 
             {/* Content */}
             <main className="relative z-10">
-                <HeroSection />
-                <StatsBar />
-                <FeaturesGrid />
+                <header>
+                    <HeroSection />
+                </header>
 
-                {/* Pricing / Trial Info */}
-                <section className="py-12 section-divider relative">
-                    <div className="container mx-auto px-6 text-center">
-                        <div className="inline-block glass-card p-8 rounded-3xl border-neon-cyan/30 neon-glow max-w-2xl mx-auto">
-                            <span className="bg-neon-cyan/20 text-neon-cyan text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest mb-4 inline-block">
-                                Offerta Limitata
-                            </span>
-                            <h2 className="text-4xl md:text-5xl font-orbitron font-black mb-2">
-                                €0 <span className="text-lg text-muted-foreground font-rajdhani font-normal">/ 7 giorni</span>
-                            </h2>
-                            <p className="text-muted-foreground mb-6">Prova la potenza degli algoritmi senza rischi. Nessuna carta richiesta.</p>
-                        </div>
-                    </div>
+                <StatsBar />
+
+                <section aria-label="Funzionalità">
+                    <FeaturesGrid />
                 </section>
 
-                <AuthSection />
+                <section aria-label="Preview Dashboard">
+                    <DashboardPreview />
+                </section>
 
-                <footer className="py-12 text-center text-sm text-muted-foreground border-t border-white/5">
-                    <p>© 2025 AI Football Predictions — Powered by Advanced Algorithms</p>
-                </footer>
+                <section aria-label="Pricing">
+                    <PricingCard />
+                </section>
+
+                <section id="auth" aria-label="Registrazione e Login">
+                    <AuthSection />
+                </section>
+
+                <LandingFooter />
             </main>
         </div>
     );
