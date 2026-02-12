@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 240 10% 3.9%;
+        --foreground: 0 0% 98%;
+
+        --card: 240 10% 3.9%;
+        --card-foreground: 0 0% 98%;
+
+        --popover: 240 10% 3.9%;
+        --popover-foreground: 0 0% 98%;
+
+        --primary: 0 0% 98%;
+        --primary-foreground: 240 5.9% 10%;
+
+        --secondary: 240 3.7% 15.9%;
+        --secondary-foreground: 0 0% 98%;
+
+        --muted: 240 3.7% 15.9%;
+        --muted-foreground: 240 5% 64.9%;
+
+        --accent: 240 3.7% 15.9%;
+        --accent-foreground: 0 0% 98%;
+
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 0 0% 98%;
+
+        --border: 240 3.7% 15.9%;
+        --input: 240 3.7% 15.9%;
+        --ring: 240 4.9% 83.9%;
+
+        --radius: 0.75rem;
+
+        /* Custom Tokens */
+        --neon-cyan: 180 100% 50%;
+        --neon-magenta: 334 100% 50%;
+        --brand-orange: 30 100% 50%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Utilities per Deep Tech Aesthetic */
+@layer utilities {
+    .glass-card {
+        @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-lg;
+    }
+
+    .neon-glow {
+        box-shadow: 0 0 10px hsla(var(--neon-cyan), 0.5), 0 0 20px hsla(var(--neon-cyan), 0.3);
+    }
+
+    .text-gradient-primary {
+        @apply bg-clip-text text-transparent bg-gradient-to-r from-white via-white/80 to-white/60;
+    }
+
+    .stat-value {
+        @apply font-orbitron font-black tracking-tighter;
+    }
+
+    .stat-label {
+        @apply font-rajdhani font-bold uppercase tracking-widest text-muted-foreground text-xs;
+    }
+}
