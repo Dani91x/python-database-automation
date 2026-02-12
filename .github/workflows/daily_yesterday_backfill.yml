@@ -1,15 +1,13 @@
-name: Daily Backfill
+name: Daily Yesterday Backfill
 
 on:
   schedule:
-    # Esegue ogni giorno alle 04:00 UTC (05:00 ora italiana invernale)
-    - cron: '0 4 * * *'
-  workflow_dispatch: # Permette l'esecuzione manuale
+    - cron: '0 1 * * *'
+  workflow_dispatch:
 
 jobs:
-  backfill:
+  run-backfill:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,10 +22,9 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run daily backfill
+      - name: Run script
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-          # Aggiungi qui altre variabili se necessarie (es. Betfair)
         run: python daily_yesterday_backfill.py
