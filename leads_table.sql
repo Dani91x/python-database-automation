@@ -26,3 +26,17 @@ with check (true);
 create policy "Solo admin può vedere i leads"
 on public.leads for select
 using (auth.role() = 'service_role');
+
+-- RLS per fixture_predictions (Sola lettura pubblica)
+alter table public.fixture_predictions enable row level security;
+
+create policy "Pronostici visibili a tutti"
+on public.fixture_predictions for select
+using (true);
+
+-- RLS per matches (Sola lettura pubblica)
+alter table public.matches enable row level security;
+
+create policy "Match visibili a tutti"
+on public.matches for select
+using (true);

@@ -20,7 +20,7 @@ export default function LeadForm() {
         setLoading(true);
 
         try {
-            const { error } = await supabase.table('leads').insert({
+            const { error } = await supabase.from('leads').insert({
                 first_name: formData.firstName,
                 last_name: formData.lastName,
                 email: formData.email,
@@ -29,11 +29,15 @@ export default function LeadForm() {
                 source: 'landing_page'
             });
 
-            if (error) throw error;
+            if (error) {
+                alert(`Errore: ${error.message}`);
+                throw error;
+            }
             setSuccess(true);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error saving lead:', err);
-            alert('Si è verificato un errore. Riprova più tardi.');
+            // Solo alert generico se non è un errore Supabase già gestito
+            if (!err.message) alert('Si è verificato un errore. Riprova più tardi.');
         } finally {
             setLoading(false);
         }

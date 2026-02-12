@@ -1,194 +1,126 @@
-import { NormalizedPredictions, NormalizedTeam } from "@/lib/normalizePrediction";
-import { Brain, Trophy, Target, Percent, Share2, Bookmark, Save } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { toast } from "@/hooks/use-toast";
+// frontend/src/components/dashboard/PredictionsCard.tsx
+import { NormalizedPredictions, NormalizedTeam } from "@/lib/normalize";
+import { BrainCircuit, Trophy, Target, Percent, Share2, Bookmark, Save, Cpu } from "lucide-react";
+import { Badge, Card, Progress, cn } from "@/components/ui/shadcn-mini";
 
 interface PredictionsCardProps {
-  predictions: NormalizedPredictions;
-  home: NormalizedTeam;
-  away: NormalizedTeam;
+    predictions: NormalizedPredictions;
+    home: NormalizedTeam;
+    away: NormalizedTeam;
 }
 
 export function PredictionsCard({ predictions, home, away }: PredictionsCardProps) {
-  const handleSave = () => {
-    toast({
-      title: "Pronostico salvato",
-      description: "Il pronostico è stato salvato con successo.",
-    });
-  };
+    const handleShare = () => {
+        if (navigator.share) {
+            navigator.share({
+                title: `${home.name} vs ${away.name} - Prediction`,
+                text: predictions.advice,
+                url: window.location.href,
+            });
+        }
+    };
 
-  const handleWatchlist = () => {
-    toast({
-      title: "Aggiunto alla watchlist",
-      description: "La partita è stata aggiunta alla tua watchlist.",
-    });
-  };
-
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `${home.name} vs ${away.name} - Prediction`,
-        text: predictions.advice,
-        url: window.location.href,
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast({
-        title: "Link copiato",
-        description: "Il link è stato copiato negli appunti.",
-      });
-    }
-  };
-
-  return (
-    <section className="container mx-auto px-4 py-8">
-      <div className="glass-card p-6 lg:p-8 animated-border animate-fade-in">
-        <h2 className="font-display text-xl lg:text-2xl font-bold mb-6 flex items-center gap-3">
-          <Brain className="w-6 h-6 text-secondary animate-pulse-subtle" />
-          <span className="text-gradient-secondary">Prediction Engine</span>
-        </h2>
-
-        {/* Main Advice */}
-        <div className="glass-card p-6 rounded-xl bg-gradient-to-r from-primary/5 to-secondary/5 border-primary/20 mb-6">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-              <Target className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-heading text-lg font-semibold text-muted-foreground mb-2">Consiglio</h3>
-              <p className="font-display text-xl lg:text-2xl font-bold leading-relaxed">
-                {predictions.advice}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Winner Suggestion */}
-          <div className="glass-card p-5 rounded-xl">
-            <h3 className="font-heading text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-accent" />
-              Vincitore Suggerito
-            </h3>
-            {predictions.winner ? (
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full glass-card p-2 pulse-glow">
-                  <img 
-                    src={predictions.winner.id === home.id ? home.logo : away.logo}
-                    alt={predictions.winner.name}
-                    className="w-full h-full object-contain"
-                  />
+    return (
+        <section className="container mx-auto px-4 py-12">
+            <Card className="p-10 border-brand-orange/20 relative overflow-hidden bg-gradient-to-br from-brand-orange/5 to-transparent backdrop-blur-3xl">
+                <div className="absolute top-0 right-0 p-8 opacity-5">
+                    <BrainCircuit className="w-40 h-40 text-brand-orange" />
                 </div>
-                <div>
-                  <div className="font-display text-2xl font-bold text-accent">
-                    {predictions.winner.name}
-                  </div>
-                  {predictions.winner.comment && (
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {predictions.winner.comment}
+
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
+                    <h2 className="text-3xl font-black italic tracking-tighter flex items-center gap-4">
+                        <BrainCircuit className="w-8 h-8 text-brand-orange" />
+                        ALGORITHM TERMINAL
+                    </h2>
+                    <div className="flex items-center gap-2 px-4 py-1 bg-brand-orange/10 border border-brand-orange/20 rounded-full text-[10px] font-black uppercase tracking-widest text-brand-orange">
+                        Confidence: High Efficiency
                     </div>
-                  )}
                 </div>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">N/D</p>
-            )}
-          </div>
 
-          {/* 1X2 Percent */}
-          <div className="glass-card p-5 rounded-xl">
-            <h3 className="font-heading text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider flex items-center gap-2">
-              <Percent className="w-4 h-4" />
-              Probabilità 1X2
-            </h3>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center">
-                <div className="font-display text-2xl font-bold text-team-home">{predictions.percent.home}</div>
-                <div className="stat-label mt-1">Home</div>
-                <div className="progress-bar mt-2">
-                  <div 
-                    className="progress-bar-fill progress-bar-fill-primary"
-                    style={{ width: `${predictions.percent.homePercent}%` }}
-                  />
+                {/* Main Advice */}
+                <div className="glass-panel p-10 rounded-[2rem] border-white/10 bg-white/5 mb-8 relative group overflow-hidden">
+                    <div className="absolute -inset-10 bg-brand-orange/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="relative flex items-start gap-8">
+                        <div className="w-16 h-16 rounded-2xl bg-brand-orange/20 flex items-center justify-center shrink-0 border border-brand-orange/30">
+                            <Target className="w-8 h-8 text-brand-orange" />
+                        </div>
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-brand-orange mb-2 block">Primary Recommendation</span>
+                            <p className="text-2xl md:text-3xl font-black leading-tight tracking-tighter italic">
+                                "{predictions.advice}"
+                            </p>
+                        </div>
+                    </div>
                 </div>
-              </div>
-              <div className="text-center">
-                <div className="font-display text-2xl font-bold text-accent">{predictions.percent.draw}</div>
-                <div className="stat-label mt-1">Draw</div>
-                <div className="progress-bar mt-2">
-                  <div 
-                    className="progress-bar-fill progress-bar-fill-accent"
-                    style={{ width: `${predictions.percent.drawPercent}%` }}
-                  />
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="font-display text-2xl font-bold text-neon-magenta">{predictions.percent.away}</div>
-                <div className="stat-label mt-1">Away</div>
-                <div className="progress-bar mt-2">
-                  <div 
-                    className="progress-bar-fill progress-bar-fill-secondary"
-                    style={{ width: `${predictions.percent.awayPercent}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Under/Over & Win or Draw & Predicted Goals */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="glass-card p-4 rounded-xl text-center">
-            <div className="stat-label mb-2">Under/Over</div>
-            <div className="font-display text-3xl font-bold text-gradient-primary">{predictions.underOver}</div>
-          </div>
-          <div className="glass-card p-4 rounded-xl text-center">
-            <div className="stat-label mb-2">Win or Draw</div>
-            <div className={`inline-flex px-4 py-2 rounded-full text-lg font-bold ${
-              predictions.winOrDraw 
-                ? 'bg-neon-green/20 text-neon-green border border-neon-green/50' 
-                : 'bg-destructive/20 text-destructive border border-destructive/50'
-            }`}>
-              {predictions.winOrDraw ? 'TRUE' : 'FALSE'}
-            </div>
-          </div>
-          <div className="glass-card p-4 rounded-xl text-center">
-            <div className="stat-label mb-2">Predicted Goals</div>
-            <div className="flex items-center justify-center gap-3">
-              <span className="font-display text-xl font-bold text-team-home">H: {predictions.goals.home}</span>
-              <span className="text-muted-foreground">/</span>
-              <span className="font-display text-xl font-bold text-neon-magenta">A: {predictions.goals.away}</span>
-            </div>
-          </div>
-        </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    {/* Winner Prediction */}
+                    <Card className="p-8 border-white/5 flex items-center gap-8 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Trophy className="w-12 h-12" />
+                        </div>
+                        <div className="relative w-24 h-24 rounded-full glass-panel p-4 border-brand-orange/30 shadow-[0_0_20px_rgba(255,153,0,0.2)]">
+                            {predictions.winner ? (
+                                <img
+                                    src={predictions.winner.id === home.id ? home.logo : away.logo}
+                                    alt={predictions.winner.name}
+                                    className="w-full h-full object-contain"
+                                />
+                            ) : (
+                                <Cpu className="w-full h-full text-brand-orange" />
+                            )}
+                        </div>
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1 block">Value Pick</span>
+                            <h3 className="text-3xl font-black italic tracking-tighter">{predictions.winner?.name || "No Clear Winner"}</h3>
+                            <p className="text-xs text-gray-500 font-bold uppercase mt-1 tracking-wider opacity-60">Probabilistic confidence active</p>
+                        </div>
+                    </Card>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-wrap justify-center gap-4">
-          <Button 
-            onClick={handleSave}
-            className="bg-gradient-to-r from-primary to-neon-blue hover:opacity-90 text-primary-foreground font-heading font-semibold px-6"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Salva Pronostico
-          </Button>
-          <Button 
-            onClick={handleWatchlist}
-            variant="outline"
-            className="border-accent/50 text-accent hover:bg-accent/10 font-heading font-semibold px-6"
-          >
-            <Bookmark className="w-4 h-4 mr-2" />
-            Aggiungi a Watchlist
-          </Button>
-          <Button 
-            onClick={handleShare}
-            variant="outline"
-            className="border-secondary/50 text-secondary hover:bg-secondary/10 font-heading font-semibold px-6"
-          >
-            <Share2 className="w-4 h-4 mr-2" />
-            Condividi
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
+                    {/* Probabilities */}
+                    <Card className="p-8 border-white/5">
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-6">Market Distribution</h3>
+                        <div className="grid grid-cols-3 gap-6">
+                            {['Home', 'Draw', 'Away'].map((label, idx) => {
+                                const percents = [predictions.percent.home, predictions.percent.draw, predictions.percent.away];
+                                const fills = [predictions.percent.homePercent, predictions.percent.drawPercent, predictions.percent.awayPercent];
+                                const colors = ["text-brand-orange", "text-gray-400", "text-neon-cyan"];
+                                const barColors = ["bg-brand-orange", "bg-gray-400", "bg-neon-cyan"];
+
+                                return (
+                                    <div key={label} className="text-center">
+                                        <div className={cn("text-2xl font-black italic", colors[idx])}>{percents[idx]}</div>
+                                        <div className="text-[8px] font-black uppercase tracking-widest text-gray-500 mt-1">{label}</div>
+                                        <Progress value={fills[idx]} className="h-1 mt-2" barClassName={barColors[idx]} />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Triple Stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Algorithm Line</span>
+                        <span className="text-3xl font-black italic text-brand-orange">{predictions.underOver}</span>
+                    </div>
+                    <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Safety Buffer</span>
+                        <Badge variant={predictions.winOrDraw ? "neon" : "destructive"} className="px-6 py-1 text-[10px] font-black uppercase tracking-[0.2em]">
+                            {predictions.winOrDraw ? "PROTECTED" : "HIGH VOLATILITY"}
+                        </Badge>
+                    </div>
+                    <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Score Projection</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-xl font-black text-brand-orange">H:{predictions.goals.home}</span>
+                            <span className="text-white/20 font-black">/</span>
+                            <span className="text-xl font-black text-neon-cyan">A:{predictions.goals.away}</span>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+        </section>
+    );
 }

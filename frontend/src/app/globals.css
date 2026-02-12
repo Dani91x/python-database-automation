@@ -4,32 +4,91 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-brand-orange: #FF9900;
-  --color-brand-black: #000000;
-  
+  --color-brand-black: #050505;
+  --color-team-home: #FF9900;
+  --color-team-away: #00F0FF;
+  --color-neon-magenta: #FF00E5;
+  --color-neon-cyan: #00F0FF;
+  --color-glass-white: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --color-glass-hover: rgba(255, 255, 255, 0.08);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  --font-display: "Outfit", sans-serif;
 }
 
 :root {
-  --background: #000000;
+  --background: #050505;
   --foreground: #ffffff;
-  --radius: 0.5rem;
+  --radius: 1rem;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-display), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
 
 /* Glassmorphism utility */
 .glass-panel {
   background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 153, 0, 0.1);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 153, 0, 0.3);
 }
 
 .brand-gradient {
   background: linear-gradient(135deg, #FF9900 0%, #FF6600 100%);
+}
+
+.neon-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.neon-shimmer::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(to bottom right,
+      transparent,
+      rgba(255, 153, 0, 0.1),
+      transparent);
+  transform: rotate(45deg);
+  animation: shimmer 3s infinite linear;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) rotate(45deg);
+  }
+
+  100% {
+    transform: translateX(100%) rotate(45deg);
+  }
+}
+
+.text-gradient {
+  background: linear-gradient(to right, #ffffff, #999999);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
