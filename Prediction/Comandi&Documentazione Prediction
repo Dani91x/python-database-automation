@@ -1,0 +1,190 @@
+📘 Prediction – Documentazione Operativa
+
+Questa sezione gestisce l’intero ciclo di vita delle prediction fornite dall’endpoint API-Football:
+
+raccolta pre-match
+
+valutazione post-match
+
+audit e reporting
+
+La logica è volutamente separata dal resto del backfill storico.
+
+1️⃣ today_predictions_backfill.py
+🎯 Scopo
+
+Recupera tutte le partite di una data (UTC) e, quando disponibile, chiama l’endpoint /predictions di API-Football per ciascun match.
+
+I dati vengono:
+
+salvati integralmente (raw_json)
+
+normalizzati in colonne chiave
+
+preparati per dashboard e query SQL
+
+▶️ Quando usarlo
+
+Ogni giorno, prima che i match inizino
+
+Per popolare le prediction “a freddo” (pre-evento)
+
+Può essere rilanciato senza creare duplicati
+
+🧠 Logica principale
+
+Per ogni fixture del giorno:
+
+Recupera le partite via /fixtures?date=YYYY-MM-DD
+
+Estrae contesto base:
+
+fixture_id
+
+league_id / season_year
+
+squadre, data, lega
+
+Controlla il coverage:
+
+se predictions = false → salva status = no_coverage
+
+Chiama /predictions:
+
+se risposta vuota → status = empty
+
+se valida → status = ok
+
+Salva:
+
+raw_json → snapshot completo API
+
+flat_summary → JSON piatto per dashboard
+
+campi “promossi” (winner, percentuali, advice…)
+
+🔐 Protezioni
+
+upsert su fixture_id → nessun duplicato
+
+Se una prediction esiste già → viene saltata (evita chiamate API inutili)
+
+Timezone solo UTC (coerente con API-Football)
+
+📌 Output principale
+
+Tabella: fixture_predictions
+
+Campi chiave:
+
+status: ok / empty / no_coverage / error
+
+raw_json: JSON completo (uso interno)
+
+flat_summary: JSON piatto
+
+colonne “promosse” per UI
+
+▶️ Comando
+python -m Prediction.today_predictions_backfill
+python -m Prediction.today_predictions_backfill --date 2026-02-01
+
+2️⃣ predictions_results_backfill.py
+🎯 Scopo
+
+Valuta l’esito reale delle prediction una volta che i match sono terminati.
+
+Trasforma le prediction in dati misurabili:
+
+hit / miss
+
+performance per mercato
+
+KPI dell’endpoint
+
+▶️ Quando usarlo
+
+Dopo il daily backfill dei match
+
+Quando matches.status_short IN ('FT','AET','PEN')
+
+Può essere rilanciato in sicurezza
+
+🧠 Logica principale
+
+Per una data UTC:
+
+Legge da fixture_predictions:
+
+solo status = ok
+
+solo non valutate (evaluated_at IS NULL)
+
+Incrocia con matches via fixture_id
+
+Valuta solo match conclusi
+
+Calcola:
+
+risultato finale (gol, outcome)
+
+hit_winner
+
+hit_win_or_draw
+
+hit_under_over
+
+Aggiorna la riga via UPDATE (mai insert)
+
+🔐 Protezioni
+
+UPDATE only → zero rischio su NOT NULL
+
+Nessun duplicato
+
+Match non finiti → skip automatico
+
+Match mancanti → skip + audit
+
+📊 Campi valorizzati
+
+Su fixture_predictions:
+
+result_home_goals
+
+result_away_goals
+
+result_total_goals
+
+result_outcome (H / D / A)
+
+hit_winner
+
+hit_win_or_draw
+
+hit_under_over
+
+evaluated_at
+
+▶️ Comando
+python -m Prediction.predictions_results_backfill --date 2026-02-01
+
+
+Forzare rivalutazione:
+
+python -m Prediction.predictions_results_backfill --date 2025-12-14 --force
+
+🔁 Ciclo completo consigliato (produzione)
+Momento	Script
+Mattina	today_predictions_backfill
+Notte	daily backfill match
+Dopo FT	predictions_results_backfill
+🧠 Filosofia della sezione Prediction
+
+Separazione netta: pre-match ≠ post-match
+
+Dati immutabili: il raw JSON non cambia mai
+
+Audit totale: ogni prediction è verificabile
+
+Dashboard-ready: l’utente non vede JSON
