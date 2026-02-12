@@ -6,7 +6,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 # ----------------------------------------------------------
@@ -302,12 +302,17 @@ def run(target_date: str, force: bool, limit: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", required=True, help="YYYY-MM-DD (UTC)")
+    parser.add_argument("--date", help="YYYY-MM-DD (UTC). Se omesso: ieri.")
     parser.add_argument("--force", action="store_true", help="Rivaluta anche se evaluated_at è già valorizzato")
     parser.add_argument("--limit", type=int, default=5000)
     args = parser.parse_args()
 
-    run(target_date=args.date, force=args.force, limit=args.limit)
+    if args.date:
+        target_date = args.date
+    else:
+        target_date = (date.today() - timedelta(days=1)).isoformat()
+
+    run(target_date=target_date, force=args.force, limit=args.limit)
 
 
 if __name__ == "__main__":
