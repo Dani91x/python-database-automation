@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // frontend/src/components/dashboard/TeamPanel.tsx
 import { NormalizedTeam } from "@/lib/normalize";
 import {
@@ -71,13 +72,13 @@ export function TeamPanel({ team, side }: TeamPanelProps) {
 
                 {/* Row 3: History & Context */}
                 <div className="grid grid-cols-1 gap-4">
-                    <FixturesSummary fixtures={team.league.fixtures} side={side} />
+                    <FixturesSummary fixtures={team.league.fixtures} />
                     <BiggestStreakCard biggest={team.league.biggest} side={side} />
                 </div>
 
                 {/* Row 4: Tactical */}
                 <div className="grid grid-cols-1 gap-4">
-                    <LineupsCard lineups={team.league.lineups} side={side} />
+                    <LineupsCard lineups={team.league.lineups} />
                     <PenaltyCard penalty={team.league.penalty} />
                 </div>
             </div>

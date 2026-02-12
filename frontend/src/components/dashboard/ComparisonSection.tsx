@@ -1,7 +1,8 @@
+/* eslint-disable @next/next/no-img-element */
 // frontend/src/components/dashboard/ComparisonSection.tsx
 import { NormalizedComparison, NormalizedTeam } from "@/lib/normalize";
 import { BarChart3, Lightbulb, Swords, Shield, Users, Target, Calculator, TrendingUp } from "lucide-react";
-import { cn, Progress } from "@/components/ui/shadcn-mini";
+import { cn } from "@/components/ui/shadcn-mini";
 
 interface ComparisonSectionProps {
     comparison: NormalizedComparison;

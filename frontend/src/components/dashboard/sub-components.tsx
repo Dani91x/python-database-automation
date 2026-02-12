@@ -1,7 +1,7 @@
 // frontend/src/components/dashboard/sub-components.tsx
-import { TeamLast5, TeamLeagueStats, GoalsByMinute, UnderOver, CardsByMinute as CardsByMinuteType } from "@/lib/normalize";
-import { Activity, Shield, Swords, Target, Trophy, Info, AlertCircle, TrendingUp } from "lucide-react";
-import { Progress, Badge, Card, Tabs, TabsList, TabsTrigger, TabsContent, cn } from "@/components/ui/shadcn-mini";
+import { TeamLast5 } from "@/lib/normalize";
+import { Activity, Target } from "lucide-react";
+import { Progress, Badge, Card, cn } from "@/components/ui/shadcn-mini";
 
 // 1. FormString
 export function FormString({ form, side }: { form: string; side: 'home' | 'away' }) {

@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 // frontend/src/components/dashboard/PredictionsCard.tsx
 import { NormalizedPredictions, NormalizedTeam } from "@/lib/normalize";
-import { BrainCircuit, Trophy, Target, Percent, Share2, Bookmark, Save, Cpu } from "lucide-react";
+import { BrainCircuit, Trophy, Target, Cpu } from "lucide-react";
 import { Badge, Card, Progress, cn } from "@/components/ui/shadcn-mini";
 
 interface PredictionsCardProps {
@@ -10,16 +11,6 @@ interface PredictionsCardProps {
 }
 
 export function PredictionsCard({ predictions, home, away }: PredictionsCardProps) {
-    const handleShare = () => {
-        if (navigator.share) {
-            navigator.share({
-                title: `${home.name} vs ${away.name} - Prediction`,
-                text: predictions.advice,
-                url: window.location.href,
-            });
-        }
-    };
-
     return (
         <section className="container mx-auto px-4 py-12">
             <Card className="p-10 border-brand-orange/20 relative overflow-hidden bg-gradient-to-br from-brand-orange/5 to-transparent backdrop-blur-3xl">
@@ -30,10 +21,10 @@ export function PredictionsCard({ predictions, home, away }: PredictionsCardProp
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
                     <h2 className="text-3xl font-black italic tracking-tighter flex items-center gap-4">
                         <BrainCircuit className="w-8 h-8 text-brand-orange" />
-                        ALGORITHM TERMINAL
+                        TERMINALE ALGORITMICO
                     </h2>
                     <div className="flex items-center gap-2 px-4 py-1 bg-brand-orange/10 border border-brand-orange/20 rounded-full text-[10px] font-black uppercase tracking-widest text-brand-orange">
-                        Confidence: High Efficiency
+                        Confidenza: Alta Efficienza
                     </div>
                 </div>
 
@@ -45,9 +36,9 @@ export function PredictionsCard({ predictions, home, away }: PredictionsCardProp
                             <Target className="w-8 h-8 text-brand-orange" />
                         </div>
                         <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-brand-orange mb-2 block">Primary Recommendation</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-brand-orange mb-2 block">Raccomandazione Primaria</span>
                             <p className="text-2xl md:text-3xl font-black leading-tight tracking-tighter italic">
-                                "{predictions.advice}"
+                                &ldquo;{predictions.advice}&rdquo;
                             </p>
                         </div>
                     </div>
@@ -71,17 +62,17 @@ export function PredictionsCard({ predictions, home, away }: PredictionsCardProp
                             )}
                         </div>
                         <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1 block">Value Pick</span>
-                            <h3 className="text-3xl font-black italic tracking-tighter">{predictions.winner?.name || "No Clear Winner"}</h3>
-                            <p className="text-xs text-gray-500 font-bold uppercase mt-1 tracking-wider opacity-60">Probabilistic confidence active</p>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1 block">Valore Selezionato</span>
+                            <h3 className="text-3xl font-black italic tracking-tighter">{predictions.winner?.name || "Nessun Vincitore Chiaro"}</h3>
+                            <p className="text-xs text-gray-500 font-bold uppercase mt-1 tracking-wider opacity-60">Confidenza probabilistica attiva</p>
                         </div>
                     </Card>
 
                     {/* Probabilities */}
                     <Card className="p-8 border-white/5">
-                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-6">Market Distribution</h3>
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-6">Distribuzione Mercato</h3>
                         <div className="grid grid-cols-3 gap-6">
-                            {['Home', 'Draw', 'Away'].map((label, idx) => {
+                            {['Casa', 'Pareggio', 'Ospite'].map((label, idx) => {
                                 const percents = [predictions.percent.home, predictions.percent.draw, predictions.percent.away];
                                 const fills = [predictions.percent.homePercent, predictions.percent.drawPercent, predictions.percent.awayPercent];
                                 const colors = ["text-brand-orange", "text-gray-400", "text-neon-cyan"];
@@ -102,17 +93,17 @@ export function PredictionsCard({ predictions, home, away }: PredictionsCardProp
                 {/* Triple Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Algorithm Line</span>
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Linea Algoritmo</span>
                         <span className="text-3xl font-black italic text-brand-orange">{predictions.underOver}</span>
                     </div>
                     <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Safety Buffer</span>
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Margine Sicurezza</span>
                         <Badge variant={predictions.winOrDraw ? "neon" : "destructive"} className="px-6 py-1 text-[10px] font-black uppercase tracking-[0.2em]">
-                            {predictions.winOrDraw ? "PROTECTED" : "HIGH VOLATILITY"}
+                            {predictions.winOrDraw ? "PROTETTO" : "ALTA VOLATILITÀ"}
                         </Badge>
                     </div>
                     <div className="p-6 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Score Projection</span>
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Proiezione Risultato</span>
                         <div className="flex items-center gap-3">
                             <span className="text-xl font-black text-brand-orange">H:{predictions.goals.home}</span>
                             <span className="text-white/20 font-black">/</span>

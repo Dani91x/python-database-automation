@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 // frontend/src/components/dashboard/H2HSection.tsx
 import { History, AlertCircle } from "lucide-react";
-import { Card, cn } from "@/components/ui/shadcn-mini";
+import { Card } from "@/components/ui/shadcn-mini";
 
 interface H2HSectionProps {
     h2h: any[];

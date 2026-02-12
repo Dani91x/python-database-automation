@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -43,13 +44,13 @@ export const MatchCard = ({ pred }: { pred: any }) => {
                             <div className="text-[10px] uppercase text-gray-500 font-black mb-1 tracking-widest">CONSIGLIO</div>
                             <div className="flex items-center gap-2">
                                 <span className="bg-brand-orange/20 text-brand-orange px-2 py-0.5 rounded text-[10px] font-black border border-brand-orange/20">
-                                    {pred.winner_team_id === pred.home_team_id ? '1' : (pred.winner_team_id ? '2' : 'D')}
+                                    {pred.winner_team_id === pred.home_team_id ? '1' : (pred.winner_team_id ? '2' : 'X')}
                                 </span>
                                 <span className="text-[10px] font-black text-white/80 uppercase">Vincitore</span>
                             </div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase text-gray-500 font-black mb-1 tracking-widest">GOAL LINE</div>
+                            <div className="text-[10px] uppercase text-gray-500 font-black mb-1 tracking-widest">LINEA GOL</div>
                             <div className="flex items-center gap-2">
                                 <span className="bg-white/5 text-white px-2 py-0.5 rounded text-[10px] font-black border border-white/10">
                                     {pred.under_over_line || 'N/D'}
@@ -84,12 +85,12 @@ export const MatchCard = ({ pred }: { pred: any }) => {
                 <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2 text-[9px] text-brand-orange font-black uppercase tracking-[0.1em]">
                         <BrainCircuit className="w-3 h-3" />
-                        Neural Network Signal
+                        Segnale Rete Neurale
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 text-[9px] text-gray-500 font-bold uppercase">
                             <Activity className="w-3 h-3" />
-                            Confidence: <span className="text-white">{pred.percent_home || 50}%</span>
+                            Confidenza: <span className="text-white">{pred.percent_home || 50}%</span>
                         </div>
                     </div>
                 </div>
