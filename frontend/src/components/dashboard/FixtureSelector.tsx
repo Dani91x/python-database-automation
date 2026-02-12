@@ -29,7 +29,8 @@ export function FixtureSelector({ currentFixtureId, onSelect }: FixtureSelectorP
                 const { data, error } = await supabase
                     .from('fixture_predictions')
                     .select('fixture_id, raw_json, fixture_date')
-                    .order('fixture_date', { ascending: false });
+                    .order('fixture_id', { ascending: false })
+                    .limit(100);
 
                 if (error) throw error;
 
