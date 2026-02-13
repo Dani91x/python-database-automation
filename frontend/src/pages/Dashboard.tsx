@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizePredictionJson, NormalizedData } from '@/lib/normalize';
-import { MOCK_RAW_JSON } from '@/lib/mockData';
 import { HeroMatch } from '@/components/dashboard/HeroMatch';
 import { PredictionsCard } from '@/components/dashboard/PredictionsCard';
 import { TeamPanel } from '@/components/dashboard/TeamPanel';
 import { ComparisonSection } from '@/components/dashboard/ComparisonSection';
 import { H2HSection } from '@/components/dashboard/H2HSection';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, RefreshCw, ChevronLeft, Calendar } from 'lucide-react';
+import { Loader2, LogOut, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -19,7 +18,6 @@ export default function Dashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [data, setData] = useState<NormalizedData | null>(null);
     const [loading, setLoading] = useState(false);
-    const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null);
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -39,7 +37,6 @@ export default function Dashboard() {
             if (fixture && fixture.raw_json) {
                 const normalized = normalizePredictionJson(fixture.raw_json, String(fixture.fixture_id));
                 setData(normalized);
-                setSelectedFixtureId(String(fixture.fixture_id));
                 setViewMode('detail');
             }
         } catch (error: any) {

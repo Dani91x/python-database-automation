@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, Trophy, MapPin, ArrowRight } from 'lucide-react';
+import { Loader2, Calendar, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface MatchPreview {
