@@ -40,15 +40,15 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
             try {
                 // Get today's date in YYYY-MM-DD format
                 const today = format(new Date(), 'yyyy-MM-dd');
-                console.log("Fetching matches for date >= ", today);
 
+                // Optimized query: Get matches for today and future days to handle TZ overlaps.
+                // We remove the limit to ensure all matches (potentially 1000+) are visible on high-volume days.
                 const { data, error } = await supabase
                     .from('fixture_predictions')
                     .select('fixture_id, fixture_date, home_team_name, away_team_name, league_name, status, raw_json')
                     .eq('status', 'ok')
-                    .gte('fixture_date', today)
-                    .order('fixture_date', { ascending: true })
-                    .limit(40);
+                    .gte('fixture_date', `${today}T00:00:00Z`) // Explicitly from start of day UTC
+                    .order('fixture_date', { ascending: true });
 
                 if (error) {
                     console.error("Supabase Error:", error);
