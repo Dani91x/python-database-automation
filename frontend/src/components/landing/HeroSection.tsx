@@ -23,7 +23,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     transition={{ duration: 0.8 }}
                 >
                     <div className="flex items-center justify-center gap-3 mb-8">
-                        <img src="/logo-alphascore-wordmark.svg" alt="Alpha Score" className="h-16 md:h-24" />
+                        {/* Logo removed as per user request */}
                     </div>
 
                     <div className="flex justify-center mb-6">
