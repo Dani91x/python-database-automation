@@ -5,22 +5,22 @@ import { Flame } from "lucide-react";
 export function BiggestStreakCard({ biggest }: { biggest: TeamLeagueStats['biggest'] }) {
     return (
         <Card className="glass-card p-6">
-            <div className="flex items-center gap-2 mb-4 text-brand-orange">
+            <div className="flex items-center gap-2 mb-4 text-muted-foreground">
                 <Flame className="w-4 h-4" />
-                <h4 className="text-xs font-rajdhani font-bold uppercase tracking-widest">Migliori Serie</h4>
+                <h4 className="text-xs font-display font-bold uppercase tracking-widest">Migliori Serie</h4>
             </div>
 
             <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="p-2 bg-green-500/10 rounded border border-green-500/20">
-                    <div className="text-2xl font-black text-green-500">{biggest.streak.wins}</div>
+                <div className="p-2 bg-result-win/10 rounded border border-result-win/20">
+                    <div className="text-2xl font-black text-result-win">{biggest.streak.wins}</div>
                     <div className="text-[8px] uppercase tracking-wider text-muted-foreground">Wins</div>
                 </div>
-                <div className="p-2 bg-yellow-500/10 rounded border border-yellow-500/20">
-                    <div className="text-2xl font-black text-yellow-500">{biggest.streak.draws}</div>
+                <div className="p-2 bg-result-draw/10 rounded border border-result-draw/20">
+                    <div className="text-2xl font-black text-result-draw">{biggest.streak.draws}</div>
                     <div className="text-[8px] uppercase tracking-wider text-muted-foreground">Draws</div>
                 </div>
-                <div className="p-2 bg-red-500/10 rounded border border-red-500/20">
-                    <div className="text-2xl font-black text-red-500">{biggest.streak.loses}</div>
+                <div className="p-2 bg-destructive/10 rounded border border-destructive/20">
+                    <div className="text-2xl font-black text-destructive">{biggest.streak.loses}</div>
                     <div className="text-[8px] uppercase tracking-wider text-muted-foreground">Losses</div>
                 </div>
             </div>

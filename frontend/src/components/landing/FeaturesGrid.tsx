@@ -7,28 +7,28 @@ const features = [
         title: "Analisi AI Avanzata",
         description:
             "I nostri algoritmi di machine learning analizzano oltre 200 variabili per partita: forma, statistiche, head-to-head, distribuzione Poisson e molto altro.",
-        glow: "neon-glow-cyan",
+        glow: "neon-glow-primary",
     },
     {
         icon: BarChart3,
         title: "Dati in Tempo Reale",
         description:
             "Dati aggiornati da 120+ campionati mondiali. Goals by minute, cards heatmap, under/over distribution — tutto visualizzato in una dashboard interattiva.",
-        glow: "neon-glow-magenta",
+        glow: "neon-glow-gold",
     },
     {
         icon: Shield,
         title: "Confronto Intelligente",
         description:
             "Confronto squadre automatico su attacco, difesa, forma e storico H2H con barre comparative e insight generati dall'AI.",
-        glow: "neon-glow-cyan",
+        glow: "neon-glow-primary",
     },
     {
         icon: Zap,
         title: "Velocità e Precisione",
         description:
             "Pronostici generati in millisecondi con percentuali 1X2, combo double chance, predicted goals e suggerimenti actionable.",
-        glow: "neon-glow-magenta",
+        glow: "neon-glow-gold",
     },
 ];
 

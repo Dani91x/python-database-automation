@@ -52,8 +52,8 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
 
     return (
         <section className="mb-8">
-            <h2 className="text-xl font-orbitron font-bold mb-6 flex items-center gap-2">
-                <span className="w-1 h-6 bg-gradient-to-b from-neon-cyan to-neon-magenta rounded-full" />
+            <h2 className="text-xl font-display font-bold mb-6 flex items-center gap-2">
+                <span className="w-1 h-6 bg-gradient-to-b from-primary to-secondary rounded-full" />
                 CONFRONTO DIRETTO
             </h2>
 
@@ -74,9 +74,9 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
                                 transition={{ duration: 0.4, delay: i * 0.05 }}
                             >
                                 <div className="flex justify-between text-xs font-bold uppercase tracking-widest mb-2 px-1">
-                                    <span className="text-neon-cyan">{data.home}%</span>
-                                    <span className="text-white opacity-50">{item.label}</span>
-                                    <span className="text-neon-magenta">{data.away}%</span>
+                                    <span className="text-primary">{data.home}%</span>
+                                    <span className="text-foreground opacity-50">{item.label}</span>
+                                    <span className="text-secondary">{data.away}%</span>
                                 </div>
                                 <div className="h-3 bg-black/40 rounded-full flex overflow-hidden relative">
                                     <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-white/20 z-10" />
@@ -85,14 +85,14 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
                                         whileInView={{ width: `${homePct}%` }}
                                         viewport={{ once: true }}
                                         transition={{ duration: 1, delay: i * 0.05, ease: 'easeOut' }}
-                                        className="h-full bg-neon-cyan shadow-[0_0_10px_rgba(0,240,255,0.3)]"
+                                        className="h-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.3)]"
                                     />
                                     <motion.div
                                         initial={{ width: 0 }}
                                         whileInView={{ width: `${awayPct}%` }}
                                         viewport={{ once: true }}
                                         transition={{ duration: 1, delay: i * 0.05, ease: 'easeOut' }}
-                                        className="h-full bg-neon-magenta shadow-[0_0_10px_rgba(255,0,110,0.3)]"
+                                        className="h-full bg-secondary shadow-[0_0_10px_hsl(var(--secondary)/0.3)]"
                                     />
                                 </div>
                             </motion.div>
@@ -102,9 +102,9 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
                     {/* Total */}
                     <div className="pt-4 border-t border-white/10">
                         <div className="flex justify-between text-xs font-bold uppercase tracking-widest mb-2 px-1">
-                            <span className="text-neon-cyan font-mono">{totalData.home}%</span>
-                            <span className="text-white font-black">TOTALE</span>
-                            <span className="text-neon-magenta font-mono">{totalData.away}%</span>
+                            <span className="text-primary font-mono">{totalData.home}%</span>
+                            <span className="text-foreground font-black">TOTALE</span>
+                            <span className="text-secondary font-mono">{totalData.away}%</span>
                         </div>
                         <div className="h-4 bg-black/40 rounded-full flex overflow-hidden relative">
                             <div className="absolute left-1/2 top-0 bottom-0 w-[1px] bg-white/20 z-10" />
@@ -113,14 +113,14 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
                                 whileInView={{ width: `${(totalData.home / ((totalData.home + totalData.away) || 1)) * 100}%` }}
                                 viewport={{ once: true }}
                                 transition={{ duration: 1.2, ease: 'easeOut' }}
-                                className="h-full bg-gradient-to-r from-neon-cyan to-cyan-400 shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+                                className="h-full bg-gradient-to-r from-primary to-emerald-400 shadow-[0_0_15px_hsl(var(--primary)/0.4)]"
                             />
                             <motion.div
                                 initial={{ width: 0 }}
                                 whileInView={{ width: `${(totalData.away / ((totalData.home + totalData.away) || 1)) * 100}%` }}
                                 viewport={{ once: true }}
                                 transition={{ duration: 1.2, ease: 'easeOut' }}
-                                className="h-full bg-gradient-to-r from-pink-500 to-neon-magenta shadow-[0_0_15px_rgba(255,0,110,0.4)]"
+                                className="h-full bg-gradient-to-r from-yellow-300 to-secondary shadow-[0_0_15px_hsl(var(--secondary)/0.4)]"
                             />
                         </div>
                     </div>
@@ -128,15 +128,15 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
 
                 {/* Insight automatici */}
                 {insights.length > 0 && (
-                    <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/5">
-                        <div className="flex items-center gap-2 mb-3 text-brand-orange">
+                    <div className="mt-8 p-4 bg-muted/10 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-2 mb-3 text-accent">
                             <TrendingUp className="w-4 h-4" />
                             <span className="text-xs font-bold uppercase tracking-widest">Insight AI</span>
                         </div>
                         <ul className="space-y-1.5">
                             {insights.map((insight, i) => (
-                                <li key={i} className="text-sm text-white/70 flex items-center gap-2">
-                                    <span className="w-1 h-1 rounded-full bg-brand-orange shrink-0" />
+                                <li key={i} className="text-sm text-foreground/70 flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-accent shrink-0" />
                                     {insight}
                                 </li>
                             ))}

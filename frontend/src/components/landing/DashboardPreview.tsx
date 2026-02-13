@@ -45,7 +45,7 @@ export function DashboardPreview() {
                             whileInView={{ opacity: 1, x: 0 }}
                             viewport={{ once: true }}
                             transition={{ duration: 0.6, delay: 0.2 }}
-                            className="glass-card rounded-xl p-6 neon-glow-cyan"
+                            className="glass-card rounded-xl p-6 neon-glow-primary"
                         >
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">

@@ -3,20 +3,34 @@ import { cn } from "@/lib/utils";
 export function FormString({ form }: { form: string }) {
     if (!form) return null;
 
-    return (
-        <div className="flex gap-1">
-            {form.split('').map((char, i) => {
-                let color = "bg-gray-500";
-                if (char === 'W') color = "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]";
-                if (char === 'L') color = "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]";
-                if (char === 'D') color = "bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.4)]";
+    const counts = {
+        W: (form.match(/W/g) || []).length,
+        D: (form.match(/D/g) || []).length,
+        L: (form.match(/L/g) || []).length,
+    };
 
-                return (
-                    <div key={i} className={cn("w-6 h-6 rounded flex items-center justify-center text-[10px] font-black text-black", color)}>
-                        {char}
-                    </div>
-                );
-            })}
+    return (
+        <div className="flex flex-col gap-2">
+            <div className="flex gap-1">
+                {form.split('').map((char, i) => {
+                    let pillClass = "bg-muted text-muted-foreground";
+                    if (char === 'W') pillClass = "form-pill-w";
+                    if (char === 'D') pillClass = "form-pill-d";
+                    if (char === 'L') pillClass = "form-pill-l";
+
+                    return (
+                        <div key={i} className={cn("form-pill", pillClass)}>
+                            {char}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="flex gap-3 text-xs font-bold font-mono mt-1">
+                <span className="text-result-win">W: {counts.W}</span>
+                <span className="text-result-draw">D: {counts.D}</span>
+                <span className="text-destructive">L: {counts.L}</span>
+            </div>
         </div>
     );
 }

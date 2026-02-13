@@ -17,8 +17,10 @@ interface TeamPanelProps {
 
 export function TeamPanel({ team, side }: TeamPanelProps) {
     const isHome = side === 'home';
-    const borderColor = isHome ? 'border-neon-cyan/20' : 'border-neon-magenta/20';
-    const textColor = isHome ? 'text-neon-cyan' : 'text-neon-magenta';
+    const borderClass = isHome ? 'border-primary/30' : 'border-secondary/30';
+    const glowClass = isHome ? 'neon-glow-primary' : 'neon-glow-gold';
+    const textClass = isHome ? 'neon-text-primary' : 'neon-text-gold';
+    const badgeClass = isHome ? 'home-badge' : 'away-badge';
 
     return (
         <motion.div
@@ -28,15 +30,15 @@ export function TeamPanel({ team, side }: TeamPanelProps) {
             className="flex-1 w-full min-w-[300px]"
         >
             {/* Identity Header */}
-            <div className={`flex items-center gap-4 mb-6 p-4 rounded-xl border bg-black/20 ${borderColor}`}>
-                <div className="w-16 h-16 p-2 bg-white/5 rounded-full shrink-0">
+            <div className={`flex items-center gap-4 mb-6 p-4 rounded-xl border bg-black/20 ${borderClass} ${glowClass}`}>
+                <div className="w-16 h-16 p-2 bg-white/5 rounded-full shrink-0 flex items-center justify-center">
                     <img src={team.logo} alt={team.name} className="w-full h-full object-contain" />
                 </div>
                 <div>
-                    <div className={`text-xs font-black uppercase tracking-widest mb-1 ${textColor}`}>
-                        {isHome ? "HOME TEAM" : "AWAY TEAM"}
+                    <div className={`mb-1`}>
+                        <span className={badgeClass}>{isHome ? "HOME" : "AWAY"}</span>
                     </div>
-                    <h3 className="text-2xl font-orbitron font-bold text-white leading-none">{team.name}</h3>
+                    <h3 className={`text-2xl font-display font-bold uppercase leading-none ${textClass}`}>{team.name}</h3>
                     <div className="mt-2">
                         <FormString form={team.league.form} />
                     </div>

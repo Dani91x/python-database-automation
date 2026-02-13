@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
-import { Brain, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import LogoFull from "../../assets/logo-alphascore-full.png";
 
 interface HeroSectionProps {
     onCtaClick: () => void;
@@ -12,7 +13,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
         <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
             {/* Background effects */}
             <div className="absolute inset-0 bg-gradient-hero" />
-            <div className="absolute inset-0 grid-pattern opacity-30" />
+            <div className="absolute inset-0 grid-pattern opacity-20" />
             <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
             <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-secondary/5 blur-[100px]" />
 
@@ -22,41 +23,43 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8 }}
                 >
-                    <div className="flex items-center justify-center gap-3 mb-6">
-                        <div className="glass-card p-3 rounded-xl neon-glow-cyan">
-                            <Brain className="w-8 h-8 text-primary" />
-                        </div>
-                        <span className="home-badge text-sm">AI-POWERED</span>
+                    <div className="flex items-center justify-center gap-3 mb-8">
+                        <img src={LogoFull} alt="Alpha Score" className="h-16 md:h-20" />
                     </div>
 
-                    <h1 className="text-4xl md:text-6xl lg:text-7xl font-display font-bold leading-tight mb-6">
-                        <span className="text-gradient-primary">Pronostici Calcistici</span>
-                        <br />
-                        <span className="text-foreground">Potenziati dall'</span>
-                        <span className="text-gradient-secondary">Intelligenza Artificiale</span>
+                    <div className="flex justify-center mb-6">
+                        <span className="home-badge text-sm">DATA-DRIVEN</span>
+                    </div>
+
+                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-bold leading-tight mb-2">
+                        <span className="text-gradient-primary">Alpha Score</span>
                     </h1>
 
-                    <p className="text-lg md:text-xl font-heading text-muted-foreground max-w-3xl mx-auto mb-10 leading-relaxed">
-                        Algoritmi avanzati analizzano <span className="text-primary font-semibold">migliaia di dati in tempo reale</span> —
-                        forma, head-to-head, distribuzione Poisson, goals by minute — per darti il{" "}
-                        <span className="text-secondary font-semibold">vantaggio decisivo</span> su ogni partita.
+                    <p className="text-2xl md:text-3xl font-heading font-bold mb-8">
+                        <span className="text-gradient-secondary">Don't bet. Invest.</span>
                     </p>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <p className="text-lg md:text-xl font-body text-muted-foreground max-w-3xl mx-auto mb-10 leading-relaxed">
+                        Algoritmi avanzati analizzano <span className="text-primary font-semibold">migliaia di dati</span> —
+                        forma, head-to-head, distribuzione Poisson, goals by minute — per darti il{" "}
+                        <span className="text-secondary font-semibold">vantaggio decisivo</span>.
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
                         <Button
                             onClick={onCtaClick}
                             size="lg"
-                            className="text-lg px-10 py-6 font-heading font-bold pulse-glow neon-glow-cyan rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                            className="text-lg px-12 py-8 font-heading font-bold pulse-glow neon-glow-primary rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-all hover:scale-105"
                         >
-                            Inizia la Prova Gratuita — 7 Giorni
+                            INIZIA ORA
                         </Button>
                         <Button
                             onClick={onLoginClick}
                             variant="ghost"
                             size="lg"
-                            className="text-lg font-heading text-muted-foreground hover:text-primary"
+                            className="text-lg font-heading text-muted-foreground hover:text-primary transition-colors"
                         >
-                            Hai già un account? Accedi →
+                            Accedi alla Dashboard →
                         </Button>
                     </div>
                 </motion.div>

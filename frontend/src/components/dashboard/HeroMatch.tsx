@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { TrendingUp, AlertTriangle } from 'lucide-react';
 
 interface HeroMatchProps {
     home: NormalizedTeam;
@@ -19,47 +20,50 @@ export function HeroMatch({ home, away, league, prediction, matchDate }: HeroMat
 
     return (
         <Card className="glass-card mb-8 overflow-hidden relative border-none">
-            {/* Background Glows */}
-            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-neon-cyan/5 via-transparent to-neon-magenta/5 pointer-events-none" />
+            {/* Background Effects */}
+            <div className="absolute inset-0 bg-gradient-hero" />
+            <div className="absolute inset-0 grid-pattern opacity-30" />
 
             <div className="p-8 relative z-10">
                 {/* Header League */}
-                <div className="flex justify-between items-center mb-12 border-b border-white/5 pb-4">
+                <div className="flex justify-between items-center mb-10 border-b border-white/5 pb-4">
                     <div className="flex items-center gap-4">
                         <img src={league.logo} alt={league.name} className="w-10 h-10 object-contain drop-shadow-md" />
                         <div>
-                            <h2 className="text-xl font-orbitron font-bold uppercase tracking-wider text-white">{league.name}</h2>
-                            <p className="text-sm text-muted-foreground font-rajdhani font-semibold">{league.country} • Stagione {league.season}</p>
+                            <h2 className="text-xl font-display font-bold uppercase tracking-wider text-foreground">{league.name}</h2>
+                            <p className="text-sm text-muted-foreground font-heading font-semibold">{league.country} • Stagione {league.season}</p>
                         </div>
                     </div>
-                    <Badge variant="outline" className="font-mono text-xs border-brand-orange/30 text-brand-orange bg-brand-orange/5 animate-pulse">
+                    <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5 animate-pulse">
                         LIVE ANALYSIS
                     </Badge>
                 </div>
 
                 {/* Teams Layout */}
-                <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16 mb-12">
 
                     {/* HOME TEAM */}
                     <div className="flex flex-col items-center flex-1 text-center w-full">
                         <div className="relative mb-6 group">
-                            <div className="absolute inset-0 bg-neon-cyan/20 blur-[40px] rounded-full opacity-50 group-hover:opacity-80 transition-opacity duration-500" />
-                            <div className="w-32 h-32 relative z-10 p-4 glass-card rounded-full border-neon-cyan/30 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-primary/20 blur-[40px] rounded-full opacity-50 group-hover:opacity-80 transition-opacity duration-500" />
+                            <div className="w-32 h-32 relative z-10 p-4 glass-card rounded-full neon-glow-primary flex items-center justify-center">
                                 <img src={home.logo} alt={home.name} className="w-full h-full object-contain" />
                             </div>
-                            <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-neon-cyan text-black hover:bg-neon-cyan font-bold shadow-[0_0_15px_rgba(0,240,255,0.4)]">
-                                HOME
-                            </Badge>
+                            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                                <span className="home-badge">HOME</span>
+                            </div>
                         </div>
-                        <h1 className="text-3xl md:text-4xl font-orbitron font-black uppercase text-transparent bg-clip-text bg-gradient-to-br from-white to-gray-400">
+                        <h1 className="text-3xl md:text-4xl font-display font-bold uppercase neon-text-primary">
                             {home.name}
                         </h1>
                     </div>
 
                     {/* VS / INFO */}
                     <div className="flex flex-col items-center justify-center shrink-0">
-                        <div className="text-4xl font-black font-orbitron text-white/20 mb-2">VS</div>
-                        <div className="text-sm font-rajdhani font-semibold text-brand-orange uppercase tracking-widest bg-brand-orange/10 px-4 py-1 rounded-full border border-brand-orange/20">
+                        <div className="glass-card animated-border px-6 py-2 rounded-xl mb-4">
+                            <span className="text-4xl font-black font-display text-gradient-primary">VS</span>
+                        </div>
+                        <div className="text-sm font-heading font-semibold text-muted-foreground uppercase tracking-widest bg-muted/20 px-4 py-1 rounded-full border border-white/5">
                             {formattedDate}
                         </div>
                     </div>
@@ -67,17 +71,63 @@ export function HeroMatch({ home, away, league, prediction, matchDate }: HeroMat
                     {/* AWAY TEAM */}
                     <div className="flex flex-col items-center flex-1 text-center w-full">
                         <div className="relative mb-6 group">
-                            <div className="absolute inset-0 bg-neon-magenta/20 blur-[40px] rounded-full opacity-50 group-hover:opacity-80 transition-opacity duration-500" />
-                            <div className="w-32 h-32 relative z-10 p-4 glass-card rounded-full border-neon-magenta/30 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-secondary/20 blur-[40px] rounded-full opacity-50 group-hover:opacity-80 transition-opacity duration-500" />
+                            <div className="w-32 h-32 relative z-10 p-4 glass-card rounded-full neon-glow-gold flex items-center justify-center">
                                 <img src={away.logo} alt={away.name} className="w-full h-full object-contain" />
                             </div>
-                            <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-neon-magenta text-white hover:bg-neon-magenta font-bold shadow-[0_0_15px_rgba(255,0,110,0.4)]">
-                                AWAY
-                            </Badge>
+                            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                                <span className="away-badge">AWAY</span>
+                            </div>
                         </div>
-                        <h1 className="text-3xl md:text-4xl font-orbitron font-black uppercase text-transparent bg-clip-text bg-gradient-to-bl from-white to-gray-400">
+                        <h1 className="text-3xl md:text-4xl font-display font-bold uppercase neon-text-gold">
                             {away.name}
                         </h1>
+                    </div>
+                </div>
+
+                {/* Prediction Stats / Progress Bars */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Home Probability */}
+                    <div className="glass-card p-4 rounded-xl">
+                        <div className="flex justify-between mb-2">
+                            <span className="text-team-home font-bold">Win Probability</span>
+                            <span className="text-white font-mono">{prediction.percent.home}</span>
+                        </div>
+                        <div className="progress-bar">
+                            <div
+                                className="progress-bar-fill progress-bar-fill-primary"
+                                style={{ width: prediction.percent.home }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Win or Draw Indicator */}
+                    <div className={`glass-card p-4 rounded-xl flex items-center justify-center gap-3 border ${prediction.winOrDraw ? 'bg-result-win/10 border-result-win/30' : 'bg-destructive/10 border-destructive/30'}`}>
+                        {prediction.winOrDraw ? (
+                            <>
+                                <TrendingUp className="w-5 h-5 text-result-win" />
+                                <span className="text-result-win font-heading font-bold uppercase">Win or Draw: YES</span>
+                            </>
+                        ) : (
+                            <>
+                                <AlertTriangle className="w-5 h-5 text-destructive" />
+                                <span className="text-destructive font-heading font-bold uppercase">Win or Draw: NO</span>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Away Probability */}
+                    <div className="glass-card p-4 rounded-xl">
+                        <div className="flex justify-between mb-2">
+                            <span className="text-team-away font-bold">Win Probability</span>
+                            <span className="text-white font-mono">{prediction.percent.away}</span>
+                        </div>
+                        <div className="progress-bar">
+                            <div
+                                className="progress-bar-fill progress-bar-fill-secondary"
+                                style={{ width: prediction.percent.away }}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>

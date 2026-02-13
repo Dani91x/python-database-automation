@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizePredictionJson, NormalizedData } from '@/lib/normalize';
 import { MOCK_RAW_JSON } from '@/lib/mockData';
@@ -116,6 +117,11 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-background relative pb-24">
+            <Helmet>
+                <title>{data.home.name} vs {data.away.name} | Alpha Score Analysis</title>
+                <meta name="description" content={`Pronostico dettagliato per ${data.home.name} vs ${data.away.name} in ${data.league.name}. Scopri le probabilità di vittoria, statistiche e insight dell'AI.`} />
+            </Helmet>
+
             {/* Grid pattern */}
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
 

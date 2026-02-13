@@ -24,7 +24,7 @@ export function PricingCard({ onCtaClick }: PricingCardProps) {
                     whileInView={{ opacity: 1, scale: 1 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.5 }}
-                    className="glass-card neon-glow-cyan rounded-2xl p-8 md:p-10 text-center"
+                    className="glass-card neon-glow-primary rounded-2xl p-8 md:p-10 text-center"
                 >
                     <span className="home-badge mb-4 inline-block">PROVA GRATUITA</span>
                     <div className="stat-value text-5xl md:text-6xl mb-2">€0</div>
@@ -42,7 +42,7 @@ export function PricingCard({ onCtaClick }: PricingCardProps) {
                     <Button
                         onClick={onCtaClick}
                         size="lg"
-                        className="w-full text-lg py-6 font-heading font-bold pulse-glow neon-glow-cyan rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                        className="w-full text-lg py-6 font-heading font-bold pulse-glow neon-glow-primary rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                         Registrati Ora
                     </Button>

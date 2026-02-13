@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { Card } from "@/components/ui/card";
 
 export function GoalsTabs({ stats, side }: { stats: TeamLeagueStats; side: 'home' | 'away' }) {
-    const barColor = side === 'home' ? 'var(--neon-cyan)' : 'var(--neon-magenta)';
+    const barColor = side === 'home' ? 'hsl(155, 84%, 42%)' : 'hsl(45, 93%, 55%)';
 
     // Transform minute data for chart
     const minuteData = Object.entries(stats.goals.for.minute)

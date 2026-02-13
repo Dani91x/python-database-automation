@@ -39,7 +39,7 @@ interface AuthSectionProps {
     defaultTab?: "register" | "login";
 }
 
-const inputClass = "bg-input/50 border-border text-foreground placeholder:text-muted-foreground/50";
+const inputClass = "bg-input/50 border-glass-border text-foreground placeholder:text-muted-foreground/50";
 
 export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
     ({ defaultTab = "register" }, ref) => {
@@ -268,7 +268,7 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
                                         <Button
                                             type="submit"
                                             disabled={isLoading}
-                                            className="w-full py-6 text-lg font-heading font-bold pulse-glow neon-glow-cyan rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                                            className="w-full py-6 text-lg font-heading font-bold pulse-glow neon-glow-primary rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
                                         >
                                             {isLoading ? (
                                                 <span className="flex items-center gap-2">

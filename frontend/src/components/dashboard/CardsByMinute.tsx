@@ -13,12 +13,12 @@ export function CardsByMinute({ cards }: { cards: any }) {
 
     return (
         <div className="glass-card p-6 rounded-xl">
-            <h4 className="text-xs font-rajdhani font-bold uppercase tracking-widest text-muted-foreground mb-4">Cartellini Gialli</h4>
+            <h4 className="text-xs font-display font-bold uppercase tracking-widest text-muted-foreground mb-4">Cartellini Gialli</h4>
             <div className="grid grid-cols-4 gap-2">
                 {data.map((item: any, i: number) => (
-                    <div key={i} className="text-center bg-white/5 rounded p-2">
-                        <div className="text-[10px] text-gray-500">{item.range}</div>
-                        <div className="font-bold text-yellow-500">{item.count}</div>
+                    <div key={i} className="text-center bg-muted/20 rounded-md p-2">
+                        <div className="text-[10px] text-muted-foreground mb-1">{item.range}</div>
+                        <div className="font-bold text-accent">{item.count}</div>
                     </div>
                 ))}
             </div>

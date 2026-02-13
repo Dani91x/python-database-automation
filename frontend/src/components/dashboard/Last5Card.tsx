@@ -5,31 +5,31 @@ import { Progress } from "@/components/ui/progress";
 export function Last5Card({ last5 }: { last5: TeamLast5 }) {
     return (
         <Card className="glass-card p-6 mb-4">
-            <h4 className="text-xs font-rajdhani font-bold uppercase tracking-widest text-muted-foreground mb-4">Ultime 5 Partite</h4>
+            <h4 className="text-xs font-display font-bold uppercase tracking-widest text-muted-foreground mb-4">Ultime 5 Partite</h4>
 
             <div className="space-y-4 font-mono text-sm">
                 <div>
                     <div className="flex justify-between mb-1">
-                        <span>Forma</span>
-                        <span className="font-bold text-white">{last5.form}%</span>
+                        <span className="text-muted-foreground">Forma</span>
+                        <span className="font-bold text-foreground">{last5.form}%</span>
                     </div>
-                    <Progress value={last5.form} className="h-1.5" indicatorClassName="bg-brand-orange" />
+                    <Progress value={last5.form} className="h-1.5 bg-muted" indicatorClassName="progress-bar-fill-primary" />
                 </div>
 
                 <div>
                     <div className="flex justify-between mb-1">
-                        <span>Attacco</span>
-                        <span className="font-bold text-neon-cyan">{last5.att}%</span>
+                        <span className="text-muted-foreground">Attacco</span>
+                        <span className="font-bold text-secondary">{last5.att}%</span>
                     </div>
-                    <Progress value={last5.att} className="h-1.5" indicatorClassName="bg-neon-cyan" />
+                    <Progress value={last5.att} className="h-1.5 bg-muted" indicatorClassName="progress-bar-fill-secondary" />
                 </div>
 
                 <div>
                     <div className="flex justify-between mb-1">
-                        <span>Difesa</span>
-                        <span className="font-bold text-neon-magenta">{last5.def}%</span>
+                        <span className="text-muted-foreground">Difesa</span>
+                        <span className="font-bold text-accent">{last5.def}%</span>
                     </div>
-                    <Progress value={last5.def} className="h-1.5" indicatorClassName="bg-neon-magenta" />
+                    <Progress value={last5.def} className="h-1.5 bg-muted" indicatorClassName="bg-accent" />
                 </div>
             </div>
 
