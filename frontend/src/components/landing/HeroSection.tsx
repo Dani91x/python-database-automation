@@ -42,27 +42,40 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     transition={{ duration: 0.8 }}
                     className="flex flex-col justify-center items-start text-left"
                 >
-                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-black leading-tight mb-4">
-                        <span className="text-primary">Alpha</span><span className="text-white">-Score</span>
+                    <div className="mb-6">
+                        <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold tracking-wider text-primary uppercase backdrop-blur-md">
+                            Data-Driven Football Analysis
+                        </span>
+                    </div>
+
+                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-black leading-tight mb-6">
+                        <span className="text-white">ALPHA</span> <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-400">SCORE</span>
                     </h1>
 
-                    <h2 className="text-2xl md:text-4xl font-heading font-bold mb-6 text-white leading-tight">
-                        Forged by <span className="text-primary">Data</span><br />
-                        For <span className="text-white">Investors</span>
+                    <h2 className="text-2xl md:text-4xl font-heading font-light mb-8 text-white/90">
+                        Don't bet. <span className="font-bold text-secondary">Invest.</span>
                     </h2>
 
                     <p className="text-lg md:text-xl font-body text-gray-400 max-w-lg mb-10 leading-relaxed">
-                        Your ultimate destination for cutting-edge sports data and analytics.
-                        Smetti di scommettere, inizia a investire.
+                        L'unico algoritmo che trasforma le scommesse sportive in <span className="text-white font-medium">investimenti basati sui dati</span>.
+                        Analisi predittiva avanzata per chi non cerca fortuna, ma risultati.
                     </p>
 
-                    <div className="flex items-center gap-6">
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
                         <Button
                             onClick={onCtaClick}
                             size="lg"
                             className="text-lg px-10 py-6 font-heading font-bold rounded-xl bg-primary text-black hover:bg-primary/90 transition-all hover:scale-105 shadow-lg shadow-primary/25"
                         >
-                            Get Started
+                            INIZIA ORA
+                        </Button>
+                        <Button
+                            onClick={onLoginClick}
+                            variant="ghost"
+                            size="lg"
+                            className="text-lg font-heading text-white hover:text-primary transition-colors flex items-center gap-2"
+                        >
+                            Accedi alla Dashboard
                         </Button>
                     </div>
                 </motion.div>
