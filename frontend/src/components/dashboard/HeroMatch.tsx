@@ -24,17 +24,17 @@ export function HeroMatch({ home, away, league, prediction, matchDate }: HeroMat
             <div className="absolute inset-0 bg-gradient-hero" />
             <div className="absolute inset-0 grid-pattern opacity-30" />
 
-            <div className="p-8 relative z-10">
+            <div className="p-4 md:p-8 relative z-10">
                 {/* Header League */}
-                <div className="flex justify-between items-center mb-10 border-b border-white/5 pb-4">
-                    <div className="flex items-center gap-4">
-                        <img src={league.logo} alt={league.name} className="w-10 h-10 object-contain drop-shadow-md" />
+                <div className="flex flex-wrap justify-between items-center mb-6 md:mb-10 border-b border-white/5 pb-4 gap-4">
+                    <div className="flex items-center gap-3 md:gap-4">
+                        <img src={league.logo} alt={league.name} className="w-8 h-8 md:w-10 md:h-10 object-contain drop-shadow-md" />
                         <div>
-                            <h2 className="text-xl font-display font-bold uppercase tracking-wider text-foreground">{league.name}</h2>
-                            <p className="text-sm text-muted-foreground font-heading font-semibold">{league.country} • Stagione {league.season}</p>
+                            <h2 className="text-sm md:text-xl font-display font-bold uppercase tracking-wider text-foreground line-clamp-1">{league.name}</h2>
+                            <p className="text-[10px] md:text-sm text-muted-foreground font-heading font-semibold">{league.country} • {league.season}</p>
                         </div>
                     </div>
-                    <Badge variant="outline" className="font-mono text-xs border-primary/30 text-primary bg-primary/5 animate-pulse">
+                    <Badge variant="outline" className="font-mono text-[10px] md:text-xs border-primary/30 text-primary bg-primary/5 animate-pulse">
                         LIVE ANALYSIS
                     </Badge>
                 </div>
@@ -59,11 +59,11 @@ export function HeroMatch({ home, away, league, prediction, matchDate }: HeroMat
                     </div>
 
                     {/* VS / INFO */}
-                    <div className="flex flex-col items-center justify-center shrink-0">
-                        <div className="glass-card animated-border px-6 py-2 rounded-xl mb-4">
-                            <span className="text-4xl font-black font-display text-gradient-primary">VS</span>
+                    <div className="flex flex-col items-center justify-center shrink-0 order-first md:order-none mb-4 md:mb-0">
+                        <div className="glass-card animated-border px-4 py-1.5 md:px-6 md:py-2 rounded-xl mb-3 md:mb-4">
+                            <span className="text-2xl md:text-4xl font-black font-display text-gradient-primary">VS</span>
                         </div>
-                        <div className="text-sm font-heading font-semibold text-muted-foreground uppercase tracking-widest bg-muted/20 px-4 py-1 rounded-full border border-white/5">
+                        <div className="text-[10px] md:text-sm font-heading font-semibold text-muted-foreground uppercase tracking-widest bg-muted/20 px-3 py-1 md:px-4 md:py-1 rounded-full border border-white/5">
                             {formattedDate}
                         </div>
                     </div>

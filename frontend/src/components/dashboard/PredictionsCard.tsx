@@ -14,8 +14,8 @@ interface PredictionsCardProps {
 
 export function PredictionsCard({ predictions, home, away }: PredictionsCardProps) {
     return (
-        <section className="mb-8">
-            <Card className="p-10 border-accent/20 relative overflow-hidden bg-gradient-to-br from-accent/5 to-transparent backdrop-blur-3xl shadow-[0_0_40px_rgba(var(--accent),0.05)]">
+        <section className="mb-8 overflow-hidden sm:overflow-visible">
+            <Card className="p-6 md:p-10 border-accent/20 relative overflow-hidden bg-gradient-to-br from-accent/5 to-transparent backdrop-blur-3xl shadow-[0_0_40px_rgba(var(--accent),0.05)]">
                 <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
                     <BrainCircuit className="w-40 h-40 text-accent" />
                 </div>
@@ -31,15 +31,15 @@ export function PredictionsCard({ predictions, home, away }: PredictionsCardProp
                 </div>
 
                 {/* Main Advice */}
-                <div className="glass-card p-10 rounded-[2rem] border-white/10 bg-white/5 mb-8 relative group overflow-hidden">
+                <div className="glass-card p-6 md:p-10 rounded-2xl md:rounded-[2rem] border-white/10 bg-white/5 mb-8 relative group overflow-hidden">
                     <div className="absolute -inset-10 bg-accent/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                    <div className="relative flex items-start gap-8">
-                        <div className="w-16 h-16 rounded-2xl bg-accent/20 flex items-center justify-center shrink-0 border border-accent/30 shadow-[0_0_20px_rgba(var(--accent),0.15)]">
-                            <Target className="w-8 h-8 text-accent" />
+                    <div className="relative flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-8 text-center md:text-left">
+                        <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-accent/20 flex items-center justify-center shrink-0 border border-accent/30 shadow-[0_0_20px_rgba(var(--accent),0.15)]">
+                            <Target className="w-6 h-6 md:w-8 md:h-8 text-accent" />
                         </div>
                         <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-accent mb-2 block">Raccomandazione Primaria</span>
-                            <p className="text-2xl md:text-3xl font-black leading-tight tracking-tighter italic text-foreground/90">
+                            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-accent mb-2 block">Raccomandazione Primaria</span>
+                            <p className="text-xl md:text-3xl font-black leading-tight tracking-tighter italic text-foreground/90">
                                 &ldquo;{predictions.advice}&rdquo;
                             </p>
                         </div>
