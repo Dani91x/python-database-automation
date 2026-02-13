@@ -8,54 +8,21 @@ import { PredictionsCard } from '@/components/dashboard/PredictionsCard';
 import { TeamPanel } from '@/components/dashboard/TeamPanel';
 import { ComparisonSection } from '@/components/dashboard/ComparisonSection';
 import { H2HSection } from '@/components/dashboard/H2HSection';
-import { FixtureSelector } from '@/components/dashboard/FixtureSelector';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, RefreshCw } from 'lucide-react';
+import { Loader2, LogOut, RefreshCw, ChevronLeft, Calendar } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { MatchesList } from '@/components/dashboard/MatchesList';
 
 export default function Dashboard() {
+    const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [data, setData] = useState<NormalizedData | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null);
+
     const { user } = useAuth();
     const navigate = useNavigate();
-
-    // Fetch latest fixture (initial load)
-    const fetchLatest = async () => {
-        setLoading(true);
-        try {
-            const { data: fixtures, error } = await supabase
-                .from('fixture_predictions')
-                .select('raw_json, fixture_id')
-                .order('fixture_id', { ascending: false })
-                .limit(1)
-                .single();
-
-            if (error) throw error;
-
-            if (fixtures && fixtures.raw_json) {
-                const fid = String(fixtures.fixture_id);
-                const normalized = normalizePredictionJson(fixtures.raw_json, fid);
-                setData(normalized);
-                setSelectedFixtureId(fid);
-            } else {
-                toast("Nessun pronostico trovato. Uso dati demo.");
-                const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
-                setData(normalized);
-                setSelectedFixtureId('DEMO');
-            }
-        } catch (error: any) {
-            console.error(error);
-            toast.error("Errore caricamento — uso dati demo", { description: error.message });
-            const normalized = normalizePredictionJson(MOCK_RAW_JSON, 'DEMO');
-            setData(normalized);
-            setSelectedFixtureId('DEMO');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
@@ -73,6 +40,7 @@ export default function Dashboard() {
                 const normalized = normalizePredictionJson(fixture.raw_json, String(fixture.fixture_id));
                 setData(normalized);
                 setSelectedFixtureId(String(fixture.fixture_id));
+                setViewMode('detail');
             }
         } catch (error: any) {
             console.error(error);
@@ -82,44 +50,21 @@ export default function Dashboard() {
         }
     };
 
-    useEffect(() => {
-        fetchLatest();
-    }, []);
-
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/');
     };
 
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <Loader2 className="w-12 h-12 text-primary animate-spin" />
-            </div>
-        );
-    }
-
-    if (!data) {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground">
-                <div className="glass-card p-8 text-center">
-                    <h1 className="font-display text-2xl font-bold text-destructive mb-2">
-                        Nessun dato disponibile
-                    </h1>
-                    <p className="text-muted-foreground mb-4">Impossibile caricare i dati del pronostico.</p>
-                    <Button onClick={fetchLatest} variant="outline" className="mt-4" aria-label="Ricarica dati">
-                        <RefreshCw className="mr-2 h-4 w-4" /> Riprova
-                    </Button>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="min-h-screen bg-background relative pb-24">
             <Helmet>
-                <title>{data.home.name} vs {data.away.name} | Alpha Score Analysis</title>
-                <meta name="description" content={`Pronostico dettagliato per ${data.home.name} vs ${data.away.name} in ${data.league.name}. Scopri le probabilità di vittoria, statistiche e insight dell'AI.`} />
+                <title>
+                    {viewMode === 'list'
+                        ? 'Partite del Giorno | Alpha Score'
+                        : data
+                            ? `${data.home.name} vs ${data.away.name} | Alpha Score Analysis`
+                            : 'Dashboard | Alpha Score'}
+                </title>
             </Helmet>
 
             {/* Grid pattern */}
@@ -128,13 +73,25 @@ export default function Dashboard() {
             {/* Navbar */}
             <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50" role="navigation" aria-label="Dashboard navigation">
                 <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-                    <div className="font-display font-black text-xl tracking-tighter">
-                        AI <span className="text-primary">TERMINAL</span>
-                    </div>
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="sm" onClick={fetchLatest} className="text-muted-foreground hover:text-white" aria-label="Aggiorna dati">
-                            <RefreshCw className="w-4 h-4" />
-                        </Button>
+                        <div className="font-display font-black text-xl tracking-tighter cursor-pointer" onClick={() => setViewMode('list')}>
+                            AI <span className="text-primary">TERMINAL</span>
+                        </div>
+
+                        {viewMode === 'detail' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setViewMode('list')}
+                                className="hidden md:flex items-center gap-2 border-white/10 text-muted-foreground hover:text-white ml-6"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                                Torna alle partite
+                            </Button>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
                         <span className="text-xs text-muted-foreground hidden md:inline-block">
                             {user?.email}
                         </span>
@@ -148,47 +105,67 @@ export default function Dashboard() {
 
             <main className="container mx-auto px-4 py-8 max-w-7xl relative z-10">
 
-                {/* Fixture Selector */}
-                <div className="mb-8">
-                    <FixtureSelector
-                        currentFixtureId={selectedFixtureId || undefined}
-                        onSelect={loadFixture}
-                    />
-                </div>
+                {viewMode === 'list' ? (
+                    <MatchesList onSelectMatch={loadFixture} />
+                ) : (
+                    <>
+                        {loading && (
+                            <div className="flex items-center justify-center py-20">
+                                <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                            </div>
+                        )}
 
-                <HeroMatch
-                    home={data.home}
-                    away={data.away}
-                    league={data.league}
-                    prediction={data.predictions}
-                    matchDate={undefined}
-                />
+                        {!loading && data && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="mb-6 flex md:hidden">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setViewMode('list')}
+                                        className="gap-2 text-muted-foreground hover:text-white -ml-2"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        Torna alla lista
+                                    </Button>
+                                </div>
 
-                <PredictionsCard
-                    predictions={data.predictions}
-                    home={data.home}
-                    away={data.away}
-                />
+                                <HeroMatch
+                                    home={data.home}
+                                    away={data.away}
+                                    league={data.league}
+                                    prediction={data.predictions}
+                                    matchDate={undefined}
+                                />
 
-                <div className="flex flex-col xl:flex-row gap-8 mb-12">
-                    <TeamPanel team={data.home} side="home" />
-                    <div className="w-full xl:w-px xl:bg-white/5 xl:self-stretch hidden xl:block" />
-                    <TeamPanel team={data.away} side="away" />
-                </div>
+                                <PredictionsCard
+                                    predictions={data.predictions}
+                                    home={data.home}
+                                    away={data.away}
+                                />
 
-                <ComparisonSection
-                    comparison={data.comparison}
-                    homeName={data.home.name}
-                    awayName={data.away.name}
-                />
+                                <div className="flex flex-col xl:flex-row gap-8 mb-12">
+                                    <TeamPanel team={data.home} side="home" />
+                                    <div className="w-full xl:w-px xl:bg-white/5 xl:self-stretch hidden xl:block" />
+                                    <TeamPanel team={data.away} side="away" />
+                                </div>
 
-                <H2HSection h2h={data.h2h} />
+                                <ComparisonSection
+                                    comparison={data.comparison}
+                                    homeName={data.home.name}
+                                    awayName={data.away.name}
+                                />
+
+                                <H2HSection h2h={data.h2h} />
+                            </div>
+                        )}
+                    </>
+                )}
 
             </main>
 
             <footer className="border-t border-white/5 py-8 text-center text-xs text-muted-foreground">
                 <p>
-                    Dati aggiornati • Fixture ID: {data.fixtureId} • {data.league.name} {data.league.season}
+                    &copy; {new Date().getFullYear()} Alpha Score AI. All rights reserved.
                 </p>
             </footer>
         </div>
