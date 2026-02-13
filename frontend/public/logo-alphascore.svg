@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .cls-1 { fill: #ffffff; }
+      .cls-2 { fill: #11B365; }
+      .cls-text { fill: #ffffff; font-family: 'Sora', 'Arial', sans-serif; font-weight: 700; }
+    </style>
+  </defs>
+  
+  <!-- Main Icon Group -->
+  <g transform="translate(100, 50) scale(0.8)">
+      <!-- Stylized 'A' - White -->
+      <!-- Simulating the A with the lightning cut/overlap -->
+      <path class="cls-1" d="M 150 0 L 50 250 L 110 250 L 130 190 L 230 190 L 190 250 L 260 250 L 160 0 Z M 155 60 L 205 150 L 125 150 Z" />
+      
+      <!-- Stylized 'S' - Green -->
+      <!-- Wrapping around the A -->
+      <path class="cls-2" d="M 220 160 C 280 160, 320 180, 320 230 C 320 280, 280 300, 220 300 L 180 300 L 190 270 L 220 270 C 250 270, 270 260, 270 240 C 270 220, 250 210, 200 210 L 170 210 L 220 160" />
+      <!-- Sharp Cut/Overlap detail to match style might be complex, sticking to clean geometry -->
+  </g>
+
+  <!-- Text Group -->
+  <g transform="translate(256, 380)" text-anchor="middle">
+    <text x="0" y="0" class="cls-text" font-size="64" letter-spacing="4">ALPHA</text>
+    <text x="0" y="70" class="cls-text" font-size="64" letter-spacing="4">SCORE</text>
+  </g>
+</svg>
