@@ -12,7 +12,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
             {/* Navbar */}
             <nav className="absolute top-0 left-0 w-full z-50 px-6 py-6 md:px-12 flex justify-between items-center bg-transparent">
                 <div className="flex items-center gap-2">
-                    <img src="/logo-alphascore.svg" alt="Alpha Score" className="h-10 md:h-12 w-auto" />
+                    <img src="/9511045.png" alt="Alpha Score" className="h-12 md:h-16 w-auto" />
                 </div>
                 <div className="hidden md:flex gap-8 items-center">
                     <button onClick={onLoginClick} className="text-sm font-bold uppercase tracking-widest text-white hover:text-primary transition-colors">
