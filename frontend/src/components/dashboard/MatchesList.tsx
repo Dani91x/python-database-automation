@@ -44,45 +44,51 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
 
                 const { data, error } = await supabase
                     .from('fixture_predictions')
-                    .select('fixture_id, raw_json, fixture_date')
-                    .gte('fixture_date', today) // Filter: Today or future
-                    .order('fixture_date', { ascending: true }) // Chronological
-                    .limit(50);
+                    .select('fixture_id, fixture_date, home_team_name, away_team_name, league_name, status, raw_json')
+                    .eq('status', 'ok')
+                    .gte('fixture_date', today)
+                    .order('fixture_date', { ascending: true })
+                    .limit(40);
+
+                if (error) {
+                    console.error("Supabase Error:", error);
+                    toast.error("Errore database: " + error.message);
+                    return;
+                }
+
+                console.log("Found matches:", data?.length);
 
                 if (error) throw error;
 
-                const mapped: MatchPreview[] = (data || [])
-                    .map((row: any) => {
-                        try {
-                            const resp = row.raw_json?.response?.[0];
-                            if (!resp) return null;
+                const mapped: MatchPreview[] = (data || []).map((row: any) => {
+                    try {
+                        const dateObj = new Date(row.fixture_date);
+                        // Safely extract logos from raw_json prediction structure
+                        const prediction = row.raw_json?.response?.[0];
 
-                            const dateObj = new Date(resp.fixture.date);
-
-                            return {
-                                fixture_id: String(row.fixture_id),
-                                date: dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
-                                time: dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-                                status: resp.fixture.status.short,
-                                league: {
-                                    name: resp.league.name,
-                                    logo: resp.league.logo,
-                                    flag: resp.league.flag,
-                                },
-                                home: {
-                                    name: resp.teams.home.name,
-                                    logo: resp.teams.home.logo,
-                                },
-                                away: {
-                                    name: resp.teams.away.name,
-                                    logo: resp.teams.away.logo,
-                                },
-                            };
-                        } catch (e) {
-                            return null;
-                        }
-                    })
-                    .filter(Boolean) as MatchPreview[];
+                        return {
+                            fixture_id: String(row.fixture_id),
+                            date: dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
+                            time: dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+                            status: row.status,
+                            league: {
+                                name: row.league_name || 'N/A',
+                                logo: prediction?.league?.logo || '',
+                                flag: prediction?.league?.flag || '',
+                            },
+                            home: {
+                                name: row.home_team_name || 'N/A',
+                                logo: prediction?.teams?.home?.logo || '',
+                            },
+                            away: {
+                                name: row.away_team_name || 'N/A',
+                                logo: prediction?.teams?.away?.logo || '',
+                            },
+                        };
+                    } catch (e) {
+                        return null;
+                    }
+                }).filter(Boolean) as MatchPreview[];
 
                 // Optional: client-side filter for "today" if needed. 
                 // For now, simpler to show the retrieved list (which are likely the relevant ones).
