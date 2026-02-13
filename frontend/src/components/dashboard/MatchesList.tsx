@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Loader2, Calendar, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface MatchPreview {
     fixture_id: string;
@@ -37,18 +39,13 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
             setLoading(true);
             try {
                 // Get today's date in YYYY-MM-DD format
-                const today = new Date().toISOString().split('T')[0];
-
-                // Fetch matches. 
-                // Note: filtering by date might need adjustment depending on DB timezone vs local. 
-                // For now, we fetch recent/upcoming to ensure data visibility, 
-                // or we can strictly filter .eq('fixture_date', today) if the column is just specific date.
-                // Given the user said "populated every day", we'll try to fetch broadly and sort/filter in JS or query.
-                // Let's first try to get everything from today onwards, or just latest 50 to be safe and filter client side if needed or use the exact date if the column is date type.
+                const today = format(new Date(), 'yyyy-MM-dd');
+                console.log("Fetching matches for date >= ", today);
 
                 const { data, error } = await supabase
                     .from('fixture_predictions')
                     .select('fixture_id, raw_json, fixture_date')
+                    .gte('fixture_date', today) // Filter: Today or future
                     .order('fixture_date', { ascending: true }) // Chronological
                     .limit(50);
 
