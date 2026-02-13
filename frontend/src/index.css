@@ -98,7 +98,7 @@
             0 8px 32px hsl(0 0% 0% / 0.3),
             inset 0 1px 0 hsl(var(--foreground) / 0.05);
     }
-    
+
     .glass-card::before {
         content: '';
         @apply absolute inset-0 pointer-events-none;
@@ -116,7 +116,7 @@
     }
 
     .neon-glow-gold {
-         box-shadow:
+        box-shadow:
             0 0 20px hsl(var(--secondary) / 0.3),
             0 0 40px hsl(var(--secondary) / 0.2),
             inset 0 0 20px hsl(var(--secondary) / 0.1);
@@ -126,7 +126,7 @@
     .neon-text-primary {
         text-shadow: 0 0 10px hsl(var(--primary) / 0.8), 0 0 20px hsl(var(--primary) / 0.5);
     }
-    
+
     .neon-text-gold {
         text-shadow: 0 0 10px hsl(var(--secondary) / 0.8), 0 0 20px hsl(var(--secondary) / 0.5);
     }
@@ -150,16 +150,19 @@
     .form-pill {
         @apply w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold;
     }
+
     .form-pill-w {
         background: hsl(var(--win) / 0.2);
         color: hsl(var(--win));
         border: 1px solid hsl(var(--win) / 0.5);
     }
+
     .form-pill-d {
         background: hsl(var(--draw) / 0.2);
         color: hsl(var(--draw));
         border: 1px solid hsl(var(--draw) / 0.5);
     }
+
     .form-pill-l {
         background: hsl(var(--loss) / 0.2);
         color: hsl(var(--loss));
@@ -171,17 +174,21 @@
         @apply h-2 rounded-full overflow-hidden;
         background: hsl(var(--muted) / 0.5);
     }
+
     .progress-bar-fill {
         @apply h-full rounded-full transition-all duration-500 ease-out;
     }
+
     .progress-bar-fill-primary {
         background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)));
         box-shadow: 0 0 10px hsl(var(--primary) / 0.5);
     }
+
     .progress-bar-fill-secondary {
-         background: linear-gradient(90deg, hsl(var(--secondary)), hsl(38, 95%, 50%));
+        background: linear-gradient(90deg, hsl(var(--secondary)), hsl(38, 95%, 50%));
         box-shadow: 0 0 10px hsl(var(--secondary) / 0.5);
     }
+
     .progress-bar-fill-accent {
         background: hsl(var(--accent));
         box-shadow: 0 0 10px hsl(var(--accent) / 0.5);
@@ -195,7 +202,7 @@
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    
+
     .stat-label {
         @apply text-xs uppercase tracking-wider text-muted-foreground font-medium;
     }
@@ -204,6 +211,7 @@
     .hover-lift {
         @apply transition-all duration-300 ease-out;
     }
+
     .hover-lift:hover {
         transform: translateY(-4px);
         box-shadow: 0 12px 40px hsl(0 0% 0% / 0.4);
@@ -212,15 +220,24 @@
     .pulse-glow {
         animation: pulse-glow 2s ease-in-out infinite;
     }
+
     @keyframes pulse-glow {
-        0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.3); }
-        50% { box-shadow: 0 0 40px hsl(var(--primary) / 0.5); }
+
+        0%,
+        100% {
+            box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
+        }
+
+        50% {
+            box-shadow: 0 0 40px hsl(var(--primary) / 0.5);
+        }
     }
 
     /* Animated Border */
     .animated-border {
         position: relative;
     }
+
     .animated-border::before {
         content: '';
         position: absolute;
@@ -240,18 +257,24 @@
         mask-composite: exclude;
         opacity: 0.5;
     }
+
     @keyframes gradient-shift {
-        0% { background-position: 0% 50%; }
-        100% { background-position: 200% 50%; }
+        0% {
+            background-position: 0% 50%;
+        }
+
+        100% {
+            background-position: 200% 50%;
+        }
     }
-    
+
     .grid-pattern {
         background-image:
             linear-gradient(hsl(var(--border) / 0.1) 1px, transparent 1px),
             linear-gradient(90deg, hsl(var(--border) / 0.1) 1px, transparent 1px);
         background-size: 40px 40px;
     }
-    
+
     /* Skeleton loading */
     .skeleton {
         @apply relative overflow-hidden bg-muted/50 rounded;
@@ -268,33 +291,41 @@
     }
 
     @keyframes shimmer {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
+        0% {
+            transform: translateX(-100%);
+        }
+
+        100% {
+            transform: translateX(100%);
+        }
     }
 }
 
 @layer utilities {
-    .font-display, .font-heading {
+
+    .font-display,
+    .font-heading {
         font-family: 'Sora', sans-serif;
     }
+
     .font-sans {
         font-family: 'Inter', system-ui, sans-serif;
     }
-    
+
     .text-gradient-primary {
-         background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+        background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    
+
     .text-gradient-secondary {
         background: linear-gradient(135deg, hsl(var(--secondary)), hsl(38, 95%, 50%));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    
+
     .bg-gradient-hero {
         background: radial-gradient(ellipse at 50% 0%,
                 hsl(var(--primary) / 0.15) 0%,
@@ -302,24 +333,74 @@
     }
 
     /* Aliases for backward compatibility as requested */
-    .neon-glow-cyan { @apply neon-glow-primary; }
-    .neon-glow-magenta { @apply neon-glow-gold; }
-    .neon-text-cyan { @apply neon-text-primary; }
-    .neon-text-magenta { @apply neon-text-gold; }
-    .font-orbitron { @apply font-display; } 
-    .font-rajdhani { @apply font-heading; }
-    
+    .neon-glow-cyan {
+        @apply neon-glow-primary;
+    }
+
+    .neon-glow-magenta {
+        @apply neon-glow-gold;
+    }
+
+    .neon-text-cyan {
+        @apply neon-text-primary;
+    }
+
+    .neon-text-magenta {
+        @apply neon-text-gold;
+    }
+
+    .font-orbitron {
+        @apply font-display;
+    }
+
+    .font-rajdhani {
+        @apply font-heading;
+    }
+
     /* Animations */
-    .animate-fade-in { animation: fade-in 0.6s ease-out both; }
-    .animate-fade-in-up { animation: fade-in-up 0.6s ease-out both; }
+    .animate-fade-in {
+        animation: fade-in 0.6s ease-out both;
+    }
+
+    .animate-fade-in-up {
+        animation: fade-in-up 0.6s ease-out both;
+    }
 }
 
 @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes fade-in-up {
-    from { opacity: 0; transform: translateY(15px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@layer utilities {
+    .animate-slow-zoom {
+        animation: slow-zoom 20s infinite alternate;
+    }
+
+    @keyframes slow-zoom {
+        0% {
+            transform: scale(1);
+        }
+
+        100% {
+            transform: scale(1.1);
+        }
+    }
 }

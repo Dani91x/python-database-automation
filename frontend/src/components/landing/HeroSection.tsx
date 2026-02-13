@@ -26,19 +26,32 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                 </div>
             </nav>
 
-            {/* Cinematic Background Fallback (CSS) */}
-            <div className="absolute inset-0 z-0">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-black to-black opacity-60"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-secondary/10 via-black to-black opacity-40"></div>
-                <div className="absolute inset-0 grid-pattern opacity-10" />
+            {/* Immersive Tunnel Background Effect (CSS Simulation) */}
+            <div className="absolute inset-0 z-0 overflow-hidden">
+                <div className="absolute inset-0 bg-black scale-105 animate-slow-zoom">
+                    {/* Tunnel Light Source */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[20vw] h-[20vw] bg-white/10 blur-[100px] rounded-full"></div>
+
+                    {/* Tunnel Walls (Radial Gradient) */}
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_10%,_#000000_90%)]"></div>
+
+                    {/* Atmosphere / Neon Fog */}
+                    <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-primary/20 to-transparent opacity-60 mix-blend-screen"></div>
+
+                    {/* Grid Floor */}
+                    <div className="absolute bottom-0 w-full h-1/3 grid-pattern opacity-20 [transform:perspective(500px)_rotateX(60deg)] origin-bottom"></div>
+                </div>
+
+                {/* Vignette Overlay for Depth */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.8)_100%)] z-10 pointer-events-none"></div>
             </div>
 
-            <div className="relative z-10 container mx-auto px-4 flex-1 flex flex-col justify-center items-start mt-20 md:mt-0">
+            <div className="relative z-10 container mx-auto px-4 flex-1 flex flex-col justify-center items-center mt-20 md:mt-0 text-center">
                 <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8 }}
-                    className="max-w-4xl"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 1.2, ease: "easeOut" }}
+                    className="max-w-5xl"
                 >
                     <div className="mb-6">
                         <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold tracking-wider text-primary uppercase backdrop-blur-md">
