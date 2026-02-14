@@ -1,10 +1,9 @@
 import { TeamLeagueStats } from "@/lib/normalize";
 import { Flame, ArrowUpRight, ArrowDownRight, Trophy, Skull } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export function BiggestStreakCard({ biggest }: { biggest: TeamLeagueStats['biggest'] }) {
     return (
-        <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-white/5 p-6 space-y-8 overflow-hidden relative">
+        <div className="glass-card p-6 space-y-8 overflow-hidden relative">
             {/* 1. Records & Streaks Header */}
             <div className="flex items-center gap-3 text-white/40">
                 <Trophy className="w-4 h-4 text-emerald-500/50" />

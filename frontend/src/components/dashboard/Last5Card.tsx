@@ -7,9 +7,9 @@ export function Last5Card({ last5 }: { last5: TeamLast5 }) {
     const avgAgainst = (last5.goalsAgainst / last5.played).toFixed(1);
 
     return (
-        <div className="space-y-6">
-            {/* 1. Percentage Summary Card */}
-            <div className="bg-black/20 p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+        <div className="glass-card p-6 space-y-8">
+            {/* 1. Percentage Summary */}
+            <div className="relative">
                 <div className="flex items-center gap-2 mb-6 text-white/40">
                     <Activity className="w-3 h-3" />
                     <h4 className="text-[10px] font-black uppercase tracking-widest">Last 5 Matches Summary</h4>
@@ -45,7 +45,7 @@ export function Last5Card({ last5 }: { last5: TeamLast5 }) {
 
             {/* 2. Goals Boxes */}
             <div className="space-y-4">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-4">Goals (Last 5)</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40">Goals (Last 5)</h4>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white/[0.03] p-4 rounded-xl border border-white/5 flex flex-col items-center group hover:bg-white/[0.05] transition-colors">
                         <span className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-2">Goals For</span>

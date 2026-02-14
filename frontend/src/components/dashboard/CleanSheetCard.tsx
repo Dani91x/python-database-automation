@@ -7,7 +7,7 @@ interface CleanSheetCardProps {
 
 export function CleanSheetCard({ cleanSheet, failedToScore }: CleanSheetCardProps) {
     return (
-        <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-white/5 p-6 shadow-2xl overflow-hidden">
+        <div className="glass-card p-6 shadow-2xl overflow-hidden">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:divide-x md:divide-white/5">
                 {/* Left: Clean Sheets */}
                 <div className="space-y-6">

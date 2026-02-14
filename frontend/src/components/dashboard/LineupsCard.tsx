@@ -20,7 +20,7 @@ export function LineupsCard({ lineups }: LineupsCardProps) {
     const getPct = (played: number) => Math.round((played / totalMatches) * 100);
 
     return (
-        <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-white/5 p-6 space-y-6">
+        <div className="glass-card p-6 space-y-6">
             {/* Header */}
             <div className="flex items-center gap-3 text-white/40 mb-2">
                 <Users className="w-4 h-4" />

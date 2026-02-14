@@ -11,7 +11,7 @@ export function FormString({ form }: { form: string }) {
     };
 
     return (
-        <div className="bg-white/[0.02] backdrop-blur-md p-5 rounded-3xl border border-white/5 space-y-4">
+        <div className="glass-card p-5 space-y-4">
             <div className="flex items-center justify-between">
                 <h4 className="text-[11px] font-black uppercase tracking-widest text-white/40">League Form</h4>
                 <div className="text-[10px] font-black text-white/20 uppercase tracking-widest tabular-nums">

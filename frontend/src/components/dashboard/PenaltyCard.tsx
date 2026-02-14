@@ -3,7 +3,7 @@ import { Target, CheckCircle2, XCircle } from "lucide-react";
 
 export function PenaltyCard({ penalty }: { penalty: TeamLeagueStats['penalty'] }) {
     return (
-        <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-white/5 p-6 space-y-6 overflow-hidden relative">
+        <div className="glass-card p-6 space-y-6 overflow-hidden relative">
             {/* Header */}
             <div className="flex items-center gap-3 text-white/40">
                 <Target className="w-4 h-4 text-red-500/50" />

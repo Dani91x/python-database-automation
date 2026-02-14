@@ -13,7 +13,6 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
 
     const isFor = activeTab === 'for';
     const data = isFor ? stats.goals.for : stats.goals.against;
-    const accentColor = isFor ? "emerald" : "red";
     const chartColor = isFor ? "#10b981" : "#ef4444"; // emerald-500 : red-500
 
     // Transform minute data for chart
@@ -27,7 +26,7 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
     const underOverThresholds = ['0.5', '1.5', '2.5', '3.5', '4.5'];
 
     return (
-        <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-white/5 overflow-hidden">
+        <div className="glass-card overflow-hidden">
             {/* Custom Tab Switcher */}
             <div className="p-2 bg-black/40 flex gap-2">
                 <button
@@ -137,7 +136,7 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
                                     }}
                                 />
                                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                                    {minuteData.map((entry, index) => (
+                                    {minuteData.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={chartColor} />
                                     ))}
                                 </Bar>
