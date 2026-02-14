@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { TeamLeagueStats } from "@/lib/normalize";
-import { Users } from "lucide-react";
+import { Users, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface LineupsCardProps {
     lineups: TeamLeagueStats['lineups'];
 }
 
 export function LineupsCard({ lineups }: LineupsCardProps) {
+    const [isOpen, setIsOpen] = useState(false);
     if (!lineups || lineups.length === 0) return null;
 
     // Sort by matches played descending
@@ -43,30 +46,47 @@ export function LineupsCard({ lineups }: LineupsCardProps) {
                 <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/5 blur-3xl rounded-full" />
             </div>
 
-            {/* Others List */}
-            <div className="space-y-4 px-2">
-                {others.map((l, i) => {
-                    const pct = getPct(l.played);
-                    return (
-                        <div key={i} className="space-y-2 group">
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm font-black text-white/70 group-hover:text-white transition-colors">
-                                    {l.formation}
-                                </span>
-                                <span className="text-[10px] font-black text-white/20 tabular-nums">
-                                    {l.played}
-                                </span>
-                            </div>
-                            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-white/20 group-hover:bg-emerald-500/40 transition-all duration-500"
-                                    style={{ width: `${pct}%` }}
-                                />
-                            </div>
+            {/* Others List - Accordion */}
+            {others.length > 0 && (
+                <div className="space-y-4">
+                    <button
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase tracking-widest text-white/30 hover:text-white/60 transition-colors group"
+                    >
+                        <span>Other Formations ({others.length})</span>
+                        <ChevronDown className={cn(
+                            "w-3 h-3 transition-transform duration-300",
+                            isOpen && "rotate-180 text-emerald-500"
+                        )} />
+                    </button>
+
+                    {isOpen && (
+                        <div className="space-y-4 px-2 pt-2 animate-fade-in">
+                            {others.map((l, i) => {
+                                const pct = getPct(l.played);
+                                return (
+                                    <div key={i} className="space-y-2 group">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm font-black text-white/70 group-hover:text-white transition-colors">
+                                                {l.formation}
+                                            </span>
+                                            <span className="text-[10px] font-black text-white/20 tabular-nums">
+                                                {l.played}
+                                            </span>
+                                        </div>
+                                        <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-white/20 group-hover:bg-emerald-500/40 transition-all duration-500"
+                                                style={{ width: `${pct}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
-                    );
-                })}
-            </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
