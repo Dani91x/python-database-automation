@@ -24,20 +24,20 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                     </div>
                 </div>
 
-                <div className="w-full max-w-full lg:max-w-7xl px-4 overflow-hidden">
+                <div className="w-full max-w-full lg:max-w-7xl px-4">
                     <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-4 lg:gap-12 w-full">
                         {/* Home Side: Name then Logo */}
-                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-end group min-w-0">
-                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-right leading-none drop-shadow-2xl text-glow-emerald transition-all group-hover:scale-105 truncate max-w-[120px] md:max-w-none">
+                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-end group min-w-0 w-full md:w-auto">
+                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-right leading-none drop-shadow-2xl text-glow-emerald transition-all group-hover:scale-105 break-words">
                                 {home.name}
                             </h1>
                             <div className="relative shrink-0">
                                 {/* Glowing Ring */}
                                 <div className="absolute -inset-3 md:-inset-4 bg-emerald-500/25 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <div className="w-16 h-16 md:w-28 md:h-28 lg:w-36 lg:h-36 rounded-full bg-black/60 border-2 border-emerald-500/30 flex items-center justify-center p-3 md:p-4 lg:p-5 relative z-10 shadow-[0_0_30px_rgba(16,185,129,0.2)] backdrop-blur-xl group-hover:border-emerald-500/60 transition-colors">
+                                <div className="w-14 h-14 md:w-28 md:h-28 lg:w-36 lg:h-36 rounded-full bg-black/60 border-2 border-emerald-500/30 flex items-center justify-center p-2 md:p-4 lg:p-5 relative z-10 shadow-[0_0_30px_rgba(16,185,129,0.2)] backdrop-blur-xl group-hover:border-emerald-500/60 transition-colors">
                                     <img src={home.logo} alt="" className="w-full h-full object-contain filter drop-shadow-[0_0_10px_rgba(16,185,129,0.4)]" />
                                     <div className="absolute -top-1 -left-1 md:-top-2 md:-left-2">
-                                        <span className="bg-emerald-500 text-black text-[6px] md:text-[8px] font-black px-1.5 md:px-2 py-0.5 rounded-full shadow-lg">HOME</span>
+                                        <span className="bg-emerald-500 text-black text-[5px] md:text-[8px] font-black px-1 md:px-2 py-0.5 rounded-full shadow-lg">HOME</span>
                                     </div>
                                 </div>
                             </div>
@@ -52,18 +52,18 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                         </div>
 
                         {/* Away Side: Logo then Name */}
-                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-start group min-w-0">
+                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-start group min-w-0 w-full md:w-auto">
                             <div className="relative shrink-0">
                                 {/* Glowing Ring */}
                                 <div className="absolute -inset-3 md:-inset-4 bg-amber-500/25 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-                                <div className="w-16 h-16 md:w-28 md:h-28 lg:w-36 lg:h-36 rounded-full bg-black/60 border-2 border-amber-500/30 flex items-center justify-center p-3 md:p-4 lg:p-5 relative z-10 shadow-[0_0_30px_rgba(245,158,11,0.2)] backdrop-blur-xl group-hover:border-amber-500/60 transition-colors">
+                                <div className="w-14 h-14 md:w-28 md:h-28 lg:w-36 lg:h-36 rounded-full bg-black/60 border-2 border-amber-500/30 flex items-center justify-center p-2 md:p-4 lg:p-5 relative z-10 shadow-[0_0_30px_rgba(245,158,11,0.2)] backdrop-blur-xl group-hover:border-amber-500/60 transition-colors">
                                     <img src={away.logo} alt="" className="w-full h-full object-contain filter drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]" />
                                     <div className="absolute -top-1 -right-1 md:-top-2 md:-right-2">
-                                        <span className="bg-amber-500 text-black text-[6px] md:text-[8px] font-black px-1.5 md:px-2 py-0.5 rounded-full shadow-lg">AWAY</span>
+                                        <span className="bg-amber-500 text-black text-[5px] md:text-[8px] font-black px-1 md:px-2 py-0.5 rounded-full shadow-lg">AWAY</span>
                                     </div>
                                 </div>
                             </div>
-                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-left leading-none drop-shadow-2xl text-glow-amber transition-all group-hover:scale-105 truncate max-w-[120px] md:max-w-none">
+                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-left leading-none drop-shadow-2xl text-glow-amber transition-all group-hover:scale-105 break-words">
                                 {away.name}
                             </h1>
                         </div>

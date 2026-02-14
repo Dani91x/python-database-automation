@@ -162,7 +162,7 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
                                         <span className="w-6 text-[10px] font-black text-white/30 italic group-hover:text-white/60 transition-colors">
                                             {threshold}
                                         </span>
-                                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden flex">
+                                        <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden flex min-w-[50px]">
                                             <div
                                                 className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)] transition-all duration-500"
                                                 style={{ width: `${underPct}%` }}
@@ -172,9 +172,9 @@ export function GoalsTabs({ stats }: GoalsTabsProps) {
                                                 style={{ width: `${overPct}%` }}
                                             />
                                         </div>
-                                        <div className="w-12 text-right">
-                                            <span className="text-[9px] font-bold text-white/40 tracking-tighter whitespace-nowrap">
-                                                U:{uo.under} O:{uo.over}
+                                        <div className="w-14 text-right shrink-0">
+                                            <span className="text-[8px] md:text-[9px] font-bold text-white/40 tracking-tighter whitespace-nowrap">
+                                                U:{uo.under}·O:{uo.over}
                                             </span>
                                         </div>
                                     </div>

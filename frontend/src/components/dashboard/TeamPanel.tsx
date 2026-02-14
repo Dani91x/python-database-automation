@@ -43,7 +43,7 @@ export function TeamPanel({ team, side }: TeamPanelProps) {
                                 {isHome ? "HOME" : "AWAY"}
                             </span>
                         </div>
-                        <h3 className="text-xl md:text-3xl font-black font-display text-white uppercase tracking-tighter drop-shadow-sm leading-none truncate">
+                        <h3 className="text-xl md:text-3xl font-black font-display text-white uppercase tracking-tighter drop-shadow-sm leading-none break-words">
                             {team.name}
                         </h3>
                         <div className="text-[9px] md:text-[10px] font-black text-white/20 mt-1 md:mt-2 tracking-widest uppercase text-left">

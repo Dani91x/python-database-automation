@@ -226,17 +226,17 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                                         {/* Teams */}
                                                         <div className="flex-1 flex items-center justify-center gap-2 md:gap-6">
                                                             <div className="flex items-center gap-2 md:gap-3 text-right flex-1 justify-end">
-                                                                <span className="text-sm md:text-lg font-bold text-white line-clamp-1">
+                                                                <span className="text-sm md:text-lg font-bold text-white">
                                                                     {match.home.name}
                                                                 </span>
-                                                                <img src={match.home.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain" />
+                                                                <img src={match.home.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
                                                             </div>
 
-                                                            <div className="text-muted-foreground font-display font-black text-xs md:text-sm">VS</div>
+                                                            <div className="text-muted-foreground font-display font-black text-xs md:text-sm shrink-0">VS</div>
 
                                                             <div className="flex items-center gap-2 md:gap-3 text-left flex-1 justify-start">
-                                                                <img src={match.away.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain" />
-                                                                <span className="text-sm md:text-lg font-bold text-white line-clamp-1">
+                                                                <img src={match.away.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
+                                                                <span className="text-sm md:text-lg font-bold text-white">
                                                                     {match.away.name}
                                                                 </span>
                                                             </div>
