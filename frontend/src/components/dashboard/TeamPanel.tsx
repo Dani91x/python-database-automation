@@ -1,6 +1,13 @@
 import { NormalizedTeam } from "@/lib/normalize";
 import { FormString } from "./FormString";
 import { Last5Card } from "./Last5Card";
+import { GoalsTabs } from "./GoalsTabs";
+import { CardsByMinute } from "./CardsByMinute";
+import { BiggestStreakCard } from "./BiggestStreakCard";
+import { LineupsCard } from "./LineupsCard";
+import { FixturesSummary } from "./FixturesSummary";
+import { PenaltyCard } from "./PenaltyCard";
+import { CleanSheetCard } from "./CleanSheetCard";
 import { motion } from "framer-motion";
 
 interface TeamPanelProps {
