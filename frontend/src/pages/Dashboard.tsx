@@ -131,7 +131,8 @@ export default function Dashboard() {
                                     away={data.away}
                                     league={data.league}
                                     prediction={data.predictions}
-                                    matchDate={undefined}
+                                    fixtureId={data.fixtureId}
+                                    leagueId={data.league.id}
                                 />
 
                                 <PredictionsCard
@@ -140,10 +141,22 @@ export default function Dashboard() {
                                     away={data.away}
                                 />
 
-                                <div className="flex flex-col xl:flex-row gap-8 mb-12">
-                                    <TeamPanel team={data.home} side="home" />
-                                    <div className="w-full xl:w-px xl:bg-white/5 xl:self-stretch hidden xl:block" />
-                                    <TeamPanel team={data.away} side="away" />
+                                {--SEZIONE HOME VS AWAY --}
+                                <div className="mb-8">
+                                    <div className="flex items-center justify-center gap-4 mb-10">
+                                        <div className="h-px bg-white/5 flex-1" />
+                                        <h2 className="text-3xl font-black font-display italic tracking-tighter flex items-center gap-4 uppercase">
+                                            <span className="text-emerald-400">Home</span>
+                                            <span className="text-white/20 text-sm normal-case font-bold mt-1">vs</span>
+                                            <span className="text-amber-400">Away</span>
+                                        </h2>
+                                        <div className="h-px bg-white/5 flex-1" />
+                                    </div>
+
+                                    <div className="flex flex-col lg:flex-row gap-8">
+                                        <TeamPanel team={data.home} side="home" />
+                                        <TeamPanel team={data.away} side="away" />
+                                    </div>
                                 </div>
 
                                 <ComparisonSection

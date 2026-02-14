@@ -1,13 +1,6 @@
 import { NormalizedTeam } from "@/lib/normalize";
 import { FormString } from "./FormString";
 import { Last5Card } from "./Last5Card";
-import { GoalsTabs } from "./GoalsTabs";
-import { LineupsCard } from "./LineupsCard";
-import { CardsByMinute } from "./CardsByMinute";
-import { BiggestStreakCard } from "./BiggestStreakCard";
-import { FixturesSummary } from "./FixturesSummary";
-import { PenaltyCard } from "./PenaltyCard";
-import { CleanSheetCard } from "./CleanSheetCard";
 import { motion } from "framer-motion";
 
 interface TeamPanelProps {
@@ -17,48 +10,71 @@ interface TeamPanelProps {
 
 export function TeamPanel({ team, side }: TeamPanelProps) {
     const isHome = side === 'home';
-    const borderClass = isHome ? 'border-primary/30' : 'border-secondary/30';
-    const glowClass = isHome ? 'neon-glow-primary' : 'neon-glow-gold';
-    const textClass = isHome ? 'neon-text-primary' : 'neon-text-gold';
-    const badgeClass = isHome ? 'home-badge' : 'away-badge';
+    const accentColor = isHome ? 'emerald' : 'amber';
+    const borderClass = isHome ? 'border-emerald-500/20' : 'border-amber-500/20';
+    const badgeClass = isHome ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400';
 
     return (
         <motion.div
-            initial={{ opacity: 0, x: isHome ? -30 : 30 }}
-            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: isHome ? 0.1 : 0.2 }}
-            className="flex-1 w-full min-w-[300px]"
+            className="flex-1 w-full space-y-6"
         >
-            {/* Identity Header */}
-            <div className={`flex items-center gap-3 md:gap-4 mb-4 md:mb-6 p-4 rounded-xl border bg-black/20 ${borderClass} ${glowClass}`}>
-                <div className="w-12 h-12 md:w-16 md:h-16 p-2 bg-white/5 rounded-full shrink-0 flex items-center justify-center">
-                    <img src={team.logo} alt={team.name} className="w-full h-full object-contain" />
-                </div>
-                <div>
-                    <div className={`mb-1`}>
-                        <span className={`${badgeClass} text-[9px] md:text-xs px-2 py-0.5`}>{isHome ? "HOME" : "AWAY"}</span>
+            {/* 1. Identity Header Card */}
+            <div className={`p-6 rounded-2xl border bg-black/40 backdrop-blur-md relative overflow-hidden group ${borderClass}`}>
+                {/* Accent Glow */}
+                <div className={`absolute -inset-1 bg-${accentColor}-500/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
+
+                <div className="relative flex items-center gap-6">
+                    <div className="w-20 h-20 p-2 bg-white/5 rounded-2xl shrink-0 flex items-center justify-center border border-white/5">
+                        <img src={team.logo} alt={team.name} className="w-full h-full object-contain filter drop-shadow-md" />
                     </div>
-                    <h3 className={`text-xl md:text-2xl font-display font-bold uppercase leading-tight ${textClass}`}>{team.name}</h3>
-                    <div className="mt-1.5 md:mt-2">
-                        <FormString form={team.league.form} />
+                    <div>
+                        <div className="mb-2">
+                            <span className={`${badgeClass} text-[9px] font-black px-3 py-1 rounded-full border border-current/20 italic tracking-widest`}>
+                                {isHome ? "HOME" : "AWAY"}
+                            </span>
+                        </div>
+                        <h3 className="text-3xl font-black font-display text-white uppercase tracking-tighter drop-shadow-sm leading-none">
+                            {team.name}
+                        </h3>
+                        <div className="text-[10px] font-black text-white/20 mt-2 tracking-widest uppercase">
+                            TD: <span className="text-white/40">{team.id}</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Sub Components Stack */}
-            <div className="space-y-6">
-                <Last5Card last5={team.last5} />
-                <FixturesSummary fixtures={team.league.fixtures} />
-                <GoalsTabs stats={team.league} side={side} />
-                <BiggestStreakCard biggest={team.league.biggest} />
-                <LineupsCard lineups={team.league.lineups} />
-                <CardsByMinute cards={team.league.cards} />
-                <PenaltyCard penalty={team.league.penalty} />
-                <CleanSheetCard
-                    cleanSheet={team.league.cleanSheet}
-                    failedToScore={team.league.failedToScore}
-                />
-            </div>
+            {/* 2. League Form */}
+            <FormString form={team.league.form} />
+
+            {/* 3. Last 5 Summary & Goals */}
+            <Last5Card last5={team.last5} />
+
+            {/* 4. Advanced Goals Analytics */}
+            <GoalsTabs stats={team.league} />
+
+            {/* 5. Cards Breakdown */}
+            <CardsByMinute cards={team.league.cards} />
+
+            {/* 6. Records & Streaks */}
+            <BiggestStreakCard biggest={team.league.biggest} />
+
+            {/* 7. Tactical Summary */}
+            <LineupsCard lineups={team.league.lineups} />
+
+            {/* 8. Season Fixtures Overview */}
+            <FixturesSummary fixtures={team.league.fixtures} />
+
+            {/* 9. Penalty Stats */}
+            <PenaltyCard penalty={team.league.penalty} />
+
+            {/* 10. Defensive Consistency */}
+            <CleanSheetCard
+                cleanSheet={team.league.cleanSheet}
+                failedToScore={team.league.failedToScore}
+            />
         </motion.div>
     );
 }
