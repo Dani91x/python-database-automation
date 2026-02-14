@@ -100,7 +100,7 @@ export default function Dashboard() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 py-8 max-w-7xl relative z-10">
+            <main className="container mx-auto px-2 md:px-4 lg:px-6 py-8 max-w-7xl relative z-10 w-full overflow-hidden">
 
                 {viewMode === 'list' ? (
                     <MatchesList onSelectMatch={loadFixture} />

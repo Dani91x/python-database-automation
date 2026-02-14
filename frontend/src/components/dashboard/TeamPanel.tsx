@@ -29,25 +29,25 @@ export function TeamPanel({ team, side }: TeamPanelProps) {
             className="flex-1 w-full space-y-6"
         >
             {/* 1. Identity Header Card */}
-            <div className={`p-6 rounded-2xl border bg-black/40 backdrop-blur-md relative overflow-hidden group ${borderClass}`}>
+            <div className={`p-4 md:p-6 rounded-2xl border bg-black/40 backdrop-blur-md relative overflow-hidden group ${borderClass}`}>
                 {/* Accent Glow */}
                 <div className={`absolute -inset-1 bg-${accentColor}-500/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
 
-                <div className="relative flex items-center gap-6">
-                    <div className="w-20 h-20 p-2 bg-white/5 rounded-2xl shrink-0 flex items-center justify-center border border-white/5">
+                <div className="relative flex items-center gap-4 md:gap-6">
+                    <div className="w-16 h-16 md:w-20 md:h-20 p-2 bg-white/5 rounded-2xl shrink-0 flex items-center justify-center border border-white/5">
                         <img src={team.logo} alt={team.name} className="w-full h-full object-contain filter drop-shadow-md" />
                     </div>
-                    <div>
-                        <div className="mb-2">
-                            <span className={`${badgeClass} text-[9px] font-black px-3 py-1 rounded-full border border-current/20 italic tracking-widest`}>
+                    <div className="min-w-0">
+                        <div className="mb-1 md:mb-2 text-left">
+                            <span className={`${badgeClass} text-[8px] md:text-[9px] font-black px-2 md:px-3 py-0.5 md:py-1 rounded-full border border-current/20 italic tracking-widest`}>
                                 {isHome ? "HOME" : "AWAY"}
                             </span>
                         </div>
-                        <h3 className="text-3xl font-black font-display text-white uppercase tracking-tighter drop-shadow-sm leading-none">
+                        <h3 className="text-xl md:text-3xl font-black font-display text-white uppercase tracking-tighter drop-shadow-sm leading-none truncate">
                             {team.name}
                         </h3>
-                        <div className="text-[10px] font-black text-white/20 mt-2 tracking-widest uppercase">
-                            TD: <span className="text-white/40">{team.id}</span>
+                        <div className="text-[9px] md:text-[10px] font-black text-white/20 mt-1 md:mt-2 tracking-widest uppercase text-left">
+                            ID: <span className="text-white/40">{team.id}</span>
                         </div>
                     </div>
                 </div>
