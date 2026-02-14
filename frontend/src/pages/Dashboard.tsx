@@ -141,7 +141,7 @@ export default function Dashboard() {
                                     away={data.away}
                                 />
 
-                                {--SEZIONE HOME VS AWAY --}
+                                {/* SEZIONE HOME VS AWAY */}
                                 <div className="mb-8">
                                     <div className="flex items-center justify-center gap-4 mb-10">
                                         <div className="h-px bg-white/5 flex-1" />
