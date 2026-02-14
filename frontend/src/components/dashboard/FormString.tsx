@@ -19,8 +19,8 @@ export function FormString({ form }: { form: string }) {
                 </div>
             </div>
 
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex gap-2">
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                     {lastMatches.map((char, i) => {
                         const dotClass =
                             char === 'W' ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]" :

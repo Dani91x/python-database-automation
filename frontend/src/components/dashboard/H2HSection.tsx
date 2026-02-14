@@ -20,18 +20,18 @@ export function H2HSection({ h2h }: { h2h: any[] }) {
                         <div className="text-[10px] text-accent uppercase tracking-widest mb-2 font-bold">
                             {format(new Date(match.fixture.date), "dd MMM yyyy", { locale: it })}
                         </div>
-                        <div className="flex justify-between items-center">
-                            <div className={`text-sm font-bold ${match.teams.home.winner ? 'text-result-win' : 'text-foreground'}`}>
+                        <div className="flex justify-between items-center gap-2">
+                            <div className={`text-sm font-bold truncate flex-1 text-left ${match.teams.home.winner ? 'text-result-win' : 'text-foreground'}`}>
                                 {match.teams.home.name}
                             </div>
-                            <div className="bg-black/40 px-3 py-1 rounded font-mono font-bold text-foreground border border-white/10">
+                            <div className="bg-black/40 px-3 py-1 rounded font-mono font-bold text-foreground border border-white/10 shrink-0 whitespace-nowrap">
                                 {match.goals.home} - {match.goals.away}
                             </div>
-                            <div className={`text-sm font-bold ${match.teams.away.winner ? 'text-result-win' : 'text-foreground'}`}>
+                            <div className={`text-sm font-bold truncate flex-1 text-right ${match.teams.away.winner ? 'text-result-win' : 'text-foreground'}`}>
                                 {match.teams.away.name}
                             </div>
                         </div>
-                        <div className="text-[10px] text-muted-foreground text-center mt-2">
+                        <div className="text-[10px] text-muted-foreground text-center mt-2 truncate">
                             {match.league.name}
                         </div>
                     </Card>

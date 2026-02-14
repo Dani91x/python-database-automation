@@ -34,7 +34,7 @@ export function BiggestStreakCard({ biggest }: { biggest: TeamLeagueStats['bigge
             </div>
 
             {/* 3. Comparisons Table */}
-            <div className="grid grid-cols-2 gap-8 px-2">
+            <div className="grid grid-cols-2 gap-4 md:gap-8 px-2">
                 {/* Biggest Wins */}
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-2">

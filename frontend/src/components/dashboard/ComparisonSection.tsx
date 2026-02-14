@@ -14,7 +14,7 @@ function generateInsight(key: string, homeVal: number, awayVal: number): string 
         form: 'forma recente',
         att: 'attacco',
         def: 'difesa',
-        poissonDistribution: 'distribuzione Poisson',
+        poissonDistribution: 'Dist. Poisson',
         h2h: 'testa a testa',
         goals: 'gol',
     };
@@ -73,9 +73,9 @@ export function ComparisonSection({ comparison, homeName, awayName }: {
                                 viewport={{ once: true }}
                                 transition={{ duration: 0.4, delay: i * 0.05 }}
                             >
-                                <div className="flex justify-between text-xs font-bold uppercase tracking-widest mb-2 px-1">
+                                <div className="flex justify-between text-[10px] md:text-xs font-bold uppercase tracking-widest mb-2 px-1">
                                     <span className="text-primary">{data.home}%</span>
-                                    <span className="text-foreground opacity-50">{item.label}</span>
+                                    <span className="text-foreground opacity-50 truncate mx-2">{item.label}</span>
                                     <span className="text-secondary">{data.away}%</span>
                                 </div>
                                 <div className="h-3 bg-black/40 rounded-full flex overflow-hidden relative">

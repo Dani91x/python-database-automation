@@ -27,8 +27,8 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                 <div className="w-full max-w-full lg:max-w-7xl px-4">
                     <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-4 lg:gap-12 w-full">
                         {/* Home Side: Name then Logo */}
-                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-end group min-w-0 w-full md:w-auto">
-                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-right leading-none drop-shadow-2xl text-glow-emerald transition-all group-hover:scale-105 break-words">
+                        <div className="flex flex-col-reverse md:flex-row items-center gap-3 md:gap-6 flex-1 justify-end group min-w-0 w-full md:w-auto">
+                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-center md:text-right leading-none drop-shadow-2xl text-glow-emerald transition-all group-hover:scale-105 break-words w-full md:w-auto">
                                 {home.name}
                             </h1>
                             <div className="relative shrink-0">
@@ -44,7 +44,7 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                         </div>
 
                         {/* VS Divider */}
-                        <div className="px-2 md:px-6 lg:px-12 flex flex-col items-center shrink-0">
+                        <div className="px-2 md:px-6 lg:px-12 flex flex-col items-center shrink-0 my-4 md:my-0">
                             <div className="w-10 h-7 md:w-16 md:h-10 lg:w-20 lg:h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-xl relative group">
                                 <div className="absolute inset-0 bg-white/5 blur-md rounded-full" />
                                 <span className="text-sm md:text-xl lg:text-2xl font-black italic text-emerald-400/80 tracking-tighter relative z-10">VS</span>
@@ -52,7 +52,7 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                         </div>
 
                         {/* Away Side: Logo then Name */}
-                        <div className="flex items-center gap-3 md:gap-6 flex-1 justify-start group min-w-0 w-full md:w-auto">
+                        <div className="flex flex-col md:flex-row items-center gap-3 md:gap-6 flex-1 justify-start group min-w-0 w-full md:w-auto">
                             <div className="relative shrink-0">
                                 {/* Glowing Ring */}
                                 <div className="absolute -inset-3 md:-inset-4 bg-amber-500/25 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
@@ -63,7 +63,7 @@ export function HeroMatch({ home, away, league, fixtureId, leagueId }: HeroMatch
                                     </div>
                                 </div>
                             </div>
-                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-left leading-none drop-shadow-2xl text-glow-amber transition-all group-hover:scale-105 break-words">
+                            <h1 className="text-xl md:text-3xl lg:text-5xl font-black text-white font-display tracking-tighter uppercase text-center md:text-left leading-none drop-shadow-2xl text-glow-amber transition-all group-hover:scale-105 break-words w-full md:w-auto">
                                 {away.name}
                             </h1>
                         </div>

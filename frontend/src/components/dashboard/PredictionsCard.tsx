@@ -65,11 +65,11 @@ export function PredictionsCard({ predictions }: PredictionsCardProps) {
                         </p>
 
                         {predictions.winner && (
-                            <div className="flex items-center gap-3 pt-4 border-t border-white/5 w-fit">
-                                <Trophy className="w-4 h-4 text-emerald-400" />
-                                <span className="text-sm font-bold text-white/50">Winner: </span>
-                                <span className="text-sm font-black text-emerald-400 uppercase tracking-wider italic">
-                                    {predictions.winner.name} <span className="text-[10px] text-white/40 normal-case font-bold ml-1">({predictions.winner.comment})</span>
+                            <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/5 w-full">
+                                <Trophy className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <span className="text-sm font-bold text-white/50 whitespace-nowrap">Winner: </span>
+                                <span className="text-sm font-black text-emerald-400 uppercase tracking-wider italic break-words flex-1 min-w-0">
+                                    {predictions.winner.name} <span className="text-[10px] text-white/40 normal-case font-bold ml-1 inline-block">({predictions.winner.comment})</span>
                                 </span>
                             </div>
                         )}

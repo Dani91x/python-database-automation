@@ -15,7 +15,7 @@ export function Last5Card({ last5 }: { last5: TeamLast5 }) {
                     <h4 className="text-[10px] font-black uppercase tracking-widest">Last 5 Matches Summary</h4>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Form */}
                     <div className="flex flex-col items-center">
                         <span className="text-2xl font-black italic text-white tracking-widest leading-none mb-1">{last5.form}%</span>

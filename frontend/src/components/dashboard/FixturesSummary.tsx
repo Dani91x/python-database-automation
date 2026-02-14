@@ -24,7 +24,7 @@ export function FixturesSummary({ fixtures }: { fixtures: TeamLeagueStats['fixtu
                 <h4 className="text-[12px] font-black uppercase tracking-widest text-white/60">Season Fixtures</h4>
             </div>
 
-            <div className="flex flex-col md:flex-row items-center gap-8">
+            <div className="flex flex-col xl:flex-row items-center gap-8">
                 {/* Donut Chart */}
                 <div className="w-full md:w-1/3 aspect-square relative max-w-[160px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -62,7 +62,7 @@ export function FixturesSummary({ fixtures }: { fixtures: TeamLeagueStats['fixtu
 
                 <div className="flex-1 w-full space-y-4">
                     {rows.map((row) => (
-                        <div key={row.label} className="grid grid-cols-[1fr_repeat(3,auto)] items-center gap-4 md:gap-6">
+                        <div key={row.label} className="grid grid-cols-[1fr_repeat(3,auto)] items-center gap-2 md:gap-4">
                             <div className="flex items-center gap-2">
                                 {row.icon}
                                 <span className="text-[10px] md:text-[11px] font-black uppercase tracking-wider text-white">
