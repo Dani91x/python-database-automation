@@ -1,6 +1,5 @@
 import { TeamLeagueStats } from "@/lib/normalize";
 import { Users } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface LineupsCardProps {
     lineups: TeamLeagueStats['lineups'];

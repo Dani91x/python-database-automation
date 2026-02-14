@@ -1,3 +1,4 @@
+import { TeamLeagueStats } from "@/lib/normalize";
 import { Target, CheckCircle2, XCircle } from "lucide-react";
 
 export function PenaltyCard({ penalty }: { penalty: TeamLeagueStats['penalty'] }) {

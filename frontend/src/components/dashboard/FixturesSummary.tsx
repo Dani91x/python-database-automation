@@ -1,5 +1,7 @@
+import { TeamLeagueStats } from "@/lib/normalize";
 import { Calendar, Trophy, Minus, X } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Label } from "recharts";
+import { cn } from "@/lib/utils";
 
 export function FixturesSummary({ fixtures }: { fixtures: TeamLeagueStats['fixtures'] }) {
     const data = [
