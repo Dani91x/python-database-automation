@@ -12,7 +12,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
             {/* Navbar */}
             <nav className="absolute top-0 left-0 w-full z-50 px-6 py-6 md:px-12 flex justify-between items-center bg-transparent">
                 <div className="flex items-center gap-2">
-                    <img src="/9511045.png" alt="Alpha Score" className="h-12 md:h-16 w-auto" />
+                    <img src="/logo.png" alt="Alpha Score" className="h-12 md:h-16 w-auto" />
                 </div>
                 <div className="hidden md:flex gap-8 items-center">
                     <button onClick={onLoginClick} className="text-sm font-bold uppercase tracking-widest text-white hover:text-primary transition-colors">
@@ -49,7 +49,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     </div>
 
                     <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-black leading-tight mb-6">
-                        <span className="text-white">ALPHA</span> <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-400">SCORE</span>
+                        <span className="text-white">Alpha</span> <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-400">Score</span>
                     </h1>
 
                     <h2 className="text-2xl md:text-4xl font-heading font-light mb-8 text-white/90">
