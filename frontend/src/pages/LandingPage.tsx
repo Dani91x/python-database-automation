@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { StatsBar } from '@/components/landing/StatsBar';
 import { FeaturesGrid } from '@/components/landing/FeaturesGrid';
+import { SystemWorkflow } from '@/components/landing/SystemWorkflow';
 import { DashboardPreview } from '@/components/landing/DashboardPreview';
 import { PricingCard } from '@/components/landing/PricingCard';
 import { AuthSection } from '@/components/landing/AuthSection';
@@ -33,6 +34,7 @@ export default function LandingPage() {
                 onLoginClick={() => scrollToAuth()}
             />
             <StatsBar />
+            <SystemWorkflow />
             <FeaturesGrid />
             <DashboardPreview />
             <PricingCard onCtaClick={() => scrollToAuth()} />

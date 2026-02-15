@@ -53,12 +53,12 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     </h1>
 
                     <h2 className="text-2xl md:text-4xl font-heading font-light mb-8 text-white/90">
-                        Non scommettere. <span className="font-bold text-secondary">Investi.</span>
+                        Dati. Storia. Contesto. <span className="font-bold text-secondary">Investi.</span>
                     </h2>
 
                     <p className="text-lg md:text-xl font-body text-gray-400 max-w-lg mb-10 leading-relaxed">
-                        L'unico algoritmo che trasforma le scommesse sportive in <span className="text-white font-medium">investimenti basati sui dati</span>.
-                        Analisi predittiva avanzata per chi non cerca fortuna, ma risultati.
+                        Il primo algoritmo a <span className="text-white font-medium">3 Livelli</span> che trasforma le scommesse in asset finanziari.
+                        Smetti di giocare d'azzardo. Inizia ad operare con metodo.
                     </p>
 
                     <div className="flex flex-col sm:flex-row items-center gap-6">

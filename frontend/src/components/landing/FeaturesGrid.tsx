@@ -4,30 +4,30 @@ import { Brain, BarChart3, Shield, Zap } from "lucide-react";
 const features = [
     {
         icon: Brain,
-        title: "Analisi AI Avanzata",
+        title: "Edge Matematico",
         description:
-            "I nostri algoritmi di machine learning analizzano oltre 200 variabili per partita: forma, statistiche, head-to-head, distribuzione Poisson e molto altro.",
+            "Sfrutta le inefficienze dei bookmaker. Il nostro modello identifica le quote che hanno un valore attesa positivo (EV+).",
         glow: "neon-glow-primary",
     },
     {
         icon: BarChart3,
-        title: "Dati in Tempo Reale",
+        title: "Copertura Globale",
         description:
-            "Dati aggiornati da 120+ campionati mondiali. Goals by minute, cards heatmap, under/over distribution — tutto visualizzato in una dashboard interattiva.",
+            "120+ Campionati monitorati H24. Dalla Premier League alla Serie B brasiliana, non ti perdi mai un'occasione di profitto.",
         glow: "neon-glow-gold",
     },
     {
         icon: Shield,
-        title: "Confronto Intelligente",
+        title: "Gestione del Rischio",
         description:
-            "Confronto squadre automatico su attacco, difesa, forma e storico H2H con barre comparative e insight generati dall'AI.",
+            "Il sistema a 3 livelli filtra i falsi positivi. Non cerchiamo di indovinare tutto, ma di proteggere il tuo capitale nel lungo periodo.",
         glow: "neon-glow-primary",
     },
     {
         icon: Zap,
-        title: "Velocità e Precisione",
+        title: "Risparmio di Tempo",
         description:
-            "Pronostici generati in millisecondi con percentuali 1X2, combo double chance, predicted goals e suggerimenti actionable.",
+            "Da 4 ore di studio a 30 secondi. Tu devi solo decidere l'investimento, a tutta l'analisi complessa ci pensiamo noi.",
         glow: "neon-glow-gold",
     },
 ];
@@ -43,10 +43,10 @@ export function FeaturesGrid() {
                     className="text-center mb-14"
                 >
                     <h2 className="text-3xl md:text-4xl font-display font-bold text-gradient-primary mb-4">
-                        Come Funziona
+                        Perché Alpha Score?
                     </h2>
                     <p className="text-muted-foreground font-heading text-lg max-w-2xl mx-auto">
-                        Tecnologia all'avanguardia al servizio dei tuoi pronostici
+                        Non siamo un altro sito di statistiche. Siamo il tuo vantaggio competitivo.
                     </p>
                 </motion.div>
 
