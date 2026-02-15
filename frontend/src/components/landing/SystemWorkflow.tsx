@@ -6,7 +6,7 @@ const steps = [
         id: 1,
         title: "Deep Data Analysis",
         subtitle: "Livello 1: L'Algoritmo",
-        description: "Analisi grezza di 200+ metriche: xG, Poisson, Form State e trend statistici puri.",
+        description: "Analisi di 200+ metriche: xG, Poisson, Form State e trend statistici puri.",
         icon: Database,
         color: "text-blue-400",
         glow: "neon-glow-primary", // mapped to blue-ish primary usually
@@ -24,9 +24,9 @@ const steps = [
     },
     {
         id: 3,
-        title: "Context Synthesis",
-        subtitle: "Livello 3: Il Contesto",
-        description: "L'LLM finale incrocia i dati con news, meteo e infortuni dell'ultimo minuto.",
+        title: "AI Financial Advisor",
+        subtitle: "Livello 3: Il verdetto",
+        description: "L'AI confronta i dati dell'algoritmo con i dati storici e news in tempo reale come infortuni, meteo, o imprevisti dell'ultimo minuto e ti consiglia le scelte statisticamente più probabili per quello specifico evento.",
         icon: Sparkles,
         color: "text-purple-400",
         glow: "shadow-[0_0_20px_rgba(168,85,247,0.4)]", // Custom purple glow

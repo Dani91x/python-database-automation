@@ -6,14 +6,14 @@ const features = [
         icon: Brain,
         title: "Edge Matematico",
         description:
-            "Sfrutta le inefficienze dei bookmaker. Il nostro modello identifica le quote che hanno un valore attesa positivo (EV+).",
+            "Algoritmo + Database + Intelligenza Artificiale, nessuna opinione personale solo dati e scelte consapevoli.",
         glow: "neon-glow-primary",
     },
     {
         icon: BarChart3,
         title: "Copertura Globale",
         description:
-            "120+ Campionati monitorati H24. Dalla Premier League alla Serie B brasiliana, non ti perdi mai un'occasione di profitto.",
+            "1200+ Campionati monitorati H24. Dalla Premier League alla Serie B brasiliana, non ti perdi mai un'occasione di profitto.",
         glow: "neon-glow-gold",
     },
     {
@@ -46,7 +46,7 @@ export function FeaturesGrid() {
                         Perché Alpha Score?
                     </h2>
                     <p className="text-muted-foreground font-heading text-lg max-w-2xl mx-auto">
-                        Non siamo un altro sito di statistiche. Siamo il tuo vantaggio competitivo.
+                        Non siamo un altro sito di statistiche. Siamo il tuo vantaggio competitivo. Saprai esattamente come affrontare ogni investimento con i dati dalla tua
                     </p>
                 </motion.div>
 

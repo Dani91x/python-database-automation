@@ -53,7 +53,7 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
                     </h1>
 
                     <h2 className="text-2xl md:text-4xl font-heading font-light mb-8 text-white/90">
-                        Dati. Storia. Contesto. <span className="font-bold text-secondary">Investi.</span>
+                        Non scommettere. <span className="font-bold text-secondary">Investi.</span>
                     </h2>
 
                     <p className="text-lg md:text-xl font-body text-gray-400 max-w-lg mb-10 leading-relaxed">
