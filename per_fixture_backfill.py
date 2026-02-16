@@ -152,6 +152,7 @@ def get_fixtures_from_matches(league_id: int, season_year: int) -> List[int]:
     """
     supabase = get_supabase()
     fixtures: List[int] = []
+    skipped = 0
 
     try:
         logger.info(
@@ -169,9 +170,11 @@ def get_fixtures_from_matches(league_id: int, season_year: int) -> List[int]:
         )
         data = getattr(resp, "data", None) or []
         for row in data:
-            fid = row.get("fixture_id")
-            if isinstance(fid, int):
+            fid = _parse_int(row.get("fixture_id"))
+            if fid is not None:
                 fixtures.append(fid)
+            else:
+                skipped += 1
 
         logger.info(
             "📌 Fixtures trovati in matches per league_id=%s, season_year=%s: %s",
@@ -179,6 +182,11 @@ def get_fixtures_from_matches(league_id: int, season_year: int) -> List[int]:
             season_year,
             len(fixtures),
         )
+        if skipped:
+            logger.warning(
+                "⚠️ Fixtures con fixture_id non valido (saltati): %s",
+                skipped,
+            )
     except Exception as e:
         logger.error(
             "❌ Errore lettura fixtures da matches per league_id=%s, season_year=%s: %s",
