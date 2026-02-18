@@ -1,4 +1,13 @@
-﻿from __future__ import annotations
+﻿"""
+Generate human-readable fixture report with value bets and confidence gates.
+
+Produces a markdown report showing:
+- Top recommended bets (with EV, Kelly stake, confidence)
+- Markets excluded (with reasons)
+- Coverage and reliability details
+- Profit balance
+"""
+from __future__ import annotations
 
 import os
 import sys
@@ -15,46 +24,29 @@ if AI_ENGINE_DIR not in sys.path:
 
 from ai_engine.market_ranking import TARGET_TO_MARKET
 from ai_engine.predict_fixture import predict_fixture
-from ai_engine.db_adapter import fetch_fixture_prediction_by_id, fetch_matches_for_league_seasons, fetch_seasons_for_league
-from ai_engine.feature_pipeline import build_feature_dataframe_for_fixtures
-from ai_engine.coverage import build_coverage_report
-
-
-def _rank_markets(preds: dict) -> list[tuple[str, float, str]]:
-    ranked = []
-    for target, probs in preds.items():
-        if not probs:
-            continue
-        label = max(probs, key=probs.get)
-        confidence = float(probs[label])
-        market = TARGET_TO_MARKET.get(target, target)
-        ranked.append((market, confidence, label))
-    ranked.sort(key=lambda x: x[1], reverse=True)
-    return ranked
-
-
-def _format_line(line: str) -> str:
-    return line.replace(".", ",")
 
 
 def _action_label(market: str, pred_label: str) -> str:
-    # Make the action explicit for the user
     pl = str(pred_label)
     if market.startswith("Home Over "):
-        line = _format_line(market.replace("Home Over ", ""))
+        line = market.replace("Home Over ", "").replace(".", ",")
         return f"Casa segna 1+ gol (Over {line})" if pl in ("True", "over") else "Casa a secco (0 gol)"
     if market.startswith("Away Over "):
-        line = _format_line(market.replace("Away Over ", ""))
+        line = market.replace("Away Over ", "").replace(".", ",")
         return f"Trasferta segna 1+ gol (Over {line})" if pl in ("True", "over") else "Trasferta a secco (0 gol)"
     if market.startswith("Over "):
-        line = _format_line(market.replace("Over ", ""))
+        line = market.replace("Over ", "").replace(".", ",")
         return f"Under {line}" if pl in ("False", "under") else f"Over {line}"
     if market == "BTTS":
         return "NO (entrambe NON segnano)" if pl in ("False", "no") else "SI (entrambe segnano)"
-    if market == "1X2" or market == "FT 1X2" or market == "HT 1X2":
+    if market in ("1X2", "FT 1X2", "HT 1X2"):
         return {"H": "Casa", "D": "Pareggio", "A": "Trasferta"}.get(pl, pl)
     if market == "HT/FT":
         return "Dati insufficienti" if pl == "_" else pl.replace("_", "->")
+    if market == "Clean Sheet Home":
+        return "SI (clean sheet casa)" if pl in ("True",) else "NO"
+    if market == "Clean Sheet Away":
+        return "SI (clean sheet trasferta)" if pl in ("True",) else "NO"
     return pl
 
 
@@ -66,207 +58,125 @@ def _confidence_text(conf: float) -> str:
     return "bassa"
 
 
-def _explain_top_markets(
-    ranked: list[tuple[str, float, str]],
-    preds: dict,
-    data_summary: str,
-) -> list[str]:
-    lines = []
-    for market, conf, label in ranked[:5]:
-        action = _action_label(market, label)
-        if market.startswith("Over "):
-            target = None
-            for t, m in TARGET_TO_MARKET.items():
-                if m == market:
-                    target = t
-                    break
-            probs = preds.get(target, {})
-            over_prob = probs.get("True") or probs.get("over")
-            detail = (
-                f"prob Over {market.replace('Over ', '').replace('.', ',')} ~ {over_prob:.2f}"
-                if over_prob is not None
-                else "prob Over non disponibile"
-            )
-            if action.startswith("Under"):
-                lines.append(f"- {action}: prob bassa di molti gol ({detail}). {data_summary}")
-            else:
-                lines.append(f"- {action}: prob alta di molti gol ({detail}). {data_summary}")
-        elif market == "BTTS":
-            lines.append(f"- BTTS {action}: conf {conf:.2f} ({_confidence_text(conf)}). {data_summary}")
-        elif market == "1X2":
-            lines.append(f"- 1X2: esito {action} con conf {conf:.2f} ({_confidence_text(conf)}). {data_summary}")
-        else:
-            lines.append(f"- {market}: esito {action} con conf {conf:.2f} ({_confidence_text(conf)}). {data_summary}")
-    return lines
-
-
-def _hist_feature_breakdown(features_df: pd.DataFrame) -> list[str]:
-    if features_df.empty:
-        return []
-
-    hist_cols = [c for c in features_df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")]
-    if not hist_cols:
-        return []
-
-    row = features_df.iloc[0]
-    player_keys = {
-        "minutes",
-        "shots_total",
-        "shots_on",
-        "goals_total",
-        "assists_total",
-        "passes_total",
-        "passes_key",
-        "passes_accurate",
-        "tackles_total",
-        "interceptions",
-        "duels_total",
-        "duels_won",
-        "dribbles_attempts",
-        "dribbles_success",
-        "fouls_drawn",
-        "fouls_committed",
-        "yellow_cards",
-        "red_cards",
-        "offsides",
-        "rating",
-    }
-    event_keys = {"goals", "yellow_cards", "red_cards", "avg_goal_minute"}
-
-    groups = {
-        "eventi": [],
-        "team_stats": [],
-        "player_stats": [],
-        "injuries": [],
-        "base_match": [],
-    }
-
-    for col in hist_cols:
-        raw = col
-        raw = raw.replace("home_hist_", "").replace("away_hist_", "")
-        # remove rolling prefix
-        for n in (5, 10, 15):
-            raw = raw.replace(f"hist_w{n}_", "")
-        if "injuries_count" in raw:
-            groups["injuries"].append(col)
-        elif raw in event_keys:
-            groups["eventi"].append(col)
-        elif raw in player_keys:
-            groups["player_stats"].append(col)
-        elif raw in {"gf", "ga"}:
-            groups["base_match"].append(col)
-        else:
-            groups["team_stats"].append(col)
-
-    lines = []
-    for name, cols in groups.items():
-        if not cols:
-            continue
-        ok = int(row[cols].notna().sum())
-        total = int(len(cols))
-        lines.append(f"- {name}: {ok}/{total}")
-    return lines
-
-
 def generate_report(fixture_id: int) -> str:
-    preds = predict_fixture(fixture_id)
-    ranked = _rank_markets(preds)
-
-    # coverage info
-    fx_rows = fetch_fixture_prediction_by_id(fixture_id)
-    fx_df = pd.DataFrame(fx_rows)
-    league_id = int(fx_df.iloc[0]["league_id"]) if not fx_df.empty else None
-    seasons = fetch_seasons_for_league(league_id) if league_id is not None else []
-    league_seasons = [(league_id, s) for s in seasons[-3:]] if league_id is not None else []
-    history_rows = fetch_matches_for_league_seasons(league_seasons) if league_seasons else []
-    history_df = pd.DataFrame(history_rows)
-    features_df = build_feature_dataframe_for_fixtures(
-        fx_df,
-        history_df,
-        league_seasons,
-        include_events=True,
-        include_team_stats=True,
-        include_injuries=True,
-        include_player_stats=True,
-        pre_match=True,
-    )
-    coverage = build_coverage_report(features_df) if not features_df.empty else {}
-
-    # historical coverage depth
-    hist_cols = [c for c in features_df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")]
-    hist_non_null = int(features_df[hist_cols].notna().sum(axis=1).iloc[0]) if hist_cols else 0
-    hist_total = int(len(hist_cols)) if hist_cols else 0
-    hist_ratio = (hist_non_null / hist_total) if hist_total else 0.0
-
-    # historical matches per team
-    home_team_id = int(fx_df.iloc[0]["home_team_id"]) if not fx_df.empty else None
-    away_team_id = int(fx_df.iloc[0]["away_team_id"]) if not fx_df.empty else None
-    home_matches = 0
-    away_matches = 0
-    if not history_df.empty and home_team_id is not None and away_team_id is not None:
-        home_matches = int(
-            (history_df["home_team_id"].eq(home_team_id) | history_df["away_team_id"].eq(home_team_id)).sum()
-        )
-        away_matches = int(
-            (history_df["home_team_id"].eq(away_team_id) | history_df["away_team_id"].eq(away_team_id)).sum()
-        )
-    min_matches = min(home_matches, away_matches) if home_matches and away_matches else 0
+    """Generate a complete fixture report with value betting analysis."""
+    result = predict_fixture(fixture_id)
 
     report_dir = os.path.join("Ai Engine", "reports")
     os.makedirs(report_dir, exist_ok=True)
     path = os.path.join(report_dir, f"fixture_{fixture_id}_report.md")
 
     lines = []
-    lines.append(f"# Fixture Report - {fixture_id}")
+    lines.append(f"# Fixture Report — {fixture_id}")
     lines.append("")
-    lines.append(f"Generated at: {datetime.now(timezone.utc).isoformat()} UTC")
+    lines.append(f"Generated at: {result.get('generated_at', datetime.now(timezone.utc).isoformat())} UTC")
     lines.append("")
-    lines.append("Sintesi consigliata:")
-    if ranked:
-        top_action = _action_label(ranked[0][0], ranked[0][2])
-        lines.append(f"- Mercato piu affidabile: {top_action} (conf {ranked[0][1]:.2f})")
+
+    # ── Reliability Summary ──────────────────────────────────
+    rel = result.get("reliability", {})
+    coverage = result.get("coverage", {})
+    lines.append("## Affidabilità Dati")
     lines.append("")
-    data_summary = (
-        f"Storico disponibile: casa {home_matches} partite, trasferta {away_matches} partite. "
-        f"Medie calcolate su finestre 5/10/15. "
-        f"Copertura feature {hist_non_null}/{hist_total} ({hist_ratio:.0%})."
-    )
-    lines.append("Perche (prime 5):")
-    lines.extend(_explain_top_markets(ranked, preds, data_summary))
+    grade_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(rel.get("grade", "low"), "⚪")
+    lines.append(f"- **Grado**: {grade_emoji} {rel.get('grade', 'N/A').upper()} (score: {rel.get('score', 0):.2f})")
+    lines.append(f"- Copertura feature: {coverage.get('features_pct', 0):.0%}")
+    lines.append(f"- Partite storiche: casa {coverage.get('matches_home', 0)}, trasferta {coverage.get('matches_away', 0)}")
     lines.append("")
-    lines.append("Copertura dati:")
-    lines.append(
-        f"- Partite storiche disponibili: casa {home_matches}, trasferta {away_matches}, "
-        f"minimo {min_matches} (finestre 5/10/15)."
-    )
-    if hist_total:
-        lines.append(f"- Feature storiche disponibili: {hist_non_null}/{hist_total} ({hist_ratio:.0%}).")
-    if min_matches < 10 or hist_ratio < 0.6:
-        lines.append("- Avvertenza: copertura dati bassa, affidabilita potenzialmente ridotta.")
-    for name, data in coverage.items():
-        lines.append(f"- {name}: {data.get('ok', 0)}/{data.get('total', 0)}")
-    breakdown_lines = _hist_feature_breakdown(features_df)
-    if breakdown_lines:
-        lines.append("- Dettaglio feature storiche per categoria:")
-        lines.extend(breakdown_lines)
-    lines.append("")
-    lines.append("Tutti i mercati (ordine per affidabilita):")
-    for market, conf, label in ranked:
-        action = _action_label(market, label)
-        lines.append(
-            f"- {market}: consiglio {action} | conf {conf:.2f} ({_confidence_text(conf)}) | {data_summary}"
-        )
-    lines.append("")
-    lines.append("Dettagli tecnici (probabilita grezze):")
-    for target, probs in preds.items():
-        lines.append(f"- {target}: {probs}")
-    if "target_exact_score" in preds and preds["target_exact_score"]:
+
+    # ── Value Bets Section ──────────────────────────────────
+    bet_signals = result.get("bet_signals", [])
+    no_bet_reasons = result.get("no_bet_reasons", [])
+
+    if bet_signals:
+        lines.append("## ✅ Scommesse Consigliate (Value Bets)")
         lines.append("")
-        lines.append("Risultati esatti piu probabili:")
-        exact_probs = preds["target_exact_score"]
-        top_scores = sorted(exact_probs.items(), key=lambda x: x[1], reverse=True)[:5]
-        for score, prob in top_scores:
-            lines.append(f"- {score}: {prob:.2f}")
+        lines.append("| Mercato | Azione | Prob Modello | Prob Implicita | EV | Quota | Stake Kelly | Conf |")
+        lines.append("|---------|--------|-------------|---------------|------|-------|-------------|------|")
+        for s in bet_signals:
+            market_name = TARGET_TO_MARKET.get(s["market"], s["market"])
+            action = _action_label(market_name, s["action"])
+            lines.append(
+                f"| {market_name} "
+                f"| {action} "
+                f"| {s['model_prob']:.1%} "
+                f"| {s['implied_prob']:.1%} "
+                f"| +{s['expected_value']:.1%} "
+                f"| {s['decimal_odds']:.2f} "
+                f"| €{s['kelly_stake']:.0f} "
+                f"| {s['confidence_grade']} |"
+            )
+        lines.append("")
+        lines.append("> **Come leggere**: EV (Expected Value) > 0 = scommessa con valore.")
+        lines.append("> Stake Kelly = importo consigliato su bankroll €1000 (quarter-Kelly).")
+        lines.append("> Tutte le scommesse hanno superato i 3 gate di sicurezza.")
+        lines.append("")
+    else:
+        lines.append("## ⚠️ Nessuna Scommessa Consigliata")
+        lines.append("")
+        lines.append("Nessun mercato supera tutti i gate di sicurezza per questa partita.")
+        lines.append("")
+
+    # ── NO BET Section ──────────────────────────────────────
+    if no_bet_reasons:
+        lines.append("## ❌ Mercati Esclusi (NO BET)")
+        lines.append("")
+        for nb in no_bet_reasons[:15]:
+            market_name = TARGET_TO_MARKET.get(nb.get("target", ""), nb.get("target", ""))
+            lines.append(f"- **{market_name}**: {nb.get('reason', 'N/A')}")
+        lines.append("")
+
+    # ── Ensemble Agreement ──────────────────────────────────
+    agreement = result.get("ensemble_agreement", {})
+    if agreement:
+        lines.append("## Consenso Modelli (Ensemble)")
+        lines.append("")
+        lines.append("| Target | Predizione | Accordo | Voti |")
+        lines.append("|--------|-----------|---------|------|")
+        for target, info in list(agreement.items())[:10]:
+            market_name = TARGET_TO_MARKET.get(target, target)
+            pred_class = info.get("predicted_class", "?")
+            agr = info.get("agreement_ratio", 0)
+            votes = info.get("votes", {})
+            votes_str = ", ".join(f"{k}={v}" for k, v in votes.items())
+            agr_emoji = "✅" if agr >= 0.66 else "⚠️"
+            lines.append(f"| {market_name} | {pred_class} | {agr_emoji} {agr:.0%} | {votes_str} |")
+        lines.append("")
+
+    # ── Profit Balance ──────────────────────────────────────
+    pb = result.get("profit_balance", {})
+    if pb:
+        lines.append("## Profit Balance (Odds)")
+        lines.append("")
+        for market, val in pb.items():
+            lines.append(f"- {market}: {val}")
+        lines.append("")
+
+    # ── Coverage Detail ──────────────────────────────────────
+    detail = coverage.get("detail", {})
+    if detail:
+        lines.append("## Dettaglio Copertura")
+        lines.append("")
+        for name, data in detail.items():
+            ok = data.get("ok", 0)
+            total = data.get("total", 0)
+            pct = ok / total if total > 0 else 0
+            bar = "█" * int(pct * 10) + "░" * (10 - int(pct * 10))
+            lines.append(f"- {name}: {ok}/{total} {bar} {pct:.0%}")
+        lines.append("")
+
+    # ── Raw Probabilities ──────────────────────────────────
+    lines.append("## Probabilità Grezze (Tutti i Target)")
+    lines.append("")
+    targets = result.get("targets", {})
+    for target, probs in targets.items():
+        if not probs:
+            continue
+        market_name = TARGET_TO_MARKET.get(target, target)
+        best = max(probs, key=probs.get)
+        best_prob = probs[best]
+        probs_str = ", ".join(f"{k}={v:.2f}" for k, v in probs.items())
+        lines.append(f"- **{market_name}** → {best} ({best_prob:.0%}) | {probs_str}")
+    lines.append("")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -279,4 +189,4 @@ if __name__ == "__main__":
         raise SystemExit("Usage: python generate_fixture_report.py <fixture_id>")
     fid = int(sys.argv[1])
     out = generate_report(fid)
-    print(out)
+    print(f"Report: {out}")

@@ -64,7 +64,8 @@ def fetch_fixtures_for_date(target_date: date) -> List[Dict[str, Any]]:
     fp_columns = (
         "fixture_id,league_id,league_name,season_year,fixture_date,home_team_id,home_team_name,"
         "away_team_id,away_team_name,status,goals_home_line,goals_away_line,under_over_line,"
-        "percent_home,percent_draw,percent_away,win_or_draw,advice,winner_team_id,winner_name"
+        "percent_home,percent_draw,percent_away,win_or_draw,advice,winner_team_id,winner_name,"
+        "raw_json_odds,raw_json"
     )
     filters = [("gte", "fixture_date", start), ("lt", "fixture_date", end)]
     return _fetch_all("fixture_predictions", fp_columns, filters)
@@ -104,15 +105,21 @@ def fetch_related_by_fixture_ids(
     fixture_ids: List[int],
     columns: str,
     extra_filters: Optional[List[Tuple[str, str, Any]]] = None,
+    page_size: int = 1000,
+    chunk_size: int = 1000,
 ) -> List[Dict[str, Any]]:
     if not fixture_ids:
         return []
     results: List[Dict[str, Any]] = []
-    for chunk in _chunked(fixture_ids, 1000):
+    if table == "match_odds":
+        # reduce payload to avoid timeouts on large odds tables
+        page_size = min(page_size, 200)
+        chunk_size = min(chunk_size, 200)
+    for chunk in _chunked(fixture_ids, chunk_size):
         filters = [("in", "fixture_id", chunk)]
         if extra_filters:
             filters.extend(extra_filters)
-        results.extend(_fetch_all(table, columns, filters))
+        results.extend(_fetch_all(table, columns, filters, page_size=page_size))
     return results
 
 
@@ -151,7 +158,8 @@ def fetch_fixture_prediction_by_id(fixture_id: int) -> List[Dict[str, Any]]:
         .select(
             "fixture_id,league_id,league_name,season_year,fixture_date,home_team_id,home_team_name,"
             "away_team_id,away_team_name,status,goals_home_line,goals_away_line,under_over_line,"
-            "percent_home,percent_draw,percent_away,win_or_draw,advice,winner_team_id,winner_name"
+            "percent_home,percent_draw,percent_away,win_or_draw,advice,winner_team_id,winner_name,"
+            "raw_json_odds"
         )
         .eq("fixture_id", fixture_id)
         .execute()

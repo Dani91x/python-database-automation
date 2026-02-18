@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Dict, List, Tuple
+import json
 
 import pandas as pd
 
@@ -12,6 +13,7 @@ from .db_adapter import (
     fetch_related_by_fixture_ids,
     fetch_standings_by_league_seasons,
 )
+from .preprocessing.statistics import build_team_window_stats
 
 
 def _sanitize_col(name: str) -> str:
@@ -69,6 +71,46 @@ def _odds_features(odds_rows: List[Dict[str, Any]]) -> pd.DataFrame:
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def _odds_features_from_raw_json(fixtures_df: pd.DataFrame) -> pd.DataFrame:
+    if fixtures_df.empty or "raw_json_odds" not in fixtures_df.columns:
+        return pd.DataFrame(columns=["fixture_id"])
+
+    rows = []
+    for _, row in fixtures_df.iterrows():
+        fixture_id = row.get("fixture_id")
+        raw = row.get("raw_json_odds")
+        if raw is None or fixture_id is None:
+            continue
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                continue
+        if not isinstance(raw, dict):
+            continue
+
+        values = []
+        for bm in raw.get("bookmakers", []) or []:
+            for bet in bm.get("bets", []) or []:
+                bet_name = str(bet.get("name", "")).lower()
+                for v in bet.get("values", []) or []:
+                    values.append(
+                        {
+                            "fixture_id": fixture_id,
+                            "market_name": bet_name,
+                            "label": str(v.get("value", "")).lower(),
+                            "odd_value": v.get("odd"),
+                            "snapshot_time": raw.get("update"),
+                        }
+                    )
+        if values:
+            rows.extend(values)
+
+    if not rows:
+        return pd.DataFrame(columns=["fixture_id"])
+    return _odds_features(rows)
 
 
 def _events_features(events_rows: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -161,21 +203,6 @@ def _player_stats_features(player_rows: List[Dict[str, Any]]) -> pd.DataFrame:
         agg_map["rating"] = "mean"
 
     agg = df.groupby(["fixture_id", "team_id"], dropna=False).agg(agg_map).reset_index()
-    return agg
-
-
-def _injuries_features(injuries_rows: List[Dict[str, Any]]) -> pd.DataFrame:
-    if not injuries_rows:
-        return pd.DataFrame(columns=["fixture_id"])
-    df = pd.DataFrame(injuries_rows)
-    if df.empty:
-        return pd.DataFrame(columns=["fixture_id"])
-
-    agg = (
-        df.groupby(["fixture_id", "team_id"], dropna=False)
-        .agg(injuries_count=("player_id", "count"))
-        .reset_index()
-    )
     return agg
 
 
@@ -279,7 +306,6 @@ def _build_historical_team_features(
     events_rows: List[Dict[str, Any]],
     team_stats_rows: List[Dict[str, Any]],
     player_stats_rows: List[Dict[str, Any]],
-    injuries_rows: List[Dict[str, Any]],
 ) -> pd.DataFrame:
     if history_df.empty:
         return pd.DataFrame()
@@ -291,10 +317,8 @@ def _build_historical_team_features(
     events_df = _events_features(events_rows)
     team_stats_df = _team_stats_features(team_stats_rows)
     player_stats_df = _player_stats_features(player_stats_rows)
-    injuries_df = _injuries_features(injuries_rows)
-
     merged = base.copy()
-    for df in [events_df, team_stats_df, player_stats_df, injuries_df]:
+    for df in [events_df, team_stats_df, player_stats_df]:
         if not df.empty:
             merged = merged.merge(df, on=["fixture_id", "team_id"], how="left")
 
@@ -334,25 +358,30 @@ def _compute_form_features(history_df: pd.DataFrame) -> pd.DataFrame:
     if history_df.empty:
         return history_df
 
+    history_df = history_df.copy()
+    history_df["fixture_date"] = pd.to_datetime(history_df["fixture_date"], errors="coerce")
+    history_df = history_df.dropna(subset=["fixture_date"])
     history_df = history_df.sort_values("fixture_date")
     history_df["home_goals"] = _safe_num(history_df["goals_home"])
     history_df["away_goals"] = _safe_num(history_df["goals_away"])
 
     rows = []
     for n in FORM_WINDOWS:
-        # Home team form
-        home = history_df.copy()
-        home["team_id"] = home["home_team_id"]
+        home = history_df[["fixture_date", "home_team_id", "home_goals", "away_goals"]].copy()
+        home.rename(columns={"home_team_id": "team_id"}, inplace=True)
         home["gf"] = home["home_goals"]
         home["ga"] = home["away_goals"]
+        home.drop(columns=["home_goals", "away_goals"], inplace=True)
         home["is_home"] = 1
-        away = history_df.copy()
-        away["team_id"] = away["away_team_id"]
+
+        away = history_df[["fixture_date", "away_team_id", "home_goals", "away_goals"]].copy()
+        away.rename(columns={"away_team_id": "team_id"}, inplace=True)
         away["gf"] = away["away_goals"]
         away["ga"] = away["home_goals"]
+        away.drop(columns=["home_goals", "away_goals"], inplace=True)
         away["is_home"] = 0
-        team_matches = pd.concat([home, away], ignore_index=True)
-        team_matches = team_matches.sort_values("fixture_date")
+
+        team_matches = pd.concat([home, away], ignore_index=True).sort_values("fixture_date")
 
         team_matches[f"form_{n}_gf"] = (
             team_matches.groupby("team_id")["gf"].rolling(n, min_periods=1).mean().reset_index(level=0, drop=True)
@@ -362,11 +391,11 @@ def _compute_form_features(history_df: pd.DataFrame) -> pd.DataFrame:
         )
         team_matches[f"form_{n}_gd"] = team_matches[f"form_{n}_gf"] - team_matches[f"form_{n}_ga"]
 
-        rows.append(team_matches[["fixture_id", "team_id", f"form_{n}_gf", f"form_{n}_ga", f"form_{n}_gd"]])
+        rows.append(team_matches[["fixture_date", "team_id", f"form_{n}_gf", f"form_{n}_ga", f"form_{n}_gd"]])
 
     merged = rows[0]
     for r in rows[1:]:
-        merged = merged.merge(r, on=["fixture_id", "team_id"], how="left")
+        merged = merged.merge(r, on=["fixture_date", "team_id"], how="left")
     return merged
 
 
@@ -378,7 +407,7 @@ def build_feature_dataframe_for_fixtures(
     include_player_stats: bool = True,
     include_events: bool = True,
     include_team_stats: bool = True,
-    include_injuries: bool = True,
+    include_team_window_stats: bool = True,
     pre_match: bool = False,
 ) -> pd.DataFrame:
     if fixtures_df.empty:
@@ -390,7 +419,13 @@ def build_feature_dataframe_for_fixtures(
     odds_rows = []
     team_stats_rows = []
     player_stats_rows = []
-    injuries_rows = []
+    odds_market_filter = [
+        "Match Winner",
+        "Goals Over/Under",
+        "Both Teams Score",
+        "Over/Under",
+        "Goals Over Under",
+    ]
 
     if pre_match:
         # use historical aggregates
@@ -415,18 +450,13 @@ def build_feature_dataframe_for_fixtures(
                 "passes_total,passes_key,passes_accurate,tackles_total,interceptions,duels_total,duels_won,"
                 "dribbles_attempts,dribbles_success,fouls_drawn,fouls_committed,yellow_cards,red_cards,offsides",
             )
-        if include_injuries:
-            injuries_rows = fetch_related_by_fixture_ids(
-                "injuries",
-                history_fixture_ids,
-                "fixture_id,team_id,player_id",
-            )
         # odds for fixture (pre-match)
         if include_odds:
             odds_rows = fetch_related_by_fixture_ids(
                 "match_odds",
                 fixture_ids,
                 "fixture_id,market_name,label,odd_value,snapshot_time",
+                extra_filters=[("in", "market_name", odds_market_filter)],
             )
     else:
         if include_events:
@@ -440,6 +470,7 @@ def build_feature_dataframe_for_fixtures(
                 "match_odds",
                 fixture_ids,
                 "fixture_id,market_name,label,odd_value,snapshot_time",
+                extra_filters=[("in", "market_name", odds_market_filter)],
             )
         if include_team_stats:
             team_stats_rows = fetch_related_by_fixture_ids(
@@ -455,25 +486,33 @@ def build_feature_dataframe_for_fixtures(
                 "passes_total,passes_key,passes_accurate,tackles_total,interceptions,duels_total,duels_won,"
                 "dribbles_attempts,dribbles_success,fouls_drawn,fouls_committed,yellow_cards,red_cards,offsides",
             )
-        if include_injuries:
-            injuries_rows = fetch_related_by_fixture_ids(
-                "injuries",
-                fixture_ids,
-                "fixture_id,team_id,player_id",
-            )
     standings_rows = fetch_standings_by_league_seasons(league_seasons_tuples)
 
     events_df = _events_features(events_rows) if include_events else pd.DataFrame()
     odds_df = _odds_features(odds_rows) if include_odds else pd.DataFrame()
+    if include_odds and pre_match and "raw_json_odds" in fixtures_df.columns:
+        raw_odds_df = _odds_features_from_raw_json(fixtures_df)
+        if odds_df.empty:
+            odds_df = raw_odds_df
+        elif not raw_odds_df.empty:
+            merged = odds_df.merge(raw_odds_df, on="fixture_id", how="outer", suffixes=("", "_raw"))
+            for col in [c for c in merged.columns if c.endswith("_raw")]:
+                base_col = col.replace("_raw", "")
+                if base_col in merged.columns:
+                    merged[base_col] = merged[base_col].combine_first(merged[col])
+                merged.drop(columns=[col], inplace=True)
+            odds_df = merged
     team_stats_df = _team_stats_features(team_stats_rows) if include_team_stats else pd.DataFrame()
     player_stats_df = _player_stats_features(player_stats_rows) if include_player_stats else pd.DataFrame()
-    injuries_df = _injuries_features(injuries_rows) if include_injuries else pd.DataFrame()
 
     hist_team_df = pd.DataFrame()
     if pre_match:
         hist_team_df = _build_historical_team_features(
-            history_df, events_rows, team_stats_rows, player_stats_rows, injuries_rows
+            history_df, events_rows, team_stats_rows, player_stats_rows
         )
+    team_window_stats_df = pd.DataFrame()
+    if pre_match and include_team_window_stats and not history_df.empty:
+        team_window_stats_df = build_team_window_stats(history_df, FORM_WINDOWS)
     standings_df = _standings_features(standings_rows)
 
     # Base merge
@@ -483,13 +522,13 @@ def build_feature_dataframe_for_fixtures(
     if pre_match:
         base = _merge_historical_features(base, hist_team_df, "home_hist", "home_team_id")
         base = _merge_historical_features(base, hist_team_df, "away_hist", "away_team_id")
+        base = _merge_historical_features(base, team_window_stats_df, "home_stat", "home_team_id")
+        base = _merge_historical_features(base, team_window_stats_df, "away_stat", "away_team_id")
     else:
         base = _merge_team_side(base, team_stats_df, "home_stats", "home_team_id")
         base = _merge_team_side(base, team_stats_df, "away_stats", "away_team_id")
         base = _merge_team_side(base, player_stats_df, "home_players", "home_team_id")
         base = _merge_team_side(base, player_stats_df, "away_players", "away_team_id")
-        base = _merge_team_side(base, injuries_df, "home_injuries", "home_team_id")
-        base = _merge_team_side(base, injuries_df, "away_injuries", "away_team_id")
         base = _merge_team_side(base, events_df, "home_events", "home_team_id")
         base = _merge_team_side(base, events_df, "away_events", "away_team_id")
 
@@ -522,8 +561,8 @@ def build_feature_dataframe_for_fixtures(
     # Form features
     if not history_df.empty:
         form_df = _compute_form_features(history_df)
-        base = _merge_team_side(base, form_df, "home_form", "home_team_id")
-        base = _merge_team_side(base, form_df, "away_form", "away_team_id")
+        base = _merge_historical_features(base, form_df, "home_form", "home_team_id")
+        base = _merge_historical_features(base, form_df, "away_form", "away_team_id")
 
     return base
 

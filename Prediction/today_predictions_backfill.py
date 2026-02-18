@@ -7,6 +7,7 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 # ----------------------------------------------------------
@@ -59,6 +60,42 @@ def _safe_get(d: Any, path: List[str]) -> Any:
         if cur is None:
             return None
     return cur
+
+
+
+def _fetch_all_table(
+    table: str,
+    columns: str,
+    filters: Optional[List[Tuple[str, str, Any]]] = None,
+    page_size: int = 1000,
+) -> List[Dict[str, Any]]:
+    sb = get_supabase_client()
+    offset = 0
+    results: List[Dict[str, Any]] = []
+
+    while True:
+        query = sb.table(table).select(columns)
+        if filters:
+            for op, col, val in filters:
+                if op == "eq":
+                    query = query.eq(col, val)
+                elif op == "gte":
+                    query = query.gte(col, val)
+                elif op == "lt":
+                    query = query.lt(col, val)
+                elif op == "in":
+                    query = query.in_(col, val)
+                else:
+                    raise ValueError(f"Unsupported filter op: {op}")
+
+        resp = query.range(offset, offset + page_size - 1).execute()
+        data = getattr(resp, "data", None) or []
+        results.extend(data)
+        if len(data) < page_size:
+            break
+        offset += page_size
+
+    return results
 
 
 # ==============================
@@ -118,6 +155,116 @@ def predictions_coverage_true(
 
     cache[key] = flag
     return flag
+
+
+def odds_coverage_true(
+    league_id: int,
+    season_year: int,
+    cache: Dict[Tuple[int, int], bool],
+) -> bool:
+    """
+    Legge da api_coverage_by_season la colonna 'odds' per (league_id, season_year).
+    Cache per evitare query ripetute.
+    """
+    key = (league_id, season_year)
+    if key in cache:
+        return cache[key]
+
+    sb = get_supabase_client()
+    try:
+        resp = (
+            sb.table("api_coverage_by_season")
+            .select("odds")
+            .eq("league_id", league_id)
+            .eq("season_year", season_year)
+            .maybe_single()
+            .execute()
+        )
+        row = getattr(resp, "data", None) or {}
+        flag = bool(row.get("odds"))
+    except Exception as e:
+        # 406 can happen if column doesn't exist or view doesn't expose it
+        logger.error(
+            "❌ Errore nel leggere coverage odds (league_id=%s season=%s): %s",
+            league_id, season_year, e
+        )
+        flag = False
+
+    cache[key] = flag
+    return flag
+
+
+# ==============================
+# Odds helper
+# ==============================
+
+def fetch_odds_for_league_season(
+    api: APIFootballClient,
+    league_id: int,
+    season_year: int,
+    cache: Dict[Tuple[int, int], Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Chiama /odds?league=...&season=...&bookmaker=3 e cache per (league_id, season_year).
+    Ritorna il JSON grezzo della risposta.
+    """
+    key = (league_id, season_year)
+    if key in cache:
+        return cache[key]
+
+    logger.info("📡 Chiamata API /odds?league=%s&season=%s&bookmaker=3", league_id, season_year)
+    data = api.call(
+        "/odds",
+        params={"league": str(league_id), "season": str(season_year), "bookmaker": "3"},
+    )
+    cache[key] = data or {}
+    return cache[key]
+
+
+def extract_odds_for_fixture(odds_json: Dict[str, Any], fixture_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Estrae l'oggetto odds per fixture_id dalla risposta /odds.
+    """
+    if not odds_json:
+        return None
+    resp_list = odds_json.get("response") or []
+    for item in resp_list:
+        fixture = item.get("fixture") or {}
+        if fixture.get("id") == fixture_id:
+            return item
+    return None
+
+
+def upsert_odds_row(fixture_id: int, raw_json_odds: Optional[Dict[str, Any]]) -> None:
+    """
+    Salva le odds grezze in fixture_predictions.raw_json_odds.
+    Non tocca gli altri campi.
+    """
+    sb = get_supabase_client()
+    row = {
+        "raw_json_odds": raw_json_odds,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+    updated = getattr(resp, "data", None)
+    if not updated:
+        logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
+
+
+def upsert_db_json_analisi(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]]) -> None:
+    """
+    Salva il JSON della terza analisi in fixture_predictions.db_json_analisi.
+    Non tocca gli altri campi.
+    """
+    sb = get_supabase_client()
+    row = {
+        "db_json_analisi": db_json_analisi,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+    updated = getattr(resp, "data", None)
+    if not updated:
+        logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (db_json_analisi non salvato)", fixture_id)
 
 
 # ==============================
@@ -184,6 +331,313 @@ def extract_fixture_context(fx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "home_team_name": home.get("name"),
         "away_team_id": int(away["id"]) if away.get("id") is not None else None,
         "away_team_name": away.get("name"),
+    }
+
+
+# ==============================
+# DB analysis (Poisson/xG)
+# ==============================
+
+def _poisson_prob(lmbda: float, k: int) -> float:
+    return math.exp(-lmbda) * (lmbda ** k) / math.factorial(k)
+
+
+def _build_match_cache(
+    league_id: int,
+    season_year: int,
+    cache: Dict[Tuple[int, int], Dict[str, Any]],
+) -> Dict[str, Any]:
+    key = (league_id, season_year)
+    if key in cache:
+        return cache[key]
+
+    cols = (
+        "fixture_id,fixture_date,home_team_id,away_team_id,"
+        "goals_home,goals_away,halftime_home,halftime_away,status_short"
+    )
+    filters = [("eq", "league_id", league_id), ("eq", "season_year", season_year)]
+    rows = _fetch_all_table("matches", cols, filters, page_size=1000)
+
+    played = []
+    for r in rows:
+        if str(r.get("status_short") or "").upper() in {"FT", "AET", "PEN"}:
+            played.append(r)
+
+    team_hist: Dict[int, List[Dict[str, Any]]] = {}
+    for m in played:
+        fixture_date = m.get("fixture_date")
+        home_id = m.get("home_team_id")
+        away_id = m.get("away_team_id")
+        goals_home = m.get("goals_home") or 0
+        goals_away = m.get("goals_away") or 0
+        ht_home = m.get("halftime_home")
+        ht_away = m.get("halftime_away")
+
+        if home_id is not None:
+            team_hist.setdefault(int(home_id), []).append(
+                {
+                    "fixture_id": m.get("fixture_id"),
+                    "fixture_date": fixture_date,
+                    "team_id": int(home_id),
+                    "goals_for": goals_home,
+                    "goals_against": goals_away,
+                    "halftime_for": ht_home,
+                }
+            )
+        if away_id is not None:
+            team_hist.setdefault(int(away_id), []).append(
+                {
+                    "fixture_id": m.get("fixture_id"),
+                    "fixture_date": fixture_date,
+                    "team_id": int(away_id),
+                    "goals_for": goals_away,
+                    "goals_against": goals_home,
+                    "halftime_for": ht_away,
+                }
+            )
+
+    for team_id, lst in team_hist.items():
+        lst.sort(key=lambda x: x.get("fixture_date") or "")
+
+    total_matches = len(played)
+    if total_matches > 0:
+        league_home_avg = sum((m.get("goals_home") or 0) for m in played) / total_matches
+        league_away_avg = sum((m.get("goals_away") or 0) for m in played) / total_matches
+        league_total_avg = league_home_avg + league_away_avg
+    else:
+        league_home_avg = 1.2
+        league_away_avg = 1.0
+        league_total_avg = 2.2
+
+    cache[key] = {
+        "played": played,
+        "team_hist": team_hist,
+        "league_home_avg": league_home_avg,
+        "league_away_avg": league_away_avg,
+        "league_total_avg": league_total_avg,
+    }
+    return cache[key]
+
+
+def _build_xg_cache(
+    league_id: int,
+    season_year: int,
+    cache: Dict[Tuple[int, int], Dict[Tuple[int, int], float]],
+    fixture_ids: List[int],
+) -> Dict[Tuple[int, int], float]:
+    key = (league_id, season_year)
+    if key in cache:
+        return cache[key]
+
+    xg_map: Dict[Tuple[int, int], float] = {}
+    if not fixture_ids:
+        cache[key] = xg_map
+        return xg_map
+
+    for i in range(0, len(fixture_ids), 500):
+        chunk = fixture_ids[i : i + 500]
+        rows = _fetch_all_table(
+            "match_team_stats",
+            "fixture_id,team_id,stat_type,value_numeric",
+            filters=[("eq", "league_id", league_id), ("eq", "season_year", season_year), ("in", "fixture_id", chunk)],
+            page_size=1000,
+        )
+        for r in rows:
+            st = str(r.get("stat_type") or "").lower()
+            if "expected" in st or "xg" in st:
+                key2 = (int(r.get("fixture_id")), int(r.get("team_id")))
+                val = r.get("value_numeric")
+                try:
+                    val_f = float(val)
+                except Exception:
+                    continue
+                prev = xg_map.get(key2)
+                if prev is None or val_f > prev:
+                    xg_map[key2] = val_f
+
+    cache[key] = xg_map
+    return xg_map
+
+
+def _window_stats(team_matches: List[Dict[str, Any]], n: int, xg_map: Dict[Tuple[int, int], float]) -> Dict[str, Optional[float]]:
+    if not team_matches:
+        return {"gf_avg": None, "ga_avg": None, "xg_avg": None, "n_used": 0}
+
+    recent = team_matches[-n:]
+    gf = [m.get("goals_for", 0) for m in recent]
+    ga = [m.get("goals_against", 0) for m in recent]
+    xg_vals = []
+    for m in recent:
+        fx_id = m.get("fixture_id")
+        team_id = m.get("team_id")
+        if fx_id is None or team_id is None:
+            continue
+        val = xg_map.get((int(fx_id), int(team_id)))
+        if val is not None:
+            xg_vals.append(val)
+
+    return {
+        "gf_avg": sum(gf) / len(gf) if gf else None,
+        "ga_avg": sum(ga) / len(ga) if ga else None,
+        "xg_avg": sum(xg_vals) / len(xg_vals) if xg_vals else None,
+        "n_used": len(recent),
+        "xg_used": len(xg_vals),
+    }
+
+
+def _blend_windows(stats5: Dict[str, Any], stats10: Dict[str, Any], stats15: Dict[str, Any], weights: Dict[int, float]) -> Dict[str, Any]:
+    def _blend(key: str) -> Optional[float]:
+        parts = []
+        for n, st in [(5, stats5), (10, stats10), (15, stats15)]:
+            val = st.get(key)
+            if val is not None:
+                parts.append((weights[n], val))
+        if not parts:
+            return None
+        return sum(w * v for w, v in parts)
+
+    return {
+        "gf_blend": _blend("gf_avg"),
+        "ga_blend": _blend("ga_avg"),
+        "xg_blend": _blend("xg_avg"),
+    }
+
+
+def compute_db_json_analisi(
+    ctx: Dict[str, Any],
+    match_cache: Dict[Tuple[int, int], Dict[str, Any]],
+    xg_cache: Dict[Tuple[int, int], Dict[Tuple[int, int], float]],
+) -> Optional[Dict[str, Any]]:
+    fixture_id = ctx.get("fixture_id")
+    league_id = ctx.get("league_id")
+    season_year = ctx.get("season_year")
+    fixture_date = ctx.get("fixture_date")
+    home_team_id = ctx.get("home_team_id")
+    away_team_id = ctx.get("away_team_id")
+
+    if not all([fixture_id, league_id, season_year, fixture_date, home_team_id, away_team_id]):
+        return None
+
+    cache = _build_match_cache(int(league_id), int(season_year), match_cache)
+    team_hist = cache["team_hist"]
+    league_home_avg = cache["league_home_avg"]
+    league_away_avg = cache["league_away_avg"]
+    league_total_avg = cache["league_total_avg"]
+
+    fixture_ids = [m.get("fixture_id") for m in cache["played"] if m.get("fixture_id") is not None]
+    xg_map = _build_xg_cache(int(league_id), int(season_year), xg_cache, fixture_ids)
+
+    def _before_date(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [m for m in matches if m.get("fixture_date") and m["fixture_date"] < fixture_date]
+
+    home_matches = _before_date(team_hist.get(int(home_team_id), []))
+    away_matches = _before_date(team_hist.get(int(away_team_id), []))
+
+    stats5_h = _window_stats(home_matches, 5, xg_map)
+    stats10_h = _window_stats(home_matches, 10, xg_map)
+    stats15_h = _window_stats(home_matches, 15, xg_map)
+    stats5_a = _window_stats(away_matches, 5, xg_map)
+    stats10_a = _window_stats(away_matches, 10, xg_map)
+    stats15_a = _window_stats(away_matches, 15, xg_map)
+
+    weights = {5: 0.5, 10: 0.3, 15: 0.2}
+    blend_h = _blend_windows(stats5_h, stats10_h, stats15_h, weights)
+    blend_a = _blend_windows(stats5_a, stats10_a, stats15_a, weights)
+
+    k_shrink = 8.0
+    eta_goals = 0.6
+    league_half = max(0.1, league_total_avg / 2.0)
+
+    def _shrink(raw: Optional[float], n_used: int) -> float:
+        base = league_half if raw is None else raw
+        return ((k_shrink * league_half) + (base * max(n_used, 1))) / (k_shrink + max(n_used, 1))
+
+    home_n_used = stats15_h.get("n_used", 0)
+    away_n_used = stats15_a.get("n_used", 0)
+
+    gf_h = _shrink(blend_h.get("gf_blend"), home_n_used)
+    ga_h = _shrink(blend_h.get("ga_blend"), home_n_used)
+    gf_a = _shrink(blend_a.get("gf_blend"), away_n_used)
+    ga_a = _shrink(blend_a.get("ga_blend"), away_n_used)
+
+    xg_h = _shrink(blend_h.get("xg_blend"), home_n_used)
+    xg_a = _shrink(blend_a.get("xg_blend"), away_n_used)
+
+    home_attack = ((eta_goals * gf_h) + ((1 - eta_goals) * xg_h)) / league_half
+    away_attack = ((eta_goals * gf_a) + ((1 - eta_goals) * xg_a)) / league_half
+    home_def = ga_h / league_half
+    away_def = ga_a / league_half
+
+    lambda_home = max(0.05, league_home_avg * home_attack * away_def)
+    lambda_away = max(0.05, league_away_avg * away_attack * home_def)
+
+    max_goals = 6
+    probs = []
+    for hg in range(0, max_goals + 1):
+        p_h = _poisson_prob(lambda_home, hg)
+        for ag in range(0, max_goals + 1):
+            p = p_h * _poisson_prob(lambda_away, ag)
+            probs.append((hg, ag, p))
+
+    total_p = sum(p for _, _, p in probs) or 1.0
+    probs = [(hg, ag, p / total_p) for hg, ag, p in probs]
+
+    p_home = sum(p for hg, ag, p in probs if hg > ag)
+    p_draw = sum(p for hg, ag, p in probs if hg == ag)
+    p_away = sum(p for hg, ag, p in probs if hg < ag)
+    p_over25 = sum(p for hg, ag, p in probs if (hg + ag) >= 3)
+    p_under25 = 1.0 - p_over25
+    p_btts = sum(p for hg, ag, p in probs if hg > 0 and ag > 0)
+    p_btts_no = 1.0 - p_btts
+
+    def _team_p_goal_1h(matches: List[Dict[str, Any]]) -> float:
+        if not matches:
+            return 0.5
+        recent = matches[-15:]
+        flags = []
+        for m in recent:
+            ht = m.get("halftime_for")
+            if ht is None:
+                continue
+            flags.append(1 if ht > 0 else 0)
+        if not flags:
+            return 0.5
+        return sum(flags) / len(flags)
+
+    p_home_1h = _team_p_goal_1h(home_matches)
+    p_away_1h = _team_p_goal_1h(away_matches)
+    p_goal_1h = 1.0 - ((1 - p_home_1h) * (1 - p_away_1h))
+
+    return {
+        "model": "poisson_xg",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "league_id": int(league_id),
+        "season_year": int(season_year),
+        "fixture_id": int(fixture_id),
+        "inputs": {
+            "lambda_home": round(lambda_home, 4),
+            "lambda_away": round(lambda_away, 4),
+            "league_home_avg": round(league_home_avg, 4),
+            "league_away_avg": round(league_away_avg, 4),
+            "league_total_avg": round(league_total_avg, 4),
+            "home_matches_used": int(home_n_used),
+            "away_matches_used": int(away_n_used),
+            "home_xg_covered": int(stats15_h.get("xg_used", 0)),
+            "away_xg_covered": int(stats15_a.get("xg_used", 0)),
+        },
+        "markets": {
+            "1x2": {"H": round(p_home, 4), "D": round(p_draw, 4), "A": round(p_away, 4)},
+            "over_2_5": {"True": round(p_over25, 4), "False": round(p_under25, 4)},
+            "btts": {"True": round(p_btts, 4), "False": round(p_btts_no, 4)},
+            "first_half_over_0_5": {"True": round(p_goal_1h, 4), "False": round(1.0 - p_goal_1h, 4)},
+        },
+        "coverage": {
+            "windows_used": {
+                "home": {"5": int(stats5_h.get("n_used", 0)), "10": int(stats10_h.get("n_used", 0)), "15": int(stats15_h.get("n_used", 0))},
+                "away": {"5": int(stats5_a.get("n_used", 0)), "10": int(stats10_a.get("n_used", 0)), "15": int(stats15_a.get("n_used", 0))},
+            },
+            "xg_used": {"home": int(stats15_h.get("xg_used", 0)), "away": int(stats15_a.get("xg_used", 0))},
+        },
     }
 
 
@@ -283,6 +737,10 @@ def run_for_date(target_date: str) -> None:
         return
 
     coverage_cache: Dict[Tuple[int, int], bool] = {}
+    odds_coverage_cache: Dict[Tuple[int, int], bool] = {}
+    odds_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    match_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    xg_cache: Dict[Tuple[int, int], Dict[Tuple[int, int], float]] = {}
 
     ok_count = 0
     empty_count = 0
@@ -339,6 +797,22 @@ def run_for_date(target_date: str) -> None:
             upsert_prediction_row(row)
             no_cov_count += 1
             logger.info("⏭️ no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            # dopo prediction, inserisco odds per questo fixture
+            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                upsert_odds_row(fixture_id, odds_item)
+                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            else:
+                upsert_odds_row(fixture_id, None)
+                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+            # db_json_analisi (sempre)
+            try:
+                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                upsert_db_json_analisi(fixture_id, analysis_json)
+            except Exception as e:
+                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
             continue
 
         # Call predictions
@@ -373,6 +847,22 @@ def run_for_date(target_date: str) -> None:
             upsert_prediction_row(row)
             empty_count += 1
             logger.warning("⚠️ empty fixture_id=%s", fixture_id)
+            # dopo prediction, inserisco odds per questo fixture
+            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                upsert_odds_row(fixture_id, odds_item)
+                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            else:
+                upsert_odds_row(fixture_id, None)
+                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+            # db_json_analisi (sempre)
+            try:
+                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                upsert_db_json_analisi(fixture_id, analysis_json)
+            except Exception as e:
+                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
             continue
 
         try:
@@ -394,6 +884,23 @@ def run_for_date(target_date: str) -> None:
             upsert_prediction_row(row)
             ok_count += 1
             logger.info("✅ ok fixture_id=%s", fixture_id)
+
+            # dopo prediction, inserisco odds per questo fixture
+            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                upsert_odds_row(fixture_id, odds_item)
+                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            else:
+                upsert_odds_row(fixture_id, None)
+                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+            # db_json_analisi (sempre)
+            try:
+                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                upsert_db_json_analisi(fixture_id, analysis_json)
+            except Exception as e:
+                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
 
         except Exception as e:
             row = {
@@ -421,6 +928,23 @@ def run_for_date(target_date: str) -> None:
             upsert_prediction_row(row)
             err_count += 1
             logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
+
+            # dopo prediction (errore), inserisco odds per questo fixture
+            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                upsert_odds_row(fixture_id, odds_item)
+                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            else:
+                upsert_odds_row(fixture_id, None)
+                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+            # db_json_analisi (sempre)
+            try:
+                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                upsert_db_json_analisi(fixture_id, analysis_json)
+            except Exception as e:
+                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
 
     logger.info(
         "🏁 RIEPILOGO %s → ok=%s empty=%s no_coverage=%s error=%s skipped=%s skipped_existing=%s",

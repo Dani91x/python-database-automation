@@ -30,11 +30,10 @@ def build_training_dataset(
         matches_df,
         history_df,
         league_seasons,
-        include_odds=False,
+        include_odds=True,
         include_player_stats=False,
         include_events=True,
         include_team_stats=True,
-        include_injuries=True,
     )
 
     # Targets from matches + team stats + events

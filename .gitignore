@@ -21,3 +21,12 @@ Appunti.txt/
 node_modules/
 bun.lockb
 match-insights-hub-temp/
+
+# Data / Predictions
+*_prediction_*.json
+*.jsonl.gz
+
+# Cache
+models_cache/
+*.pkl.gz
+expected_features_fixture_*.txt

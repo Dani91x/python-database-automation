@@ -37,14 +37,14 @@ def build_coverage_report(df: pd.DataFrame) -> Dict[str, Dict[str, int]]:
         "events": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
         "team_stats": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
         "player_stats": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
-        "injuries": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
+        "team_window_stats": [c for c in df.columns if c.startswith("home_stat_") or c.startswith("away_stat_")],
         "standings": [c for c in df.columns if c.startswith("home_standings_") or c.startswith("away_standings_")],
         "form": [c for c in df.columns if c.startswith("home_form_") or c.startswith("away_form_")],
     }
 
     report: Dict[str, Dict[str, int]] = {}
     for name, cols in groups.items():
-        if name in {"events", "team_stats", "player_stats", "injuries"}:
+        if name in {"events", "team_stats", "player_stats", "team_window_stats"}:
             ok, total = _coverage_any(df, cols)
         else:
             ok, total = _coverage_count(df, cols)
