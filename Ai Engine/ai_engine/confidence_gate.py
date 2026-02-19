@@ -1,12 +1,14 @@
 """
-Confidence Gates: 3-level filtering system that decides whether to bet.
+Confidence Gates: 4-level filtering system that decides whether to bet.
 
-A bet is only recommended if ALL three gates pass:
-  1. Data Sufficiency  — enough features and match history
-  2. Model Agreement   — ensemble models agree (consensus)
-  3. Value Present     — positive expected value above threshold
+A bet is only recommended if ALL four gates pass:
+  1. Data Sufficiency       — enough features and match history
+  2. Model Agreement        — ensemble models agree (consensus)
+  3. Value Present          — positive expected value above threshold
+  4. Calibration Quality    — model is well-calibrated (Brier/ECE)
 
 If any gate fails, the signal is "NO BET" with an explanation.
+If Gate 4 fails, the signal includes "MODEL_NOT_RELIABLE" with metrics.
 """
 from __future__ import annotations
 
@@ -31,6 +33,8 @@ MIN_COVERAGE_PCT: float = 0.50        # minimum feature coverage
 MIN_MATCHES_PER_TEAM: int = 8         # minimum historical matches
 MIN_AGREEMENT_RATIO: float = 0.66     # at least 2/3 models must agree
 MIN_RELIABILITY_SCORE: float = 0.40   # from reliability calculation
+MAX_BRIER_SCORE: float = 0.35         # max Brier score before MODEL_NOT_RELIABLE
+MAX_ECE_SCORE: float = 0.15           # max ECE before MODEL_NOT_RELIABLE
 
 
 def gate_data_sufficiency(
@@ -159,6 +163,55 @@ def gate_value_present(
     )
 
 
+def gate_calibration_quality(
+    brier: Optional[float] = None,
+    ece: Optional[float] = None,
+) -> GateResult:
+    """
+    Gate 4: Check if model calibration metrics are acceptable.
+
+    Fails (MODEL_NOT_RELIABLE) if:
+    - Brier score exceeds MAX_BRIER_SCORE
+    - ECE exceeds MAX_ECE_SCORE
+    - No calibration metrics available
+    """
+    details = {
+        "brier": brier,
+        "ece": ece,
+        "max_brier": MAX_BRIER_SCORE,
+        "max_ece": MAX_ECE_SCORE,
+    }
+
+    if brier is None and ece is None:
+        return GateResult(
+            passed=False,
+            gate_failed="calibration_quality",
+            reason="MODEL_NOT_RELIABLE: no calibration metrics available",
+            details=details,
+        )
+
+    reasons = []
+    if brier is not None and brier > MAX_BRIER_SCORE:
+        reasons.append(f"brier={brier:.3f} > max {MAX_BRIER_SCORE}")
+    if ece is not None and ece > MAX_ECE_SCORE:
+        reasons.append(f"ece={ece:.3f} > max {MAX_ECE_SCORE}")
+
+    if reasons:
+        return GateResult(
+            passed=False,
+            gate_failed="calibration_quality",
+            reason=f"MODEL_NOT_RELIABLE: {', '.join(reasons)}",
+            details=details,
+        )
+
+    return GateResult(
+        passed=True,
+        gate_failed=None,
+        reason=f"Calibration OK: brier={brier}, ece={ece}",
+        details=details,
+    )
+
+
 def apply_all_gates(
     coverage_pct: float,
     matches_home: int,
@@ -167,9 +220,11 @@ def apply_all_gates(
     agreement_ratio: float,
     votes: Dict[str, str],
     bet_signal: Optional[BetSignal],
+    brier: Optional[float] = None,
+    ece: Optional[float] = None,
 ) -> Tuple[bool, List[GateResult]]:
     """
-    Apply all 3 gates sequentially.
+    Apply all 4 gates sequentially.
 
     Returns (all_passed, list_of_gate_results).
     """
@@ -177,6 +232,7 @@ def apply_all_gates(
         gate_data_sufficiency(coverage_pct, matches_home, matches_away, reliability_score),
         gate_model_agreement(agreement_ratio, votes),
         gate_value_present(bet_signal),
+        gate_calibration_quality(brier, ece),
     ]
 
     all_passed = all(g.passed for g in gates)

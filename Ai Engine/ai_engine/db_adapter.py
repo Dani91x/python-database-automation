@@ -113,8 +113,8 @@ def fetch_related_by_fixture_ids(
     results: List[Dict[str, Any]] = []
     if table == "match_odds":
         # reduce payload to avoid timeouts on large odds tables
-        page_size = min(page_size, 200)
-        chunk_size = min(chunk_size, 200)
+        page_size = min(page_size, 50)
+        chunk_size = min(chunk_size, 50)
     for chunk in _chunked(fixture_ids, chunk_size):
         filters = [("in", "fixture_id", chunk)]
         if extra_filters:

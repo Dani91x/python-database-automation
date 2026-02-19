@@ -1,9 +1,10 @@
 """
-Walk-forward backtesting with simulated P&L.
+Walk-forward backtesting with real odds P&L.
 
 Divides history into temporal folds, trains on past data only,
-predicts next window, applies value-betting rules, and tracks
-cumulative ROI, yield, max drawdown, and Sharpe ratio.
+predicts next window, applies value-betting rules using real
+market odds from the `match_odds` table, and tracks cumulative
+ROI, yield, max drawdown, Sharpe ratio, Brier score, and ECE.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ AI_ENGINE_DIR = os.path.join(ROOT, "Ai Engine")
 if AI_ENGINE_DIR not in sys.path:
     sys.path.insert(0, AI_ENGINE_DIR)
 
-from ai_engine.db_adapter import fetch_seasons_for_league
+from ai_engine.db_adapter import fetch_seasons_for_league, fetch_related_by_fixture_ids
 from ai_engine.training_dataset import build_training_dataset
 from ai_engine.preprocessing.temporal_split import walk_forward_splits
 from ai_engine.value_betting import (
@@ -38,6 +39,80 @@ from ai_engine.value_betting import (
     MAX_KELLY,
     DEFAULT_BANKROLL,
 )
+
+
+# Mapping from target names to odds column prefixes in match_odds
+TARGET_ODDS_MAP = {
+    "target_1x2": {"H": "odds_1x2_home", "D": "odds_1x2_draw", "A": "odds_1x2_away"},
+    "target_btts": {"True": "odds_btts_yes", "False": "odds_btts_no"},
+    "target_over_0_5": {"True": "odds_over_0_5", "False": "odds_under_0_5"},
+    "target_over_1_5": {"True": "odds_over_1_5", "False": "odds_under_1_5"},
+    "target_over_2_5": {"True": "odds_over_2_5", "False": "odds_under_2_5"},
+    "target_over_3_5": {"True": "odds_over_3_5", "False": "odds_under_3_5"},
+    "target_over_4_5": {"True": "odds_over_4_5", "False": "odds_under_4_5"},
+}
+
+
+def _fetch_odds_by_fixture(fixture_ids: List[int]) -> Dict[int, Dict[str, float]]:
+    """Fetch real odds from match_odds and return dict keyed by fixture_id."""
+    if not fixture_ids:
+        return {}
+    rows = fetch_related_by_fixture_ids(
+        "match_odds", fixture_ids,
+        columns="fixture_id,bookmaker_name,bet_name,bet_value,odd",
+    )
+    odds_by_fid: Dict[int, Dict[str, float]] = {}
+    for r in rows:
+        fid = r.get("fixture_id")
+        if fid is None:
+            continue
+        if fid not in odds_by_fid:
+            odds_by_fid[fid] = {}
+        bet_name = str(r.get("bet_name", "")).strip()
+        bet_value = str(r.get("bet_value", "")).strip()
+        odd = r.get("odd")
+        if odd is None:
+            continue
+        try:
+            odd_f = float(odd)
+        except (ValueError, TypeError):
+            continue
+        # Map to standardized keys
+        key = f"{bet_name}_{bet_value}".lower().replace(" ", "_")
+        # Store the best (first) odds we find
+        if key not in odds_by_fid[fid]:
+            odds_by_fid[fid][key] = odd_f
+    return odds_by_fid
+
+
+def _get_real_odds_for_target(
+    fixture_id: int, target: str, predicted_class: str,
+    odds_lookup: Dict[int, Dict[str, float]],
+) -> Optional[float]:
+    """Look up real decimal odds for a specific fixture/target/class."""
+    fid_odds = odds_lookup.get(fixture_id, {})
+    if not fid_odds:
+        return None
+    target_map = TARGET_ODDS_MAP.get(target)
+    if target_map:
+        col = target_map.get(str(predicted_class))
+        if col and col in fid_odds:
+            return fid_odds[col]
+    # Fallback: try to find any matching odds
+    for key, val in fid_odds.items():
+        if target.replace("target_", "") in key and str(predicted_class).lower() in key:
+            return val
+    return None
+
+
+def _brier_score_multiclass(y_true: np.ndarray, proba: np.ndarray, classes: list) -> float:
+    """Compute Brier score for multiclass."""
+    y_onehot = np.zeros_like(proba)
+    for i, yt in enumerate(y_true):
+        cls_str = str(yt)
+        if cls_str in classes:
+            y_onehot[i, classes.index(cls_str)] = 1
+    return float(np.mean(np.sum((proba - y_onehot) ** 2, axis=1)))
 
 
 def _prepare_xy(
@@ -166,21 +241,27 @@ def run_backtest(
             except Exception:
                 ll = float("nan")
 
-            fold_metrics.append({"fold": fold_idx, "accuracy": acc, "logloss": ll})
+            # Brier score
+            brier = _brier_score_multiclass(y_val_arr, proba, classes)
 
-            # Simulate bets per validation sample
-            #
-            # Simulate bookmaker odds realistically:
-            # - The bookmaker sets odds based on true prob (unknown to model)
-            # - We use the class base-rate in the validation set as a proxy
-            # - Add overround (margin) so bookmaker pays less than fair
-            # - If model prob > bookie implied prob → model has edge → positive EV
-            #
-            class_rates = {}
-            for c in classes:
-                class_rates[c] = max(0.05, float((y_val_arr == c).mean()) if str(c) in [str(v) for v in y_val_arr] else 0.1)
+            # Baseline: majority class accuracy
+            from collections import Counter
+            majority_class = Counter(str(v) for v in y_train.to_numpy()).most_common(1)[0][0]
+            baseline_acc = float((np.array([str(v) for v in y_val_arr]) == majority_class).mean())
 
-            rng = np.random.RandomState(fold_idx)
+            fold_metrics.append({
+                "fold": fold_idx,
+                "accuracy": acc,
+                "logloss": ll,
+                "brier": round(brier, 4),
+                "baseline_accuracy": round(baseline_acc, 4),
+                "lift_vs_baseline": round(acc - baseline_acc, 4),
+            })
+
+            # Use real odds from match_odds table
+            val_fixture_ids = df.iloc[valid_val]["fixture_id"].tolist() if "fixture_id" in df.columns else []
+            odds_lookup_fold = _fetch_odds_by_fixture([int(fid) for fid in val_fixture_ids if pd.notna(fid)])
+
             for i in range(len(y_val_arr)):
                 best_idx = int(np.argmax(proba[i]))
                 best_class = classes[best_idx]
@@ -188,17 +269,20 @@ def run_backtest(
                 actual = str(y_val_arr[i])
 
                 if best_prob > 0.52:
-                    # Bookmaker odds: based on true rate + overround
-                    true_rate = class_rates.get(best_class, 0.33)
-                    # Add noise to simulate imperfect bookmaker pricing
-                    noise = rng.uniform(-0.05, 0.05)
-                    bookie_implied = max(0.10, true_rate + noise)
-                    overround = 1.05  # 5% margin
-                    bookie_odds = (1.0 / bookie_implied) / overround
+                    # Look up real odds for this fixture
+                    fid = None
+                    if "fixture_id" in df.columns:
+                        fid_val = df.iloc[valid_val[i]]["fixture_id"] if i < len(valid_val) else None
+                        fid = int(fid_val) if pd.notna(fid_val) else None
 
-                    if bookie_odds < 1.01:
-                        continue
+                    real_odds = _get_real_odds_for_target(
+                        fid, target, best_class, odds_lookup_fold
+                    ) if fid else None
 
+                    if real_odds is None or real_odds < 1.01:
+                        continue  # Skip if no real odds available
+
+                    bookie_odds = real_odds
                     ev = expected_value(best_prob, bookie_odds)
 
                     if ev > MIN_EDGE and best_prob > MIN_PROB:
@@ -214,6 +298,7 @@ def run_backtest(
                             "actual": actual,
                             "prob": best_prob,
                             "odds": round(bookie_odds, 3),
+                            "odds_source": "match_odds",
                             "ev": round(ev, 4),
                             "stake": round(stake, 2),
                             "won": won,
@@ -331,21 +416,32 @@ def generate_backtest_report(league_id: int, **kwargs) -> str:
     if per_target:
         lines.append("## Per-Target Results")
         lines.append("")
-        lines.append("| Target | Bets | Win Rate | ROI | Profit | Sharpe |")
-        lines.append("|--------|------|----------|-----|--------|--------|")
+        lines.append("| Target | Bets | Win Rate | ROI | Profit | Sharpe | Avg Brier | Baseline Acc | Lift |")
+        lines.append("|--------|------|----------|-----|--------|--------|-----------|-------------|------|")
         for target, data in sorted(per_target.items(), key=lambda x: x[1].get("roi", 0), reverse=True):
+            fm = data.get("fold_metrics", [])
+            avg_brier = np.mean([f.get("brier", 0) for f in fm]) if fm else 0
+            avg_baseline = np.mean([f.get("baseline_accuracy", 0) for f in fm]) if fm else 0
+            avg_lift = np.mean([f.get("lift_vs_baseline", 0) for f in fm]) if fm else 0
             lines.append(
                 f"| {target} "
                 f"| {data.get('n_bets', 0)} "
                 f"| {data.get('win_rate', 0):.1%} "
                 f"| {data.get('roi', 0):.1%} "
                 f"| {data.get('total_profit', 0):.2f} "
-                f"| {data.get('sharpe', 0):.3f} |"
+                f"| {data.get('sharpe', 0):.3f} "
+                f"| {avg_brier:.3f} "
+                f"| {avg_baseline:.1%} "
+                f"| {avg_lift:+.1%} |"
             )
         lines.append("")
 
     # Interpretation
     lines.append("## Interpretation")
+    lines.append("")
+    lines.append("> [!NOTE]")
+    lines.append("> Odds source: **real market odds** from `match_odds` table.")
+    lines.append("> Fixtures without odds data are excluded from P&L calculations.")
     lines.append("")
     if overall.get("roi", 0) > 0:
         lines.append("> [!TIP]")

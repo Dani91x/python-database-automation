@@ -34,9 +34,10 @@ def build_coverage_report(df: pd.DataFrame) -> Dict[str, Dict[str, int]]:
         "odds_ou_25": ["odds_over_2_5", "odds_under_2_5"],
         "odds_btts": ["odds_btts_yes", "odds_btts_no"],
         "pre_xg": ["goals_home_line", "goals_away_line"],
-        "events": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
-        "team_stats": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
-        "player_stats": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
+        "events": [c for c in df.columns if c.startswith("home_events_") or c.startswith("away_events_")],
+        "team_stats": [c for c in df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")],
+        "player_stats": [c for c in df.columns if c.startswith("home_players_") or c.startswith("away_players_")],
+        "historical": [c for c in df.columns if c.startswith("home_hist_") or c.startswith("away_hist_")],
         "team_window_stats": [c for c in df.columns if c.startswith("home_stat_") or c.startswith("away_stat_")],
         "standings": [c for c in df.columns if c.startswith("home_standings_") or c.startswith("away_standings_")],
         "form": [c for c in df.columns if c.startswith("home_form_") or c.startswith("away_form_")],
@@ -44,7 +45,7 @@ def build_coverage_report(df: pd.DataFrame) -> Dict[str, Dict[str, int]]:
 
     report: Dict[str, Dict[str, int]] = {}
     for name, cols in groups.items():
-        if name in {"events", "team_stats", "player_stats", "team_window_stats"}:
+        if name in {"events", "team_stats", "player_stats", "team_window_stats", "historical"}:
             ok, total = _coverage_any(df, cols)
         else:
             ok, total = _coverage_count(df, cols)

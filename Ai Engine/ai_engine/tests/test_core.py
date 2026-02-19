@@ -199,6 +199,7 @@ class TestConfidenceGates:
             reliability_score=0.75, agreement_ratio=1.0,
             votes={"rf": "H", "gb": "H", "logreg": "H"},
             bet_signal=signal,
+            brier=0.20, ece=0.05,
         )
         assert all_passed
         assert all(g.passed for g in gates)
@@ -234,6 +235,127 @@ class TestFeatureSelection:
 
         kept = variance_threshold(df, threshold=0.0)
         assert "varying" in kept
+
+
+# ── Calibration Tests ───────────────────────────────────────────────
+
+class TestCalibration:
+    def test_brier_score_perfect(self):
+        """Perfect predictions should give Brier score of 0."""
+        from ai_engine.seriea_model_export import _brier_score
+        y_true = np.array(["H", "A", "D"])
+        proba = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
+        classes = np.array(["H", "A", "D"])
+        bs = _brier_score(y_true, proba, classes)
+        assert bs == 0.0
+
+    def test_brier_score_worst(self):
+        """Completely wrong predictions should give high Brier score."""
+        from ai_engine.seriea_model_export import _brier_score
+        y_true = np.array(["H", "H", "H"])
+        proba = np.array([[0, 1, 0], [0, 1, 0], [0, 1, 0]], dtype=float)
+        classes = np.array(["H", "A", "D"])
+        bs = _brier_score(y_true, proba, classes)
+        assert bs > 1.0  # Should be 2.0 for binary misclassification
+
+    def test_ece_score_well_calibrated(self):
+        """Well-calibrated model should have low ECE."""
+        from ai_engine.seriea_model_export import _ece_score
+        # 100 samples, 70% confidence → 70% accurate
+        y_true = np.array(["H"] * 70 + ["A"] * 30)
+        proba = np.array([[0.7, 0.3]] * 100)
+        classes = np.array(["H", "A"])
+        ece = _ece_score(y_true, proba, classes)
+        assert ece < 0.05  # Should be close to 0
+
+    def test_ece_score_poorly_calibrated(self):
+        """Over-confident model should have high ECE."""
+        from ai_engine.seriea_model_export import _ece_score
+        # 100 samples, 95% confidence but only 50% accurate
+        y_true = np.array(["H"] * 50 + ["A"] * 50)
+        proba = np.array([[0.95, 0.05]] * 100)
+        classes = np.array(["H", "A"])
+        ece = _ece_score(y_true, proba, classes)
+        assert ece > 0.3  # Should be high due to overconfidence
+
+
+# ── Calibration Gate Tests ──────────────────────────────────────────
+
+class TestCalibrationGate:
+    def test_gate_passes_with_good_metrics(self):
+        """Gate should pass with good calibration metrics."""
+        from ai_engine.confidence_gate import gate_calibration_quality
+        result = gate_calibration_quality(brier=0.20, ece=0.05)
+        assert result.passed
+
+    def test_gate_fails_high_brier(self):
+        """Gate should fail with high Brier score."""
+        from ai_engine.confidence_gate import gate_calibration_quality
+        result = gate_calibration_quality(brier=0.50, ece=0.05)
+        assert not result.passed
+        assert "MODEL_NOT_RELIABLE" in result.reason
+        assert result.gate_failed == "calibration_quality"
+
+    def test_gate_fails_high_ece(self):
+        """Gate should fail with high ECE."""
+        from ai_engine.confidence_gate import gate_calibration_quality
+        result = gate_calibration_quality(brier=0.20, ece=0.25)
+        assert not result.passed
+        assert "MODEL_NOT_RELIABLE" in result.reason
+
+    def test_gate_fails_no_metrics(self):
+        """Gate should fail when no calibration metrics are available."""
+        from ai_engine.confidence_gate import gate_calibration_quality
+        result = gate_calibration_quality(brier=None, ece=None)
+        assert not result.passed
+        assert "no calibration metrics" in result.reason
+
+    def test_all_gates_with_calibration(self):
+        """Test 4-gate system including calibration gate."""
+        from ai_engine.confidence_gate import apply_all_gates
+        from ai_engine.value_betting import BetSignal
+
+        signal = BetSignal(
+            market="target_1x2", action="H", model_prob=0.65,
+            implied_prob=0.50, decimal_odds=2.0, expected_value=0.10,
+            kelly_fraction=0.02, kelly_stake=20.0, confidence_grade="medium",
+            edge=0.15,
+        )
+
+        all_passed, gates = apply_all_gates(
+            coverage_pct=0.85, matches_home=20, matches_away=18,
+            reliability_score=0.75, agreement_ratio=1.0,
+            votes={"rf": "H", "gb": "H", "logreg": "H"},
+            bet_signal=signal,
+            brier=0.20, ece=0.05,
+        )
+        assert all_passed
+        assert len(gates) == 4
+        assert all(g.passed for g in gates)
+
+
+# ── Output Schema Tests ─────────────────────────────────────────────
+
+class TestOutputSchema:
+    def test_required_keys_present(self):
+        """Verify that all required keys are defined in the module."""
+        from ai_engine.predict_fixture import ALL_DEFINED_TARGETS
+        assert len(ALL_DEFINED_TARGETS) >= 20
+        assert "target_1x2" in ALL_DEFINED_TARGETS
+        assert "target_btts" in ALL_DEFINED_TARGETS
+        assert "target_over_2_5" in ALL_DEFINED_TARGETS
+
+    def test_target_coverage_complete(self):
+        """All common targets should be in ALL_DEFINED_TARGETS."""
+        from ai_engine.predict_fixture import ALL_DEFINED_TARGETS
+        expected = [
+            "target_1x2", "target_btts", "target_over_0_5",
+            "target_over_1_5", "target_over_2_5", "target_over_3_5",
+            "target_over_4_5", "target_clean_sheet_home",
+            "target_clean_sheet_away", "target_ht_1x2", "target_ft_1x2",
+        ]
+        for t in expected:
+            assert t in ALL_DEFINED_TARGETS, f"{t} missing from ALL_DEFINED_TARGETS"
 
 
 if __name__ == "__main__":

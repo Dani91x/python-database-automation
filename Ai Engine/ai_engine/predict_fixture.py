@@ -6,13 +6,18 @@ runs predictions through the stacking ensemble, applies value-betting
 analysis and confidence gates, then optionally stores results.
 
 Output JSON includes:
-  - targets / targets_raw  (calibrated/raw probabilities)
-  - coverage               (feature availability)
+  - schema_version          (JSON schema version)
+  - run_id                  (unique run identifier)
+  - targets / targets_raw   (calibrated/raw probabilities)
+  - targets_skipped         (targets without models or data)
+  - targets_not_reliable    (targets failing calibration gate)
+  - coverage                (feature availability)
   - reliability             (data quality score)
+  - calibration_metrics     (Brier/ECE per target)
   - ensemble_agreement      (base model consensus per target)
   - bet_signals             (value bets with EV, Kelly, stake)
   - no_bet_reasons          (why certain markets were excluded)
-  - confidence_gates        (3-gate pass/fail summary)
+  - confidence_gates        (4-gate pass/fail summary)
   - profit_balance          (from odds)
 """
 from __future__ import annotations
@@ -23,6 +28,8 @@ import gzip
 import pickle
 import warnings
 import json
+import uuid
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
@@ -277,6 +284,24 @@ def _scale_probabilities(probs: Dict[str, float], alpha: float) -> Dict[str, flo
     return {lbl: val / total for lbl, val in scaled.items()}
 
 
+# All targets defined in targets.py
+ALL_DEFINED_TARGETS = [
+    "target_1x2", "target_btts", "target_total_goals",
+    "target_over_0_5", "target_over_1_5", "target_over_2_5",
+    "target_over_3_5", "target_over_4_5",
+    "target_clean_sheet_home", "target_clean_sheet_away",
+    "target_home_over_0_5", "target_home_over_1_5",
+    "target_away_over_0_5", "target_away_over_1_5",
+    "target_ht_1x2", "target_ft_1x2", "target_ht_ft",
+    "target_exact_score",
+    "target_corners_total", "target_sot_total",
+    "target_cards_total", "target_home_cards", "target_away_cards",
+    "target_first_goal_before_30", "target_goal_in_2h",
+]
+
+logger = logging.getLogger(__name__)
+
+
 def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
     """
     Full prediction pipeline for a single fixture.
@@ -326,7 +351,10 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
     results: Dict[str, Dict[str, float]] = {}
     raw_results: Dict[str, Dict[str, float]] = {}
     agreement_results: Dict[str, Dict[str, Any]] = {}
+    calibration_metrics: Dict[str, Dict[str, Any]] = {}
     feats_union: list[str] = []
+    run_id = str(uuid.uuid4())
+    modeled_targets: set[str] = set()
 
     for m in models:
         target = m["target"]
@@ -344,6 +372,12 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
 
         raw_results[target] = raw_probs
         agreement_results[target] = agreement
+        modeled_targets.add(target)
+
+        # Extract calibration metrics from model payload
+        cal_m = payload.get("calibration_metrics", {})
+        if cal_m:
+            calibration_metrics[target] = cal_m
 
     # Coverage & reliability
     coverage = build_coverage_report(features_df)
@@ -390,6 +424,8 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
             agreement_ratio=agr_ratio,
             votes=agr_votes,
             bet_signal=signal,
+            brier=calibration_metrics.get(signal.market, {}).get("brier"),
+            ece=calibration_metrics.get(signal.market, {}).get("ece"),
         )
 
         signal_dict = {
@@ -421,12 +457,42 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
 
     profit_balance = _profit_balance_from_odds(raw_odds) if raw_odds else {}
 
+    # ── BUILD TARGETS_SKIPPED & TARGETS_NOT_RELIABLE ────────
+    targets_skipped: List[Dict[str, str]] = []
+    targets_not_reliable: List[Dict[str, str]] = []
+
+    from .confidence_gate import MAX_BRIER_SCORE, MAX_ECE_SCORE
+    for t in ALL_DEFINED_TARGETS:
+        if t not in modeled_targets:
+            targets_skipped.append({
+                "target": t,
+                "reason": f"TARGET_SKIPPED: no model in registry for league {league_id}",
+            })
+        else:
+            cal_m = calibration_metrics.get(t, {})
+            brier_val = cal_m.get("brier")
+            ece_val = cal_m.get("ece")
+            fail_reasons = []
+            if brier_val is not None and brier_val > MAX_BRIER_SCORE:
+                fail_reasons.append(f"brier={brier_val:.3f} > max {MAX_BRIER_SCORE}")
+            if ece_val is not None and ece_val > MAX_ECE_SCORE:
+                fail_reasons.append(f"ece={ece_val:.3f} > max {MAX_ECE_SCORE}")
+            if fail_reasons:
+                targets_not_reliable.append({
+                    "target": t,
+                    "reason": f"MODEL_NOT_RELIABLE: {', '.join(fail_reasons)}",
+                })
+
     # ── BUILD OUTPUT JSON ─────────────────────────────────────
     model_predictions_json = {
+        "schema_version": "2.0",
+        "run_id": run_id,
         "model_name": "ensemble_v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "targets": results,
         "targets_raw": raw_results,
+        "targets_skipped": targets_skipped,
+        "targets_not_reliable": targets_not_reliable,
         "coverage": {
             "features_pct": round(features_pct_val, 3),
             "matches_home": matches_home,
@@ -435,6 +501,7 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
         },
         "profit_balance": profit_balance,
         "reliability": {**rel, "alpha": round(alpha, 3), "scaling": "uniform_shrink"},
+        "calibration_metrics": calibration_metrics,
         "ensemble_agreement": {
             t: {
                 "predicted_class": a.get("predicted_class", ""),
@@ -448,12 +515,17 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
     }
 
     if store:
-        sb.table("fixture_predictions").update(
-            {
-                "model_predictions_json": model_predictions_json,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ).eq("fixture_id", fixture_id).execute()
+        try:
+            sb.table("fixture_predictions").update(
+                {
+                    "model_predictions_json": model_predictions_json,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("fixture_id", fixture_id).execute()
+            logger.info(f"Stored prediction for fixture_id={fixture_id}, run_id={run_id}")
+        except Exception as e:
+            logger.error(f"DB write failed for fixture_id={fixture_id}, run_id={run_id}: {e}")
+            raise
 
     return model_predictions_json
 

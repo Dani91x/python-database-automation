@@ -81,6 +81,24 @@ def _brier_score(y_true: np.ndarray, proba: np.ndarray, classes: np.ndarray) -> 
     return float(np.mean(np.sum((proba - y_onehot) ** 2, axis=1)))
 
 
+def _ece_score(y_true: np.ndarray, proba: np.ndarray, classes: np.ndarray, n_bins: int = 10) -> float:
+    """Expected Calibration Error: weighted average of |accuracy - confidence| per bin."""
+    class_to_idx = {c: i for i, c in enumerate(classes)}
+    confidences = np.max(proba, axis=1)
+    predictions = np.array([classes[i] for i in np.argmax(proba, axis=1)])
+    accuracies = (predictions == y_true).astype(float)
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        mask = (confidences > bin_boundaries[i]) & (confidences <= bin_boundaries[i + 1])
+        if mask.sum() == 0:
+            continue
+        bin_acc = accuracies[mask].mean()
+        bin_conf = confidences[mask].mean()
+        ece += mask.sum() * abs(bin_acc - bin_conf)
+    return float(ece / len(y_true)) if len(y_true) > 0 else 0.0
+
+
 def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
     """
     Train ensemble models for all targets in a league.
@@ -186,6 +204,45 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             print(f"    Ensemble training failed for {target}: {e}")
             continue
 
+        # ── COMPUTE CALIBRATION METRICS ON VALIDATION ──────────────
+        calibration_metrics = {}
+        try:
+            from ai_engine.ensemble_trainer import predict_ensemble
+            X_val_np = X_val_sel.to_numpy().astype(float)
+            X_val_scaled = payload.scaler.transform(X_val_np) if payload.scaler else X_val_np
+            classes = np.array(payload.class_labels)
+            # Get ensemble probabilities for entire validation set
+            base_probas_list = []
+            for name, model in payload.base_models:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    proba = model.predict_proba(X_val_scaled)
+                model_classes = [str(c) for c in model.classes_]
+                aligned = np.zeros((X_val_scaled.shape[0], len(classes)))
+                for ci, c in enumerate(classes):
+                    if c in model_classes:
+                        idx_c = model_classes.index(c)
+                        aligned[:, ci] = proba[:, idx_c]
+                base_probas_list.append(aligned)
+            if payload.meta_model is not None:
+                meta_input = np.hstack(base_probas_list)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    ensemble_proba = payload.meta_model.predict_proba(meta_input)
+            else:
+                total_w = sum(payload.base_weights.values()) or 1.0
+                ensemble_proba = np.zeros_like(base_probas_list[0])
+                for (name, _), bp in zip(payload.base_models, base_probas_list):
+                    w = payload.base_weights.get(name, 1.0) / total_w
+                    ensemble_proba += w * bp
+            y_val_str = np.array([str(v) for v in y_val.to_numpy()])
+            brier = _brier_score(y_val_str, ensemble_proba, classes)
+            ece = _ece_score(y_val_str, ensemble_proba, classes)
+            calibration_metrics = {"brier": round(brier, 4), "ece": round(ece, 4)}
+        except Exception as e:
+            print(f"    Calibration metrics failed for {target}: {e}")
+            calibration_metrics = {"brier": None, "ece": None}
+
         # ── SAVE MODEL ────────────────────────────────────────────
         out_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
         os.makedirs(out_dir, exist_ok=True)
@@ -200,6 +257,7 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             "feature_medians": payload.feature_medians,
             "class_labels": payload.class_labels,
             "base_weights": payload.base_weights,
+            "calibration_metrics": calibration_metrics,
             "trained_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -218,7 +276,8 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             "file_size": size,
             "accuracy": metrics.get("ensemble_accuracy", metrics.get("rf_accuracy", 0.0)),
             "logloss": metrics.get("ensemble_logloss", metrics.get("rf_logloss", 0.0)),
-            "brier": 0.0,  # Computed on upload if needed
+            "brier": calibration_metrics.get("brier", 0.0),
+            "ece": calibration_metrics.get("ece", 0.0),
             "feature_count": len(selected_cols),
             "train_rows": int(len(y_train)),
             "val_rows": int(len(y_val)),
@@ -233,6 +292,8 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
         })
         print(f"    {target}: acc={metrics.get('ensemble_accuracy', 'N/A')}, "
               f"ll={metrics.get('ensemble_logloss', 'N/A')}, "
+              f"brier={calibration_metrics.get('brier', 'N/A')}, "
+              f"ece={calibration_metrics.get('ece', 'N/A')}, "
               f"features={len(selected_cols)}")
 
     return results

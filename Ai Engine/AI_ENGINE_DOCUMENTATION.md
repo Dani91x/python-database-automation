@@ -75,9 +75,9 @@ Train & upload modelli per lega.
   - drop di tutti `target_*`
   - drop `*_fixture_id`, `*_team_id`
   - drop colonne non predittive (score finali, ecc.)
-- **Pesi temporali** (partite recenti contano di pi?).
+- **Pesi temporali** (partite recenti contano di più).
 - Calibrazione (`CalibratedClassifierCV`) quando possibile.
-- Metriche salvate: accuracy, logloss, brier, feature_count.
+- Metriche salvate: accuracy, logloss, **brier**, **ece**, feature_count.
 - Salvataggio su bucket `ai-models` e registry `ai_model_registry`.
 
 ### 6) `ai_engine/predict_fixture.py`
@@ -88,17 +88,25 @@ Predizione singolo fixture_id.
 2. Recupera storico 3 anni per la lega.
 3. Costruisce feature.
 4. Carica modelli dal bucket per quella lega.
-5. Predice probabilit? (`targets_raw`).
+5. Predice probabilità (`targets_raw`).
 6. Calibra output con shrink basato su reliability (`targets`).
-7. Calcola `profit_balance` se odds disponibili.
-8. Scrive `model_predictions_json` in DB (se `--store`).
+7. **Applica Confidence Gates (4 livelli)** incluso quality check (Brier/ECE).
+8. Calcola `profit_balance` se odds disponibili.
+9. Scrive `model_predictions_json` in DB (se `--store`).
 
 **Output JSON**:
+- `schema_version`: "2.0"
+- `run_id`: UUID univoco
 - `targets` (calibrati)
 - `targets_raw` (grezzi)
+- `targets_skipped`: target senza modello
+- `targets_not_reliable`: target falliti al Gate 4
 - `coverage` (features_pct, matches_home/away, detail)
 - `profit_balance`
 - `reliability` (score/grade/alpha)
+- `calibration_metrics` (Brier/ECE)
+- `confidence_gates`: risultato dei 4 gate
+- `bet_signals`: value bets filtrate
 
 ### 7) `ai_engine/generate_fixture_report.py`
 Genera report leggibile in `Ai Engine/reports/`.
@@ -118,24 +126,25 @@ Calcolo coverage per gruppi feature:
 - team stats, player stats, events
 - team_window_stats
 - standings
+- **historical**: storico partite
 
 ### 10) `ai_engine/audit_nulls.py`
 Audit dati mancanti per lega:
 - report su nulls per feature
 - coverage gruppi
-- top colonne con pi? null
+- top colonne con più null
 
 Output:
 - `Ai Engine/reports/audit_nulls_league_<id>.md`
 
-### 11) `ai_engine/evaluate_holdout.py`
-Valutazione scientifica:
-- holdout per stagione
-- metriche: accuracy, logloss, brier, ECE
-- top feature importance (se disponibile)
+### 11) `ai_engine/backtest.py`
+Backtest walk-forward realistico:
+- Uso di **quote reali** da `match_odds`
+- Metriche: ROI, Yield, Drawdown, Sharpe, **Brier**, **Baseline Accuracy**, **Lift**
+- Report per target e globale
 
 Output:
-- `Ai Engine/reports/eval_holdout_league_<id>.md`
+- `Ai Engine/reports/backtest_league_<id>.md`
 
 ---
 
@@ -147,7 +156,7 @@ Output:
 - percent_home/draw/away (API)
 - raw_json (API response)
 - raw_json_odds (odds pre-match)
-- model_predictions_json (output ML)
+- model_predictions_json (output ML v2.0)
 - db_json_analisi (terza analisi Poisson/xG - via Prediction)
 
 ### Tabella `matches`
@@ -166,6 +175,10 @@ Output:
 ### Tabella `match_player_stats`
 - fixture_id, team_id, minutes, shots, passes, etc.
 
+### Tabella `match_odds`
+- fixture_id, bookmaker_name, bet_name, bet_value, odd
+- Usata per backtest realistico e value betting
+
 ### Tabella `standings`
 - league_id, season_year, team_id
 - rank, points, goals_for, goals_against, form
@@ -177,13 +190,18 @@ Output:
 
 ## Output principali
 
-### `model_predictions_json`
+### `model_predictions_json` (v2.0)
 Contiene:
+- `run_id`: tracciabilità
 - `targets`: output calibrato
 - `targets_raw`: output grezzo
+- `targets_skipped`: lista target ignorati
+- `targets_not_reliable`: lista target scartati per calibrazione
 - `coverage`: percentuale feature + dettagli
 - `profit_balance`: 1x2/OU/BTTS
 - `reliability`: score e grade
+- `calibration_metrics`: Brier/ECE
+- `confidence_gates`: 4 livelli (Dati, Modelli, Valore, Calibrazione)
 
 ### `db_json_analisi`
 Terza analisi Poisson/xG:
@@ -193,13 +211,14 @@ Terza analisi Poisson/xG:
 
 ---
 
-## Differenze chiave rispetto all?originale
+## Differenze chiave rispetto all’originale
 - Nessun CSV
 - Feature basate esclusivamente sul DB
 - Modelli separati per lega
-- Calibrazione + reliability
-- Odds come feature
-- Audit e holdout integrati
+- Leakage rimosso (`train_df` scope fix)
+- Calibrazione (`_ece_score`, `_brier_score`) + Gate 4
+- Odds reali nel backtest
+- Versionamento JSON output (v2.0)
 
 ---
 

@@ -70,11 +70,6 @@ def run_daily_report(target_date: date | None = None, include_matches: bool = Tr
         "target_exact_score",
     ]
 
-    # Drop post-match features for training (prevent leakage)
-    drop_cols += [c for c in train_df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
-    drop_cols += [c for c in train_df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
-    drop_cols += [c for c in train_df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
-
     # add suggestions
     suggestions = df.apply(suggest_market, axis=1)
     df["suggested_market"] = suggestions.apply(lambda x: x.get("market"))
@@ -93,11 +88,18 @@ def run_daily_report(target_date: date | None = None, include_matches: bool = Tr
         if train_df.empty:
             continue
 
+        # Drop post-match features for training (prevent leakage)
+        # Must be computed here after train_df is available
+        league_drop_cols = list(drop_cols)
+        league_drop_cols += [c for c in train_df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
+        league_drop_cols += [c for c in train_df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
+        league_drop_cols += [c for c in train_df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
+
         if not target_cols:
             target_cols = [c for c in train_df.columns if c.startswith("target_")]
 
         for target in target_cols:
-            results = train_and_predict(train_df, pred_df, target, drop_cols)
+            results = train_and_predict(train_df, pred_df, target, league_drop_cols)
             if not results:
                 continue
 
