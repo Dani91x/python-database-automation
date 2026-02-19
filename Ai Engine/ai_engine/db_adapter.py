@@ -5,6 +5,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from db_client import get_supabase_client
 
+import time as _time
+
+_MAX_RETRIES = 3
+_RETRY_BACKOFF = 2  # seconds, doubled each retry
+
 
 def _chunked(items: List[Any], size: int) -> Iterable[List[Any]]:
     for i in range(0, len(items), size):
@@ -20,6 +25,7 @@ def _fetch_all(
     """
     Fetch all rows from a table with optional filters.
     Filters are tuples (op, column, value), e.g. ("eq", "league_id", 39).
+    Includes retry logic to handle transient connection errors.
     """
     sb = get_supabase_client()
     offset = 0
@@ -40,8 +46,35 @@ def _fetch_all(
                 else:
                     raise ValueError(f"Unsupported filter op: {op}")
 
-        resp = query.range(offset, offset + page_size - 1).execute()
-        data = getattr(resp, "data", None) or []
+        # Retry with exponential backoff on transient errors
+        data = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = query.range(offset, offset + page_size - 1).execute()
+                data = getattr(resp, "data", None) or []
+                break
+            except Exception as e:
+                if attempt < _MAX_RETRIES - 1:
+                    wait = _RETRY_BACKOFF * (2 ** attempt)
+                    print(f"  [db_adapter] Retry {attempt+1}/{_MAX_RETRIES} for {table} "
+                          f"(offset={offset}): {e!r} — waiting {wait}s")
+                    _time.sleep(wait)
+                    sb = get_supabase_client()  # refresh client
+                    # re-build query after reconnect
+                    query = sb.table(table).select(columns)
+                    if filters:
+                        for op, col, val in filters:
+                            if op == "eq":
+                                query = query.eq(col, val)
+                            elif op == "gte":
+                                query = query.gte(col, val)
+                            elif op == "lt":
+                                query = query.lt(col, val)
+                            elif op == "in":
+                                query = query.in_(col, val)
+                else:
+                    raise  # all retries exhausted
+
         results.extend(data)
         if len(data) < page_size:
             break
@@ -113,8 +146,8 @@ def fetch_related_by_fixture_ids(
     results: List[Dict[str, Any]] = []
     if table == "match_odds":
         # reduce payload to avoid timeouts on large odds tables
-        page_size = min(page_size, 50)
-        chunk_size = min(chunk_size, 50)
+        page_size = min(page_size, 200)
+        chunk_size = min(chunk_size, 200)
     for chunk in _chunked(fixture_ids, chunk_size):
         filters = [("in", "fixture_id", chunk)]
         if extra_filters:

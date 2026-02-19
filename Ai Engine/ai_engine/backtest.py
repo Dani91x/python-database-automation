@@ -41,15 +41,15 @@ from ai_engine.value_betting import (
 )
 
 
-# Mapping from target names to odds column prefixes in match_odds
+# Mapping from target names to odds keys built as "{market_name}_{label}".lower()
 TARGET_ODDS_MAP = {
-    "target_1x2": {"H": "odds_1x2_home", "D": "odds_1x2_draw", "A": "odds_1x2_away"},
-    "target_btts": {"True": "odds_btts_yes", "False": "odds_btts_no"},
-    "target_over_0_5": {"True": "odds_over_0_5", "False": "odds_under_0_5"},
-    "target_over_1_5": {"True": "odds_over_1_5", "False": "odds_under_1_5"},
-    "target_over_2_5": {"True": "odds_over_2_5", "False": "odds_under_2_5"},
-    "target_over_3_5": {"True": "odds_over_3_5", "False": "odds_under_3_5"},
-    "target_over_4_5": {"True": "odds_over_4_5", "False": "odds_under_4_5"},
+    "target_1x2": {"H": "match_winner_home", "D": "match_winner_draw", "A": "match_winner_away"},
+    "target_btts": {"True": "both_teams_score_yes", "False": "both_teams_score_no"},
+    "target_over_0_5": {"True": "goals_over/under_over_0.5", "False": "goals_over/under_under_0.5"},
+    "target_over_1_5": {"True": "goals_over/under_over_1.5", "False": "goals_over/under_under_1.5"},
+    "target_over_2_5": {"True": "goals_over/under_over_2.5", "False": "goals_over/under_under_2.5"},
+    "target_over_3_5": {"True": "goals_over/under_over_3.5", "False": "goals_over/under_under_3.5"},
+    "target_over_4_5": {"True": "goals_over/under_over_4.5", "False": "goals_over/under_under_4.5"},
 }
 
 
@@ -59,7 +59,7 @@ def _fetch_odds_by_fixture(fixture_ids: List[int]) -> Dict[int, Dict[str, float]
         return {}
     rows = fetch_related_by_fixture_ids(
         "match_odds", fixture_ids,
-        columns="fixture_id,bookmaker_name,bet_name,bet_value,odd",
+        columns="fixture_id,bookmaker_name,market_name,label,odd_value",
     )
     odds_by_fid: Dict[int, Dict[str, float]] = {}
     for r in rows:
@@ -68,17 +68,17 @@ def _fetch_odds_by_fixture(fixture_ids: List[int]) -> Dict[int, Dict[str, float]
             continue
         if fid not in odds_by_fid:
             odds_by_fid[fid] = {}
-        bet_name = str(r.get("bet_name", "")).strip()
-        bet_value = str(r.get("bet_value", "")).strip()
-        odd = r.get("odd")
-        if odd is None:
+        market_name = str(r.get("market_name", "")).strip()
+        label = str(r.get("label", "")).strip()
+        odd_value = r.get("odd_value")
+        if odd_value is None:
             continue
         try:
-            odd_f = float(odd)
+            odd_f = float(odd_value)
         except (ValueError, TypeError):
             continue
-        # Map to standardized keys
-        key = f"{bet_name}_{bet_value}".lower().replace(" ", "_")
+        # Map to standardized keys: "{market_name}_{label}" in lowercase
+        key = f"{market_name}_{label}".lower().replace(" ", "_")
         # Store the best (first) odds we find
         if key not in odds_by_fid[fid]:
             odds_by_fid[fid][key] = odd_f
@@ -190,6 +190,12 @@ def run_backtest(
     if not splits:
         return {"error": "Not enough data for walk-forward splits"}
 
+    # Prefetch ALL odds once to avoid repeated Supabase calls per fold/target
+    all_fixture_ids = df["fixture_id"].dropna().astype(int).tolist() if "fixture_id" in df.columns else []
+    print(f"Fetching real odds for {len(all_fixture_ids)} fixtures (this may take a moment)...")
+    odds_lookup_all = _fetch_odds_by_fixture(all_fixture_ids)
+    print(f"  Found odds for {len(odds_lookup_all)} fixtures")
+
     results_per_target: Dict[str, Dict[str, Any]] = {}
     all_bets: List[Dict[str, Any]] = []
 
@@ -258,9 +264,8 @@ def run_backtest(
                 "lift_vs_baseline": round(acc - baseline_acc, 4),
             })
 
-            # Use real odds from match_odds table
-            val_fixture_ids = df.iloc[valid_val]["fixture_id"].tolist() if "fixture_id" in df.columns else []
-            odds_lookup_fold = _fetch_odds_by_fixture([int(fid) for fid in val_fixture_ids if pd.notna(fid)])
+            # Use prefetched real odds (no per-fold DB calls)
+            odds_lookup_fold = odds_lookup_all
 
             for i in range(len(y_val_arr)):
                 best_idx = int(np.argmax(proba[i]))
@@ -386,7 +391,10 @@ def generate_backtest_report(league_id: int, **kwargs) -> str:
     """Run backtest and save report as markdown."""
     result = run_backtest(league_id, **kwargs)
 
-    report_dir = os.path.join("Ai Engine", "reports")
+    # Determine absolute path to "reports" folder (sibling of "ai_engine" package)
+    script_dir = os.path.dirname(os.path.abspath(__file__))  # .../ai_engine
+    project_root = os.path.dirname(script_dir)  # .../Ai Engine
+    report_dir = os.path.join(project_root, "reports")
     os.makedirs(report_dir, exist_ok=True)
     path = os.path.join(report_dir, f"backtest_league_{league_id}.md")
 
