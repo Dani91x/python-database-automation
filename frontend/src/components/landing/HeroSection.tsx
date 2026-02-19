@@ -11,8 +11,13 @@ export function HeroSection({ onCtaClick, onLoginClick }: HeroSectionProps) {
         <section className="relative min-h-screen flex flex-col justify-center overflow-hidden bg-black text-white">
             {/* Navbar */}
             <nav className="absolute top-0 left-0 w-full z-50 px-6 py-6 md:px-12 flex justify-between items-center bg-transparent">
-                <div className="flex items-center gap-2">
-                    <img src="/logo.png" alt="Alpha Score" className="h-12 md:h-16 w-auto" />
+                <div className="flex flex-col select-none cursor-pointer hover:scale-105 transition-transform duration-300" onClick={() => window.location.href = '/'}>
+                    <span className="font-display font-bold text-2xl md:text-3xl tracking-widest text-white leading-none drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
+                        ALPHA
+                    </span>
+                    <span className="font-display text-[10px] md:text-xs tracking-[0.3em] text-primary uppercase leading-none self-end drop-shadow-[0_0_5px_rgba(17,197,120,0.5)]">
+                        SCORE
+                    </span>
                 </div>
                 <div className="hidden md:flex gap-8 items-center">
                     <button onClick={onLoginClick} className="text-sm font-bold uppercase tracking-widest text-white hover:text-primary transition-colors">
