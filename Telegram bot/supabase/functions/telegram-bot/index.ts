@@ -183,8 +183,101 @@ bot.on("callback_query:data", async (ctx) => {
         return output.trim();
       };
 
+      // Helper per formattare specificamente le predizioni Machine Learning (AI)
+      const formatMlAnalysis = (parsedData: any): string => {
+        let output = "";
+
+        if (parsedData.reliability) {
+          const rel = parsedData.reliability;
+          const rGrade = rel.grade === 'high' ? 'Alta 🟢' : rel.grade === 'medium' ? 'Media 🟡' : 'Bassa 🔴';
+          const score = rel.score ? (rel.score * 100).toFixed(0) : '?';
+          output += `⚙️ <b>Affidabilità Modello:</b> ${rGrade} (${score}%)\n`;
+        }
+
+        if (parsedData.bet_signals && parsedData.bet_signals.length > 0) {
+          output += `\n🎯 <b>Segnali di Valore (Value Bets):</b>\n`;
+          parsedData.bet_signals.forEach((sig: any) => {
+            let act = String(sig.action);
+            if (act.includes('Home') || act === 'H') act = '1 (Casa)';
+            if (act.includes('Away') || act === 'A') act = '2 (Trasferta)';
+            if (act.includes('Draw') || act === 'D') act = 'X (Pareggio)';
+            if (act === 'True') act = 'Si / Over';
+            if (act === 'False') act = 'No / Under';
+
+            const mProb = sig.model_prob ? (sig.model_prob * 100).toFixed(0) : '?';
+            const edge = sig.edge ? (sig.edge * 100).toFixed(1) : '?';
+
+            output += `   🔥 <b>${sig.market}</b>: Punta su <b>${act}</b>\n`;
+            output += `      Quota: ${sig.decimal_odds} | Nostra Prob: ${mProb}%\n`;
+            output += `      Vantaggio Matematico (Edge): +${edge}%\n`;
+            if (sig.kelly_stake) output += `      Puntata Ottimale: ${sig.kelly_stake}€\n`;
+          });
+        } else {
+          output += `\n🎯 <b>Segnali di Valore:</b> Nessuna quota con un reale vantaggio matematico puro trovata sui bookmaker.\n`;
+        }
+
+        if (parsedData.targets) {
+          output += `\n📊 <b>Predizioni Principali ML (Prob. Nette):</b>\n`;
+          const t = parsedData.targets;
+          if (t.target_1x2) {
+            const h = (t.target_1x2.H !== undefined ? t.target_1x2.H : t.target_1x2.Home || 0) * 100;
+            const d = (t.target_1x2.D !== undefined ? t.target_1x2.D : t.target_1x2.Draw || 0) * 100;
+            const a = (t.target_1x2.A !== undefined ? t.target_1x2.A : t.target_1x2.Away || 0) * 100;
+            if (h > 0) output += `   • <b>Esito Finale:</b> 1 (${h.toFixed(0)}%) | X (${d.toFixed(0)}%) | 2 (${a.toFixed(0)}%)\n`;
+          }
+          if (t.target_ht_1x2) {
+            const h = (t.target_ht_1x2.H !== undefined ? t.target_ht_1x2.H : t.target_ht_1x2.Home || 0) * 100;
+            const d = (t.target_ht_1x2.D !== undefined ? t.target_ht_1x2.D : t.target_ht_1x2.Draw || 0) * 100;
+            const a = (t.target_ht_1x2.A !== undefined ? t.target_ht_1x2.A : t.target_ht_1x2.Away || 0) * 100;
+            if (h > 0) output += `   • <b>Esito 1° Tempo:</b> 1 (${h.toFixed(0)}%) | X (${d.toFixed(0)}%) | 2 (${a.toFixed(0)}%)\n`;
+          }
+          if (t.target_btts) {
+            const y = (t.target_btts.True !== undefined ? t.target_btts.True : t.target_btts.Yes || 0) * 100;
+            const n = (t.target_btts.False !== undefined ? t.target_btts.False : t.target_btts.No || 0) * 100;
+            if (y > 0) output += `   • <b>Gol/No Gol:</b> Gol (${y.toFixed(0)}%) | No Gol (${n.toFixed(0)}%)\n`;
+          }
+          if (t.target_over_1_5) {
+            const o = (t.target_over_1_5.True !== undefined ? t.target_over_1_5.True : t.target_over_1_5.Over || 0) * 100;
+            const u = (t.target_over_1_5.False !== undefined ? t.target_over_1_5.False : t.target_over_1_5.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Over 1.5:</b> Over (${o.toFixed(0)}%) | Under (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_over_2_5) {
+            const o = (t.target_over_2_5.True !== undefined ? t.target_over_2_5.True : t.target_over_2_5.Over || 0) * 100;
+            const u = (t.target_over_2_5.False !== undefined ? t.target_over_2_5.False : t.target_over_2_5.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Over 2.5:</b> Over (${o.toFixed(0)}%) | Under (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_over_3_5) {
+            const o = (t.target_over_3_5.True !== undefined ? t.target_over_3_5.True : t.target_over_3_5.Over || 0) * 100;
+            const u = (t.target_over_3_5.False !== undefined ? t.target_over_3_5.False : t.target_over_3_5.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Over 3.5:</b> Over (${o.toFixed(0)}%) | Under (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_home_over_0_5) {
+            const o = (t.target_home_over_0_5.True !== undefined ? t.target_home_over_0_5.True : t.target_home_over_0_5.Over || 0) * 100;
+            const u = (t.target_home_over_0_5.False !== undefined ? t.target_home_over_0_5.False : t.target_home_over_0_5.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Subisce Casa (>0.5):</b> Si (${o.toFixed(0)}%) | No (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_away_over_0_5) {
+            const o = (t.target_away_over_0_5.True !== undefined ? t.target_away_over_0_5.True : t.target_away_over_0_5.Over || 0) * 100;
+            const u = (t.target_away_over_0_5.False !== undefined ? t.target_away_over_0_5.False : t.target_away_over_0_5.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Subisce Trasferta (>0.5):</b> Si (${o.toFixed(0)}%) | No (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_corners_total) {
+            const o = (t.target_corners_total.True !== undefined ? t.target_corners_total.True : t.target_corners_total.Over || 0) * 100;
+            const u = (t.target_corners_total.False !== undefined ? t.target_corners_total.False : t.target_corners_total.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Calci d'Angolo (>9.5):</b> Over (${o.toFixed(0)}%) | Under (${u.toFixed(0)}%)\n`;
+          }
+          if (t.target_cards_total) {
+            const o = (t.target_cards_total.True !== undefined ? t.target_cards_total.True : t.target_cards_total.Over || 0) * 100;
+            const u = (t.target_cards_total.False !== undefined ? t.target_cards_total.False : t.target_cards_total.Under || 0) * 100;
+            if (o > 0) output += `   • <b>Cartellini (>4.5):</b> Over (${o.toFixed(0)}%) | Under (${u.toFixed(0)}%)\n`;
+          }
+        }
+
+        return output.trim();
+      };
+
       // Helper function to safely parse and format JSON data
-      const formatJsonData = (jsonData: any, fallbackMessage: string, isDbAnalysis: boolean = false) => {
+      const formatJsonData = (jsonData: any, fallbackMessage: string, isDbAnalysis: boolean = false, isMlAnalysis: boolean = false) => {
         if (!jsonData) return `<i>${fallbackMessage}</i>`;
         try {
           // If it's a string, try parsing it
@@ -201,6 +294,12 @@ bot.on("callback_query:data", async (ctx) => {
             if (isDbAnalysis && (parsedData.markets || parsedData.inputs || parsedData.model)) {
               const humanFormatted = formatDbAnalysis(parsedData);
               if (humanFormatted !== "") return humanFormatted;
+            }
+
+            // Format data specifically for ML analisi
+            if (isMlAnalysis && (parsedData.bet_signals || parsedData.targets)) {
+              const mlFormatted = formatMlAnalysis(parsedData);
+              if (mlFormatted !== "") return mlFormatted;
             }
 
             const keysToIgnore = new Set(["league_id", "fixture_id", "season_year", "generated_at"]);
@@ -262,8 +361,8 @@ bot.on("callback_query:data", async (ctx) => {
         }
 
         // Parse JSON sections safely
-        const dbAnalysisText = formatJsonData(match.db_json_analisi, "Nessuna informazione aggiuntiva dal database.", true);
-        const mlPredictionText = formatJsonData(match.model_predictions_json, "coming soon..");
+        const dbAnalysisText = formatJsonData(match.db_json_analisi, "Nessuna informazione aggiuntiva dal database.", true, false);
+        const mlPredictionText = formatJsonData(match.model_predictions_json, "coming soon..", false, true);
 
         // Safely extract primitive fields handling nulls
         let adviceStr = match.advice ? match.advice : 'N/D';
