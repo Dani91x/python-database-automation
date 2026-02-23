@@ -6,9 +6,9 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 # ----------------------------------------------------------
 # Ensure project root is on sys.path so absolute imports work
@@ -115,6 +115,108 @@ def fetch_fixtures_for_date(api: APIFootballClient, target_date: str) -> List[Di
     resp = data.get("response") or []
     logger.info("📌 Fixtures trovate per date=%s: %s", target_date, len(resp))
     return resp
+
+
+# ==============================
+# Helper per il logging / DB
+# ==============================
+
+def setup_logger() -> logging.Logger:
+    pass # defined above
+    
+# --- CACHE BLACKLIST DINAMICA ---
+_TOXIC_LEAGUES_CACHE: Optional[Set[int]] = None
+
+def get_toxic_leagues() -> Set[int]:
+    """
+    Ricalcola dinamicamente la blacklist delle leghe sfavorevoli.
+    Scarica i match "Elite" degli ultimi 3 mesi, calcola il P/L 
+    simulato a quota 1.35 per ogni lega, e restituisce il set di league_id
+    che hanno un P/L negativo.
+    """
+    global _TOXIC_LEAGUES_CACHE
+    if _TOXIC_LEAGUES_CACHE is not None:
+        return _TOXIC_LEAGUES_CACHE
+
+    logger.info("Calcolo dinamico della Blacklist Leghe in corso...")
+    sb = get_supabase_client()
+    
+    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    
+    # Prendi tutte le predictions che sono Elite e matches FT
+    # Questo richiede una join. Con l'API REST di Supabase (postgrest):
+    # sb.table("fixture_predictions").select("fixture_id, league_id, ht_predictions, matches!inner(halftime_home, halftime_away, status_short, fixture_date)").eq("matches.status_short", "FT").gte("matches.fixture_date", cutoff_date).execute()
+    # Ma per non complicare la sintassi postgrest con JSONB filter, usiamo un batch.
+    
+    res = sb.table("matches") \
+        .select("fixture_id, league_id, halftime_home, halftime_away, status_short") \
+        .in_("status_short", ["FT", "AET", "PEN"]) \
+        .gte("fixture_date", cutoff_date) \
+        .execute()
+    
+    matches_data = getattr(res, "data", [])
+    if not matches_data:
+        _TOXIC_LEAGUES_CACHE = set()
+        return _TOXIC_LEAGUES_CACHE
+
+    match_dict = {m["fixture_id"]: m for m in matches_data}
+    match_ids = list(match_dict.keys())
+    
+    batch_size = 500
+    elite_predictions = []
+    
+    for i in range(0, len(match_ids), batch_size):
+        batch = match_ids[i:i+batch_size]
+        p_res = sb.table("fixture_predictions") \
+            .select("fixture_id, ht_predictions, db_json_analisi") \
+            .in_("fixture_id", batch) \
+            .neq("ht_predictions", "null") \
+            .execute()
+        
+        for p in getattr(p_res, "data", []):
+            ht = p.get("ht_predictions")
+            if not ht: continue
+            if isinstance(ht, str):
+                import json
+                try: ht = json.loads(ht)
+                except: continue
+                
+            # Verifica trifecta cruda o flag is_elite (se già calcolato)
+            is_e = ht.get("is_elite", False)
+            if is_e:
+                 elite_predictions.append(p)
+                 
+    league_stats = {}
+    
+    for p in elite_predictions:
+        fix_id = p["fixture_id"]
+        m = match_dict.get(fix_id)
+        if not m: continue
+        
+        l_id = m["league_id"]
+        goals_ht = (m.get("halftime_home") or 0) + (m.get("halftime_away") or 0)
+        is_win = 1 if goals_ht > 0 else 0
+        
+        if l_id not in league_stats:
+            league_stats[l_id] = {"total": 0, "wins": 0}
+        
+        league_stats[l_id]["total"] += 1
+        league_stats[l_id]["wins"] += is_win
+            
+    toxic_set = set()
+    for l_id, stats in league_stats.items():
+        total = stats["total"]
+        wins = stats["wins"]
+        losses = total - wins
+        if total == 0: continue
+            
+        profit = (wins * 0.35) - (losses * 1.0)
+        if profit < 0:
+            toxic_set.add(l_id)
+            
+    logger.info(f"Blacklist Dinamica calcolata: trovate {len(toxic_set)} leghe non profittevoli.")
+    _TOXIC_LEAGUES_CACHE = toxic_set
+    return _TOXIC_LEAGUES_CACHE
 
 
 # ==============================
@@ -251,20 +353,20 @@ def upsert_odds_row(fixture_id: int, raw_json_odds: Optional[Dict[str, Any]]) ->
         logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
 
 
-def upsert_db_json_analisi(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]]) -> None:
+def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]], ht_predictions: Optional[Dict[str, Any]]) -> None:
     """
-    Salva il JSON della terza analisi in fixture_predictions.db_json_analisi.
-    Non tocca gli altri campi.
+    Salva sia l'analisi completa che quella specifica per l'HT.
     """
     sb = get_supabase_client()
     row = {
         "db_json_analisi": db_json_analisi,
+        "ht_predictions": ht_predictions,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
     updated = getattr(resp, "data", None)
     if not updated:
-        logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (db_json_analisi non salvato)", fixture_id)
+        logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
 
 
 # ==============================
@@ -274,13 +376,13 @@ def upsert_db_json_analisi(fixture_id: int, db_json_analisi: Optional[Dict[str, 
 def prediction_already_done(fixture_id: int) -> bool:
     """
     Ritorna True se in fixture_predictions esiste già una riga per fixture_id
-    con status='ok'. In quel caso skippiamo la chiamata API /predictions.
+    con status='ok' E ht_predictions non è nullo. In quel caso skippiamo la chiamata.
     """
     sb = get_supabase_client()
     try:
         resp = (
             sb.table("fixture_predictions")
-            .select("fixture_id,status")
+            .select("fixture_id,status,ht_predictions")
             .eq("fixture_id", fixture_id)
             .maybe_single()
             .execute()
@@ -288,7 +390,11 @@ def prediction_already_done(fixture_id: int) -> bool:
         row = getattr(resp, "data", None) or None
         if not row:
             return False
-        return row.get("status") == "ok"
+        if row.get("status") != "ok":
+            return False
+        if row.get("ht_predictions") is None:
+            return False
+        return True
     except Exception as e:
         # Se il check fallisce, NON blocchiamo: meglio chiamare l'API che perdere dati
         logger.warning("⚠️ Errore check prediction_already_done fixture_id=%s: %s", fixture_id, e)
@@ -606,10 +712,16 @@ def compute_db_json_analisi(
 
     p_home_1h = _team_p_goal_1h(home_matches)
     p_away_1h = _team_p_goal_1h(away_matches)
-    p_goal_1h = 1.0 - ((1 - p_home_1h) * (1 - p_away_1h))
+    p_goal_1h_freq = 1.0 - ((1 - p_home_1h) * (1 - p_away_1h))
 
-    return {
-        "model": "poisson_xg",
+    # --- HYBRID HT MODEL ---
+    lambda_1h = (lambda_home + lambda_away) * 0.45
+    p_goal_1h_poisson = 1.0 - math.exp(-lambda_1h)
+    p_hybrid_1h = (p_goal_1h_freq + p_goal_1h_poisson) / 2.0
+    # -----------------------
+
+    analysis = {
+        "model": "poisson_xg_hybrid",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "league_id": int(league_id),
         "season_year": int(season_year),
@@ -617,6 +729,7 @@ def compute_db_json_analisi(
         "inputs": {
             "lambda_home": round(lambda_home, 4),
             "lambda_away": round(lambda_away, 4),
+            "lambda_1h_tot": round(lambda_1h, 4),
             "league_home_avg": round(league_home_avg, 4),
             "league_away_avg": round(league_away_avg, 4),
             "league_total_avg": round(league_total_avg, 4),
@@ -629,7 +742,14 @@ def compute_db_json_analisi(
             "1x2": {"H": round(p_home, 4), "D": round(p_draw, 4), "A": round(p_away, 4)},
             "over_2_5": {"True": round(p_over25, 4), "False": round(p_under25, 4)},
             "btts": {"True": round(p_btts, 4), "False": round(p_btts_no, 4)},
-            "first_half_over_0_5": {"True": round(p_goal_1h, 4), "False": round(1.0 - p_goal_1h, 4)},
+            "first_half_over_0_5": {
+                "True": round(p_hybrid_1h, 4), 
+                "False": round(1.0 - p_hybrid_1h, 4),
+                "details": {
+                    "freq": round(p_goal_1h_freq, 4),
+                    "poisson": round(p_goal_1h_poisson, 4)
+                }
+            },
         },
         "coverage": {
             "windows_used": {
@@ -639,6 +759,28 @@ def compute_db_json_analisi(
             "xg_used": {"home": int(stats15_h.get("xg_used", 0)), "away": int(stats15_a.get("xg_used", 0))},
         },
     }
+    
+    # --- DYNAMIC BLACKLIST CHECK ---
+    toxic_leagues = get_toxic_leagues()
+    
+    is_elite = False
+    if int(league_id) not in toxic_leagues:
+        # Il Filtro Trifecta: Freq >= 75%, Poisson >= 75%, Match Lambda >= 2.70
+        is_elite = (p_goal_1h_freq >= 0.75 and 
+                    p_goal_1h_poisson >= 0.75 and 
+                    (lambda_home + lambda_away) >= 2.70)
+    
+    ht_pred = {
+        "hybrid_prob": round(p_hybrid_1h, 4),
+        "lambda_1h": round(lambda_1h, 4),
+        "is_elite": is_elite,
+        "details": {
+            "freq": round(p_goal_1h_freq, 4),
+            "poisson": round(p_goal_1h_poisson, 4)
+        }
+    }
+    
+    return analysis, ht_pred
 
 
 # ==============================
@@ -809,8 +951,10 @@ def run_for_date(target_date: str) -> None:
 
             # db_json_analisi (sempre)
             try:
-                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                upsert_db_json_analisi(fixture_id, analysis_json)
+                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                if res:
+                    analysis_json, ht_pred = res
+                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
             except Exception as e:
                 logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
             continue
@@ -859,8 +1003,10 @@ def run_for_date(target_date: str) -> None:
 
             # db_json_analisi (sempre)
             try:
-                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                upsert_db_json_analisi(fixture_id, analysis_json)
+                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                if res:
+                    analysis_json, ht_pred = res
+                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
             except Exception as e:
                 logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
             continue
@@ -897,8 +1043,10 @@ def run_for_date(target_date: str) -> None:
 
             # db_json_analisi (sempre)
             try:
-                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                upsert_db_json_analisi(fixture_id, analysis_json)
+                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                if res:
+                    analysis_json, ht_pred = res
+                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
             except Exception as e:
                 logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
 
@@ -941,8 +1089,10 @@ def run_for_date(target_date: str) -> None:
 
             # db_json_analisi (sempre)
             try:
-                analysis_json = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                upsert_db_json_analisi(fixture_id, analysis_json)
+                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                if res:
+                    analysis_json, ht_pred = res
+                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
             except Exception as e:
                 logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
 

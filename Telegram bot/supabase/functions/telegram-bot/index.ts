@@ -26,22 +26,32 @@ if (!botToken) {
 const bot = new Bot(botToken);
 
 // Create the main menu keyboard
-const menuKeyboard = new InlineKeyboard()
+const mainMenuKeyboard = new InlineKeyboard()
+  .text("🎯 HT Sniper", "menu_ht_sniper").row()
+  .text("📊 Predictions", "menu_predictions");
+
+// Create the predictions (leagues) keyboard
+const leaguesKeyboard = new InlineKeyboard()
   .text(LEAGUES[135], "league_135").text(LEAGUES[136], "league_136").row()
   .text(LEAGUES[39], "league_39").text(LEAGUES[140], "league_140").row()
   .text(LEAGUES[61], "league_61").text(LEAGUES[78], "league_78").row()
   .text(LEAGUES[2], "league_2").text(LEAGUES[3], "league_3").row()
-  .text(LEAGUES[848], "league_848");
+  .text(LEAGUES[848], "league_848").row()
+  .text("🔙 Torna al Menù", "menu_main");
+
+// Back button keyboard for individual reports
+const backToMainKeyboard = new InlineKeyboard()
+  .text("🔙 Torna al Menù", "menu_main");
 
 bot.command("start", (ctx) => {
-  return ctx.reply("Bentornato! Seleziona una lega per vedere le previsioni di oggi:", {
-    reply_markup: menuKeyboard,
+  return ctx.reply("Bentornato su Alpha Score! 🚀\nScegli cosa vuoi visualizzare oggi:", {
+    reply_markup: mainMenuKeyboard,
   });
 });
 
 bot.command("partite", (ctx) => {
-  return ctx.reply("Seleziona una lega per le partite di oggi:", {
-    reply_markup: menuKeyboard,
+  return ctx.reply("Scegli un'opzione dal menù principale:", {
+    reply_markup: mainMenuKeyboard,
   });
 });
 
@@ -49,6 +59,130 @@ bot.command("partite", (ctx) => {
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
+  // Navigazione Menù Principale
+  if (data === "menu_main") {
+    await ctx.answerCallbackQuery();
+    return ctx.editMessageText("Bentornato su Alpha Score! 🚀\nScegli cosa vuoi visualizzare oggi:", {
+      reply_markup: mainMenuKeyboard,
+    });
+  }
+
+  // Sottomenù Predictions (Leghe)
+  if (data === "menu_predictions") {
+    await ctx.answerCallbackQuery();
+    return ctx.editMessageText("Seleziona una lega per vedere le previsioni di oggi:", {
+      reply_markup: leaguesKeyboard,
+    });
+  }
+
+  // HT Sniper Query
+  if (data === "menu_ht_sniper") {
+    console.log(`[BOT] User requested HT Sniper`);
+    await ctx.answerCallbackQuery({ text: `Ricerca segnali Elite HT...` });
+
+    // Configura Supabase
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("MY_DB_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("MY_DB_KEY");
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[BOT] Missing DB credentials!");
+      await ctx.reply("Errore di sistema: Credenziali database non trovate nel server.");
+      return;
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString();
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString();
+
+    let waitMsg;
+    try {
+      waitMsg = await ctx.reply(`🎯 Sto cercando i segnali Elite HT per oggi...`);
+    } catch (e) {
+      console.error("[BOT] Failed to send wait message", e);
+    }
+
+    try {
+      // HT Sniper Query
+      const { data: matches, error } = await supabase
+        .from("fixture_predictions")
+        .select(`
+          fixture_id,
+          home_team_name,
+          away_team_name,
+          fixture_date,
+          ht_predictions
+        `)
+        .gte("fixture_date", todayStr)
+        .lt("fixture_date", tomorrowStr)
+        .not("ht_predictions", "is", null)
+        .order("fixture_date", { ascending: true });
+
+      if (error) throw error;
+
+      // Filtra solo le Elite in memoria (visto che JSON filter in query è complesso)
+      const eliteMatches = (matches || []).filter(m => {
+        if (!m.ht_predictions) return false;
+        // Supponendo the l'oggetto JSON sia già passato come object
+        const ht = typeof m.ht_predictions === 'string' ? JSON.parse(m.ht_predictions) : m.ht_predictions;
+        return ht.is_elite === true;
+      });
+
+      if (waitMsg) {
+        try { await ctx.api.deleteMessage(ctx.chat!.id, waitMsg.message_id); } catch (e) { }
+      }
+
+      if (eliteMatches.length === 0) {
+        await ctx.reply(`Nessun segnale HT Sniper trovato per oggi.`, { reply_markup: backToMainKeyboard });
+        return;
+      }
+
+      await ctx.reply(`🎯 <b>HT SNIPER - SEGALI ELITE DI OGGI</b>\nTrovati ${eliteMatches.length} segnali purificati.`, { parse_mode: "HTML" });
+
+      for (const match of eliteMatches) {
+        let dateStr = "N/D", timeStr = "N/D";
+        if (match.fixture_date) {
+          const matchDate = new Date(match.fixture_date);
+          dateStr = `${matchDate.getDate().toString().padStart(2, '0')}/${(matchDate.getMonth() + 1).toString().padStart(2, '0')}`;
+          timeStr = `${matchDate.getHours().toString().padStart(2, '0')}:${matchDate.getMinutes().toString().padStart(2, '0')}`;
+        }
+
+        const ht = typeof match.ht_predictions === 'string' ? JSON.parse(match.ht_predictions) : match.ht_predictions;
+        const prob = ht.hybrid_prob ? (ht.hybrid_prob * 100).toFixed(1) : '?';
+        const lambda = ht.lambda_1h ? ht.lambda_1h.toFixed(2) : '?';
+        const f = ht.details?.freq ? (ht.details.freq * 100).toFixed(0) : '?';
+        const p = ht.details?.poisson ? (ht.details.poisson * 100).toFixed(0) : '?';
+
+        const text = `
+🎯 <b>HT SNIPER: OVER 0.5 1° TEMPO</b>
+<b>🏟 ${match.home_team_name} vs ${match.away_team_name}</b>
+⏰ Oggi alle ${timeStr}
+
+📊 <b>Metriche del Modello Ibrido:</b>
+✅ <b>Probabilità Globale:</b> ${prob}%
+<i>(Calcolata incrociando la frequenza storica con la stima matematica attuale)</i>
+
+✅ <b>Intensità Offensiva (Lambda):</b> ${lambda}
+<i>(La forza d'attacco nel 1° tempo. Valori sopra 1.57 indicano alta probensione al gol)</i>
+
+🔍 <b>Analisi Dettagliata:</b> Storicamente questo evento si è verificato nel ${f}% dei match recenti. L'analisi Poisson stima una forza d'attacco attuale pari al ${p}%.
+`;
+        await ctx.reply(text, { parse_mode: "HTML", reply_markup: backToMainKeyboard });
+      }
+
+    } catch (err) {
+      console.error(`[HT SNIPER] Error:`, err);
+      await ctx.reply(`❌ Errore durante la ricerca HT Sniper.`, { reply_markup: backToMainKeyboard });
+    }
+    return;
+  }
+
+  // Risoluzione League
   if (data.startsWith("league_")) {
     const leagueId = parseInt(data.replace("league_", ""));
     const leagueName = LEAGUES[leagueId as keyof typeof LEAGUES];
@@ -128,7 +262,7 @@ bot.on("callback_query:data", async (ctx) => {
 
       if (!matches || matches.length === 0) {
         console.log(`[BOT] No matches found for ${leagueName}. Notifying user.`);
-        await ctx.reply(`Nessuna partita trovata oggi per ${leagueName}.`);
+        await ctx.reply(`Nessuna partita trovata oggi per ${leagueName}.`, { reply_markup: backToMainKeyboard });
         return;
       }
 
@@ -395,13 +529,14 @@ ${mlPredictionText}
 `;
 
         try {
-          await ctx.reply(text, { parse_mode: "HTML" });
+          // Aggiungiamo il bottone back all'ultimo messaggio (o a tutti per praticità)
+          await ctx.reply(text, { parse_mode: "HTML", reply_markup: backToMainKeyboard });
           console.log(`[BOT] Successfully sent message for ${match.home_team_name} vs ${match.away_team_name}`);
         } catch (telegramErr) {
           // Telegram might throw an error if the HTML is malformed or the message is too long
           console.error(`[TELEGRAM] Failed to send message for match ID ${match.fixture_id}:`, telegramErr);
           // Fallback plain text message
-          await ctx.reply(`Errore nell'invio del report per ${match.home_team_name} vs ${match.away_team_name}. Controlla i log di Supabase.`);
+          await ctx.reply(`Errore nell'invio del report per ${match.home_team_name} vs ${match.away_team_name}.`, { reply_markup: backToMainKeyboard });
         }
       }
 
@@ -410,7 +545,7 @@ ${mlPredictionText}
       if (err instanceof Error) {
         console.error(`[MAIN] Error stack:`, err.stack);
       }
-      await ctx.reply(`❌ Si è verificato un errore critico consultando il database per ${leagueName}. Segnala l'orario (${new Date().toISOString()}) per il debug nei log di Supabase.`);
+      await ctx.reply(`❌ Si è verificato un errore critico consultando il database per ${leagueName}. Segnala l'orario (${new Date().toISOString()}) per il debug nei log di Supabase.`, { reply_markup: backToMainKeyboard });
     }
   }
 });
