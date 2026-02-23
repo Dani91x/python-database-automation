@@ -461,7 +461,7 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
     targets_skipped: List[Dict[str, str]] = []
     targets_not_reliable: List[Dict[str, str]] = []
 
-    from .confidence_gate import MAX_BRIER_SCORE, MAX_ECE_SCORE
+    from ai_engine.confidence_gate import MAX_BRIER_SCORE, MAX_ECE_SCORE
     for t in ALL_DEFINED_TARGETS:
         if t not in modeled_targets:
             targets_skipped.append({

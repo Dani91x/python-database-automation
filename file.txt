@@ -1,7 +1,0 @@
-PowerShell:
-cd .\python-database-automation
-.\.venv\Scripts\Activate.ps1
-
-
-CMD:
-.\.venv\Scripts\activate
