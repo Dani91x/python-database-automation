@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
 
 const MAKE_WEBHOOK_URL = Deno.env.get("MAKE_WEBHOOK_URL");
 const KIE_API_KEY = Deno.env.get("KIE_API_KEY");
@@ -95,7 +96,7 @@ serve(async (req) => {
         const formattedTime = `${String(fDate.getUTCHours()).padStart(2, "0")}:${String(fDate.getUTCMinutes()).padStart(2, "0")} (UTC)`;
 
         // URL del logo AlphaScore Ufficiale (GLOBE VERSION)
-        const alphaScoreLogoUrl = "https://files.catbox.moe/zmljo5.png";
+        const alphaScoreLogoUrl = "https://dqbwaocvlzbxfrpacsac.supabase.co/storage/v1/object/public/Loghi/AlphaScore_OFFICIAL_Transparent.png";
 
         const messageText = `📊 Metriche del Modello Ibrido:
 ✅ Probabilità Globale: ${hybridProb}%
@@ -112,28 +113,28 @@ serve(async (req) => {
 SCENE & ATMOSPHERE:
 A dark, dramatic, ultra-realistic modern football stadium environment at night. Soft atmospheric fog, cinematic spotlights cutting through the darkness, and a subtle glowing gradient in the background matching the primary colors of the two teams: ${bestMatch.home_team_name} and ${bestMatch.away_team_name}. Depth-of-field effect with bokeh lights in the deep background. Ultra-sharp 8k resolution, editorial magazine quality.
 
-CENTER LAYOUT & SUBJECTS:
-1. LEAGUE & DATE (TOP CENTER): At the top center, write perfectly the league name "${bestMatch.league_name}" in elegant, spaced-out small caps. Directly below it, write perfectly the match date: "${formattedDate}" in clean, bold typography, followed by the time: "${formattedTime}".
-2. LOGOS & TEAM NAMES (CENTER AREA): In the exact center, place a sleek, glowing "VS". 
+CENTER LAYOUT & STRICT PROPORTIONS LOCK:
+You MUST maintain the exact same proportions and positions for every generated image. Do not change the layout.
+1. LEAGUE & DATE (TOP 15%): At the top center, write perfectly the league name "${bestMatch.league_name}" in elegant, spaced-out small caps. Directly below it, write perfectly the match date: "${formattedDate}" in clean, bold typography, followed by the time: "${formattedTime}".
+2. LOGOS & TEAM NAMES (UPPER-MIDDLE 30%): In the exact center, place a sleek, glowing "VS". 
    - On the LEFT: seamlessly integrate the exact logo reference: ${homeLogo}. Directly below this left logo, write the name "${bestMatch.home_team_name}" in modern, bold sports typography.
    - On the RIGHT: seamlessly integrate the exact logo reference: ${awayLogo}. Directly below this right logo, write the name "${bestMatch.away_team_name}".
    Both logos MUST have a premium 3D metallic edge or glowing backlight. DO NOT distort them.
-3. ANALYTICS CARD (LOWER HALF): Create an ultra-premium, eye-catching, high-tech glassmorphism analytics card with subtle neon borders. 
-   - HEADER: High above this card (leaving a VERY LARGE vertical gap of empty space), write perfectly in bold, glowing white text: "HT Sniper consiglia 👇". 
+3. ANALYTICS CARD (LOWER-MIDDLE 40%): Create an ultra-premium, eye-catching, high-tech glassmorphism analytics card with subtle neon borders. 
+   - HEADER: Leave a generous vertical empty space, then write perfectly in bold, glowing white text: "HT Sniper consiglia 👇". 
    - CONTENT: Inside the analytics card itself, write the following text exactly, preserving structure:
 "${messageText}"
-4. BRANDING (BOTTOM FOOTER): 
-   - TEXT: Very far below the analytics card (leaving a VERY LARGE vertical gap so it's nowhere near the card), write in small, elegant, minimal tracking font: "powered by AlphaScore". 
-   - LOGO: Below that text, at the very bottom center of the poster, include the official brand logo using this exact visual reference: ${alphaScoreLogoUrl}.
+4. BRANDING (BOTTOM FOOTER 15%): 
+   - TEXT FIRST: Write "powered by AlphaScore" cleanly and elegantly directly below the analytics box. Use a very THIN, lightweight, minimalist and wide-tracked font (extra letter spacing).
+   - PADDING BELOW TEXT: You absolutely MUST leave the bottom 15% of the poster completely empty and dark. DO NOT put the text at the bottom edge. Create a huge empty black/dark margin at the very bottom.
 
 STRICT VISUAL STYLE LOCK & RULES:
+- ABSOLUTELY NO HALLUCINATIONS: Do not hallucinate any random text, logos, shapes, or players not explicitly asked for.
+- PERFECT SPACING: Keep equal and generous vertical spacing between the Top text, the Team Logos, the Analytics Card, and the Bottom text.
 - The atmospheric lighting MUST be identical to a dark, smoky, cinematic UEFA Champions League premium broadcast.
-- The typography MUST be perfectly rendered, crisp, using premium modern sans-serif fonts (like bold Montserrat or Bebas Neue).
-- PERFECT ALIGNMENT & PADDING: All text must be perfectly centered and aligned. ENFORCE VAST VERTICAL PADDING: There MUST be a massive, clear empty space separating the "HT Sniper consiglia" header from the analytics box. Similarly, there MUST be a massive clear empty space separating the box from the "powered by" footer. 
-- The composition must be perfectly symmetrical and balanced.
+- PERFECT ALIGNMENT: All elements must be strictly horizontally centered.
 - Aspect ratio: 4:5.
-- NO watermark other than AlphaScore, NO stock photo artifacts, NO random irrelevant players, NO messy text.
-- The absolute priority is making the image look like an expensive, official club social media broadcast graphic.`;
+- The absolute priority is making the image look like an expensive, highly standardized, official corporate broadcast graphic.`;
 
         // 1. Iniziamo la task di generazione immagine su Kie.ai
         console.log("Inviando richiesta a Kie.ai (Nano Banana Pro)...");
@@ -215,6 +216,76 @@ STRICT VISUAL STYLE LOCK & RULES:
             console.error("Nessun taskId restituito da Kie.ai, la chiamata potrebbe essere fallita.");
         }
 
+        let finalImageUrl = generatedImageUrl || "https://dummyimage.com/800x1000/000/fff&text=Immagine+Kie.ai+Fallita";
+        let postProdError = null;
+
+        if (kieFinished && generatedImageUrl) {
+            try {
+                console.log("Inizio post-produzione: applicazione del logo AlphaScore...");
+
+                // 1. Scarica l'immagine generata dall'IA
+                const bgRes = await fetch(generatedImageUrl);
+                const bgArrayBuffer = await bgRes.arrayBuffer();
+                const bgImage = await Image.decode(new Uint8Array(bgArrayBuffer));
+
+                // 2. TAGLIO E RICOSTRUZIONE DEL FOOTER
+                // L'IA continua a disegnare una fascia nera orrenda in basso nonostante i divieti.
+                // Soluzione: tagliamo fisicamente via gli ultimi 150 pixel dell'immagine generata.
+                const cropArea = 150;
+                bgImage.crop(0, 0, bgImage.width, bgImage.height - cropArea);
+
+                // Ora estendiamo noi il canvas verso il basso ricreando quello spazio in modo pulito (oppure usimo lo spazio rimasto)
+                // Creiamo un nuovo canvas alto quanto l'immagine originale
+                const finalCanvas = new Image(bgImage.width, bgImage.height + cropArea);
+
+                // Opzionale: riempiamo lo sfondo del nuovo canvas di nero (o lasciamo trasparente/nero)
+                finalCanvas.fill(Image.rgbaToColor(10, 10, 10, 255)); // Nero quasi assoluto, pulitissimo
+
+                // Incolliamo l'immagine tagliata (lo stadio pulito) in cima (Y=0)
+                finalCanvas.composite(bgImage, 0, 0);
+
+                // 3. Scarica il logo AlphaScore
+                const logoRes = await fetch(alphaScoreLogoUrl);
+                const logoArrayBuffer = await logoRes.arrayBuffer();
+                const logoImage = await Image.decode(new Uint8Array(logoArrayBuffer));
+
+                // 4. Ridimensiona il logo (compatto, elegante)
+                logoImage.resize(220, Image.RESIZE_AUTO);
+
+                // 5. Calcola le coordinate: esattamente in basso al centro del NUOVO canvas pulito
+                const x = Math.floor((finalCanvas.width - logoImage.width) / 2);
+                const y = Math.floor(finalCanvas.height - logoImage.height - 30);
+
+                // 6. Incolla il logo sul canvas ricostruito
+                finalCanvas.composite(logoImage, x, y);
+
+                // 7. Converti l'immagine finale (canvas ricostruito) in formato PNG
+                const finalBuffer = await finalCanvas.encode(3);
+
+                // 7. Carica su Supabase Storage (Bucket "Loghi")
+                const fileName = `generati/post_${bestMatch.fixture_id}_${Date.now()}.png`;
+                const { error: uploadError } = await supabase.storage.from("Loghi").upload(fileName, finalBuffer, {
+                    contentType: "image/png",
+                    upsert: true
+                });
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
+                // 8. Ottieni l'URL pubblico finale
+                const { data: publicUrlData } = supabase.storage.from("Loghi").getPublicUrl(fileName);
+                finalImageUrl = publicUrlData.publicUrl;
+
+                console.log("Post-produzione completata! URL finale:", finalImageUrl);
+            } catch (err: any) {
+                console.error("Errore durante l'applicazione del logo in post-produzione:", err);
+                postProdError = err.message || "Errore sconosciuto";
+                // Se fallisce per qualche motivo, ripieghiamo cull'immagine base generata dall'IA
+                finalImageUrl = generatedImageUrl;
+            }
+        }
+
         // 3. Prepariamo il payload finale, ultra-pulito per Make.com
         const payload = {
             home_team_name: bestMatch.home_team_name,
@@ -223,8 +294,8 @@ STRICT VISUAL STYLE LOCK & RULES:
             fixture_date: bestMatch.fixture_date,
             message_text: messageText,
 
-            // Risultato della magia (se e' andata bene)
-            generated_image_url: generatedImageUrl || "https://dummyimage.com/800x1000/000/fff&text=Immagine+Kie.ai+Fallita",
+            // Risultato della magia post-prodotta
+            generated_image_url: finalImageUrl,
             generation_success: kieFinished && !!generatedImageUrl
         };
 
@@ -243,8 +314,9 @@ STRICT VISUAL STYLE LOCK & RULES:
         return new Response(JSON.stringify({
             success: true,
             sent_match: bestMatch.fixture_id,
-            generatedImageUrl: generatedImageUrl,
-            payload_to_make: payload
+            generatedImageUrl: finalImageUrl,
+            payload_to_make: payload,
+            post_production_error: postProdError
         }), {
             headers: { "Content-Type": "application/json" }
         });
