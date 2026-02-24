@@ -228,39 +228,25 @@ STRICT VISUAL STYLE LOCK & RULES:
                 const bgArrayBuffer = await bgRes.arrayBuffer();
                 const bgImage = await Image.decode(new Uint8Array(bgArrayBuffer));
 
-                // 2. TAGLIO E RICOSTRUZIONE DEL FOOTER
-                // L'IA continua a disegnare una fascia nera orrenda in basso nonostante i divieti.
-                // Soluzione: tagliamo fisicamente via gli ultimi 150 pixel dell'immagine generata.
-                const cropArea = 150;
-                bgImage.crop(0, 0, bgImage.width, bgImage.height - cropArea);
-
-                // Ora estendiamo noi il canvas verso il basso ricreando quello spazio in modo pulito (oppure usimo lo spazio rimasto)
-                // Creiamo un nuovo canvas alto quanto l'immagine originale
-                const finalCanvas = new Image(bgImage.width, bgImage.height + cropArea);
-
-                // Opzionale: riempiamo lo sfondo del nuovo canvas di nero (o lasciamo trasparente/nero)
-                finalCanvas.fill(Image.rgbaToColor(10, 10, 10, 255)); // Nero quasi assoluto, pulitissimo
-
-                // Incolliamo l'immagine tagliata (lo stadio pulito) in cima (Y=0)
-                finalCanvas.composite(bgImage, 0, 0);
-
-                // 3. Scarica il logo AlphaScore
+                // 2. Scarica il logo AlphaScore
                 const logoRes = await fetch(alphaScoreLogoUrl);
                 const logoArrayBuffer = await logoRes.arrayBuffer();
                 const logoImage = await Image.decode(new Uint8Array(logoArrayBuffer));
 
-                // 4. Ridimensiona il logo (compatto, elegante)
+                // 3. Ridimensiona il logo (compatto, elegante)
                 logoImage.resize(220, Image.RESIZE_AUTO);
 
-                // 5. Calcola le coordinate: esattamente in basso al centro del NUOVO canvas pulito
-                const x = Math.floor((finalCanvas.width - logoImage.width) / 2);
-                const y = Math.floor(finalCanvas.height - logoImage.height - 30);
+                // 4. Calcola le coordinate: esattamente in basso al centro, 
+                // con un margine di 30px dal bordo inferiore in modo che stia SOTTO
+                // alla scritta "powered by AlphaScore" generata dall'IA.
+                const x = Math.floor((bgImage.width - logoImage.width) / 2);
+                const y = Math.floor(bgImage.height - logoImage.height - 30);
 
-                // 6. Incolla il logo sul canvas ricostruito
-                finalCanvas.composite(logoImage, x, y);
+                // 5. Incolla il logo nudo e crudo sopra lo sfondo originale e intatto (ZERO banner neri aggiunti via codice)
+                bgImage.composite(logoImage, x, y);
 
-                // 7. Converti l'immagine finale (canvas ricostruito) in formato PNG
-                const finalBuffer = await finalCanvas.encode(3);
+                // 6. Converti l'immagine finale in formato PNG ad alta qualita
+                const finalBuffer = await bgImage.encode(3); // compressione PNG = 3 (veloce e buona)
 
                 // 7. Carica su Supabase Storage (Bucket "Loghi")
                 const fileName = `generati/post_${bestMatch.fixture_id}_${Date.now()}.png`;
