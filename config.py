@@ -27,6 +27,13 @@ BETFAIR_IDENTITY_URL = os.getenv(
     "https://identitysso-cert.betfair.it/api/certlogin"
 )
 
+# =========================
+# Google Sheets
+# =========================
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+WORKSHEET_NAME = os.getenv("WORKSHEET_NAME")
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE")
+
 def _mask(value: str | None, left: int = 3, right: int = 2) -> str:
     """
     Maschera i segreti in log: mostra solo primi/ultimi caratteri.

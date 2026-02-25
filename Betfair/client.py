@@ -232,14 +232,59 @@ class BetfairClient:
         raise RuntimeError(f"Betting RPC failed after {max_retries} retries. Last error: {last_err}")
 
     # =========================
-    # SMOKE METHODS
+    # CONVENIENCE METHODS
     # =========================
-    def list_event_types(self) -> Any:
+    def list_events(self, event_type_ids: list[str], days_ahead: int = 1) -> Any:
         """
-        Smoke call: listEventTypes con filter vuoto.
+        Ritorna la lista degli eventi (partite) per i prossimi X giorni.
         """
-        return self.betting_rpc(
-            method="SportsAPING/v1.0/listEventTypes",
-            params={"filter": {}},
-            request_id=1,
-        )
+        now_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        end_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400 * days_ahead))
+
+        params = {
+            "filter": {
+                "eventTypeIds": event_type_ids,
+                "marketStartTime": {"from": now_utc, "to": end_utc},
+            }
+        }
+        return self.betting_rpc(method="SportsAPING/v1.0/listEvents", params=params)
+
+    def list_market_catalogue(
+        self,
+        event_ids: list[str],
+        market_types: list[str] = ["MATCH_ODDS"],
+        max_results: int = 200,
+    ) -> Any:
+        """
+        Ritorna i cataloghi dei mercati per una lista di eventi.
+        Supporta il batching naturale dell'API (più eventIds).
+        """
+        params = {
+            "filter": {
+                "eventIds": event_ids,
+                "marketTypeCodes": market_types,
+            },
+            "maxResults": max_results,
+            "marketProjection": ["MARKET_START_TIME", "EVENT"],
+        }
+        return self.betting_rpc(method="SportsAPING/v1.0/listMarketCatalogue", params=params)
+
+    def list_market_book(
+        self,
+        market_ids: list[str],
+        price_projection: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """
+        Ritorna i dati reali (quote) per una lista di mercati.
+        """
+        if price_projection is None:
+            price_projection = {
+                "priceData": ["EX_BEST_OFFERS"],
+                "virtualise": "true"
+            }
+
+        params = {
+            "marketIds": market_ids,
+            "priceProjection": price_projection,
+        }
+        return self.betting_rpc(method="SportsAPING/v1.0/listMarketBook", params=params)
