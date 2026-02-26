@@ -234,12 +234,16 @@ class BetfairClient:
     # =========================
     # CONVENIENCE METHODS
     # =========================
-    def list_events(self, event_type_ids: list[str], days_ahead: int = 1) -> Any:
+    def list_events(self, event_type_ids: list[str], days_ahead: int = 1, to_date: Optional[str] = None) -> Any:
         """
         Ritorna la lista degli eventi (partite) per i prossimi X giorni.
+        Se to_date è fornito, usa quello come limite superiore (formato ISO 8601).
         """
         now_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        end_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400 * days_ahead))
+        if to_date:
+            end_utc = to_date
+        else:
+            end_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400 * days_ahead))
 
         params = {
             "filter": {
@@ -265,7 +269,7 @@ class BetfairClient:
                 "marketTypeCodes": market_types,
             },
             "maxResults": max_results,
-            "marketProjection": ["MARKET_START_TIME", "EVENT"],
+            "marketProjection": ["MARKET_START_TIME", "RUNNER_DESCRIPTION", "EVENT", "MARKET_DESCRIPTION"],
         }
         return self.betting_rpc(method="SportsAPING/v1.0/listMarketCatalogue", params=params)
 

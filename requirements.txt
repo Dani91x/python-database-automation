@@ -7,3 +7,7 @@ numpy
 scikit-learn
 imbalanced-learn
 boruta
+gspread
+thefuzz
+python-Levenshtein
+pytz
