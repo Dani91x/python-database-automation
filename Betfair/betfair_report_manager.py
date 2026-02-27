@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pytz
 from thefuzz import fuzz
 import unicodedata
+import time
 
 # Import local modules
 import sys
@@ -13,6 +14,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from Betfair.client import BetfairClient
 from db_client import get_supabase_client
+try:
+    from Betfair.money_management import SlotManager
+except ImportError:
+    from money_management import SlotManager
 
 # Logging setup
 log_file = os.path.join(os.path.dirname(__file__), "betfair_matcher.log")
@@ -37,6 +42,7 @@ class BetfairReportManager:
         self.name_map = self._load_name_map()
         self.gc = gspread.service_account(filename=config.GOOGLE_CREDENTIALS_FILE)
         self.sh = self.gc.open_by_key(config.SPREADSHEET_ID)
+        self.slot_manager = SlotManager(self.gc, self.sh)
 
     def _load_name_map(self):
         if os.path.exists(MAPPING_FILE):
@@ -98,8 +104,16 @@ class BetfairReportManager:
     def run_daily_report(self):
         logger.info("Avvio report giornaliero completo...")
         
-        # 1. Login Betfair
-        self.bf.login_cert()
+        # Super Conservative: pausa iniziale dopo login (che avviene in __init__ -> BetfairClient)
+        # In realtà il login avviene esplicitamente se serve, ma assicuriamoci una pausa
+        try:
+            self.bf.login_cert()
+            logger.info("Attesa di sicurezza post-login (5s)...")
+            time.sleep(5.0)
+        except Exception as e:
+            logger.error(f"Errore critico nel login Betfair: {e}")
+            return
+        
         
         # 2. Recupera eventi Betfair (solo di oggi)
         # Calcola la fine della giornata odierna in UTC
@@ -145,11 +159,27 @@ class BetfairReportManager:
         if event_list:
             self._update_match_events_sheet(event_list, db_fixtures)
         
-        # 6. Aggiorna foglio Segnali (La Magia)
+        # 6. Risolve risultati dei giorni precedenti (PRIMA di processare oggi)
+        logger.info("Fase 6: Risoluzione risultati giorni precedenti...")
+        self.slot_manager.resolve_history_results()
+
+        # 7. Aggiorna foglio Segnali (La Magia + Edge Scanner)
         if event_list:
             self._update_signals_sheet(event_list, db_fixtures)
 
-        logger.info("Job completato con successo.")
+        # 8. Salva operazioni di oggi nello storico multi-giorno
+        logger.info("Fase 8: Salvataggio storico giornaliero...")
+        self.slot_manager.save_today_to_history()
+
+        # 9. Aggiorna Dashboard Money Management
+        logger.info("Fase 9: Aggiornamento Dashboard MM...")
+        self.slot_manager.update_dashboard_sheet()
+
+        # 10. Aggiorna Report Ven-Dom (multi-giorno)
+        logger.info("Fase 10: Aggiornamento Report Ven-Dom...")
+        self.slot_manager.update_report_sheet()
+
+        logger.info("✅ Job completato con successo.")
 
     def _sync_all_predictions(self, db_fixtures):
         if not db_fixtures:
@@ -211,6 +241,9 @@ class BetfairReportManager:
             "Data Evento", "Event ID", "Nome Evento (Betfair)", 
             "Nome Evento (API-Football)", "Fixture ID", "League Name",
             "Advice", "HT %", "Elite?",
+            # --- Money Management v2 (Quant Fund) ---
+            "Slot", "Mercato Scelto", "Edge", "Score", "Stake €",
+            # --- Statistiche ---
             "N. Dati Casa", "N. Dati Trasf", 
             "xG C", "xG T",
             "Avg Gol Lega", "Avg Gol Casa", "Avg Gol Trasf",
@@ -247,8 +280,11 @@ class BetfairReportManager:
             logger.info(f"Fase 2: Prefetching quote per {len(matched_ids)} match...")
             odds_cache = self._prefetch_odds_for_events(matched_ids)
 
-        # 3. Generazione righe
-        logger.info("Fase 3: Generazione righe del report...")
+        # 3. Generazione righe e preparazione dati per Money Management
+        logger.info("Fase 3: Generazione righe del report e calcolo stake...")
+        signals_payload_for_mm = [] # Dati da passare a SlotManager
+        raw_rows_data = [] # Mantiene i dati temporanei della riga prima dell'arricchimento MM
+        
         for bf_e in bf_events_sorted:
             # Dati Betfair
             dt = datetime.strptime(bf_e["open_date"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=pytz.UTC)
@@ -291,8 +327,9 @@ class BetfairReportManager:
 
                 def fmt_p(val):
                     if val is None: return ""
-                    if val > 1: return f"{val:.1f}%"
-                    return f"{val*100:.1f}%"
+                    # Aggiungiamo ' davanti per evitare che Google Sheets lo interpreti come formula in USER_ENTERED
+                    if val > 1: return f"'{val:.1f}%"
+                    return f"'{val*100:.1f}%"
 
                 def fmt_v(val, decimals=2):
                     if val is None: return ""
@@ -312,12 +349,39 @@ class BetfairReportManager:
 
                 def fmt_edge(edge):
                     if edge is None: return ""
-                    return f"{edge*100:+.1f}%"
+                    # Usiamo l'apice ' per forzare il formato testo ed evitare l'errore #ERROR! di Google Sheets
+                    return f"'{edge*100:+.1f}%"
 
-                row = [
-                    dt_ita, bf_e["id"], bf_e["name"], api_event_name, 
+                # Hyperlink per l'evento Betfair (Match Odds)
+                mo_id = odds.get("mo_id")
+                event_name_val = bf_e["name"]
+                if mo_id:
+                    event_display = f'=HYPERLINK("https://www.betfair.it/exchange/plus/football/market/{mo_id}"; "{event_name_val}")'
+                else:
+                    event_display = event_name_val
+
+                # --- PREPARAZIONE PAYLOAD PER MONEY MANAGEMENT v2 (Quant Fund) ---
+                # Passiamo TUTTI i dati al nuovo Edge Scanner:
+                # - L'intero dict analysis["markets"] con tutte le probabilità dei 6 mercati
+                # - L'intero dict odds con tutte le quote Betfair
+                # - L'intero dict inputs per i filtri di qualità dati
+                signals_payload_for_mm.append({
+                    "event_id": bf_e["id"],
+                    "fixture_id": matched_db["fixture_id"],  # Necessario per risolvere risultati
+                    "name": api_event_name,
+                    "date": dt_ita,
+                    "analysis_markets": analysis,  # Dict completo con markets.1x2, markets.btts etc.
+                    "odds_data": odds,              # Dict con H, D, A, HT05, BTTS, O25
+                    "inputs_data": inputs,           # Dict con home_matches_used, etc.
+                    "row_index": len(raw_rows_data)
+                })
+
+                row_base = [
+                    dt_ita, bf_e["id"], event_display, api_event_name, 
                     matched_db["fixture_id"], matched_db["league_name"],
                     advice, fmt_p(ht_prob), "SÌ" if is_elite else "",
+                    # MM v2: Slot, Mercato Scelto, Edge, Score, Stake (segnaposti)
+                    "{MM_SLOT}", "{MM_MKT}", "{MM_EDGE}", "{MM_SCORE}", "{MM_STAKE}",
                     # Deep Stats
                     fmt_v(inputs.get("home_matches_used"), 0),
                     fmt_v(inputs.get("away_matches_used"), 0),
@@ -338,9 +402,42 @@ class BetfairReportManager:
                     fmt_p(o25_prob), fmt_q(odds.get("O25")), fmt_edge(calc_edge(o25_prob, odds.get("O25")))
                 ]
             else:
-                row = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (len(header) - 3)
+                row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (len(header) - 3)
             
-            rows.append(row)
+            raw_rows_data.append(row_base)
+            
+        # 4. Elaborazione Money Management v2 (Edge Scanner + Kelly)
+        if signals_payload_for_mm:
+            logger.info("Fase 4: Edge Scanner Multi-Mercato + Kelly Staking...")
+            enriched_signals = self.slot_manager.process_signals(signals_payload_for_mm)
+            
+            # Mappiamo i risultati arricchiti indietro sulle righe del foglio
+            for signal in enriched_signals:
+                r_idx = signal["row_index"]
+                
+                stake_val = signal.get('stake', '')
+                if isinstance(stake_val, (int, float)) and stake_val > 0:
+                   stake_val = round(stake_val, 2)
+                else:
+                   stake_val = ''
+                   
+                # Indici: 9=Slot, 10=Mercato Scelto, 11=Edge, 12=Score, 13=Stake
+                raw_rows_data[r_idx][9] = signal.get("slot_id", "")
+                raw_rows_data[r_idx][10] = signal.get("selected_market", "")
+                raw_rows_data[r_idx][11] = signal.get("edge_pct", "")
+                raw_rows_data[r_idx][12] = signal.get("score", "")
+                raw_rows_data[r_idx][13] = stake_val
+                
+        # Sostituisce eventuali segnaposti rimasti (eventi senza match nel DB)
+        for r in raw_rows_data:
+            if len(r) > 9 and r[9] == "{MM_SLOT}":
+                r[9] = ""
+                r[10] = ""
+                r[11] = ""
+                r[12] = ""
+                r[13] = ""
+                
+        rows = raw_rows_data
 
         try:
             ws = self._get_or_create_worksheet("Segnali")
@@ -350,7 +447,7 @@ class BetfairReportManager:
             ws.format("A:Z", {"horizontalAlignment": "CENTER"})
             
             if rows:
-                ws.append_rows(rows, value_input_option="RAW")
+                ws.append_rows(rows, value_input_option="USER_ENTERED")
             
             # Masterpiece Formatting
             self._format_signals_sheet(ws, len(header))
@@ -367,22 +464,40 @@ class BetfairReportManager:
         market_types = ['MATCH_ODDS', 'BOTH_TEAMS_TO_SCORE', 'OVER_UNDER_25', 'FIRST_HALF_GOALS_05']
         
         try:
-            # 1. Recupera catalogo mercati per TUTTI gli eventi in un colpo solo
-            logger.debug(f"Richiesta catalogo per {len(event_ids)} eventi...")
-            cats = self.bf.list_market_catalogue(
-                event_ids=event_ids,
-                market_types=market_types,
-                max_results=250 # Betfair limite max
-            )
+            # 1. Recupera catalogo mercati per TUTTI gli eventi
+            # OPTIMIZED SAFE: Chunking event_ids (30 eventi = max 120 mercati per chiamata, Peso ~120)
+            all_cats = []
+            event_chunk_size = 30
+            for i in range(0, len(event_ids), event_chunk_size):
+                chunk = event_ids[i:i + event_chunk_size]
+                logger.debug(f"Richiesta catalogo per chunk {i//event_chunk_size + 1} ({len(chunk)} eventi)...")
+                
+                try:
+                    cats = self.bf.list_market_catalogue(
+                        event_ids=chunk,
+                        market_types=market_types,
+                        max_results=200
+                    )
+                    if cats:
+                        all_cats.extend(cats)
+                    
+                    # Delay ottimizzato
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"Errore durante list_market_catalogue (chunk {i//event_chunk_size + 1}): {e}")
+                    if "TOO_MUCH_DATA" in str(e) or "TOO_MANY_REQUESTS" in str(e):
+                        logger.critical("Rilevato errore di limiti API Betfair! Interruzione per sicurezza.")
+                        return all_results
             
-            if not cats:
+            if not all_cats:
                 return all_results
 
             # Mappatura market_id -> metadata
             market_map = {} # market_id -> {event_id, market_name, runners_cat}
             market_ids = []
             
-            for c in cats:
+            for c in all_cats:
                 mid = c['marketId']
                 market_ids.append(mid)
                 market_map[mid] = {
@@ -391,16 +506,27 @@ class BetfairReportManager:
                     "runners_cat": c.get('runners', [])
                 }
 
-            # 2. Recupera quote in batch (limite Betfair di solito 40 market per chiamata)
-            # Suddividiamo market_ids in chunk da 40
-            chunk_size = 40
+            # 2. Recupera quote in batch (OPTIMIZED SAFE: 30 mercati per chiamata, Peso 150)
+            batch_size = 30
             all_books = []
-            for i in range(0, len(market_ids), chunk_size):
-                chunk = market_ids[i:i + chunk_size]
-                logger.debug(f"Fetching market book batch {i//chunk_size + 1} ({len(chunk)} mercati)...")
-                books = self.bf.list_market_book(market_ids=chunk)
-                if books:
-                    all_books.extend(books)
+            for i in range(0, len(market_ids), batch_size):
+                chunk = market_ids[i:i + batch_size]
+                logger.debug(f"Fetching market book batch {i//batch_size + 1} ({len(chunk)} mercati)...")
+                
+                try:
+                    books = self.bf.list_market_book(market_ids=chunk)
+                    if books:
+                        all_books.extend(books)
+                    
+                    # Delay ottimizzato
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"Errore durante list_market_book (batch {i//batch_size + 1}): {e}")
+                    if "TOO_MUCH_DATA" in str(e) or "TOO_MANY_REQUESTS" in str(e):
+                        logger.critical("Rilevato errore di limiti API Betfair! Interruzione per sicurezza.")
+                        break
+
 
             # 3. Processa i risultati e popola il cache
             for book in all_books:
@@ -414,7 +540,7 @@ class BetfairReportManager:
                 runners_book = {r['selectionId']: r for r in book.get('runners', [])}
                 
                 if eid not in all_results:
-                    all_results[eid] = {"H": None, "D": None, "A": None, "HT05": None, "BTTS": None, "O25": None}
+                    all_results[eid] = {"H": None, "D": None, "A": None, "HT05": None, "BTTS": None, "O25": None, "mo_id": None}
 
                 def get_best_back(selection_id):
                     r_book = runners_book.get(selection_id)
@@ -423,6 +549,7 @@ class BetfairReportManager:
                     return back[0].get('price') if back else None
 
                 if mname == "Match Odds":
+                    all_results[eid]["mo_id"] = mid
                     if len(runners_cat) >= 3:
                         all_results[eid]["H"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["A"] = get_best_back(runners_cat[1]['selectionId'])
@@ -448,8 +575,8 @@ class BetfairReportManager:
         """
         try:
             # 1. Header (Dark Blue, White, Bold, Frozen)
-            header_range = "A1:AF1"
-            ws.format(header_range, {
+            # Usiamo "1:1" per coprire tutta la riga a prescindere dal numero di colonne
+            ws.format("1:1", {
                 "backgroundColor": {"red": 0.0, "green": 0.13, "blue": 0.28}, # #002147
                 "textFormat": {"foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}, "bold": True, "fontSize": 10},
                 "horizontalAlignment": "CENTER"
@@ -457,42 +584,60 @@ class BetfairReportManager:
             ws.freeze(rows=1)
 
             # 2. Raggruppamento Colonne (Colori di sfondo per gruppi logici)
-            # Identità (A-F): Grigio chiaro professionale
-            ws.format("A2:F200", {"backgroundColor": {"red": 0.96, "green": 0.96, "blue": 0.96}})
+            # Header: A-I (Identità+AI), J-N (Money Management v2), O-X (Deep Stats), Y-AP (Mercati)
             
-            # AI Intelligence (G-I): Verde acqua leggero
-            ws.format("G2:I200", {"backgroundColor": {"red": 0.92, "green": 0.97, "blue": 0.94}})
+            # Identità + AI Intelligence (A-I): Grigio chiaro
+            ws.format("A2:I1000", {"backgroundColor": {"red": 0.96, "green": 0.96, "blue": 0.96}})
             
-            # Statistiche Profonde (J-S): Blu cielo leggero
-            ws.format("J2:S200", {"backgroundColor": {"red": 0.91, "green": 0.94, "blue": 1.0}})
+            # Money Management v2 (J-N): Verde acqua leggero con highlight
+            ws.format("J2:N1000", {"backgroundColor": {"red": 0.9, "green": 0.97, "blue": 0.9}})
             
-            # Mercati (T-AK): Alternanza per leggibilità
-            # Match Odds (T-AB): Giallino
-            ws.format("T2:AB200", {"backgroundColor": {"red": 1.0, "green": 0.98, "blue": 0.9}})
+            # Slot (J) in blu scuro grassetto
+            ws.format("J2:J1000", {
+                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.5}, "bold": True}
+            })
+            # Mercato Scelto (K) in grassetto
+            ws.format("K2:K1000", {"textFormat": {"bold": True}})
+            # Edge (L) colorato
+            ws.format("L2:L1000", {
+                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.4, "blue": 0.0}, "bold": True}
+            })
+            # Stake (N) in verde valuta grassetto
+            ws.format("N2:N1000", {
+                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.35, "blue": 0.0}, "bold": True},
+                "numberFormat": {"type": "CURRENCY", "pattern": "€#,##0.00"}
+            })
+            
+            # Deep Stats (O-X): Blu cielo leggero
+            ws.format("O2:X1000", {"backgroundColor": {"red": 0.91, "green": 0.94, "blue": 1.0}})
+            
+            # Mercati probabilità/quote/edge (Y-AP): Crema
+            ws.format("Y2:AP1000", {"backgroundColor": {"red": 1.0, "green": 0.98, "blue": 0.9}})
             
             # 3. Formattazione Numerica e Allineamento
-            ws.format("A2:B200", {"horizontalAlignment": "CENTER"})
-            ws.format("E2:F200", {"horizontalAlignment": "CENTER"})
-            ws.format("G2:AK200", {"horizontalAlignment": "CENTER"})
+            ws.format("A2:B1000", {"horizontalAlignment": "CENTER"})
+            ws.format("E2:F1000", {"horizontalAlignment": "CENTER"})
+            ws.format("G2:AP1000", {"horizontalAlignment": "CENTER"})
             
             # Advice Bold
-            ws.format("G2:G200", {"textFormat": {"bold": True}})
+            ws.format("G2:G1000", {"textFormat": {"bold": True}})
             
-            # Quotas Bold
-            quota_ranges = ["U2:U200", "X2:X200", "AA2:AA200", "AD2:AD200", "AG2:AG200", "AJ2:AJ200"]
+            # Quotas Bold (col Z=Quota H, AC=Quota D, AF=Quota A, AI=Quota HT, AL=Quota BTTS, AO=Quota O25)
+            quota_ranges = ["Z2:Z1000", "AC2:AC1000", "AF2:AF1000", "AI2:AI1000", "AL2:AL1000", "AO2:AO1000"]
             for qr in quota_ranges:
                 ws.format(qr, {"textFormat": {"bold": True}})
 
             # 4. Conditional Formatting (Heatmap per Edge)
             sheet_id = ws.id
-            edge_cols_indices = [21, 24, 27, 30, 33, 36] # V, Y, AB, AE, AH, AK (0-indexed)
+            # Edge cols: AA(H Edge)=26, AD(D Edge)=29, AG(A Edge)=32, AJ(HT Edge)=35, AM(BTTS Edge)=38, AP(O25 Edge)=41
+            edge_cols_indices = [26, 29, 32, 35, 38, 41] 
             
             requests = []
             for col_idx in edge_cols_indices:
                 requests.append({
                     "addConditionalFormatRule": {
                         "rule": {
-                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 200, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}],
+                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 1000, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}],
                             "booleanRule": {
                                 "condition": {"type": "TEXT_CONTAINS", "values": [{"userEnteredValue": "+"}]},
                                 "format": {"backgroundColor": {"red": 0.8, "green": 1.0, "blue": 0.8}, "textFormat": {"bold": True}}
