@@ -44,6 +44,7 @@ DEFAULT_MIN_PROB_PCT = 55.0
 DEFAULT_KELLY_FRACTION = 0.25
 DEFAULT_MAX_STAKE_PCT = 3.0
 DEFAULT_MIN_MATCHES_USED = 5
+DEFAULT_COMMISSION_PCT = 5.0  # Commissione Betfair sulle vincite (%)
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "money_management_state.json")
 
@@ -57,17 +58,28 @@ MARKET_MAP = {
 }
 
 # ---------------------------------------------------------------------------
-#  HELPER: Google Sheets call con retry su 429 (Rate Limit)
+#  HELPER: Google Sheets call con retry su 429/500/503 (Rate Limit & Server Errors)
 # ---------------------------------------------------------------------------
-def _sheets_retry(func, *args, max_retries=3, **kwargs):
-    """Esegue una chiamata Google Sheets con retry automatico su errore 429."""
+def _sheets_retry(func, *args, max_retries=5, **kwargs):
+    """Esegue una chiamata Google Sheets con retry automatico su errore 429/500/503.
+    Usa exponential backoff: 5s, 10s, 20s, 40s, 80s."""
     for attempt in range(max_retries):
         try:
             return func(*args, **kwargs)
         except gspread.exceptions.APIError as e:
-            if "429" in str(e) and attempt < max_retries - 1:
-                wait = 10 * (attempt + 1)
-                logger.warning(f"Rate limit 429, attendo {wait}s (tentativo {attempt+1}/{max_retries})...")
+            err_str = str(e)
+            is_retryable = any(code in err_str for code in ("429", "500", "503"))
+            if is_retryable and attempt < max_retries - 1:
+                wait = 5 * (2 ** attempt)  # 5, 10, 20, 40, 80
+                logger.warning(f"Sheets API error ({err_str[:80]}), attendo {wait}s (tentativo {attempt+1}/{max_retries})...")
+                time_module.sleep(wait)
+            else:
+                raise
+        except Exception as e:
+            # Catch anche errori di rete/timeout
+            if attempt < max_retries - 1:
+                wait = 5 * (2 ** attempt)
+                logger.warning(f"Sheets error generico ({type(e).__name__}: {str(e)[:60]}), retry in {wait}s...")
                 time_module.sleep(wait)
             else:
                 raise
@@ -96,6 +108,7 @@ class SlotManager:
             "kelly_fraction":   DEFAULT_KELLY_FRACTION,
             "max_stake_pct":    DEFAULT_MAX_STAKE_PCT,
             "min_matches_used": DEFAULT_MIN_MATCHES_USED,
+            "commission_pct":   DEFAULT_COMMISSION_PCT,
         }
         try:
             ws = self.sh.worksheet("Money Management")
@@ -112,6 +125,9 @@ class SlotManager:
                 config["kelly_fraction"]   = _sf(vals[5], DEFAULT_KELLY_FRACTION)
                 config["max_stake_pct"]    = _sf(vals[6], DEFAULT_MAX_STAKE_PCT)
                 config["min_matches_used"] = int(_sf(vals[7], DEFAULT_MIN_MATCHES_USED))
+                # Colonna K (indice 10): Commissione Betfair
+                if len(vals) >= 11:
+                    config["commission_pct"] = _sf(vals[10], DEFAULT_COMMISSION_PCT)
                 logger.info(f"Config caricata dal foglio: {config}")
         except Exception as e:
             logger.info(f"Config da foglio non disponibile, uso default: {e}")
@@ -178,7 +194,10 @@ class SlotManager:
             if quota is None or quota <= 1.01:
                 continue
 
-            edge = (prob * quota) - 1.0
+            # Applica commissione Betfair: quota_netta = (quota - 1) * (1 - comm%) + 1
+            comm = self.config["commission_pct"] / 100.0
+            quota_net = (quota - 1.0) * (1.0 - comm) + 1.0
+            edge = (prob * quota_net) - 1.0
             if edge < min_edge or prob < min_prob:
                 continue
 
@@ -218,7 +237,10 @@ class SlotManager:
         kelly_frac = self.config["kelly_fraction"]
         max_pct = self.config["max_stake_pct"] / 100.0
 
-        b = odds - 1.0
+        # Applica commissione Betfair alla quota per Kelly
+        comm = self.config["commission_pct"] / 100.0
+        odds_net = (odds - 1.0) * (1.0 - comm) + 1.0
+        b = odds_net - 1.0
         p = prob
         q = 1.0 - p
         kelly_full = (b * p - q) / b if b > 0 else 0
@@ -331,6 +353,25 @@ class SlotManager:
     # ======================================================================
     def resolve_results(self):
         """Controlla il DB per risolvere gli slot PENDING con risultati reali."""
+        # === Ricalibra P&L degli slot GIÀ risolti con commissione attuale ===
+        comm = self.config["commission_pct"] / 100.0
+        recalibrated = 0
+        pnl_adjustment = 0.0
+        for sid, slot in self.state["slots"].items():
+            if "VINTO" in str(slot.get("result", "")):
+                stake = slot.get("stake", 0)
+                odds = slot.get("odds", 1)
+                correct_pnl = round(stake * (odds - 1) * (1.0 - comm), 2)
+                if slot.get("pnl") != correct_pnl:
+                    old_pnl = slot.get("pnl", 0)
+                    slot["pnl"] = correct_pnl
+                    pnl_adjustment += (correct_pnl - old_pnl)
+                    recalibrated += 1
+        if recalibrated > 0:
+            self.state["total_profit_today"] += pnl_adjustment
+            self._save_state()
+            logger.info(f"📐 Ricalibrati {recalibrated} P&L state con commissione {self.config['commission_pct']}% (adj: {pnl_adjustment:+.2f}€).")
+
         sb = get_supabase_client()
         pending = {sid: s for sid, s in self.state["slots"].items() if s["result"] == "PENDING"}
 
@@ -380,7 +421,8 @@ class SlotManager:
             stake = slot["stake"]
 
             if won:
-                profit = stake * (slot["odds"] - 1)
+                comm = self.config["commission_pct"] / 100.0
+                profit = stake * (slot["odds"] - 1) * (1.0 - comm)
                 slot["result"] = "VINTO ✅"
                 slot["pnl"] = round(profit, 2)
                 self.state["events_won"] += 1
@@ -430,7 +472,8 @@ class SlotManager:
     # ======================================================================
     def update_report_sheet(self):
         """Genera/aggiorna il foglio 'Report Ven Dom' con tutte le operazioni
-        di tutti i giorni, raggruppate per data, con P&L progressivo."""
+        di tutti i giorni, raggruppate per data, con P&L progressivo.
+        OTTIMIZZATO: usa batch_update per ridurre le chiamate API."""
         logger.info("📋 Aggiornamento foglio 'Report Ven Dom'...")
 
         try:
@@ -443,32 +486,78 @@ class SlotManager:
             except gspread.exceptions.WorksheetNotFound:
                 ws = self.sh.add_worksheet(title="Report Ven Dom", rows=1500, cols=14)
 
-            # --- TITOLO ---
-            _sheets_retry(ws.update_acell, "A1", "📊 REPORT OPERATIVO — Test Venerdì-Domenica")
-            _sheets_retry(ws.merge_cells, "A1:N1")
-            _sheets_retry(ws.format, "A1:N1", {
+            sheet_id = ws.id
+
+            # === FASE 1: Prepara TUTTI i dati in una griglia unica ===
+            all_data = []  # Lista di righe, ciascuna con 14 colonne
+            format_requests = []  # Batch di formattazione
+
+            def add_row(values, row_formats=None):
+                """Aggiunge una riga di dati e opzionalmente la formattazione."""
+                row_idx = len(all_data)  # 0-indexed
+                # Padding a 14 colonne
+                padded = list(values) + [""] * (14 - len(values))
+                all_data.append(padded[:14])
+                return row_idx
+
+            def add_format(row_idx, end_row_idx, fmt, start_col=0, end_col=14):
+                """Accumula una richiesta di formattazione."""
+                format_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": end_row_idx + 1,
+                            "startColumnIndex": start_col,
+                            "endColumnIndex": end_col
+                        },
+                        "cell": {"userEnteredFormat": fmt},
+                        "fields": "userEnteredFormat"
+                    }
+                })
+
+            def add_merge(row_idx, start_col=0, end_col=14):
+                """Accumula una richiesta di merge."""
+                format_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": row_idx + 1,
+                            "startColumnIndex": start_col,
+                            "endColumnIndex": end_col
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+
+            # --- TITOLO --- (riga 0)
+            r = add_row(["📊 REPORT OPERATIVO — Test Venerdì-Domenica"])
+            add_merge(r)
+            add_format(r, r, {
                 "backgroundColor": {"red": 0.05, "green": 0.05, "blue": 0.18},
                 "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 14},
                 "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
             })
 
-            # --- RIEPILOGO GLOBALE ---
-            _sheets_retry(ws.update_acell, "A2", "📈 RIEPILOGO GLOBALE")
-            _sheets_retry(ws.merge_cells, "A2:N2")
-            _sheets_retry(ws.format, "A2:N2", {
+            # --- RIEPILOGO GLOBALE --- (riga 1)
+            r = add_row(["📈 RIEPILOGO GLOBALE"])
+            add_merge(r)
+            add_format(r, r, {
                 "backgroundColor": {"red": 0.15, "green": 0.15, "blue": 0.15},
                 "textFormat": {"foregroundColor": {"red": 0.9, "green": 0.75, "blue": 0.3}, "bold": True, "fontSize": 11},
                 "horizontalAlignment": "CENTER"
             })
 
+            # --- Header riepilogo --- (riga 2)
             summary_headers = [
                 "Bankroll Iniziale", "Bankroll Attuale", "P&L Totale",
                 "Scommesse Totali", "Vinte", "Perse", "Pendenti",
                 "Win Rate", "Yield", "Stake Totale",
                 "Giorni Operativi", "", "", ""
             ]
-            _sheets_retry(ws.update, "A3:N3", [summary_headers])
-            _sheets_retry(ws.format, "A3:N3", {
+            r = add_row(summary_headers)
+            add_format(r, r, {
                 "backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.85},
                 "textFormat": {"bold": True, "fontSize": 9},
                 "horizontalAlignment": "CENTER"
@@ -498,17 +587,18 @@ class SlotManager:
                 win_rate, yield_pct, f"€{total_staked:.2f}",
                 len(daily_dates), "", "", ""
             ]
-            _sheets_retry(ws.update, "A4:N4", [summary_values])
-            _sheets_retry(ws.format, "A4:N4", {
+            r = add_row(summary_values)
+            add_format(r, r, {
                 "horizontalAlignment": "CENTER", "textFormat": {"bold": True, "fontSize": 10}
             })
-
-            # Colore P&L
+            # Colore P&L nella cella C
             color = {"red": 0.1, "green": 0.6, "blue": 0.1} if total_pnl >= 0 else {"red": 0.7, "green": 0.1, "blue": 0.1}
-            _sheets_retry(ws.format, "C4", {"textFormat": {"foregroundColor": color, "bold": True, "fontSize": 13}})
+            add_format(r, r, {"textFormat": {"foregroundColor": color, "bold": True, "fontSize": 13}}, start_col=2, end_col=3)
+
+            # --- Riga vuota --- (riga 4)
+            add_row([""])
 
             # --- DETTAGLIO OPERAZIONI PER GIORNO ---
-            current_row = 6
             running_pnl = 0.0
 
             for day in sorted(history, key=lambda d: d["date"]):
@@ -519,14 +609,13 @@ class SlotManager:
                     continue
 
                 # Header del giorno
-                _sheets_retry(ws.update_acell, f"A{current_row}", f"📅 {date_str}")
-                _sheets_retry(ws.merge_cells, f"A{current_row}:N{current_row}")
-                _sheets_retry(ws.format, f"A{current_row}:N{current_row}", {
+                r = add_row([f"📅 {date_str}"])
+                add_merge(r)
+                add_format(r, r, {
                     "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.35},
                     "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 11},
                     "horizontalAlignment": "CENTER"
                 })
-                current_row += 1
 
                 # Header colonne
                 col_headers = [
@@ -534,16 +623,15 @@ class SlotManager:
                     "Edge", "Score", "Stake €", "Risultato", "P&L €",
                     "Cassa Dopo", "Gol Casa", "Gol Trasferta", "HT Total"
                 ]
-                _sheets_retry(ws.update, f"A{current_row}:N{current_row}", [col_headers])
-                _sheets_retry(ws.format, f"A{current_row}:N{current_row}", {
+                r = add_row(col_headers)
+                add_format(r, r, {
                     "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.92},
                     "textFormat": {"bold": True, "fontSize": 9},
                     "horizontalAlignment": "CENTER"
                 })
-                current_row += 1
 
                 # Righe operazioni del giorno
-                day_rows = []
+                first_data_row = len(all_data)
                 for s in slots:
                     pnl = s.get("pnl", 0)
                     if s.get("result") != "PENDING":
@@ -566,15 +654,13 @@ class SlotManager:
                         s.get("goals_away", "—"),
                         s.get("ht_total", "—"),
                     ]
-                    day_rows.append(row)
+                    add_row(row)
+                last_data_row = len(all_data) - 1
 
-                if day_rows:
-                    end_row = current_row + len(day_rows) - 1
-                    _sheets_retry(ws.update, f"A{current_row}:N{end_row}", day_rows)
-                    _sheets_retry(ws.format, f"A{current_row}:N{end_row}", {
+                if last_data_row >= first_data_row:
+                    add_format(first_data_row, last_data_row, {
                         "horizontalAlignment": "CENTER", "textFormat": {"fontSize": 9}
                     })
-                    current_row = end_row + 1
 
                 # Riga riepilogo giorno
                 day_pnl = sum(s.get("pnl", 0) for s in slots if s.get("result") != "PENDING")
@@ -588,19 +674,33 @@ class SlotManager:
                     "", "", f"€{day_staked:.2f}", day_wr, f"€{day_pnl:+.2f}",
                     f"€{bankroll_start + running_pnl:.2f}", "", "", ""
                 ]
-                _sheets_retry(ws.update, f"A{current_row}:N{current_row}", [summary_row])
+                r = add_row(summary_row)
                 pnl_color = {"red": 0.1, "green": 0.5, "blue": 0.1} if day_pnl >= 0 else {"red": 0.6, "green": 0.1, "blue": 0.1}
-                _sheets_retry(ws.format, f"A{current_row}:N{current_row}", {
+                add_format(r, r, {
                     "backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.9},
                     "textFormat": {"bold": True, "fontSize": 10, "foregroundColor": pnl_color},
                     "horizontalAlignment": "CENTER"
                 })
-                current_row += 2  # Spazio tra i giorni
 
+                # Riga vuota di separazione
+                add_row([""])
+
+            # === FASE 2: Scrivi TUTTI i dati in UNA sola chiamata ===
+            if all_data:
+                end_cell = f"N{len(all_data)}"
+                _sheets_retry(ws.update, f"A1:{end_cell}", all_data)
+                time_module.sleep(2)  # Pausa di sicurezza tra data e format
+
+            # === FASE 3: Applica TUTTA la formattazione in UNA sola batch ===
+            if format_requests:
+                _sheets_retry(self.sh.batch_update, {"requests": format_requests})
+                time_module.sleep(1)
+
+            # === FASE 4: Freeze + Auto-resize ===
             _sheets_retry(ws.freeze, rows=1)
             _sheets_retry(ws.columns_auto_resize, 0, 13)
 
-            logger.info(f"✅ Report Ven Dom aggiornato ({len(all_slots)} operazioni su {len(daily_dates)} giorni).")
+            logger.info(f"✅ Report Ven Dom aggiornato ({len(all_slots)} operazioni su {len(daily_dates)} giorni) — {len(format_requests)} formattazioni in batch.")
         except Exception as e:
             logger.error(f"Errore Report Ven Dom: {e}", exc_info=True)
 
@@ -674,6 +774,21 @@ class SlotManager:
             logger.info("Nessuno storico da risolvere.")
             return
 
+        # === Ricalibra P&L storico con commissione attuale ===
+        comm = self.config["commission_pct"] / 100.0
+        recalibrated = 0
+        for day in history:
+            for slot in day.get("slots", []):
+                if "VINTO" in str(slot.get("result", "")):
+                    stake = slot.get("stake", 0)
+                    odds = slot.get("odds", 1)
+                    correct_pnl = round(stake * (odds - 1) * (1.0 - comm), 2)
+                    if slot.get("pnl") != correct_pnl:
+                        slot["pnl"] = correct_pnl
+                        recalibrated += 1
+        if recalibrated > 0:
+            logger.info(f"📐 Ricalibrati {recalibrated} P&L storici con commissione {self.config['commission_pct']}%.")
+
         # Raccoglie tutti i fixture_id PENDING
         pending_fixtures = {}
         for day in history:
@@ -682,6 +797,8 @@ class SlotManager:
                     pending_fixtures[int(slot["fixture_id"])] = (day, slot)
 
         if not pending_fixtures:
+            if recalibrated > 0:
+                self._save_history(history)
             logger.info("Nessun risultato PENDING nello storico.")
             return
 
@@ -725,7 +842,8 @@ class SlotManager:
             stake = slot["stake"]
 
             if won:
-                profit = stake * (slot["odds"] - 1)
+                comm = self.config["commission_pct"] / 100.0
+                profit = stake * (slot["odds"] - 1) * (1.0 - comm)
                 slot["result"] = "VINTO ✅"
                 slot["pnl"] = round(profit, 2)
             else:
@@ -743,6 +861,7 @@ class SlotManager:
     #  DASHBOARD GOOGLE SHEETS
     # ======================================================================
     def update_dashboard_sheet(self):
+        """Dashboard Money Management — OTTIMIZZATO con batch_update."""
         logger.info("🎨 Generazione Dashboard Money Management...")
         try:
             try:
@@ -751,68 +870,14 @@ class SlotManager:
             except gspread.exceptions.WorksheetNotFound:
                 ws = self.sh.add_worksheet(title="Money Management", rows=1500, cols=20)
 
-            # TITOLO
-            _sheets_retry(ws.update_acell, "A1", "🏦 QUANT FUND — MONEY MANAGEMENT ENGINE v2.0")
-            _sheets_retry(ws.merge_cells, "A1:J1")
-            _sheets_retry(ws.format, "A1:J1", {
-                "backgroundColor": {"red": 0.05, "green": 0.05, "blue": 0.18},
-                "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 14},
-                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-            })
+            sheet_id = ws.id
 
-            # CONFIGURAZIONE
-            _sheets_retry(ws.update_acell, "A2", "⚙️ PARAMETRI CONFIGURABILI (modifica i valori in riga 4)")
-            _sheets_retry(ws.merge_cells, "A2:J2")
-            _sheets_retry(ws.format, "A2:J2", {
-                "backgroundColor": {"red": 0.15, "green": 0.15, "blue": 0.15},
-                "textFormat": {"foregroundColor": {"red": 0.9, "green": 0.75, "blue": 0.3}, "bold": True, "fontSize": 11},
-                "horizontalAlignment": "CENTER"
-            })
-
-            config_h = ["Bankroll (€)", "Target (€)", "StopLoss (%)", "Edge Min (%)", "Prob Min (%)", "Kelly Frac", "Max Stake (%)", "Min Match", "Modalità", "Stato"]
-            _sheets_retry(ws.update, "A3:J3", [config_h])
-            _sheets_retry(ws.format, "A3:J3", {"backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.85}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"})
-
+            # === Calcola tutti i dati ===
             global_status = "🟢 OPERATIVO"
             if self.state["total_profit_today"] >= self.state["daily_target"]:
                 global_status = "🎯 TARGET"
             elif self.state["total_profit_today"] <= self.state["stop_loss"]:
                 global_status = "🛑 STOP"
-
-            config_v = [
-                self.config["bankroll"], self.config["daily_target"], self.config["stop_loss_pct"],
-                self.config["min_edge_pct"], self.config["min_prob_pct"], self.config["kelly_fraction"],
-                self.config["max_stake_pct"], self.config["min_matches_used"], "PAPER TRADING", global_status
-            ]
-            _sheets_retry(ws.update, "A4:J4", [config_v])
-            _sheets_retry(ws.format, "A4:J4", {
-                "backgroundColor": {"red": 1, "green": 1, "blue": 0.9},
-                "textFormat": {"bold": True, "fontSize": 10}, "horizontalAlignment": "CENTER"
-            })
-
-            # DROPDOWNS
-            if HAS_FORMATTING:
-                try:
-                    set_data_validation_for_cell_range(ws, "F4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["0.25", "0.33", "0.50"]), showCustomUi=True))
-                    set_data_validation_for_cell_range(ws, "D4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["3", "5", "7", "10", "15"]), showCustomUi=True))
-                    set_data_validation_for_cell_range(ws, "E4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["50", "55", "60", "65", "70"]), showCustomUi=True))
-                    set_data_validation_for_cell_range(ws, "I4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["PAPER TRADING", "LIVE"]), showCustomUi=True))
-                    logger.info("Menu a tendina OK.")
-                except Exception as e:
-                    logger.warning(f"Dropdown falliti: {e}")
-
-            # P&L GIORNALIERO
-            _sheets_retry(ws.update_acell, "A6", "📊 P&L GIORNALIERO")
-            _sheets_retry(ws.merge_cells, "A6:J6")
-            _sheets_retry(ws.format, "A6:J6", {
-                "backgroundColor": {"red": 0.1, "green": 0.1, "blue": 0.3},
-                "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 11},
-                "horizontalAlignment": "CENTER"
-            })
-
-            pnl_h = ["Data", "Bankroll", "P&L Oggi", "Turnover", "Bet", "Vinte", "Perse", "Win Rate", "Yield", "Dist. Target"]
-            _sheets_retry(ws.update, "A7:J7", [pnl_h])
-            _sheets_retry(ws.format, "A7:J7", {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"})
 
             tp = self.state["events_played"]
             won = self.state["events_won"]
@@ -822,26 +887,35 @@ class SlotManager:
             wr = f"{(won/tp*100):.1f}%" if tp > 0 else "N/A"
             yl = f"{(prf/turn*100):.2f}%" if turn > 0 else "N/A"
 
-            pnl_v = [self.state["last_run_date"], f"€{self.state['bankroll']+prf:.2f}", f"€{prf:+.2f}", f"€{turn:.2f}", tp, won, lost, wr, yl, f"€{self.config['daily_target']-prf:.2f}"]
-            _sheets_retry(ws.update, "A8:J8", [pnl_v])
-            _sheets_retry(ws.format, "A8:J8", {"horizontalAlignment": "CENTER", "textFormat": {"bold": True}})
+            # === FASE 1: Prepara griglia dati completa ===
+            all_data = [
+                # Riga 1: Titolo
+                ["🏦 QUANT FUND — MONEY MANAGEMENT ENGINE v2.0"] + [""] * 10,
+                # Riga 2: Sottotitolo config
+                ["⚙️ PARAMETRI CONFIGURABILI (modifica i valori in riga 4)"] + [""] * 10,
+                # Riga 3: Header config
+                ["Bankroll (€)", "Target (€)", "StopLoss (%)", "Edge Min (%)", "Prob Min (%)", "Kelly Frac", "Max Stake (%)", "Min Match", "Modalità", "Stato", "Comm. BF (%)"],
+                # Riga 4: Valori config
+                [self.config["bankroll"], self.config["daily_target"], self.config["stop_loss_pct"],
+                 self.config["min_edge_pct"], self.config["min_prob_pct"], self.config["kelly_fraction"],
+                 self.config["max_stake_pct"], self.config["min_matches_used"], "PAPER TRADING", global_status, self.config["commission_pct"]],
+                # Riga 5: vuota
+                [""] * 11,
+                # Riga 6: Titolo P&L
+                ["📊 P&L GIORNALIERO"] + [""] * 10,
+                # Riga 7: Header P&L
+                ["Data", "Bankroll", "P&L Oggi", "Turnover", "Bet", "Vinte", "Perse", "Win Rate", "Yield", "Dist. Target", ""],
+                # Riga 8: Valori P&L
+                [self.state["last_run_date"], f"€{self.state['bankroll']+prf:.2f}", f"€{prf:+.2f}", f"€{turn:.2f}", tp, won, lost, wr, yl, f"€{self.config['daily_target']-prf:.2f}", ""],
+                # Riga 9: vuota
+                [""] * 11,
+                # Riga 10: Titolo Operazioni
+                ["🎰 OPERAZIONI"] + [""] * 10,
+                # Riga 11: Header slot
+                ["Slot", "Evento", "Mercato", "Prob", "Quota", "Edge", "Score", "Stake €", "Risultato", "P&L €", ""],
+            ]
 
-            pc = {"red": 0.1, "green": 0.6, "blue": 0.1} if prf >= 0 else {"red": 0.7, "green": 0.1, "blue": 0.1}
-            _sheets_retry(ws.format, "C8", {"textFormat": {"foregroundColor": pc, "bold": True, "fontSize": 12}})
-
-            # DETTAGLIO SLOT
-            _sheets_retry(ws.update_acell, "A10", "🎰 OPERAZIONI")
-            _sheets_retry(ws.merge_cells, "A10:J10")
-            _sheets_retry(ws.format, "A10:J10", {
-                "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
-                "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 11},
-                "horizontalAlignment": "CENTER"
-            })
-
-            sh = ["Slot", "Evento", "Mercato", "Prob", "Quota", "Edge", "Score", "Stake €", "Risultato", "P&L €"]
-            _sheets_retry(ws.update, "A11:J11", [sh])
-            _sheets_retry(ws.format, "A11:J11", {"backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.88}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"})
-
+            # Righe slot (da riga 12 in poi)
             slots = self.state.get("slots", {})
             slot_rows = []
             for sid, d in sorted(slots.items()):
@@ -851,14 +925,89 @@ class SlotManager:
                     f"{d.get('edge',0)*100:+.1f}%", f"{d.get('score',0):.3f}",
                     f"€{d.get('stake',0):.2f}", d.get("result","PENDING"), f"€{d.get('pnl',0):+.2f}"
                 ])
+            all_data.extend(slot_rows)
 
+            # === FASE 2: Scrivi TUTTI i dati in UNA chiamata ===
+            end_row = len(all_data)
+            _sheets_retry(ws.update, f"A1:K{end_row}", all_data)
+            time_module.sleep(2)
+
+            # === FASE 3: Prepara TUTTA la formattazione batch ===
+            pc = {"red": 0.1, "green": 0.6, "blue": 0.1} if prf >= 0 else {"red": 0.7, "green": 0.1, "blue": 0.1}
+
+            fmt_requests = [
+                # Riga 1: Titolo
+                {"mergeCells": {"range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 11}, "mergeType": "MERGE_ALL"}},
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.05, "green": 0.05, "blue": 0.18}, "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 14}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat"}},
+                # Riga 2: Config titolo
+                {"mergeCells": {"range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 11}, "mergeType": "MERGE_ALL"}},
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.15, "green": 0.15, "blue": 0.15}, "textFormat": {"foregroundColor": {"red": 0.9, "green": 0.75, "blue": 0.3}, "bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 3: Config header
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 2, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.85}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 4: Config valori
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 0.9}, "textFormat": {"bold": True, "fontSize": 10}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 6: P&L titolo
+                {"mergeCells": {"range": {"sheetId": sheet_id, "startRowIndex": 5, "endRowIndex": 6, "startColumnIndex": 0, "endColumnIndex": 11}, "mergeType": "MERGE_ALL"}},
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 5, "endRowIndex": 6, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.1, "green": 0.1, "blue": 0.3}, "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 7: P&L header
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 6, "endRowIndex": 7, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 8: P&L valori
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 7, "endRowIndex": 8, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "textFormat": {"bold": True}}}, "fields": "userEnteredFormat"}},
+                # Riga 8 colonna C: colore P&L
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 7, "endRowIndex": 8, "startColumnIndex": 2, "endColumnIndex": 3},
+                    "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": pc, "bold": True, "fontSize": 12}}}, "fields": "userEnteredFormat"}},
+                # Riga 10: Operazioni titolo
+                {"mergeCells": {"range": {"sheetId": sheet_id, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 11}, "mergeType": "MERGE_ALL"}},
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2}, "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+                # Riga 11: Slot header
+                {"repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 10, "endRowIndex": 11, "startColumnIndex": 0, "endColumnIndex": 11},
+                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.85, "green": 0.85, "blue": 0.88}, "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat"}},
+            ]
+
+            # Formattazione righe dati slot
             if slot_rows:
-                end = 11 + len(slot_rows)
-                _sheets_retry(ws.update, f"A12:J{end}", slot_rows)
-                _sheets_retry(ws.format, f"A12:J{end}", {"horizontalAlignment": "CENTER", "textFormat": {"fontSize": 9}})
+                fmt_requests.append({
+                    "repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 11, "endRowIndex": 11 + len(slot_rows), "startColumnIndex": 0, "endColumnIndex": 11},
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "textFormat": {"fontSize": 9}}}, "fields": "userEnteredFormat"}
+                })
 
-            _sheets_retry(ws.freeze, rows=1)
-            _sheets_retry(ws.columns_auto_resize, 0, 9)
-            logger.info(f"✅ Dashboard OK: {len(slot_rows)} operazioni.")
+            # Freeze
+            fmt_requests.append({
+                "updateSheetProperties": {
+                    "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+                    "fields": "gridProperties.frozenRowCount"
+                }
+            })
+
+            _sheets_retry(self.sh.batch_update, {"requests": fmt_requests})
+            time_module.sleep(1)
+
+            # Auto-resize (non disponibile come batch)
+            _sheets_retry(ws.columns_auto_resize, 0, 10)
+
+            # DROPDOWNS (chiamate separate, ma con retry)
+            if HAS_FORMATTING:
+                try:
+                    time_module.sleep(1)
+                    set_data_validation_for_cell_range(ws, "F4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["0.25", "0.33", "0.50"]), showCustomUi=True))
+                    set_data_validation_for_cell_range(ws, "D4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["3", "5", "7", "10", "15"]), showCustomUi=True))
+                    set_data_validation_for_cell_range(ws, "E4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["50", "55", "60", "65", "70"]), showCustomUi=True))
+                    set_data_validation_for_cell_range(ws, "I4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["PAPER TRADING", "LIVE"]), showCustomUi=True))
+                    # Dropdown per Commissione Betfair (colonna K)
+                    set_data_validation_for_cell_range(ws, "K4", DataValidationRule(BooleanCondition("ONE_OF_LIST", ["0", "2", "3", "4", "5", "6", "7", "8"]), showCustomUi=True))
+                    logger.info("Menu a tendina OK.")
+                except Exception as e:
+                    logger.warning(f"Dropdown falliti: {e}")
+
+            logger.info(f"✅ Dashboard OK: {len(slot_rows)} operazioni — {len(fmt_requests)} formattazioni in batch.")
         except Exception as e:
             logger.error(f"Errore dashboard: {e}", exc_info=True)
+

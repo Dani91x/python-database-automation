@@ -15,9 +15,9 @@ import config
 from Betfair.client import BetfairClient
 from db_client import get_supabase_client
 try:
-    from Betfair.money_management import SlotManager
+    from Betfair.money_management import SlotManager, _sheets_retry
 except ImportError:
-    from money_management import SlotManager
+    from money_management import SlotManager, _sheets_retry
 
 # Logging setup
 log_file = os.path.join(os.path.dirname(__file__), "betfair_matcher.log")
@@ -154,6 +154,7 @@ class BetfairReportManager:
 
         # 4. Aggiorna foglio Prediction (Tutte)
         self._sync_all_predictions(db_fixtures)
+        time.sleep(3)  # Pausa anti-rate-limit tra fasi Google Sheets
         
         # 5. Aggiorna foglio Match Eventi (Debug/Internal)
         if event_list:
@@ -166,6 +167,7 @@ class BetfairReportManager:
         # 7. Aggiorna foglio Segnali (La Magia + Edge Scanner)
         if event_list:
             self._update_signals_sheet(event_list, db_fixtures)
+        time.sleep(3)  # Pausa anti-rate-limit
 
         # 8. Salva operazioni di oggi nello storico multi-giorno
         logger.info("Fase 8: Salvataggio storico giornaliero...")
@@ -174,6 +176,7 @@ class BetfairReportManager:
         # 9. Aggiorna Dashboard Money Management
         logger.info("Fase 9: Aggiornamento Dashboard MM...")
         self.slot_manager.update_dashboard_sheet()
+        time.sleep(3)  # Pausa anti-rate-limit
 
         # 10. Aggiorna Report Ven-Dom (multi-giorno)
         logger.info("Fase 10: Aggiornamento Report Ven-Dom...")
@@ -216,15 +219,15 @@ class BetfairReportManager:
 
         try:
             ws = self.sh.worksheet("Prediction")
-            ws.clear()
-            ws.append_row(headers, value_input_option="RAW")
+            _sheets_retry(ws.clear)
+            _sheets_retry(ws.append_row, headers, value_input_option="RAW")
             # Formattazione: Grassetto intestazione + Allineamento centrato
-            ws.format("1:1", {"textFormat": {"bold": True}})
-            ws.format("A:Z", {"horizontalAlignment": "CENTER"})
+            _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
+            _sheets_retry(ws.format, "A:Z", {"horizontalAlignment": "CENTER"})
             
             if rows:
                 rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
-                ws.append_rows(rows, value_input_option="RAW")
+                _sheets_retry(ws.append_rows, rows, value_input_option="RAW")
             logger.info(f"Aggiornato foglio 'Prediction' con {len(rows)} analisi.")
         except Exception as err:
             logger.error(f"Errore aggiornamento foglio Prediction: {err}")
@@ -441,14 +444,15 @@ class BetfairReportManager:
 
         try:
             ws = self._get_or_create_worksheet("Segnali")
-            ws.clear()
-            ws.append_row(header, value_input_option="RAW")
-            ws.format("1:1", {"textFormat": {"bold": True}})
-            ws.format("A:Z", {"horizontalAlignment": "CENTER"})
+            _sheets_retry(ws.clear)
+            _sheets_retry(ws.append_row, header, value_input_option="RAW")
+            _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
+            _sheets_retry(ws.format, "A:Z", {"horizontalAlignment": "CENTER"})
             
             if rows:
-                ws.append_rows(rows, value_input_option="USER_ENTERED")
+                _sheets_retry(ws.append_rows, rows, value_input_option="USER_ENTERED")
             
+            time.sleep(2)  # Pausa anti-rate-limit prima della formattazione pesante
             # Masterpiece Formatting
             self._format_signals_sheet(ws, len(header))
             
@@ -572,88 +576,89 @@ class BetfairReportManager:
     def _format_signals_sheet(self, ws, num_cols):
         """
         Applica una formattazione professionale "Masterpiece" al foglio Segnali.
+        OTTIMIZZATO: usa batch_update con field masks specifici per combinare bg+text.
         """
         try:
-            # 1. Header (Dark Blue, White, Bold, Frozen)
-            # Usiamo "1:1" per coprire tutta la riga a prescindere dal numero di colonne
-            ws.format("1:1", {
-                "backgroundColor": {"red": 0.0, "green": 0.13, "blue": 0.28}, # #002147
-                "textFormat": {"foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}, "bold": True, "fontSize": 10},
-                "horizontalAlignment": "CENTER"
-            })
-            ws.freeze(rows=1)
-
-            # 2. Raggruppamento Colonne (Colori di sfondo per gruppi logici)
-            # Header: A-I (Identità+AI), J-N (Money Management v2), O-X (Deep Stats), Y-AP (Mercati)
-            
-            # Identità + AI Intelligence (A-I): Grigio chiaro
-            ws.format("A2:I1000", {"backgroundColor": {"red": 0.96, "green": 0.96, "blue": 0.96}})
-            
-            # Money Management v2 (J-N): Verde acqua leggero con highlight
-            ws.format("J2:N1000", {"backgroundColor": {"red": 0.9, "green": 0.97, "blue": 0.9}})
-            
-            # Slot (J) in blu scuro grassetto
-            ws.format("J2:J1000", {
-                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.5}, "bold": True}
-            })
-            # Mercato Scelto (K) in grassetto
-            ws.format("K2:K1000", {"textFormat": {"bold": True}})
-            # Edge (L) colorato
-            ws.format("L2:L1000", {
-                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.4, "blue": 0.0}, "bold": True}
-            })
-            # Stake (N) in verde valuta grassetto
-            ws.format("N2:N1000", {
-                "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.35, "blue": 0.0}, "bold": True},
-                "numberFormat": {"type": "CURRENCY", "pattern": "€#,##0.00"}
-            })
-            
-            # Deep Stats (O-X): Blu cielo leggero
-            ws.format("O2:X1000", {"backgroundColor": {"red": 0.91, "green": 0.94, "blue": 1.0}})
-            
-            # Mercati probabilità/quote/edge (Y-AP): Crema
-            ws.format("Y2:AP1000", {"backgroundColor": {"red": 1.0, "green": 0.98, "blue": 0.9}})
-            
-            # 3. Formattazione Numerica e Allineamento
-            ws.format("A2:B1000", {"horizontalAlignment": "CENTER"})
-            ws.format("E2:F1000", {"horizontalAlignment": "CENTER"})
-            ws.format("G2:AP1000", {"horizontalAlignment": "CENTER"})
-            
-            # Advice Bold
-            ws.format("G2:G1000", {"textFormat": {"bold": True}})
-            
-            # Quotas Bold (col Z=Quota H, AC=Quota D, AF=Quota A, AI=Quota HT, AL=Quota BTTS, AO=Quota O25)
-            quota_ranges = ["Z2:Z1000", "AC2:AC1000", "AF2:AF1000", "AI2:AI1000", "AL2:AL1000", "AO2:AO1000"]
-            for qr in quota_ranges:
-                ws.format(qr, {"textFormat": {"bold": True}})
-
-            # 4. Conditional Formatting (Heatmap per Edge)
             sheet_id = ws.id
-            # Edge cols: AA(H Edge)=26, AD(D Edge)=29, AG(A Edge)=32, AJ(HT Edge)=35, AM(BTTS Edge)=38, AP(O25 Edge)=41
-            edge_cols_indices = [26, 29, 32, 35, 38, 41] 
-            
-            requests = []
-            for col_idx in edge_cols_indices:
+
+            def _rng(r1, r2, c1, c2):
+                return {"sheetId": sheet_id, "startRowIndex": r1, "endRowIndex": r2, "startColumnIndex": c1, "endColumnIndex": c2}
+
+            def _bg(r1, r2, c1, c2, color):
+                return {"repeatCell": {"range": _rng(r1, r2, c1, c2), "cell": {"userEnteredFormat": {"backgroundColor": color}}, "fields": "userEnteredFormat.backgroundColor"}}
+
+            def _txt(r1, r2, c1, c2, fmt):
+                return {"repeatCell": {"range": _rng(r1, r2, c1, c2), "cell": {"userEnteredFormat": {"textFormat": fmt}}, "fields": "userEnteredFormat.textFormat"}}
+
+            def _align(r1, r2, c1, c2, align):
+                return {"repeatCell": {"range": _rng(r1, r2, c1, c2), "cell": {"userEnteredFormat": {"horizontalAlignment": align}}, "fields": "userEnteredFormat.horizontalAlignment"}}
+
+            requests = [
+                # === 1. HEADER: Dark Navy + White Bold ===
+                {"repeatCell": {"range": _rng(0, 1, 0, num_cols),
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": {"red": 0.0, "green": 0.13, "blue": 0.28},
+                        "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 10},
+                        "horizontalAlignment": "CENTER"
+                    }}, "fields": "userEnteredFormat"}},
+                # Freeze
+                {"updateSheetProperties": {"properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}}, "fields": "gridProperties.frozenRowCount"}},
+
+                # === 2. SFONDI PER GRUPPO (field mask specifico: solo backgroundColor) ===
+                # Identità + AI (A-I = 0-8): Grigio chiaro
+                _bg(1, 1000, 0, 9, {"red": 0.95, "green": 0.95, "blue": 0.96}),
+                # Money Management (J-N = 9-13): Verde menta
+                _bg(1, 1000, 9, 14, {"red": 0.85, "green": 0.95, "blue": 0.87}),
+                # Deep Stats (O-X = 14-23): Blu ghiaccio
+                _bg(1, 1000, 14, 24, {"red": 0.88, "green": 0.92, "blue": 1.0}),
+                # Mercati (Y-AP = 24-41): Crema caldo
+                _bg(1, 1000, 24, 42, {"red": 1.0, "green": 0.96, "blue": 0.88}),
+
+                # === 3. TEXT FORMAT PER COLONNE SPECIALI (field mask: solo textFormat) ===
+                # Slot (J=9): Blu scuro grassetto
+                _txt(1, 1000, 9, 10, {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.5}, "bold": True, "fontSize": 10}),
+                # Mercato Scelto (K=10): Grassetto nero
+                _txt(1, 1000, 10, 11, {"bold": True, "fontSize": 10}),
+                # Edge (L=11): Verde scuro grassetto
+                _txt(1, 1000, 11, 12, {"foregroundColor": {"red": 0.0, "green": 0.35, "blue": 0.0}, "bold": True}),
+                # Score (M=12): Corsivo
+                _txt(1, 1000, 12, 13, {"italic": True}),
+                # Stake (N=13): Verde valuta grassetto
+                _txt(1, 1000, 13, 14, {"foregroundColor": {"red": 0.0, "green": 0.3, "blue": 0.0}, "bold": True, "fontSize": 10}),
+                # Advice (G=6): Grassetto, colore scuro
+                _txt(1, 1000, 6, 7, {"bold": True, "foregroundColor": {"red": 0.2, "green": 0.2, "blue": 0.4}}),
+
+                # === 4. ALLINEAMENTO (field mask: solo horizontalAlignment) ===
+                _align(1, 1000, 0, 42, "CENTER"),
+            ]
+
+            # Quotas Bold: Z=25, AC=28, AF=31, AI=34, AL=37, AO=40
+            for col_idx in [25, 28, 31, 34, 37, 40]:
+                requests.append(_txt(1, 1000, col_idx, col_idx + 1, {"bold": True}))
+
+            # === 5. CONDITIONAL FORMATTING: Edge positivo = verde ===
+            for col_idx in [26, 29, 32, 35, 38, 41]:
                 requests.append({
                     "addConditionalFormatRule": {
                         "rule": {
-                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 1000, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}],
+                            "ranges": [_rng(1, 1000, col_idx, col_idx + 1)],
                             "booleanRule": {
                                 "condition": {"type": "TEXT_CONTAINS", "values": [{"userEnteredValue": "+"}]},
-                                "format": {"backgroundColor": {"red": 0.8, "green": 1.0, "blue": 0.8}, "textFormat": {"bold": True}}
+                                "format": {"backgroundColor": {"red": 0.75, "green": 1.0, "blue": 0.75}, "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.3, "blue": 0.0}, "bold": True}}
                             }
                         },
                         "index": 0
                     }
                 })
-            
-            if requests:
-                self.sh.batch_update({"requests": requests})
 
-            # 5. Dimensionamento automatico
-            ws.columns_auto_resize(0, num_cols - 1)
-            
-            logger.info("Formattazione 'Masterpiece' applicata con successo.")
+            # Esegui batch
+            _sheets_retry(self.sh.batch_update, {"requests": requests})
+            time.sleep(1)
+
+            # Auto-resize
+            _sheets_retry(ws.columns_auto_resize, 0, num_cols - 1)
+
+            logger.info(f"Formattazione 'Masterpiece' applicata — {len(requests)} operazioni in batch.")
         except Exception as e:
             logger.warning(f"Errore durante la formattazione grafica: {e}")
 
@@ -732,16 +737,16 @@ class BetfairReportManager:
                 
                 rows.append([e["id"], e["name"], dt_ita, e["country"] or "", link])
 
-            ws.clear()
-            ws.append_row(header, value_input_option="RAW")
+            _sheets_retry(ws.clear)
+            _sheets_retry(ws.append_row, header, value_input_option="RAW")
             # Formattazione: Grassetto intestazione + Allineamento centrato
-            ws.format("1:1", {"textFormat": {"bold": True}})
-            ws.format("A:E", {"horizontalAlignment": "CENTER"})
+            _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
+            _sheets_retry(ws.format, "A:E", {"horizontalAlignment": "CENTER"})
             
             if rows:
                 # Forza le stringhe che iniziano con = ad essere trattate come testo
                 rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
-                ws.append_rows(rows, value_input_option="RAW")
+                _sheets_retry(ws.append_rows, rows, value_input_option="RAW")
             logger.info(f"Aggiornato foglio '{config.WORKSHEET_NAME}' con {len(rows)} righe.")
         except Exception as err:
             logger.error(f"Errore aggiornamento foglio Betfair: {err}")
