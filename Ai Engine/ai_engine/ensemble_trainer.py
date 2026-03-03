@@ -314,7 +314,12 @@ def predict_ensemble(
 
         return meta_classes or payload_classes
 
-    X_np = X.reindex(columns=payload.feature_cols).to_numpy().astype(float)
+    X_reindexed = X.reindex(columns=payload.feature_cols).select_dtypes(include=["number", "bool"]).copy()
+    # Impute NaN con mediane (stessa logica del training) per evitare ValueError
+    if getattr(payload, "feature_medians", None):
+        X_reindexed = X_reindexed.fillna(payload.feature_medians)
+    X_reindexed = X_reindexed.fillna(0)
+    X_np = X_reindexed.to_numpy().astype(float)
     X_scaled = payload.scaler.transform(X_np) if payload.scaler else X_np
     classes = _resolve_classes(payload)
     n_classes = len(classes)
@@ -382,7 +387,11 @@ def get_ensemble_agreement(
         'votes': {model_name: predicted_class},
     }
     """
-    X_np = X.reindex(columns=payload.feature_cols).to_numpy().astype(float)
+    X_reindexed = X.reindex(columns=payload.feature_cols).select_dtypes(include=["number", "bool"]).copy()
+    if getattr(payload, "feature_medians", None):
+        X_reindexed = X_reindexed.fillna(payload.feature_medians)
+    X_reindexed = X_reindexed.fillna(0)
+    X_np = X_reindexed.to_numpy().astype(float)
     X_scaled = payload.scaler.transform(X_np) if payload.scaler else X_np
 
     votes = {}

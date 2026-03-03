@@ -11,9 +11,15 @@ import time
 # Import local modules
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Ai Engine"))
 import config
 from Betfair.client import BetfairClient
 from db_client import get_supabase_client
+
+# AI Engine imports
+from ai_engine.predict_fixture import predict_fixture
+from ai_engine.seriea_model_export import train_and_save_all, upload_and_register
+
 try:
     from Betfair.money_management import SlotManager, _sheets_retry
 except ImportError:
@@ -161,8 +167,10 @@ class BetfairReportManager:
             self._update_match_events_sheet(event_list, db_fixtures)
         
         # 6. Risolve risultati dei giorni precedenti (PRIMA di processare oggi)
-        logger.info("Fase 6: Risoluzione risultati giorni precedenti...")
+        logger.info("Fase 6: Risoluzione risultati giorni precedenti (Poisson + ML)...")
         self.slot_manager.resolve_history_results()
+        self.slot_manager.resolve_results()
+        self.slot_manager.resolve_ml_results()
 
         # 7. Aggiorna foglio Segnali (La Magia + Edge Scanner)
         if event_list:
@@ -239,26 +247,81 @@ class BetfairReportManager:
         pass # Mantengo il corpo esistente ma aggiungo il nuovo metodo sotto
 
     def _update_signals_sheet(self, bf_events, db_fixtures):
-        logger.info("Generazione foglio 'Segnali' (Market Map)...")
+        logger.info("Generazione foglio 'Segnali' (Market Map) — Layout Poisson + ML Side-by-Side...")
+
+        # =====================================================================
+        # HEADER — Organizzato in sezioni logiche:
+        # SEZIONE 1: Identità + Stato Lega (A-J)
+        # SEZIONE 2: Poisson Money Management (K-O)
+        # SEZIONE 3: Poisson Deep Stats (P-Y)
+        # SEZIONE 4: Poisson Markets — 6 mercati × (Prob, Quota, Edge) = 18 col (Z-AQ)
+        # SEZIONE 5: ML Money Management (AR-AV)
+        # SEZIONE 6: ML Primary Markets — 6 mercati × (Prob, Quota, Edge) = 18 col (AW-BN)
+        # SEZIONE 7: ML Additional Targets — prob only (BO+)
+        # =====================================================================
         header = [
-            "Data Evento", "Event ID", "Nome Evento (Betfair)", 
-            "Nome Evento (API-Football)", "Fixture ID", "League Name",
-            "Advice", "HT %", "Elite?",
-            # --- Money Management v2 (Quant Fund) ---
-            "Slot", "Mercato Scelto", "Edge", "Score", "Stake €",
-            # --- Statistiche ---
-            "N. Dati Casa", "N. Dati Trasf", 
-            "xG C", "xG T",
-            "Avg Gol Lega", "Avg Gol Casa", "Avg Gol Trasf",
-            "Lmb Casa", "Lmb Trasf", "Lmb 1H",
-            "H %", "Quota H", "Edge H", 
-            "D %", "Quota D", "Edge D", 
-            "A %", "Quota A", "Edge A",
-            "1H Over 0.5 %", "Quota 1H", "Edge 1H", 
-            "BTTS %", "Quota BTTS", "Edge BTTS", 
-            "O2.5 %", "Quota O2.5", "Edge O2.5"
+            # --- SEZIONE 1: Identità (0-9) ---
+            "Data Evento",                  # 0
+            "Event ID",                     # 1
+            "Nome Evento (Betfair)",        # 2
+            "Nome Evento (API-Football)",   # 3
+            "Fixture ID",                   # 4
+            "League Name",                  # 5
+            "Advice",                       # 6
+            "HT % (Poisson)",              # 7
+            "Elite?",                       # 8
+            "Stato Lega AI",               # 9
+            # --- SEZIONE 2: Poisson Money Management (10-14) ---
+            "Slot Poisson",                # 10
+            "Mercato Poisson",             # 11
+            "Edge Poisson",                # 12
+            "Score Poisson",               # 13
+            "Stake € Poisson",            # 14
+            # --- SEZIONE 3: Poisson Deep Stats (15-24) ---
+            "N. Dati Casa",                # 15
+            "N. Dati Trasf",               # 16
+            "xG C",                        # 17
+            "xG T",                        # 18
+            "Avg Gol Lega",                # 19
+            "Avg Gol Casa",                # 20
+            "Avg Gol Trasf",               # 21
+            "Lmb Casa",                    # 22
+            "Lmb Trasf",                   # 23
+            "Lmb 1H",                      # 24
+            # --- SEZIONE 4: Poisson Markets — Prob, Quota, Edge per mercato (25-42) ---
+            "H % Pois",     "Quota H",  "Edge H Pois",    # 25-27 (Home)
+            "D % Pois",     "Quota D",  "Edge D Pois",    # 28-30 (Draw)
+            "A % Pois",     "Quota A",  "Edge A Pois",    # 31-33 (Away)
+            "1H O0.5 Pois", "Quota 1H", "Edge 1H Pois",  # 34-36 (HT Over 0.5)
+            "BTTS % Pois",  "Quota BTTS","Edge BTTS Pois",# 37-39 (BTTS)
+            "O2.5 % Pois",  "Quota O2.5","Edge O2.5 Pois",# 40-42 (Over 2.5)
+            # --- SEZIONE 5: ML Money Management (43-47) ---
+            "Slot ML",                     # 43
+            "Mercato ML",                  # 44
+            "Edge ML",                     # 45
+            "Score ML",                    # 46
+            "Stake € ML",                 # 47
+            # --- SEZIONE 6: ML Primary Markets — Prob, Quota, Edge ML (48-65) ---
+            "H % AI",       "Quota H",  "Edge H ML",      # 48-50
+            "D % AI",       "Quota D",  "Edge D ML",      # 51-53
+            "A % AI",       "Quota A",  "Edge A ML",      # 54-56
+            "1H O0.5 AI",  "Quota 1H", "Edge 1H ML",     # 57-59
+            "BTTS % AI",   "Quota BTTS","Edge BTTS ML",   # 60-62
+            "O2.5 % AI",   "Quota O2.5","Edge O2.5 ML",   # 63-65
+            # --- SEZIONE 7: ML Additional Targets (66+) ---
+            "O0.5 % AI",   # 66 — target_over_0_5
+            "O1.5 % AI",   # 67 — target_over_1_5
+            "O3.5 % AI",   # 68 — target_over_3_5
+            "O4.5 % AI",   # 69 — target_over_4_5
+            "CS Home AI",  # 70 — target_clean_sheet_home
+            "CS Away AI",  # 71 — target_clean_sheet_away
+            "HT 1X2 H AI", # 72 — target_ht_1x2 H
+            "HT 1X2 D AI", # 73 — target_ht_1x2 D
+            "HT 1X2 A AI", # 74 — target_ht_1x2 A
+            "Goal 2H AI",  # 75 — target_goal_in_2h
         ]
-        
+        NUM_COLS = len(header)  # 76
+
         # 1. Ordina eventi Betfair cronologicamente
         bf_events_sorted = sorted(bf_events, key=lambda x: x.get("open_date", ""))
         
@@ -285,15 +348,13 @@ class BetfairReportManager:
 
         # 3. Generazione righe e preparazione dati per Money Management
         logger.info("Fase 3: Generazione righe del report e calcolo stake...")
-        signals_payload_for_mm = [] # Dati da passare a SlotManager
-        raw_rows_data = [] # Mantiene i dati temporanei della riga prima dell'arricchimento MM
+        signals_payload_for_mm = []
+        raw_rows_data = []
         
         for bf_e in bf_events_sorted:
-            # Dati Betfair
             dt = datetime.strptime(bf_e["open_date"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=pytz.UTC)
             dt_ita = dt.astimezone(pytz.timezone("Europe/Rome")).strftime("%Y-%m-%d %H:%M")
             
-            # Recupera match pre-identificato
             match_data = bf_e_map.get(bf_e["id"])
             
             if match_data:
@@ -301,36 +362,28 @@ class BetfairReportManager:
                 match_count += 1
                 api_event_name = f"{matched_db['home_team_name']} v {matched_db['away_team_name']}"
                 
-                # Estrazione Statistiche dal DB
                 advice = matched_db.get("advice", "")
-                
-                # Probabilità da db_json_analisi o dai campi flat
                 analysis = matched_db.get("db_json_analisi") or {}
                 markets = analysis.get("markets", {})
                 inputs = analysis.get("inputs", {})
                 
                 ht_prob = markets.get("first_half_over_0_5", {}).get("True")
-                if ht_prob is None: # Fallback a ht_predictions
+                if ht_prob is None:
                     ht_pred = matched_db.get("ht_predictions") or {}
                     ht_prob = ht_pred.get("hybrid_prob")
                 
                 btts_prob = markets.get("btts", {}).get("True")
                 o25_prob = markets.get("over_2_5", {}).get("True")
-                
-                # 1X2 probabilities
                 h_p = markets.get("1x2", {}).get("H") or matched_db.get("percent_home")
                 d_p = markets.get("1x2", {}).get("D") or matched_db.get("percent_draw")
                 a_p = markets.get("1x2", {}).get("A") or matched_db.get("percent_away")
-                
                 is_elite = (matched_db.get("ht_predictions") or {}).get("is_elite", False)
                 
-                # --- Integrazione Quote Betfair ---
-                # Recupera le quote dalla cache pre-caricata
                 odds = odds_cache.get(bf_e["id"], {})
 
+                # --- Helpers ---
                 def fmt_p(val):
                     if val is None: return ""
-                    # Aggiungiamo ' davanti per evitare che Google Sheets lo interpreti come formula in USER_ENTERED
                     if val > 1: return f"'{val:.1f}%"
                     return f"'{val*100:.1f}%"
 
@@ -344,18 +397,14 @@ class BetfairReportManager:
 
                 def calc_edge(prob, quota):
                     if prob is None or quota is None: return None
-                    # Se prob è 65% (0.65) e quota è 2.0 -> (0.65 * 2.0) - 1 = 0.30 (+30%)
-                    # In caso il DB abbia prob > 1 (es. 65), lo normalizziamo
                     p = prob / 100.0 if prob > 1 else prob
-                    edge = (p * quota) - 1
-                    return edge
+                    return (p * quota) - 1
 
                 def fmt_edge(edge):
                     if edge is None: return ""
-                    # Usiamo l'apice ' per forzare il formato testo ed evitare l'errore #ERROR! di Google Sheets
                     return f"'{edge*100:+.1f}%"
 
-                # Hyperlink per l'evento Betfair (Match Odds)
+                # Hyperlink Betfair
                 mo_id = odds.get("mo_id")
                 event_name_val = bf_e["name"]
                 if mo_id:
@@ -363,29 +412,83 @@ class BetfairReportManager:
                 else:
                     event_display = event_name_val
 
-                # --- PREPARAZIONE PAYLOAD PER MONEY MANAGEMENT v2 (Quant Fund) ---
-                # Passiamo TUTTI i dati al nuovo Edge Scanner:
-                # - L'intero dict analysis["markets"] con tutte le probabilità dei 6 mercati
-                # - L'intero dict odds con tutte le quote Betfair
-                # - L'intero dict inputs per i filtri di qualità dati
+                # --- INTEGRAZIONE AI ENGINE ---
+                ai_preds, ai_status = self._get_or_train_ai_predictions(
+                    matched_db["fixture_id"], matched_db["league_id"], odds
+                )
+                
+                # Estrazione probabilità AI per i 6 mercati primari
+                ai_h_p, ai_d_p, ai_a_p = None, None, None
+                ai_ht_prob, ai_btts_prob, ai_o25_prob = None, None, None
+                # Target addizionali ML
+                ai_o05, ai_o15, ai_o35, ai_o45 = None, None, None, None
+                ai_cs_home, ai_cs_away = None, None
+                ai_ht_h, ai_ht_d, ai_ht_a = None, None, None
+                ai_goal_2h = None
+                
+                if ai_preds and "targets" in ai_preds:
+                    t = ai_preds["targets"]
+                    # 1X2
+                    ai_h_p = t.get("target_1x2", {}).get("H")
+                    ai_d_p = t.get("target_1x2", {}).get("D")
+                    ai_a_p = t.get("target_1x2", {}).get("A")
+                    # HT Over 0.5 — dal nuovo target dedicato o proxy da HT 1X2
+                    ht_o05 = t.get("target_ht_over_0_5", {})
+                    if ht_o05:
+                        ai_ht_prob = ht_o05.get("True", ht_o05.get(True))
+                    else:
+                        # Fallback: proxy da HT 1X2 — P(Over 0.5 1H) ≈ 1 − P(Draw HT)
+                        ht_1x2 = t.get("target_ht_1x2", {})
+                        d_ht = ht_1x2.get("D", ht_1x2.get("Draw"))
+                        if d_ht is not None:
+                            ai_ht_prob = 1.0 - d_ht
+                    # BTTS
+                    ai_btts_prob = t.get("target_btts", {}).get("True", t.get("target_btts", {}).get(True))
+                    # Over 2.5
+                    ov25 = t.get("target_over_2_5", {})
+                    ai_o25_prob = ov25.get("True", ov25.get(True, ov25.get("over")))
+                    # Additional ML targets
+                    ov05 = t.get("target_over_0_5", {})
+                    ai_o05 = ov05.get("True", ov05.get(True, ov05.get("over")))
+                    ov15 = t.get("target_over_1_5", {})
+                    ai_o15 = ov15.get("True", ov15.get(True, ov15.get("over")))
+                    ov35 = t.get("target_over_3_5", {})
+                    ai_o35 = ov35.get("True", ov35.get(True, ov35.get("over")))
+                    ov45 = t.get("target_over_4_5", {})
+                    ai_o45 = ov45.get("True", ov45.get(True, ov45.get("over")))
+                    cs_h = t.get("target_clean_sheet_home", {})
+                    ai_cs_home = cs_h.get("True", cs_h.get(True))
+                    cs_a = t.get("target_clean_sheet_away", {})
+                    ai_cs_away = cs_a.get("True", cs_a.get(True))
+                    ht1x2 = t.get("target_ht_1x2", {})
+                    ai_ht_h = ht1x2.get("H")
+                    ai_ht_d = ht1x2.get("D")
+                    ai_ht_a = ht1x2.get("A")
+                    g2h = t.get("target_goal_in_2h", {})
+                    ai_goal_2h = g2h.get("True", g2h.get(True))
+
+                # --- PREPARAZIONE PAYLOAD PER MONEY MANAGEMENT ---
                 signals_payload_for_mm.append({
                     "event_id": bf_e["id"],
-                    "fixture_id": matched_db["fixture_id"],  # Necessario per risolvere risultati
+                    "fixture_id": matched_db["fixture_id"],
                     "name": api_event_name,
                     "date": dt_ita,
-                    "analysis_markets": analysis,  # Dict completo con markets.1x2, markets.btts etc.
-                    "odds_data": odds,              # Dict con H, D, A, HT05, BTTS, O25
-                    "inputs_data": inputs,           # Dict con home_matches_used, etc.
+                    "analysis_markets": analysis,
+                    "ai_markets": ai_preds.get("targets", {}) if ai_preds else {},
+                    "odds_data": odds,
+                    "inputs_data": inputs,
                     "row_index": len(raw_rows_data)
                 })
 
                 row_base = [
+                    # SEZIONE 1: Identità (0-9)
                     dt_ita, bf_e["id"], event_display, api_event_name, 
                     matched_db["fixture_id"], matched_db["league_name"],
                     advice, fmt_p(ht_prob), "SÌ" if is_elite else "",
-                    # MM v2: Slot, Mercato Scelto, Edge, Score, Stake (segnaposti)
+                    ai_status,  # 9 = Stato Lega AI
+                    # SEZIONE 2: Poisson MM segnaposti (10-14)
                     "{MM_SLOT}", "{MM_MKT}", "{MM_EDGE}", "{MM_SCORE}", "{MM_STAKE}",
-                    # Deep Stats
+                    # SEZIONE 3: Poisson Deep Stats (15-24)
                     fmt_v(inputs.get("home_matches_used"), 0),
                     fmt_v(inputs.get("away_matches_used"), 0),
                     fmt_v(inputs.get("home_xg_covered"), 0),
@@ -396,49 +499,77 @@ class BetfairReportManager:
                     fmt_v(inputs.get("lambda_home")),
                     fmt_v(inputs.get("lambda_away")),
                     fmt_v((matched_db.get("ht_predictions") or {}).get("lambda_1h")),
-                    # Probabilities & Odds & Edges
-                    fmt_p(h_p), fmt_q(odds.get("H")), fmt_edge(calc_edge(h_p, odds.get("H"))),
-                    fmt_p(d_p), fmt_q(odds.get("D")), fmt_edge(calc_edge(d_p, odds.get("D"))),
-                    fmt_p(a_p), fmt_q(odds.get("A")), fmt_edge(calc_edge(a_p, odds.get("A"))),
-                    fmt_p(ht_prob), fmt_q(odds.get("HT05")), fmt_edge(calc_edge(ht_prob, odds.get("HT05"))),
-                    fmt_p(btts_prob), fmt_q(odds.get("BTTS")), fmt_edge(calc_edge(btts_prob, odds.get("BTTS"))),
-                    fmt_p(o25_prob), fmt_q(odds.get("O25")), fmt_edge(calc_edge(o25_prob, odds.get("O25")))
+                    # SEZIONE 4: Poisson Markets — Prob, Quota, Edge (25-42)
+                    fmt_p(h_p),      fmt_q(odds.get("H")),    fmt_edge(calc_edge(h_p, odds.get("H"))),
+                    fmt_p(d_p),      fmt_q(odds.get("D")),    fmt_edge(calc_edge(d_p, odds.get("D"))),
+                    fmt_p(a_p),      fmt_q(odds.get("A")),    fmt_edge(calc_edge(a_p, odds.get("A"))),
+                    fmt_p(ht_prob),  fmt_q(odds.get("HT05")), fmt_edge(calc_edge(ht_prob, odds.get("HT05"))),
+                    fmt_p(btts_prob),fmt_q(odds.get("BTTS")), fmt_edge(calc_edge(btts_prob, odds.get("BTTS"))),
+                    fmt_p(o25_prob), fmt_q(odds.get("O25")),  fmt_edge(calc_edge(o25_prob, odds.get("O25"))),
+                    # SEZIONE 5: ML MM segnaposti (43-47)
+                    "{ML_SLOT}", "{ML_MKT}", "{ML_EDGE}", "{ML_SCORE}", "{ML_STAKE}",
+                    # SEZIONE 6: ML Primary Markets — Prob, Quota, Edge ML (48-65)
+                    fmt_p(ai_h_p),      fmt_q(odds.get("H")),    fmt_edge(calc_edge(ai_h_p, odds.get("H"))),
+                    fmt_p(ai_d_p),      fmt_q(odds.get("D")),    fmt_edge(calc_edge(ai_d_p, odds.get("D"))),
+                    fmt_p(ai_a_p),      fmt_q(odds.get("A")),    fmt_edge(calc_edge(ai_a_p, odds.get("A"))),
+                    fmt_p(ai_ht_prob),  fmt_q(odds.get("HT05")), fmt_edge(calc_edge(ai_ht_prob, odds.get("HT05"))),
+                    fmt_p(ai_btts_prob),fmt_q(odds.get("BTTS")), fmt_edge(calc_edge(ai_btts_prob, odds.get("BTTS"))),
+                    fmt_p(ai_o25_prob), fmt_q(odds.get("O25")),  fmt_edge(calc_edge(ai_o25_prob, odds.get("O25"))),
+                    # SEZIONE 7: ML Additional Targets (66-75)
+                    fmt_p(ai_o05),
+                    fmt_p(ai_o15),
+                    fmt_p(ai_o35),
+                    fmt_p(ai_o45),
+                    fmt_p(ai_cs_home),
+                    fmt_p(ai_cs_away),
+                    fmt_p(ai_ht_h),
+                    fmt_p(ai_ht_d),
+                    fmt_p(ai_ht_a),
+                    fmt_p(ai_goal_2h),
                 ]
             else:
-                row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (len(header) - 3)
+                row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (NUM_COLS - 3)
             
             raw_rows_data.append(row_base)
             
-        # 4. Elaborazione Money Management v2 (Edge Scanner + Kelly)
+        # 4. Elaborazione Money Management v2 — DUAL TRACK (Poisson + ML)
         if signals_payload_for_mm:
-            logger.info("Fase 4: Edge Scanner Multi-Mercato + Kelly Staking...")
+            logger.info("Fase 4: Edge Scanner Dual Track (Poisson + ML)...")
             enriched_signals = self.slot_manager.process_signals(signals_payload_for_mm)
             
-            # Mappiamo i risultati arricchiti indietro sulle righe del foglio
             for signal in enriched_signals:
                 r_idx = signal["row_index"]
                 
+                # --- Poisson track ---
                 stake_val = signal.get('stake', '')
                 if isinstance(stake_val, (int, float)) and stake_val > 0:
                    stake_val = round(stake_val, 2)
                 else:
                    stake_val = ''
-                   
-                # Indici: 9=Slot, 10=Mercato Scelto, 11=Edge, 12=Score, 13=Stake
-                raw_rows_data[r_idx][9] = signal.get("slot_id", "")
-                raw_rows_data[r_idx][10] = signal.get("selected_market", "")
-                raw_rows_data[r_idx][11] = signal.get("edge_pct", "")
-                raw_rows_data[r_idx][12] = signal.get("score", "")
-                raw_rows_data[r_idx][13] = stake_val
+                raw_rows_data[r_idx][10] = signal.get("slot_id", "")
+                raw_rows_data[r_idx][11] = signal.get("selected_market", "")
+                raw_rows_data[r_idx][12] = signal.get("edge_pct", "")
+                raw_rows_data[r_idx][13] = signal.get("score", "")
+                raw_rows_data[r_idx][14] = stake_val
                 
-        # Sostituisce eventuali segnaposti rimasti (eventi senza match nel DB)
+                # --- ML track ---
+                ml_stake = signal.get('ml_stake', '')
+                if isinstance(ml_stake, (int, float)) and ml_stake > 0:
+                   ml_stake = round(ml_stake, 2)
+                else:
+                   ml_stake = ''
+                raw_rows_data[r_idx][43] = signal.get("ml_slot_id", "")
+                raw_rows_data[r_idx][44] = signal.get("ml_selected_market", "")
+                raw_rows_data[r_idx][45] = signal.get("ml_edge_pct", "")
+                raw_rows_data[r_idx][46] = signal.get("ml_score", "")
+                raw_rows_data[r_idx][47] = ml_stake
+                
+        # Sostituisce segnaposti rimasti
         for r in raw_rows_data:
-            if len(r) > 9 and r[9] == "{MM_SLOT}":
-                r[9] = ""
-                r[10] = ""
-                r[11] = ""
-                r[12] = ""
-                r[13] = ""
+            if len(r) > 10 and r[10] == "{MM_SLOT}":
+                r[10] = ""; r[11] = ""; r[12] = ""; r[13] = ""; r[14] = ""
+            if len(r) > 43 and r[43] == "{ML_SLOT}":
+                r[43] = ""; r[44] = ""; r[45] = ""; r[46] = ""; r[47] = ""
                 
         rows = raw_rows_data
 
@@ -447,16 +578,14 @@ class BetfairReportManager:
             _sheets_retry(ws.clear)
             _sheets_retry(ws.append_row, header, value_input_option="RAW")
             _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
-            _sheets_retry(ws.format, "A:Z", {"horizontalAlignment": "CENTER"})
             
             if rows:
                 _sheets_retry(ws.append_rows, rows, value_input_option="USER_ENTERED")
             
-            time.sleep(2)  # Pausa anti-rate-limit prima della formattazione pesante
-            # Masterpiece Formatting
-            self._format_signals_sheet(ws, len(header))
+            time.sleep(2)
+            self._format_signals_sheet(ws, NUM_COLS)
             
-            logger.info(f"Aggiornato foglio 'Segnali': {match_count}/{len(bf_events)} match accoppiati con statistiche.")
+            logger.info(f"Aggiornato foglio 'Segnali': {match_count}/{len(bf_events)} match — Layout Poisson+ML con {NUM_COLS} colonne.")
         except Exception as err:
             logger.error(f"Errore aggiornamento foglio Segnali: {err}")
 
@@ -544,7 +673,13 @@ class BetfairReportManager:
                 runners_book = {r['selectionId']: r for r in book.get('runners', [])}
                 
                 if eid not in all_results:
-                    all_results[eid] = {"H": None, "D": None, "A": None, "HT05": None, "BTTS": None, "O25": None, "mo_id": None}
+                    all_results[eid] = {
+                        "H": None, "D": None, "A": None,
+                        "O25": None, "U25": None,
+                        "BTTS": None, "BTTS_NO": None,
+                        "HT05": None, "HT_U05": None,
+                        "mo_id": None
+                    }
 
                 def get_best_back(selection_id):
                     r_book = runners_book.get(selection_id)
@@ -559,13 +694,18 @@ class BetfairReportManager:
                         all_results[eid]["A"] = get_best_back(runners_cat[1]['selectionId'])
                         all_results[eid]["D"] = get_best_back(runners_cat[2]['selectionId'])
                 elif mname == "Both teams to Score?":
-                    if len(runners_cat) >= 1:
+                    if len(runners_cat) >= 2:
+                        all_results[eid]["BTTS"] = get_best_back(runners_cat[0]['selectionId'])
+                        all_results[eid]["BTTS_NO"] = get_best_back(runners_cat[1]['selectionId'])
+                    elif len(runners_cat) >= 1:
                         all_results[eid]["BTTS"] = get_best_back(runners_cat[0]['selectionId'])
                 elif mname == "Over/Under 2.5 Goals":
                     if len(runners_cat) >= 2:
+                        all_results[eid]["U25"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["O25"] = get_best_back(runners_cat[1]['selectionId'])
                 elif mname == "First Half Goals 0.5":
                     if len(runners_cat) >= 2:
+                        all_results[eid]["HT_U05"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["HT05"] = get_best_back(runners_cat[1]['selectionId'])
 
         except Exception as e:
@@ -575,8 +715,9 @@ class BetfairReportManager:
 
     def _format_signals_sheet(self, ws, num_cols):
         """
-        Applica una formattazione professionale "Masterpiece" al foglio Segnali.
-        OTTIMIZZATO: usa batch_update con field masks specifici per combinare bg+text.
+        Applica formattazione professionale al foglio Segnali — Layout Poisson + ML.
+        Sezioni: Identità(0-9) | Poisson MM(10-14) | Stats(15-24) | Poisson Mkts(25-42)
+                 | ML MM(43-47) | ML Mkts(48-65) | ML Extra(66-75)
         """
         try:
             sheet_id = ws.id
@@ -601,43 +742,70 @@ class BetfairReportManager:
                         "textFormat": {"foregroundColor": {"red": 1, "green": 1, "blue": 1}, "bold": True, "fontSize": 10},
                         "horizontalAlignment": "CENTER"
                     }}, "fields": "userEnteredFormat"}},
-                # Freeze
+                # Freeze header
                 {"updateSheetProperties": {"properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}}, "fields": "gridProperties.frozenRowCount"}},
 
-                # === 2. SFONDI PER GRUPPO (field mask specifico: solo backgroundColor) ===
-                # Identità + AI (A-I = 0-8): Grigio chiaro
-                _bg(1, 1000, 0, 9, {"red": 0.95, "green": 0.95, "blue": 0.96}),
-                # Money Management (J-N = 9-13): Verde menta
-                _bg(1, 1000, 9, 14, {"red": 0.85, "green": 0.95, "blue": 0.87}),
-                # Deep Stats (O-X = 14-23): Blu ghiaccio
-                _bg(1, 1000, 14, 24, {"red": 0.88, "green": 0.92, "blue": 1.0}),
-                # Mercati (Y-AP = 24-41): Crema caldo
-                _bg(1, 1000, 24, 42, {"red": 1.0, "green": 0.96, "blue": 0.88}),
+                # === 2. SFONDI PER SEZIONE ===
+                # Identità (0-9): Grigio chiaro
+                _bg(1, 1000, 0, 10, {"red": 0.95, "green": 0.95, "blue": 0.96}),
+                # Poisson MM (10-14): Verde menta
+                _bg(1, 1000, 10, 15, {"red": 0.85, "green": 0.95, "blue": 0.87}),
+                # Deep Stats (15-24): Blu ghiaccio
+                _bg(1, 1000, 15, 25, {"red": 0.88, "green": 0.92, "blue": 1.0}),
+                # Poisson Markets (25-42): Crema caldo
+                _bg(1, 1000, 25, 43, {"red": 1.0, "green": 0.96, "blue": 0.88}),
+                # ML MM (43-47): Lavanda
+                _bg(1, 1000, 43, 48, {"red": 0.91, "green": 0.85, "blue": 0.95}),
+                # ML Primary Markets (48-65): Pesca chiaro
+                _bg(1, 1000, 48, 66, {"red": 1.0, "green": 0.91, "blue": 0.85}),
+                # ML Additional (66-75): Rosa pallido
+                _bg(1, 1000, 66, 76, {"red": 0.98, "green": 0.88, "blue": 0.92}),
 
-                # === 3. TEXT FORMAT PER COLONNE SPECIALI (field mask: solo textFormat) ===
-                # Slot (J=9): Blu scuro grassetto
-                _txt(1, 1000, 9, 10, {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.5}, "bold": True, "fontSize": 10}),
-                # Mercato Scelto (K=10): Grassetto nero
-                _txt(1, 1000, 10, 11, {"bold": True, "fontSize": 10}),
-                # Edge (L=11): Verde scuro grassetto
-                _txt(1, 1000, 11, 12, {"foregroundColor": {"red": 0.0, "green": 0.35, "blue": 0.0}, "bold": True}),
-                # Score (M=12): Corsivo
-                _txt(1, 1000, 12, 13, {"italic": True}),
-                # Stake (N=13): Verde valuta grassetto
-                _txt(1, 1000, 13, 14, {"foregroundColor": {"red": 0.0, "green": 0.3, "blue": 0.0}, "bold": True, "fontSize": 10}),
-                # Advice (G=6): Grassetto, colore scuro
+                # === 3. TEXT FORMAT PER COLONNE SPECIALI ===
+                # Poisson Slot (10): Blu scuro grassetto
+                _txt(1, 1000, 10, 11, {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.5}, "bold": True, "fontSize": 10}),
+                # Poisson Mercato (11): Grassetto
+                _txt(1, 1000, 11, 12, {"bold": True, "fontSize": 10}),
+                # Poisson Edge (12): Verde scuro grassetto
+                _txt(1, 1000, 12, 13, {"foregroundColor": {"red": 0.0, "green": 0.35, "blue": 0.0}, "bold": True}),
+                # Poisson Score (13): Corsivo
+                _txt(1, 1000, 13, 14, {"italic": True}),
+                # Poisson Stake (14): Verde valuta grassetto
+                _txt(1, 1000, 14, 15, {"foregroundColor": {"red": 0.0, "green": 0.3, "blue": 0.0}, "bold": True, "fontSize": 10}),
+                # Advice (6): Grassetto scuro
                 _txt(1, 1000, 6, 7, {"bold": True, "foregroundColor": {"red": 0.2, "green": 0.2, "blue": 0.4}}),
+                # Stato Lega AI (9): Grassetto
+                _txt(1, 1000, 9, 10, {"bold": True}),
+                # ML Slot (43): Viola grassetto
+                _txt(1, 1000, 43, 44, {"foregroundColor": {"red": 0.4, "green": 0.0, "blue": 0.5}, "bold": True, "fontSize": 10}),
+                # ML Mercato (44): Grassetto
+                _txt(1, 1000, 44, 45, {"bold": True, "fontSize": 10}),
+                # ML Edge (45): Viola scuro grassetto
+                _txt(1, 1000, 45, 46, {"foregroundColor": {"red": 0.4, "green": 0.0, "blue": 0.4}, "bold": True}),
+                # ML Score (46): Corsivo
+                _txt(1, 1000, 46, 47, {"italic": True}),
+                # ML Stake (47): Viola valuta grassetto
+                _txt(1, 1000, 47, 48, {"foregroundColor": {"red": 0.4, "green": 0.0, "blue": 0.3}, "bold": True, "fontSize": 10}),
 
-                # === 4. ALLINEAMENTO (field mask: solo horizontalAlignment) ===
-                _align(1, 1000, 0, 42, "CENTER"),
+                # === 4. ALLINEAMENTO globale ===
+                _align(1, 1000, 0, num_cols, "CENTER"),
             ]
 
-            # Quotas Bold: Z=25, AC=28, AF=31, AI=34, AL=37, AO=40
-            for col_idx in [25, 28, 31, 34, 37, 40]:
+            # Quote Bold — Poisson: indici 26, 29, 32, 35, 38, 41
+            pois_quota_cols = [26, 29, 32, 35, 38, 41]
+            for col_idx in pois_quota_cols:
+                requests.append(_txt(1, 1000, col_idx, col_idx + 1, {"bold": True}))
+
+            # Quote Bold — ML: indici 49, 52, 55, 58, 61, 64
+            ml_quota_cols = [49, 52, 55, 58, 61, 64]
+            for col_idx in ml_quota_cols:
                 requests.append(_txt(1, 1000, col_idx, col_idx + 1, {"bold": True}))
 
             # === 5. CONDITIONAL FORMATTING: Edge positivo = verde ===
-            for col_idx in [26, 29, 32, 35, 38, 41]:
+            # Poisson edge cols: 27, 30, 33, 36, 39, 42
+            # ML edge cols: 50, 53, 56, 59, 62, 65
+            all_edge_cols = [27, 30, 33, 36, 39, 42, 50, 53, 56, 59, 62, 65]
+            for col_idx in all_edge_cols:
                 requests.append({
                     "addConditionalFormatRule": {
                         "rule": {
@@ -656,11 +824,85 @@ class BetfairReportManager:
             time.sleep(1)
 
             # Auto-resize
-            _sheets_retry(ws.columns_auto_resize, 0, num_cols - 1)
+            _sheets_retry(ws.columns_auto_resize, 0, min(num_cols - 1, 75))
 
-            logger.info(f"Formattazione 'Masterpiece' applicata — {len(requests)} operazioni in batch.")
+            logger.info(f"Formattazione Poisson+ML applicata — {len(requests)} operazioni in batch.")
         except Exception as e:
             logger.warning(f"Errore durante la formattazione grafica: {e}")
+
+    # Cache per evitare ri-addestramento della stessa lega in una singola esecuzione
+    _trained_leagues_this_run = set()
+    MODEL_CACHE_TTL_DAYS = 7  # Riuserà modelli locali se < 7 giorni
+
+    def _get_or_train_ai_predictions(self, fixture_id, league_id, odds_dict):
+        """Helper robusto per predizioni AI. Ritorna (predictions, status_string).
+        Con smart caching: se i modelli locali sono freschi (<7gg), li riusa senza riaddestramento.
+        status = 'OK' | 'LEGA SALTATA PER DATI INSUFFICIENTI' | 'ERRORE AI'"""
+        try:
+            preds = predict_fixture(fixture_id, store=False, live_odds=odds_dict)
+            return preds, "OK"
+        except RuntimeError as e:
+            if "No models found" in str(e):
+                # Evita di addestrare la stessa lega più volte nella stessa esecuzione
+                if league_id in self._trained_leagues_this_run:
+                    logger.info(f"League {league_id} già processata in questa esecuzione. Salto.")
+                    return None, "LEGA SALTATA PER DATI INSUFFICIENTI"
+
+                logger.info(f"Modelli assenti nel registry per League {league_id}. Controllo cache locale...")
+                self._trained_leagues_this_run.add(league_id)
+
+                try:
+                    # --- SMART CACHE: controlla se esistono modelli locali freschi ---
+                    import glob
+                    cache_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
+                    local_models = glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+
+                    need_training = True
+                    if local_models:
+                        # Controlla l'età del modello più recente
+                        newest_mtime = max(os.path.getmtime(p) for p in local_models)
+                        age_days = (datetime.now().timestamp() - newest_mtime) / 86400.0
+                        if age_days < self.MODEL_CACHE_TTL_DAYS:
+                            logger.info(f"✅ Cache locale fresca ({age_days:.1f}gg < {self.MODEL_CACHE_TTL_DAYS}gg). "
+                                       f"Upload di {len(local_models)} modelli senza riaddestrare.")
+                            # Upload modelli locali al registry (molto più veloce del training)
+                            for model_path in local_models:
+                                target = os.path.basename(model_path).replace("ensemble_v2_", "").replace(".pkl.gz", "")
+                                file_size = os.path.getsize(model_path)
+                                upload_and_register(model_path, file_size, target, {
+                                    "league_id": league_id,
+                                    "model_type": "ensemble_v2",
+                                    "accuracy": None,
+                                    "logloss": None,
+                                    "brier": None,
+                                    "feature_count": None,
+                                    "train_rows": None,
+                                    "trained_range": "cached",
+                                })
+                            need_training = False
+                        else:
+                            logger.info(f"⏰ Cache locale scaduta ({age_days:.1f}gg >= {self.MODEL_CACHE_TTL_DAYS}gg). Riaddestrare.")
+
+                    if need_training:
+                        logger.info(f"🔧 Training completo League {league_id}...")
+                        results = train_and_save_all(league_id, last_n_seasons=3)
+                        for r in results:
+                            upload_and_register(r["model_path"], r["file_size"], r["target"], r)
+
+                    logger.info(f"League {league_id} pronta. Riprendo predizione.")
+                    preds = predict_fixture(fixture_id, store=False, live_odds=odds_dict)
+                    return preds, "OK"
+                except Exception as ex:
+                    logger.warning(f"Dati insufficienti per lega {league_id}: {ex}. Salto AI.")
+                    return None, "LEGA SALTATA PER DATI INSUFFICIENTI"
+            else:
+                import traceback
+                logger.warning(f"Errore AI fixture {fixture_id}: {e}\n{traceback.format_exc()}")
+                return None, "ERRORE AI"
+        except Exception as generic_e:
+            import traceback
+            logger.warning(f"Errore non gestito AI fixture {fixture_id}: {generic_e}\n{traceback.format_exc()}")
+            return None, "ERRORE AI"
 
     def _fetch_odds_for_event(self, event_id):
         # [Manteniamo per ora per retrocompatibilità o debug, ma useremo _prefetch_odds_for_events]
