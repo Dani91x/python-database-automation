@@ -858,7 +858,7 @@ class BetfairReportManager:
         Con smart caching: se i modelli locali sono freschi (<7gg), li riusa senza riaddestramento.
         status = 'OK' | 'LEGA SALTATA PER DATI INSUFFICIENTI' | 'ERRORE AI'"""
         try:
-            preds = predict_fixture(fixture_id, store=False, live_odds=odds_dict)
+            preds = predict_fixture(fixture_id, store=True, live_odds=odds_dict)
             return preds, "OK"
         except RuntimeError as e:
             if "No models found" in str(e):
@@ -909,7 +909,7 @@ class BetfairReportManager:
                             upload_and_register(r["model_path"], r["file_size"], r["target"], r)
 
                     logger.info(f"League {league_id} pronta. Riprendo predizione.")
-                    preds = predict_fixture(fixture_id, store=False, live_odds=odds_dict)
+                    preds = predict_fixture(fixture_id, store=True, live_odds=odds_dict)
                     return preds, "OK"
                 except Exception as ex:
                     logger.warning(f"Dati insufficienti per lega {league_id}: {ex}. Salto AI.")
