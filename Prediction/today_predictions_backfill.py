@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import math
@@ -127,96 +129,196 @@ def setup_logger() -> logging.Logger:
 # --- CACHE BLACKLIST DINAMICA ---
 _TOXIC_LEAGUES_CACHE: Optional[Set[int]] = None
 
-def get_toxic_leagues() -> Set[int]:
+def get_league_trust_scores() -> Dict[int, float]:
     """
-    Ricalcola dinamicamente la blacklist delle leghe sfavorevoli.
-    Scarica i match "Elite" degli ultimi 3 mesi, calcola il P/L 
-    simulato a quota 1.35 per ogni lega, e restituisce il set di league_id
-    che hanno un P/L negativo.
+    Calcola il Trust Score per ogni lega degli ultimi 90 giorni.
+    Usa le quote reali da raw_json_odds per calcolare il Profit Factor,
+    poi mappa PF → Trust con interpolazione lineare continua (0.2–1.2).
+    
+    Genera league_trust_scores.json con scrittura atomica.
+    Ritorna dict {league_id: trust_score}.
     """
-    global _TOXIC_LEAGUES_CACHE
-    if _TOXIC_LEAGUES_CACHE is not None:
-        return _TOXIC_LEAGUES_CACHE
-
-    logger.info("Calcolo dinamico della Blacklist Leghe in corso...")
+    import tempfile as _tempfile
+    
+    logger.info("Calcolo Trust Scores per lega (ultimi 90 giorni)...")
     sb = get_supabase_client()
     
     cutoff_date = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
     
-    # Prendi tutte le predictions che sono Elite e matches FT
-    # Questo richiede una join. Con l'API REST di Supabase (postgrest):
-    # sb.table("fixture_predictions").select("fixture_id, league_id, ht_predictions, matches!inner(halftime_home, halftime_away, status_short, fixture_date)").eq("matches.status_short", "FT").gte("matches.fixture_date", cutoff_date).execute()
-    # Ma per non complicare la sintassi postgrest con JSONB filter, usiamo un batch.
+    # 1. Fetch match finiti degli ultimi 90 giorni
+    matches = []
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = sb.table("matches") \
+            .select("fixture_id, league_id, goals_home, goals_away, halftime_home, halftime_away") \
+            .in_("status_short", ["FT", "AET", "PEN"]) \
+            .gte("fixture_date", cutoff_date) \
+            .range(offset, offset + page_size - 1) \
+            .execute()
+        batch = getattr(resp, "data", []) or []
+        matches.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
     
-    res = sb.table("matches") \
-        .select("fixture_id, league_id, halftime_home, halftime_away, status_short") \
-        .in_("status_short", ["FT", "AET", "PEN"]) \
-        .gte("fixture_date", cutoff_date) \
-        .execute()
+    if not matches:
+        logger.info("Nessun match negli ultimi 90 giorni — trust scores vuoti.")
+        return {}
     
-    matches_data = getattr(res, "data", [])
-    if not matches_data:
-        _TOXIC_LEAGUES_CACHE = set()
-        return _TOXIC_LEAGUES_CACHE
-
-    match_dict = {m["fixture_id"]: m for m in matches_data}
+    match_dict = {m["fixture_id"]: m for m in matches}
     match_ids = list(match_dict.keys())
     
-    batch_size = 500
-    elite_predictions = []
-    
-    for i in range(0, len(match_ids), batch_size):
-        batch = match_ids[i:i+batch_size]
+    # 2. Fetch predictions con ht_predictions (per Elite) e raw_json_odds
+    elite_with_odds = []
+    for i in range(0, len(match_ids), 500):
+        batch = match_ids[i:i+500]
         p_res = sb.table("fixture_predictions") \
-            .select("fixture_id, ht_predictions, db_json_analisi") \
+            .select("fixture_id, ht_predictions, raw_json_odds") \
             .in_("fixture_id", batch) \
-            .neq("ht_predictions", "null") \
             .execute()
-        
-        for p in getattr(p_res, "data", []):
+        for p in getattr(p_res, "data", []) or []:
             ht = p.get("ht_predictions")
-            if not ht: continue
+            if not ht:
+                continue
             if isinstance(ht, str):
-                import json
-                try: ht = json.loads(ht)
-                except: continue
-                
-            # Verifica trifecta cruda o flag is_elite (se già calcolato)
-            is_e = ht.get("is_elite", False)
-            if is_e:
-                 elite_predictions.append(p)
-                 
-    league_stats = {}
+                try:
+                    ht = json.loads(ht)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            if ht.get("is_elite", False):
+                elite_with_odds.append(p)
     
-    for p in elite_predictions:
+    # 3. Parse odds da raw_json_odds (struttura API-Football)
+    def _parse_apifootball_odds(raw):
+        if not isinstance(raw, dict):
+            return None
+        bookmakers = raw.get("bookmakers", [])
+        if not bookmakers:
+            return None
+        bets = bookmakers[0].get("bets", [])
+        odds = {}
+        for bet in bets:
+            name = bet.get("name", "")
+            vals = {}
+            for v in bet.get("values", []):
+                if v.get("odd"):
+                    try:
+                        vals[v["value"]] = float(v["odd"])
+                    except (ValueError, TypeError):
+                        pass
+            if name == "Goals Over/Under First Half":
+                odds["HT05"] = vals.get("Over 0.5")
+        return odds if odds else None
+    
+    # 4. Calcola Profit Factor per lega
+    # PF = Gross Profit / Gross Loss (simulazione su HT Over 0.5 con quote reali)
+    league_stats = {}  # league_id -> {"gross_profit": float, "gross_loss": float}
+    
+    for p in elite_with_odds:
         fix_id = p["fixture_id"]
         m = match_dict.get(fix_id)
-        if not m: continue
+        if not m:
+            continue
         
-        l_id = m["league_id"]
-        goals_ht = (m.get("halftime_home") or 0) + (m.get("halftime_away") or 0)
-        is_win = 1 if goals_ht > 0 else 0
+        l_id = m.get("league_id")
+        if l_id is None:
+            continue
+        
+        # Parse odds reali
+        raw_odds = p.get("raw_json_odds")
+        parsed = _parse_apifootball_odds(raw_odds)
+        
+        # Se non ci sono odds reali, usa quota fissa 1.35 come fallback
+        if parsed and parsed.get("HT05"):
+            quota = parsed["HT05"]
+        else:
+            quota = 1.35
+        
+        # Risultato HT
+        hth = m.get("halftime_home")
+        hta = m.get("halftime_away")
+        if hth is None or hta is None:
+            continue
+        
+        goals_ht = int(hth) + int(hta)
+        is_win = goals_ht > 0
         
         if l_id not in league_stats:
-            league_stats[l_id] = {"total": 0, "wins": 0}
+            league_stats[l_id] = {"gross_profit": 0.0, "gross_loss": 0.0, "total": 0}
         
         league_stats[l_id]["total"] += 1
-        league_stats[l_id]["wins"] += is_win
-            
-    toxic_set = set()
+        if is_win:
+            league_stats[l_id]["gross_profit"] += (quota - 1.0)  # profitto netto
+        else:
+            league_stats[l_id]["gross_loss"] += 1.0  # perso lo stake
+    
+    # 5. Calcola Trust Score con mapping continuo
+    # PF = gross_profit / gross_loss (se gross_loss > 0)
+    # Mapping lineare: PF 0.3 → trust 0.2, PF 1.0 → trust 1.0, PF >= 1.5 → trust 1.2
+    trust_scores = {}
     for l_id, stats in league_stats.items():
-        total = stats["total"]
-        wins = stats["wins"]
-        losses = total - wins
-        if total == 0: continue
-            
-        profit = (wins * 0.35) - (losses * 1.0)
-        if profit < 0:
-            toxic_set.add(l_id)
-            
-    logger.info(f"Blacklist Dinamica calcolata: trovate {len(toxic_set)} leghe non profittevoli.")
+        if stats["total"] < 5:  # troppo pochi match per giudicare
+            trust_scores[l_id] = 1.0
+            continue
+        
+        gp = stats["gross_profit"]
+        gl = stats["gross_loss"]
+        
+        if gl <= 0:
+            pf = 2.0  # nessuna perdita = massima fiducia
+        else:
+            pf = gp / gl
+        
+        # Mapping continuo: PF 0.3→0.2, PF 1.0→1.0, capped a 1.2
+        trust = min(1.2, max(0.2, 0.2 + (pf - 0.3) * (0.8 / 0.7)))
+        trust_scores[l_id] = round(trust, 3)
+    
+    logger.info(f"Trust Scores calcolati per {len(trust_scores)} leghe.")
+    
+    # 6. Scrivi league_trust_scores.json (atomico)
+    base_dir = Path(__file__).resolve().parent.parent
+    target_path = base_dir / "league_trust_scores.json"
+    output = {
+        "scores": {str(k): v for k, v in trust_scores.items()},
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "lookback_days": 90,
+        "leagues_analyzed": len(trust_scores),
+    }
+    tmp_path = None
+    try:
+        fd, tmp_path = _tempfile.mkstemp(suffix=".tmp", dir=str(base_dir))
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
+            json.dump(output, tmp_f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, str(target_path))
+        logger.info(f"✅ league_trust_scores.json generato ({len(trust_scores)} leghe)")
+    except Exception as e:
+        logger.error(f"❌ Errore scrittura league_trust_scores.json: {e}")
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    
+    return trust_scores
+
+
+def get_toxic_leagues() -> Set[int]:
+    """
+    Wrapper retrocompatibile: leghe con trust < 0.3 sono considerate "toxic".
+    Ricalcola dinamicamente la blacklist usando get_league_trust_scores().
+    """
+    global _TOXIC_LEAGUES_CACHE
+    if _TOXIC_LEAGUES_CACHE is not None:
+        return _TOXIC_LEAGUES_CACHE
+    
+    trust_scores = get_league_trust_scores()
+    toxic_set = {lid for lid, trust in trust_scores.items() if trust < 0.3}
+    
+    logger.info(f"Blacklist Dinamica: {len(toxic_set)} leghe non profittevoli (trust < 0.3).")
     _TOXIC_LEAGUES_CACHE = toxic_set
     return _TOXIC_LEAGUES_CACHE
+
 
 
 # ==============================

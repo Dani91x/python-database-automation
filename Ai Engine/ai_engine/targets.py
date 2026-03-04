@@ -67,6 +67,10 @@ def add_targets_from_matches(df: pd.DataFrame) -> pd.DataFrame:
     )
     out["target_ht_ft"] = out["target_ht_1x2"].fillna("") + "_" + out["target_ft_1x2"].fillna("")
 
+    # First Half Over 0.5 (direct boolean target)
+    ht_total = out["halftime_home"] + out["halftime_away"]
+    out["target_ht_over_0_5"] = ht_total > 0
+
     # Exact score
     out["target_exact_score"] = (
         out["goals_home"].fillna(-1).astype(int).astype(str) + "-" + out["goals_away"].fillna(-1).astype(int).astype(str)

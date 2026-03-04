@@ -12,6 +12,10 @@ from .training_dataset import build_training_dataset
 from .model_suite import train_and_predict
 from .advanced_validation import aggregate_model_outputs, consensus, entropy
 from .market_ranking import build_ranked_markets
+from .seriea_model_export import train_and_save_all, upload_and_register
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def run_daily_report(target_date: date | None = None, include_matches: bool = True) -> str:
@@ -88,32 +92,18 @@ def run_daily_report(target_date: date | None = None, include_matches: bool = Tr
         if train_df.empty:
             continue
 
-        # Drop post-match features for training (prevent leakage)
-        # Must be computed here after train_df is available
-        league_drop_cols = list(drop_cols)
-        league_drop_cols += [c for c in train_df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
-        league_drop_cols += [c for c in train_df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
-        league_drop_cols += [c for c in train_df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
-
-        if not target_cols:
-            target_cols = [c for c in train_df.columns if c.startswith("target_")]
-
-        for target in target_cols:
-            results = train_and_predict(train_df, pred_df, target, league_drop_cols)
-            if not results:
-                continue
-
-            # aggregate per fixture across models
-            for idx, row_idx in enumerate(pred_df.index):
-                prob_maps = [r.pred_probas[idx] for r in results]
-                pred_labels = [r.pred_labels[idx] for r in results]
-                weights = [r.weight or 1.0 for r in results]
-                agg = aggregate_model_outputs(prob_maps, weights)
-                df.loc[row_idx, f"{target}_ensemble"] = max(agg, key=agg.get) if agg else None
-                df.loc[row_idx, f"{target}_entropy"] = entropy(agg) if agg else None
-                df.loc[row_idx, f"{target}_consensus"] = consensus(pred_labels)
-
-            model_summary.append(target)
+        # Dynamic Training triggered by daily runner
+        try:
+            logger.info(f"Triggering dynamic training for League {league_id_int}...")
+            # We train/save models using the production methodology
+            results = train_and_save_all(league_id_int, last_n_seasons=3)
+            for r in results:
+                upload_and_register(r["model_path"], r["file_size"], r["target"], r)
+                
+            model_summary.extend([r["target"] for r in results])
+        except Exception as e:
+            logger.warning(f"Failed to dynamically train models for league {league_id_int}: {e}")
+            continue
 
     if model_summary:
         df["suggested_confidence"] = df.get("target_over_2_5_consensus", 0)

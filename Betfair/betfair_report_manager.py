@@ -319,8 +319,12 @@ class BetfairReportManager:
             "HT 1X2 D AI", # 73 — target_ht_1x2 D
             "HT 1X2 A AI", # 74 — target_ht_1x2 A
             "Goal 2H AI",  # 75 — target_goal_in_2h
+            # --- SEZIONE 8: Edge Engine v3.0 Diagnostics (76-78) ---
+            "🛡️ Safety Vault",  # 76
+            "Trust Score",       # 77
+            "Edge Originale",    # 78
         ]
-        NUM_COLS = len(header)  # 76
+        NUM_COLS = len(header)  # 79 (was 76 before Edge Engine v3.0)
 
         # 1. Ordina eventi Betfair cronologicamente
         bf_events_sorted = sorted(bf_events, key=lambda x: x.get("open_date", ""))
@@ -471,6 +475,7 @@ class BetfairReportManager:
                 signals_payload_for_mm.append({
                     "event_id": bf_e["id"],
                     "fixture_id": matched_db["fixture_id"],
+                    "league_id": matched_db.get("league_id"),  # Edge Engine v3.0
                     "name": api_event_name,
                     "date": dt_ita,
                     "analysis_markets": analysis,
@@ -526,6 +531,10 @@ class BetfairReportManager:
                     fmt_p(ai_ht_d),
                     fmt_p(ai_ht_a),
                     fmt_p(ai_goal_2h),
+                    # SEZIONE 8: Edge Engine v3.0 Diagnostics (76-78)
+                    "",  # Safety Vault placeholder
+                    "",  # Trust Score placeholder
+                    "",  # Edge Originale placeholder
                 ]
             else:
                 row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (NUM_COLS - 3)
@@ -563,6 +572,14 @@ class BetfairReportManager:
                 raw_rows_data[r_idx][45] = signal.get("ml_edge_pct", "")
                 raw_rows_data[r_idx][46] = signal.get("ml_score", "")
                 raw_rows_data[r_idx][47] = ml_stake
+                
+                # --- Edge Engine v3.0 Diagnostics ---
+                safety_vault = signal.get("safety_vault", False)
+                raw_rows_data[r_idx][76] = "🛡️ ATTIVO" if safety_vault else ""
+                trust_score = signal.get("trust_score")
+                raw_rows_data[r_idx][77] = f"{trust_score:.2f}" if trust_score is not None else ""
+                orig_edge = signal.get("original_edge")
+                raw_rows_data[r_idx][78] = f"'{orig_edge*100:+.1f}%" if orig_edge is not None else ""
                 
         # Sostituisce segnaposti rimasti
         for r in raw_rows_data:
@@ -760,6 +777,8 @@ class BetfairReportManager:
                 _bg(1, 1000, 48, 66, {"red": 1.0, "green": 0.91, "blue": 0.85}),
                 # ML Additional (66-75): Rosa pallido
                 _bg(1, 1000, 66, 76, {"red": 0.98, "green": 0.88, "blue": 0.92}),
+                # Edge Engine v3.0 Diagnostics (76-79): Rosso tenue per Safety Vault
+                _bg(1, 1000, 76, 79, {"red": 1.0, "green": 0.90, "blue": 0.90}),
 
                 # === 3. TEXT FORMAT PER COLONNE SPECIALI ===
                 # Poisson Slot (10): Blu scuro grassetto

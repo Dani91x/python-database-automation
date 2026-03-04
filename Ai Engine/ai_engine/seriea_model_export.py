@@ -302,11 +302,11 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
 def upload_and_register(model_path: str, file_size: int, target: str, metrics: dict) -> None:
     """Upload model to Supabase storage and register in ai_model_registry."""
     sb = get_supabase_client()
-    bucket = "ai-models"
+    league_id = metrics.get("league_id")
+    bucket = f"ai-models-league-{league_id}"
     _ensure_bucket(bucket)
 
-    league_id = metrics.get("league_id")
-    storage_path = f"league_{league_id}/{MODEL_NAME}_{target}.pkl.gz"
+    storage_path = f"{MODEL_NAME}_{target}.pkl.gz"
     with open(model_path, "rb") as f:
         sb.storage.from_(bucket).upload(
             storage_path, f, {"content-type": "application/octet-stream", "upsert": "true"}

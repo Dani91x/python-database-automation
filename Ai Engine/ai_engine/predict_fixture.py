@@ -297,12 +297,13 @@ ALL_DEFINED_TARGETS = [
     "target_corners_total", "target_sot_total",
     "target_cards_total", "target_home_cards", "target_away_cards",
     "target_first_goal_before_30", "target_goal_in_2h",
+    "target_ht_over_0_5",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
+def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None) -> Dict[str, Any]:
     """
     Full prediction pipeline for a single fixture.
 
@@ -345,6 +346,9 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
     if not models:
         raise RuntimeError("No models found in ai_model_registry for league")
 
+    # The models might still point to the old bucket in DB, but we strictly enforce the new bucket path
+    bucket = f"ai-models-league-{league_id}"
+
     out_dir = os.path.join("Ai Engine", "models_cache", "downloaded")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -358,11 +362,18 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
 
     for m in models:
         target = m["target"]
-        bucket = m["storage_bucket"]
         path = m["storage_path"]
+        
+        # Override bucket from registry to enforce dynamically isolated bucket per league
+        m_bucket = f"ai-models-league-{league_id}"
+        
         local_path = os.path.join(out_dir, os.path.basename(path))
         if not os.path.exists(local_path):
-            _download_model(bucket, path, local_path)
+            try:
+                _download_model(m_bucket, path, local_path)
+            except Exception as e:
+                logger.warning(f"Failed to download model {target} from {m_bucket}: {e}")
+                continue
         payload = _load_model(local_path)
 
         feats = payload["features"]
@@ -394,12 +405,18 @@ def predict_fixture(fixture_id: int, store: bool = False) -> Dict[str, Any]:
         results[target] = _scale_probabilities(probs, alpha)
 
     # ── VALUE BETTING ANALYSIS ─────────────────────────────────
-    raw_odds = fx_df.iloc[0].get("raw_json_odds") if not fx_df.empty else None
-    if isinstance(raw_odds, str):
-        try:
-            raw_odds = json.loads(raw_odds)
-        except Exception:
-            raw_odds = None
+    if live_odds:
+        logger.info(f"Using LIVE ODDS passed from Betfair for Fixture {fixture_id}")
+        raw_odds = live_odds
+    else:
+        logger.info(f"Using DB ODDS for Fixture {fixture_id}")
+        raw_odds = fx_df.iloc[0].get("raw_json_odds") if not fx_df.empty else None
+        
+        if isinstance(raw_odds, str):
+            try:
+                raw_odds = json.loads(raw_odds)
+            except Exception:
+                raw_odds = None
 
     odds_mapping = build_odds_mapping(raw_odds, results) if raw_odds else {}
     bet_signals, no_bet_reasons = evaluate_bet_opportunities(results, odds_mapping)

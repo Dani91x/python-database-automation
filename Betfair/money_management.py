@@ -1,6 +1,6 @@
 """
 =============================================================================
-  QUANT FUND — Money Management Engine v2.0
+  QUANT FUND — Money Management Engine v3.0 (Edge Engine)
   Sistema di Money Management a Slot Paralleli Dinamici con:
   - Edge Scanner Multi-Mercato (6 mercati)
   - Confidence-Adjusted Edge Score (Edge × √Prob)
@@ -8,14 +8,19 @@
   - Risoluzione Risultati automatica dal DB
   - Report "Ven-Dom" su Google Sheets
   - Dashboard Professionale su Google Sheets
-=============================================================================
-"""
+  --- v3.0 ---
+  - Calibrazione Poisson Dinamica (rolling window per lega + globale)
+  - Hallucination Filter (Z-Score Protection)
+  - League Trust Score (Pressure Regulator)
+  - Feature Flags per attivazione/disattivazione indipendente
+============================================================================="""
 
 import json
 import os
 import math
 import logging
 import time as time_module
+import tempfile
 from datetime import datetime, timedelta, timezone
 import gspread
 
@@ -47,6 +52,21 @@ DEFAULT_MIN_MATCHES_USED = 2     # A/B Test: lowered from 5
 DEFAULT_COMMISSION_PCT = 5.0  # Commissione Betfair sulle vincite (%)
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "money_management_state.json")
+
+# ---------------------------------------------------------------------------
+#  EDGE ENGINE v3.0 — Feature Flags
+#  Ogni componente può essere attivato/disattivato indipendentemente.
+# ---------------------------------------------------------------------------
+EDGE_ENGINE_FLAGS = {
+    "use_dynamic_cal": True,           # Alpha: Calibrazione Dinamica
+    "use_hallucination_filter": True,  # Sigma: Z-Score Hallucination Filter
+    "use_trust_score": True,           # Omega: League Trust Score
+}
+
+# Correzione overround Betfair (~2.5%) per calcolo prob_market
+OVERROUND_CORRECTION = 0.975
+# Z-Score σ di fallback (usata se dynamic_cal.json non contiene divergence_stats)
+DEFAULT_DIVERGENCE_STD = 0.30
 
 MARKET_MAP = {
     # --- A/B Test: tutti i min_edge a 2.0 per raccogliere dati ---
@@ -139,6 +159,8 @@ class SlotManager:
         self.sh = sh
         self.config = self._load_config_from_sheet()
         self.state = self._load_state()
+        self._load_dynamic_data()
+        self._last_kelly_meta = {}  # metadati dell'ultimo calcolo per diagnostica
 
     # ======================================================================
     #  CONFIGURAZIONE
@@ -173,10 +195,65 @@ class SlotManager:
                 # Colonna K (indice 10): Commissione Betfair
                 if len(vals) >= 11:
                     config["commission_pct"] = _sf(vals[10], DEFAULT_COMMISSION_PCT)
+                # Feature flags (colonne aggiuntive se presenti)
+                # Colonna L=11: use_dynamic_cal, M=12: use_hallucination_filter, N=13: use_trust_score
+                if len(vals) >= 14:
+                    for idx, flag_name in [(11, "use_dynamic_cal"), (12, "use_hallucination_filter"), (13, "use_trust_score")]:
+                        flag_val = str(vals[idx]).strip().upper() if idx < len(vals) and vals[idx] else ""
+                        if flag_val in ("TRUE", "1", "SÌ", "SI", "YES"):
+                            EDGE_ENGINE_FLAGS[flag_name] = True
+                        elif flag_val in ("FALSE", "0", "NO"):
+                            EDGE_ENGINE_FLAGS[flag_name] = False
+                        # Se vuoto, mantiene il default
                 logger.info(f"Config caricata dal foglio: {config}")
+                logger.info(f"Edge Engine Flags: {EDGE_ENGINE_FLAGS}")
         except Exception as e:
             logger.info(f"Config da foglio non disponibile, uso default: {e}")
         return config
+
+    # ======================================================================
+    #  CARICAMENTO DATI DINAMICI (Edge Engine v3.0)
+    # ======================================================================
+    def _load_dynamic_data(self):
+        """Carica dynamic_cal.json e league_trust_scores.json all'avvio."""
+        base = os.path.dirname(os.path.dirname(__file__))
+
+        # --- Dynamic Calibration ---
+        cal_path = os.path.join(base, "dynamic_cal.json")
+        self._dynamic_cal = None
+        if os.path.exists(cal_path):
+            try:
+                with open(cal_path, "r", encoding="utf-8") as f:
+                    self._dynamic_cal = json.load(f)
+                n_leagues = self._dynamic_cal.get("leagues_covered", 0)
+                logger.info(f"📊 Dynamic calibration caricata ({n_leagues} leghe)")
+            except Exception as e:
+                logger.warning(f"⚠️ Errore lettura dynamic_cal.json: {e} — fallback su tabella statica")
+                self._dynamic_cal = None
+        else:
+            logger.info("📊 dynamic_cal.json non trovato — fallback su tabella statica")
+
+        # --- League Trust Scores ---
+        trust_path = os.path.join(base, "league_trust_scores.json")
+        self._trust_scores = None
+        if os.path.exists(trust_path):
+            try:
+                with open(trust_path, "r", encoding="utf-8") as f:
+                    self._trust_scores = json.load(f)
+                n_scores = len(self._trust_scores.get("scores", {}))
+                logger.info(f"📊 Trust scores caricati ({n_scores} leghe)")
+            except Exception as e:
+                logger.warning(f"⚠️ Errore lettura league_trust_scores.json: {e}")
+                self._trust_scores = None
+        else:
+            logger.info("📊 league_trust_scores.json non trovato — nessun trust adjustment")
+
+        # --- Divergence σ (per Z-Score) ---
+        self._divergence_std = DEFAULT_DIVERGENCE_STD
+        if self._dynamic_cal and "divergence_stats" in self._dynamic_cal:
+            ds = self._dynamic_cal["divergence_stats"]
+            self._divergence_std = ds.get("std", DEFAULT_DIVERGENCE_STD)
+            logger.info(f"📊 Divergence σ = {self._divergence_std:.4f} (da {ds.get('n_samples', 0)} campioni)")
 
     # ======================================================================
     #  STATO GIORNALIERO
@@ -232,7 +309,7 @@ class SlotManager:
     # ======================================================================
     #  EDGE SCANNER MULTI-MERCATO
     # ======================================================================
-    def scan_best_market(self, analysis_data, odds_data, inputs_data=None, ai_data=None):
+    def scan_best_market(self, analysis_data, odds_data, inputs_data=None, ai_data=None, league_id=None):
         min_edge = self.config["min_edge_pct"] / 100.0
         min_prob = self.config["min_prob_pct"] / 100.0
         min_matches = self.config["min_matches_used"]
@@ -259,7 +336,7 @@ class SlotManager:
             # === CALIBRAZIONE: corregge la probabilità con dati storici ===
             cal_key = market_info.get("cal_key", market_key)
             prob_raw = prob
-            prob = self._apply_calibration(prob, cal_key)
+            prob, cal_source = self._apply_calibration(prob, cal_key, league_id=league_id)
 
             quota = odds_data.get(market_key)
             if quota is None or quota <= 1.01:
@@ -292,6 +369,7 @@ class SlotManager:
                 "edge": round(edge, 4),
                 "ai_edge": round(ai_edge, 4) if ai_edge is not None else None,
                 "score": round(score, 4),
+                "cal_source": cal_source,
             })
 
         if not candidates:
@@ -358,17 +436,48 @@ class SlotManager:
         best["all_candidates"] = len(candidates)
         return best
 
-    @staticmethod
-    def _apply_calibration(prob, cal_key):
-        """Applica correzione calibrazione bin-level alla probabilità.
-        Basata su 24,787 match storici — corregge bias sistematici del modello Poisson."""
-        cal = CALIBRATION_TABLE.get(cal_key)
-        if cal is None:
-            return prob
+    def _apply_calibration(self, prob, cal_key, league_id=None):
+        """Applica correzione calibrazione con chain di lookup:
+        1. dynamic_cal → by_league[league_id][cal_key][bin] (se disponibile)
+        2. dynamic_cal → global[cal_key][bin]
+        3. CALIBRATION_TABLE[cal_key][bin] (statico, fallback)
+        Ritorna (prob_corretta, source) dove source indica quale livello è stato usato."""
         bin_idx = min(int(prob * 10), 9)
-        correction = cal.get(bin_idx, 1.0)
+        correction = None
+        source = "none"
+
+        # --- Livello 1: Dinamico per lega ---
+        if (EDGE_ENGINE_FLAGS.get("use_dynamic_cal", False)
+                and self._dynamic_cal is not None and league_id is not None):
+            league_cal = self._dynamic_cal.get("by_league", {}).get(str(league_id), {})
+            market_bins = league_cal.get(cal_key, {})
+            # I bin nel JSON dinamico hanno chiavi come interi (o stringhe)
+            corr = market_bins.get(bin_idx, market_bins.get(str(bin_idx)))
+            if corr is not None:
+                correction = corr
+                source = "league"
+
+        # --- Livello 2: Dinamico globale ---
+        if correction is None and EDGE_ENGINE_FLAGS.get("use_dynamic_cal", False) and self._dynamic_cal is not None:
+            global_cal = self._dynamic_cal.get("global", {})
+            market_bins = global_cal.get(cal_key, {})
+            corr = market_bins.get(bin_idx, market_bins.get(str(bin_idx)))
+            if corr is not None:
+                correction = corr
+                source = "global"
+
+        # --- Livello 3: Statico (fallback) ---
+        if correction is None:
+            cal = CALIBRATION_TABLE.get(cal_key)
+            if cal is not None:
+                correction = cal.get(bin_idx, 1.0)
+                source = "static"
+
+        if correction is None:
+            return prob, source
+
         corrected = prob * correction
-        return max(0.01, min(corrected, 0.99))
+        return max(0.01, min(corrected, 0.99)), source
 
     def _extract_nested(self, data, path):
         current = data
@@ -402,6 +511,56 @@ class SlotManager:
         stake = min(stake, max_stake)
         stake = max(round(stake, 2), 1.0)
         return stake
+
+    # ======================================================================
+    #  SAFETY FILTERS — Edge Engine v3.0
+    #  Applicati DOPO il calcolo Kelly, a livello di signal processing.
+    # ======================================================================
+    def _apply_safety_filters(self, stake, prob, odds, league_id=None):
+        """Applica Hallucination Filter (Sigma) e Trust Score (Omega) allo stake.
+        Ritorna (stake_finale, metadata_dict)."""
+        meta = {
+            "is_hallucination": False,
+            "z_score": None,
+            "divergence": None,
+            "trust_score": 1.0,
+            "safety_vault": False,
+            "original_stake": stake,
+        }
+
+        if stake <= 0:
+            return 0.0, meta
+
+        # --- SIGMA: Hallucination Filter (Z-Score) ---
+        if EDGE_ENGINE_FLAGS.get("use_hallucination_filter", False) and odds > 1.01:
+            prob_market = (1.0 / odds) * OVERROUND_CORRECTION
+            if prob_market > 0.01:
+                divergence = (prob / prob_market) - 1.0
+                z_score = abs(divergence) / self._divergence_std
+
+                meta["divergence"] = round(divergence, 4)
+                meta["z_score"] = round(z_score, 2)
+
+                if divergence > 0.50 or z_score > 3.0:
+                    meta["is_hallucination"] = True
+                    meta["safety_vault"] = True
+                    stake = max(stake / 10.0, 2.0)
+                    logger.info(
+                        f"    🛡️ Safety Vault ATTIVO: div={divergence:+.2f}, z={z_score:.2f} "
+                        f"→ stake ridotto a €{stake:.2f}"
+                    )
+
+        # --- OMEGA: League Trust Score ---
+        if EDGE_ENGINE_FLAGS.get("use_trust_score", False) and self._trust_scores is not None and league_id is not None:
+            scores = self._trust_scores.get("scores", {})
+            trust = scores.get(str(league_id), 1.0)  # default 1.0 se non trovata
+            meta["trust_score"] = round(trust, 2)
+            if trust != 1.0:
+                stake = stake * trust
+                logger.info(f"    📊 Trust Score lega {league_id}: {trust:.2f} → stake €{stake:.2f}")
+
+        stake = max(round(stake, 2), 1.0)  # minimo €1
+        return stake, meta
 
     # ======================================================================
     #  PROCESSAMENTO SEGNALI
@@ -452,10 +611,18 @@ class SlotManager:
                 signal["edge_pct"] = ""
                 signal["score"] = ""
             else:
-                scan = self.scan_best_market(analysis_markets, odds, inputs, ai_data=ai_markets)
+                sig_league_id = signal.get("league_id")
+                scan = self.scan_best_market(analysis_markets, odds, inputs, ai_data=ai_markets, league_id=sig_league_id)
                 if scan.get("market") is not None:
                     prob = scan["prob"]
                     stake = self.calculate_kelly_stake(prob, scan["odds"])
+                    # Applica Safety Filters (Hallucination + Trust)
+                    stake, safety_meta = self._apply_safety_filters(stake, prob, scan["odds"], league_id=sig_league_id)
+                    cal_source = scan.get("cal_source", "static")
+                    logger.info(
+                        f"    Calibrazione: {cal_source} | Trust: {safety_meta['trust_score']} | "
+                        f"Safety Vault: {'Attivo' if safety_meta['safety_vault'] else 'Inattivo'}"
+                    )
                     if stake > 0:
                         pois_counter += 1
                         slot_id = f"S{pois_counter}"
@@ -482,6 +649,12 @@ class SlotManager:
                         signal["selected_market"] = f"{scan['label']} @{scan['odds']}"
                         signal["edge_pct"] = f"'{scan['edge']*100:+.1f}%"
                         signal["score"] = f"{scan['score']:.3f}"
+                        # Edge Engine v3.0 diagnostics
+                        signal["cal_source"] = cal_source
+                        signal["trust_score"] = safety_meta["trust_score"]
+                        signal["safety_vault"] = safety_meta["safety_vault"]
+                        signal["original_edge"] = scan["edge"]  # edge prima dei filtri
+                        signal["z_score"] = safety_meta.get("z_score")
                         pois_accepted += 1
                     else:
                         signal["slot_id"] = "⊘ SKIP"
@@ -765,9 +938,9 @@ class SlotManager:
     #  REPORT "VEN-DOM" — A/B Test Poisson vs ML
     # ======================================================================
     def update_report_sheet(self):
-        """Genera il foglio 'Report Ven Dom' — Dashboard professionale A/B Test.
-        Layout verticale: KPI Scorecard → Sezione Poisson → Sezione ML."""
-        logger.info("📋 Generazione Report Dashboard A/B Test...")
+        """Genera il foglio 'Report Ven Dom' — Dashboard Edge Engine v3.0.
+        Layout side-by-side: Poisson LEFT (A-G) | ML RIGHT (H-N)."""
+        logger.info("📋 Generazione Report Dashboard v3.0...")
 
         try:
             history = self._load_history()
@@ -775,6 +948,13 @@ class SlotManager:
             try:
                 ws = self.sh.worksheet("Report Ven Dom")
                 _sheets_retry(ws.clear)
+                # Unmerge tutte le celle unite per un foglio pulito
+                try:
+                    _sheets_retry(self.sh.batch_update, {"requests": [
+                        {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": 14}}}
+                    ]})
+                except Exception:
+                    pass  # Se non ci sono merge, ignora
             except gspread.exceptions.WorksheetNotFound:
                 ws = self.sh.add_worksheet(title="Report Ven Dom", rows=2000, cols=14)
 
@@ -783,6 +963,7 @@ class SlotManager:
             format_requests = []
             COLS = 14
 
+            # --- Helper ---
             def add_row(values):
                 row_idx = len(all_data)
                 padded = list(values) + [""] * (COLS - len(values))
@@ -799,18 +980,21 @@ class SlotManager:
                     "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": c1, "endColumnIndex": c2},
                     "mergeType": "MERGE_ALL"}})
 
-            # Colors
-            DARK_BG = {"red": 0.08, "green": 0.08, "blue": 0.14}
+            # --- Colors ---
+            DARK_BG = {"red": 0.06, "green": 0.06, "blue": 0.12}
             WHITE = {"red": 1, "green": 1, "blue": 1}
-            POIS_BG = {"red": 0.12, "green": 0.32, "blue": 0.18}
-            POIS_LIGHT = {"red": 0.9, "green": 0.96, "blue": 0.9}
-            ML_BG = {"red": 0.22, "green": 0.12, "blue": 0.38}
-            ML_LIGHT = {"red": 0.93, "green": 0.9, "blue": 0.97}
-            HEADER_BG = {"red": 0.2, "green": 0.2, "blue": 0.25}
+            GOLD = {"red": 1, "green": 0.84, "blue": 0}
+            POIS_BG = {"red": 0.1, "green": 0.3, "blue": 0.15}
+            POIS_HEADER = {"red": 0.85, "green": 0.93, "blue": 0.85}
+            POIS_LIGHT = {"red": 0.93, "green": 0.97, "blue": 0.93}
+            ML_BG = {"red": 0.2, "green": 0.1, "blue": 0.35}
+            ML_HEADER = {"red": 0.88, "green": 0.85, "blue": 0.95}
+            ML_LIGHT = {"red": 0.95, "green": 0.93, "blue": 0.98}
+            STATS_BG = {"red": 0.95, "green": 0.95, "blue": 0.95}
             WIN_BG = {"red": 0.85, "green": 0.95, "blue": 0.85}
             LOSS_BG = {"red": 0.97, "green": 0.87, "blue": 0.87}
             PEND_BG = {"red": 0.96, "green": 0.96, "blue": 0.96}
-            GREEN_TXT = {"red": 0.1, "green": 0.55, "blue": 0.1}
+            GREEN_TXT = {"red": 0.05, "green": 0.5, "blue": 0.05}
             RED_TXT = {"red": 0.7, "green": 0.1, "blue": 0.1}
 
             # --- Aggregate stats ---
@@ -829,8 +1013,8 @@ class SlotManager:
                 lost = sum(1 for s in slots if "PERSO" in str(s.get("result", "")))
                 pending = sum(1 for s in slots if s.get("result") == "PENDING")
                 played = won + lost
-                wr = f"{won/played*100:.1f}%" if played > 0 else "N/A"
-                yld = f"{pnl/staked*100:.2f}%" if staked > 0 else "N/A"
+                wr = f"{won/played*100:.1f}%" if played > 0 else "—"
+                yld = f"{pnl/staked*100:.2f}%" if staked > 0 else "—"
                 return {"pnl": pnl, "staked": staked, "won": won, "lost": lost, "pending": pending,
                         "total": len(slots), "played": played, "wr": wr, "yield": yld,
                         "bankroll": bankroll_start + pnl}
@@ -838,134 +1022,183 @@ class SlotManager:
             pois_st = calc_stats(all_pois_slots, self.config["bankroll"])
             ml_st = calc_stats(all_ml_slots, 1000.0)
 
-            # ═══════════ TITLE ═══════════
-            r = add_row(["📊 DASHBOARD A/B TEST — POISSON vs ML"])
-            add_merge(r)
+            # ═══════════════════════════════════════════════════════════════
+            # ROW 1: TITOLO (merge full width)
+            # ═══════════════════════════════════════════════════════════════
+            r = add_row(["📊 EDGE ENGINE v3.0 — POISSON vs ML"])
+            add_merge(r, 0, COLS)
             add_fmt(r, r, {"backgroundColor": DARK_BG,
-                "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 16},
+                "textFormat": {"foregroundColor": GOLD, "bold": True, "fontSize": 16},
                 "horizontalAlignment": "CENTER"})
 
-            add_row([""])
-
-            # ═══════════ KPI SCORECARD ═══════════
-            r = add_row(["", "📈 POISSON", "", "", "", "", "", "🤖 MACHINE LEARNING"])
-            add_merge(r, 1, 7)
+            # ═══════════════════════════════════════════════════════════════
+            # ROW 2-3: SEZIONE KPI — Poisson LEFT (A-G) | ML RIGHT (H-N)
+            # ═══════════════════════════════════════════════════════════════
+            # Headers
+            r = add_row(["📈 POISSON", "", "", "", "", "", "",
+                         "🤖 MACHINE LEARNING", "", "", "", "", "", ""])
+            add_merge(r, 0, 7)
             add_merge(r, 7, 14)
             add_fmt(r, r, {"backgroundColor": POIS_BG,
                 "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 13},
-                "horizontalAlignment": "CENTER"}, 1, 7)
+                "horizontalAlignment": "CENTER"}, 0, 7)
             add_fmt(r, r, {"backgroundColor": ML_BG,
                 "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 13},
                 "horizontalAlignment": "CENTER"}, 7, 14)
-            add_fmt(r, r, {"backgroundColor": DARK_BG}, 0, 1)
 
-            kpi_labels = ["", "Bankroll", "P&L", "Win Rate", "Yield", "Eventi", "Pend.",
-                          "Bankroll", "P&L", "Win Rate", "Yield", "Eventi", "Pend.", ""]
-            r = add_row(kpi_labels)
-            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 9,
-                "foregroundColor": {"red": 0.4, "green": 0.4, "blue": 0.4}},
-                "horizontalAlignment": "CENTER",
-                "backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}})
-
-            pois_pnl_c = GREEN_TXT if pois_st["pnl"] >= 0 else RED_TXT
-            ml_pnl_c = GREEN_TXT if ml_st["pnl"] >= 0 else RED_TXT
-            kpi_vals = ["",
-                f"€{pois_st['bankroll']:.2f}", f"€{pois_st['pnl']:+.2f}",
-                pois_st["wr"], pois_st["yield"], pois_st["total"], pois_st["pending"],
-                f"€{ml_st['bankroll']:.2f}", f"€{ml_st['pnl']:+.2f}",
-                ml_st["wr"], ml_st["yield"], ml_st["total"], ml_st["pending"], ""]
-            r = add_row(kpi_vals)
-            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 12}, "horizontalAlignment": "CENTER"})
-            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 14, "foregroundColor": pois_pnl_c}}, 2, 3)
-            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 14, "foregroundColor": ml_pnl_c}}, 8, 9)
-
-            r = add_row(["", f"Giorni: {len(daily_dates)}", "",
-                f"V:{pois_st['won']} P:{pois_st['lost']}", "", "", "",
-                f"Giorni: {len(daily_dates)}", "",
-                f"V:{ml_st['won']} P:{ml_st['lost']}"])
-            add_fmt(r, r, {"textFormat": {"fontSize": 9,
-                "foregroundColor": {"red": 0.5, "green": 0.5, "blue": 0.5}},
+            # KPI Labels
+            r = add_row(["P&L", "Yield", "Win Rate", "Vinte", "Perse", "Pend.", "Giorni",
+                         "P&L", "Yield", "Win Rate", "Vinte", "Perse", "Pend.", "Giorni"])
+            add_fmt(r, r, {"backgroundColor": STATS_BG,
+                "textFormat": {"bold": True, "fontSize": 9, "foregroundColor": {"red": 0.3, "green": 0.3, "blue": 0.3}},
                 "horizontalAlignment": "CENTER"})
 
+            # KPI Values
+            pois_pnl_c = GREEN_TXT if pois_st["pnl"] >= 0 else RED_TXT
+            ml_pnl_c = GREEN_TXT if ml_st["pnl"] >= 0 else RED_TXT
+            r = add_row([
+                f"€{pois_st['pnl']:+.2f}", pois_st["yield"], pois_st["wr"],
+                pois_st["won"], pois_st["lost"], pois_st["pending"], len(daily_dates),
+                f"€{ml_st['pnl']:+.2f}", ml_st["yield"], ml_st["wr"],
+                ml_st["won"], ml_st["lost"], ml_st["pending"], len(daily_dates),
+            ])
+            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"})
+            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 14, "foregroundColor": pois_pnl_c}}, 0, 1)
+            add_fmt(r, r, {"textFormat": {"bold": True, "fontSize": 14, "foregroundColor": ml_pnl_c}}, 7, 8)
+            add_fmt(r, r, {"backgroundColor": POIS_LIGHT}, 0, 7)
+            add_fmt(r, r, {"backgroundColor": ML_LIGHT}, 7, 14)
+
+            # Separator
             add_row([""])
 
-            # ═══════════ HELPER: render section ═══════════
-            def render_section(label, bg_color, light_bg, slots_key, bankroll_start):
-                r = add_row([f"  {label}"])
-                add_merge(r)
-                add_fmt(r, r, {"backgroundColor": bg_color,
-                    "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 13},
-                    "horizontalAlignment": "CENTER"})
+            # ═══════════════════════════════════════════════════════════════
+            # DAILY SECTIONS — Side by side: Poisson in cols A-G, ML in cols H-N
+            # ═══════════════════════════════════════════════════════════════
+            sorted_days = sorted(history, key=lambda d: d["date"])
 
-                running_pnl = 0.0
-                for day in sorted(history, key=lambda d: d["date"]):
-                    slots = day.get(slots_key, [])
-                    if not slots:
-                        continue
-                    date_str = day["date"]
+            for day in sorted_days:
+                pois_slots = day.get("slots", [])
+                ml_slots = day.get("ml_slots", [])
+                if not pois_slots and not ml_slots:
+                    continue
 
-                    r = add_row([f"� {date_str}  —  {len(slots)} selezioni"])
-                    add_merge(r)
-                    add_fmt(r, r, {"backgroundColor": HEADER_BG,
-                        "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 10},
-                        "horizontalAlignment": "LEFT"})
+                date_str = day["date"]
+                p_count = len(pois_slots)
+                m_count = len(ml_slots)
+                max_count = max(p_count, m_count)
 
-                    hdrs = ["#", "Evento", "Mercato", "Prob", "Quota", "Edge",
-                            "Score", "Stake €", "Risultato", "P&L €", "Cassa"]
-                    r = add_row(hdrs)
-                    add_fmt(r, r, {"backgroundColor": light_bg,
-                        "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"})
+                # --- Date header ---
+                r = add_row([f"📅 {date_str} — {p_count} Poisson", "", "", "", "", "", "",
+                             f"📅 {date_str} — {m_count} ML"])
+                add_merge(r, 0, 7)
+                add_merge(r, 7, 14)
+                add_fmt(r, r, {"backgroundColor": POIS_BG,
+                    "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 10},
+                    "horizontalAlignment": "CENTER"}, 0, 7)
+                add_fmt(r, r, {"backgroundColor": ML_BG,
+                    "textFormat": {"foregroundColor": WHITE, "bold": True, "fontSize": 10},
+                    "horizontalAlignment": "CENTER"}, 7, 14)
 
-                    first_data = len(all_data)
-                    for s in slots:
+                # --- Column headers ---
+                r = add_row(["#", "Evento", "Mercato", "Quota", "Edge", "Stake", "Risultato",
+                             "#", "Evento", "Mercato", "Quota", "Edge", "Stake", "Risultato"])
+                add_fmt(r, r, {"backgroundColor": POIS_HEADER,
+                    "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"}, 0, 7)
+                add_fmt(r, r, {"backgroundColor": ML_HEADER,
+                    "textFormat": {"bold": True, "fontSize": 9}, "horizontalAlignment": "CENTER"}, 7, 14)
+
+                # --- Data rows (parallel: Poisson LEFT, ML RIGHT) ---
+                first_data = len(all_data)
+                for i in range(max_count):
+                    row = [""] * COLS
+                    # Poisson (cols 0-6)
+                    if i < p_count:
+                        s = pois_slots[i]
                         s_pnl = s.get("pnl", 0)
                         is_pend = s.get("result") == "PENDING"
-                        if not is_pend:
-                            running_pnl += s_pnl
-                        rv = [
-                            s.get("slot_id", ""), s.get("event_name", ""),
-                            s.get("market_label", ""), f"{s.get('prob', 0)*100:.0f}%",
-                            s.get("odds", ""), f"{s.get('edge', 0)*100:+.1f}%",
-                            f"{s.get('score', 0):.3f}", f"€{s.get('stake', 0):.2f}",
-                            s.get("result", "PENDING"),
-                            f"€{s_pnl:+.2f}" if not is_pend else "—",
-                            f"€{bankroll_start + running_pnl:.2f}" if not is_pend else "—",
-                        ]
-                        ri = add_row(rv)
-                        res_str = str(s.get("result", ""))
-                        if "VINTO" in res_str:
-                            add_fmt(ri, ri, {"backgroundColor": WIN_BG}, 0, COLS)
-                        elif "PERSO" in res_str:
-                            add_fmt(ri, ri, {"backgroundColor": LOSS_BG}, 0, COLS)
+                        result_str = s.get("result", "PENDING")
+                        if is_pend:
+                            result_str = "PENDING"
+                        row[0] = s.get("slot_id", "")
+                        row[1] = s.get("event_name", "")
+                        row[2] = s.get("market_label", "")
+                        row[3] = s.get("odds", "")
+                        row[4] = f"{s.get('edge', 0)*100:+.1f}%"
+                        row[5] = f"€{s.get('stake', 0):.2f}"
+                        row[6] = f"{result_str} {f'€{s_pnl:+.2f}' if not is_pend else ''}"
+                    # ML (cols 7-13)
+                    if i < m_count:
+                        s = ml_slots[i]
+                        s_pnl = s.get("pnl", 0)
+                        is_pend = s.get("result") == "PENDING"
+                        result_str = s.get("result", "PENDING")
+                        if is_pend:
+                            result_str = "PENDING"
+                        row[7] = s.get("slot_id", "")
+                        row[8] = s.get("event_name", "")
+                        row[9] = s.get("market_label", "")
+                        row[10] = s.get("odds", "")
+                        row[11] = f"{s.get('edge', 0)*100:+.1f}%"
+                        row[12] = f"€{s.get('stake', 0):.2f}"
+                        row[13] = f"{result_str} {f'€{s_pnl:+.2f}' if not is_pend else ''}"
+
+                    ri = add_row(row)
+
+                    # Poisson row coloring
+                    if i < p_count:
+                        res = str(pois_slots[i].get("result", ""))
+                        if "VINTO" in res:
+                            add_fmt(ri, ri, {"backgroundColor": WIN_BG}, 0, 7)
+                        elif "PERSO" in res:
+                            add_fmt(ri, ri, {"backgroundColor": LOSS_BG}, 0, 7)
                         else:
-                            add_fmt(ri, ri, {"backgroundColor": PEND_BG}, 0, COLS)
+                            add_fmt(ri, ri, {"backgroundColor": PEND_BG}, 0, 7)
+                    # ML row coloring
+                    if i < m_count:
+                        res = str(ml_slots[i].get("result", ""))
+                        if "VINTO" in res:
+                            add_fmt(ri, ri, {"backgroundColor": WIN_BG}, 7, 14)
+                        elif "PERSO" in res:
+                            add_fmt(ri, ri, {"backgroundColor": LOSS_BG}, 7, 14)
+                        else:
+                            add_fmt(ri, ri, {"backgroundColor": ML_LIGHT}, 7, 14)
 
-                    last_data = len(all_data) - 1
-                    if last_data >= first_data:
-                        add_fmt(first_data, last_data, {
-                            "horizontalAlignment": "CENTER", "textFormat": {"fontSize": 9}})
+                last_data = len(all_data) - 1
+                if last_data >= first_data:
+                    add_fmt(first_data, last_data, {
+                        "horizontalAlignment": "CENTER", "textFormat": {"fontSize": 9}})
 
+                # --- Daily totals row ---
+                def day_totals(slots):
                     d_pnl = sum(s.get("pnl", 0) for s in slots if s.get("result") != "PENDING")
                     d_stk = sum(s.get("stake", 0) for s in slots if s.get("result") != "PENDING")
                     d_won = sum(1 for s in slots if "VINTO" in str(s.get("result", "")))
                     d_played = sum(1 for s in slots if s.get("result") != "PENDING")
                     d_wr = f"{d_won/d_played*100:.0f}%" if d_played > 0 else "—"
-                    sr = ["", f"TOTALE {date_str}", "", "", "", "", "",
-                          f"€{d_stk:.2f}", d_wr, f"€{d_pnl:+.2f}",
-                          f"€{bankroll_start + running_pnl:.2f}"]
-                    r = add_row(sr)
-                    c = GREEN_TXT if d_pnl >= 0 else RED_TXT
-                    add_fmt(r, r, {"backgroundColor": light_bg,
-                        "textFormat": {"bold": True, "fontSize": 10, "foregroundColor": c},
-                        "horizontalAlignment": "CENTER"})
+                    return d_pnl, d_stk, d_wr
 
+                p_pnl, p_stk, p_wr = day_totals(pois_slots)
+                m_pnl, m_stk, m_wr = day_totals(ml_slots)
+
+                r = add_row([
+                    "", f"TOTALE", p_wr, "", "", f"€{p_stk:.2f}", f"€{p_pnl:+.2f}",
+                    "", f"TOTALE", m_wr, "", "", f"€{m_stk:.2f}", f"€{m_pnl:+.2f}",
+                ])
+                p_c = GREEN_TXT if p_pnl >= 0 else RED_TXT
+                m_c = GREEN_TXT if m_pnl >= 0 else RED_TXT
+                add_fmt(r, r, {"backgroundColor": POIS_HEADER,
+                    "textFormat": {"bold": True, "fontSize": 10, "foregroundColor": p_c},
+                    "horizontalAlignment": "CENTER"}, 0, 7)
+                add_fmt(r, r, {"backgroundColor": ML_HEADER,
+                    "textFormat": {"bold": True, "fontSize": 10, "foregroundColor": m_c},
+                    "horizontalAlignment": "CENTER"}, 7, 14)
+
+                # Separator between days
                 add_row([""])
 
-            # ═══════════ RENDER ═══════════
-            render_section("📈 SEZIONE POISSON — Analisi Statistica", POIS_BG, POIS_LIGHT, "slots", self.config["bankroll"])
-            render_section("🤖 SEZIONE ML — Machine Learning", ML_BG, ML_LIGHT, "ml_slots", 1000.0)
-
-            # ═══════════ CONCORDANCES ═══════════
+            # ═══════════════════════════════════════════════════════════════
+            # CONCORDANCES — Bottom section
+            # ═══════════════════════════════════════════════════════════════
             n_conc = 0
             conc_details = []
             for day in history:
@@ -978,29 +1211,67 @@ class SlotManager:
 
             if n_conc > 0:
                 r = add_row([f"🤝 CONCORDANZE: {n_conc} selezioni identiche Poisson + ML"])
-                add_merge(r)
-                add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.95, "blue": 0.7},
+                add_merge(r, 0, COLS)
+                add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.93, "blue": 0.6},
                     "textFormat": {"bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"})
                 for detail in conc_details[:10]:
                     r = add_row([f"  → {detail}"])
-                    add_merge(r)
+                    add_merge(r, 0, COLS)
                     add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.97, "blue": 0.85},
                         "textFormat": {"fontSize": 9}, "horizontalAlignment": "LEFT"})
 
-            # ═══════════ WRITE ═══════════
+            # ═══════════════════════════════════════════════════════════════
+            # WRITE E CLEANUP RESIDUI
+            # ═══════════════════════════════════════════════════════════════
+            end_row = len(all_data)
+            
+            # --- Forza pulizia completa (dati e unioni) da end_row in poi ---
+            # Questo garantisce che non ci siano "rimanenze" dei giorni precedenti
+            # o della vecchia impaginazione dalla riga 92 in giù (esempio).
+            if end_row < 2000:
+                format_requests.append({
+                    "unmergeCells": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": COLS}
+                    }
+                })
+                # Resetta sfondo e testo a default per le celle non usate
+                format_requests.append({
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": COLS},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                                "textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False, "fontSize": 10}
+                            }
+                        },
+                        "fields": "userEnteredFormat"
+                    }
+                })
+
             if all_data:
-                _sheets_retry(ws.update, f"A1:N{len(all_data)}", all_data)
+                _sheets_retry(ws.update, f"A1:N{end_row}", all_data)
                 time_module.sleep(2)
+                
+            # Azzera i valori dalle righe successive
+            if end_row < 2000:
+                 empty_chunk = [[""] * COLS] * (2000 - end_row)
+                 # Usare update così massivo può essere lento, quindi usiamo batch_clear
+                 _sheets_retry(ws.batch_clear, [f"A{end_row+1}:N2000"])
+                 time_module.sleep(1)
+
             if format_requests:
-                _sheets_retry(self.sh.batch_update, {"requests": format_requests})
-                time_module.sleep(1)
+                # Batch in chunks of 100 to avoid API limits
+                for i in range(0, len(format_requests), 100):
+                    chunk = format_requests[i:i+100]
+                    _sheets_retry(self.sh.batch_update, {"requests": chunk})
+                    time_module.sleep(1)
 
             _sheets_retry(ws.freeze, rows=1)
             _sheets_retry(ws.columns_auto_resize, 0, COLS - 1)
 
-            logger.info(f"✅ Dashboard A/B: {len(all_pois_slots)} Poisson + {len(all_ml_slots)} ML, {n_conc} concordanze.")
+            logger.info(f"✅ Dashboard v3.0: {len(all_pois_slots)} Poisson + {len(all_ml_slots)} ML, {n_conc} concordanze.")
         except Exception as e:
-            logger.error(f"Errore Dashboard A/B: {e}", exc_info=True)
+            logger.error(f"Errore Dashboard v3.0: {e}", exc_info=True)
 
 
     #  HISTORY — Persistenza multi-giorno

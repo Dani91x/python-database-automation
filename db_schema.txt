@@ -1,0 +1,15 @@
+=== fixture_predictions ===
+Columns (39): ['fixture_id', 'league_id', 'league_name', 'season_year', 'fixture_date', 'home_team_id', 'home_team_name', 'away_team_id', 'away_team_name', 'status', 'error_message', 'winner_team_id', 'winner_name', 'winner_comment', 'win_or_draw', 'advice', 'percent_home', 'percent_draw', 'percent_away', 'under_over_line', 'goals_home_line', 'goals_away_line', 'raw_json', 'flat_summary', 'created_at', 'updated_at', 'result_status_short', 'result_home_goals', 'result_away_goals', 'result_total_goals', 'result_outcome', 'hit_winner', 'hit_win_or_draw', 'hit_under_over', 'evaluated_at', 'raw_json_odds', 'model_predictions_json', 'db_json_analisi', 'ht_predictions']
+
+  raw_json (dict): keys=['get', 'errors', 'paging', 'results', 'response', 'parameters']
+  flat_summary (dict): keys=['winner_name', 'percent_away', 'percent_draw', 'percent_home', 'away_last5_att', 'away_last5_def', 'home_last5_att', 'home_last5_def', 'winner_comment', 'away_last5_form', 'home_last5_form', 'prediction_advice', 'comparison_form_away', 'comparison_form_home', 'comparison_goals_away', 'comparison_goals_home', 'comparison_total_away', 'comparison_total_home', 'prediction_under_over', 'prediction_win_or_draw', 'away_last5_goals_for_avg', 'home_last5_goals_for_avg', 'away_last5_goals_against_avg', 'home_last5_goals_against_avg']
+  db_json_analisi (dict): keys=['model', 'inputs', 'markets', 'coverage', 'league_id', 'fixture_id', 'season_year', 'generated_at']
+    markets keys: ['1x2', 'btts', 'over_2_5', 'first_half_over_0_5']
+      markets.1x2: {"A": 0.2296, "D": 0.2309, "H": 0.5395}
+      markets.btts: {"True": 0.5576, "False": 0.4424}
+      markets.first_half_over_0_5: {"True": 0.6694, "False": 0.3306}
+      markets.over_2_5: {"True": 0.5554, "False": 0.4446}
+  ht_predictions (dict): keys=['details', 'is_elite', 'lambda_1h', 'hybrid_prob']
+
+=== matches ===
+Sample: {'fixture_id': 1391060, 'status_short': 'FT', 'goals_home': 2, 'goals_away': 1, 'halftime_home': 0, 'halftime_away': 0}
