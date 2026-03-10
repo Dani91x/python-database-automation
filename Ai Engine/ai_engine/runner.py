@@ -12,7 +12,7 @@ from .training_dataset import build_training_dataset
 from .model_suite import train_and_predict
 from .advanced_validation import aggregate_model_outputs, consensus, entropy
 from .market_ranking import build_ranked_markets
-from .seriea_model_export import train_and_save_all, upload_and_register
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,77 +38,17 @@ def run_daily_report(target_date: date | None = None, include_matches: bool = Tr
     )
     league_seasons_tuples = [(int(x[0]), int(x[1])) for x in league_seasons]
 
-    # Targets to predict will be discovered per-league from training data
-    target_cols = []
-
-    # Drop columns not used as features (leakage control)
-    drop_cols = [
-        "fixture_id",
-        "league_id",
-        "league_name",
-        "season_year",
-        "fixture_date",
-        "home_team_id",
-        "home_team_name",
-        "away_team_id",
-        "away_team_name",
-        "status",
-        "advice",
-        "winner_team_id",
-        "winner_name",
-        "win_or_draw",
-        "under_over_line",
-        "goals_home_line",
-        "goals_away_line",
-        "goals_home",
-        "goals_away",
-        "halftime_home",
-        "halftime_away",
-        "fulltime_home",
-        "fulltime_away",
-        "extratime_home",
-        "extratime_away",
-        "penalty_home",
-        "penalty_away",
-        "target_total_goals",
-        "target_exact_score",
-    ]
-
     # add suggestions
     suggestions = df.apply(suggest_market, axis=1)
     df["suggested_market"] = suggestions.apply(lambda x: x.get("market"))
     df["suggested_reason"] = suggestions.apply(lambda x: x.get("reason"))
     df["suggested_notes"] = suggestions.apply(lambda x: x.get("notes"))
 
-    # model predictions (aggregate) per league
-    model_summary = []
-    for league_id in df["league_id"].dropna().unique():
-        league_id_int = int(league_id)
-        league_mask = df["league_id"] == league_id_int
-        pred_df = df[league_mask].copy()
-
-        league_seasons_l = [ls for ls in league_seasons_tuples if ls[0] == league_id_int]
-        train_df = build_training_dataset(league_seasons_l)
-        if train_df.empty:
-            continue
-
-        # Dynamic Training triggered by daily runner
-        try:
-            logger.info(f"Triggering dynamic training for League {league_id_int}...")
-            # We train/save models using the production methodology
-            results = train_and_save_all(league_id_int, last_n_seasons=3)
-            for r in results:
-                upload_and_register(r["model_path"], r["file_size"], r["target"], r)
-                
-            model_summary.extend([r["target"] for r in results])
-        except Exception as e:
-            logger.warning(f"Failed to dynamically train models for league {league_id_int}: {e}")
-            continue
-
-    if model_summary:
-        df["suggested_confidence"] = df.get("target_over_2_5_consensus", 0)
-    else:
-        df["suggested_confidence"] = ""
+    # Daily report uses EXISTING cached models only.
+    # Full retraining is handled by the dedicated retrain_all_leagues.py script
+    # (or by running it from aggiorna_modelli.bat), not by the daily runner.
+    # This keeps aggiorna_report.bat fast (seconds, not minutes/hours).
+    df["suggested_confidence"] = ""
 
     # Build ordered market list per match
     ordered_markets = []

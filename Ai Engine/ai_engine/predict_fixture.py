@@ -259,9 +259,17 @@ def _reliability_score(
     )
     if odds_ok:
         key_presence += 0.34
-    if coverage.get("team_stats", {}).get("ok"):
+    # In pre_match mode, home_stats_* and home_events_* are not populated for the
+    # target fixture (they only exist for historical matches). Use the historical
+    # aggregates (home_hist_* / home_stat_*) as the data-richness proxy instead.
+    hist_ok = (
+        coverage.get("historical", {}).get("ok", 0)
+        or coverage.get("team_window_stats", {}).get("ok", 0)
+    )
+    if hist_ok:
         key_presence += 0.33
-    if coverage.get("events", {}).get("ok"):
+    form_ok = coverage.get("form", {}).get("ok", 0)
+    if form_ok:
         key_presence += 0.33
 
     score = (0.45 * features_pct) + (0.35 * matches_depth) + (0.20 * key_presence)
@@ -349,7 +357,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     # The models might still point to the old bucket in DB, but we strictly enforce the new bucket path
     bucket = f"ai-models-league-{league_id}"
 
-    out_dir = os.path.join("Ai Engine", "models_cache", "downloaded")
+    out_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
     os.makedirs(out_dir, exist_ok=True)
 
     results: Dict[str, Dict[str, float]] = {}
@@ -433,6 +441,10 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         agr_ratio = target_agreement.get("agreement_ratio", 0.0)
         agr_votes = target_agreement.get("votes", {})
 
+        # Derive n_classes from the number of probability keys for this market.
+        # Needed to compute the normalised BSS in gate_calibration_quality.
+        market_n_classes = len(results.get(signal.market, {})) or 2
+
         all_passed, gate_results = apply_all_gates(
             coverage_pct=features_pct_val,
             matches_home=matches_home,
@@ -443,6 +455,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
             bet_signal=signal,
             brier=calibration_metrics.get(signal.market, {}).get("brier"),
             ece=calibration_metrics.get(signal.market, {}).get("ece"),
+            n_classes=market_n_classes,
         )
 
         signal_dict = {
@@ -478,7 +491,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     targets_skipped: List[Dict[str, str]] = []
     targets_not_reliable: List[Dict[str, str]] = []
 
-    from ai_engine.confidence_gate import MAX_BRIER_SCORE, MAX_ECE_SCORE
+    from ai_engine.confidence_gate import MIN_BSS, MAX_ECE_SCORE
     for t in ALL_DEFINED_TARGETS:
         if t not in modeled_targets:
             targets_skipped.append({
@@ -489,9 +502,17 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
             cal_m = calibration_metrics.get(t, {})
             brier_val = cal_m.get("brier")
             ece_val = cal_m.get("ece")
+            # n_classes derived from the number of output classes in results.
+            n_cls = len(results.get(t, {})) or 2
+            brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
             fail_reasons = []
-            if brier_val is not None and brier_val > MAX_BRIER_SCORE:
-                fail_reasons.append(f"brier={brier_val:.3f} > max {MAX_BRIER_SCORE}")
+            if brier_val is not None and brier_random > 0:
+                bss = 1.0 - (brier_val / brier_random)
+                if bss < MIN_BSS:
+                    fail_reasons.append(
+                        f"BSS={bss:.3f} < min {MIN_BSS} "
+                        f"(brier={brier_val:.3f}, random_baseline={brier_random:.3f})"
+                    )
             if ece_val is not None and ece_val > MAX_ECE_SCORE:
                 fail_reasons.append(f"ece={ece_val:.3f} > max {MAX_ECE_SCORE}")
             if fail_reasons:

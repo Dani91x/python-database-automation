@@ -1,0 +1,59 @@
+Sheet names: ['DATI MATCH', 'RIS.ESATTI', 'GH_RE', 'SGE', 'GH_SGE', 'OVER', 'GH_OVER', 'UNDER', 'GH_UNDER', 'GGPT', 'GH_GGPT', 'GGST', 'GH_GGST', 'OVPT', 'GH_OVPT', 'PF1X', 'GH_PF1X', 'PF2X', 'GH_PF2X', 'PFX1', 'GH_PFX1', 'PFX2', 'GH_PFX2', 'X', 'GH_X', 'GG&OV25', 'GH_GG&OV25']
+
+================ SHEET: DATI MATCH ================
+Shape: (6307, 107)
+Columns:
+['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10', 'Unnamed: 11', 'Unnamed: 12', 'Unnamed: 13', 'Unnamed: 14', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17', 'Unnamed: 18', 'Unnamed: 19', 'Unnamed: 20', 'Unnamed: 21', 'Unnamed: 22', 'Unnamed: 23', 'Unnamed: 24', 'Unnamed: 25', 'Unnamed: 26', 'Unnamed: 27', 'Unnamed: 28', 'Unnamed: 29']
+First 5 data rows:
+   Unnamed: 0 Unnamed: 1   Unnamed: 2       Unnamed: 3 Unnamed: 4 Unnamed: 5 Unnamed: 6 Unnamed: 7 Unnamed: 8 Unnamed: 9  ... Unnamed: 97 Unnamed: 98 Unnamed: 99 Unnamed: 100 Unnamed: 101 Unnamed: 102 Unnamed: 103 Unnamed: 104 Unnamed: 105 Unnamed: 106
+0         NaN     EVENTO         HOME             AWAY    QUOTA_1    QUOTA_X    QUOTA_2         GC         GA       GCFH  ...         NaN         NaN         NaN        UNDER          NaN          NaN          NaN      GG&OV25          NaN          NaN
+1         NaN          1   Bragantino      Sao Caetano        NaN        NaN        NaN          2          0          2  ...         NaN         NaN         NaN          1.5          NaN          NaN          NaN          NaN          NaN          NaN
+2         NaN          2   Campinense  Duque De Caxias        NaN        NaN        NaN          1          2          1  ...    3.685564    3.317008         NaN     0.317634     3.148278      2.83345          NaN     0.358865     2.786567      2.50791
+3         NaN          3  Figueirense         Ipatinga        NaN        NaN        NaN          3          0          1  ...   35.000000    0.000000         NaN         2003    26.000000      1.00000          NaN         2263    20.000000      2.00000
+4         NaN          4  Ponte Preta              ABC        NaN        NaN        NaN          2          0          1  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+
+Last 5 data rows:
+      Unnamed: 0 Unnamed: 1      Unnamed: 2   Unnamed: 3 Unnamed: 4 Unnamed: 5 Unnamed: 6 Unnamed: 7 Unnamed: 8 Unnamed: 9  ... Unnamed: 97 Unnamed: 98 Unnamed: 99 Unnamed: 100 Unnamed: 101 Unnamed: 102 Unnamed: 103 Unnamed: 104 Unnamed: 105 Unnamed: 106
+6302         NaN       6302    Athletico-PR       Cuiaba        NaN        NaN        NaN          1          1          0  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+6303         NaN       6303  Chapecoense-SC     Paysandu        NaN        NaN        NaN          2          0          1  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+6304         NaN       6304     Atletico GO  Ferroviaria        NaN        NaN        NaN          1          3          0  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+6305         NaN       6305   Volta Redonda          CRB        NaN        NaN        NaN          0          1          0  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+6306         NaN       6306   Athletic Club     Criciuma        NaN        NaN        NaN          1          1          0  ...         NaN         NaN         NaN          NaN          NaN          NaN          NaN          NaN          NaN          NaN
+
+================ SHEET: GGPT ================
+Shape: (1127, 65)
+Head (first 10 rows):
+   Unnamed: 0       Unnamed: 1  Unnamed: 2  Unnamed: 3  Unnamed: 4 Unnamed: 5 Unnamed: 6 Unnamed: 7 Unnamed: 8 Unnamed: 9  ...  Unnamed: 55 Unnamed: 56      Unnamed: 57 Unnamed: 58 Unnamed: 59 Unnamed: 60  Unnamed: 61    Unnamed: 62   Unnamed: 63    Unnamed: 64
+0         NaN  QUOTA OGGETTIVA    5.600355         NaN         NaN        NaN        NaN        NaN        NaN         F1  ...           F6         NaN  ULTIME 10 SERIE         NaN         NaN         NaN          NaN  STORICO SERIE  TOT. STORICO  % SULLA SERIE
+1         NaN       QUOTA BOOK    6.500000         NaN         NaN        RIT         w1     Staked     Payout     Profit  ...  Media Unità         NaN              NaN         NaN    SUC_GGPT         1.0          3.0              0            18          0.225
+2         NaN  RITARDO ATTUALE   11.000000         NaN         NaN          0        207       1126     1345.5      219.5  ...   523.083333         NaN                1         NaN           1         4.0          2.0              1            16            0.2
+3         NaN        % MERCATO    0.178560         NaN         NaN          1        176        920       1144        224  ...   393.083333         NaN                1         NaN           4         2.0          0.0              2            10          0.125
+4         NaN       MEDIA RIT.    5.727992         NaN         NaN          2        145        744      942.5      198.5  ...   236.083333         NaN                7         NaN           2         0.0          0.0              4             7         0.0875
+5         NaN              NaN         NaN         NaN         NaN          3         81        599      526.5      -72.5  ...    75.416667         NaN                2         NaN           0         8.0          3.0              5             6          0.075
+6         NaN              NaN         NaN         NaN         NaN          4         80        518        520          2  ...   203.916667         NaN                2         NaN           8         2.0          7.0              6             6          0.075
+7         NaN              NaN         NaN         NaN         NaN          5         86        438        559        121  ...   265.166667         NaN                0         NaN           2         3.0          0.0              7             4           0.05
+8         NaN              NaN         NaN         NaN         NaN          6         64        352        416         64  ...   191.333333         NaN                0         NaN           3         3.0          4.0             13             4           0.05
+9         NaN              NaN         NaN         NaN         NaN          7         58        288        377         89  ...   164.333333         NaN                2         NaN           3         2.0          0.0              3             3         0.0375
+
+
+
+================ SHEET: SGE ================
+Shape: (1591, 65)
+Head (first 15 rows):
+    Unnamed: 0            Unnamed: 1  Unnamed: 2  Unnamed: 3  Unnamed: 4 Unnamed: 5 Unnamed: 6 Unnamed: 7   Unnamed: 8 Unnamed: 9  ...  Unnamed: 55 Unnamed: 56      Unnamed: 57 Unnamed: 58 Unnamed: 59 Unnamed: 60  Unnamed: 61    Unnamed: 62   Unnamed: 63    Unnamed: 64
+0          NaN       QUOTA OGGETTIVA    3.966038         NaN         NaN        NaN        NaN        NaN          NaN         F1  ...           F6         NaN  ULTIME 10 SERIE         NaN         NaN         NaN          NaN  STORICO SERIE  TOT. STORICO  % SULLA SERIE
+1          NaN            QUOTA BOOK    3.966038         NaN         NaN        RIT         w1     Staked       Payout     Profit  ...  Media Unità         NaN              NaN         NaN      SUC_SG         0.0          0.0              1            63       0.258197
+2          NaN       RITARDO ATTUALE    0.000000         NaN         NaN          0        383       1590  1518.992453 -71.007547  ...    -1.848428         NaN                1         NaN           0         2.0          1.0              0            59       0.241803
+3          NaN             % MERCATO    0.252141         NaN         NaN          1        311       1207  1233.437736  26.437736  ...    74.238994         NaN                0         NaN           2         0.0          0.0              2            27       0.110656
+4          NaN            MEDIA RIT.    3.909881         NaN         NaN          2        245        896   971.679245  75.679245  ...    48.824528         NaN                0         NaN           0        10.0          4.0              3            25       0.102459
+5          NaN                   NaN         NaN         NaN         NaN          3        169        651   670.260377  19.260377  ...   -39.337736         NaN                5         NaN          10         4.0          4.0              4            21       0.086066
+6          NaN      SOMMA GOL ESATTA    2.000000         NaN         NaN          4        115        482    456.09434  -25.90566  ...   -71.822642         NaN                0         NaN           4         8.0         16.0              5            13       0.053279
+7          NaN                   NaN         NaN         NaN         NaN          5         86        367   341.079245 -25.920755  ...   -53.793082         NaN                5         NaN           8         2.0          8.0              7            10       0.040984
+8          NaN  MEMORIZZA QUOTE BOOK         NaN         NaN         NaN          6         61        281   241.928302 -39.071698  ...   -33.007547         NaN                0         NaN           2         1.0          0.0              6             9       0.036885
+9          NaN    SOMMA GOL ESATTA 1         NaN         NaN         NaN          7         56        220   222.098113   2.098113  ...         11.5         NaN                0         NaN           1         5.0          8.0              8             6        0.02459
+10         NaN    SOMMA GOL ESATTA 2         NaN         NaN         NaN          8         40        164   158.641509  -5.358491  ...     15.76478         NaN                0         NaN           5         3.0          1.0             10             2       0.008197
+11         NaN    SOMMA GOL ESATTA 3         NaN         4.5         NaN          9         35        124   138.811321  14.811321  ...    27.356604         NaN                2         NaN           3        13.0          1.0             12             2       0.008197
+12         NaN    SOMMA GOL ESATTA 4         NaN         8.5         NaN         10         24         89    95.184906   6.184906  ...    14.632075         NaN              NaN         NaN          13        10.0          1.0             16             2       0.008197
+13         NaN    SOMMA GOL ESATTA 5         NaN         NaN         NaN         11         14         65    55.524528  -9.475472  ...    10.802516         NaN              NaN         NaN          10         3.0          4.0              9             1       0.004098
+14         NaN    SOMMA GOL ESATTA 6         NaN         NaN         NaN         12         19         51    75.354717  24.354717  ...    25.189937         NaN              NaN         NaN           3         2.0          5.0             11             1       0.004098
+

@@ -33,8 +33,12 @@ MIN_COVERAGE_PCT: float = 0.50        # minimum feature coverage
 MIN_MATCHES_PER_TEAM: int = 8         # minimum historical matches
 MIN_AGREEMENT_RATIO: float = 0.66     # at least 2/3 models must agree
 MIN_RELIABILITY_SCORE: float = 0.40   # from reliability calculation
-MAX_BRIER_SCORE: float = 0.35         # max Brier score before MODEL_NOT_RELIABLE
-MAX_ECE_SCORE: float = 0.15           # max ECE before MODEL_NOT_RELIABLE
+# BSS = 1 - brier / brier_random, where brier_random = (n_classes-1)/n_classes.
+# This threshold is scale-invariant: 0.10 means "at least 10% better than a
+# random classifier", regardless of whether the market is binary or 3-class.
+# A model with BSS < 0.10 cannot reliably overcome Betfair's 5% commission.
+MIN_BSS: float = 0.12                 # min Brier Skill Score before MODEL_NOT_RELIABLE
+MAX_ECE_SCORE: float = 0.10           # max ECE before MODEL_NOT_RELIABLE (tightened from 0.15)
 
 
 def gate_data_sufficiency(
@@ -166,19 +170,35 @@ def gate_value_present(
 def gate_calibration_quality(
     brier: Optional[float] = None,
     ece: Optional[float] = None,
+    n_classes: int = 2,
 ) -> GateResult:
     """
     Gate 4: Check if model calibration metrics are acceptable.
 
+    Uses the Brier Skill Score (BSS) instead of raw Brier, normalising by the
+    random-classifier baseline so the threshold is scale-invariant:
+        brier_random = (n_classes - 1) / n_classes
+        BSS          = 1 - brier / brier_random
+    A BSS < MIN_BSS means the model is not significantly better than random and
+    cannot overcome Betfair's commission.
+
     Fails (MODEL_NOT_RELIABLE) if:
-    - Brier score exceeds MAX_BRIER_SCORE
+    - BSS < MIN_BSS  (model too close to random for the given number of classes)
     - ECE exceeds MAX_ECE_SCORE
-    - No calibration metrics available
+    - No calibration metrics available at all
     """
-    details = {
+    brier_random = (n_classes - 1) / n_classes if n_classes > 1 else 0.5
+    bss: Optional[float] = None
+    if brier is not None and brier_random > 0:
+        bss = 1.0 - (brier / brier_random)
+
+    details: Dict[str, Any] = {
         "brier": brier,
         "ece": ece,
-        "max_brier": MAX_BRIER_SCORE,
+        "n_classes": n_classes,
+        "brier_random": round(brier_random, 4),
+        "bss": round(bss, 4) if bss is not None else None,
+        "min_bss": MIN_BSS,
         "max_ece": MAX_ECE_SCORE,
     }
 
@@ -191,8 +211,11 @@ def gate_calibration_quality(
         )
 
     reasons = []
-    if brier is not None and brier > MAX_BRIER_SCORE:
-        reasons.append(f"brier={brier:.3f} > max {MAX_BRIER_SCORE}")
+    if bss is not None and bss < MIN_BSS:
+        reasons.append(
+            f"BSS={bss:.3f} < min {MIN_BSS} "
+            f"(brier={brier:.3f}, random_baseline={brier_random:.3f})"
+        )
     if ece is not None and ece > MAX_ECE_SCORE:
         reasons.append(f"ece={ece:.3f} > max {MAX_ECE_SCORE}")
 
@@ -204,10 +227,11 @@ def gate_calibration_quality(
             details=details,
         )
 
+    bss_str = f"BSS={bss:.3f}, " if bss is not None else ""
     return GateResult(
         passed=True,
         gate_failed=None,
-        reason=f"Calibration OK: brier={brier}, ece={ece}",
+        reason=f"Calibration OK: {bss_str}ece={ece}",
         details=details,
     )
 
@@ -222,9 +246,14 @@ def apply_all_gates(
     bet_signal: Optional[BetSignal],
     brier: Optional[float] = None,
     ece: Optional[float] = None,
+    n_classes: int = 2,
 ) -> Tuple[bool, List[GateResult]]:
     """
     Apply all 4 gates sequentially.
+
+    n_classes: number of output classes for the target market (2 for binary
+               markets such as btts/over-under, 3 for 1x2, etc.).  Used to
+               compute the BSS baseline inside gate_calibration_quality.
 
     Returns (all_passed, list_of_gate_results).
     """
@@ -232,7 +261,7 @@ def apply_all_gates(
         gate_data_sufficiency(coverage_pct, matches_home, matches_away, reliability_score),
         gate_model_agreement(agreement_ratio, votes),
         gate_value_present(bet_signal),
-        gate_calibration_quality(brier, ece),
+        gate_calibration_quality(brier, ece, n_classes=n_classes),
     ]
 
     all_passed = all(g.passed for g in gates)

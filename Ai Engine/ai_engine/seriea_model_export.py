@@ -56,8 +56,10 @@ def _build_features(
     y = df[target]
     X = df.drop(columns=drop_cols + [target], errors="ignore")
     X = X.select_dtypes(include=["number", "bool"]).copy()
-    medians = X.median(numeric_only=True).to_dict()
-    X = X.fillna(medians)
+    # fillna(0) on medians guards against all-NaN columns whose median is NaN,
+    # which would leave NaN unfilled and crash GradientBoosting downstream.
+    medians = X.median(numeric_only=True).fillna(0).to_dict()
+    X = X.fillna(medians).fillna(0)
     return X, y, list(X.columns), medians
 
 
@@ -181,8 +183,8 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             )
         except Exception as e:
             print(f"    Feature selection failed for {target}: {e}")
-            X_train_sel = X_train_raw
-            X_val_sel = X_val_raw
+            X_train_sel = X_train_raw.fillna(0)
+            X_val_sel = X_val_raw.fillna(0)
             selected_cols = list(X_train_raw.columns)
 
         # Update medians for selected features

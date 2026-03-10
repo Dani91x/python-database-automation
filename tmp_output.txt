@@ -1,0 +1,17 @@
+Total days: 3
+Total Poisson bets: 47
+Total ML bets: 109
+
+POISSON Stats:
+  Matches: 47 (Wins: 17, Losses: 12, Pending: 18)
+  Win Rate: 58.62%
+  Avg Odds: 1.77
+  Profit: 19.29 euro
+  Total Staked: 773.72 euro (ROI: 2.49%)
+
+ML Stats:
+  Matches: 109 (Wins: 22, Losses: 48, Pending: 39)
+  Win Rate: 31.43%
+  Avg Odds: 4.33
+  Profit: 285.53 euro
+  Total Staked: 1973.43 euro (ROI: 14.47%)

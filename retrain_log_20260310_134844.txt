@@ -1,0 +1,3 @@
+[13:48:44] [1/1] League 13
+[13:48:50]   → Training league 13 (last 3 seasons)...
+[13:48:50]   [DRY-RUN] Saltato league 13

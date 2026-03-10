@@ -18,6 +18,14 @@ def build_training_dataset(
     """
     Build a historical training dataset for given league_seasons.
     Uses matches as base, enriches with features, then adds all targets.
+
+    Uses pre_match=True so that:
+    - home_stat_* / away_stat_* (win_rate, draw_rate, loss_rate over rolling
+      windows) are computed from historical data and included as features.
+    - home_hist_* / away_hist_* (rolling aggregates of team stats and events)
+      are included where available.
+    These features are also available at prediction time (predict_fixture.py
+    already uses pre_match=True), so train/predict feature sets now match.
     """
     matches_rows = fetch_matches_full_for_league_seasons(league_seasons)
     if not matches_rows:
@@ -34,6 +42,7 @@ def build_training_dataset(
         include_player_stats=False,
         include_events=True,
         include_team_stats=True,
+        pre_match=True,
     )
 
     # Targets from matches + team stats + events

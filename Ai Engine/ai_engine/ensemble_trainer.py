@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
@@ -84,6 +83,7 @@ def _generate_oof_probas(
     y: np.ndarray,
     splits: List[Tuple[np.ndarray, np.ndarray]],
     sample_weights: Optional[np.ndarray] = None,
+    classes: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, List[Tuple[str, Any]]]:
     """
     Generate out-of-fold (OOF) predicted probabilities for the meta-learner.
@@ -93,8 +93,10 @@ def _generate_oof_probas(
       fitted_models: list of (name, fitted_model) on full training data
     """
     n_samples = X.shape[0]
-    # Determine classes from y
-    classes = np.unique(y)
+    # Use pre-computed classes if provided (ensures OOF matrix width matches
+    # the meta-learner input width when val set has classes absent from train).
+    if classes is None:
+        classes = np.unique(y)
     n_classes = len(classes)
     n_models = len(models)
 
@@ -202,22 +204,20 @@ def build_ensemble(
     classes = np.unique(np.concatenate([y_tr_np, y_val_np]))
     n_classes = len(classes)
 
-    # Build walk-forward splits on the training portion
-    # Create a dummy DataFrame with index to generate splits
-    train_df_for_splits = pd.DataFrame({"idx": range(len(y_tr_np))})
-    # Use simple 3-fold expanding window for OOF within training
+    # Build stratified k-fold splits for OOF within training.
+    # StratifiedKFold ensures class balance in each fold — critical for rare
+    # outcomes like draws (~27%) to avoid biased OOF predictions.
+    from sklearn.model_selection import StratifiedKFold
     n_tr = len(y_tr_np)
     splits = []
-    fold_size = max(n_tr // 4, 10)
-    for i in range(3):
-        val_start = n_tr - (3 - i) * fold_size
-        val_end = val_start + fold_size if i < 2 else n_tr
-        if val_start < fold_size:
-            continue
-        train_idx = np.arange(0, val_start)
-        val_idx = np.arange(val_start, min(val_end, n_tr))
-        if len(train_idx) >= 20 and len(val_idx) >= 5:
-            splits.append((train_idx, val_idx))
+    try:
+        skf = StratifiedKFold(n_splits=5, shuffle=False)
+        for train_idx, val_idx in skf.split(X_tr_np, y_tr_np):
+            if len(train_idx) >= 20 and len(val_idx) >= 5:
+                splits.append((train_idx, val_idx))
+    except ValueError:
+        # Fallback for extremely small datasets
+        pass
 
     if not splits:
         # Fallback: simple first 70% train, last 30% val
@@ -232,9 +232,12 @@ def build_ensemble(
     # Build base models
     base_templates = _build_base_models(n_classes)
 
-    # Generate OOF probabilities
+    # Generate OOF probabilities — pass pre-computed classes so OOF matrix
+    # width matches meta-learner input (fixes mismatch when val has rare classes
+    # absent from train, e.g. target_ht_ft with many outcome combinations).
     oof, fitted_models = _generate_oof_probas(
-        base_templates, X_tr_scaled, y_tr_np, splits, sample_weights
+        base_templates, X_tr_scaled, y_tr_np, splits, sample_weights,
+        classes=classes,
     )
 
     # Handle NaN in OOF (rows not covered by any fold)
@@ -242,20 +245,19 @@ def build_ensemble(
     oof_clean = oof[~nan_mask]
     y_oof = y_tr_np[~nan_mask]
 
-    # Train meta-learner on OOF predictions
+    # Train meta-learner on OOF predictions.
+    # LogisticRegression is used directly (no CalibratedClassifierCV wrapper): LR
+    # already outputs true probabilities by construction, so wrapping it in a
+    # second sigmoid calibration would create double-calibration and push
+    # extreme probabilities further toward 0/1, inflating false confidence.
     meta_model: Any
     if len(oof_clean) >= 20 and oof_clean.shape[1] > 0:
-        meta_base = LogisticRegression(max_iter=2000, random_state=0)
+        meta_base = LogisticRegression(max_iter=2000, C=0.5, random_state=0)
         try:
-            meta_model = CalibratedClassifierCV(meta_base, method="sigmoid", cv=3)
-            meta_model.fit(oof_clean, y_oof)
+            meta_base.fit(oof_clean, y_oof)
+            meta_model = meta_base
         except Exception:
-            try:
-                meta_model = CalibratedClassifierCV(meta_base, method="sigmoid", cv=2)
-                meta_model.fit(oof_clean, y_oof)
-            except Exception:
-                meta_base.fit(oof_clean, y_oof)
-                meta_model = meta_base
+            meta_model = None
     else:
         # Fallback: simple average (meta_model = None)
         meta_model = None

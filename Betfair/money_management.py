@@ -63,6 +63,20 @@ EDGE_ENGINE_FLAGS = {
     "use_trust_score": True,           # Omega: League Trust Score
 }
 
+# ---------------------------------------------------------------------------
+#  FILTRO INTELLIGENTE QUOTE ALTE (ML Track)
+#  score = edge × √prob  —  penalizza naturalmente le quote alte senza cap
+#  arbitrari.  Una quota 4.0 (prob ~0.25) richiede un edge proporzionalmente
+#  più alto rispetto a una quota 2.0 (prob ~0.50) per ottenere lo stesso score.
+#  Esempio:
+#    odds 2.0, edge 5%  → score = 0.035  → PASSA
+#    odds 4.0, edge 5%  → score = 0.025  → PASSA (esattamente al limite)
+#    odds 4.0, edge 4%  → score = 0.020  → SCARTATO
+#    odds 4.0, edge 10% → score = 0.050  → PASSA (segnale genuinamente forte)
+#    odds 6.0, edge 15% → score = 0.061  → PASSA (edge reale su quota alta)
+# ---------------------------------------------------------------------------
+MIN_ML_SCORE_THRESHOLD: float = 0.025
+
 # Correzione overround Betfair (~2.5%) per calcolo prob_market
 OVERROUND_CORRECTION = 0.975
 # Z-Score σ di fallback (usata se dynamic_cal.json non contiene divergence_stats)
@@ -83,17 +97,23 @@ MARKET_MAP = {
 # ---------------------------------------------------------------------------
 #  MARKET MAP per ML — usa probabilità AI direttamente (no calibrazione Poisson)
 #  Copre gli stessi mercati con odds disponibili su Betfair.
+#
+#  ai_target : nome del target nel payload del modello (usato per leggere
+#              il Brier score e applicare il Kelly Shrinkage basato su BSS).
+#  n_classes : numero di classi del modello corrispondente (2=binario, 3=1x2).
+#              Serve per normalizzare il BSS: brier_random=(n_classes-1)/n_classes.
+#  min_edge  : ripristinato a 5.0 (era stato abbassato a 2.0 per A/B Test;
+#              con modelli a Brier ~random il 2% era indistinguibile dal rumore).
 # ---------------------------------------------------------------------------
 ML_MARKET_MAP = {
-    # --- A/B Test: tutti a 2.0 per catturare più segnali ---
-    "H":       {"label": "Home Win (ML)",   "ai_path": ("target_1x2", "H"),                     "odds_key": "H",    "min_edge": 2.0},
-    "D":       {"label": "Pareggio (ML)",   "ai_path": ("target_1x2", "D"),                     "odds_key": "D",    "min_edge": 2.0},
-    "A":       {"label": "Away Win (ML)",   "ai_path": ("target_1x2", "A"),                     "odds_key": "A",    "min_edge": 2.0},
-    "O25":     {"label": "Over 2.5 (ML)",   "ai_path": ("target_over_2_5", "True"),              "odds_key": "O25",  "min_edge": 2.0},
-    "U25":     {"label": "Under 2.5 (ML)",  "ai_path": ("target_over_2_5", "False"),             "odds_key": "U25",  "min_edge": 2.0},
-    "BTTS":    {"label": "BTTS Sì (ML)",    "ai_path": ("target_btts", "True"),                  "odds_key": "BTTS", "min_edge": 2.0},
-    "BTTS_NO": {"label": "BTTS No (ML)",    "ai_path": ("target_btts", "False"),                 "odds_key": "BTTS_NO","min_edge": 2.0},
-    "HT05":    {"label": "1H Over 0.5 (ML)","ai_path": ("target_ht_over_0_5", "True"),           "odds_key": "HT05", "min_edge": 2.0},
+    "H":       {"label": "Home Win (ML)",    "ai_path": ("target_1x2", "H"),           "odds_key": "H",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
+    "D":       {"label": "Pareggio (ML)",    "ai_path": ("target_1x2", "D"),           "odds_key": "D",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
+    "A":       {"label": "Away Win (ML)",    "ai_path": ("target_1x2", "A"),           "odds_key": "A",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
+    "O25":     {"label": "Over 2.5 (ML)",    "ai_path": ("target_over_2_5", "True"),   "odds_key": "O25",     "min_edge": 5.0, "ai_target": "target_over_2_5",  "n_classes": 2},
+    "U25":     {"label": "Under 2.5 (ML)",   "ai_path": ("target_over_2_5", "False"),  "odds_key": "U25",     "min_edge": 5.0, "ai_target": "target_over_2_5",  "n_classes": 2},
+    "BTTS":    {"label": "BTTS Sì (ML)",     "ai_path": ("target_btts", "True"),       "odds_key": "BTTS",    "min_edge": 5.0, "ai_target": "target_btts",      "n_classes": 2},
+    "BTTS_NO": {"label": "BTTS No (ML)",     "ai_path": ("target_btts", "False"),      "odds_key": "BTTS_NO", "min_edge": 5.0, "ai_target": "target_btts",      "n_classes": 2},
+    "HT05":    {"label": "1H Over 0.5 (ML)", "ai_path": ("target_ht_over_0_5", "True"),"odds_key": "HT05",   "min_edge": 5.0, "ai_target": "target_ht_over_0_5","n_classes": 2},
 }
 
 # ---------------------------------------------------------------------------
@@ -386,9 +406,10 @@ class SlotManager:
     # ======================================================================
     #  EDGE SCANNER ML — Usa SOLO probabilità AI (no Poisson, no calibrazione)
     # ======================================================================
-    def scan_best_market_ml(self, ai_data, odds_data):
+    def scan_best_market_ml(self, ai_data, odds_data, calibration_metrics=None):
         """Edge scanner basato SOLO su probabilità ML.
-        Non usa calibrazione Poisson né filtro concordanza."""
+        Non usa calibrazione Poisson né filtro concordanza.
+        Se calibration_metrics è fornito, scarta mercati con BSS < 0."""
         if not ai_data:
             return {"market": None, "reason": "Nessun dato AI disponibile"}
 
@@ -417,7 +438,25 @@ class SlotManager:
             if edge < market_min_edge:
                 continue
 
+            # BSS gate: skip models worse than random
+            if calibration_metrics:
+                ai_target = market_info.get("ai_target", "")
+                brier = calibration_metrics.get(ai_target, {}).get("brier") if ai_target else None
+                n_cls = market_info.get("n_classes", 2)
+                if brier is not None:
+                    brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
+                    bss = 1.0 - brier / brier_random if brier_random > 0 else None
+                    if bss is not None and bss < 0:
+                        continue  # model worse than random, skip
+
+            # Intelligent high-odds filter: score = edge × √prob.
+            # High-odds selections (low prob) need proportionally stronger edge
+            # to achieve the same score as low-odds selections.  No arbitrary
+            # odds cap is imposed — a genuine +10% edge on odds 4.0 still passes.
             score = edge * math.sqrt(prob)
+            if score < MIN_ML_SCORE_THRESHOLD:
+                continue
+
             candidates.append({
                 "market": market_key,
                 "label": market_info["label"],
@@ -491,10 +530,33 @@ class SlotManager:
     # ======================================================================
     #  CALCOLO STAKE — Kelly Criterion Frazionato
     # ======================================================================
-    def calculate_kelly_stake(self, prob, odds, use_ml_bankroll=False):
+    def calculate_kelly_stake(self, prob, odds, use_ml_bankroll=False,
+                              brier_score=None, n_classes=2):
+        """
+        Calcola lo stake via Kelly Criterion frazionato.
+
+        Se brier_score è fornito, applica il BSS-based Kelly Shrinkage:
+            brier_random = (n_classes - 1) / n_classes
+            BSS          = 1 - brier_score / brier_random   (clipped in [0, 1])
+            kelly_frac   = kelly_frac_config × √BSS
+
+        √BSS: la radice quadrata fornisce una scalatura graduale — un BSS di 0.0
+        azzera completamente il Kelly (modello random = nessuna scommessa),
+        mentre un BSS di 1.0 lascia il Kelly invariato.  Un BSS di 0.10 (soglia
+        minima) riduce il Kelly di circa il 68%, contenendo l'esposizione sui
+        modelli al limite dell'accettabilità.
+        """
         bankroll = self.state.get("ml_bankroll", 1000.0) if use_ml_bankroll else self.state["bankroll"]
         kelly_frac = self.config["kelly_fraction"]
         max_pct = self.config["max_stake_pct"] / 100.0
+
+        # BSS-based Kelly Shrinkage (active only when brier_score is provided)
+        if brier_score is not None:
+            brier_random = (n_classes - 1) / n_classes if n_classes > 1 else 0.5
+            if brier_random > 0:
+                bss = 1.0 - (brier_score / brier_random)
+                bss = max(0.0, min(bss, 1.0))
+                kelly_frac = kelly_frac * math.sqrt(bss)
 
         comm = self.config["commission_pct"] / 100.0
         odds_net = (odds - 1.0) * (1.0 - comm) + 1.0
@@ -541,14 +603,17 @@ class SlotManager:
                 meta["divergence"] = round(divergence, 4)
                 meta["z_score"] = round(z_score, 2)
 
-                if divergence > 0.50 or z_score > 3.0:
+                # Tightened thresholds: divergence 0.50→0.30, z_score 3.0→2.0.
+                # Changed from soft-reduction (stake/10) to HARD BLOCK (return 0)
+                # because a hallucinatory signal at any stake size is a losing bet.
+                if divergence > 0.30 or z_score > 2.0:
                     meta["is_hallucination"] = True
                     meta["safety_vault"] = True
-                    stake = max(stake / 10.0, 2.0)
                     logger.info(
-                        f"    🛡️ Safety Vault ATTIVO: div={divergence:+.2f}, z={z_score:.2f} "
-                        f"→ stake ridotto a €{stake:.2f}"
+                        f"    🚫 HALLUCINATION BLOCKED: div={divergence:+.2f}, z={z_score:.2f} "
+                        f"→ scommessa ANNULLATA (stake=0)"
                     )
+                    return 0.0, meta
 
         # --- OMEGA: League Trust Score ---
         if EDGE_ENGINE_FLAGS.get("use_trust_score", False) and self._trust_scores is not None and league_id is not None:
@@ -601,6 +666,8 @@ class SlotManager:
             ai_markets = signal.get("ai_markets", {})
             odds = signal.get("odds_data", {})
             inputs = signal.get("inputs_data", {})
+            # Extracted here so it is available to both Poisson and ML tracks.
+            sig_league_id = signal.get("league_id")
 
             # ===================== POISSON TRACK =====================
             pois_skip = (sig_fid is not None and int(sig_fid) in existing_pois)
@@ -611,7 +678,6 @@ class SlotManager:
                 signal["edge_pct"] = ""
                 signal["score"] = ""
             else:
-                sig_league_id = signal.get("league_id")
                 scan = self.scan_best_market(analysis_markets, odds, inputs, ai_data=ai_markets, league_id=sig_league_id)
                 if scan.get("market") is not None:
                     prob = scan["prob"]
@@ -678,10 +744,38 @@ class SlotManager:
                 signal["ml_edge_pct"] = ""
                 signal["ml_score"] = ""
             else:
-                ml_scan = self.scan_best_market_ml(ai_markets, odds)
+                ml_scan = self.scan_best_market_ml(ai_markets, odds, calibration_metrics=signal.get("calibration_metrics"))
                 if ml_scan.get("market") is not None:
                     ml_prob = ml_scan["prob"]
-                    ml_stake = self.calculate_kelly_stake(ml_prob, ml_scan["odds"], use_ml_bankroll=True)
+                    ml_market_key = ml_scan.get("market", "")
+
+                    # --- BSS-based Kelly Shrinkage ---
+                    # Attempt to read the Brier score for the winning market from
+                    # calibration_metrics if the orchestrator passes them in the
+                    # signal dict.  Gracefully falls back to no shrinkage (None).
+                    _cal_metrics = signal.get("calibration_metrics", {})
+                    _ai_target = ML_MARKET_MAP.get(ml_market_key, {}).get("ai_target", "")
+                    ml_brier_score = (
+                        _cal_metrics.get(_ai_target, {}).get("brier")
+                        if _ai_target else None
+                    )
+                    ml_n_classes = ML_MARKET_MAP.get(ml_market_key, {}).get("n_classes", 2)
+
+                    ml_stake = self.calculate_kelly_stake(
+                        ml_prob, ml_scan["odds"],
+                        use_ml_bankroll=True,
+                        brier_score=ml_brier_score,
+                        n_classes=ml_n_classes,
+                    )
+
+                    # --- Safety Filters (previously ABSENT from ML track) ---
+                    # Apply the same Hallucination Filter + Trust Score that the
+                    # Poisson track applies.  If the signal is hallucinatory the
+                    # filter returns stake=0 (hard block).
+                    ml_stake, ml_safety_meta = self._apply_safety_filters(
+                        ml_stake, ml_prob, ml_scan["odds"], league_id=sig_league_id
+                    )
+
                     if ml_stake > 0:
                         ml_counter += 1
                         ml_slot_id = f"M{ml_counter}"
@@ -700,6 +794,9 @@ class SlotManager:
                             "edge": ml_scan["edge"],
                             "score": ml_scan["score"],
                             "stake": ml_stake,
+                            "z_score": ml_safety_meta.get("z_score"),
+                            "trust_score": ml_safety_meta.get("trust_score", 1.0),
+                            "brier_score": ml_brier_score,
                             "pnl": 0.0,
                             "result": "PENDING",
                         }
@@ -710,6 +807,8 @@ class SlotManager:
                         signal["ml_selected_market"] = f"{ml_scan['label']} @{ml_scan['odds']}"
                         signal["ml_edge_pct"] = f"'{ml_scan['edge']*100:+.1f}%"
                         signal["ml_score"] = f"{ml_scan['score']:.3f}"
+                        signal["ml_z_score"] = ml_safety_meta.get("z_score")
+                        signal["ml_trust_score"] = ml_safety_meta.get("trust_score", 1.0)
                         ml_accepted += 1
                     else:
                         signal["ml_slot_id"] = "⊘ SKIP"
@@ -1200,25 +1299,88 @@ class SlotManager:
             # CONCORDANCES — Bottom section
             # ═══════════════════════════════════════════════════════════════
             n_conc = 0
-            conc_details = []
+            conc_list = []
             for day in history:
                 p_by_f = {int(s.get("fixture_id", 0)): s for s in day.get("slots", []) if s.get("fixture_id")}
                 m_by_f = {int(s.get("fixture_id", 0)): s for s in day.get("ml_slots", []) if s.get("fixture_id")}
                 for fid in p_by_f:
                     if fid in m_by_f and p_by_f[fid].get("market") == m_by_f[fid].get("market"):
                         n_conc += 1
-                        conc_details.append(f"{p_by_f[fid].get('event_name','?')} → {p_by_f[fid].get('market_label','?')}")
+                        p_slot = p_by_f[fid]
+                        m_slot = m_by_f[fid]
+                        
+                        stake_tot = p_slot.get("stake", 0) + m_slot.get("stake", 0)
+                        
+                        is_pend = p_slot.get("result", "PENDING") == "PENDING"
+                        if is_pend:
+                            res_str = "PENDING"
+                            pnl_tot = 0
+                        else:
+                            res_str = str(p_slot.get("result", ""))
+                            pnl_tot = p_slot.get("pnl", 0) + m_slot.get("pnl", 0)
+                        
+                        conc_list.append({
+                            "date": day["date"],
+                            "event": p_slot.get("event_name", "?"),
+                            "market": p_slot.get("market_label", "?"),
+                            "odds": p_slot.get("odds", ""),
+                            "stake_tot": stake_tot,
+                            "result": res_str,
+                            "pnl_tot": pnl_tot,
+                            "is_pend": is_pend
+                        })
 
             if n_conc > 0:
+                add_row([""])
                 r = add_row([f"🤝 CONCORDANZE: {n_conc} selezioni identiche Poisson + ML"])
                 add_merge(r, 0, COLS)
-                add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.93, "blue": 0.6},
-                    "textFormat": {"bold": True, "fontSize": 11}, "horizontalAlignment": "CENTER"})
-                for detail in conc_details[:10]:
-                    r = add_row([f"  → {detail}"])
-                    add_merge(r, 0, COLS)
-                    add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.97, "blue": 0.85},
-                        "textFormat": {"fontSize": 9}, "horizontalAlignment": "LEFT"})
+                CONC_TITLE_BG = {"red": 1.0, "green": 0.93, "blue": 0.6}
+                add_fmt(r, r, {"backgroundColor": CONC_TITLE_BG, "textFormat": {"bold": True, "fontSize": 12}, "horizontalAlignment": "CENTER"})
+                
+                r = add_row(["Data", "", "Evento", "", "Mercato", "", "Quota", "", "Stake Totale", "", "Risultato", "", "P&L Totale", ""])
+                for i in range(0, 14, 2): add_merge(r, i, i+2)
+                CONC_HEADER_BG = {"red": 1.0, "green": 0.88, "blue": 0.4}
+                add_fmt(r, r, {"backgroundColor": CONC_HEADER_BG, "textFormat": {"bold": True, "fontSize": 10}, "horizontalAlignment": "CENTER"})
+                
+                conc_pnl_tot = 0
+                conc_stake_tot = 0
+                conc_won = 0
+                conc_played = 0
+
+                for c in conc_list:
+                    r = add_row([
+                        c["date"], "",
+                        c["event"], "",
+                        c["market"], "",
+                        c["odds"], "",
+                        f"€{c['stake_tot']:.2f}", "",
+                        c["result"], "",
+                        f"€{c['pnl_tot']:+.2f}" if not c['is_pend'] else "", ""
+                    ])
+                    for i in range(0, 14, 2): add_merge(r, i, i+2)
+                    
+                    if not c['is_pend']:
+                        conc_pnl_tot += c["pnl_tot"]
+                        conc_stake_tot += c["stake_tot"]
+                        conc_played += 1
+                        if "VINTO" in c["result"]:
+                            conc_won += 1
+                    
+                    if "VINTO" in c["result"]:
+                        add_fmt(r, r, {"backgroundColor": WIN_BG}, 0, COLS)
+                    elif "PERSO" in c["result"]:
+                        add_fmt(r, r, {"backgroundColor": LOSS_BG}, 0, COLS)
+                    else:
+                        add_fmt(r, r, {"backgroundColor": {"red": 1.0, "green": 0.97, "blue": 0.85}}, 0, COLS)
+                
+                conc_wr = f"{(conc_won/conc_played)*100:.1f}%" if conc_played > 0 else "—"
+                r = add_row(["", "", "TOTALE CONCORDANZE", "", conc_wr, "", "", "", f"€{conc_stake_tot:.2f}", "", "", "", f"€{conc_pnl_tot:+.2f}", ""])
+                add_merge(r, 0, 2)
+                for i in range(2, 14, 2): add_merge(r, i, i+2)
+                
+                c_pnl_color = GREEN_TXT if conc_pnl_tot >= 0 else RED_TXT
+                add_fmt(r, r, {"backgroundColor": CONC_HEADER_BG, "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": {"red": 0.3, "green": 0.3, "blue": 0.3}}, "horizontalAlignment": "CENTER"}, 0, 12)
+                add_fmt(r, r, {"backgroundColor": CONC_HEADER_BG, "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": c_pnl_color}, "horizontalAlignment": "CENTER"}, 12, 14)
 
             # ═══════════════════════════════════════════════════════════════
             # WRITE E CLEANUP RESIDUI

@@ -16,6 +16,11 @@ def variance_threshold(df: pd.DataFrame, threshold: float = 0.0) -> List[str]:
     X = df.select_dtypes(include=["number", "bool"]).copy()
     if X.empty:
         return []
+    # Drop columns that are 100% NaN — VarianceThreshold cannot handle them
+    X = X.dropna(axis=1, how="all")
+    if X.empty:
+        return []
+    X = X.fillna(0)  # fill remaining NaN so VarianceThreshold doesn't crash
     selector = VarianceThreshold(threshold=threshold)
     selector.fit(X)
     return X.columns[selector.get_support(indices=True)].tolist()
@@ -72,12 +77,17 @@ def select_by_mutual_info(
 
     X_filled = X_num.fillna(X_num.median())
 
-    # Encode target if string/object
+    # Encode target if non-numeric.
+    # Uses pd.api.types.is_numeric_dtype which correctly handles all pandas
+    # string types including legacy object dtype AND pandas 2.0+ StringDtype
+    # (which does NOT match `dtype == object` and caused int('H') crashes).
     y_enc = y.copy()
-    if y_enc.dtype == object or y_enc.dtype.name == "category":
-        y_enc = y_enc.astype("category").cat.codes
-
-    y_enc = y_enc.fillna(-1).astype(int)
+    if not pd.api.types.is_numeric_dtype(y_enc):
+        y_enc = pd.Categorical(
+            y_enc.astype(str).fillna("__NAN__")
+        ).codes.astype(int)
+    else:
+        y_enc = y_enc.fillna(-1).astype(int)
 
     try:
         mi = mutual_info_classif(
@@ -122,4 +132,7 @@ def apply_feature_selection(
         final_cols = keep_cols
 
     X_v = X_val.reindex(columns=final_cols).copy()
+    # Safety: ensure no NaN reaches the ensemble trainer
+    X_tr = X_tr.fillna(0)
+    X_v = X_v.fillna(0)
     return X_tr, X_v, final_cols

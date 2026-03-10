@@ -480,6 +480,7 @@ class BetfairReportManager:
                     "date": dt_ita,
                     "analysis_markets": analysis,
                     "ai_markets": ai_preds.get("targets", {}) if ai_preds else {},
+                    "calibration_metrics": ai_preds.get("calibration_metrics", {}) if ai_preds else {},
                     "odds_data": odds,
                     "inputs_data": inputs,
                     "row_index": len(raw_rows_data)
@@ -851,12 +852,61 @@ class BetfairReportManager:
 
     # Cache per evitare ri-addestramento della stessa lega in una singola esecuzione
     _trained_leagues_this_run = set()
-    MODEL_CACHE_TTL_DAYS = 7  # Riuserà modelli locali se < 7 giorni
+    MODEL_CACHE_TTL_DAYS = 7   # Riuserà modelli locali (league_XXX) se < 7 giorni
+    MODEL_RETRAIN_TTL_DAYS = 7  # Riaddestra modelli scaricati da Supabase se > 7 giorni
+
+    def _check_and_invalidate_stale_models(self, league_id: int) -> bool:
+        """
+        Controlla se i modelli scaricati localmente per questa lega sono scaduti.
+        Se scaduti (> MODEL_RETRAIN_TTL_DAYS): cancella i file locali e rimuove
+        le entry dal registry Supabase, in modo che predict_fixture() triggeri
+        automaticamente il retraining al prossimo tentativo.
+        Ritorna True se i modelli erano scaduti e sono stati invalidati.
+        """
+        import glob as glob_mod
+        cache_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
+        local_models = glob_mod.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+
+        if not local_models:
+            return False  # Nessun modello locale: gestito da "No models found" in predict_fixture
+
+        newest_mtime = max(os.path.getmtime(p) for p in local_models)
+        age_days = (datetime.now().timestamp() - newest_mtime) / 86400.0
+
+        if age_days < self.MODEL_RETRAIN_TTL_DAYS:
+            return False  # Modelli freschi, nessuna azione necessaria
+
+        logger.info(
+            f"Modelli League {league_id} scaduti ({age_days:.0f}gg > {self.MODEL_RETRAIN_TTL_DAYS}gg). "
+            f"Invalido cache locale e registry Supabase..."
+        )
+
+        # 1. Cancella file locali
+        for f in local_models:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+
+        # 2. Rimuovi entry dal registry Supabase → predict_fixture → "No models found" → retraining
+        try:
+            sb = get_supabase_client()
+            sb.table("ai_model_registry").delete().eq("league_id", league_id).execute()
+            logger.info(f"Registry Supabase pulito per League {league_id}.")
+        except Exception as e:
+            logger.warning(f"Impossibile pulire registry Supabase per League {league_id}: {e}")
+
+        return True
 
     def _get_or_train_ai_predictions(self, fixture_id, league_id, odds_dict):
         """Helper robusto per predizioni AI. Ritorna (predictions, status_string).
         Con smart caching: se i modelli locali sono freschi (<7gg), li riusa senza riaddestramento.
+        Retraining automatico se i modelli scaricati da Supabase sono scaduti (>7gg).
         status = 'OK' | 'LEGA SALTATA PER DATI INSUFFICIENTI' | 'ERRORE AI'"""
+        # Invalida modelli scaduti prima di tentare la predizione
+        if league_id not in self._trained_leagues_this_run:
+            self._check_and_invalidate_stale_models(league_id)
+
         try:
             preds = predict_fixture(fixture_id, store=True, live_odds=odds_dict)
             return preds, "OK"
