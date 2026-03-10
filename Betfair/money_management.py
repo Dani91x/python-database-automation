@@ -350,8 +350,8 @@ class SlotManager:
             if prob > 1:
                 prob = prob / 100.0
 
-            # Usa l'edge minimo specifico del mercato se definito, altrimenti usa il default
-            market_min_edge = market_info.get("min_edge", self.config["min_edge_pct"]) / 100.0
+            # Edge minimo controllato dal foglio Money Management (riga 4, col D)
+            market_min_edge = self.config["min_edge_pct"] / 100.0
 
             # === CALIBRAZIONE: corregge la probabilità con dati storici ===
             cal_key = market_info.get("cal_key", market_key)
