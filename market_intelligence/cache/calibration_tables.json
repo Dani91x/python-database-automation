@@ -1,0 +1,7733 @@
+{
+  "generated_at": "2026-03-11T14:54:51.902294+00:00",
+  "leagues": {
+    "233": {
+      "1x2_H": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2993,
+          "real_rate": 0.1429,
+          "bias": -0.1565,
+          "bias_pct": -15.65,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3397,
+          "real_rate": 0.3636,
+          "bias": 0.024,
+          "bias_pct": 2.4,
+          "correction_factor": 1.0706,
+          "ci_95": 0.2843,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2409,
+          "real_rate": 0.2,
+          "bias": -0.0409,
+          "bias_pct": -4.09,
+          "correction_factor": 0.8301,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4309,
+          "real_rate": 0.3333,
+          "bias": -0.0975,
+          "bias_pct": -9.75,
+          "correction_factor": 0.7736,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4251,
+          "real_rate": 0.2222,
+          "bias": -0.2029,
+          "bias_pct": -20.29,
+          "correction_factor": 0.5228,
+          "ci_95": 0.2716,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.339,
+          "real_rate": 0.5,
+          "bias": 0.161,
+          "bias_pct": 16.1,
+          "correction_factor": 1.4749,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6121,
+          "real_rate": 0.7143,
+          "bias": 0.1021,
+          "bias_pct": 10.21,
+          "correction_factor": 1.1669,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 9,
+          "implied_mean": 0.7061,
+          "real_rate": 0.5556,
+          "bias": -0.1505,
+          "bias_pct": -15.05,
+          "correction_factor": 0.7868,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4986,
+          "real_rate": 0.6,
+          "bias": 0.1014,
+          "bias_pct": 10.14,
+          "correction_factor": 1.2035,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 12,
+          "implied_mean": 0.4145,
+          "real_rate": 0.5833,
+          "bias": 0.1689,
+          "bias_pct": 16.89,
+          "correction_factor": 1.4074,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.30-1.55": {
+          "n": 7,
+          "implied_mean": 0.6592,
+          "real_rate": 0.4286,
+          "bias": -0.2306,
+          "bias_pct": -23.06,
+          "correction_factor": 0.6501,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6072,
+          "real_rate": 0.375,
+          "bias": -0.2322,
+          "bias_pct": -23.22,
+          "correction_factor": 0.6176,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      }
+    },
+    "287": {
+      "1x2_H": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6103,
+          "real_rate": 0.5,
+          "bias": -0.1103,
+          "bias_pct": -11.03,
+          "correction_factor": 0.8193,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4067,
+          "real_rate": 0.1429,
+          "bias": -0.2639,
+          "bias_pct": -26.39,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5247,
+          "real_rate": 0.5,
+          "bias": -0.0247,
+          "bias_pct": -2.47,
+          "correction_factor": 0.9528,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 23,
+          "implied_mean": 0.3258,
+          "real_rate": 0.3478,
+          "bias": 0.022,
+          "bias_pct": 2.2,
+          "correction_factor": 1.0675,
+          "ci_95": 0.1947,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 11,
+          "implied_mean": 0.2216,
+          "real_rate": 0.3636,
+          "bias": 0.142,
+          "bias_pct": 14.2,
+          "correction_factor": 1.6407,
+          "ci_95": 0.2843,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.335,
+          "real_rate": 0.4,
+          "bias": 0.065,
+          "bias_pct": 6.5,
+          "correction_factor": 1.194,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.3882,
+          "real_rate": 0.1667,
+          "bias": -0.2216,
+          "bias_pct": -22.16,
+          "correction_factor": 0.5,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 20,
+          "implied_mean": 0.4128,
+          "real_rate": 0.5,
+          "bias": 0.0872,
+          "bias_pct": 8.72,
+          "correction_factor": 1.2113,
+          "ci_95": 0.2191,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6301,
+          "real_rate": 0.25,
+          "bias": -0.3801,
+          "bias_pct": -38.01,
+          "correction_factor": 0.5,
+          "ci_95": 0.3001,
+          "significant": true
+        },
+        "1.30-1.55": {
+          "n": 13,
+          "implied_mean": 0.6871,
+          "real_rate": 0.6154,
+          "bias": -0.0717,
+          "bias_pct": -7.17,
+          "correction_factor": 0.8956,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 17,
+          "implied_mean": 0.4832,
+          "real_rate": 0.5882,
+          "bias": 0.105,
+          "bias_pct": 10.5,
+          "correction_factor": 1.2174,
+          "ci_95": 0.234,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4374,
+          "real_rate": 0.2,
+          "bias": -0.2374,
+          "bias_pct": -23.74,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 20,
+          "implied_mean": 0.6025,
+          "real_rate": 0.5,
+          "bias": -0.1025,
+          "bias_pct": -10.25,
+          "correction_factor": 0.8299,
+          "ci_95": 0.2191,
+          "significant": false
+        }
+      }
+    },
+    "585": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3179,
+          "real_rate": 0.25,
+          "bias": -0.0679,
+          "bias_pct": -6.79,
+          "correction_factor": 0.7864,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "6.00-inf": {
+          "n": 6,
+          "implied_mean": 0.124,
+          "real_rate": 0.0,
+          "bias": -0.124,
+          "bias_pct": -12.4,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4182,
+          "real_rate": 0.0,
+          "bias": -0.4182,
+          "bias_pct": -41.82,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "under_2_5": {},
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4325,
+          "real_rate": 0.4,
+          "bias": -0.0325,
+          "bias_pct": -3.25,
+          "correction_factor": 0.9249,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6175,
+          "real_rate": 0.6667,
+          "bias": 0.0491,
+          "bias_pct": 4.91,
+          "correction_factor": 1.0796,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      }
+    },
+    "358": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.2992,
+          "real_rate": 0.4615,
+          "bias": 0.1624,
+          "bias_pct": 16.24,
+          "correction_factor": 1.5428,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.322,
+          "real_rate": 0.2,
+          "bias": -0.122,
+          "bias_pct": -12.2,
+          "correction_factor": 0.621,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5297,
+          "real_rate": 0.3,
+          "bias": -0.2297,
+          "bias_pct": -22.97,
+          "correction_factor": 0.5664,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5835,
+          "real_rate": 0.8,
+          "bias": 0.2165,
+          "bias_pct": 21.65,
+          "correction_factor": 1.3711,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5181,
+          "real_rate": 0.5,
+          "bias": -0.0181,
+          "bias_pct": -1.81,
+          "correction_factor": 0.9651,
+          "ci_95": 0.3099,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5319,
+          "real_rate": 0.8,
+          "bias": 0.2681,
+          "bias_pct": 26.81,
+          "correction_factor": 1.5041,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.5889,
+          "real_rate": 0.6,
+          "bias": 0.0111,
+          "bias_pct": 1.11,
+          "correction_factor": 1.0188,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4955,
+          "real_rate": 0.2308,
+          "bias": -0.2647,
+          "bias_pct": -26.47,
+          "correction_factor": 0.5,
+          "ci_95": 0.229,
+          "significant": true
+        }
+      }
+    },
+    "240": {
+      "1x2_H": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5874,
+          "real_rate": 0.2,
+          "bias": -0.3874,
+          "bias_pct": -38.74,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.3215,
+          "real_rate": 0.4167,
+          "bias": 0.0952,
+          "bias_pct": 9.52,
+          "correction_factor": 1.2961,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2201,
+          "real_rate": 0.3333,
+          "bias": 0.1132,
+          "bias_pct": 11.32,
+          "correction_factor": 1.5145,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 10,
+          "implied_mean": 0.4167,
+          "real_rate": 0.4,
+          "bias": -0.0167,
+          "bias_pct": -1.67,
+          "correction_factor": 0.9599,
+          "ci_95": 0.3036,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4861,
+          "real_rate": 0.4,
+          "bias": -0.0861,
+          "bias_pct": -8.61,
+          "correction_factor": 0.8229,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6133,
+          "real_rate": 0.7,
+          "bias": 0.0867,
+          "bias_pct": 8.67,
+          "correction_factor": 1.1413,
+          "ci_95": 0.284,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6863,
+          "real_rate": 0.4,
+          "bias": -0.2863,
+          "bias_pct": -28.63,
+          "correction_factor": 0.5828,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4963,
+          "real_rate": 0.5385,
+          "bias": 0.0421,
+          "bias_pct": 4.21,
+          "correction_factor": 1.0849,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.6,
+          "real_rate": 0.3333,
+          "bias": -0.2667,
+          "bias_pct": -26.67,
+          "correction_factor": 0.5555,
+          "ci_95": 0.308,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5455,
+          "real_rate": 0.6,
+          "bias": 0.0545,
+          "bias_pct": 5.45,
+          "correction_factor": 1.0999,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "16": {
+      "1x2_H": {
+        "1.01-1.30": {
+          "n": 6,
+          "implied_mean": 0.9245,
+          "real_rate": 0.8333,
+          "bias": -0.0911,
+          "bias_pct": -9.11,
+          "correction_factor": 0.9014,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "6.00-inf": {
+          "n": 6,
+          "implied_mean": 0.1203,
+          "real_rate": 0.1667,
+          "bias": 0.0464,
+          "bias_pct": 4.64,
+          "correction_factor": 1.386,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.7338,
+          "real_rate": 0.4,
+          "bias": -0.3338,
+          "bias_pct": -33.38,
+          "correction_factor": 0.5451,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "333": {
+      "1x2_H": {
+        "1.01-1.30": {
+          "n": 5,
+          "implied_mean": 0.8551,
+          "real_rate": 1.0,
+          "bias": 0.1449,
+          "bias_pct": 14.49,
+          "correction_factor": 1.1695,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3165,
+          "real_rate": 0.2727,
+          "bias": -0.0438,
+          "bias_pct": -4.38,
+          "correction_factor": 0.8616,
+          "ci_95": 0.2632,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "6.00-inf": {
+          "n": 7,
+          "implied_mean": 0.1078,
+          "real_rate": 0.0,
+          "bias": -0.1078,
+          "bias_pct": -10.78,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.429,
+          "real_rate": 0.375,
+          "bias": -0.054,
+          "bias_pct": -5.4,
+          "correction_factor": 0.8742,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4305,
+          "real_rate": 0.4,
+          "bias": -0.0305,
+          "bias_pct": -3.05,
+          "correction_factor": 0.9293,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6143,
+          "real_rate": 0.6,
+          "bias": -0.0143,
+          "bias_pct": -1.43,
+          "correction_factor": 0.9767,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6945,
+          "real_rate": 0.4,
+          "bias": -0.2945,
+          "bias_pct": -29.45,
+          "correction_factor": 0.5759,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5106,
+          "real_rate": 0.3333,
+          "bias": -0.1773,
+          "bias_pct": -17.73,
+          "correction_factor": 0.6528,
+          "ci_95": 0.308,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4434,
+          "real_rate": 0.1429,
+          "bias": -0.3005,
+          "bias_pct": -30.05,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 12,
+          "implied_mean": 0.6078,
+          "real_rate": 0.8333,
+          "bias": 0.2255,
+          "bias_pct": 22.55,
+          "correction_factor": 1.371,
+          "ci_95": 0.2109,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5217,
+          "real_rate": 0.4,
+          "bias": -0.1217,
+          "bias_pct": -12.17,
+          "correction_factor": 0.7667,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "13": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2391,
+          "real_rate": 0.2,
+          "bias": -0.0391,
+          "bias_pct": -3.91,
+          "correction_factor": 0.8366,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.3228,
+          "real_rate": 0.2222,
+          "bias": -0.1006,
+          "bias_pct": -10.06,
+          "correction_factor": 0.6884,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3283,
+          "real_rate": 0.2,
+          "bias": -0.1283,
+          "bias_pct": -12.83,
+          "correction_factor": 0.6093,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4908,
+          "real_rate": 0.2,
+          "bias": -0.2908,
+          "bias_pct": -29.08,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4279,
+          "real_rate": 0.25,
+          "bias": -0.1779,
+          "bias_pct": -17.79,
+          "correction_factor": 0.5842,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.6133,
+          "real_rate": 0.6667,
+          "bias": 0.0534,
+          "bias_pct": 5.34,
+          "correction_factor": 1.0871,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5015,
+          "real_rate": 0.5556,
+          "bias": 0.0541,
+          "bias_pct": 5.41,
+          "correction_factor": 1.1079,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.5996,
+          "real_rate": 0.5556,
+          "bias": -0.044,
+          "bias_pct": -4.4,
+          "correction_factor": 0.9266,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      }
+    },
+    "162": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5084,
+          "real_rate": 0.6,
+          "bias": 0.0916,
+          "bias_pct": 9.16,
+          "correction_factor": 1.1802,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 14,
+          "implied_mean": 0.3143,
+          "real_rate": 0.2857,
+          "bias": -0.0286,
+          "bias_pct": -2.86,
+          "correction_factor": 0.9091,
+          "ci_95": 0.2366,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2062,
+          "real_rate": 0.2857,
+          "bias": 0.0795,
+          "bias_pct": 7.95,
+          "correction_factor": 1.3857,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4435,
+          "real_rate": 0.5,
+          "bias": 0.0565,
+          "bias_pct": 5.65,
+          "correction_factor": 1.1274,
+          "ci_95": 0.3465,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5181,
+          "real_rate": 0.25,
+          "bias": -0.2681,
+          "bias_pct": -26.81,
+          "correction_factor": 0.5,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 11,
+          "implied_mean": 0.6147,
+          "real_rate": 0.7273,
+          "bias": 0.1126,
+          "bias_pct": 11.26,
+          "correction_factor": 1.1831,
+          "ci_95": 0.2632,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5313,
+          "real_rate": 0.5,
+          "bias": -0.0313,
+          "bias_pct": -3.13,
+          "correction_factor": 0.941,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 15,
+          "implied_mean": 0.5242,
+          "real_rate": 0.4667,
+          "bias": -0.0575,
+          "bias_pct": -5.75,
+          "correction_factor": 0.8902,
+          "ci_95": 0.2525,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5815,
+          "real_rate": 0.5,
+          "bias": -0.0815,
+          "bias_pct": -8.15,
+          "correction_factor": 0.8599,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5377,
+          "real_rate": 0.5,
+          "bias": -0.0377,
+          "bias_pct": -3.77,
+          "correction_factor": 0.9298,
+          "ci_95": 0.2829,
+          "significant": false
+        }
+      }
+    },
+    "323": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5151,
+          "real_rate": 0.5,
+          "bias": -0.0151,
+          "bias_pct": -1.51,
+          "correction_factor": 0.9708,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.294,
+          "real_rate": 0.2222,
+          "bias": -0.0718,
+          "bias_pct": -7.18,
+          "correction_factor": 0.7558,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3067,
+          "real_rate": 0.5,
+          "bias": 0.1933,
+          "bias_pct": 19.33,
+          "correction_factor": 1.6301,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5999,
+          "real_rate": 0.2,
+          "bias": -0.3999,
+          "bias_pct": -39.99,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5103,
+          "real_rate": 0.1429,
+          "bias": -0.3674,
+          "bias_pct": -36.74,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5045,
+          "real_rate": 0.8889,
+          "bias": 0.3844,
+          "bias_pct": 38.44,
+          "correction_factor": 1.7618,
+          "ci_95": 0.2053,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5987,
+          "real_rate": 0.3333,
+          "bias": -0.2653,
+          "bias_pct": -26.53,
+          "correction_factor": 0.5568,
+          "ci_95": 0.3772,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5173,
+          "real_rate": 0.2857,
+          "bias": -0.2316,
+          "bias_pct": -23.16,
+          "correction_factor": 0.5523,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5082,
+          "real_rate": 0.75,
+          "bias": 0.2418,
+          "bias_pct": 24.18,
+          "correction_factor": 1.4757,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      }
+    },
+    "276": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5043,
+          "real_rate": 0.6,
+          "bias": 0.0957,
+          "bias_pct": 9.57,
+          "correction_factor": 1.1899,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.3356,
+          "real_rate": 0.3333,
+          "bias": -0.0023,
+          "bias_pct": -0.23,
+          "correction_factor": 0.9932,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.2905,
+          "real_rate": 0.2,
+          "bias": -0.0905,
+          "bias_pct": -9.05,
+          "correction_factor": 0.6885,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4465,
+          "real_rate": 0.3333,
+          "bias": -0.1132,
+          "bias_pct": -11.32,
+          "correction_factor": 0.7465,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6274,
+          "real_rate": 0.8,
+          "bias": 0.1726,
+          "bias_pct": 17.26,
+          "correction_factor": 1.2751,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      }
+    },
+    "62": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3056,
+          "real_rate": 0.3846,
+          "bias": 0.079,
+          "bias_pct": 7.9,
+          "correction_factor": 1.2586,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5229,
+          "real_rate": 0.4,
+          "bias": -0.1229,
+          "bias_pct": -12.29,
+          "correction_factor": 0.7649,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5244,
+          "real_rate": 0.625,
+          "bias": 0.1006,
+          "bias_pct": 10.06,
+          "correction_factor": 1.1917,
+          "ci_95": 0.3355,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6145,
+          "real_rate": 0.3333,
+          "bias": -0.2812,
+          "bias_pct": -28.12,
+          "correction_factor": 0.5424,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5277,
+          "real_rate": 0.5833,
+          "bias": 0.0556,
+          "bias_pct": 5.56,
+          "correction_factor": 1.1054,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5133,
+          "real_rate": 0.5,
+          "bias": -0.0133,
+          "bias_pct": -1.33,
+          "correction_factor": 0.9741,
+          "ci_95": 0.2829,
+          "significant": false
+        }
+      }
+    },
+    "234": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4318,
+          "real_rate": 0.6,
+          "bias": 0.1682,
+          "bias_pct": 16.82,
+          "correction_factor": 1.3896,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3014,
+          "real_rate": 0.3077,
+          "bias": 0.0063,
+          "bias_pct": 0.63,
+          "correction_factor": 1.0209,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3289,
+          "real_rate": 0.5,
+          "bias": 0.1711,
+          "bias_pct": 17.11,
+          "correction_factor": 1.52,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2188,
+          "real_rate": 0.0,
+          "bias": -0.2188,
+          "bias_pct": -21.88,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5247,
+          "real_rate": 0.5556,
+          "bias": 0.0309,
+          "bias_pct": 3.09,
+          "correction_factor": 1.0588,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.5986,
+          "real_rate": 0.625,
+          "bias": 0.0264,
+          "bias_pct": 2.64,
+          "correction_factor": 1.0441,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5111,
+          "real_rate": 0.4167,
+          "bias": -0.0944,
+          "bias_pct": -9.44,
+          "correction_factor": 0.8152,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 14,
+          "implied_mean": 0.5945,
+          "real_rate": 0.6429,
+          "bias": 0.0484,
+          "bias_pct": 4.84,
+          "correction_factor": 1.0813,
+          "ci_95": 0.251,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4962,
+          "real_rate": 0.2308,
+          "bias": -0.2655,
+          "bias_pct": -26.55,
+          "correction_factor": 0.5,
+          "ci_95": 0.229,
+          "significant": true
+        }
+      }
+    },
+    "192": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2311,
+          "real_rate": 0.1429,
+          "bias": -0.0882,
+          "bias_pct": -8.82,
+          "correction_factor": 0.6182,
+          "ci_95": 0.2592,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.2822,
+          "real_rate": 0.1111,
+          "bias": -0.1711,
+          "bias_pct": -17.11,
+          "correction_factor": 0.5,
+          "ci_95": 0.2053,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "211": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4135,
+          "real_rate": 0.8333,
+          "bias": 0.4198,
+          "bias_pct": 41.98,
+          "correction_factor": 2.0,
+          "ci_95": 0.2982,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 14,
+          "implied_mean": 0.3308,
+          "real_rate": 0.2143,
+          "bias": -0.1165,
+          "bias_pct": -11.65,
+          "correction_factor": 0.6477,
+          "ci_95": 0.2149,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4213,
+          "real_rate": 0.4,
+          "bias": -0.0213,
+          "bias_pct": -2.13,
+          "correction_factor": 0.9495,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 12,
+          "implied_mean": 0.4266,
+          "real_rate": 0.4167,
+          "bias": -0.0099,
+          "bias_pct": -0.99,
+          "correction_factor": 0.9767,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.686,
+          "real_rate": 0.6,
+          "bias": -0.086,
+          "bias_pct": -8.6,
+          "correction_factor": 0.8746,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6251,
+          "real_rate": 0.5,
+          "bias": -0.1251,
+          "bias_pct": -12.51,
+          "correction_factor": 0.7999,
+          "ci_95": 0.3465,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.4897,
+          "real_rate": 0.3,
+          "bias": -0.1897,
+          "bias_pct": -18.97,
+          "correction_factor": 0.6126,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 11,
+          "implied_mean": 0.6098,
+          "real_rate": 0.5455,
+          "bias": -0.0643,
+          "bias_pct": -6.43,
+          "correction_factor": 0.8945,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      }
+    },
+    "357": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4377,
+          "real_rate": 0.4,
+          "bias": -0.0377,
+          "bias_pct": -3.77,
+          "correction_factor": 0.9139,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 14,
+          "implied_mean": 0.3042,
+          "real_rate": 0.3571,
+          "bias": 0.0529,
+          "bias_pct": 5.29,
+          "correction_factor": 1.1739,
+          "ci_95": 0.251,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3122,
+          "real_rate": 0.2857,
+          "bias": -0.0265,
+          "bias_pct": -2.65,
+          "correction_factor": 0.9152,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5169,
+          "real_rate": 0.1429,
+          "bias": -0.374,
+          "bias_pct": -37.4,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        },
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4379,
+          "real_rate": 0.625,
+          "bias": 0.1871,
+          "bias_pct": 18.71,
+          "correction_factor": 1.4272,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6142,
+          "real_rate": 0.5,
+          "bias": -0.1142,
+          "bias_pct": -11.42,
+          "correction_factor": 0.8141,
+          "ci_95": 0.3099,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.528,
+          "real_rate": 0.8,
+          "bias": 0.272,
+          "bias_pct": 27.2,
+          "correction_factor": 1.5151,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5132,
+          "real_rate": 0.6923,
+          "bias": 0.1791,
+          "bias_pct": 17.91,
+          "correction_factor": 1.3489,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5295,
+          "real_rate": 0.3846,
+          "bias": -0.1449,
+          "bias_pct": -14.49,
+          "correction_factor": 0.7264,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      }
+    },
+    "494": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5217,
+          "real_rate": 0.6,
+          "bias": 0.0783,
+          "bias_pct": 7.83,
+          "correction_factor": 1.15,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3154,
+          "real_rate": 0.4615,
+          "bias": 0.1461,
+          "bias_pct": 14.61,
+          "correction_factor": 1.4632,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2278,
+          "real_rate": 0.0,
+          "bias": -0.2278,
+          "bias_pct": -22.78,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.427,
+          "real_rate": 0.375,
+          "bias": -0.052,
+          "bias_pct": -5.2,
+          "correction_factor": 0.8783,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6204,
+          "real_rate": 0.4,
+          "bias": -0.2204,
+          "bias_pct": -22.04,
+          "correction_factor": 0.6448,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.493,
+          "real_rate": 0.6,
+          "bias": 0.107,
+          "bias_pct": 10.7,
+          "correction_factor": 1.2171,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6103,
+          "real_rate": 0.7143,
+          "bias": 0.1039,
+          "bias_pct": 10.39,
+          "correction_factor": 1.1703,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      }
+    },
+    "624": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.395,
+          "real_rate": 0.3333,
+          "bias": -0.0617,
+          "bias_pct": -6.17,
+          "correction_factor": 0.8438,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3268,
+          "real_rate": 0.3077,
+          "bias": -0.0191,
+          "bias_pct": -1.91,
+          "correction_factor": 0.9416,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.3858,
+          "real_rate": 0.2,
+          "bias": -0.1858,
+          "bias_pct": -18.58,
+          "correction_factor": 0.5183,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "283": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5096,
+          "real_rate": 0.3333,
+          "bias": -0.1763,
+          "bias_pct": -17.63,
+          "correction_factor": 0.6541,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 14,
+          "implied_mean": 0.3075,
+          "real_rate": 0.1429,
+          "bias": -0.1646,
+          "bias_pct": -16.46,
+          "correction_factor": 0.5,
+          "ci_95": 0.1833,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2382,
+          "real_rate": 0.6667,
+          "bias": 0.4284,
+          "bias_pct": 42.84,
+          "correction_factor": 2.0,
+          "ci_95": 0.3772,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4459,
+          "real_rate": 0.625,
+          "bias": 0.1791,
+          "bias_pct": 17.91,
+          "correction_factor": 1.4017,
+          "ci_95": 0.3355,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5063,
+          "real_rate": 0.7143,
+          "bias": 0.208,
+          "bias_pct": 20.8,
+          "correction_factor": 1.4109,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6134,
+          "real_rate": 0.5,
+          "bias": -0.1134,
+          "bias_pct": -11.34,
+          "correction_factor": 0.8152,
+          "ci_95": 0.3099,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5372,
+          "real_rate": 0.0,
+          "bias": -0.5372,
+          "bias_pct": -53.72,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 15,
+          "implied_mean": 0.5138,
+          "real_rate": 0.6,
+          "bias": 0.0862,
+          "bias_pct": 8.62,
+          "correction_factor": 1.1677,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.532,
+          "real_rate": 0.3846,
+          "bias": -0.1474,
+          "bias_pct": -14.74,
+          "correction_factor": 0.723,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      }
+    },
+    "271": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5216,
+          "real_rate": 0.2,
+          "bias": -0.3216,
+          "bias_pct": -32.16,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 14,
+          "implied_mean": 0.2904,
+          "real_rate": 0.4286,
+          "bias": 0.1381,
+          "bias_pct": 13.81,
+          "correction_factor": 1.4756,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3157,
+          "real_rate": 0.0,
+          "bias": -0.3157,
+          "bias_pct": -31.57,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.599,
+          "real_rate": 0.625,
+          "bias": 0.026,
+          "bias_pct": 2.6,
+          "correction_factor": 1.0434,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4245,
+          "real_rate": 0.2857,
+          "bias": -0.1387,
+          "bias_pct": -13.87,
+          "correction_factor": 0.6731,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5096,
+          "real_rate": 0.5,
+          "bias": -0.0096,
+          "bias_pct": -0.96,
+          "correction_factor": 0.9812,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.30-1.55": {
+          "n": 6,
+          "implied_mean": 0.6705,
+          "real_rate": 0.8333,
+          "bias": 0.1628,
+          "bias_pct": 16.28,
+          "correction_factor": 1.2428,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5431,
+          "real_rate": 0.6,
+          "bias": 0.0569,
+          "bias_pct": 5.69,
+          "correction_factor": 1.1048,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6156,
+          "real_rate": 0.8,
+          "bias": 0.1844,
+          "bias_pct": 18.44,
+          "correction_factor": 1.2995,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4265,
+          "real_rate": 0.1111,
+          "bias": -0.3154,
+          "bias_pct": -31.54,
+          "correction_factor": 0.5,
+          "ci_95": 0.2053,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5196,
+          "real_rate": 0.5,
+          "bias": -0.0196,
+          "bias_pct": -1.96,
+          "correction_factor": 0.9622,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      }
+    },
+    "263": {
+      "1x2_H": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6189,
+          "real_rate": 0.8333,
+          "bias": 0.2145,
+          "bias_pct": 21.45,
+          "correction_factor": 1.3466,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5059,
+          "real_rate": 0.8,
+          "bias": 0.2941,
+          "bias_pct": 29.41,
+          "correction_factor": 1.5814,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2348,
+          "real_rate": 0.0,
+          "bias": -0.2348,
+          "bias_pct": -23.48,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.295,
+          "real_rate": 0.1538,
+          "bias": -0.1412,
+          "bias_pct": -14.12,
+          "correction_factor": 0.5215,
+          "ci_95": 0.1961,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2257,
+          "real_rate": 0.1667,
+          "bias": -0.059,
+          "bias_pct": -5.9,
+          "correction_factor": 0.7384,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3106,
+          "real_rate": 0.2,
+          "bias": -0.1106,
+          "bias_pct": -11.06,
+          "correction_factor": 0.6439,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6054,
+          "real_rate": 0.3333,
+          "bias": -0.2721,
+          "bias_pct": -27.21,
+          "correction_factor": 0.5506,
+          "ci_95": 0.3772,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5251,
+          "real_rate": 0.75,
+          "bias": 0.2249,
+          "bias_pct": 22.49,
+          "correction_factor": 1.4284,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5158,
+          "real_rate": 0.5455,
+          "bias": 0.0296,
+          "bias_pct": 2.96,
+          "correction_factor": 1.0575,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5413,
+          "real_rate": 0.8333,
+          "bias": 0.292,
+          "bias_pct": 29.2,
+          "correction_factor": 1.5395,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6039,
+          "real_rate": 0.3333,
+          "bias": -0.2706,
+          "bias_pct": -27.06,
+          "correction_factor": 0.5519,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4276,
+          "real_rate": 1.0,
+          "bias": 0.5724,
+          "bias_pct": 57.24,
+          "correction_factor": 2.0,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.513,
+          "real_rate": 0.2222,
+          "bias": -0.2908,
+          "bias_pct": -29.08,
+          "correction_factor": 0.5,
+          "ci_95": 0.2716,
+          "significant": true
+        }
+      }
+    },
+    "188": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 11,
+          "implied_mean": 0.2411,
+          "real_rate": 0.3636,
+          "bias": 0.1225,
+          "bias_pct": 12.25,
+          "correction_factor": 1.5082,
+          "ci_95": 0.2843,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2837,
+          "real_rate": 0.3333,
+          "bias": 0.0496,
+          "bias_pct": 4.96,
+          "correction_factor": 1.1748,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3098,
+          "real_rate": 0.0,
+          "bias": -0.3098,
+          "bias_pct": -30.98,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.30-1.55": {
+          "n": 8,
+          "implied_mean": 0.6972,
+          "real_rate": 0.375,
+          "bias": -0.3222,
+          "bias_pct": -32.22,
+          "correction_factor": 0.5378,
+          "ci_95": 0.3355,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6149,
+          "real_rate": 0.8,
+          "bias": 0.1851,
+          "bias_pct": 18.51,
+          "correction_factor": 1.301,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4123,
+          "real_rate": 0.2222,
+          "bias": -0.1901,
+          "bias_pct": -19.01,
+          "correction_factor": 0.539,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.30-1.55": {
+          "n": 8,
+          "implied_mean": 0.6967,
+          "real_rate": 0.375,
+          "bias": -0.3217,
+          "bias_pct": -32.17,
+          "correction_factor": 0.5382,
+          "ci_95": 0.3355,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6068,
+          "real_rate": 0.5714,
+          "bias": -0.0353,
+          "bias_pct": -3.53,
+          "correction_factor": 0.9417,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 11,
+          "implied_mean": 0.4073,
+          "real_rate": 0.3636,
+          "bias": -0.0437,
+          "bias_pct": -4.37,
+          "correction_factor": 0.8928,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      }
+    },
+    "173": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3031,
+          "real_rate": 0.3636,
+          "bias": 0.0605,
+          "bias_pct": 6.05,
+          "correction_factor": 1.1996,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2077,
+          "real_rate": 0.0,
+          "bias": -0.2077,
+          "bias_pct": -20.77,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5053,
+          "real_rate": 0.6,
+          "bias": 0.0947,
+          "bias_pct": 9.47,
+          "correction_factor": 1.1874,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.5851,
+          "real_rate": 0.1429,
+          "bias": -0.4422,
+          "bias_pct": -44.22,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5134,
+          "real_rate": 0.7143,
+          "bias": 0.2009,
+          "bias_pct": 20.09,
+          "correction_factor": 1.3913,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5299,
+          "real_rate": 0.2,
+          "bias": -0.3299,
+          "bias_pct": -32.99,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6029,
+          "real_rate": 0.1429,
+          "bias": -0.4601,
+          "bias_pct": -46.01,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      }
+    },
+    "268": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5196,
+          "real_rate": 0.6667,
+          "bias": 0.1471,
+          "bias_pct": 14.71,
+          "correction_factor": 1.2831,
+          "ci_95": 0.3772,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3284,
+          "real_rate": 0.0,
+          "bias": -0.3284,
+          "bias_pct": -32.84,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 17,
+          "implied_mean": 0.3305,
+          "real_rate": 0.3529,
+          "bias": 0.0224,
+          "bias_pct": 2.24,
+          "correction_factor": 1.0678,
+          "ci_95": 0.2272,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4276,
+          "real_rate": 0.5714,
+          "bias": 0.1438,
+          "bias_pct": 14.38,
+          "correction_factor": 1.3362,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2431,
+          "real_rate": 0.0,
+          "bias": -0.2431,
+          "bias_pct": -24.31,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 16,
+          "implied_mean": 0.4211,
+          "real_rate": 0.3125,
+          "bias": -0.1086,
+          "bias_pct": -10.86,
+          "correction_factor": 0.7421,
+          "ci_95": 0.2271,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.6218,
+          "real_rate": 0.5556,
+          "bias": -0.0663,
+          "bias_pct": -6.63,
+          "correction_factor": 0.8934,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 8,
+          "implied_mean": 0.6737,
+          "real_rate": 0.875,
+          "bias": 0.2013,
+          "bias_pct": 20.13,
+          "correction_factor": 1.2988,
+          "ci_95": 0.2292,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.4956,
+          "real_rate": 0.3636,
+          "bias": -0.1319,
+          "bias_pct": -13.19,
+          "correction_factor": 0.7338,
+          "ci_95": 0.2843,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4525,
+          "real_rate": 0.6,
+          "bias": 0.1475,
+          "bias_pct": 14.75,
+          "correction_factor": 1.3259,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 13,
+          "implied_mean": 0.6016,
+          "real_rate": 0.4615,
+          "bias": -0.1401,
+          "bias_pct": -14.01,
+          "correction_factor": 0.7671,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      }
+    },
+    "685": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4983,
+          "real_rate": 0.8,
+          "bias": 0.3017,
+          "bias_pct": 30.17,
+          "correction_factor": 1.6055,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2889,
+          "real_rate": 0.1667,
+          "bias": -0.1223,
+          "bias_pct": -12.23,
+          "correction_factor": 0.5769,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2415,
+          "real_rate": 0.2,
+          "bias": -0.0415,
+          "bias_pct": -4.15,
+          "correction_factor": 0.8283,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "356": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3086,
+          "real_rate": 0.125,
+          "bias": -0.1836,
+          "bias_pct": -18.36,
+          "correction_factor": 0.5,
+          "ci_95": 0.2292,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "179": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.2872,
+          "real_rate": 0.625,
+          "bias": 0.3378,
+          "bias_pct": 33.78,
+          "correction_factor": 2.0,
+          "ci_95": 0.3355,
+          "significant": true
+        },
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2289,
+          "real_rate": 0.1429,
+          "bias": -0.0861,
+          "bias_pct": -8.61,
+          "correction_factor": 0.6241,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.536,
+          "real_rate": 0.5556,
+          "bias": 0.0196,
+          "bias_pct": 1.96,
+          "correction_factor": 1.0366,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5135,
+          "real_rate": 0.5455,
+          "bias": 0.032,
+          "bias_pct": 3.2,
+          "correction_factor": 1.0623,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.531,
+          "real_rate": 0.5,
+          "bias": -0.031,
+          "bias_pct": -3.1,
+          "correction_factor": 0.9416,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.5962,
+          "real_rate": 0.8889,
+          "bias": 0.2927,
+          "bias_pct": 29.27,
+          "correction_factor": 1.4909,
+          "ci_95": 0.2053,
+          "significant": true
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4977,
+          "real_rate": 0.3077,
+          "bias": -0.19,
+          "bias_pct": -19.0,
+          "correction_factor": 0.6182,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      }
+    },
+    "107": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4545,
+          "real_rate": 0.5,
+          "bias": 0.0455,
+          "bias_pct": 4.55,
+          "correction_factor": 1.1,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5122,
+          "real_rate": 0.3333,
+          "bias": -0.1788,
+          "bias_pct": -17.88,
+          "correction_factor": 0.6508,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 15,
+          "implied_mean": 0.2946,
+          "real_rate": 0.1333,
+          "bias": -0.1613,
+          "bias_pct": -16.13,
+          "correction_factor": 0.5,
+          "ci_95": 0.172,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3218,
+          "real_rate": 0.5455,
+          "bias": 0.2236,
+          "bias_pct": 22.36,
+          "correction_factor": 1.6948,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.5998,
+          "real_rate": 0.625,
+          "bias": 0.0252,
+          "bias_pct": 2.52,
+          "correction_factor": 1.042,
+          "ci_95": 0.3355,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5307,
+          "real_rate": 0.4,
+          "bias": -0.1307,
+          "bias_pct": -13.07,
+          "correction_factor": 0.7538,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5149,
+          "real_rate": 0.6667,
+          "bias": 0.1518,
+          "bias_pct": 15.18,
+          "correction_factor": 1.2947,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6067,
+          "real_rate": 0.3,
+          "bias": -0.3067,
+          "bias_pct": -30.67,
+          "correction_factor": 0.5,
+          "ci_95": 0.284,
+          "significant": true
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4238,
+          "real_rate": 0.5556,
+          "bias": 0.1318,
+          "bias_pct": 13.18,
+          "correction_factor": 1.311,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.4998,
+          "real_rate": 0.5714,
+          "bias": 0.0716,
+          "bias_pct": 7.16,
+          "correction_factor": 1.1433,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "278": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2218,
+          "real_rate": 0.1429,
+          "bias": -0.079,
+          "bias_pct": -7.9,
+          "correction_factor": 0.644,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6222,
+          "real_rate": 0.6,
+          "bias": -0.0222,
+          "bias_pct": -2.22,
+          "correction_factor": 0.9643,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6994,
+          "real_rate": 0.4,
+          "bias": -0.2994,
+          "bias_pct": -29.94,
+          "correction_factor": 0.5719,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4149,
+          "real_rate": 0.4286,
+          "bias": 0.0137,
+          "bias_pct": 1.37,
+          "correction_factor": 1.033,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6078,
+          "real_rate": 0.375,
+          "bias": -0.2328,
+          "bias_pct": -23.28,
+          "correction_factor": 0.617,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4355,
+          "real_rate": 0.5,
+          "bias": 0.0645,
+          "bias_pct": 6.45,
+          "correction_factor": 1.1481,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      }
+    },
+    "419": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3327,
+          "real_rate": 0.5,
+          "bias": 0.1673,
+          "bias_pct": 16.73,
+          "correction_factor": 1.5028,
+          "ci_95": 0.3465,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "6.00-inf": {
+          "n": 5,
+          "implied_mean": 0.1047,
+          "real_rate": 0.0,
+          "bias": -0.1047,
+          "bias_pct": -10.47,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4154,
+          "real_rate": 0.1429,
+          "bias": -0.2726,
+          "bias_pct": -27.26,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6091,
+          "real_rate": 0.3333,
+          "bias": -0.2757,
+          "bias_pct": -27.57,
+          "correction_factor": 0.5473,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5035,
+          "real_rate": 0.2857,
+          "bias": -0.2178,
+          "bias_pct": -21.78,
+          "correction_factor": 0.5674,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4337,
+          "real_rate": 0.4,
+          "bias": -0.0337,
+          "bias_pct": -3.37,
+          "correction_factor": 0.9223,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6101,
+          "real_rate": 0.8571,
+          "bias": 0.247,
+          "bias_pct": 24.7,
+          "correction_factor": 1.4048,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      }
+    },
+    "180": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4063,
+          "real_rate": 1.0,
+          "bias": 0.5937,
+          "bias_pct": 59.37,
+          "correction_factor": 2.0,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3125,
+          "real_rate": 0.25,
+          "bias": -0.0625,
+          "bias_pct": -6.25,
+          "correction_factor": 0.8,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5153,
+          "real_rate": 0.1429,
+          "bias": -0.3724,
+          "bias_pct": -37.24,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6042,
+          "real_rate": 0.4,
+          "bias": -0.2042,
+          "bias_pct": -20.42,
+          "correction_factor": 0.662,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5361,
+          "real_rate": 1.0,
+          "bias": 0.4639,
+          "bias_pct": 46.39,
+          "correction_factor": 1.8655,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5291,
+          "real_rate": 0.3333,
+          "bias": -0.1958,
+          "bias_pct": -19.58,
+          "correction_factor": 0.63,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5221,
+          "real_rate": 0.7273,
+          "bias": 0.2052,
+          "bias_pct": 20.52,
+          "correction_factor": 1.393,
+          "ci_95": 0.2632,
+          "significant": false
+        }
+      }
+    },
+    "144": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.2984,
+          "real_rate": 0.1667,
+          "bias": -0.1317,
+          "bias_pct": -13.17,
+          "correction_factor": 0.5586,
+          "ci_95": 0.2109,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3266,
+          "real_rate": 0.4286,
+          "bias": 0.1019,
+          "bias_pct": 10.19,
+          "correction_factor": 1.3121,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6033,
+          "real_rate": 0.75,
+          "bias": 0.1467,
+          "bias_pct": 14.67,
+          "correction_factor": 1.2431,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4374,
+          "real_rate": 0.2,
+          "bias": -0.2374,
+          "bias_pct": -23.74,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5042,
+          "real_rate": 0.2857,
+          "bias": -0.2185,
+          "bias_pct": -21.85,
+          "correction_factor": 0.5667,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6079,
+          "real_rate": 0.7,
+          "bias": 0.0921,
+          "bias_pct": 9.21,
+          "correction_factor": 1.1515,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5053,
+          "real_rate": 0.5714,
+          "bias": 0.0661,
+          "bias_pct": 6.61,
+          "correction_factor": 1.1308,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.439,
+          "real_rate": 0.375,
+          "bias": -0.064,
+          "bias_pct": -6.4,
+          "correction_factor": 0.8541,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      }
+    },
+    "510": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.515,
+          "real_rate": 0.6,
+          "bias": 0.085,
+          "bias_pct": 8.5,
+          "correction_factor": 1.1651,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 8,
+          "implied_mean": 0.2476,
+          "real_rate": 0.25,
+          "bias": 0.0024,
+          "bias_pct": 0.24,
+          "correction_factor": 1.0096,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2829,
+          "real_rate": 0.0,
+          "bias": -0.2829,
+          "bias_pct": -28.29,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3076,
+          "real_rate": 0.4,
+          "bias": 0.0924,
+          "bias_pct": 9.24,
+          "correction_factor": 1.3004,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4034,
+          "real_rate": 0.6,
+          "bias": 0.1966,
+          "bias_pct": 19.66,
+          "correction_factor": 1.4875,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "195": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2461,
+          "real_rate": 0.0,
+          "bias": -0.2461,
+          "bias_pct": -24.61,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2772,
+          "real_rate": 0.0,
+          "bias": -0.2772,
+          "bias_pct": -27.72,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "208": {
+      "1x2_H": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3046,
+          "real_rate": 0.2,
+          "bias": -0.1046,
+          "bias_pct": -10.46,
+          "correction_factor": 0.6567,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.2973,
+          "real_rate": 0.5556,
+          "bias": 0.2583,
+          "bias_pct": 25.83,
+          "correction_factor": 1.869,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2463,
+          "real_rate": 0.1667,
+          "bias": -0.0796,
+          "bias_pct": -7.96,
+          "correction_factor": 0.6768,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6713,
+          "real_rate": 0.4,
+          "bias": -0.2713,
+          "bias_pct": -27.13,
+          "correction_factor": 0.5959,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.5851,
+          "real_rate": 0.2857,
+          "bias": -0.2994,
+          "bias_pct": -29.94,
+          "correction_factor": 0.5,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5053,
+          "real_rate": 0.6,
+          "bias": 0.0947,
+          "bias_pct": 9.47,
+          "correction_factor": 1.1874,
+          "ci_95": 0.3036,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4118,
+          "real_rate": 0.6,
+          "bias": 0.1882,
+          "bias_pct": 18.82,
+          "correction_factor": 1.4571,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 12,
+          "implied_mean": 0.6227,
+          "real_rate": 0.3333,
+          "bias": -0.2893,
+          "bias_pct": -28.93,
+          "correction_factor": 0.5353,
+          "ci_95": 0.2667,
+          "significant": true
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4857,
+          "real_rate": 0.4,
+          "bias": -0.0857,
+          "bias_pct": -8.57,
+          "correction_factor": 0.8236,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 10,
+          "implied_mean": 0.4429,
+          "real_rate": 0.8,
+          "bias": 0.3571,
+          "bias_pct": 35.71,
+          "correction_factor": 1.8062,
+          "ci_95": 0.2479,
+          "significant": true
+        }
+      }
+    },
+    "887": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.3801,
+          "real_rate": 0.2222,
+          "bias": -0.1579,
+          "bias_pct": -15.79,
+          "correction_factor": 0.5847,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3228,
+          "real_rate": 0.0,
+          "bias": -0.3228,
+          "bias_pct": -32.28,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3114,
+          "real_rate": 0.0909,
+          "bias": -0.2205,
+          "bias_pct": -22.05,
+          "correction_factor": 0.5,
+          "ci_95": 0.1699,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.30-1.55": {
+          "n": 7,
+          "implied_mean": 0.7594,
+          "real_rate": 0.8571,
+          "bias": 0.0977,
+          "bias_pct": 9.77,
+          "correction_factor": 1.1287,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 10,
+          "implied_mean": 0.3996,
+          "real_rate": 0.2,
+          "bias": -0.1996,
+          "bias_pct": -19.96,
+          "correction_factor": 0.5005,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.30-1.55": {
+          "n": 10,
+          "implied_mean": 0.6785,
+          "real_rate": 0.9,
+          "bias": 0.2215,
+          "bias_pct": 22.15,
+          "correction_factor": 1.3265,
+          "ci_95": 0.1859,
+          "significant": true
+        }
+      }
+    },
+    "205": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2902,
+          "real_rate": 0.5714,
+          "bias": 0.2812,
+          "bias_pct": 28.12,
+          "correction_factor": 1.9689,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "370": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3137,
+          "real_rate": 0.0,
+          "bias": -0.3137,
+          "bias_pct": -31.37,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5083,
+          "real_rate": 0.4615,
+          "bias": -0.0468,
+          "bias_pct": -4.68,
+          "correction_factor": 0.908,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5345,
+          "real_rate": 0.5,
+          "bias": -0.0345,
+          "bias_pct": -3.45,
+          "correction_factor": 0.9355,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.5952,
+          "real_rate": 0.5,
+          "bias": -0.0952,
+          "bias_pct": -9.52,
+          "correction_factor": 0.8401,
+          "ci_95": 0.3099,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5239,
+          "real_rate": 0.5833,
+          "bias": 0.0594,
+          "bias_pct": 5.94,
+          "correction_factor": 1.1134,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5308,
+          "real_rate": 0.5833,
+          "bias": 0.0525,
+          "bias_pct": 5.25,
+          "correction_factor": 1.099,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      }
+    },
+    "701": {
+      "1x2_H": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3452,
+          "real_rate": 0.4,
+          "bias": 0.0548,
+          "bias_pct": 5.48,
+          "correction_factor": 1.1589,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5185,
+          "real_rate": 0.5385,
+          "bias": 0.02,
+          "bias_pct": 2.0,
+          "correction_factor": 1.0386,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 23,
+          "implied_mean": 0.2887,
+          "real_rate": 0.1739,
+          "bias": -0.1148,
+          "bias_pct": -11.48,
+          "correction_factor": 0.6025,
+          "ci_95": 0.1549,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2392,
+          "real_rate": 0.4,
+          "bias": 0.1608,
+          "bias_pct": 16.08,
+          "correction_factor": 1.6726,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.2981,
+          "real_rate": 0.3846,
+          "bias": 0.0865,
+          "bias_pct": 8.65,
+          "correction_factor": 1.2901,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 18,
+          "implied_mean": 0.59,
+          "real_rate": 0.7222,
+          "bias": 0.1322,
+          "bias_pct": 13.22,
+          "correction_factor": 1.2242,
+          "ci_95": 0.2069,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5432,
+          "real_rate": 0.0,
+          "bias": -0.5432,
+          "bias_pct": -54.32,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4429,
+          "real_rate": 0.2,
+          "bias": -0.2429,
+          "bias_pct": -24.29,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 19,
+          "implied_mean": 0.5126,
+          "real_rate": 0.4737,
+          "bias": -0.0389,
+          "bias_pct": -3.89,
+          "correction_factor": 0.9241,
+          "ci_95": 0.2245,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 20,
+          "implied_mean": 0.6116,
+          "real_rate": 0.55,
+          "bias": -0.0616,
+          "bias_pct": -6.16,
+          "correction_factor": 0.8993,
+          "ci_95": 0.218,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 14,
+          "implied_mean": 0.4424,
+          "real_rate": 0.3571,
+          "bias": -0.0852,
+          "bias_pct": -8.52,
+          "correction_factor": 0.8073,
+          "ci_95": 0.251,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.4906,
+          "real_rate": 0.6,
+          "bias": 0.1094,
+          "bias_pct": 10.94,
+          "correction_factor": 1.2229,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      }
+    },
+    "299": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.3218,
+          "real_rate": 0.25,
+          "bias": -0.0718,
+          "bias_pct": -7.18,
+          "correction_factor": 0.7769,
+          "ci_95": 0.245,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5077,
+          "real_rate": 0.6,
+          "bias": 0.0923,
+          "bias_pct": 9.23,
+          "correction_factor": 1.1818,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4351,
+          "real_rate": 0.4444,
+          "bias": 0.0093,
+          "bias_pct": 0.93,
+          "correction_factor": 1.0214,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6073,
+          "real_rate": 0.375,
+          "bias": -0.2323,
+          "bias_pct": -23.23,
+          "correction_factor": 0.6175,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5162,
+          "real_rate": 0.4545,
+          "bias": -0.0616,
+          "bias_pct": -6.16,
+          "correction_factor": 0.8806,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5981,
+          "real_rate": 0.2,
+          "bias": -0.3981,
+          "bias_pct": -39.81,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5411,
+          "real_rate": 0.6667,
+          "bias": 0.1256,
+          "bias_pct": 12.56,
+          "correction_factor": 1.232,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      }
+    },
+    "405": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.3366,
+          "real_rate": 0.5,
+          "bias": 0.1634,
+          "bias_pct": 16.34,
+          "correction_factor": 1.4853,
+          "ci_95": 0.3099,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4261,
+          "real_rate": 0.8,
+          "bias": 0.3739,
+          "bias_pct": 37.39,
+          "correction_factor": 1.8777,
+          "ci_95": 0.3506,
+          "significant": true
+        }
+      },
+      "btts_no": {}
+    },
+    "332": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5153,
+          "real_rate": 0.6667,
+          "bias": 0.1513,
+          "bias_pct": 15.13,
+          "correction_factor": 1.2937,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2944,
+          "real_rate": 0.3,
+          "bias": 0.0056,
+          "bias_pct": 0.56,
+          "correction_factor": 1.0191,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3005,
+          "real_rate": 0.1429,
+          "bias": -0.1577,
+          "bias_pct": -15.77,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6002,
+          "real_rate": 0.7143,
+          "bias": 0.1141,
+          "bias_pct": 11.41,
+          "correction_factor": 1.19,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5158,
+          "real_rate": 0.2,
+          "bias": -0.3158,
+          "bias_pct": -31.58,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.501,
+          "real_rate": 0.3333,
+          "bias": -0.1676,
+          "bias_pct": -16.76,
+          "correction_factor": 0.6654,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5502,
+          "real_rate": 0.5,
+          "bias": -0.0502,
+          "bias_pct": -5.02,
+          "correction_factor": 0.9087,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6055,
+          "real_rate": 0.6667,
+          "bias": 0.0612,
+          "bias_pct": 6.12,
+          "correction_factor": 1.101,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5082,
+          "real_rate": 0.4444,
+          "bias": -0.0638,
+          "bias_pct": -6.38,
+          "correction_factor": 0.8745,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      }
+    },
+    "265": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4963,
+          "real_rate": 0.4,
+          "bias": -0.0963,
+          "bias_pct": -9.63,
+          "correction_factor": 0.8059,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 15,
+          "implied_mean": 0.3126,
+          "real_rate": 0.1333,
+          "bias": -0.1793,
+          "bias_pct": -17.93,
+          "correction_factor": 0.5,
+          "ci_95": 0.172,
+          "significant": true
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3136,
+          "real_rate": 0.5,
+          "bias": 0.1864,
+          "bias_pct": 18.64,
+          "correction_factor": 1.5941,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4973,
+          "real_rate": 0.3846,
+          "bias": -0.1127,
+          "bias_pct": -11.27,
+          "correction_factor": 0.7734,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6073,
+          "real_rate": 0.6,
+          "bias": -0.0073,
+          "bias_pct": -0.73,
+          "correction_factor": 0.988,
+          "ci_95": 0.3036,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5412,
+          "real_rate": 0.6667,
+          "bias": 0.1254,
+          "bias_pct": 12.54,
+          "correction_factor": 1.2317,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5258,
+          "real_rate": 0.5,
+          "bias": -0.0258,
+          "bias_pct": -2.58,
+          "correction_factor": 0.9509,
+          "ci_95": 0.2829,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5217,
+          "real_rate": 0.6154,
+          "bias": 0.0937,
+          "bias_pct": 9.37,
+          "correction_factor": 1.1795,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      }
+    },
+    "355": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4119,
+          "real_rate": 0.2,
+          "bias": -0.2119,
+          "bias_pct": -21.19,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 16,
+          "implied_mean": 0.3181,
+          "real_rate": 0.1875,
+          "bias": -0.1306,
+          "bias_pct": -13.06,
+          "correction_factor": 0.5894,
+          "ci_95": 0.1913,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3173,
+          "real_rate": 0.4,
+          "bias": 0.0827,
+          "bias_pct": 8.27,
+          "correction_factor": 1.2607,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2182,
+          "real_rate": 0.2,
+          "bias": -0.0182,
+          "bias_pct": -1.82,
+          "correction_factor": 0.9165,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "848": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3003,
+          "real_rate": 0.1667,
+          "bias": -0.1336,
+          "bias_pct": -13.36,
+          "correction_factor": 0.555,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.51,
+          "real_rate": 0.3333,
+          "bias": -0.1766,
+          "bias_pct": -17.66,
+          "correction_factor": 0.6536,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.514,
+          "real_rate": 0.8333,
+          "bias": 0.3193,
+          "bias_pct": 31.93,
+          "correction_factor": 1.6211,
+          "ci_95": 0.2982,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5286,
+          "real_rate": 0.2,
+          "bias": -0.3286,
+          "bias_pct": -32.86,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.512,
+          "real_rate": 0.7143,
+          "bias": 0.2022,
+          "bias_pct": 20.22,
+          "correction_factor": 1.395,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      }
+    },
+    "94": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3051,
+          "real_rate": 0.7273,
+          "bias": 0.4222,
+          "bias_pct": 42.22,
+          "correction_factor": 2.0,
+          "ci_95": 0.2632,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5072,
+          "real_rate": 0.6,
+          "bias": 0.0928,
+          "bias_pct": 9.28,
+          "correction_factor": 1.183,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5375,
+          "real_rate": 0.2857,
+          "bias": -0.2518,
+          "bias_pct": -25.18,
+          "correction_factor": 0.5316,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5921,
+          "real_rate": 0.6,
+          "bias": 0.0079,
+          "bias_pct": 0.79,
+          "correction_factor": 1.0134,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5133,
+          "real_rate": 0.6,
+          "bias": 0.0867,
+          "bias_pct": 8.67,
+          "correction_factor": 1.1689,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5144,
+          "real_rate": 0.5,
+          "bias": -0.0144,
+          "bias_pct": -1.44,
+          "correction_factor": 0.972,
+          "ci_95": 0.3099,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5983,
+          "real_rate": 0.4,
+          "bias": -0.1983,
+          "bias_pct": -19.83,
+          "correction_factor": 0.6686,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "79": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.513,
+          "real_rate": 0.8333,
+          "bias": 0.3203,
+          "bias_pct": 32.03,
+          "correction_factor": 1.6243,
+          "ci_95": 0.2982,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.2893,
+          "real_rate": 0.25,
+          "bias": -0.0393,
+          "bias_pct": -3.93,
+          "correction_factor": 0.8642,
+          "ci_95": 0.245,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3302,
+          "real_rate": 0.3333,
+          "bias": 0.0031,
+          "bias_pct": 0.31,
+          "correction_factor": 1.0095,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 13,
+          "implied_mean": 0.5966,
+          "real_rate": 0.5385,
+          "bias": -0.0581,
+          "bias_pct": -5.81,
+          "correction_factor": 0.9025,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.4852,
+          "real_rate": 0.4545,
+          "bias": -0.0306,
+          "bias_pct": -3.06,
+          "correction_factor": 0.9369,
+          "ci_95": 0.2943,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4263,
+          "real_rate": 0.2,
+          "bias": -0.2263,
+          "bias_pct": -22.63,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 12,
+          "implied_mean": 0.6108,
+          "real_rate": 0.75,
+          "bias": 0.1392,
+          "bias_pct": 13.92,
+          "correction_factor": 1.2278,
+          "ci_95": 0.245,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.4823,
+          "real_rate": 0.1667,
+          "bias": -0.3156,
+          "bias_pct": -31.56,
+          "correction_factor": 0.5,
+          "ci_95": 0.2982,
+          "significant": true
+        },
+        "2.20-2.80": {
+          "n": 10,
+          "implied_mean": 0.4295,
+          "real_rate": 0.2,
+          "bias": -0.2295,
+          "bias_pct": -22.95,
+          "correction_factor": 0.5,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      }
+    },
+    "705": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4235,
+          "real_rate": 0.4,
+          "bias": -0.0235,
+          "bias_pct": -2.35,
+          "correction_factor": 0.9444,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2913,
+          "real_rate": 0.2,
+          "bias": -0.0913,
+          "bias_pct": -9.13,
+          "correction_factor": 0.6866,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5898,
+          "real_rate": 0.6667,
+          "bias": 0.0768,
+          "bias_pct": 7.68,
+          "correction_factor": 1.1302,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5023,
+          "real_rate": 0.25,
+          "bias": -0.2523,
+          "bias_pct": -25.23,
+          "correction_factor": 0.5,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6063,
+          "real_rate": 0.625,
+          "bias": 0.0187,
+          "bias_pct": 1.87,
+          "correction_factor": 1.0309,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4417,
+          "real_rate": 0.2,
+          "bias": -0.2417,
+          "bias_pct": -24.17,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      }
+    },
+    "197": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.3149,
+          "real_rate": 0.3636,
+          "bias": 0.0487,
+          "bias_pct": 4.87,
+          "correction_factor": 1.1548,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4226,
+          "real_rate": 0.5,
+          "bias": 0.0774,
+          "bias_pct": 7.74,
+          "correction_factor": 1.183,
+          "ci_95": 0.3465,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.497,
+          "real_rate": 0.2857,
+          "bias": -0.2113,
+          "bias_pct": -21.13,
+          "correction_factor": 0.5749,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6154,
+          "real_rate": 0.6,
+          "bias": -0.0154,
+          "bias_pct": -1.54,
+          "correction_factor": 0.975,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.4939,
+          "real_rate": 0.3846,
+          "bias": -0.1093,
+          "bias_pct": -10.93,
+          "correction_factor": 0.7787,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.585,
+          "real_rate": 0.5556,
+          "bias": -0.0295,
+          "bias_pct": -2.95,
+          "correction_factor": 0.9496,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5355,
+          "real_rate": 0.6,
+          "bias": 0.0645,
+          "bias_pct": 6.45,
+          "correction_factor": 1.1204,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "41": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.3946,
+          "real_rate": 0.0,
+          "bias": -0.3946,
+          "bias_pct": -39.46,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.2901,
+          "real_rate": 0.25,
+          "bias": -0.0401,
+          "bias_pct": -4.01,
+          "correction_factor": 0.8617,
+          "ci_95": 0.245,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5125,
+          "real_rate": 0.2222,
+          "bias": -0.2903,
+          "bias_pct": -29.03,
+          "correction_factor": 0.5,
+          "ci_95": 0.2716,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5228,
+          "real_rate": 0.8571,
+          "bias": 0.3343,
+          "bias_pct": 33.43,
+          "correction_factor": 1.6395,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5244,
+          "real_rate": 0.0,
+          "bias": -0.5244,
+          "bias_pct": -52.44,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5914,
+          "real_rate": 0.5,
+          "bias": -0.0914,
+          "bias_pct": -9.14,
+          "correction_factor": 0.8454,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5105,
+          "real_rate": 0.7778,
+          "bias": 0.2673,
+          "bias_pct": 26.73,
+          "correction_factor": 1.5237,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      }
+    },
+    "408": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.2993,
+          "real_rate": 0.25,
+          "bias": -0.0493,
+          "bias_pct": -4.93,
+          "correction_factor": 0.8354,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2291,
+          "real_rate": 0.0,
+          "bias": -0.2291,
+          "bias_pct": -22.91,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "210": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3134,
+          "real_rate": 0.3077,
+          "bias": -0.0057,
+          "bias_pct": -0.57,
+          "correction_factor": 0.9818,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3092,
+          "real_rate": 0.2,
+          "bias": -0.1092,
+          "bias_pct": -10.92,
+          "correction_factor": 0.6469,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5078,
+          "real_rate": 0.4,
+          "bias": -0.1078,
+          "bias_pct": -10.78,
+          "correction_factor": 0.7877,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6011,
+          "real_rate": 0.6,
+          "bias": -0.0011,
+          "bias_pct": -0.11,
+          "correction_factor": 0.9982,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.535,
+          "real_rate": 0.4545,
+          "bias": -0.0805,
+          "bias_pct": -8.05,
+          "correction_factor": 0.8496,
+          "ci_95": 0.2943,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5316,
+          "real_rate": 0.5,
+          "bias": -0.0316,
+          "bias_pct": -3.16,
+          "correction_factor": 0.9406,
+          "ci_95": 0.2829,
+          "significant": false
+        }
+      }
+    },
+    "207": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2819,
+          "real_rate": 0.1667,
+          "bias": -0.1152,
+          "bias_pct": -11.52,
+          "correction_factor": 0.5912,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 8,
+          "implied_mean": 0.2281,
+          "real_rate": 0.25,
+          "bias": 0.0219,
+          "bias_pct": 2.19,
+          "correction_factor": 1.0959,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6168,
+          "real_rate": 0.6,
+          "bias": -0.0168,
+          "bias_pct": -1.68,
+          "correction_factor": 0.9727,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 8,
+          "implied_mean": 0.6891,
+          "real_rate": 0.75,
+          "bias": 0.0609,
+          "bias_pct": 6.09,
+          "correction_factor": 1.0884,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4126,
+          "real_rate": 0.4444,
+          "bias": 0.0319,
+          "bias_pct": 3.19,
+          "correction_factor": 1.0773,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6203,
+          "real_rate": 0.75,
+          "bias": 0.1297,
+          "bias_pct": 12.97,
+          "correction_factor": 1.2091,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6982,
+          "real_rate": 0.8,
+          "bias": 0.1018,
+          "bias_pct": 10.18,
+          "correction_factor": 1.1458,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 10,
+          "implied_mean": 0.4172,
+          "real_rate": 0.3,
+          "bias": -0.1172,
+          "bias_pct": -11.72,
+          "correction_factor": 0.7191,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      }
+    },
+    "266": {
+      "1x2_H": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.59,
+          "real_rate": 0.4,
+          "bias": -0.19,
+          "bias_pct": -19.0,
+          "correction_factor": 0.678,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5014,
+          "real_rate": 0.5,
+          "bias": -0.0014,
+          "bias_pct": -0.14,
+          "correction_factor": 0.9973,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4058,
+          "real_rate": 0.2857,
+          "bias": -0.12,
+          "bias_pct": -12.0,
+          "correction_factor": 0.7041,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 17,
+          "implied_mean": 0.3164,
+          "real_rate": 0.4118,
+          "bias": 0.0953,
+          "bias_pct": 9.53,
+          "correction_factor": 1.3013,
+          "ci_95": 0.234,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2325,
+          "real_rate": 0.0,
+          "bias": -0.2325,
+          "bias_pct": -23.25,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3218,
+          "real_rate": 0.5714,
+          "bias": 0.2496,
+          "bias_pct": 24.96,
+          "correction_factor": 1.7756,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4477,
+          "real_rate": 0.1429,
+          "bias": -0.3048,
+          "bias_pct": -30.48,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5016,
+          "real_rate": 0.5714,
+          "bias": 0.0699,
+          "bias_pct": 6.99,
+          "correction_factor": 1.1393,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 10,
+          "implied_mean": 0.6064,
+          "real_rate": 0.6,
+          "bias": -0.0064,
+          "bias_pct": -0.64,
+          "correction_factor": 0.9894,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5254,
+          "real_rate": 0.7273,
+          "bias": 0.2018,
+          "bias_pct": 20.18,
+          "correction_factor": 1.3841,
+          "ci_95": 0.2632,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 12,
+          "implied_mean": 0.5333,
+          "real_rate": 0.4167,
+          "bias": -0.1166,
+          "bias_pct": -11.66,
+          "correction_factor": 0.7813,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      }
+    },
+    "145": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.2996,
+          "real_rate": 0.3333,
+          "bias": 0.0337,
+          "bias_pct": 3.37,
+          "correction_factor": 1.1127,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "203": {
+      "1x2_H": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.2937,
+          "real_rate": 0.2,
+          "bias": -0.0937,
+          "bias_pct": -9.37,
+          "correction_factor": 0.6809,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.2949,
+          "real_rate": 0.3077,
+          "bias": 0.0128,
+          "bias_pct": 1.28,
+          "correction_factor": 1.0434,
+          "ci_95": 0.2509,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2242,
+          "real_rate": 0.6,
+          "bias": 0.3758,
+          "bias_pct": 37.58,
+          "correction_factor": 2.0,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2431,
+          "real_rate": 0.0,
+          "bias": -0.2431,
+          "bias_pct": -24.31,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5192,
+          "real_rate": 0.3636,
+          "bias": -0.1556,
+          "bias_pct": -15.56,
+          "correction_factor": 0.7004,
+          "ci_95": 0.2843,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6035,
+          "real_rate": 0.5,
+          "bias": -0.1035,
+          "bias_pct": -10.35,
+          "correction_factor": 0.8285,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5139,
+          "real_rate": 0.4615,
+          "bias": -0.0523,
+          "bias_pct": -5.23,
+          "correction_factor": 0.8982,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.5909,
+          "real_rate": 0.5,
+          "bias": -0.0909,
+          "bias_pct": -9.09,
+          "correction_factor": 0.8461,
+          "ci_95": 0.3465,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5253,
+          "real_rate": 0.5,
+          "bias": -0.0253,
+          "bias_pct": -2.53,
+          "correction_factor": 0.9519,
+          "ci_95": 0.3099,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 15,
+          "implied_mean": 0.5082,
+          "real_rate": 0.5333,
+          "bias": 0.0251,
+          "bias_pct": 2.51,
+          "correction_factor": 1.0494,
+          "ci_95": 0.2525,
+          "significant": false
+        }
+      }
+    },
+    "120": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2909,
+          "real_rate": 0.2,
+          "bias": -0.0909,
+          "bias_pct": -9.09,
+          "correction_factor": 0.6875,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.597,
+          "real_rate": 0.6667,
+          "bias": 0.0696,
+          "bias_pct": 6.96,
+          "correction_factor": 1.1166,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5216,
+          "real_rate": 0.4286,
+          "bias": -0.093,
+          "bias_pct": -9.3,
+          "correction_factor": 0.8216,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5991,
+          "real_rate": 0.6667,
+          "bias": 0.0675,
+          "bias_pct": 6.75,
+          "correction_factor": 1.1127,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.4968,
+          "real_rate": 0.2857,
+          "bias": -0.2111,
+          "bias_pct": -21.11,
+          "correction_factor": 0.5751,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      }
+    },
+    "183": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2881,
+          "real_rate": 0.4286,
+          "bias": 0.1405,
+          "bias_pct": 14.05,
+          "correction_factor": 1.4875,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5144,
+          "real_rate": 0.375,
+          "bias": -0.1394,
+          "bias_pct": -13.94,
+          "correction_factor": 0.729,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5067,
+          "real_rate": 0.7143,
+          "bias": 0.2076,
+          "bias_pct": 20.76,
+          "correction_factor": 1.4098,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.5174,
+          "real_rate": 0.625,
+          "bias": 0.1076,
+          "bias_pct": 10.76,
+          "correction_factor": 1.208,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5192,
+          "real_rate": 0.4286,
+          "bias": -0.0906,
+          "bias_pct": -9.06,
+          "correction_factor": 0.8255,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "318": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 9,
+          "implied_mean": 0.3046,
+          "real_rate": 0.2222,
+          "bias": -0.0824,
+          "bias_pct": -8.24,
+          "correction_factor": 0.7296,
+          "ci_95": 0.2716,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5228,
+          "real_rate": 0.4444,
+          "bias": -0.0783,
+          "bias_pct": -7.83,
+          "correction_factor": 0.8501,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5294,
+          "real_rate": 0.6667,
+          "bias": 0.1373,
+          "bias_pct": 13.73,
+          "correction_factor": 1.2593,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5209,
+          "real_rate": 0.5556,
+          "bias": 0.0347,
+          "bias_pct": 3.47,
+          "correction_factor": 1.0666,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.529,
+          "real_rate": 0.3333,
+          "bias": -0.1957,
+          "bias_pct": -19.57,
+          "correction_factor": 0.6301,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      }
+    },
+    "393": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5217,
+          "real_rate": 0.4,
+          "bias": -0.1217,
+          "bias_pct": -12.17,
+          "correction_factor": 0.7668,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 12,
+          "implied_mean": 0.3073,
+          "real_rate": 0.5833,
+          "bias": 0.276,
+          "bias_pct": 27.6,
+          "correction_factor": 1.898,
+          "ci_95": 0.2789,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2264,
+          "real_rate": 0.0,
+          "bias": -0.2264,
+          "bias_pct": -22.64,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5345,
+          "real_rate": 0.5,
+          "bias": -0.0345,
+          "bias_pct": -3.45,
+          "correction_factor": 0.9355,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5334,
+          "real_rate": 0.4,
+          "bias": -0.1334,
+          "bias_pct": -13.34,
+          "correction_factor": 0.75,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.4902,
+          "real_rate": 0.3333,
+          "bias": -0.1569,
+          "bias_pct": -15.69,
+          "correction_factor": 0.68,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5809,
+          "real_rate": 0.6,
+          "bias": 0.0191,
+          "bias_pct": 1.91,
+          "correction_factor": 1.0329,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "218": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4106,
+          "real_rate": 0.2857,
+          "bias": -0.1249,
+          "bias_pct": -12.49,
+          "correction_factor": 0.6958,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3129,
+          "real_rate": 0.3846,
+          "bias": 0.0717,
+          "bias_pct": 7.17,
+          "correction_factor": 1.229,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3095,
+          "real_rate": 0.1429,
+          "bias": -0.1666,
+          "bias_pct": -16.66,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": false
+        },
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.3959,
+          "real_rate": 0.1667,
+          "bias": -0.2293,
+          "bias_pct": -22.93,
+          "correction_factor": 0.5,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4338,
+          "real_rate": 0.2857,
+          "bias": -0.1481,
+          "bias_pct": -14.81,
+          "correction_factor": 0.6586,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4903,
+          "real_rate": 0.4,
+          "bias": -0.0903,
+          "bias_pct": -9.03,
+          "correction_factor": 0.8158,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6089,
+          "real_rate": 0.75,
+          "bias": 0.1411,
+          "bias_pct": 14.11,
+          "correction_factor": 1.2317,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6028,
+          "real_rate": 0.4,
+          "bias": -0.2028,
+          "bias_pct": -20.28,
+          "correction_factor": 0.6636,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5175,
+          "real_rate": 0.6667,
+          "bias": 0.1492,
+          "bias_pct": 14.92,
+          "correction_factor": 1.2884,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5239,
+          "real_rate": 0.4,
+          "bias": -0.1239,
+          "bias_pct": -12.39,
+          "correction_factor": 0.7636,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      }
+    },
+    "110": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4989,
+          "real_rate": 0.6,
+          "bias": 0.1011,
+          "bias_pct": 10.11,
+          "correction_factor": 1.2026,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2957,
+          "real_rate": 0.1429,
+          "bias": -0.1528,
+          "bias_pct": -15.28,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3093,
+          "real_rate": 0.2,
+          "bias": -0.1093,
+          "bias_pct": -10.93,
+          "correction_factor": 0.6466,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5956,
+          "real_rate": 0.6667,
+          "bias": 0.071,
+          "bias_pct": 7.1,
+          "correction_factor": 1.1193,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5025,
+          "real_rate": 0.4444,
+          "bias": -0.058,
+          "bias_pct": -5.8,
+          "correction_factor": 0.8845,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6105,
+          "real_rate": 0.7143,
+          "bias": 0.1038,
+          "bias_pct": 10.38,
+          "correction_factor": 1.17,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.4885,
+          "real_rate": 0.3333,
+          "bias": -0.1551,
+          "bias_pct": -15.51,
+          "correction_factor": 0.6824,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      }
+    },
+    "296": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.2969,
+          "real_rate": 0.0909,
+          "bias": -0.206,
+          "bias_pct": -20.6,
+          "correction_factor": 0.5,
+          "ci_95": 0.1699,
+          "significant": true
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.233,
+          "real_rate": 0.2,
+          "bias": -0.033,
+          "bias_pct": -3.3,
+          "correction_factor": 0.8585,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.5923,
+          "real_rate": 0.375,
+          "bias": -0.2173,
+          "bias_pct": -21.73,
+          "correction_factor": 0.6331,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5151,
+          "real_rate": 0.5556,
+          "bias": 0.0404,
+          "bias_pct": 4.04,
+          "correction_factor": 1.0785,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 11,
+          "implied_mean": 0.6015,
+          "real_rate": 0.3636,
+          "bias": -0.2379,
+          "bias_pct": -23.79,
+          "correction_factor": 0.6045,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.4941,
+          "real_rate": 0.4,
+          "bias": -0.0941,
+          "bias_pct": -9.41,
+          "correction_factor": 0.8096,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      }
+    },
+    "275": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3064,
+          "real_rate": 0.4286,
+          "bias": 0.1222,
+          "bias_pct": 12.22,
+          "correction_factor": 1.3987,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3118,
+          "real_rate": 0.2,
+          "bias": -0.1118,
+          "bias_pct": -11.18,
+          "correction_factor": 0.6415,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "664": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4247,
+          "real_rate": 0.5,
+          "bias": 0.0753,
+          "bias_pct": 7.53,
+          "correction_factor": 1.1772,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3178,
+          "real_rate": 0.5,
+          "bias": 0.1822,
+          "bias_pct": 18.22,
+          "correction_factor": 1.5735,
+          "ci_95": 0.3465,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4905,
+          "real_rate": 0.2,
+          "bias": -0.2905,
+          "bias_pct": -29.05,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6012,
+          "real_rate": 0.7143,
+          "bias": 0.1131,
+          "bias_pct": 11.31,
+          "correction_factor": 1.1882,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5179,
+          "real_rate": 0.4,
+          "bias": -0.1179,
+          "bias_pct": -11.79,
+          "correction_factor": 0.7723,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {}
+    },
+    "410": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.2831,
+          "real_rate": 0.0,
+          "bias": -0.2831,
+          "bias_pct": -28.31,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "63": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3305,
+          "real_rate": 0.25,
+          "bias": -0.0805,
+          "bias_pct": -8.05,
+          "correction_factor": 0.7564,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 6,
+          "implied_mean": 0.4362,
+          "real_rate": 0.5,
+          "bias": 0.0638,
+          "bias_pct": 6.38,
+          "correction_factor": 1.1464,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6207,
+          "real_rate": 0.3333,
+          "bias": -0.2873,
+          "bias_pct": -28.73,
+          "correction_factor": 0.537,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5134,
+          "real_rate": 0.4286,
+          "bias": -0.0848,
+          "bias_pct": -8.48,
+          "correction_factor": 0.8348,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5367,
+          "real_rate": 0.6,
+          "bias": 0.0633,
+          "bias_pct": 6.33,
+          "correction_factor": 1.118,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      }
+    },
+    "418": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.296,
+          "real_rate": 0.25,
+          "bias": -0.046,
+          "bias_pct": -4.6,
+          "correction_factor": 0.8446,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2331,
+          "real_rate": 0.0,
+          "bias": -0.2331,
+          "bias_pct": -23.31,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6025,
+          "real_rate": 0.75,
+          "bias": 0.1475,
+          "bias_pct": 14.75,
+          "correction_factor": 1.2447,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5102,
+          "real_rate": 0.3333,
+          "bias": -0.1769,
+          "bias_pct": -17.69,
+          "correction_factor": 0.6533,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.447,
+          "real_rate": 0.2,
+          "bias": -0.247,
+          "bias_pct": -24.7,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5131,
+          "real_rate": 0.3333,
+          "bias": -0.1798,
+          "bias_pct": -17.98,
+          "correction_factor": 0.6496,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5362,
+          "real_rate": 0.6364,
+          "bias": 0.1002,
+          "bias_pct": 10.02,
+          "correction_factor": 1.1868,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5216,
+          "real_rate": 0.4615,
+          "bias": -0.06,
+          "bias_pct": -6.0,
+          "correction_factor": 0.8849,
+          "ci_95": 0.271,
+          "significant": false
+        }
+      }
+    },
+    "219": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2895,
+          "real_rate": 0.2857,
+          "bias": -0.0038,
+          "bias_pct": -0.38,
+          "correction_factor": 0.9868,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5303,
+          "real_rate": 0.8,
+          "bias": 0.2697,
+          "bias_pct": 26.97,
+          "correction_factor": 1.5085,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5106,
+          "real_rate": 0.3333,
+          "bias": -0.1773,
+          "bias_pct": -17.73,
+          "correction_factor": 0.6528,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {},
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5134,
+          "real_rate": 0.5,
+          "bias": -0.0134,
+          "bias_pct": -1.34,
+          "correction_factor": 0.9739,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      }
+    },
+    "604": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3206,
+          "real_rate": 0.0,
+          "bias": -0.3206,
+          "bias_pct": -32.06,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "172": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.22,
+          "real_rate": 0.1667,
+          "bias": -0.0534,
+          "bias_pct": -5.34,
+          "correction_factor": 0.7574,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3193,
+          "real_rate": 0.2857,
+          "bias": -0.0336,
+          "bias_pct": -3.36,
+          "correction_factor": 0.8949,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5179,
+          "real_rate": 0.4,
+          "bias": -0.1179,
+          "bias_pct": -11.79,
+          "correction_factor": 0.7723,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5037,
+          "real_rate": 0.3333,
+          "bias": -0.1704,
+          "bias_pct": -17.04,
+          "correction_factor": 0.6617,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5178,
+          "real_rate": 0.6667,
+          "bias": 0.1489,
+          "bias_pct": 14.89,
+          "correction_factor": 1.2875,
+          "ci_95": 0.3772,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6126,
+          "real_rate": 0.5714,
+          "bias": -0.0412,
+          "bias_pct": -4.12,
+          "correction_factor": 0.9327,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5128,
+          "real_rate": 0.4444,
+          "bias": -0.0683,
+          "bias_pct": -6.83,
+          "correction_factor": 0.8667,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6115,
+          "real_rate": 0.5714,
+          "bias": -0.0401,
+          "bias_pct": -4.01,
+          "correction_factor": 0.9345,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5404,
+          "real_rate": 0.6667,
+          "bias": 0.1263,
+          "bias_pct": 12.63,
+          "correction_factor": 1.2336,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      }
+    },
+    "42": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.295,
+          "real_rate": 0.4286,
+          "bias": 0.1335,
+          "bias_pct": 13.35,
+          "correction_factor": 1.4526,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5032,
+          "real_rate": 0.4,
+          "bias": -0.1032,
+          "bias_pct": -10.32,
+          "correction_factor": 0.7949,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {},
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5344,
+          "real_rate": 0.8,
+          "bias": 0.2656,
+          "bias_pct": 26.56,
+          "correction_factor": 1.4969,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5155,
+          "real_rate": 0.3333,
+          "bias": -0.1821,
+          "bias_pct": -18.21,
+          "correction_factor": 0.6467,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      }
+    },
+    "345": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5179,
+          "real_rate": 0.5,
+          "bias": -0.0179,
+          "bias_pct": -1.79,
+          "correction_factor": 0.9655,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.2946,
+          "real_rate": 0.3636,
+          "bias": 0.0691,
+          "bias_pct": 6.91,
+          "correction_factor": 1.2345,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 7,
+          "implied_mean": 0.2299,
+          "real_rate": 0.1429,
+          "bias": -0.087,
+          "bias_pct": -8.7,
+          "correction_factor": 0.6214,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.4962,
+          "real_rate": 0.5,
+          "bias": 0.0038,
+          "bias_pct": 0.38,
+          "correction_factor": 1.0077,
+          "ci_95": 0.3465,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.5944,
+          "real_rate": 0.7143,
+          "bias": 0.1199,
+          "bias_pct": 11.99,
+          "correction_factor": 1.2017,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5004,
+          "real_rate": 0.5,
+          "bias": -0.0004,
+          "bias_pct": -0.04,
+          "correction_factor": 0.9992,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.513,
+          "real_rate": 0.3333,
+          "bias": -0.1797,
+          "bias_pct": -17.97,
+          "correction_factor": 0.6498,
+          "ci_95": 0.3772,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5965,
+          "real_rate": 0.3333,
+          "bias": -0.2631,
+          "bias_pct": -26.31,
+          "correction_factor": 0.5588,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.507,
+          "real_rate": 0.5714,
+          "bias": 0.0644,
+          "bias_pct": 6.44,
+          "correction_factor": 1.1271,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "78": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.2887,
+          "real_rate": 0.0,
+          "bias": -0.2887,
+          "bias_pct": -28.87,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5996,
+          "real_rate": 0.2,
+          "bias": -0.3996,
+          "bias_pct": -39.96,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.4999,
+          "real_rate": 0.8,
+          "bias": 0.3001,
+          "bias_pct": 30.01,
+          "correction_factor": 1.6004,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6124,
+          "real_rate": 0.5,
+          "bias": -0.1124,
+          "bias_pct": -11.24,
+          "correction_factor": 0.8164,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4226,
+          "real_rate": 0.4286,
+          "bias": 0.0059,
+          "bias_pct": 0.59,
+          "correction_factor": 1.014,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "98": {
+      "1x2_H": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5263,
+          "real_rate": 0.4,
+          "bias": -0.1263,
+          "bias_pct": -12.63,
+          "correction_factor": 0.76,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 15,
+          "implied_mean": 0.3026,
+          "real_rate": 0.2667,
+          "bias": -0.036,
+          "bias_pct": -3.6,
+          "correction_factor": 0.8812,
+          "ci_95": 0.2238,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.3001,
+          "real_rate": 0.0,
+          "bias": -0.3001,
+          "bias_pct": -30.01,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5375,
+          "real_rate": 0.5714,
+          "bias": 0.0339,
+          "bias_pct": 3.39,
+          "correction_factor": 1.0631,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5941,
+          "real_rate": 0.8,
+          "bias": 0.2059,
+          "bias_pct": 20.59,
+          "correction_factor": 1.3466,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.5179,
+          "real_rate": 0.3,
+          "bias": -0.2179,
+          "bias_pct": -21.79,
+          "correction_factor": 0.5792,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5239,
+          "real_rate": 0.8,
+          "bias": 0.2761,
+          "bias_pct": 27.61,
+          "correction_factor": 1.5269,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.6091,
+          "real_rate": 0.5556,
+          "bias": -0.0536,
+          "bias_pct": -5.36,
+          "correction_factor": 0.9121,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 8,
+          "implied_mean": 0.509,
+          "real_rate": 0.375,
+          "bias": -0.134,
+          "bias_pct": -13.4,
+          "correction_factor": 0.7367,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      }
+    },
+    "315": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3256,
+          "real_rate": 0.1429,
+          "bias": -0.1827,
+          "bias_pct": -18.27,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2153,
+          "real_rate": 0.4,
+          "bias": 0.1847,
+          "bias_pct": 18.47,
+          "correction_factor": 1.8582,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2223,
+          "real_rate": 0.0,
+          "bias": -0.2223,
+          "bias_pct": -22.23,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        },
+        "6.00-inf": {
+          "n": 5,
+          "implied_mean": 0.1032,
+          "real_rate": 0.0,
+          "bias": -0.1032,
+          "bias_pct": -10.32,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.419,
+          "real_rate": 0.1429,
+          "bias": -0.2762,
+          "bias_pct": -27.62,
+          "correction_factor": 0.5,
+          "ci_95": 0.2592,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6805,
+          "real_rate": 1.0,
+          "bias": 0.3195,
+          "bias_pct": 31.95,
+          "correction_factor": 1.4696,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.4402,
+          "real_rate": 0.4444,
+          "bias": 0.0042,
+          "bias_pct": 0.42,
+          "correction_factor": 1.0096,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.6148,
+          "real_rate": 0.6667,
+          "bias": 0.0519,
+          "bias_pct": 5.19,
+          "correction_factor": 1.0844,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      }
+    },
+    "383": {
+      "1x2_H": {},
+      "1x2_D": {},
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "163": {
+      "1x2_H": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4006,
+          "real_rate": 0.4,
+          "bias": -0.0006,
+          "bias_pct": -0.06,
+          "correction_factor": 0.9986,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2995,
+          "real_rate": 0.3,
+          "bias": 0.0005,
+          "bias_pct": 0.05,
+          "correction_factor": 1.0018,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4187,
+          "real_rate": 0.4,
+          "bias": -0.0187,
+          "bias_pct": -1.87,
+          "correction_factor": 0.9552,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5984,
+          "real_rate": 0.2,
+          "bias": -0.3984,
+          "bias_pct": -39.84,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": true
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5089,
+          "real_rate": 1.0,
+          "bias": 0.4911,
+          "bias_pct": 49.11,
+          "correction_factor": 1.9651,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      }
+    },
+    "286": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.3081,
+          "real_rate": 0.6,
+          "bias": 0.2919,
+          "bias_pct": 29.19,
+          "correction_factor": 1.9472,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.321,
+          "real_rate": 0.0,
+          "bias": -0.321,
+          "bias_pct": -32.1,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.4999,
+          "real_rate": 0.4286,
+          "bias": -0.0713,
+          "bias_pct": -7.13,
+          "correction_factor": 0.8573,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6038,
+          "real_rate": 0.8333,
+          "bias": 0.2295,
+          "bias_pct": 22.95,
+          "correction_factor": 1.3801,
+          "ci_95": 0.2982,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5148,
+          "real_rate": 0.4444,
+          "bias": -0.0703,
+          "bias_pct": -7.03,
+          "correction_factor": 0.8634,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5318,
+          "real_rate": 0.4444,
+          "bias": -0.0873,
+          "bias_pct": -8.73,
+          "correction_factor": 0.8358,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      }
+    },
+    "43": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 11,
+          "implied_mean": 0.2915,
+          "real_rate": 0.2727,
+          "bias": -0.0188,
+          "bias_pct": -1.88,
+          "correction_factor": 0.9356,
+          "ci_95": 0.2632,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3148,
+          "real_rate": 0.4,
+          "bias": 0.0852,
+          "bias_pct": 8.52,
+          "correction_factor": 1.2707,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6161,
+          "real_rate": 0.6667,
+          "bias": 0.0506,
+          "bias_pct": 5.06,
+          "correction_factor": 1.0821,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.4373,
+          "real_rate": 0.125,
+          "bias": -0.3123,
+          "bias_pct": -31.23,
+          "correction_factor": 0.5,
+          "ci_95": 0.2292,
+          "significant": true
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6019,
+          "real_rate": 0.8571,
+          "bias": 0.2552,
+          "bias_pct": 25.52,
+          "correction_factor": 1.424,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4165,
+          "real_rate": 0.4,
+          "bias": -0.0165,
+          "bias_pct": -1.65,
+          "correction_factor": 0.9605,
+          "ci_95": 0.4294,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.501,
+          "real_rate": 0.0,
+          "bias": -0.501,
+          "bias_pct": -50.1,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      }
+    },
+    "61": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.29,
+          "real_rate": 0.3,
+          "bias": 0.01,
+          "bias_pct": 1.0,
+          "correction_factor": 1.0345,
+          "ci_95": 0.284,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5131,
+          "real_rate": 0.2222,
+          "bias": -0.2909,
+          "bias_pct": -29.09,
+          "correction_factor": 0.5,
+          "ci_95": 0.2716,
+          "significant": true
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.518,
+          "real_rate": 0.6,
+          "bias": 0.082,
+          "bias_pct": 8.2,
+          "correction_factor": 1.1582,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.6004,
+          "real_rate": 0.5,
+          "bias": -0.1004,
+          "bias_pct": -10.04,
+          "correction_factor": 0.8328,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5382,
+          "real_rate": 0.3333,
+          "bias": -0.2049,
+          "bias_pct": -20.49,
+          "correction_factor": 0.6194,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5163,
+          "real_rate": 0.6923,
+          "bias": 0.176,
+          "bias_pct": 17.6,
+          "correction_factor": 1.341,
+          "ci_95": 0.2509,
+          "significant": false
+        }
+      }
+    },
+    "262": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2903,
+          "real_rate": 0.2,
+          "bias": -0.0903,
+          "bias_pct": -9.03,
+          "correction_factor": 0.6889,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.5899,
+          "real_rate": 0.75,
+          "bias": 0.1601,
+          "bias_pct": 16.01,
+          "correction_factor": 1.2713,
+          "ci_95": 0.3001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5205,
+          "real_rate": 0.6,
+          "bias": 0.0795,
+          "bias_pct": 7.95,
+          "correction_factor": 1.1527,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.80-2.20": {
+          "n": 11,
+          "implied_mean": 0.5143,
+          "real_rate": 0.3636,
+          "bias": -0.1507,
+          "bias_pct": -15.07,
+          "correction_factor": 0.707,
+          "ci_95": 0.2843,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 11,
+          "implied_mean": 0.6108,
+          "real_rate": 0.7273,
+          "bias": 0.1164,
+          "bias_pct": 11.64,
+          "correction_factor": 1.1906,
+          "ci_95": 0.2632,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4531,
+          "real_rate": 0.2857,
+          "bias": -0.1674,
+          "bias_pct": -16.74,
+          "correction_factor": 0.6306,
+          "ci_95": 0.3347,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.514,
+          "real_rate": 0.4286,
+          "bias": -0.0855,
+          "bias_pct": -8.55,
+          "correction_factor": 0.8337,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "135": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.2975,
+          "real_rate": 0.375,
+          "bias": 0.0775,
+          "bias_pct": 7.75,
+          "correction_factor": 1.2606,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.499,
+          "real_rate": 0.5,
+          "bias": 0.001,
+          "bias_pct": 0.1,
+          "correction_factor": 1.002,
+          "ci_95": 0.3099,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 6,
+          "implied_mean": 0.5904,
+          "real_rate": 0.5,
+          "bias": -0.0904,
+          "bias_pct": -9.04,
+          "correction_factor": 0.8469,
+          "ci_95": 0.4001,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5252,
+          "real_rate": 0.6667,
+          "bias": 0.1415,
+          "bias_pct": 14.15,
+          "correction_factor": 1.2694,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5284,
+          "real_rate": 0.3333,
+          "bias": -0.1951,
+          "bias_pct": -19.51,
+          "correction_factor": 0.6308,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 7,
+          "implied_mean": 0.5313,
+          "real_rate": 0.5714,
+          "bias": 0.0401,
+          "bias_pct": 4.01,
+          "correction_factor": 1.0755,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "17": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3067,
+          "real_rate": 0.375,
+          "bias": 0.0683,
+          "bias_pct": 6.83,
+          "correction_factor": 1.2225,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.5114,
+          "real_rate": 0.2,
+          "bias": -0.3114,
+          "bias_pct": -31.14,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5169,
+          "real_rate": 0.6667,
+          "bias": 0.1498,
+          "bias_pct": 14.98,
+          "correction_factor": 1.2898,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      }
+    },
+    "603": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 5,
+          "implied_mean": 0.3223,
+          "real_rate": 0.2,
+          "bias": -0.1223,
+          "bias_pct": -12.23,
+          "correction_factor": 0.6206,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "119": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 8,
+          "implied_mean": 0.2427,
+          "real_rate": 0.375,
+          "bias": 0.1323,
+          "bias_pct": 13.23,
+          "correction_factor": 1.5451,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2055,
+          "real_rate": 0.3333,
+          "bias": 0.1279,
+          "bias_pct": 12.79,
+          "correction_factor": 1.6223,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 9,
+          "implied_mean": 0.611,
+          "real_rate": 0.6667,
+          "bias": 0.0557,
+          "bias_pct": 5.57,
+          "correction_factor": 1.0911,
+          "ci_95": 0.308,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 8,
+          "implied_mean": 0.417,
+          "real_rate": 0.375,
+          "bias": -0.042,
+          "bias_pct": -4.2,
+          "correction_factor": 0.8993,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 8,
+          "implied_mean": 0.6067,
+          "real_rate": 0.625,
+          "bias": 0.0183,
+          "bias_pct": 1.83,
+          "correction_factor": 1.0302,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 9,
+          "implied_mean": 0.424,
+          "real_rate": 0.4444,
+          "bias": 0.0205,
+          "bias_pct": 2.05,
+          "correction_factor": 1.0483,
+          "ci_95": 0.3246,
+          "significant": false
+        }
+      }
+    },
+    "284": {
+      "1x2_H": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.595,
+          "real_rate": 0.4,
+          "bias": -0.195,
+          "bias_pct": -19.5,
+          "correction_factor": 0.6722,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 13,
+          "implied_mean": 0.3046,
+          "real_rate": 0.0769,
+          "bias": -0.2277,
+          "bias_pct": -22.77,
+          "correction_factor": 0.5,
+          "ci_95": 0.1449,
+          "significant": true
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 6,
+          "implied_mean": 0.2342,
+          "real_rate": 0.5,
+          "bias": 0.2658,
+          "bias_pct": 26.58,
+          "correction_factor": 2.0,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "1.80-2.20": {
+          "n": 10,
+          "implied_mean": 0.516,
+          "real_rate": 0.4,
+          "bias": -0.116,
+          "bias_pct": -11.6,
+          "correction_factor": 0.7753,
+          "ci_95": 0.3036,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.5966,
+          "real_rate": 0.5714,
+          "bias": -0.0252,
+          "bias_pct": -2.52,
+          "correction_factor": 0.9578,
+          "ci_95": 0.3666,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.5348,
+          "real_rate": 0.5,
+          "bias": -0.0348,
+          "bias_pct": -3.48,
+          "correction_factor": 0.9349,
+          "ci_95": 0.4001,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 9,
+          "implied_mean": 0.5337,
+          "real_rate": 0.4444,
+          "bias": -0.0892,
+          "bias_pct": -8.92,
+          "correction_factor": 0.8328,
+          "ci_95": 0.3246,
+          "significant": false
+        },
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.5754,
+          "real_rate": 0.4,
+          "bias": -0.1754,
+          "bias_pct": -17.54,
+          "correction_factor": 0.6952,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.80-2.20": {
+          "n": 13,
+          "implied_mean": 0.5292,
+          "real_rate": 0.6154,
+          "bias": 0.0862,
+          "bias_pct": 8.62,
+          "correction_factor": 1.1628,
+          "ci_95": 0.2645,
+          "significant": false
+        }
+      }
+    },
+    "184": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 6,
+          "implied_mean": 0.2799,
+          "real_rate": 0.1667,
+          "bias": -0.1132,
+          "bias_pct": -11.32,
+          "correction_factor": 0.5955,
+          "ci_95": 0.2982,
+          "significant": false
+        },
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2407,
+          "real_rate": 0.2,
+          "bias": -0.0407,
+          "bias_pct": -4.07,
+          "correction_factor": 0.8308,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2163,
+          "real_rate": 0.0,
+          "bias": -0.2163,
+          "bias_pct": -21.63,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "over_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6013,
+          "real_rate": 0.5714,
+          "bias": -0.0299,
+          "bias_pct": -2.99,
+          "correction_factor": 0.9503,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4337,
+          "real_rate": 0.2,
+          "bias": -0.2337,
+          "bias_pct": -23.37,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        },
+        "1.80-2.20": {
+          "n": 5,
+          "implied_mean": 0.494,
+          "real_rate": 0.4,
+          "bias": -0.094,
+          "bias_pct": -9.4,
+          "correction_factor": 0.8097,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.6088,
+          "real_rate": 0.4286,
+          "bias": -0.1802,
+          "bias_pct": -18.02,
+          "correction_factor": 0.704,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4163,
+          "real_rate": 0.4286,
+          "bias": 0.0123,
+          "bias_pct": 1.23,
+          "correction_factor": 1.0295,
+          "ci_95": 0.3666,
+          "significant": false
+        }
+      }
+    },
+    "111": {
+      "1x2_H": {},
+      "1x2_D": {},
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "187": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 7,
+          "implied_mean": 0.3334,
+          "real_rate": 0.0,
+          "bias": -0.3334,
+          "bias_pct": -33.34,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2243,
+          "real_rate": 0.2,
+          "bias": -0.0243,
+          "bias_pct": -2.43,
+          "correction_factor": 0.8918,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.3947,
+          "real_rate": 0.4,
+          "bias": 0.0053,
+          "bias_pct": 0.53,
+          "correction_factor": 1.0133,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.30-1.55": {
+          "n": 6,
+          "implied_mean": 0.6945,
+          "real_rate": 0.6667,
+          "bias": -0.0278,
+          "bias_pct": -2.78,
+          "correction_factor": 0.9599,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "2.20-2.80": {
+          "n": 7,
+          "implied_mean": 0.4235,
+          "real_rate": 0.2857,
+          "bias": -0.1378,
+          "bias_pct": -13.78,
+          "correction_factor": 0.6747,
+          "ci_95": 0.3347,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6814,
+          "real_rate": 0.8,
+          "bias": 0.1186,
+          "bias_pct": 11.86,
+          "correction_factor": 1.174,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      }
+    },
+    "875": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3231,
+          "real_rate": 0.25,
+          "bias": -0.0731,
+          "bias_pct": -7.31,
+          "correction_factor": 0.7738,
+          "ci_95": 0.3001,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "136": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 8,
+          "implied_mean": 0.3253,
+          "real_rate": 0.625,
+          "bias": 0.2997,
+          "bias_pct": 29.97,
+          "correction_factor": 1.9214,
+          "ci_95": 0.3355,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4309,
+          "real_rate": 0.2,
+          "bias": -0.2309,
+          "bias_pct": -23.09,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "1.55-1.80": {
+          "n": 7,
+          "implied_mean": 0.612,
+          "real_rate": 0.8571,
+          "bias": 0.2451,
+          "bias_pct": 24.51,
+          "correction_factor": 1.4006,
+          "ci_95": 0.2592,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.80-2.20": {
+          "n": 6,
+          "implied_mean": 0.4946,
+          "real_rate": 0.3333,
+          "bias": -0.1613,
+          "bias_pct": -16.13,
+          "correction_factor": 0.6739,
+          "ci_95": 0.3772,
+          "significant": false
+        }
+      },
+      "btts_no": {}
+    },
+    "602": {
+      "1x2_H": {},
+      "1x2_D": {},
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "475": {
+      "1x2_H": {},
+      "1x2_D": {},
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "303": {
+      "1x2_H": {},
+      "1x2_D": {
+        "2.80-3.80": {
+          "n": 10,
+          "implied_mean": 0.2899,
+          "real_rate": 0.2,
+          "bias": -0.0899,
+          "bias_pct": -8.99,
+          "correction_factor": 0.6899,
+          "ci_95": 0.2479,
+          "significant": false
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {},
+      "under_2_5": {},
+      "btts_yes": {},
+      "btts_no": {}
+    },
+    "45": {
+      "1x2_H": {},
+      "1x2_D": {
+        "3.80-6.00": {
+          "n": 5,
+          "implied_mean": 0.2186,
+          "real_rate": 0.0,
+          "bias": -0.2186,
+          "bias_pct": -21.86,
+          "correction_factor": 0.5,
+          "ci_95": 0.0,
+          "significant": true
+        }
+      },
+      "1x2_A": {},
+      "over_2_5": {
+        "1.30-1.55": {
+          "n": 5,
+          "implied_mean": 0.6875,
+          "real_rate": 0.8,
+          "bias": 0.1125,
+          "bias_pct": 11.25,
+          "correction_factor": 1.1636,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "under_2_5": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.3998,
+          "real_rate": 0.2,
+          "bias": -0.1998,
+          "bias_pct": -19.98,
+          "correction_factor": 0.5002,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      },
+      "btts_yes": {
+        "1.55-1.80": {
+          "n": 5,
+          "implied_mean": 0.6118,
+          "real_rate": 0.6,
+          "bias": -0.0118,
+          "bias_pct": -1.18,
+          "correction_factor": 0.9807,
+          "ci_95": 0.4294,
+          "significant": false
+        }
+      },
+      "btts_no": {
+        "2.20-2.80": {
+          "n": 5,
+          "implied_mean": 0.4278,
+          "real_rate": 0.2,
+          "bias": -0.2278,
+          "bias_pct": -22.78,
+          "correction_factor": 0.5,
+          "ci_95": 0.3506,
+          "significant": false
+        }
+      }
+    }
+  },
+  "global": {
+    "1x2_H": {
+      "3.80-6.00": {
+        "n": 200,
+        "implied_mean": 0.2287,
+        "real_rate": 0.19,
+        "bias": -0.0387,
+        "bias_pct": -3.87,
+        "correction_factor": 0.8307,
+        "ci_95": 0.0544,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 224,
+        "implied_mean": 0.7088,
+        "real_rate": 0.6384,
+        "bias": -0.0704,
+        "bias_pct": -7.04,
+        "correction_factor": 0.9006,
+        "ci_95": 0.0629,
+        "significant": true
+      },
+      "2.80-3.80": {
+        "n": 308,
+        "implied_mean": 0.3173,
+        "real_rate": 0.2792,
+        "bias": -0.0381,
+        "bias_pct": -3.81,
+        "correction_factor": 0.8799,
+        "ci_95": 0.0501,
+        "significant": false
+      },
+      "2.20-2.80": {
+        "n": 545,
+        "implied_mean": 0.4159,
+        "real_rate": 0.367,
+        "bias": -0.0489,
+        "bias_pct": -4.89,
+        "correction_factor": 0.8824,
+        "ci_95": 0.0405,
+        "significant": true
+      },
+      "1.55-1.80": {
+        "n": 321,
+        "implied_mean": 0.6016,
+        "real_rate": 0.4361,
+        "bias": -0.1655,
+        "bias_pct": -16.55,
+        "correction_factor": 0.725,
+        "ci_95": 0.0543,
+        "significant": true
+      },
+      "1.80-2.20": {
+        "n": 492,
+        "implied_mean": 0.5107,
+        "real_rate": 0.4817,
+        "bias": -0.029,
+        "bias_pct": -2.9,
+        "correction_factor": 0.9432,
+        "ci_95": 0.0442,
+        "significant": false
+      },
+      "1.01-1.30": {
+        "n": 148,
+        "implied_mean": 0.8495,
+        "real_rate": 0.7905,
+        "bias": -0.059,
+        "bias_pct": -5.9,
+        "correction_factor": 0.9305,
+        "ci_95": 0.0656,
+        "significant": false
+      },
+      "6.00-inf": {
+        "n": 61,
+        "implied_mean": 0.1358,
+        "real_rate": 0.1803,
+        "bias": 0.0446,
+        "bias_pct": 4.46,
+        "correction_factor": 1.3282,
+        "ci_95": 0.0965,
+        "significant": false
+      }
+    },
+    "1x2_D": {
+      "3.80-6.00": {
+        "n": 540,
+        "implied_mean": 0.2347,
+        "real_rate": 0.2278,
+        "bias": -0.0069,
+        "bias_pct": -0.69,
+        "correction_factor": 0.9706,
+        "ci_95": 0.0354,
+        "significant": false
+      },
+      "2.80-3.80": {
+        "n": 1648,
+        "implied_mean": 0.308,
+        "real_rate": 0.3046,
+        "bias": -0.0033,
+        "bias_pct": -0.33,
+        "correction_factor": 0.9892,
+        "ci_95": 0.0222,
+        "significant": false
+      },
+      "2.20-2.80": {
+        "n": 41,
+        "implied_mean": 0.3706,
+        "real_rate": 0.3415,
+        "bias": -0.0292,
+        "bias_pct": -2.92,
+        "correction_factor": 0.9213,
+        "ci_95": 0.1452,
+        "significant": false
+      },
+      "6.00-inf": {
+        "n": 76,
+        "implied_mean": 0.1331,
+        "real_rate": 0.0789,
+        "bias": -0.0542,
+        "bias_pct": -5.42,
+        "correction_factor": 0.593,
+        "ci_95": 0.0606,
+        "significant": false
+      }
+    },
+    "1x2_A": {
+      "1.80-2.20": {
+        "n": 246,
+        "implied_mean": 0.5095,
+        "real_rate": 0.5163,
+        "bias": 0.0067,
+        "bias_pct": 0.67,
+        "correction_factor": 1.0132,
+        "ci_95": 0.0624,
+        "significant": false
+      },
+      "6.00-inf": {
+        "n": 305,
+        "implied_mean": 0.1248,
+        "real_rate": 0.1148,
+        "bias": -0.01,
+        "bias_pct": -1.0,
+        "correction_factor": 0.9198,
+        "ci_95": 0.0358,
+        "significant": false
+      },
+      "2.20-2.80": {
+        "n": 401,
+        "implied_mean": 0.4056,
+        "real_rate": 0.3591,
+        "bias": -0.0465,
+        "bias_pct": -4.65,
+        "correction_factor": 0.8854,
+        "ci_95": 0.047,
+        "significant": false
+      },
+      "2.80-3.80": {
+        "n": 607,
+        "implied_mean": 0.315,
+        "real_rate": 0.29,
+        "bias": -0.0251,
+        "bias_pct": -2.51,
+        "correction_factor": 0.9204,
+        "ci_95": 0.0361,
+        "significant": false
+      },
+      "3.80-6.00": {
+        "n": 526,
+        "implied_mean": 0.2234,
+        "real_rate": 0.1749,
+        "bias": -0.0485,
+        "bias_pct": -4.85,
+        "correction_factor": 0.783,
+        "ci_95": 0.0325,
+        "significant": true
+      },
+      "1.55-1.80": {
+        "n": 102,
+        "implied_mean": 0.6011,
+        "real_rate": 0.5686,
+        "bias": -0.0325,
+        "bias_pct": -3.25,
+        "correction_factor": 0.946,
+        "ci_95": 0.0961,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 66,
+        "implied_mean": 0.7047,
+        "real_rate": 0.6515,
+        "bias": -0.0532,
+        "bias_pct": -5.32,
+        "correction_factor": 0.9245,
+        "ci_95": 0.115,
+        "significant": false
+      },
+      "1.01-1.30": {
+        "n": 29,
+        "implied_mean": 0.8726,
+        "real_rate": 0.6207,
+        "bias": -0.2519,
+        "bias_pct": -25.19,
+        "correction_factor": 0.7113,
+        "ci_95": 0.1766,
+        "significant": true
+      }
+    },
+    "over_2_5": {
+      "1.55-1.80": {
+        "n": 436,
+        "implied_mean": 0.5991,
+        "real_rate": 0.5596,
+        "bias": -0.0395,
+        "bias_pct": -3.95,
+        "correction_factor": 0.9341,
+        "ci_95": 0.0466,
+        "significant": false
+      },
+      "1.80-2.20": {
+        "n": 624,
+        "implied_mean": 0.5154,
+        "real_rate": 0.4792,
+        "bias": -0.0362,
+        "bias_pct": -3.62,
+        "correction_factor": 0.9298,
+        "ci_95": 0.0392,
+        "significant": false
+      },
+      "2.20-2.80": {
+        "n": 421,
+        "implied_mean": 0.4286,
+        "real_rate": 0.4299,
+        "bias": 0.0013,
+        "bias_pct": 0.13,
+        "correction_factor": 1.0031,
+        "ci_95": 0.0473,
+        "significant": false
+      },
+      "1.01-1.30": {
+        "n": 24,
+        "implied_mean": 0.8144,
+        "real_rate": 0.7917,
+        "bias": -0.0228,
+        "bias_pct": -2.28,
+        "correction_factor": 0.972,
+        "ci_95": 0.1625,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 155,
+        "implied_mean": 0.6979,
+        "real_rate": 0.6,
+        "bias": -0.0979,
+        "bias_pct": -9.79,
+        "correction_factor": 0.8597,
+        "ci_95": 0.0771,
+        "significant": true
+      },
+      "2.80-3.80": {
+        "n": 22,
+        "implied_mean": 0.3345,
+        "real_rate": 0.3182,
+        "bias": -0.0163,
+        "bias_pct": -1.63,
+        "correction_factor": 0.9513,
+        "ci_95": 0.1946,
+        "significant": false
+      }
+    },
+    "under_2_5": {
+      "1.80-2.20": {
+        "n": 658,
+        "implied_mean": 0.5149,
+        "real_rate": 0.5152,
+        "bias": 0.0003,
+        "bias_pct": 0.03,
+        "correction_factor": 1.0006,
+        "ci_95": 0.0382,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 175,
+        "implied_mean": 0.6864,
+        "real_rate": 0.68,
+        "bias": -0.0064,
+        "bias_pct": -0.64,
+        "correction_factor": 0.9907,
+        "ci_95": 0.0691,
+        "significant": false
+      },
+      "1.55-1.80": {
+        "n": 523,
+        "implied_mean": 0.6057,
+        "real_rate": 0.5143,
+        "bias": -0.0913,
+        "bias_pct": -9.13,
+        "correction_factor": 0.8492,
+        "ci_95": 0.0428,
+        "significant": true
+      },
+      "2.20-2.80": {
+        "n": 244,
+        "implied_mean": 0.4261,
+        "real_rate": 0.3115,
+        "bias": -0.1147,
+        "bias_pct": -11.47,
+        "correction_factor": 0.7309,
+        "ci_95": 0.0581,
+        "significant": true
+      },
+      "2.80-3.80": {
+        "n": 67,
+        "implied_mean": 0.329,
+        "real_rate": 0.4925,
+        "bias": 0.1636,
+        "bias_pct": 16.36,
+        "correction_factor": 1.4971,
+        "ci_95": 0.1197,
+        "significant": true
+      },
+      "3.80-6.00": {
+        "n": 12,
+        "implied_mean": 0.2334,
+        "real_rate": 0.0833,
+        "bias": -0.1501,
+        "bias_pct": -15.01,
+        "correction_factor": 0.5,
+        "ci_95": 0.1564,
+        "significant": false
+      },
+      "1.01-1.30": {
+        "n": 5,
+        "implied_mean": 0.8068,
+        "real_rate": 0.4,
+        "bias": -0.4068,
+        "bias_pct": -40.68,
+        "correction_factor": 0.5,
+        "ci_95": 0.4294,
+        "significant": false
+      }
+    },
+    "btts_yes": {
+      "1.55-1.80": {
+        "n": 527,
+        "implied_mean": 0.6026,
+        "real_rate": 0.5351,
+        "bias": -0.0675,
+        "bias_pct": -6.75,
+        "correction_factor": 0.888,
+        "ci_95": 0.0426,
+        "significant": true
+      },
+      "1.80-2.20": {
+        "n": 768,
+        "implied_mean": 0.5182,
+        "real_rate": 0.5208,
+        "bias": 0.0026,
+        "bias_pct": 0.26,
+        "correction_factor": 1.0051,
+        "ci_95": 0.0353,
+        "significant": false
+      },
+      "2.20-2.80": {
+        "n": 205,
+        "implied_mean": 0.4338,
+        "real_rate": 0.361,
+        "bias": -0.0729,
+        "bias_pct": -7.29,
+        "correction_factor": 0.8321,
+        "ci_95": 0.0657,
+        "significant": true
+      },
+      "1.01-1.30": {
+        "n": 8,
+        "implied_mean": 0.7814,
+        "real_rate": 0.625,
+        "bias": -0.1564,
+        "bias_pct": -15.64,
+        "correction_factor": 0.7999,
+        "ci_95": 0.3355,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 138,
+        "implied_mean": 0.6761,
+        "real_rate": 0.7174,
+        "bias": 0.0413,
+        "bias_pct": 4.13,
+        "correction_factor": 1.0611,
+        "ci_95": 0.0751,
+        "significant": false
+      },
+      "2.80-3.80": {
+        "n": 13,
+        "implied_mean": 0.3338,
+        "real_rate": 0.4615,
+        "bias": 0.1278,
+        "bias_pct": 12.78,
+        "correction_factor": 1.3828,
+        "ci_95": 0.271,
+        "significant": false
+      }
+    },
+    "btts_no": {
+      "2.20-2.80": {
+        "n": 375,
+        "implied_mean": 0.4307,
+        "real_rate": 0.4,
+        "bias": -0.0307,
+        "bias_pct": -3.07,
+        "correction_factor": 0.9287,
+        "ci_95": 0.0496,
+        "significant": false
+      },
+      "1.80-2.20": {
+        "n": 783,
+        "implied_mean": 0.5166,
+        "real_rate": 0.4725,
+        "bias": -0.0441,
+        "bias_pct": -4.41,
+        "correction_factor": 0.9146,
+        "ci_95": 0.035,
+        "significant": true
+      },
+      "1.55-1.80": {
+        "n": 402,
+        "implied_mean": 0.6009,
+        "real_rate": 0.5448,
+        "bias": -0.0561,
+        "bias_pct": -5.61,
+        "correction_factor": 0.9066,
+        "ci_95": 0.0487,
+        "significant": true
+      },
+      "2.80-3.80": {
+        "n": 27,
+        "implied_mean": 0.3271,
+        "real_rate": 0.3333,
+        "bias": 0.0062,
+        "bias_pct": 0.62,
+        "correction_factor": 1.0191,
+        "ci_95": 0.1778,
+        "significant": false
+      },
+      "1.30-1.55": {
+        "n": 69,
+        "implied_mean": 0.6773,
+        "real_rate": 0.6087,
+        "bias": -0.0686,
+        "bias_pct": -6.86,
+        "correction_factor": 0.8987,
+        "ci_95": 0.1152,
+        "significant": false
+      }
+    }
+  }
+}

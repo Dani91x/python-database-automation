@@ -409,20 +409,53 @@ def fetch_odds_for_league_season(
     cache: Dict[Tuple[int, int], Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Chiama /odds?league=...&season=...&bookmaker=3 e cache per (league_id, season_year).
-    Ritorna il JSON grezzo della risposta.
+    Chiama /odds?league=...&season=...&bookmaker=3 con paginazione completa.
+    Raccoglie tutte le pagine e le unisce in un unico dict con chiave "response".
+    Mette in cache per (league_id, season_year).
     """
     key = (league_id, season_year)
     if key in cache:
         return cache[key]
 
-    logger.info("📡 Chiamata API /odds?league=%s&season=%s&bookmaker=3", league_id, season_year)
-    data = api.call(
-        "/odds",
-        params={"league": str(league_id), "season": str(season_year), "bookmaker": "3"},
-    )
-    cache[key] = data or {}
-    return cache[key]
+    all_responses: List[Dict[str, Any]] = []
+    page = 1
+
+    while True:
+        logger.info(
+            "📡 Chiamata API /odds?league=%s&season=%s&bookmaker=3&page=%s",
+            league_id, season_year, page,
+        )
+        data = api.call(
+            "/odds",
+            params={
+                "league": str(league_id),
+                "season": str(season_year),
+                "bookmaker": "3",
+                "page": str(page),
+            },
+        )
+        if not data:
+            break
+
+        batch = data.get("response") or []
+        all_responses.extend(batch)
+
+        paging = data.get("paging") or {}
+        current = int(paging.get("current", 1))
+        total = int(paging.get("total", 1))
+
+        logger.info(
+            "   /odds lega=%s stagione=%s pagina %s/%s → %s fixture ricevute (totale: %s)",
+            league_id, season_year, current, total, len(batch), len(all_responses),
+        )
+
+        if current >= total or not batch:
+            break
+        page += 1
+
+    merged = {"response": all_responses}
+    cache[key] = merged
+    return merged
 
 
 def extract_odds_for_fixture(odds_json: Dict[str, Any], fixture_id: int) -> Optional[Dict[str, Any]]:
