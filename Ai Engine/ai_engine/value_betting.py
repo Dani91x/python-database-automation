@@ -29,8 +29,15 @@ class BetSignal:
 
 # ── Configuration ───────────────────────────────────────────────────
 
-# Minimum EV (expected profit per 1 unit wagered) to recommend a bet
-MIN_EDGE: float = 0.03              # 3% edge minimum
+# Betfair exchange commission applied to NET winnings (not stake).
+# Standard UK rate is 5%.  This is deducted from the winning profit.
+BETFAIR_COMMISSION: float = 0.05
+
+# Minimum EV AFTER Betfair commission to recommend a bet.
+# At 5% commission, any EV (pre-commission) below ~5.26% yields negative
+# expected profit.  We set the bar at 3% POST-commission, meaning the
+# model must show an EV of at least 3% after deducting Betfair's cut.
+MIN_EDGE: float = 0.03              # 3% post-commission edge minimum
 MIN_PROB: float = 0.52              # model probability minimum
 MAX_KELLY: float = 0.05             # never stake more than 5% of bankroll
 KELLY_FRACTION: float = 0.25        # quarter-Kelly (reduces variance)
@@ -60,17 +67,26 @@ MARKET_MIN_PROB: Dict[str, float] = {
 # ── Core Functions ──────────────────────────────────────────────────
 
 
-def expected_value(model_prob: float, decimal_odds: float) -> float:
+def expected_value(
+    model_prob: float,
+    decimal_odds: float,
+    commission: float = BETFAIR_COMMISSION,
+) -> float:
     """
-    Calculate Expected Value per 1 unit staked.
+    Calculate Expected Value per 1 unit staked, net of Betfair commission.
 
-    EV = (prob * (odds - 1)) - (1 - prob)
+    EV = (prob * (odds - 1) * (1 - commission)) - (1 - prob)
 
-    Positive EV means profitable in the long run.
+    The commission is deducted from the NET PROFIT on winning bets.
+    A positive EV means profitable in the long run after Betfair's cut.
+
+    Example: prob=0.55, odds=2.00, commission=5%
+      EV = (0.55 * 1.0 * 0.95) - 0.45 = 0.5225 - 0.45 = +0.0725 (7.25% edge)
     """
     if decimal_odds <= 1.0 or model_prob <= 0.0 or model_prob >= 1.0:
         return -1.0
-    return (model_prob * (decimal_odds - 1.0)) - (1.0 - model_prob)
+    net_profit_per_unit = (decimal_odds - 1.0) * (1.0 - commission)
+    return (model_prob * net_profit_per_unit) - (1.0 - model_prob)
 
 
 def implied_probability(decimal_odds: float) -> float:
@@ -85,12 +101,17 @@ def kelly_criterion(
     decimal_odds: float,
     fraction: float = KELLY_FRACTION,
     max_kelly: float = MAX_KELLY,
+    commission: float = BETFAIR_COMMISSION,
 ) -> float:
     """
-    Fractional Kelly Criterion.
+    Fractional Kelly Criterion with Betfair commission.
 
-    Full Kelly: f* = (p * (b + 1) - 1) / b
-    where p = model probability, b = odds - 1
+    Full Kelly (with commission): f* = (p * b_net - (1-p)) / b_net
+    where b_net = (odds - 1) * (1 - commission) = net profit per unit staked
+
+    The commission reduces the effective win amount, shrinking the Kelly
+    fraction vs the naive formula.  This is the correct Kelly for exchange
+    betting with per-win commission.
 
     We use fraction * f* (quarter-Kelly by default) to reduce variance.
     Capped at max_kelly to prevent over-betting on single events.
@@ -98,8 +119,12 @@ def kelly_criterion(
     if decimal_odds <= 1.0 or model_prob <= 0.0 or model_prob >= 1.0:
         return 0.0
 
-    b = decimal_odds - 1.0
-    f_star = (model_prob * (b + 1.0) - 1.0) / b
+    # Net win per unit staked after commission
+    b_net = (decimal_odds - 1.0) * (1.0 - commission)
+    if b_net <= 0:
+        return 0.0
+
+    f_star = (model_prob * b_net - (1.0 - model_prob)) / b_net
 
     if f_star <= 0:
         return 0.0  # No bet — negative Kelly means no edge
@@ -136,77 +161,80 @@ def evaluate_bet_opportunities(
         if not probs:
             continue
 
-        # Get best predicted class
-        best_class = max(probs, key=probs.get)  # type: ignore
-        best_prob = float(probs[best_class])
-
-        # Check minimum probability
         market_min = MARKET_MIN_PROB.get(target, min_prob)
-        if best_prob < market_min:
-            no_bet_reasons.append({
-                "target": target,
-                "reason": f"prob {best_prob:.3f} < min {market_min:.2f}",
-            })
-            continue
+        target_has_signal = False
 
-        # Look for odds for this target+class
-        odds_key = f"{target}_{best_class}"
-        if odds_key not in odds_mapping:
-            # Try alternative keys
-            for key, odds_val in odds_mapping.items():
-                if key.startswith(target):
-                    odds_key = key
-                    break
+        # Evaluate ALL classes with sufficient probability — not just the
+        # best class.  For 1X2 markets, the Draw can have value even when
+        # it is not the most probable outcome.
+        for cls, cls_prob in probs.items():
+            cls_prob = float(cls_prob)
+            if cls_prob < 0.15:
+                continue  # skip negligible classes
+
+            odds_key = f"{target}_{cls}"
+            if odds_key not in odds_mapping:
+                continue
+
+            decimal_odds = odds_mapping[odds_key]
+            if decimal_odds <= 1.0:
+                continue
+
+            ev = expected_value(cls_prob, decimal_odds)
+            impl_prob = implied_probability(decimal_odds)
+            edge = cls_prob - impl_prob
+
+            if ev < min_edge:
+                continue
+
+            if cls_prob < market_min:
+                continue
+
+            kelly = kelly_criterion(cls_prob, decimal_odds)
+            kelly_stake = round(kelly * bankroll, 2)
+
+            if cls_prob >= 0.70 and ev >= 0.10:
+                grade = "high"
+            elif cls_prob >= 0.55 and ev >= 0.05:
+                grade = "medium"
             else:
+                grade = "low"
+
+            bet_signals.append(BetSignal(
+                market=target,
+                action=cls,
+                model_prob=round(cls_prob, 4),
+                implied_prob=round(impl_prob, 4),
+                decimal_odds=decimal_odds,
+                expected_value=round(ev, 4),
+                kelly_fraction=round(kelly, 6),
+                kelly_stake=kelly_stake,
+                confidence_grade=grade,
+                edge=round(edge, 4),
+            ))
+            target_has_signal = True
+
+        if not target_has_signal:
+            best_class = max(probs, key=probs.get)  # type: ignore
+            best_prob = float(probs[best_class])
+            odds_key = f"{target}_{best_class}"
+            if odds_key not in odds_mapping:
                 no_bet_reasons.append({
                     "target": target,
                     "reason": "no odds available",
                 })
-                continue
-
-        decimal_odds = odds_mapping[odds_key]
-        if decimal_odds <= 1.0:
-            no_bet_reasons.append({
-                "target": target,
-                "reason": f"invalid odds {decimal_odds}",
-            })
-            continue
-
-        ev = expected_value(best_prob, decimal_odds)
-        impl_prob = implied_probability(decimal_odds)
-        edge = best_prob - impl_prob
-
-        if ev < min_edge:
-            no_bet_reasons.append({
-                "target": target,
-                "reason": f"EV {ev:.3f} < min_edge {min_edge:.3f} "
-                          f"(model={best_prob:.3f}, implied={impl_prob:.3f})",
-            })
-            continue
-
-        kelly = kelly_criterion(best_prob, decimal_odds)
-        kelly_stake = round(kelly * bankroll, 2)
-
-        # Confidence grade
-        if best_prob >= 0.70 and ev >= 0.10:
-            grade = "high"
-        elif best_prob >= 0.55 and ev >= 0.05:
-            grade = "medium"
-        else:
-            grade = "low"
-
-        bet_signals.append(BetSignal(
-            market=target,
-            action=best_class,
-            model_prob=round(best_prob, 4),
-            implied_prob=round(impl_prob, 4),
-            decimal_odds=decimal_odds,
-            expected_value=round(ev, 4),
-            kelly_fraction=round(kelly, 6),
-            kelly_stake=kelly_stake,
-            confidence_grade=grade,
-            edge=round(edge, 4),
-        ))
+            elif best_prob < market_min:
+                no_bet_reasons.append({
+                    "target": target,
+                    "reason": f"prob {best_prob:.3f} < min {market_min:.2f}",
+                })
+            else:
+                impl = implied_probability(odds_mapping.get(odds_key, 1.0))
+                no_bet_reasons.append({
+                    "target": target,
+                    "reason": f"no class with positive EV (best: {best_class} "
+                              f"prob={best_prob:.3f}, implied={impl:.3f})",
+                })
 
     # Sort by EV descending
     bet_signals.sort(key=lambda s: s.expected_value, reverse=True)

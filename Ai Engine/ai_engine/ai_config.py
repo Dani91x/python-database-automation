@@ -9,7 +9,7 @@ TIMEZONE = timezone.utc
 FORM_WINDOWS = [5, 10, 15]
 
 # Odds markets of interest
-ODDS_LINES = [2.5]
+ODDS_LINES = [1.5, 2.5, 3.5]
 
 ODDS_LABELS_1X2 = {
     "home": {"home", "1", "1x2_1"},

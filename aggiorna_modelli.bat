@@ -19,7 +19,7 @@ cd /d "%~dp0"
 echo [INFO] Avvio retraining...
 echo.
 
-python retrain_all_leagues.py %*
+python retrain_all_leagues.py --source db %*
 
 echo.
 echo ============================================================

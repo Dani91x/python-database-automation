@@ -1,0 +1,46 @@
+[09:31:35] [1/1] League 39
+[09:31:54]   → Training league 39 (last 3 seasons)...
+[09:37:17]   BSS comparison — league 39:
+[09:37:17]     Target                         Prima BSS    Dopo BSS     Delta      Gate  
+[09:37:17]     ----------------------------------------------------------------------
+[09:37:17]     target_1x2                     +0.075       +0.148       +0.073     OK 
+[09:37:17]     target_btts                    -0.140       +0.081       +0.221     FAIL
+[09:37:17]     target_over_0_5                -0.666       +0.033       +0.699     FAIL
+[09:37:17]     target_over_1_5                -0.470       +0.012       +0.482     FAIL
+[09:37:17]     target_over_2_5                -0.226       +0.141       +0.367     OK 
+[09:37:17]     target_over_3_5                +0.258       +0.413       +0.156     OK 
+[09:37:17]     target_clean_sheet_home        +0.395       +0.530       +0.136     OK 
+[09:37:17]     target_clean_sheet_away        +0.493       +0.515       +0.022     OK 
+[09:37:17]     target_ht_over_0_5             -0.406       +0.060       +0.466     FAIL
+[09:37:17]     target_total_goals             +0.083       +0.116       +0.034     FAIL
+[09:37:17]     target_over_4_5                +0.625       +0.657       +0.032     OK 
+[09:37:17]     target_home_over_0_5           -0.427       +0.096       +0.523     FAIL
+[09:37:17]     target_away_over_0_5           -0.211       +0.088       +0.298     FAIL
+[09:37:17]     target_home_over_1_5           -0.091       +0.274       +0.365     OK 
+[09:37:17]     target_away_over_1_5           +0.276       +0.344       +0.068     OK 
+[09:37:17]     target_home_over_2_5           +0.582       +0.683       +0.101     OK 
+[09:37:17]     target_away_over_2_5           +0.665       +0.685       +0.020     OK 
+[09:37:17]     target_ht_1x2                  +0.048       +0.099       +0.052     FAIL
+[09:37:17]     target_ft_1x2                  +0.075       +0.148       +0.073     OK 
+[09:37:17]     target_ht_ft                     N/A          N/A          N/A      FAIL
+[09:37:17]   [WARN] model_performance upsert failed for target_1x2: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_btts: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_over_0_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_over_1_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_over_2_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_over_3_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_clean_sheet_home: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_clean_sheet_away: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_ht_over_0_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:17]   [WARN] model_performance upsert failed for target_total_goals: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_over_4_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_home_over_0_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_away_over_0_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_home_over_1_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_away_over_1_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_home_over_2_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_away_over_2_5: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_ht_1x2: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_ft_1x2: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   [WARN] model_performance upsert failed for target_ht_ft: {'message': "Could not find the table 'public.model_performance' in the schema cache", 'code': 'PGRST205', 'hint': None, 'details': None}
+[09:37:18]   ✓ Completato in 324.7s | 20 modelli

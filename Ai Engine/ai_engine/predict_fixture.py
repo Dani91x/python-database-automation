@@ -98,6 +98,7 @@ def _payload_to_ensemble(payload: Dict) -> Any:
         class_labels=payload.get("class_labels", []),
         base_weights=payload.get("base_weights", {}),
         metrics=payload.get("metrics", {}),
+        isotonic_calibrators=payload.get("isotonic_calibrators", {}),
     )
 
 
@@ -330,7 +331,8 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     league_id = int(fx_df.iloc[0]["league_id"])
 
     seasons = fetch_seasons_for_league(league_id)
-    league_seasons = [(league_id, s) for s in seasons[-3:]]
+    last_n = int(os.environ.get("PREDICT_LAST_N_SEASONS", "3"))
+    league_seasons = [(league_id, s) for s in seasons[-last_n:]]
     history_rows = fetch_matches_for_league_seasons(league_seasons)
     history_df = pd.DataFrame(history_rows)
 
@@ -408,9 +410,13 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     rel = _reliability_score(features_df, feats_union, matches_home, matches_away, coverage)
     alpha = float(rel.get("score", 0.0))
 
-    # Apply reliability scaling to get final calibrated targets
+    # Use raw model probabilities directly for EV/Kelly calculations.
+    # Reliability scaling is applied as a stake multiplier AFTER Kelly,
+    # not to probabilities — shrinking probs toward uniform before EV
+    # destroys marginal edges that are the only source of profit.
+    reliability_multiplier = max(0.5, alpha)
     for target, probs in raw_results.items():
-        results[target] = _scale_probabilities(probs, alpha)
+        results[target] = probs  # raw probs used for betting decisions
 
     # ── VALUE BETTING ANALYSIS ─────────────────────────────────
     if live_odds:
@@ -458,6 +464,9 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
             n_classes=market_n_classes,
         )
 
+        # Apply reliability as stake multiplier (not probability scaling)
+        adjusted_kelly_stake = round(signal.kelly_stake * reliability_multiplier, 2)
+
         signal_dict = {
             "market": signal.market,
             "action": signal.action,
@@ -466,9 +475,10 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
             "decimal_odds": signal.decimal_odds,
             "expected_value": signal.expected_value,
             "kelly_fraction": signal.kelly_fraction,
-            "kelly_stake": signal.kelly_stake,
+            "kelly_stake": adjusted_kelly_stake,
             "confidence_grade": signal.confidence_grade,
             "edge": signal.edge,
+            "reliability_multiplier": round(reliability_multiplier, 3),
             "gates_passed": all_passed,
             "gates_detail": summarize_gates(gate_results),
         }

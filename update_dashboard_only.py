@@ -28,4 +28,4 @@ sm.update_report_sheet()
 print("3/3 Aggiornamento Dashboard Money Management...")
 sm.update_dashboard_sheet()
 
-print("✅ Dashboard aggiornate!")
+print("Dashboard aggiornate!")

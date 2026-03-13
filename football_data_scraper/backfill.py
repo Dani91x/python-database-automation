@@ -228,7 +228,7 @@ def _build_odds_rows(
                 "label": label,
                 "odd_value": odd_value,
                 "snapshot_type": SNAPSHOT_TYPE,
-                "snapshot_time": None,
+                "snapshot_time": str(row["fixture_date"]) + "T12:00:00",
                 "raw_json": {"csv_col": col, "value": raw},
             })
             # Aggiungi alla cache per evitare duplicati intra-batch

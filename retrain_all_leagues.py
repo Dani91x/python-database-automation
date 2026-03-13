@@ -320,6 +320,35 @@ def main() -> None:
                 elif after_bss < before_bss - 0.005:
                     bss_degraded += 1
 
+        # ── Save BSS tracking to Supabase model_performance table ──────
+        try:
+            from db_client import get_supabase_client
+            sb = get_supabase_client()
+            for r in after_list:
+                target = r.get("target", "?")
+                n_cls = r.get("n_classes") or (len(r.get("class_labels", [])) if r.get("class_labels") else 2)
+                brier_val = r.get("brier")
+                ece_val = r.get("ece")
+                bss_val = _bss(brier_val, n_cls)
+                brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
+                try:
+                    sb.table("model_performance").upsert({
+                        "league_id": league_id,
+                        "target": target,
+                        "n_classes": n_cls,
+                        "brier": brier_val,
+                        "brier_random": round(brier_random, 4),
+                        "bss": bss_val,
+                        "ece": ece_val,
+                        "train_rows": r.get("train_rows"),
+                        "val_rows": r.get("val_rows"),
+                        "trained_at": datetime.now(timezone.utc).isoformat(),
+                    }).execute()
+                except Exception as e:
+                    _log(f"  [WARN] model_performance upsert failed for {target}: {e}", log_lines)
+        except Exception as e:
+            _log(f"  [WARN] BSS tracking to Supabase failed: {e}", log_lines)
+
         upload_errors = result.get("upload_errors", [])
         if upload_errors:
             for ue in upload_errors:

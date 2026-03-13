@@ -1,0 +1,30 @@
+﻿
+  MARKET INTELLIGENCE ? Status
+  --------------------------------------------------
+  OK league_registry.json           2026-03-11T14:53:08  (400 KB)
+  OK calibration_tables.json        2026-03-11T14:54:51  (191 KB)
+  OK signal_weights.json            2026-03-11T14:56:03  (2 KB)
+
+  Partite finite nel DB:    29730
+  Leghe qualificate (>=80):  96
+
+  Lega                                   Odds     ML     xG
+  ----------------------------------------------------
+  Premier League                           34     88      0
+  Prva Liga                                26     32      0
+  Premier League                           26    128      0
+  First Division                           26     26      0
+  Primera B                                25     51      0
+  CONCACAF Champions League                25     25      0
+  Premier League                           24     48      0
+  CONMEBOL Libertadores                    23     34      0
+  Primera Divisi¾n                         22     67      0
+  Indian Super League                      22     34      0
+  FKF Premier League                       21    162      0
+  Ligue 2                                  21    104      0
+  Liga Nacional                            21    114      0
+  New South Wales NPL                      21     32      0
+  First NL                                 20     37      0
+  ... e altre 81 leghe
+
+  Pesi segnali: ML=1.00  xG=0.00  [FALLBACK]

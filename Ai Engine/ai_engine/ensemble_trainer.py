@@ -36,29 +36,51 @@ class EnsemblePayload:
     class_labels: List[str]
     base_weights: Dict[str, float] = field(default_factory=dict)
     metrics: Dict[str, float] = field(default_factory=dict)
+    isotonic_calibrators: Optional[Dict[str, Any]] = field(default_factory=dict)
 
 
-def _build_base_models(n_classes: int) -> List[Tuple[str, Any]]:
-    """Instantiate the 3 base models."""
-    n_est_rf = 400 if n_classes <= 5 else 200
+def _build_base_models(
+    n_classes: int,
+    n_samples: int = 5000,
+    imbalance_ratio: float = 1.0,
+) -> List[Tuple[str, Any]]:
+    """Instantiate the 3 base models.
+
+    Args:
+        n_classes: number of target classes.
+        n_samples: training set size — controls tree depth and n_estimators.
+        imbalance_ratio: min_class_count / max_class_count (1.0 = balanced).
+            class_weight is only applied when ratio < 0.35 (genuinely
+            imbalanced targets like 1x2 or clean_sheet).  For near-balanced
+            targets (e.g. over_0_5 at 95%) using class_weight inflates the
+            minority class ~19x, destroying calibration (Brier 0.83).
+    """
+    use_balanced = imbalance_ratio < 0.35
+    rf_class_weight = "balanced_subsample" if use_balanced else None
+    logreg_class_weight = "balanced" if use_balanced else None
+
+    max_depth = 6 if n_samples < 2000 else 10
+    n_estimators_rf = 100 if n_samples < 1000 else 200
+    n_estimators_gb = 100 if n_samples < 1000 else 150
+
     models = [
         (
             "rf",
             RandomForestClassifier(
-                n_estimators=n_est_rf,
+                n_estimators=n_estimators_rf,
                 random_state=0,
                 n_jobs=-1,
-                class_weight="balanced_subsample",
-                max_depth=12,
+                class_weight=rf_class_weight,
+                max_depth=max_depth,
                 min_samples_leaf=5,
             ),
         ),
         (
             "gb",
             GradientBoostingClassifier(
-                n_estimators=300,
+                n_estimators=n_estimators_gb,
                 learning_rate=0.05,
-                max_depth=5,
+                max_depth=min(max_depth, 5),
                 min_samples_leaf=10,
                 subsample=0.8,
                 random_state=0,
@@ -68,7 +90,7 @@ def _build_base_models(n_classes: int) -> List[Tuple[str, Any]]:
             "logreg",
             LogisticRegression(
                 max_iter=2000,
-                class_weight="balanced",
+                class_weight=logreg_class_weight,
                 C=1.0,
                 random_state=0,
             ),
@@ -181,6 +203,7 @@ def build_ensemble(
     sample_weights: Optional[np.ndarray] = None,
     feature_cols: Optional[List[str]] = None,
     feature_medians: Optional[Dict[str, float]] = None,
+    train_dates: Optional[pd.Series] = None,
 ) -> EnsemblePayload:
     """
     Train a stacking ensemble and return the full payload.
@@ -204,33 +227,40 @@ def build_ensemble(
     classes = np.unique(np.concatenate([y_tr_np, y_val_np]))
     n_classes = len(classes)
 
-    # Build stratified k-fold splits for OOF within training.
-    # StratifiedKFold ensures class balance in each fold — critical for rare
-    # outcomes like draws (~27%) to avoid biased OOF predictions.
-    from sklearn.model_selection import StratifiedKFold
+    # Build walk-forward (temporal) splits for OOF within training.
+    # StratifiedKFold causes temporal leakage — fold 1 trains on future data.
+    # walk_forward_splits uses expanding windows with purge gaps.
     n_tr = len(y_tr_np)
     splits = []
-    try:
-        skf = StratifiedKFold(n_splits=5, shuffle=False)
-        for train_idx, val_idx in skf.split(X_tr_np, y_tr_np):
-            if len(train_idx) >= 20 and len(val_idx) >= 5:
-                splits.append((train_idx, val_idx))
-    except ValueError:
-        # Fallback for extremely small datasets
-        pass
+    if train_dates is not None and len(train_dates) == n_tr:
+        combined_for_wf = pd.DataFrame(X_tr_np)
+        combined_for_wf["fixture_date"] = train_dates.values
+        wf_splits = walk_forward_splits(
+            combined_for_wf, n_splits=5, purge_days=30, min_train_rows=50,
+        )
+        splits = wf_splits if wf_splits else []
 
     if not splits:
-        # Fallback: simple first 70% train, last 30% val
+        # Fallback: simple first 70% train, last 30% val (temporal order)
         cut = int(n_tr * 0.7)
-        splits = [(np.arange(0, cut), np.arange(cut, n_tr))]
+        if cut >= 20 and (n_tr - cut) >= 5:
+            splits = [(np.arange(0, cut), np.arange(cut, n_tr))]
+        else:
+            splits = [(np.arange(0, cut), np.arange(cut, n_tr))]
 
     # Scale for LogReg
     scaler = StandardScaler()
     X_tr_scaled = scaler.fit_transform(X_tr_np)
     X_val_scaled = scaler.transform(X_val_np)
 
+    # Compute imbalance ratio for conditional class_weight
+    _class_counts = pd.Series(y_tr_np).value_counts()
+    _imbalance_ratio = float(_class_counts.min() / _class_counts.max()) if len(_class_counts) > 1 else 1.0
+
     # Build base models
-    base_templates = _build_base_models(n_classes)
+    base_templates = _build_base_models(
+        n_classes, n_samples=len(y_tr_np), imbalance_ratio=_imbalance_ratio,
+    )
 
     # Generate OOF probabilities — pass pre-computed classes so OOF matrix
     # width matches meta-learner input (fixes mismatch when val has rare classes
@@ -370,6 +400,18 @@ def predict_ensemble(
                 if c in model_classes:
                     idx_c = model_classes.index(c)
                     result[c] += w * float(proba[0][idx_c])
+
+    # Apply isotonic calibration if available
+    if getattr(payload, "isotonic_calibrators", None):
+        calibrated = {}
+        for c in result:
+            iso = payload.isotonic_calibrators.get(c)
+            if iso is not None:
+                # IsotonicRegression.predict expects array-like
+                calibrated[c] = float(np.clip(iso.predict([result[c]])[0], 0.001, 0.999))
+            else:
+                calibrated[c] = result[c]
+        result = calibrated
 
     # Normalize
     total = sum(result.values()) or 1.0

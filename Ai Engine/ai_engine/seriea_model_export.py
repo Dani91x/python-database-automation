@@ -56,6 +56,23 @@ def _build_features(
     y = df[target]
     X = df.drop(columns=drop_cols + [target], errors="ignore")
     X = X.select_dtypes(include=["number", "bool"]).copy()
+
+    # Drop columns that are >50% NaN — after median imputation these become
+    # noise (majority of rows get the same constant value, no signal).
+    nan_pct = X.isna().mean()
+    high_nan_cols = nan_pct[nan_pct > 0.50].index.tolist()
+    if high_nan_cols:
+        print(f"    Dropping {len(high_nan_cols)} columns with >50% NaN")
+        X = X.drop(columns=high_nan_cols)
+
+    # Drop rows that are >80% NaN (insufficient data for meaningful prediction)
+    row_nan_pct = X.isna().mean(axis=1)
+    bad_rows = row_nan_pct > 0.80
+    if bad_rows.any():
+        print(f"    Dropping {int(bad_rows.sum())} rows with >80% NaN")
+        X = X.loc[~bad_rows]
+        y = y.loc[X.index]
+
     # fillna(0) on medians guards against all-NaN columns whose median is NaN,
     # which would leave NaN unfilled and crash GradientBoosting downstream.
     medians = X.median(numeric_only=True).fillna(0).to_dict()
@@ -101,7 +118,11 @@ def _ece_score(y_true: np.ndarray, proba: np.ndarray, classes: np.ndarray, n_bin
     return float(ece / len(y_true)) if len(y_true) > 0 else 0.0
 
 
-def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
+def train_and_save_all(
+    league_id: int,
+    last_n_seasons: int = 3,
+    targets_filter: list[str] | None = None,
+) -> list[dict]:
     """
     Train ensemble models for all targets in a league.
 
@@ -118,7 +139,22 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
     if train_df.empty:
         raise RuntimeError(f"No training data for league {league_id}.")
 
-    target_cols = [c for c in train_df.columns if c.startswith("target_")]
+    all_target_cols = [c for c in train_df.columns if c.startswith("target_")]
+
+    # Prioritise targets that have Betfair markets (can actually generate bets).
+    # Other targets are still trained but placed last so critical ones finish first.
+    PRIORITY_TARGETS = {
+        "target_1x2", "target_btts", "target_over_2_5", "target_over_1_5",
+        "target_over_3_5", "target_over_0_5", "target_ht_over_0_5",
+        "target_clean_sheet_home", "target_clean_sheet_away",
+    }
+    priority = [t for t in all_target_cols if t in PRIORITY_TARGETS]
+    rest = [t for t in all_target_cols if t not in PRIORITY_TARGETS]
+    target_cols = priority + rest
+
+    # Optional: filter to specific targets (e.g. priority-only for speed)
+    if targets_filter:
+        target_cols = [t for t in target_cols if t in targets_filter]
 
     drop_cols = [
         "fixture_id", "league_id", "league_name", "season_year", "fixture_date",
@@ -201,6 +237,7 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
                 sample_weights=weights_train,
                 feature_cols=selected_cols,
                 feature_medians=selected_medians,
+                train_dates=train_dates,
             )
         except Exception as e:
             print(f"    Ensemble training failed for {target}: {e}")
@@ -208,8 +245,10 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
 
         # ── COMPUTE CALIBRATION METRICS ON VALIDATION ──────────────
         calibration_metrics = {}
+        isotonic_calibrators = {}
         try:
             from ai_engine.ensemble_trainer import predict_ensemble
+            from sklearn.isotonic import IsotonicRegression
             X_val_np = X_val_sel.to_numpy().astype(float)
             X_val_scaled = payload.scaler.transform(X_val_np) if payload.scaler else X_val_np
             classes = np.array(payload.class_labels)
@@ -237,13 +276,76 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
                 for (name, _), bp in zip(payload.base_models, base_probas_list):
                     w = payload.base_weights.get(name, 1.0) / total_w
                     ensemble_proba += w * bp
+
             y_val_str = np.array([str(v) for v in y_val.to_numpy()])
-            brier = _brier_score(y_val_str, ensemble_proba, classes)
-            ece = _ece_score(y_val_str, ensemble_proba, classes)
+
+            # ── ALIGN ensemble_proba to classes ─────────────────────
+            # The meta-learner may output fewer columns than len(classes)
+            # when rare classes are absent from OOF data (e.g. target_ht_ft
+            # with 9+ outcome combos). Align to full class set.
+            n_classes_expected = len(classes)
+            if ensemble_proba.shape[1] != n_classes_expected:
+                # Determine which classes the meta-model actually has
+                if payload.meta_model is not None and hasattr(payload.meta_model, "classes_"):
+                    meta_cls = [str(c) for c in payload.meta_model.classes_]
+                else:
+                    meta_cls = [str(c) for c in classes[:ensemble_proba.shape[1]]]
+                aligned_proba = np.zeros((ensemble_proba.shape[0], n_classes_expected))
+                for ci, c in enumerate(classes):
+                    c_str = str(c)
+                    if c_str in meta_cls:
+                        aligned_proba[:, ci] = ensemble_proba[:, meta_cls.index(c_str)]
+                ensemble_proba = aligned_proba
+
+            # ── ISOTONIC CALIBRATION (from ProphitBet) ──────────────
+            # Fit isotonic regression per class on validation set.
+            # Isotonic is non-parametric (no double-sigmoid problem) and
+            # directly maps raw probabilities to calibrated ones.
+            # Requires >= 30 validation samples to avoid overfitting.
+            if len(y_val_str) >= 30:
+                class_to_idx = {str(c): i for i, c in enumerate(classes)}
+                y_onehot = np.zeros_like(ensemble_proba)
+                for i, yv in enumerate(y_val_str):
+                    if yv in class_to_idx:
+                        y_onehot[i, class_to_idx[yv]] = 1
+
+                for ci, c in enumerate(classes):
+                    try:
+                        ir = IsotonicRegression(out_of_bounds="clip")
+                        ir.fit(ensemble_proba[:, ci], y_onehot[:, ci])
+                        isotonic_calibrators[str(c)] = ir
+                    except Exception:
+                        pass
+
+                # Re-compute calibrated probabilities for metrics
+                if isotonic_calibrators:
+                    cal_proba = np.zeros_like(ensemble_proba)
+                    for ci, c in enumerate(classes):
+                        iso = isotonic_calibrators.get(str(c))
+                        if iso is not None:
+                            cal_proba[:, ci] = np.clip(iso.predict(ensemble_proba[:, ci]), 0.001, 0.999)
+                        else:
+                            cal_proba[:, ci] = ensemble_proba[:, ci]
+                    # Normalize rows to sum to 1
+                    row_sums = cal_proba.sum(axis=1, keepdims=True)
+                    row_sums = np.where(row_sums > 0, row_sums, 1.0)
+                    cal_proba = cal_proba / row_sums
+                    brier = _brier_score(y_val_str, cal_proba, classes)
+                    ece = _ece_score(y_val_str, cal_proba, classes)
+                else:
+                    brier = _brier_score(y_val_str, ensemble_proba, classes)
+                    ece = _ece_score(y_val_str, ensemble_proba, classes)
+            else:
+                brier = _brier_score(y_val_str, ensemble_proba, classes)
+                ece = _ece_score(y_val_str, ensemble_proba, classes)
+
             calibration_metrics = {"brier": round(brier, 4), "ece": round(ece, 4)}
         except Exception as e:
             print(f"    Calibration metrics failed for {target}: {e}")
             calibration_metrics = {"brier": None, "ece": None}
+
+        # Store isotonic calibrators in the ensemble payload
+        payload.isotonic_calibrators = isotonic_calibrators
 
         # ── SAVE MODEL ────────────────────────────────────────────
         out_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
@@ -259,6 +361,7 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             "feature_medians": payload.feature_medians,
             "class_labels": payload.class_labels,
             "base_weights": payload.base_weights,
+            "isotonic_calibrators": isotonic_calibrators,
             "calibration_metrics": calibration_metrics,
             "trained_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -280,6 +383,8 @@ def train_and_save_all(league_id: int, last_n_seasons: int = 3) -> list[dict]:
             "logloss": metrics.get("ensemble_logloss", metrics.get("rf_logloss", 0.0)),
             "brier": calibration_metrics.get("brier", 0.0),
             "ece": calibration_metrics.get("ece", 0.0),
+            "class_labels": payload.class_labels,
+            "n_classes": len(payload.class_labels),
             "feature_count": len(selected_cols),
             "train_rows": int(len(y_train)),
             "val_rows": int(len(y_val)),

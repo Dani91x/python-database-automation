@@ -13,6 +13,7 @@ from .db_adapter import (
     fetch_related_by_fixture_ids,
     fetch_standings_by_league_seasons,
 )
+from .elo_ratings import compute_elo_features
 from .preprocessing.statistics import build_team_window_stats
 
 
@@ -43,8 +44,15 @@ def _odds_features(odds_rows: List[Dict[str, Any]]) -> pd.DataFrame:
 
     def pick_value(sub: pd.DataFrame) -> float:
         if "snapshot_time" in sub.columns and sub["snapshot_time"].notna().any():
-            sub = sub.sort_values("snapshot_time")
-            return sub["odd_value"].dropna().astype(float).iloc[-1]
+            sub = sub.copy()
+            sub["snapshot_time"] = pd.to_datetime(sub["snapshot_time"], errors="coerce")
+            sub = sub.dropna(subset=["snapshot_time"]).sort_values("snapshot_time")
+            if sub.empty:
+                vals = sub["odd_value"].dropna().astype(float)
+                return float(vals.median()) if not vals.empty else float("nan")
+            last_ts = sub["snapshot_time"].iloc[-1]
+            vals = sub.loc[sub["snapshot_time"] == last_ts, "odd_value"].dropna().astype(float)
+            return float(vals.median()) if not vals.empty else float("nan")
         vals = sub["odd_value"].dropna().astype(float)
         return float(vals.median()) if not vals.empty else float("nan")
 
@@ -137,6 +145,21 @@ def _events_features(events_rows: List[Dict[str, Any]]) -> pd.DataFrame:
         )
         .reset_index()
     )
+
+    # Add first (minimum) goal minute per team per fixture — only from goal events.
+    # avg_goal_minute is a poor proxy for "target_first_goal_before_30" because
+    # a team scoring at 10' and 70' has avg=40' which incorrectly signals "no early goal".
+    goal_events = df[df["is_goal"]].copy()
+    if not goal_events.empty:
+        goal_timing = (
+            goal_events.groupby(["fixture_id", "team_id"], dropna=False)
+            .agg(min_goal_minute=("minute", "min"))
+            .reset_index()
+        )
+        agg = agg.merge(goal_timing, on=["fixture_id", "team_id"], how="left")
+    else:
+        agg["min_goal_minute"] = float("nan")
+
     return agg
 
 
@@ -340,17 +363,23 @@ def _build_historical_team_features(
         return pd.DataFrame()
 
     hist = pd.concat(out_rows, ignore_index=True)
-    # restore columns
-    hist.rename(columns={"hist_w5_team_id": "team_id", "hist_w5_fixture_date": "fixture_date"}, inplace=True)
-    if "team_id" not in hist.columns or "fixture_date" not in hist.columns:
-        # team_id/fixture_date from other windows
-        for n in FORM_WINDOWS:
-            tid = f"hist_w{n}_team_id"
-            fdt = f"hist_w{n}_fixture_date"
-            if tid in hist.columns:
-                hist.rename(columns={tid: "team_id"}, inplace=True)
-            if fdt in hist.columns:
-                hist.rename(columns={fdt: "fixture_date"}, inplace=True)
+    # Restore team_id and fixture_date columns that were prefixed by add_prefix.
+    # Each window produces hist_w{n}_team_id and hist_w{n}_fixture_date;
+    # we need to consolidate them back into canonical column names.
+    for n in FORM_WINDOWS:
+        tid = f"hist_w{n}_team_id"
+        fdt = f"hist_w{n}_fixture_date"
+        if tid in hist.columns and "team_id" not in hist.columns:
+            hist.rename(columns={tid: "team_id"}, inplace=True)
+        elif tid in hist.columns:
+            # Fill missing team_id from this window's column, then drop it
+            hist["team_id"] = hist["team_id"].combine_first(hist[tid])
+            hist.drop(columns=[tid], inplace=True)
+        if fdt in hist.columns and "fixture_date" not in hist.columns:
+            hist.rename(columns={fdt: "fixture_date"}, inplace=True)
+        elif fdt in hist.columns:
+            hist["fixture_date"] = hist["fixture_date"].combine_first(hist[fdt])
+            hist.drop(columns=[fdt], inplace=True)
     return hist
 
 
@@ -397,6 +426,80 @@ def _compute_form_features(history_df: pd.DataFrame) -> pd.DataFrame:
     for r in rows[1:]:
         merged = merged.merge(r, on=["fixture_date", "team_id"], how="left")
     return merged
+
+
+def _build_h2h_features(df: pd.DataFrame, history_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute head-to-head stats from the last 5 meetings between the two teams.
+
+    Optimised: pre-groups history by team-pair key for O(1) lookup per fixture
+    instead of O(n×h) full-scan per row.
+    """
+    if history_df.empty or df.empty:
+        return df
+
+    hist = history_df.copy()
+    hist["fixture_date"] = pd.to_datetime(hist["fixture_date"], errors="coerce")
+    hist["goals_home"] = _safe_num(hist["goals_home"])
+    hist["goals_away"] = _safe_num(hist["goals_away"])
+    hist = hist.dropna(subset=["fixture_date", "home_team_id", "away_team_id"])
+    hist["home_team_id"] = hist["home_team_id"].astype(int)
+    hist["away_team_id"] = hist["away_team_id"].astype(int)
+    hist = hist.sort_values("fixture_date")
+
+    # Build pair-key index: frozenset(home, away) → sorted list of rows
+    from collections import defaultdict
+    pair_index: dict = defaultdict(list)
+    for row_tuple in hist[["fixture_date", "home_team_id", "away_team_id",
+                           "goals_home", "goals_away"]].itertuples(index=False):
+        key = (min(row_tuple[1], row_tuple[2]), max(row_tuple[1], row_tuple[2]))
+        pair_index[key].append(row_tuple)
+
+    empty_rec = {"h2h_matches": 0, "h2h_home_wins": 0,
+                 "h2h_draws": 0, "h2h_avg_goals": float("nan")}
+
+    h2h_records = []
+    for _, row in df.iterrows():
+        h_id = row.get("home_team_id")
+        a_id = row.get("away_team_id")
+        match_date = pd.to_datetime(row.get("fixture_date"), errors="coerce")
+
+        if pd.isna(h_id) or pd.isna(a_id) or pd.isna(match_date):
+            h2h_records.append(empty_rec.copy())
+            continue
+
+        h_id, a_id = int(h_id), int(a_id)
+        key = (min(h_id, a_id), max(h_id, a_id))
+        meetings = pair_index.get(key, [])
+
+        # Filter to pre-match only, take last 5
+        prior = [m for m in meetings if m[0] < match_date]
+        last5 = prior[-5:] if len(prior) > 5 else prior
+
+        if not last5:
+            h2h_records.append(empty_rec.copy())
+        else:
+            home_wins = 0
+            draws = 0
+            total_goals = 0.0
+            for m in last5:
+                gh, ga = m[3], m[4]
+                m_home = m[1]  # home_team_id of this historical match
+                if pd.notna(gh) and pd.notna(ga):
+                    total_goals += gh + ga
+                    if gh == ga:
+                        draws += 1
+                    elif (m_home == h_id and gh > ga) or (m_home != h_id and ga > gh):
+                        home_wins += 1
+            avg_goals = total_goals / len(last5) if last5 else float("nan")
+            h2h_records.append({
+                "h2h_matches": len(last5),
+                "h2h_home_wins": home_wins,
+                "h2h_draws": draws,
+                "h2h_avg_goals": round(avg_goals, 2),
+            })
+
+    h2h_df = pd.DataFrame(h2h_records, index=df.index)
+    return pd.concat([df, h2h_df], axis=1)
 
 
 def build_feature_dataframe_for_fixtures(
@@ -558,11 +661,49 @@ def build_feature_dataframe_for_fixtures(
     if not odds_df.empty:
         base = base.merge(odds_df, on="fixture_id", how="left")
 
+    # Implied probabilities from 1X2 odds (normalised to remove bookmaker margin)
+    if "odds_1x2_home" in base.columns:
+        base["implied_prob_home"] = 1.0 / base["odds_1x2_home"].clip(lower=1.01)
+        base["implied_prob_draw"] = 1.0 / base["odds_1x2_draw"].clip(lower=1.01)
+        base["implied_prob_away"] = 1.0 / base["odds_1x2_away"].clip(lower=1.01)
+        total_imp = (
+            base["implied_prob_home"] + base["implied_prob_draw"] + base["implied_prob_away"]
+        )
+        base["fair_prob_home"] = base["implied_prob_home"] / total_imp
+        base["fair_prob_draw"] = base["implied_prob_draw"] / total_imp
+        base["fair_prob_away"] = base["implied_prob_away"] / total_imp
+
     # Form features
     if not history_df.empty:
         form_df = _compute_form_features(history_df)
         base = _merge_historical_features(base, form_df, "home_form", "home_team_id")
         base = _merge_historical_features(base, form_df, "away_form", "away_team_id")
+
+    # H2H (Head-to-Head) features
+    if not history_df.empty:
+        try:
+            base = _build_h2h_features(base, history_df)
+        except Exception:
+            pass  # H2H is a nice-to-have, don't break the pipeline
+
+    # ELO ratings — computed from historical match results
+    if not history_df.empty:
+        try:
+            elo_hist = compute_elo_features(history_df)
+            # Build ELO lookup: (team_id, fixture_date) → elo_value
+            # Merge via merge_asof on home/away team_id
+            elo_home = elo_hist[["fixture_date", "home_team_id", "home_elo"]].copy()
+            elo_home = elo_home.rename(columns={"home_team_id": "team_id", "home_elo": "elo"})
+            elo_away = elo_hist[["fixture_date", "away_team_id", "away_elo"]].copy()
+            elo_away = elo_away.rename(columns={"away_team_id": "team_id", "away_elo": "elo"})
+            elo_all = pd.concat([elo_home, elo_away], ignore_index=True)
+            elo_all = elo_all.drop_duplicates(subset=["fixture_date", "team_id"], keep="last")
+            base = _merge_historical_features(base, elo_all, "home_elo", "home_team_id")
+            base = _merge_historical_features(base, elo_all, "away_elo", "away_team_id")
+            if "home_elo_elo" in base.columns and "away_elo_elo" in base.columns:
+                base["elo_diff"] = base["home_elo_elo"] - base["away_elo_elo"]
+        except Exception:
+            pass  # ELO is a nice-to-have, don't break the pipeline
 
     return base
 

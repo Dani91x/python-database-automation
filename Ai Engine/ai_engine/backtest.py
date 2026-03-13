@@ -12,7 +12,7 @@ import os
 import sys
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -38,6 +38,7 @@ from ai_engine.value_betting import (
     KELLY_FRACTION,
     MAX_KELLY,
     DEFAULT_BANKROLL,
+    BETFAIR_COMMISSION,
 )
 
 
@@ -155,6 +156,7 @@ def run_backtest(
     n_folds: int = 3,
     targets: List[str] | None = None,
     bankroll: float = DEFAULT_BANKROLL,
+    commission: float = BETFAIR_COMMISSION,
 ) -> Dict[str, Any]:
     """
     Run walk-forward backtest for a league.
@@ -291,10 +293,13 @@ def run_backtest(
                     ev = expected_value(best_prob, bookie_odds)
 
                     if ev > MIN_EDGE and best_prob > MIN_PROB:
-                        kelly = kelly_criterion(best_prob, bookie_odds)
+                        kelly = kelly_criterion(best_prob, bookie_odds, commission=commission)
                         stake = kelly * bankroll
                         won = best_class == actual
-                        profit = stake * (bookie_odds - 1) if won else -stake
+                        # Deduct Betfair commission from winning profit.
+                        # Commission is applied to NET WINNINGS (not stake).
+                        gross_win = stake * (bookie_odds - 1)
+                        profit = gross_win * (1.0 - commission) if won else -stake
 
                         bet_record = {
                             "fold": fold_idx,

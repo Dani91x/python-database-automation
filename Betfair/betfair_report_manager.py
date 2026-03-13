@@ -49,6 +49,8 @@ class BetfairReportManager:
         self.gc = gspread.service_account(filename=config.GOOGLE_CREDENTIALS_FILE)
         self.sh = self.gc.open_by_key(config.SPREADSHEET_ID)
         self.slot_manager = SlotManager(self.gc, self.sh)
+        # Instance-level cache (not class-level) to avoid cross-instance state pollution
+        self._trained_leagues_this_run: set = set()
 
     def _load_name_map(self):
         if os.path.exists(MAPPING_FILE):
@@ -157,6 +159,13 @@ class BetfairReportManager:
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         res = self.supabase.from_("fixture_predictions").select("*").gte("fixture_date", today).lt("fixture_date", tomorrow).execute()
         db_fixtures = res.data or []
+
+        # 3b. PRE-FLIGHT: allena SOLO le leghe di oggi (prima del loop per-fixture)
+        # Questo evita training inline bloccante durante la generazione del report.
+        if db_fixtures:
+            today_league_ids = list({f.get("league_id") for f in db_fixtures if f.get("league_id")})
+            logger.info(f"🚀 Pre-flight training: {len(today_league_ids)} leghe rilevate oggi → {today_league_ids}")
+            self._preflight_train_leagues(today_league_ids)
 
         # 4. Aggiorna foglio Prediction (Tutte)
         self._sync_all_predictions(db_fixtures)
@@ -323,8 +332,14 @@ class BetfairReportManager:
             "🛡️ Safety Vault",  # 76
             "Trust Score",       # 77
             "Edge Originale",    # 78
+            # --- SEZIONE 9: ML Extended Markets — O1.5, O3.5, HT 1X2 (79-93) ---
+            "O1.5 % ML", "Quota O1.5", "Edge O1.5 ML",   # 79-81
+            "O3.5 % ML", "Quota O3.5", "Edge O3.5 ML",   # 82-84
+            "HT H % ML", "Quota HT H", "Edge HT H ML",   # 85-87
+            "HT D % ML", "Quota HT D", "Edge HT D ML",   # 88-90
+            "HT A % ML", "Quota HT A", "Edge HT A ML",   # 91-93
         ]
-        NUM_COLS = len(header)  # 79 (was 76 before Edge Engine v3.0)
+        NUM_COLS = len(header)  # 94
 
         # 1. Ordina eventi Betfair cronologicamente
         bf_events_sorted = sorted(bf_events, key=lambda x: x.get("open_date", ""))
@@ -399,10 +414,12 @@ class BetfairReportManager:
                     if val is None: return ""
                     return val
 
-                def calc_edge(prob, quota):
+                def calc_edge(prob, quota, commission=0.05):
+                    """EV post-commissione Betfair: p*(odds-1)*(1-comm) - (1-p)"""
                     if prob is None or quota is None: return None
                     p = prob / 100.0 if prob > 1 else prob
-                    return (p * quota) - 1
+                    net_profit = (quota - 1.0) * (1.0 - commission)
+                    return (p * net_profit) - (1.0 - p)
 
                 def fmt_edge(edge):
                     if edge is None: return ""
@@ -536,6 +553,12 @@ class BetfairReportManager:
                     "",  # Safety Vault placeholder
                     "",  # Trust Score placeholder
                     "",  # Edge Originale placeholder
+                    # SEZIONE 9: ML Extended Markets (79-93)
+                    fmt_p(ai_o15), fmt_q(odds.get("O15")), fmt_edge(calc_edge(ai_o15, odds.get("O15"))),
+                    fmt_p(ai_o35), fmt_q(odds.get("O35")), fmt_edge(calc_edge(ai_o35, odds.get("O35"))),
+                    fmt_p(ai_ht_h), fmt_q(odds.get("HT_H")), fmt_edge(calc_edge(ai_ht_h, odds.get("HT_H"))),
+                    fmt_p(ai_ht_d), fmt_q(odds.get("HT_D")), fmt_edge(calc_edge(ai_ht_d, odds.get("HT_D"))),
+                    fmt_p(ai_ht_a), fmt_q(odds.get("HT_A")), fmt_edge(calc_edge(ai_ht_a, odds.get("HT_A"))),
                 ]
             else:
                 row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (NUM_COLS - 3)
@@ -612,17 +635,20 @@ class BetfairReportManager:
         Recupera le quote per una lista di eventi in modalità batch (massima efficienza).
         """
         all_results = {} # event_id -> {H, D, A, HT05, BTTS, O25}
-        market_types = ['MATCH_ODDS', 'BOTH_TEAMS_TO_SCORE', 'OVER_UNDER_25', 'FIRST_HALF_GOALS_05']
+        market_types = [
+            'MATCH_ODDS', 'BOTH_TEAMS_TO_SCORE', 'OVER_UNDER_25', 'FIRST_HALF_GOALS_05',
+            'OVER_UNDER_15', 'OVER_UNDER_35', 'HALF_TIME',
+        ]
         
         try:
             # 1. Recupera catalogo mercati per TUTTI gli eventi
-            # OPTIMIZED SAFE: Chunking event_ids (30 eventi = max 120 mercati per chiamata, Peso ~120)
+            # Con 7 market_types, chunk da 25 eventi = max 175 mercati per chiamata (< 200 limit).
             all_cats = []
-            event_chunk_size = 30
+            event_chunk_size = 25
             for i in range(0, len(event_ids), event_chunk_size):
                 chunk = event_ids[i:i + event_chunk_size]
                 logger.debug(f"Richiesta catalogo per chunk {i//event_chunk_size + 1} ({len(chunk)} eventi)...")
-                
+
                 try:
                     cats = self.bf.list_market_catalogue(
                         event_ids=chunk,
@@ -696,6 +722,9 @@ class BetfairReportManager:
                         "O25": None, "U25": None,
                         "BTTS": None, "BTTS_NO": None,
                         "HT05": None, "HT_U05": None,
+                        "O15": None, "U15": None,
+                        "O35": None, "U35": None,
+                        "HT_H": None, "HT_D": None, "HT_A": None,
                         "mo_id": None
                     }
 
@@ -705,12 +734,23 @@ class BetfairReportManager:
                     back = r_book.get('ex', {}).get('availableToBack', [])
                     return back[0].get('price') if back else None
 
+                def get_best_back_size(selection_id):
+                    """Volume disponibile alla migliore quota back (per liquidity check)."""
+                    r_book = runners_book.get(selection_id)
+                    if not r_book: return None
+                    back = r_book.get('ex', {}).get('availableToBack', [])
+                    return back[0].get('size') if back else None
+
                 if mname == "Match Odds":
                     all_results[eid]["mo_id"] = mid
                     if len(runners_cat) >= 3:
                         all_results[eid]["H"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["A"] = get_best_back(runners_cat[1]['selectionId'])
                         all_results[eid]["D"] = get_best_back(runners_cat[2]['selectionId'])
+                        # Liquidity sizes (used by place_orders for minimum-size validation)
+                        all_results[eid]["H_size"] = get_best_back_size(runners_cat[0]['selectionId'])
+                        all_results[eid]["A_size"] = get_best_back_size(runners_cat[1]['selectionId'])
+                        all_results[eid]["D_size"] = get_best_back_size(runners_cat[2]['selectionId'])
                 elif mname == "Both teams to Score?":
                     if len(runners_cat) >= 2:
                         all_results[eid]["BTTS"] = get_best_back(runners_cat[0]['selectionId'])
@@ -725,6 +765,20 @@ class BetfairReportManager:
                     if len(runners_cat) >= 2:
                         all_results[eid]["HT_U05"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["HT05"] = get_best_back(runners_cat[1]['selectionId'])
+                elif mname == "Over/Under 1.5 Goals":
+                    if len(runners_cat) >= 2:
+                        all_results[eid]["U15"] = get_best_back(runners_cat[0]['selectionId'])
+                        all_results[eid]["O15"] = get_best_back(runners_cat[1]['selectionId'])
+                elif mname == "Over/Under 3.5 Goals":
+                    if len(runners_cat) >= 2:
+                        all_results[eid]["U35"] = get_best_back(runners_cat[0]['selectionId'])
+                        all_results[eid]["O35"] = get_best_back(runners_cat[1]['selectionId'])
+                elif mname == "Half Time":
+                    # Betfair runner order: Home(0), Away(1), Draw(2)
+                    if len(runners_cat) >= 3:
+                        all_results[eid]["HT_H"] = get_best_back(runners_cat[0]['selectionId'])
+                        all_results[eid]["HT_A"] = get_best_back(runners_cat[1]['selectionId'])
+                        all_results[eid]["HT_D"] = get_best_back(runners_cat[2]['selectionId'])
 
         except Exception as e:
             logger.error(f"Errore critico nel prefetch delle quote: {e}")
@@ -780,6 +834,8 @@ class BetfairReportManager:
                 _bg(1, 1000, 66, 76, {"red": 0.98, "green": 0.88, "blue": 0.92}),
                 # Edge Engine v3.0 Diagnostics (76-79): Rosso tenue per Safety Vault
                 _bg(1, 1000, 76, 79, {"red": 1.0, "green": 0.90, "blue": 0.90}),
+                # ML Extended Markets (79-94): Turchese chiaro
+                _bg(1, 1000, 79, 94, {"red": 0.85, "green": 0.96, "blue": 0.96}),
 
                 # === 3. TEXT FORMAT PER COLONNE SPECIALI ===
                 # Poisson Slot (10): Blu scuro grassetto
@@ -824,7 +880,8 @@ class BetfairReportManager:
             # === 5. CONDITIONAL FORMATTING: Edge positivo = verde ===
             # Poisson edge cols: 27, 30, 33, 36, 39, 42
             # ML edge cols: 50, 53, 56, 59, 62, 65
-            all_edge_cols = [27, 30, 33, 36, 39, 42, 50, 53, 56, 59, 62, 65]
+            # Edge cols: Poisson (27,30,33,36,39,42) + ML Primary (50,53,56,59,62,65) + ML Extended (81,84,87,90,93)
+            all_edge_cols = [27, 30, 33, 36, 39, 42, 50, 53, 56, 59, 62, 65, 81, 84, 87, 90, 93]
             for col_idx in all_edge_cols:
                 requests.append({
                     "addConditionalFormatRule": {
@@ -843,15 +900,14 @@ class BetfairReportManager:
             _sheets_retry(self.sh.batch_update, {"requests": requests})
             time.sleep(1)
 
-            # Auto-resize
-            _sheets_retry(ws.columns_auto_resize, 0, min(num_cols - 1, 75))
+            # Auto-resize tutte le colonne
+            _sheets_retry(ws.columns_auto_resize, 0, num_cols)
 
             logger.info(f"Formattazione Poisson+ML applicata — {len(requests)} operazioni in batch.")
         except Exception as e:
             logger.warning(f"Errore durante la formattazione grafica: {e}")
 
-    # Cache per evitare ri-addestramento della stessa lega in una singola esecuzione
-    _trained_leagues_this_run = set()
+    # Costanti di classe
     MODEL_CACHE_TTL_DAYS = 7   # Riuserà modelli locali (league_XXX) se < 7 giorni
     MODEL_RETRAIN_TTL_DAYS = 7  # Riaddestra modelli scaricati da Supabase se > 7 giorni
 
@@ -897,6 +953,93 @@ class BetfairReportManager:
             logger.warning(f"Impossibile pulire registry Supabase per League {league_id}: {e}")
 
         return True
+
+    def _preflight_train_leagues(self, league_ids: list) -> None:
+        """
+        Fase pre-flight: controlla e allena in anticipo tutte le leghe necessarie
+        per la giornata odierna, in modo che il loop per-fixture sia solo predict (veloce).
+
+        Logica per ogni league_id:
+          1. Già processata in questo run → skip
+          2. Registry Supabase ha modelli freschi → skip (marca come done)
+          3. Cache locale fresca (<7gg) → upload registry, niente training
+          4. Altrimenti → training completo + upload
+        """
+        import glob as _glob
+        sb = self.supabase
+
+        total = len(league_ids)
+        for idx, league_id in enumerate(league_ids, 1):
+            if not league_id:
+                continue
+            if league_id in self._trained_leagues_this_run:
+                logger.info(f"  [{idx}/{total}] League {league_id}: già processata, skip.")
+                continue
+
+            logger.info(f"  [{idx}/{total}] League {league_id}: controllo registry...")
+
+            # 1. Controlla registry Supabase + cache su disco (evita download se già presente)
+            try:
+                reg_resp = sb.table("ai_model_registry").select("target").eq("league_id", league_id).limit(1).execute()
+                registry_has_models = bool(getattr(reg_resp, "data", None))
+            except Exception as e:
+                logger.warning(f"  [{idx}/{total}] League {league_id}: errore query registry ({e}), procedo con training.")
+                registry_has_models = False
+
+            if registry_has_models:
+                # Controlla se i modelli locali scaricati sono freschi (evita re-download)
+                dl_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
+                local_dl = _glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
+                if local_dl:
+                    newest = max(os.path.getmtime(p) for p in local_dl)
+                    age_days = (datetime.now().timestamp() - newest) / 86400.0
+                    if age_days < self.MODEL_RETRAIN_TTL_DAYS:
+                        logger.info(f"  [{idx}/{total}] League {league_id}: registry OK + cache locale fresca ({age_days:.1f}gg). Skip.")
+                        self._trained_leagues_this_run.add(league_id)
+                        continue
+                # Registry OK ma file locali assenti/scaduti: predict_fixture li scaricherà da solo
+                logger.info(f"  [{idx}/{total}] League {league_id}: registry OK, download on-demand al momento della predizione.")
+                self._trained_leagues_this_run.add(league_id)
+                continue
+
+            # 2. Nessun modello in registry: controlla cache locale di training
+            self._check_and_invalidate_stale_models(league_id)
+            cache_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
+            local_models = _glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+
+            need_training = True
+            if local_models:
+                newest = max(os.path.getmtime(p) for p in local_models)
+                age_days = (datetime.now().timestamp() - newest) / 86400.0
+                if age_days < self.MODEL_CACHE_TTL_DAYS:
+                    logger.info(f"  [{idx}/{total}] League {league_id}: cache training fresca ({age_days:.1f}gg). Upload senza retraining...")
+                    try:
+                        for model_path in local_models:
+                            target = os.path.basename(model_path).replace("ensemble_v2_", "").replace(".pkl.gz", "")
+                            upload_and_register(model_path, os.path.getsize(model_path), target, {
+                                "league_id": league_id, "model_type": "ensemble_v2",
+                                "accuracy": None, "logloss": None, "brier": None,
+                                "feature_count": None, "train_rows": None, "trained_range": "cached",
+                            })
+                        logger.info(f"  [{idx}/{total}] League {league_id}: {len(local_models)} modelli caricati.")
+                        need_training = False
+                    except Exception as e:
+                        logger.warning(f"  [{idx}/{total}] League {league_id}: upload fallito ({e}), procedo con training.")
+
+            # 3. Training completo
+            if need_training:
+                logger.info(f"  [{idx}/{total}] League {league_id}: ⚙️ Training completo (3 stagioni)...")
+                try:
+                    results = train_and_save_all(league_id, last_n_seasons=3)
+                    for r in results:
+                        upload_and_register(r["model_path"], r["file_size"], r["target"], r)
+                    logger.info(f"  [{idx}/{total}] League {league_id}: ✅ Training OK ({len(results)} target).")
+                except Exception as e:
+                    logger.warning(f"  [{idx}/{total}] League {league_id}: ⚠️ Training fallito: {e}. Salto lega.")
+
+            self._trained_leagues_this_run.add(league_id)
+
+        logger.info(f"✅ Pre-flight completato: {len(self._trained_leagues_this_run)}/{total} leghe pronte.")
 
     def _get_or_train_ai_predictions(self, fixture_id, league_id, odds_dict):
         """Helper robusto per predizioni AI. Ritorna (predictions, status_string).

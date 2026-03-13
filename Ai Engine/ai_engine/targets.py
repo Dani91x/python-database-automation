@@ -68,13 +68,16 @@ def add_targets_from_matches(df: pd.DataFrame) -> pd.DataFrame:
     out["target_ht_ft"] = out["target_ht_1x2"].fillna("") + "_" + out["target_ft_1x2"].fillna("")
 
     # First Half Over 0.5 (direct boolean target)
+    # Use .where() to propagate NaN when halftime data is missing, instead of
+    # silently coercing NaN > 0 to False (which creates false negatives).
     ht_total = out["halftime_home"] + out["halftime_away"]
-    out["target_ht_over_0_5"] = ht_total > 0
+    out["target_ht_over_0_5"] = (ht_total > 0).where(ht_total.notna())
 
-    # Exact score
+    # Exact score — keep NaN when goals are missing instead of using "-1--1"
+    has_goals = out["goals_home"].notna() & out["goals_away"].notna()
     out["target_exact_score"] = (
-        out["goals_home"].fillna(-1).astype(int).astype(str) + "-" + out["goals_away"].fillna(-1).astype(int).astype(str)
-    )
+        out["goals_home"].astype("Int64").astype(str) + "-" + out["goals_away"].astype("Int64").astype(str)
+    ).where(has_goals, other=None)
 
     return out
 
@@ -122,10 +125,19 @@ def add_targets_from_events(df: pd.DataFrame) -> pd.DataFrame:
     out["target_home_cards"] = hy + hr
     out["target_away_cards"] = ay + ar
 
-    # Goal timing proxy from average goal minute
-    hgm = _series("home_events_avg_goal_minute")
-    agm = _series("away_events_avg_goal_minute")
-    out["target_first_goal_before_30"] = ((hgm < 30) | (agm < 30)).fillna(False)
-    out["target_goal_in_2h"] = ((hgm >= 46) | (agm >= 46)).fillna(False)
+    # Goal timing — use minimum (first) goal minute when available,
+    # fallback to average as proxy.  The original code used avg_goal_minute
+    # which is logically wrong: a team scoring at 10' and 70' has avg=40'
+    # and would be classified as "no first goal before 30'" even though it did.
+    hgm_min = _series("home_events_min_goal_minute")
+    agm_min = _series("away_events_min_goal_minute")
+    hgm = hgm_min.combine_first(_series("home_events_avg_goal_minute"))
+    agm = agm_min.combine_first(_series("away_events_avg_goal_minute"))
+    # If both teams have no goal events at all, the target is False (no goal happened).
+    # Use .where() to preserve NaN only where we genuinely lack any timing data.
+    first_goal_raw = (hgm < 30) | (agm < 30)
+    out["target_first_goal_before_30"] = first_goal_raw.fillna(False)
+    goal_in_2h_raw = (hgm >= 46) | (agm >= 46)
+    out["target_goal_in_2h"] = goal_in_2h_raw.fillna(False)
 
     return out
