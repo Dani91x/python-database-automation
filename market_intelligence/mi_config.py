@@ -12,12 +12,12 @@ CALIBRATION_FILE    = CACHE_DIR / "calibration_tables.json"
 SIGNAL_WEIGHTS_FILE = CACHE_DIR / "signal_weights.json"
 
 # -- League qualification ----------------------------------------------------
-# NOTA: Soglie basse perche il DB e ancora in popolamento.
-# Aumentare progressivamente man mano che crescono i dati storici.
-# Target finale: MIN_MATCHES_CALIBRATION=200, MIN_BRACKET_SAMPLES=30
-MIN_MATCHES_CALIBRATION = 10   # min partite con odds+risultato per qualificarsi
-MIN_BRACKET_SAMPLES     = 5    # min campioni per fascia per fidarsi della calibrazione
-MIN_MATCHES_SIGNAL      = 10   # min partite per validare un segnale
+# NOTA: Soglie alzate a valori statisticamente affidabili.
+# MIN_BRACKET_SAMPLES=30 garantisce Wilson CI sufficientemente stretto (~18% a p=0.5).
+# Con n=5 il CI era ~43% — qualsiasi "bias significativo" era rumore.
+MIN_MATCHES_CALIBRATION = 80   # min partite con odds+risultato per qualificarsi
+MIN_BRACKET_SAMPLES     = 30   # min campioni per fascia per fidarsi della calibrazione
+MIN_MATCHES_SIGNAL      = 40   # min partite per validare un segnale
 
 # -- Odds brackets (half-open: [low, high)) ---------------------------------
 # Piu fine nella zona 1.20-2.80 dove c'e la maggior densita di scommesse
@@ -59,3 +59,8 @@ XG_MIN_SAMPLE      = 30     # campioni minimi per fidarsi del segnale xG
 # -- Edge scorer -------------------------------------------------------------
 MIN_COMPOSITE_EDGE  = 0.02  # sotto questa soglia -> edge = 0.0 (nessun segnale)
 CACHE_MAX_AGE_HOURS = 48    # warn se cache piu vecchia di N ore
+
+# Pesi formula composita: edge_raw = W_CAL * bias + W_ML * ml_divergence
+# Esternalizzati qui per permettere tuning senza toccare la logica.
+COMPOSITE_WEIGHT_CALIBRATION = 0.40
+COMPOSITE_WEIGHT_ML_DIV      = 0.60

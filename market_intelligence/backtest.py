@@ -160,7 +160,7 @@ def backtest_market(rows, market_name, bet_name, value, result_fn):
     """
     acc = defaultdict(lambda: {
         "n": 0, "implied_sum": 0.0, "outcome_sum": 0,
-        "odds_list": []
+        "bets": [],  # list of (odd, outcome) per calcolo ROI esatto
     })
 
     for row in rows:
@@ -185,7 +185,7 @@ def backtest_market(rows, market_name, bet_name, value, result_fn):
         cell["n"] += 1
         cell["implied_sum"] += 1.0 / odd
         cell["outcome_sum"] += outcome
-        cell["odds_list"].append(odd)
+        cell["bets"].append((odd, outcome))
 
     results = []
     for label, cell in sorted(acc.items(), key=lambda x: float(x[0].split("-")[0])):
@@ -199,11 +199,10 @@ def backtest_market(rows, market_name, bet_name, value, result_fn):
         ci = _wilson_ci(real_rate, n)
         significant = abs(bias) > ci
 
-        # Flat stake backtest: scommetti 1 unita su ogni evento in questo bracket
-        # Profitto = sum(odds_i * outcome_i) - n (tutte le scommesse costano 1)
-        avg_odd = sum(cell["odds_list"]) / n
-        # Expected profit con avg_odd: outcome_sum * avg_odd - n
-        profit = cell["outcome_sum"] * avg_odd - n
+        # Flat stake backtest: profitto esatto usando la quota reale di ogni scommessa
+        # profit = sum(odd_i * outcome_i - 1) per ogni bet
+        profit = sum(odd * outcome - 1.0 for odd, outcome in cell["bets"])
+        avg_odd = sum(o for o, _ in cell["bets"]) / n
         roi = (profit / n) * 100  # % sul capitale investito
 
         results.append({

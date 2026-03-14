@@ -7,6 +7,8 @@ import pytz
 from thefuzz import fuzz
 import unicodedata
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import local modules
 import sys
@@ -896,12 +898,27 @@ class BetfairReportManager:
                     }
                 })
 
-            # Esegui batch
-            _sheets_retry(self.sh.batch_update, {"requests": requests})
-            time.sleep(1)
+            # Larghezze fisse per sezione (evita columns_auto_resize che è lentissimo su 94 col)
+            def _col_width(c1, c2, px):
+                return {"updateDimensionProperties": {
+                    "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                              "startIndex": c1, "endIndex": c2},
+                    "properties": {"pixelSize": px},
+                    "fields": "pixelSize"
+                }}
+            requests += [
+                _col_width(0, 2, 90),    # Data + EventID
+                _col_width(2, 4, 160),   # Nomi evento
+                _col_width(4, 10, 80),   # Fixture ID, league, advice, ecc.
+                _col_width(10, 15, 75),  # Poisson MM
+                _col_width(15, 25, 70),  # Deep Stats
+                _col_width(25, 43, 72),  # Poisson Markets
+                _col_width(43, 48, 75),  # ML MM
+                _col_width(48, 94, 72),  # ML Markets
+            ]
 
-            # Auto-resize tutte le colonne
-            _sheets_retry(ws.columns_auto_resize, 0, num_cols)
+            # Esegui batch unico
+            _sheets_retry(self.sh.batch_update, {"requests": requests})
 
             logger.info(f"Formattazione Poisson+ML applicata — {len(requests)} operazioni in batch.")
         except Exception as e:
@@ -954,6 +971,43 @@ class BetfairReportManager:
 
         return True
 
+    def _predownload_models_for_league(self, league_id: int) -> int:
+        """
+        Scarica in anticipo tutti i modelli dal registry Supabase nella cache locale.
+        Eseguito durante il pre-flight così predict_fixture() non deve scaricare on-demand.
+        Ritorna il numero di modelli scaricati.
+        """
+        import glob as _glob
+        sb = get_supabase_client()
+        bucket = f"ai-models-league-{league_id}"
+        out_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
+        os.makedirs(out_dir, exist_ok=True)
+
+        try:
+            reg = sb.table("ai_model_registry").select("storage_path").eq("league_id", league_id).execute()
+            models = getattr(reg, "data", None) or []
+        except Exception as e:
+            logger.warning(f"  Pre-download League {league_id}: errore query registry: {e}")
+            return 0
+
+        downloaded = 0
+        for m in models:
+            path = m.get("storage_path", "")
+            if not path:
+                continue
+            local_path = os.path.join(out_dir, os.path.basename(path))
+            if os.path.exists(local_path):
+                continue  # già in cache
+            try:
+                res = sb.storage.from_(bucket).download(path)
+                with open(local_path, "wb") as f:
+                    f.write(res)
+                downloaded += 1
+            except Exception as e:
+                logger.warning(f"  Pre-download League {league_id} — {path}: {e}")
+
+        return downloaded
+
     def _preflight_train_leagues(self, league_ids: list) -> None:
         """
         Fase pre-flight: controlla e allena in anticipo tutte le leghe necessarie
@@ -961,24 +1015,29 @@ class BetfairReportManager:
 
         Logica per ogni league_id:
           1. Già processata in questo run → skip
-          2. Registry Supabase ha modelli freschi → skip (marca come done)
-          3. Cache locale fresca (<7gg) → upload registry, niente training
-          4. Altrimenti → training completo + upload
+          2. Registry Supabase ha modelli freschi + cache locale fresca → skip
+          3. Registry OK ma cache locale assente → PRE-DOWNLOAD ora (fix lazy-download)
+          4. Cache locale di training fresca → upload registry
+          5. Altrimenti → training completo + upload (parallelo tra leghe)
         """
         import glob as _glob
-        sb = self.supabase
 
         total = len(league_ids)
-        for idx, league_id in enumerate(league_ids, 1):
+        sb = self.supabase
+        lock = threading.Lock()
+
+        def _process_league(args):
+            idx, league_id = args
             if not league_id:
-                continue
-            if league_id in self._trained_leagues_this_run:
-                logger.info(f"  [{idx}/{total}] League {league_id}: già processata, skip.")
-                continue
+                return
+            with lock:
+                if league_id in self._trained_leagues_this_run:
+                    logger.info(f"  [{idx}/{total}] League {league_id}: già processata, skip.")
+                    return
 
             logger.info(f"  [{idx}/{total}] League {league_id}: controllo registry...")
 
-            # 1. Controlla registry Supabase + cache su disco (evita download se già presente)
+            # 1. Controlla registry Supabase
             try:
                 reg_resp = sb.table("ai_model_registry").select("target").eq("league_id", league_id).limit(1).execute()
                 registry_has_models = bool(getattr(reg_resp, "data", None))
@@ -987,7 +1046,6 @@ class BetfairReportManager:
                 registry_has_models = False
 
             if registry_has_models:
-                # Controlla se i modelli locali scaricati sono freschi (evita re-download)
                 dl_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
                 local_dl = _glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
                 if local_dl:
@@ -995,12 +1053,17 @@ class BetfairReportManager:
                     age_days = (datetime.now().timestamp() - newest) / 86400.0
                     if age_days < self.MODEL_RETRAIN_TTL_DAYS:
                         logger.info(f"  [{idx}/{total}] League {league_id}: registry OK + cache locale fresca ({age_days:.1f}gg). Skip.")
-                        self._trained_leagues_this_run.add(league_id)
-                        continue
-                # Registry OK ma file locali assenti/scaduti: predict_fixture li scaricherà da solo
-                logger.info(f"  [{idx}/{total}] League {league_id}: registry OK, download on-demand al momento della predizione.")
-                self._trained_leagues_this_run.add(league_id)
-                continue
+                        with lock:
+                            self._trained_leagues_this_run.add(league_id)
+                        return
+
+                # Registry OK ma file locali assenti/scaduti: pre-scarica ORA (evita download lazy per-fixture)
+                logger.info(f"  [{idx}/{total}] League {league_id}: registry OK, pre-download modelli...")
+                n = self._predownload_models_for_league(league_id)
+                logger.info(f"  [{idx}/{total}] League {league_id}: {n} modelli pre-scaricati. ✅")
+                with lock:
+                    self._trained_leagues_this_run.add(league_id)
+                return
 
             # 2. Nessun modello in registry: controlla cache locale di training
             self._check_and_invalidate_stale_models(league_id)
@@ -1037,7 +1100,20 @@ class BetfairReportManager:
                 except Exception as e:
                     logger.warning(f"  [{idx}/{total}] League {league_id}: ⚠️ Training fallito: {e}. Salto lega.")
 
-            self._trained_leagues_this_run.add(league_id)
+            with lock:
+                self._trained_leagues_this_run.add(league_id)
+
+        # Parallelizzazione per lega: max 4 worker (bilanciamento CPU/RAM/rete)
+        # Il training usa ThreadPoolExecutor internamente (sklearn rilascia GIL)
+        n_workers = min(4, total)
+        logger.info(f"🚀 Pre-flight: {total} leghe con {n_workers} worker paralleli...")
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(_process_league, (idx, lid)) for idx, lid in enumerate(league_ids, 1)]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    logger.error(f"Pre-flight worker errore: {exc}")
 
         logger.info(f"✅ Pre-flight completato: {len(self._trained_leagues_this_run)}/{total} leghe pronte.")
 

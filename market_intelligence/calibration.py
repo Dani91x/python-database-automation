@@ -26,14 +26,27 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 # -- Helpers odds ------------------------------------------------------------
 
+def _find_betfair_bm(bookmakers: list):
+    """Find Betfair sportsbook. Name match → index 2 (bookmaker #3) → index 0."""
+    for bm in bookmakers:
+        if "betfair" in str(bm.get("name", "")).lower():
+            return bm
+    if len(bookmakers) > 2:
+        return bookmakers[2]
+    return bookmakers[0] if bookmakers else None
+
+
 def _parse_odds_for_market(raw_json_odds: dict, market_cfg: dict) -> float | None:
-    """Estrae la quota decimale per uno specifico mercato/valore."""
+    """Estrae la quota Betfair sportsbook per uno specifico mercato/valore."""
     if not isinstance(raw_json_odds, dict):
         return None
     bookmakers = raw_json_odds.get("bookmakers", [])
     if not bookmakers:
         return None
-    for bet in bookmakers[0].get("bets", []):
+    bm = _find_betfair_bm(bookmakers)
+    if bm is None:
+        return None
+    for bet in bm.get("bets", []):
         if bet.get("name") == market_cfg["bet_name"]:
             for v in bet.get("values", []):
                 if v.get("value") == market_cfg["value"]:

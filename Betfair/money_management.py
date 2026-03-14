@@ -308,6 +308,7 @@ class SlotManager:
                     state.setdefault("ml_events_won", 0)
                     state.setdefault("ml_events_lost", 0)
                     state.setdefault("ml_slots", {})
+                    state.setdefault("rejected_today", [])
                     return state
             except Exception as e:
                 logger.error(f"Errore lettura {STATE_FILE}: {e}")
@@ -333,6 +334,7 @@ class SlotManager:
             "ml_events_won": 0,
             "ml_events_lost": 0,
             "ml_slots": {},
+            "rejected_today": [],
         }
 
     def _save_state(self):
@@ -730,6 +732,8 @@ class SlotManager:
                             "stake": stake,
                             "pnl": 0.0,
                             "result": "PENDING",
+                            "closing_odds": None,   # Fix 18: populated by update_closing_odds()
+                            "clv": None,            # closing_line_value = entry_implied - closing_implied
                         }
                         if sig_fid is not None:
                             existing_pois.add(int(sig_fid))
@@ -757,6 +761,14 @@ class SlotManager:
                     signal["selected_market"] = ""
                     signal["edge_pct"] = ""
                     signal["score"] = ""
+                    # Fix 17: log rejection reason for analysis
+                    self.state["rejected_today"].append({
+                        "fixture_id": sig_fid,
+                        "event": signal.get("name", ""),
+                        "track": "poisson",
+                        "reason": scan.get("reason", "no_signal"),
+                        "date": self.state["last_run_date"],
+                    })
 
             # ===================== ML TRACK =====================
             ml_skip = (sig_fid is not None and int(sig_fid) in existing_ml)
@@ -823,6 +835,8 @@ class SlotManager:
                             "brier_score": ml_brier_score,
                             "pnl": 0.0,
                             "result": "PENDING",
+                            "closing_odds": None,   # Fix 18: CLV tracking
+                            "clv": None,
                         }
                         if sig_fid is not None:
                             existing_ml.add(int(sig_fid))
@@ -846,6 +860,14 @@ class SlotManager:
                     signal["ml_selected_market"] = ""
                     signal["ml_edge_pct"] = ""
                     signal["ml_score"] = ""
+                    # Fix 17: log ML rejection reason
+                    self.state["rejected_today"].append({
+                        "fixture_id": sig_fid,
+                        "event": signal.get("name", ""),
+                        "track": "ml",
+                        "reason": ml_scan.get("reason", "no_signal"),
+                        "date": self.state["last_run_date"],
+                    })
 
             enriched.append(signal)
 
@@ -1545,19 +1567,28 @@ class SlotManager:
             })
         today_ml_slots = self._deduplicate_slots(today_ml_slots)
 
+        today_rejected = self.state.get("rejected_today", [])
+
         # Aggiorna o aggiungi il giorno
         found = False
         for day in history:
             if day["date"] == today:
                 day["slots"] = today_slots
                 day["ml_slots"] = today_ml_slots
+                day["rejected"] = today_rejected
                 found = True
                 break
         if not found:
-            history.append({"date": today, "slots": today_slots, "ml_slots": today_ml_slots})
+            history.append({"date": today, "slots": today_slots, "ml_slots": today_ml_slots, "rejected": today_rejected})
 
         self._save_history(history)
-        logger.info(f"Storico aggiornato: {today} — {len(today_slots)} Poisson + {len(today_ml_slots)} ML slots.")
+        logger.info(f"Storico aggiornato: {today} — {len(today_slots)} Poisson + {len(today_ml_slots)} ML slots, {len(today_rejected)} rifiutati.")
+
+        # Fix 16: push to Supabase signal_history (best-effort, non-blocking)
+        try:
+            self._push_slots_to_supabase(today, today_slots, today_ml_slots)
+        except Exception as e:
+            logger.warning(f"Supabase signal_history sync failed (local JSON OK): {e}")
 
     @staticmethod
     def _deduplicate_slots(slots):
@@ -1595,22 +1626,10 @@ class SlotManager:
             logger.info("Nessuno storico da risolvere.")
             return
 
-        # === Ricalibra P&L storico con commissione attuale ===
-        comm = self.config["commission_pct"] / 100.0
-        recalibrated = 0
-        for day in history:
-            for slot in day.get("slots", []):
-                if "VINTO" in str(slot.get("result", "")):
-                    stake = slot.get("stake", 0)
-                    odds = slot.get("odds", 1)
-                    correct_pnl = round(stake * (odds - 1) * (1.0 - comm), 2)
-                    if slot.get("pnl") != correct_pnl:
-                        slot["pnl"] = correct_pnl
-                        recalibrated += 1
-        if recalibrated > 0:
-            logger.info(f"📐 Ricalibrati {recalibrated} P&L storici con commissione {self.config['commission_pct']}%.")
+        # Commissione fissa 5% su vincite — non ricalcolare mai P&L storici.
+        # Il P&L viene congelato al momento della risoluzione.
 
-        # Raccoglie tutti i fixture_id PENDING
+        # Raccoglie tutti i fixture_id PENDING (Poisson)
         pending_fixtures = {}
         for day in history:
             for slot in day.get("slots", []):
@@ -1618,8 +1637,6 @@ class SlotManager:
                     pending_fixtures[int(slot["fixture_id"])] = (day, slot)
 
         if not pending_fixtures:
-            if recalibrated > 0:
-                self._save_history(history)
             logger.info("Nessun risultato PENDING nello storico.")
             return
 
@@ -1673,18 +1690,17 @@ class SlotManager:
             logger.info(f"  {slot['slot_id']}: {slot['event_name']} → {slot['result']} ({slot['pnl']:+.2f}€)")
 
         # === Risolvi anche ML SLOTS nello storico ===
+        # Key = (fixture_id, slot_id) to avoid overwriting when multiple ML bets on same fixture
         ml_pending = {}
         for day in history:
             for slot in day.get("ml_slots", []):
                 if slot.get("result") == "PENDING" and slot.get("fixture_id"):
                     fid = int(slot["fixture_id"])
-                    ml_pending[fid] = (day, slot)
-                    if fid not in matches_map:
-                        # Need to fetch
-                        pass
+                    key = (fid, slot.get("slot_id", ""))
+                    ml_pending[key] = (day, slot)
 
         # Fetch any missing ML fixture IDs
-        ml_missing = [fid for fid in ml_pending if fid not in matches_map]
+        ml_missing = list(set(fid for (fid, _) in ml_pending if fid not in matches_map))
         if ml_missing:
             for i in range(0, len(ml_missing), 200):
                 chunk = ml_missing[i:i+200]
@@ -1697,7 +1713,7 @@ class SlotManager:
                         matches_map[int(fid)] = r
 
         ml_resolved = 0
-        for fid, (day, slot) in ml_pending.items():
+        for (fid, _sid), (day, slot) in ml_pending.items():
             match = matches_map.get(fid)
             if not match:
                 continue
@@ -1726,9 +1742,712 @@ class SlotManager:
             logger.info(f"  ML {slot['slot_id']}: {slot['event_name']} → {slot['result']} ({slot['pnl']:+.2f}€)")
 
         total_resolved = resolved + ml_resolved
-        if total_resolved > 0 or recalibrated > 0:
+        if total_resolved > 0:
             self._save_history(history)
             logger.info(f"✅ Risolti {resolved} Poisson + {ml_resolved} ML risultati dallo storico.")
+            # Fix 16: sync resolved results to Supabase
+            try:
+                self._update_resolved_in_supabase(history)
+            except Exception as e:
+                logger.warning(f"Supabase resolve sync failed (local JSON OK): {e}")
+
+    # ======================================================================
+    #  FIX 16: SUPABASE SIGNAL HISTORY SYNC
+    # ======================================================================
+    def _push_slots_to_supabase(self, today: str, slots: list, ml_slots: list):
+        """Upsert today's slots into signal_history table on Supabase.
+        Table DDL: see migrations/signal_history.sql
+        Non-fatal: caller wraps in try/except."""
+        from db_client import get_supabase_client
+        sb = get_supabase_client()
+        rows = []
+        for s in slots:
+            fid = s.get("fixture_id")
+            if fid is None:
+                continue
+            rows.append({
+                "signal_id":    f"P_{today}_{s.get('slot_id', '')}",
+                "fixture_id":   int(fid),
+                "date":         today,
+                "track":        "poisson",
+                "market":       s.get("market", ""),
+                "market_label": s.get("market_label", ""),
+                "prob":         s.get("prob"),
+                "odds":         s.get("odds"),
+                "edge":         s.get("edge"),
+                "score":        s.get("score"),
+                "stake":        s.get("stake"),
+                "result":       s.get("result", "PENDING"),
+                "pnl":          s.get("pnl", 0),
+                "commission":   5.0,
+            })
+        for s in ml_slots:
+            fid = s.get("fixture_id")
+            if fid is None:
+                continue
+            rows.append({
+                "signal_id":    f"M_{today}_{s.get('slot_id', '')}",
+                "fixture_id":   int(fid),
+                "date":         today,
+                "track":        "ml",
+                "market":       s.get("market", ""),
+                "market_label": s.get("market_label", ""),
+                "prob":         s.get("prob"),
+                "odds":         s.get("odds"),
+                "edge":         s.get("edge"),
+                "score":        s.get("score"),
+                "stake":        s.get("stake"),
+                "result":       s.get("result", "PENDING"),
+                "pnl":          s.get("pnl", 0),
+                "commission":   5.0,
+                "bss":          s.get("brier_score"),
+            })
+        if rows:
+            sb.table("signal_history").upsert(rows, on_conflict="signal_id").execute()
+            logger.info(f"Supabase signal_history: {len(rows)} upserted.")
+
+    def _update_resolved_in_supabase(self, history: list):
+        """Update resolved (VINTO/PERSO) records in signal_history."""
+        from db_client import get_supabase_client
+        sb = get_supabase_client()
+        updates = []
+        for day in history:
+            d = day["date"]
+            for s in day.get("slots", []):
+                if s.get("result") != "PENDING" and s.get("fixture_id"):
+                    updates.append({
+                        "signal_id": f"P_{d}_{s.get('slot_id', '')}",
+                        "result": s.get("result"),
+                        "pnl":    s.get("pnl", 0),
+                        "goals_home": s.get("goals_home"),
+                        "goals_away": s.get("goals_away"),
+                    })
+            for s in day.get("ml_slots", []):
+                if s.get("result") != "PENDING" and s.get("fixture_id"):
+                    updates.append({
+                        "signal_id": f"M_{d}_{s.get('slot_id', '')}",
+                        "result": s.get("result"),
+                        "pnl":    s.get("pnl", 0),
+                        "goals_home": s.get("goals_home"),
+                        "goals_away": s.get("goals_away"),
+                    })
+        if updates:
+            sb.table("signal_history").upsert(updates, on_conflict="signal_id").execute()
+            logger.info(f"Supabase signal_history: {len(updates)} results synced.")
+
+    # ======================================================================
+    #  FIX 18: CLV (CLOSING LINE VALUE) TRACKING
+    # ======================================================================
+    def update_closing_odds(self, live_odds_by_fixture: dict):
+        """
+        Store closing odds and compute CLV for all PENDING slots.
+        Call this ~5 minutes before each fixture's kick-off.
+
+        live_odds_by_fixture: {fixture_id: {"home": odds, "draw": odds, "away": odds, ...}}
+        CLV = entry_implied_prob - closing_implied_prob
+              Positive CLV = we got a better price than market close (skill signal).
+        """
+        updated = 0
+        COMMISSION = 0.05  # fixed 5%
+
+        for sid, slot in self.state.get("slots", {}).items():
+            if slot.get("result") != "PENDING":
+                continue
+            fid = slot.get("fixture_id")
+            if fid is None:
+                continue
+            closing = live_odds_by_fixture.get(int(fid))
+            if not closing:
+                continue
+            market = slot.get("market")
+            closing_odd = closing.get(market)
+            if closing_odd and closing_odd > 1.01:
+                entry_implied = 1.0 / slot["odds"]
+                closing_implied = 1.0 / closing_odd
+                # CLV > 0 means we got better than market close
+                clv = round(entry_implied - closing_implied, 4)
+                slot["closing_odds"] = closing_odd
+                slot["clv"] = clv
+                updated += 1
+
+        for sid, slot in self.state.get("ml_slots", {}).items():
+            if slot.get("result") != "PENDING":
+                continue
+            fid = slot.get("fixture_id")
+            if fid is None:
+                continue
+            closing = live_odds_by_fixture.get(int(fid))
+            if not closing:
+                continue
+            market = slot.get("market")
+            closing_odd = closing.get(market)
+            if closing_odd and closing_odd > 1.01:
+                entry_implied = 1.0 / slot["odds"]
+                closing_implied = 1.0 / closing_odd
+                clv = round(entry_implied - closing_implied, 4)
+                slot["closing_odds"] = closing_odd
+                slot["clv"] = clv
+                updated += 1
+
+        if updated > 0:
+            self._save_state()
+            logger.info(f"CLV aggiornato per {updated} slot aperti.")
+
+    # ======================================================================
+    #  FIX 13: BSS MONITOR
+    # ======================================================================
+    def check_bss_degradation(self, min_samples: int = 20, alert_threshold: float = 0.08):
+        """
+        Compute production Brier proxy from resolved ML bets in history.
+        Compares with MIN_BSS_THRESHOLD (0.12).
+        Writes alert to log. Call manually when you want to check model health.
+
+        Returns a dict with metrics for each ML market.
+        """
+        history = self._load_history()
+        by_market: dict = {}
+
+        for day in history:
+            for slot in day.get("ml_slots", []):
+                result_str = slot.get("result", "PENDING")
+                if "VINTO" in result_str:
+                    outcome = 1
+                elif "PERSO" in result_str:
+                    outcome = 0
+                else:
+                    continue
+                prob = slot.get("prob")
+                market = slot.get("market", "unknown")
+                if prob is None:
+                    continue
+                if market not in by_market:
+                    by_market[market] = {"sq_errors": [], "probs": [], "outcomes": []}
+                by_market[market]["sq_errors"].append((prob - outcome) ** 2)
+                by_market[market]["probs"].append(prob)
+                by_market[market]["outcomes"].append(outcome)
+
+        report = {}
+        alerts = []
+        for market, data in by_market.items():
+            n = len(data["sq_errors"])
+            if n < min_samples:
+                continue
+            avg_brier = sum(data["sq_errors"]) / n
+            win_rate = sum(data["outcomes"]) / n
+            avg_prob = sum(data["probs"]) / n
+            calibration_error = abs(avg_prob - win_rate)
+            # Proxy BSS: compare vs Brier of always-predicting avg_prob
+            brier_baseline = avg_prob * (1 - avg_prob)
+            bss_proxy = 1.0 - (avg_brier / brier_baseline) if brier_baseline > 0 else None
+
+            status = "OK"
+            if bss_proxy is not None and bss_proxy < alert_threshold:
+                status = "DEGRADED"
+                alerts.append(f"{market}: BSS_proxy={bss_proxy:.3f} < {alert_threshold}")
+
+            report[market] = {
+                "n": n, "brier": round(avg_brier, 4), "bss_proxy": round(bss_proxy, 3) if bss_proxy is not None else None,
+                "win_rate": round(win_rate, 3), "avg_prob": round(avg_prob, 3),
+                "calibration_error": round(calibration_error, 3), "status": status,
+            }
+
+        if alerts:
+            logger.warning(f"🚨 BSS DEGRADATION DETECTED: {' | '.join(alerts)}")
+            logger.warning("Action: run ensemble_trainer.py to retrain models.")
+        else:
+            logger.info(f"✅ BSS monitor: {len(report)} markets checked, all OK.")
+
+        return report
+
+    # ======================================================================
+    #  FIX 20: ANALYTICS SHEET
+    # ======================================================================
+    def update_analytics_sheet(self):
+        """
+        Foglio 'Analytics' con distinzione chiara POISSON vs ML:
+        - KPI globali affiancati
+        - Sezione POISSON (verde): stats + mercati + fasce quota
+        - Sezione ML (viola): stats + mercati + BSS + CLV + fasce quota
+        - Sezione CONCORDANZE: fixture dove entrambi i track hanno scommesso
+        - Sezione SEGNALI SCARTATI: per track, per motivo, dettaglio eventi
+        """
+        logger.info("📊 Generazione Analytics Sheet (redesign)...")
+        try:
+            try:
+                ws = self.sh.worksheet("Analytics")
+                _sheets_retry(ws.clear)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = self.sh.add_worksheet(title="Analytics", rows=500, cols=14)
+
+            history = self._load_history()
+            sheet_id = ws.id
+            all_data: list = []
+            fmt_requests: list = []
+            COLS = 14
+
+            def add_row(vals):
+                padded = list(vals) + [""] * (COLS - len(vals))
+                all_data.append(padded[:COLS])
+                return len(all_data) - 1
+
+            # ── colours
+            DARK        = {"red": 0.06, "green": 0.06,  "blue": 0.12}
+            WHITE       = {"red": 1,    "green": 1,      "blue": 1}
+            GOLD        = {"red": 1,    "green": 0.84,   "blue": 0}
+            GRAY_HDR    = {"red": 0.82, "green": 0.82,   "blue": 0.85}
+            # Poisson — green theme
+            P_SECTION   = {"red": 0.05, "green": 0.30,  "blue": 0.10}
+            P_SUBHDR    = {"red": 0.13, "green": 0.50,  "blue": 0.18}
+            P_HDR       = {"red": 0.80, "green": 0.95,  "blue": 0.82}
+            P_ROW_OK    = {"red": 0.88, "green": 0.97,  "blue": 0.88}
+            P_ROW_KO    = {"red": 0.99, "green": 0.87,  "blue": 0.87}
+            # ML — purple theme
+            M_SECTION   = {"red": 0.22, "green": 0.05,  "blue": 0.38}
+            M_SUBHDR    = {"red": 0.38, "green": 0.12,  "blue": 0.60}
+            M_HDR       = {"red": 0.92, "green": 0.85,  "blue": 0.98}
+            M_ROW_OK    = {"red": 0.93, "green": 0.88,  "blue": 0.99}
+            M_ROW_KO    = {"red": 0.99, "green": 0.87,  "blue": 0.87}
+            # Concordanze — blue
+            C_SECTION   = {"red": 0.05, "green": 0.15,  "blue": 0.38}
+            C_HDR       = {"red": 0.82, "green": 0.88,  "blue": 0.98}
+            # Rejected — dark red
+            R_SECTION   = {"red": 0.38, "green": 0.05,  "blue": 0.05}
+            R_HDR       = {"red": 0.98, "green": 0.88,  "blue": 0.88}
+            # inline colours for text
+            G_TEXT      = {"red": 0.05, "green": 0.45,  "blue": 0.05}
+            R_TEXT      = {"red": 0.72, "green": 0.08,  "blue": 0.08}
+            GRAY_TEXT   = {"red": 0.5,  "green": 0.5,   "blue": 0.5}
+
+            def fmt(r, c1=0, c2=COLS, bg=None, bold=False, color=None, size=10, center=False, italic=False):
+                cell_fmt: dict = {}
+                if bg:
+                    cell_fmt["backgroundColor"] = bg
+                tf: dict = {"bold": bold, "fontSize": size}
+                if color:
+                    tf["foregroundColor"] = color
+                if italic:
+                    tf["italic"] = True
+                cell_fmt["textFormat"] = tf
+                if center:
+                    cell_fmt["horizontalAlignment"] = "CENTER"
+                fmt_requests.append({"repeatCell": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": r, "endRowIndex": r+1,
+                              "startColumnIndex": c1, "endColumnIndex": c2},
+                    "cell": {"userEnteredFormat": cell_fmt}, "fields": "userEnteredFormat"}})
+
+            def merge(r, c1=0, c2=COLS):
+                fmt_requests.append({"mergeCells": {"range": {"sheetId": sheet_id,
+                    "startRowIndex": r, "endRowIndex": r+1,
+                    "startColumnIndex": c1, "endColumnIndex": c2},
+                    "mergeType": "MERGE_ALL"}})
+
+            # ── helpers ───────────────────────────────────────────────────
+            def _resolved(slots):
+                return [s for s in slots if s.get("result") not in ("PENDING", None, "")]
+
+            def _won(slots):
+                return [s for s in slots if "VINTO" in str(s.get("result", ""))]
+
+            def track_stats(slots):
+                res   = _resolved(slots)
+                w     = _won(res)
+                n     = len(res)
+                stk   = sum(s.get("stake", 0) for s in res)
+                pnl   = sum(s.get("pnl",   0) for s in res)
+                wr    = len(w) / n  if n   else 0
+                roi   = pnl  / stk  if stk else 0
+                avg_o = sum(s.get("odds", 0) for s in res) / n if n else 0
+                return n, len(w), round(pnl, 2), round(stk, 2), wr, roi, round(avg_o, 2)
+
+            def market_breakdown(slots):
+                """Returns dict market -> {n, won, pnl, staked}"""
+                bm: dict = {}
+                for s in _resolved(slots):
+                    m = s.get("market_label") or s.get("market") or "?"
+                    if m not in bm:
+                        bm[m] = {"n": 0, "won": 0, "pnl": 0.0, "staked": 0.0}
+                    bm[m]["n"]      += 1
+                    bm[m]["staked"] += s.get("stake", 0)
+                    bm[m]["pnl"]    += s.get("pnl",   0)
+                    if "VINTO" in str(s.get("result", "")):
+                        bm[m]["won"] += 1
+                return bm
+
+            def odds_bracket_stats(slots):
+                BRACKETS = [(1.01,1.5),(1.5,2.0),(2.0,2.5),(2.5,3.0),(3.0,4.0),(4.0,6.0),(6.0,200)]
+                rows = []
+                for lo, hi in BRACKETS:
+                    lbl = f"{lo:.2g}–{hi:.2g}" if hi < 200 else f"{lo:.2g}+"
+                    grp = [s for s in _resolved(slots) if lo <= s.get("odds", 0) < hi]
+                    if not grp:
+                        rows.append((lbl, 0, "—", "—", "—"))
+                        continue
+                    n  = len(grp)
+                    w  = sum(1 for s in grp if "VINTO" in str(s.get("result", "")))
+                    p  = sum(s.get("pnl",   0) for s in grp)
+                    st = sum(s.get("stake", 0) for s in grp)
+                    rows.append((lbl, n, f"{w/n:.1%}", f"€{p:+.2f}", f"{p/st:.2%}" if st else "—"))
+                return rows
+
+            # ── collect data ──────────────────────────────────────────────
+            pois_slots, ml_slots, all_rejected = [], [], []
+            for day in history:
+                pois_slots.extend(day.get("slots",    []))
+                ml_slots.extend(  day.get("ml_slots", []))
+                all_rejected.extend(day.get("rejected", []))
+
+            total_days = len(history)
+
+            # ══════════════════════════════════════════════════════════════
+            # TITOLO PRINCIPALE
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["📊  ANALYTICS — Performance Storica  |  Poisson vs ML"])
+            merge(r)
+            fmt(r, bg=DARK, color=GOLD, bold=True, size=14, center=True)
+            r = add_row([f"Storico: {total_days} giorni  |  aggiornato da mm_history.json"])
+            merge(r)
+            fmt(r, bg=DARK, color=GRAY_TEXT, size=9, center=True, italic=True)
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # KPI GLOBALI affiancati
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["📈  KPI GLOBALI"])
+            merge(r)
+            fmt(r, bg={"red":0.1,"green":0.18,"blue":0.35}, color=WHITE, bold=True, size=12, center=True)
+
+            r = add_row(["", "POISSON", "", "", "", "", "", "ML", "", "", "", "", "", ""])
+            fmt(r, bg=GRAY_HDR, bold=True, center=True)
+            fmt(r, c1=1, c2=7,  bg=P_HDR, bold=True, center=True)
+            fmt(r, c1=7, c2=14, bg=M_HDR, bold=True, center=True)
+
+            r = add_row(["Metrica", "N Bet", "Vinte", "Win Rate", "P&L", "Turnover", "ROI",
+                         "N Bet", "Vinte", "Win Rate", "P&L", "Turnover", "ROI", ""])
+            fmt(r, bg=GRAY_HDR, bold=True, center=True)
+
+            p_n, p_w, p_pnl, p_stk, p_wr, p_roi, p_ao = track_stats(pois_slots)
+            m_n, m_w, m_pnl, m_stk, m_wr, m_roi, m_ao = track_stats(ml_slots)
+
+            r = add_row(["Totale risolti",
+                         p_n, p_w, f"{p_wr:.1%}", f"€{p_pnl:+.2f}", f"€{p_stk:.2f}", f"{p_roi:.2%}",
+                         m_n, m_w, f"{m_wr:.1%}", f"€{m_pnl:+.2f}", f"€{m_stk:.2f}", f"{m_roi:.2%}", ""])
+            fmt(r, center=True)
+            fmt(r, c1=4,  c2=5,  color=G_TEXT if p_pnl >= 0 else R_TEXT, bold=True, center=True)
+            fmt(r, c1=10, c2=11, color=G_TEXT if m_pnl >= 0 else R_TEXT, bold=True, center=True)
+
+            r = add_row(["Quota media",
+                         "", "", "", f"{p_ao:.2f}", "", "",
+                         "", "", "", f"{m_ao:.2f}", "", "", ""])
+            fmt(r, center=True)
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # SEZIONE POISSON
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["🟢  TRACK POISSON"])
+            merge(r)
+            fmt(r, bg=P_SECTION, color=WHITE, bold=True, size=13, center=True)
+
+            # -- Poisson mercati
+            r = add_row(["  Mercati Poisson"])
+            merge(r)
+            fmt(r, bg=P_SUBHDR, color=WHITE, bold=True, size=11, center=True)
+
+            r = add_row(["Mercato", "N Bet", "Vinte", "Win Rate", "P&L", "Turnover", "ROI",
+                         "", "", "", "", "", "", ""])
+            fmt(r, bg=P_HDR, bold=True, center=True)
+
+            p_mkt = market_breakdown(pois_slots)
+            if p_mkt:
+                for mkt, d in sorted(p_mkt.items(), key=lambda x: -x[1]["pnl"]):
+                    wr  = f"{d['won']/d['n']:.1%}"   if d['n']      else "—"
+                    roi = f"{d['pnl']/d['staked']:.2%}" if d['staked'] else "—"
+                    r = add_row([mkt, d['n'], d['won'], wr, f"€{d['pnl']:+.2f}", f"€{d['staked']:.2f}", roi,
+                                 "", "", "", "", "", "", ""])
+                    row_bg = P_ROW_OK if d['pnl'] >= 0 else P_ROW_KO
+                    fmt(r, bg=row_bg, center=True)
+                    fmt(r, c1=4, c2=5, color=G_TEXT if d['pnl'] >= 0 else R_TEXT, bold=True, center=True)
+            else:
+                r = add_row(["  Nessun dato risolto"])
+                fmt(r, color=GRAY_TEXT, italic=True)
+            add_row([""])
+
+            # -- Poisson fasce quota
+            r = add_row(["  Win Rate per Fascia di Quota — POISSON"])
+            merge(r)
+            fmt(r, bg=P_SUBHDR, color=WHITE, bold=True, size=11, center=True)
+
+            r = add_row(["Fascia Quota", "N Bet", "Win Rate", "P&L", "ROI",
+                         "", "", "", "", "", "", "", "", ""])
+            fmt(r, bg=P_HDR, bold=True, center=True)
+
+            for lbl, n, wr, pnl_s, roi_s in odds_bracket_stats(pois_slots):
+                r = add_row([lbl, n, wr, pnl_s, roi_s,
+                             "", "", "", "", "", "", "", "", ""])
+                fmt(r, center=True)
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # SEZIONE ML
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["🟣  TRACK ML"])
+            merge(r)
+            fmt(r, bg=M_SECTION, color=WHITE, bold=True, size=13, center=True)
+
+            # -- ML mercati + BSS
+            r = add_row(["  Mercati ML"])
+            merge(r)
+            fmt(r, bg=M_SUBHDR, color=WHITE, bold=True, size=11, center=True)
+
+            r = add_row(["Mercato", "N Bet", "Vinte", "Win Rate", "P&L", "Turnover", "ROI",
+                         "Brier medio", "BSS proxy", "", "", "", "", ""])
+            fmt(r, bg=M_HDR, bold=True, center=True)
+
+            # Build BSS proxy per market from resolved slots
+            bss_by_mkt: dict = {}
+            for s in _resolved(ml_slots):
+                mkey = s.get("market_label") or s.get("market") or "?"
+                prob = s.get("prob")
+                if prob is None:
+                    continue
+                outcome = 1 if "VINTO" in str(s.get("result", "")) else 0
+                if mkey not in bss_by_mkt:
+                    bss_by_mkt[mkey] = {"sq": [], "probs": [], "outcomes": []}
+                bss_by_mkt[mkey]["sq"].append((prob - outcome) ** 2)
+                bss_by_mkt[mkey]["probs"].append(prob)
+                bss_by_mkt[mkey]["outcomes"].append(outcome)
+
+            def _bss(mkey):
+                d = bss_by_mkt.get(mkey)
+                if not d or len(d["sq"]) < 5:
+                    return "—", "—"
+                brier = sum(d["sq"]) / len(d["sq"])
+                avg_p = sum(d["probs"]) / len(d["probs"])
+                base  = avg_p * (1 - avg_p)
+                proxy = round(1 - brier / base, 3) if base > 0 else None
+                brier_s = f"{brier:.4f}"
+                proxy_s = f"{proxy:.3f}" if proxy is not None else "—"
+                return brier_s, proxy_s
+
+            m_mkt = market_breakdown(ml_slots)
+            if m_mkt:
+                for mkt, d in sorted(m_mkt.items(), key=lambda x: -x[1]["pnl"]):
+                    wr  = f"{d['won']/d['n']:.1%}"      if d['n']      else "—"
+                    roi = f"{d['pnl']/d['staked']:.2%}" if d['staked'] else "—"
+                    brier_s, proxy_s = _bss(mkt)
+                    r = add_row([mkt, d['n'], d['won'], wr, f"€{d['pnl']:+.2f}", f"€{d['staked']:.2f}", roi,
+                                 brier_s, proxy_s, "", "", "", "", ""])
+                    row_bg = M_ROW_OK if d['pnl'] >= 0 else M_ROW_KO
+                    fmt(r, bg=row_bg, center=True)
+                    fmt(r, c1=4, c2=5, color=G_TEXT if d['pnl'] >= 0 else R_TEXT, bold=True, center=True)
+            else:
+                r = add_row(["  Nessun dato risolto"])
+                fmt(r, color=GRAY_TEXT, italic=True)
+            add_row([""])
+
+            # -- CLV summary (ML)
+            clv_vals = [s.get("clv") for s in _resolved(ml_slots) if s.get("clv") is not None]
+            if clv_vals:
+                r = add_row(["  CLV — Closing Line Value (ML)"])
+                merge(r)
+                fmt(r, bg=M_SUBHDR, color=WHITE, bold=True, size=11, center=True)
+
+                r = add_row(["N con CLV", "CLV medio", "CLV StdDev", "Verdetto",
+                             "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, bg=M_HDR, bold=True, center=True)
+
+                avg_clv  = sum(clv_vals) / len(clv_vals)
+                var_clv  = sum((v - avg_clv) ** 2 for v in clv_vals) / len(clv_vals)
+                std_clv  = var_clv ** 0.5
+                verdict  = "✅ SKILL_SIGNAL" if avg_clv > 0 else "⚠️ NO_EDGE"
+                r = add_row([len(clv_vals), f"{avg_clv*100:.3f}%", f"{std_clv*100:.3f}%", verdict,
+                             "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, center=True)
+                clv_color = G_TEXT if avg_clv > 0 else R_TEXT
+                fmt(r, c1=1, c2=4, color=clv_color, bold=True, center=True)
+                add_row([""])
+
+            # -- ML fasce quota
+            r = add_row(["  Win Rate per Fascia di Quota — ML"])
+            merge(r)
+            fmt(r, bg=M_SUBHDR, color=WHITE, bold=True, size=11, center=True)
+
+            r = add_row(["Fascia Quota", "N Bet", "Win Rate", "P&L", "ROI",
+                         "", "", "", "", "", "", "", "", ""])
+            fmt(r, bg=M_HDR, bold=True, center=True)
+
+            for lbl, n, wr, pnl_s, roi_s in odds_bracket_stats(ml_slots):
+                r = add_row([lbl, n, wr, pnl_s, roi_s,
+                             "", "", "", "", "", "", "", "", ""])
+                fmt(r, center=True)
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # CONCORDANZE — stessa logica di Report Ven Dom:
+            #   stesso fixture_id E stesso market su entrambi i track
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["🔵  CONCORDANZE — Stesso mercato su Poisson e ML"])
+            merge(r)
+            fmt(r, bg=C_SECTION, color=WHITE, bold=True, size=12, center=True)
+
+            # Build concordance list exactly as Report Ven Dom does
+            conc_list_a: list = []
+            for day in history:
+                p_by_f = {int(s.get("fixture_id", 0)): s for s in day.get("slots", []) if s.get("fixture_id")}
+                m_by_f = {int(s.get("fixture_id", 0)): s for s in day.get("ml_slots", []) if s.get("fixture_id")}
+                for fid in p_by_f:
+                    if fid in m_by_f and p_by_f[fid].get("market") == m_by_f[fid].get("market"):
+                        p_s = p_by_f[fid]
+                        m_s = m_by_f[fid]
+                        conc_list_a.append({"p": p_s, "m": m_s, "date": day.get("date", "")})
+
+            n_conc_a = len(conc_list_a)
+            conc_res  = [c for c in conc_list_a if c["p"].get("result") not in ("PENDING", None, "")]
+
+            r = add_row(["N concordanze", "Risolte", "Poisson vinte", "ML vinte",
+                         "P&L Poisson", "P&L ML", "P&L Totale",
+                         "Win Rate", "", "", "", "", "", ""])
+            fmt(r, bg=C_HDR, bold=True, center=True)
+
+            if conc_list_a:
+                pc_w   = sum(1 for c in conc_res if "VINTO" in str(c["p"].get("result", "")))
+                mc_w   = sum(1 for c in conc_res if "VINTO" in str(c["m"].get("result", "")))
+                pc_pnl = sum(c["p"].get("pnl", 0) for c in conc_res)
+                mc_pnl = sum(c["m"].get("pnl", 0) for c in conc_res)
+                tot    = pc_pnl + mc_pnl
+                wr_s   = f"{pc_w/len(conc_res):.1%}" if conc_res else "—"
+                r = add_row([n_conc_a, len(conc_res), pc_w, mc_w,
+                             f"€{pc_pnl:+.2f}", f"€{mc_pnl:+.2f}", f"€{tot:+.2f}", wr_s,
+                             "", "", "", "", "", ""])
+                fmt(r, center=True)
+                fmt(r, c1=6, c2=7, color=G_TEXT if tot >= 0 else R_TEXT, bold=True, center=True)
+
+                # Detail rows
+                add_row([""])
+                r = add_row(["Data", "Evento", "Mercato", "Quota P", "Quota ML",
+                             "Stake Totale", "Risultato", "P&L Totale",
+                             "", "", "", "", "", ""])
+                fmt(r, bg=C_HDR, bold=True, center=True)
+                for c in conc_list_a:
+                    p_s, m_s = c["p"], c["m"]
+                    is_pend  = p_s.get("result", "PENDING") == "PENDING"
+                    res_str  = "PENDING" if is_pend else str(p_s.get("result", ""))
+                    pnl_tot  = (p_s.get("pnl", 0) + m_s.get("pnl", 0)) if not is_pend else 0
+                    stk_tot  = p_s.get("stake", 0) + m_s.get("stake", 0)
+                    r = add_row([c["date"],
+                                 p_s.get("event_name", "?"),
+                                 p_s.get("market_label", p_s.get("market", "?")),
+                                 p_s.get("odds", ""),
+                                 m_s.get("odds", ""),
+                                 f"€{stk_tot:.2f}",
+                                 res_str,
+                                 f"€{pnl_tot:+.2f}" if not is_pend else "—",
+                                 "", "", "", "", "", ""])
+                    if not is_pend:
+                        row_bg = P_ROW_OK if pnl_tot >= 0 else P_ROW_KO
+                        fmt(r, bg=row_bg, center=True)
+                        fmt(r, c1=7, c2=8, color=G_TEXT if pnl_tot >= 0 else R_TEXT, bold=True, center=True)
+                    else:
+                        fmt(r, center=True)
+            else:
+                r = add_row(["  Nessuna concordanza rilevata ancora"])
+                fmt(r, color=GRAY_TEXT, italic=True)
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # SEGNALI SCARTATI
+            # ══════════════════════════════════════════════════════════════
+            r = add_row(["🚫  SEGNALI SCARTATI"])
+            merge(r)
+            fmt(r, bg=R_SECTION, color=WHITE, bold=True, size=13, center=True)
+
+            if not all_rejected:
+                r = add_row(["  Nessun segnale scartato registrato.",
+                             "I dati si accumulano ad ogni esecuzione di pipeline.py (Fix 17).",
+                             "", "", "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, color=GRAY_TEXT, italic=True)
+            else:
+                # -- Riepilogo per track
+                rej_p = [x for x in all_rejected if x.get("track", "").lower() in ("poisson", "p", "pois")]
+                rej_m = [x for x in all_rejected if x.get("track", "").lower() in ("ml", "m")]
+                rej_u = [x for x in all_rejected if x not in rej_p and x not in rej_m]
+
+                r = add_row(["Track", "Totale Scartati", "", "", "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, bg=R_HDR, bold=True, center=True)
+
+                for lbl, lst in [("Poisson", rej_p), ("ML", rej_m), ("Non classificati", rej_u)]:
+                    if lst or lbl != "Non classificati":
+                        r = add_row([lbl, len(lst), "", "", "", "", "", "", "", "", "", "", "", ""])
+                        fmt(r, center=True)
+                r = add_row(["TOTALE", len(all_rejected), "", "", "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, bold=True, center=True)
+                add_row([""])
+
+                # -- Per motivo × track
+                r = add_row(["  Dettaglio: Motivo di Scarto"])
+                merge(r)
+                fmt(r, bg={"red":0.55,"green":0.12,"blue":0.12}, color=WHITE, bold=True, size=11, center=True)
+
+                r = add_row(["Motivo", "Track", "Conteggio", "% sul totale",
+                             "", "", "", "", "", "", "", "", "", ""])
+                fmt(r, bg=R_HDR, bold=True, center=True)
+
+                by_reason: dict = {}
+                for rej in all_rejected:
+                    key = (rej.get("reason", "motivo sconosciuto"), rej.get("track", "?"))
+                    by_reason[key] = by_reason.get(key, 0) + 1
+
+                tot_rej = len(all_rejected) or 1
+                for (reason, track), count in sorted(by_reason.items(), key=lambda x: -x[1]):
+                    pct = f"{count/tot_rej:.1%}"
+                    r = add_row([reason, track, count, pct,
+                                 "", "", "", "", "", "", "", "", "", ""])
+                    fmt(r, center=True)
+
+                # -- Ultimi eventi scartati con dettaglio
+                detailed = [x for x in all_rejected if x.get("fixture_id") or x.get("home") or x.get("event")]
+                if detailed:
+                    add_row([""])
+                    r = add_row(["  Ultimi segnali scartati con dettaglio (max 20)"])
+                    merge(r)
+                    fmt(r, bg={"red":0.55,"green":0.12,"blue":0.12}, color=WHITE, bold=True, size=11, center=True)
+
+                    r = add_row(["Track", "Data", "Evento / Fixture ID", "Motivo",
+                                 "", "", "", "", "", "", "", "", "", ""])
+                    fmt(r, bg=R_HDR, bold=True, center=True)
+
+                    for rej in detailed[-20:]:
+                        if rej.get("event"):
+                            event_s = rej["event"]
+                        elif rej.get("home"):
+                            event_s = rej.get("home", "") + " vs " + rej.get("away", "")
+                        else:
+                            event_s = str(rej.get("fixture_id", "—"))
+                        date_s   = rej.get("date", "—")
+                        reason_s = rej.get("reason", "—")
+                        track_s  = rej.get("track", "—")
+                        r = add_row([track_s, date_s, event_s, reason_s,
+                                     "", "", "", "", "", "", "", "", "", ""])
+                        fmt(r, center=True)
+
+            add_row([""])
+            add_row([""])
+
+            # ══════════════════════════════════════════════════════════════
+            # WRITE TO SHEET
+            # ══════════════════════════════════════════════════════════════
+            end_row = len(all_data)
+            col_letter = "N"  # col 14
+            _sheets_retry(ws.update, f"A1:{col_letter}{end_row}", all_data)
+            time_module.sleep(1)
+            if fmt_requests:
+                for i in range(0, len(fmt_requests), 100):
+                    _sheets_retry(self.sh.batch_update, {"requests": fmt_requests[i:i+100]})
+                    time_module.sleep(0.5)
+            _sheets_retry(ws.columns_auto_resize, 0, COLS - 1)
+            logger.info(f"✅ Analytics Sheet aggiornato: {end_row} righe, {COLS} colonne.")
+        except Exception as e:
+            logger.error(f"Errore Analytics Sheet: {e}", exc_info=True)
 
     # ======================================================================
     #  DASHBOARD GOOGLE SHEETS

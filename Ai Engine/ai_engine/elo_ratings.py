@@ -1,6 +1,11 @@
 """
 ELO rating tracker per team. Computes pre-match ELO for each fixture.
 
+K-factor is variable: higher for the first K_WARMUP_MATCHES games of a team
+(faster convergence from the 1500 prior) then drops to K_FACTOR_STABLE.
+This mimics the FIDE provisional rating approach and avoids the problem of
+all newcomer teams anchored at 1500 for too long.
+
 Usage:
     df = compute_elo_features(df)
     # Adds columns: home_elo, away_elo, elo_diff
@@ -10,7 +15,14 @@ from __future__ import annotations
 import pandas as pd
 
 DEFAULT_ELO = 1500.0
-K_FACTOR = 32.0
+K_FACTOR_STABLE  = 32.0   # K once team has played >= K_WARMUP_MATCHES
+K_FACTOR_WARMUP  = 56.0   # K during first K_WARMUP_MATCHES (faster convergence)
+K_WARMUP_MATCHES = 10     # matches to use warmup K before switching to stable K
+
+
+def _k_factor(matches_played: int) -> float:
+    """Return K-factor based on how many matches the team has played so far."""
+    return K_FACTOR_WARMUP if matches_played < K_WARMUP_MATCHES else K_FACTOR_STABLE
 
 
 def compute_elo_features(
@@ -21,7 +33,9 @@ def compute_elo_features(
     Compute pre-match ELO ratings for home and away teams.
 
     Iterates chronologically, recording each team's ELO *before* the match,
-    then updating it based on the result.
+    then updating it based on the result. K-factor is higher during a team's
+    first K_WARMUP_MATCHES games so the rating converges quickly from the
+    1500 prior, then settles to K_FACTOR_STABLE.
 
     Returns df with columns: home_elo, away_elo, elo_diff.
     """
@@ -30,6 +44,7 @@ def compute_elo_features(
     df = df.sort_values(date_col).reset_index(drop=True)
 
     elo: dict[int, float] = {}
+    matches_played: dict[int, int] = {}  # tracks games played per team for K selection
     home_elos: list[float] = []
     away_elos: list[float] = []
 
@@ -57,8 +72,12 @@ def compute_elo_features(
         if pd.notna(gh) and pd.notna(ga):
             actual_h = 1.0 if gh > ga else (0.5 if gh == ga else 0.0)
             exp_h = 1.0 / (1.0 + 10.0 ** ((a_elo - h_elo) / 400.0))
-            elo[h_id] = h_elo + K_FACTOR * (actual_h - exp_h)
-            elo[a_id] = a_elo + K_FACTOR * ((1.0 - actual_h) - (1.0 - exp_h))
+            k_h = _k_factor(matches_played.get(h_id, 0))
+            k_a = _k_factor(matches_played.get(a_id, 0))
+            elo[h_id] = h_elo + k_h * (actual_h - exp_h)
+            elo[a_id] = a_elo + k_a * ((1.0 - actual_h) - (1.0 - exp_h))
+            matches_played[h_id] = matches_played.get(h_id, 0) + 1
+            matches_played[a_id] = matches_played.get(a_id, 0) + 1
 
     df["home_elo"] = home_elos
     df["away_elo"] = away_elos

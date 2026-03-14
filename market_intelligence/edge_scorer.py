@@ -23,7 +23,7 @@ from market_intelligence.mi_config import (
     CACHE_DIR, REGISTRY_FILE, CALIBRATION_FILE, SIGNAL_WEIGHTS_FILE,
     MARKETS, ODDS_BRACKETS, MIN_COMPOSITE_EDGE,
     CACHE_MAX_AGE_HOURS, DEFAULT_WEIGHT_ML_DIV, DEFAULT_WEIGHT_XG,
-    XG_MIN_SAMPLE
+    XG_MIN_SAMPLE, COMPOSITE_WEIGHT_CALIBRATION, COMPOSITE_WEIGHT_ML_DIV,
 )
 
 
@@ -91,13 +91,30 @@ def reload_cache():
 
 # -- Helpers ----------------------------------------------------------------
 
+def _find_betfair_bm(bookmakers: list) -> Optional[dict]:
+    """Find Betfair sportsbook in bookmakers list.
+    Strategy: name match → index 2 (bookmaker #3 in API-Football) → index 0.
+    Betfair sportsbook is intentionally used (not exchange): edge on sportsbook
+    is amplified on exchange since exchange odds are higher.
+    """
+    for bm in bookmakers:
+        if "betfair" in str(bm.get("name", "")).lower():
+            return bm
+    if len(bookmakers) > 2:
+        return bookmakers[2]
+    return bookmakers[0] if bookmakers else None
+
+
 def _parse_bookie_odd(raw_json_odds: dict, market_cfg: dict) -> Optional[float]:
     if not isinstance(raw_json_odds, dict):
         return None
     bookmakers = raw_json_odds.get("bookmakers", [])
     if not bookmakers:
         return None
-    for bet in bookmakers[0].get("bets", []):
+    bm = _find_betfair_bm(bookmakers)
+    if bm is None:
+        return None
+    for bet in bm.get("bets", []):
         if bet.get("name") == market_cfg["bet_name"]:
             for v in bet.get("values", []):
                 if v.get("value") == market_cfg["value"]:
@@ -280,8 +297,10 @@ def score_fixture_from_row(fixture_row: dict, xg: Optional[dict] = None) -> dict
 
         # Weighted average dei componenti
         if "calibration_bias" in components and "ml_divergence" in components:
-            # Combina calibrazione (peso 0.4) + ML divergenza (peso 0.6)
-            edge_raw = 0.4 * components["calibration_bias"] + 0.6 * components["ml_divergence"]
+            edge_raw = (
+                COMPOSITE_WEIGHT_CALIBRATION * components["calibration_bias"]
+                + COMPOSITE_WEIGHT_ML_DIV * components["ml_divergence"]
+            )
         elif "ml_divergence" in components:
             edge_raw = components["ml_divergence"]
         elif "calibration_bias" in components:

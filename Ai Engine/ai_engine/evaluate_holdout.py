@@ -148,15 +148,26 @@ def evaluate_holdout(league_id: int, last_n_seasons: int = 3, holdout_ratio: flo
         except Exception:
             X_tr_sel, X_v_sel, sel_cols = X_train, X_val, list(X_train.columns)
 
+        # Mirror ensemble_trainer.py: class_weight only when genuinely imbalanced
+        _class_counts = np.unique(y_train, return_counts=True)[1]
+        _imbalance_ratio = float(_class_counts.min() / _class_counts.max()) if len(_class_counts) > 1 else 1.0
+        _use_balanced = _imbalance_ratio < 0.35
+        _rf_class_weight = "balanced_subsample" if _use_balanced else None
+
         # Train and evaluate multiple models
         models_to_eval = {
             "RF": RandomForestClassifier(n_estimators=200, random_state=0, n_jobs=-1,
-                                         class_weight="balanced_subsample", max_depth=10),
+                                         class_weight=_rf_class_weight, max_depth=10),
             "GB": GradientBoostingClassifier(n_estimators=200, learning_rate=0.05,
                                              max_depth=5, random_state=0),
         }
 
-        target_lines = [f"## {target}", f"- holdout rows: {len(y_val)}", f"- features: {len(sel_cols)}"]
+        target_lines = [
+            f"## {target}",
+            f"- holdout rows: {len(y_val)}",
+            f"- features: {len(sel_cols)}",
+            f"- imbalance_ratio: {_imbalance_ratio:.3f} ({'balanced' if _use_balanced else 'no class_weight'})",
+        ]
 
         for model_name, model in models_to_eval.items():
             try:

@@ -11,6 +11,10 @@ gc = gspread.service_account(filename=config.GOOGLE_CREDENTIALS_FILE)
 sh = gc.open_by_key(config.SPREADSHEET_ID)
 
 sm = SlotManager(gc, sh)
-print("Aggiornamento dashboard Report Ven Dom...")
+print("Aggiornamento Report Ven Dom...")
 sm.update_report_sheet()
-print("Dashboard aggiornata!")
+print("Report Ven Dom aggiornato!")
+
+print("Aggiornamento Analytics Sheet...")
+sm.update_analytics_sheet()
+print("Analytics Sheet aggiornato!")

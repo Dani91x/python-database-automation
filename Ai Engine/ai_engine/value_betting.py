@@ -242,6 +242,23 @@ def evaluate_bet_opportunities(
     return bet_signals, no_bet_reasons
 
 
+def _find_betfair_bookmaker(raw_odds: dict) -> Optional[dict]:
+    """Find Betfair sportsbook bookmaker from raw_json_odds.
+    Strategy: name match → index 2 (bookmaker #3 in API-Football) → index 0.
+    Betfair sportsbook is used for edge calculation. Exchange odds are higher,
+    so any edge on sportsbook is amplified when betting on the exchange.
+    """
+    bookmakers = raw_odds.get("bookmakers", []) or []
+    if not bookmakers:
+        return None
+    for bm in bookmakers:
+        if "betfair" in str(bm.get("name", "")).lower():
+            return bm
+    if len(bookmakers) > 2:
+        return bookmakers[2]
+    return bookmakers[0]
+
+
 def build_odds_mapping(
     raw_odds: dict,
     targets_probs: Dict[str, Dict[str, float]],
@@ -249,15 +266,16 @@ def build_odds_mapping(
     """
     Build a flat {target_class_key: decimal_odds} mapping from raw_json_odds.
 
-    Maps bookmaker market names to our target names and extracts
-    the best (highest) odds for each outcome.
+    Uses Betfair sportsbook odds specifically (bookmaker #3 in API-Football).
+    Edge calculated on sportsbook is amplified on the exchange.
     """
     if not isinstance(raw_odds, dict):
         return {}
 
-    # Extract all odds by market name
+    # Use Betfair sportsbook bookmaker only
     market_odds: Dict[str, Dict[str, List[float]]] = {}
-    for bm in raw_odds.get("bookmakers", []) or []:
+    _bf_bm = _find_betfair_bookmaker(raw_odds)
+    for bm in ([_bf_bm] if _bf_bm else []):
         for bet in bm.get("bets", []) or []:
             bet_name = str(bet.get("name", "")).strip()
             for v in bet.get("values", []) or []:

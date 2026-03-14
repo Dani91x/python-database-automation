@@ -378,12 +378,25 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         m_bucket = f"ai-models-league-{league_id}"
         
         local_path = os.path.join(out_dir, os.path.basename(path))
-        if not os.path.exists(local_path):
+        _MODEL_CACHE_TTL_HOURS = float(os.environ.get("MODEL_CACHE_TTL_HOURS", "24"))
+        _needs_download = not os.path.exists(local_path)
+        if not _needs_download:
+            import time
+            age_hours = (time.time() - os.path.getmtime(local_path)) / 3600
+            if age_hours > _MODEL_CACHE_TTL_HOURS:
+                logger.info(
+                    f"Model cache expired for {target} "
+                    f"(age={age_hours:.1f}h > TTL={_MODEL_CACHE_TTL_HOURS}h) — re-downloading"
+                )
+                _needs_download = True
+        if _needs_download:
             try:
                 _download_model(m_bucket, path, local_path)
             except Exception as e:
                 logger.warning(f"Failed to download model {target} from {m_bucket}: {e}")
-                continue
+                if not os.path.exists(local_path):
+                    continue
+                logger.warning(f"Using stale cached model for {target}")
         payload = _load_model(local_path)
 
         feats = payload["features"]
@@ -497,6 +510,51 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
 
     profit_balance = _profit_balance_from_odds(raw_odds) if raw_odds else {}
 
+    # ── MARKET INTELLIGENCE EDGE (optional enrichment) ──────────────────
+    # Calls EdgeScorer to add calibration bias + composite edge per signal.
+    # Gracefully skipped if MI cache not available (run pipeline.py --all first).
+    mi_scorecard = None
+    _MI_TARGET_MAP = {
+        ("target_1x2",    "H"):     "1x2_H",
+        ("target_1x2",    "D"):     "1x2_D",
+        ("target_1x2",    "A"):     "1x2_A",
+        ("target_over_2_5", "True"):  "over_2_5",
+        ("target_over_2_5", "False"): "under_2_5",
+        ("target_btts",   "True"):  "btts_yes",
+        ("target_btts",   "False"): "btts_no",
+    }
+    try:
+        import sys as _sys
+        _mi_path = os.path.join(ROOT, "market_intelligence")
+        if _mi_path not in _sys.path:
+            _sys.path.insert(0, _mi_path)
+        from market_intelligence.edge_scorer import EdgeScorer as _EdgeScorer
+        # Build db_json_analisi compatible dict from our ML results
+        _db_json_mi = {"markets": {}}
+        for _t, _probs in results.items():
+            if _t == "target_1x2":
+                _db_json_mi["markets"]["1x2"] = {k: round(v * 100, 2) for k, v in _probs.items()}
+            elif _t == "target_over_2_5":
+                _db_json_mi["markets"]["over_2_5"] = {k: round(v * 100, 2) for k, v in _probs.items()}
+            elif _t == "target_btts":
+                _db_json_mi["markets"]["btts"] = {k: round(v * 100, 2) for k, v in _probs.items()}
+        _fx_row_mi = {
+            "fixture_id": fixture_id, "league_id": league_id,
+            "raw_json_odds": raw_odds, "db_json_analisi": _db_json_mi,
+        }
+        mi_scorecard = _EdgeScorer().score_from_dict(_fx_row_mi)
+        # Enrich each gated signal with MI composite edge
+        if mi_scorecard:
+            for _sig in gated_signals:
+                _mi_key = _MI_TARGET_MAP.get((_sig["market"], str(_sig["action"])))
+                if _mi_key and _mi_key in mi_scorecard.get("markets", {}):
+                    _md = mi_scorecard["markets"][_mi_key]
+                    _sig["mi_composite_edge"]    = _md.get("composite_edge")
+                    _sig["mi_direction"]         = _md.get("direction")
+                    _sig["mi_calibration_bias"]  = _md.get("calibration_bias")
+    except Exception as _mi_e:
+        logger.debug(f"Market Intelligence enrichment skipped: {_mi_e}")
+
     # ── BUILD TARGETS_SKIPPED & TARGETS_NOT_RELIABLE ────────
     targets_skipped: List[Dict[str, str]] = []
     targets_not_reliable: List[Dict[str, str]] = []
@@ -560,6 +618,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         },
         "bet_signals": gated_signals,
         "no_bet_reasons": gated_no_bet,
+        "market_intelligence": mi_scorecard,
     }
 
     if store:

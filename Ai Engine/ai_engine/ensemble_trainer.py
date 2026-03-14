@@ -132,7 +132,7 @@ def _generate_oof_probas(
 
             model_clone = _clone_model(model)
             try:
-                if w_tr is not None and name != "gb":
+                if w_tr is not None:
                     model_clone.fit(X_tr, y_tr, sample_weight=w_tr)
                 else:
                     model_clone.fit(X_tr, y_tr)
@@ -159,7 +159,7 @@ def _generate_oof_probas(
     for name, model in models:
         model_clone = _clone_model(model)
         try:
-            if sample_weights is not None and name != "gb":
+            if sample_weights is not None:
                 model_clone.fit(X, y, sample_weight=sample_weights)
             else:
                 model_clone.fit(X, y)
