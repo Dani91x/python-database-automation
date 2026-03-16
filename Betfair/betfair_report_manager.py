@@ -200,6 +200,11 @@ class BetfairReportManager:
         # 10. Aggiorna Report Ven-Dom (multi-giorno)
         logger.info("Fase 10: Aggiornamento Report Ven-Dom...")
         self.slot_manager.update_report_sheet()
+        time.sleep(3)  # Pausa anti-rate-limit
+
+        # 11. Aggiorna foglio Analytics (performance storica Poisson + ML)
+        logger.info("Fase 11: Aggiornamento foglio Analytics...")
+        self.slot_manager.update_analytics_sheet()
 
         logger.info("✅ Job completato con successo.")
 
@@ -252,10 +257,39 @@ class BetfairReportManager:
             logger.error(f"Errore aggiornamento foglio Prediction: {err}")
 
     def _update_match_events_sheet(self, bf_events, db_fixtures):
-        # ... [metodo esistente invariato, usato per debug interno] ...
-        logger.info("Generazione foglio Match Eventi...")
-        # ... logic ...
-        pass # Mantengo il corpo esistente ma aggiungo il nuovo metodo sotto
+        """Foglio 'Match Events' — lista grezza degli eventi Betfair con match DB."""
+        logger.info("Generazione foglio Match Events...")
+        try:
+            try:
+                ws = self.sh.worksheet("Match Events")
+                ws.clear()
+            except gspread.exceptions.WorksheetNotFound:
+                ws = self.sh.add_worksheet(title="Match Events", rows=500, cols=10)
+
+            header = ["Event ID", "Nome Evento", "Data", "Fixture ID DB",
+                      "Home DB", "Away DB", "Status", "Goals H", "Goals A", "Lega ID"]
+            rows = [header]
+            for ev in (bf_events or []):
+                ev_id   = ev.get("event_id", "") or ev.get("id", "")
+                ev_name = ev.get("name", "")
+                ev_date = ev.get("openDate", "") or ev.get("date", "")
+                match   = self._find_match(ev, db_fixtures, None)
+                if match:
+                    rows.append([
+                        str(ev_id), ev_name, str(ev_date),
+                        match.get("fixture_id", ""),
+                        match.get("home_team_name", ""), match.get("away_team_name", ""),
+                        match.get("status_short", ""), match.get("goals_home", ""),
+                        match.get("goals_away", ""), match.get("league_id", ""),
+                    ])
+                else:
+                    rows.append([str(ev_id), ev_name, str(ev_date),
+                                 "—", "—", "—", "—", "—", "—", "—"])
+            if len(rows) > 1:
+                ws.update(rows, value_input_option="RAW")
+            logger.info(f"Foglio 'Match Events' aggiornato: {len(rows)-1} eventi.")
+        except Exception as e:
+            logger.error(f"Errore _update_match_events_sheet: {e}")
 
     def _update_signals_sheet(self, bf_events, db_fixtures):
         logger.info("Generazione foglio 'Segnali' (Market Map) — Layout Poisson + ML Side-by-Side...")
@@ -500,6 +534,7 @@ class BetfairReportManager:
                     "analysis_markets": analysis,
                     "ai_markets": ai_preds.get("targets", {}) if ai_preds else {},
                     "calibration_metrics": ai_preds.get("calibration_metrics", {}) if ai_preds else {},
+                    "ml_reliability_multiplier": float(ai_preds.get("reliability", {}).get("score", 1.0)) if ai_preds else 0.0,
                     "odds_data": odds,
                     "inputs_data": inputs,
                     "row_index": len(raw_rows_data)
@@ -746,6 +781,8 @@ class BetfairReportManager:
                 if mname == "Match Odds":
                     all_results[eid]["mo_id"] = mid
                     if len(runners_cat) >= 3:
+                        # Betfair Match Odds sort priority: Home(0=sortPriority1), Away(1=sortPriority2), Draw(2=sortPriority3)
+                        # Verificato live con listMarketCatalogue: away è sortPriority=2, draw è sortPriority=3
                         all_results[eid]["H"] = get_best_back(runners_cat[0]['selectionId'])
                         all_results[eid]["A"] = get_best_back(runners_cat[1]['selectionId'])
                         all_results[eid]["D"] = get_best_back(runners_cat[2]['selectionId'])
@@ -1200,14 +1237,24 @@ class BetfairReportManager:
         """Helper per trovare il match nel DB (estratto da _update_match_events_sheet)"""
         if " v " not in bf_e["name"]:
             return None
-            
+
         bf_home, bf_away = bf_e["name"].split(" v ", 1)
-        
-        # Filtro temporale (+/- 60 min)
-        candidates = [
-            f for f in db_fixtures 
-            if abs((datetime.fromisoformat(f["fixture_date"].replace('Z', '+00:00')) - dt_utc).total_seconds()) < 3600
-        ]
+
+        # Filtro temporale (+/- 60 min); salta il filtro se dt_utc non disponibile
+        if dt_utc is not None:
+            candidates = []
+            for f in db_fixtures:
+                fd = f.get("fixture_date")
+                if not fd:
+                    continue
+                try:
+                    fdt = datetime.fromisoformat(fd.replace('Z', '+00:00'))
+                    if abs((fdt - dt_utc).total_seconds()) < 3600:
+                        candidates.append(f)
+                except (ValueError, AttributeError):
+                    continue
+        else:
+            candidates = list(db_fixtures)
         
         bf_home_clean = self.name_map.get(bf_home, bf_home)
         bf_away_clean = self.name_map.get(bf_away, bf_away)
@@ -1218,8 +1265,10 @@ class BetfairReportManager:
         best_candidate = None
         
         for f in candidates:
-            db_home = f["home_team_name"]
-            db_away = f["away_team_name"]
+            db_home = f.get("home_team_name") or ""
+            db_away = f.get("away_team_name") or ""
+            if not db_home or not db_away:
+                continue
             n_db_home = self.normalize_name(db_home)
             n_db_away = self.normalize_name(db_away)
 

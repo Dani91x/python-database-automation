@@ -47,11 +47,11 @@ DEFAULT_STOP_LOSS_PCT = 10.0
 # At 5% Betfair commission, a raw EV below ~5.26% yields negative expected
 # profit.  We require at least 5% edge (post-margin) so every accepted bet
 # has a genuine positive expectation even after the exchange cut.
-DEFAULT_MIN_EDGE_PCT = 5.0       # Minimum edge % to place a bet (covers 5% commission)
-DEFAULT_MIN_PROB_PCT = 50.0      # Minimum model probability (avoids high-variance long shots)
+DEFAULT_MIN_EDGE_PCT = 6.0       # Minimum edge % to place a bet (raised from 5→6% for higher win rate target)
+DEFAULT_MIN_PROB_PCT = 52.0      # Minimum model probability (raised from 50→52% to reduce false positives)
 DEFAULT_KELLY_FRACTION = 0.10    # Conservative fractional Kelly — validated BSS required before raising
 DEFAULT_MAX_STAKE_PCT = 2.0      # Max 2% bankroll per slot
-DEFAULT_MIN_MATCHES_USED = 5     # Minimum historical matches for reliable form features
+DEFAULT_MIN_MATCHES_USED = 8     # Minimum historical matches for reliable form features (raised from 5 → 8 for win rate target)
 DEFAULT_COMMISSION_PCT = 5.0     # Betfair commission on net winnings (%)
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "money_management_state.json")
@@ -77,8 +77,32 @@ EDGE_ENGINE_FLAGS = {
 #    odds 4.0, edge 4%  → score = 0.020  → SCARTATO
 #    odds 4.0, edge 10% → score = 0.050  → PASSA (segnale genuinamente forte)
 #    odds 6.0, edge 15% → score = 0.061  → PASSA (edge reale su quota alta)
+#
+# SOGLIE GRADUATE PER FASCIA DI QUOTA (ML_SCORE_TIERS):
+# Quote basse (< 2.5): basta un segnale debole, mercato liquido.
+# Quote medie (2.5–4.0): serve un segnale più forte.
+# Quote alte (4.0–6.0): richiesto segnale forte — poche scommesse ma di qualità.
+# Quote molto alte (> 6.0): solo opportunità eccezionali.
+#
+#   Esempi pratici:
+#   odds 2.0, prob 0.60, edge 14%  → score 0.108 → PASSA (tier 0.025)
+#   odds 3.5, prob 0.35, edge  8%  → score 0.047 → PASSA (tier 0.040)
+#   odds 3.5, prob 0.35, edge  3%  → score 0.018 → SCARTATO (sotto 0.040)
+#   odds 5.0, prob 0.25, edge 12%  → score 0.060 → PASSA (tier 0.055)
+#   odds 5.0, prob 0.25, edge  5%  → score 0.025 → SCARTATO (sotto 0.055)
+#   odds 7.0, prob 0.20, edge 18%  → score 0.081 → PASSA (tier 0.075)
+#   odds 7.0, prob 0.20, edge 10%  → score 0.045 → SCARTATO (sotto 0.075)
 # ---------------------------------------------------------------------------
-MIN_ML_SCORE_THRESHOLD: float = 0.025
+MIN_ML_SCORE_THRESHOLD: float = 0.025  # fallback base (odds < 2.5)
+
+# Tiered thresholds: (max_odds_exclusive, min_score)
+# Se odds >= ultima soglia usa l'ultima riga.
+ML_SCORE_TIERS: list = [
+    (2.5,  0.025),   # odds < 2.5  → score ≥ 0.025
+    (4.0,  0.040),   # odds 2.5–4  → score ≥ 0.040
+    (6.0,  0.055),   # odds 4–6    → score ≥ 0.055
+    (999., 0.075),   # odds > 6    → score ≥ 0.075 (solo occasioni eccezionali)
+]
 
 # Correzione overround Betfair (~2.5%) per calcolo prob_market
 OVERROUND_CORRECTION = 0.975
@@ -86,17 +110,27 @@ OVERROUND_CORRECTION = 0.975
 DEFAULT_DIVERGENCE_STD = 0.30
 
 MARKET_MAP = {
-    # min_edge is the minimum edge % required AFTER Betfair commission (5%).
-    # Previously set to 2% for an A/B data-collection experiment — but at 5%
-    # commission, a 2% edge is guaranteed to lose money.  Restored to 5%.
-    "H":       {"label": "Home Win",      "json_path": ("markets", "1x2", "H"),                      "ai_path": ("target_1x2", "H"), "cal_key": "H", "min_edge": 5.0},
-    "D":       {"label": "Pareggio",      "json_path": ("markets", "1x2", "D"),                      "ai_path": ("target_1x2", "D"), "cal_key": "D", "min_edge": 5.0},
-    "A":       {"label": "Away Win",      "json_path": ("markets", "1x2", "A"),                      "ai_path": ("target_1x2", "A"), "cal_key": "A", "min_edge": 5.0},
-    "O25":     {"label": "Over 2.5",      "json_path": ("markets", "over_2_5", "True"),              "ai_path": ("target_over_2_5", "True"), "cal_key": "O25", "min_edge": 5.0},
-    "U25":     {"label": "Under 2.5",     "json_path": ("markets", "over_2_5", "False"),             "ai_path": ("target_over_2_5", "False"), "cal_key": "U25", "min_edge": 5.0},
-    "BTTS":    {"label": "BTTS Sì",       "json_path": ("markets", "btts", "True"),                  "ai_path": ("target_btts", "True"), "cal_key": "BTTS", "min_edge": 5.0},
-    "BTTS_NO": {"label": "BTTS No",       "json_path": ("markets", "btts", "False"),                 "ai_path": ("target_btts", "False"), "cal_key": "BTTS_NO", "min_edge": 5.0},
-    "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"), "cal_key": "HT05", "min_edge": 5.0},
+    # min_edge: minimum edge % AFTER Betfair 5% commission.
+    # min_prob: minimum calibrated probability required (per-market floor).
+    # min_odds: minimum acceptable odds (below this we refuse even with edge).
+    #
+    # Performance data (11 days):
+    #   H    39.4% WR, avg 2.06 → break-even 51.1% → UNDERPERFORMING, raised min_prob
+    #   D    no bets (Poisson Draw rarely passes calibration)
+    #   A    55.6% WR, avg 2.03 → break-even 51.8% → OK (small sample=9)
+    #   O25  42.9% WR, avg 1.82 → break-even 57.8% → UNDERPERFORMING, raised min_prob+edge
+    #   U25  55.4% WR, avg 1.93 → break-even 54.5% → PROFITABLE ✓
+    #   BTTS  0.0% WR  → suspended (0/5 sample catastrophic)
+    #   BTTS_NO 43.9% WR → borderline (raised min_edge to 7%)
+    #   HT05 63.4% WR, avg 1.56 → break-even 67.5% → LOSING, min_odds=1.68 enforced
+    "H":       {"label": "Home Win",      "json_path": ("markets", "1x2", "H"),                      "ai_path": ("target_1x2", "H"),          "cal_key": "H",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
+    "D":       {"label": "Pareggio",      "json_path": ("markets", "1x2", "D"),                      "ai_path": ("target_1x2", "D"),          "cal_key": "D",       "min_edge": 7.0, "min_prob": 0.35, "min_odds": 2.50},
+    "A":       {"label": "Away Win",      "json_path": ("markets", "1x2", "A"),                      "ai_path": ("target_1x2", "A"),          "cal_key": "A",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
+    "O25":     {"label": "Over 2.5",      "json_path": ("markets", "over_2_5", "True"),              "ai_path": ("target_over_2_5", "True"),  "cal_key": "O25",     "min_edge": 7.0, "min_prob": 0.58, "min_odds": 1.50},
+    "U25":     {"label": "Under 2.5",     "json_path": ("markets", "over_2_5", "False"),             "ai_path": ("target_over_2_5", "False"), "cal_key": "U25",     "min_edge": 5.0, "min_prob": 0.54, "min_odds": 1.50},
+    "BTTS":    {"label": "BTTS Sì",       "json_path": ("markets", "btts", "True"),                  "ai_path": ("target_btts", "True"),      "cal_key": "BTTS",    "min_edge": 8.0, "min_prob": 0.58, "min_odds": 1.60},
+    "BTTS_NO": {"label": "BTTS No",       "json_path": ("markets", "btts", "False"),                 "ai_path": ("target_btts", "False"),     "cal_key": "BTTS_NO", "min_edge": 7.0, "min_prob": 0.54, "min_odds": 1.50},
+    "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"),"cal_key": "HT05",  "min_edge": 5.0},
 }
 
 # ---------------------------------------------------------------------------
@@ -111,48 +145,61 @@ MARKET_MAP = {
 #              con modelli a Brier ~random il 2% era indistinguibile dal rumore).
 # ---------------------------------------------------------------------------
 ML_MARKET_MAP = {
-    "H":       {"label": "Home Win (ML)",    "ai_path": ("target_1x2", "H"),           "odds_key": "H",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
-    "D":       {"label": "Pareggio (ML)",    "ai_path": ("target_1x2", "D"),           "odds_key": "D",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
-    "A":       {"label": "Away Win (ML)",    "ai_path": ("target_1x2", "A"),           "odds_key": "A",       "min_edge": 5.0, "ai_target": "target_1x2",       "n_classes": 3},
-    "O25":     {"label": "Over 2.5 (ML)",    "ai_path": ("target_over_2_5", "True"),   "odds_key": "O25",     "min_edge": 5.0, "ai_target": "target_over_2_5",  "n_classes": 2},
-    "U25":     {"label": "Under 2.5 (ML)",   "ai_path": ("target_over_2_5", "False"),  "odds_key": "U25",     "min_edge": 5.0, "ai_target": "target_over_2_5",  "n_classes": 2},
-    "BTTS":    {"label": "BTTS Sì (ML)",     "ai_path": ("target_btts", "True"),       "odds_key": "BTTS",    "min_edge": 5.0, "ai_target": "target_btts",      "n_classes": 2},
-    "BTTS_NO": {"label": "BTTS No (ML)",     "ai_path": ("target_btts", "False"),      "odds_key": "BTTS_NO", "min_edge": 5.0, "ai_target": "target_btts",      "n_classes": 2},
-    "HT05":    {"label": "1H Over 0.5 (ML)", "ai_path": ("target_ht_over_0_5", "True"),"odds_key": "HT05",   "min_edge": 5.0, "ai_target": "target_ht_over_0_5","n_classes": 2},
-    # Extended markets — Betfair odds now fetched via OVER_UNDER_15/35 and HALF_TIME
-    "O15":     {"label": "Over 1.5 (ML)",    "ai_path": ("target_over_1_5", "True"),   "odds_key": "O15",    "min_edge": 5.0, "ai_target": "target_over_1_5",   "n_classes": 2},
-    "U15":     {"label": "Under 1.5 (ML)",   "ai_path": ("target_over_1_5", "False"),  "odds_key": "U15",    "min_edge": 5.0, "ai_target": "target_over_1_5",   "n_classes": 2},
-    "O35":     {"label": "Over 3.5 (ML)",    "ai_path": ("target_over_3_5", "True"),   "odds_key": "O35",    "min_edge": 5.0, "ai_target": "target_over_3_5",   "n_classes": 2},
-    "U35":     {"label": "Under 3.5 (ML)",   "ai_path": ("target_over_3_5", "False"),  "odds_key": "U35",    "min_edge": 5.0, "ai_target": "target_over_3_5",   "n_classes": 2},
-    "HT_H":    {"label": "HT Home (ML)",     "ai_path": ("target_ht_1x2", "H"),        "odds_key": "HT_H",   "min_edge": 5.0, "ai_target": "target_ht_1x2",    "n_classes": 3},
-    "HT_D":    {"label": "HT Draw (ML)",     "ai_path": ("target_ht_1x2", "D"),        "odds_key": "HT_D",   "min_edge": 5.0, "ai_target": "target_ht_1x2",    "n_classes": 3},
-    "HT_A":    {"label": "HT Away (ML)",     "ai_path": ("target_ht_1x2", "A"),        "odds_key": "HT_A",   "min_edge": 5.0, "ai_target": "target_ht_1x2",    "n_classes": 3},
+    # min_edge  : minimum edge % after 5% commission
+    # min_prob_margin : model prob must exceed market-implied prob by at least
+    #   this margin (dynamic floor — adapts to market odds automatically).
+    #   Example: D at odds 3.50 → implied 28.6%; margin 0.08 → min_prob 36.6%
+    #   Set to 0.0 to disable (no dynamic floor beyond edge check).
+    # min_odds  : refuse bets below this price (avoids overfit on tiny margins)
+    # min_prob_margin: model prob must exceed market-implied by this margin.
+    # 3-way markets (H/D/A, HT_*) use +0.06 — harder to estimate, need more edge vs market.
+    # Binary markets use +0.05.
+    "H":       {"label": "Home Win (ML)",    "ai_path": ("target_1x2", "H"),            "odds_key": "H",       "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_1x2",        "n_classes": 3},
+    "D":       {"label": "Pareggio (ML)",    "ai_path": ("target_1x2", "D"),            "odds_key": "D",       "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.50, "ai_target": "target_1x2",        "n_classes": 3},
+    "A":       {"label": "Away Win (ML)",    "ai_path": ("target_1x2", "A"),            "odds_key": "A",       "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.00, "ai_target": "target_1x2",        "n_classes": 3},
+    "O25":     {"label": "Over 2.5 (ML)",    "ai_path": ("target_over_2_5", "True"),    "odds_key": "O25",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_over_2_5",   "n_classes": 2},
+    "U25":     {"label": "Under 2.5 (ML)",   "ai_path": ("target_over_2_5", "False"),   "odds_key": "U25",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_over_2_5",   "n_classes": 2},
+    "BTTS":    {"label": "BTTS Sì (ML)",     "ai_path": ("target_btts", "True"),        "odds_key": "BTTS",    "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.60, "ai_target": "target_btts",       "n_classes": 2},
+    "BTTS_NO": {"label": "BTTS No (ML)",     "ai_path": ("target_btts", "False"),       "odds_key": "BTTS_NO", "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_btts",       "n_classes": 2},
+    "HT05":    {"label": "1H Over 0.5 (ML)", "ai_path": ("target_ht_over_0_5", "True"), "odds_key": "HT05",    "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_ht_over_0_5","n_classes": 2},
+    # Extended markets
+    "O15":     {"label": "Over 1.5 (ML)",    "ai_path": ("target_over_1_5", "True"),    "odds_key": "O15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.40, "ai_target": "target_over_1_5",   "n_classes": 2},
+    "U15":     {"label": "Under 1.5 (ML)",   "ai_path": ("target_over_1_5", "False"),   "odds_key": "U15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_1_5",   "n_classes": 2},
+    "O35":     {"label": "Over 3.5 (ML)",    "ai_path": ("target_over_3_5", "True"),    "odds_key": "O35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_3_5",   "n_classes": 2},
+    "U35":     {"label": "Under 3.5 (ML)",   "ai_path": ("target_over_3_5", "False"),   "odds_key": "U35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.20, "ai_target": "target_over_3_5",   "n_classes": 2},
+    "HT_H":    {"label": "HT Home (ML)",     "ai_path": ("target_ht_1x2", "H"),         "odds_key": "HT_H",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 1.80, "ai_target": "target_ht_1x2",     "n_classes": 3},
+    "HT_D":    {"label": "HT Draw (ML)",     "ai_path": ("target_ht_1x2", "D"),         "odds_key": "HT_D",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.50, "ai_target": "target_ht_1x2",     "n_classes": 3},
+    "HT_A":    {"label": "HT Away (ML)",     "ai_path": ("target_ht_1x2", "A"),         "odds_key": "HT_A",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.00, "ai_target": "target_ht_1x2",     "n_classes": 3},
 }
 
 # ---------------------------------------------------------------------------
-#  TABELLA DI CALIBRAZIONE — Derivata da 24,787 match storici
-#  Per ogni mercato e fascia di probabilità: fattore correttivo = WR_reale / Prob_stimata
+#  TABELLA DI CALIBRAZIONE — Aggiornata 2026-03-16 da update_poisson_calibration.py
+#  Derivata da 33,071 match storici (258,274 campioni totali su 8 mercati).
+#  Per ogni mercato e fascia di probabilità [bin×10%, bin×10%+10%]:
+#    correction_factor = hit_rate_reale / prob_media_nel_bin
+#  Bin con N < 30 campioni → factor = 1.0 (nessuna correzione, dati insufficienti).
 #  Applicato PRIMA del calcolo dell'edge per usare probabilità realistiche.
 # ---------------------------------------------------------------------------
 CALIBRATION_TABLE = {
-    # 1X2 Home — ben calibrato (bias ±1pp)
-    "H": {0: 2.234, 1: 1.013, 2: 1.056, 3: 1.005, 4: 1.004, 5: 1.033, 6: 1.015, 7: 0.937, 8: 0.998, 9: 1.017},
-    # 1X2 Draw
-    "D": {0: 0.685, 1: 0.917, 2: 0.975, 3: 1.019, 4: 0.793, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 0.661},
-    # 1X2 Away
-    "A": {0: 1.638, 1: 0.956, 2: 0.994, 3: 1.018, 4: 0.961, 5: 1.012, 6: 1.083, 7: 1.100, 8: 1.082, 9: 0.613},
-    # Over 2.5 — sovrastima alle alte prob
-    "O25": {0: 5.616, 1: 1.630, 2: 1.288, 3: 1.150, 4: 1.027, 5: 0.969, 6: 0.961, 7: 0.971, 8: 0.935, 9: 0.845},
-    # Under 2.5
-    "U25": {0: 3.238, 1: 1.342, 2: 1.077, 3: 1.074, 4: 1.037, 5: 0.978, 6: 0.917, 7: 0.900, 8: 0.874, 9: 0.709},
-    # BTTS Sì — FORTE sovrastima (80%+: corr 0.63)
-    "BTTS": {0: 4.542, 1: 1.061, 2: 1.268, 3: 1.201, 4: 1.026, 5: 0.941, 6: 0.886, 7: 0.821, 8: 0.635, 9: 0.572},
-    # BTTS No — sottostimato (yield +62% nel backtest)
-    "BTTS_NO": {0: 5.708, 1: 2.966, 2: 1.504, 3: 1.208, 4: 1.071, 5: 0.978, 6: 0.888, 7: 0.904, 8: 0.987, 9: 0.865},
-    # 1H Over 0.5 — calibrazione rotta: il modello non funziona bene
-    "HT05": {0: 1.0, 1: 4.564, 2: 2.667, 3: 1.877, 4: 1.451, 5: 1.251, 6: 1.059, 7: 0.922, 8: 0.860, 9: 0.727},
-    # 1H Under 0.5 — calibrazione rotta
-    "HT_U05": {0: 22.399, 1: 1.833, 2: 1.246, 3: 0.884, 4: 0.778, 5: 0.659, 6: 0.544, 7: 0.457, 8: 0.411, 9: 0.320},
+    # 1X2 Home — ben calibrato nei bin centrali; bin 0 e 9 estremi rari
+    "H":       {0: 3.350, 1: 1.217, 2: 0.996, 3: 1.009, 4: 0.982, 5: 0.987, 6: 1.008, 7: 1.001, 8: 0.962, 9: 0.873},
+    # 1X2 Draw — concentrato nei bin 1-3; oltre il bin 4 N troppo basso → 1.0
+    "D":       {0: 0.717, 1: 0.906, 2: 0.994, 3: 1.022, 4: 0.852, 5: 1.0,   6: 1.0,   7: 1.0,   8: 1.0,   9: 1.0  },
+    # 1X2 Away — ben calibrato nei bin centrali
+    "A":       {0: 1.656, 1: 1.057, 2: 1.016, 3: 1.020, 4: 0.958, 5: 1.025, 6: 1.019, 7: 0.960, 8: 0.966, 9: 1.0  },
+    # Over 2.5 — sottostima ai bin bassi (0-2), sovrastima ai bin alti (8-9)
+    "O25":     {0: 6.894, 1: 1.437, 2: 1.393, 3: 1.126, 4: 1.039, 5: 0.963, 6: 0.961, 7: 0.965, 8: 0.931, 9: 0.796},
+    # Under 2.5 — sottostima ai bin bassi, sovrastima ai bin alti
+    "U25":     {0: 3.638, 1: 1.351, 2: 1.103, 3: 1.075, 4: 1.041, 5: 0.969, 6: 0.931, 7: 0.863, 8: 0.913, 9: 0.649},
+    # BTTS Si — forte sottostima nei bin bassi (0-3), sovrastima nei bin alti (6-8)
+    "BTTS":    {0: 7.159, 1: 1.994, 2: 1.437, 3: 1.194, 4: 1.021, 5: 0.963, 6: 0.886, 7: 0.869, 8: 0.767, 9: 1.0  },
+    # BTTS No — speculare a BTTS
+    "BTTS_NO": {0: 1.0,   1: 2.178, 2: 1.364, 3: 1.206, 4: 1.044, 5: 0.983, 6: 0.891, 7: 0.842, 8: 0.795, 9: 0.765},
+    # 1H Over 0.5 — modello sistematicamente sbagliato: dopo calibrazione
+    #   il risultato cade sempre in 65-75%, il mercato prezza 77% → mai edge reale
+    "HT05":    {0: 1.0,   1: 4.724, 2: 2.735, 3: 1.950, 4: 1.433, 5: 1.226, 6: 1.040, 7: 0.946, 8: 0.870, 9: 0.813},
+    # 1H Under 0.5 — non aggiornato (N insufficiente nei bin utili)
+    "HT_U05":  {0: 22.399, 1: 1.833, 2: 1.246, 3: 0.884, 4: 0.778, 5: 0.659, 6: 0.544, 7: 0.457, 8: 0.411, 9: 0.320},
 }
 
 # ---------------------------------------------------------------------------
@@ -257,9 +304,26 @@ class SlotManager:
         if os.path.exists(cal_path):
             try:
                 with open(cal_path, "r", encoding="utf-8") as f:
-                    self._dynamic_cal = json.load(f)
-                n_leagues = self._dynamic_cal.get("leagues_covered", 0)
-                logger.info(f"📊 Dynamic calibration caricata ({n_leagues} leghe)")
+                    _cal_raw = json.load(f)
+                # Validate expected top-level keys
+                _required_keys = {"leagues_covered", "divergence_stats"}
+                _missing = _required_keys - set(_cal_raw.keys())
+                if _missing:
+                    logger.warning(
+                        f"⚠️ dynamic_cal.json struttura incompleta — chiavi mancanti: {_missing}. "
+                        f"Usa fallback tabella statica. Rigenera con lo script di calibrazione."
+                    )
+                    self._dynamic_cal = None
+                else:
+                    self._dynamic_cal = _cal_raw
+                    n_leagues = self._dynamic_cal.get("leagues_covered", 0)
+                    logger.info(f"📊 Dynamic calibration caricata ({n_leagues} leghe)")
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"⚠️ dynamic_cal.json CORROTTO (JSONDecodeError: {e}) — "
+                    f"fallback su tabella statica. Elimina il file e rilancialo per rigenerarlo."
+                )
+                self._dynamic_cal = None
             except Exception as e:
                 logger.warning(f"⚠️ Errore lettura dynamic_cal.json: {e} — fallback su tabella statica")
                 self._dynamic_cal = None
@@ -301,7 +365,7 @@ class SlotManager:
                         logger.info("Nuovo giorno → reset stato MM.")
                         return self._create_default_state()
                     # Ensure ML fields exist (backward compat)
-                    state.setdefault("ml_bankroll", 1000.0)
+                    state.setdefault("ml_bankroll", self.config["bankroll"])
                     state.setdefault("ml_total_profit", 0.0)
                     state.setdefault("ml_total_staked", 0.0)
                     state.setdefault("ml_events_played", 0)
@@ -327,7 +391,9 @@ class SlotManager:
             "events_lost": 0,
             "slots": {},
             # --- ML Tracking (separato) ---
-            "ml_bankroll": 1000.0,
+            # ml_bankroll parte dalla stessa bankroll Poisson per simmetria.
+            # Entrambe i track gestiscono capitale equivalente e scalano insieme.
+            "ml_bankroll": self.config["bankroll"],
             "ml_total_profit": 0.0,
             "ml_total_staked": 0.0,
             "ml_events_played": 0,
@@ -365,8 +431,10 @@ class SlotManager:
             if prob > 1:
                 prob = prob / 100.0
 
-            # Edge minimo controllato dal foglio Money Management (riga 4, col D)
-            market_min_edge = self.config["min_edge_pct"] / 100.0
+            # Soglie per-mercato da MARKET_MAP; fallback su config globale
+            market_min_edge = market_info.get("min_edge", self.config["min_edge_pct"]) / 100.0
+            market_min_prob  = market_info.get("min_prob", min_prob)
+            market_min_odds  = market_info.get("min_odds", 1.01)
 
             # === CALIBRAZIONE: corregge la probabilità con dati storici ===
             cal_key = market_info.get("cal_key", market_key)
@@ -374,27 +442,53 @@ class SlotManager:
             prob, cal_source = self._apply_calibration(prob, cal_key, league_id=league_id)
 
             quota = odds_data.get(market_key)
-            if quota is None or quota <= 1.01:
+            if quota is None or quota < max(1.01, market_min_odds):
+                if quota is not None and quota > 1.01 and quota < market_min_odds:
+                    if not hasattr(self, "_scan_rejected_candidates"):
+                        self._scan_rejected_candidates = []
+                    self._scan_rejected_candidates.append({
+                        "market": market_key, "label": market_info["label"],
+                        "track": "poisson",
+                        "reason": f"quota {quota:.2f} < min_odds {market_min_odds:.2f}",
+                        "prob": round(prob, 4), "edge": 0.0, "odds": quota,
+                    })
                 continue
 
             # Applica commissione Betfair: quota_netta = (quota - 1) * (1 - comm%) + 1
             comm = self.config["commission_pct"] / 100.0
             quota_net = (quota - 1.0) * (1.0 - comm) + 1.0
             edge = (prob * quota_net) - 1.0
-            
+
             # AI edge — solo informativo, NON blocca (A/B test indipendente)
             ai_edge = None
             if ai_prob is not None:
                 if ai_prob > 1:
                     ai_prob = ai_prob / 100.0
                 ai_edge = (ai_prob * quota_net) - 1.0
-            
-            if edge < market_min_edge or prob < min_prob:
+
+            if edge < market_min_edge or prob < market_min_prob:
+                # Traccia il motivo specifico del rifiuto per analytics
+                if not hasattr(self, "_scan_rejected_candidates"):
+                    self._scan_rejected_candidates = []
+                _rej_reason = []
+                if edge < market_min_edge:
+                    _rej_reason.append(f"edge {edge*100:+.1f}% < min {market_min_edge*100:.0f}%")
+                if prob < market_min_prob:
+                    _rej_reason.append(f"prob {prob*100:.0f}% < min {market_min_prob*100:.0f}%")
+                self._scan_rejected_candidates.append({
+                    "market": market_key,
+                    "label": market_info["label"],
+                    "track": "poisson",
+                    "reason": " & ".join(_rej_reason),
+                    "prob": round(prob, 4),
+                    "edge": round(edge, 4),
+                    "odds": quota,
+                })
                 continue
 
             # Score basato SOLO su Poisson (indipendente da AI)
             score = edge * math.sqrt(prob)
-            
+
             candidates.append({
                 "market": market_key,
                 "label": market_info["label"],
@@ -421,10 +515,11 @@ class SlotManager:
     # ======================================================================
     #  EDGE SCANNER ML — Usa SOLO probabilità AI (no Poisson, no calibrazione)
     # ======================================================================
-    def scan_best_market_ml(self, ai_data, odds_data, calibration_metrics=None):
+    def scan_best_market_ml(self, ai_data, odds_data, calibration_metrics=None, excluded_markets=None):
         """Edge scanner basato SOLO su probabilità ML.
         Non usa calibrazione Poisson né filtro concordanza.
-        Se calibration_metrics è fornito, scarta mercati con BSS < 0."""
+        Se calibration_metrics è fornito, scarta mercati con BSS < 0.
+        excluded_markets: set di market_key già scommessi su questo fixture (skip per evitare duplicati)."""
         if not ai_data:
             return {"market": None, "reason": "Nessun dato AI disponibile"}
 
@@ -432,6 +527,9 @@ class SlotManager:
         candidates = []
 
         for market_key, market_info in ML_MARKET_MAP.items():
+            # Salta mercati già scommessi su questo fixture (dedup composita per fixture+market)
+            if excluded_markets and market_key in excluded_markets:
+                continue
             # Estrai probabilità dal dict AI
             prob = self._extract_nested(ai_data, market_info["ai_path"])
             if prob is None:
@@ -441,22 +539,64 @@ class SlotManager:
             if prob < 0.01 or prob > 0.99:
                 continue
 
-            market_min_edge = market_info.get("min_edge", 5.0) / 100.0
+            market_min_edge    = market_info.get("min_edge", 5.0) / 100.0
+            min_prob_margin    = market_info.get("min_prob_margin", 0.0)
+            market_min_odds    = market_info.get("min_odds", 1.01)
             odds_key = market_info.get("odds_key", market_key)
             quota = odds_data.get(odds_key)
-            if quota is None or quota <= 1.01:
+            if quota is None or quota < max(1.01, market_min_odds):
+                if quota is not None and 1.01 < quota < market_min_odds:
+                    if not hasattr(self, "_scan_rejected_candidates"):
+                        self._scan_rejected_candidates = []
+                    self._scan_rejected_candidates.append({
+                        "market": market_key, "label": market_info["label"],
+                        "track": "ml",
+                        "reason": f"quota {quota:.2f} < min_odds {market_min_odds:.2f}",
+                        "prob": round(prob, 4), "edge": 0.0, "odds": quota,
+                    })
                 continue
 
             quota_net = (quota - 1.0) * (1.0 - comm) + 1.0
             edge = (prob * quota_net) - 1.0
 
-            if edge < market_min_edge:
+            # Dynamic min_prob: model must exceed market-implied by min_prob_margin.
+            # This adapts automatically to market price (no hardcoded absolute floor).
+            implied = (1.0 / quota) * OVERROUND_CORRECTION
+            dynamic_min_prob = implied + min_prob_margin
+            if prob < dynamic_min_prob:
+                if not hasattr(self, "_scan_rejected_candidates"):
+                    self._scan_rejected_candidates = []
+                self._scan_rejected_candidates.append({
+                    "market": market_key, "label": market_info["label"],
+                    "track": "ml",
+                    "reason": f"prob {prob*100:.1f}% < implied+margin {dynamic_min_prob*100:.1f}% (odds {quota:.2f})",
+                    "prob": round(prob, 4), "edge": round(edge, 4), "odds": quota,
+                })
                 continue
 
-            # BSS gate: skip models below MIN_BSS_THRESHOLD (consistent
-            # with confidence_gate.py MIN_BSS=0.12).  Was "bss < 0" which
-            # allowed near-random models to bet.
-            MIN_BSS_THRESHOLD = 0.12
+            if edge < market_min_edge:
+                if not hasattr(self, "_scan_rejected_candidates"):
+                    self._scan_rejected_candidates = []
+                self._scan_rejected_candidates.append({
+                    "market": market_key,
+                    "label": market_info["label"],
+                    "track": "ml",
+                    "reason": f"edge {edge*100:+.1f}% < min {market_min_edge*100:.0f}%",
+                    "prob": round(prob, 4),
+                    "edge": round(edge, 4),
+                    "odds": quota,
+                })
+                continue
+
+            # BSS gate: graduated Kelly reduction instead of binary block.
+            # BSS already normalised by n_classes so 0.12 = same quality
+            # regardless of 2-way or 3-way market.
+            #   BSS >= 0.12 → full stake (no reduction)
+            #   BSS  0.05–0.12 → stake scaled linearly (0% at 0.12, -58% at 0.05)
+            #   BSS < 0.05  → hard block (near-random model)
+            BSS_FULL  = 0.12   # above this: no reduction
+            BSS_FLOOR = 0.05   # below this: block entirely
+            bss_multiplier = 1.0
             if calibration_metrics:
                 ai_target = market_info.get("ai_target", "")
                 brier = calibration_metrics.get(ai_target, {}).get("brier") if ai_target else None
@@ -464,15 +604,55 @@ class SlotManager:
                 if brier is not None:
                     brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
                     bss = 1.0 - brier / brier_random if brier_random > 0 else None
-                    if bss is not None and bss < MIN_BSS_THRESHOLD:
-                        continue  # model below quality threshold, skip
+                    if bss is not None:
+                        if bss < BSS_FLOOR:
+                            if not hasattr(self, "_scan_rejected_candidates"):
+                                self._scan_rejected_candidates = []
+                            self._scan_rejected_candidates.append({
+                                "market": market_key, "label": market_info["label"],
+                                "track": "ml",
+                                "reason": f"BSS={bss:.3f} < floor {BSS_FLOOR} — modello near-random",
+                                "prob": round(prob, 4), "edge": round(edge, 4), "odds": quota,
+                            })
+                            continue  # hard block
+                        elif bss < BSS_FULL:
+                            # Linear scale: 0.0 at BSS_FLOOR → 1.0 at BSS_FULL
+                            bss_multiplier = (bss - BSS_FLOOR) / (BSS_FULL - BSS_FLOOR)
+                            logger.debug(
+                                f"    ⚠️ BSS graduato {market_key}: BSS={bss:.3f} → "
+                                f"stake ×{bss_multiplier:.2f}"
+                            )
 
             # Intelligent high-odds filter: score = edge × √prob.
             # High-odds selections (low prob) need proportionally stronger edge
             # to achieve the same score as low-odds selections.  No arbitrary
             # odds cap is imposed — a genuine +10% edge on odds 4.0 still passes.
             score = edge * math.sqrt(prob)
-            if score < MIN_ML_SCORE_THRESHOLD:
+
+            # Score threshold cresce con la quota: quote alte richiedono
+            # un'occasione eccezionale, non basta un edge marginale.
+            # Default = ultimo tier (più stringente) per quote fuori scala (>999).
+            min_score_for_odds = ML_SCORE_TIERS[-1][1] if ML_SCORE_TIERS else MIN_ML_SCORE_THRESHOLD
+            for _max_odds, _min_score in ML_SCORE_TIERS:
+                if quota < _max_odds:
+                    min_score_for_odds = _min_score
+                    break
+
+            if score < min_score_for_odds:
+                if not hasattr(self, "_scan_rejected_candidates"):
+                    self._scan_rejected_candidates = []
+                self._scan_rejected_candidates.append({
+                    "market": market_key,
+                    "label": market_info["label"],
+                    "track": "ml",
+                    "reason": (
+                        f"score {score:.4f} < min {min_score_for_odds} "
+                        f"(odds {quota:.2f} → tier {min_score_for_odds})"
+                    ),
+                    "prob": round(prob, 4),
+                    "edge": round(edge, 4),
+                    "odds": quota,
+                })
                 continue
 
             candidates.append({
@@ -482,6 +662,7 @@ class SlotManager:
                 "odds": quota,
                 "edge": round(edge, 4),
                 "score": round(score, 4),
+                "bss_multiplier": round(bss_multiplier, 3),
             })
 
         if not candidates:
@@ -564,7 +745,7 @@ class SlotManager:
         minima) riduce il Kelly di circa il 68%, contenendo l'esposizione sui
         modelli al limite dell'accettabilità.
         """
-        bankroll = self.state.get("ml_bankroll", 1000.0) if use_ml_bankroll else self.state["bankroll"]
+        bankroll = self.state.get("ml_bankroll", self.config["bankroll"]) if use_ml_bankroll else self.state["bankroll"]
         kelly_frac = self.config["kelly_fraction"]
         max_pct = self.config["max_stake_pct"] / 100.0
 
@@ -617,26 +798,29 @@ class SlotManager:
             prob_market = (1.0 / odds) * OVERROUND_CORRECTION
             if prob_market > 0.01:
                 divergence = (prob / prob_market) - 1.0
-                z_score = abs(divergence) / self._divergence_std
+                # Usiamo divergenza diretta (NON abs): blocchiamo solo divergenze POSITIVE
+                # estreme (modello molto più ottimista del mercato = potenziale hallucination).
+                # Divergenze negative (modello più pessimista) sono già bloccate dal check
+                # edge > min_edge — non ha senso bloccarle due volte.
+                z_score = divergence / self._divergence_std
 
                 meta["divergence"] = round(divergence, 4)
                 meta["z_score"] = round(z_score, 2)
 
-                # ML track uses wider thresholds — ML probability distributions
-                # diverge from market more than Poisson (different model family).
+                # Soglie z-score: ML più permissivo perché ha varianza legittima più alta.
+                # Poisson z=2.0 → divergenza > 60% bloccata (con σ=0.30 default)
+                # ML     z=2.5 → divergenza > 75% bloccata
                 if track == "ml":
-                    div_thresh = 0.45
                     z_thresh = 2.5
                 else:
-                    div_thresh = 0.30
                     z_thresh = 2.0
 
-                if divergence > div_thresh or z_score > z_thresh:
+                if z_score > z_thresh:
                     meta["is_hallucination"] = True
                     meta["safety_vault"] = True
                     logger.info(
-                        f"    🚫 HALLUCINATION BLOCKED [{track}]: div={divergence:+.2f}, z={z_score:.2f} "
-                        f"(thresh: div>{div_thresh}, z>{z_thresh}) → scommessa ANNULLATA (stake=0)"
+                        f"    🚫 HALLUCINATION BLOCKED [{track}]: z={z_score:.2f} > {z_thresh} "
+                        f"(div={divergence:+.2f}) → scommessa ANNULLATA (stake=0)"
                     )
                     return 0.0, meta
 
@@ -672,12 +856,14 @@ class SlotManager:
             fid = s.get("fixture_id")
             if fid is not None:
                 existing_pois.add(int(fid))
-        # ML dedup
+        # ML dedup — chiave composita (fixture_id, market) per permettere più mercati
+        # diversi sullo stesso fixture (es. H + O25 sulla stessa partita)
         existing_ml = set()
         for s in self.state.get("ml_slots", {}).values():
             fid = s.get("fixture_id")
-            if fid is not None:
-                existing_ml.add(int(fid))
+            mkt = s.get("market")
+            if fid is not None and mkt is not None:
+                existing_ml.add((int(fid), mkt))
 
         enriched = []
         pois_counter = len(self.state["slots"])
@@ -703,7 +889,24 @@ class SlotManager:
                 signal["edge_pct"] = ""
                 signal["score"] = ""
             else:
+                # Reset per-signal candidate tracker before scanning
+                self._scan_rejected_candidates = []
                 scan = self.scan_best_market(analysis_markets, odds, inputs, ai_data=ai_markets, league_id=sig_league_id)
+                # Log per-candidate rejections into rejected_today for analytics
+                for _crej in getattr(self, "_scan_rejected_candidates", []):
+                    self.state["rejected_today"].append({
+                        "fixture_id": sig_fid,
+                        "event": signal.get("name", ""),
+                        "track": _crej.get("track", "poisson"),
+                        "market": _crej.get("market", ""),
+                        "market_label": _crej.get("label", ""),
+                        "reason": _crej.get("reason", ""),
+                        "prob": _crej.get("prob"),
+                        "edge": _crej.get("edge"),
+                        "odds": _crej.get("odds"),
+                        "date": self.state["last_run_date"],
+                    })
+                self._scan_rejected_candidates = []
                 if scan.get("market") is not None:
                     prob = scan["prob"]
                     stake = self.calculate_kelly_stake(prob, scan["odds"])
@@ -733,7 +936,7 @@ class SlotManager:
                             "pnl": 0.0,
                             "result": "PENDING",
                             "closing_odds": None,   # Fix 18: populated by update_closing_odds()
-                            "clv": None,            # closing_line_value = entry_implied - closing_implied
+                            "clv": None,            # closing_line_value = closing_implied - entry_implied (positive = skill)
                         }
                         if sig_fid is not None:
                             existing_pois.add(int(sig_fid))
@@ -771,15 +974,45 @@ class SlotManager:
                     })
 
             # ===================== ML TRACK =====================
-            ml_skip = (sig_fid is not None and int(sig_fid) in existing_ml)
-            if ml_skip:
+            # Dedup composita: calcola i mercati già scommessi per questo fixture
+            _ml_excluded = (
+                {mkt for (fid, mkt) in existing_ml if fid == int(sig_fid)}
+                if sig_fid is not None else set()
+            )
+            self._scan_rejected_candidates = []
+            ml_scan = self.scan_best_market_ml(
+                ai_markets, odds,
+                calibration_metrics=signal.get("calibration_metrics"),
+                excluded_markets=_ml_excluded,
+            )
+            # Controllo post-scan: skip se nessun mercato trovato o già presente
+            _ml_market_found = ml_scan.get("market")
+            ml_skip = (
+                sig_fid is not None and _ml_market_found is not None and
+                (int(sig_fid), _ml_market_found) in existing_ml
+            )
+            if ml_skip or _ml_market_found is None:
                 signal["ml_slot_id"] = "⊘ SKIP"
                 signal["ml_stake"] = ""
                 signal["ml_selected_market"] = ""
                 signal["ml_edge_pct"] = ""
                 signal["ml_score"] = ""
             else:
-                ml_scan = self.scan_best_market_ml(ai_markets, odds, calibration_metrics=signal.get("calibration_metrics"))
+                # Log per-candidate ML rejections
+                for _crej in getattr(self, "_scan_rejected_candidates", []):
+                    self.state["rejected_today"].append({
+                        "fixture_id": sig_fid,
+                        "event": signal.get("name", ""),
+                        "track": "ml",
+                        "market": _crej.get("market", ""),
+                        "market_label": _crej.get("label", ""),
+                        "reason": _crej.get("reason", ""),
+                        "prob": _crej.get("prob"),
+                        "edge": _crej.get("edge"),
+                        "odds": _crej.get("odds"),
+                        "date": self.state["last_run_date"],
+                    })
+                self._scan_rejected_candidates = []
                 if ml_scan.get("market") is not None:
                     ml_prob = ml_scan["prob"]
                     ml_market_key = ml_scan.get("market", "")
@@ -799,9 +1032,28 @@ class SlotManager:
                     ml_stake = self.calculate_kelly_stake(
                         ml_prob, ml_scan["odds"],
                         use_ml_bankroll=True,
-                        brier_score=ml_brier_score,
+                        brier_score=None,        # BSS shrinkage already applied via bss_multiplier below
                         n_classes=ml_n_classes,
                     )
+
+                    # Apply BSS graduated multiplier from scan (already computed)
+                    _bss_mult = ml_scan.get("bss_multiplier", 1.0)
+                    if _bss_mult < 1.0:
+                        ml_stake = round(ml_stake * _bss_mult, 2)
+
+                    # --- Reliability Multiplier (propagated from predict_fixture) ---
+                    # alpha = reliability_score (0.0–1.0): penalizza stake quando i dati
+                    # sono scarsi (poche partite storiche / copertura feature bassa).
+                    # Default 1.0 se il campo non è presente (segnali legacy).
+                    _rel_mult = float(signal.get("ml_reliability_multiplier", 1.0))
+                    _rel_mult = max(0.0, min(1.0, _rel_mult))  # clamp [0, 1]
+                    if _rel_mult < 1.0:
+                        old_ml_stake = ml_stake
+                        ml_stake = round(ml_stake * _rel_mult, 2)
+                        logger.debug(
+                            f"    🔬 Reliability [{_rel_mult:.2f}]: ml_stake "
+                            f"{old_ml_stake:.2f} → {ml_stake:.2f}"
+                        )
 
                     # --- Safety Filters (previously ABSENT from ML track) ---
                     # Apply the same Hallucination Filter + Trust Score that the
@@ -833,13 +1085,14 @@ class SlotManager:
                             "z_score": ml_safety_meta.get("z_score"),
                             "trust_score": ml_safety_meta.get("trust_score", 1.0),
                             "brier_score": ml_brier_score,
+                            "reliability_multiplier": round(_rel_mult, 3),
                             "pnl": 0.0,
                             "result": "PENDING",
                             "closing_odds": None,   # Fix 18: CLV tracking
                             "clv": None,
                         }
-                        if sig_fid is not None:
-                            existing_ml.add(int(sig_fid))
+                        if sig_fid is not None and ml_scan.get("market"):
+                            existing_ml.add((int(sig_fid), ml_scan["market"]))
                         signal["ml_slot_id"] = ml_slot_id
                         signal["ml_stake"] = ml_stake
                         signal["ml_selected_market"] = f"{ml_scan['label']} @{ml_scan['odds']}"
@@ -873,20 +1126,30 @@ class SlotManager:
 
         # ── Correlated Kelly adjustment: reduce stake when multiple bets
         #    on the same fixture (e.g. 1x2 + BTTS on same match).
-        ml_fixture_counts: dict = {}
-        for sid, slot in self.state.get("ml_slots", {}).items():
-            fid = slot.get("fixture_id")
-            if fid is not None and slot.get("result") == "PENDING":
-                ml_fixture_counts[int(fid)] = ml_fixture_counts.get(int(fid), 0) + 1
-        for sid, slot in self.state.get("ml_slots", {}).items():
-            fid = slot.get("fixture_id")
-            if fid is not None and ml_fixture_counts.get(int(fid), 1) > 1:
-                old_stake = slot["stake"]
-                slot["stake"] = round(old_stake * 0.70, 2)
-                logger.info(
-                    f"    📉 Correlated Kelly: {sid} (fixture {fid}) "
-                    f"stake {old_stake:.2f} → {slot['stake']:.2f} (-30%)"
-                )
+        #    Applied to both Poisson and ML tracks.
+        #    Guard _corr_adj: idempotente su multi-run (lo stake non viene
+        #    ridotto più di una volta per lo stesso slot).
+        for track_key in ("slots", "ml_slots"):
+            track_label = "Poisson" if track_key == "slots" else "ML"
+            fixture_counts: dict = {}
+            for sid, slot in self.state.get(track_key, {}).items():
+                fid = slot.get("fixture_id")
+                if fid is not None and slot.get("result") == "PENDING":
+                    fixture_counts[int(fid)] = fixture_counts.get(int(fid), 0) + 1
+            for sid, slot in self.state.get(track_key, {}).items():
+                fid = slot.get("fixture_id")
+                # Applica SOLO a slot PENDING non ancora aggiustati (idempotenza)
+                if (fid is not None
+                        and slot.get("result") == "PENDING"
+                        and not slot.get("_corr_adj", False)
+                        and fixture_counts.get(int(fid), 1) > 1):
+                    old_stake = slot["stake"]
+                    slot["stake"] = max(round(old_stake * 0.70, 2), 1.0)  # floor €1 Betfair minimum
+                    slot["_corr_adj"] = True  # marca: riduzione già applicata
+                    logger.info(
+                        f"    📉 Correlated Kelly [{track_label}]: {sid} (fixture {fid}) "
+                        f"stake {old_stake:.2f} → {slot['stake']:.2f} (-30%)"
+                    )
 
         logger.info(f"✅ Poisson accettati: {pois_accepted} | ML accettati: {ml_accepted} | Totale segnali: {len(signals_data)}")
         self._save_state()
@@ -980,6 +1243,11 @@ class SlotManager:
             won = self._evaluate_bet_result(slot, match)
             stake = slot["stake"]
 
+            # FIX: won=None significa dati HT mancanti → lascia PENDING anziché PERSA
+            if won is None:
+                logger.warning(f"  {sid}: dati HT mancanti per {slot.get('market')} — slot rimane PENDING")
+                continue
+
             if won:
                 comm = self.config["commission_pct"] / 100.0
                 profit = stake * (slot["odds"] - 1) * (1.0 - comm)
@@ -1021,18 +1289,39 @@ class SlotManager:
             return (gh + ga) >= 3
         elif market == "U25":
             return (gh + ga) < 3
+        elif market == "O15":
+            return (gh + ga) >= 2
+        elif market == "U15":
+            return (gh + ga) < 2
+        elif market == "O35":
+            return (gh + ga) >= 4
+        elif market == "U35":
+            return (gh + ga) < 4
         elif market == "BTTS":
             return gh >= 1 and ga >= 1
         elif market == "BTTS_NO":
             return gh == 0 or ga == 0
         elif market == "HT05":
             if hth is None or hta is None:
-                return False
+                return None  # FIX: dati HT mancanti → PENDING, non PERSA
             return (int(hth) + int(hta)) >= 1
         elif market == "HT_U05":
             if hth is None or hta is None:
-                return False
+                return None  # FIX: dati HT mancanti → PENDING, non PERSA
             return (int(hth) + int(hta)) == 0
+        elif market == "HT_H":
+            if hth is None or hta is None:
+                return None  # FIX: dati HT mancanti → PENDING, non PERSA
+            return int(hth) > int(hta)
+        elif market == "HT_D":
+            if hth is None or hta is None:
+                return None  # FIX: dati HT mancanti → PENDING, non PERSA
+            return int(hth) == int(hta)
+        elif market == "HT_A":
+            if hth is None or hta is None:
+                return None  # FIX: dati HT mancanti → PENDING, non PERSA
+            return int(hth) < int(hta)
+        logger.warning(f"_evaluate_bet_result: mercato '{market}' non gestito — bet marcata come PERSA")
         return False
 
     def resolve_ml_results(self):
@@ -1074,6 +1363,10 @@ class SlotManager:
 
             won = self._evaluate_bet_result(slot, match)
             stake = slot["stake"]
+            # FIX: won=None → dati HT mancanti → PENDING
+            if won is None:
+                logger.warning(f"  ML {sid}: dati HT mancanti per {slot.get('market')} — slot rimane PENDING")
+                continue
             if won:
                 profit = stake * (slot["odds"] - 1) * (1.0 - comm)
                 slot["result"] = "VINTO ✅"
@@ -1182,7 +1475,7 @@ class SlotManager:
                         "bankroll": bankroll_start + pnl}
 
             pois_st = calc_stats(all_pois_slots, self.config["bankroll"])
-            ml_st = calc_stats(all_ml_slots, 1000.0)
+            ml_st = calc_stats(all_ml_slots, self.state.get("ml_bankroll", self.config["bankroll"]))
 
             # ═══════════════════════════════════════════════════════════════
             # ROW 1: TITOLO (merge full width)
@@ -1508,8 +1801,10 @@ class SlotManager:
             try:
                 with open(history_file, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except:
-                pass
+            except json.JSONDecodeError as e:
+                logger.error(f"mm_history.json corrotto o non valido: {e}")
+            except Exception as e:
+                logger.error(f"Errore lettura mm_history.json: {e}")
         return []
 
     def _save_history(self, history):
@@ -1592,33 +1887,133 @@ class SlotManager:
 
     @staticmethod
     def _deduplicate_slots(slots):
-        """Deduplica una lista di slot per fixture_id.
-        Per ogni fixture_id tiene l'entry risolta (VINTO/PERSO) se esiste,
+        """Deduplica una lista di slot per (fixture_id, market).
+        Chiave composita per consentire più mercati sulla stessa partita
+        (es. H + O25 sulla stessa fixture).
+        Per ogni chiave tiene l'entry risolta (VINTO/PERSO) se esiste,
         altrimenti la prima entry PENDING."""
-        by_fid = {}
+        by_key = {}
         for s in slots:
             fid = s.get("fixture_id")
+            mkt = s.get("market", "")
             if fid is None:
-                # Slot senza fixture_id: tieni sempre
-                by_fid[id(s)] = s
+                # Slot senza fixture_id: usa slot_id come chiave univoca
+                by_key[s.get("slot_id", id(s))] = s
                 continue
-            fid = int(fid)
-            existing = by_fid.get(fid)
+            key = (int(fid), mkt)
+            existing = by_key.get(key)
             if existing is None:
-                by_fid[fid] = s
+                by_key[key] = s
             else:
                 # Preferisci entry risolta su PENDING
                 if s.get("result") != "PENDING" and existing.get("result") == "PENDING":
-                    by_fid[fid] = s
-        result = list(by_fid.values())
+                    by_key[key] = s
+        result = list(by_key.values())
         if len(result) < len(slots):
-            logger.info(f"🔄 Deduplicati {len(slots) - len(result)} slot duplicati (per fixture_id).")
+            logger.info(f"🔄 Deduplicati {len(slots) - len(result)} slot duplicati (per fixture+market).")
         return result
+
+    def retroactive_fix_misclassified_results(self):
+        """Corregge retroattivamente gli slot PERSO con mercati estesi che
+        venivano sempre valutati False (O15, U15, O35, U35, HT_H, HT_D, HT_A).
+        Chiamato automaticamente da resolve_history_results.
+        Operazione idempotente: non modifica slot già taggati come corretti."""
+        AFFECTED = {"O15", "U15", "O35", "U35", "HT_H", "HT_D", "HT_A"}
+        history = self._load_history()
+        if not history:
+            return
+
+        comm = self.config["commission_pct"] / 100.0
+
+        # Raccoglie fixture_id per mercati HT (necessitano halftime dal DB)
+        ht_markets = {"HT_H", "HT_D", "HT_A"}
+        ht_fixture_ids = set()
+        for day in history:
+            for slot in day.get("slots", []) + day.get("ml_slots", []):
+                if slot.get("market") in ht_markets and "PERSO" in str(slot.get("result", "")):
+                    fid = slot.get("fixture_id")
+                    if fid and slot.get("goals_home", "—") != "—":
+                        ht_fixture_ids.add(int(fid))
+
+        # Fetch halftime data dal DB per mercati HT
+        ht_map = {}
+        if ht_fixture_ids:
+            try:
+                sb = get_supabase_client()
+                for i in range(0, len(ht_fixture_ids), 200):
+                    chunk = list(ht_fixture_ids)[i:i+200]
+                    resp = sb.table("matches").select(
+                        "fixture_id, halftime_home, halftime_away"
+                    ).in_("fixture_id", chunk).execute()
+                    for r in (getattr(resp, "data", None) or []):
+                        fid = r.get("fixture_id")
+                        if fid is not None:
+                            ht_map[int(fid)] = r
+            except Exception as e:
+                logger.warning(f"Retroactive fix: DB fetch halftime failed: {e}")
+
+        corrected = 0
+        for day in history:
+            for slot in day.get("slots", []) + day.get("ml_slots", []):
+                market = slot.get("market", "")
+                if market not in AFFECTED:
+                    continue
+                if "PERSO" not in str(slot.get("result", "")):
+                    continue
+                # Already tagged as retroactively fixed — skip
+                if slot.get("_retrofix"):
+                    continue
+
+                gh = slot.get("goals_home")
+                ga = slot.get("goals_away")
+                if gh is None or gh == "—" or ga is None or ga == "—":
+                    continue  # no goal data stored, cannot re-evaluate
+
+                gh = int(gh)
+                ga = int(ga)
+
+                # Build a pseudo-match dict for _evaluate_bet_result
+                pseudo_match = {"goals_home": gh, "goals_away": ga,
+                                "halftime_home": None, "halftime_away": None}
+                if market in ht_markets:
+                    fid = slot.get("fixture_id")
+                    ht_row = ht_map.get(int(fid)) if fid else None
+                    if ht_row:
+                        pseudo_match["halftime_home"] = ht_row.get("halftime_home")
+                        pseudo_match["halftime_away"] = ht_row.get("halftime_away")
+                    else:
+                        continue  # can't evaluate HT without halftime data
+
+                won = self._evaluate_bet_result(slot, pseudo_match)
+                if won:
+                    stake = slot.get("stake", 0)
+                    profit = stake * (slot.get("odds", 1) - 1) * (1.0 - comm)
+                    old_pnl = slot.get("pnl", -stake)
+                    slot["result"] = "VINTO ✅"
+                    slot["pnl"] = round(profit, 2)
+                    slot["_retrofix"] = True
+                    corrected += 1
+                    logger.info(
+                        f"  [RETROFIX] {slot.get('slot_id','?')} {slot.get('event_name','?')} "
+                        f"mkt={market} {gh}-{ga} → VINTO (P&L: {old_pnl:+.2f}→{profit:+.2f}€)"
+                    )
+                else:
+                    # Correctly PERSO — tag it so we don't re-check next run
+                    slot["_retrofix"] = True
+
+        if corrected > 0:
+            self._save_history(history)
+            logger.info(f"✅ Retroactive fix completato: {corrected} slot corretti da PERSO→VINTO")
+        else:
+            logger.info("Retroactive fix: nessuna correzione necessaria")
 
     def resolve_history_results(self):
         """Risolve i risultati PENDING di TUTTI i giorni nello storico.
         Questo è il metodo chiave: quando lanci lo script sabato mattina,
         risolve automaticamente i risultati di venerdì."""
+        # Run retroactive fix for previously misclassified extended ML markets
+        self.retroactive_fix_misclassified_results()
+
         sb = get_supabase_client()
         history = self._load_history()
 
@@ -1629,24 +2024,27 @@ class SlotManager:
         # Commissione fissa 5% su vincite — non ricalcolare mai P&L storici.
         # Il P&L viene congelato al momento della risoluzione.
 
-        # Raccoglie tutti i fixture_id PENDING (Poisson)
+        # Raccoglie tutti i slot PENDING Poisson — key = (fixture_id, slot_id) per evitare
+        # sovrascrittura quando ci sono più scommesse sullo stesso fixture (es. H + O25)
         pending_fixtures = {}
         for day in history:
             for slot in day.get("slots", []):
                 if slot.get("result") == "PENDING" and slot.get("fixture_id"):
-                    pending_fixtures[int(slot["fixture_id"])] = (day, slot)
+                    key = (int(slot["fixture_id"]), slot.get("slot_id", ""))
+                    pending_fixtures[key] = (day, slot)
 
         if not pending_fixtures:
-            logger.info("Nessun risultato PENDING nello storico.")
-            return
+            logger.info("Nessun risultato PENDING Poisson nello storico — controllo ML...")
+            # Non fare return: i slot ML potrebbero avere PENDING anche senza Poisson PENDING
 
-        logger.info(f"Risolvo {len(pending_fixtures)} risultati PENDING dallo storico...")
+        if pending_fixtures:
+            logger.info(f"Risolvo {len(pending_fixtures)} risultati PENDING Poisson dallo storico...")
 
-        # Fetch dal DB
-        ids = list(pending_fixtures.keys())
+        # Fetch dal DB — estrae fixture_id univoci dal composite key
+        unique_fids = list({fid for fid, _ in pending_fixtures.keys()})
         matches_map = {}
-        for i in range(0, len(ids), 200):
-            chunk = ids[i:i+200]
+        for i in range(0, len(unique_fids), 200):
+            chunk = unique_fids[i:i+200]
             resp = sb.table("matches").select(
                 "fixture_id, status_short, goals_home, goals_away, halftime_home, halftime_away"
             ).in_("fixture_id", chunk).execute()
@@ -1656,7 +2054,7 @@ class SlotManager:
                     matches_map[int(fid)] = r
 
         resolved = 0
-        for fid, (day, slot) in pending_fixtures.items():
+        for (fid, _sid), (day, slot) in pending_fixtures.items():
             match = matches_map.get(fid)
             if not match:
                 continue
@@ -1844,7 +2242,7 @@ class SlotManager:
         Call this ~5 minutes before each fixture's kick-off.
 
         live_odds_by_fixture: {fixture_id: {"home": odds, "draw": odds, "away": odds, ...}}
-        CLV = entry_implied_prob - closing_implied_prob
+        CLV = closing_implied_prob - entry_implied_prob
               Positive CLV = we got a better price than market close (skill signal).
         """
         updated = 0
@@ -1864,8 +2262,9 @@ class SlotManager:
             if closing_odd and closing_odd > 1.01:
                 entry_implied = 1.0 / slot["odds"]
                 closing_implied = 1.0 / closing_odd
-                # CLV > 0 means we got better than market close
-                clv = round(entry_implied - closing_implied, 4)
+                # CLV > 0 means we got better than market close (closing_implied > entry_implied
+                # means market moved against us after entry, i.e. we got value)
+                clv = round(closing_implied - entry_implied, 4)
                 slot["closing_odds"] = closing_odd
                 slot["clv"] = clv
                 updated += 1
@@ -1884,7 +2283,7 @@ class SlotManager:
             if closing_odd and closing_odd > 1.01:
                 entry_implied = 1.0 / slot["odds"]
                 closing_implied = 1.0 / closing_odd
-                clv = round(entry_implied - closing_implied, 4)
+                clv = round(closing_implied - entry_implied, 4)
                 slot["closing_odds"] = closing_odd
                 slot["clv"] = clv
                 updated += 1
@@ -1936,8 +2335,10 @@ class SlotManager:
             win_rate = sum(data["outcomes"]) / n
             avg_prob = sum(data["probs"]) / n
             calibration_error = abs(avg_prob - win_rate)
-            # Proxy BSS: compare vs Brier of always-predicting avg_prob
-            brier_baseline = avg_prob * (1 - avg_prob)
+            # Proxy BSS: baseline = (n_classes-1)/n_classes (random classifier).
+            # Coerente con la formula usata in scan_best_market_ml e calculate_kelly_stake.
+            n_cls_market = ML_MARKET_MAP.get(market, {}).get("n_classes", 2)
+            brier_baseline = (n_cls_market - 1) / n_cls_market if n_cls_market > 1 else 0.5
             bss_proxy = 1.0 - (avg_brier / brier_baseline) if brier_baseline > 0 else None
 
             status = "OK"
@@ -2222,8 +2623,9 @@ class SlotManager:
                 if not d or len(d["sq"]) < 5:
                     return "—", "—"
                 brier = sum(d["sq"]) / len(d["sq"])
-                avg_p = sum(d["probs"]) / len(d["probs"])
-                base  = avg_p * (1 - avg_p)
+                # BSS baseline coerente con scan e Kelly: (n_classes-1)/n_classes
+                n_cls_bss = ML_MARKET_MAP.get(mkey, {}).get("n_classes", 2)
+                base = (n_cls_bss - 1) / n_cls_bss if n_cls_bss > 1 else 0.5
                 proxy = round(1 - brier / base, 3) if base > 0 else None
                 brier_s = f"{brier:.4f}"
                 proxy_s = f"{proxy:.3f}" if proxy is not None else "—"
@@ -2531,7 +2933,7 @@ class SlotManager:
                 all_data.append(["Slot", "Evento", "Mercato", "Prob", "Quota", "Edge", "Score", "Stake €", "Risultato", "P&L €", "BSS"])
                 for sid, d in sorted(ml_slots.items()):
                     brier = d.get("brier_score")
-                    n_cls = 2
+                    n_cls = ML_MARKET_MAP.get(d.get("market", ""), {}).get("n_classes", 2)
                     bss_str = ""
                     if brier is not None:
                         brier_random = (n_cls - 1) / n_cls

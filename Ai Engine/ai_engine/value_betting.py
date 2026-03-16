@@ -8,6 +8,7 @@ of model confidence.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -25,9 +26,20 @@ class BetSignal:
     kelly_stake: float     # recommended units (given bankroll)
     confidence_grade: str  # "high" / "medium" / "low"
     edge: float            # model_prob - implied_prob
+    ml_score: float = 0.0  # edge × √prob — signal quality metric (ML_SCORE_TIERS)
 
 
 # ── Configuration ───────────────────────────────────────────────────
+
+# ML Score tiers: score = edge × √prob  (quantifica qualità del segnale).
+# Le stesse soglie usate da money_management.scan_best_market_ml per coerenza.
+# Tiered thresholds: (max_odds_exclusive, min_score)
+ML_SCORE_TIERS: List[tuple] = [
+    (2.5,  0.025),   # odds < 2.5  → score ≥ 0.025
+    (4.0,  0.040),   # odds 2.5–4  → score ≥ 0.040
+    (6.0,  0.055),   # odds 4–6    → score ≥ 0.055
+    (999., 0.075),   # odds > 6    → score ≥ 0.075 (solo occasioni eccezionali)
+]
 
 # Betfair exchange commission applied to NET winnings (not stake).
 # Standard UK rate is 5%.  This is deducted from the winning profit.
@@ -37,10 +49,10 @@ BETFAIR_COMMISSION: float = 0.05
 # At 5% commission, any EV (pre-commission) below ~5.26% yields negative
 # expected profit.  We set the bar at 3% POST-commission, meaning the
 # model must show an EV of at least 3% after deducting Betfair's cut.
-MIN_EDGE: float = 0.03              # 3% post-commission edge minimum
-MIN_PROB: float = 0.52              # model probability minimum
-MAX_KELLY: float = 0.05             # never stake more than 5% of bankroll
-KELLY_FRACTION: float = 0.25        # quarter-Kelly (reduces variance)
+MIN_EDGE: float = 0.05              # 5% post-commission edge minimum (raised from 3% → 5% for win rate target)
+MIN_PROB: float = 0.54              # model probability minimum (raised from 0.52 → 0.54)
+MAX_KELLY: float = 0.02             # FIX: allineato a money_management.py DEFAULT_MAX_STAKE_PCT=2%
+KELLY_FRACTION: float = 0.10        # FIX: allineato a money_management.py DEFAULT_KELLY_FRACTION=0.10
 DEFAULT_BANKROLL: float = 1000.0    # base bankroll for stake calculation
 
 # Market-specific minimum probabilities (some markets need higher confidence)
@@ -187,7 +199,21 @@ def evaluate_bet_opportunities(
             if ev < min_edge:
                 continue
 
+            if edge <= 0:
+                continue  # nessun edge positivo → non scommettere
+
             if cls_prob < market_min:
+                continue
+
+            # ML Score tier filter: score = edge × √prob
+            # Filtra segnali deboli in base alla fascia di quota.
+            ml_score = edge * math.sqrt(cls_prob)
+            min_score_for_odds = ML_SCORE_TIERS[-1][1]  # fallback: ultimo tier
+            for _max_odds, _min_score in ML_SCORE_TIERS:
+                if decimal_odds < _max_odds:
+                    min_score_for_odds = _min_score
+                    break
+            if ml_score < min_score_for_odds:
                 continue
 
             kelly = kelly_criterion(cls_prob, decimal_odds)
@@ -211,6 +237,7 @@ def evaluate_bet_opportunities(
                 kelly_stake=kelly_stake,
                 confidence_grade=grade,
                 edge=round(edge, 4),
+                ml_score=round(ml_score, 5),
             ))
             target_has_signal = True
 

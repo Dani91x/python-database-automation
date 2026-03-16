@@ -124,7 +124,7 @@ def fetch_fixtures_for_date(api: APIFootballClient, target_date: str) -> List[Di
 # ==============================
 
 def setup_logger() -> logging.Logger:
-    pass # defined above
+    return logger  # modulo-level logger definito sopra
     
 # --- CACHE BLACKLIST DINAMICA ---
 _TOXIC_LEAGUES_CACHE: Optional[Set[int]] = None
@@ -221,9 +221,10 @@ def get_league_trust_scores() -> Dict[int, float]:
         if not m:
             continue
         
-        l_id = m.get("league_id")
-        if l_id is None:
+        _raw_lid = m.get("league_id")
+        if _raw_lid is None:
             continue
+        l_id = int(_raw_lid)
         
         # Parse odds reali
         raw_odds = p.get("raw_json_odds")
@@ -313,7 +314,7 @@ def get_toxic_leagues() -> Set[int]:
         return _TOXIC_LEAGUES_CACHE
     
     trust_scores = get_league_trust_scores()
-    toxic_set = {lid for lid, trust in trust_scores.items() if trust < 0.3}
+    toxic_set = {int(lid) for lid, trust in trust_scores.items() if trust < 0.3}
     
     logger.info(f"Blacklist Dinamica: {len(toxic_set)} leghe non profittevoli (trust < 0.3).")
     _TOXIC_LEAGUES_CACHE = toxic_set
@@ -735,7 +736,8 @@ def _blend_windows(stats5: Dict[str, Any], stats10: Dict[str, Any], stats15: Dic
                 parts.append((weights[n], val))
         if not parts:
             return None
-        return sum(w * v for w, v in parts)
+        total_w = sum(w for w, _ in parts)
+        return sum(w * v for w, v in parts) / total_w  # renormalize for missing windows
 
     return {
         "gf_blend": _blend("gf_avg"),
@@ -795,6 +797,17 @@ def compute_db_json_analisi(
 
     home_n_used = stats15_h.get("n_used", 0)
     away_n_used = stats15_a.get("n_used", 0)
+
+    # Minimum data guard: with fewer than 3 matches the shrinkage pulls so strongly
+    # toward the league prior that the estimate adds no information over the base rate.
+    # Return None to signal "insufficient data" rather than a near-random Poisson estimate.
+    MIN_MATCHES_FOR_POISSON = 5  # soglia per generare stime Poisson; money_management usa 8 per scommettere
+    if home_n_used < MIN_MATCHES_FOR_POISSON or away_n_used < MIN_MATCHES_FOR_POISSON:
+        logger.debug(
+            f"Fixture {fixture_id}: insufficient data (home={home_n_used}, away={away_n_used} "
+            f"< {MIN_MATCHES_FOR_POISSON}) — skipping Poisson estimate"
+        )
+        return None
 
     gf_h = _shrink(blend_h.get("gf_blend"), home_n_used)
     ga_h = _shrink(blend_h.get("ga_blend"), home_n_used)
@@ -1006,6 +1019,10 @@ def upsert_prediction_row(row: Dict[str, Any]) -> None:
 # ==============================
 
 def run_for_date(target_date: str) -> None:
+    # Reset cache blacklist per ogni run: evita blacklist stantia in processi multi-data
+    global _TOXIC_LEAGUES_CACHE
+    _TOXIC_LEAGUES_CACHE = None
+
     api = APIFootballClient()
     fixtures = fetch_fixtures_for_date(api, target_date)
 

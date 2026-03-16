@@ -26,6 +26,7 @@ import os
 import sys
 import gzip
 import pickle
+import time
 import warnings
 import json
 import uuid
@@ -65,10 +66,18 @@ from ai_engine.confidence_gate import (
 
 
 def _download_model(bucket: str, path: str, out_path: str) -> None:
+    """Scarica il modello in un file temporaneo poi rinomina atomicamente.
+    Previene file corrotti parzialmente scritti che passano os.path.exists().
+    """
+    import tempfile
     sb = get_supabase_client()
     res = sb.storage.from_(bucket).download(path)
-    with open(out_path, "wb") as f:
-        f.write(res)
+    # Scrittura atomica: scrivi su temp nello stesso dir, poi rinomina
+    out_dir = os.path.dirname(out_path)
+    with tempfile.NamedTemporaryFile(dir=out_dir, delete=False, suffix=".tmp") as tmp:
+        tmp.write(res)
+        tmp_path = tmp.name
+    os.replace(tmp_path, out_path)  # atomico su tutti i SO moderni
 
 
 def _load_model(path: str) -> Dict:
@@ -137,7 +146,12 @@ def _predict_with_ensemble(
 
         return meta_classes or payload_classes
 
-    model_type = payload.get("model_type", "legacy")
+    # EnsemblePayload è un dataclass, non un dict — controlla il tipo prima di .get()
+    from ai_engine.ensemble_trainer import EnsemblePayload as _EP
+    if isinstance(payload, _EP):
+        model_type = "ensemble_v2"
+    else:
+        model_type = payload.get("model_type", "legacy")
 
     if model_type == "ensemble_v2":
         # Reconstruct EnsemblePayload and use canonical prediction functions
@@ -160,28 +174,31 @@ def _predict_with_ensemble(
 
         total_weight = sum(ep.base_weights.values()) or 1.0
         raw_probs = {c: 0.0 for c in class_labels}
+        per_model_probs: dict = {}
         for name, model in ep.base_models:
             w = ep.base_weights.get(name, 1.0) / total_weight
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UserWarning)
                 proba = model.predict_proba(X_scaled)
             model_classes = [str(c) for c in model.classes_]
+            per_model_probs[name] = {}
             for i, c in enumerate(class_labels):
                 if c in model_classes:
                     idx_c = model_classes.index(c)
-                    raw_probs[c] += w * float(proba[0][idx_c])
+                    p_val = float(proba[0][idx_c])
+                    raw_probs[c] += w * p_val
+                    per_model_probs[name][c] = p_val
+                else:
+                    per_model_probs[name][c] = 0.0
 
-        # Add per-model probs to agreement info
-        agreement["per_model_probs"] = {}
-        for name, model in ep.base_models:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                proba = model.predict_proba(X_scaled)
-            model_classes = [str(c) for c in model.classes_]
-            agreement["per_model_probs"][name] = {
-                c: float(proba[0][model_classes.index(c)]) if c in model_classes else 0.0
-                for c in class_labels
-            }
+        # Normalise raw_probs: weighted average may not sum to 1 when some classes
+        # are missing from a base model (zero contribution for that class).
+        _raw_total = sum(raw_probs.values())
+        if _raw_total > 0:
+            raw_probs = {c: v / _raw_total for c, v in raw_probs.items()}
+
+        # Reuse per-model probs from the single loop above (no redundant second pass)
+        agreement["per_model_probs"] = per_model_probs
 
         return cal_probs, raw_probs, agreement
 
@@ -359,7 +376,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     # The models might still point to the old bucket in DB, but we strictly enforce the new bucket path
     bucket = f"ai-models-league-{league_id}"
 
-    out_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
+    out_dir = os.path.join(ROOT, "Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
     os.makedirs(out_dir, exist_ok=True)
 
     results: Dict[str, Dict[str, float]] = {}
@@ -381,7 +398,6 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         _MODEL_CACHE_TTL_HOURS = float(os.environ.get("MODEL_CACHE_TTL_HOURS", "24"))
         _needs_download = not os.path.exists(local_path)
         if not _needs_download:
-            import time
             age_hours = (time.time() - os.path.getmtime(local_path)) / 3600
             if age_hours > _MODEL_CACHE_TTL_HOURS:
                 logger.info(
@@ -399,12 +415,16 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                 logger.warning(f"Using stale cached model for {target}")
         payload = _load_model(local_path)
 
-        feats = payload["features"]
+        feats = payload.get("features") or payload.get("feature_cols", [])
         feats_union.extend([f for f in feats if f not in feats_union])
 
         cal_probs, raw_probs, agreement = _predict_with_ensemble(payload, features_df)
 
         raw_results[target] = raw_probs
+        # Use calibrated probabilities for betting decisions — isotonic calibration
+        # maps predicted probabilities to actual win rates, giving more accurate EV.
+        # raw_probs are preserved in targets_raw for inspection/diagnostics.
+        results[target] = cal_probs
         agreement_results[target] = agreement
         modeled_targets.add(target)
 
@@ -423,13 +443,12 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     rel = _reliability_score(features_df, feats_union, matches_home, matches_away, coverage)
     alpha = float(rel.get("score", 0.0))
 
-    # Use raw model probabilities directly for EV/Kelly calculations.
-    # Reliability scaling is applied as a stake multiplier AFTER Kelly,
-    # not to probabilities — shrinking probs toward uniform before EV
-    # destroys marginal edges that are the only source of profit.
-    reliability_multiplier = max(0.5, alpha)
-    for target, probs in raw_results.items():
-        results[target] = probs  # raw probs used for betting decisions
+    # Reliability multiplier applied as stake scalar AFTER Kelly calculation.
+    # alpha=0.0 → no data → multiplier=0 → no bet (correct: don't bet without data).
+    # alpha=1.0 → full data → multiplier=1 → full Kelly stake.
+    # The confidence gates (Gate 1/2) also block low-reliability fixtures
+    # independently, so this is a double safety for partial-data cases.
+    reliability_multiplier = alpha
 
     # ── VALUE BETTING ANALYSIS ─────────────────────────────────
     if live_odds:
@@ -444,6 +463,43 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                 raw_odds = json.loads(raw_odds)
             except Exception:
                 raw_odds = None
+
+    # ── ML POST-CALIBRATION (post-hoc correction layer) ──────────
+    # Carica ml_post_calibration.json e applica correzioni bin-based
+    # sulle probabilita' PRIMA del calcolo EV/Kelly, senza toccare i modelli.
+    _post_cal_path = os.path.join(ROOT, "ml_post_calibration.json")
+    if os.path.exists(_post_cal_path):
+        try:
+            with open(_post_cal_path, "r", encoding="utf-8") as _f:
+                _post_cal = json.load(_f).get("corrections", {})
+            _BINARY_TARGETS = {
+                "target_over_2_5", "target_over_1_5", "target_over_3_5",
+                "target_over_4_5", "target_btts",
+            }
+            for _target, _probs in list(results.items()):
+                _tcal = _post_cal.get(_target)
+                if not _tcal:
+                    continue
+                if _target in _BINARY_TARGETS:
+                    # Corregge "True", poi False = 1 - True
+                    _p_true = _probs.get("True")
+                    if _p_true is not None:
+                        _bin = min(int(float(_p_true) * 10), 9)
+                        _cf = _tcal.get("True", {}).get(str(_bin), 1.0)
+                        _new_true = max(0.01, min(float(_p_true) * _cf, 0.99))
+                        results[_target] = {"True": round(_new_true, 4), "False": round(1.0 - _new_true, 4)}
+                else:
+                    # Multi-classe (1x2): corregge ogni classe e rinormalizza
+                    _corrected = {}
+                    for _cls, _p in _probs.items():
+                        _bin = min(int(float(_p) * 10), 9)
+                        _cf = _tcal.get(_cls, {}).get(str(_bin), 1.0)
+                        _corrected[_cls] = max(0.001, float(_p) * _cf)
+                    _tot = sum(_corrected.values())
+                    if _tot > 0:
+                        results[_target] = {k: round(v / _tot, 4) for k, v in _corrected.items()}
+        except Exception as _e:
+            logger.warning(f"ml_post_calibration.json non applicabile: {_e}")
 
     odds_mapping = build_odds_mapping(raw_odds, results) if raw_odds else {}
     bet_signals, no_bet_reasons = evaluate_bet_opportunities(results, odds_mapping)
@@ -491,6 +547,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
             "kelly_stake": adjusted_kelly_stake,
             "confidence_grade": signal.confidence_grade,
             "edge": signal.edge,
+            "ml_score": getattr(signal, "ml_score", 0.0),
             "reliability_multiplier": round(reliability_multiplier, 3),
             "gates_passed": all_passed,
             "gates_detail": summarize_gates(gate_results),

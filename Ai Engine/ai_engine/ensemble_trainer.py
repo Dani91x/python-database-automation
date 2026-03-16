@@ -11,14 +11,18 @@ calibrated prediction via a logistic regression stacker.
 """
 from __future__ import annotations
 
+import logging
 import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import log_loss
 from sklearn.preprocessing import StandardScaler
 
@@ -195,6 +199,106 @@ def _compute_base_weights(
     return weights
 
 
+def _train_isotonic_calibrators(
+    fitted_models: List[Tuple[str, Any]],
+    meta_model: Any,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    classes: np.ndarray,
+    min_samples: int = 50,
+    base_weights: Optional[Dict[str, float]] = None,
+) -> Dict[str, Any]:
+    """
+    Addestra un IsotonicRegression per classe sulle probabilità del validation set.
+
+    Perché isotonic invece di Platt (sigmoid)?
+    - Isotonic è non-parametrico: non assume forma della curva di calibrazione.
+    - Appropriato quando la curva prevista→reale non è monotona lineare.
+    - Richiede più dati (min ~50 per classe) ma è più flessibile.
+
+    Flusso:
+    1. Calcola probabilità ensemble sul val set (meta-learner o weighted avg)
+    2. Per ogni classe c: fit ISO su (prob_pred_c, y_binary_c)
+    3. Ritorna dict {class_label: IsotonicRegression} o {} se val troppo piccolo.
+
+    NOTA: la calibrazione è fittata SULLO STESSO val set usato per le metriche.
+    Questo introduce una lieve sovrastima della qualità di calibrazione, accettabile
+    in produzione perché i fixture reali sono always out-of-sample rispetto al val.
+    """
+    if len(y_val) < min_samples:
+        return {}
+
+    class_strs = [str(c) for c in classes]
+    n_classes = len(class_strs)
+
+    # Calcola probabilità ensemble sul val set
+    if meta_model is not None:
+        try:
+            base_probas = []
+            for name, model in fitted_models:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    proba = model.predict_proba(X_val)
+                model_classes = [str(c) for c in model.classes_]
+                aligned = np.zeros((X_val.shape[0], n_classes))
+                for i, c in enumerate(class_strs):
+                    if c in model_classes:
+                        idx_c = model_classes.index(c)
+                        aligned[:, i] = proba[:, idx_c]
+                base_probas.append(aligned)
+            meta_input = np.hstack(base_probas)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                ensemble_proba = meta_model.predict_proba(meta_input)
+            meta_classes = [str(c) for c in meta_model.classes_]
+            # Allinea a class_strs
+            proba_aligned = np.zeros((X_val.shape[0], n_classes))
+            for i, c in enumerate(class_strs):
+                if c in meta_classes:
+                    idx_c = meta_classes.index(c)
+                    proba_aligned[:, i] = ensemble_proba[:, idx_c]
+        except Exception as exc:
+            logger.warning("isotonic calibration (meta model) failed: %s", exc)
+            return {}
+    else:
+        # Weighted average dei base models — usa gli stessi pesi di predict_ensemble
+        try:
+            _bw = base_weights or {}
+            _total_w = sum(_bw.values()) if _bw else 0.0
+            proba_aligned = np.zeros((X_val.shape[0], n_classes))
+            for name, model in fitted_models:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    proba = model.predict_proba(X_val)
+                model_classes = [str(c) for c in model.classes_]
+                w = (_bw.get(name, 1.0) / _total_w) if _total_w > 0 else (1.0 / len(fitted_models))
+                for i, c in enumerate(class_strs):
+                    if c in model_classes:
+                        idx_c = model_classes.index(c)
+                        proba_aligned[:, i] += w * proba[:, idx_c]
+        except Exception as exc:
+            logger.warning("isotonic calibration (weighted avg) failed: %s", exc)
+            return {}
+
+    y_val_str = np.array([str(v) for v in y_val])
+    calibrators: Dict[str, Any] = {}
+
+    for i, c in enumerate(class_strs):
+        y_binary = (y_val_str == c).astype(float)
+        # Serve almeno un esempio positivo e uno negativo per fittare ISO
+        if y_binary.sum() < 5 or (1.0 - y_binary).sum() < 5:
+            continue
+        preds = proba_aligned[:, i]
+        try:
+            iso = IsotonicRegression(out_of_bounds="clip")
+            iso.fit(preds, y_binary)
+            calibrators[c] = iso
+        except Exception:
+            continue
+
+    return calibrators
+
+
 def build_ensemble(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -241,12 +345,17 @@ def build_ensemble(
         splits = wf_splits if wf_splits else []
 
     if not splits:
-        # Fallback: simple first 70% train, last 30% val (temporal order)
-        cut = int(n_tr * 0.7)
-        if cut >= 20 and (n_tr - cut) >= 5:
+        # Fallback: simple 70/30 temporal split when walk_forward_splits unavailable.
+        cut = max(20, int(n_tr * 0.7))
+        if cut < n_tr:
             splits = [(np.arange(0, cut), np.arange(cut, n_tr))]
         else:
-            splits = [(np.arange(0, cut), np.arange(cut, n_tr))]
+            # Dataset troppo piccolo per qualsiasi split (n_tr <= 20):
+            # NON usare train==val — il meta-learner overfitterebbe in-sample
+            # producendo un BSS gonfiato e stake ingiustificatamente alte.
+            # Lascia splits=[] → oof_clean sarà vuoto → meta_model=None →
+            # predict_ensemble cade back su weighted average dei base models.
+            splits = []
 
     # Scale for LogReg
     scaler = StandardScaler()
@@ -302,6 +411,15 @@ def build_ensemble(
 
     class_labels = [str(c) for c in classes]
 
+    # Train isotonic calibrators on validation set.
+    # This maps ensemble predicted probabilities → actual win rates.
+    # Requires min 50 val samples per class; falls back to empty dict (no calibration)
+    # for small leagues. The calibration is applied automatically in predict_ensemble.
+    isotonic_calibrators = _train_isotonic_calibrators(
+        fitted_models, meta_model, X_val_scaled, y_val_np, classes,
+        base_weights=base_weights,
+    )
+
     return EnsemblePayload(
         base_models=fitted_models,
         meta_model=meta_model,
@@ -311,6 +429,7 @@ def build_ensemble(
         class_labels=class_labels,
         base_weights=base_weights,
         metrics=metrics,
+        isotonic_calibrators=isotonic_calibrators,
     )
 
 
@@ -354,6 +473,9 @@ def predict_ensemble(
     X_np = X_reindexed.to_numpy().astype(float)
     X_scaled = payload.scaler.transform(X_np) if payload.scaler else X_np
     classes = _resolve_classes(payload)
+    if not classes:
+        logger.warning("predict_ensemble: impossibile risolvere le classi — payload corrotto o vuoto. Ritorno {}.")
+        return {}
     n_classes = len(classes)
 
     if payload.meta_model is not None:
@@ -440,10 +562,16 @@ def get_ensemble_agreement(
 
     votes = {}
     for name, model in payload.base_models:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            pred = model.predict(X_scaled)
-        votes[name] = str(pred[0])
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                pred = model.predict(X_scaled)
+            votes[name] = str(pred[0])
+        except Exception as _exc:
+            logger.warning("get_ensemble_agreement: modello '%s' ha sollevato eccezione: %s", name, _exc)
+
+    if not votes:
+        return {"predicted_class": "", "agreement_ratio": 0.0, "votes": {}}
 
     # Majority vote
     from collections import Counter
