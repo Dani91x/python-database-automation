@@ -581,7 +581,33 @@ def extract_fixture_context(fx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # ==============================
 
 def _poisson_prob(lmbda: float, k: int) -> float:
+    if lmbda <= 0:
+        return 0.0
     return math.exp(-lmbda) * (lmbda ** k) / math.factorial(k)
+
+
+# Dixon-Coles correlation parameter.
+# Negative value: 0-0 and 1-1 occur MORE often than independent Poisson predicts;
+# 1-0 and 0-1 occur LESS often.  Literature range: ρ ∈ [−0.20, −0.08].
+# We use the original Dixon & Coles (1997) estimate: ρ = −0.13.
+DC_RHO: float = -0.13
+
+
+def _dc_tau(hg: int, ag: int, lh: float, la: float, rho: float = DC_RHO) -> float:
+    """Dixon-Coles correction factor for the four low-scoring score cells.
+    Adjusts the joint-independence assumption for (0,0), (1,0), (0,1), (1,1).
+    All other score combinations return 1.0 (no adjustment).
+    Tau is floored at 0.0: with |rho|=0.13 this only triggers above lambda ~7.7,
+    unreachable in normal football data, but the guard is kept for safety."""
+    if hg == 0 and ag == 0:
+        return 1.0 - lh * la * rho          # always > 1 when rho < 0
+    if hg == 1 and ag == 0:
+        return max(0.0, 1.0 + la * rho)     # negative if la > 1/|rho| ≈ 7.7
+    if hg == 0 and ag == 1:
+        return max(0.0, 1.0 + lh * rho)     # negative if lh > 1/|rho| ≈ 7.7
+    if hg == 1 and ag == 1:
+        return 1.0 - rho                     # always 1.13 when rho = -0.13
+    return 1.0
 
 
 def _build_match_cache(
@@ -624,6 +650,7 @@ def _build_match_cache(
                     "goals_for": goals_home,
                     "goals_against": goals_away,
                     "halftime_for": ht_home,
+                    "is_home": True,
                 }
             )
         if away_id is not None:
@@ -635,6 +662,7 @@ def _build_match_cache(
                     "goals_for": goals_away,
                     "goals_against": goals_home,
                     "halftime_for": ht_away,
+                    "is_home": False,
                 }
             )
 
@@ -776,6 +804,13 @@ def compute_db_json_analisi(
     home_matches = _before_date(team_hist.get(int(home_team_id), []))
     away_matches = _before_date(team_hist.get(int(away_team_id), []))
 
+    # Context-specific lists: home team's matches played at home, away team's matches played away.
+    # Used to compute attack/defense in the correct situational context rather than mixing venues.
+    home_home = [m for m in home_matches if m.get("is_home") is True]
+    away_away = [m for m in away_matches if m.get("is_home") is False]
+
+    # Overall blended windows (all matches) for the MIN_MATCHES data-sufficiency check
+    # and as fallback when context-specific data is too sparse.
     stats5_h = _window_stats(home_matches, 5, xg_map)
     stats10_h = _window_stats(home_matches, 10, xg_map)
     stats15_h = _window_stats(home_matches, 15, xg_map)
@@ -787,13 +822,36 @@ def compute_db_json_analisi(
     blend_h = _blend_windows(stats5_h, stats10_h, stats15_h, weights)
     blend_a = _blend_windows(stats5_a, stats10_a, stats15_a, weights)
 
+    # Context-specific blended windows — fall back to all-match blend when < 3 games available.
+    # With k_shrink=8 and n<3, the prior dominates (>73% weight), making split vs fallback
+    # differences negligible; 3 is therefore an appropriate minimum to justify the split.
+    MIN_CTX = 3
+    if len(home_home) >= MIN_CTX:
+        ctx5_h  = _window_stats(home_home, 5,  xg_map)
+        ctx10_h = _window_stats(home_home, 10, xg_map)
+        ctx15_h = _window_stats(home_home, 15, xg_map)
+        ctx_blend_h = _blend_windows(ctx5_h, ctx10_h, ctx15_h, weights)
+        ctx_n_h = ctx15_h.get("n_used", 0)
+    else:
+        ctx_blend_h = blend_h
+        ctx_n_h = stats15_h.get("n_used", 0)
+
+    if len(away_away) >= MIN_CTX:
+        ctx5_a  = _window_stats(away_away, 5,  xg_map)
+        ctx10_a = _window_stats(away_away, 10, xg_map)
+        ctx15_a = _window_stats(away_away, 15, xg_map)
+        ctx_blend_a = _blend_windows(ctx5_a, ctx10_a, ctx15_a, weights)
+        ctx_n_a = ctx15_a.get("n_used", 0)
+    else:
+        ctx_blend_a = blend_a
+        ctx_n_a = stats15_a.get("n_used", 0)
+
     k_shrink = 8.0
     eta_goals = 0.6
-    league_half = max(0.1, league_total_avg / 2.0)
 
-    def _shrink(raw: Optional[float], n_used: int) -> float:
-        base = league_half if raw is None else raw
-        return ((k_shrink * league_half) + (base * max(n_used, 1))) / (k_shrink + max(n_used, 1))
+    def _shrink(raw: Optional[float], n_used: int, prior: float) -> float:
+        base = prior if raw is None else raw
+        return ((k_shrink * prior) + (base * max(n_used, 1))) / (k_shrink + max(n_used, 1))
 
     home_n_used = stats15_h.get("n_used", 0)
     away_n_used = stats15_a.get("n_used", 0)
@@ -809,18 +867,27 @@ def compute_db_json_analisi(
         )
         return None
 
-    gf_h = _shrink(blend_h.get("gf_blend"), home_n_used)
-    ga_h = _shrink(blend_h.get("ga_blend"), home_n_used)
-    gf_a = _shrink(blend_a.get("gf_blend"), away_n_used)
-    ga_a = _shrink(blend_a.get("ga_blend"), away_n_used)
+    # Correct normalisation for each statistic:
+    #   gf_h  = home team goals scored AT HOME   → prior & normaliser = league_home_avg
+    #   ga_h  = home team goals conceded AT HOME  → these are goals scored BY visitors
+    #                                               → prior & normaliser = league_away_avg
+    #   gf_a  = away team goals scored AWAY       → prior & normaliser = league_away_avg
+    #   ga_a  = away team goals conceded AWAY     → these are goals scored BY hosting teams
+    #                                               → prior & normaliser = league_home_avg
+    gf_h = _shrink(ctx_blend_h.get("gf_blend"), ctx_n_h, league_home_avg)
+    ga_h = _shrink(ctx_blend_h.get("ga_blend"), ctx_n_h, league_away_avg)
+    gf_a = _shrink(ctx_blend_a.get("gf_blend"), ctx_n_a, league_away_avg)
+    ga_a = _shrink(ctx_blend_a.get("ga_blend"), ctx_n_a, league_home_avg)
 
-    xg_h = _shrink(blend_h.get("xg_blend"), home_n_used)
-    xg_a = _shrink(blend_a.get("xg_blend"), away_n_used)
+    xg_h = _shrink(ctx_blend_h.get("xg_blend"), ctx_n_h, league_home_avg)
+    xg_a = _shrink(ctx_blend_a.get("xg_blend"), ctx_n_a, league_away_avg)
 
-    home_attack = ((eta_goals * gf_h) + ((1 - eta_goals) * xg_h)) / league_half
-    away_attack = ((eta_goals * gf_a) + ((1 - eta_goals) * xg_a)) / league_half
-    home_def = ga_h / league_half
-    away_def = ga_a / league_half
+    # Attack and defense coefficients normalised to their respective league baselines.
+    # Neutral team (averages exactly the league) yields coefficient = 1.0 in all cases.
+    home_attack = ((eta_goals * gf_h) + ((1 - eta_goals) * xg_h)) / league_home_avg
+    away_attack = ((eta_goals * gf_a) + ((1 - eta_goals) * xg_a)) / league_away_avg
+    home_def    = ga_h / league_away_avg   # goals visitors score against home team / league away avg
+    away_def    = ga_a / league_home_avg   # goals home opponents score against away team / league home avg
 
     lambda_home = max(0.05, league_home_avg * home_attack * away_def)
     lambda_away = max(0.05, league_away_avg * away_attack * home_def)
@@ -830,7 +897,8 @@ def compute_db_json_analisi(
     for hg in range(0, max_goals + 1):
         p_h = _poisson_prob(lambda_home, hg)
         for ag in range(0, max_goals + 1):
-            p = p_h * _poisson_prob(lambda_away, ag)
+            tau = _dc_tau(hg, ag, lambda_home, lambda_away)
+            p = p_h * _poisson_prob(lambda_away, ag) * tau
             probs.append((hg, ag, p))
 
     total_p = sum(p for _, _, p in probs) or 1.0
@@ -839,10 +907,62 @@ def compute_db_json_analisi(
     p_home = sum(p for hg, ag, p in probs if hg > ag)
     p_draw = sum(p for hg, ag, p in probs if hg == ag)
     p_away = sum(p for hg, ag, p in probs if hg < ag)
+    p_over15 = sum(p for hg, ag, p in probs if (hg + ag) >= 2)
+    p_under15 = 1.0 - p_over15
     p_over25 = sum(p for hg, ag, p in probs if (hg + ag) >= 3)
     p_under25 = 1.0 - p_over25
+    p_over35 = sum(p for hg, ag, p in probs if (hg + ag) >= 4)
+    p_under35 = 1.0 - p_over35
     p_btts = sum(p for hg, ag, p in probs if hg > 0 and ag > 0)
     p_btts_no = 1.0 - p_btts
+
+    def _compute_ht_ratio(matches: List[Dict[str, Any]], prior: float = 0.45, k: int = 12) -> float:
+        """Frazione empirica di gol segnata nel primo tempo.
+        Bayesian shrinkage verso prior=0.45 con forza k=12 gol.
+        Cap [0.25, 0.65] per evitare estremi da piccoli campioni.
+        Ritorna prior se nessun match ha dati HT validi."""
+        total_gf = 0
+        total_ht = 0
+        valid = 0
+        for m in matches[-15:]:
+            gf = m.get("goals_for")
+            ht = m.get("halftime_for")
+            if gf is None or ht is None:
+                continue  # dato HT mancante — non distorcere il ratio
+            gf_int = int(float(gf))
+            ht_int = int(float(ht))
+            if gf_int < 0 or ht_int < 0 or ht_int > gf_int:
+                continue  # dato impossibile o corrotto
+            total_gf += gf_int
+            total_ht += ht_int
+            valid += 1
+        if valid == 0:
+            return prior  # nessun dato HT valido: usa prior invece di distorcere
+        if total_gf == 0:
+            return prior  # tutte le partite finite 0-0: nessuna info sul ratio, usa prior
+        shrunk = (k * prior + total_ht) / (k + total_gf)
+        return max(0.25, min(0.65, shrunk))
+
+    # --- HT 1X2 via matrice separata (ratio HT/FT data-driven per squadra) ---
+    # Nessun fallback a home_matches/away_matches: mantenere coerenza contestuale
+    # con i lambda. Con pochi/nessun dato, lo shrinkage converge al prior 0.45.
+    ht_ratio_h = _compute_ht_ratio(home_home)
+    ht_ratio_a = _compute_ht_ratio(away_away)
+    lambda_ht_home = lambda_home * ht_ratio_h
+    lambda_ht_away = lambda_away * ht_ratio_a
+    max_goals_ht = 4
+    ht_probs = []
+    for _hg in range(0, max_goals_ht + 1):
+        _p_h = _poisson_prob(lambda_ht_home, _hg)
+        for _ag in range(0, max_goals_ht + 1):
+            _tau = _dc_tau(_hg, _ag, lambda_ht_home, lambda_ht_away)
+            _p = _p_h * _poisson_prob(lambda_ht_away, _ag) * _tau
+            ht_probs.append((_hg, _ag, _p))
+    _ht_total = sum(p for _, _, p in ht_probs) or 1.0
+    ht_probs = [(_hg, _ag, p / _ht_total) for _hg, _ag, p in ht_probs]
+    p_ht_home = sum(p for _hg, _ag, p in ht_probs if _hg > _ag)
+    p_ht_draw = sum(p for _hg, _ag, p in ht_probs if _hg == _ag)
+    p_ht_away = sum(p for _hg, _ag, p in ht_probs if _hg < _ag)
 
     def _team_p_goal_1h(matches: List[Dict[str, Any]]) -> float:
         if not matches:
@@ -858,18 +978,21 @@ def compute_db_json_analisi(
             return 0.5
         return sum(flags) / len(flags)
 
-    p_home_1h = _team_p_goal_1h(home_matches)
-    p_away_1h = _team_p_goal_1h(away_matches)
+    # Coerenza contestuale: stessa lista usata per _compute_ht_ratio (home_home / away_away).
+    # Se la lista contestuale è troppo corta, _team_p_goal_1h ritorna il prior 0.5
+    # tramite il proprio guard (flags vuoto → return 0.5).
+    p_home_1h = _team_p_goal_1h(home_home)
+    p_away_1h = _team_p_goal_1h(away_away)
     p_goal_1h_freq = 1.0 - ((1 - p_home_1h) * (1 - p_away_1h))
 
     # --- HYBRID HT MODEL ---
-    lambda_1h = (lambda_home + lambda_away) * 0.45
+    lambda_1h = lambda_home * ht_ratio_h + lambda_away * ht_ratio_a
     p_goal_1h_poisson = 1.0 - math.exp(-lambda_1h)
     p_hybrid_1h = (p_goal_1h_freq + p_goal_1h_poisson) / 2.0
     # -----------------------
 
     analysis = {
-        "model": "poisson_xg_hybrid",
+        "model": "poisson_xg_hybrid_dc",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "league_id": int(league_id),
         "season_year": int(season_year),
@@ -885,19 +1008,25 @@ def compute_db_json_analisi(
             "away_matches_used": int(away_n_used),
             "home_xg_covered": int(stats15_h.get("xg_used", 0)),
             "away_xg_covered": int(stats15_a.get("xg_used", 0)),
+            "ht_ratio_home": round(ht_ratio_h, 3),
+            "ht_ratio_away": round(ht_ratio_a, 3),
+            "dc_rho": DC_RHO,
         },
         "markets": {
             "1x2": {"H": round(p_home, 4), "D": round(p_draw, 4), "A": round(p_away, 4)},
+            "over_1_5": {"True": round(p_over15, 4), "False": round(p_under15, 4)},
             "over_2_5": {"True": round(p_over25, 4), "False": round(p_under25, 4)},
+            "over_3_5": {"True": round(p_over35, 4), "False": round(p_under35, 4)},
             "btts": {"True": round(p_btts, 4), "False": round(p_btts_no, 4)},
             "first_half_over_0_5": {
-                "True": round(p_hybrid_1h, 4), 
+                "True": round(p_hybrid_1h, 4),
                 "False": round(1.0 - p_hybrid_1h, 4),
                 "details": {
                     "freq": round(p_goal_1h_freq, 4),
                     "poisson": round(p_goal_1h_poisson, 4)
                 }
             },
+            "ht_1x2": {"H": round(p_ht_home, 4), "D": round(p_ht_draw, 4), "A": round(p_ht_away, 4)},
         },
         "coverage": {
             "windows_used": {

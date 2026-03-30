@@ -56,9 +56,10 @@ POISSON_MIN_PROB: Dict[str, float] = {
     "1x2_A":      0.54,   # live: min_prob=0.54
     "over_2_5":   0.58,   # live: min_prob=0.58
     "under_2_5":  0.54,   # live: min_prob=0.54
-    "over_1_5":   0.60,
-    "under_1_5":  0.50,
-    "over_3_5":   0.45,
+    "over_1_5":   0.65,   # live: min_prob=0.65
+    "under_1_5":  0.55,   # live: min_prob=0.55
+    "over_3_5":   0.40,   # live: min_prob=0.40
+    "under_3_5":  0.58,   # live: min_prob=0.58
     "btts_yes":   0.58,   # live: min_prob=0.58
     "btts_no":    0.54,   # live: min_prob=0.54
     "ht_over_0_5": 0.62,
@@ -71,9 +72,10 @@ POISSON_MIN_EDGE: Dict[str, float] = {
     "1x2_A":      0.06,   # live: 6%
     "over_2_5":   0.07,   # live: 7%
     "under_2_5":  0.05,   # live: 5%
-    "over_1_5":   0.05,
-    "under_1_5":  0.05,
-    "over_3_5":   0.05,
+    "over_1_5":   0.06,   # live: 6%
+    "under_1_5":  0.06,   # live: 6%
+    "over_3_5":   0.06,   # live: 6%
+    "under_3_5":  0.05,   # live: 5%
     "btts_yes":   0.08,   # live: 8%
     "btts_no":    0.07,   # live: 7%
     "ht_over_0_5": 0.05,  # live: 5%
@@ -110,6 +112,8 @@ ML_SCORE_TIERS: List[Tuple[float, float]] = [
 # Copia esatta di money_management.py::CALIBRATION_TABLE
 # bin_idx = int(prob * 10), capped a 9
 # correction_factor = hit_rate_reale / prob_media_nel_bin (derivato da 24k+ match)
+# Mercati estesi (O15/U15/O35/U35/HT_*) aggiunti 2026-03-30: calibrazione
+# neutrale 1.0 finché update_poisson_calibration.py non accumula dati storici.
 # ─────────────────────────────────────────────────────────────────────────────
 
 POISSON_CALIBRATION_TABLE: Dict[str, Dict[int, float]] = {
@@ -122,19 +126,32 @@ POISSON_CALIBRATION_TABLE: Dict[str, Dict[int, float]] = {
     "BTTS":    {0: 7.159, 1: 1.994, 2: 1.437, 3: 1.194, 4: 1.021, 5: 0.963, 6: 0.886, 7: 0.869, 8: 0.767, 9: 1.0  },
     "BTTS_NO": {0: 1.0,   1: 2.178, 2: 1.364, 3: 1.206, 4: 1.044, 5: 0.983, 6: 0.891, 7: 0.842, 8: 0.795, 9: 0.765},
     "HT05":    {0: 1.0,   1: 4.724, 2: 2.735, 3: 1.950, 4: 1.433, 5: 1.226, 6: 1.040, 7: 0.946, 8: 0.870, 9: 0.813},
+    # Mercati estesi — calibrazione neutrale 1.0 (nessun dato storico ancora)
+    "O15":     {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "U15":     {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "O35":     {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "U35":     {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_H":    {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_D":    {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_A":    {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_U05":  {0: 22.399, 1: 1.833, 2: 1.246, 3: 0.884, 4: 0.778, 5: 0.659, 6: 0.544, 7: 0.457, 8: 0.411, 9: 0.320},
 }
 
 # Mappa: market key backtest → cal_key nella tabella
 POISSON_CAL_KEY: Dict[str, str] = {
-    "1x2_H":      "H",
-    "1x2_D":      "D",
-    "1x2_A":      "A",
-    "over_2_5":   "O25",
-    "under_2_5":  "U25",
-    "btts_yes":   "BTTS",
-    "btts_no":    "BTTS_NO",
-    "ht_over_0_5": "HT05",
-    # over_1_5, over_3_5: no calibration → factor 1.0
+    "1x2_H":       "H",
+    "1x2_D":       "D",
+    "1x2_A":       "A",
+    "over_2_5":    "O25",
+    "under_2_5":   "U25",
+    "over_1_5":    "O15",
+    "under_1_5":   "U15",
+    "over_3_5":    "O35",
+    "under_3_5":   "U35",
+    "btts_yes":     "BTTS",
+    "btts_no":      "BTTS_NO",
+    "ht_over_0_5":  "HT05",
+    "ht_under_0_5": "HT_U05",
 }
 
 
@@ -176,19 +193,21 @@ ODDS_PARSE_MAP: Dict[str, Dict[str, str]] = {
 }
 
 # db_json_analisi.markets → chiave standardizzata
+# Nota: HT_H/HT_D/HT_A non sono inclusi — raw_json_odds non contiene odds HT 1X2
 POISSON_MARKET_MAP: Dict[str, Tuple[str, str, str]] = {
     # chiave_std: (market_in_json, class_in_json, odds_key)
-    "1x2_H":      ("1x2", "H", "1x2_H"),
-    "1x2_D":      ("1x2", "D", "1x2_D"),
-    "1x2_A":      ("1x2", "A", "1x2_A"),
-    "over_2_5":   ("over_2_5", "True", "over_2_5"),
-    "under_2_5":  ("over_2_5", "False", "under_2_5"),
-    "over_1_5":   ("over_1_5", "True", "over_1_5"),
-    "under_1_5":  ("over_1_5", "False", "under_1_5"),
-    "over_3_5":   ("over_3_5", "True", "over_3_5"),
-    "btts_yes":   ("btts", "True", "btts_yes"),
-    "btts_no":    ("btts", "False", "btts_no"),
-    "ht_over_0_5": ("first_half_over_0_5", "True", "ht_over_0_5"),
+    "1x2_H":       ("1x2",                 "H",     "1x2_H"),
+    "1x2_D":       ("1x2",                 "D",     "1x2_D"),
+    "1x2_A":       ("1x2",                 "A",     "1x2_A"),
+    "over_2_5":    ("over_2_5",            "True",  "over_2_5"),
+    "under_2_5":   ("over_2_5",            "False", "under_2_5"),
+    "over_1_5":    ("over_1_5",            "True",  "over_1_5"),
+    "under_1_5":   ("over_1_5",            "False", "under_1_5"),
+    "over_3_5":    ("over_3_5",            "True",  "over_3_5"),
+    "under_3_5":   ("over_3_5",            "False", "under_3_5"),
+    "btts_yes":    ("btts",                "True",  "btts_yes"),
+    "btts_no":     ("btts",                "False", "btts_no"),
+    "ht_over_0_5": ("first_half_over_0_5", "True",  "ht_over_0_5"),
 }
 
 # model_predictions_json.targets → (odds_key, result_fn_key)

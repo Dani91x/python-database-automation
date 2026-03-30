@@ -2,7 +2,7 @@
 =============================================================================
   QUANT FUND — Money Management Engine v3.0 (Edge Engine)
   Sistema di Money Management a Slot Paralleli Dinamici con:
-  - Edge Scanner Multi-Mercato (6 mercati)
+  - Edge Scanner Multi-Mercato (15 mercati Poisson + 15 ML)
   - Confidence-Adjusted Edge Score (Edge × √Prob)
   - Kelly Criterion Frazionato (configurabile)
   - Risoluzione Risultati automatica dal DB
@@ -126,11 +126,18 @@ MARKET_MAP = {
     "H":       {"label": "Home Win",      "json_path": ("markets", "1x2", "H"),                      "ai_path": ("target_1x2", "H"),          "cal_key": "H",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
     "D":       {"label": "Pareggio",      "json_path": ("markets", "1x2", "D"),                      "ai_path": ("target_1x2", "D"),          "cal_key": "D",       "min_edge": 7.0, "min_prob": 0.35, "min_odds": 2.50},
     "A":       {"label": "Away Win",      "json_path": ("markets", "1x2", "A"),                      "ai_path": ("target_1x2", "A"),          "cal_key": "A",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
+    "O15":     {"label": "Over 1.5",      "json_path": ("markets", "over_1_5", "True"),              "ai_path": ("target_over_1_5", "True"),  "cal_key": "O15",     "min_edge": 6.0, "min_prob": 0.65, "min_odds": 1.40},
+    "U15":     {"label": "Under 1.5",     "json_path": ("markets", "over_1_5", "False"),             "ai_path": ("target_over_1_5", "False"), "cal_key": "U15",     "min_edge": 6.0, "min_prob": 0.55, "min_odds": 1.80},
     "O25":     {"label": "Over 2.5",      "json_path": ("markets", "over_2_5", "True"),              "ai_path": ("target_over_2_5", "True"),  "cal_key": "O25",     "min_edge": 7.0, "min_prob": 0.58, "min_odds": 1.50},
     "U25":     {"label": "Under 2.5",     "json_path": ("markets", "over_2_5", "False"),             "ai_path": ("target_over_2_5", "False"), "cal_key": "U25",     "min_edge": 5.0, "min_prob": 0.54, "min_odds": 1.50},
+    "O35":     {"label": "Over 3.5",      "json_path": ("markets", "over_3_5", "True"),              "ai_path": ("target_over_3_5", "True"),  "cal_key": "O35",     "min_edge": 6.0, "min_prob": 0.40, "min_odds": 1.80},
+    "U35":     {"label": "Under 3.5",     "json_path": ("markets", "over_3_5", "False"),             "ai_path": ("target_over_3_5", "False"), "cal_key": "U35",     "min_edge": 5.0, "min_prob": 0.58, "min_odds": 1.35},
     "BTTS":    {"label": "BTTS Sì",       "json_path": ("markets", "btts", "True"),                  "ai_path": ("target_btts", "True"),      "cal_key": "BTTS",    "min_edge": 8.0, "min_prob": 0.58, "min_odds": 1.60},
     "BTTS_NO": {"label": "BTTS No",       "json_path": ("markets", "btts", "False"),                 "ai_path": ("target_btts", "False"),     "cal_key": "BTTS_NO", "min_edge": 7.0, "min_prob": 0.54, "min_odds": 1.50},
     "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"),"cal_key": "HT05",  "min_edge": 5.0},
+    "HT_H":    {"label": "HT Home",       "json_path": ("markets", "ht_1x2", "H"),                   "ai_path": ("target_ht_1x2", "H"),       "cal_key": "HT_H",    "min_edge": 6.0, "min_prob": 0.40, "min_odds": 1.80},
+    "HT_D":    {"label": "HT Draw",       "json_path": ("markets", "ht_1x2", "D"),                   "ai_path": ("target_ht_1x2", "D"),       "cal_key": "HT_D",    "min_edge": 7.0, "min_prob": 0.30, "min_odds": 2.50},
+    "HT_A":    {"label": "HT Away",       "json_path": ("markets", "ht_1x2", "A"),                   "ai_path": ("target_ht_1x2", "A"),       "cal_key": "HT_A",    "min_edge": 6.0, "min_prob": 0.35, "min_odds": 2.00},
 }
 
 # ---------------------------------------------------------------------------
@@ -166,7 +173,7 @@ ML_MARKET_MAP = {
     "O15":     {"label": "Over 1.5 (ML)",    "ai_path": ("target_over_1_5", "True"),    "odds_key": "O15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.40, "ai_target": "target_over_1_5",   "n_classes": 2},
     "U15":     {"label": "Under 1.5 (ML)",   "ai_path": ("target_over_1_5", "False"),   "odds_key": "U15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_1_5",   "n_classes": 2},
     "O35":     {"label": "Over 3.5 (ML)",    "ai_path": ("target_over_3_5", "True"),    "odds_key": "O35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_3_5",   "n_classes": 2},
-    "U35":     {"label": "Under 3.5 (ML)",   "ai_path": ("target_over_3_5", "False"),   "odds_key": "U35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.20, "ai_target": "target_over_3_5",   "n_classes": 2},
+    "U35":     {"label": "Under 3.5 (ML)",   "ai_path": ("target_over_3_5", "False"),   "odds_key": "U35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.35, "ai_target": "target_over_3_5",   "n_classes": 2},
     "HT_H":    {"label": "HT Home (ML)",     "ai_path": ("target_ht_1x2", "H"),         "odds_key": "HT_H",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 1.80, "ai_target": "target_ht_1x2",     "n_classes": 3},
     "HT_D":    {"label": "HT Draw (ML)",     "ai_path": ("target_ht_1x2", "D"),         "odds_key": "HT_D",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.50, "ai_target": "target_ht_1x2",     "n_classes": 3},
     "HT_A":    {"label": "HT Away (ML)",     "ai_path": ("target_ht_1x2", "A"),         "odds_key": "HT_A",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.00, "ai_target": "target_ht_1x2",     "n_classes": 3},
@@ -200,6 +207,14 @@ CALIBRATION_TABLE = {
     "HT05":    {0: 1.0,   1: 4.724, 2: 2.735, 3: 1.950, 4: 1.433, 5: 1.226, 6: 1.040, 7: 0.946, 8: 0.870, 9: 0.813},
     # 1H Under 0.5 — non aggiornato (N insufficiente nei bin utili)
     "HT_U05":  {0: 22.399, 1: 1.833, 2: 1.246, 3: 0.884, 4: 0.778, 5: 0.659, 6: 0.544, 7: 0.457, 8: 0.411, 9: 0.320},
+    # Mercati estesi — fattori neutri (1.0) fino ad accumulo dati storici sufficienti
+    "O15":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "U15":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "O35":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "U35":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_H": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_D": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_A": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
 }
 
 # ---------------------------------------------------------------------------
@@ -1404,14 +1419,15 @@ class SlotManager:
                 ws = self.sh.worksheet("Report Ven Dom")
                 _sheets_retry(ws.clear)
                 # Unmerge tutte le celle unite per un foglio pulito
+                old_rows = ws.row_count
                 try:
                     _sheets_retry(self.sh.batch_update, {"requests": [
-                        {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": 14}}}
+                        {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": old_rows, "startColumnIndex": 0, "endColumnIndex": 14}}}
                     ]})
                 except Exception:
                     pass  # Se non ci sono merge, ignora
             except gspread.exceptions.WorksheetNotFound:
-                ws = self.sh.add_worksheet(title="Report Ven Dom", rows=2000, cols=14)
+                ws = self.sh.add_worksheet(title="Report Ven Dom", rows=3000, cols=14)
 
             sheet_id = ws.id
             all_data = []
@@ -1742,20 +1758,25 @@ class SlotManager:
             # WRITE E CLEANUP RESIDUI
             # ═══════════════════════════════════════════════════════════════
             end_row = len(all_data)
+            # Margine dinamico: il foglio deve coprire almeno tutti i dati + buffer
+            max_rows = max(end_row + 200, ws.row_count)
+            
+            # Ridimensiona il foglio se necessario
+            if ws.row_count < end_row + 10:
+                _sheets_retry(ws.resize, rows=max_rows, cols=COLS)
+                time_module.sleep(1)
             
             # --- Forza pulizia completa (dati e unioni) da end_row in poi ---
-            # Questo garantisce che non ci siano "rimanenze" dei giorni precedenti
-            # o della vecchia impaginazione dalla riga 92 in giù (esempio).
-            if end_row < 2000:
+            if end_row < max_rows:
                 format_requests.append({
                     "unmergeCells": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": COLS}
+                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": max_rows, "startColumnIndex": 0, "endColumnIndex": COLS}
                     }
                 })
                 # Resetta sfondo e testo a default per le celle non usate
                 format_requests.append({
                     "repeatCell": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": 2000, "startColumnIndex": 0, "endColumnIndex": COLS},
+                        "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": max_rows, "startColumnIndex": 0, "endColumnIndex": COLS},
                         "cell": {
                             "userEnteredFormat": {
                                 "backgroundColor": {"red": 1, "green": 1, "blue": 1},
@@ -1767,14 +1788,29 @@ class SlotManager:
                 })
 
             if all_data:
-                _sheets_retry(ws.update, f"A1:N{end_row}", all_data)
-                time_module.sleep(2)
+                # Usa updateCells con stringValue/numberValue per compatibilità locale
+                rows_api = []
+                for row in all_data:
+                    cell_vals = []
+                    for val in row:
+                        if isinstance(val, (int, float)):
+                            cell_vals.append({"userEnteredValue": {"numberValue": float(val)}})
+                        else:
+                            cell_vals.append({"userEnteredValue": {"stringValue": str(val)}})
+                    rows_api.append({"values": cell_vals})
+                update_cells_req = {
+                    "updateCells": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": COLS},
+                        "rows": rows_api,
+                        "fields": "userEnteredValue"
+                    }
+                }
+                format_requests.insert(0, update_cells_req)
+                time_module.sleep(1)
                 
             # Azzera i valori dalle righe successive
-            if end_row < 2000:
-                 empty_chunk = [[""] * COLS] * (2000 - end_row)
-                 # Usare update così massivo può essere lento, quindi usiamo batch_clear
-                 _sheets_retry(ws.batch_clear, [f"A{end_row+1}:N2000"])
+            if end_row < max_rows:
+                 _sheets_retry(ws.batch_clear, [f"A{end_row+1}:N{max_rows}"])
                  time_module.sleep(1)
 
             if format_requests:
@@ -2377,8 +2413,15 @@ class SlotManager:
             try:
                 ws = self.sh.worksheet("Analytics")
                 _sheets_retry(ws.clear)
+                # Unmerge tutte le celle per evitare residui visivi
+                try:
+                    _sheets_retry(self.sh.batch_update, {"requests": [
+                        {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": ws.row_count, "startColumnIndex": 0, "endColumnIndex": 14}}}
+                    ]})
+                except Exception:
+                    pass
             except gspread.exceptions.WorksheetNotFound:
-                ws = self.sh.add_worksheet(title="Analytics", rows=500, cols=14)
+                ws = self.sh.add_worksheet(title="Analytics", rows=2000, cols=14)
 
             history = self._load_history()
             sheet_id = ws.id
@@ -2537,8 +2580,8 @@ class SlotManager:
             fmt(r, c1=10, c2=11, color=G_TEXT if m_pnl >= 0 else R_TEXT, bold=True, center=True)
 
             r = add_row(["Quota media",
-                         "", "", "", f"{p_ao:.2f}", "", "",
-                         "", "", "", f"{m_ao:.2f}", "", "", ""])
+                         f"{p_ao:.2f}", "", "", "", "", "",
+                         f"{m_ao:.2f}", "", "", "", "", "", ""])
             fmt(r, center=True)
             add_row([""])
 
@@ -2618,13 +2661,17 @@ class SlotManager:
                 bss_by_mkt[mkey]["probs"].append(prob)
                 bss_by_mkt[mkey]["outcomes"].append(outcome)
 
-            def _bss(mkey):
-                d = bss_by_mkt.get(mkey)
+            def _bss(mkt_label):
+                d = bss_by_mkt.get(mkt_label)
                 if not d or len(d["sq"]) < 5:
                     return "—", "—"
                 brier = sum(d["sq"]) / len(d["sq"])
-                # BSS baseline coerente con scan e Kelly: (n_classes-1)/n_classes
-                n_cls_bss = ML_MARKET_MAP.get(mkey, {}).get("n_classes", 2)
+                # Trova il codice mercato dalla label per recuperare n_classes
+                n_cls_bss = 2  # default
+                for code, info in ML_MARKET_MAP.items():
+                    if info.get("label") == mkt_label:
+                        n_cls_bss = info.get("n_classes", 2)
+                        break
                 base = (n_cls_bss - 1) / n_cls_bss if n_cls_bss > 1 else 0.5
                 proxy = round(1 - brier / base, 3) if base > 0 else None
                 brier_s = f"{brier:.4f}"
@@ -2840,8 +2887,49 @@ class SlotManager:
             # ══════════════════════════════════════════════════════════════
             end_row = len(all_data)
             col_letter = "N"  # col 14
-            _sheets_retry(ws.update, f"A1:{col_letter}{end_row}", all_data)
+            
+            # Ridimensiona il foglio se necessario
+            max_rows = max(end_row + 100, ws.row_count)
+            if ws.row_count < end_row + 10:
+                _sheets_retry(ws.resize, rows=max_rows, cols=COLS)
+                time_module.sleep(1)
+            
+            # Usa updateCells con stringValue/numberValue per compatibilità locale
+            rows_api = []
+            for row in all_data:
+                cell_vals = []
+                for val in row:
+                    if isinstance(val, (int, float)):
+                        cell_vals.append({"userEnteredValue": {"numberValue": float(val)}})
+                    else:
+                        cell_vals.append({"userEnteredValue": {"stringValue": str(val)}})
+                rows_api.append({"values": cell_vals})
+            update_cells_req = {
+                "updateCells": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": COLS},
+                    "rows": rows_api,
+                    "fields": "userEnteredValue"
+                }
+            }
+            fmt_requests.insert(0, update_cells_req)
             time_module.sleep(1)
+            
+            # Pulisci righe residue
+            if end_row < max_rows:
+                _sheets_retry(ws.batch_clear, [f"A{end_row+1}:{col_letter}{max_rows}"])
+                # Reset formattazione residua
+                fmt_requests.append({"unmergeCells": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": max_rows, "startColumnIndex": 0, "endColumnIndex": COLS}
+                }})
+                fmt_requests.append({"repeatCell": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": end_row, "endRowIndex": max_rows, "startColumnIndex": 0, "endColumnIndex": COLS},
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                        "textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False, "fontSize": 10}
+                    }},
+                    "fields": "userEnteredFormat"
+                }})
+            
             if fmt_requests:
                 for i in range(0, len(fmt_requests), 100):
                     _sheets_retry(self.sh.batch_update, {"requests": fmt_requests[i:i+100]})

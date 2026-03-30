@@ -21,6 +21,7 @@ Uso:
 """
 from __future__ import annotations
 
+import ast
 import argparse
 import json
 import os
@@ -30,19 +31,37 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# TABELLA ATTUALE (da money_management.py) — usata per confronto
+# TABELLA ATTUALE — letta dinamicamente da money_management.py
+# Nessuna copia hardcodata: ogni run usa sempre i valori reali in produzione.
 # ─────────────────────────────────────────────────────────────────────────────
-CURRENT_CALIBRATION_TABLE = {
-    "H":       {0: 2.234, 1: 1.013, 2: 1.056, 3: 1.005, 4: 1.004, 5: 1.033, 6: 1.015, 7: 0.937, 8: 0.998, 9: 1.017},
-    "D":       {0: 0.685, 1: 0.917, 2: 0.975, 3: 1.019, 4: 0.793, 5: 1.0,   6: 1.0,   7: 1.0,   8: 1.0,   9: 0.661},
-    "A":       {0: 1.638, 1: 0.956, 2: 0.994, 3: 1.018, 4: 0.961, 5: 1.012, 6: 1.083, 7: 1.100, 8: 1.082, 9: 0.613},
-    "O25":     {0: 5.616, 1: 1.630, 2: 1.288, 3: 1.150, 4: 1.027, 5: 0.969, 6: 0.961, 7: 0.971, 8: 0.935, 9: 0.845},
-    "U25":     {0: 3.238, 1: 1.342, 2: 1.077, 3: 1.074, 4: 1.037, 5: 0.978, 6: 0.917, 7: 0.900, 8: 0.874, 9: 0.709},
-    "BTTS":    {0: 4.542, 1: 1.061, 2: 1.268, 3: 1.201, 4: 1.026, 5: 0.941, 6: 0.886, 7: 0.821, 8: 0.635, 9: 0.572},
-    "BTTS_NO": {0: 5.708, 1: 2.966, 2: 1.504, 3: 1.208, 4: 1.071, 5: 0.978, 6: 0.888, 7: 0.904, 8: 0.987, 9: 0.865},
-    "HT05":    {0: 1.0,   1: 4.564, 2: 2.667, 3: 1.877, 4: 1.451, 5: 1.251, 6: 1.059, 7: 0.922, 8: 0.860, 9: 0.727},
-}
+def load_current_calibration_table() -> Dict[str, Dict[int, float]]:
+    """Legge CALIBRATION_TABLE direttamente da money_management.py a runtime.
+    Ritorna {} se il file non esiste o il pattern non viene trovato:
+    in quel caso il confronto delta verrà saltato senza crash."""
+    mm_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "Betfair", "money_management.py"
+    )
+    if not os.path.exists(mm_path):
+        return {}
+    try:
+        with open(mm_path, encoding="utf-8") as f:
+            content = f.read()
+        # Trova il blocco: CALIBRATION_TABLE = { ... }
+        # I valori interni sono dict a singolo livello {0: x, 1: y, ...}
+        pattern = re.compile(
+            r"^CALIBRATION_TABLE\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\})",
+            re.MULTILINE | re.DOTALL,
+        )
+        m = pattern.search(content)
+        if not m:
+            return {}
+        return ast.literal_eval(m.group(1))
+    except Exception as e:
+        print(f"  Warning: impossibile parsare CALIBRATION_TABLE da money_management.py — {type(e).__name__}: {e}")
+        return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAPPA MERCATI POISSON
@@ -57,22 +76,48 @@ MARKET_CONFIG = {
     "BTTS":    ("btts",                 "True",  "BTTS Si"),
     "BTTS_NO": ("btts",                 "False", "BTTS No"),
     "HT05":    ("first_half_over_0_5",  "True",  "1T Over 0.5"),
+    # Mercati estesi aggiunti in produzione 2026-03-30
+    "O15":    ("over_1_5",           "True",  "Over 1.5"),
+    "U15":    ("over_1_5",           "False", "Under 1.5"),
+    "O35":    ("over_3_5",           "True",  "Over 3.5"),
+    "U35":    ("over_3_5",           "False", "Under 3.5"),
+    "HT_H":   ("ht_1x2",            "H",     "HT Casa"),
+    "HT_D":   ("ht_1x2",            "D",     "HT Pareggio"),
+    "HT_A":   ("ht_1x2",            "A",     "HT Trasferta"),
+    # HT Under 0.5 — calibration entry e usato in _resolve_result; classe "False" di first_half_over_0_5
+    "HT_U05": ("first_half_over_0_5", "False", "1H Under 0.5"),
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FUNZIONE RISULTATO (stessa di master_backtest.py)
 # ─────────────────────────────────────────────────────────────────────────────
 def check_result(cal_key: str, h: int, a: int, hh: Optional[int], ha: Optional[int]) -> Optional[bool]:
-    if cal_key == "H":      return h > a
-    if cal_key == "D":      return h == a
-    if cal_key == "A":      return h < a
-    if cal_key == "O25":    return h + a > 2
-    if cal_key == "U25":    return h + a <= 2
-    if cal_key == "BTTS":   return h > 0 and a > 0
+    if cal_key == "H":       return h > a
+    if cal_key == "D":       return h == a
+    if cal_key == "A":       return h < a
+    if cal_key == "O25":     return h + a > 2
+    if cal_key == "U25":     return h + a <= 2
+    if cal_key == "BTTS":    return h > 0 and a > 0
     if cal_key == "BTTS_NO": return not (h > 0 and a > 0)
     if cal_key == "HT05":
         if hh is None or ha is None: return None
         return hh + ha > 0
+    if cal_key == "O15":     return h + a > 1
+    if cal_key == "U15":     return h + a <= 1
+    if cal_key == "O35":     return h + a > 3
+    if cal_key == "U35":     return h + a <= 3
+    if cal_key == "HT_H":
+        if hh is None or ha is None: return None
+        return hh > ha
+    if cal_key == "HT_D":
+        if hh is None or ha is None: return None
+        return hh == ha
+    if cal_key == "HT_A":
+        if hh is None or ha is None: return None
+        return hh < ha
+    if cal_key == "HT_U05":
+        if hh is None or ha is None: return None
+        return hh + ha == 0
     return None
 
 
@@ -158,6 +203,13 @@ def compute_calibration(
             skipped += 1
             continue
 
+        # Escludi record scritti dal modello pre-DC: le probabilità nelle 4 celle
+        # basse (0-0, 1-0, 0-1, 1-1) differiscono sistematicamente. Usare record
+        # misti produrrebbe fattori di calibrazione contaminati.
+        if analisi.get("model") != "poisson_xg_hybrid_dc":
+            skipped += 1
+            continue
+
         fid = row.get("fixture_id")
         hh, ha = ht_map.get(fid, (None, None))
         markets = analisi.get("markets", {})
@@ -224,10 +276,13 @@ def print_comparison(
     stats: Dict[str, Dict[int, dict]],
     new_table: Dict[str, Dict[int, float]],
     min_n: int,
+    current_table: Dict[str, Dict[int, float]],
 ) -> None:
     print("\n" + "=" * 90)
     print("  NUOVA CALIBRATION TABLE — confronto con attuale")
     print("  Bin: 0=[0-10%]  1=[10-20%] ... 9=[90-100%]")
+    if not current_table:
+        print("  AVVISO: colonna 'Old CF' non disponibile (money_management.py non leggibile)")
     print("=" * 90)
 
     for cal_key, (_, _, label) in MARKET_CONFIG.items():
@@ -244,7 +299,7 @@ def print_comparison(
             hit_rate = s["hits"] / n
             bias = hit_rate - avg_prob
             new_cf = new_table[cal_key][bin_idx]
-            old_cf = CURRENT_CALIBRATION_TABLE.get(cal_key, {}).get(bin_idx, 1.0)
+            old_cf = current_table.get(cal_key, {}).get(bin_idx, 1.0)
             delta = new_cf - old_cf
             note = ""
             if n < min_n:
@@ -272,6 +327,14 @@ def print_python_table(new_table: Dict[str, Dict[int, float]]) -> None:
         "BTTS":    "BTTS Si",
         "BTTS_NO": "BTTS No",
         "HT05":    "1H Over 0.5",
+        "O15":     "Over 1.5",
+        "U15":     "Under 1.5",
+        "O35":     "Over 3.5",
+        "U35":     "Under 3.5",
+        "HT_H":    "HT Casa",
+        "HT_D":    "HT Pareggio",
+        "HT_A":    "HT Trasferta",
+        "HT_U05":  "1H Under 0.5",
     }
     for cal_key, bins in new_table.items():
         desc = descriptions.get(cal_key, cal_key)
@@ -284,7 +347,7 @@ def print_python_table(new_table: Dict[str, Dict[int, float]]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # APPLY (aggiorna money_management.py automaticamente)
 # ─────────────────────────────────────────────────────────────────────────────
-def apply_to_money_management(new_table: Dict[str, Dict[int, float]]) -> None:
+def apply_to_money_management(new_table: Dict[str, Dict[int, float]], total_rows: int = 0) -> None:
     """Sostituisce CALIBRATION_TABLE in money_management.py."""
     mm_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -307,12 +370,20 @@ def apply_to_money_management(new_table: Dict[str, Dict[int, float]]) -> None:
         "BTTS":    "BTTS Si",
         "BTTS_NO": "BTTS No",
         "HT05":    "1H Over 0.5",
+        "O15":     "Over 1.5",
+        "U15":     "Under 1.5",
+        "O35":     "Over 3.5",
+        "U35":     "Under 3.5",
+        "HT_H":    "HT Casa",
+        "HT_D":    "HT Pareggio",
+        "HT_A":    "HT Trasferta",
+        "HT_U05":  "1H Under 0.5",
     }
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     lines = [
         "# ---------------------------------------------------------------------------",
         f"#  TABELLA DI CALIBRAZIONE — Aggiornata il {ts} da update_poisson_calibration.py",
-        f"#  Derivata da {sum(bins[b]['n'] for bins in [{}] for b in range(10))} match storici",
+        f"#  Derivata da {total_rows} match storici",
         "#  Per ogni mercato e fascia di probabilità: fattore correttivo = WR_reale / Prob_stimata",
         "#  Applicato PRIMA del calcolo dell'edge per usare probabilità realistiche.",
         "# ---------------------------------------------------------------------------",
@@ -326,9 +397,11 @@ def apply_to_money_management(new_table: Dict[str, Dict[int, float]]) -> None:
     lines.append("}")
     new_block = "\n".join(lines)
 
-    # Regex per trovare il blocco CALIBRATION_TABLE esistente
+    # Regex per trovare il blocco CALIBRATION_TABLE esistente.
+    # La chiusura ^\} deve stare a colonna 0: corrisponde sempre all'outer dict close,
+    # mai agli inner dict (che sono indentati e terminano con "},").
     pattern = re.compile(
-        r"# -{10,}.*?TABELLA DI CALIBRAZIONE.*?^CALIBRATION_TABLE\s*=\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}",
+        r"# -{10,}.*?TABELLA DI CALIBRAZIONE.*?^CALIBRATION_TABLE\s*=\s*\{.*?^\}",
         re.DOTALL | re.MULTILINE
     )
     match = pattern.search(content)
@@ -344,6 +417,15 @@ def apply_to_money_management(new_table: Dict[str, Dict[int, float]]) -> None:
     with open(backup_path, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"  Backup salvato: {backup_path}")
+
+    # Validazione sintattica prima di scrivere — evita di corrompere il file live
+    try:
+        compile(new_content, mm_path, "exec")
+    except SyntaxError as syn_err:
+        print(f"  ERRORE CRITICO: il nuovo contenuto ha errori di sintassi Python — scrittura annullata!")
+        print(f"  Dettaglio: {syn_err}")
+        print(f"  Il file originale NON è stato modificato. Backup disponibile in: {backup_path}")
+        return
 
     with open(mm_path, "w", encoding="utf-8") as f:
         f.write(new_content)
@@ -393,6 +475,12 @@ def main() -> None:
                         help="Aggiorna money_management.py automaticamente (crea backup)")
     args = parser.parse_args()
 
+    # 0. Carica tabella corrente da money_management.py (sempre aggiornata, mai hardcodata)
+    current_table = load_current_calibration_table()
+    if not current_table:
+        print("  AVVISO: impossibile leggere CALIBRATION_TABLE da money_management.py")
+        print("  Il confronto delta mostrerà 'Old CF' = 1.0 per tutti i bin.\n")
+
     # 1. Fetch
     rows, ht_map = fetch_all_data()
 
@@ -404,7 +492,7 @@ def main() -> None:
     new_table = build_calibration_table(stats, min_n=args.min_n)
 
     # 4. Mostra confronto
-    print_comparison(stats, new_table, min_n=args.min_n)
+    print_comparison(stats, new_table, min_n=args.min_n, current_table=current_table)
 
     # 5. Mostra codice pronto
     print_python_table(new_table)
@@ -420,7 +508,7 @@ def main() -> None:
     # 7. Applica (opzionale)
     if args.apply:
         print("\nApplico a money_management.py...")
-        apply_to_money_management(new_table)
+        apply_to_money_management(new_table, total_rows=len(rows))
     else:
         print("\n  Aggiungi --apply per aggiornare money_management.py automaticamente.")
         print("  Oppure incolla il codice CALIBRATION_TABLE stampato sopra.")

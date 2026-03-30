@@ -1,0 +1,244 @@
+Total calls in the last 20 days: 484779
+
+2026-03-07: 2282 total calls
+  /predictions: 1687
+  /odds: 272
+  /fixtures/events: 164
+  /fixtures/lineups: 115
+  /fixtures/statistics: 22
+  /fixtures/players: 21
+  /fixtures: 1
+
+2026-03-08: 17597 total calls
+  /fixtures/events: 4612
+  /fixtures/lineups: 4042
+  /predictions: 3253
+  /odds: 3198
+  /fixtures/statistics: 1252
+  /fixtures/players: 1167
+  /fixtures: 15
+  /players/topredcards: 12
+  /players/topscorers: 12
+  /standings: 11
+  /players/topassists: 11
+  /players/topyellowcards: 11
+  /injuries: 1
+
+2026-03-09: 2336 total calls
+  /fixtures/events: 804
+  /fixtures/lineups: 640
+  /odds: 559
+  /fixtures/statistics: 183
+  /fixtures/players: 149
+  /fixtures: 1
+
+2026-03-11: 32460 total calls
+  /fixtures/events: 15178
+  /fixtures/lineups: 10367
+  /odds: 2984
+  /fixtures/statistics: 1608
+  /fixtures/players: 1607
+  /predictions: 204
+  /fixtures: 133
+  /standings: 82
+  /players/topassists: 75
+  /players/topredcards: 74
+  /players/topscorers: 70
+  /players/topyellowcards: 70
+  /injuries: 8
+
+2026-03-12: 2266 total calls
+  /fixtures/events: 540
+  /odds: 526
+  /fixtures/lineups: 462
+  /predictions: 411
+  /fixtures/statistics: 175
+  /fixtures/players: 146
+  /fixtures: 6
+
+2026-03-13: 31883 total calls
+  /fixtures/events: 7766
+  /fixtures/lineups: 7462
+  /fixtures/players: 7299
+  /fixtures/statistics: 7268
+  /odds: 1447
+  /predictions: 488
+  /fixtures: 33
+  /players/topredcards: 25
+  /players/topscorers: 24
+  /players/topassists: 23
+  /players/topyellowcards: 23
+  /standings: 19
+  /injuries: 6
+
+2026-03-14: 2194 total calls
+  /predictions: 882
+  /fixtures/events: 436
+  /odds: 367
+  /fixtures/lineups: 331
+  /fixtures/statistics: 91
+  /fixtures/players: 85
+  /fixtures: 2
+
+2026-03-15: 3656 total calls
+  /predictions: 1343
+  /odds: 804
+  /fixtures/events: 696
+  /fixtures/lineups: 543
+  /fixtures/statistics: 149
+  /fixtures/players: 121
+
+2026-03-16: 37063 total calls
+  /fixtures/events: 11249
+  /fixtures/lineups: 11222
+  /fixtures/statistics: 7492
+  /fixtures/players: 5876
+  /odds: 1041
+  /fixtures: 32
+  /players/topredcards: 31
+  /players/topyellowcards: 30
+  /players/topscorers: 30
+  /standings: 30
+  /players/topassists: 28
+  /injuries: 2
+
+2026-03-17: 70626 total calls
+  /fixtures/events: 19957
+  /fixtures/lineups: 19625
+  /fixtures/statistics: 15266
+  /fixtures/players: 13427
+  /odds: 1138
+  /predictions: 694
+  /fixtures: 105
+  /players/topscorers: 85
+  /players/topyellowcards: 83
+  /players/topassists: 82
+  /players/topredcards: 79
+  /standings: 79
+  /injuries: 6
+
+2026-03-18: 59065 total calls
+  /fixtures/events: 25047
+  /fixtures/lineups: 23571
+  /fixtures/players: 3159
+  /fixtures/statistics: 3155
+  /odds: 2577
+  /predictions: 822
+  /fixtures: 145
+  /standings: 127
+  /players/topassists: 116
+  /players/topredcards: 115
+  /players/topyellowcards: 113
+  /players/topscorers: 112
+  /injuries: 6
+
+2026-03-19: 29606 total calls
+  /fixtures/events: 12497
+  /fixtures/lineups: 12341
+  /fixtures/statistics: 2078
+  /fixtures/players: 1261
+  /odds: 725
+  /predictions: 287
+  /fixtures: 84
+  /players/topyellowcards: 69
+  /players/topredcards: 68
+  /players/topscorers: 67
+  /players/topassists: 66
+  /standings: 63
+
+2026-03-20: 74870 total calls
+  /fixtures/events: 26199
+  /fixtures/lineups: 25246
+  /fixtures/statistics: 11724
+  /fixtures/players: 8376
+  /odds: 2223
+  /predictions: 347
+  /fixtures: 138
+  /players/topredcards: 124
+  /players/topscorers: 123
+  /players/topassists: 122
+  /standings: 121
+  /players/topyellowcards: 120
+  /injuries: 7
+
+2026-03-21: 1090 total calls
+  /predictions: 861
+  /odds: 169
+  /fixtures/events: 29
+  /fixtures/lineups: 20
+  /fixtures/players: 5
+  /fixtures/statistics: 5
+  /fixtures: 1
+
+2026-03-22: 18538 total calls
+  /fixtures/events: 6336
+  /fixtures/lineups: 6181
+  /odds: 2277
+  /fixtures/statistics: 1657
+  /fixtures/players: 1423
+  /predictions: 577
+  /fixtures: 16
+  /standings: 16
+  /players/topscorers: 14
+  /players/topassists: 13
+  /players/topyellowcards: 13
+  /players/topredcards: 13
+  /injuries: 2
+
+2026-03-23: 37462 total calls
+  /fixtures/events: 16507
+  /fixtures/lineups: 12608
+  /fixtures/statistics: 3029
+  /odds: 2781
+  /fixtures/players: 2027
+  /predictions: 168
+  /fixtures: 69
+  /standings: 55
+  /players/topscorers: 55
+  /players/topassists: 54
+  /players/topyellowcards: 53
+  /players/topredcards: 53
+  /injuries: 3
+
+2026-03-24: 51522 total calls
+  /fixtures/events: 21397
+  /fixtures/lineups: 18842
+  /fixtures/statistics: 4971
+  /fixtures/players: 4628
+  /odds: 635
+  /fixtures: 204
+  /players/topredcards: 169
+  /players/topyellowcards: 166
+  /players/topscorers: 165
+  /players/topassists: 162
+  /standings: 109
+  /predictions: 67
+  /injuries: 7
+
+2026-03-25: 1511 total calls
+  /fixtures/events: 690
+  /fixtures/lineups: 507
+  /odds: 216
+  /fixtures: 22
+  /players/topscorers: 13
+  /players/topassists: 13
+  /players/topyellowcards: 13
+  /fixtures/statistics: 12
+  /players/topredcards: 12
+  /fixtures/players: 10
+  /standings: 3
+
+2026-03-26: 8752 total calls
+  /fixtures/events: 4968
+  /fixtures/lineups: 1880
+  /fixtures/statistics: 1386
+  /odds: 284
+  /predictions: 98
+  /fixtures: 37
+  /players/topscorers: 19
+  /players/topredcards: 19
+  /players/topyellowcards: 19
+  /players/topassists: 18
+  /standings: 12
+  /fixtures/players: 11
+  /injuries: 1

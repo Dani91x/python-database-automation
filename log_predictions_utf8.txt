@@ -1,0 +1,581 @@
+﻿run-results-backfill	UNKNOWN STEP	´╗┐2026-03-26T05:05:46.4667049Z Current runner version: '2.332.0'
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4703268Z ##[group]Runner Image Provisioner
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4704670Z Hosted Compute Agent
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4705603Z Version: 20260213.493
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4706562Z Commit: 5c115507f6dd24b8de37d8bbe0bb4509d0cc0fa3
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4707883Z Build Date: 2026-02-13T00:28:41Z
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4708965Z Worker ID: {dddfb478-a680-4170-8201-a15b92da201c}
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4710226Z Azure Region: eastus
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4711019Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4713991Z ##[group]Operating System
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4715149Z Ubuntu
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4715903Z 24.04.3
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4716770Z LTS
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4717693Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4718518Z ##[group]Runner Image
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4719513Z Image: ubuntu-24.04
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4720401Z Version: 20260309.50.1
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4722696Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260309.50/images/ubuntu/Ubuntu2404-Readme.md
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4725436Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260309.50
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4726955Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4728989Z ##[group]GITHUB_TOKEN Permissions
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4731457Z Contents: read
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4732657Z Metadata: read
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4733523Z Packages: read
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4734855Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4737897Z Secret source: Actions
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.4738940Z Prepare workflow directory
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.5409642Z Prepare all required actions
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.5530090Z Getting action download info
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:46.9009346Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.0417243Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.2410766Z Complete job name: run-results-backfill
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3099649Z ##[group]Run actions/checkout@v4
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3100519Z with:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3100987Z   repository: Dani91x/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3101749Z   token: ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3102315Z   ssh-strict: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3102727Z   ssh-user: git
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3103143Z   persist-credentials: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3103605Z   clean: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3104005Z   sparse-checkout-cone-mode: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3104492Z   fetch-depth: 1
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3104891Z   fetch-tags: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3105299Z   show-progress: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3105702Z   lfs: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3106072Z   submodules: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3106480Z   set-safe-directory: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.3107176Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.4296593Z Syncing repository: Dani91x/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.4397189Z ##[group]Getting Git version info
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.4398785Z Working directory is '/home/runner/work/python-database-automation/python-database-automation'
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.4400594Z [command]/usr/bin/git version
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.4411568Z git version 2.53.0
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5300312Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5307787Z Temporarily overriding HOME='/home/runner/work/_temp/d755a478-c5fc-4f41-9bda-219bf9d189cb' before making global git config changes
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5310195Z Adding repository directory to the temporary git global config as a safe directory
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5312793Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/python-database-automation/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5316380Z Deleting the contents of '/home/runner/work/python-database-automation/python-database-automation'
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5318491Z ##[group]Initializing the repository
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5319982Z [command]/usr/bin/git init /home/runner/work/python-database-automation/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5321890Z hint: Using 'master' as the name for the initial branch. This default branch name
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5323733Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5325859Z hint: to use in all of your new repositories, which will suppress this warning,
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5327020Z hint: call:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5327620Z hint:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5328471Z hint: 	git config --global init.defaultBranch <name>
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5329553Z hint:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5330504Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5332053Z hint: 'development'. The just-created branch can be renamed via this command:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5333600Z hint:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5334225Z hint: 	git branch -m <name>
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5334961Z hint:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5335973Z hint: Disable this message with "git config set advice.defaultBranchName false"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5338065Z Initialized empty Git repository in /home/runner/work/python-database-automation/python-database-automation/.git/
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5341216Z [command]/usr/bin/git remote add origin https://github.com/Dani91x/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5344092Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5345444Z ##[group]Disabling automatic garbage collection
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5346495Z [command]/usr/bin/git config --local gc.auto 0
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5348691Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5349915Z ##[group]Setting up auth
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5351070Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5354801Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5525398Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5534770Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5837833Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.5874389Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.6153875Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.6192910Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.6195440Z ##[group]Fetching the repository
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:47.6203814Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +4e4aa72e402bffd63229723d089e9d195613fc70:refs/remotes/origin/master
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0411004Z From https://github.com/Dani91x/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0422800Z  * [new ref]         4e4aa72e402bffd63229723d089e9d195613fc70 -> origin/master
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0451813Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0464727Z ##[group]Determining the checkout info
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0467576Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0473480Z [command]/usr/bin/git sparse-checkout disable
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0547147Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0601687Z ##[group]Checking out the ref
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.0606433Z [command]/usr/bin/git checkout --progress --force -B master refs/remotes/origin/master
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1206735Z Reset branch 'master'
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1209675Z branch 'master' set up to track 'origin/master'.
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1224357Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1265738Z [command]/usr/bin/git log -1 --format=%H
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1290523Z 4e4aa72e402bffd63229723d089e9d195613fc70
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1614128Z ##[group]Run actions/setup-python@v5
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1615302Z with:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1616146Z   python-version: 3.10
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1617102Z   cache: pip
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1617970Z   check-latest: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1619196Z   token: ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1620300Z   update-environment: true
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1621342Z   allow-prereleases: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1622505Z   freethreaded: false
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.1623456Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.3471552Z ##[group]Installed versions
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.3560415Z Successfully set up CPython (3.10.20)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.3563470Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:48.4249365Z [command]/opt/hostedtoolcache/Python/3.10.20/x64/bin/pip cache dir
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:50.1023858Z /home/runner/.cache/pip
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:50.2192910Z Cache hit for: setup-python-Linux-x64-24.04-Ubuntu-python-3.10.20-pip-406b172f9f7669b494644fce32defdf79b30d727228012d32687545416368a95
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.0529039Z Received 109194616 of 109194616 (100.0%), 135.9 MBs/sec
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.0534501Z Cache Size: ~104 MB (109194616 B)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.0565283Z [command]/usr/bin/tar -xf /home/runner/work/_temp/38893e74-a24b-4564-bf6f-20767520c98e/cache.tzst -P -C /home/runner/work/python-database-automation/python-database-automation --use-compress-program unzstd
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.2865348Z Cache restored successfully
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3093668Z Cache restored from key: setup-python-Linux-x64-24.04-Ubuntu-python-3.10.20-pip-406b172f9f7669b494644fce32defdf79b30d727228012d32687545416368a95
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3281708Z ##[group]Run python -m pip install --upgrade pip
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3282536Z [36;1mpython -m pip install --upgrade pip[0m
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3283005Z [36;1mif [ -f requirements.txt ]; then pip install -r requirements.txt; fi[0m
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3339785Z shell: /usr/bin/bash -e {0}
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3340068Z env:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3340338Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3340782Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib/pkgconfig
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3341226Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3341643Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3342017Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3342753Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:51.3343079Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:52.6756342Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.10.20/x64/lib/python3.10/site-packages (26.0.1)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:53.8795960Z Collecting requests (from -r requirements.txt (line 1))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:53.9416649Z   Downloading requests-2.33.0-py3-none-any.whl.metadata (5.1 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:53.9779169Z Collecting supabase (from -r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:53.9829031Z   Downloading supabase-2.28.3-py3-none-any.whl.metadata (4.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.0168602Z Collecting python-dotenv (from -r requirements.txt (line 3))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.0185212Z   Using cached python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.0395868Z Collecting httpx (from -r requirements.txt (line 4))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.0414765Z   Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.1779688Z Collecting pandas (from -r requirements.txt (line 5))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.1807610Z   Using cached pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (91 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.4361773Z Collecting numpy (from -r requirements.txt (line 6))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.4380096Z   Using cached numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5555935Z Collecting scikit-learn (from -r requirements.txt (line 7))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5573282Z   Using cached scikit_learn-1.7.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5795805Z Collecting imbalanced-learn (from -r requirements.txt (line 8))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5811550Z   Using cached imbalanced_learn-0.14.1-py3-none-any.whl.metadata (8.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5958999Z Collecting boruta (from -r requirements.txt (line 9))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.5975564Z   Using cached Boruta-0.4.3-py3-none-any.whl.metadata (8.8 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6171189Z Collecting gspread (from -r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6189080Z   Using cached gspread-6.2.1-py3-none-any.whl.metadata (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6272614Z Collecting thefuzz (from -r requirements.txt (line 11))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6287773Z   Using cached thefuzz-0.22.1-py3-none-any.whl.metadata (3.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6409683Z Collecting python-Levenshtein (from -r requirements.txt (line 12))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6427004Z   Using cached python_levenshtein-0.27.3-py3-none-any.whl.metadata (3.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6828244Z Collecting pytz (from -r requirements.txt (line 13))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.6846225Z   Using cached pytz-2026.1.post1-py2.py3-none-any.whl.metadata (22 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8013403Z Collecting charset_normalizer<4,>=2 (from requests->-r requirements.txt (line 1))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8060518Z   Downloading charset_normalizer-3.4.6-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8293341Z Collecting idna<4,>=2.5 (from requests->-r requirements.txt (line 1))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8308403Z   Using cached idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8548333Z Collecting urllib3<3,>=1.26 (from requests->-r requirements.txt (line 1))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8565592Z   Using cached urllib3-2.6.3-py3-none-any.whl.metadata (6.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8750774Z Collecting certifi>=2023.5.7 (from requests->-r requirements.txt (line 1))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8767186Z   Using cached certifi-2026.2.25-py3-none-any.whl.metadata (2.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8939428Z Collecting realtime==2.28.3 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.8984971Z   Downloading realtime-2.28.3-py3-none-any.whl.metadata (7.0 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9200185Z Collecting supabase-functions==2.28.3 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9245341Z   Downloading supabase_functions-2.28.3-py3-none-any.whl.metadata (2.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9451404Z Collecting storage3==2.28.3 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9500776Z   Downloading storage3-2.28.3-py3-none-any.whl.metadata (2.1 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9693003Z Collecting supabase-auth==2.28.3 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9736622Z   Downloading supabase_auth-2.28.3-py3-none-any.whl.metadata (6.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9938999Z Collecting postgrest==2.28.3 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:54.9984040Z   Downloading postgrest-2.28.3-py3-none-any.whl.metadata (3.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.3388115Z Collecting yarl>=1.22.0 (from supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.3405955Z   Using cached yarl-1.23.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.3539038Z Collecting deprecation>=2.1.0 (from postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.3554019Z   Using cached deprecation-2.1.0-py2.py3-none-any.whl.metadata (4.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.4865607Z Collecting pydantic<3.0,>=1.9 (from postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.4882626Z   Using cached pydantic-2.12.5-py3-none-any.whl.metadata (90 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.5004569Z Collecting strenum>=0.4.9 (from postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.5019624Z   Using cached StrEnum-0.4.15-py3-none-any.whl.metadata (5.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.5253835Z Collecting typing-extensions>=4.14.0 (from realtime==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.5269166Z   Using cached typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.6267664Z Collecting websockets<16,>=11 (from realtime==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.6284906Z   Using cached websockets-15.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.8 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.7306823Z Collecting pyiceberg>=0.10.0 (from storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.7324475Z   Using cached pyiceberg-0.11.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (4.8 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.7671399Z Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->supabase-auth==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.7720489Z   Downloading pyjwt-2.12.1-py3-none-any.whl.metadata (4.1 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8011309Z Collecting anyio (from httpx->-r requirements.txt (line 4))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8050698Z   Downloading anyio-4.13.0-py3-none-any.whl.metadata (4.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8235282Z Collecting httpcore==1.* (from httpx->-r requirements.txt (line 4))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8249521Z   Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8359440Z Collecting h11>=0.16 (from httpcore==1.*->httpx->-r requirements.txt (line 4))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8373820Z   Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8526837Z Collecting h2<5,>=3 (from httpx[http2]<0.29,>=0.26->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8542668Z   Using cached h2-4.3.0-py3-none-any.whl.metadata (5.1 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.8659148Z Collecting hyperframe<7,>=6.1 (from h2<5,>=3->httpx[http2]<0.29,>=0.26->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.9134858Z   Using cached hyperframe-6.1.0-py3-none-any.whl.metadata (4.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.9245086Z Collecting hpack<5,>=4.1 (from h2<5,>=3->httpx[http2]<0.29,>=0.26->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.9261935Z   Using cached hpack-4.1.0-py3-none-any.whl.metadata (4.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.9375933Z Collecting annotated-types>=0.6.0 (from pydantic<3.0,>=1.9->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:55.9392969Z   Using cached annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7566615Z Collecting pydantic-core==2.41.5 (from pydantic<3.0,>=1.9->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7584526Z   Using cached pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7689090Z Collecting typing-inspection>=0.4.2 (from pydantic<3.0,>=1.9->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7704084Z   Using cached typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7878432Z Collecting python-dateutil>=2.8.2 (from pandas->-r requirements.txt (line 5))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.7893198Z   Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.8048527Z Collecting tzdata>=2022.7 (from pandas->-r requirements.txt (line 5))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.8063111Z   Using cached tzdata-2025.3-py2.py3-none-any.whl.metadata (1.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9556991Z Collecting scipy>=1.8.0 (from scikit-learn->-r requirements.txt (line 7))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9573537Z   Using cached scipy-1.15.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9832488Z Collecting joblib>=1.2.0 (from scikit-learn->-r requirements.txt (line 7))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9848880Z   Using cached joblib-1.5.3-py3-none-any.whl.metadata (5.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9938930Z Collecting threadpoolctl>=3.1.0 (from scikit-learn->-r requirements.txt (line 7))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:56.9953388Z   Using cached threadpoolctl-3.6.0-py3-none-any.whl.metadata (13 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.0149342Z Collecting sklearn-compat<0.2,>=0.1.5 (from imbalanced-learn->-r requirements.txt (line 8))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.0163084Z   Using cached sklearn_compat-0.1.5-py3-none-any.whl.metadata (20 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.1851824Z Collecting google-auth>=1.12.0 (from gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.1871107Z   Using cached google_auth-2.49.1-py3-none-any.whl.metadata (6.2 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.2061559Z Collecting google-auth-oauthlib>=0.4.1 (from gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.2080650Z   Using cached google_auth_oauthlib-1.3.0-py3-none-any.whl.metadata (2.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.7917279Z Collecting rapidfuzz<4.0.0,>=3.0.0 (from thefuzz->-r requirements.txt (line 11))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:57.7933953Z   Using cached rapidfuzz-3.14.3-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (12 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0354918Z Collecting Levenshtein==0.27.3 (from python-Levenshtein->-r requirements.txt (line 12))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0372547Z   Using cached levenshtein-0.27.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.7 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0610836Z Collecting packaging (from deprecation>=2.1.0->postgrest==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0624299Z   Using cached packaging-26.0-py3-none-any.whl.metadata (3.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0811359Z Collecting pyasn1-modules>=0.2.1 (from google-auth>=1.12.0->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.0827198Z   Using cached pyasn1_modules-0.4.2-py3-none-any.whl.metadata (3.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.2922937Z Collecting cryptography>=38.0.3 (from google-auth>=1.12.0->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.2967199Z   Downloading cryptography-46.0.6-cp38-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4259525Z Collecting cffi>=2.0.0 (from cryptography>=38.0.3->google-auth>=1.12.0->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4279183Z   Using cached cffi-2.0.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4459100Z Collecting pycparser (from cffi>=2.0.0->cryptography>=38.0.3->google-auth>=1.12.0->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4479259Z   Using cached pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4711022Z Collecting requests-oauthlib>=0.7.0 (from google-auth-oauthlib>=0.4.1->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4727943Z   Using cached requests_oauthlib-2.0.0-py2.py3-none-any.whl.metadata (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.4965137Z Collecting pyasn1<0.7.0,>=0.6.1 (from pyasn1-modules>=0.2.1->google-auth>=1.12.0->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.5077620Z   Downloading pyasn1-0.6.3-py3-none-any.whl.metadata (8.4 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.5629067Z Collecting mmh3<6.0.0,>=4.0.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.5646240Z   Using cached mmh3-5.2.1-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (14 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.5885923Z Collecting click<9.0.0,>=7.1.1 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.5901257Z   Using cached click-8.3.1-py3-none-any.whl.metadata (2.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6280345Z Collecting rich<15.0.0,>=10.11.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6294417Z   Using cached rich-14.3.3-py3-none-any.whl.metadata (18 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6414220Z Collecting strictyaml<2.0.0,>=1.7.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6427436Z   Using cached strictyaml-1.7.3-py3-none-any.whl.metadata (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6736312Z Collecting fsspec>=2023.1.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.6751023Z   Using cached fsspec-2026.2.0-py3-none-any.whl.metadata (10 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.7285162Z Collecting pyparsing<4.0.0,>=3.1.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.7298205Z   Using cached pyparsing-3.3.2-py3-none-any.whl.metadata (5.8 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.7438879Z Collecting tenacity<10.0.0,>=8.2.3 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.7453279Z   Using cached tenacity-9.1.4-py3-none-any.whl.metadata (1.2 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.8104914Z Collecting pyroaring<2.0.0,>=1.0.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.8161554Z   Downloading pyroaring-1.0.4-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.8351771Z Collecting cachetools<7.0,>=5.5 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:58.8366048Z   Using cached cachetools-6.2.6-py3-none-any.whl.metadata (5.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0146998Z Collecting zstandard<1.0.0,>=0.13.0 (from pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0163557Z   Using cached zstandard-0.25.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (3.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0338307Z Collecting markdown-it-py>=2.2.0 (from rich<15.0.0,>=10.11.0->pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0353408Z   Using cached markdown_it_py-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0565376Z Collecting pygments<3.0.0,>=2.13.0 (from rich<15.0.0,>=10.11.0->pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0579839Z   Using cached pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0714240Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich<15.0.0,>=10.11.0->pyiceberg>=0.10.0->storage3==2.28.3->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.0728642Z   Using cached mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.1101882Z Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas->-r requirements.txt (line 5))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.1116226Z   Using cached six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.1235538Z Collecting oauthlib>=3.0.0 (from requests-oauthlib>=0.7.0->google-auth-oauthlib>=0.4.1->gspread->-r requirements.txt (line 10))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.1250161Z   Using cached oauthlib-3.3.1-py3-none-any.whl.metadata (7.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4139621Z Collecting multidict>=4.0 (from yarl>=1.22.0->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4157322Z   Using cached multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4770676Z Collecting propcache>=0.2.1 (from yarl>=1.22.0->supabase->-r requirements.txt (line 2))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4787460Z   Using cached propcache-0.4.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (13 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4946822Z Collecting exceptiongroup>=1.0.2 (from anyio->httpx->-r requirements.txt (line 4))
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.4960964Z   Using cached exceptiongroup-1.3.1-py3-none-any.whl.metadata (6.7 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5117363Z Downloading requests-2.33.0-py3-none-any.whl (65 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5219193Z Downloading charset_normalizer-3.4.6-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (207 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5315156Z Using cached idna-3.11-py3-none-any.whl (71 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5329315Z Using cached urllib3-2.6.3-py3-none-any.whl (131 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5369656Z Downloading supabase-2.28.3-py3-none-any.whl (16 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5430446Z Downloading postgrest-2.28.3-py3-none-any.whl (21 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5490531Z Downloading realtime-2.28.3-py3-none-any.whl (22 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5550804Z Downloading storage3-2.28.3-py3-none-any.whl (28 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5614984Z Downloading supabase_auth-2.28.3-py3-none-any.whl (48 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5678369Z Downloading supabase_functions-2.28.3-py3-none-any.whl (8.8 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5714327Z Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5728516Z Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5742965Z Using cached h2-4.3.0-py3-none-any.whl (61 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5756684Z Using cached hpack-4.1.0-py3-none-any.whl (34 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5770479Z Using cached hyperframe-6.1.0-py3-none-any.whl (13 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5784144Z Using cached pydantic-2.12.5-py3-none-any.whl (463 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5800865Z Using cached pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5829311Z Using cached websockets-15.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (181 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5843964Z Using cached python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5857174Z Using cached pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (12.8 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.5965103Z Using cached numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6095197Z Using cached scikit_learn-1.7.2-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (9.7 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6175824Z Using cached imbalanced_learn-0.14.1-py3-none-any.whl (235 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6190127Z Using cached joblib-1.5.3-py3-none-any.whl (309 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6206044Z Using cached scipy-1.15.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (37.7 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6489124Z Using cached sklearn_compat-0.1.5-py3-none-any.whl (20 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6504367Z Using cached threadpoolctl-3.6.0-py3-none-any.whl (18 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6518376Z Using cached Boruta-0.4.3-py3-none-any.whl (57 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6533074Z Using cached gspread-6.2.1-py3-none-any.whl (59 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6546896Z Using cached thefuzz-0.22.1-py3-none-any.whl (8.2 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6560815Z Using cached rapidfuzz-3.14.3-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (3.2 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6596574Z Using cached python_levenshtein-0.27.3-py3-none-any.whl (9.5 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6610500Z Using cached levenshtein-0.27.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6624933Z Using cached pytz-2026.1.post1-py2.py3-none-any.whl (510 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6641576Z Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6655183Z Using cached certifi-2026.2.25-py3-none-any.whl (153 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6669526Z Using cached deprecation-2.1.0-py2.py3-none-any.whl (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6683178Z Using cached google_auth-2.49.1-py3-none-any.whl (240 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.6727884Z Downloading cryptography-46.0.6-cp38-abi3-manylinux_2_34_x86_64.whl (4.4 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7419921Z    ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü 4.4/4.4 MB 71.2 MB/s  0:00:00
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7438568Z Using cached cffi-2.0.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (216 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7455766Z Using cached google_auth_oauthlib-1.3.0-py3-none-any.whl (19 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7469486Z Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7483007Z Using cached pyasn1_modules-0.4.2-py3-none-any.whl (181 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7525578Z Downloading pyasn1-0.6.3-py3-none-any.whl (83 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7568191Z Using cached pyiceberg-0.11.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (705 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7586716Z Using cached cachetools-6.2.6-py3-none-any.whl (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7599927Z Using cached click-8.3.1-py3-none-any.whl (108 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7615042Z Using cached mmh3-5.2.1-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (101 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7629089Z Using cached pyparsing-3.3.2-py3-none-any.whl (122 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7670973Z Downloading pyroaring-1.0.4-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (2.1 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7884396Z    ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü 2.1/2.1 MB 101.7 MB/s  0:00:00
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7898895Z Using cached rich-14.3.3-py3-none-any.whl (310 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7914376Z Using cached pygments-2.19.2-py3-none-any.whl (1.2 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7936253Z Using cached strictyaml-1.7.3-py3-none-any.whl (123 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7950520Z Using cached tenacity-9.1.4-py3-none-any.whl (28 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.7964822Z Using cached zstandard-0.25.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.6 MB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8016804Z Using cached fsspec-2026.2.0-py3-none-any.whl (202 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8031309Z Using cached markdown_it_py-4.0.0-py3-none-any.whl (87 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8045481Z Using cached mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8085340Z Downloading pyjwt-2.12.1-py3-none-any.whl (29 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8127323Z Using cached python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8141524Z Using cached requests_oauthlib-2.0.0-py2.py3-none-any.whl (24 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8155256Z Using cached oauthlib-3.3.1-py3-none-any.whl (160 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8169869Z Using cached six-1.17.0-py2.py3-none-any.whl (11 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8183314Z Using cached StrEnum-0.4.15-py3-none-any.whl (8.9 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8197086Z Using cached typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8210703Z Using cached typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8224722Z Using cached tzdata-2025.3-py2.py3-none-any.whl (348 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8240720Z Using cached yarl-1.23.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (102 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8255465Z Using cached multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (243 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8271036Z Using cached propcache-0.4.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (196 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8314496Z Downloading anyio-4.13.0-py3-none-any.whl (114 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8357098Z Using cached exceptiongroup-1.3.1-py3-none-any.whl (16 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8370872Z Using cached packaging-26.0-py3-none-any.whl (74 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:05:59.8385123Z Using cached pycparser-3.0-py3-none-any.whl (48 kB)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:00.2356781Z Installing collected packages: strenum, pytz, pyroaring, zstandard, websockets, urllib3, tzdata, typing-extensions, threadpoolctl, tenacity, six, rapidfuzz, python-dotenv, pyparsing, pygments, pycparser, pyasn1, propcache, packaging, oauthlib, numpy, mmh3, mdurl, joblib, idna, hyperframe, hpack, h11, fsspec, click, charset_normalizer, certifi, cachetools, annotated-types, typing-inspection, thefuzz, scipy, requests, python-dateutil, pyjwt, pydantic-core, pyasn1-modules, multidict, markdown-it-py, Levenshtein, httpcore, h2, exceptiongroup, deprecation, cffi, yarl, strictyaml, scikit-learn, rich, requests-oauthlib, python-Levenshtein, pydantic, pandas, cryptography, anyio, sklearn-compat, realtime, pyiceberg, httpx, google-auth, boruta, imbalanced-learn, google-auth-oauthlib, supabase-functions, supabase-auth, storage3, postgrest, gspread, supabase
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:16.8870675Z 
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:16.9025190Z Successfully installed Levenshtein-0.27.3 annotated-types-0.7.0 anyio-4.13.0 boruta-0.4.3 cachetools-6.2.6 certifi-2026.2.25 cffi-2.0.0 charset_normalizer-3.4.6 click-8.3.1 cryptography-46.0.6 deprecation-2.1.0 exceptiongroup-1.3.1 fsspec-2026.2.0 google-auth-2.49.1 google-auth-oauthlib-1.3.0 gspread-6.2.1 h11-0.16.0 h2-4.3.0 hpack-4.1.0 httpcore-1.0.9 httpx-0.28.1 hyperframe-6.1.0 idna-3.11 imbalanced-learn-0.14.1 joblib-1.5.3 markdown-it-py-4.0.0 mdurl-0.1.2 mmh3-5.2.1 multidict-6.7.1 numpy-2.2.6 oauthlib-3.3.1 packaging-26.0 pandas-2.3.3 postgrest-2.28.3 propcache-0.4.1 pyasn1-0.6.3 pyasn1-modules-0.4.2 pycparser-3.0 pydantic-2.12.5 pydantic-core-2.41.5 pygments-2.19.2 pyiceberg-0.11.1 pyjwt-2.12.1 pyparsing-3.3.2 pyroaring-1.0.4 python-Levenshtein-0.27.3 python-dateutil-2.9.0.post0 python-dotenv-1.2.2 pytz-2026.1.post1 rapidfuzz-3.14.3 realtime-2.28.3 requests-2.33.0 requests-oauthlib-2.0.0 rich-14.3.3 scikit-learn-1.7.2 scipy-1.15.3 six-1.17.0 sklearn-compat-0.1.5 storage3-2.28.3 strenum-0.4.15 strictyaml-1.7.3 supabase-2.28.3 supabase-auth-2.28.3 supabase-functions-2.28.3 tenacity-9.1.4 thefuzz-0.22.1 threadpoolctl-3.6.0 typing-extensions-4.15.0 typing-inspection-0.4.2 tzdata-2025.3 urllib3-2.6.3 websockets-15.0.1 yarl-1.23.0 zstandard-0.25.0
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9020132Z ##[group]Run python -m Prediction.predictions_results_backfill
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9020621Z [36;1mpython -m Prediction.predictions_results_backfill[0m
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9072660Z shell: /usr/bin/bash -e {0}
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9073054Z env:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9073332Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9073787Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib/pkgconfig
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9074239Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9074632Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9075015Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.20/x64
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9075409Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.20/x64/lib
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9075970Z   SUPABASE_URL: ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9077301Z   SUPABASE_SERVICE_ROLE_KEY: ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9077610Z   API_FOOTBALL_KEY: ***
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:17.9077853Z ##[endgroup]
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:20.7784650Z INFO:httpx:HTTP Request: GET ***/rest/v1/fixture_predictions?select=fixture_id%2Cfixture_date%2Cstatus%2Cwinner_team_id%2Cwin_or_draw%2Cunder_over_line%2Cevaluated_at&status=eq.ok&fixture_date=gte.2026-03-25T00%3A00%3A00%2B00%3A00&fixture_date=lte.2026-03-25T23%3A59%3A59%2B00%3A00&limit=5000&evaluated_at=is.null "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:20.7819325Z INFO:__main__:­ƒôî Predictions OK trovate per 2026-03-25: 185
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:21.1553338Z INFO:httpx:HTTP Request: GET ***/rest/v1/matches?select=fixture_id%2Cstatus_short%2Cgoals_home%2Cgoals_away%2Chome_team_id%2Caway_team_id&fixture_id=in.%281397364%2C1397369%2C1397370%2C1398848%2C1398850%2C1398851%2C1398853%2C1398854%2C1399872%2C1399873%2C1399874%2C1399875%2C1399876%2C1399877%2C1405218%2C1406249%2C1407025%2C1407593%2C1407633%2C1407636%2C1407952%2C1409383%2C1409397%2C1410325%2C1410330%2C1410625%2C1410929%2C1411228%2C1412810%2C1413893%2C1420861%2C1425534%2C1430330%2C1430335%2C1430549%2C1434215%2C1437735%2C1441962%2C1441963%2C1441964%2C1441968%2C1441970%2C1441972%2C1441973%2C1441976%2C1441978%2C1448418%2C1448419%2C1448420%2C1448423%2C1448653%2C1448654%2C1448656%2C1448657%2C1448889%2C1448890%2C1448893%2C1449118%2C1449119%2C1449122%2C1449123%2C1451838%2C1454842%2C1455147%2C1466600%2C1476916%2C1476918%2C1476921%2C1484492%2C1491018%2C1491145%2C1491150%2C1491153%2C1491154%2C1491158%2C1491160%2C1491164%2C1491168%2C1491170%2C1491174%2C1491176%2C1491181%2C1491182%2C1491186%2C1491989%2C1493431%2C1493432%2C1493796%2C1502223%2C1502224%2C1502225%2C1502226%2C1502227%2C1502228%2C1502229%2C1502230%2C1502231%2C1502232%2C1502233%2C1502234%2C1502235%2C1502236%2C1502237%2C1502831%2C1502832%2C1502833%2C1502834%2C1502835%2C1502836%2C1502837%2C1502838%2C1503206%2C1503676%2C1506055%2C1507292%2C1507294%2C1507295%2C1507810%2C1508081%2C1508372%2C1508373%2C1510181%2C1510515%2C1510516%2C1511920%2C1511921%2C1511922%2C1511952%2C1512255%2C1512256%2C1512259%2C1512264%2C1512269%2C1512270%2C1512756%2C1514497%2C1514893%2C1515135%2C1515220%2C1522296%2C1524373%2C1524374%2C1525452%2C1525484%2C1525485%2C1525670%2C1526051%2C1526254%2C1526663%2C1527466%2C1527467%2C1528473%2C1531659%2C1531768%2C1531769%2C1531770%2C1531771%2C1531789%2C1531790%2C1531791%2C1531854%2C1531929%2C1531930%2C1531931%2C1533333%2C1533552%2C1533553%2C1533554%2C1534664%2C1534665%2C1534666%2C1534667%2C1534668%2C1535065%2C1535066%2C1535067%2C1535068%2C1535069%2C1535070%2C1535071%2C1535072%2C1536901%2C1536902%2C1536903%2C1536904%29 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:21.1584594Z INFO:__main__:­ƒº¥ Pre-update: updates=179 missing_match=5 not_finished=1
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:21.6021382Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1506055 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:21.7617941Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1526663 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.1420007Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1522296 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.3025940Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1536901 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.4716538Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1484492 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.6308924Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491186 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.7949552Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531659 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:22.9562852Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502224 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.1144490Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1527466 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.2754010Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1507294 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.4477727Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1437735 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.6018922Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491182 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.7497825Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502223 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:23.9051070Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502229 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.0643248Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441972 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.2230846Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441978 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.3853741Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448419 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.5489532Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448653 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.7072352Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448654 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:24.9760867Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448656 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.1437768Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448657 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.3038049Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448889 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.4585867Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448890 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.6084093Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448893 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.7607730Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1449118 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:25.9203973Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491018 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.0772507Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491145 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.2285045Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491150 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.3812612Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491158 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.5412888Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1507295 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.6959480Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1536902 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:26.8772721Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1511952 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.0291039Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1534664 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.1953296Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1534666 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.3541895Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1534667 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.5037387Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1410625 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.6751327Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441963 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.8379143Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441964 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:27.9942508Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441968 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.1503219Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441970 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.3116134Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448418 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.4846890Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448420 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.6449480Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1448423 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.7954361Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1449119 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:28.9580505Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1449122 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.1043454Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1449123 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.2708300Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491153 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.4335451Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502225 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.5834583Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502230 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.7487034Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1503206 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:29.8982466Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1507810 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.0462997Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1527467 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.1974966Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1451838 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.3555741Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1454842 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.5166108Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1466600 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.6684659Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1397364 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.8163282Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1411228 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:30.9641900Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502231 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.1260779Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502233 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.2780375Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502237 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.4391334Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1455147 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.5917990Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491170 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.7503356Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502227 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:31.8972949Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1536904 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.0485356Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491160 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.2088959Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512756 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.3659669Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1410330 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.5249577Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1507292 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.6760844Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1410325 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:32.8215057Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1397369 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.0152017Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1413893 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.1745929Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441962 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.3517149Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441973 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.5101706Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1441976 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.6650443Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491176 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.8192032Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502228 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:33.9671843Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502236 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.1220214Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1510515 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.2802012Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1533333 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.4304580Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1534665 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.5988917Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1534668 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.7526250Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1514893 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:34.9027147Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502234 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.0575406Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502235 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.2158097Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491168 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.3678905Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491174 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.5241266Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502226 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.6874476Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1397370 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.8461186Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491154 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:35.9919685Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531854 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.1612719Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535065 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.3067954Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1526051 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.4671313Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535066 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.6282886Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535067 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.8033094Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535068 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:36.9654005Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535069 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.1199434Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535070 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.2903335Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1476916 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.4611824Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491164 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.6114539Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491181 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.7651225Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1525485 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:37.9263164Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1410929 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.0868218Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531929 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.2474235Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1535072 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.3921385Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1514497 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.5423297Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1398851 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.6899853Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1420861 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:38.8500693Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1425534 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.0074458Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1515220 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.1632617Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1525484 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.3433110Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1525452 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.4963825Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1434215 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.6445291Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1406249 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:39.8284697Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512269 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.0043746Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512270 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.1589794Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1407636 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.3115162Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1398848 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.4726656Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1398850 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.6352495Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1398853 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.7917926Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1409397 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:40.9468216Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1398854 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.1038838Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1407025 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.2540506Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1407593 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.4135812Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1407633 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.5748884Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502832 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.7403339Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502833 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:41.9184855Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502836 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.0845607Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502838 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.2315282Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1510516 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.4013837Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512255 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.5548735Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512256 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.7137394Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512259 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:42.8652881Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1512264 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.0297418Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1409383 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.1764103Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1412810 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.3313372Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1407952 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.4820305Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1430549 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.6426753Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502232 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.8069394Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1528473 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:43.9681960Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1430335 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.1173394Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1430330 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.2714252Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1508081 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.4268627Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531768 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.5801194Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531769 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.7353754Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531770 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:44.8987931Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399873 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.0650752Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399875 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.2196531Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399876 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.3819783Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399877 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.5507176Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1405218 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.7183808Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399874 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:45.8762408Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1399872 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.0363824Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1525670 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.2021408Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1511920 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.3607256Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531930 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.5176859Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1524374 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.6767423Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1533552 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:46.8542775Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1533553 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.0115549Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1533554 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.1966103Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1476918 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.3488485Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531789 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.5091163Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1491989 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.6579924Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502835 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.8068257Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1503676 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:47.9619411Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1511922 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.1210856Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502837 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.2726370Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1493796 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.4334447Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502831 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.5924417Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1515135 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.7485486Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1493431 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:48.9074680Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1502834 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.0578528Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1508372 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.2056504Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1508373 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.3641936Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1511921 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.5163539Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531790 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.6900828Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531791 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.8395226Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531771 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:49.9941273Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1493432 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.1435898Z INFO:httpx:HTTP Request: PATCH ***/rest/v1/fixture_predictions?fixture_id=eq.1531931 "HTTP/2 200 OK"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.1540989Z INFO:__main__:­ƒÅü COMPLETATO ÔåÆ updated=179 failed=0 missing_match=5 (date=2026-03-25)
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.2806156Z Post job cleanup.
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.4362644Z Cache hit occurred on the primary key setup-python-Linux-x64-24.04-Ubuntu-python-3.10.20-pip-406b172f9f7669b494644fce32defdf79b30d727228012d32687545416368a95, not saving cache.
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.4514813Z Post job cleanup.
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5515923Z [command]/usr/bin/git version
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5559844Z git version 2.53.0
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5611134Z Temporarily overriding HOME='/home/runner/work/_temp/d418c3bb-ff9e-455d-a910-a2acf38533f2' before making global git config changes
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5613366Z Adding repository directory to the temporary git global config as a safe directory
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5619075Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/python-database-automation/python-database-automation
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5669583Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.5710592Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6115164Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6163640Z http.https://github.com/.extraheader
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6190502Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6248539Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6526633Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6567236Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.6961234Z Cleaning up orphan processes
+run-results-backfill	UNKNOWN STEP	2026-03-26T05:06:50.7364800Z ##[warning]Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: actions/checkout@v4, actions/setup-python@v5. Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026. Please check if updated versions of these actions are available that support Node.js 24. To opt into Node.js 24 now, set the FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true environment variable on the runner or in your workflow file. Once Node.js 24 becomes the default, you can temporarily opt out by setting ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
