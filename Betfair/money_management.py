@@ -106,8 +106,10 @@ ML_SCORE_TIERS: list = [
 
 # Correzione overround Betfair (~2.5%) per calcolo prob_market
 OVERROUND_CORRECTION = 0.975
-# Z-Score σ di fallback (usata se dynamic_cal.json non contiene divergence_stats)
-DEFAULT_DIVERGENCE_STD = 0.30
+# Z-Score σ di fallback (usata se dynamic_cal.json non contiene divergence_stats).
+# Aggiornato al valore calcolato da dynamic_cal.json del 2026-03-31 (n=1757 campioni,
+# solo record modello poisson_xg_hybrid_dc). Rigenera dynamic_cal.json periodicamente.
+DEFAULT_DIVERGENCE_STD = 0.3287
 
 MARKET_MAP = {
     # min_edge: minimum edge % AFTER Betfair 5% commission.
@@ -122,7 +124,7 @@ MARKET_MAP = {
     #   U25  55.4% WR, avg 1.93 → break-even 54.5% → PROFITABLE ✓
     #   BTTS  0.0% WR  → suspended (0/5 sample catastrophic)
     #   BTTS_NO 43.9% WR → borderline (raised min_edge to 7%)
-    #   HT05 63.4% WR, avg 1.56 → break-even 67.5% → LOSING, min_odds=1.68 enforced
+    #   HT05 63.4% WR, avg 1.56 → break-even 67.5% → ROI -25.6% su 53 bet → SOSPESO
     "H":       {"label": "Home Win",      "json_path": ("markets", "1x2", "H"),                      "ai_path": ("target_1x2", "H"),          "cal_key": "H",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
     "D":       {"label": "Pareggio",      "json_path": ("markets", "1x2", "D"),                      "ai_path": ("target_1x2", "D"),          "cal_key": "D",       "min_edge": 7.0, "min_prob": 0.35, "min_odds": 2.50},
     "A":       {"label": "Away Win",      "json_path": ("markets", "1x2", "A"),                      "ai_path": ("target_1x2", "A"),          "cal_key": "A",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
@@ -134,7 +136,7 @@ MARKET_MAP = {
     "U35":     {"label": "Under 3.5",     "json_path": ("markets", "over_3_5", "False"),             "ai_path": ("target_over_3_5", "False"), "cal_key": "U35",     "min_edge": 5.0, "min_prob": 0.58, "min_odds": 1.35},
     "BTTS":    {"label": "BTTS Sì",       "json_path": ("markets", "btts", "True"),                  "ai_path": ("target_btts", "True"),      "cal_key": "BTTS",    "min_edge": 8.0, "min_prob": 0.58, "min_odds": 1.60},
     "BTTS_NO": {"label": "BTTS No",       "json_path": ("markets", "btts", "False"),                 "ai_path": ("target_btts", "False"),     "cal_key": "BTTS_NO", "min_edge": 7.0, "min_prob": 0.54, "min_odds": 1.50},
-    "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"),"cal_key": "HT05",  "min_edge": 5.0},
+    "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"), "cal_key": "HT05",   "min_edge": 5.0},
     "HT_H":    {"label": "HT Home",       "json_path": ("markets", "ht_1x2", "H"),                   "ai_path": ("target_ht_1x2", "H"),       "cal_key": "HT_H",    "min_edge": 6.0, "min_prob": 0.40, "min_odds": 1.80},
     "HT_D":    {"label": "HT Draw",       "json_path": ("markets", "ht_1x2", "D"),                   "ai_path": ("target_ht_1x2", "D"),       "cal_key": "HT_D",    "min_edge": 7.0, "min_prob": 0.30, "min_odds": 2.50},
     "HT_A":    {"label": "HT Away",       "json_path": ("markets", "ht_1x2", "A"),                   "ai_path": ("target_ht_1x2", "A"),       "cal_key": "HT_A",    "min_edge": 6.0, "min_prob": 0.35, "min_odds": 2.00},
@@ -188,33 +190,26 @@ ML_MARKET_MAP = {
 #  Applicato PRIMA del calcolo dell'edge per usare probabilità realistiche.
 # ---------------------------------------------------------------------------
 CALIBRATION_TABLE = {
-    # 1X2 Home — ben calibrato nei bin centrali; bin 0 e 9 estremi rari
-    "H":       {0: 3.350, 1: 1.217, 2: 0.996, 3: 1.009, 4: 0.982, 5: 0.987, 6: 1.008, 7: 1.001, 8: 0.962, 9: 0.873},
-    # 1X2 Draw — concentrato nei bin 1-3; oltre il bin 4 N troppo basso → 1.0
-    "D":       {0: 0.717, 1: 0.906, 2: 0.994, 3: 1.022, 4: 0.852, 5: 1.0,   6: 1.0,   7: 1.0,   8: 1.0,   9: 1.0  },
-    # 1X2 Away — ben calibrato nei bin centrali
-    "A":       {0: 1.656, 1: 1.057, 2: 1.016, 3: 1.020, 4: 0.958, 5: 1.025, 6: 1.019, 7: 0.960, 8: 0.966, 9: 1.0  },
-    # Over 2.5 — sottostima ai bin bassi (0-2), sovrastima ai bin alti (8-9)
-    "O25":     {0: 6.894, 1: 1.437, 2: 1.393, 3: 1.126, 4: 1.039, 5: 0.963, 6: 0.961, 7: 0.965, 8: 0.931, 9: 0.796},
-    # Under 2.5 — sottostima ai bin bassi, sovrastima ai bin alti
-    "U25":     {0: 3.638, 1: 1.351, 2: 1.103, 3: 1.075, 4: 1.041, 5: 0.969, 6: 0.931, 7: 0.863, 8: 0.913, 9: 0.649},
-    # BTTS Si — forte sottostima nei bin bassi (0-3), sovrastima nei bin alti (6-8)
-    "BTTS":    {0: 7.159, 1: 1.994, 2: 1.437, 3: 1.194, 4: 1.021, 5: 0.963, 6: 0.886, 7: 0.869, 8: 0.767, 9: 1.0  },
-    # BTTS No — speculare a BTTS
-    "BTTS_NO": {0: 1.0,   1: 2.178, 2: 1.364, 3: 1.206, 4: 1.044, 5: 0.983, 6: 0.891, 7: 0.842, 8: 0.795, 9: 0.765},
-    # 1H Over 0.5 — modello sistematicamente sbagliato: dopo calibrazione
-    #   il risultato cade sempre in 65-75%, il mercato prezza 77% → mai edge reale
-    "HT05":    {0: 1.0,   1: 4.724, 2: 2.735, 3: 1.950, 4: 1.433, 5: 1.226, 6: 1.040, 7: 0.946, 8: 0.870, 9: 0.813},
-    # 1H Under 0.5 — non aggiornato (N insufficiente nei bin utili)
-    "HT_U05":  {0: 22.399, 1: 1.833, 2: 1.246, 3: 0.884, 4: 0.778, 5: 0.659, 6: 0.544, 7: 0.457, 8: 0.411, 9: 0.320},
-    # Mercati estesi — fattori neutri (1.0) fino ad accumulo dati storici sufficienti
-    "O15":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "U15":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "O35":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "U35":  {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "HT_H": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "HT_D": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
-    "HT_A": {0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    # Aggiornata 2026-03-31 da update_poisson_calibration.py
+    # Solo record poisson_xg_hybrid_dc, cap correction [0.2, 3.0]
+    "H":      {0: 1.0,   1: 0.807, 2: 1.165, 3: 1.015, 4: 1.048, 5: 1.005, 6: 1.05,  7: 1.109, 8: 1.0,   9: 1.0},
+    "D":      {0: 1.0,   1: 0.866, 2: 0.953, 3: 0.959, 4: 0.998, 5: 1.0,   6: 1.0,   7: 1.0,   8: 1.0,   9: 1.0},
+    "A":      {0: 0.997, 1: 0.945, 2: 0.99,  3: 1.026, 4: 0.922, 5: 0.997, 6: 1.008, 7: 1.0,   8: 1.0,   9: 1.0},
+    "O25":    {0: 1.0,   1: 1.798, 2: 1.179, 3: 1.155, 4: 1.02,  5: 0.959, 6: 0.889, 7: 0.9,   8: 0.861, 9: 1.0},
+    "U25":    {0: 1.0,   1: 1.701, 2: 1.282, 3: 1.199, 4: 1.05,  5: 0.984, 6: 0.914, 7: 0.937, 8: 0.849, 9: 1.0},
+    "BTTS":   {0: 1.0,   1: 1.0,   2: 1.332, 3: 1.097, 4: 1.019, 5: 0.945, 6: 0.835, 7: 0.771, 8: 0.873, 9: 1.0},
+    "BTTS_NO":{0: 1.0,   1: 1.609, 2: 1.629, 3: 1.298, 4: 1.065, 5: 0.985, 6: 0.946, 7: 0.885, 8: 1.0,   9: 1.0},
+    "HT05":   {0: 1.0,   1: 1.0,   2: 2.559, 3: 1.686, 4: 1.253, 5: 1.139, 6: 1.04,  7: 0.941, 8: 0.872, 9: 0.872},
+    "O15":    {0: 1.0,   1: 1.0,   2: 1.0,   3: 1.271, 4: 1.036, 5: 1.108, 6: 1.03,  7: 0.945, 8: 0.913, 9: 0.927},
+    "U15":    {0: 1.864, 1: 1.47,  2: 1.166, 3: 0.942, 4: 0.862, 5: 0.969, 6: 0.845, 7: 1.0,   8: 1.0,   9: 1.0},
+    "O35":    {0: 1.515, 1: 1.215, 2: 1.046, 3: 0.883, 4: 0.824, 5: 0.826, 6: 0.783, 7: 1.0,   8: 1.0,   9: 1.0},
+    "U35":    {0: 1.0,   1: 1.0,   2: 1.0,   3: 1.394, 4: 1.21,  5: 1.14,  6: 1.061, 7: 0.985, 8: 0.96,  9: 0.961},
+    "HT_H":   {0: 1.0,   1: 1.297, 2: 1.086, 3: 1.017, 4: 1.009, 5: 0.974, 6: 1.02,  7: 1.0,   8: 1.0,   9: 1.0},
+    "HT_D":   {0: 1.0,   1: 1.0,   2: 0.82,  3: 0.916, 4: 0.942, 5: 0.958, 6: 0.861, 7: 1.0,   8: 1.0,   9: 1.0},
+    "HT_A":   {0: 0.93,  1: 1.17,  2: 1.052, 3: 0.974, 4: 0.894, 5: 1.115, 6: 1.0,   7: 1.0,   8: 1.0,   9: 1.0},
+    # HT_U05: non in MARKET_MAP (non viene scommesso), ma mantenuto per completezza.
+    # NB: bin 5-7 mostrano sovrastima marcata del modello in fascia alta.
+    "HT_U05": {0: 2.456, 1: 1.681, 2: 1.175, 3: 0.927, 4: 0.825, 5: 0.783, 6: 0.631, 7: 0.399, 8: 1.0,   9: 1.0},
 }
 
 # ---------------------------------------------------------------------------

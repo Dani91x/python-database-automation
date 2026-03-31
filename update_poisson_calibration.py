@@ -261,8 +261,10 @@ def build_calibration_table(
                 hit_rate = s["hits"] / n
                 if avg_prob > 0:
                     correction = round(hit_rate / avg_prob, 3)
-                    # Cap: correzioni estreme (>10x o <0.1x) indicano bin vuoti o anomali
-                    correction = max(0.1, min(correction, 10.0))
+                    # Cap conservativo [0.2, 3.0]: valori estremi indicano overfitting
+                    # su bin rari. Allineato al cap di generate_dynamic_cal.py per
+                    # coerenza tra le due tabelle di calibrazione.
+                    correction = max(0.2, min(correction, 3.0))
                 else:
                     correction = 1.0
                 new_table[cal_key][bin_idx] = correction

@@ -38,7 +38,7 @@ MARKET_CONFIG = {
     "HT05":    ("first_half_over_0_5",  "True",  "1T Over 0.5"),
 }
 
-DEFAULT_DIVERGENCE_STD = 0.30  # fallback se non calcolabile da odds
+DEFAULT_DIVERGENCE_STD = 0.3287  # fallback se n_campioni < 30; allineato a money_management.py
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +192,13 @@ def accumulate_stats(
             skipped += 1
             continue
 
+        # Filtra solo record del modello DC per coerenza con update_poisson_calibration.py.
+        # Record di modelli precedenti hanno distribuzioni di probabilità diverse
+        # e contaminano la calibrazione con bias sistematici.
+        if analisi.get("model") != "poisson_xg_hybrid_dc":
+            skipped += 1
+            continue
+
         fid = row.get("fixture_id")
         league_id = str(row.get("league_id") or "")
         hh, ha = ht_map.get(fid, (None, None))
@@ -277,7 +284,10 @@ def build_correction(
                 hit_rate = s["hits"] / n
                 if avg_prob > 0:
                     cf = round(hit_rate / avg_prob, 3)
-                    cf = max(0.1, min(cf, 10.0))
+                    # Cap conservativo [0.2, 3.0]: valori estremi indicano quasi
+                    # sempre overfitting su bin rari (es. prob 0-10% ha pochissimi
+                    # campioni anche con N >= min_n). Max 10.0 era troppo permissivo.
+                    cf = max(0.2, min(cf, 3.0))
                 else:
                     cf = 1.0
                 table[cal_key][bin_idx] = cf

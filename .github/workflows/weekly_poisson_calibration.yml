@@ -1,0 +1,61 @@
+name: Weekly Poisson Calibration
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # ogni lunedì alle 03:00 UTC
+  workflow_dispatch:       # lancio manuale dal tab Actions
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Step 1 — Genera dynamic_cal.json (calibrazione per-lega)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONIOENCODING: utf-8
+        run: python generate_dynamic_cal.py
+
+      - name: Step 2 — Aggiorna CALIBRATION_TABLE in money_management.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONIOENCODING: utf-8
+        run: python update_poisson_calibration.py --apply
+
+      - name: Commit e push calibrazioni aggiornate
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dynamic_cal.json Betfair/money_management.py
+          # Committa solo se ci sono cambiamenti reali
+          if git diff --cached --quiet; then
+            echo "Nessun cambiamento nei file di calibrazione, skip commit."
+          else
+            FIXTURES=$(python -c "import json; d=json.load(open('dynamic_cal.json')); print(d.get('total_fixtures','?'))")
+            LEAGUES=$(python -c "import json; d=json.load(open('dynamic_cal.json')); print(d.get('leagues_covered','?'))")
+            git commit -m "chore(calibration): aggiornamento settimanale Poisson
+
+- dynamic_cal.json: ${FIXTURES} fixture, ${LEAGUES} leghe calibrate
+- CALIBRATION_TABLE: aggiornata in money_management.py
+- Filtro: solo modello poisson_xg_hybrid_dc
+- Cap correction factor: [0.2, 3.0]"
+            git push
+          fi
