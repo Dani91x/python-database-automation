@@ -53,9 +53,9 @@ jobs:
             LEAGUES=$(python -c "import json; d=json.load(open('dynamic_cal.json')); print(d.get('leagues_covered','?'))")
             git commit -m "chore(calibration): aggiornamento settimanale Poisson
 
-- dynamic_cal.json: ${FIXTURES} fixture, ${LEAGUES} leghe calibrate
-- CALIBRATION_TABLE: aggiornata in money_management.py
-- Filtro: solo modello poisson_xg_hybrid_dc
-- Cap correction factor: [0.2, 3.0]"
+            - dynamic_cal.json: ${FIXTURES} fixture, ${LEAGUES} leghe calibrate
+            - CALIBRATION_TABLE: aggiornata in money_management.py
+            - Filtro: solo modello poisson_xg_hybrid_dc
+            - Cap correction factor: [0.2, 3.0]"
             git push
           fi
