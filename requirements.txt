@@ -6,6 +6,7 @@ pandas
 numpy
 scikit-learn
 imbalanced-learn
+lightgbm
 boruta
 gspread
 thefuzz

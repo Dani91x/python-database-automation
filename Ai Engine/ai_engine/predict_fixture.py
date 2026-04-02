@@ -26,6 +26,7 @@ import os
 import sys
 import gzip
 import pickle
+import tempfile
 import time
 import warnings
 import json
@@ -62,6 +63,13 @@ from ai_engine.value_betting import (
 from ai_engine.confidence_gate import (
     apply_all_gates,
     summarize_gates,
+    MIN_BSS,
+    MAX_ECE_SCORE,
+)
+from ai_engine.ensemble_trainer import (
+    EnsemblePayload,
+    predict_ensemble,
+    get_ensemble_agreement,
 )
 
 
@@ -69,15 +77,25 @@ def _download_model(bucket: str, path: str, out_path: str) -> None:
     """Scarica il modello in un file temporaneo poi rinomina atomicamente.
     Previene file corrotti parzialmente scritti che passano os.path.exists().
     """
-    import tempfile
     sb = get_supabase_client()
     res = sb.storage.from_(bucket).download(path)
-    # Scrittura atomica: scrivi su temp nello stesso dir, poi rinomina
+    # Scrittura atomica: scrivi su temp nello stesso dir, poi rinomina.
+    # Il blocco try/finally garantisce la pulizia del file temp anche in caso
+    # di errore durante la scrittura o la rinomina (delete=False non fa cleanup auto).
     out_dir = os.path.dirname(out_path)
-    with tempfile.NamedTemporaryFile(dir=out_dir, delete=False, suffix=".tmp") as tmp:
-        tmp.write(res)
-        tmp_path = tmp.name
-    os.replace(tmp_path, out_path)  # atomico su tutti i SO moderni
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=out_dir, delete=False, suffix=".tmp") as tmp:
+            tmp.write(res)
+            tmp_path = tmp.name
+        os.replace(tmp_path, out_path)  # atomico su tutti i SO moderni
+        tmp_path = None  # rinomina riuscita — non c'è nulla da pulire
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def _load_model(path: str) -> Dict:
@@ -94,7 +112,6 @@ def _payload_to_ensemble(payload: Dict) -> Any:
     Reconstruct an EnsemblePayload dataclass from a saved dict payload.
     Handles both EnsemblePayload objects (already correct) and raw dicts.
     """
-    from ai_engine.ensemble_trainer import EnsemblePayload
     if isinstance(payload, EnsemblePayload):
         return payload
     # Reconstruct from dict
@@ -121,8 +138,6 @@ def _predict_with_ensemble(
     Returns (calibrated_probs, raw_probs, agreement_info).
     Handles both legacy (single model) and new ensemble payloads.
     """
-    from ai_engine.ensemble_trainer import predict_ensemble, get_ensemble_agreement
-
     def _meta_n_features(meta: Any) -> Optional[int]:
         if meta is None:
             return None
@@ -147,8 +162,7 @@ def _predict_with_ensemble(
         return meta_classes or payload_classes
 
     # EnsemblePayload è un dataclass, non un dict — controlla il tipo prima di .get()
-    from ai_engine.ensemble_trainer import EnsemblePayload as _EP
-    if isinstance(payload, _EP):
+    if isinstance(payload, EnsemblePayload):
         model_type = "ensemble_v2"
     else:
         model_type = payload.get("model_type", "legacy")
@@ -328,6 +342,23 @@ ALL_DEFINED_TARGETS = [
 
 logger = logging.getLogger(__name__)
 
+# Targets trattati come binari nel post-calibration layer (True/False).
+_BINARY_TARGETS = frozenset({
+    "target_over_2_5", "target_over_1_5", "target_over_3_5",
+    "target_over_4_5", "target_btts",
+})
+
+# Mappa (target, azione) → chiave MI per arricchimento EdgeScorer.
+_MI_TARGET_MAP: Dict[tuple, str] = {
+    ("target_1x2",      "H"):     "1x2_H",
+    ("target_1x2",      "D"):     "1x2_D",
+    ("target_1x2",      "A"):     "1x2_A",
+    ("target_over_2_5", "True"):  "over_2_5",
+    ("target_over_2_5", "False"): "under_2_5",
+    ("target_btts",     "True"):  "btts_yes",
+    ("target_btts",     "False"): "btts_no",
+}
+
 
 def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None) -> Dict[str, Any]:
     """
@@ -373,9 +404,6 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     if not models:
         raise RuntimeError("No models found in ai_model_registry for league")
 
-    # The models might still point to the old bucket in DB, but we strictly enforce the new bucket path
-    bucket = f"ai-models-league-{league_id}"
-
     out_dir = os.path.join(ROOT, "Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -384,18 +412,17 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     agreement_results: Dict[str, Dict[str, Any]] = {}
     calibration_metrics: Dict[str, Dict[str, Any]] = {}
     feats_union: list[str] = []
+    feats_union_set: set[str] = set()
     run_id = str(uuid.uuid4())
     modeled_targets: set[str] = set()
+
+    m_bucket = f"ai-models-league-{league_id}"
+    _MODEL_CACHE_TTL_HOURS = float(os.environ.get("MODEL_CACHE_TTL_HOURS", "24"))
 
     for m in models:
         target = m["target"]
         path = m["storage_path"]
-        
-        # Override bucket from registry to enforce dynamically isolated bucket per league
-        m_bucket = f"ai-models-league-{league_id}"
-        
         local_path = os.path.join(out_dir, os.path.basename(path))
-        _MODEL_CACHE_TTL_HOURS = float(os.environ.get("MODEL_CACHE_TTL_HOURS", "24"))
         _needs_download = not os.path.exists(local_path)
         if not _needs_download:
             age_hours = (time.time() - os.path.getmtime(local_path)) / 3600
@@ -416,7 +443,10 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         payload = _load_model(local_path)
 
         feats = payload.get("features") or payload.get("feature_cols", [])
-        feats_union.extend([f for f in feats if f not in feats_union])
+        for f in feats:
+            if f not in feats_union_set:
+                feats_union.append(f)
+                feats_union_set.add(f)
 
         cal_probs, raw_probs, agreement = _predict_with_ensemble(payload, features_df)
 
@@ -472,10 +502,6 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         try:
             with open(_post_cal_path, "r", encoding="utf-8") as _f:
                 _post_cal = json.load(_f).get("corrections", {})
-            _BINARY_TARGETS = {
-                "target_over_2_5", "target_over_1_5", "target_over_3_5",
-                "target_over_4_5", "target_btts",
-            }
             for _target, _probs in list(results.items()):
                 _tcal = _post_cal.get(_target)
                 if not _tcal:
@@ -571,20 +597,10 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     # Calls EdgeScorer to add calibration bias + composite edge per signal.
     # Gracefully skipped if MI cache not available (run pipeline.py --all first).
     mi_scorecard = None
-    _MI_TARGET_MAP = {
-        ("target_1x2",    "H"):     "1x2_H",
-        ("target_1x2",    "D"):     "1x2_D",
-        ("target_1x2",    "A"):     "1x2_A",
-        ("target_over_2_5", "True"):  "over_2_5",
-        ("target_over_2_5", "False"): "under_2_5",
-        ("target_btts",   "True"):  "btts_yes",
-        ("target_btts",   "False"): "btts_no",
-    }
     try:
-        import sys as _sys
         _mi_path = os.path.join(ROOT, "market_intelligence")
-        if _mi_path not in _sys.path:
-            _sys.path.insert(0, _mi_path)
+        if _mi_path not in sys.path:
+            sys.path.insert(0, _mi_path)
         from market_intelligence.edge_scorer import EdgeScorer as _EdgeScorer
         # Build db_json_analisi compatible dict from our ML results
         _db_json_mi = {"markets": {}}
@@ -616,7 +632,6 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     targets_skipped: List[Dict[str, str]] = []
     targets_not_reliable: List[Dict[str, str]] = []
 
-    from ai_engine.confidence_gate import MIN_BSS, MAX_ECE_SCORE
     for t in ALL_DEFINED_TARGETS:
         if t not in modeled_targets:
             targets_skipped.append({

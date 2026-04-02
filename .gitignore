@@ -25,6 +25,9 @@ match-insights-hub-temp/
 # Data / Predictions
 *_prediction_*.json
 *.jsonl.gz
+log*.txt
+analysis_output.txt
+api_usage_report.txt
 
 # Cache
 models_cache/

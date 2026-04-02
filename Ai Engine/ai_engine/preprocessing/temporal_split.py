@@ -48,6 +48,79 @@ def temporal_train_val_split(
     return train_df, val_df
 
 
+def temporal_train_val_holdout_split(
+    df: pd.DataFrame,
+    val_ratio: float = 0.15,
+    holdout_ratio: float = 0.10,
+    purge_days: int = 30,
+    date_col: str = "fixture_date",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Split a DataFrame chronologically into three sets: train / val / holdout.
+
+    - train  (~75%): used for fitting base models and meta-learner (OOF walk-forward).
+    - val    (~15%): used for fitting isotonic calibrators and base weights
+                     inside build_ensemble().
+    - holdout (~10%): used ONLY for computing Brier/ECE metrics that are saved
+                      in the model — never seen by any fitting step.
+
+    P8 fix: having a dedicated holdout set ensures the calibration metrics
+    stored in the model reflect true out-of-sample performance, not an
+    optimistic in-sample estimate produced by evaluating on the same data
+    used to fit the isotonic calibrators.
+
+    A single purge gap of `purge_days` is applied between train and val to
+    prevent leakage from rolling/form features that span the boundary.
+    No second purge is applied between val and holdout because holdout
+    features are pre-match aggregates computed over historical data — they
+    legitimately include val-era matches and this causes no leakage.
+
+    Returns (train_df, val_df, holdout_df).
+    """
+    if not (0.0 < val_ratio < 1.0) or not (0.0 < holdout_ratio < 1.0):
+        raise ValueError(
+            f"val_ratio and holdout_ratio must both be strictly in (0, 1); "
+            f"got val_ratio={val_ratio}, holdout_ratio={holdout_ratio}"
+        )
+    if val_ratio + holdout_ratio >= 1.0:
+        raise ValueError(
+            f"val_ratio + holdout_ratio must be < 1.0; "
+            f"got {val_ratio} + {holdout_ratio} = {val_ratio + holdout_ratio:.4f}"
+        )
+
+    dfc = df.copy()
+    dfc[date_col] = pd.to_datetime(dfc[date_col], errors="coerce")
+    dfc = dfc.dropna(subset=[date_col]).sort_values(date_col).reset_index(drop=True)
+
+    if dfc.empty:
+        return dfc, dfc, dfc
+
+    n = len(dfc)
+
+    # Cutoff indices measured from the end of the chronologically-sorted dataset.
+    holdout_cutoff_idx = int(n * (1.0 - holdout_ratio))
+    holdout_cutoff_idx = max(2, min(holdout_cutoff_idx, n - 1))
+
+    val_cutoff_idx = int(n * (1.0 - holdout_ratio - val_ratio))
+    val_cutoff_idx = max(1, min(val_cutoff_idx, holdout_cutoff_idx - 1))
+
+    holdout_cutoff_date = dfc.iloc[holdout_cutoff_idx][date_col]
+    val_cutoff_date = dfc.iloc[val_cutoff_idx][date_col]
+
+    # Purge gap: remove the last `purge_days` of training data to prevent
+    # rolling-feature leakage at the train→val boundary (same logic as
+    # temporal_train_val_split).
+    purge_start = val_cutoff_date - pd.Timedelta(days=purge_days)
+
+    holdout_df = dfc[dfc[date_col] >= holdout_cutoff_date].copy()
+    val_df = dfc[
+        (dfc[date_col] >= val_cutoff_date) & (dfc[date_col] < holdout_cutoff_date)
+    ].copy()
+    train_df = dfc[dfc[date_col] < purge_start].copy()
+
+    return train_df, val_df, holdout_df
+
+
 def walk_forward_splits(
     df: pd.DataFrame,
     n_splits: int = 3,
@@ -73,9 +146,11 @@ def walk_forward_splits(
     dates = dfc[date_col].values
     n = len(dates)
 
-    # Divide the last 60% of data into n_splits folds for validation
-    # The first 40% is always training for the first fold.
-    val_start_pct = 0.40
+    # Divide the last 80% of data into n_splits folds for validation.
+    # The first 20% is always training for the first fold.
+    # P11 fix: was 0.40 → changed to 0.20 so OOF covers 80% of training data
+    # (instead of 60%), giving the meta-learner substantially more calibration signal.
+    val_start_pct = 0.20
     val_start_idx = int(n * val_start_pct)
     val_total = n - val_start_idx
     fold_size = max(val_total // n_splits, 10)

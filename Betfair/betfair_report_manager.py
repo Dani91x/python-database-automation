@@ -1,7 +1,10 @@
+import glob
 import gspread
 import os
 import json
 import logging
+import tempfile
+import traceback
 from datetime import datetime, timedelta
 import pytz
 from thefuzz import fuzz
@@ -20,7 +23,7 @@ from db_client import get_supabase_client
 
 # AI Engine imports
 from ai_engine.predict_fixture import predict_fixture
-from ai_engine.seriea_model_export import train_and_save_all, upload_and_register
+from ai_engine.seriea_model_export import train_and_save_all, upload_and_register, MAX_UPLOAD_MB
 
 try:
     from Betfair.money_management import SlotManager, _sheets_retry
@@ -111,8 +114,8 @@ class BetfairReportManager:
         # Ordina per gestire inversioni ("City Manchester" vs "Manchester City")
         return " ".join(sorted(words))
 
-    def run_daily_report(self):
-        logger.info("Avvio report giornaliero completo...")
+    def run_daily_report(self, skip_training: bool = False):
+        logger.info("Avvio report giornaliero completo..." + (" [SKIP-TRAINING]" if skip_training else ""))
         
         # Super Conservative: pausa iniziale dopo login (che avviene in __init__ -> BetfairClient)
         # In realtà il login avviene esplicitamente se serve, ma assicuriamoci una pausa
@@ -157,17 +160,19 @@ class BetfairReportManager:
 
         # 3. Recupera tutte le Prediction dal DB
         logger.info("Recupero tutte le prediction della giornata...")
-        today = datetime.now().strftime("%Y-%m-%d")
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now(pytz.UTC).strftime("%Y-%m-%d")
+        tomorrow = (datetime.now(pytz.UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
         res = self.supabase.from_("fixture_predictions").select("*").gte("fixture_date", today).lt("fixture_date", tomorrow).execute()
         db_fixtures = res.data or []
 
         # 3b. PRE-FLIGHT: allena SOLO le leghe di oggi (prima del loop per-fixture)
         # Questo evita training inline bloccante durante la generazione del report.
-        if db_fixtures:
+        if db_fixtures and not skip_training:
             today_league_ids = list({f.get("league_id") for f in db_fixtures if f.get("league_id")})
             logger.info(f"🚀 Pre-flight training: {len(today_league_ids)} leghe rilevate oggi → {today_league_ids}")
             self._preflight_train_leagues(today_league_ids)
+        elif db_fixtures and skip_training:
+            logger.info("⚡ Pre-flight training SALTATO (--skip-training). Uso solo modelli in cache.")
 
         # 4. Aggiorna foglio Prediction (Tutte)
         self._sync_all_predictions(db_fixtures)
@@ -398,7 +403,37 @@ class BetfairReportManager:
         
         rows = []
         match_count = 0
-        
+
+        # --- Helpers di formattazione (definiti una sola volta, non ad ogni iterazione) ---
+        def fmt_p(val):
+            if val is None: return ""
+            if val > 1: return f"'{val:.1f}%"
+            return f"'{val*100:.1f}%"
+
+        def fmt_v(val, decimals=2):
+            if val is None: return ""
+            return round(val, decimals)
+
+        def fmt_q(val):
+            if val is None: return ""
+            return val
+
+        def fmt_q_nd(val):
+            """Come fmt_q ma mostra 'N.D.' se la quota non è disponibile su Betfair."""
+            if val is None: return "N.D."
+            return val
+
+        def calc_edge(prob, quota, commission=0.05):
+            """EV post-commissione Betfair: p*(odds-1)*(1-comm) - (1-p)"""
+            if prob is None or quota is None: return None
+            p = prob / 100.0 if prob > 1 else prob
+            net_profit = (quota - 1.0) * (1.0 - commission)
+            return (p * net_profit) - (1.0 - p)
+
+        def fmt_edge(edge):
+            if edge is None: return ""
+            return f"'{edge*100:+.1f}%"
+
         # 1. Pre-identificazione match per prefetch quote
         logger.info("Fase 1: Pre-identificazione match per ottimizzazione API Betfair...")
         matched_events = []
@@ -459,36 +494,6 @@ class BetfairReportManager:
                 pois_ht_a = markets.get("ht_1x2", {}).get("A")
                 
                 odds = odds_cache.get(bf_e["id"], {})
-
-                # --- Helpers ---
-                def fmt_p(val):
-                    if val is None: return ""
-                    if val > 1: return f"'{val:.1f}%"
-                    return f"'{val*100:.1f}%"
-
-                def fmt_v(val, decimals=2):
-                    if val is None: return ""
-                    return round(val, decimals)
-                
-                def fmt_q(val):
-                    if val is None: return ""
-                    return val
-
-                def fmt_q_nd(val):
-                    """Come fmt_q ma mostra 'N.D.' se la quota non è disponibile su Betfair."""
-                    if val is None: return "N.D."
-                    return val
-
-                def calc_edge(prob, quota, commission=0.05):
-                    """EV post-commissione Betfair: p*(odds-1)*(1-comm) - (1-p)"""
-                    if prob is None or quota is None: return None
-                    p = prob / 100.0 if prob > 1 else prob
-                    net_profit = (quota - 1.0) * (1.0 - commission)
-                    return (p * net_profit) - (1.0 - p)
-
-                def fmt_edge(edge):
-                    if edge is None: return ""
-                    return f"'{edge*100:+.1f}%"
 
                 # Hyperlink Betfair
                 mo_id = odds.get("mo_id")
@@ -1033,9 +1038,8 @@ class BetfairReportManager:
         automaticamente il retraining al prossimo tentativo.
         Ritorna True se i modelli erano scaduti e sono stati invalidati.
         """
-        import glob as glob_mod
         cache_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
-        local_models = glob_mod.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+        local_models = glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
 
         if not local_models:
             return False  # Nessun modello locale: gestito da "No models found" in predict_fixture
@@ -1073,8 +1077,8 @@ class BetfairReportManager:
         Scarica in anticipo tutti i modelli dal registry Supabase nella cache locale.
         Eseguito durante il pre-flight così predict_fixture() non deve scaricare on-demand.
         Ritorna il numero di modelli scaricati.
+        Usa scrittura atomica (tempfile + os.replace) per evitare file corrotti parziali.
         """
-        import glob as _glob
         sb = get_supabase_client()
         bucket = f"ai-models-league-{league_id}"
         out_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
@@ -1095,13 +1099,24 @@ class BetfairReportManager:
             local_path = os.path.join(out_dir, os.path.basename(path))
             if os.path.exists(local_path):
                 continue  # già in cache
+            tmp_path = None
             try:
                 res = sb.storage.from_(bucket).download(path)
-                with open(local_path, "wb") as f:
-                    f.write(res)
+                # Scrittura atomica: scrivi su temp → rinomina, evita file corrotti parziali
+                with tempfile.NamedTemporaryFile(dir=out_dir, delete=False, suffix=".tmp") as tmp:
+                    tmp.write(res)
+                    tmp_path = tmp.name
+                os.replace(tmp_path, local_path)
+                tmp_path = None  # rinomina riuscita
                 downloaded += 1
             except Exception as e:
                 logger.warning(f"  Pre-download League {league_id} — {path}: {e}")
+            finally:
+                if tmp_path is not None:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
 
         return downloaded
 
@@ -1117,9 +1132,11 @@ class BetfairReportManager:
           4. Cache locale di training fresca → upload registry
           5. Altrimenti → training completo + upload (parallelo tra leghe)
         """
-        import glob as _glob
-
         total = len(league_ids)
+        if total == 0:
+            logger.info("Pre-flight: nessuna lega da processare.")
+            return
+
         sb = self.supabase
         lock = threading.Lock()
 
@@ -1144,7 +1161,7 @@ class BetfairReportManager:
 
             if registry_has_models:
                 dl_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
-                local_dl = _glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
+                local_dl = glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
                 if local_dl:
                     newest = max(os.path.getmtime(p) for p in local_dl)
                     age_days = (datetime.now().timestamp() - newest) / 86400.0
@@ -1165,7 +1182,7 @@ class BetfairReportManager:
             # 2. Nessun modello in registry: controlla cache locale di training
             self._check_and_invalidate_stale_models(league_id)
             cache_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
-            local_models = _glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+            local_models = glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
 
             need_training = True
             if local_models:
@@ -1174,14 +1191,24 @@ class BetfairReportManager:
                 if age_days < self.MODEL_CACHE_TTL_DAYS:
                     logger.info(f"  [{idx}/{total}] League {league_id}: cache training fresca ({age_days:.1f}gg). Upload senza retraining...")
                     try:
+                        uploaded = 0
                         for model_path in local_models:
+                            file_size = os.path.getsize(model_path)
+                            if file_size > MAX_UPLOAD_MB * 1024 * 1024:
+                                logger.warning(
+                                    f"  [{idx}/{total}] League {league_id}: "
+                                    f"{os.path.basename(model_path)} troppo grande "
+                                    f"({file_size / 1024 / 1024:.1f} MB > {MAX_UPLOAD_MB} MB) — upload saltato."
+                                )
+                                continue
                             target = os.path.basename(model_path).replace("ensemble_v2_", "").replace(".pkl.gz", "")
-                            upload_and_register(model_path, os.path.getsize(model_path), target, {
+                            upload_and_register(model_path, file_size, target, {
                                 "league_id": league_id, "model_type": "ensemble_v2",
                                 "accuracy": None, "logloss": None, "brier": None,
                                 "feature_count": None, "train_rows": None, "trained_range": "cached",
                             })
-                        logger.info(f"  [{idx}/{total}] League {league_id}: {len(local_models)} modelli caricati.")
+                            uploaded += 1
+                        logger.info(f"  [{idx}/{total}] League {league_id}: {uploaded}/{len(local_models)} modelli caricati.")
                         need_training = False
                     except Exception as e:
                         logger.warning(f"  [{idx}/{total}] League {league_id}: upload fallito ({e}), procedo con training.")
@@ -1191,9 +1218,20 @@ class BetfairReportManager:
                 logger.info(f"  [{idx}/{total}] League {league_id}: ⚙️ Training completo (3 stagioni)...")
                 try:
                     results = train_and_save_all(league_id, last_n_seasons=3)
+                    uploaded = 0
                     for r in results:
+                        if r.get("upload_skipped"):
+                            logger.warning(
+                                f"  [{idx}/{total}] League {league_id}: {r['target']} troppo grande "
+                                f"({r.get('file_size', 0) / 1024 / 1024:.1f} MB) — upload saltato."
+                            )
+                            continue
                         upload_and_register(r["model_path"], r["file_size"], r["target"], r)
-                    logger.info(f"  [{idx}/{total}] League {league_id}: ✅ Training OK ({len(results)} target).")
+                        uploaded += 1
+                    logger.info(
+                        f"  [{idx}/{total}] League {league_id}: ✅ Training OK "
+                        f"({len(results)} target, {uploaded} uploadati)."
+                    )
                 except Exception as e:
                     logger.warning(f"  [{idx}/{total}] League {league_id}: ⚠️ Training fallito: {e}. Salto lega.")
 
@@ -1202,7 +1240,7 @@ class BetfairReportManager:
 
         # Parallelizzazione per lega: max 4 worker (bilanciamento CPU/RAM/rete)
         # Il training usa ThreadPoolExecutor internamente (sklearn rilascia GIL)
-        n_workers = min(4, total)
+        n_workers = max(1, min(4, total))
         logger.info(f"🚀 Pre-flight: {total} leghe con {n_workers} worker paralleli...")
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             futures = [executor.submit(_process_league, (idx, lid)) for idx, lid in enumerate(league_ids, 1)]
@@ -1238,7 +1276,6 @@ class BetfairReportManager:
 
                 try:
                     # --- SMART CACHE: controlla se esistono modelli locali freschi ---
-                    import glob
                     cache_dir = os.path.join("Ai Engine", "models_cache", f"league_{league_id}")
                     local_models = glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
 
@@ -1251,9 +1288,16 @@ class BetfairReportManager:
                             logger.info(f"✅ Cache locale fresca ({age_days:.1f}gg < {self.MODEL_CACHE_TTL_DAYS}gg). "
                                        f"Upload di {len(local_models)} modelli senza riaddestrare.")
                             # Upload modelli locali al registry (molto più veloce del training)
+                            uploaded = 0
                             for model_path in local_models:
-                                target = os.path.basename(model_path).replace("ensemble_v2_", "").replace(".pkl.gz", "")
                                 file_size = os.path.getsize(model_path)
+                                if file_size > MAX_UPLOAD_MB * 1024 * 1024:
+                                    logger.warning(
+                                        f"League {league_id}: {os.path.basename(model_path)} troppo grande "
+                                        f"({file_size / 1024 / 1024:.1f} MB > {MAX_UPLOAD_MB} MB) — upload saltato."
+                                    )
+                                    continue
+                                target = os.path.basename(model_path).replace("ensemble_v2_", "").replace(".pkl.gz", "")
                                 upload_and_register(model_path, file_size, target, {
                                     "league_id": league_id,
                                     "model_type": "ensemble_v2",
@@ -1264,6 +1308,8 @@ class BetfairReportManager:
                                     "train_rows": None,
                                     "trained_range": "cached",
                                 })
+                                uploaded += 1
+                            logger.info(f"League {league_id}: {uploaded}/{len(local_models)} modelli caricati.")
                             need_training = False
                         else:
                             logger.info(f"⏰ Cache locale scaduta ({age_days:.1f}gg >= {self.MODEL_CACHE_TTL_DAYS}gg). Riaddestrare.")
@@ -1271,8 +1317,17 @@ class BetfairReportManager:
                     if need_training:
                         logger.info(f"🔧 Training completo League {league_id}...")
                         results = train_and_save_all(league_id, last_n_seasons=3)
+                        uploaded = 0
                         for r in results:
+                            if r.get("upload_skipped"):
+                                logger.warning(
+                                    f"League {league_id}: {r['target']} troppo grande "
+                                    f"({r.get('file_size', 0) / 1024 / 1024:.1f} MB) — upload saltato."
+                                )
+                                continue
                             upload_and_register(r["model_path"], r["file_size"], r["target"], r)
+                            uploaded += 1
+                        logger.info(f"League {league_id}: training OK ({len(results)} target, {uploaded} uploadati).")
 
                     logger.info(f"League {league_id} pronta. Riprendo predizione.")
                     preds = predict_fixture(fixture_id, store=True, live_odds=odds_dict)
@@ -1281,11 +1336,9 @@ class BetfairReportManager:
                     logger.warning(f"Dati insufficienti per lega {league_id}: {ex}. Salto AI.")
                     return None, "LEGA SALTATA PER DATI INSUFFICIENTI"
             else:
-                import traceback
                 logger.warning(f"Errore AI fixture {fixture_id}: {e}\n{traceback.format_exc()}")
                 return None, "ERRORE AI"
         except Exception as generic_e:
-            import traceback
             logger.warning(f"Errore non gestito AI fixture {fixture_id}: {generic_e}\n{traceback.format_exc()}")
             return None, "ERRORE AI"
 
@@ -1391,5 +1444,16 @@ class BetfairReportManager:
             logger.error(f"Errore aggiornamento foglio Betfair: {err}")
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Betfair Report Manager")
+    parser.add_argument(
+        "--skip-training",
+        action="store_true",
+        help=(
+            "Salta il pre-flight training. Usa solo i modelli già in cache locale. "
+            "Le leghe senza modelli avranno predizioni AI assenti ma il report gira subito."
+        ),
+    )
+    args = parser.parse_args()
     manager = BetfairReportManager()
-    manager.run_daily_report()
+    manager.run_daily_report(skip_training=args.skip_training)

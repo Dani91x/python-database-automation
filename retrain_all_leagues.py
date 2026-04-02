@@ -27,9 +27,9 @@ import os
 import pickle
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # ── Path setup ─────────────────────────────────────────────────────────────
 ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -38,10 +38,12 @@ for p in [ROOT, AI_ENGINE_DIR]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from db_client import get_supabase_client
+from ai_engine.seriea_model_export import train_and_save_all, upload_and_register
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 MODELS_CACHE_DIR = os.path.join(AI_ENGINE_DIR, "models_cache")
-LOG_FILE = os.path.join(ROOT, "retrain_log.txt")
 MIN_BSS_THRESHOLD = 0.12   # gate di qualità: modelli sotto questa soglia non scommettono
 DEFAULT_LAST_N_SEASONS = 3
 
@@ -99,16 +101,58 @@ def _get_all_league_ids_from_cache() -> List[int]:
 
 
 def _get_all_league_ids_from_db() -> List[int]:
-    """Recupera tutti i league_id presenti nella tabella matches (Supabase)."""
+    """Recupera tutti i league_id da season_backfill_state (fonte autorevole, ~3k righe).
+
+    Non usa 'matches' direttamente perché quella tabella ha milioni di righe e
+    Supabase tronca ogni query a 100.000 righe: con leghe grandi (es. 39=6070,
+    45=10294 righe) il buffer si satura e vengono restituite solo 64 leghe
+    invece delle 328+ effettivamente popolate.
+    season_backfill_state ha una riga per stagione di ogni lega, entra sempre
+    in un singolo .execute() e si aggiorna automaticamente ogni volta che
+    l'orchestratore popola una nuova lega.
+    """
     try:
-        from db_client import get_supabase_client
         sb = get_supabase_client()
-        resp = sb.table("matches").select("league_id").execute()
+        resp = sb.table("season_backfill_state").select("league_id").execute()
         data = getattr(resp, "data", None) or []
-        return sorted({int(r["league_id"]) for r in data if r.get("league_id") is not None})
+        ids = sorted({int(r["league_id"]) for r in data if r.get("league_id") is not None})
+        if not ids:
+            # Fallback: paginazione esplicita su matches
+            print("  [WARN] season_backfill_state vuota, fallback su matches paginato")
+            ids = _get_league_ids_from_matches_paginated(sb)
+        return ids
     except Exception as e:
         print(f"  [WARN] Impossibile recuperare leghe dal DB: {e}")
         return []
+
+
+def _get_league_ids_from_matches_paginated(sb: Any) -> List[int]:
+    """Fallback: paginazione esplicita su matches per raccogliere tutti i league_id."""
+    PAGE = 50_000
+    offset = 0
+    seen: set = set()
+    while True:
+        try:
+            r = (
+                sb.table("matches")
+                .select("league_id")
+                .range(offset, offset + PAGE - 1)
+                .execute()
+            )
+        except Exception as exc:
+            print(f"  [WARN] Errore paginazione matches a offset {offset}: {exc}")
+            break
+        rows = getattr(r, "data", None) or []
+        if not rows:
+            break
+        for row in rows:
+            lid = row.get("league_id")
+            if lid is not None:
+                seen.add(int(lid))
+        if len(rows) < PAGE:
+            break
+        offset += PAGE
+    return sorted(seen)
 
 
 def _log(msg: str, log_lines: List[str]) -> None:
@@ -118,13 +162,27 @@ def _log(msg: str, log_lines: List[str]) -> None:
     log_lines.append(line)
 
 
-def _was_trained_today(metrics: Dict[str, Dict]) -> bool:
-    """True se almeno un modello è stato addestrato oggi."""
-    today = datetime.now(timezone.utc).date().isoformat()
+def _was_trained_recently(metrics: Dict[str, Dict], max_age_days: int = 0) -> bool:
+    """
+    True se almeno un modello è stato addestrato entro ``max_age_days`` giorni.
+
+    max_age_days=0  → comportamento originale: solo oggi
+    max_age_days=7  → salta la lega se è stata addestrata negli ultimi 7 giorni
+    """
+    now = datetime.now(timezone.utc)
     for m in metrics.values():
-        trained_at = m.get("trained_at", "")
-        if trained_at.startswith(today):
-            return True
+        trained_at_str = m.get("trained_at", "")
+        if not trained_at_str:
+            continue
+        try:
+            trained_at = datetime.fromisoformat(trained_at_str)
+            if trained_at.tzinfo is None:
+                trained_at = trained_at.replace(tzinfo=timezone.utc)
+            age_days = (now - trained_at).total_seconds() / 86400.0
+            if age_days <= max(max_age_days, 0) + 1:  # +1 = include "oggi"
+                return True
+        except (ValueError, TypeError):
+            continue
     return False
 
 
@@ -137,8 +195,6 @@ def retrain_league(
     log_lines: List[str],
 ) -> Dict:
     """Riaddestra tutti i target per una lega. Ritorna un dizionario con i risultati."""
-    from ai_engine.seriea_model_export import train_and_save_all, upload_and_register
-
     _log(f"  → Training league {league_id} (last {last_n_seasons} seasons)...", log_lines)
 
     if dry_run:
@@ -151,9 +207,16 @@ def retrain_league(
         _log(f"  [ERROR] league {league_id}: {e}", log_lines)
         return {"league_id": league_id, "status": "error", "error": str(e), "targets": []}
 
-    # Upload to Supabase
+    # Upload to Supabase — skip models flagged as too large by _train_one_target.
     upload_errors = []
     for r in results:
+        if r.get("upload_skipped"):
+            _log(
+                f"  [SKIP UPLOAD] {r['target']}: model too large "
+                f"({r.get('file_size', 0) / 1024 / 1024:.1f} MB) — BSS tracked, upload skipped.",
+                log_lines,
+            )
+            continue
         try:
             upload_and_register(r["model_path"], r["file_size"], r["target"], r)
         except Exception as e:
@@ -204,6 +267,107 @@ def print_bss_comparison(
         _log(f"    {target:30} {before_str:12} {after_str:12} {delta_str:10} {gate}", log_lines)
 
 
+def _process_league_worker(
+    league_id: int,
+    idx: int,
+    total: int,
+    last_n_seasons: int,
+    dry_run: bool,
+    skip_existing: bool,
+    max_age_days: int,
+) -> Dict:
+    """Elabora una singola lega: training, BSS comparison, upload Supabase.
+
+    Progettato per essere chiamato in parallelo via ThreadPoolExecutor.
+    Ogni worker usa la propria lista di log per evitare race condition.
+    """
+    local_logs: List[str] = []
+
+    print(f"\n[{idx}/{total}] League {league_id}")
+    _log(f"[{idx}/{total}] League {league_id}", local_logs)
+
+    before_metrics = _load_existing_metrics(league_id)
+
+    if skip_existing and _was_trained_recently(before_metrics, max_age_days):
+        _log(f"  → SALTATO (già addestrato negli ultimi {max_age_days} giorni)", local_logs)
+        return {"league_id": league_id, "status": "skipped", "logs": local_logs}
+
+    t_start = time.time()
+    result = retrain_league(league_id, last_n_seasons, dry_run, local_logs)
+    elapsed = time.time() - t_start
+
+    if result["status"] == "dry_run":
+        return {"league_id": league_id, "status": "dry_run", "logs": local_logs}
+
+    if result["status"] == "error":
+        return {
+            "league_id": league_id, "status": "error",
+            "error": result.get("error", ""),
+            "elapsed_s": round(elapsed, 1),
+            "logs": local_logs,
+        }
+
+    after_list = result["targets"]
+    print_bss_comparison(league_id, before_metrics, after_list, local_logs)
+
+    bss_improved = 0
+    bss_degraded = 0
+    for r in after_list:
+        target = r.get("target", "?")
+        n_cls = len(r.get("class_labels", [])) if r.get("class_labels") else 2
+        after_bss = _bss(r.get("brier"), n_cls)
+        before_bss = before_metrics.get(target, {}).get("bss")
+        if before_bss is not None and after_bss is not None:
+            if after_bss > before_bss + 0.005:
+                bss_improved += 1
+            elif after_bss < before_bss - 0.005:
+                bss_degraded += 1
+
+    try:
+        sb = get_supabase_client()
+        for r in after_list:
+            target = r.get("target", "?")
+            n_cls = r.get("n_classes") or (len(r.get("class_labels", [])) if r.get("class_labels") else 2)
+            brier_val = r.get("brier")
+            ece_val = r.get("ece")
+            bss_val = _bss(brier_val, n_cls)
+            brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
+            try:
+                sb.table("model_performance").upsert({
+                    "league_id": league_id,
+                    "target": target,
+                    "n_classes": n_cls,
+                    "brier": brier_val,
+                    "brier_random": round(brier_random, 4),
+                    "bss": bss_val,
+                    "ece": ece_val,
+                    "train_rows": r.get("train_rows"),
+                    "val_rows": r.get("val_rows"),
+                    "trained_at": datetime.now(timezone.utc).isoformat(),
+                }).execute()
+            except Exception as e:
+                _log(f"  [WARN] model_performance upsert failed for {target}: {e}", local_logs)
+    except Exception as e:
+        _log(f"  [WARN] BSS tracking to Supabase failed: {e}", local_logs)
+
+    upload_errors = result.get("upload_errors", [])
+    for ue in upload_errors:
+        _log(f"  [UPLOAD WARN] {ue}", local_logs)
+
+    _log(f"  ✓ Completato in {elapsed:.1f}s | {len(after_list)} modelli", local_logs)
+
+    return {
+        "league_id": league_id,
+        "status": "ok",
+        "models_trained": len(after_list),
+        "elapsed_s": round(elapsed, 1),
+        "upload_errors": len(upload_errors),
+        "bss_improved": bss_improved,
+        "bss_degraded": bss_degraded,
+        "logs": local_logs,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Riaddestra tutti i modelli ML per tutte le leghe disponibili."
@@ -223,7 +387,27 @@ def main() -> None:
     parser.add_argument(
         "--skip-existing",
         action="store_true",
-        help="Salta le leghe già riaddestrate oggi.",
+        help="Salta le leghe già riaddestrate recentemente (vedi --max-age-days).",
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=0,
+        help=(
+            "Usato con --skip-existing: salta la lega se è stata addestrata "
+            "negli ultimi N giorni. Default=0 (solo oggi). "
+            "Es: --max-age-days 7 per saltare leghe già addestrate questa settimana."
+        ),
+    )
+    parser.add_argument(
+        "--parallel-leagues",
+        type=int,
+        default=1,
+        help=(
+            "Leghe da processare in parallelo. Default=1 (sequenziale). "
+            "Con 2: dimezza il tempo totale usando tutti gli 8 core disponibili. "
+            "Richiede RETRAIN_N_WORKERS=2 (settato automaticamente da aggiorna_modelli.bat)."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -272,97 +456,53 @@ def main() -> None:
 
     summary_rows: List[Dict] = []
 
-    for i, league_id in enumerate(league_ids, start=1):
-        print(f"\n[{i}/{total}] League {league_id}")
-        _log(f"[{i}/{total}] League {league_id}", log_lines)
+    # ── Parallelismo a livello di lega ─────────────────────────────────────
+    parallel = args.parallel_leagues
+    if parallel > 1:
+        # IMPORTANTE: env var deve essere settata PRIMA di creare il ThreadPoolExecutor,
+        # altrimenti i worker potrebbero leggere il valore di default "1" anziché il reale.
+        # aggiorna_modelli.bat setta già RETRAIN_PARALLEL_LEAGUES prima di lanciare Python;
+        # questo set è un fallback per chi invoca retrain_all_leagues.py direttamente.
+        os.environ["RETRAIN_PARALLEL_LEAGUES"] = str(parallel)
+        print(f"  Modalità: {parallel} leghe in parallelo")
 
-        # Carica metriche PRIMA del retraining
-        before_metrics = _load_existing_metrics(league_id)
+    with ThreadPoolExecutor(max_workers=parallel) as executor:
+        futures = {
+            executor.submit(
+                _process_league_worker,
+                lid, i, total,
+                args.last_n_seasons, args.dry_run,
+                args.skip_existing, args.max_age_days,
+            ): lid
+            for i, lid in enumerate(league_ids, 1)
+        }
+        for future in as_completed(futures):
+            r = future.result()
+            log_lines.extend(r.get("logs", []))
+            status = r.get("status", "error")
+            lid = r["league_id"]
 
-        if args.skip_existing and _was_trained_today(before_metrics):
-            _log(f"  → SALTATO (già addestrato oggi)", log_lines)
-            skipped_count += 1
-            continue
-
-        t_start = time.time()
-        result = retrain_league(league_id, args.last_n_seasons, args.dry_run, log_lines)
-        elapsed = time.time() - t_start
-
-        if result["status"] == "dry_run":
-            skipped_count += 1
-            continue
-
-        if result["status"] == "error":
-            error_count += 1
-            summary_rows.append({
-                "league_id": league_id,
-                "status": "ERROR",
-                "error": result.get("error", ""),
-                "elapsed_s": round(elapsed, 1),
-            })
-            continue
-
-        ok_count += 1
-        after_list = result["targets"]
-
-        # Confronto BSS prima/dopo
-        print_bss_comparison(league_id, before_metrics, after_list, log_lines)
-
-        # Conta miglioramenti/peggioramenti
-        for r in after_list:
-            target = r.get("target", "?")
-            n_cls = len(r.get("class_labels", [])) if r.get("class_labels") else 2
-            after_bss = _bss(r.get("brier"), n_cls)
-            before_bss = before_metrics.get(target, {}).get("bss")
-            if before_bss is not None and after_bss is not None:
-                if after_bss > before_bss + 0.005:
-                    bss_improved += 1
-                elif after_bss < before_bss - 0.005:
-                    bss_degraded += 1
-
-        # ── Save BSS tracking to Supabase model_performance table ──────
-        try:
-            from db_client import get_supabase_client
-            sb = get_supabase_client()
-            for r in after_list:
-                target = r.get("target", "?")
-                n_cls = r.get("n_classes") or (len(r.get("class_labels", [])) if r.get("class_labels") else 2)
-                brier_val = r.get("brier")
-                ece_val = r.get("ece")
-                bss_val = _bss(brier_val, n_cls)
-                brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
-                try:
-                    sb.table("model_performance").upsert({
-                        "league_id": league_id,
-                        "target": target,
-                        "n_classes": n_cls,
-                        "brier": brier_val,
-                        "brier_random": round(brier_random, 4),
-                        "bss": bss_val,
-                        "ece": ece_val,
-                        "train_rows": r.get("train_rows"),
-                        "val_rows": r.get("val_rows"),
-                        "trained_at": datetime.now(timezone.utc).isoformat(),
-                    }).execute()
-                except Exception as e:
-                    _log(f"  [WARN] model_performance upsert failed for {target}: {e}", log_lines)
-        except Exception as e:
-            _log(f"  [WARN] BSS tracking to Supabase failed: {e}", log_lines)
-
-        upload_errors = result.get("upload_errors", [])
-        if upload_errors:
-            for ue in upload_errors:
-                _log(f"  [UPLOAD WARN] {ue}", log_lines)
-
-        summary_rows.append({
-            "league_id": league_id,
-            "status": "OK",
-            "models_trained": len(after_list),
-            "elapsed_s": round(elapsed, 1),
-            "upload_errors": len(upload_errors),
-        })
-
-        _log(f"  ✓ Completato in {elapsed:.1f}s | {len(after_list)} modelli", log_lines)
+            if status in ("skipped", "dry_run"):
+                skipped_count += 1
+            elif status == "error":
+                error_count += 1
+                summary_rows.append({
+                    "league_id": lid,
+                    "status": "ERROR",
+                    "error": r.get("error", ""),
+                    "elapsed_s": r.get("elapsed_s", 0),
+                })
+            elif status == "ok":
+                ok_count += 1
+                bss_improved += r.get("bss_improved", 0)
+                bss_degraded += r.get("bss_degraded", 0)
+                summary_rows.append({
+                    "league_id": lid,
+                    "status": "OK",
+                    "models_trained": r.get("models_trained", 0),
+                    "elapsed_s": r.get("elapsed_s", 0),
+                    "upload_errors": r.get("upload_errors", 0),
+                })
 
     # ── Riepilogo finale ───────────────────────────────────────────────────
     ended_at = datetime.now(timezone.utc)
@@ -385,12 +525,6 @@ def main() -> None:
     # Aggregate post-training BSS by target across all successfully retrained
     # leagues.  Shows how many models are active (BSS≥0.12), blocked, and
     # worse-than-random per target.
-    target_n_classes = {
-        "target_1x2": 3,
-        "target_btts": 2,
-        "target_over_2_5": 2,
-        "target_ht_over_0_5": 2,
-    }
     # Collect metrics from all OK leagues
     target_bss_values: Dict[str, List[float]] = {}
     for sr in summary_rows:

@@ -1,0 +1,104 @@
+{
+  "last_check": "2026-04-02",
+  "last_report": {
+    "U25": {
+      "n": 73,
+      "brier": 0.3176,
+      "bss_proxy": 0.365,
+      "win_rate": 0.425,
+      "avg_prob": 0.68,
+      "calibration_error": 0.256,
+      "status": "OK"
+    },
+    "A": {
+      "n": 157,
+      "brier": 0.1934,
+      "bss_proxy": 0.71,
+      "win_rate": 0.21,
+      "avg_prob": 0.376,
+      "calibration_error": 0.166,
+      "status": "OK"
+    },
+    "H": {
+      "n": 152,
+      "brier": 0.2111,
+      "bss_proxy": 0.683,
+      "win_rate": 0.382,
+      "avg_prob": 0.487,
+      "calibration_error": 0.105,
+      "status": "OK"
+    },
+    "D": {
+      "n": 88,
+      "brier": 0.2247,
+      "bss_proxy": 0.663,
+      "win_rate": 0.193,
+      "avg_prob": 0.425,
+      "calibration_error": 0.232,
+      "status": "OK"
+    },
+    "BTTS_NO": {
+      "n": 109,
+      "brier": 0.3347,
+      "bss_proxy": 0.331,
+      "win_rate": 0.44,
+      "avg_prob": 0.674,
+      "calibration_error": 0.234,
+      "status": "OK"
+    },
+    "O25": {
+      "n": 75,
+      "brier": 0.2702,
+      "bss_proxy": 0.46,
+      "win_rate": 0.387,
+      "avg_prob": 0.592,
+      "calibration_error": 0.205,
+      "status": "OK"
+    },
+    "O35": {
+      "n": 42,
+      "brier": 0.1745,
+      "bss_proxy": 0.651,
+      "win_rate": 0.262,
+      "avg_prob": 0.341,
+      "calibration_error": 0.079,
+      "status": "OK"
+    },
+    "U35": {
+      "n": 36,
+      "brier": 0.2565,
+      "bss_proxy": 0.487,
+      "win_rate": 0.722,
+      "avg_prob": 0.872,
+      "calibration_error": 0.15,
+      "status": "OK"
+    },
+    "U15": {
+      "n": 25,
+      "brier": 0.1838,
+      "bss_proxy": 0.632,
+      "win_rate": 0.24,
+      "avg_prob": 0.315,
+      "calibration_error": 0.075,
+      "status": "OK"
+    },
+    "HT_H": {
+      "n": 21,
+      "brier": 0.2498,
+      "bss_proxy": 0.625,
+      "win_rate": 0.19,
+      "avg_prob": 0.464,
+      "calibration_error": 0.273,
+      "status": "OK"
+    },
+    "O15": {
+      "n": 21,
+      "brier": 0.3568,
+      "bss_proxy": 0.286,
+      "win_rate": 0.429,
+      "avg_prob": 0.766,
+      "calibration_error": 0.337,
+      "status": "OK"
+    }
+  }
+}

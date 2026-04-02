@@ -28,12 +28,67 @@ HISTORY_FILE = os.path.join(ROOT, "Betfair", "mm_history.json")
 COLS = 16 
 MIN_SIGNALS = 3
 
+# max_stake_pct per masaniello_puro:
+#   La garanzia matematica (profitto invariante all'ordine) richiede che il cap NON
+#   vincoli mai gli stake naturali del sistema. Calcoli mostrano che per q≈2.0
+#   lo stake massimo naturale è ~25-38% del bankroll corrente (caso PPP...VVV).
+#   Con cap=35%: garanzia quasi sempre rispettata per N≥15 e q≥2.0.
+#   Con cap=20%: più conservativo, ma il profitto può scendere sotto il target
+#   nei casi sfavorevoli (ordine perdite-prima). Abbassare solo in caso di
+#   gestione del rischio critica.
 DEFAULTS = {
-    "masaniello":    {"bankroll": 100, "target": 20, "wr_pct": 50, "max_stake_pct": 95},
-    "masaniello_sl": {"bankroll": 100, "target": 20, "wr_pct": 50, "stop_loss_pct": 50, "max_stake_pct": 50},
-    "flat":          {"bankroll": 100, "stake_pct": 3, "stop_profit": 20, "stop_loss": 30},
-    "masaniello_puro": {"bankroll": 100, "target": 20, "wr_pct": 50, "max_stake_pct": 95},
+    "masaniello":      {"bankroll": 100, "target": 20, "wr_pct": 50, "max_stake_pct": 20},
+    "masaniello_sl":   {"bankroll": 100, "target": 20, "wr_pct": 50, "stop_loss_pct": 50, "max_stake_pct": 20},
+    "flat":            {"bankroll": 100, "stake_pct": 3, "stop_profit": 20, "stop_loss": 30},
+    "masaniello_puro": {"bankroll": 100, "target": 20, "wr_pct": 50, "max_stake_pct": 35},
 }
+
+def _find_pvirt_normalized(W_tot: int, N: int, avg_q: float, p: float, n_iters: int = 80) -> float:
+    """
+    Calcola il P_virt per unità di target (target = 1.0, bankroll = 0).
+
+    Il Masaniello puro garantisce che vincendo esattamente W_tot su N scommesse
+    il profitto sia esattamente = target, indipendentemente dall'ordine.
+    Questa funzione restituisce il fattore di scala:
+        P_virt = _find_pvirt_normalized(...) * target
+    da moltiplicare poi per $B$3 nella formula Sheets.
+
+    La ricerca binaria simula lo scenario worst-case (tutte le perdite prima delle
+    vittorie) che è invariante all'ordine per costruzione del Masaniello.
+    """
+    from math import comb as _comb
+
+    def _cdf(k, n, q):
+        if k < 0: return 0.0
+        if k >= n: return 1.0
+        return sum(_comb(n, i) * (q ** i) * ((1 - q) ** (n - i)) for i in range(k + 1))
+
+    def _profit(PV: float) -> float:
+        bank = 0.0
+        wins = 0
+        for i in range(N):
+            won = i >= (N - W_tot)          # ultime W_tot posizioni = vittorie
+            rem_after = N - i - 1
+            wn = W_tot - wins
+            if wn <= 0 or wn > (rem_after + 1):
+                continue
+            c_lose = PV * _cdf(wn - 1, rem_after, p)
+            c_win  = PV * _cdf(wn - 2, rem_after, p)
+            stake  = max(1e-12, (c_lose - c_win) / avg_q)
+            bank  += stake * (avg_q - 1) if won else -stake
+            if won:
+                wins += 1
+        return bank
+
+    lo, hi = 1e-9, 1e9
+    for _ in range(n_iters):
+        mid = (lo + hi) / 2
+        if _profit(mid) < 1.0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
 
 def _sheets_retry(func, *args, max_retries=5, **kwargs):
     for attempt in range(max_retries):
@@ -120,66 +175,106 @@ RED_TXT = {"red": 0.7, "green": 0.1, "blue": 0.1}
 CFG_BG = {"red": 0.95, "green": 0.95, "blue": 0.80}
 CFG_LABEL_BG = {"red": 0.90, "green": 0.90, "blue": 0.75}
 
-def get_live_formulas(strategy, r_idx, start_r, N_day, avg_q, side):
+def get_live_formulas(strategy, r_idx, start_r, N_day, avg_q, side, pvirt_norm=None):
     """
-    Ritorna le stringhe delle formule in formato INGLESE.
-    Usa la virgola (,) come separatore ed il punto (.) per i decimali.
-    Google Sheets API (userEnteredValue.formulaValue) sa come tradurle al volo in Italiano.
+    Ritorna le stringhe delle formule in formato INGLESE usando il punto-virgola (;)
+    come separatore di argomenti (standard italiano per Google Sheets).
+    Google Sheets API (userEnteredValue.formulaValue) le interpreta correttamente.
+
+    pvirt_norm: per masaniello_puro, il fattore P_virt/target pre-calcolato in Python
+                tramite _find_pvirt_normalized(). Se None, viene calcolato qui.
     """
     is_pois = (side == "P")
     bank_in = "$A$3"
-    
+
     if is_pois:
-        c_Q, c_R, c_S, c_P, c_C = f"D{r_idx}", f"E{r_idx}", f"F{r_idx}", f"G{r_idx}", f"H{r_idx}"
+        c_Q, c_R, c_S, c_P, _ = f"D{r_idx}", f"E{r_idx}", f"F{r_idx}", f"G{r_idx}", f"H{r_idx}"
         past_R = f"$E${start_r}:E{r_idx-1}"
         past_S = f"$F${start_r}:F{r_idx-1}"
         prev_C = bank_in if r_idx == start_r else f"H{r_idx-1}"
     else:
-        c_Q, c_R, c_S, c_P, c_C = f"L{r_idx}", f"M{r_idx}", f"N{r_idx}", f"O{r_idx}", f"P{r_idx}"
+        c_Q, c_R, c_S, c_P, _ = f"L{r_idx}", f"M{r_idx}", f"N{r_idx}", f"O{r_idx}", f"P{r_idx}"
         past_R = f"$M${start_r}:M{r_idx-1}"
         past_S = f"$N${start_r}:N{r_idx-1}"
         prev_C = bank_in if r_idx == start_r else f"P{r_idx-1}"
 
-    f_pnl = f'=IF(OR({c_S}="--"; LEFT({c_R}; 7)="PENDING"; {c_R}=""); "--"; IF(LEFT({c_R}; 5)="VINTO"; ROUND({c_S}*({c_Q}-1); 2); -{c_S}))'
+    f_pnl   = f'=IF(OR({c_S}="--"; LEFT({c_R}; 7)="PENDING"; {c_R}=""); "--"; IF(LEFT({c_R}; 5)="VINTO"; ROUND({c_S}*({c_Q}-1); 2); -{c_S}))'
     f_cassa = f'=IF({c_S}="--"; {prev_C}; ROUND({prev_C} + {c_P}; 2))'
-    
+
     wins_p = "0" if r_idx == start_r else f'COUNTIFS({past_R}; "VINTO*"; {past_S}; "<>--")'
-    rem = f"({N_day} - {r_idx} + {start_r})"
+    rem    = f"({N_day} - {r_idx} + {start_r})"
 
     if strategy == "flat":
+        # Flat stake: % fissa del bankroll corrente, fermati al stop-profit/loss.
         cond_skip = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {prev_C}>={bank_in}+$C$3; {prev_C}<={bank_in}-$D$3)'
-        f_stk = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C}*95/100; ROUND({prev_C}*$B$3/100; 2))); 2))'
-    
+        f_stk = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; ROUND({prev_C}*$B$3/100; 2)); 2))'
+
     elif strategy == "masaniello_puro":
-        W_tot = f'MAX(1; INT({N_day} * $C$3 / 100))'
-        wn = f'({W_tot} - {wins_p})'
-        q_int = int(round(avg_q * 100))
-        M_init = f'IFERROR(BINOMDIST({W_tot}-1; {N_day}; 100/{q_int}; 1); 0)' 
-        P_virt = f'IFERROR({bank_in} / {M_init}; 0)'
-        
+        # -----------------------------------------------------------------------
+        # MASANIELLO PURO (binomiale) — FORMULA CORRETTA
+        #
+        # P_virt = pvirt_norm * $B$3   dove pvirt_norm è calcolato in Python
+        # in modo che, vincendo esattamente W su N, il profitto = $B$3 (target).
+        #
+        # La formula delle stake è:
+        #   stake_i = P_virt * [CDF(wn-1; rem-1; p) - CDF(wn-2; rem-1; p)] / quota_i
+        #           = P_virt * PMF(wn-1; rem-1; p) / quota_i
+        #
+        # Proprietà garantita: profitto invariante all'ordine delle vincite/perdite.
+        # -----------------------------------------------------------------------
+        W_tot_int = max(1, int(N_day * DEFAULTS["masaniello_puro"]["wr_pct"] / 100))
+        p = 1.0 / max(avg_q, 1.05)
+        if pvirt_norm is None:
+            pvirt_norm = _find_pvirt_normalized(W_tot_int, N_day, max(avg_q, 1.05), p)
+
+        q_int  = int(round(avg_q * 100))
+        W_tot  = f'MAX(1; INT({N_day} * $C$3 / 100))'
+        wn     = f'({W_tot} - {wins_p})'
+
+        # P_virt scala con $B$3 (target): se l'utente modifica il target, le stake
+        # si adeguano proporzionalmente. pvirt_norm è costante per questa giornata.
+        P_virt = f'({pvirt_norm:.10f} * $B$3)'
+
         c_loss = f'{P_virt} * IFERROR(BINOMDIST({wn}-1; {rem}-1; 100/{q_int}; 1); 0)'
         c_win  = f'{P_virt} * IFERROR(BINOMDIST({wn}-2; {rem}-1; 100/{q_int}; 1); 0)'
-        
-        cond_skip = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {wn}<=0; {prev_C}<=1/100; {wn}>{rem})'
-        raw = f'(({c_loss} - {c_win}) / {c_Q})'
-        f_stk = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $D$3 / 100; {raw})); 2))'
-        
-    elif strategy == "masaniello_sl":
-        W_tot = f'MAX(1; INT({N_day} * $C$3 / 100))'
-        wn = f'({W_tot} - {wins_p})'
-        tgt_val = f'({bank_in} + $B$3)'
-        floor_val = f'({bank_in} * (1 - $D$3/100))'
-        cond_skip = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {wn}<=0; {prev_C}<={floor_val}; ({tgt_val}-{prev_C})<=1/100)'
-        raw = f'IFERROR((({tgt_val} - {prev_C}) * ({wn} / {rem}) / ({c_Q} - 1)); 1/100)'
-        f_stk = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $E$3 / 100; {raw})); 2))'
 
-    else: # masaniello (fake-linear)
-        W_tot = f'MAX(1; INT({N_day} * $C$3 / 100))'
-        wn = f'({W_tot} - {wins_p})'
-        tgt_val = f'({bank_in} + $B$3)'
+        cond_skip = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {wn}<=0; {prev_C}<=1/100; {wn}>{rem})'
+        raw    = f'(({c_loss} - {c_win}) / {c_Q})'
+        f_stk  = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $D$3 / 100; {raw})); 2))'
+
+    elif strategy == "masaniello_sl":
+        # -----------------------------------------------------------------------
+        # MASANIELLO CON STOP-LOSS — formula lineare + protezione floor
+        #
+        # BUG FIX: lo stake è ora cappato a (prev_C - floor_val) per garantire
+        # che dopo una perdita la cassa non scenda MAI sotto il floor.
+        # In precedenza il cap era applicato solo dopo la perdita (troppo tardi).
+        # -----------------------------------------------------------------------
+        W_tot     = f'MAX(1; INT({N_day} * $C$3 / 100))'
+        wn        = f'({W_tot} - {wins_p})'
+        tgt_val   = f'({bank_in} + $B$3)'
+        floor_val = f'({bank_in} * (1 - $D$3/100))'
+
+        # Skip se: risultato mancante/pending, vittorie raggiunte, cassa già a floor,
+        # o gap residuo al target troppo piccolo.
+        cond_skip  = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {wn}<=0; {prev_C}<={floor_val}; ({tgt_val}-{prev_C})<=1/100)'
+        raw        = f'IFERROR((({tgt_val} - {prev_C}) * ({wn} / {rem}) / ({c_Q} - 1)); 1/100)'
+        # floor_cap: stake massimo che evita di bucare il floor in caso di perdita
+        floor_cap  = f'MAX(1/100; {prev_C} - {floor_val})'
+        f_stk      = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $E$3 / 100; {floor_cap}; {raw})); 2))'
+
+    else:
+        # -----------------------------------------------------------------------
+        # MASANIELLO LINEARE ("fake-linear")
+        # Attenzione: questa formula NON è invariante all'ordine delle vincite.
+        # Il profitto varia tra ~(target * 0.75) e target a seconda dell'ordine.
+        # -----------------------------------------------------------------------
+        W_tot     = f'MAX(1; INT({N_day} * $C$3 / 100))'
+        wn        = f'({W_tot} - {wins_p})'
+        tgt_val   = f'({bank_in} + $B$3)'
         cond_skip = f'OR({c_R}=""; LEFT({c_R}; 7)="PENDING"; {wn}<=0; {prev_C}<=1/2; {prev_C}>={tgt_val})'
-        raw = f'IFERROR((({tgt_val} - {prev_C}) * ({wn} / {rem}) / ({c_Q} - 1)); 1/100)'
-        f_stk = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $D$3 / 100; {raw})); 2))'
+        raw       = f'IFERROR((({tgt_val} - {prev_C}) * ({wn} / {rem}) / ({c_Q} - 1)); 1/100)'
+        f_stk     = f'=IF({cond_skip}; "--"; ROUND(MAX(1/100; MIN({prev_C} * $D$3 / 100; {raw})); 2))'
 
     return f_stk, f_pnl, f_cassa
 
@@ -280,6 +375,18 @@ def build_sheet(sh, sheet_name, strategy, history):
         p_q = max(p_q, 1.05)
         m_q = max(m_q, 1.05)
 
+        # Per masaniello_puro: pre-calcola pvirt_norm una volta per lato per giornata.
+        # Questo evita di ricalcolarlo per ogni riga e garantisce consistenza interna.
+        pvirt_norm_p = pvirt_norm_m = None
+        if strategy == "masaniello_puro":
+            wr_pct = params.get("wr_pct", DEFAULTS["masaniello_puro"]["wr_pct"])
+            if p_count >= MIN_SIGNALS:
+                W_p = max(1, int(p_count * wr_pct / 100))
+                pvirt_norm_p = _find_pvirt_normalized(W_p, p_count, p_q, 1.0 / p_q)
+            if m_count >= MIN_SIGNALS:
+                W_m = max(1, int(m_count * wr_pct / 100))
+                pvirt_norm_m = _find_pvirt_normalized(W_m, m_count, m_q, 1.0 / m_q)
+
         r = add_row([f"{date_str} -- {p_count} Poisson", "","","","","","","", f"{date_str} -- {m_count} ML", "","","","","","",""])
         add_merge(r, 0, 8)
         add_merge(r, 8, 16)
@@ -304,7 +411,7 @@ def build_sheet(sh, sheet_name, strategy, history):
                 row[2] = s.get("market_label", "")
                 row[3] = s.get("odds", "")
                 row[4] = s.get("original_result", "")
-                row[5], row[6], row[7] = get_live_formulas(strategy, r_idx, start_r, p_count, p_q, "P")
+                row[5], row[6], row[7] = get_live_formulas(strategy, r_idx, start_r, p_count, p_q, "P", pvirt_norm=pvirt_norm_p)
 
             if i < m_count:
                 s = m_sigs[i]
@@ -313,7 +420,7 @@ def build_sheet(sh, sheet_name, strategy, history):
                 row[10] = s.get("market_label", "")
                 row[11] = s.get("odds", "")
                 row[12] = s.get("original_result", "")
-                row[13], row[14], row[15] = get_live_formulas(strategy, r_idx, start_r, m_count, m_q, "M")
+                row[13], row[14], row[15] = get_live_formulas(strategy, r_idx, start_r, m_count, m_q, "M", pvirt_norm=pvirt_norm_m)
 
             ri = add_row(row)
 
