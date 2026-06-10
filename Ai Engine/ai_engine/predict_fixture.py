@@ -376,6 +376,9 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         raise RuntimeError(f"fixture_id {fixture_id} not found in fixture_predictions")
 
     fx_df = pd.DataFrame(rows)
+    # Garantisce 1 sola riga per fixture (la tabella può avere duplicati per odds-snapshot multipli)
+    if len(fx_df) > 1:
+        fx_df = fx_df.drop_duplicates(subset=["fixture_id"]).head(1)
     league_id = int(fx_df.iloc[0]["league_id"])
 
     seasons = fetch_seasons_for_league(league_id)
@@ -493,6 +496,13 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                 raw_odds = json.loads(raw_odds)
             except Exception:
                 raw_odds = None
+
+    # M2 fix: snapshot the model-calibrated probabilities BEFORE the post-hoc
+    # correction layer below. compute_ml_post_calibration.py must learn its
+    # bin-based factors from THESE (pre-post-hoc) probabilities — otherwise it
+    # re-estimates corrections on top of probabilities it has already corrected,
+    # a feedback loop that compounds the adjustment on every regeneration.
+    results_model_calibrated = {t: dict(p) for t, p in results.items()}
 
     # ── ML POST-CALIBRATION (post-hoc correction layer) ──────────
     # Carica ml_post_calibration.json e applica correzioni bin-based
@@ -669,6 +679,9 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "targets": results,
         "targets_raw": raw_results,
+        # Model-calibrated probabilities BEFORE the post-hoc ml_post_calibration
+        # layer. Source of truth for recomputing post-hoc factors without feedback.
+        "targets_model_calibrated": results_model_calibrated,
         "targets_skipped": targets_skipped,
         "targets_not_reliable": targets_not_reliable,
         "coverage": {

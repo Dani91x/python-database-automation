@@ -68,7 +68,14 @@ def _fetch_all_table(
 def run_backfill(limit: Optional[int] = None, league_id_filter: Optional[int] = None):
     sb = get_supabase_client()
 
-    filters = [("is", "ht_predictions", "null")]
+    # Solo fixture concluse: questo è il backfill del PREGRESSO storico.
+    # Senza questo filtro si scriverebbero ht_predictions anche su fixture non
+    # ancora giocate (gestite invece dal percorso live today_predictions_backfill).
+    # Stesso filtro usato da AGGIORNA_CAMPO_db_json_analisi.py.
+    filters = [
+        ("in", "result_status_short", ["FT", "AET", "PEN"]),
+        ("is", "ht_predictions", "null"),
+    ]
     if league_id_filter:
         filters.append(("eq", "league_id", league_id_filter))
 

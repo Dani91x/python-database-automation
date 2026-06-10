@@ -59,21 +59,35 @@ def _load_cache() -> dict:
     with open(SIGNAL_WEIGHTS_FILE, encoding="utf-8") as f:
         signals = json.load(f)
 
-    # Verifica eta cache
-    warnings = []
+    # Verifica eta cache. HARD-GATE: una cache scaduta non viene usata per scorare
+    # (le tabelle di calibrazione sarebbero stale → edge fuorvianti su denaro reale).
+    # Rigenerare con: python -m market_intelligence.pipeline --all
+    age_h = float("inf")
+    gen_raw = calibration.get("generated_at", "")
     try:
-        gen_at = datetime.fromisoformat(calibration.get("generated_at", ""))
-        age_h  = (datetime.now(timezone.utc) - gen_at).total_seconds() / 3600
-        if age_h > CACHE_MAX_AGE_HOURS:
-            warnings.append(f"cache_stale ({age_h:.0f}h > {CACHE_MAX_AGE_HOURS}h) ? ri-esegui --all")
+        gen_at = datetime.fromisoformat(gen_raw)
     except Exception:
-        pass
+        raise ValueError(
+            f"Cache di calibrazione senza 'generated_at' valido ({gen_raw!r}). "
+            f"Rigenera: python -m market_intelligence.pipeline --all"
+        )
+    # Tratta un timestamp naive come UTC così un valore valido ma senza tzinfo
+    # calcola un'eta reale invece di sollevare un TypeError nella sottrazione.
+    if gen_at.tzinfo is None:
+        gen_at = gen_at.replace(tzinfo=timezone.utc)
+    age_h = (datetime.now(timezone.utc) - gen_at).total_seconds() / 3600
+    if age_h > CACHE_MAX_AGE_HOURS:
+        raise RuntimeError(
+            f"Cache di calibrazione SCADUTA: {age_h:.0f}h > {CACHE_MAX_AGE_HOURS}h "
+            f"(generata {gen_raw[:19]}). Scoring rifiutato per evitare edge su dati "
+            f"stale. Rigenera: python -m market_intelligence.pipeline --all"
+        )
 
     _cache = {
         "registry":    registry,
         "calibration": calibration,
         "signals":     signals,
-        "warnings":    warnings,
+        "warnings":    [],  # placeholder: lo stale-cache è ora un hard-gate (raise)
         "qualified_ids": {
             str(l["league_id"])
             for l in registry.get("qualified_leagues", [])
@@ -124,6 +138,55 @@ def _parse_bookie_odd(raw_json_odds: dict, market_cfg: dict) -> Optional[float]:
                     except (KeyError, ValueError, TypeError):
                         return None
     return None
+
+
+# Market groups that form a complete (mutually exclusive, exhaustive) outcome
+# set on the same bookie market. De-vig is computed within each group so the
+# bookmaker overround is removed before any edge is measured.
+_DEVIG_GROUPS: dict[str, tuple[str, ...]] = {
+    "1x2":      ("1x2_H", "1x2_D", "1x2_A"),
+    "over_2_5": ("over_2_5", "under_2_5"),
+    "btts":     ("btts_yes", "btts_no"),
+}
+
+# Fail loudly at import time if a group ever references an unknown MARKETS key
+# (prevents a silent KeyError later in _devig_implied_probs on config drift).
+assert all(
+    mkey in MARKETS for legs in _DEVIG_GROUPS.values() for mkey in legs
+), "_DEVIG_GROUPS references unknown MARKETS keys"
+
+
+def _devig_implied_probs(raw_json_odds: dict) -> dict[str, float]:
+    """Compute fair (overround-removed) implied probabilities per market.
+
+    For each complete market group (1x2, over/under, btts) we read the Betfair
+    sportsbook odds for every leg, convert each to raw implied prob (1/odd) and
+    normalize within the group so the legs sum to 1.0. The de-vigged value
+    replaces the naive 1/odd, removing the bookmaker margin that otherwise
+    biases every edge upward.
+
+    Returns {market_key: fair_implied_prob}. A group is only de-vigged when ALL
+    its legs are present; otherwise its legs fall back to raw 1/odd so a missing
+    leg never silently distorts the others.
+    """
+    fair: dict[str, float] = {}
+    for legs in _DEVIG_GROUPS.values():
+        raw: dict[str, float] = {}
+        for mkey in legs:
+            odd = _parse_bookie_odd(raw_json_odds, MARKETS[mkey])
+            if odd is not None:
+                raw[mkey] = 1.0 / odd
+        if not raw:
+            continue
+        if len(raw) == len(legs):
+            total = sum(raw.values())
+            if total > 0:
+                for mkey, p in raw.items():
+                    fair[mkey] = p / total
+                continue
+        # Incomplete group (or degenerate total): keep raw implied per leg.
+        fair.update(raw)
+    return fair
 
 
 def _get_ml_prob(db_json_analisi: dict, ml_market: str, ml_key: str) -> Optional[float]:
@@ -179,7 +242,7 @@ def _get_calibration_bias(calibration: dict, league_id: int,
     if brk is None:
         return None, "none"
 
-    for source_key, source_label in [("league", str(league_id)), ("global", "global")]:
+    for source_key, source_label in [("league", "league"), ("global", "global")]:
         if source_key == "league":
             table = calibration.get("leagues", {}).get(str(league_id), {})
         else:
@@ -240,12 +303,18 @@ def score_fixture_from_row(fixture_row: dict, xg: Optional[dict] = None) -> dict
     if not league_qualified:
         base_warn.append(f"league_{league_id}_not_qualified_using_global_calibration")
 
-    # Pesi segnali
+    # Pesi segnali (trust gates).
+    # w_ml / w_xg sono soglie di affidabilità prodotte da signals.py: decidono SE
+    # il contributo ML-divergence e xG entra nello scoring (gate booleano > 0),
+    # NON un blend ML-vs-xG. Il blend calibration-vs-ML-divergence usa pesi propri
+    # (COMPOSITE_WEIGHT_*). Sono due assi distinti: non si fondono.
     ml_sig  = sig.get("ml_divergence", {})
     xg_sig  = sig.get("xg_residual", {})
     w_ml    = ml_sig.get("weight", DEFAULT_WEIGHT_ML_DIV)
     w_xg    = xg_sig.get("weight", DEFAULT_WEIGHT_XG)
-    w_total = w_ml + w_xg if (w_ml + w_xg) > 0 else 1.0
+
+    # De-vig per gruppo: rimuove l'overround del bookie PRIMA di misurare l'edge.
+    fair_implied = _devig_implied_probs(raw_odds)
 
     markets_out = {}
     warnings    = list(base_warn)
@@ -256,7 +325,9 @@ def score_fixture_from_row(fixture_row: dict, xg: Optional[dict] = None) -> dict
         if odd is None:
             continue
 
-        implied_prob = 1.0 / odd
+        # Probabilità implicita FAIR (overround rimosso per gruppo di mercato).
+        # Fallback a 1/odd solo se il gruppo era incompleto (vedi _devig_implied_probs).
+        implied_prob = fair_implied.get(mkey, 1.0 / odd)
 
         # 2. Calibrazione storica
         cal_bias, cal_src = _get_calibration_bias(cal, league_id, mkey, odd)
@@ -460,9 +531,10 @@ class EdgeScorer:
             print(f"\n  Nessun edge azionabile (soglia: +-{MIN_COMPOSITE_EDGE:.0%})")
 
         if result.get("warnings"):
-            # Mostra solo warning rilevanti (non i globali-fallback di routine)
-            important = [w for w in result["warnings"] if "stale" in w or "unavailable" in w]
+            # Mostra solo warning rilevanti (non i globali-fallback di routine).
+            # NB: "stale" non arriva più qui (cache scaduta -> hard-gate in _load_cache).
+            important = [w for w in result["warnings"] if "unavailable" in w]
             if important:
-                print(f"\n  \!  {' | '.join(important)}")
+                print(f"\n  !  {' | '.join(important)}")
 
         print("=" * 68)

@@ -1,0 +1,58 @@
+
+====================================================================================================
+SEGNALI DEL MODELLO — partite di oggi (out-of-sample)
+====================================================================================================
+  [FINITA] ?                v ?                [1-1] (lega 666) -> 1x2 H48/D22/A30 | O1.5 79% | O2.5 55% | BTTS 48% | nessun segnale (gate)
+  [FINITA] Philippines      v Myanmar          [5-1] (lega 10) -> 1x2 H44/D22/A34 | O1.5 77% | O2.5 37% | BTTS 50% | nessun segnale (gate)
+  [FINITA] China            v Thailand         [0-0] (lega 10) -> 1x2 H32/D20/A47 | O1.5 69% | O2.5 37% | BTTS 54% | nessun segnale (gate)
+  [2H    ] Cambodia         v Hong Kong        (lega 10) -> 1x2 H41/D21/A38 | O1.5 99% | O2.5 99% | BTTS 54% | SEGNALI GATE: 1
+             >> BET target_over_1_5 True p=0.99 EV=None (high)
+  [CANC  ] Oman             v Kuwait           (lega 10) -> 1x2 H48/D21/A31 | O1.5 77% | O2.5 37% | BTTS 50% | SEGNALI GATE: 2
+             >> BET target_over_0_5 True p=0.999 EV=None (medium)
+             >> BET target_over_1_5 True p=0.7679 EV=None (medium)
+  [2H    ] ?                v ?                (lega 333) -> 1x2 H36/D31/A34 | O1.5 71% | O2.5 47% | BTTS 43% | HTO0.5 72% | nessun segnale (gate)
+  fid 1547220 (928): NO MODEL/ERR — No models found in ai_model_registry for league
+  [1H    ] Indonesia        v Mozambique       (lega 10) -> 1x2 H58/D19/A23 | O1.5 77% | O2.5 37% | BTTS 50% | nessun segnale (gate)
+  [NS    ] ?                v ?                (lega 10) -> 1x2 H43/D23/A34 | O1.5 77% | O2.5 37% | BTTS 50% | nessun segnale (gate)
+  [NS    ] Serbia U19       v Portugal U19     (lega 893) -> 1x2 H42/D26/A32 | O1.5 80% | O2.5 51% | BTTS 48% | nessun segnale (gate)
+  [NS    ] Armenia          v Moldova          (lega 10) -> 1x2 H45/D22/A34 | O1.5 77% | O2.5 37% | BTTS 50% | nessun segnale (gate)
+  [NS    ] ?                v ?                (lega 333) -> 1x2 H45/D19/A37 | O1.5 99% | O2.5 42% | BTTS 43% | HTO0.5 75% | nessun segnale (gate)
+  [NS    ] Georgia U19      v Iceland U19      (lega 893) -> 1x2 H41/D21/A38 | O1.5 79% | O2.5 44% | BTTS 48% | nessun segnale (gate)
+  [NS    ] Kazakhstan U19   v Greece U19       (lega 893) -> 1x2 H37/D18/A45 | O1.5 80% | O2.5 44% | BTTS 48% | nessun segnale (gate)
+  [NS    ] ?                v ?                (lega 666) -> 1x2 H33/D22/A44 | O1.5 82% | O2.5 40% | BTTS 48% | nessun segnale (gate)
+  [NS    ] Tajikistan       v India            (lega 10) -> 1x2 H47/D23/A31 | O1.5 77% | O2.5 37% | BTTS 50% | nessun segnale (gate)
+  [NS    ] ?                v ?                (lega 246) -> 1x2 H26/D19/A56 | O1.5 90% | O2.5 56% | BTTS 44% | nessun segnale (gate)
+  fid 1544367 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1548331 (200): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1544819 (666): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1545274 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1543831 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1497598 (114): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1497599 (114): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1497596 (114): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1497593 (114): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1545632 (115): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1525493 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1497595 (114): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1548332 (200): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1546506 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1544813 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1548054 (141): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1548334 (200): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1545447 (666): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1520715 (72): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1520717 (72): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+  fid 1544368 (10): NO MODEL/ERR — [Errno 11001] getaddrinfo failed
+
+====================================================================================================
+VERIFICA sulle partite FINITE (segnale vs risultato reale)
+====================================================================================================
+  ?                1-1 ?                | 1x2 pick H (p48) real D X | O1.5 p79% real O OK | O2.5 p55% real U X
+  Philippines      5-1 Myanmar          | 1x2 pick H (p44) real H OK | O1.5 p77% real O OK | O2.5 p37% real O X
+  China            0-0 Thailand         | 1x2 pick A (p47) real D X | O1.5 p69% real U X | O2.5 p37% real U OK
+----------------------------------------------------------------------------------------------------
+Partite finite verificate: 3 | 1x2 top-pick corretti: 1/3
+Partite con modello: 16/38 | senza modello/errore: 22
+Segnali totali passati ai gate su tutta la card: 3
+
+NOTA: campione finite minuscolo -> sanity, non significativita statistica.

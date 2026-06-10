@@ -56,6 +56,7 @@ class BetfairReportManager:
         self.slot_manager = SlotManager(self.gc, self.sh)
         # Instance-level cache (not class-level) to avoid cross-instance state pollution
         self._trained_leagues_this_run: set = set()
+        self._skip_training: bool = False
 
     def _load_name_map(self):
         if os.path.exists(MAPPING_FILE):
@@ -115,6 +116,7 @@ class BetfairReportManager:
         return " ".join(sorted(words))
 
     def run_daily_report(self, skip_training: bool = False):
+        self._skip_training = skip_training
         logger.info("Avvio report giornaliero completo..." + (" [SKIP-TRAINING]" if skip_training else ""))
         
         # Super Conservative: pausa iniziale dopo login (che avviene in __init__ -> BetfairClient)
@@ -341,21 +343,24 @@ class BetfairReportManager:
             "Lmb Casa",                    # 22
             "Lmb Trasf",                   # 23
             "Lmb 1H",                      # 24
-            # --- SEZIONE 4: Poisson Primary Markets — Prob, Quota, Edge (25-42) ---
-            "H % Pois",     "Quota H",    "Edge H Pois",    # 25-27
-            "D % Pois",     "Quota D",    "Edge D Pois",    # 28-30
-            "A % Pois",     "Quota A",    "Edge A Pois",    # 31-33
-            "1H O0.5 Pois", "Quota 1H",  "Edge 1H Pois",   # 34-36
-            "BTTS % Pois",  "Quota BTTS","Edge BTTS Pois",  # 37-39
-            "O2.5 % Pois",  "Quota O2.5","Edge O2.5 Pois",  # 40-42
+            # --- SEZIONE 4: Poisson Primary Markets — Prob (RAW model), Quota, Edge (25-42) ---
+            # NB: le % sono la probabilità RAW del modello (non calibrata).
+            # Le colonne MM 'Edge Poisson'/'Stake € Poisson' usano la prob CALIBRATA
+            # (vedi money_management._apply_calibration): i due edge possono differire.
+            "H % Pois (raw)",     "Quota H Pois",    "Edge H Pois",    # 25-27
+            "D % Pois (raw)",     "Quota D Pois",    "Edge D Pois",    # 28-30
+            "A % Pois (raw)",     "Quota A Pois",    "Edge A Pois",    # 31-33
+            "1H O0.5 (Pois/hybrid)", "Quota 1H Pois", "Edge 1H Pois",  # 34-36 (fallback ML-hybrid se Poisson assente)
+            "BTTS % Pois (raw)",  "Quota BTTS Pois","Edge BTTS Pois",  # 37-39
+            "O2.5 % Pois (raw)",  "Quota O2.5 Pois","Edge O2.5 Pois",  # 40-42
             # --- SEZIONE 5: Poisson Extended — O1.5, U1.5, O3.5, U3.5, HT 1X2 (43-63) ---
-            "O1.5 % Pois", "Quota O1.5", "Edge O1.5 Pois",  # 43-45
-            "U1.5 % Pois", "Quota U1.5", "Edge U1.5 Pois",  # 46-48
-            "O3.5 % Pois", "Quota O3.5", "Edge O3.5 Pois",  # 49-51
-            "U3.5 % Pois", "Quota U3.5", "Edge U3.5 Pois",  # 52-54
-            "HT H % Pois", "Quota HT H", "Edge HT H Pois",  # 55-57
-            "HT D % Pois", "Quota HT D", "Edge HT D Pois",  # 58-60
-            "HT A % Pois", "Quota HT A", "Edge HT A Pois",  # 61-63
+            "O1.5 % Pois (raw)", "Quota O1.5 Pois", "Edge O1.5 Pois",  # 43-45
+            "U1.5 % Pois (raw)", "Quota U1.5 Pois", "Edge U1.5 Pois",  # 46-48
+            "O3.5 % Pois (raw)", "Quota O3.5 Pois", "Edge O3.5 Pois",  # 49-51
+            "U3.5 % Pois (raw)", "Quota U3.5 Pois", "Edge U3.5 Pois",  # 52-54
+            "HT H % Pois (raw)", "Quota HT H Pois", "Edge HT H Pois",  # 55-57
+            "HT D % Pois (raw)", "Quota HT D Pois", "Edge HT D Pois",  # 58-60
+            "HT A % Pois (raw)", "Quota HT A Pois", "Edge HT A Pois",  # 61-63
             # --- SEZIONE 6: ML Money Management (64-68) ---
             "Slot ML",                     # 64
             "Mercato ML",                  # 65
@@ -363,12 +368,12 @@ class BetfairReportManager:
             "Score ML",                    # 67
             "Stake € ML",                 # 68
             # --- SEZIONE 7: ML Primary Markets — Prob, Quota, Edge ML (69-86) ---
-            "H % AI",       "Quota H",    "Edge H ML",      # 69-71
-            "D % AI",       "Quota D",    "Edge D ML",      # 72-74
-            "A % AI",       "Quota A",    "Edge A ML",      # 75-77
-            "1H O0.5 AI",  "Quota 1H",   "Edge 1H ML",     # 78-80
-            "BTTS % AI",   "Quota BTTS", "Edge BTTS ML",    # 81-83
-            "O2.5 % AI",   "Quota O2.5", "Edge O2.5 ML",   # 84-86
+            "H % AI",       "Quota H ML",    "Edge H ML",      # 69-71
+            "D % AI",       "Quota D ML",    "Edge D ML",      # 72-74
+            "A % AI",       "Quota A ML",    "Edge A ML",      # 75-77
+            "1H O0.5 AI",  "Quota 1H ML",   "Edge 1H ML",     # 78-80
+            "BTTS % AI",   "Quota BTTS ML", "Edge BTTS ML",    # 81-83
+            "O2.5 % AI",   "Quota O2.5 ML", "Edge O2.5 ML",   # 84-86
             # --- SEZIONE 8: ML Additional Targets — prob only (87-96) ---
             "O0.5 % AI",   # 87
             "O1.5 % AI",   # 88
@@ -385,18 +390,21 @@ class BetfairReportManager:
             "Trust Score",       # 98
             "Edge Originale",    # 99
             # --- SEZIONE 10: ML Extended — O1.5, U1.5, O3.5, U3.5, HT 1X2 (100-120) ---
-            "O1.5 % ML", "Quota O1.5", "Edge O1.5 ML",   # 100-102
-            "U1.5 % ML", "Quota U1.5", "Edge U1.5 ML",   # 103-105
-            "O3.5 % ML", "Quota O3.5", "Edge O3.5 ML",   # 106-108
-            "U3.5 % ML", "Quota U3.5", "Edge U3.5 ML",   # 109-111
-            "HT H % ML", "Quota HT H", "Edge HT H ML",   # 112-114
-            "HT D % ML", "Quota HT D", "Edge HT D ML",   # 115-117
-            "HT A % ML", "Quota HT A", "Edge HT A ML",   # 118-120
+            "O1.5 % ML", "Quota O1.5 ML", "Edge O1.5 ML",   # 100-102
+            "U1.5 % ML", "Quota U1.5 ML", "Edge U1.5 ML",   # 103-105
+            "O3.5 % ML", "Quota O3.5 ML", "Edge O3.5 ML",   # 106-108
+            "U3.5 % ML", "Quota U3.5 ML", "Edge U3.5 ML",   # 109-111
+            "HT H % ML", "Quota HT H ML", "Edge HT H ML",   # 112-114
+            "HT D % ML", "Quota HT D ML", "Edge HT D ML",   # 115-117
+            "HT A % ML", "Quota HT A ML", "Edge HT A ML",   # 118-120
             # --- SEZIONE 11: Poisson HT Ratio per squadra (121-122) ---
             "HT Ratio Casa",   # 121  ht_ratio_home — frazione gol nel 1T (data-driven)
             "HT Ratio Trasf",  # 122  ht_ratio_away
+            # --- SEZIONE 12: Under 2.5 (mercato scommesso da MM, prima mancante) (123-128) ---
+            "U2.5 % Pois (raw)", "Quota U2.5 Pois", "Edge U2.5 Pois",  # 123-125
+            "U2.5 % AI",         "Quota U2.5 ML",   "Edge U2.5 ML",    # 126-128
         ]
-        NUM_COLS = len(header)  # 123
+        NUM_COLS = len(header)  # 129
 
         # 1. Ordina eventi Betfair cronologicamente
         bf_events_sorted = sorted(bf_events, key=lambda x: x.get("open_date", ""))
@@ -423,7 +431,16 @@ class BetfairReportManager:
             if val is None: return "N.D."
             return val
 
-        def calc_edge(prob, quota, commission=0.05):
+        # Commissione live letta dalla config dello SlotManager (allineata a
+        # money_management.py: self.config["commission_pct"]/100). Se l'utente
+        # cambia la commissione sul foglio, ogni edge per-mercato resta coerente
+        # con il Money Management. Fallback 0.05 se la config non è leggibile.
+        try:
+            _live_commission = self.slot_manager.config["commission_pct"] / 100.0
+        except (AttributeError, KeyError, TypeError):
+            _live_commission = 0.05
+
+        def calc_edge(prob, quota, commission=_live_commission):
             """EV post-commissione Betfair: p*(odds-1)*(1-comm) - (1-p)"""
             if prob is None or quota is None: return None
             p = prob / 100.0 if prob > 1 else prob
@@ -480,6 +497,7 @@ class BetfairReportManager:
                 
                 btts_prob = markets.get("btts", {}).get("True")
                 o25_prob = markets.get("over_2_5", {}).get("True")
+                pois_u25_prob = markets.get("over_2_5", {}).get("False")
                 h_p = markets.get("1x2", {}).get("H") or matched_db.get("percent_home")
                 d_p = markets.get("1x2", {}).get("D") or matched_db.get("percent_draw")
                 a_p = markets.get("1x2", {}).get("A") or matched_db.get("percent_away")
@@ -513,6 +531,7 @@ class BetfairReportManager:
                 ai_ht_prob, ai_btts_prob, ai_o25_prob = None, None, None
                 # Target addizionali ML
                 ai_o05, ai_o15, ai_u15, ai_o35, ai_u35, ai_o45 = None, None, None, None, None, None
+                ai_u25 = None
                 ai_cs_home, ai_cs_away = None, None
                 ai_ht_h, ai_ht_d, ai_ht_a = None, None, None
                 ai_goal_2h = None
@@ -538,6 +557,7 @@ class BetfairReportManager:
                     # Over 2.5
                     ov25 = t.get("target_over_2_5", {})
                     ai_o25_prob = ov25.get("True", ov25.get(True, ov25.get("over")))
+                    ai_u25 = ov25.get("False", ov25.get(False, ov25.get("under")))
                     # Additional ML targets
                     ov05 = t.get("target_over_0_5", {})
                     ai_o05 = ov05.get("True", ov05.get(True, ov05.get("over")))
@@ -645,6 +665,9 @@ class BetfairReportManager:
                     # SEZIONE 11: Poisson HT Ratio per squadra (121-122)
                     fmt_v(inputs.get("ht_ratio_home")),
                     fmt_v(inputs.get("ht_ratio_away")),
+                    # SEZIONE 12: Under 2.5 — Poisson (raw) + ML (123-128)
+                    fmt_p(pois_u25_prob), fmt_q_nd(odds.get("U25")), fmt_edge(calc_edge(pois_u25_prob, odds.get("U25"))),
+                    fmt_p(ai_u25),        fmt_q_nd(odds.get("U25")), fmt_edge(calc_edge(ai_u25, odds.get("U25"))),
                 ]
             else:
                 row_base = [dt_ita, bf_e["id"], bf_e["name"]] + [""] * (NUM_COLS - 3)  # NUM_COLS include le nuove colonne
@@ -974,6 +997,10 @@ class BetfairReportManager:
             for col_idx in [101, 104, 107, 110, 113, 116, 119]:
                 requests.append(_txt(1, 1000, col_idx, col_idx + 1, {"bold": True}))
 
+            # Quote Bold — Under 2.5: Pois→124, ML→127
+            for col_idx in [124, 127]:
+                requests.append(_txt(1, 1000, col_idx, col_idx + 1, {"bold": True}))
+
             # === 5. CONDITIONAL FORMATTING: Edge positivo = verde ===
             # Poisson Primary edge:   27,30,33,36,39,42
             # Poisson Extended edge:  45,48,51,54,57,60,63
@@ -984,6 +1011,7 @@ class BetfairReportManager:
                 45, 48, 51, 54, 57, 60, 63,       # Poisson Extended
                 71, 74, 77, 80, 83, 86,           # ML Primary
                 102, 105, 108, 111, 114, 117, 120, # ML Extended
+                125, 128,                          # Under 2.5 (Pois + ML)
             ]
             for col_idx in all_edge_cols:
                 requests.append({
@@ -1017,6 +1045,7 @@ class BetfairReportManager:
                 _col_width(43, 64, 72),  # Poisson Extended
                 _col_width(64, 69, 75),  # ML MM
                 _col_width(69, 121, 72), # ML Markets (Primary + Additional + Diagnostics + Extended)
+                _col_width(121, 129, 72), # HT Ratio (121-122) + Under 2.5 Pois/ML (123-128)
             ]
 
             # Esegui batch unico
@@ -1313,6 +1342,10 @@ class BetfairReportManager:
                             need_training = False
                         else:
                             logger.info(f"⏰ Cache locale scaduta ({age_days:.1f}gg >= {self.MODEL_CACHE_TTL_DAYS}gg). Riaddestrare.")
+
+                    if need_training and self._skip_training:
+                        logger.info(f"⚡ League {league_id} senza modelli — training saltato (--skip-training).")
+                        return None, "LEGA SALTATA - NO MODELLI"
 
                     if need_training:
                         logger.info(f"🔧 Training completo League {league_id}...")

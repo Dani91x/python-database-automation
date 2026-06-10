@@ -1,0 +1,1964 @@
+{
+  "tables": {
+    "ai_model_registry": {
+      "row_count": 3374,
+      "n_cols": 18,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "target": {
+          "type": "text",
+          "desc": ""
+        },
+        "model_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "storage_bucket": {
+          "type": "text",
+          "desc": ""
+        },
+        "storage_path": {
+          "type": "text",
+          "desc": ""
+        },
+        "file_size_bytes": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "features_version": {
+          "type": "text",
+          "desc": ""
+        },
+        "targets_version": {
+          "type": "text",
+          "desc": ""
+        },
+        "trained_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "notes": {
+          "type": "text",
+          "desc": ""
+        },
+        "train_rows": {
+          "type": "integer",
+          "desc": ""
+        },
+        "feature_count": {
+          "type": "integer",
+          "desc": ""
+        },
+        "accuracy": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "logloss": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "brier": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "trained_range": {
+          "type": "text",
+          "desc": ""
+        }
+      }
+    },
+    "api_call_log": {
+      "row_count": 2666087,
+      "n_cols": 11,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "method": {
+          "type": "text",
+          "desc": ""
+        },
+        "endpoint": {
+          "type": "text",
+          "desc": ""
+        },
+        "params": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "status": {
+          "type": "text",
+          "desc": ""
+        },
+        "http_status": {
+          "type": "integer",
+          "desc": ""
+        },
+        "error_message": {
+          "type": "text",
+          "desc": ""
+        },
+        "duration_ms": {
+          "type": "integer",
+          "desc": ""
+        },
+        "response_size": {
+          "type": "integer",
+          "desc": ""
+        },
+        "retry_attempts": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        }
+      }
+    },
+    "api_coverage_by_season": {
+      "row_count": 8155,
+      "n_cols": 22,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "country_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_start": {
+          "type": "date",
+          "desc": ""
+        },
+        "season_end": {
+          "type": "date",
+          "desc": ""
+        },
+        "current": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_fixtures": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_players": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "standings": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "players": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_scorers": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_assists": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_cards": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "injuries": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "predictions": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "odds": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "inserted_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        }
+      }
+    },
+    "api_coverage_by_season_v2_mv": {
+      "row_count": 726,
+      "n_cols": 19,
+      "columns": {
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "matches_count": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "past_matches_count": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "events_fixtures": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "lineups_fixtures": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "player_stats_fixtures": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "team_stats_fixtures": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "odds_fixtures": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "fixtures_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_players": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_fixtures": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "odds": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "ok_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "ok_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "ok_player_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "ok_team_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "ok_odds": {
+          "type": "boolean",
+          "desc": ""
+        }
+      }
+    },
+    "fixture_predictions": {
+      "row_count": 80186,
+      "n_cols": 39,
+      "columns": {
+        "fixture_id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "home_team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "home_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "away_team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "away_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "status": {
+          "type": "text",
+          "desc": ""
+        },
+        "error_message": {
+          "type": "text",
+          "desc": ""
+        },
+        "winner_team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "winner_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "winner_comment": {
+          "type": "text",
+          "desc": ""
+        },
+        "win_or_draw": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "advice": {
+          "type": "text",
+          "desc": ""
+        },
+        "percent_home": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "percent_draw": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "percent_away": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "under_over_line": {
+          "type": "text",
+          "desc": ""
+        },
+        "goals_home_line": {
+          "type": "text",
+          "desc": ""
+        },
+        "goals_away_line": {
+          "type": "text",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "flat_summary": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "result_status_short": {
+          "type": "text",
+          "desc": ""
+        },
+        "result_home_goals": {
+          "type": "integer",
+          "desc": ""
+        },
+        "result_away_goals": {
+          "type": "integer",
+          "desc": ""
+        },
+        "result_total_goals": {
+          "type": "integer",
+          "desc": ""
+        },
+        "result_outcome": {
+          "type": "text",
+          "desc": ""
+        },
+        "hit_winner": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "hit_win_or_draw": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "hit_under_over": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "evaluated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json_odds": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "model_predictions_json": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "db_json_analisi": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "ht_predictions": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "injuries": {
+      "row_count": 159994,
+      "n_cols": 16,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_age": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_nationality": {
+          "type": "text",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "type": {
+          "type": "text",
+          "desc": ""
+        },
+        "reason": {
+          "type": "text",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "leads": {
+      "row_count": 2,
+      "n_cols": 12,
+      "columns": {
+        "id": {
+          "type": "uuid",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "first_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "last_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "email": {
+          "type": "text",
+          "desc": ""
+        },
+        "phone": {
+          "type": "text",
+          "desc": ""
+        },
+        "telegram_username": {
+          "type": "text",
+          "desc": ""
+        },
+        "trial_start_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "trial_end_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "is_active": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "source": {
+          "type": "text",
+          "desc": ""
+        },
+        "notes": {
+          "type": "text",
+          "desc": ""
+        }
+      }
+    },
+    "league_season_riepilogo_popolamento": {
+      "row_count": 8155,
+      "n_cols": 25,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "country_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_start": {
+          "type": "date",
+          "desc": ""
+        },
+        "season_end": {
+          "type": "date",
+          "desc": ""
+        },
+        "current": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_fixtures": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "fixtures_statistics_players": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "standings": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "players": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_scorers": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_assists": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "top_cards": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "injuries": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "predictions": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "odds": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "inserted_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "season_status": {
+          "type": "text",
+          "desc": ""
+        },
+        "season_last_run_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "fixtures_in_matches": {
+          "type": "bigint",
+          "desc": ""
+        }
+      }
+    },
+    "match_events": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 18,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "assist_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "assist_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "event_type": {
+          "type": "text",
+          "desc": ""
+        },
+        "detail": {
+          "type": "text",
+          "desc": ""
+        },
+        "comments": {
+          "type": "text",
+          "desc": ""
+        },
+        "minute": {
+          "type": "integer",
+          "desc": ""
+        },
+        "minute_extra": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "match_lineups": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 17,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "coach_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "coach_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_number": {
+          "type": "integer",
+          "desc": ""
+        },
+        "position": {
+          "type": "text",
+          "desc": ""
+        },
+        "grid": {
+          "type": "text",
+          "desc": ""
+        },
+        "is_starter": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "match_odds": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 15,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "bookmaker_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "bookmaker_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "market_key": {
+          "type": "text",
+          "desc": ""
+        },
+        "market_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "label": {
+          "type": "text",
+          "desc": ""
+        },
+        "odd_value": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "snapshot_type": {
+          "type": "text",
+          "desc": ""
+        },
+        "snapshot_time": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "match_player_stats": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 31,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "minutes": {
+          "type": "integer",
+          "desc": ""
+        },
+        "rating": {
+          "type": "text",
+          "desc": ""
+        },
+        "shots_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "shots_on": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "assists_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "passes_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "passes_key": {
+          "type": "integer",
+          "desc": ""
+        },
+        "passes_accurate": {
+          "type": "integer",
+          "desc": ""
+        },
+        "tackles_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "interceptions": {
+          "type": "integer",
+          "desc": ""
+        },
+        "duels_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "duels_won": {
+          "type": "integer",
+          "desc": ""
+        },
+        "dribbles_attempts": {
+          "type": "integer",
+          "desc": ""
+        },
+        "dribbles_success": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fouls_drawn": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fouls_committed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "yellow_cards": {
+          "type": "integer",
+          "desc": ""
+        },
+        "red_cards": {
+          "type": "integer",
+          "desc": ""
+        },
+        "offsides": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "match_team_stats": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 12,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "stat_type": {
+          "type": "text",
+          "desc": ""
+        },
+        "value_text": {
+          "type": "text",
+          "desc": ""
+        },
+        "value_numeric": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "matches": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 27,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "venue_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "venue_city": {
+          "type": "text",
+          "desc": ""
+        },
+        "status_short": {
+          "type": "text",
+          "desc": ""
+        },
+        "status_long": {
+          "type": "text",
+          "desc": ""
+        },
+        "status_elapsed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "home_team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "home_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "away_team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "away_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "goals_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "halftime_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "halftime_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fulltime_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fulltime_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "extratime_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "extratime_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalty_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalty_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        }
+      }
+    },
+    "missing_fixture_coverage": {
+      "row_count": "ERR: {'message': 'canceling statement due to statement timeout', 'code': '57014', 'hint': None, 'details': None}",
+      "n_cols": 11,
+      "columns": {
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "home_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "away_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "missing_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_player_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_team_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_odds": {
+          "type": "boolean",
+          "desc": ""
+        }
+      }
+    },
+    "missing_fixture_coverage_mat": {
+      "row_count": 135,
+      "n_cols": 11,
+      "columns": {
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "fixture_date": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "home_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "away_team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "missing_events": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_lineups": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_player_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_team_stats": {
+          "type": "boolean",
+          "desc": ""
+        },
+        "missing_odds": {
+          "type": "boolean",
+          "desc": ""
+        }
+      }
+    },
+    "model_performance": {
+      "row_count": 1025,
+      "n_cols": 11,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "target": {
+          "type": "text",
+          "desc": ""
+        },
+        "n_classes": {
+          "type": "integer",
+          "desc": ""
+        },
+        "brier": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "brier_random": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "bss": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "ece": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "train_rows": {
+          "type": "integer",
+          "desc": ""
+        },
+        "val_rows": {
+          "type": "integer",
+          "desc": ""
+        },
+        "trained_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        }
+      }
+    },
+    "season_backfill_state": {
+      "row_count": 6775,
+      "n_cols": 9,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "status": {
+          "type": "text",
+          "desc": ""
+        },
+        "last_run_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "error_message": {
+          "type": "text",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "stats_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "signal_history": {
+      "row_count": 3474,
+      "n_cols": 21,
+      "columns": {
+        "signal_id": {
+          "type": "text",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "fixture_id": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "date": {
+          "type": "date",
+          "desc": ""
+        },
+        "track": {
+          "type": "text",
+          "desc": ""
+        },
+        "market": {
+          "type": "text",
+          "desc": ""
+        },
+        "market_label": {
+          "type": "text",
+          "desc": ""
+        },
+        "prob": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "odds": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "edge": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "score": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "stake": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "result": {
+          "type": "text",
+          "desc": ""
+        },
+        "pnl": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "commission": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "bss": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "closing_odds": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "clv": {
+          "type": "double precision",
+          "desc": ""
+        },
+        "goals_home": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_away": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        }
+      }
+    },
+    "standings": {
+      "row_count": 84380,
+      "n_cols": 20,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "standing_group": {
+          "type": "text",
+          "desc": ""
+        },
+        "rank": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "played": {
+          "type": "integer",
+          "desc": ""
+        },
+        "win": {
+          "type": "integer",
+          "desc": ""
+        },
+        "draw": {
+          "type": "integer",
+          "desc": ""
+        },
+        "lose": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_for": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_against": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_diff": {
+          "type": "integer",
+          "desc": ""
+        },
+        "points": {
+          "type": "integer",
+          "desc": ""
+        },
+        "form": {
+          "type": "text",
+          "desc": ""
+        },
+        "description": {
+          "type": "text",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "top_assists": {
+      "row_count": 25119,
+      "n_cols": 25,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_age": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_nationality": {
+          "type": "text",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "games_appearances": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_lineups": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_minutes": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_conceded": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_assists": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_saves": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_won": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_scored": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_missed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_saved": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_committed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_conceded": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "top_cards": {
+      "row_count": 185535,
+      "n_cols": 18,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "card_type": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_age": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_nationality": {
+          "type": "text",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "games_appearances": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_lineups": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_minutes": {
+          "type": "integer",
+          "desc": ""
+        },
+        "yellow_cards": {
+          "type": "integer",
+          "desc": ""
+        },
+        "red_cards": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "top_scorers": {
+      "row_count": 74763,
+      "n_cols": 25,
+      "columns": {
+        "id": {
+          "type": "bigint",
+          "desc": "Note:\nThis is a Primary Key.<pk/>"
+        },
+        "league_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "season_year": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "player_age": {
+          "type": "integer",
+          "desc": ""
+        },
+        "player_nationality": {
+          "type": "text",
+          "desc": ""
+        },
+        "team_id": {
+          "type": "integer",
+          "desc": ""
+        },
+        "team_name": {
+          "type": "text",
+          "desc": ""
+        },
+        "games_appearances": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_lineups": {
+          "type": "integer",
+          "desc": ""
+        },
+        "games_minutes": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_total": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_conceded": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_assists": {
+          "type": "integer",
+          "desc": ""
+        },
+        "goals_saves": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_won": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_scored": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_missed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_saved": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_committed": {
+          "type": "integer",
+          "desc": ""
+        },
+        "penalties_conceded": {
+          "type": "integer",
+          "desc": ""
+        },
+        "created_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "updated_at": {
+          "type": "timestamp with time zone",
+          "desc": ""
+        },
+        "raw_json": {
+          "type": "jsonb",
+          "desc": ""
+        }
+      }
+    },
+    "v_clv_summary": {
+      "row_count": 0,
+      "n_cols": 5,
+      "columns": {
+        "track": {
+          "type": "text",
+          "desc": ""
+        },
+        "n_with_clv": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "avg_clv_pct": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "stddev_clv_pct": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "verdict": {
+          "type": "text",
+          "desc": ""
+        }
+      }
+    },
+    "v_roi_by_market": {
+      "row_count": 0,
+      "n_cols": 6,
+      "columns": {
+        "market_label": {
+          "type": "text",
+          "desc": ""
+        },
+        "track": {
+          "type": "text",
+          "desc": ""
+        },
+        "n_bets": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "n_won": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "total_pnl": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "roi_pct": {
+          "type": "numeric",
+          "desc": ""
+        }
+      }
+    },
+    "v_roi_by_track": {
+      "row_count": 0,
+      "n_cols": 7,
+      "columns": {
+        "track": {
+          "type": "text",
+          "desc": ""
+        },
+        "n_bets": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "n_won": {
+          "type": "bigint",
+          "desc": ""
+        },
+        "total_staked": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "total_pnl": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "roi_pct": {
+          "type": "numeric",
+          "desc": ""
+        },
+        "avg_clv_pct": {
+          "type": "numeric",
+          "desc": ""
+        }
+      }
+    }
+  }
+}

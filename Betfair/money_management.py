@@ -581,6 +581,8 @@ class SlotManager:
 
             # Dynamic min_prob: model must exceed market-implied by min_prob_margin.
             # This adapts automatically to market price (no hardcoded absolute floor).
+            # NB: this `implied` is overround-CORRECTED (0.975 fair-prob estimate) — a
+            # different definition from CLV's margin-inclusive 1/odds (~:2474). Intentional.
             implied = (1.0 / quota) * OVERROUND_CORRECTION
             dynamic_min_prob = implied + min_prob_margin
             if prob < dynamic_min_prob:
@@ -770,7 +772,13 @@ class SlotManager:
         kelly_frac = self.config["kelly_fraction"]
         max_pct = self.config["max_stake_pct"] / 100.0
 
-        # BSS-based Kelly Shrinkage (active only when brier_score is provided)
+        # BSS-based Kelly Shrinkage (active only when brier_score is provided).
+        # ⚠️ DOUBLE-APPLY GUARD: the ML track applies BSS shrinkage as a graduated
+        # linear multiplier (`bss_multiplier`, scan_best_market_ml ~:611-644, consumed
+        # ~:1077-1099) and therefore calls this method with brier_score=None.
+        # This √BSS branch is the SINGLE alternative definition — never combine the two
+        # on the same stake or shrinkage is applied twice. If re-enabling this branch
+        # for the ML track, stop passing `bss_multiplier` there first.
         if brier_score is not None:
             brier_random = (n_classes - 1) / n_classes if n_classes > 1 else 0.5
             if brier_random > 0:
@@ -1086,6 +1094,9 @@ class SlotManager:
                     )
                     ml_n_classes = ML_MARKET_MAP.get(ml_market_key, {}).get("n_classes", 2)
 
+                    # GUARD: brier_score MUST stay None here — BSS shrinkage is applied
+                    # exactly once via _bss_mult below (graduated linear), never via the
+                    # √BSS branch in calculate_kelly_stake (see double-apply guard there).
                     ml_stake = self.calculate_kelly_stake(
                         ml_prob, ml_scan["odds"],
                         use_ml_bankroll=True,
@@ -2471,6 +2482,10 @@ class SlotManager:
             market = slot.get("market")
             closing_odd = closing.get(market)
             if closing_odd and closing_odd > 1.01:
+                # NB: CLV uses margin-INCLUSIVE implied prob (raw 1/odds) on BOTH sides,
+                # so the bookmaker margin cancels in the difference — this is intentional
+                # and NOT the 0.975-corrected `implied` used by the ML edge gate (~:584).
+                # Two different "implied" definitions, neither is a bug.
                 entry_implied = 1.0 / slot["odds"]
                 closing_implied = 1.0 / closing_odd
                 # CLV > 0 means we got better than market close (closing_implied > entry_implied

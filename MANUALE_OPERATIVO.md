@@ -1,6 +1,15 @@
 # MANUALE OPERATIVO — Sistema ML Betting
-> Ultimo aggiornamento: 2026-03-16
+> Ultimo aggiornamento: 2026-06-09
 > NON CANCELLARE QUESTO FILE
+
+> ⚠️ **2026-06-09 — AUDIT + BLINDATURA MATEMATICA DEL MOTORE ML.**
+> Un audit forense ha trovato e corretto 13 problemi (2 CRITICI: leakage
+> classifica e label partite-non-giocate). Inoltre lo stack è risultato
+> **incompleto** (lightgbm/xgboost/optuna/imbalanced-learn NON installati → motore
+> in modalità ridotta RF+LogReg). **Dettagli, fix, audit stack e guida al
+> training veloce per-lega: vedi [`Ai Engine/ML_TRAINING_AND_STACK.md`](./Ai%20Engine/ML_TRAINING_AND_STACK.md).**
+> AZIONE RICHIESTA: `pip install -r requirements.txt` + **retrain completo** (i
+> modelli precedenti erano addestrati con il leakage → metriche gonfiate).
 
 ---
 
