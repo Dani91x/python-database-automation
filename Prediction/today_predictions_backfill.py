@@ -12,6 +12,9 @@ from datetime import datetime, timezone, timedelta
 import math
 from typing import Any, Dict, List, Optional, Tuple, Set
 
+import numpy as np
+from scipy.stats import poisson
+
 # ----------------------------------------------------------
 # Ensure project root is on sys.path so absolute imports work
 # even when running this file from the Prediction/ folder.
@@ -580,17 +583,91 @@ def extract_fixture_context(fx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # DB analysis (Poisson/xG)
 # ==============================
 
+def _to_float(v: Any) -> Optional[float]:
+    """Coerce a DB value to float, tolerating numeric strings and None.
+    Some Supabase/PostgREST drivers return numeric columns as strings; summing
+    those with the built-in sum() would CONCATENATE instead of adding and
+    silently corrupt every goal-based statistic. Returns None when the value is
+    missing or non-numeric so callers can apply their own missing-data policy."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _poisson_prob(lmbda: float, k: int) -> float:
+    """Scalar Poisson PMF backed by scipy (no factorial/exp overflow risk).
+    Preserves the historical contract lmbda <= 0 -> 0.0 (the legacy hand-rolled
+    implementation returned 0.0 for non-positive lambda; scipy would return 1.0
+    at k=0).  In practice lambdas are always floored > 0, so this guard is a
+    safety net only and does not change live output."""
     if lmbda <= 0:
         return 0.0
-    return math.exp(-lmbda) * (lmbda ** k) / math.factorial(k)
+    return float(poisson.pmf(k, lmbda))
+
+
+def _build_score_grid(lambda_home: float, lambda_away: float, max_goals: int) -> np.ndarray:
+    """Vectorized independent-Poisson score grid (rows = home goals 0..max_goals,
+    cols = away goals 0..max_goals) via scipy PMF + numpy outer product.
+    Numerically identical to the nested-loop _poisson_prob build to ~1e-15,
+    but without per-cell factorial/exp evaluation (removes overflow risk).
+    Returns the RAW independent grid; Dixon-Coles tau correction and
+    normalisation are applied by the caller."""
+    ks = np.arange(0, max_goals + 1)
+    p_home = poisson.pmf(ks, lambda_home) if lambda_home > 0 else np.zeros(max_goals + 1)
+    p_away = poisson.pmf(ks, lambda_away) if lambda_away > 0 else np.zeros(max_goals + 1)
+    return np.outer(p_home, p_away)
 
 
 # Dixon-Coles correlation parameter.
 # Negative value: 0-0 and 1-1 occur MORE often than independent Poisson predicts;
 # 1-0 and 0-1 occur LESS often.  Literature range: ρ ∈ [−0.20, −0.08].
-# We use the original Dixon & Coles (1997) estimate: ρ = −0.13.
+# We use the original Dixon & Coles (1997) estimate as the GLOBAL FALLBACK: ρ = −0.13.
 DC_RHO: float = -0.13
+
+# Per-league ρ overrides (#11). Estimated offline by generate_dc_rho.py via a
+# 1-parameter profile-likelihood MLE on the four low-score cells (held marginals
+# = the engine's own per-fixture lambdas), shrunk toward DC_RHO for low-N leagues
+# and clamped to the literature-plausible band. The engine loads them read-only;
+# a missing file or missing league transparently falls back to DC_RHO.
+_DC_RHO_BY_LEAGUE_CACHE: Optional[Dict[int, float]] = None
+# Safety band: refuse any stored value outside the plausible Dixon-Coles range so
+# a corrupted/over-fit estimate can never push tau into a degenerate regime.
+DC_RHO_MIN: float = -0.25
+DC_RHO_MAX: float = 0.05
+
+
+def get_league_rho(league_id: Optional[int]) -> float:
+    """Return the per-league Dixon-Coles ρ, falling back to the global DC_RHO.
+    Reads dc_rho_by_league.json once and caches it. Any stored value outside
+    [DC_RHO_MIN, DC_RHO_MAX] is ignored in favour of DC_RHO (defensive)."""
+    global _DC_RHO_BY_LEAGUE_CACHE
+    if _DC_RHO_BY_LEAGUE_CACHE is None:
+        loaded: Dict[int, float] = {}
+        path = PROJECT_ROOT / "dc_rho_by_league.json"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            for k, v in (raw.get("rho_by_league") or {}).items():
+                try:
+                    loaded[int(k)] = float(v)
+                except (TypeError, ValueError):
+                    continue
+            logger.info(f"Loaded per-league Dixon-Coles ρ for {len(loaded)} leagues.")
+        except FileNotFoundError:
+            logger.debug("dc_rho_by_league.json not found — using global DC_RHO for all leagues.")
+        except Exception as e:  # noqa: BLE001 — never let a bad file break predictions
+            logger.warning(f"Could not load dc_rho_by_league.json ({e}); using global DC_RHO.")
+        _DC_RHO_BY_LEAGUE_CACHE = loaded
+
+    if league_id is None:
+        return DC_RHO
+    rho = _DC_RHO_BY_LEAGUE_CACHE.get(int(league_id))
+    if rho is None or not (DC_RHO_MIN <= rho <= DC_RHO_MAX):
+        return DC_RHO
+    return rho
 
 
 def _dc_tau(hg: int, ag: int, lh: float, la: float, rho: float = DC_RHO) -> float:
@@ -628,16 +705,30 @@ def _build_match_cache(
 
     played = []
     for r in rows:
-        if str(r.get("status_short") or "").upper() in {"FT", "AET", "PEN"}:
-            played.append(r)
+        if str(r.get("status_short") or "").upper() not in {"FT", "AET", "PEN"}:
+            continue
+        # Coerce goals to float up-front: numeric-string DB values would break
+        # every downstream sum()/mean (concatenation instead of addition).
+        gh = _to_float(r.get("goals_home"))
+        ga = _to_float(r.get("goals_away"))
+        # Exclude finished fixtures with missing/non-numeric FT goals: coercing
+        # None to 0 (the old behaviour) biases per-team and league averages down.
+        if gh is None or ga is None:
+            continue
+        r["goals_home"] = gh
+        r["goals_away"] = ga
+        # Halftime may legitimately be missing; keep float-or-None.
+        r["halftime_home"] = _to_float(r.get("halftime_home"))
+        r["halftime_away"] = _to_float(r.get("halftime_away"))
+        played.append(r)
 
     team_hist: Dict[int, List[Dict[str, Any]]] = {}
     for m in played:
         fixture_date = m.get("fixture_date")
         home_id = m.get("home_team_id")
         away_id = m.get("away_team_id")
-        goals_home = m.get("goals_home") or 0
-        goals_away = m.get("goals_away") or 0
+        goals_home = m.get("goals_home")
+        goals_away = m.get("goals_away")
         ht_home = m.get("halftime_home")
         ht_away = m.get("halftime_away")
 
@@ -647,6 +738,9 @@ def _build_match_cache(
                     "fixture_id": m.get("fixture_id"),
                     "fixture_date": fixture_date,
                     "team_id": int(home_id),
+                    # opponent_id lets us derive xG-conceded (xGA) as the
+                    # opponent's xG in the SAME fixture (no native xGA needed).
+                    "opponent_id": int(away_id) if away_id is not None else None,
                     "goals_for": goals_home,
                     "goals_against": goals_away,
                     "halftime_for": ht_home,
@@ -659,6 +753,7 @@ def _build_match_cache(
                     "fixture_id": m.get("fixture_id"),
                     "fixture_date": fixture_date,
                     "team_id": int(away_id),
+                    "opponent_id": int(home_id) if home_id is not None else None,
                     "goals_for": goals_away,
                     "goals_against": goals_home,
                     "halftime_for": ht_away,
@@ -671,8 +766,9 @@ def _build_match_cache(
 
     total_matches = len(played)
     if total_matches > 0:
-        league_home_avg = sum((m.get("goals_home") or 0) for m in played) / total_matches
-        league_away_avg = sum((m.get("goals_away") or 0) for m in played) / total_matches
+        # played rows are guaranteed to have non-None goals_home/goals_away.
+        league_home_avg = sum(m["goals_home"] for m in played) / total_matches
+        league_away_avg = sum(m["goals_away"] for m in played) / total_matches
         league_total_avg = league_home_avg + league_away_avg
     else:
         league_home_avg = 1.2
@@ -704,6 +800,12 @@ def _build_xg_cache(
         cache[key] = xg_map
         return xg_map
 
+    # Accumulate all 'expected_goals' rows per (fixture, team) then aggregate by
+    # mean. EXACT stat_type match (was substring 'expected'/'xg' + max() dedupe):
+    # this prevents a future 'expected_goals_against' row from corrupting the
+    # attack proxy, and mean is robust to duplicate rows (max would pick an
+    # arbitrary inflated value).
+    accum: Dict[Tuple[int, int], List[float]] = {}
     for i in range(0, len(fixture_ids), 500):
         chunk = fixture_ids[i : i + 500]
         rows = _fetch_all_table(
@@ -713,45 +815,63 @@ def _build_xg_cache(
             page_size=1000,
         )
         for r in rows:
-            st = str(r.get("stat_type") or "").lower()
-            if "expected" in st or "xg" in st:
-                key2 = (int(r.get("fixture_id")), int(r.get("team_id")))
-                val = r.get("value_numeric")
-                try:
-                    val_f = float(val)
-                except Exception:
-                    continue
-                prev = xg_map.get(key2)
-                if prev is None or val_f > prev:
-                    xg_map[key2] = val_f
+            st = str(r.get("stat_type") or "").strip().lower()
+            if st != "expected_goals":
+                continue
+            try:
+                val_f = float(r.get("value_numeric"))
+            except (ValueError, TypeError):
+                continue
+            fx_id = r.get("fixture_id")
+            tm_id = r.get("team_id")
+            if fx_id is None or tm_id is None:
+                continue
+            key2 = (int(fx_id), int(tm_id))
+            accum.setdefault(key2, []).append(val_f)
+
+    for key2, vals in accum.items():
+        xg_map[key2] = sum(vals) / len(vals)
 
     cache[key] = xg_map
     return xg_map
 
 
-def _window_stats(team_matches: List[Dict[str, Any]], n: int, xg_map: Dict[Tuple[int, int], float]) -> Dict[str, Optional[float]]:
+def _window_stats(team_matches: List[Dict[str, Any]], n: int, xg_map: Dict[Tuple[int, int], float]) -> Dict[str, Any]:
     if not team_matches:
-        return {"gf_avg": None, "ga_avg": None, "xg_avg": None, "n_used": 0}
+        return {"gf_avg": None, "ga_avg": None, "xg_avg": None, "xga_avg": None,
+                "n_used": 0, "xg_used": 0, "xga_used": 0}
 
     recent = team_matches[-n:]
-    gf = [m.get("goals_for", 0) for m in recent]
-    ga = [m.get("goals_against", 0) for m in recent]
-    xg_vals = []
+    # goals_for/against are already float-coerced in _build_match_cache, but
+    # guard again here so a stray non-numeric value drops out instead of
+    # poisoning the mean.
+    gf = [v for m in recent if (v := _to_float(m.get("goals_for"))) is not None]
+    ga = [v for m in recent if (v := _to_float(m.get("goals_against"))) is not None]
+    xg_vals = []   # xG generated BY this team   (attack proxy)
+    xga_vals = []  # xG conceded by this team = opponent's xG same fixture (defense proxy)
     for m in recent:
         fx_id = m.get("fixture_id")
         team_id = m.get("team_id")
-        if fx_id is None or team_id is None:
+        opp_id = m.get("opponent_id")
+        if fx_id is None:
             continue
-        val = xg_map.get((int(fx_id), int(team_id)))
-        if val is not None:
-            xg_vals.append(val)
+        if team_id is not None:
+            val = xg_map.get((int(fx_id), int(team_id)))
+            if val is not None:
+                xg_vals.append(val)
+        if opp_id is not None:
+            oval = xg_map.get((int(fx_id), int(opp_id)))
+            if oval is not None:
+                xga_vals.append(oval)
 
     return {
         "gf_avg": sum(gf) / len(gf) if gf else None,
         "ga_avg": sum(ga) / len(ga) if ga else None,
         "xg_avg": sum(xg_vals) / len(xg_vals) if xg_vals else None,
+        "xga_avg": sum(xga_vals) / len(xga_vals) if xga_vals else None,
         "n_used": len(recent),
         "xg_used": len(xg_vals),
+        "xga_used": len(xga_vals),
     }
 
 
@@ -771,6 +891,7 @@ def _blend_windows(stats5: Dict[str, Any], stats10: Dict[str, Any], stats15: Dic
         "gf_blend": _blend("gf_avg"),
         "ga_blend": _blend("ga_avg"),
         "xg_blend": _blend("xg_avg"),
+        "xga_blend": _blend("xga_avg"),
     }
 
 
@@ -778,7 +899,7 @@ def compute_db_json_analisi(
     ctx: Dict[str, Any],
     match_cache: Dict[Tuple[int, int], Dict[str, Any]],
     xg_cache: Dict[Tuple[int, int], Dict[Tuple[int, int], float]],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
     fixture_id = ctx.get("fixture_id")
     league_id = ctx.get("league_id")
     season_year = ctx.get("season_year")
@@ -797,6 +918,38 @@ def compute_db_json_analisi(
 
     fixture_ids = [m.get("fixture_id") for m in cache["played"] if m.get("fixture_id") is not None]
     xg_map = _build_xg_cache(int(league_id), int(season_year), xg_cache, fixture_ids)
+
+    # League xG baselines over the SAME played-set used for the goals baselines.
+    # The xG term must be shrunk/normalised against a league xG average, not the
+    # league GOALS average (xG and realised goals differ systematically). When
+    # the league has no xG coverage, fall back to the goals baseline so a neutral
+    # team still yields coefficient ~1.0 and behaviour degrades gracefully.
+    home_xg_samples: List[float] = []
+    away_xg_samples: List[float] = []
+    for _m in cache["played"]:
+        _fx = _m.get("fixture_id")
+        _hid = _m.get("home_team_id")
+        _aid = _m.get("away_team_id")
+        if _fx is not None and _hid is not None:
+            _hv = xg_map.get((int(_fx), int(_hid)))
+            if _hv is not None:
+                home_xg_samples.append(_hv)
+        if _fx is not None and _aid is not None:
+            _av = xg_map.get((int(_fx), int(_aid)))
+            if _av is not None:
+                away_xg_samples.append(_av)
+    league_home_xg_avg = (
+        sum(home_xg_samples) / len(home_xg_samples) if home_xg_samples else league_home_avg
+    )
+    league_away_xg_avg = (
+        sum(away_xg_samples) / len(away_xg_samples) if away_xg_samples else league_away_avg
+    )
+    # Guard against a degenerate all-zero xG baseline (division by zero in the
+    # attack term); fall back to the goals baseline which is always > 0 here.
+    if league_home_xg_avg <= 0:
+        league_home_xg_avg = league_home_avg
+    if league_away_xg_avg <= 0:
+        league_away_xg_avg = league_away_avg
 
     def _before_date(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return [m for m in matches if m.get("fixture_date") and m["fixture_date"] < fixture_date]
@@ -879,41 +1032,89 @@ def compute_db_json_analisi(
     gf_a = _shrink(ctx_blend_a.get("gf_blend"), ctx_n_a, league_away_avg)
     ga_a = _shrink(ctx_blend_a.get("ga_blend"), ctx_n_a, league_home_avg)
 
-    xg_h = _shrink(ctx_blend_h.get("xg_blend"), ctx_n_h, league_home_avg)
-    xg_a = _shrink(ctx_blend_a.get("xg_blend"), ctx_n_a, league_away_avg)
+    # xG (attack) and xGA (defense) are shrunk toward the league xG baseline on
+    # the SAME scale as the statistic being shrunk.
+    #   xg_h  = home team xG generated AT HOME      → baseline = league_home_xg_avg
+    #   xg_a  = away team xG generated AWAY         → baseline = league_away_xg_avg
+    #   xga_h = home team xG CONCEDED at home = visitors' xG → baseline = league_away_xg_avg
+    #   xga_a = away team xG CONCEDED away  = hosts' xG      → baseline = league_home_xg_avg
+    xg_h  = _shrink(ctx_blend_h.get("xg_blend"),  ctx_n_h, league_home_xg_avg)
+    xg_a  = _shrink(ctx_blend_a.get("xg_blend"),  ctx_n_a, league_away_xg_avg)
+    xga_h = _shrink(ctx_blend_h.get("xga_blend"), ctx_n_h, league_away_xg_avg)
+    xga_a = _shrink(ctx_blend_a.get("xga_blend"), ctx_n_a, league_home_xg_avg)
 
-    # Attack and defense coefficients normalised to their respective league baselines.
-    # Neutral team (averages exactly the league) yields coefficient = 1.0 in all cases.
-    home_attack = ((eta_goals * gf_h) + ((1 - eta_goals) * xg_h)) / league_home_avg
-    away_attack = ((eta_goals * gf_a) + ((1 - eta_goals) * xg_a)) / league_away_avg
-    home_def    = ga_h / league_away_avg   # goals visitors score against home team / league away avg
-    away_def    = ga_a / league_home_avg   # goals home opponents score against away team / league home avg
+    # Availability of the xG/xGA term per team/side. When a stat has NO xG sample
+    # backing it, _shrink() returns the prior and its ratio would collapse to an
+    # uninformative 1.0 — silently dampening the (informative) goals signal toward
+    # neutral. Policy (user-confirmed): if xG is missing, use ONLY goals (no blend).
+    xg_h_ok  = ctx_blend_h.get("xg_blend")  is not None
+    xg_a_ok  = ctx_blend_a.get("xg_blend")  is not None
+    xga_h_ok = ctx_blend_h.get("xga_blend") is not None
+    xga_a_ok = ctx_blend_a.get("xga_blend") is not None
+
+    def _coef(goals_ratio: float, xg_ratio: Optional[float]) -> float:
+        """Blend a goals ratio with an xG ratio (both dimensionless, centred at
+        1.0 on their own league scale). If the xG ratio is unavailable, fall back
+        to goals only (effective eta=1.0) instead of blending against a neutral
+        1.0 — which would otherwise shrink a real signal toward the mean."""
+        if xg_ratio is None:
+            return goals_ratio
+        return (eta_goals * goals_ratio) + ((1.0 - eta_goals) * xg_ratio)
+
+    home_attack = _coef(gf_h / league_home_avg, (xg_h  / league_home_xg_avg) if xg_h_ok  else None)
+    away_attack = _coef(gf_a / league_away_avg, (xg_a  / league_away_xg_avg) if xg_a_ok  else None)
+    home_def    = _coef(ga_h / league_away_avg, (xga_h / league_away_xg_avg) if xga_h_ok else None)
+    away_def    = _coef(ga_a / league_home_avg, (xga_a / league_home_xg_avg) if xga_a_ok else None)
 
     lambda_home = max(0.05, league_home_avg * home_attack * away_def)
     lambda_away = max(0.05, league_away_avg * away_attack * home_def)
 
-    max_goals = 6
-    probs = []
-    for hg in range(0, max_goals + 1):
-        p_h = _poisson_prob(lambda_home, hg)
-        for ag in range(0, max_goals + 1):
-            tau = _dc_tau(hg, ag, lambda_home, lambda_away)
-            p = p_h * _poisson_prob(lambda_away, ag) * tau
-            probs.append((hg, ag, p))
+    # Telemetry (#2): persisted in db_json_analisi.inputs so coverage of the xG
+    # blend is queryable per-league straight from the stored JSON / sheet.
+    if not (xg_h_ok or xg_a_ok or xga_h_ok or xga_a_ok):
+        logger.debug(
+            f"Fixture {fixture_id}: no xG/xGA coverage — lambda computed on goals only"
+        )
 
-    total_p = sum(p for _, _, p in probs) or 1.0
-    probs = [(hg, ag, p / total_p) for hg, ag, p in probs]
+    # Score grid truncated at 10 goals (was 6): recovers truncated tail mass
+    # before renormalisation. Vectorized independent-Poisson grid + Dixon-Coles
+    # tau correction on the four low-scoring cells, then renormalise as before.
+    # Per-league Dixon-Coles correlation (#11): estimated offline, falls back to
+    # the global DC_RHO when no league-specific value is available. The SAME rho
+    # is reused for the half-time grid below so FT and HT stay internally coherent.
+    rho_league = get_league_rho(league_id)
 
-    p_home = sum(p for hg, ag, p in probs if hg > ag)
-    p_draw = sum(p for hg, ag, p in probs if hg == ag)
-    p_away = sum(p for hg, ag, p in probs if hg < ag)
-    p_over15 = sum(p for hg, ag, p in probs if (hg + ag) >= 2)
+    max_goals = 10
+    grid = _build_score_grid(lambda_home, lambda_away, max_goals)
+    for hg in (0, 1):
+        for ag in (0, 1):
+            grid[hg, ag] *= _dc_tau(hg, ag, lambda_home, lambda_away, rho=rho_league)
+
+    total_p = float(grid.sum()) or 1.0
+    grid = grid / total_p
+
+    hg_idx = np.arange(max_goals + 1).reshape(-1, 1)
+    ag_idx = np.arange(max_goals + 1).reshape(1, -1)
+    tot_idx = hg_idx + ag_idx
+
+    p_home = float(grid[hg_idx > ag_idx].sum())
+    p_draw = float(grid[hg_idx == ag_idx].sum())
+    p_away = float(grid[hg_idx < ag_idx].sum())
+    # (#15) Enforce a proper 1X2 distribution. The three masks already partition
+    # the normalised grid so the sum is 1.0 up to float error; renormalise so the
+    # stored probabilities sum to exactly 1 (no 0.9999/1.0001 leakage downstream).
+    _x2_tot = p_home + p_draw + p_away
+    if _x2_tot > 0:
+        p_home /= _x2_tot
+        p_draw /= _x2_tot
+        p_away /= _x2_tot
+    p_over15 = float(grid[tot_idx >= 2].sum())
     p_under15 = 1.0 - p_over15
-    p_over25 = sum(p for hg, ag, p in probs if (hg + ag) >= 3)
+    p_over25 = float(grid[tot_idx >= 3].sum())
     p_under25 = 1.0 - p_over25
-    p_over35 = sum(p for hg, ag, p in probs if (hg + ag) >= 4)
+    p_over35 = float(grid[tot_idx >= 4].sum())
     p_under35 = 1.0 - p_over35
-    p_btts = sum(p for hg, ag, p in probs if hg > 0 and ag > 0)
+    p_btts = float(grid[(hg_idx > 0) & (ag_idx > 0)].sum())
     p_btts_no = 1.0 - p_btts
 
     def _compute_ht_ratio(matches: List[Dict[str, Any]], prior: float = 0.45, k: int = 12) -> float:
@@ -951,44 +1152,68 @@ def compute_db_json_analisi(
     lambda_ht_home = lambda_home * ht_ratio_h
     lambda_ht_away = lambda_away * ht_ratio_a
     max_goals_ht = 4
-    ht_probs = []
-    for _hg in range(0, max_goals_ht + 1):
-        _p_h = _poisson_prob(lambda_ht_home, _hg)
-        for _ag in range(0, max_goals_ht + 1):
-            _tau = _dc_tau(_hg, _ag, lambda_ht_home, lambda_ht_away)
-            _p = _p_h * _poisson_prob(lambda_ht_away, _ag) * _tau
-            ht_probs.append((_hg, _ag, _p))
-    _ht_total = sum(p for _, _, p in ht_probs) or 1.0
-    ht_probs = [(_hg, _ag, p / _ht_total) for _hg, _ag, p in ht_probs]
-    p_ht_home = sum(p for _hg, _ag, p in ht_probs if _hg > _ag)
-    p_ht_draw = sum(p for _hg, _ag, p in ht_probs if _hg == _ag)
-    p_ht_away = sum(p for _hg, _ag, p in ht_probs if _hg < _ag)
+    ht_grid = _build_score_grid(lambda_ht_home, lambda_ht_away, max_goals_ht)
+    for _hg in (0, 1):
+        for _ag in (0, 1):
+            ht_grid[_hg, _ag] *= _dc_tau(_hg, _ag, lambda_ht_home, lambda_ht_away, rho=rho_league)
+    _ht_total = float(ht_grid.sum()) or 1.0
+    ht_grid = ht_grid / _ht_total
+    _ht_hg = np.arange(max_goals_ht + 1).reshape(-1, 1)
+    _ht_ag = np.arange(max_goals_ht + 1).reshape(1, -1)
+    p_ht_home = float(ht_grid[_ht_hg > _ht_ag].sum())
+    p_ht_draw = float(ht_grid[_ht_hg == _ht_ag].sum())
+    p_ht_away = float(ht_grid[_ht_hg < _ht_ag].sum())
+    # (#15) Renormalise HT 1X2 to sum to exactly 1 (same rationale as FT 1X2).
+    _ht2_tot = p_ht_home + p_ht_draw + p_ht_away
+    if _ht2_tot > 0:
+        p_ht_home /= _ht2_tot
+        p_ht_draw /= _ht2_tot
+        p_ht_away /= _ht2_tot
 
-    def _team_p_goal_1h(matches: List[Dict[str, Any]]) -> float:
-        if not matches:
-            return 0.5
-        recent = matches[-15:]
+    # (#4) Probability a team scores in the 1st half, with Beta-Binomial shrinkage
+    # toward 0.5 (strength HT_GOAL_K matches) — consistent with the shrinkage used
+    # everywhere else in the engine. Returns (prob, n_valid) so the hybrid blend
+    # below can weight by how much data backs the empirical estimate.
+    HT_GOAL_PRIOR = 0.5
+    HT_GOAL_K = 5  # in matches
+
+    def _team_p_goal_1h(matches: List[Dict[str, Any]]) -> Tuple[float, int]:
+        recent = matches[-15:] if matches else []
         flags = []
         for m in recent:
             ht = m.get("halftime_for")
             if ht is None:
                 continue
             flags.append(1 if ht > 0 else 0)
-        if not flags:
-            return 0.5
-        return sum(flags) / len(flags)
+        n = len(flags)
+        if n == 0:
+            return HT_GOAL_PRIOR, 0
+        shrunk = (HT_GOAL_K * HT_GOAL_PRIOR + sum(flags)) / (HT_GOAL_K + n)
+        return shrunk, n
 
     # Coerenza contestuale: stessa lista usata per _compute_ht_ratio (home_home / away_away).
-    # Se la lista contestuale è troppo corta, _team_p_goal_1h ritorna il prior 0.5
-    # tramite il proprio guard (flags vuoto → return 0.5).
-    p_home_1h = _team_p_goal_1h(home_home)
-    p_away_1h = _team_p_goal_1h(away_away)
+    p_home_1h, n_home_1h = _team_p_goal_1h(home_home)
+    p_away_1h, n_away_1h = _team_p_goal_1h(away_away)
     p_goal_1h_freq = 1.0 - ((1 - p_home_1h) * (1 - p_away_1h))
 
-    # --- HYBRID HT MODEL ---
-    lambda_1h = lambda_home * ht_ratio_h + lambda_away * ht_ratio_a
-    p_goal_1h_poisson = 1.0 - math.exp(-lambda_1h)
-    p_hybrid_1h = (p_goal_1h_freq + p_goal_1h_poisson) / 2.0
+    # --- HYBRID HT MODEL (#9 + #8) ---
+    # (#9) Poisson term = P(>=1 goal in 1H) = 1 - P(0-0 at HT) taken from the SAME
+    # Dixon-Coles-corrected HT grid used for ht_1x2 (coherent). The old term
+    # 1 - exp(-lambda_1h) was the INDEPENDENT-Poisson P(0-0) and ignored the DC
+    # correction, slightly overstating Over 0.5 1H.
+    lambda_1h = lambda_home * ht_ratio_h + lambda_away * ht_ratio_a  # reported for diagnostics only
+    p_goal_1h_poisson = 1.0 - float(ht_grid[0, 0])
+    # (#8) Reliability-weighted blend instead of a fixed 50/50: trust the empirical
+    # frequency in proportion to how much HT data backs it. n_eff is the MEAN of
+    # the two sides' valid-match counts: the freq estimate combines both teams, so
+    # one team lacking data shouldn't discard the other's observations (a min()
+    # would). n_eff -> 0 only in the true cold-start (both teams without HT data),
+    # where the blend leans fully on the model-based Poisson term; with full data
+    # (both ~15) w_freq -> 0.6.
+    K_HT_BLEND = 10.0
+    n_eff = (n_home_1h + n_away_1h) / 2.0
+    w_freq = n_eff / (n_eff + K_HT_BLEND)
+    p_hybrid_1h = w_freq * p_goal_1h_freq + (1.0 - w_freq) * p_goal_1h_poisson
     # -----------------------
 
     analysis = {
@@ -1004,13 +1229,20 @@ def compute_db_json_analisi(
             "league_home_avg": round(league_home_avg, 4),
             "league_away_avg": round(league_away_avg, 4),
             "league_total_avg": round(league_total_avg, 4),
+            "league_home_xg_avg": round(league_home_xg_avg, 4),
+            "league_away_xg_avg": round(league_away_xg_avg, 4),
             "home_matches_used": int(home_n_used),
             "away_matches_used": int(away_n_used),
             "home_xg_covered": int(stats15_h.get("xg_used", 0)),
             "away_xg_covered": int(stats15_a.get("xg_used", 0)),
+            "home_xga_covered": int(stats15_h.get("xga_used", 0)),
+            "away_xga_covered": int(stats15_a.get("xga_used", 0)),
+            # Telemetry (#2): True when at least one xG/xGA term informed lambda;
+            # False means lambda was computed on goals only (no xG coverage).
+            "xg_blend_active": bool(xg_h_ok or xg_a_ok or xga_h_ok or xga_a_ok),
             "ht_ratio_home": round(ht_ratio_h, 3),
             "ht_ratio_away": round(ht_ratio_a, 3),
-            "dc_rho": DC_RHO,
+            "dc_rho": round(rho_league, 4),
         },
         "markets": {
             "1x2": {"H": round(p_home, 4), "D": round(p_draw, 4), "A": round(p_away, 4)},
@@ -1023,7 +1255,8 @@ def compute_db_json_analisi(
                 "False": round(1.0 - p_hybrid_1h, 4),
                 "details": {
                     "freq": round(p_goal_1h_freq, 4),
-                    "poisson": round(p_goal_1h_poisson, 4)
+                    "poisson": round(p_goal_1h_poisson, 4),
+                    "w_freq": round(w_freq, 4)
                 }
             },
             "ht_1x2": {"H": round(p_ht_home, 4), "D": round(p_ht_draw, 4), "A": round(p_ht_away, 4)},
@@ -1053,10 +1286,11 @@ def compute_db_json_analisi(
         "is_elite": is_elite,
         "details": {
             "freq": round(p_goal_1h_freq, 4),
-            "poisson": round(p_goal_1h_poisson, 4)
+            "poisson": round(p_goal_1h_poisson, 4),
+            "w_freq": round(w_freq, 4)
         }
     }
-    
+
     return analysis, ht_pred
 
 
