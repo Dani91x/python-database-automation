@@ -1,8 +1,20 @@
 """
 CALIBRAZIONE COMPLETA — Probabilità stimate vs Risultati reali
 Analizza lo storico del modello Poisson per identificare bias sistematici.
+
+⚠️ QUESTO SCRIPT È DIAGNOSTICO. NON è la fonte di verità per dynamic_cal.json.
+La fonte di verità (SINGLE SOURCE OF TRUTH) per dynamic_cal.json è
+``generate_dynamic_cal.py`` (vedi MANUALE_OPERATIVO.md §3 e diagramma architettura):
+quello script filtra solo i record del modello ``poisson_xg_hybrid_dc``, applica
+empirical-Bayes shrinkage per-lega e produce lo schema consumato da
+``money_management.py`` (``by_league`` / ``global`` / ``divergence_stats`` +
+``leagues_covered``).
+
+Per evitare due metodologie incompatibili che si sovrascrivono lo stesso file,
+questo script scrive la sua tabella dinamica in ``dynamic_cal_diagnostic.json``
+(NON sovrascrive ``dynamic_cal.json``).
 """
-import sys, os, json
+import sys, os, json, math
 sys.path.insert(0, '.')
 from db_client import get_supabase_client
 from collections import defaultdict
@@ -89,8 +101,12 @@ def check_result(row, market_type):
     if market_type == "home_win": return gh > ga
     if market_type == "draw": return gh == ga
     if market_type == "away_win": return gh < ga
+    if market_type == "over15": return (gh + ga) > 1
+    if market_type == "under15": return (gh + ga) <= 1
     if market_type == "over25": return (gh + ga) >= 3
     if market_type == "under25": return (gh + ga) < 3
+    if market_type == "over35": return (gh + ga) > 3
+    if market_type == "under35": return (gh + ga) <= 3
     if market_type == "btts_yes": return gh >= 1 and ga >= 1
     if market_type == "btts_no": return gh == 0 or ga == 0
     if market_type == "ht_over05":
@@ -99,18 +115,34 @@ def check_result(row, market_type):
     if market_type == "ht_under05":
         if hth is None or hta is None: return None
         return (hth + hta) == 0
+    if market_type == "ht_home":
+        if hth is None or hta is None: return None
+        return hth > hta
+    if market_type == "ht_draw":
+        if hth is None or hta is None: return None
+        return hth == hta
+    if market_type == "ht_away":
+        if hth is None or hta is None: return None
+        return hth < hta
     return None
 
 MARKETS_CONFIG = [
     ("1x2 Home",       "1x2", "H",    "home_win"),
     ("1x2 Draw",       "1x2", "D",    "draw"),
     ("1x2 Away",       "1x2", "A",    "away_win"),
+    ("Over 1.5",       "over_1_5", "True", "over15"),
+    ("Under 1.5",      "over_1_5", "False", "under15"),
     ("Over 2.5",       "over_2_5", "True", "over25"),
     ("Under 2.5",      "over_2_5", "False", "under25"),
+    ("Over 3.5",       "over_3_5", "True", "over35"),
+    ("Under 3.5",      "over_3_5", "False", "under35"),
     ("BTTS Sì",        "btts", "True", "btts_yes"),
     ("BTTS No",        "btts", "False", "btts_no"),
     ("1H Over 0.5",    "first_half_over_0_5", "True", "ht_over05"),
     ("1H Under 0.5",   "first_half_over_0_5", "False", "ht_under05"),
+    ("HT Casa",        "ht_1x2", "H", "ht_home"),
+    ("HT Pareggio",    "ht_1x2", "D", "ht_draw"),
+    ("HT Trasferta",   "ht_1x2", "A", "ht_away"),
 ]
 
 output_lines = []
@@ -364,9 +396,12 @@ print(f"  Odds API-Football parsate: {len(odds_map)}")
 # Mapping label -> cal_key (come in money_management.py MARKET_MAP)
 LABEL_TO_CAL_KEY = {
     "1x2 Home": "H", "1x2 Draw": "D", "1x2 Away": "A",
+    "Over 1.5": "O15", "Under 1.5": "U15",
     "Over 2.5": "O25", "Under 2.5": "U25",
+    "Over 3.5": "O35", "Under 3.5": "U35",
     "BTTS Sì": "BTTS", "BTTS No": "BTTS_NO",
     "1H Over 0.5": "HT05", "1H Under 0.5": "HT_U05",
+    "HT Casa": "HT_H", "HT Pareggio": "HT_D", "HT Trasferta": "HT_A",
 }
 
 # Mapping cal_key -> odds_map key (stessa mappatura)
@@ -378,8 +413,48 @@ CAL_KEY_TO_ODDS_KEY = {
 }
 
 
-def compute_calibration_bins(subset_rows, markets_config, min_per_bin=5):
-    """Calcola fattori di correzione bin-level per un sottoinsieme di match."""
+# Empirical-Bayes shrinkage strength: ogni bin per-lega è tirato verso il
+# fattore globale con peso n/(n+SHRINK_K). Con SHRINK_K=75 un bin con 75
+# campioni pesa 50% reale / 50% globale; 150 campioni → 67% reale. Sceglie un
+# valore nel range documentato 50-100 per essere robusto sui bin piccoli senza
+# annullare il segnale per-lega sui bin grandi.
+SHRINK_K = 75
+# Soglia minima alzata da 5 → 20: 5 campioni davano fattori puro rumore.
+MIN_PER_BIN = 20
+
+
+def _enforce_monotonic(market_cal, bin_data):
+    """Rende la mappatura calibrata MONOTONA non-decrescente in prob grezza.
+
+    Per ogni bin presente calcola la prob calibrata rappresentativa
+    (avg_prob_del_bin * correction) e applica un pooling adjacent-violators
+    leggero: se un bin a prob grezza più alta mappa a una prob calibrata più
+    bassa di un bin precedente, alza il suo fattore quel tanto che basta a non
+    decrescere. Mantiene il formato {bin: correction_factor} esistente.
+    """
+    bins_sorted = sorted(market_cal.keys())
+    prev_calibrated = None
+    for bi in bins_sorted:
+        avg_p = bin_data[bi]["avg_p"]
+        if avg_p <= 0:
+            continue
+        calibrated = avg_p * market_cal[bi]
+        if prev_calibrated is not None and calibrated < prev_calibrated:
+            calibrated = prev_calibrated
+            market_cal[bi] = round(calibrated / avg_p, 4)
+        prev_calibrated = calibrated
+    return market_cal
+
+
+def compute_calibration_bins(subset_rows, markets_config, min_per_bin=MIN_PER_BIN,
+                             global_cal=None):
+    """Calcola fattori di correzione bin-level per un sottoinsieme di match.
+
+    Se ``global_cal`` è fornito (mappa cal_key->{bin:correction}), ogni fattore
+    per-lega viene shrinkato verso il fattore globale con peso n/(n+SHRINK_K)
+    (empirical-Bayes). Inoltre la mappatura risultante è resa monotona
+    non-decrescente in probabilità grezza.
+    """
     cal = {}
     for label, mk, sk, check_type in markets_config:
         cal_key = LABEL_TO_CAL_KEY.get(label, label)
@@ -397,20 +472,33 @@ def compute_calibration_bins(subset_rows, markets_config, min_per_bin=5):
             bin_data[bin_idx]["actuals"].append(1 if result else 0)
 
         market_cal = {}
+        avg_p_by_bin = {}
         for bi in range(10):
             bd = bin_data[bi]
-            if len(bd["preds"]) < min_per_bin:
+            n = len(bd["preds"])
+            if n < min_per_bin:
                 continue
-            avg_p = sum(bd["preds"]) / len(bd["preds"])
-            wr = sum(bd["actuals"]) / len(bd["actuals"])
-            market_cal[bi] = round(wr / avg_p, 4) if avg_p > 0 else 1.0
+            avg_p = sum(bd["preds"]) / n
+            wr = sum(bd["actuals"]) / n
+            raw_cf = wr / avg_p if avg_p > 0 else 1.0
+            # Empirical-Bayes shrinkage verso il fattore globale.
+            if global_cal is not None:
+                global_cf = (global_cal.get(cal_key, {}) or {}).get(bi, 1.0)
+                w = n / (n + SHRINK_K)
+                cf = w * raw_cf + (1.0 - w) * global_cf
+            else:
+                cf = raw_cf
+            market_cal[bi] = round(cf, 4)
+            avg_p_by_bin[bi] = avg_p
 
         if market_cal:
-            cal[cal_key] = market_cal
+            # Monotonicità: usa avg_p per bin appena calcolati.
+            _bd = {bi: {"avg_p": avg_p_by_bin[bi]} for bi in market_cal}
+            cal[cal_key] = _enforce_monotonic(market_cal, _bd)
 
     return cal
 
-# --- 5b. Calibrazione per lega (ultimi 150 match per lega) ---
+# --- 5b/5c. Finestre rolling per la calibrazione dinamica diagnostica ---
 LEAGUE_WINDOW = 150
 GLOBAL_WINDOW = 1000
 
@@ -426,24 +514,27 @@ for r in rows:
 for lid in league_rows:
     league_rows[lid].sort(key=lambda x: x["date"])
 
+# --- 5c. Calibrazione globale (ultimi 1000 match) — calcolata PRIMA perché
+#         serve come target di shrinkage per la calibrazione per-lega. ---
+sorted_rows = sorted(rows, key=lambda x: x["date"])
+global_window = sorted_rows[-GLOBAL_WINDOW:]
+global_cal = compute_calibration_bins(global_window, MARKETS_CONFIG)
+out(f"Calibrazione globale: {len(global_cal)} mercati (window={GLOBAL_WINDOW}, match usati={len(global_window)})")
+
+# --- 5b. Calibrazione per lega (empirical-Bayes shrinkage verso il globale) ---
 by_league_cal = {}
 leagues_covered = 0
 for lid, lr in league_rows.items():
     window = lr[-LEAGUE_WINDOW:]  # ultimi 150
     if len(window) < 30:  # serve un minimo per calibrare
         continue
-    cal = compute_calibration_bins(window, MARKETS_CONFIG)
+    cal = compute_calibration_bins(window, MARKETS_CONFIG, global_cal=global_cal)
     if cal:
         by_league_cal[str(lid)] = cal
         leagues_covered += 1
 
-out(f"\nCalibrazione per lega: {leagues_covered} leghe coperte (window={LEAGUE_WINDOW})")
-
-# --- 5c. Calibrazione globale (ultimi 1000 match) ---
-sorted_rows = sorted(rows, key=lambda x: x["date"])
-global_window = sorted_rows[-GLOBAL_WINDOW:]
-global_cal = compute_calibration_bins(global_window, MARKETS_CONFIG)
-out(f"Calibrazione globale: {len(global_cal)} mercati (window={GLOBAL_WINDOW}, match usati={len(global_window)})")
+out(f"\nCalibrazione per lega: {leagues_covered} leghe coperte "
+    f"(window={LEAGUE_WINDOW}, shrink_k={SHRINK_K}, min_per_bin={MIN_PER_BIN})")
 
 # --- 5d. Divergence Stats (per il filtro Z-Score / Hallucination) ---
 # Raccoglie le divergenze (prob_model / prob_market) - 1 per tutti i mercati
@@ -491,7 +582,9 @@ if n_div >= 50:
 
 out(f"\nDivergence Stats: n={n_div}, mean={div_mean:.4f}, std={div_std:.4f}")
 
-# --- 5e. Assembla e scrivi dynamic_cal.json (ATOMICO) ---
+# --- 5e. Assembla e scrivi dynamic_cal_diagnostic.json (ATOMICO) ---
+# IMPORTANTE: questo file è DIAGNOSTICO e NON viene caricato da money_management.py.
+# La fonte di verità di dynamic_cal.json è generate_dynamic_cal.py. Vedi nota in testa.
 dynamic_cal = {
     "by_league": by_league_cal,
     "global": global_cal,
@@ -505,20 +598,22 @@ dynamic_cal = {
     "leagues_covered": leagues_covered,
     "league_window": LEAGUE_WINDOW,
     "global_window": GLOBAL_WINDOW,
+    "_note": "DIAGNOSTIC ONLY — non caricato in produzione. SoT = generate_dynamic_cal.py",
 }
 
 # Scrittura atomica: temp file → os.replace
 base_dir = os.path.dirname(os.path.abspath(__file__))
-target_path = os.path.join(base_dir, "dynamic_cal.json")
+target_path = os.path.join(base_dir, "dynamic_cal_diagnostic.json")
 tmp_path = None
 try:
     fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=base_dir)
     with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
         json.dump(dynamic_cal, tmp_f, indent=2, ensure_ascii=False)
     os.replace(tmp_path, target_path)
-    out(f"\n✅ dynamic_cal.json generato ({leagues_covered} leghe, {len(global_cal)} mercati globali)")
+    out(f"\n✅ dynamic_cal_diagnostic.json generato ({leagues_covered} leghe, "
+        f"{len(global_cal)} mercati globali) — DIAGNOSTICO, non carica in produzione")
 except Exception as e:
-    out(f"\n❌ Errore scrittura dynamic_cal.json: {e}")
+    out(f"\n❌ Errore scrittura dynamic_cal_diagnostic.json: {e}")
     # Cleanup temp file se esiste
     if tmp_path and os.path.exists(tmp_path):
         try:

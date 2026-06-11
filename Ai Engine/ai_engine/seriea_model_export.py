@@ -39,10 +39,10 @@ from ai_engine.preprocessing.temporal_split import (
 from ai_engine.preprocessing.selection import apply_feature_selection
 from ai_engine.ensemble_trainer import (
     build_ensemble,
+    predict_ensemble,
     EnsemblePayload,
     _get_league_tier,
     _run_optuna_tuning,
-    _KerasMetaWrapper,
 )
 
 
@@ -62,22 +62,25 @@ def _ensure_bucket(bucket: str) -> None:
 
 def _build_features(
     df: pd.DataFrame, target: str, drop_cols: list[str]
-) -> tuple[pd.DataFrame, pd.Series, list[str], dict]:
-    """Extract numeric features, target, columns list, and medians."""
+) -> tuple[pd.DataFrame, pd.Series, list[str]]:
+    """Extract the numeric feature matrix and target — WITHOUT imputation.
+
+    Split-contamination fix: NaN-median imputation and the >50%-NaN column drop
+    are intentionally NOT done here. Performing them on the full league dataset
+    (before the chronological split) leaks val/holdout — i.e. *future* — column
+    statistics into the training features. The caller now computes the high-NaN
+    column list and the imputation medians on the TRAIN split ONLY, and applies
+    them to val / holdout / live-prediction data.
+
+    Row-level pruning (>80% NaN) is a per-row data-quality filter (no
+    cross-sample statistic involved), so it legitimately stays here.
+    """
     df = df.dropna(subset=[target]).copy()
     y = df[target]
     X = df.drop(columns=drop_cols + [target], errors="ignore")
     X = X.select_dtypes(include=["number", "bool"]).copy()
 
-    # Drop columns that are >50% NaN — after median imputation these become
-    # noise (majority of rows get the same constant value, no signal).
-    nan_pct = X.isna().mean()
-    high_nan_cols = nan_pct[nan_pct > 0.50].index.tolist()
-    if high_nan_cols:
-        print(f"    Dropping {len(high_nan_cols)} columns with >50% NaN")
-        X = X.drop(columns=high_nan_cols)
-
-    # Drop rows that are >80% NaN (insufficient data for meaningful prediction)
+    # Drop rows that are >80% NaN (insufficient data for meaningful prediction).
     row_nan_pct = X.isna().mean(axis=1)
     bad_rows = row_nan_pct > 0.80
     if bad_rows.any():
@@ -85,11 +88,7 @@ def _build_features(
         X = X.loc[~bad_rows]
         y = y.loc[X.index]
 
-    # fillna(0) on medians guards against all-NaN columns whose median is NaN,
-    # which would leave NaN unfilled and crash GradientBoosting downstream.
-    medians = X.median(numeric_only=True).fillna(0).to_dict()
-    X = X.fillna(medians).fillna(0)
-    return X, y, list(X.columns), medians
+    return X, y, list(X.columns)
 
 
 def _compute_time_weights(fixture_dates: pd.Series, half_life_days: int = 365) -> np.ndarray:
@@ -173,7 +172,7 @@ def _train_one_target(
             over-subscription when multiple targets run in parallel.
     """
     print(f"  [league {league_id}] Training target: {target}")
-    X_df, y, _, medians = _build_features(train_df, target, drop_cols)
+    X_df, y, _ = _build_features(train_df, target, drop_cols)
     if len(np.unique(y)) < 2:
         print(f"    Skipped {target}: only 1 class")
         return None
@@ -189,9 +188,13 @@ def _train_one_target(
     train_split, val_split, holdout_split = temporal_train_val_holdout_split(
         combined, val_ratio=0.15, holdout_ratio=0.10, purge_days=30, date_col="fixture_date"
     )
-    # P8 fix: prefer holdout set for metrics (never seen during model fitting).
-    # Fall back to val when holdout is too small for a reliable Brier estimate.
-    metrics_split = holdout_split if len(holdout_split) >= 15 else val_split
+    # M4 fix: metrics are ALWAYS computed on the holdout set, which is never seen
+    # during fitting. The previous fallback to val_split (when holdout < 15 rows)
+    # produced optimistic in-sample Brier/ECE, because val is used inside
+    # build_ensemble to fit base_weights and the LightGBM early-stopping. When the
+    # holdout is too small for a reliable estimate the metrics are set to None
+    # (see guard below) rather than substituting a biased val-based number.
+    metrics_split = holdout_split
 
     if train_split.empty or val_split.empty:
         print(f"    Skipped {target}: insufficient data after temporal split")
@@ -208,6 +211,26 @@ def _train_one_target(
     if len(np.unique(y_train)) < 2 or len(np.unique(y_val)) < 2:
         print(f"    Skipped {target}: insufficient class diversity after split")
         return None
+
+    # ── Train-only NaN handling (split-contamination fix) ────────────────────
+    # Decide the >50%-NaN column drop and the imputation medians using the TRAIN
+    # split only, then apply identically to val / holdout / live data. This
+    # prevents future (val+holdout) statistics from leaking into the features and
+    # makes the saved feature_medians reproducible at prediction time.
+    nan_pct_train = X_train_raw.isna().mean()
+    high_nan_cols = nan_pct_train[nan_pct_train > 0.50].index.tolist()
+    if high_nan_cols:
+        print(f"    Dropping {len(high_nan_cols)} columns with >50% NaN (train-based)")
+        X_train_raw = X_train_raw.drop(columns=high_nan_cols)
+        X_val_raw = X_val_raw.drop(columns=high_nan_cols, errors="ignore")
+        X_metrics_raw = X_metrics_raw.drop(columns=high_nan_cols, errors="ignore")
+
+    # fillna(0) on medians guards against all-NaN columns whose median is NaN,
+    # which would otherwise leave NaN unfilled and crash GradientBoosting.
+    medians = X_train_raw.median(numeric_only=True).fillna(0).to_dict()
+    X_train_raw = X_train_raw.fillna(medians).fillna(0)
+    X_val_raw = X_val_raw.fillna(medians).fillna(0)
+    X_metrics_raw = X_metrics_raw.fillna(medians).fillna(0)
 
     try:
         X_train_sel, X_val_sel, selected_cols = apply_feature_selection(
@@ -270,6 +293,7 @@ def _train_one_target(
                     _opt_splits,
                     tier=_tier,
                     n_trials=_n_trials,
+                    n_jobs=n_jobs,
                 )
                 try:
                     _cache_dir = os.path.dirname(_optuna_cache_path)
@@ -304,17 +328,21 @@ def _train_one_target(
         print(f"    Ensemble training failed for {target}: {e}")
         return None
 
-    # Calibration metrics — evaluated on pre-isotonic ensemble probabilities of the
-    # metrics set (holdout when large enough, val otherwise).
-    # P2 fix: ensemble_proba (before isotonic) removes the PAVA in-sample optimism.
-    #         Previously, the isotonic calibrators were fitted and evaluated on the
-    #         same val set, making the Brier score artificially low (by design:
-    #         PAVA minimises squared error on the fitting data).
-    # P5 fix: isotonic_calibrators from build_ensemble() are authoritative — the
-    #         second fit here was redundant and overwrote them with an identical
-    #         result.  Removed entirely to keep a single source of truth.
-    # P8 fix: metrics_split is holdout_split when len(holdout_split) >= 15, giving
-    #         a truly out-of-sample Brier/ECE that was never seen during fitting.
+    # Calibration metrics — evaluated on the holdout set (never seen during
+    # fitting) using the SAME calibrated probabilities that are served at
+    # prediction time.
+    # M1 fix: Brier/ECE were previously computed on the raw pre-calibration
+    #         ensemble output, so the reported numbers described a different
+    #         distribution than the one actually published on the sheet. We now
+    #         route every holdout row through predict_ensemble — the exact
+    #         serving path (base models → meta-learner → temperature-scaling /
+    #         isotonic calibration) — so the metric reflects the probabilities
+    #         the user really bets on. This also removes the duplicated stacking
+    #         logic (and its positional class-mapping fallback) that could drift
+    #         from the serving code.
+    # Note: during fresh training TensorFlow is available, so a Keras meta-learner
+    #       is valid here; the deserialize-without-TF degenerate case cannot occur
+    #       in this in-process path.
     calibration_metrics = {}
     try:
         # Minimum sample guard: fewer than 10 metrics samples produce unreliable
@@ -325,68 +353,25 @@ def _train_one_target(
                 f"metrics set too small ({len(metrics_split)} rows); "
                 "brier/ece not computed"
             )
-        X_metrics_np = X_metrics_sel.to_numpy().astype(float)
-        X_metrics_scaled = payload.scaler.transform(X_metrics_np) if payload.scaler else X_metrics_np
         classes = np.array(payload.class_labels)
-        base_probas_list = []
-        for name, model in payload.base_models:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                proba = model.predict_proba(X_metrics_scaled)
-            model_classes = [str(c) for c in model.classes_]
-            aligned = np.zeros((X_metrics_scaled.shape[0], len(classes)))
-            for ci, c in enumerate(classes):
-                if c in model_classes:
-                    idx_c = model_classes.index(c)
-                    aligned[:, ci] = proba[:, idx_c]
-            base_probas_list.append(aligned)
-        # Guard: _KerasMetaWrapper deserialized with TF unavailable has
-        # _model=None — using it as meta-learner would produce uniform
-        # distributions and corrupt Brier/ECE metrics silently.
-        _meta_for_metrics = payload.meta_model
-        if isinstance(_meta_for_metrics, _KerasMetaWrapper) and _meta_for_metrics._model is None:
-            print(f"    WARNING [{target}]: _KerasMetaWrapper._model is None "
-                  "(TF unavailable) — using weighted average for calibration metrics.")
-            _meta_for_metrics = None
-
-        if _meta_for_metrics is not None:
-            meta_input = np.hstack(base_probas_list)
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                ensemble_proba = _meta_for_metrics.predict_proba(meta_input)
-        else:
-            total_w = sum(payload.base_weights.values()) or 1.0
-            ensemble_proba = np.zeros_like(base_probas_list[0])
-            for (name, _), bp in zip(payload.base_models, base_probas_list):
-                w = payload.base_weights.get(name, 1.0) / total_w
-                ensemble_proba += w * bp
-
         y_metrics_str = np.array([str(v) for v in y_metrics.to_numpy()])
+        cal_rows = []
+        for _i in range(len(X_metrics_sel)):
+            _row = X_metrics_sel.iloc[[_i]]
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                _probs = predict_ensemble(payload, _row)
+            cal_rows.append([float(_probs.get(str(c), 0.0)) for c in classes])
+        cal_proba = np.asarray(cal_rows, dtype=float)
+        # Defensive: an empty/degenerate holdout would yield a 1-D array that the
+        # Brier/ECE helpers cannot consume. The len<10 guard above already covers
+        # this, but assert the 2-D contract explicitly so a future threshold change
+        # cannot silently produce a malformed metric.
+        if cal_proba.ndim != 2 or cal_proba.shape[0] == 0:
+            raise ValueError("no calibrated holdout rows available for brier/ece")
 
-        n_classes_expected = len(classes)
-        if ensemble_proba.shape[1] != n_classes_expected:
-            if _meta_for_metrics is not None and hasattr(_meta_for_metrics, "classes_"):
-                meta_cls = [str(c) for c in _meta_for_metrics.classes_]
-            else:
-                # Positional fallback: assumes meta-model output order matches
-                # `classes[:k]`.  This may be wrong if the meta-model was trained
-                # with a different class ordering.  Metrics should be treated with
-                # caution when this warning fires.
-                meta_cls = [str(c) for c in classes[:ensemble_proba.shape[1]]]
-                print(
-                    f"    WARNING [{target}]: meta_model has no classes_ attribute — "
-                    f"falling back to positional class mapping; calibration metrics "
-                    f"may be unreliable if class ordering differs."
-                )
-            aligned_proba = np.zeros((ensemble_proba.shape[0], n_classes_expected))
-            for ci, c in enumerate(classes):
-                c_str = str(c)
-                if c_str in meta_cls:
-                    aligned_proba[:, ci] = ensemble_proba[:, meta_cls.index(c_str)]
-            ensemble_proba = aligned_proba
-
-        brier = _brier_score(y_metrics_str, ensemble_proba, classes)
-        ece = _ece_score(y_metrics_str, ensemble_proba, classes)
+        brier = _brier_score(y_metrics_str, cal_proba, classes)
+        ece = _ece_score(y_metrics_str, cal_proba, classes)
         calibration_metrics = {"brier": round(brier, 4), "ece": round(ece, 4)}
     except Exception as e:
         print(f"    Calibration metrics failed for {target}: {e}")
@@ -475,6 +460,33 @@ def train_and_save_all(
     if train_df.empty:
         raise RuntimeError(f"No training data for league {league_id}.")
 
+    # C2 fix (label integrity): drop matches without a final result. Future /
+    # postponed / not-yet-played fixtures of the in-progress season carry NULL
+    # goals and were entering the training set with spurious labels — pandas
+    # coerces `NaN > line` to False, so btts/over/clean_sheet/team-over all became
+    # constant False, inflating the negative class and biasing P(True) downward.
+    # `dropna(subset=[target])` does NOT remove these (False is non-null). Only
+    # matches with both scores recorded carry a real outcome. The history needed
+    # to build pre-match features was already fully consumed by
+    # build_training_dataset above, so removing these rows is loss-free for
+    # feature construction.
+    if {"goals_home", "goals_away"}.issubset(train_df.columns):
+        _played_mask = (
+            pd.to_numeric(train_df["goals_home"], errors="coerce").notna()
+            & pd.to_numeric(train_df["goals_away"], errors="coerce").notna()
+        )
+        _n_unplayed = int((~_played_mask).sum())
+        if _n_unplayed:
+            print(
+                f"  [league {league_id}] Dropping {_n_unplayed} unplayed/NULL-result "
+                f"fixtures from the training set"
+            )
+        train_df = train_df[_played_mask].copy()
+        if train_df.empty:
+            raise RuntimeError(
+                f"No played matches for league {league_id} after dropping unplayed fixtures."
+            )
+
     # Stale data guard: warn if the most recent fixture is older than 30 days.
     # This can happen when the ETL pipeline has not run recently or when the
     # season is in a winter break.  The model will still train, but predictions
@@ -496,6 +508,21 @@ def train_and_save_all(
             pass
 
     all_target_cols = [c for c in train_df.columns if c.startswith("target_")]
+
+    # Count / continuous targets must NOT be trained as multiclass classification.
+    # One class per integer value (0..8 goals, 0..N corners/cards, every exact
+    # scoreline) spawns dozens of ultra-rare classes that the min-class guard does
+    # not catch, breaking per-class calibration (temperature scaling / isotonic)
+    # and producing meaningless per-class probabilities. The bettable goal markets
+    # are already covered by the binary over/under targets; proper count markets
+    # (corners/cards over-under) would need their own binary lines or a
+    # regression / Poisson head (documented as future work).
+    COUNT_TARGETS = {
+        "target_total_goals", "target_exact_score", "target_corners_total",
+        "target_sot_total", "target_cards_total", "target_home_cards",
+        "target_away_cards",
+    }
+    all_target_cols = [c for c in all_target_cols if c not in COUNT_TARGETS]
 
     # Prioritise targets that have Betfair markets (can actually generate bets).
     # Other targets are still trained but placed last so critical ones finish first.
@@ -528,6 +555,16 @@ def train_and_save_all(
     drop_cols += [c for c in train_df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
     drop_cols += [c for c in train_df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
     drop_cols += [c for c in train_df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
+    # C1 fix (CRITICAL leakage): the `standings` table is an END-OF-SEASON snapshot
+    # merged onto every fixture by team_id WITHOUT any date filter (see
+    # feature_pipeline.build_feature_dataframe_for_fixtures). A fixture played in
+    # October therefore received the final-table rank/points/goal-diff, which
+    # already incorporate the result of the match being predicted and of every
+    # later match — a direct post-match leak that inflates accuracy/log-loss/Brier
+    # and corrupts the calibrated probabilities. Recent table strength is already
+    # captured leakage-free by the rolling window stats (stat_w*). A leakage-free
+    # point-in-time league table is left as a documented future enhancement.
+    drop_cols += [c for c in train_df.columns if c.startswith("home_standings_") or c.startswith("away_standings_")]
 
     out_dir = os.path.join(ROOT, "Ai Engine", "models_cache", f"league_{league_id}")
     os.makedirs(out_dir, exist_ok=True)

@@ -11,7 +11,7 @@ Output:  dynamic_cal.json  (nella root del progetto)
 
 Uso:
   python generate_dynamic_cal.py
-  python generate_dynamic_cal.py --min-n 15     # bin per-lega con N < 15 esclusi
+  python generate_dynamic_cal.py --min-n 30     # bin per-lega con N < 30 esclusi
   python generate_dynamic_cal.py --min-global 30 # bin globali con N < 30 esclusi
 """
 from __future__ import annotations
@@ -27,15 +27,27 @@ from typing import Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # MAPPA MERCATI POISSON (identica a update_poisson_calibration.py)
 # ---------------------------------------------------------------------------
+# cal_key allineato a Betfair/money_management.py MARKET_MAP (campo 'cal_key'):
+#   H, D, A, O15, U15, O25, U25, O35, U35, BTTS, BTTS_NO, HT05, HT_H, HT_D, HT_A.
+# Produttore (questo script) e consumatore (_apply_calibration) DEVONO usare le
+# stesse stringhe cal_key, altrimenti i mercati estesi ricadono sempre sulla
+# tabella statica.
 MARKET_CONFIG = {
     "H":       ("1x2",                  "H",     "Victoria casa"),
     "D":       ("1x2",                  "D",     "Pareggio"),
     "A":       ("1x2",                  "A",     "Victoria trasferta"),
+    "O15":     ("over_1_5",             "True",  "Over 1.5"),
+    "U15":     ("over_1_5",             "False", "Under 1.5"),
     "O25":     ("over_2_5",             "True",  "Over 2.5"),
     "U25":     ("over_2_5",             "False", "Under 2.5"),
+    "O35":     ("over_3_5",             "True",  "Over 3.5"),
+    "U35":     ("over_3_5",             "False", "Under 3.5"),
     "BTTS":    ("btts",                 "True",  "BTTS Si"),
     "BTTS_NO": ("btts",                 "False", "BTTS No"),
     "HT05":    ("first_half_over_0_5",  "True",  "1T Over 0.5"),
+    "HT_H":    ("ht_1x2",               "H",     "HT Casa"),
+    "HT_D":    ("ht_1x2",               "D",     "HT Pareggio"),
+    "HT_A":    ("ht_1x2",               "A",     "HT Trasferta"),
 }
 
 DEFAULT_DIVERGENCE_STD = 0.3287  # fallback se n_campioni < 30; allineato a money_management.py
@@ -49,14 +61,30 @@ def check_result(cal_key: str, h: int, a: int,
     if cal_key == "H":       return h > a
     if cal_key == "D":       return h == a
     if cal_key == "A":       return h < a
+    if cal_key == "O15":     return h + a > 1
+    if cal_key == "U15":     return h + a <= 1
     if cal_key == "O25":     return h + a > 2
     if cal_key == "U25":     return h + a <= 2
+    if cal_key == "O35":     return h + a > 3
+    if cal_key == "U35":     return h + a <= 3
     if cal_key == "BTTS":    return h > 0 and a > 0
     if cal_key == "BTTS_NO": return not (h > 0 and a > 0)
     if cal_key == "HT05":
         if hh is None or ha is None:
             return None
         return hh + ha > 0
+    if cal_key == "HT_H":
+        if hh is None or ha is None:
+            return None
+        return hh > ha
+    if cal_key == "HT_D":
+        if hh is None or ha is None:
+            return None
+        return hh == ha
+    if cal_key == "HT_A":
+        if hh is None or ha is None:
+            return None
+        return hh < ha
     return None
 
 
@@ -267,30 +295,96 @@ def accumulate_stats(
 # ---------------------------------------------------------------------------
 # COSTRUISCI TABELLA DI CORREZIONE
 # ---------------------------------------------------------------------------
+# Empirical-Bayes shrinkage strength per i fattori PER-LEGA.
+# Ogni fattore di bin per-lega è tirato verso il corrispondente fattore globale
+# con peso w = n / (n + SHRINK_K). Esempio con SHRINK_K=75:
+#   n=15  → w=0.17 (83% globale): bin piccoli quasi annullati verso il globale
+#   n=75  → w=0.50 (50/50)
+#   n=300 → w=0.80 (segnale per-lega quasi pieno)
+# Questo evita che bin per-lega con pochi campioni vengano applicati a piena forza
+# (prima erano solo cappati [0.2,3.0]). I fattori GLOBALI NON sono shrinkati
+# (sono già la prior/baseline). Valore 75 scelto nel range documentato 50-100.
+SHRINK_K = 75
+
+
+def _enforce_monotonic(
+    market_cal: Dict[int, float],
+    avg_prob_by_bin: Dict[int, float],
+) -> Dict[int, float]:
+    """Rende la mappatura calibrata MONOTONA non-decrescente in prob grezza.
+
+    Per ogni bin presente la prob calibrata rappresentativa è
+    ``avg_prob_del_bin * correction``. Scorrendo i bin in ordine crescente di
+    probabilità grezza, se un bin mappa a una prob calibrata inferiore al bin
+    precedente, alza il suo fattore quel tanto che basta a non decrescere
+    (pooling adjacent-violators leggero). Mantiene il formato
+    ``{bin: correction_factor}`` consumato da money_management._apply_calibration.
+    """
+    prev_calibrated: Optional[float] = None
+    for bin_idx in sorted(market_cal.keys()):
+        avg_prob = avg_prob_by_bin.get(bin_idx, 0.0)
+        if avg_prob <= 0:
+            continue
+        calibrated = avg_prob * market_cal[bin_idx]
+        if prev_calibrated is not None and calibrated < prev_calibrated:
+            calibrated = prev_calibrated
+            market_cal[bin_idx] = round(calibrated / avg_prob, 3)
+        prev_calibrated = calibrated
+    return market_cal
+
+
 def build_correction(
     stats: Dict[str, Dict[int, dict]],
     min_n: int,
+    global_table: Optional[Dict[str, Dict[int, float]]] = None,
 ) -> Dict[str, Dict[int, float]]:
-    """Costruisce {cal_key: {bin_idx: correction_factor}} dalla stats dict."""
+    """Costruisce {cal_key: {bin_idx: correction_factor}} dalla stats dict.
+
+    Se ``global_table`` è fornito, ogni fattore per-lega viene shrinkato verso il
+    fattore globale corrispondente con peso n/(n+SHRINK_K) (empirical-Bayes), poi
+    la mappatura risultante è resa monotona non-decrescente in prob grezza.
+    Quando ``global_table`` è None (calcolo del layer globale) non si applica né
+    shrinkage né monotonicità incrociata, ma si applica comunque la monotonicità
+    interna al layer globale per coerenza.
+    """
+    # Contratto chain di lookup (money_management._apply_calibration):
+    #   league -> global -> static.
+    # Un bin con N < min_n viene OMESSO (non emesso a 1.0) in ENTRAMBI i layer:
+    # così il consumatore ricade sul layer successivo della chain. Per il layer
+    # PER-LEGA l'omissione fa ricadere sul layer GLOBALE; per il layer GLOBALE
+    # l'omissione fa ricadere sulla tabella statica CALIBRATION_TABLE (che per i
+    # mercati nuovi — es. O35/HT_* — contiene fattori reali). Emettere 1.0 nel
+    # layer globale cortocircuitava quel fallback con una correzione neutra,
+    # bloccando la tabella statica: per questo NON si emette più 1.0.
     table: Dict[str, Dict[int, float]] = {}
     for cal_key, bins in stats.items():
-        table[cal_key] = {}
+        market_cal: Dict[int, float] = {}
+        avg_prob_by_bin: Dict[int, float] = {}
         for bin_idx, s in bins.items():
             n = s["n"]
             if n < min_n:
-                table[cal_key][bin_idx] = 1.0
+                continue
+            avg_prob = s["sum_prob"] / n
+            hit_rate = s["hits"] / n
+            if avg_prob > 0:
+                cf = hit_rate / avg_prob
+                # Cap conservativo [0.2, 3.0]: valori estremi indicano quasi
+                # sempre overfitting su bin rari.
+                cf = max(0.2, min(cf, 3.0))
+                # Empirical-Bayes shrinkage verso il fattore globale (solo per-lega).
+                if global_table is not None:
+                    global_cf = (global_table.get(cal_key, {}) or {}).get(bin_idx, 1.0)
+                    w = n / (n + SHRINK_K)
+                    cf = w * cf + (1.0 - w) * global_cf
+                cf = round(cf, 3)
             else:
-                avg_prob = s["sum_prob"] / n
-                hit_rate = s["hits"] / n
-                if avg_prob > 0:
-                    cf = round(hit_rate / avg_prob, 3)
-                    # Cap conservativo [0.2, 3.0]: valori estremi indicano quasi
-                    # sempre overfitting su bin rari (es. prob 0-10% ha pochissimi
-                    # campioni anche con N >= min_n). Max 10.0 era troppo permissivo.
-                    cf = max(0.2, min(cf, 3.0))
-                else:
-                    cf = 1.0
-                table[cal_key][bin_idx] = cf
+                cf = 1.0
+            market_cal[bin_idx] = cf
+            avg_prob_by_bin[bin_idx] = avg_prob
+
+        # Monotonicità sui soli bin con dato reale (i bin a basso N sono omessi,
+        # quindi tutti i bin presenti hanno avg_prob registrato).
+        table[cal_key] = _enforce_monotonic(market_cal, avg_prob_by_bin)
     return table
 
 
@@ -301,8 +395,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Genera dynamic_cal.json per calibrazione Poisson per-lega"
     )
-    parser.add_argument("--min-n", type=int, default=15,
-                        help="Min campioni per bin PER LEGA (default: 15)")
+    parser.add_argument("--min-n", type=int, default=30,
+                        help="Min campioni per bin PER LEGA (default: 30; "
+                             "alzato da 15 per ridurre overfitting su bin rari, "
+                             "ulteriormente smussato da shrinkage empirical-Bayes)")
     parser.add_argument("--min-global", type=int, default=30,
                         help="Min campioni per bin GLOBALE (default: 30)")
     args = parser.parse_args()
@@ -323,12 +419,12 @@ def main() -> None:
     )
     print(f"  Bin globali con N >= {args.min_global}: {n_global_bins}")
 
-    # 4. Tabelle per-lega
-    print(f"\nCalibrazione per-lega (layer 1, min_n={args.min_n})...")
+    # 4. Tabelle per-lega (shrinkage empirical-Bayes verso il layer globale)
+    print(f"\nCalibrazione per-lega (layer 1, min_n={args.min_n}, shrink_k={SHRINK_K})...")
     by_league_cal: Dict[str, Dict[str, Dict[int, float]]] = {}
     leagues_with_data = 0
     for league_id, lg_stats in league_stats.items():
-        lg_table = build_correction(lg_stats, min_n=args.min_n)
+        lg_table = build_correction(lg_stats, min_n=args.min_n, global_table=global_table)
         # Controlla se almeno un bin ha correzione reale (N >= min_n)
         has_real_data = any(
             s["n"] >= args.min_n

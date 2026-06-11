@@ -48,14 +48,32 @@ def _get_ml_prob(db_json_analisi: dict, ml_market: str, ml_key: str) -> float | 
         return None
 
 
+def _find_betfair_bm(bookmakers: list):
+    """Find Betfair sportsbook. Name match → index 2 (bookmaker #3) → index 0.
+
+    Deve restare allineato a calibration._find_betfair_bm e
+    edge_scorer._find_betfair_bm: il segnale va validato sullo STESSO book su cui
+    viene poi calibrato/scorato, non su bookmakers[0] (book arbitrario).
+    """
+    for bm in bookmakers:
+        if "betfair" in str(bm.get("name", "")).lower():
+            return bm
+    if len(bookmakers) > 2:
+        return bookmakers[2]
+    return bookmakers[0] if bookmakers else None
+
+
 def _parse_bookie_odd(raw_json_odds: dict, market_cfg: dict) -> float | None:
-    """Estrae la quota decimale per un mercato specifico."""
+    """Estrae la quota decimale Betfair sportsbook per un mercato specifico."""
     if not isinstance(raw_json_odds, dict):
         return None
     bookmakers = raw_json_odds.get("bookmakers", [])
     if not bookmakers:
         return None
-    for bet in bookmakers[0].get("bets", []):
+    bm = _find_betfair_bm(bookmakers)
+    if bm is None:
+        return None
+    for bet in bm.get("bets", []):
         if bet.get("name") == market_cfg["bet_name"]:
             for v in bet.get("values", []):
                 if v.get("value") == market_cfg["value"]:

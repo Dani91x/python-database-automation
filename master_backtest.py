@@ -15,8 +15,8 @@ Metriche calcolate per ogni market:
   - ROI netto (dopo commissione Betfair 5%)
   - P&L su bankroll simulato
   - Max drawdown
-  - Sharpe ratio
-  - Calibrazione: prob media predetta vs hit rate reale
+  - Edge/Vol ratio (per-bet mean/std — NON uno Sharpe annualizzato)
+  - Calibrazione: Brier score, log-loss, reliability buckets, bias (pred vs reale)
 
 Uso:
   python master_backtest.py
@@ -48,6 +48,16 @@ MAX_STAKE_PCT: float = 0.02        # max stake = 2% bankroll
 MIN_EDGE: float = 0.05             # min EV post-commissione (5%)
 BETFAIR_COMMISSION: float = 0.05   # 5% su profitto netto
 MIN_PROB_GLOBAL: float = 0.40      # prob minima globale per qualsiasi scommessa
+
+# ── Safety-filter constants — ALLINEATE a money_management.py (Edge Engine v3.0) ──
+# Replichiamo i filtri live così che il backtest non gonfi count/volume/PnL:
+#   - Hallucination Filter (Z-Score): blocca prob troppo ottimiste vs mercato.
+#   - League Trust Score: scala lo stake per affidabilità storica della lega.
+OVERROUND_CORRECTION: float = 0.975          # money_management.py:109
+DEFAULT_DIVERGENCE_STD: float = 0.3287       # money_management.py:113 (fallback)
+POISSON_Z_THRESHOLD: float = 2.0             # money_management.py:837 (track poisson)
+USE_DYNAMIC_CAL: bool = True                 # mirror EDGE_ENGINE_FLAGS in money_management.py for the period being backtested
+USE_HALLUCINATION_FILTER: bool = True        # mirror EDGE_ENGINE_FLAGS in money_management.py for the period being backtested
 
 # Soglie minime per Poisson (per mercato) — ALLINEATE a money_management.py MARKET_MAP
 POISSON_MIN_PROB: Dict[str, float] = {
@@ -154,16 +164,137 @@ POISSON_CAL_KEY: Dict[str, str] = {
 }
 
 
-def apply_poisson_calibration(prob: float, market_key: str) -> float:
-    """Applica la stessa calibrazione del sistema live (money_management.py).
-    Ritorna la prob corretta. Se non c'è tabella per il mercato, ritorna prob invariata."""
+# ── Dynamic calibration (dynamic_cal.json) + Trust scores (league_trust_scores.json) ──
+# Caricati una volta all'avvio per replicare ESATTAMENTE la chain del live system
+# (money_management.SlotManager._apply_calibration / _apply_safety_filters).
+_DYNAMIC_CAL: Optional[Dict[str, Any]] = None
+_TRUST_SCORES: Optional[Dict[str, float]] = None
+_DIVERGENCE_STD: float = DEFAULT_DIVERGENCE_STD
+
+
+def load_dynamic_data() -> None:
+    """Carica dynamic_cal.json e league_trust_scores.json dalla repo root.
+    Replica money_management.SlotManager._load_dynamic_data: stessa validazione di
+    struttura (chiavi richieste) e stesso fallback su tabella statica/σ di default."""
+    global _DYNAMIC_CAL, _TRUST_SCORES, _DIVERGENCE_STD
+    base = os.path.dirname(os.path.abspath(__file__))
+
+    # --- Dynamic Calibration ---
+    cal_path = os.path.join(base, "dynamic_cal.json")
+    _DYNAMIC_CAL = None
+    if os.path.exists(cal_path):
+        try:
+            with open(cal_path, "r", encoding="utf-8") as f:
+                _cal_raw = json.load(f)
+            required_keys = {"leagues_covered", "divergence_stats"}
+            if required_keys - set(_cal_raw.keys()):
+                print("  ⚠️ dynamic_cal.json struttura incompleta — uso tabella statica")
+            else:
+                _DYNAMIC_CAL = _cal_raw
+                ds = _cal_raw.get("divergence_stats", {})
+                _DIVERGENCE_STD = ds.get("std", DEFAULT_DIVERGENCE_STD)
+                print(f"  📊 dynamic_cal.json caricato "
+                      f"({_cal_raw.get('leagues_covered', 0)} leghe, σ={_DIVERGENCE_STD:.4f})")
+        except Exception as e:  # noqa: BLE001 — mirror live fallback behaviour
+            print(f"  ⚠️ dynamic_cal.json non leggibile ({e}) — uso tabella statica")
+            _DYNAMIC_CAL = None
+    else:
+        print("  📊 dynamic_cal.json non trovato — uso tabella statica")
+
+    # --- League Trust Scores ---
+    trust_path = os.path.join(base, "league_trust_scores.json")
+    _TRUST_SCORES = None
+    if os.path.exists(trust_path):
+        try:
+            with open(trust_path, "r", encoding="utf-8") as f:
+                _TRUST_SCORES = json.load(f).get("scores", {})
+            print(f"  📊 league_trust_scores.json caricato ({len(_TRUST_SCORES)} leghe)")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠️ league_trust_scores.json non leggibile ({e})")
+            _TRUST_SCORES = None
+
+
+def apply_poisson_calibration(
+    prob: float, market_key: str, league_id: Optional[int] = None
+) -> Tuple[float, str]:
+    """Replica ESATTA di money_management.SlotManager._apply_calibration.
+
+    Chain di lookup:
+      1. dynamic_cal → by_league[league_id][cal_key][bin]
+      2. dynamic_cal → global[cal_key][bin]
+      3. POISSON_CALIBRATION_TABLE[cal_key][bin]  (statico, fallback)
+
+    Ritorna (prob_corretta, source). Le chiavi bin nel JSON dinamico possono essere
+    int o str → tentiamo entrambe come nel live system.
+    """
     cal_key = POISSON_CAL_KEY.get(market_key)
     if cal_key is None:
-        return prob
-    table = POISSON_CALIBRATION_TABLE.get(cal_key, {})
+        return prob, "none"
+
     bin_idx = min(int(prob * 10), 9)
-    correction = table.get(bin_idx, 1.0)
-    return max(0.01, min(prob * correction, 0.99))
+    correction: Optional[float] = None
+    source = "none"
+
+    # --- Livello 1: dinamico per lega ---
+    if USE_DYNAMIC_CAL and _DYNAMIC_CAL is not None and league_id is not None:
+        league_cal = _DYNAMIC_CAL.get("by_league", {}).get(str(league_id), {})
+        market_bins = league_cal.get(cal_key, {})
+        corr = market_bins.get(bin_idx, market_bins.get(str(bin_idx)))
+        if corr is not None:
+            correction = corr
+            source = "league"
+
+    # --- Livello 2: dinamico globale ---
+    if correction is None and USE_DYNAMIC_CAL and _DYNAMIC_CAL is not None:
+        market_bins = _DYNAMIC_CAL.get("global", {}).get(cal_key, {})
+        corr = market_bins.get(bin_idx, market_bins.get(str(bin_idx)))
+        if corr is not None:
+            correction = corr
+            source = "global"
+
+    # --- Livello 3: statico (fallback) ---
+    if correction is None:
+        table = POISSON_CALIBRATION_TABLE.get(cal_key)
+        if table is not None:
+            correction = table.get(bin_idx, 1.0)
+            source = "static"
+
+    if correction is None:
+        return prob, source
+    return max(0.01, min(prob * correction, 0.99)), source
+
+
+def apply_poisson_safety_filters(
+    stake: float, prob: float, odds: float, league_id: Optional[int] = None
+) -> Tuple[float, bool]:
+    """Replica money_management.SlotManager._apply_safety_filters per il track Poisson.
+
+    - SIGMA (Hallucination Filter): blocca (stake=0) se z_score > POISSON_Z_THRESHOLD
+      con z_score = divergence / σ, divergence = prob / prob_market - 1.
+    - OMEGA (Trust Score): scala lo stake per il trust della lega.
+
+    NB: il BSS Kelly Shrink NON si applica al track Poisson nel live system
+    (process_signals chiama calculate_kelly_stake senza brier_score) → qui replicato
+    di conseguenza. Ritorna (stake_finale, is_hallucination)."""
+    if stake <= 0:
+        return 0.0, False
+
+    # --- SIGMA: Z-Score Hallucination Filter ---
+    if USE_HALLUCINATION_FILTER and odds > 1.01:
+        prob_market = (1.0 / odds) * OVERROUND_CORRECTION
+        if prob_market > 0.01:
+            divergence = (prob / prob_market) - 1.0
+            z_score = divergence / _DIVERGENCE_STD
+            if z_score > POISSON_Z_THRESHOLD:
+                return 0.0, True
+
+    # --- OMEGA: League Trust Score ---
+    if _TRUST_SCORES is not None and league_id is not None:
+        trust = _TRUST_SCORES.get(str(league_id), 1.0)
+        if trust != 1.0:
+            stake = stake * trust
+
+    return max(round(stake, 2), 1.0), False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -264,7 +395,18 @@ def parse_raw_json_odds(raw: Any) -> Dict[str, float]:
 def check_result(
     h: int, a: int, hh: Optional[int], ha: Optional[int], key: str
 ) -> Optional[bool]:
-    """Controlla se l'esito corrisponde a key. None = dati insufficienti."""
+    """Controlla se l'esito corrisponde a key. None = dati insufficienti.
+
+    NOTA AET/PEN (faithfulness): h/a derivano da result_home_goals/result_away_goals,
+    che in API-Football provengono dal campo `goals` = punteggio FINALE incluso
+    l'eventuale tempo supplementare (NON il 90'; il 90' è in score.fulltime).
+    Per le partite AET/PEN questi goal possono essere gonfiati dai supplementari
+    rispetto a un modello Poisson tarato sui 90 minuti.
+    DECISIONE: il backtest mantiene la settlement su `goals` perché è ESATTAMENTE
+    ciò che fa il live system (money_management.resolve_results accetta FT/AET/PEN e
+    valuta su goals_home/goals_away). Escludere AET/PEN o usare il campo 90' sarebbe
+    una modifica di settlement del live → registrata come deferred (strategy-change).
+    L'impatto è comunque marginale (AET/PEN ~1% delle fixture, quasi solo coppe)."""
     try:
         if key == "1x2_H":     return h > a
         if key == "1x2_D":     return h == a
@@ -476,9 +618,10 @@ def run_poisson_backtest(
             except (ValueError, TypeError):
                 continue
 
-            # === CALIBRAZIONE POISSON (identica a money_management.py) ===
+            # === CALIBRAZIONE POISSON (chain by_league → global → static, come live) ===
             model_prob_raw = model_prob
-            model_prob = apply_poisson_calibration(model_prob, mkey)
+            lid = row.get("league_id")
+            model_prob, cal_source = apply_poisson_calibration(model_prob, mkey, league_id=lid)
 
             # Quota di mercato
             decimal_odds = odds_dict.get(odds_key)
@@ -504,6 +647,15 @@ def run_poisson_backtest(
             if stake <= 0:
                 continue
 
+            # FIX (faithfulness): replica i Safety Filters del live system
+            # (Z-Score Hallucination + Trust Score). Senza questo il backtest gonfia
+            # count/volume/PnL rispetto a ciò che il live piazzerebbe realmente.
+            stake, is_hallucination = apply_poisson_safety_filters(
+                stake, model_prob, decimal_odds, league_id=lid
+            )
+            if stake <= 0 or is_hallucination:
+                continue
+
             # Verifica risultato
             won = check_result(h, a, hh, ha, odds_key)
             if won is None:
@@ -516,11 +668,16 @@ def run_poisson_backtest(
             else:
                 pnl = -stake
 
+            # FIX (faithfulness): score = ev_after_commission × √prob — IDENTICO al
+            # live scan_best_market (edge live == ev_after_commission qui). Il live
+            # ordina i candidati per questo score e prende candidates[0], NON max-EV.
+            score = ev * math.sqrt(max(0.0, model_prob))
+
             candidate = {
                 "track": "Poisson",
                 "fixture_id": fid,
                 "fixture_date": str(row.get("fixture_date", ""))[:10],
-                "league_id": row.get("league_id"),
+                "league_id": lid,
                 "home": row.get("home_team_name", ""),
                 "away": row.get("away_team_name", ""),
                 "result": f"{h}-{a}",
@@ -531,6 +688,8 @@ def run_poisson_backtest(
                 "edge": round(edge, 4),
                 "decimal_odds": round(decimal_odds, 3),
                 "ev": round(ev, 4),
+                "score": round(score, 4),
+                "cal_source": cal_source,
                 "stake": round(stake, 2),
                 "won": won,
                 "pnl": round(pnl, 2),
@@ -539,10 +698,11 @@ def run_poisson_backtest(
                 fixture_candidates[fid] = []
             fixture_candidates[fid].append(candidate)
 
-    # FIX dedup: per ogni fixture tieni solo il mercato con EV massima (come scan_best_market)
+    # FIX (faithfulness): selezione per-fixture IDENTICA a scan_best_market —
+    # ordina per score = ev_after_commission × √prob (== live edge × √prob)
     for fid, candidates in fixture_candidates.items():
-        best = max(candidates, key=lambda x: x["ev"])
-        results.append(best)
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        results.append(candidates[0])
 
     print(f"\n  [Poisson] Skipped: no_analisi={skipped_no_analisi}, "
           f"no_odds={skipped_no_odds}, no_result={skipped_no_result}")
@@ -680,10 +840,22 @@ def run_ml_calibration(rows: List[Dict]) -> Dict[str, Dict]:
     Analisi di calibrazione ML: per ogni target, confronta prob predetta vs hit rate reale.
     Non richiede odds — usa solo model_predictions_json e risultati reali.
     """
-    # {target: {cls: {"n": int, "sum_prob": float, "hits": int}}}
-    stats: Dict[str, Dict[str, Dict]] = defaultdict(lambda: defaultdict(
-        lambda: {"n": 0, "sum_prob": 0.0, "hits": 0}
-    ))
+    # FIX (low): accumula anche Brier score (p-y)², log-loss e reliability buckets.
+    # bias = hit_rate - avg_pred misura solo la calibrazione media globale: un modello
+    # che predice 0.5 ovunque ha bias≈0 ma skill nulla. Brier/log-loss penalizzano la
+    # mancanza di discriminazione; le reliability buckets mostrano la calibrazione
+    # per fascia di probabilità (pred vs realtà in ciascun bin).
+    # {target: {cls: {n, sum_prob, hits, sum_brier, sum_logloss, buckets[10]}}}
+    def _new_class_stat() -> Dict[str, Any]:
+        return {
+            "n": 0, "sum_prob": 0.0, "hits": 0,
+            "sum_brier": 0.0, "sum_logloss": 0.0,
+            # bucket[i] = {"n", "sum_prob", "hits"} per fascia [i/10, (i+1)/10)
+            "buckets": [{"n": 0, "sum_prob": 0.0, "hits": 0} for _ in range(10)],
+        }
+
+    stats: Dict[str, Dict[str, Dict]] = defaultdict(lambda: defaultdict(_new_class_stat))
+    eps = 1e-15  # clip per log-loss
 
     for row in rows:
         ml_pred = row.get("model_predictions_json")
@@ -699,7 +871,6 @@ def run_ml_calibration(rows: List[Dict]) -> Dict[str, Dict]:
         except (ValueError, TypeError):
             continue
 
-        fid = row.get("fixture_id")
         hh, ha = None, None  # HT non critico per calibrazione
 
         targets = ml_pred.get("targets", ml_pred)
@@ -722,11 +893,23 @@ def run_ml_calibration(rows: List[Dict]) -> Dict[str, Dict]:
                 if won is None:
                     continue
 
+                y = 1.0 if won else 0.0
+                p = min(max(model_prob, 0.0), 1.0)
                 s = stats[target][cls]
                 s["n"] += 1
-                s["sum_prob"] += model_prob
+                s["sum_prob"] += p
                 if won:
                     s["hits"] += 1
+                # Brier: (p - y)²  |  log-loss: -[y·ln p + (1-y)·ln(1-p)]
+                s["sum_brier"] += (p - y) ** 2
+                p_clip = min(max(p, eps), 1.0 - eps)
+                s["sum_logloss"] += -(y * math.log(p_clip) + (1.0 - y) * math.log(1.0 - p_clip))
+                # Reliability bucket
+                bkt = s["buckets"][min(int(p * 10), 9)]
+                bkt["n"] += 1
+                bkt["sum_prob"] += p
+                if won:
+                    bkt["hits"] += 1
 
     # Calcola calibrazione
     calibration: Dict[str, Dict] = {}
@@ -739,12 +922,31 @@ def run_ml_calibration(rows: List[Dict]) -> Dict[str, Dict]:
             avg_pred = s["sum_prob"] / n
             hit_rate = s["hits"] / n
             bias = hit_rate - avg_pred
-            bss_baseline = 0.5 if cls in ("H", "A", "True", "False") else 0.333
+            brier = s["sum_brier"] / n
+            log_loss = s["sum_logloss"] / n
+            # BSS normalizzato rispetto al baseline "predici sempre il rate medio".
+            # baseline_brier = rate·(1-rate) (varianza di Bernoulli del campione).
+            baseline_brier = hit_rate * (1.0 - hit_rate)
+            bss = (1.0 - brier / baseline_brier) if baseline_brier > 0 else None
+            # Reliability buckets non vuoti: (bin_center_pred, actual, n)
+            reliability = []
+            for i, bkt in enumerate(s["buckets"]):
+                if bkt["n"] > 0:
+                    reliability.append({
+                        "bin": i,
+                        "pred": round(bkt["sum_prob"] / bkt["n"], 4),
+                        "actual": round(bkt["hits"] / bkt["n"], 4),
+                        "n": bkt["n"],
+                    })
             calibration[target][cls] = {
                 "n": n,
                 "avg_pred_prob": round(avg_pred, 4),
                 "actual_hit_rate": round(hit_rate, 4),
                 "bias": round(bias, 4),
+                "brier": round(brier, 4),
+                "log_loss": round(log_loss, 4),
+                "bss": round(bss, 4) if bss is not None else None,
+                "reliability": reliability,
                 "accuracy_top1": round(hit_rate, 4),
             }
 
@@ -773,10 +975,14 @@ def compute_metrics(bets: List[Dict]) -> Dict[str, Any]:
     drawdown = peak - cumulative
     max_dd = float(drawdown.max()) if len(drawdown) > 0 else 0.0
 
-    # Sharpe normalizzato per stake (ROI per scommessa / std del ROI)
-    # FIX: normalizzare per stake evita che scommesse con stake diversi distorcano la std
+    # Per-bet edge/vol ratio (NON è uno Sharpe annualizzato/risk-free-adjusted):
+    # media del ritorno per-scommessa diviso la sua deviazione standard.
+    # Normalizzato per stake così che scommesse con stake diversi non distorcano la std.
+    # FIX (low): rinominato da "Sharpe" — è un rapporto unitless per-bet, non un
+    # indice di Sharpe finanziario. La chiave "sharpe" è mantenuta come alias per
+    # retro-compatibilità con report/CSV esistenti.
     roi_per_bet = np.array([b["pnl"] / b["stake"] for b in bets if b["stake"] > 0])
-    sharpe = float(np.mean(roi_per_bet) / (np.std(roi_per_bet) + 1e-9))
+    edge_vol_ratio = float(np.mean(roi_per_bet) / (np.std(roi_per_bet) + 1e-9))
 
     # Media prob predetta e implied
     avg_model_prob = sum(b["model_prob"] for b in bets) / n
@@ -800,7 +1006,8 @@ def compute_metrics(bets: List[Dict]) -> Dict[str, Any]:
         "total_pnl": round(total_pnl, 2),
         "roi": round(roi, 4),
         "max_drawdown": round(max_dd, 2),
-        "sharpe": round(sharpe, 4),
+        "edge_vol_ratio": round(edge_vol_ratio, 4),
+        "sharpe": round(edge_vol_ratio, 4),  # alias retro-compatibile (vedi nota sopra)
         "avg_model_prob": round(avg_model_prob, 4),
         "avg_implied_prob": round(avg_implied_prob, 4),
         "avg_edge": round(avg_edge, 4),
@@ -861,7 +1068,7 @@ def print_overall_metrics(metrics: Dict, track: str) -> None:
     print(f"  P&L totale         : {metrics['total_pnl']:>+8.2f} €  (staked: {metrics['total_staked']:.2f} €)")
     print(f"  Bankroll finale    : {metrics['final_bankroll']:>8.2f} €  (start: {BANKROLL:.2f} €)")
     print(f"  Max drawdown       : {metrics['max_drawdown']:>8.2f} €")
-    print(f"  Sharpe ratio       : {metrics['sharpe']:>8.3f}")
+    print(f"  Edge/Vol ratio     : {metrics['edge_vol_ratio']:>8.3f}  (per-bet, non annualizzato)")
     print(f"  Edge medio         : {metrics['avg_edge']*100:>+6.2f}%")
     print(f"  Quota media        : {metrics['avg_odds']:>6.2f}x")
 
@@ -871,7 +1078,7 @@ def print_market_breakdown(per_market: Dict[str, Dict], top_n: int = 20) -> None
         return
     # Sort by total_pnl desc
     sorted_markets = sorted(per_market.items(), key=lambda x: x[1].get("total_pnl", 0), reverse=True)
-    print(f"\n  {'Market':<30} {'N':>5} {'Hit%':>7} {'BE%':>7} {'Δ%':>7} {'ROI%':>7} {'P&L':>9} {'Sharpe':>8}")
+    print(f"\n  {'Market':<30} {'N':>5} {'Hit%':>7} {'BE%':>7} {'Δ%':>7} {'ROI%':>7} {'P&L':>9} {'Ed/Vol':>8}")
     print(f"  {'─'*30} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*9} {'─'*8}")
     for market, m in sorted_markets[:top_n]:
         delta = (m["hit_rate"] - m["avg_breakeven"]) * 100
@@ -885,25 +1092,38 @@ def print_market_breakdown(per_market: Dict[str, Dict], top_n: int = 20) -> None
               f"{delta_s:>7} "
               f"{roi_s:>7} "
               f"{pnl_s:>9} "
-              f"{m['sharpe']:>7.3f}  {flag}")
+              f"{m['edge_vol_ratio']:>7.3f}  {flag}")
 
 
 def print_calibration(calibration: Dict[str, Dict]) -> None:
     if not calibration:
         return
-    print(f"\n  {'Target+Cls':<35} {'N':>5} {'Avg Pred':>9} {'Hit Rate':>9} {'Bias':>8} {'Status'}")
-    print(f"  {'─'*35} {'─'*5} {'─'*9} {'─'*9} {'─'*8} {'─'*10}")
+    print(f"\n  {'Target+Cls':<35} {'N':>5} {'Pred':>7} {'Hit':>7} {'Bias':>7} "
+          f"{'Brier':>7} {'LogL':>7} {'BSS':>7} {'Status'}")
+    print(f"  {'─'*35} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*10}")
     for target, classes in sorted(calibration.items()):
         for cls, s in sorted(classes.items()):
             bias = s["bias"]
             bias_s = f"{bias*100:+.1f}%"
-            status = "✅ calibrato" if abs(bias) < 0.05 else (
-                "⚠ lieve bias" if abs(bias) < 0.10 else "❌ over/under-pred")
+            bss = s.get("bss")
+            bss_s = f"{bss:+.3f}" if bss is not None else "  n/a"
+            # Status ora basato sullo SKILL (BSS), non solo sul bias medio:
+            # un modello "0.5 ovunque" ha bias≈0 ma BSS≈0 → nessuna skill.
+            if bss is not None and bss <= 0.0:
+                status = "❌ no skill (BSS≤0)"
+            elif abs(bias) < 0.05:
+                status = "✅ calibrato"
+            elif abs(bias) < 0.10:
+                status = "⚠ lieve bias"
+            else:
+                status = "❌ over/under-pred"
             print(f"  {target}_{cls:<20} {s['n']:>5} "
-                  f"{s['avg_pred_prob']*100:>8.1f}% "
-                  f"{s['actual_hit_rate']*100:>8.1f}% "
-                  f"{bias_s:>8} "
-                  f"  {status}")
+                  f"{s['avg_pred_prob']*100:>6.1f}% "
+                  f"{s['actual_hit_rate']*100:>6.1f}% "
+                  f"{bias_s:>7} "
+                  f"{s.get('brier', 0.0):>7.4f} "
+                  f"{s.get('log_loss', 0.0):>7.4f} "
+                  f"{bss_s:>7}  {status}")
 
 
 def print_data_quality(rows: List[Dict]) -> None:
@@ -940,9 +1160,19 @@ def print_data_quality(rows: List[Dict]) -> None:
 def save_csv(bets: List[Dict], path: str) -> None:
     if not bets:
         return
-    fieldnames = list(bets[0].keys())
+    # Union ordinata delle chiavi: i record Poisson e ML hanno campi parzialmente
+    # diversi (es. Poisson aggiunge score/cal_source/model_prob_raw). Costruiamo
+    # l'unione preservando l'ordine di prima apparizione ed escludiamo i campi extra
+    # mancanti senza errori (DictWriter su righe eterogenee).
+    fieldnames: List[str] = []
+    seen = set()
+    for b in bets:
+        for k in b.keys():
+            if k not in seen:
+                seen.add(k)
+                fieldnames.append(k)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(bets)
     print(f"\n  CSV salvato: {path}")
@@ -976,7 +1206,7 @@ def save_markdown_report(
         lines.append(f"| ROI netto | {poisson_overall['roi']*100:+.1f}% |")
         lines.append(f"| P&L | {poisson_overall['total_pnl']:+.2f} € |")
         lines.append(f"| Max drawdown | {poisson_overall['max_drawdown']:.2f} € |")
-        lines.append(f"| Sharpe | {poisson_overall['sharpe']:.3f} |")
+        lines.append(f"| Edge/Vol ratio (per-bet, non annualizzato) | {poisson_overall['edge_vol_ratio']:.3f} |")
         lines.append(f"| Edge medio | {poisson_overall['avg_edge']*100:+.2f}% |")
         lines.append("")
         lines.append("### Per Market (Poisson)")
@@ -999,7 +1229,7 @@ def save_markdown_report(
         lines.append(f"| ROI netto | {ml_overall['roi']*100:+.1f}% |")
         lines.append(f"| P&L | {ml_overall['total_pnl']:+.2f} € |")
         lines.append(f"| Max drawdown | {ml_overall['max_drawdown']:.2f} € |")
-        lines.append(f"| Sharpe | {ml_overall['sharpe']:.3f} |")
+        lines.append(f"| Edge/Vol ratio (per-bet, non annualizzato) | {ml_overall['edge_vol_ratio']:.3f} |")
         lines.append("")
         if ml_market:
             lines.append("### Per Market (ML)")
@@ -1014,17 +1244,31 @@ def save_markdown_report(
 
     # Calibrazione ML
     lines.append("## Calibrazione ML (su tutti i record con predizioni)")
+    lines.append("_Brier=(p-y)² (più basso = meglio) · LogLoss (più basso = meglio) · "
+                 "BSS=skill vs baseline rate medio (≤0 = nessuna skill)._")
     if calibration:
-        lines.append("| Target | Cls | N | Pred% | Hit% | Bias | Stato |")
-        lines.append("|--------|-----|---|-------|------|------|-------|")
+        lines.append("| Target | Cls | N | Pred% | Hit% | Bias | Brier | LogLoss | BSS | Stato |")
+        lines.append("|--------|-----|---|-------|------|------|-------|---------|-----|-------|")
         for target, classes in sorted(calibration.items()):
             for cls, s in sorted(classes.items()):
                 bias = s["bias"]
-                stato = "✅" if abs(bias) < 0.05 else ("⚠️" if abs(bias) < 0.10 else "❌")
+                bss = s.get("bss")
+                bss_s = f"{bss:+.3f}" if bss is not None else "n/a"
+                if bss is not None and bss <= 0.0:
+                    stato = "❌"
+                elif abs(bias) < 0.05:
+                    stato = "✅"
+                elif abs(bias) < 0.10:
+                    stato = "⚠️"
+                else:
+                    stato = "❌"
                 lines.append(f"| {target} | {cls} | {s['n']} | "
                              f"{s['avg_pred_prob']*100:.1f}% | "
                              f"{s['actual_hit_rate']*100:.1f}% | "
-                             f"{bias*100:+.1f}% | {stato} |")
+                             f"{bias*100:+.1f}% | "
+                             f"{s.get('brier', 0.0):.4f} | "
+                             f"{s.get('log_loss', 0.0):.4f} | "
+                             f"{bss_s} | {stato} |")
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -1052,6 +1296,10 @@ def main() -> None:
     out_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(out_dir, f"backtest_results_{ts}.csv")
     md_path = os.path.join(out_dir, f"backtest_report_{ts}.md")
+
+    # ── 0. CARICA DATI DINAMICI (replica esatta del live system) ──
+    print_section("CARICAMENTO CALIBRAZIONE DINAMICA + TRUST SCORES")
+    load_dynamic_data()
 
     # ── 1. FETCH DATI ──
     print_section("FETCH DATI DAL DB")
@@ -1138,10 +1386,13 @@ def main() -> None:
     print()
     print("  CALIBRAZIONE ML:")
     total_bias_abs = []
+    bss_values = []
     for target, classes in calibration.items():
         for cls, s in classes.items():
             if s["n"] >= 20:
                 total_bias_abs.append(abs(s["bias"]))
+                if s.get("bss") is not None:
+                    bss_values.append(s["bss"])
     if total_bias_abs:
         avg_bias = sum(total_bias_abs) / len(total_bias_abs)
         print(f"    Bias medio assoluto: {avg_bias*100:.1f}%")
@@ -1151,6 +1402,17 @@ def main() -> None:
             print("    ⚠️  Lieve miscalibrazione (bias 5-10%) — considera ricalibrazione isotonica")
         else:
             print("    ❌ Miscalibrazione significativa (>10%) — modello deve essere ricalibrato")
+    # BSS misura la SKILL (discriminazione), che il bias da solo non cattura:
+    # un modello "0.5 ovunque" ha bias≈0 ma BSS≈0.
+    if bss_values:
+        avg_bss = sum(bss_values) / len(bss_values)
+        print(f"    BSS medio (skill): {avg_bss:+.3f}")
+        if avg_bss <= 0.0:
+            print("    ❌ Nessuna skill predittiva (BSS ≤ 0) — il modello non batte il rate medio")
+        elif avg_bss < 0.05:
+            print("    ⚠️  Skill molto debole (BSS < 0.05) — al limite del rumore")
+        else:
+            print("    ✅ Skill predittiva presente (BSS > 0.05)")
 
     print()
     print("  COSA FARE ADESSO:")

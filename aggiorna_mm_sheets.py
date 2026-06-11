@@ -25,8 +25,15 @@ logger = logging.getLogger("mm_sheets")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 HISTORY_FILE = os.path.join(ROOT, "Betfair", "mm_history.json")
-COLS = 16 
+COLS = 16
 MIN_SIGNALS = 3
+
+# Betfair charges commission on NET winnings only. The live P&L formula on the MM
+# sheet must net it out to stay consistent with money_management.py (same 5%).
+# Without it the sheet's P&L / Cassa / Yield were overstated by COMMISSION * net
+# profit on every winning bet (both the ML and Poisson columns).
+MM_COMMISSION = 0.05
+MM_NET_FACTOR = round(1.0 - MM_COMMISSION, 4)  # 0.95
 
 # max_stake_pct per masaniello_puro:
 #   La garanzia matematica (profitto invariante all'ordine) richiede che il cap NON
@@ -198,7 +205,9 @@ def get_live_formulas(strategy, r_idx, start_r, N_day, avg_q, side, pvirt_norm=N
         past_S = f"$N${start_r}:N{r_idx-1}"
         prev_C = bank_in if r_idx == start_r else f"P{r_idx-1}"
 
-    f_pnl   = f'=IF(OR({c_S}="--"; LEFT({c_R}; 7)="PENDING"; {c_R}=""); "--"; IF(LEFT({c_R}; 5)="VINTO"; ROUND({c_S}*({c_Q}-1); 2); -{c_S}))'
+    # VINTO → net profit = stake*(quota-1)*(1-commission); PERSO → -stake.
+    # The (1-commission) factor nets out the Betfair commission charged on winnings.
+    f_pnl   = f'=IF(OR({c_S}="--"; LEFT({c_R}; 7)="PENDING"; {c_R}=""); "--"; IF(LEFT({c_R}; 5)="VINTO"; ROUND({c_S}*({c_Q}-1)*{MM_NET_FACTOR}; 2); -{c_S}))'
     f_cassa = f'=IF({c_S}="--"; {prev_C}; ROUND({prev_C} + {c_P}; 2))'
 
     wins_p = "0" if r_idx == start_r else f'COUNTIFS({past_R}; "VINTO*"; {past_S}; "<>--")'

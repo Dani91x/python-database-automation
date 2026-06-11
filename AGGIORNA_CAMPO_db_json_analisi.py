@@ -175,10 +175,16 @@ def write_one(sb: Any, fixture_id: int, analysis: Dict[str, Any], dry_run: bool)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            sb.table("fixture_predictions").update({
+            resp = sb.table("fixture_predictions").update({
                 "db_json_analisi": analysis,
                 "updated_at":      datetime.now(timezone.utc).isoformat(),
             }).eq("fixture_id", fixture_id).execute()
+            updated = getattr(resp, "data", None)
+            if not updated:
+                # Nessuna riga corrisponde a questo fixture_id: la scrittura
+                # non ha aggiornato nulla. Trattala come errore per non
+                # contarla come "scritta" e checkpointarla per sbaglio.
+                return f"nessuna riga aggiornata per fixture_id={fixture_id}"
             return None  # successo
 
         except Exception as exc:
@@ -320,7 +326,11 @@ def run(
 
             except Exception as exc:
                 errors += 1
-                failed_ids.append(fid)
+                if fid is not None:
+                    try:
+                        failed_ids.append(int(fid))
+                    except (TypeError, ValueError, OverflowError):
+                        pass
                 logger.error("❌ fixture_id=%s — errore inatteso: %s", fid, exc)
 
     # Flush checkpoint finale

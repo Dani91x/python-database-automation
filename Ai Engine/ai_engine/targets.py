@@ -65,7 +65,16 @@ def add_targets_from_matches(df: pd.DataFrame) -> pd.DataFrame:
         lambda r: _result_1x2(pd.Series({"goals_home": r["fulltime_home"], "goals_away": r["fulltime_away"]})),
         axis=1,
     )
-    out["target_ht_ft"] = out["target_ht_1x2"].fillna("") + "_" + out["target_ft_1x2"].fillna("")
+    # HT/FT combined target. Only define it when BOTH half-time and full-time
+    # results are available. Previously `fillna("")` turned a missing half into
+    # spurious classes like "_", "H_" or "_A" (which are not real outcomes and
+    # survive dropna because they are non-null strings), polluting the class
+    # distribution and the log-loss/Brier of the HT/FT market. Now we emit None
+    # when either half is missing, so dropna(subset=["target_ht_ft"]) removes them.
+    _ht_res = out["target_ht_1x2"]
+    _ft_res = out["target_ft_1x2"]
+    _ht_ft_valid = _ht_res.notna() & _ft_res.notna()
+    out["target_ht_ft"] = (_ht_res.fillna("") + "_" + _ft_res.fillna("")).where(_ht_ft_valid, other=None)
 
     # First Half Over 0.5 (direct boolean target)
     # Use .where() to propagate NaN when halftime data is missing, instead of

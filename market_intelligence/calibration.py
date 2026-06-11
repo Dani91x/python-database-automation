@@ -6,6 +6,29 @@ Per ogni lega qualificata + ogni mercato + ogni fascia di quota:
 
 Output: cache/calibration_tables.json
 
+⚠️ DIVERGENZA DALLA CALIBRAZIONE CANONICA (documentata di proposito)
+-------------------------------------------------------------------
+Questa tabella NON è la stessa di dynamic_cal.json / CALIBRATION_TABLE
+(la calibrazione canonica consumata dal motore LIVE Prediction/).
+Le due misurano cose diverse su assi diversi e NON sono consolidabili
+in modo non invasivo:
+
+  - dynamic_cal.json (canonica, generate_dynamic_cal.py): bin per PROBABILITÀ
+    DEL MODELLO, larghezza fissa 0.10 -> bin_idx = min(int(prob*10), 9), per
+    cal_key {H,D,A,O25,U25,BTTS,BTTS_NO,HT05}. Misura la calibrazione del
+    modello (predicted prob vs hit rate) e produce correction_factor sul modello.
+
+  - questa tabella (MI, esperimentale): bin per FASCIA DI QUOTA BOOKIE
+    (ODDS_BRACKETS, vedi mi_config) e misura il BIAS DEL BOOKMAKER
+    (real_rate - implied_mean) sul book Betfair sportsbook.
+
+L'asse è incompatibile (prob-modello vs odds-bookie): allineare la griglia
+dei bin non è possibile senza ridefinire la semantica. La MI resta quindi
+volutamente sull'asse odds-bracket. Un match può ricevere correzioni diverse
+a seconda del consumer: dynamic_cal per il motore LIVE, questa tabella solo
+per la scorecard sperimentale MI. NON usare questa tabella per decisioni di
+puntata reale.
+
 Uso:
     python pipeline.py --calibration
 """

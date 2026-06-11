@@ -1,0 +1,1275 @@
+[
+  {
+    "fid": 1546836,
+    "name": "Myanmar W v Thailand W",
+    "league": "Friendlies Women",
+    "league_id": 666,
+    "status": "FT",
+    "finished": true,
+    "gh": 1,
+    "ga": 1,
+    "targets": {
+      "target_btts": {
+        "True": 0.476,
+        "False": 0.524
+      },
+      "target_over_0_5": {
+        "True": 0.9512195121951219,
+        "False": 0.04878048780487809
+      },
+      "target_over_2_5": {
+        "True": 0.5481,
+        "False": 0.4519
+      },
+      "target_1x2": {
+        "A": 0.2975,
+        "D": 0.2215,
+        "H": 0.481
+      },
+      "target_over_1_5": {
+        "True": 0.7915,
+        "False": 0.2085
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1545703,
+    "name": "Philippines v Myanmar",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "FT",
+    "finished": true,
+    "gh": 5,
+    "ga": 1,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3409,
+        "D": 0.221,
+        "H": 0.438
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1546502,
+    "name": "China v Thailand",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "FT",
+    "finished": true,
+    "gh": 0,
+    "ga": 0,
+    "targets": {
+      "target_btts": {
+        "True": 0.5367,
+        "False": 0.4633
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.4732,
+        "D": 0.203,
+        "H": 0.3239
+      },
+      "target_over_1_5": {
+        "True": 0.6864,
+        "False": 0.3136
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1544363,
+    "name": "Cambodia v Hong Kong",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "2H",
+    "finished": false,
+    "gh": 2,
+    "ga": 0,
+    "targets": {
+      "target_btts": {
+        "True": 0.5367,
+        "False": 0.4633
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_1x2": {
+        "A": 0.3807,
+        "D": 0.2058,
+        "H": 0.4135
+      },
+      "target_over_1_5": {
+        "True": 0.99,
+        "False": 0.01
+      }
+    },
+    "n_signals": 1
+  },
+  {
+    "fid": 1544365,
+    "name": "Oman v Kuwait",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "CANC",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.999,
+        "False": 0.0010000000000000009
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3067,
+        "D": 0.2126,
+        "H": 0.4807
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 2
+  },
+  {
+    "fid": 1548188,
+    "name": "Livyi Bereh v Oleksandria",
+    "league": "Premier League",
+    "league_id": 333,
+    "status": "2H",
+    "finished": false,
+    "gh": 1,
+    "ga": 0,
+    "targets": {
+      "target_btts": {
+        "True": 0.4345,
+        "False": 0.5655
+      },
+      "target_over_0_5": {
+        "True": 0.9523809523809523,
+        "False": 0.04761904761904767
+      },
+      "target_over_2_5": {
+        "True": 0.4744,
+        "False": 0.5256
+      },
+      "target_1x2": {
+        "A": 0.3356,
+        "D": 0.3086,
+        "H": 0.3559
+      },
+      "target_over_1_5": {
+        "True": 0.707,
+        "False": 0.293
+      },
+      "target_ht_over_0_5": {
+        "True": 0.7222222222222222,
+        "False": 0.2777777777777778
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1547220,
+    "name": "Australia U19 v Cambodia U19",
+    "league": "ASEAN Championship U19",
+    "league_id": 928,
+    "status": "1H",
+    "finished": false,
+    "gh": 2,
+    "ga": 0,
+    "error": "No models found in ai_model_registry for league"
+  },
+  {
+    "fid": 1546507,
+    "name": "Indonesia v Mozambique",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "1H",
+    "finished": false,
+    "gh": 1,
+    "ga": 0,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.2321,
+        "D": 0.1898,
+        "H": 0.5781
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548456,
+    "name": "Republic of Ireland U21 v Qatar U23",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.345,
+        "D": 0.2261,
+        "H": 0.4288
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1538926,
+    "name": "Serbia U19 v Portugal U19",
+    "league": "UEFA U19 Championship - Qualification",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3201,
+        "D": 0.2565,
+        "H": 0.4234
+      },
+      "target_over_0_5": {
+        "False": 0.04915867662990414,
+        "True": 0.9508413233700959
+      },
+      "target_btts": {
+        "True": 0.4824,
+        "False": 0.5176
+      },
+      "target_over_1_5": {
+        "True": 0.8031,
+        "False": 0.1969
+      },
+      "target_over_2_5": {
+        "True": 0.5139,
+        "False": 0.4861
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1537651,
+    "name": "Armenia v Moldova",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3378,
+        "D": 0.2162,
+        "H": 0.446
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1547739,
+    "name": "Ahrobiznes Volochysk v Kudrivka",
+    "league": "Premier League",
+    "league_id": 333,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4345,
+        "False": 0.5655
+      },
+      "target_over_0_5": {
+        "True": 0.999,
+        "False": 0.0010000000000000009
+      },
+      "target_over_2_5": {
+        "True": 0.4185,
+        "False": 0.5815
+      },
+      "target_1x2": {
+        "A": 0.3667,
+        "D": 0.1874,
+        "H": 0.4459
+      },
+      "target_over_1_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_ht_over_0_5": {
+        "True": 0.75,
+        "False": 0.25
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1538962,
+    "name": "Georgia U19 v Iceland U19",
+    "league": "UEFA U19 Championship - Qualification",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3843,
+        "D": 0.2061,
+        "H": 0.4096
+      },
+      "target_over_0_5": {
+        "False": 0.04127047657228777,
+        "True": 0.9587295234277122
+      },
+      "target_btts": {
+        "True": 0.479,
+        "False": 0.521
+      },
+      "target_over_1_5": {
+        "True": 0.7947,
+        "False": 0.2053
+      },
+      "target_over_2_5": {
+        "True": 0.4354,
+        "False": 0.5646
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1538925,
+    "name": "Kazakhstan U19 v Greece U19",
+    "league": "UEFA U19 Championship - Qualification",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.4507,
+        "D": 0.1799,
+        "H": 0.3694
+      },
+      "target_over_0_5": {
+        "False": 0.04245946480783369,
+        "True": 0.9575405351921663
+      },
+      "target_btts": {
+        "True": 0.4777,
+        "False": 0.5223
+      },
+      "target_over_1_5": {
+        "True": 0.798,
+        "False": 0.202
+      },
+      "target_over_2_5": {
+        "True": 0.4371,
+        "False": 0.5629
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548486,
+    "name": "Jordan W v Palestine W",
+    "league": "Friendlies Women",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.476,
+        "False": 0.524
+      },
+      "target_over_0_5": {
+        "True": 0.9512195121951219,
+        "False": 0.04878048780487809
+      },
+      "target_over_2_5": {
+        "True": 0.3994,
+        "False": 0.6006
+      },
+      "target_1x2": {
+        "A": 0.4433,
+        "D": 0.224,
+        "H": 0.3327
+      },
+      "target_over_1_5": {
+        "True": 0.8236,
+        "False": 0.1764
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1546842,
+    "name": "Tajikistan v India",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3078,
+        "D": 0.2259,
+        "H": 0.4662
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548300,
+    "name": "Honka v HJK Helsinki",
+    "league": "Suomen Cup",
+    "league_id": 246,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4396,
+        "False": 0.5604
+      },
+      "target_over_1_5": {
+        "True": 0.9,
+        "False": 0.1
+      },
+      "target_1x2": {
+        "A": 0.5581,
+        "D": 0.186,
+        "H": 0.2559
+      },
+      "target_over_2_5": {
+        "True": 0.5576,
+        "False": 0.4424
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1544367,
+    "name": "Congo DR v Chile",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4552,
+        "False": 0.5448
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.2842,
+        "D": 0.2215,
+        "H": 0.4943
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 1
+  },
+  {
+    "fid": 1548331,
+    "name": "Yacoub El Mansour v CODM Mekn\u00e8s",
+    "league": "Botola Pro",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4082,
+        "False": 0.5918
+      },
+      "target_over_0_5": {
+        "True": 0.9137931034482759,
+        "False": 0.08620689655172409
+      },
+      "target_over_2_5": {
+        "True": 0.4577,
+        "False": 0.5423
+      },
+      "target_1x2": {
+        "A": 0.4908,
+        "D": 0.2403,
+        "H": 0.2689
+      },
+      "target_over_1_5": {
+        "True": 0.7507,
+        "False": 0.2493
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1544819,
+    "name": "New Zealand W v Morocco W",
+    "league": "Friendlies Women",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4445,
+        "False": 0.5555
+      },
+      "target_over_0_5": {
+        "True": 0.9512195121951219,
+        "False": 0.04878048780487809
+      },
+      "target_over_2_5": {
+        "True": 0.3882,
+        "False": 0.6118
+      },
+      "target_1x2": {
+        "A": 0.5986,
+        "D": 0.1885,
+        "H": 0.2129
+      },
+      "target_over_1_5": {
+        "True": 0.8236,
+        "False": 0.1764
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1545274,
+    "name": "Moldova U21 v Georgia U21",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3145,
+        "D": 0.2205,
+        "H": 0.465
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1543831,
+    "name": "Angola v Central African Republic",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3088,
+        "D": 0.225,
+        "H": 0.4662
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 1
+  },
+  {
+    "fid": 1497598,
+    "name": "Osters IF v IFK Varnamo",
+    "league": "Superettan",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4642,
+        "False": 0.5357
+      },
+      "target_over_0_5": {
+        "True": 0.9423076923076923,
+        "False": 0.05769230769230771
+      },
+      "target_over_2_5": {
+        "True": 0.5419,
+        "False": 0.4581
+      },
+      "target_1x2": {
+        "A": 0.4075,
+        "D": 0.1897,
+        "H": 0.4028
+      },
+      "target_over_1_5": {
+        "True": 0.6881,
+        "False": 0.3119
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1497599,
+    "name": "Sandviken v Falkenbergs FF",
+    "league": "Superettan",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_over_0_5": {
+        "True": 0.9423076923076923,
+        "False": 0.05769230769230771
+      },
+      "target_over_2_5": {
+        "True": 0.4105,
+        "False": 0.5895
+      },
+      "target_1x2": {
+        "A": 0.2354,
+        "D": 0.2853,
+        "H": 0.4793
+      },
+      "target_over_1_5": {
+        "True": 0.7582,
+        "False": 0.2418
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1497596,
+    "name": "Oddevold v IFK Norrkoping",
+    "league": "Superettan",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5516,
+        "False": 0.4484
+      },
+      "target_over_0_5": {
+        "True": 0.9423076923076923,
+        "False": 0.05769230769230771
+      },
+      "target_over_2_5": {
+        "True": 0.5544,
+        "False": 0.4456
+      },
+      "target_1x2": {
+        "A": 0.3543,
+        "D": 0.1869,
+        "H": 0.4588
+      },
+      "target_over_1_5": {
+        "True": 0.7393,
+        "False": 0.2607
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1497593,
+    "name": "IK brage v Ljungskile SK",
+    "league": "Superettan",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5516,
+        "False": 0.4484
+      },
+      "target_over_0_5": {
+        "True": 0.9423076923076923,
+        "False": 0.05769230769230771
+      },
+      "target_over_2_5": {
+        "True": 0.4105,
+        "False": 0.5895
+      },
+      "target_1x2": {
+        "A": 0.3468,
+        "D": 0.1931,
+        "H": 0.4602
+      },
+      "target_over_1_5": {
+        "True": 0.7582,
+        "False": 0.2418
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1545632,
+    "name": "R\u00e4ppe v H\u00e4ssleholms IF",
+    "league": "Svenska Cupen",
+    "league_id": 115,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5179,
+        "False": 0.4821
+      },
+      "target_over_2_5": {
+        "True": 0.6318,
+        "False": 0.3682
+      },
+      "target_1x2": {
+        "A": 0.4901,
+        "D": 0.0696,
+        "H": 0.4403
+      },
+      "target_over_1_5": {
+        "True": 0.7202,
+        "False": 0.2798
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1525493,
+    "name": "Hungary v Kazakhstan",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5367,
+        "False": 0.4633
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_1x2": {
+        "A": 0.2323,
+        "D": 0.1889,
+        "H": 0.5788
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1497595,
+    "name": "United Nordic v Ostersunds FK",
+    "league": "Superettan",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5516,
+        "False": 0.4484
+      },
+      "target_over_0_5": {
+        "True": 0.9423076923076923,
+        "False": 0.05769230769230771
+      },
+      "target_over_2_5": {
+        "True": 0.4105,
+        "False": 0.5895
+      },
+      "target_1x2": {
+        "A": 0.3978,
+        "D": 0.1913,
+        "H": 0.4109
+      },
+      "target_over_1_5": {
+        "True": 0.7393,
+        "False": 0.2607
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548332,
+    "name": "Kawkab Marrakech v Raja Casablanca",
+    "league": "Botola Pro",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4082,
+        "False": 0.5918
+      },
+      "target_over_0_5": {
+        "True": 0.8181818181818182,
+        "False": 0.18181818181818177
+      },
+      "target_over_2_5": {
+        "True": 0.4577,
+        "False": 0.5423
+      },
+      "target_1x2": {
+        "A": 0.6237,
+        "D": 0.1677,
+        "H": 0.2085
+      },
+      "target_over_1_5": {
+        "True": 0.7153,
+        "False": 0.2847
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1546506,
+    "name": "Togo v Benin",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_over_2_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_1x2": {
+        "A": 0.3019,
+        "D": 0.2079,
+        "H": 0.4902
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1544813,
+    "name": "Azerbaijan v San Marino",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.9976393589226019,
+        "False": 0.0023606410773980846
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.2701,
+        "D": 0.2296,
+        "H": 0.5002
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548054,
+    "name": "Almeria v Castell\u00f3n",
+    "league": "Segunda Divisi\u00f3n",
+    "league_id": 141,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5559,
+        "False": 0.4441
+      },
+      "target_over_1_5": {
+        "True": 0.8036,
+        "False": 0.1964
+      },
+      "target_over_2_5": {
+        "True": 0.4355,
+        "False": 0.5645
+      },
+      "target_1x2": {
+        "A": 0.331,
+        "D": 0.2468,
+        "H": 0.4222
+      },
+      "target_over_0_5": {
+        "True": 0.9381443298969072,
+        "False": 0.061855670103092786
+      },
+      "target_ht_over_0_5": {
+        "True": 0.8113207547169812,
+        "False": 0.18867924528301883
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1548334,
+    "name": "Maghreb F\u00e8s v FAR Rabat",
+    "league": "Botola Pro",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.5094,
+        "False": 0.4906
+      },
+      "target_over_0_5": {
+        "True": 0.9137931034482759,
+        "False": 0.08620689655172409
+      },
+      "target_over_2_5": {
+        "True": 0.4942,
+        "False": 0.5058
+      },
+      "target_1x2": {
+        "A": 0.2331,
+        "D": 0.2694,
+        "H": 0.4975
+      },
+      "target_over_1_5": {
+        "True": 0.7507,
+        "False": 0.2493
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1545447,
+    "name": "Guatemala W v El Salvador W",
+    "league": "Friendlies Women",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.476,
+        "False": 0.524
+      },
+      "target_over_0_5": {
+        "True": 0.967741935483871,
+        "False": 0.032258064516129004
+      },
+      "target_over_2_5": {
+        "True": 0.3882,
+        "False": 0.6118
+      },
+      "target_1x2": {
+        "A": 0.4817,
+        "D": 0.2385,
+        "H": 0.2798
+      },
+      "target_over_1_5": {
+        "True": 0.8236,
+        "False": 0.1764
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1520715,
+    "name": "Nautico Recife v Fortaleza EC",
+    "league": "Serie B",
+    "league_id": 72,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4635,
+        "False": 0.5365
+      },
+      "target_over_0_5": {
+        "True": 0.9,
+        "False": 0.09999999999999998
+      },
+      "target_over_2_5": {
+        "True": 0.4985,
+        "False": 0.5015
+      },
+      "target_1x2": {
+        "A": 0.2779,
+        "D": 0.2323,
+        "H": 0.4898
+      },
+      "target_over_1_5": {
+        "True": 0.7295,
+        "False": 0.2705
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1520717,
+    "name": "Ponte Preta v Cuiaba",
+    "league": "Serie B",
+    "league_id": 72,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4635,
+        "False": 0.5365
+      },
+      "target_over_0_5": {
+        "True": 0.6666666666666666,
+        "False": 0.33333333333333337
+      },
+      "target_over_2_5": {
+        "True": 0.4577,
+        "False": 0.5423
+      },
+      "target_1x2": {
+        "A": 0.2941,
+        "D": 0.2334,
+        "H": 0.4725
+      },
+      "target_over_1_5": {
+        "True": 0.01,
+        "False": 0.99
+      }
+    },
+    "n_signals": 0
+  },
+  {
+    "fid": 1544368,
+    "name": "Saudi Arabia v Senegal",
+    "league": "Friendlies",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_1x2": {
+        "A": 0.3706,
+        "D": 0.2287,
+        "H": 0.4007
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      }
+    },
+    "n_signals": 0
+  }
+]

@@ -156,6 +156,7 @@ def _run_optuna_tuning(
     tier: str,
     n_trials: int,
     random_state: int = 42,
+    n_jobs: int = 1,
 ) -> dict:
     """
     Run Optuna hyperparameter tuning for RF, LGB/GB and XGB.
@@ -241,11 +242,11 @@ def _run_optuna_tuning(
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", 0.5]),
         }
         def _build():
-            return RandomForestClassifier(random_state=random_state, n_jobs=-1, **params)
+            return RandomForestClassifier(random_state=random_state, n_jobs=n_jobs, **params)
         return _oof_nll(_build, X_train, y_train)
 
     try:
-        sampler = optuna.samplers.TPESampler(seed=random_state)
+        sampler = optuna.samplers.TPESampler(seed=random_state, multivariate=True)
         study_rf = optuna.create_study(direction="minimize", sampler=sampler)
         study_rf.optimize(_rf_objective, n_trials=n_trials, show_progress_bar=False)
         best_params["rf"] = study_rf.best_params
@@ -258,14 +259,17 @@ def _run_optuna_tuning(
             "n_estimators": trial.suggest_int("n_estimators", 50, 400),
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
             "max_depth": trial.suggest_int("max_depth", 3, 10),
-            "num_leaves": trial.suggest_int("num_leaves", 15, 127),
+            # Upper bound kept at 63 (not 127): per-league datasets are small
+            # (350-1500 rows for MEDIUM/LARGE), and deep leaf-wise trees overfit
+            # quickly. The OOF NLL objective rarely benefits from >63 leaves here.
+            "num_leaves": trial.suggest_int("num_leaves", 15, 63),
             "min_child_samples": trial.suggest_int("min_child_samples", 5, 50),
             "subsample": trial.suggest_float("subsample", 0.5, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
         }
         def _build():
             if _LIGHTGBM_AVAILABLE and tier in ("MEDIUM", "LARGE"):
-                return LGBMClassifier(random_state=random_state, n_jobs=-1, verbose=-1, **params)
+                return LGBMClassifier(random_state=random_state, n_jobs=n_jobs, verbose=-1, **params)
             gb_params = {k: v for k, v in params.items() if k in (
                 "n_estimators", "learning_rate", "max_depth", "subsample"
             )}
@@ -274,7 +278,7 @@ def _run_optuna_tuning(
         return _oof_nll(_build, X_train, y_train)
 
     try:
-        sampler = optuna.samplers.TPESampler(seed=random_state)
+        sampler = optuna.samplers.TPESampler(seed=random_state, multivariate=True)
         study_lgb = optuna.create_study(direction="minimize", sampler=sampler)
         study_lgb.optimize(_lgb_objective, n_trials=n_trials, show_progress_bar=False)
         best_params["lgb"] = study_lgb.best_params
@@ -301,7 +305,7 @@ def _run_optuna_tuning(
             return _oof_nll(_build, X_train, y_train)
 
         try:
-            sampler = optuna.samplers.TPESampler(seed=random_state)
+            sampler = optuna.samplers.TPESampler(seed=random_state, multivariate=True)
             study_xgb = optuna.create_study(direction="minimize", sampler=sampler)
             study_xgb.optimize(_xgb_objective, n_trials=n_trials, show_progress_bar=False)
             best_params["xgb"] = study_xgb.best_params
@@ -548,7 +552,13 @@ def _generate_oof_probas(
                 )
                 if w_tr is not None and len(X_tr_fit) > len(X_tr):
                     n_new = len(X_tr_fit) - len(X_tr)
-                    w_tr_fit = np.concatenate([w_tr, np.ones(n_new)])
+                    # Synthetic SMOTE samples have no real date, so they get the
+                    # MEAN time-decay weight of the real training rows — not 1.0,
+                    # which is the maximum weight and would over-weight synthetic
+                    # minority-class samples (mostly interpolated from older data)
+                    # relative to their real, time-discounted sources.
+                    _syn_w = float(w_tr.mean()) if len(w_tr) else 1.0
+                    w_tr_fit = np.concatenate([w_tr, np.full(n_new, _syn_w)])
                 else:
                     w_tr_fit = w_tr
             else:
@@ -582,67 +592,78 @@ def _generate_oof_probas(
             start_col = m_idx * n_classes
             oof[val_idx, start_col : start_col + n_classes] = aligned_proba
 
-    # Fit models on full training data for final predictions.
-    # LightGBM uses early stopping against X_val_for_es (when provided) so
-    # n_estimators=300 acts as a ceiling and the model stops at the optimal
-    # iteration, avoiding the overfitting that a fixed n_estimators causes.
+    # Fit models on the full training data for the final (serving) predictions.
+    #
+    # LightGBM early stopping: the eval set is carved from the TRAIN tail (most
+    # recent temporal slice), NOT from the external val/holdout set. Using the
+    # calibration val here would let early stopping pick the tree count on the
+    # very data later used to fit the calibrators and base_weights — an
+    # optimistic bias. After finding the optimal iteration on the internal slice
+    # we REFIT on the full training data with that fixed n_estimators, so the
+    # served model uses ALL training rows AND the optimal complexity, while
+    # val/holdout stay pristine.
+    # (X_val_for_es / y_val_for_es are accepted for backward compatibility but
+    # are no longer used for early stopping.)
     fitted_models = []
     for name, model in models:
         model_clone = _clone_model(model)
-        fit_kwargs: Dict[str, Any] = {}
-        if sample_weights is not None:
-            fit_kwargs["sample_weight"] = sample_weights
 
-        # LightGBM early stopping on final fit using the held-out val set.
-        # Early stopping is NOT applied inside OOF folds because each fold
-        # has no separate val set (the fold val_idx is used for OOF probas,
-        # not for early stopping).  This is only for the final full-data fit.
-        _es_applied = False
+        # ── LightGBM: early stopping on an internal train-tail slice ──────────
         if (
             _LIGHTGBM_AVAILABLE
             and isinstance(model_clone, LGBMClassifier)
-            and X_val_for_es is not None
-            and y_val_for_es is not None
-            and len(y_val_for_es) >= 20
+            and n_samples >= 80
         ):
-            try:
-                fit_kwargs["eval_set"] = [(X_val_for_es, y_val_for_es)]
-                # early_stopping: stop when val loss doesn't improve for 30 rounds.
-                # log_evaluation(period=0): suppress all LightGBM iteration output.
-                # Both callbacks are portable across LightGBM >= 3.3.0.
-                fit_kwargs["callbacks"] = [
-                    lgb.early_stopping(stopping_rounds=30),
-                    lgb.log_evaluation(period=0),
-                ]
-                _es_applied = True
-            except Exception as _es_exc:
-                logger.debug("LightGBM early stopping setup failed: %s — training without ES", _es_exc)
-                fit_kwargs.pop("eval_set", None)
-                fit_kwargs.pop("callbacks", None)
+            es_cut = int(n_samples * 0.85)
+            if es_cut >= 40 and (n_samples - es_cut) >= 20:
+                try:
+                    _X_fit, _X_es = X[:es_cut], X[es_cut:]
+                    _y_fit, _y_es = y[:es_cut], y[es_cut:]
+                    _es_kwargs: Dict[str, Any] = {
+                        "eval_set": [(_X_es, _y_es)],
+                        "callbacks": [
+                            lgb.early_stopping(stopping_rounds=30),
+                            lgb.log_evaluation(period=0),
+                        ],
+                    }
+                    if sample_weights is not None:
+                        _es_kwargs["sample_weight"] = sample_weights[:es_cut]
+                    model_clone.fit(_X_fit, _y_fit, **_es_kwargs)
+                    best_iter = getattr(model_clone, "best_iteration_", None)
+                    if best_iter and best_iter > 0:
+                        # Refit on the FULL training data with the ES-selected
+                        # tree count (uses all rows, optimal complexity, no
+                        # val/holdout contamination).
+                        final_lgb = _clone_model(model)
+                        final_lgb.set_params(n_estimators=int(best_iter))
+                        _refit_kwargs: Dict[str, Any] = {}
+                        if sample_weights is not None:
+                            _refit_kwargs["sample_weight"] = sample_weights
+                        final_lgb.fit(X, y, **_refit_kwargs)
+                        logger.info(
+                            "[lgb early stopping] best_iteration=%d → refit on full train",
+                            best_iter,
+                        )
+                        fitted_models.append((name, final_lgb))
+                        continue
+                    # No best_iteration_ → keep the slice-fitted model.
+                    fitted_models.append((name, model_clone))
+                    continue
+                except Exception as _es_exc:
+                    logger.debug(
+                        "LightGBM internal early stopping failed: %s — plain fit", _es_exc
+                    )
+                    model_clone = _clone_model(model)  # discard partial state
 
+        # ── All other models (and LGB fallback): plain fit on full train ─────
+        fit_kwargs: Dict[str, Any] = {}
+        if sample_weights is not None:
+            fit_kwargs["sample_weight"] = sample_weights
         try:
             model_clone.fit(X, y, **fit_kwargs)
-            if _es_applied:
-                best_iter = getattr(model_clone, "best_iteration_", None)
-                if best_iter and best_iter > 0:
-                    logger.info(
-                        "[lgb early stopping] best_iteration=%d / %d",
-                        best_iter,
-                        model_clone.get_params().get("n_estimators", "?"),
-                    )
         except TypeError:
-            # A kwarg in fit_kwargs is unsupported by this model.  Retry in
-            # degrading order to preserve as much information as possible:
-            #   1st retry: sample_weight only (drop ES-specific keys)
-            #   2nd retry: bare fit (no kwargs at all)
-            _sw = fit_kwargs.get("sample_weight")
-            try:
-                if _sw is not None:
-                    model_clone.fit(X, y, sample_weight=_sw)
-                else:
-                    model_clone.fit(X, y)
-            except TypeError:
-                model_clone.fit(X, y)
+            # sample_weight unsupported by this model → bare fit.
+            model_clone.fit(X, y)
         fitted_models.append((name, model_clone))
 
     return oof, fitted_models
@@ -770,6 +791,13 @@ def _train_calibrators(
 
     class_strs = [str(c) for c in classes]
     n_classes = len(class_strs)
+
+    # Guard: a _KerasMetaWrapper deserialized without TensorFlow has _model=None
+    # and its predict_proba returns a uniform distribution — fitting calibrators
+    # on that would produce garbage. Fall through to the weighted-average path,
+    # consistent with the same guard in predict_ensemble and _evaluate_ensemble.
+    if isinstance(meta_model, _KerasMetaWrapper) and getattr(meta_model, "_model", None) is None:
+        meta_model = None
 
     # Compute ensemble probabilities on val set
     if meta_model is not None:
@@ -1471,6 +1499,11 @@ def _evaluate_ensemble(
                 meta_preds = _eval_meta.predict(meta_input)
             except Exception:
                 meta_preds = np.array(meta_classes_list)[np.argmax(final_proba, axis=1)]
+            # Align dtype to y_str: for binary targets the meta-learner predicts
+            # native bool labels (True/False), and numpy compares `bool == "True"`
+            # as always-False, which silently zeroed ensemble_accuracy for every
+            # binary market. Stringify before comparison.
+            meta_preds = np.array([str(p) for p in meta_preds])
             meta_acc = float((meta_preds == y_str).mean())
             metrics["ensemble_logloss"] = round(meta_ll, 4)
             metrics["ensemble_accuracy"] = round(meta_acc, 4)

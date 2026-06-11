@@ -58,7 +58,9 @@ XG_MIN_SAMPLE      = 30     # campioni minimi per fidarsi del segnale xG
 
 # -- Edge scorer -------------------------------------------------------------
 MIN_COMPOSITE_EDGE  = 0.02  # sotto questa soglia -> edge = 0.0 (nessun segnale)
-CACHE_MAX_AGE_HOURS = 48    # warn se cache piu vecchia di N ore
+# HARD-GATE: oltre questa eta il scoring viene RIFIUTATO (non solo warning).
+# edge_scorer._load_cache solleva RuntimeError -> rigenera con --all.
+CACHE_MAX_AGE_HOURS = 48    # max eta cache di calibrazione (ore) per scorare
 
 # Pesi formula composita: edge_raw = W_CAL * bias + W_ML * ml_divergence
 # Esternalizzati qui per permettere tuning senza toccare la logica.

@@ -1,0 +1,626 @@
+AGENTI CON CONTENUTO UTILE: 38
+
+===== BLOCCO 1 (2065868 char) =====
+JVBERi0xLjUKJY8KMTE4IDAgb2JqCjw8IC9GaWx0ZXIgL0ZsYXRlRGVjb2RlIC9MZW5ndGggMzIzMyA+PgpzdHJlYW0KeNrNWlmT47YRfp9fIeeJUxnRuEiQ2bKrPE7sOLZTSXmqnJTXD5QEjZilRIWHZ8e/Pt1ogNdAOzv22pUXCcTVB7q/bhxsdb9iqy+vmPu/vbv6+AulVpzFOcv56m6/ytKYJ3ylGY+5ylZ3u9UP0d3BNOZ6LZMsKnyhNT9dCx2Zpqio4uFaQDP+PLZU09Wu67amUXlUN1S1rYq2LfeP9HVuzK7cdmV9ciPrvetWdOa+bsqtJ4JE4feEv11Lc3aHonPMtW1/dPzVJ3P9493fVmuexjJV8C/jJCF5GtP2FY7JZVT3tqCIJlQU9Lkr221jOkOVrVn0OqLwfdcXVXXNo0dqNG+3Vd+WxCNVna/X0LFugVcelRvoW7kWILytj6a9uV4rlkdV+WYYJqM9qA6+6m6DBIhi0W2R6MG08fU6FUn0nSERGQmncpLuc1BjV5CKylPdw3CW4MQ86qhcVDEVXrOECcYF/HOsSYFw4/rQ36YpzZ6a2r4hyR6pqR7qt1h9oNqjKaCjaamtOJ+r0uyoydqDpUFKscIBJ0om0ffXmbTCQ7+d2ZY7GpTioICM3qSUhOW3BbGwIiWdLNBiCtIcfQ2KpM/y5OYxzbGlKisZTV26KcAcQKdb46du6uOCfNf03eEGmQWXyqYuJTMRixREsKyXsYldr5nj8SRmifK9bnDSxM8uI9J8U75mXIFqrGXLXMeSq7lmZh6CtiVAHmAcrUxFZUf/h6KlAtnZdts3oD3XvTjtqJHWtW7dYMsMFo516+bpW+P6ThRkCZ0WY6oSFFx0YBp/ul4nWRrdgmU11IZmaD9vQmvN84ShgaJKpIyq+r5oyu5wLLdYoYhdbGnPgFOIFVa/q4Dj3x1KXECZRufibCVHFvDb19fNfXEqf7bWJ3VUuOp9XVU1auMBnU8lEpzPmho1C/rbGevm26YEP9/Q/C1N1B2gylC57fodOQWMOdIK7EzV3lDzbGZJf40hdusGUO8JrHlNkbUAMnhXGJBIEBKhvOAVx8IaBPa0pi7UOHTCD7WQegUhAvzdO++lbifTtvOZ0EI7NxdhAWpM8eirE9WO8sGHokEPA6OJRd6+bUOmQNaUaIfgaGtJ6uwVarcV2SoUH8BCqPXc1E53bVG11GqRARv3PVrkMKcpGrJ5YDnjCgMftX12duo77cq3NBSREWRNHqkHrD2s+7jo2AXZvQBe5emejLbpK7KRiSHTYkABZgSvKQtq78GErIEZ189Cl+1P5itRj7A0zRtXX7tpxmgr1Tj7ZKk9IukV17HggEOASMC2zGKZaGIbjJxzWB+rFKmT6Fucntvx6NOMYRPgcufiNXS5BeSFLm/um7o/7UKwB0SEAiKSiKCRCKc6WwBU6QBaaEoBih6B5AYNkY9d0fJO1C114dVqy1Xs6X8RWrGKIkKGoZUqypZo9e0Y4PHb+RXqH7ttbLbj5hiUiUsbWHUDFoloI7RwLAPvFqZ7m0xsrFv5HpZb+L+vrdFiX0TJb4sDoqRt4nkmXlHTn8u36FBYa40IC5/XlU0usJ3nuX5F1d8YM4x3lTz6umgqK/M4AY/+3v1c9/umaIOoLBiTLm3QkvI67S0XZplnbtAyLI7tTrkPfZRda6q975WwBzBrbgMgpAS7xqaUD3MylU2obM2e6DnCEsKVn7czxXHkEGf+ApOMGiIdhi/pZA3I9l15PEIWYWNwjpKyV1T8uj7B6tr6bFoPwavCdbdr48ZkYzFHNhAFcx4BD4rkgLaC/hziESjCN+UfmNma1rgiaQEN1w09A7AVg9mGYMZYRajoS2eau6LZUQ3lfSxxfCVpSuislccS7TAZsMSuxASiNSYG4Ff1yeNRuaPgxiNvBmjQA7cwwOHiifg9FhahtFpEG0veJvNQ2sOcFHU1Lb9HLk0xpmldR4jkPFpPNeCi/agggKc0YdFrLtVnTdPvij9g1plaPThQyqeglMMmKBM+F3t4eIi3B4yZO7DpKgbTjTdNMIcTSZznmR9I1oeEKEQhRWABXPAZ+qmONcDuhD4gz09lW9SmPUMOUP5UvIuLlEFuIKZcvKKkQSUsFnkeyhpSAOum2FXmcX2HJmqa5pGqxzWibwpTqRoHzlcxxfwDF8+HXRuuoNbDJZZ713NMrOh7yJOg3JptfXJjp+aOFitzF4eQGgxpzDrkA5MNAXNgwTxKMTl4lU1nsMKBMJoyWjftE5y5MrkQlEnnFI2b7txvAEYPtHWR3uj3tW83xbhTmmzogNCuwNIjKn7cEKnIjestCrDBORluSCmJCiVJLurPMpIhsWhdSFwkAPOEoiUQhWRhZ7qirCbpAcRqBbbl0gMZQxRyASHmLkG4RT+HqD/4+SxVuJQEsDjJhzQdw2Mehg2sXyTNTETk1tSKXrVzM1D9DX0gYpNP4hcFOih8Y8w40MVH+ML46PcdQMEfLmAToRSVXNXJHggckdGN31kEFodMMPNxHYsjCCRiqhQlY5UMXvxv14WtdJxrRjARwxLB/HEqU7dXCk4UawkVYy+IWjzVwSk5t8g3nVOEVuzJnP4IwR33WBfIo8YHhpYOQgxtSqBQPVLvARSgjBG7DUnAFQCyGrbQnwVRj4OW1QT0mEsF3MSewdxH/SWRLInFMP42DO+gnBmJYgjLzoGfkMtor42FgshvQAO4a4G8vnNnVLDtAebTuan8w8bPsm0xLcDtBG6xwaF72j2phOLHX+vqHia6oRqep8qFnfkuqGiKo4HMuR1Hkoipnooo0hxWVo8yiiRgJRDl+PvZnZzbXYCiijOVvZSe+O3pzQnK93YCXIgMVH8oPdijvunAhbajm2JTwi7GGT5W2n1K4fa8AJTcxu+ZNez703AsIKP70h/zWJR2ThTQiQR/FhoiP2zrgFdnWAFZsjjh+dS0wxoWSj6HSJIUp2eWMScG6U1KK+V6fRL0evBonnhyj8F1gkQ8RO4SAOoXAaB+BwB+SBHyEDnIYt8lwn9Cti1jJt/blfR7ua7+cK6kn/Fd8RsRfMZ39TSACZ3BSto/8/YcWgmZQFgelnT/GnKKYKyQcS4DDrUUSCjxYoEu+BRP0qlAfwwRpOIvXbPfkeILFi3oLhO93gcIAhxqidlsmjiAPZanCezJKSToWDG9dGKOTGudEjmeYfSOOVt41XQeZW/WJp1eheZK40Rms7lEgP8nc000Mbt8wNM1hQgDKsldmPpXgDkGEwJZIWPNXbc3QbqpGBT7SdCmZR7noA1I6BFDlqsul1gEAOhleJlq03erg4WWEpSbDSsZkm8NJpFDGrjOYiX5jOAiUWIxg1gIGyDo/ZyQv0BK8SulTJ+XUs6kFL9aSuiWe28KUYWtUBpnmZg4+NVf7q7+e8Whia34SjEO5HKbhPJEr7bHqx9+ZKsdNMJGClhNVw+263GVA4/2hKRafXf1z9BF9jBZ
+
+===== BLOCCO 2 (875912 char) =====
+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
+
+===== BLOCCO 3 (29519 char) =====
+ Predictive Modeling of Association Football Scores Using Bivariate Poisson 
+ wild ” difference in playing at home or away contrary to conclusions drawn by previous researchers in playing at home without skills dominance of the home team. Both home and away scores are influenced by corner profiles and shots on targets of teams."/>
+ wild ” difference in playing at home or away contrary to conclusions drawn by previous researchers in playing at home without skills dominance of the home team. Both home and away scores are influenced by corner profiles and shots on targets of teams."/>
+ wild ” difference in playing at home or away contrary to conclusions drawn by previous researchers in playing at home without skills dominance of the home team. Both home and away scores are influenced by corner profiles and shots on targets of teams."/>
+ 2020;&nbsp;
+ doi:10.5923/j.ajms.20201003.01 
+ Predictive Modeling of Association Football Scores Using Bivariate Poisson 
+ Abstract 
+ Copyright © 2020 The Author(s). Published by Scientific & Academic Publishing. 
+ Abstract 
+ Formative outcomes and terminal scores of association football serves as the basis for most placed bets in Ghana. These formative outcomes and terminal scores are largely dependent on the quality of teams’ performance as against that of the opponent(s). The paper proposes a predictive model that assesses the quality of teams’ performance via teams’ scoring intensity by encapsulating Foul for teams (FoulF), Fouls against the team (FoulA), Red cards against the team (Red CA), Corners profile for the team (CornP), Yellow cards against the team (YelCA) and Shots on targets (ShotT) of home and away teams, and further used these scores’ intensities between any two teams to calculate the probabilities of win, draw or lose between teams using bivariate Poisson distribution. The paper concludes that, the higher the scoring potency of teams, the higher their probability of winning and vice-versa. The paper also avers that, on average there appears not to be any “ wild ” difference in playing at home or away contrary to conclusions drawn by previous researchers in playing at home without skills dominance of the home team. Both home and away scores are influenced by corner profiles and shots on targets of teams.
+ Poisson Regression, Bivariate Poisson, Scores Modeling, English Premier League (EPL), Home advantage, Probability matrix
+ Cite this paper: Robert Kay Ankomah , Emmanuel Kojo Amoah , Elvis Agyei Obeng , Predictive Modeling of Association Football Scores Using Bivariate Poisson, American Journal of Mathematics and Statistics , Vol. 10 No. 3, 2020, pp. 63-69. doi: 10.5923/j.ajms.20201003.01.
+ Article Outline 1. Introduction 2. Methodology &nbsp;&nbsp;&nbsp;&nbsp; 2.1. Data Description &nbsp;&nbsp;&nbsp;&nbsp; 2.2. Poisson Regression &nbsp;&nbsp;&nbsp;&nbsp; 2.3. Theoretical Framework of Model Specifications &nbsp;&nbsp;&nbsp;&nbsp; 2.4. Home Advantage Factor &nbsp;&nbsp;&nbsp;&nbsp; 2.5. Model Inference 3. Results, Analysis and Discussions &nbsp;&nbsp;&nbsp;&nbsp; 3.1. Model Assumption &nbsp;&nbsp;&nbsp;&nbsp; 3.2. Model Results &nbsp;&nbsp;&nbsp;&nbsp; 3.3. Parameter Estimates &nbsp;&nbsp;&nbsp;&nbsp; 3.4. Home Advantage 4. Conclusions 
+ 1. Introduction Formative outcomes and terminal scores of association football serves as the basis for most placed bets in Ghana; and this trend prevails in most countries across continents. This is evidenced in the case of Ghana by patrons who flock at the
+
+===== BLOCCO 4 (26889 char) =====
+=== PAGE 0 ===
+arXiv:2101.00457v2  [stat.AP]  8 Mar 2021
+Home advantage of European major
+football leagues under COVID-19
+pandemic
+Eiji Konaka
+Meijo University
+konaka@meijo-u.ac.jp
+March 9, 2021
+Abstract
+Since March 2020, the environment surrounding football has changed dramatically because of the
+COVID-19 pandemic. After a few months’ break, re-scheduled matches were held behind closed doors
+without spectators. The main objective of this study is a qua ntitative evaluation of “crowd effects”
+on home advantage, using the results of these closed matches . The proposed analysis uses pairwise
+comparison method to reduce the effects caused by the unbala nced schedule. The following conclusions
+were drawn from the statistical hypothesis tests conducted in this study: In four major European leagues,
+the home advantage is reduced in closed matches compared to t han in the normal situation, i.e., with
+spectators. The reduction amounts among leagues were diffe rent. For example, in Germany, the home
+advantage was negative during the closed-match period. On t he other hand, in England, statistically
+signiﬁcant differences in home advantage were not observed between closed matches and normal situation.
+I. I ntroduction
+Sice March 2020, the environment surrounding football has c hanged dramatically — because of
+the COVID-19 pandemic. Similar to many other crowd-pleasin g events, most football leagues
+were suspended. Some of the leagues had even been calcelled, whereas others resumed after
+a few months’ break. With regard to the resumed leagues, howe ver, no decision as before the
+suspension, has been announced. Re-scheduled matches have therefore been held behind closed
+doors without spectators.
+The objective of this study was to analyze how this unfortuna te closed-match situation af-
+fected the match outcomes of football. In particular, our ma in objective was a quantitative evalu-
+ation of “crowd effects” on home advantage.
+T oday , the existence of “home advantage” in sports, especia lly football, seems unquestionable
+[1][2][3]. However, deﬁnitive evidence on the factors that produce home advantage remains
+elusive. Of course, the quantitative impact of each of these factors on home advantage has also
+been discussed.
+“Home advantage” can be deﬁned as the beneﬁt that induces hom e teams to consistently win
+more than 50 percent of the games under a balanced home-and-a way schedule [4]. Quantitative
+research on home advantage in football dates back nearly 40 y ears to Morris [5], followed by
+Dowie [6] and Pollard [2]. In a very brief and thorough review paper on home advantage [7],
+consisting of only three pages, Pollard presented eight mai n factors that could generate home
+1
+=== PAGE 1 ===
+advantage and explained conventional studies for each (of c ourse, he did not forget to mention
+interactions and other factors). The ﬁrst one is “’crowd eff ect,” i.e, effect caused by spectators. In
+[7], he wrote, “This is the most obvious factor involved with home advantage and one that fans
+certainly believe to be dominant [8][9].” Studies by Dowie [ 6] and Pollard [2] were also able to
+ﬁnd very little evidence that home advantage depends on crow d density (spectators per stadium
+capacity).
+This study utilizes the results of matches conducted behind closed doors during the COVID-
+19 pandemic to determine the relationship between the prese nce of spectators and home advan-
+tage. A similar study had already been performed by Reade et a l., who used the results
+
+===== BLOCCO 5 (21584 char) =====
+=== PAGE 0 ===
+Ranking soccer teams on basis of their current strength: a
+comparison of maximum likelihood approaches
+Christophe Ley ∗1, Tom Van de Wiele †2, and Hans Van Eetvelde ‡3
+1Ghent University, Ghent, Belgium
+2DeepMind, London, UK
+3Ghent University, Ghent, Belgium
+Abstract
+We present ten diﬀerent strength-based statistical models that we use to model soccer
+match outcomes with the aim of producing a new ranking. The models are of four main
+types: Thurstone-Mosteller, Bradley-Terry, Independent Poisson and Bivariate Poisson, and
+their common aspect is that the parameters are estimated via weighted maximum likelihood,
+the weights being a match importance factor and a time depreciation factor giving less weight
+to matches that are played a long time ago. Since our goal is to build a ranking reﬂecting the
+teams’ current strengths, we compare the 10 models on basis of their predictive performance
+via the Rank Probability Score at the level of both domestic leagues and national teams.
+We ﬁnd that the best models are the Bivariate and Independent Poisson models. We then
+illustrate the versatility and usefulness of our new rankings by means of three examples
+where the existing rankings fail to provide enough information or lead to peculiar results.
+Key words: Bivariate Poisson model, Bradley-Terry model, Independent Poisson model, Pre-
+dictive performance, Weighted likelihood
+1 Introduction
+Football, or soccer, is undeniably the most popular sport worldwide. Predicting which team
+will win the next World Cup or the Champions League ﬁnal are issues that lead to heated
+discussions and debates among football fans, and even attract the attention of casual watchers.
+Or put more simply, the question of which team will win the next match, independent of its
+circumstances, excites the fans. Bookmakers have made a business out of football predictions,
+and they use highly advanced models taking into account numerous factors (like a team’s current
+form, injured players, the history between both teams, the importance of the game for each team,
+etc.) to obtain the odds of winning, losing and drawing for both teams.
+One major appeal of football, and a reason for its success, is its simplicity as game. This
+stands somehow in contrast to the diﬃculty of predicting the winner of a football match. A
+help in this respect would be a ranking of the teams involved in a given competition based on
+their current strength, as this would enable football fans and casual watchers to have a better
+∗Electronic address: christophe.ley@ugent.be
+†Electronic address: tomvandewiele@google.com
+‡Electronic address: hans.vaneetvelde@ugent.be
+1
+arXiv:1705.09575v3  [stat.AP]  13 Nov 2018
+=== PAGE 1 ===
+feeling for who is the favourite and who is the underdog. However, the existing rankings, both
+at domestic leagues level and at national team level, fail to provide this, either because they are
+by nature not designed for that purpose or because they suﬀer from serious ﬂaws.
+Domestic league rankings obey the 3-1-0 principle, meaning that the winner gets 3 points, the
+loser 0 points and a draw earns each team 1 point. The ranking is very clear and fair, and tells
+at every moment of the season how strong a team has been since the beginning of the season.
+However, given that every match has the same impact on the ranking, it is not designed to reﬂect
+a team’s current strength. A recent illustration of this fact can be found in last year’s English
+Premier League, where the newly prom
+
+===== BLOCCO 6 (18903 char) =====
+==== PAGE 15 ====
+ignorance scores of two forecasting systems represents the diﬀerence in infor-
+mation provided by each one expressed in bits. This means that calculating
+2 to the power of the mean relative ignorance between forecasting systems
+one and two yields the mean increase in probability density placed on the
+outcome by the former over the latter.
+Whilst scoring rules are useful tools for evaluating and comparing fore-
+casting systems, it is important to acknowledge their limitations. Often, a set
+of forecasts are used with a speciﬁc purpose in mind. In sports forecasting,
+this might be to aid a decision whether to place a bet on a certain outcome,
+whether to select a certain player for a match or which play to make during
+a game. It is therefore crucial to determine whether the forecasts are ﬁt for
+that speciﬁc purpose. For example, a set of forecasts may successfully in-
+corporate important information and therefore score better than alternative
+forecasts that do not incorporate this information yet still not be ﬁt for a
+speciﬁc purpose. For example, using a set of forecasts to choose whether to
+place bets may result in a substantial loss which would have been avoided
+had the bets not been placed at all.
+5 Perfect and imperfect model scenarios
+Philosophical approaches to the comparison of scoring rules typically consider
+two distinct settings: the perfect model scenario, in which one of the candi-
+date forecasting systems coincides with the probability distribution that gen-
+erated the outcome (often referred to as the data generating model (DGM))
+and the imperfect model scenario, in which each candidate forecasting system
+is imperfect ( Judd and Smith [2001, 2004]). In the perfect model scenario,
+there should be no ambiguity as to which set of forecasts is most desirable;
+a perfect forecasting system is always better than an imperfect one. In the
+latter, on the other hand, the ‘best’ forecasting system is subjective and the
+question of which one is the most desirable is also subjective.
+In the perfect model setting, there are two directly linked questions of
+interest. Firstly, ‘does the scoring rule always favour the perfect forecasting
+system in expectation?’ Scoring rules that do this are called proper and it
+is generally considered that a chosen scoring rule should have this property
+(Br¨ ocker and Smith[2007]). As discussed in section 2.2, each of the three
+scoring rules considered in this paper are proper and thus they cannot be
+distinguished in this way. A closely linked means of comparison for scoring
+15
+==== PAGE 16 ====
+rules assumes that each one is proper and assesses how many past forecasts
+and outcomes are required to have a given probability of selecting the perfect
+forecasting system. Requiring fewer forecasts and outcomes to do this means
+that the information is used more eﬃciently and therefore that there is a
+better chance of selecting the best forecasting system for future events. This
+observation forms the basis of the experiments presented in this paper.
+In practice, one can never expect any of the candidate forecasting sys-
+tems to be perfect and therefore the perfect model case is generally accepted
+to be only a theoretical construct. It can nonetheless be argued that the
+performance of scoring rules in this context is important. If, in expectation,
+a scoring rule does not favour a perfect forecasting system over all others,
+one should be uneasy about th
+
+===== BLOCCO 7 (17830 char) =====
+############ Arruda
+--- or lost by each team as inputs, and (ii) compare such models with two benchmark models, whose predictions for matches of the Brazilian national championships are published on Internet websites—see de Arruda (2015) and GMEE (2015). Such models are widely consulted by football fans and consider multiple covariates as inputs. As a baseline, we also make comparisons with an extension of the Bradley-Terry model (Davidson, 1970). Brazilian football championships
+--- and Simmons, 2000; Koning, 2000; Brillinger, 2008, 2009). For a discussion of these two approaches see Goddard (2005). In this work, we consider two benchmark models that follow the ﬁrst ap- proach: “Arruda” ( www.chancedegol.com.br) and “Lee” ( www.previsaoesportiva.com.br); the Bradley-Terry model and the models proposed by us follow the second approach. The pre- dictions of the two benchmark models were published before each matchday. We use this sectio
+--- nd approach. The pre- dictions of the two benchmark models were published before each matchday. We use this section to describe these models in some detail. 2.1 Benchmark Models The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1,Y 2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters ( λ1, λ2, λ3), which has probability mass f
+--- . The pre- dictions of the two benchmark models were published before each matchday. We use this section to describe these models in some detail. 2.1 Benchmark Models The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1,Y 2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters ( λ1, λ2, λ3), which has probability mass function giv
+--- h dependence parameter λ3 ≥ 0. If λ3 = 0 the marginal distributions are independent, while if λ3 > 0 the marginal distributions are positively correlated. While the Lee model assumes that λ3 = 0, the Arruda model does not. Because of its ﬂexibility, Karlis and Ntzoufras (2003) argue that this distribution is a plausible choice for modeling dependence of scores in sports competitions. Similar to Karlis and Ntzoufras (2003) and Lee (1997), both benchmark mod
+--- er representing the average number of goals in a match, ATTk is the oﬀensive strength of team k, DEF k is the defensive strength of team k and γ is the home advantage parameter, k =A,B . For both the Arruda and Lee models, it is usual to assume the following identiﬁability constraint T∑ t=1 ATTt = 0, T∑ t=1 DEFt = 0, where T is the number of teams of the analyzed championship. The predictions of an upcoming matchday are obtained by ﬁtting the model to all 
+############ Lee
+--- The Models: Theoretical Background In the statistical literature, the ﬁnal outcome of football matches is usually predicted by modeling either the number of goals (Maher, 1982; Dixon and Coles, 1997; Lee, 1997; Karlis and Ntzoufras, 2003) or the categorical ﬁnal outcome itself (win, draw or loss of the home team) (Forrest and Simmons, 2000; Koning, 2000; Brillinger, 2008, 2009). For a discussion of these two approaches see Goddard (2005). In this work, we 
+--- nger, 2008, 2009). For a discussion of these two approaches see Goddard (2005). In this work, we consider two benchmark models that follow the ﬁrst ap- proach: “Arruda” ( www.chancedegol.com.br) and “Lee”
+
+===== BLOCCO 8 (15789 char) =====
+11-theircommonaspectisthattheparametersareestimatedviaweightedmaximumlikelihood,
+12-theweightsbeingamatchimportancefactorandatimedepreciationfactorgivinglessweight
+13:tomatchesthatareplayedalongtimeago. Sinceourgoalistobuildarankingreflectingthe
+14-teams’currentstrengths,wecomparethe10modelsonbasisoftheirpredictiveperformance
+15-via the Rank Probability Score at the level of both domestic leagues and national teams.
+--
+49-However,giventhateverymatchhasthesameimpactontheranking,itisnotdesignedtoreflect
+50-a team’s current strength. A recent illustration of this fact can be found in last year’s English
+51:Premier League, where the newly promoted team of Huddersfield Town had a very good start
+52:in the season 2017-2018 with 7 out of 9 points after the first 3 rounds. They ended the first half
+53-of the season on rank 11 out of 20, with 22 points after 19 games. Their second half season was
+54-however very poor, with only 15 points scored in 19 games, earning them the second last spot
+55-overthesecondhalfoftheseason(overalltheyendedtheyearonrank16, allowingthemtostay
+56:in the Premier League). There was a clear tendency of decay in their performance, which was
+57-hidden in the overall ranking by their very good performance at the start of the season.
+58-Contrary to domestic league rankings, the FIFA/Coca-Cola World Ranking of national soc-
+--
+80-currentstrength. Tothisend,weconsiderandcomparevariousexistingandnewstatisticalmod-
+81-elsthatassignoneormorestrengthparameterstoeachsoccerteamandwheretheseparameters
+82:are estimated over an entire range of matches by means of maximum likelihood estimation. We
+83:shall propose a smooth time depreciation function to give more weight to more recent matches.
+84-The comparison between the distinct models will be based on their predictive performance, as
+85-themodelwiththebestpredictiveperformancewillalsoyieldthebestcurrent-strength-ranking.
+--
+94-based models whose parameters are estimated via maximum likelihood. More precisely, via
+95-weighted maximum likelihood as we introduce two types of weight parameters: the above-
+96:mentioned time depreciation effect and a match importance effect for national team matches.
+97-In Section 3 we describe the exact computations behind our estimation procedures as well as a
+98-criterion according to which we define a statistical model’s predictive performance. Two case
+99-studies allow us to compare our 10 models at domestic league and national team levels in Sec-
+100:tion 4: we investigate the English Premier League seasons from 2008-2017 (Section 4.1) as well
+101:as national team matches between 2008 and 2017 (Section 4.2). On basis of the best-performing
+102-models, we then illustrate in Section 5 the advantages of our current-strength based ranking via
+103-variousexamples. Weconcludethepaperwithfinalcommentsandanoutlookonfutureresearch
+--
+114-weights introduced are of two types: time depreciation (domestic leagues and national teams)
+115-and match importance (only national teams).
+116:2.1.1 A smooth decay function based on the concept of Half period
+117-A feature that is common to all considered models is our proposal of decay function in order
+118-to reflect the time depreciation. Instead of the step-wise decay function employed in the FIFA
+119-ranking, we rather suggest a continuous depreciation function that gives less weight to older
+120:matches with a maximum weight of 1 for a match played today. Specifically, the time weight for
+121-a match which is played
+
+===== BLOCCO 9 (15116 char) =====
+6:We propose two Bayesian multinomial-Dirichlet models to predict the final outcome of football (soccer) matches and compare them to three well-known models regarding their predictive power. All the models predicted the full-time results of 1710 matches of the first division of the Brazilian football championship and the comparison used three proper scoring rules, the proportion of errors and a calibration assessment. We also provide a goodness of fit measure. Our results show that multinomial-Dirichlet models are not only competitive with standard approaches, but they are also well calibrated and present reasonable goodness of fit. Keywords: Bayesian inference; predictive inference; probabilistic prediction; scoring rules; soccer prediction.
+8:Several models for football (soccer) prediction exist (see, e.g., Owen (2011); Koopman and Lit (2015); Volf (2009); Titman et al. (2015) and references therein). In this work, we (i) propose two novel Bayesian multinomial-Dirichlet models that consider only the number of matches won, drawn or lost by each team as inputs, and (ii) compare such models with two benchmark models, whose predictions for matches of the Brazilian national championships are published on Internet websites--see de Arruda (2015) and GMEE (2015). Such models are widely consulted by football fans and consider multiple covariates as inputs. As a baseline, we also make comparisons with an extension of the Bradley-Terry model (Davidson, 1970).
+10:Our comparisons were made using 1710 matches of the first division of the Brazilian football championship. Several standard metrics (scoring rules) were used for ranking the models, as well as other criteria such as the proportion of matches that were "incorrectly" predicted by each model and a measure of calibration.
+14:This paper is organized as follows. Section 2 describes the studied models, Section 3 reports the predictive performance of the models and a goodness of fit measure. In Section 4 we discuss the results and close with proposals for future research. The Appendix briefly describes the scoring rules and the criteria used in this work to classify the models.
+17:In the statistical literature, the final outcome of football matches is usually predicted by modeling either the number of goals (Maher, 1982; Dixon and Coles, 1997; Lee, 1997; Karlis and Ntzoufras, 2003) or the categorical final outcome itself (win, draw or loss of the home team) (Forrest and Simmons, 2000; Koning, 2000; Brillinger, 2008, 2009). For a discussion of these two approaches see Goddard (2005). In this work, we consider two benchmark models that follow the first approach: "Arruda" (www.chancedegol.com.br) and "Lee" (www.previsaoesportiva.com.br); the Bradley-Terry model and the models proposed by us follow the second approach. The predictions of the two benchmark models were published before each matchday. We use this section to describe these models in some detail.
+19:The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1, Y2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters (1, 2, 3), which has probability mass function given by
+58:3  0. If 3 = 0 the marginal distributions are independent, while if 3 > 0 the marginal distributions are positively correlated. While the Lee model assumes that 3 = 0, the Arruda model does not. Because of its flexibility, Karlis and Ntzoufras (2003)
+
+===== BLOCCO 10 (13008 char) =====
+463 out.txt
+16:Domestic league rankings obey the 3-1-0 principle, meaning that the winner gets 3 points, the loser 0 points and a draw earns each team 1 point. The ranking is very clear and fair, and tells at every moment of the season how strong a team has been since the beginning of the season. However, given that every match has the same impact on the ranking, it is not designed to reflect a team's current strength. A recent illustration of this fact can be found in last year's English Premier League, where the newly promoted team of Huddersfield Town had a very good start in the season 2017-2018 with 7 out of 9 points after the first 3 rounds. They ended the first half of the season on rank 11 out of 20, with 22 points after 19 games. Their second half season was however very poor, with only 15 points scored in 19 games, earning them the second last spot over the second half of the season (overall they ended the year on rank 16, allowing them to stay in the Premier League). There was a clear tendency of decay in their performance, which was hidden in the overall ranking by their very good performance at the start of the season.
+22:The present paper is organized as follows. We shall present in Section 2 10 different strengthbased models whose parameters are estimated via maximum likelihood. More precisely, via weighted maximum likelihood as we introduce two types of weight parameters: the abovementioned time depreciation effect and a match importance effect for national team matches. In Section 3 we describe the exact computations behind our estimation procedures as well as a criterion according to which we define a statistical model's predictive performance. Two case studies allow us to compare our 10 models at domestic league and national team levels in Section 4: we investigate the English Premier League seasons from 2008-2017 (Section 4.1) as well as national team matches between 2008 and 2017 (Section 4.2). On basis of the best-performing models, we then illustrate in Section 5 the advantages of our current-strength based ranking via various examples. We conclude the paper with final comments and an outlook on future research in Section 6.
+201:2.2.4 Thurstone-Mosteller, Bradley-Terry and Bradley-Terry-Davidson models with Goal Difference weights
+203:The basic Thurstone-Mosteller, Bradley-Terry and Bradley-Terry-Davidson models of the previous sections do not use all of the available information. They only take the match outcome into account, omitting likely valuable information present in the goal difference. A team that wins by 8-0 and loses the return match by 0-1 is probably stronger than the opponent team. Therefore we propose an extension of these models that modifies the basic models in the sense that matches are given an increasing weight when the goal difference grows. The likelihood function is calculated as
+214:through the goal difference weight
+222:with goalDif fm the absolute value of the goal difference in match m (both outcomes 2-0 and 0-2 thus give the same goal difference of 2). This way, a goal difference of 1 receives a goal difference weight of 1 and every additional increment in goal difference results in a smaller increase of the goal difference weight. A goal difference of 7 goals receives a goal difference weight of 3. Parameter estimation is achieved in the same way as in the basic models.
+283:where yijm = 1 if i and j are the home team, resp. away team in match m and yijm = 0 otherwise, and gi,m and gj,
+
+===== BLOCCO 11 (11737 char) =====
+90	3 Team performance over the course of the season 
+91	The average goal difference that a specific team would score against an average team after averaging 
+92	over all random effects can be chosen as a useful measure of the performance strength of a team 
+93	within a league (Heuer 2012). To find out whether the performance of a team changes within a season, 
+94	the league-averaged autocorrelation function of the goal difference 𝛥𝐺  
+95	𝑐𝑜𝑟𝑟Δ𝐺(Δ𝑛) = ⟨𝛥𝐺(𝑛)𝛥𝐺(𝑛 + 𝛥𝑛)⟩𝑡,teams,leagues
+96	= 1
+97	#terms ∑  
+98	 
+99	leagues
+100	∑ ∑ 𝛥𝐺𝑚(𝑛) ⋅ 𝛥𝐺𝑚(𝑛 + 𝛥𝑛)
+101	Nmatch days−Δ𝑛
+102	𝑛=1
+103	𝑁teams
+104	𝑚=1
+105	 
+106	can be used, whereby 𝑁teams describes the number of teams and 𝑁match days describes the number 
+107	of match days within a league.  The argument 𝛥𝑛 describes the time difference and thus records 
+108	whether and to what extent the performance level changes after matches. 𝛥𝐺𝑚(𝑛) describes the goal 
+109	difference from the point of view of team m on match day n. Some technical aspects are still important: 
+110	(1) Terms are omitted from the sum if it is the same opponent of team m on match days 𝑛 and 𝑛 + 𝛥𝑛 
+111	are involved.  (2) 𝛥𝐺𝑚(𝑛) is corrected by the home advantage available for the corresponding season. 
+112	(3) Especially in the Corona years, the sequence of games is often different than originally planned. 
+113	Therefore, the temporal argument (e.g. n=10) generally describes the 10th game of team m, which 
+114	does not necessarily have to take place on the 10th matchday.  
+115	The autocorrelation function has a finite positive value if the performance of a team is still positively 
+116	correlated after a number of match days . If both are completely uncorrelated after a time 𝛥𝑛 the 
+117	autocorrelation function disappears. 
+118	As can be seen in Fig. 1a, the autocorrelation function shows no significant dependence on 𝛥𝑛 but 
+119	fluctuates around a constant value. This results in the surprising observation that the performance of 
+120	a team does not change during a season in the context of statistical errors. This observation is 
+121	consistent with preliminary earlier studies (Heuer 2009, Heuer 2012). It should be noted that this does 
+122	not rule out fluctuations in performance from game to game - but without any systematic time 
+123	dependency. On the other hand, systematic changes in performance levels do occur when comparing 
+124	successive seasons (Heuer 2009). 
+125	4 Single match predictions 
+126	4.1 Prediction of match outcome, goal difference and exact match result 
+127	There are different ways of predicting the outcome of a game. In the simplest variant, only the result 
+128	in the form win/draw/loss is considered. The prediction of the goal difference is somewhat more 
+129	specific. In the most informative variant, the exact match result is predicted, as already mentioned, by 
+130	specifying the probabilities for all possible outcomes. To predict the exact match result using data -
+131	driven models, more data is naturally required than when restricting to goal differences, as the 
+132	number of possible exact match results is significantly larger than the number of possible goal 
+133	differences. In this paper, we focus on the prediction of goal differences and will also discuss the 
+134	prediction of total number of goals for comparison.  
+135	  
+136	==== PAGE 4 ====
+137	4.2 Neglecting the chronological order 
+138	When predicting the results of the last game, all previous games of the teams are available. Since (see
+
+===== BLOCCO 12 (10832 char) =====
+PAGES 16
+===== PAGE 8 =====
+3 Parameter estimation and model selection
+Inthissectionweshallbrieflydescribetwocrucialstatisticalaspectsofourinvestigation,namely
+how we compute the maximum likelihood estimates and which criterion we apply to select the
+model with the highest predictive performance.
+3.1 Computing the maximum likelihood estimates
+Parameters in the Thurstone-Mosteller and Bradley-Terry type as well as in the Poisson models
+areestimatedusingmaximumlikelihoodestimation. Tothisend,wehaveusedtheoptimfunction
+in R (R Development Core Team, 2018) by specifying as preferred method the BFGS (Broyden-
+Fletcher-Goldfarb-Shannooptimizationalgorithm). Wehaveoptedforthisquasi-Newtonmethod
+becauseofitsrobustproperties. Notethattheratingsr areuniqueuptoadditionbyaconstant.
+i
+Toidentifytheseparameters,weaddtheconstraintthatthesumoftheratingshastoequalzero.
+For the Bradley-Terry-Davidson model the same constraint can be applied after logtransforma-
+tionoftheratingsr∗. Thankstothisconstraint,onlyT−1strengthshavetobeestimatedwhen
+i
+we consider T teams. For the models with 2 parameters per team, we have to estimate 2(T −1)
+strength parameters. The strictly positive parameters are initialized at 1, the other parameters
+get an initial value of 0. After the first optimization, the estimates are used as initial values in
+the next optimization to speed up the calculations.
+3.2 Measure of predictive performance
+Thestudiedmodelsarebuilttoperformthree-wayoutcomeprediction(homewin,draworhome
+loss). Each of the three possible match outcomes is predicted with a certain probability but
+onlytheactualoutcomeisobserved. Thepredictedprobabilityoftheoutcomethatwasactually
+observed is thus a natural measure of predictive performance. The ideal predictive performance
+metric is able to select the model which approximates the true outcome probabilities the best.
+The metric we use is the Rank Probability Score (RPS) of Epstein (1969). It represents the
+difference between cumulative predicted and observed distributions via the formula
+M
+1 (cid:88) (cid:0) (P −y )2+(P −y )2(cid:1)
+2M Hm Hm AM AM
+m=1
+where we simplify the previous notations so that P and P stand for the predicted proba-
+Hm Am
+bilitiesinmatchmandy andy fortheactualoutcomes(hence, 1or0). Ithasbeenshown
+Hm Am
+in Constantinou and Fenton (2012) that the RPS is more appropriate as soccer performance
+metric than other popular metrics such as the RMS and Brier score. The reason is that, by
+construction, the RPS works at an ordinal instead of nominal scale, meaning that, for instance,
+it penalizes more severely a wrongly predicted home win in case of a home loss than in case of a
+draw.
+4 Comparison of the 10 models in terms of their predictive
+performance
+Inthissectionwecomparethepredictiveperformanceofall10modelsdescribedinSection2. To
+this end, we first consider the English Premier League as example for domestic league matches,
+and then move to nationalteam matchesplayed over a period of 10 years all over the world, i.e.,
+without restriction to a particular zone.
+9
+===== PAGE 9 =====
+Table 1: Comparison table for the best performing models of each of the considered classes with
+respecttotheRPScriterion. TheEnglishPremierLeaguematchesfromrounds6to38between
+the seasons 2008-2009 and 2017-2018 are considered.
+Model Class Optimal Half Period RPS
+Bivariate Poisson 390 days 0.1953
+Independent Poisson 360 days 0.1954
+Independent Poisson Def. & Att. 390 days 0.1
+
+===== BLOCCO 13 (10593 char) =====
+== half @ 3498 ==
+t year’s English Premier League, where the newly promoted team of Huddersfield Town had a very good start in the season 2017-2018 with 7 out of 9 points after the first 3 rounds. They ended the first half of the season on rank 11 out of 20, with 22 points after 19 games. Their second half season was however very poor, with only 15 points scored in 19 games, earning them the second last spot overthesecondhalfoftheseason(overalltheyendedtheyearonrank16, allo
+
+== half @ 3583 ==
+ad a very good start in the season 2017-2018 with 7 out of 9 points after the first 3 rounds. They ended the first half of the season on rank 11 out of 20, with 22 points after 19 games. Their second half season was however very poor, with only 15 points scored in 19 games, earning them the second last spot overthesecondhalfoftheseason(overalltheyendedtheyearonrank16, allowingthemtostay in the Premier League). There was a clear tendency of decay in their p
+
+== Half @ 8783 ==
+wherethe weights introduced are of two types: time depreciation (domestic leagues and national teams) and match importance (only national teams). 2.1.1 A smooth decay function based on the concept of Half period A feature that is common to all considered models is our proposal of decay function in order to reflect the time depreciation. Instead of the step-wise decay function employed in the FIFA ranking, we rather suggest a continuous depreciation functio
+
+== Half @ 9250 ==
+gives less weight to older matches with a maximum weight of 1 for a match played today. Specifically, the time weight for a match which is played x days back is calculated as m (cid:18) (cid:19) xm 1 Half period w (x )= , (1) time,m m 2 meaning that a match played Half period days ago only contributes half as much as a match played today and a match played 3×Half period days ago contributes 12.5% of a match played today. Figure 1 shows a graphical comparis
+
+== depreciation func @ 6148 ==
+elsthatassignoneormorestrengthparameterstoeachsoccerteamandwheretheseparameters are estimated over an entire range of matches by means of maximum likelihood estimation. We shall propose a smooth time depreciation function to give more weight to more recent matches. The comparison between the distinct models will be based on their predictive performance, as themodelwiththebestpredictiveperformancewillalsoyieldthebestcurrent-strength-ranking. The resulting r
+
+== depreciation func @ 9023 ==
+all considered models is our proposal of decay function in order to reflect the time depreciation. Instead of the step-wise decay function employed in the FIFA ranking, we rather suggest a continuous depreciation function that gives less weight to older matches with a maximum weight of 1 for a match played today. Specifically, the time weight for a match which is played x days back is calculated as m (cid:18) (cid:19) xm 1 Half period w (x )= , (1) time,m 
+
+== xi @ 75 ==
+Ranking soccer teams on basis of their current strength: a comparison of maximum likelihood approaches Christophe Ley ∗1, Tom Van de Wiele †2, and Hans Van Eetvelde ‡3 1Ghent University, Ghent, Belgium 2DeepMind, London, UK 3Ghent University, Ghent, Belgium Abstract We present ten different strength-based statistical models that we u
+
+== xi @ 582 ==
+of producing a new ranking. The models are of four main types: Thurstone-Mosteller,Bradley-Terry,IndependentPoissonandBivariatePoisson,and theircommonaspectisthattheparametersareestimatedviaweightedmaximuml
+
+===== BLOCCO 14 (10294 char) =====
+PAGES 29
+==== PAGE 1 ====
+Evaluating probabilistic forecasts of football
+matches: The case against the Ranked
+Probability Score
+Edward Wheatcroft
+London School of Economics and Political Science, Houghton
+Street, London, United Kingdom, WC2A 2AE.
+August 27, 2019
+Abstract
+A scoring rule is a function of a probabilistic forecast and a cor-
+responding outcome that is used to evaluate forecast performance. A
+wide range of scoring rules have been defined over time and there is
+some debate as to which are the most appropriate for evaluating the
+performance of forecasts of sporting events. This paper focuses on
+forecasts of the outcomes of football matches. The ranked probability
+score (RPS) is often recommended since it is �sensitive to distance�,
+that is it takes into account the ordering in the outcomes (a home win
+is �closer� to a draw than it is to an away win, for example). In this
+paper, this reasoning is disputed on the basis that it adds nothing in
+terms of the actual aims of using scoring rules. A related property
+of scoring rules is locality. A scoring rule is local if it only takes the
+probability placed on the outcome into consideration. Two simula-
+tion experiments are carried out in the context of football matches
+to compare the performance of the RPS, which is non-local and sen-
+sitive to distance, the Brier score, which is non-local and insensitive
+to distance, and the ignorance score, which is local and insensitive to
+distance. The ignorance score is found to outperform both the RPS
+and the Brier score, casting doubt on the value of non-locality and
+sensitivity to distance as properties of scoring rules in this context.
+1
+9102
+guA
+32
+]PA.tats[
+1v08980.8091:viXra
+==== PAGE 2 ====
+1 Introduction
+Probabilistic forecasting of sporting events such as football matches has be-
+come an area of considerable interest in recent years. One reason for this
+is that forecasting can help inform gambling decisions and therefore has the
+potential to support the identification of profitable betting strategies. Prob-
+abilistic forecasting has also grown in popularity in the sports media. In
+some media outlets, for example, estimated probabilities are routinely dis-
+seminated in match previews and even in-play. An obvious implication of
+the growth of probabilistic forecasting in sport is the need for effective meth-
+ods of forecast evaluation. This is particularly true in the case of gambling
+where �beating the bookmaker� is a difficult task which typically requires
+highly informative predictions. However, even when the forecasts are used
+for purposes other than gambling, there is often still an incentive for the
+forecasts to be informative, or at least to be perceived as such. There is
+therefore a need for objective measures of forecast performance. This paper
+is concerned with the question of how to evaluate probabilistic forecasts of
+events such as football matches with three or more possible outcomes.
+Evaluation of probabilistic forecasts is typically performed using scoring
+rules, functions of the forecast and corresponding outcome aimed at assessing
+forecast performance. A large number of scoring rules have been defined
+over the years and there is considerable debate surrounding which are the
+most appropriate. A common approach with which to differentiate candidate
+scoring rules is to identify desirable properties and favour scores that have
+them. There is often debate, however, su
+
+===== BLOCCO 15 (9892 char) =====
+Draft version, 2012. 
+To appear in Journal of Quantitative Analysis in Sports, 2012. 
+
+Solving the problem of inadequate scoring rules for 
+assessing probabilistic football forecast models 
+
+ANTHONY C. CONSTANTINOU* AND NORMAN E. FENTON 
+
+Risk Assessment and Decision Analysis Research Group (RADAR) 
+Department of Electronic Engineering and Computer Science (EECS), 
+Queen Mary, University of London (QMUL), UK, E1 4NS 
+
+THIS IS A PRE-PUBLICATION DRAFT OF THE FOLLOWING CITATION: 
+
+Constantinou, A. C. & Fenton, N. E. (2012). Solving the Problem of Inadequate Scoring Rules for 
+Assessing Probabilistic Football Forecast Models. Journal of Quantitative Analysis in Sports: Vol. 8: 
+Iss. 1, Article 1. 
+
+DOI: 10.1515/1559-0410.1418 
+Corresponding author:   Dr. Anthony Constantinou, E-mail: anthony@constantinou.info 
+
+ABSTRACT:  Despite  the  massive  popularity  of  probabilistic  (association)  football 
+forecasting  models,  and  the  relative  simplicity  of  the  outcome  of  such  forecasts  (they 
+three probability values corresponding to home win, draw, and away win) 
+require only  
+there  is  no  agreed  scoring  rule  to  determine  their  forecast  accuracy.  Moreover,  the 
+various scoring rules used for validation in previous studies are inadequate since they fail 
+to recognise that football outcomes represent a ranked (ordinal) scale. This raises severe 
+concerns  about  the  validity  of  conclusions  from  previous  studies.  There  is  a  well-
+established  generic  scoring  rule,  the  Rank  Probability  Score  (RPS),  which  has  been 
+missed  by  previous  researchers,  but  which  properly  assesses  football  forecasting 
+models.  
+
+KEY WORDS: association football forecasting, forecast assessment, forecast verification, 
+predictive evaluation, probability forecasting, rank probability score, sports forecasting. 
+
+1 
+
+INTRODUCTION 
+
+If  a  problem  has  a  fixed  set  of  possible  outcomes  (such  as  a  football  match 
+where the outcomes are H, D, A corresponding to Home win, Draw, Away win), a 
+probabilistic forecast model is one that provides predicted probabilities (such as 
+
+*Corresponding author. E-mail addresses: anthony@constantinou.info (Constantinou, A. 
+C.), norman@eecs.qmul.ac.uk (Fenton, N. E.) 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+                                                           
+routine 
+
+in  domains  as  diverse  as 
+
+{pH,  pD,  pA}  in the  case of football)  corresponding to the  outcomes.  Probabilistic 
+finance, 
+forecasting  has  become 
+macroeconomics,  sports,  medical  diagnosis,  climate  and  weather.  Some 
+forecasts  are  conceptually  simple  (involving  a  single  binary  outcome  variable) 
+while others are complex (involving multiple  possibly related numeric variables). 
+To  determine  the  accuracy  of  forecast  models  we  use  so-called  scoring  rules, 
+which  assign  a  numerical  score  to  each  prediction  based  on  how  ‘close’  the 
+probabilities are to the (actual)  observed  outcome.  For  a detailed  review  on  the 
+theory  of  scoring  rules  and  probability  assessment  in  general  see  (Jolliffe  & 
+Stephenson, 2003; Hirotsu & Wright, 2003).  
+
+Defining  suitable  scoring  rules  has  proven  to  be  extremely  difficult, 
+(Murphy  &  Winkler,  1987;  Garthwaite,  Kadane,  &  O'Hagan,  2005),  even  for 
+apparently ‘simple’ binary forecasts (Jolliffe & Stephenson, 2003), or even when 
+restricted  to  a  specific  application  domain.  For  exa
+
+===== BLOCCO 16 (9676 char) =====
+751 pi.txt
+10:A rating system provides relative measures of superiority between adversaries. We propose a novel and simple approach, which we call pi-rating, for dynamically rating Association Football teams solely on the basis of the relative discrepancies in scores through relevant match instances. The pi-rating system is applicable to any other sport where the score is considered as a good indicator for prediction purposes, as well as determining the relative performances between adversaries. In an attempt to examine how well the ratings capture a team's performance, we have a) assessed them against two recently proposed football ELO rating variants and b) used them as the basis of a football betting strategy against published market odds. The results show that the pi-ratings outperform considerably the widely accepted ELO ratings and, perhaps more importantly, demonstrate profitability over a period of five English Premier League seasons (2007/08 to 2011/12), even allowing for the bookmakers' built-in profit margin. This is the first academic study to demonstrate profitability against market odds using such a relatively simple technique, and the resulting pi-ratings can be incorporated as parameters into other more sophisticated models in an attempt to further enhance forecasting capability.
+40:Accordingly, the pi-rating system is built on the following hypothesis: Let us assume that team Y scored 240 and conceded 150 goals over the last 100 matches. Overall, team Y scored 90 goals more than those conceded; a rate of +0.9 goals in favour of team Y per match instance. If we were to predict Y's goal difference at match instance 101 against a random opponent, the best we could do on the basis of the above information is to predict +0.9 goals in favour of team Y and, in this paper, this is what we call Y's expected goal difference against the average opponent. What the pi-rating systems does is simply to revise this expected value on the basis of the rules (a), (b) and (c) specified above, and Sections 2.2 and 3 provide further information regarding the description of this revised value.
+84:Recognising that a win is more important than increasing goal difference is important in football. However, we do not know exactly how `less' important each additional score difference becomes for individual match instances and hence, there are many possible ways to introduce diminishing returns. No relevant published paper appears to have sufficiently addressed this issue, and is an area of future investigation. In this paper we provide one possible approach for handling this. As a result, even though the deterministic function proposed in this section might appear to adequately capture (see Section 4) the importance of high goal differences, it should be noted that this approach is still a weakness. Perhaps a more traditional approach of dealing with this issue, is to consider a class of functions that can be optimised based on an appropriate data analysis.
+99:team, against the average opponent (i.e. the revised expected value as
+105:resulting values are useful in earning such a description on the basis of the
+202:Step 5: Prior to updating the respective pi-ratings, we want to first weight . Accordingly, the diminishing equation will simply return the value of :
+257:The learning parameters and can take values that go from to . A
+277:In determining optimal learning rates we have assessed the ratings generated for different values of and by formulat
+
+===== BLOCCO 17 (9393 char) =====
+11:types: Thurstone-Mosteller,Bradley-Terry,IndependentPoissonandBivariatePoisson,and
+17:We find that the best models are the Bivariate and Independent Poisson models. We then
+20:Key words: Bivariate Poisson model, Bradley-Terry model, Independent Poisson model, Pre-
+53:Premier League, where the newly promoted team of Huddersfield Town had a very good start
+58:in the Premier League). There was a clear tendency of decay in their performance, which was
+103:tion 4: we investigate the English Premier League seasons from 2008-2017 (Section 4.1) as well
+110:Our strength-based statistical models are of two main types: Thurstone-Mosteller and Bradley-
+112:win) of a match, and the Independent and Bivariate Poisson models on the other hand, which
+152:2.2 The Thurstone-Mosteller and Bradley-Terry type models
+153:Thurstone-Mosteller (TM) (Thurstone, 1927; Mosteller, 2006) and Bradley-Terry (BT) models
+154:(Bradley and Terry, 1952) have been designed to predict the outcome of pairwise comparisons.
+167:2.2.1 Thurstone-Mosteller model
+168:The Thurstone-Mosteller model assumes that the performances Y are normally distributed
+228:2.2.2 Bradley-Terry model
+229:In the Bradley-Terry model, the normal distribution is replaced with the logistic distribution.
+256:parametersareestimatedviamaximumlikelihoodinthesamewayasfortheThurstone-Mosteller
+260:2.2.3 Bradley-Terry-Davidson model
+261:In the original Bradley-Terry model, there exists no possibility for a draw (d = 0). The two
+273:These simple formulae are one of the reasons for the popularity of the Bradley-Terry model.
+292:2.2.4 Thurstone-Mosteller,Bradley-TerryandBradley-Terry-Davidsonmodelswith
+293:Goal Difference weights
+294:The basic Thurstone-Mosteller, Bradley-Terry and Bradley-Terry-Davidson models of the previ-
+296:account, omitting likely valuable information present in the goal difference. A team that wins
+299:matches are given an increasing weight when the goal difference grows. The likelihood function
+308:where P can stand for the Thurstone-Mosteller, Bradley-Terry and Bradley-Terry-Davidson
+311:through the goal difference weight
+320:weight of 1 and every additional increment in goal difference results in a smaller increase of
+321:the goal difference weight. A goal difference of 7 goals receives a goal difference weight of 3.
+325:2.3 The Poisson models
+326:PoissonmodelswerefirstsuggestedbyMaher(1982)tomodelfootballmatchresults. Heassumed
+327:the number of scored goals by both teams to be independent Poisson distributed variables. Let
+336:shall consider this model and variants of it, including the Bivariate Poisson model that removes
+338:Being a count-type distribution, the Poisson is a natural choice to model soccer matches. It
+345:Poissonrandomvariables, isusedtoderivetheseprobabilitiesgivenλ andλ . Thisrenders
+347:the prediction of future matches via the Poisson model particularly simple.
+348:2.3.1 Independent Poisson model
+353:define the Poisson means as λ =exp(c+(r +h)−r ) and λ =exp(c+r −(r +h)) with
+366:the Poisson model uses two observations for each match (the goals scored by each team) while
+368:for the models with Goal Difference Weight, only use a single observation for each match.
+369:2.3.2 The Bivariate Poisson model
+370:A potential drawback of the Independent Poisson models lies precisely in the independence
+372:by the fact that the strength parameters of each team are present in the Poisson means of both
+375:Karlis and Ntzoufras (2003) suggested a bivariate Poisson model by adding
+
+===== BLOCCO 18 (9288 char) =====
+### KW: not significantly count= 0
+### KW: significantly different count= 0
+### KW: were not signi count= 1
+  ... ese results therefore indicate that while the multinomial-Dirichlet models presented similar performances, they were better than BT and comparable to Lee. It is clear that the Arruda model presented the best performance, although the predictions from Mn-Dir 1 were not signiﬁcantly diﬀerent from it, according to all scoring rules. Hence, while BT lead to worse predictions than its competitors, Arruda was slightly better than some of its competitors, but roughly equivalent to Mn-Dir1. Table 4: ANOVA comparing the per ...
+
+### KW: Arruda count= 53
+  ...  models that consider only the number of matches won, drawn or lost by each team as inputs, and (ii) compare such models with two benchmark models, whose predictions for matches of the Brazilian national championships are published on Internet websites—see de Arruda (2015) and GMEE (2015). Such models are widely consulted by football fans and consider multiple covariates as inputs. As a baseline, we also make comparisons with an extension of the Bradley-Terry model (Davidson, 1970). Brazilian football championships ...
+
+  ... utcome itself (win, draw or loss of the home team) (Forrest and Simmons, 2000; Koning, 2000; Brillinger, 2008, 2009). For a discussion of these two approaches see Goddard (2005). In this work, we consider two benchmark models that follow the ﬁrst ap- proach: “Arruda” ( www.chancedegol.com.br) and “Lee” ( www.previsaoesportiva.com.br); the Bradley-Terry model and the models proposed by us follow the second approach. The pre- dictions of the two benchmark models were published before each matchday. We use this sectio ...
+
+  ... ey-Terry model and the models proposed by us follow the second approach. The pre- dictions of the two benchmark models were published before each matchday. We use this section to describe these models in some detail. 2.1 Benchmark Models The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1,Y 2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters ( λ1, λ2, λ3), which has probability mass f ...
+
+  ... del and the models proposed by us follow the second approach. The pre- dictions of the two benchmark models were published before each matchday. We use this section to describe these models in some detail. 2.1 Benchmark Models The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1,Y 2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters ( λ1, λ2, λ3), which has probability mass function giv ...
+
+### KW: bivariate count= 6
+  ... . We use this section to describe these models in some detail. 2.1 Benchmark Models The benchmark models, Arruda (de Arruda, 2000) and Lee (Lee, 1997), assume that the number of goals (Y1,Y 2) scored respectively by teams A (home team) and B (away team) has a bivariate Poisson distribution (Holgate, 1964) with parameters ( λ1, λ2, λ3), which has probability mass function given by P (Y1 =y1,Y 2 =y2|λ1, λ2, λ3) = exp{−(λ1 + λ2 + λ3)} min(y1,y2)∑ k=0 λy1−k 1 λy2−k 2 λk 3 (y1−k)!(y2−k)!k!, for λ1, λ2> 0 and λ3≥ 0. Both ...
+
+  ... lf, 2009; Titman et al., 2015), those allowing for the team performance pa- rameters to change along the season (Rue and Salv

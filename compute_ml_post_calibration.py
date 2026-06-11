@@ -147,8 +147,16 @@ def compute_corrections(
         fid = row.get("fixture_id")
         hh, ha = ht_map.get(fid, (None, None))
 
-        # Supporta formato con/senza wrapper "targets"
-        targets_data = ml.get("targets", ml)
+        # M2 fix (break the post-hoc feedback loop): learn the correction factors
+        # from the model-calibrated probabilities BEFORE the post-hoc layer was
+        # applied. `targets` already includes the post-hoc correction, so using it
+        # would stack corrections on every regeneration. Fall back to `targets`
+        # (and to the bare dict) only for older records without the new field.
+        targets_data = (
+            ml.get("targets_model_calibrated")
+            or ml.get("targets")
+            or ml
+        )
 
         for target, classes in ALL_TARGETS.items():
             target_probs = targets_data.get(target)

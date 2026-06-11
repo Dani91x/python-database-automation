@@ -1,14 +1,51 @@
-﻿requests
+# ─────────────────────────────────────────────────────────────────────────────
+# ML BETTING ENGINE — full intended stack
+#
+# IMPORTANT: the ensemble in Ai Engine/ai_engine/ensemble_trainer.py degrades
+# GRACEFULLY when an optional library is missing (try/except import guards).
+# If lightgbm/xgboost/optuna/imbalanced-learn are NOT installed the engine
+# silently runs as a basic RandomForest + LogisticRegression ensemble — it does
+# NOT crash, but it is materially weaker. Install everything below to run the
+# engine at full design strength (see Ai Engine/ML_TRAINING_AND_STACK.md).
+#
+#   pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Core data / infra
+requests
 supabase
 python-dotenv
 httpx
 pandas
 numpy
-scikit-learn
-imbalanced-learn
-lightgbm
-boruta
+pytz
 gspread
 thefuzz
 python-Levenshtein
-pytz
+
+# Core ML (always required)
+scikit-learn
+scipy            # temperature-scaling calibration (scipy.optimize / scipy.special)
+
+# Gradient boosting base models (STRONGLY recommended — without these the
+# MEDIUM/LARGE tiers have NO boosting model, only RF + LogReg)
+lightgbm
+xgboost
+
+# Class rebalancing for the minority Draw class (SMOTE / SVMSMOTE)
+imbalanced-learn
+
+# Per-league Bayesian hyperparameter tuning (cached, so paid only once/league)
+optuna
+
+# ── Optional / heavy ─────────────────────────────────────────────────────────
+# MLP meta-learner for LARGE-tier leagues. Heavy install (~500MB+). The engine
+# falls back to a LogisticRegression meta-learner when these are absent, which is
+# usually fine — enable only if you specifically want the neural meta-learner.
+# tensorflow
+# keras
+
+# boruta is declared historically but is NOT used by the production feature
+# selection path (selection.py uses variance + correlation + mutual-information).
+# Left commented to avoid an unused heavy dependency.
+# boruta

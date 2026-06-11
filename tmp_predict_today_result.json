@@ -1,0 +1,912 @@
+[
+  {
+    "fid": 1546836,
+    "home": "?",
+    "away": "?",
+    "league_id": 666,
+    "status": "FT",
+    "finished": true,
+    "gh": 1,
+    "ga": 1,
+    "targets": {
+      "target_1x2": {
+        "A": 0.2975,
+        "D": 0.2215,
+        "H": 0.481
+      },
+      "target_over_2_5": {
+        "True": 0.5481,
+        "False": 0.4519
+      },
+      "target_over_1_5": {
+        "True": 0.7915,
+        "False": 0.2085
+      },
+      "target_over_0_5": {
+        "True": 0.9512195121951219,
+        "False": 0.04878048780487809
+      },
+      "target_btts": {
+        "True": 0.476,
+        "False": 0.524
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1545703,
+    "home": "Philippines",
+    "away": "Myanmar",
+    "league_id": 10,
+    "status": "FT",
+    "finished": true,
+    "gh": 5,
+    "ga": 1,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3409,
+        "D": 0.221,
+        "H": 0.438
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1546502,
+    "home": "China",
+    "away": "Thailand",
+    "league_id": 10,
+    "status": "FT",
+    "finished": true,
+    "gh": 0,
+    "ga": 0,
+    "targets": {
+      "target_1x2": {
+        "A": 0.4732,
+        "D": 0.203,
+        "H": 0.3239
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.6864,
+        "False": 0.3136
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_btts": {
+        "True": 0.5367,
+        "False": 0.4633
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1544363,
+    "home": "Cambodia",
+    "away": "Hong Kong",
+    "league_id": 10,
+    "status": "2H",
+    "finished": false,
+    "gh": 2,
+    "ga": 0,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3807,
+        "D": 0.2058,
+        "H": 0.4135
+      },
+      "target_over_2_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_over_1_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_btts": {
+        "True": 0.5367,
+        "False": 0.4633
+      }
+    },
+    "n_signals": 1,
+    "signals": [
+      {
+        "market": "target_over_1_5",
+        "action": "True",
+        "prob": 0.99,
+        "ev": null,
+        "grade": "high"
+      }
+    ],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1544365,
+    "home": "Oman",
+    "away": "Kuwait",
+    "league_id": 10,
+    "status": "CANC",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3067,
+        "D": 0.2126,
+        "H": 0.4807
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.999,
+        "False": 0.0010000000000000009
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 2,
+    "signals": [
+      {
+        "market": "target_over_0_5",
+        "action": "True",
+        "prob": 0.999,
+        "ev": null,
+        "grade": "medium"
+      },
+      {
+        "market": "target_over_1_5",
+        "action": "True",
+        "prob": 0.7679,
+        "ev": null,
+        "grade": "medium"
+      }
+    ],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1548188,
+    "home": "?",
+    "away": "?",
+    "league_id": 333,
+    "status": "2H",
+    "finished": false,
+    "gh": 1,
+    "ga": 0,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3356,
+        "D": 0.3086,
+        "H": 0.3559
+      },
+      "target_over_2_5": {
+        "True": 0.4744,
+        "False": 0.5256
+      },
+      "target_over_1_5": {
+        "True": 0.707,
+        "False": 0.293
+      },
+      "target_over_0_5": {
+        "True": 0.9523809523809523,
+        "False": 0.04761904761904767
+      },
+      "target_btts": {
+        "True": 0.4345,
+        "False": 0.5655
+      },
+      "target_ht_over_0_5": {
+        "True": 0.7222222222222222,
+        "False": 0.2777777777777778
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5",
+      "target_ht_over_0_5"
+    ]
+  },
+  {
+    "fid": 1547220,
+    "home": "Australia U19",
+    "away": "Cambodia U19",
+    "league_id": 928,
+    "status": "1H",
+    "finished": false,
+    "gh": 2,
+    "ga": 0,
+    "error": "No models found in ai_model_registry for league"
+  },
+  {
+    "fid": 1546507,
+    "home": "Indonesia",
+    "away": "Mozambique",
+    "league_id": 10,
+    "status": "1H",
+    "finished": false,
+    "gh": 1,
+    "ga": 0,
+    "targets": {
+      "target_1x2": {
+        "A": 0.2321,
+        "D": 0.1898,
+        "H": 0.5781
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1548456,
+    "home": "?",
+    "away": "?",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.345,
+        "D": 0.2261,
+        "H": 0.4288
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1538926,
+    "home": "Serbia U19",
+    "away": "Portugal U19",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3201,
+        "D": 0.2565,
+        "H": 0.4234
+      },
+      "target_over_2_5": {
+        "True": 0.5139,
+        "False": 0.4861
+      },
+      "target_over_1_5": {
+        "True": 0.8031,
+        "False": 0.1969
+      },
+      "target_over_0_5": {
+        "False": 0.04915867662990414,
+        "True": 0.9508413233700959
+      },
+      "target_btts": {
+        "True": 0.4824,
+        "False": 0.5176
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1537651,
+    "home": "Armenia",
+    "away": "Moldova",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3378,
+        "D": 0.2162,
+        "H": 0.446
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.875,
+        "False": 0.125
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1547739,
+    "home": "?",
+    "away": "?",
+    "league_id": 333,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3667,
+        "D": 0.1874,
+        "H": 0.4459
+      },
+      "target_over_2_5": {
+        "True": 0.4185,
+        "False": 0.5815
+      },
+      "target_over_1_5": {
+        "True": 0.99,
+        "False": 0.01
+      },
+      "target_over_0_5": {
+        "True": 0.999,
+        "False": 0.0010000000000000009
+      },
+      "target_btts": {
+        "True": 0.4345,
+        "False": 0.5655
+      },
+      "target_ht_over_0_5": {
+        "True": 0.75,
+        "False": 0.25
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5",
+      "target_ht_over_0_5"
+    ]
+  },
+  {
+    "fid": 1538962,
+    "home": "Georgia U19",
+    "away": "Iceland U19",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3843,
+        "D": 0.2061,
+        "H": 0.4096
+      },
+      "target_over_2_5": {
+        "True": 0.4354,
+        "False": 0.5646
+      },
+      "target_over_1_5": {
+        "True": 0.7947,
+        "False": 0.2053
+      },
+      "target_over_0_5": {
+        "False": 0.04127047657228777,
+        "True": 0.9587295234277122
+      },
+      "target_btts": {
+        "True": 0.479,
+        "False": 0.521
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1538925,
+    "home": "Kazakhstan U19",
+    "away": "Greece U19",
+    "league_id": 893,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.4507,
+        "D": 0.1799,
+        "H": 0.3694
+      },
+      "target_over_2_5": {
+        "True": 0.4371,
+        "False": 0.5629
+      },
+      "target_over_1_5": {
+        "True": 0.798,
+        "False": 0.202
+      },
+      "target_over_0_5": {
+        "False": 0.04245946480783369,
+        "True": 0.9575405351921663
+      },
+      "target_btts": {
+        "True": 0.4777,
+        "False": 0.5223
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1548486,
+    "home": "?",
+    "away": "?",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.4433,
+        "D": 0.224,
+        "H": 0.3327
+      },
+      "target_over_2_5": {
+        "True": 0.3994,
+        "False": 0.6006
+      },
+      "target_over_1_5": {
+        "True": 0.8236,
+        "False": 0.1764
+      },
+      "target_over_0_5": {
+        "True": 0.9512195121951219,
+        "False": 0.04878048780487809
+      },
+      "target_btts": {
+        "True": 0.476,
+        "False": 0.524
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1546842,
+    "home": "Tajikistan",
+    "away": "India",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.3078,
+        "D": 0.2259,
+        "H": 0.4662
+      },
+      "target_over_2_5": {
+        "True": 0.372,
+        "False": 0.628
+      },
+      "target_over_1_5": {
+        "True": 0.7679,
+        "False": 0.2321
+      },
+      "target_over_0_5": {
+        "True": 0.935064935064935,
+        "False": 0.06493506493506496
+      },
+      "target_btts": {
+        "True": 0.4971,
+        "False": 0.5029
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_1x2",
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1548300,
+    "home": "?",
+    "away": "?",
+    "league_id": 246,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "targets": {
+      "target_1x2": {
+        "A": 0.5581,
+        "D": 0.186,
+        "H": 0.2559
+      },
+      "target_over_2_5": {
+        "True": 0.5576,
+        "False": 0.4424
+      },
+      "target_over_1_5": {
+        "True": 0.9,
+        "False": 0.1
+      },
+      "target_btts": {
+        "True": 0.4396,
+        "False": 0.5604
+      }
+    },
+    "n_signals": 0,
+    "signals": [],
+    "not_reliable": [
+      "target_btts",
+      "target_over_2_5"
+    ]
+  },
+  {
+    "fid": 1544367,
+    "home": "Congo DR",
+    "away": "Chile",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1548331,
+    "home": "?",
+    "away": "?",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1544819,
+    "home": "New Zealand W",
+    "away": "Morocco W",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1545274,
+    "home": "Moldova U21",
+    "away": "Georgia U21",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1543831,
+    "home": "Angola",
+    "away": "Central African Republic",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1497598,
+    "home": "Osters IF",
+    "away": "IFK Varnamo",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1497599,
+    "home": "Sandviken",
+    "away": "Falkenbergs FF",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1497596,
+    "home": "Oddevold",
+    "away": "IFK Norrkoping",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1497593,
+    "home": "IK brage",
+    "away": "Ljungskile SK",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1545632,
+    "home": "R\u00e4ppe",
+    "away": "H\u00e4ssleholms IF",
+    "league_id": 115,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1525493,
+    "home": "Hungary",
+    "away": "Kazakhstan",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1497595,
+    "home": "United Nordic",
+    "away": "Ostersunds FK",
+    "league_id": 114,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1548332,
+    "home": "?",
+    "away": "?",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1546506,
+    "home": "Togo",
+    "away": "Benin",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1544813,
+    "home": "Azerbaijan",
+    "away": "San Marino",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1548054,
+    "home": "?",
+    "away": "?",
+    "league_id": 141,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1548334,
+    "home": "?",
+    "away": "?",
+    "league_id": 200,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1545447,
+    "home": "?",
+    "away": "?",
+    "league_id": 666,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1520715,
+    "home": "Nautico Recife",
+    "away": "Fortaleza EC",
+    "league_id": 72,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1520717,
+    "home": "Ponte Preta",
+    "away": "Cuiaba",
+    "league_id": 72,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  },
+  {
+    "fid": 1544368,
+    "home": "Saudi Arabia",
+    "away": "Senegal",
+    "league_id": 10,
+    "status": "NS",
+    "finished": false,
+    "gh": null,
+    "ga": null,
+    "error": "[Errno 11001] getaddrinfo failed"
+  }
+]
