@@ -99,12 +99,15 @@ def _download_model(bucket: str, path: str, out_path: str) -> None:
 
 
 def _load_model(path: str) -> Dict:
-    try:
-        with gzip.open(path, "rb") as f:
-            return pickle.load(f)
-    except Exception:
-        with open(path, "rb") as f:
-            return pickle.load(f)
+    """Carica un modello pickle, gzip o no, deciso dai MAGIC BYTE del file.
+    NB: il vecchio fallback `except: pickle semplice` mascherava i file .pkl.gz
+    corrotti/troncati con un fuorviante 'invalid load key \\x1f' (il magic gzip).
+    Qui un gzip corrotto solleva l'errore VERO, così il chiamante può ri-scaricare."""
+    with open(path, "rb") as f:
+        magic = f.read(2)
+    opener = gzip.open if magic == b"\x1f\x8b" else open
+    with opener(path, "rb") as f:
+        return pickle.load(f)
 
 
 def _payload_to_ensemble(payload: Dict) -> Any:
@@ -418,6 +421,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     feats_union_set: set[str] = set()
     run_id = str(uuid.uuid4())
     modeled_targets: set[str] = set()
+    corrupt_targets: set[str] = set()  # target saltati per modello corrotto/illeggibile
 
     m_bucket = f"ai-models-league-{league_id}"
     _MODEL_CACHE_TTL_HOURS = float(os.environ.get("MODEL_CACHE_TTL_HOURS", "24"))
@@ -443,7 +447,24 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                 if not os.path.exists(local_path):
                     continue
                 logger.warning(f"Using stale cached model for {target}")
-        payload = _load_model(local_path)
+        try:
+            payload = _load_model(local_path)
+        except Exception as e:
+            # Modello in cache corrotto/troncato (es. download precedente interrotto):
+            # cancella e ri-scarica UNA volta, poi riprova. Se anche il fresh fallisce,
+            # l'eccezione si propaga (problema reale lato storage), non più mascherata.
+            logger.warning(f"Corrupt cached model for {target} ({e}); deleting and re-downloading once.")
+            try:
+                os.remove(local_path)
+            except OSError:
+                pass
+            try:
+                _download_model(m_bucket, path, local_path)
+                payload = _load_model(local_path)
+            except Exception as e2:
+                logger.warning(f"Re-download/load still failing for {target}: {e2}; skipping this target.")
+                corrupt_targets.add(target)
+                continue
 
         feats = payload.get("features") or payload.get("feature_cols", [])
         for f in feats:
@@ -644,9 +665,13 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
 
     for t in ALL_DEFINED_TARGETS:
         if t not in modeled_targets:
+            if t in corrupt_targets:
+                reason = f"TARGET_SKIPPED: modello corrotto/non caricabile per lega {league_id} (re-download fallito)"
+            else:
+                reason = f"TARGET_SKIPPED: no model in registry for league {league_id}"
             targets_skipped.append({
                 "target": t,
-                "reason": f"TARGET_SKIPPED: no model in registry for league {league_id}",
+                "reason": reason,
             })
         else:
             cal_m = calibration_metrics.get(t, {})
