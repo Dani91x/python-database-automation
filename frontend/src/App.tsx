@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from 'react-helmet-async';
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -20,7 +20,12 @@ function App() {
                     <Toaster />
                     <BrowserRouter>
                         <Routes>
-                            <Route path="/" element={<LandingPage />} />
+                            {/* AUTH DISABILITATA: la root porta direttamente alla dashboard.
+                                La landing con login resta raggiungibile a /landing.
+                                Per ripristinare il comportamento originale, rimettere
+                                LandingPage su path="/" ed eliminare il redirect. */}
+                            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                            <Route path="/landing" element={<LandingPage />} />
                             <Route path="/check-email" element={<CheckEmail />} />
                             <Route
                                 path="/dashboard"
