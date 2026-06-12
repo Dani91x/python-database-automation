@@ -17,7 +17,10 @@ supabase
 python-dotenv
 httpx
 pandas
-numpy
+# numpy 2.x richiesto: i modelli ML in cache sono picklati con numpy 2.x
+# (riferimento interno numpy._core) e scipy>=1.17 esige numpy>=1.26.4,<2.7.
+# Con numpy 1.26.3 i modelli NON si caricano -> "ERRORE AI" sul foglio Segnali.
+numpy>=2.0,<2.7
 pytz
 gspread
 thefuzz
