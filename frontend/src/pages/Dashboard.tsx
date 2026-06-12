@@ -13,10 +13,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MatchesList } from '@/components/dashboard/MatchesList';
+import { MarketFrequencyPanel } from '@/components/dashboard/MarketFrequencyPanel';
 
 export default function Dashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
     const [data, setData] = useState<NormalizedData | null>(null);
+    // league_id/season_year letti esplicitamente dalla riga DB (non da raw_json: fragile)
+    const [fixtureLeagueId, setFixtureLeagueId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
 
     const { user } = useAuth();
@@ -28,7 +31,7 @@ export default function Dashboard() {
         try {
             const { data: fixture, error } = await supabase
                 .from('fixture_predictions')
-                .select('raw_json, fixture_id')
+                .select('raw_json, fixture_id, league_id')
                 .eq('fixture_id', fixtureId)
                 .single();
 
@@ -37,6 +40,7 @@ export default function Dashboard() {
             if (fixture && fixture.raw_json) {
                 const normalized = normalizePredictionJson(fixture.raw_json, String(fixture.fixture_id));
                 setData(normalized);
+                setFixtureLeagueId(fixture.league_id ?? null);
                 setViewMode('detail');
             }
         } catch (error: any) {
@@ -132,8 +136,16 @@ export default function Dashboard() {
                                     league={data.league}
                                     prediction={data.predictions}
                                     fixtureId={data.fixtureId}
-                                    leagueId={data.league.id}
+                                    leagueId={fixtureLeagueId ?? data.league.id}
                                 />
+
+                                {/* Frequenze Mercati: subito sotto il blocco Fixture ID / League ID */}
+                                {(fixtureLeagueId ?? data.league.id) && (
+                                    <MarketFrequencyPanel
+                                        leagueId={fixtureLeagueId ?? data.league.id}
+                                        leagueName={data.league.name}
+                                    />
+                                )}
 
                                 <PredictionsCard
                                     predictions={data.predictions}
