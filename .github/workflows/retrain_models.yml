@@ -43,6 +43,12 @@ on:
         default: "7"
         required: true
 
+# Mai due campagne sovrapposte: un run nuovo (cron o manuale) attende la fine
+# di quello in corso invece di addestrare le stesse leghe in parallelo.
+concurrency:
+  group: retrain-models
+  cancel-in-progress: false
+
 jobs:
   plan:
     runs-on: ubuntu-latest
