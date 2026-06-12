@@ -5,10 +5,14 @@
 --   baseline (frequenza storica), deviazione standard, MM5/MM10/MM15
 --   (medie mobili cronologiche), z-score della MM10 vs baseline.
 --
--- FATTI ACCERTATI (Fase 0, 46.685 righe verificate):
---   - fulltime_* mai NULL su partite settlate (0/46.685) -> fonte primaria FT;
---     COALESCE(fulltime_*, goals_*) e' solo cintura di sicurezza.
---   - goals_* diverge da fulltime_* SOLO su AET/PEN (include supplementari).
+-- FATTI ACCERTATI (Fase 0 + certificazione copertura 2026-06-12):
+--   - fulltime_* quasi mai NULL su settlate; goals_* diverge da fulltime_*
+--     SOLO su AET/PEN (include i supplementari).
+--   - SETTLEMENT 90': fulltime_* fonte primaria. Fallback su goals_* AMMESSO
+--     SOLO per status 'FT' (dove goals=90', 0 divergenze verificate).
+--     Per AET/PEN senza fulltime_* (213+19 righe nel DB) il punteggio al 90'
+--     e' SCONOSCIUTO -> la riga viene ESCLUSA dalla serie (meglio escludere
+--     che settlare a 120'). Resta contata in n_scope.
 --   - Insieme settlato = whitelist status_short IN ('FT','AET','PEN')
 --     (esistono anche 'CANC','Canc','Abd' -> esclusi).
 --   - Copertura HT: ~100% campionati domestici, 35.3% FA Cup -> gate informativo.
@@ -110,8 +114,14 @@ begin
         -- la stagione; per 'all' tutto lo storico. SEMPRE filtrato per
         -- league_id (vincolo performance: mai full-scan).
         select fixture_id, fixture_date, home_team_name, away_team_name,
-               coalesce(fulltime_home, goals_home) as h,
-               coalesce(fulltime_away, goals_away) as a,
+               -- Settlement 90': fallback su goals_* SOLO per status FT
+               -- (su AET/PEN goals include i supplementari -> h/a NULL -> riga esclusa)
+               case when fulltime_home is not null then fulltime_home
+                    when status_short = 'FT'       then goals_home
+               end as h,
+               case when fulltime_away is not null then fulltime_away
+                    when status_short = 'FT'       then goals_away
+               end as a,
                halftime_home as hh, halftime_away as ha
         from matches
         where league_id = p_league_id
@@ -122,6 +132,16 @@ begin
     ),
     outcomes as (
         select s.*,
+            case
+            -- GUARD NULLITA' (prima di tutto): senza punteggio 90' i mercati FT
+            -- non sono settlabili; senza HT i mercati HT non lo sono. Evita le
+            -- trappole booleane SQL (NULL AND FALSE = FALSE) e il ramo ELSE
+            -- di ht_ft che classificherebbe una riga ignota.
+            when p_market in ('1x2','dc','dnb','ou_ft','btts','home_scores','away_scores','exact_ft','ht_ft')
+                 and (s.h is null or s.a is null) then null
+            when p_market in ('1x2_ht','ou_ht','exact_ht','ht_ft')
+                 and (s.hh is null or s.ha is null) then null
+            else
             case p_market
                 when '1x2' then case p_selection
                     when '1' then (s.h > s.a)::int
@@ -177,6 +197,7 @@ begin
                           || '-' ||
                           (case when s.h > s.a then '1' when s.h = s.a then 'X' else '2' end)
                           = p_selection)::int end
+            end
             end as outcome
         from scope s
     ),
