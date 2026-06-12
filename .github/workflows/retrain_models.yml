@@ -11,6 +11,14 @@ name: Retrain ML Models (cloud, all leagues)
 # costano una frazione. Per un retrain completo mensile il budget basta.
 
 on:
+  # CAMPAGNA AUTO-COMPLETANTE: ogni 4h riprova le leghe ancora senza modelli
+  # freschi (skip_existing salta quelle già fatte). Quando la campagna è
+  # completa, i giri successivi fanno solo refresh settimanale (max_age 7gg).
+  # ⚠️ PRIMA di rimettere la repo PRIVATA: sostituire questo cron col planner
+  # incrementale (solo leghe con partite nuove) o disattivarlo — un refresh
+  # completo continuo sforerebbe i 2000 min/mese del piano privato.
+  schedule:
+    - cron: "20 */4 * * *"
   workflow_dispatch:
     inputs:
       total_shards:
@@ -45,7 +53,7 @@ jobs:
       - name: Genera matrice shard
         id: gen
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '16' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -87,12 +95,13 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
           # Inputs passati via env (mai interpolati nello script: anti shell-injection)
+          # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards }}
-          LEAGUES_INPUT: ${{ inputs.leagues }}
-          LAST_N_SEASONS: ${{ inputs.last_n_seasons }}
-          SKIP_EXISTING: ${{ inputs.skip_existing }}
-          MAX_AGE_DAYS: ${{ inputs.max_age_days }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '16' }}
+          LEAGUES_INPUT: ${{ inputs.leagues || '' }}
+          LAST_N_SEASONS: ${{ inputs.last_n_seasons || '3' }}
+          SKIP_EXISTING: ${{ inputs.skip_existing || 'true' }}
+          MAX_AGE_DAYS: ${{ inputs.max_age_days || '7' }}
         run: |
           python cloud_retrain_shard.py \
             --shard-index "$SHARD_INDEX" \
