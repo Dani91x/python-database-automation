@@ -1,0 +1,113 @@
+name: Retrain ML Models (cloud, all leagues)
+
+# Strumento di addestramento cloud: riaddestra i modelli ML di tutte le leghe
+# su runner GitHub, in parallelo a shard, e li carica su Supabase storage +
+# ai_model_registry. Il PC locale li scarica da solo al prossimo report
+# (cache modelli 24h). Nessun carico sul PC dell'utente.
+#
+# Avvio: tab Actions -> "Retrain ML Models" -> Run workflow.
+# Budget: repo privato = 2000 minuti/mese gratis. Un run completo a freddo
+# costa ~700-1200 minuti totali; con skip_existing=true i run successivi
+# costano una frazione. Per un retrain completo mensile il budget basta.
+
+on:
+  workflow_dispatch:
+    inputs:
+      total_shards:
+        description: "Numero di job paralleli (shard). 6 consigliato per il fleet completo (~1229 id in season_backfill_state)."
+        default: "6"
+        required: true
+      leagues:
+        description: "Solo queste leghe (csv, es. 135,39,140). Vuoto = tutte."
+        default: ""
+        required: false
+      last_n_seasons:
+        description: "Stagioni di training per lega"
+        default: "3"
+        required: true
+      skip_existing:
+        description: "Salta leghe riaddestrate negli ultimi max_age_days"
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+      max_age_days:
+        description: "Età massima (giorni) per considerare un modello fresco"
+        default: "7"
+        required: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.gen.outputs.shards }}
+    steps:
+      - name: Genera matrice shard
+        id: gen
+        env:
+          TOTAL_SHARDS: ${{ inputs.total_shards }}
+        run: |
+          SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
+          echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
+          echo "Matrice shard: ${SHARDS}"
+
+  train:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    name: "train shard ${{ matrix.shard }}"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # 3.13 = stessa major.minor del Python di serving sul PC locale.
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: requirements-train.txt
+
+      - name: Install pinned training stack (serving parity)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-train.txt
+
+      - name: Train shard
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # ubuntu-latest = 4 vCPU: 2 leghe in parallelo x 2 target-worker = saturazione pulita
+          RETRAIN_N_WORKERS: "2"
+          RETRAIN_PARALLEL_LEAGUES: "2"
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: "1"
+          # Inputs passati via env (mai interpolati nello script: anti shell-injection)
+          SHARD_INDEX: ${{ matrix.shard }}
+          TOTAL_SHARDS: ${{ inputs.total_shards }}
+          LEAGUES_INPUT: ${{ inputs.leagues }}
+          LAST_N_SEASONS: ${{ inputs.last_n_seasons }}
+          SKIP_EXISTING: ${{ inputs.skip_existing }}
+          MAX_AGE_DAYS: ${{ inputs.max_age_days }}
+        run: |
+          python cloud_retrain_shard.py \
+            --shard-index "$SHARD_INDEX" \
+            --total-shards "$TOTAL_SHARDS" \
+            --leagues "$LEAGUES_INPUT" \
+            --last-n-seasons "$LAST_N_SEASONS" \
+            --skip-existing "$SKIP_EXISTING" \
+            --max-age-days "$MAX_AGE_DAYS" \
+            --parallel-leagues 2
+
+      - name: Upload retrain log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-log-shard-${{ matrix.shard }}
+          path: retrain_log_*.txt
+          if-no-files-found: ignore
+          retention-days: 30

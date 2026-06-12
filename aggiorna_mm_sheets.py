@@ -32,7 +32,12 @@ MIN_SIGNALS = 3
 # sheet must net it out to stay consistent with money_management.py (same 5%).
 # Without it the sheet's P&L / Cassa / Yield were overstated by COMMISSION * net
 # profit on every winning bet (both the ML and Poisson columns).
-MM_COMMISSION = 0.05
+# Single source of truth: DEFAULT_COMMISSION_PCT in Betfair/money_management.py.
+try:
+    from Betfair.money_management import DEFAULT_COMMISSION_PCT as _COMMISSION_PCT
+    MM_COMMISSION = _COMMISSION_PCT / 100.0
+except Exception:
+    MM_COMMISSION = 0.05  # fallback standalone: stesso valore del default live
 MM_NET_FACTOR = round(1.0 - MM_COMMISSION, 4)  # 0.95
 
 # max_stake_pct per masaniello_puro:

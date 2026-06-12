@@ -41,6 +41,15 @@ for p in [ROOT, AI_ENGINE_DIR]:
 from db_client import get_supabase_client
 from ai_engine.seriea_model_export import train_and_save_all, upload_and_register
 
+# Stdout robusto: su Windows con output rediretto l'encoding è cp1252 e i
+# simboli unicode nei print (→ ✓ ✗) farebbero crashare i worker: degrada i
+# caratteri non rappresentabili invece di interrompere il retrain.
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:
+    pass
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 MODELS_CACHE_DIR = os.path.join(AI_ENGINE_DIR, "models_cache")
@@ -158,7 +167,13 @@ def _get_league_ids_from_matches_paginated(sb: Any) -> List[int]:
 def _log(msg: str, log_lines: List[str]) -> None:
     ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
-    print(line)
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        # stdout cp1252 (es. output rediretto su Windows) non codifica '→' &co.:
+        # degrada i caratteri non rappresentabili invece di far crashare il worker.
+        enc = sys.stdout.encoding or "ascii"
+        print(line.encode(enc, errors="replace").decode(enc))
     log_lines.append(line)
 
 
