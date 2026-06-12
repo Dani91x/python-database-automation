@@ -613,7 +613,13 @@ def upload_and_register(model_path: str, file_size: int, target: str, metrics: d
             storage_path, f, {"content-type": "application/octet-stream", "upsert": "true"}
         )
 
-    sb.table("ai_model_registry").upsert(
+    # delete+insert invece di upsert: la tabella non ha vincolo UNIQUE su
+    # (league_id, target, model_name), quindi l'upsert senza on_conflict
+    # degenerava in INSERT e accumulava una riga duplicata a ogni retrain.
+    sb.table("ai_model_registry").delete().eq("league_id", league_id).eq(
+        "target", target
+    ).eq("model_name", MODEL_NAME).execute()
+    sb.table("ai_model_registry").insert(
         {
             "league_id": league_id,
             "season_year": None,
