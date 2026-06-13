@@ -46,6 +46,14 @@ logger = logging.getLogger(__name__)
 MAPPING_FILE = os.path.join(os.path.dirname(__file__), "betfair_name_map.json")
 MATCH_THRESHOLD = 70  # Score for fuzzy matching
 
+# Colonne JSON pesanti di fixture_predictions MAI usate dal report (né lette nel
+# codice, né scritte nel foglio: sono già in blacklist in _sync_all_predictions).
+# Escluderle dalla SELECT evita di leggere/deserializzare blob TOAST enormi a
+# ogni run: stesso identico output, I/O sul disco molto minore.
+HEAVY_UNUSED_PREDICTION_COLS = (
+    "raw_json", "flat_summary", "raw_json_odds", "model_predictions_json",
+)
+
 class BetfairReportManager:
     def __init__(self):
         self.bf = BetfairClient()
@@ -164,8 +172,7 @@ class BetfairReportManager:
         logger.info("Recupero tutte le prediction della giornata...")
         today = datetime.now(pytz.UTC).strftime("%Y-%m-%d")
         tomorrow = (datetime.now(pytz.UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
-        res = self.supabase.from_("fixture_predictions").select("*").gte("fixture_date", today).lt("fixture_date", tomorrow).execute()
-        db_fixtures = res.data or []
+        db_fixtures = self._fetch_today_predictions(today, tomorrow)
 
         # 3b. PRE-FLIGHT: allena SOLO le leghe di oggi (prima del loop per-fixture)
         # Questo evita training inline bloccante durante la generazione del report.
@@ -214,6 +221,51 @@ class BetfairReportManager:
         self.slot_manager.update_analytics_sheet()
 
         logger.info("✅ Job completato con successo.")
+
+    def _fetch_today_predictions(self, today, tomorrow):
+        """Recupera le prediction di oggi da fixture_predictions.
+
+        Identico nel risultato a `select('*')` filtrato per data, ma:
+        - esclude le colonne JSON pesanti mai usate (HEAVY_UNUSED_PREDICTION_COLS):
+          stesso output, molto meno I/O/detoast TOAST sul disco Supabase;
+        - riprova con backoff esponenziale sui timeout transitori invece di far
+          crashare l'intero report con un traceback criptico.
+        """
+        # 1) Rileva le colonne reali da una riga qualsiasi e togli i blob pesanti.
+        #    (il detoast di 1 sola riga è trascurabile). Se fallisce, fallback a '*'.
+        select_cols = "*"
+        try:
+            sample = self.supabase.from_("fixture_predictions").select("*").limit(1).execute()
+            if sample.data:
+                cols = [c for c in sample.data[0].keys() if c not in HEAVY_UNUSED_PREDICTION_COLS]
+                if cols:
+                    select_cols = ",".join(cols)
+                    logger.info(f"Fetch prediction: {len(cols)} colonne (escluse {len(HEAVY_UNUSED_PREDICTION_COLS)} pesanti inutilizzate).")
+        except Exception as e:
+            logger.warning(f"Rilevamento colonne fallito, uso SELECT * : {e}")
+
+        # 2) Query principale con retry/backoff sui timeout (DB sotto pressione I/O).
+        last_err = None
+        for attempt in range(4):
+            try:
+                res = (self.supabase.from_("fixture_predictions")
+                       .select(select_cols)
+                       .gte("fixture_date", today)
+                       .lt("fixture_date", tomorrow)
+                       .execute())
+                return res.data or []
+            except Exception as e:
+                last_err = e
+                if attempt < 3:
+                    wait = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                    logger.warning(f"Fetch prediction fallito (tentativo {attempt+1}/4): {e} — riprovo tra {wait}s")
+                    time.sleep(wait)
+        logger.error(
+            "Impossibile recuperare le prediction dopo 4 tentativi. Probabile budget "
+            "I/O del disco Supabase esaurito (controlla i cron ML / la salute dell'istanza). "
+            f"Ultimo errore: {last_err}"
+        )
+        raise last_err
 
     def _sync_all_predictions(self, db_fixtures):
         if not db_fixtures:

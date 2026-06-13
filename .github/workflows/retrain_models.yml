@@ -17,8 +17,17 @@ on:
   # ⚠️ PRIMA di rimettere la repo PRIVATA: sostituire questo cron col planner
   # incrementale (solo leghe con partite nuove) o disattivarlo — un refresh
   # completo continuo sforerebbe i 2000 min/mese del piano privato.
-  schedule:
-    - cron: "20 */4 * * *"
+  #
+  # 2026-06-13: SCHEDULE DISABILITATO. Causa: i run duravano 5-10h (death spiral
+  # da I/O wait su `matches` non indicizzata) e, ripartendo ogni 4h, si
+  # accodavano in continuo saturando 24/7 il budget I/O del disco Supabase
+  # (istanza irraggiungibile, mail "disk IO exhausted"). Il training NON è perso:
+  # i modelli restano in ai_model_registry + storage e il PC locale li usa da
+  # cache. Riattivazione prevista a cadenza GIORNALIERA (non 4h) DOPO aver
+  # creato gli indici su matches(league_id, season_year) — vedi sql/perf_indexes.sql.
+  # Retrain manuale sempre disponibile: tab Actions -> Run workflow.
+  # schedule:
+  #   - cron: "20 */4 * * *"
   workflow_dispatch:
     inputs:
       total_shards:
