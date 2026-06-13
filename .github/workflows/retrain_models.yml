@@ -68,7 +68,7 @@ jobs:
       - name: Genera matrice shard
         id: gen
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards || '16' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '6' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -112,7 +112,7 @@ jobs:
           # Inputs passati via env (mai interpolati nello script: anti shell-injection)
           # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards || '16' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '6' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
           LAST_N_SEASONS: ${{ inputs.last_n_seasons || '3' }}
           SKIP_EXISTING: ${{ inputs.skip_existing || 'true' }}
