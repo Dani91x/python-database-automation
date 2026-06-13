@@ -290,13 +290,22 @@ def _process_league_worker(
     dry_run: bool,
     skip_existing: bool,
     max_age_days: int,
+    deadline_ts: Optional[float] = None,
 ) -> Dict:
     """Elabora una singola lega: training, BSS comparison, upload Supabase.
 
     Progettato per essere chiamato in parallelo via ThreadPoolExecutor.
     Ogni worker usa la propria lista di log per evitare race condition.
+
+    Se ``deadline_ts`` (epoch secondi) e' superato all'inizio, la lega NON viene
+    addestrata e il worker esce subito: e' il meccanismo di time-budget che fa
+    fermare il run sotto il cap delle 3h. Le leghe gia' completate sono salvate
+    nel registry, quindi il run successivo (skip/planner) riprende da li'.
     """
     local_logs: List[str] = []
+
+    if deadline_ts is not None and time.time() > deadline_ts:
+        return {"league_id": league_id, "status": "timebudget", "logs": local_logs}
 
     print(f"\n[{idx}/{total}] League {league_id}")
     _log(f"[{idx}/{total}] League {league_id}", local_logs)
@@ -430,6 +439,16 @@ def main() -> None:
         help="Non addestra nulla, mostra solo quali leghe verrebbero riaddestrate.",
     )
     parser.add_argument(
+        "--time-budget-min",
+        type=float,
+        default=0.0,
+        help=(
+            "Budget di tempo in minuti: oltre questo, i worker non prendono nuove "
+            "leghe ed escono puliti (le fatte restano salvate nel registry, il run "
+            "dopo riprende). 0 = nessun limite. Usato in cloud per restare sotto le 3h."
+        ),
+    )
+    parser.add_argument(
         "--source",
         choices=["cache", "db", "both"],
         default="cache",
@@ -441,9 +460,16 @@ def main() -> None:
     log_lines: List[str] = []
     started_at = datetime.now(timezone.utc)
 
+    # Time-budget: deadline epoch oltre cui non si avviano nuove leghe.
+    deadline_ts: Optional[float] = None
+    if args.time_budget_min and args.time_budget_min > 0:
+        deadline_ts = time.time() + args.time_budget_min * 60.0
+
     print("=" * 70)
     print("  RETRAIN ALL LEAGUES — Betfair ML System")
     print(f"  Avviato: {started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    if deadline_ts is not None:
+        print(f"  Time-budget: {args.time_budget_min:.0f} min (stop nuove leghe oltre il budget)")
     print("=" * 70)
 
     # ── Raccolta league_ids ────────────────────────────────────────────────
@@ -466,6 +492,7 @@ def main() -> None:
     ok_count = 0
     skipped_count = 0
     error_count = 0
+    timebudget_count = 0
     bss_improved = 0
     bss_degraded = 0
 
@@ -488,6 +515,7 @@ def main() -> None:
                 lid, i, total,
                 args.last_n_seasons, args.dry_run,
                 args.skip_existing, args.max_age_days,
+                deadline_ts,
             ): lid
             for i, lid in enumerate(league_ids, 1)
         }
@@ -497,7 +525,9 @@ def main() -> None:
             status = r.get("status", "error")
             lid = r["league_id"]
 
-            if status in ("skipped", "dry_run"):
+            if status == "timebudget":
+                timebudget_count += 1
+            elif status in ("skipped", "dry_run"):
                 skipped_count += 1
             elif status == "error":
                 error_count += 1
@@ -529,6 +559,7 @@ def main() -> None:
     print(f"  Leghe totali:     {total}")
     print(f"  ✓ OK:             {ok_count}")
     print(f"  ⟳ Saltate:        {skipped_count}")
+    print(f"  ⏳ Stop budget:    {timebudget_count} (non avviate, riprese al prossimo run)")
     print(f"  ✗ Errori:         {error_count}")
     print(f"  BSS migliorati:   {bss_improved}")
     print(f"  BSS peggiorati:   {bss_degraded}")

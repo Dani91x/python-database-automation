@@ -1,59 +1,64 @@
 name: Retrain ML Models (cloud, all leagues)
 
-# Strumento di addestramento cloud: riaddestra i modelli ML di tutte le leghe
-# su runner GitHub, in parallelo a shard, e li carica su Supabase storage +
-# ai_model_registry. Il PC locale li scarica da solo al prossimo report
-# (cache modelli 24h). Nessun carico sul PC dell'utente.
+# ─────────────────────────────────────────────────────────────────────────────
+# CAMPAGNA AUTO-COMPLETANTE, GENTILE SUL DB (riscritta 2026-06-13)
 #
-# Avvio: tab Actions -> "Retrain ML Models" -> Run workflow.
-# Budget: repo privato = 2000 minuti/mese gratis. Un run completo a freddo
-# costa ~700-1200 minuti totali; con skip_existing=true i run successivi
-# costano una frazione. Per un retrain completo mensile il budget basta.
+# Obiettivo: finire di addestrare TUTTE le leghe (mancanti + vecchie/leaked-era)
+# senza mai stressare l'istanza Supabase (tier Nano, I/O del disco basso) e senza
+# mai avvicinarsi al timeout GitHub di 6h.
+#
+# Come funziona:
+#   1) Il PLANNER (training_planner.py) sceglie in 2 sole query bulk le leghe da
+#      fare (MISSING + STALE<cutoff): niente piu' una-query-per-lega.
+#   2) Si addestra UNA lega alla volta (parallel_leagues=1, 1 shost) con gli
+#      indici di sql/perf_indexes.sql attivi => letture leggere, I/O sotto soglia.
+#   3) TIME-BUDGET: dopo ~165 min il run smette di prendere nuove leghe ed esce
+#      pulito (le fatte sono gia' salvate nel registry). timeout-minutes=175 e'
+#      una rete di sicurezza: il run NON puo' superare ~3h, mai vicino alle 6h.
+#   4) Lo schedule (ogni 6h) fa ripartire il run: il planner esclude le leghe
+#      gia' fresche => si riprende da dove si era fermato, fino a CONVERGENZA
+#      (quando non resta nulla, i run diventano no-op di pochi secondi).
+#
+# ⚠️ PREREQUISITO: lanciare sql/perf_indexes.sql nel SQL Editor PRIMA di
+#    riabilitare lo schedule. Senza indici ogni training fa SEQ SCAN di `matches`
+#    e ri-satura l'I/O. Il workflow parte disabilitato: riabilitare con
+#    `gh workflow enable retrain_models.yml` quando gli indici sono in.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  # CAMPAGNA AUTO-COMPLETANTE: ogni 4h riprova le leghe ancora senza modelli
-  # freschi (skip_existing salta quelle già fatte). Quando la campagna è
-  # completa, i giri successivi fanno solo refresh settimanale (max_age 7gg).
-  # ⚠️ PRIMA di rimettere la repo PRIVATA: sostituire questo cron col planner
-  # incrementale (solo leghe con partite nuove) o disattivarlo — un refresh
-  # completo continuo sforerebbe i 2000 min/mese del piano privato.
-  #
-  # 2026-06-13: SCHEDULE DISABILITATO. Causa: i run duravano 5-10h (death spiral
-  # da I/O wait su `matches` non indicizzata) e, ripartendo ogni 4h, si
-  # accodavano in continuo saturando 24/7 il budget I/O del disco Supabase
-  # (istanza irraggiungibile, mail "disk IO exhausted"). Il training NON è perso:
-  # i modelli restano in ai_model_registry + storage e il PC locale li usa da
-  # cache. Riattivazione prevista a cadenza GIORNALIERA (non 4h) DOPO aver
-  # creato gli indici su matches(league_id, season_year) — vedi sql/perf_indexes.sql.
-  # Retrain manuale sempre disponibile: tab Actions -> Run workflow.
-  # schedule:
-  #   - cron: "20 */4 * * *"
+  schedule:
+    # Ogni 6h: runda <=3h, quindi sempre >3h di pausa tra un run e il successivo
+    # (il DB riposa). Il planner rende ogni run idempotente e auto-riprendibile.
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       total_shards:
-        description: "Numero di job paralleli (shard). 6 consigliato per il fleet completo (~1229 id in season_backfill_state)."
-        default: "6"
+        description: "Job paralleli (shard). Su Nano tieni 1 per non stressare l'I/O; alza solo con indici + monitoraggio."
+        default: "1"
         required: true
+      use_planner:
+        description: "Il planner sceglie le leghe (mancanti + stale<cutoff) in 2 query bulk."
+        type: choice
+        options: ["true", "false"]
+        default: "true"
       leagues:
-        description: "Solo queste leghe (csv, es. 135,39,140). Vuoto = tutte."
+        description: "Override: solo queste leghe (csv, es. 135,39,140). Vuoto = decide il planner."
         default: ""
         required: false
+      time_budget_min:
+        description: "Stop nuove leghe dopo N minuti (resta sotto le 3h)."
+        default: "165"
+        required: true
+      parallel_leagues:
+        description: "Leghe in parallelo per shard. Su Nano tieni 1."
+        default: "1"
+        required: true
       last_n_seasons:
         description: "Stagioni di training per lega"
         default: "3"
         required: true
-      skip_existing:
-        description: "Salta leghe riaddestrate negli ultimi max_age_days"
-        type: choice
-        options: ["true", "false"]
-        default: "true"
-      max_age_days:
-        description: "Età massima (giorni) per considerare un modello fresco"
-        default: "7"
-        required: true
 
-# Mai due campagne sovrapposte: un run nuovo (cron o manuale) attende la fine
-# di quello in corso invece di addestrare le stesse leghe in parallelo.
+# Mai due campagne sovrapposte: un run nuovo attende la fine di quello in corso.
 concurrency:
   group: retrain-models
   cancel-in-progress: false
@@ -68,7 +73,7 @@ jobs:
       - name: Genera matrice shard
         id: gen
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards || '6' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '1' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -77,7 +82,9 @@ jobs:
   train:
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    # Rete di sicurezza: il run NON puo' superare ~3h (mai vicino alle 6h).
+    # Il time-budget interno (165 min) ferma prima, in modo pulito.
+    timeout-minutes: 175
     strategy:
       fail-fast: false
       matrix:
@@ -100,32 +107,65 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-train.txt
 
-      - name: Train shard
+      - name: Pre-flight DB probe (non stressare un DB gia' lento)
+        id: probe
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # ubuntu-latest = 4 vCPU: 2 leghe in parallelo x 2 target-worker = saturazione pulita
-          RETRAIN_N_WORKERS: "2"
-          RETRAIN_PARALLEL_LEAGUES: "2"
+        run: |
+          python - <<'PY'
+          import os, time, json, urllib.request
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          req = urllib.request.Request(
+              url + "/rest/v1/ai_model_registry?select=id&limit=1",
+              headers={"apikey": key, "Authorization": "Bearer " + key},
+          )
+          slow = "false"
+          t = time.time()
+          try:
+              urllib.request.urlopen(req, timeout=25).read()
+              dt = time.time() - t
+              print(f"[PROBE] DB ok in {dt:.1f}s")
+              if dt > 12:
+                  slow = "true"
+                  print("[PROBE] DB lento (>12s): salto questo run per non stressarlo.")
+          except Exception as e:
+              slow = "true"
+              print(f"[PROBE] DB non reattivo ({e!r}): salto questo run.")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"slow={slow}\n")
+          PY
+
+      - name: Train shard (planner + time-budget)
+        if: steps.probe.outputs.slow != 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Nano: 1 lega per volta, nessuna saturazione. (RETRAIN_N_WORKERS guida i
+          # worker interni per-lega; lo teniamo basso per non saturare il DB.)
+          RETRAIN_N_WORKERS: "1"
+          RETRAIN_PARALLEL_LEAGUES: "1"
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
-          # Inputs passati via env (mai interpolati nello script: anti shell-injection)
+          # Inputs via env (mai interpolati nello script: anti shell-injection).
           # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards || '6' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '1' }}
+          USE_PLANNER: ${{ inputs.use_planner || 'true' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
+          TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '165' }}
+          PARALLEL_LEAGUES: ${{ inputs.parallel_leagues || '1' }}
           LAST_N_SEASONS: ${{ inputs.last_n_seasons || '3' }}
-          SKIP_EXISTING: ${{ inputs.skip_existing || 'true' }}
-          MAX_AGE_DAYS: ${{ inputs.max_age_days || '7' }}
         run: |
           python cloud_retrain_shard.py \
             --shard-index "$SHARD_INDEX" \
             --total-shards "$TOTAL_SHARDS" \
+            --use-planner "$USE_PLANNER" \
             --leagues "$LEAGUES_INPUT" \
-            --last-n-seasons "$LAST_N_SEASONS" \
-            --skip-existing "$SKIP_EXISTING" \
-            --max-age-days "$MAX_AGE_DAYS" \
-            --parallel-leagues 2
+            --time-budget-min "$TIME_BUDGET_MIN" \
+            --parallel-leagues "$PARALLEL_LEAGUES" \
+            --last-n-seasons "$LAST_N_SEASONS"
 
       - name: Upload retrain log
         if: always()

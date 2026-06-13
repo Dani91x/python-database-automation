@@ -46,6 +46,22 @@ def main() -> int:
     parser.add_argument("--max-age-days", type=int, default=7)
     parser.add_argument("--parallel-leagues", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true", help="Mostra cosa verrebbe addestrato senza addestrare.")
+    parser.add_argument(
+        "--use-planner",
+        default="false",
+        choices=["true", "false"],
+        help=(
+            "true = il planner sceglie le leghe (mancanti + stale<cutoff) in 2 query "
+            "bulk, gentile sull'I/O; ignora --skip-existing/--max-age-days. "
+            "Default false = comportamento storico (tutte le leghe del DB + skip per-lega)."
+        ),
+    )
+    parser.add_argument(
+        "--time-budget-min",
+        type=float,
+        default=0.0,
+        help="Minuti dopo i quali non si avviano nuove leghe (stop sotto le 3h). 0 = illimitato.",
+    )
     args = parser.parse_args()
 
     if not (0 <= args.shard_index < args.total_shards):
@@ -62,6 +78,7 @@ def main() -> int:
     except ImportError:
         print("[OK] tensorflow assente: meta-learner LogReg (parita' di serving garantita).")
 
+    planner_mode = False
     if args.leagues.strip():
         tokens = [x.strip() for x in args.leagues.split(",") if x.strip()]
         bad = [t for t in tokens if not t.isdigit()]
@@ -70,12 +87,29 @@ def main() -> int:
             return 2
         all_ids = sorted({int(t) for t in tokens})
         print(f"[SHARD] Override manuale: {len(all_ids)} leghe da input")
+    elif args.use_planner == "true":
+        # Selezione gentile: 2 query bulk, niente skip per-lega. Ordine
+        # missing-first/oldest-first PRESERVATO (non ri-ordinare).
+        import training_planner
+        plan = training_planner.select_leagues_to_train()
+        all_ids = list(plan["todo"])
+        planner_mode = True
+        print(
+            f"[PLANNER] universe={plan['universe']} | da_fare={len(all_ids)} "
+            f"(missing={len(plan['missing'])}, stale={len(plan['stale'])}) | "
+            f"gia_fresche={plan['fresh_count']} | cutoff={plan['cutoff']}"
+        )
+        if not all_ids:
+            print("[PLANNER] Niente da fare: tutte le leghe sono fresche. Esco con successo.")
+            return 0
     else:
         all_ids = sorted(set(ral._get_all_league_ids_from_db()))
         print(f"[SHARD] Leghe dal DB (season_backfill_state): {len(all_ids)}")
 
+    # Sharding round-robin (preserva l'ordine d'ingresso: in planner_mode tiene
+    # la priorita' missing-first/oldest-first).
     shard_ids = [lid for i, lid in enumerate(all_ids) if i % args.total_shards == args.shard_index]
-    print(f"[SHARD] Shard {args.shard_index + 1}/{args.total_shards}: {len(shard_ids)} leghe -> {shard_ids}")
+    print(f"[SHARD] Shard {args.shard_index + 1}/{args.total_shards}: {len(shard_ids)} leghe -> {shard_ids[:50]}{' ...' if len(shard_ids) > 50 else ''}")
 
     if not shard_ids:
         print("[SHARD] Nessuna lega in questo shard, esco con successo.")
@@ -89,8 +123,12 @@ def main() -> int:
         "--parallel-leagues", str(args.parallel_leagues),
         "--source", "db",
     ]
-    if args.skip_existing == "true":
+    # In planner_mode la selezione e' gia' fatta: niente skip per-lega (zero
+    # query extra). Fuori dal planner si mantiene lo skip storico.
+    if not planner_mode and args.skip_existing == "true":
         cmd += ["--skip-existing", "--max-age-days", str(args.max_age_days)]
+    if args.time_budget_min and args.time_budget_min > 0:
+        cmd += ["--time-budget-min", str(args.time_budget_min)]
     if args.dry_run:
         cmd += ["--dry-run"]
 
