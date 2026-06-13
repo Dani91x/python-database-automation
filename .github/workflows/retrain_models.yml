@@ -15,9 +15,12 @@ name: Retrain ML Models (cloud, all leagues)
 #   3) TIME-BUDGET: dopo ~150 min il run smette di prendere nuove leghe ed esce
 #      pulito (le fatte sono gia' salvate nel registry). timeout-minutes=175 e'
 #      una rete di sicurezza: il run NON puo' superare ~3h, mai vicino alle 6h.
-#   4) Lo schedule (ogni 6h) fa ripartire il run: il planner esclude le leghe
+#   4) Lo schedule (ogni 3h) fa ripartire il run: il planner esclude le leghe
 #      gia' fresche => si riprende da dove si era fermato, fino a CONVERGENZA
 #      (quando non resta nulla, i run diventano no-op di pochi secondi).
+#      Cadenza 3h = run quasi back-to-back (run ~2,5h, concurrency serializza gli
+#      overlap): chiude la campagna in poche ore. La pre-flight DB probe salta
+#      comunque il run se l'istanza e' lenta (>12s) => valvola anti-saturazione.
 #
 # ⚠️ PREREQUISITO: lanciare sql/perf_indexes.sql nel SQL Editor PRIMA di
 #    riabilitare lo schedule. Senza indici ogni training fa SEQ SCAN di `matches`
@@ -27,9 +30,11 @@ name: Retrain ML Models (cloud, all leagues)
 
 on:
   schedule:
-    # Ogni 6h: runda <=3h, quindi sempre >3h di pausa tra un run e il successivo
-    # (il DB riposa). Il planner rende ogni run idempotente e auto-riprendibile.
-    - cron: "0 */6 * * *"
+    # Ogni 3h: run quasi back-to-back per chiudere la campagna entro poche ore.
+    # La concurrency (cancel-in-progress:false) serializza gli overlap e la
+    # pre-flight probe salta i run se il DB e' lento. Il planner rende ogni run
+    # idempotente e auto-riprendibile. Tornare a "0 */6 * * *" a convergenza.
+    - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       total_shards:
