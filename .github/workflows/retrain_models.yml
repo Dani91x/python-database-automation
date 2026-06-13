@@ -142,9 +142,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Nano: 1 lega per volta, nessuna saturazione. (RETRAIN_N_WORKERS guida i
-          # worker interni per-lega; lo teniamo basso per non saturare il DB.)
-          RETRAIN_N_WORKERS: "1"
+          # GENTILEZZA SUL DB = solo PARALLEL_LEAGUES=1 (1 sola lega legge dal DB
+          # per volta). RETRAIN_N_WORKERS invece e' parallelismo dei 18 target
+          # DENTRO una lega, sui dati gia' scaricati UNA volta (build_training_dataset):
+          # usa solo la CPU del runner (4 vCPU), ZERO carico DB extra. Quindi 4 =
+          # training ~3-4x piu' veloce per lega a parita' di stress sul database.
+          RETRAIN_N_WORKERS: "4"
           RETRAIN_PARALLEL_LEAGUES: "1"
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: "1"
