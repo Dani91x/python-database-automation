@@ -33,8 +33,8 @@ on:
   workflow_dispatch:
     inputs:
       total_shards:
-        description: "Job paralleli (shard). Su Nano tieni 1 per non stressare l'I/O; alza solo con indici + monitoraggio."
-        default: "1"
+        description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. Con gli indici 3 e' sicuro su Nano (3 index-scan intermittenti) e chiude in ~1,5-2 giorni. Monitora il grafico Disk I/O; scendi a 2 se sale."
+        default: "3"
         required: true
       use_planner:
         description: "Il planner sceglie le leghe (mancanti + stale<cutoff) in 2 query bulk."
@@ -73,7 +73,7 @@ jobs:
       - name: Genera matrice shard
         id: gen
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards || '1' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -154,7 +154,7 @@ jobs:
           # Inputs via env (mai interpolati nello script: anti shell-injection).
           # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards || '1' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
           USE_PLANNER: ${{ inputs.use_planner || 'true' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
           TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '165' }}
