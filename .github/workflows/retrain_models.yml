@@ -12,7 +12,7 @@ name: Retrain ML Models (cloud, all leagues)
 #      fare (MISSING + STALE<cutoff): niente piu' una-query-per-lega.
 #   2) Si addestra UNA lega alla volta (parallel_leagues=1, 1 shost) con gli
 #      indici di sql/perf_indexes.sql attivi => letture leggere, I/O sotto soglia.
-#   3) TIME-BUDGET: dopo ~165 min il run smette di prendere nuove leghe ed esce
+#   3) TIME-BUDGET: dopo ~150 min il run smette di prendere nuove leghe ed esce
 #      pulito (le fatte sono gia' salvate nel registry). timeout-minutes=175 e'
 #      una rete di sicurezza: il run NON puo' superare ~3h, mai vicino alle 6h.
 #   4) Lo schedule (ogni 6h) fa ripartire il run: il planner esclude le leghe
@@ -46,8 +46,8 @@ on:
         default: ""
         required: false
       time_budget_min:
-        description: "Stop nuove leghe dopo N minuti (resta sotto le 3h)."
-        default: "165"
+        description: "Stop nuove leghe dopo N minuti. 150 lascia ~25 min di margine: una lega partita al limite (max ~12 min) finisce comoda prima del timeout hard di 175 (niente piu' shard uccise)."
+        default: "150"
         required: true
       parallel_leagues:
         description: "Leghe in parallelo per shard. Su Nano tieni 1."
@@ -83,7 +83,8 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     # Rete di sicurezza: il run NON puo' superare ~3h (mai vicino alle 6h).
-    # Il time-budget interno (165 min) ferma prima, in modo pulito.
+    # Il time-budget interno (150 min) ferma prima, in modo pulito (~25 min di
+    # margine: copre l'ultima lega partita al limite -> nessuna shard uccisa).
     timeout-minutes: 175
     strategy:
       fail-fast: false
@@ -157,7 +158,7 @@ jobs:
           TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
           USE_PLANNER: ${{ inputs.use_planner || 'true' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
-          TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '165' }}
+          TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '150' }}
           PARALLEL_LEAGUES: ${{ inputs.parallel_leagues || '1' }}
           LAST_N_SEASONS: ${{ inputs.last_n_seasons || '3' }}
         run: |

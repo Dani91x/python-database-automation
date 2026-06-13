@@ -357,6 +357,9 @@ def _process_league_worker(
             bss_val = _bss(brier_val, n_cls)
             brier_random = (n_cls - 1) / n_cls if n_cls > 1 else 0.5
             try:
+                # on_conflict sulla unique (league_id, target): per le leghe gia'
+                # presenti facciamo UPDATE delle metriche invece di un INSERT che
+                # fallirebbe con 23505 (duplicate key) lasciando metriche stale.
                 sb.table("model_performance").upsert({
                     "league_id": league_id,
                     "target": target,
@@ -368,7 +371,7 @@ def _process_league_worker(
                     "train_rows": r.get("train_rows"),
                     "val_rows": r.get("val_rows"),
                     "trained_at": datetime.now(timezone.utc).isoformat(),
-                }).execute()
+                }, on_conflict="league_id,target").execute()
             except Exception as e:
                 _log(f"  [WARN] model_performance upsert failed for {target}: {e}", local_logs)
     except Exception as e:
