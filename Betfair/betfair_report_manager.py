@@ -5,7 +5,7 @@ import json
 import logging
 import tempfile
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from thefuzz import fuzz
 import unicodedata
@@ -1108,40 +1108,98 @@ class BetfairReportManager:
             logger.warning(f"Errore durante la formattazione grafica: {e}")
 
     # Costanti di classe
-    MODEL_CACHE_TTL_DAYS = 7   # Riuserà modelli locali (league_XXX) se < 7 giorni
-    MODEL_RETRAIN_TTL_DAYS = 7  # Riaddestra modelli scaricati da Supabase se > 7 giorni
+    # ─────────────────────────────────────────────────────────────────────────
+    # RETRAINING DATA-DRIVEN (2026-06-14): niente piu' scadenza A TEMPO. Una lega
+    # viene riaddestrata SOLO se ha accumulato almeno MIN_NEW_MATCHES_RETRAIN
+    # partite GIOCATE nuove (status finale) dall'ultimo training. Cosi' i
+    # campionati fermi (es. pausa estiva fino a Settembre) NON vengono mai rifatti
+    # da zero inutilmente: il report resta veloce e i modelli si aggiornano da
+    # soli solo quando ci sono davvero risultati nuovi da imparare.
+    MIN_NEW_MATCHES_RETRAIN = 10
+    # Stati API-Football che indicano una partita conclusa con risultato valido.
+    _FINISHED_STATUSES = ("FT", "AET", "PEN")
+
+    @staticmethod
+    def _parse_ts(ts):
+        """Parsa un timestamp ISO (con o senza 'Z') in datetime aware UTC. None se vuoto/invalido."""
+        if not ts:
+            return None
+        try:
+            d = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
+
+    def _league_last_trained_at(self, league_id: int):
+        """trained_at piu' recente nel registry cloud per la lega (datetime aware), o None."""
+        try:
+            sb = get_supabase_client()
+            r = (
+                sb.table("ai_model_registry")
+                .select("trained_at")
+                .eq("league_id", league_id)
+                .order("trained_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = getattr(r, "data", None) or []
+            return self._parse_ts(rows[0]["trained_at"]) if rows else None
+        except Exception as e:
+            logger.warning(f"League {league_id}: impossibile leggere trained_at dal registry: {e}")
+            return None
+
+    def _new_finished_matches_since(self, league_id: int, since_dt) -> int:
+        """Conta le partite GIOCATE (status finale) con fixture_date successiva a
+        ``since_dt``. Se since_dt e' None ritorna un numero grande (forza training).
+        In caso di errore ritorna 0 (in dubbio NON si riaddestra: stabilita')."""
+        if since_dt is None:
+            return 10 ** 9
+        try:
+            sb = get_supabase_client()
+            r = (
+                sb.table("matches")
+                .select("id", count="exact")
+                .eq("league_id", league_id)
+                .in_("status_short", list(self._FINISHED_STATUSES))
+                .gt("fixture_date", since_dt.isoformat())
+                .limit(1)
+                .execute()
+            )
+            return int(getattr(r, "count", 0) or 0)
+        except Exception as e:
+            logger.warning(f"League {league_id}: conteggio partite nuove fallito ({e}); assumo 0.")
+            return 0
 
     def _check_and_invalidate_stale_models(self, league_id: int) -> bool:
         """
-        Controlla se i modelli scaricati localmente per questa lega sono scaduti.
-        Se scaduti (> MODEL_RETRAIN_TTL_DAYS): cancella i file locali e rimuove
-        le entry dal registry Supabase, in modo che predict_fixture() triggeri
-        automaticamente il retraining al prossimo tentativo.
-        Ritorna True se i modelli erano scaduti e sono stati invalidati.
+        DATA-DRIVEN: invalida i modelli della lega (cancella cache locale + entry
+        registry Supabase → predict_fixture() triggera il retraining) SOLO se sono
+        state giocate almeno MIN_NEW_MATCHES_RETRAIN partite nuove dall'ultimo
+        training. NESSUN vincolo temporale.
+        Ritorna True se i modelli sono stati invalidati (→ va riaddestrato).
         """
-        cache_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
-        local_models = glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(cache_dir) else []
+        last_trained = self._league_last_trained_at(league_id)
+        if last_trained is None:
+            return False  # Nessun modello nel registry: gestito da "No models found".
 
-        if not local_models:
-            return False  # Nessun modello locale: gestito da "No models found" in predict_fixture
-
-        newest_mtime = max(os.path.getmtime(p) for p in local_models)
-        age_days = (datetime.now().timestamp() - newest_mtime) / 86400.0
-
-        if age_days < self.MODEL_RETRAIN_TTL_DAYS:
-            return False  # Modelli freschi, nessuna azione necessaria
+        new_matches = self._new_finished_matches_since(league_id, last_trained)
+        if new_matches < self.MIN_NEW_MATCHES_RETRAIN:
+            # Poche/zero partite nuove: i modelli sono ancora validi. NON toccare.
+            return False
 
         logger.info(
-            f"Modelli League {league_id} scaduti ({age_days:.0f}gg > {self.MODEL_RETRAIN_TTL_DAYS}gg). "
-            f"Invalido cache locale e registry Supabase..."
+            f"League {league_id}: {new_matches} partite nuove (>= {self.MIN_NEW_MATCHES_RETRAIN}) "
+            f"dall'ultimo training ({last_trained.date()}). Invalido e riaddestro."
         )
 
-        # 1. Cancella file locali
-        for f in local_models:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
+        # 1. Cancella file locali (sia cache di training che modelli scaricati)
+        for sub in (f"league_{league_id}", os.path.join("downloaded", f"league_{league_id}")):
+            cache_dir = os.path.join("Ai Engine", "models_cache", sub)
+            for f in glob.glob(os.path.join(cache_dir, "ensemble_v2_*.pkl.gz")):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
 
         # 2. Rimuovi entry dal registry Supabase → predict_fixture → "No models found" → retraining
         try:
@@ -1241,24 +1299,28 @@ class BetfairReportManager:
                 registry_has_models = False
 
             if registry_has_models:
-                dl_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
-                local_dl = glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
-                if local_dl:
-                    newest = max(os.path.getmtime(p) for p in local_dl)
-                    age_days = (datetime.now().timestamp() - newest) / 86400.0
-                    if age_days < self.MODEL_RETRAIN_TTL_DAYS:
-                        logger.info(f"  [{idx}/{total}] League {league_id}: registry OK + cache locale fresca ({age_days:.1f}gg). Skip.")
+                # DATA-DRIVEN: riaddestra SOLO se ci sono >= MIN_NEW_MATCHES_RETRAIN
+                # partite nuove dall'ultimo training. Se invalidati, cade nel ramo
+                # di training sotto; altrimenti i modelli sono validi → skip/download.
+                if self._check_and_invalidate_stale_models(league_id):
+                    registry_has_models = False
+                else:
+                    dl_dir = os.path.join("Ai Engine", "models_cache", "downloaded", f"league_{league_id}")
+                    local_dl = glob.glob(os.path.join(dl_dir, "ensemble_v2_*.pkl.gz")) if os.path.isdir(dl_dir) else []
+                    if local_dl:
+                        # Modelli validi e gia' in cache locale: nessun retraining, nessun download.
+                        logger.info(f"  [{idx}/{total}] League {league_id}: registry OK + cache locale presente. Skip.")
                         with lock:
                             self._trained_leagues_this_run.add(league_id)
                         return
 
-                # Registry OK ma file locali assenti/scaduti: pre-scarica ORA (evita download lazy per-fixture)
-                logger.info(f"  [{idx}/{total}] League {league_id}: registry OK, pre-download modelli...")
-                n = self._predownload_models_for_league(league_id)
-                logger.info(f"  [{idx}/{total}] League {league_id}: {n} modelli pre-scaricati. ✅")
-                with lock:
-                    self._trained_leagues_this_run.add(league_id)
-                return
+                    # Registry OK ma file locali assenti: pre-scarica ORA (evita download lazy per-fixture)
+                    logger.info(f"  [{idx}/{total}] League {league_id}: registry OK, pre-download modelli...")
+                    n = self._predownload_models_for_league(league_id)
+                    logger.info(f"  [{idx}/{total}] League {league_id}: {n} modelli pre-scaricati. ✅")
+                    with lock:
+                        self._trained_leagues_this_run.add(league_id)
+                    return
 
             # 2. Nessun modello in registry: controlla cache locale di training
             self._check_and_invalidate_stale_models(league_id)
@@ -1268,9 +1330,10 @@ class BetfairReportManager:
             need_training = True
             if local_models:
                 newest = max(os.path.getmtime(p) for p in local_models)
-                age_days = (datetime.now().timestamp() - newest) / 86400.0
-                if age_days < self.MODEL_CACHE_TTL_DAYS:
-                    logger.info(f"  [{idx}/{total}] League {league_id}: cache training fresca ({age_days:.1f}gg). Upload senza retraining...")
+                cache_dt = datetime.fromtimestamp(newest, tz=timezone.utc)
+                new_matches = self._new_finished_matches_since(league_id, cache_dt)
+                if new_matches < self.MIN_NEW_MATCHES_RETRAIN:
+                    logger.info(f"  [{idx}/{total}] League {league_id}: cache training valida ({new_matches} partite nuove < {self.MIN_NEW_MATCHES_RETRAIN}). Upload senza retraining...")
                     try:
                         uploaded = 0
                         for model_path in local_models:
@@ -1335,10 +1398,11 @@ class BetfairReportManager:
 
     def _get_or_train_ai_predictions(self, fixture_id, league_id, odds_dict):
         """Helper robusto per predizioni AI. Ritorna (predictions, status_string).
-        Con smart caching: se i modelli locali sono freschi (<7gg), li riusa senza riaddestramento.
-        Retraining automatico se i modelli scaricati da Supabase sono scaduti (>7gg).
+        Smart caching DATA-DRIVEN: i modelli vengono riusati finche' non ci sono
+        almeno MIN_NEW_MATCHES_RETRAIN partite giocate nuove dall'ultimo training
+        (nessun vincolo temporale). Solo allora scatta il retraining automatico.
         status = 'OK' | 'LEGA SALTATA PER DATI INSUFFICIENTI' | 'ERRORE AI'"""
-        # Invalida modelli scaduti prima di tentare la predizione
+        # Invalida i modelli (e forza retrain) solo se ci sono abbastanza partite nuove
         if league_id not in self._trained_leagues_this_run:
             self._check_and_invalidate_stale_models(league_id)
 
@@ -1362,11 +1426,12 @@ class BetfairReportManager:
 
                     need_training = True
                     if local_models:
-                        # Controlla l'età del modello più recente
+                        # DATA-DRIVEN: riusa la cache locale se NON ci sono >= N partite nuove dal training.
                         newest_mtime = max(os.path.getmtime(p) for p in local_models)
-                        age_days = (datetime.now().timestamp() - newest_mtime) / 86400.0
-                        if age_days < self.MODEL_CACHE_TTL_DAYS:
-                            logger.info(f"✅ Cache locale fresca ({age_days:.1f}gg < {self.MODEL_CACHE_TTL_DAYS}gg). "
+                        cache_dt = datetime.fromtimestamp(newest_mtime, tz=timezone.utc)
+                        new_matches = self._new_finished_matches_since(league_id, cache_dt)
+                        if new_matches < self.MIN_NEW_MATCHES_RETRAIN:
+                            logger.info(f"✅ Cache locale valida ({new_matches} partite nuove < {self.MIN_NEW_MATCHES_RETRAIN}). "
                                        f"Upload di {len(local_models)} modelli senza riaddestrare.")
                             # Upload modelli locali al registry (molto più veloce del training)
                             uploaded = 0
@@ -1393,7 +1458,7 @@ class BetfairReportManager:
                             logger.info(f"League {league_id}: {uploaded}/{len(local_models)} modelli caricati.")
                             need_training = False
                         else:
-                            logger.info(f"⏰ Cache locale scaduta ({age_days:.1f}gg >= {self.MODEL_CACHE_TTL_DAYS}gg). Riaddestrare.")
+                            logger.info(f"⏰ {new_matches} partite nuove (>= {self.MIN_NEW_MATCHES_RETRAIN}) dall'ultimo training. Riaddestrare.")
 
                     if need_training and self._skip_training:
                         logger.info(f"⚡ League {league_id} senza modelli — training saltato (--skip-training).")
