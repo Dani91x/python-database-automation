@@ -29,12 +29,15 @@ name: Retrain ML Models (cloud, all leagues)
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    # Ogni 3h: run quasi back-to-back per chiudere la campagna entro poche ore.
-    # La concurrency (cancel-in-progress:false) serializza gli overlap e la
-    # pre-flight probe salta i run se il DB e' lento. Il planner rende ogni run
-    # idempotente e auto-riprendibile. Tornare a "0 */6 * * *" a convergenza.
-    - cron: "0 */3 * * *"
+  # ───────────────────────────────────────────────────────────────────────────
+  # SCHEDULE DISABILITATO (2026-06-14): la campagna e' CONVERSA. Il planner
+  # ritorna da_fare=0 (1021 leghe fresche, 202 senza dati, 6 in blacklist non
+  # addestrabili). Non c'e' piu' nulla da addestrare in automatico, quindi il
+  # cron 3h e' stato spento per non stressare inutilmente il DB Nano.
+  # Per ri-addestrare (es. dopo settimane di partite nuove) lanciare a mano da
+  # Actions -> Run workflow, oppure riattivare lo schedule scommentandolo.
+  # schedule:
+  #   - cron: "0 */3 * * *"
   workflow_dispatch:
     inputs:
       total_shards:

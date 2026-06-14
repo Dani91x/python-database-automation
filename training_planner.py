@@ -37,7 +37,35 @@ DEFAULT_CUTOFF = "2026-06-12"
 DEFAULT_MIN_MATCHES = 50
 DEFAULT_LAST_N = 3
 
+# BLACKLIST: leghe che superano il filtro match-count (>=50 partite nelle ultime N
+# stagioni) ma che il training NON riesce comunque ad addestrare (0 modelli),
+# perche' le partite sono troppo vecchie / strutturalmente inadatte (es. play-off
+# conclusi da oltre un anno, qualificazioni giovanili sporadiche). Senza questa
+# lista il planner le ri-proporrebbe ad OGNI run all'infinito, impedendo alla
+# campagna di convergere davvero a "0 da fare". Estendibile a runtime via env
+# RETRAIN_BLACKLIST="id1,id2,...". Verificate sul campo (0 modelli prodotti
+# ripetutamente): vedi audit 2026-06-14.
+DEFAULT_BLACKLIST = frozenset({
+    265,   # Primera Division (Chile) — dati troppo vecchi
+    483,   # Copa de la Superliga (Argentina) — dati troppo vecchi
+    997,   # Serie D Play-offs (Italy) — ultima partita >380gg fa
+    1153,  # AFC U20 Asian Cup - Qualification (World) — dati troppo vecchi
+    1161,  # AFC U17 Asian Cup - Qualification (World) — dati troppo vecchi
+    1202,  # Australian Championship (Australia) — dati troppo vecchi
+})
+
 _PAGE = 1000
+
+
+def _load_blacklist() -> frozenset:
+    """Blacklist effettiva = default + eventuale override additivo da env."""
+    extra = os.environ.get("RETRAIN_BLACKLIST", "")
+    ids = set(DEFAULT_BLACKLIST)
+    for tok in extra.split(","):
+        tok = tok.strip()
+        if tok.isdigit():
+            ids.add(int(tok))
+    return frozenset(ids)
 
 
 def _parse_ts(ts: Optional[str]) -> Optional[datetime]:
@@ -115,11 +143,18 @@ def select_leagues_to_train(
         if d and (lid not in latest or d > latest[lid]):
             latest[lid] = d
 
+    blacklist = _load_blacklist()
+
     missing: List[int] = []
     stale: List[int] = []
     skipped_no_data: List[int] = []
+    blacklisted: List[int] = []
     fresh = 0
     for lid in universe:
+        if lid in blacklist:
+            # Non addestrabile (0 modelli ripetuti): non riproporla mai.
+            blacklisted.append(lid)
+            continue
         if lid not in latest:
             # MANCANTE: includi solo se ha abbastanza dati per addestrare.
             if _matches_last_n(season_counts.get(lid, {}), last_n) >= min_matches:
@@ -141,6 +176,7 @@ def select_leagues_to_train(
         "missing": missing,
         "stale": stale,
         "skipped_no_data": skipped_no_data,
+        "blacklisted": blacklisted,
         "fresh_count": fresh,
         "universe": len(universe),
         "cutoff": cutoff,
@@ -155,6 +191,7 @@ if __name__ == "__main__":
         f"(missing={len(plan['missing'])}, stale={len(plan['stale'])}) | "
         f"gia_fresche={plan['fresh_count']} | "
         f"escluse_senza_dati={len(plan['skipped_no_data'])} (<{plan['min_matches']} match) | "
+        f"blacklist={len(plan['blacklisted'])} | "
         f"cutoff={plan['cutoff']}"
     )
     print(f"[PLANNER] prime 30 da fare: {plan['todo'][:30]}")
