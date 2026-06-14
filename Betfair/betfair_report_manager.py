@@ -1290,13 +1290,30 @@ class BetfairReportManager:
 
             logger.info(f"  [{idx}/{total}] League {league_id}: controllo registry...")
 
-            # 1. Controlla registry Supabase
-            try:
-                reg_resp = sb.table("ai_model_registry").select("target").eq("league_id", league_id).limit(1).execute()
-                registry_has_models = bool(getattr(reg_resp, "data", None))
-            except Exception as e:
-                logger.warning(f"  [{idx}/{total}] League {league_id}: errore query registry ({e}), procedo con training.")
-                registry_has_models = False
+            # 1. Controlla registry Supabase (con retry: il Nano puo' restituire
+            #    400/timeout transitori sotto carico — NON vanno scambiati per
+            #    "nessun modello", altrimenti parte un retraining inutile che
+            #    aggrava il sovraccarico a cascata).
+            registry_has_models = None  # None = stato sconosciuto (errore DB)
+            for attempt in range(3):
+                try:
+                    reg_resp = sb.table("ai_model_registry").select("target").eq("league_id", league_id).limit(1).execute()
+                    registry_has_models = bool(getattr(reg_resp, "data", None))
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    logger.warning(
+                        f"  [{idx}/{total}] League {league_id}: registry non raggiungibile ({e}). "
+                        f"NON riaddestro (uso modelli esistenti / lazy-download in predict)."
+                    )
+
+            if registry_has_models is None:
+                # Errore DB persistente: salta in sicurezza, niente training.
+                with lock:
+                    self._trained_leagues_this_run.add(league_id)
+                return
 
             if registry_has_models:
                 # DATA-DRIVEN: riaddestra SOLO se ci sono >= MIN_NEW_MATCHES_RETRAIN
