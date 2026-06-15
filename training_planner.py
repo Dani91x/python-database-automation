@@ -27,15 +27,16 @@ from typing import Dict, List, Optional
 
 from db_client import get_supabase_client
 
-# Cutoff di default: la campagna "sana" parte dal 2026-06-12. Tutto cio' che e'
-# stato addestrato PRIMA va rifatto una volta (vecchio/leaked-era/danneggiato).
-DEFAULT_CUTOFF = "2026-06-12"
+# Cutoff: campagna NUOVA METODOLOGIA (storico pieno + regolarizzazione) dal
+# 2026-06-15. Tutti i modelli addestrati PRIMA (vecchia finestra 3 stagioni) sono
+# stale e vanno rifatti una volta con i dati completi.
+DEFAULT_CUTOFF = "2026-06-15"
 
-# Soglia minima di partite (somma ultime N stagioni) per considerare addestrabile
-# una lega MANCANTE. Sotto, il training darebbe 0 modelli: la si esclude per far
-# convergere la campagna. Tarata bassa: esclude solo i casi chiaramente senza dati.
+# Soglia minima di partite per considerare addestrabile una lega. REGOLA UTENTE
+# (2026-06-15): si esclude SOLO chi ha <50 partite GIOCATE COMPLESSIVE in TUTTE le
+# stagioni disponibili (non piu' "ultime 3 stagioni"). Tutto il resto va addestrato.
 DEFAULT_MIN_MATCHES = 50
-DEFAULT_LAST_N = 3
+DEFAULT_LAST_N = 3  # mantenuto per retrocompat firma; l'eleggibilita' usa il TOTALE
 
 # BLACKLIST: leghe che superano il filtro match-count (>=50 partite nelle ultime N
 # stagioni) ma che il training NON riesce comunque ad addestrare (0 modelli),
@@ -45,14 +46,10 @@ DEFAULT_LAST_N = 3
 # campagna di convergere davvero a "0 da fare". Estendibile a runtime via env
 # RETRAIN_BLACKLIST="id1,id2,...". Verificate sul campo (0 modelli prodotti
 # ripetutamente): vedi audit 2026-06-14.
-DEFAULT_BLACKLIST = frozenset({
-    265,   # Primera Division (Chile) — dati troppo vecchi
-    483,   # Copa de la Superliga (Argentina) — dati troppo vecchi
-    997,   # Serie D Play-offs (Italy) — ultima partita >380gg fa
-    1153,  # AFC U20 Asian Cup - Qualification (World) — dati troppo vecchi
-    1161,  # AFC U17 Asian Cup - Qualification (World) — dati troppo vecchi
-    1202,  # Australian Championship (Australia) — dati troppo vecchi
-})
+# REGOLA UTENTE 2026-06-15: l'UNICO criterio di esclusione e' <50 partite totali.
+# Niente blacklist per "dati vecchi": con lo storico pieno si addestra comunque.
+# Resta solo l'override additivo via env RETRAIN_BLACKLIST (per emergenze manuali).
+DEFAULT_BLACKLIST = frozenset()
 
 _PAGE = 1000
 
@@ -97,6 +94,13 @@ def _matches_last_n(seasons_counts: Dict[int, int], last_n: int) -> int:
     """Somma matches_count delle ultime ``last_n`` stagioni (per lega)."""
     recent = sorted(seasons_counts.keys(), reverse=True)[:last_n]
     return sum(int(seasons_counts.get(s, 0) or 0) for s in recent)
+
+
+def _matches_total(seasons_counts: Dict[int, int]) -> int:
+    """Somma matches_count di TUTTE le stagioni disponibili (per lega).
+    REGOLA UTENTE 2026-06-15: l'eleggibilita' usa il totale storico, non le ultime N.
+    Cosi' si addestra ogni lega con la massima profondita' di dati."""
+    return sum(int(v or 0) for v in seasons_counts.values())
 
 
 def select_leagues_to_train(
@@ -152,19 +156,21 @@ def select_leagues_to_train(
     fresh = 0
     for lid in universe:
         if lid in blacklist:
-            # Non addestrabile (0 modelli ripetuti): non riproporla mai.
+            # Solo override manuale via env (default vuoto).
             blacklisted.append(lid)
             continue
+        # REGOLA UTENTE 2026-06-15: unico filtro = >=50 partite GIOCATE TOTALI
+        # (tutte le stagioni). Sotto soglia => esclusa. Sopra => si addestra,
+        # missing o stale che sia, con la massima profondita' di dati.
+        if _matches_total(season_counts.get(lid, {})) < min_matches:
+            skipped_no_data.append(lid)
+            continue
         if lid not in latest:
-            # MANCANTE: includi solo se ha abbastanza dati per addestrare.
-            if _matches_last_n(season_counts.get(lid, {}), last_n) >= min_matches:
-                missing.append(lid)
-            else:
-                skipped_no_data.append(lid)
+            missing.append(lid)          # mai addestrata
         elif latest[lid] < cutoff_dt:
-            stale.append(lid)
+            stale.append(lid)            # vecchia metodologia => rifai con storico pieno
         else:
-            fresh += 1
+            fresh += 1                   # gia' addestrata con la nuova metodologia
 
     # Prima le mancanti, poi le stale dalla piu' vecchia: priorita' al lavoro
     # mai fatto, poi al refresh del leaked-era.

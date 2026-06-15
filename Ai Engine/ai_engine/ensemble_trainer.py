@@ -346,8 +346,13 @@ def _build_base_models(
     use_balanced = imbalance_ratio < 0.35
     logreg_class_weight = "balanced" if use_balanced else None
 
-    max_depth = 6 if n_samples < 2000 else 10
+    # REGOLARIZZAZIONE (2026-06-15): con lo storico pieno c'e' molta piu' profondita',
+    # ma RF con depth 10 + min_samples_leaf 5 memorizzava (train 95%/test 50% sui
+    # mercati gol). Si cappa la profondita' e si alzano le foglie minime: meno
+    # memorizzazione, gap train/test molto piu' sano (validato walk-forward).
+    max_depth = 5 if n_samples < 2000 else 8
     n_estimators_rf = 100 if n_samples < 1000 else 200
+    rf_min_leaf = 20 if n_samples >= 1000 else 10
 
     models: List[Tuple[str, Any]] = []
 
@@ -366,7 +371,8 @@ def _build_base_models(
             n_jobs=n_jobs,
             class_weight="balanced_subsample" if use_balanced else None,
             max_depth=max_depth,
-            min_samples_leaf=5,
+            min_samples_leaf=rf_min_leaf,
+            max_features="sqrt",
         )
     models.append(("rf", rf))
 

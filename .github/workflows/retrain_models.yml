@@ -30,14 +30,20 @@ name: Retrain ML Models (cloud, all leagues)
 
 on:
   # ───────────────────────────────────────────────────────────────────────────
-  # SCHEDULE DISABILITATO (2026-06-14): la campagna e' CONVERSA. Il planner
-  # ritorna da_fare=0 (1021 leghe fresche, 202 senza dati, 6 in blacklist non
-  # addestrabili). Non c'e' piu' nulla da addestrare in automatico, quindi il
-  # cron 3h e' stato spento per non stressare inutilmente il DB Nano.
-  # Per ri-addestrare (es. dopo settimane di partite nuove) lanciare a mano da
-  # Actions -> Run workflow, oppure riattivare lo schedule scommentandolo.
+  # CAMPAGNA NUOVA METODOLOGIA (2026-06-15): storico PIENO + regolarizzazione, su
+  # TUTTE le leghe con >=50 partite totali. Cron progressivo "4h lavoro + 30min
+  # riposo" autonomo fino a convergenza (planner ritorna da_fare=0).
+  #
+  # COME FUNZIONA L'AUTO-RIATTIVAZIONE (identica logica gentile di prima, 3 shard,
+  # 1 lega/shard, probe DB): il time-budget interno ferma le NUOVE leghe dopo 240
+  # min (4h), l'ultima lega in corso finisce, il run esce. Il cron sotto rilancia
+  # ~30 min dopo (slot a ~4h30). concurrency serializza eventuali sovrapposizioni.
+  #
+  # SCHEDULE LASCIATO COMMENTATO: si abilita scommentando (o `gh workflow enable`)
+  # SOLO dopo lo smoke test e l'ok dell'utente. Slot UTC ogni ~4h30:
   # schedule:
-  #   - cron: "0 */3 * * *"
+  #   - cron: "0 0,9,18 * * *"    # 00:00, 09:00, 18:00 UTC
+  #   - cron: "30 4,13,22 * * *"  # 04:30, 13:30, 22:30 UTC
   workflow_dispatch:
     inputs:
       total_shards:
@@ -54,16 +60,16 @@ on:
         default: ""
         required: false
       time_budget_min:
-        description: "Stop nuove leghe dopo N minuti. 150 lascia ~25 min di margine: una lega partita al limite (max ~12 min) finisce comoda prima del timeout hard di 175 (niente piu' shard uccise)."
-        default: "150"
+        description: "Stop NUOVE leghe dopo N minuti (4h=240). L'ultima lega in corso finisce, poi il run esce; il cron rilancia ~30 min dopo."
+        default: "240"
         required: true
       parallel_leagues:
         description: "Leghe in parallelo per shard. Su Nano tieni 1."
         default: "1"
         required: true
       last_n_seasons:
-        description: "Stagioni di training per lega"
-        default: "3"
+        description: "Stagioni di training per lega. 20 = STORICO PIENO (max 17 stagioni nel DB): massima profondita' di dati, fix overfitting."
+        default: "20"
         required: true
 
 # Mai due campagne sovrapposte: un run nuovo attende la fine di quello in corso.
@@ -90,10 +96,11 @@ jobs:
   train:
     needs: plan
     runs-on: ubuntu-latest
-    # Rete di sicurezza: il run NON puo' superare ~3h (mai vicino alle 6h).
-    # Il time-budget interno (150 min) ferma prima, in modo pulito (~25 min di
-    # margine: copre l'ultima lega partita al limite -> nessuna shard uccisa).
-    timeout-minutes: 175
+    # Rete di sicurezza. Il time-budget interno (240 min = 4h) ferma le NUOVE
+    # leghe; l'ultima in corso finisce. Con lo STORICO PIENO una lega grande e'
+    # piu' lenta (fino a ~60-80 min), quindi il timeout hard sale a 330 (5h30):
+    # ~90 min di margine per chiudere l'ultima lega senza uccidere lo shard.
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:

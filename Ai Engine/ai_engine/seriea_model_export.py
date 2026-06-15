@@ -92,14 +92,20 @@ def _build_features(
 
 
 def _compute_time_weights(fixture_dates: pd.Series, half_life_days: int = 365) -> np.ndarray:
-    """Exponential decay weights: recent matches have more influence."""
+    """Exponential decay weights: recent matches have more influence.
+
+    Con lo STORICO PIENO (fino a 17 stagioni) il floor va abbassato a 0.05: con
+    half-life 1 anno una partita di 5+ anni fa pesa <0.03, ma il vecchio floor 0.2
+    la teneva artificialmente alta inquinando la stima delle forze attuali. 0.05
+    lascia che le stagioni vecchie contribuiscano (segnale strutturale) senza
+    sovrastare le recenti — esattamente la pesatura per stagioni vecchie richiesta."""
     dates = pd.to_datetime(fixture_dates, errors="coerce")
     max_date = dates.max()
     if pd.isna(max_date):
         return np.ones(len(dates), dtype=float)
     age_days = (max_date - dates).dt.days.clip(lower=0).fillna(0).astype(float)
     decay = 0.5 ** (age_days / float(half_life_days))
-    return np.clip(decay.to_numpy(), 0.2, 1.0)
+    return np.clip(decay.to_numpy(), 0.05, 1.0)
 
 
 def _brier_score(y_true: np.ndarray, proba: np.ndarray, classes: np.ndarray) -> float:
