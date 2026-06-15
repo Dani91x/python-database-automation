@@ -103,6 +103,24 @@ def _matches_total(seasons_counts: Dict[int, int]) -> int:
     return sum(int(v or 0) for v in seasons_counts.values())
 
 
+def _load_eligible_leagues() -> Optional[List[int]]:
+    """Universo leghe GROUND-TRUTH dalla tabella `matches` (lista committata in
+    training_eligible_leagues.json, rigenerata con _count_played_by_league.py).
+    Sostituisce season_backfill_state, che risultava NON aggiornato/incompleto
+    (2026-06-15): perdeva leghe realmente presenti in matches. La lista contiene
+    SOLO le leghe con >=50 partite giocate totali (regola d'esclusione). Ritorna
+    None se il file manca (fallback su season_backfill_state)."""
+    import json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "training_eligible_leagues.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        ids = [int(x) for x in data.get("eligible_league_ids", [])]
+        return ids or None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def select_leagues_to_train(
     cutoff: Optional[str] = None,
     min_matches: Optional[int] = None,
@@ -119,26 +137,35 @@ def select_leagues_to_train(
     if last_n is None:
         last_n = int(os.environ.get("RETRAIN_LAST_N_SEASONS", DEFAULT_LAST_N))
 
-    # Universe + matches_count per (lega, stagione) — solo il JSON path, payload minimo.
+    # UNIVERSO LEGHE: ground-truth dalla tabella `matches` (lista committata).
+    # NON si usa piu' season_backfill_state come fonte (incompleto/non aggiornato:
+    # 2026-06-15). La lista e' gia' pre-filtrata a >=50 partite giocate totali.
     season_counts: Dict[int, Dict[int, int]] = defaultdict(dict)
-    universe_set = set()
-    for r in _all_pages(
-        "season_backfill_state",
-        "league_id,season_year,matches_count:stats_json->fixtures->>matches_count",
-    ):
-        lid = r.get("league_id")
-        if lid is None:
-            continue
-        lid = int(lid)
-        universe_set.add(lid)
-        sy = r.get("season_year")
-        try:
-            mc = int(r.get("matches_count") or 0)
-        except (ValueError, TypeError):
-            mc = 0
-        if sy is not None:
-            season_counts[lid][int(sy)] = mc
-    universe = sorted(universe_set)
+    eligible_ids = _load_eligible_leagues()
+    if eligible_ids is not None:
+        universe = sorted(set(eligible_ids))
+        _prefiltered = True
+    else:
+        # Fallback retrocompat: universo + matches_count da season_backfill_state.
+        universe_set = set()
+        for r in _all_pages(
+            "season_backfill_state",
+            "league_id,season_year,matches_count:stats_json->fixtures->>matches_count",
+        ):
+            lid = r.get("league_id")
+            if lid is None:
+                continue
+            lid = int(lid)
+            universe_set.add(lid)
+            sy = r.get("season_year")
+            try:
+                mc = int(r.get("matches_count") or 0)
+            except (ValueError, TypeError):
+                mc = 0
+            if sy is not None:
+                season_counts[lid][int(sy)] = mc
+        universe = sorted(universe_set)
+        _prefiltered = False
 
     latest: Dict[int, datetime] = {}
     for r in _all_pages("ai_model_registry", "league_id,trained_at"):
@@ -159,10 +186,10 @@ def select_leagues_to_train(
             # Solo override manuale via env (default vuoto).
             blacklisted.append(lid)
             continue
-        # REGOLA UTENTE 2026-06-15: unico filtro = >=50 partite GIOCATE TOTALI
-        # (tutte le stagioni). Sotto soglia => esclusa. Sopra => si addestra,
-        # missing o stale che sia, con la massima profondita' di dati.
-        if _matches_total(season_counts.get(lid, {})) < min_matches:
+        # REGOLA UTENTE 2026-06-15: unico filtro = >=50 partite GIOCATE TOTALI.
+        # Con la lista ground-truth (_prefiltered) l'esclusione e' gia' applicata;
+        # nel fallback season_backfill_state la si calcola dal totale storico.
+        if not _prefiltered and _matches_total(season_counts.get(lid, {})) < min_matches:
             skipped_no_data.append(lid)
             continue
         if lid not in latest:
