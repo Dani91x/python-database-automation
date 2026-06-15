@@ -39,11 +39,12 @@ on:
   # min (4h), l'ultima lega in corso finisce, il run esce. Il cron sotto rilancia
   # ~30 min dopo (slot a ~4h30). concurrency serializza eventuali sovrapposizioni.
   #
-  # SCHEDULE LASCIATO COMMENTATO: si abilita scommentando (o `gh workflow enable`)
-  # SOLO dopo lo smoke test e l'ok dell'utente. Slot UTC ogni ~4h30:
-  # schedule:
-  #   - cron: "0 0,9,18 * * *"    # 00:00, 09:00, 18:00 UTC
-  #   - cron: "30 4,13,22 * * *"  # 04:30, 13:30, 22:30 UTC
+  # SCHEDULE ATTIVO (2026-06-15, ok utente dopo smoke test): campagna autonoma
+  # "4h lavoro + ~30min riposo". Slot UTC ogni ~4h30. Per fermare: commentare
+  # queste righe (o `gh workflow disable retrain_models.yml`).
+  schedule:
+    - cron: "0 0,9,18 * * *"    # 00:00, 09:00, 18:00 UTC
+    - cron: "30 4,13,22 * * *"  # 04:30, 13:30, 22:30 UTC
   workflow_dispatch:
     inputs:
       total_shards:
