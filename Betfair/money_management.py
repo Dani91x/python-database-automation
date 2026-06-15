@@ -40,195 +40,44 @@ from db_client import get_supabase_client
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-#  COSTANTI DI DEFAULT
-# ---------------------------------------------------------------------------
-DEFAULT_BANKROLL = 1000.0
-DEFAULT_DAILY_TARGET = 150.0
-DEFAULT_STOP_LOSS_PCT = 10.0
-# At 5% Betfair commission, a raw EV below ~5.26% yields negative expected
-# profit.  We require at least 5% edge (post-margin) so every accepted bet
-# has a genuine positive expectation even after the exchange cut.
-DEFAULT_MIN_EDGE_PCT = 6.0       # Minimum edge % to place a bet (raised from 5→6% for higher win rate target)
-DEFAULT_MIN_PROB_PCT = 52.0      # Minimum model probability (raised from 50→52% to reduce false positives)
-DEFAULT_KELLY_FRACTION = 0.10    # Conservative fractional Kelly — validated BSS required before raising
-DEFAULT_MAX_STAKE_PCT = 2.0      # Max 2% bankroll per slot
-DEFAULT_MIN_MATCHES_USED = 8     # Minimum historical matches for reliable form features (raised from 5 → 8 for win rate target)
-DEFAULT_COMMISSION_PCT = 5.0     # Betfair commission on net winnings (%)
-
-STATE_FILE = os.path.join(os.path.dirname(__file__), "money_management_state.json")
-
-# ---------------------------------------------------------------------------
-#  EDGE ENGINE v3.0 — Feature Flags
-#  Ogni componente può essere attivato/disattivato indipendentemente.
-# ---------------------------------------------------------------------------
-EDGE_ENGINE_FLAGS = {
-    "use_dynamic_cal": True,           # Alpha: Calibrazione Dinamica
-    "use_hallucination_filter": True,  # Sigma: Z-Score Hallucination Filter
-    "use_trust_score": True,           # Omega: League Trust Score
-}
-
-# ---------------------------------------------------------------------------
-#  FILTRO INTELLIGENTE QUOTE ALTE (ML Track)
-#  score = edge × √prob  —  penalizza naturalmente le quote alte senza cap
-#  arbitrari.  Una quota 4.0 (prob ~0.25) richiede un edge proporzionalmente
-#  più alto rispetto a una quota 2.0 (prob ~0.50) per ottenere lo stesso score.
-#  Esempio:
-#    odds 2.0, edge 5%  → score = 0.035  → PASSA
-#    odds 4.0, edge 5%  → score = 0.025  → PASSA (esattamente al limite)
-#    odds 4.0, edge 4%  → score = 0.020  → SCARTATO
-#    odds 4.0, edge 10% → score = 0.050  → PASSA (segnale genuinamente forte)
-#    odds 6.0, edge 15% → score = 0.061  → PASSA (edge reale su quota alta)
-#
-# SOGLIE GRADUATE PER FASCIA DI QUOTA (ML_SCORE_TIERS):
-# Quote basse (< 2.5): basta un segnale debole, mercato liquido.
-# Quote medie (2.5–4.0): serve un segnale più forte.
-# Quote alte (4.0–6.0): richiesto segnale forte — poche scommesse ma di qualità.
-# Quote molto alte (> 6.0): solo opportunità eccezionali.
-#
-#   Esempi pratici:
-#   odds 2.0, prob 0.60, edge 14%  → score 0.108 → PASSA (tier 0.025)
-#   odds 3.5, prob 0.35, edge  8%  → score 0.047 → PASSA (tier 0.040)
-#   odds 3.5, prob 0.35, edge  3%  → score 0.018 → SCARTATO (sotto 0.040)
-#   odds 5.0, prob 0.25, edge 12%  → score 0.060 → PASSA (tier 0.055)
-#   odds 5.0, prob 0.25, edge  5%  → score 0.025 → SCARTATO (sotto 0.055)
-#   odds 7.0, prob 0.20, edge 18%  → score 0.081 → PASSA (tier 0.075)
-#   odds 7.0, prob 0.20, edge 10%  → score 0.045 → SCARTATO (sotto 0.075)
-# ---------------------------------------------------------------------------
-MIN_ML_SCORE_THRESHOLD: float = 0.025  # fallback base (odds < 2.5)
-
-# Tiered thresholds: (max_odds_exclusive, min_score)
-# Se odds >= ultima soglia usa l'ultima riga.
-ML_SCORE_TIERS: list = [
-    (2.5,  0.025),   # odds < 2.5  → score ≥ 0.025
-    (4.0,  0.040),   # odds 2.5–4  → score ≥ 0.040
-    (6.0,  0.055),   # odds 4–6    → score ≥ 0.055
-    (999., 0.075),   # odds > 6    → score ≥ 0.075 (solo occasioni eccezionali)
-]
-
-# Correzione overround Betfair (~2.5%) per calcolo prob_market
-OVERROUND_CORRECTION = 0.975
-# Z-Score σ di fallback (usata se dynamic_cal.json non contiene divergence_stats).
-# Aggiornato al valore calcolato da dynamic_cal.json del 2026-03-31 (n=1757 campioni,
-# solo record modello poisson_xg_hybrid_dc). Rigenera dynamic_cal.json periodicamente.
-DEFAULT_DIVERGENCE_STD = 0.3287
-
-MARKET_MAP = {
-    # min_edge: minimum edge % AFTER Betfair 5% commission.
-    # min_prob: minimum calibrated probability required (per-market floor).
-    # min_odds: minimum acceptable odds (below this we refuse even with edge).
-    #
-    # Performance data (11 days):
-    #   H    39.4% WR, avg 2.06 → break-even 51.1% → UNDERPERFORMING, raised min_prob
-    #   D    no bets (Poisson Draw rarely passes calibration)
-    #   A    55.6% WR, avg 2.03 → break-even 51.8% → OK (small sample=9)
-    #   O25  42.9% WR, avg 1.82 → break-even 57.8% → UNDERPERFORMING, raised min_prob+edge
-    #   U25  55.4% WR, avg 1.93 → break-even 54.5% → PROFITABLE ✓
-    #   BTTS  0.0% WR  → suspended (0/5 sample catastrophic)
-    #   BTTS_NO 43.9% WR → borderline (raised min_edge to 7%)
-    #   HT05 63.4% WR, avg 1.56 → break-even 67.5% → ROI -25.6% su 53 bet → SOSPESO
-    "H":       {"label": "Home Win",      "json_path": ("markets", "1x2", "H"),                      "ai_path": ("target_1x2", "H"),          "cal_key": "H",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
-    # P1 fix: min_prob raised from 0.35 → 0.42 (alternative to disabling).
-    # Backtest ROI -47% to -55% on D; model systematically assigns P(D)=0.30-0.40
-    # to all "balanced" matches.  0.42 ensures we only bet when the model is
-    # genuinely confident — significantly above the 30% break-even threshold.
-    "D":       {"label": "Pareggio",      "json_path": ("markets", "1x2", "D"),                      "ai_path": ("target_1x2", "D"),          "cal_key": "D",       "min_edge": 7.0, "min_prob": 0.42, "min_odds": 2.50},
-    "A":       {"label": "Away Win",      "json_path": ("markets", "1x2", "A"),                      "ai_path": ("target_1x2", "A"),          "cal_key": "A",       "min_edge": 6.0, "min_prob": 0.54, "min_odds": 1.50},
-    "O15":     {"label": "Over 1.5",      "json_path": ("markets", "over_1_5", "True"),              "ai_path": ("target_over_1_5", "True"),  "cal_key": "O15",     "min_edge": 6.0, "min_prob": 0.65, "min_odds": 1.40},
-    "U15":     {"label": "Under 1.5",     "json_path": ("markets", "over_1_5", "False"),             "ai_path": ("target_over_1_5", "False"), "cal_key": "U15",     "min_edge": 6.0, "min_prob": 0.55, "min_odds": 1.80},
-    "O25":     {"label": "Over 2.5",      "json_path": ("markets", "over_2_5", "True"),              "ai_path": ("target_over_2_5", "True"),  "cal_key": "O25",     "min_edge": 7.0, "min_prob": 0.58, "min_odds": 1.50},
-    "U25":     {"label": "Under 2.5",     "json_path": ("markets", "over_2_5", "False"),             "ai_path": ("target_over_2_5", "False"), "cal_key": "U25",     "min_edge": 5.0, "min_prob": 0.54, "min_odds": 1.50},
-    "O35":     {"label": "Over 3.5",      "json_path": ("markets", "over_3_5", "True"),              "ai_path": ("target_over_3_5", "True"),  "cal_key": "O35",     "min_edge": 6.0, "min_prob": 0.40, "min_odds": 1.80},
-    "U35":     {"label": "Under 3.5",     "json_path": ("markets", "over_3_5", "False"),             "ai_path": ("target_over_3_5", "False"), "cal_key": "U35",     "min_edge": 5.0, "min_prob": 0.58, "min_odds": 1.35},
-    "BTTS":    {"label": "BTTS Sì",       "json_path": ("markets", "btts", "True"),                  "ai_path": ("target_btts", "True"),      "cal_key": "BTTS",    "min_edge": 8.0, "min_prob": 0.58, "min_odds": 1.60},
-    "BTTS_NO": {"label": "BTTS No",       "json_path": ("markets", "btts", "False"),                 "ai_path": ("target_btts", "False"),     "cal_key": "BTTS_NO", "min_edge": 7.0, "min_prob": 0.54, "min_odds": 1.50},
-    "HT05":    {"label": "1H Over 0.5",   "json_path": ("markets", "first_half_over_0_5", "True"),   "ai_path": ("target_ht_over_0_5", "True"), "cal_key": "HT05",   "min_edge": 5.0},
-    "HT_H":    {"label": "HT Home",       "json_path": ("markets", "ht_1x2", "H"),                   "ai_path": ("target_ht_1x2", "H"),       "cal_key": "HT_H",    "min_edge": 6.0, "min_prob": 0.40, "min_odds": 1.80},
-    "HT_D":    {"label": "HT Draw",       "json_path": ("markets", "ht_1x2", "D"),                   "ai_path": ("target_ht_1x2", "D"),       "cal_key": "HT_D",    "min_edge": 7.0, "min_prob": 0.30, "min_odds": 2.50},
-    "HT_A":    {"label": "HT Away",       "json_path": ("markets", "ht_1x2", "A"),                   "ai_path": ("target_ht_1x2", "A"),       "cal_key": "HT_A",    "min_edge": 6.0, "min_prob": 0.35, "min_odds": 2.00},
-}
-
-# ---------------------------------------------------------------------------
-#  MARKET MAP per ML — usa probabilità AI direttamente (no calibrazione Poisson)
-#  Copre gli stessi mercati con odds disponibili su Betfair.
-#
-#  ai_target : nome del target nel payload del modello (usato per leggere
-#              il Brier score e applicare il Kelly Shrinkage basato su BSS).
-#  n_classes : numero di classi del modello corrispondente (2=binario, 3=1x2).
-#              Serve per normalizzare il BSS: brier_random=(n_classes-1)/n_classes.
-#  min_edge  : ripristinato a 5.0 (era stato abbassato a 2.0 per A/B Test;
-#              con modelli a Brier ~random il 2% era indistinguibile dal rumore).
-# ---------------------------------------------------------------------------
-ML_MARKET_MAP = {
-    # min_edge  : minimum edge % after 5% commission
-    # min_prob_margin : model prob must exceed market-implied prob by at least
-    #   this margin (dynamic floor — adapts to market odds automatically).
-    #   Example: D at odds 3.50 → implied 28.6%; margin 0.08 → min_prob 36.6%
-    #   Set to 0.0 to disable (no dynamic floor beyond edge check).
-    # min_odds  : refuse bets below this price (avoids overfit on tiny margins)
-    # min_prob_margin: model prob must exceed market-implied by this margin.
-    # 3-way markets (H/D/A, HT_*) use +0.06 — harder to estimate, need more edge vs market.
-    # Binary markets use +0.05.
-    "H":       {"label": "Home Win (ML)",    "ai_path": ("target_1x2", "H"),            "odds_key": "H",       "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_1x2",        "n_classes": 3},
-    # P1 fix: min_prob_margin raised from 0.06 → 0.15 (alternative to disabling).
-    # Model D miscalibration (ECE undetected pre-fix) means apparent "edge" is
-    # illusory when margin < 15pp.  E.g. odds 3.50 → implied 28.6%;
-    # min_prob = 28.6% + 15% = 43.6% — only bet when model is truly high-confidence.
-    "D":       {"label": "Pareggio (ML)",    "ai_path": ("target_1x2", "D"),            "odds_key": "D",       "min_edge": 5.0, "min_prob_margin": 0.15, "min_odds": 2.50, "ai_target": "target_1x2",        "n_classes": 3},
-    "A":       {"label": "Away Win (ML)",    "ai_path": ("target_1x2", "A"),            "odds_key": "A",       "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.00, "ai_target": "target_1x2",        "n_classes": 3},
-    "O25":     {"label": "Over 2.5 (ML)",    "ai_path": ("target_over_2_5", "True"),    "odds_key": "O25",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_over_2_5",   "n_classes": 2},
-    "U25":     {"label": "Under 2.5 (ML)",   "ai_path": ("target_over_2_5", "False"),   "odds_key": "U25",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_over_2_5",   "n_classes": 2},
-    "BTTS":    {"label": "BTTS Sì (ML)",     "ai_path": ("target_btts", "True"),        "odds_key": "BTTS",    "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.60, "ai_target": "target_btts",       "n_classes": 2},
-    "BTTS_NO": {"label": "BTTS No (ML)",     "ai_path": ("target_btts", "False"),       "odds_key": "BTTS_NO", "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_btts",       "n_classes": 2},
-    "HT05":    {"label": "1H Over 0.5 (ML)", "ai_path": ("target_ht_over_0_5", "True"), "odds_key": "HT05",    "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.50, "ai_target": "target_ht_over_0_5","n_classes": 2},
-    # Extended markets
-    "O15":     {"label": "Over 1.5 (ML)",    "ai_path": ("target_over_1_5", "True"),    "odds_key": "O15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.40, "ai_target": "target_over_1_5",   "n_classes": 2},
-    "U15":     {"label": "Under 1.5 (ML)",   "ai_path": ("target_over_1_5", "False"),   "odds_key": "U15",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_1_5",   "n_classes": 2},
-    "O35":     {"label": "Over 3.5 (ML)",    "ai_path": ("target_over_3_5", "True"),    "odds_key": "O35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.80, "ai_target": "target_over_3_5",   "n_classes": 2},
-    "U35":     {"label": "Under 3.5 (ML)",   "ai_path": ("target_over_3_5", "False"),   "odds_key": "U35",     "min_edge": 5.0, "min_prob_margin": 0.05, "min_odds": 1.35, "ai_target": "target_over_3_5",   "n_classes": 2},
-    "HT_H":    {"label": "HT Home (ML)",     "ai_path": ("target_ht_1x2", "H"),         "odds_key": "HT_H",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 1.80, "ai_target": "target_ht_1x2",     "n_classes": 3},
-    "HT_D":    {"label": "HT Draw (ML)",     "ai_path": ("target_ht_1x2", "D"),         "odds_key": "HT_D",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.50, "ai_target": "target_ht_1x2",     "n_classes": 3},
-    "HT_A":    {"label": "HT Away (ML)",     "ai_path": ("target_ht_1x2", "A"),         "odds_key": "HT_A",    "min_edge": 5.0, "min_prob_margin": 0.06, "min_odds": 2.00, "ai_target": "target_ht_1x2",     "n_classes": 3},
-}
-
-# ---------------------------------------------------------------------------
-#  TABELLA DI CALIBRAZIONE — Aggiornata il 2026-06-08 da update_poisson_calibration.py
-#  Derivata da 64008 match storici
+#  TABELLA DI CALIBRAZIONE — Aggiornata il 2026-06-15 da update_poisson_calibration.py
+#  Derivata da 65091 match storici
 #  Per ogni mercato e fascia di probabilità: fattore correttivo = WR_reale / Prob_stimata
 #  Applicato PRIMA del calcolo dell'edge per usare probabilità realistiche.
 # ---------------------------------------------------------------------------
 CALIBRATION_TABLE = {
     # 1X2 Home — aggiornato da update_poisson_calibration.py
-    "H": {0: 0.51, 1: 0.882, 2: 1.057, 3: 1.022, 4: 1.012, 5: 0.998, 6: 1.014, 7: 1.04, 8: 1.01, 9: 1.0},
+    "H": {0: 1.167, 1: 0.838, 2: 1.06, 3: 0.999, 4: 0.992, 5: 1.004, 6: 0.998, 7: 1.065, 8: 1.124, 9: 1.0},
     # 1X2 Draw
-    "D": {0: 0.2, 1: 0.926, 2: 0.952, 3: 0.977, 4: 1.209, 5: 1.037, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
+    "D": {0: 0.2, 1: 0.947, 2: 0.975, 3: 0.975, 4: 1.132, 5: 1.168, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0},
     # 1X2 Away
-    "A": {0: 1.152, 1: 1.041, 2: 1.02, 3: 0.99, 4: 1.011, 5: 1.025, 6: 0.989, 7: 1.104, 8: 1.0, 9: 1.0},
+    "A": {0: 1.013, 1: 0.958, 2: 1.063, 3: 1.018, 4: 0.966, 5: 1.028, 6: 0.952, 7: 1.006, 8: 1.0, 9: 1.0},
     # Over 2.5
-    "O25": {0: 3.0, 1: 1.703, 2: 1.24, 3: 1.177, 4: 1.074, 5: 1.015, 6: 0.93, 7: 0.904, 8: 0.911, 9: 0.945},
+    "O25": {0: 3.0, 1: 1.637, 2: 1.243, 3: 1.233, 4: 1.06, 5: 1.0, 6: 0.928, 7: 0.915, 8: 0.948, 9: 0.989},
     # Under 2.5
-    "U25": {0: 1.638, 1: 1.427, 2: 1.276, 3: 1.125, 4: 0.983, 5: 0.939, 6: 0.902, 7: 0.916, 8: 0.861, 9: 0.822},
+    "U25": {0: 1.133, 1: 1.24, 2: 1.248, 3: 1.128, 4: 1.0, 5: 0.951, 6: 0.872, 7: 0.915, 8: 0.876, 9: 0.839},
     # BTTS Si
-    "BTTS": {0: 1.0, 1: 2.084, 2: 1.236, 3: 1.116, 4: 1.039, 5: 0.956, 6: 0.858, 7: 0.801, 8: 0.872, 9: 1.0},
+    "BTTS": {0: 1.0, 1: 1.854, 2: 1.296, 3: 1.157, 4: 1.062, 5: 0.945, 6: 0.877, 7: 0.809, 8: 0.935, 9: 1.0},
     # BTTS No
-    "BTTS_NO": {0: 1.0, 1: 1.602, 2: 1.558, 3: 1.256, 4: 1.054, 5: 0.968, 6: 0.935, 7: 0.915, 8: 0.792, 9: 1.0},
+    "BTTS_NO": {0: 1.0, 1: 1.305, 2: 1.532, 3: 1.222, 4: 1.067, 5: 0.949, 6: 0.911, 7: 0.894, 8: 0.84, 9: 1.0},
     # 1H Over 0.5
-    "HT05": {0: 1.0, 1: 1.0, 2: 2.592, 3: 1.74, 4: 1.373, 5: 1.165, 6: 1.056, 7: 0.965, 8: 0.875, 9: 0.863},
+    "HT05": {0: 1.0, 1: 1.0, 2: 2.631, 3: 1.693, 4: 1.366, 5: 1.172, 6: 1.059, 7: 0.966, 8: 0.878, 9: 0.864},
     # Over 1.5
-    "O15": {0: 1.0, 1: 1.0, 2: 1.551, 3: 1.217, 4: 1.071, 5: 1.054, 6: 1.025, 7: 0.975, 8: 0.931, 9: 0.911},
+    "O15": {0: 1.0, 1: 1.0, 2: 1.582, 3: 1.309, 4: 1.069, 5: 1.066, 6: 1.027, 7: 0.966, 8: 0.928, 9: 0.921},
     # Under 1.5
-    "U15": {0: 2.102, 1: 1.373, 2: 1.075, 3: 0.952, 4: 0.932, 5: 0.941, 6: 0.875, 7: 0.807, 8: 1.0, 9: 1.0},
+    "U15": {0: 1.974, 1: 1.385, 2: 1.103, 3: 0.949, 4: 0.915, 5: 0.941, 6: 0.826, 7: 0.806, 8: 1.0, 9: 1.0},
     # Over 3.5
-    "O35": {0: 2.067, 1: 1.348, 2: 1.128, 3: 0.985, 4: 0.902, 5: 0.878, 6: 0.88, 7: 0.888, 8: 1.0, 9: 1.0},
+    "O35": {0: 1.997, 1: 1.385, 2: 1.11, 3: 0.965, 4: 0.899, 5: 0.861, 6: 0.88, 7: 0.909, 8: 1.0, 9: 1.0},
     # Under 3.5
-    "U35": {0: 1.0, 1: 1.0, 2: 1.33, 3: 1.21, 4: 1.145, 5: 1.078, 6: 1.007, 7: 0.957, 8: 0.936, 9: 0.921},
+    "U35": {0: 1.0, 1: 1.0, 2: 1.261, 3: 1.213, 4: 1.166, 5: 1.08, 6: 1.018, 7: 0.964, 8: 0.929, 9: 0.927},
     # HT Casa
-    "HT_H": {0: 1.385, 1: 1.293, 2: 1.163, 3: 1.017, 4: 0.996, 5: 0.972, 6: 1.084, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_H": {0: 1.919, 1: 1.387, 2: 1.136, 3: 1.019, 4: 1.035, 5: 1.006, 6: 1.198, 7: 1.0, 8: 1.0, 9: 1.0},
     # HT Pareggio
-    "HT_D": {0: 1.0, 1: 1.0, 2: 0.845, 3: 0.956, 4: 0.921, 5: 0.889, 6: 0.77, 7: 0.746, 8: 1.0, 9: 1.0},
+    "HT_D": {0: 1.0, 1: 1.0, 2: 0.843, 3: 0.941, 4: 0.906, 5: 0.906, 6: 0.79, 7: 0.633, 8: 1.0, 9: 1.0},
     # HT Trasferta
-    "HT_A": {0: 1.382, 1: 1.165, 2: 1.047, 3: 1.012, 4: 0.976, 5: 1.028, 6: 1.232, 7: 1.0, 8: 1.0, 9: 1.0},
+    "HT_A": {0: 0.835, 1: 1.159, 2: 1.084, 3: 1.002, 4: 0.883, 5: 1.165, 6: 1.2, 7: 1.0, 8: 1.0, 9: 1.0},
     # 1H Under 0.5
-    "HT_U05": {0: 2.57, 1: 1.667, 2: 1.106, 3: 0.895, 4: 0.795, 5: 0.681, 6: 0.596, 7: 0.405, 8: 1.0, 9: 1.0},
+    "HT_U05": {0: 2.565, 1: 1.648, 2: 1.101, 3: 0.888, 4: 0.783, 5: 0.686, 6: 0.628, 7: 0.384, 8: 1.0, 9: 1.0},
 }
 
 # ---------------------------------------------------------------------------
