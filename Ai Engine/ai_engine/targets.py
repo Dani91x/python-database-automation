@@ -157,15 +157,49 @@ def add_targets_from_events(df: pd.DataFrame) -> pd.DataFrame:
     #   Prima usava il PRIMO gol: una squadra che segna al 30' e al 70' risultava
     #   "nessun gol nel 2T" (primo gol=30 < 46) pur avendo segnato nel 2T.
     #   Serve il MAX del minuto-gol tra le due squadre.
-    # Nessun gol nel match => min/max NaN => (NaN<30)/(NaN>=46)=False => fillna(False):
-    # corretto (0-0 reale = nessun gol => entrambe le label False).
     hgm_min = _series("home_events_min_goal_minute")
     agm_min = _series("away_events_min_goal_minute")
     hgm_max = _series("home_events_max_goal_minute")
     agm_max = _series("away_events_max_goal_minute")
     first_min = pd.concat([hgm_min, agm_min], axis=1).min(axis=1)
     last_min = pd.concat([hgm_max, agm_max], axis=1).max(axis=1)
-    out["target_first_goal_before_30"] = (first_min < 30).fillna(False)
-    out["target_goal_in_2h"] = (last_min >= 46).fillna(False)
+
+    # FIX 2026-06-16 (label integrity): le label di timing-gol valgono SOLO se gli
+    # eventi-gol del match sono COMPLETI. La tabella `match_events` ha copertura
+    # molto variabile per lega (verificato sul DB: fino al ~61% delle partite CON
+    # gol e' PRIVA di evento-gol). In quei casi min/max_goal_minute e' NaN e il
+    # vecchio `.fillna(False)` etichettava "nessun gol prima del 30'/nel 2T" anche
+    # per partite che AVEVANO segnato => label sistematicamente corrotte e modelli
+    # con BSS NEGATIVO (peggio del baseline). Regola corretta:
+    #   - 0-0 reale (gol totali == 0)            => False (certo: nessun gol).
+    #   - gol > 0 ed eventi-gol COMPLETI
+    #     (#eventi-gol == #gol reali)            => uso il timing (booleano).
+    #   - gol > 0 ma eventi mancanti/parziali    => None => la riga viene scartata
+    #     dal dropna(subset=[target]) del trainer (meglio non addestrare che
+    #     addestrare su una label inventata).
+    ev_goals = _series("home_events_goals").fillna(0) + _series("away_events_goals").fillna(0)
+    actual_goals = (
+        pd.to_numeric(out.get("goals_home"), errors="coerce")
+        + pd.to_numeric(out.get("goals_away"), errors="coerce")
+    )
+    goalless = actual_goals == 0
+    events_complete = actual_goals.notna() & (ev_goals == actual_goals)
+    use_timing = events_complete & ~goalless  # gol presenti e tracciati per intero
+
+    # Label come STRINGA "True"/"False" (None se non affidabile), STESSO pattern di
+    # target_ht_over_0_5: una colonna object con bool+None fa rifiutare il
+    # classificatore con "Unknown label type"; le stringhe si addestrano come
+    # binario pulito e, via str(classes_), restano "True"/"False" coerenti col
+    # serving (identiche alle vecchie label bool->str, nessun impatto a valle).
+    fb30 = (first_min < 30).map({True: "True", False: "False"})
+    g2h = (last_min >= 46).map({True: "True", False: "False"})
+    fg = pd.Series([None] * len(out), index=out.index, dtype="object")
+    g2 = pd.Series([None] * len(out), index=out.index, dtype="object")
+    fg[goalless] = "False"
+    g2[goalless] = "False"
+    fg[use_timing] = fb30[use_timing]
+    g2[use_timing] = g2h[use_timing]
+    out["target_first_goal_before_30"] = fg
+    out["target_goal_in_2h"] = g2
 
     return out

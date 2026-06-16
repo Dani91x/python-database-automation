@@ -28,15 +28,18 @@ from typing import Dict, List, Optional
 from db_client import get_supabase_client
 
 # Cutoff: campagna NUOVA METODOLOGIA CERTIFICATA (storico pieno + NO leak
-# standings + 28 target completi + ELO allineato train/predict) dal 2026-06-16.
-# Alzato a 2026-06-16T10:30Z dopo che un run cron intermedio (SHA 45bc770, senza
-# i fix ht_over_0_5/timing-gol) aveva ri-addestrato alcune leghe marcandole
-# "fresche": quei modelli sono CONTAMINATI. 10:30Z e' successivo all'ultimo
-# modello contaminato (run cancellato ~10:27Z) e precedente al lancio della
-# campagna FINALE => TUTTE le leghe risultano da riaddestrare con il codice
-# definitivo, e solo i modelli nuovi (trained_at>10:30Z) restano freschi fino a
-# convergenza (da_fare=0).
-DEFAULT_CUTOFF = "2026-06-16T10:30:00+00:00"
+# standings + target completi + ELO allineato train/predict) dal 2026-06-16.
+# Alzato a 2026-06-16T13:52Z dopo aver trovato e corretto la CORRUZIONE delle
+# label timing-gol (target_first_goal_before_30 / target_goal_in_2h): il vecchio
+# `.fillna(False)` etichettava "nessun gol" anche le partite con eventi mancanti
+# in match_events (fino al 61% per lega), producendo modelli con BSS NEGATIVO.
+# Il fix (label "True"/"False" solo se #eventi-gol == #gol reali, altrimenti None
+# scartata) e' in ai_engine/targets.py. 13:52Z e' successivo all'ULTIMO modello
+# contaminato (run 27611226736 cancellato, max trained_at 13:51:42Z) e precedente
+# al lancio della campagna FINALE => TUTTE le ~1014 leghe risultano da
+# riaddestrare col codice definitivo; solo i modelli nuovi (trained_at>13:52Z)
+# restano freschi fino a convergenza (da_fare=0).
+DEFAULT_CUTOFF = "2026-06-16T13:52:00+00:00"
 
 # Soglia minima di partite per considerare addestrabile una lega. REGOLA UTENTE
 # (2026-06-15): si esclude SOLO chi ha <50 partite GIOCATE COMPLESSIVE in TUTTE le
