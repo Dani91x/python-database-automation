@@ -45,6 +45,13 @@ def build_training_dataset(
         pre_match=True,
     )
 
+    # NB: le statistiche/eventi della PARTITA STESSA necessarie a costruire le
+    # label di mercato (corner, tiri in porta, cartellini, timing-gol) vengono
+    # gia' unite dentro build_feature_dataframe_for_fixtures (branch pre_match,
+    # colonne home_stats_*/away_stats_*/home_events_*/away_events_*), riusando le
+    # righe gia' scaricate (nessun fetch extra). Il drop_cols del trainer le
+    # rimuove dalle feature => servono solo come label, mai come feature (no leak).
+
     # Targets from matches + team stats + events
     features_df = add_targets_from_matches(features_df)
     features_df = add_targets_from_team_stats(features_df)

@@ -27,10 +27,16 @@ from typing import Dict, List, Optional
 
 from db_client import get_supabase_client
 
-# Cutoff: campagna NUOVA METODOLOGIA (storico pieno + regolarizzazione) dal
-# 2026-06-15. Tutti i modelli addestrati PRIMA (vecchia finestra 3 stagioni) sono
-# stale e vanno rifatti una volta con i dati completi.
-DEFAULT_CUTOFF = "2026-06-15"
+# Cutoff: campagna NUOVA METODOLOGIA CERTIFICATA (storico pieno + NO leak
+# standings + 28 target completi + ELO allineato train/predict) dal 2026-06-16.
+# Alzato a 2026-06-16T08:00Z perche' i run da cron del 15-16/06 avevano addestrato
+# con SOLE 3 stagioni (fallback workflow errato) E con il leak standings: quei
+# modelli, pur avendo trained_at>=2026-06-15, sono CONTAMINATI e vanno rifatti.
+# 08:00Z e' successivo all'ultimo modello vecchio (06:40Z del 16/06) e precedente
+# al lancio della campagna corretta => TUTTE le leghe risultano da riaddestrare,
+# e i modelli prodotti dalla nuova campagna (trained_at>08:00Z) restano freschi
+# fino a convergenza (da_fare=0).
+DEFAULT_CUTOFF = "2026-06-16T08:00:00+00:00"
 
 # Soglia minima di partite per considerare addestrabile una lega. REGOLA UTENTE
 # (2026-06-15): si esclude SOLO chi ha <50 partite GIOCATE COMPLESSIVE in TUTTE le

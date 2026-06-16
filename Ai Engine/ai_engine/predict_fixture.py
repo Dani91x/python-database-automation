@@ -390,10 +390,27 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     history_rows = fetch_matches_for_league_seasons(league_seasons)
     history_df = pd.DataFrame(history_rows)
 
+    # STORICO PROFONDO (tutte le stagioni, SOLO la tabella `matches` = leggera)
+    # per ELO/H2H: il training calcola l'ELO su tutto lo storico, quindi anche la
+    # predizione deve usare la stessa profondita', altrimenti i modelli ricevono
+    # ELO su scala diversa (skew train/predict). Eventi/statistiche pesanti
+    # restano alla finestra corta `league_seasons` (le feature rolling dipendono
+    # solo dalle ultime N partite, identiche a qualunque profondita').
+    deep_league_seasons = [(league_id, s) for s in seasons]
+    if len(deep_league_seasons) > len(league_seasons):
+        deep_match_df = pd.DataFrame(fetch_matches_for_league_seasons(deep_league_seasons))
+    else:
+        deep_match_df = history_df
+
+    # include_player_stats=False per PARITA' col training (training_dataset.py usa
+    # False): i giocatori sono esclusi su entrambi i lati => stesso set di feature
+    # in train e predict, nessun mismatch. In piu' evita di leggere la tabella
+    # enorme match_player_stats ad ogni predizione (risparmio I/O in serving).
     features_df = build_feature_dataframe_for_fixtures(
         fx_df, history_df, league_seasons,
         include_events=True, include_team_stats=True,
-        include_player_stats=True, pre_match=True,
+        include_player_stats=False, pre_match=True,
+        match_history_df=deep_match_df,
     )
     if features_df.empty:
         raise RuntimeError("No features produced for fixture")

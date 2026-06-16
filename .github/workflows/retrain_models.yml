@@ -48,8 +48,8 @@ on:
   workflow_dispatch:
     inputs:
       total_shards:
-        description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. Con gli indici 3 e' sicuro su Nano (3 index-scan intermittenti) e chiude in ~1,5-2 giorni. Monitora il grafico Disk I/O; scendi a 2 se sale."
-        default: "3"
+        description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. 5 = 5 leghe in parallelo (richiesto). Monitora il grafico Disk I/O; scendi a 3 se sale troppo."
+        default: "5"
         required: true
       use_planner:
         description: "Il planner sceglie le leghe (mancanti + stale<cutoff) in 2 query bulk."
@@ -88,7 +88,7 @@ jobs:
       - name: Genera matrice shard
         id: gen
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '5' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -171,12 +171,12 @@ jobs:
           # Inputs via env (mai interpolati nello script: anti shell-injection).
           # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '5' }}
           USE_PLANNER: ${{ inputs.use_planner || 'true' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
-          TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '150' }}
+          TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '240' }}
           PARALLEL_LEAGUES: ${{ inputs.parallel_leagues || '1' }}
-          LAST_N_SEASONS: ${{ inputs.last_n_seasons || '3' }}
+          LAST_N_SEASONS: ${{ inputs.last_n_seasons || '20' }}
         run: |
           python cloud_retrain_shard.py \
             --shard-index "$SHARD_INDEX" \

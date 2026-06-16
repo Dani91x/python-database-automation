@@ -512,11 +512,27 @@ def build_feature_dataframe_for_fixtures(
     include_team_stats: bool = True,
     include_team_window_stats: bool = True,
     pre_match: bool = False,
+    match_history_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if fixtures_df.empty:
         return pd.DataFrame()
 
     fixture_ids = fixtures_df["fixture_id"].dropna().astype(int).tolist()
+
+    # Sorgente storica per le feature che dipendono dalla PROFONDITA' dello
+    # storico (ELO cumulativo, H2H ultime-5): se fornita, si usa una history piu'
+    # profonda di soli `matches` (leggera: gol+squadre+data). Serve a tenere
+    # train e predict ALLINEATI: il training calcola l'ELO su tutto lo storico,
+    # quindi anche la predizione deve farlo, altrimenti gli stessi modelli
+    # ricevono ELO su scala diversa (skew). Le feature a finestra mobile
+    # (form/hist_w/stat_w) restano su `history_df` perche' dipendono solo dalle
+    # ultime N partite (identiche a qualunque profondita' >= finestra), cosi'
+    # eventi/statistiche pesanti restano a finestra corta in serving.
+    match_hist_src = (
+        match_history_df
+        if (match_history_df is not None and not match_history_df.empty)
+        else history_df
+    )
 
     events_rows = []
     odds_rows = []
@@ -627,6 +643,47 @@ def build_feature_dataframe_for_fixtures(
         base = _merge_historical_features(base, hist_team_df, "away_hist", "away_team_id")
         base = _merge_historical_features(base, team_window_stats_df, "home_stat", "home_team_id")
         base = _merge_historical_features(base, team_window_stats_df, "away_stat", "away_team_id")
+        # Statistiche/eventi della PARTITA STESSA, SOLO per costruire le label di
+        # mercato (corner, tiri in porta, cartellini, timing-gol). RIUSA
+        # team_stats_rows / events_rows GIA' scaricati per lo storico: in training
+        # history_fixture_ids == fixture_ids, quindi le righe della partita
+        # corrente sono gia' presenti => ZERO fetch extra (importante con 5 shard
+        # su Nano). Si filtrano ai fixture correnti e si uniscono come
+        # home_stats_*/away_stats_*/home_events_*/away_events_*. Il drop_cols del
+        # trainer le RIMUOVE dalle feature: servono SOLO come label (y), mai come
+        # feature (X) => nessun leak. A predict i fixture sono futuri e non hanno
+        # ancora statistiche => filtro vuoto, nessuna colonna aggiunta.
+        def _cur_only(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            ids = set(fixture_ids)
+            out = []
+            for r in rows or []:
+                fv = r.get("fixture_id")
+                try:
+                    if int(fv) in ids:
+                        out.append(r)
+                except (TypeError, ValueError):
+                    continue
+            return out
+        # Difensivo: dati eterogenei tra leghe (stat/eventi mancanti o malformati).
+        # Un errore qui non deve far fallire l'INTERA lega: si saltano solo le
+        # label che dipendono da queste colonne (corner/tiri/cartellini/timing),
+        # i mercati core restano addestrabili.
+        try:
+            if include_team_stats:
+                _cur_ts = _team_stats_features(_cur_only(team_stats_rows))
+                if not _cur_ts.empty:
+                    base = _merge_team_side(base, _cur_ts, "home_stats", "home_team_id")
+                    base = _merge_team_side(base, _cur_ts, "away_stats", "away_team_id")
+        except Exception:
+            pass
+        try:
+            if include_events:
+                _cur_ev = _events_features(_cur_only(events_rows))
+                if not _cur_ev.empty:
+                    base = _merge_team_side(base, _cur_ev, "home_events", "home_team_id")
+                    base = _merge_team_side(base, _cur_ev, "away_events", "away_team_id")
+        except Exception:
+            pass
     else:
         base = _merge_team_side(base, team_stats_df, "home_stats", "home_team_id")
         base = _merge_team_side(base, team_stats_df, "away_stats", "away_team_id")
@@ -637,12 +694,19 @@ def build_feature_dataframe_for_fixtures(
 
     # Standings for home/away
     if not standings_df.empty:
+        # LEAK FIX (2026-06-16): la tabella `standings` e' uno snapshot di FINE
+        # stagione (un record per team per stagione). Prima venivano rinominate
+        # solo le 3 colonne-chiave, quindi dopo `add_prefix("home_"/"away_")` le
+        # statistiche restavano come home_rank/home_points/home_win/home_played/
+        # home_goals_for/... — valori di classifica finale uniti a OGNI partita di
+        # quella stagione = leak diretto del risultato (anche di partite future).
+        # Il drop_cols del trainer filtrava solo `home_standings_*`/`away_standings_*`
+        # e quindi NON le prendeva. Prefissando TUTTE le colonne con `standings_`
+        # diventano home_standings_*/away_standings_* e vengono eliminate davvero.
+        # La forza di classifica recente e' gia' catturata leak-free dai rolling
+        # window stats (stat_w*).
         standings_df = standings_df.rename(
-            columns={
-                "team_id": "standings_team_id",
-                "league_id": "standings_league_id",
-                "season_year": "standings_season_year",
-            }
+            columns={c: f"standings_{c}" for c in standings_df.columns}
         )
         base = base.merge(
             standings_df.add_prefix("home_"),
@@ -673,23 +737,28 @@ def build_feature_dataframe_for_fixtures(
         base["fair_prob_draw"] = base["implied_prob_draw"] / total_imp
         base["fair_prob_away"] = base["implied_prob_away"] / total_imp
 
-    # Form features
-    if not history_df.empty:
-        form_df = _compute_form_features(history_df)
-        base = _merge_historical_features(base, form_df, "home_form", "home_team_id")
-        base = _merge_historical_features(base, form_df, "away_form", "away_team_id")
-
-    # H2H (Head-to-Head) features
+    # Form features (difensivo: non deve far fallire la lega su dati anomali)
     if not history_df.empty:
         try:
-            base = _build_h2h_features(base, history_df)
+            form_df = _compute_form_features(history_df)
+            base = _merge_historical_features(base, form_df, "home_form", "home_team_id")
+            base = _merge_historical_features(base, form_df, "away_form", "away_team_id")
+        except Exception:
+            pass
+
+    # H2H (Head-to-Head) features — usano lo storico profondo (match_hist_src)
+    # per coerenza train/predict sulle ultime-5 sfide.
+    if not match_hist_src.empty:
+        try:
+            base = _build_h2h_features(base, match_hist_src)
         except Exception:
             pass  # H2H is a nice-to-have, don't break the pipeline
 
-    # ELO ratings — computed from historical match results
-    if not history_df.empty:
+    # ELO ratings — computed from historical match results (storico PROFONDO:
+    # l'ELO e' cumulativo, deve coprire la stessa profondita' del training).
+    if not match_hist_src.empty:
         try:
-            elo_hist = compute_elo_features(history_df)
+            elo_hist = compute_elo_features(match_hist_src)
             # Build ELO lookup: (team_id, fixture_date) → elo_value
             # Merge via merge_asof on home/away team_id
             elo_home = elo_hist[["fixture_date", "home_team_id", "home_elo"]].copy()
