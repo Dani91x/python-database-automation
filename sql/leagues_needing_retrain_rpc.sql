@@ -17,6 +17,13 @@
 -- eseguibile SOLO da service_role (i nostri script) — MAI da anon.
 -- ============================================================================
 
+-- PERFORMANCE: il conteggio squadre viene da `standings` (tabella PICCOLA: ~poche
+-- righe per lega/stagione), NON da `matches` (milioni di righe) — cosi' si evita
+-- una scansione pesante. L'unico accesso a `matches` resta `new_counts`, accelerato
+-- dall'indice idx_matches_fixture_date_settled (vedi in fondo). Filtro fixture_date
+-- > now()-400gg per limitare lo scan: trained_at e' sempre recente (la campagna e
+-- la manutenzione incrementale riaddestrano spesso), quindi 400gg coprono con
+-- ampio margine ogni "nuova" partita.
 create or replace function public.leagues_needing_retrain(p_min_new integer default 10)
 returns jsonb
 language sql
@@ -31,28 +38,22 @@ as $$
     where trained_at is not null
     group by league_id
   ),
-  latest_season as (
-    select league_id, max(season_year) as sy
-    from matches
-    where status_short in ('FT','AET','PEN')
-    group by league_id
-  ),
   team_counts as (
-    -- squadre della STAGIONE CORRENTE (per stimare la dimensione di una giornata)
-    select m.league_id, count(distinct m.home_team_id) as n_teams
-    from matches m
-    join latest_season ls
-      on ls.league_id = m.league_id and m.season_year = ls.sy
-    where m.status_short in ('FT','AET','PEN')
-    group by m.league_id
+    -- squadre della STAGIONE CORRENTE, da STANDINGS (leggero)
+    select s.league_id, count(*)::int as n_teams
+    from standings s
+    join (select league_id, max(season_year) as sy from standings group by league_id) ls
+      on ls.league_id = s.league_id and s.season_year = ls.sy
+    group by s.league_id
   ),
   new_counts as (
-    -- partite settlate NUOVE dopo l'ultimo trained_at
+    -- partite settlate NUOVE dopo l'ultimo trained_at (scan limitato a ~400gg)
     select m.league_id, count(*)::int as new_matches
     from matches m
     join last_train lt on lt.league_id = m.league_id
     where m.status_short in ('FT','AET','PEN')
       and m.fixture_date > lt.trained_at
+      and m.fixture_date > (now() - interval '400 days')
     group by m.league_id
   )
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -71,3 +72,15 @@ grant execute on function public.leagues_needing_retrain(integer) to service_rol
 
 comment on function public.leagues_needing_retrain is
 'Leghe da riaddestrare in manutenzione incrementale: partite settlate nuove dall ultimo trained_at >= soglia adattiva (max(p_min_new, squadre_correnti/2)). Solo service_role.';
+
+-- ----------------------------------------------------------------------------
+-- INDICE che rende veloce l'unico accesso a `matches` (filtro per fixture_date).
+-- Senza, la RPC fa scan pesanti e va in timeout su Nano sotto carico.
+-- ⚠️ CREATE INDEX CONCURRENTLY NON puo' stare in una transazione: nell'SQL Editor
+--    eseguilo DA SOLO (una sola istruzione selezionata), non insieme al resto.
+--    CONCURRENTLY = nessun lock sulla tabella => sicuro anche con la campagna in
+--    corso (solo piu' lento a costruirsi).
+-- ----------------------------------------------------------------------------
+-- create index concurrently if not exists idx_matches_fixture_date_settled
+--   on public.matches (fixture_date)
+--   where status_short in ('FT','AET','PEN');
