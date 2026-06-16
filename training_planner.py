@@ -130,6 +130,30 @@ def _load_eligible_leagues() -> Optional[List[int]]:
         return None
 
 
+def _incremental_todo(min_new: int, eligible) -> List[int]:
+    """MANUTENZIONE incrementale: leghe da riaddestrare perche' hanno abbastanza
+    partite settlate NUOVE dall'ultimo trained_at. La soglia e' ADATTIVA e calcolata
+    server-side dalla RPC `leagues_needing_retrain` (max(min_new, squadre/2) ~ una
+    giornata di campionato). Difensivo: ritorna [] se la RPC non e' deployata o su
+    qualsiasi errore (cosi' non blocca mai il planner)."""
+    try:
+        sb = get_supabase_client()
+        resp = sb.rpc("leagues_needing_retrain", {"p_min_new": int(min_new)}).execute()
+        data = getattr(resp, "data", None) or []
+        out: List[int] = []
+        for x in data:
+            try:
+                lid = int(x.get("league_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if (not eligible) or (lid in eligible):
+                out.append(lid)
+        return out
+    except Exception as e:
+        print(f"[PLANNER] RPC incrementale non disponibile ({type(e).__name__}): {e}")
+        return []
+
+
 def select_leagues_to_train(
     cutoff: Optional[str] = None,
     min_matches: Optional[int] = None,
@@ -213,10 +237,29 @@ def select_leagues_to_train(
     stale.sort(key=lambda l: latest[l])
     todo = missing + stale
 
+    # CONVERGENZA -> MANUTENZIONE INCREMENTALE (automatica): quando non resta nulla
+    # da rifare con la metodologia (todo cutoff vuoto = campagna di massa finita),
+    # il planner passa DA SOLO alla modalita' incrementale: riaddestra solo le
+    # leghe con abbastanza partite NUOVE dall'ultimo trained_at (soglia adattiva).
+    # Cosi' lo STESSO workflow+cron, dopo la campagna, mantiene i modelli freschi
+    # all'infinito senza intervento. Attivo di default; disattivabile con
+    # RETRAIN_INCREMENTAL=0. Durante la campagna di massa todo NON e' vuoto, quindi
+    # questo ramo non scatta mai finche' non si e' convergiuti.
+    incremental: List[int] = []
+    mode = "cutoff"
+    if not todo and os.environ.get("RETRAIN_INCREMENTAL", "1") == "1":
+        min_new = int(os.environ.get("RETRAIN_INCREMENTAL_MIN_NEW", "10"))
+        incremental = _incremental_todo(min_new, set(universe))
+        if incremental:
+            todo = incremental
+            mode = "incremental"
+
     return {
         "todo": todo,
         "missing": missing,
         "stale": stale,
+        "incremental": incremental,
+        "mode": mode,
         "skipped_no_data": skipped_no_data,
         "blacklisted": blacklisted,
         "fresh_count": fresh,

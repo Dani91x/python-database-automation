@@ -1,0 +1,56 @@
+name: ML Post-Calibration (assembla per-lega + globale)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Assembla la calibrazione post-hoc ML e la scrive sulla tabella
+# public.ml_post_calibration (riga per lega + riga globale league_id=0).
+#
+# COSA FA: legge ai_model_registry.calibration_cells (celle holdout out-of-sample
+# emesse dal training), aggrega per-lega + fallback globale, UPSERT nella tabella.
+# Niente ri-predizione, niente file: solo aggregazione di numeri => leggero.
+#
+# CADENZA: ogni 6h. Durante la campagna di massa popola la tabella MAN MANO che le
+# leghe si addestrano; a regime tiene fresca la calibrazione quando il planner
+# incrementale riaddestra una lega. Idempotente (upsert su PK league_id).
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"     # ogni 6 ore
+  workflow_dispatch:
+    inputs:
+      min_n:
+        description: "Campioni minimi per bin per applicare una correzione."
+        default: "20"
+        required: true
+
+concurrency:
+  group: ml-calibration
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install minimal deps
+        run: python -m pip install --upgrade pip supabase python-dotenv
+
+      - name: Assemble calibration -> DB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: "1"
+          # min_n via env (mai interpolato direttamente nello shell: anti-injection,
+          # stesso pattern di retrain_models.yml).
+          MIN_N: ${{ inputs.min_n || '20' }}
+        run: |
+          python compute_ml_post_calibration.py --min-n "$MIN_N"
