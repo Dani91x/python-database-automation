@@ -159,6 +159,46 @@ def _ece_score(y_true: np.ndarray, proba: np.ndarray, classes: np.ndarray, n_bin
     return float(total_ece / len(classes))
 
 
+def _compute_calibration_cells(
+    cal_proba: "np.ndarray", y_true_str: "np.ndarray", classes: "np.ndarray"
+) -> dict:
+    """Bina le predizioni OUT-OF-SAMPLE dell'holdout in celle per (classe, decile di
+    probabilita'), sorgente della calibrazione post-hoc per-lega.
+
+    Per ogni classe c e bin di probabilita' b (0..9) accumula:
+      n        = #righe holdout la cui P(c) prevista cade nel bin b
+      pred_sum = somma delle P(c) previste in quel bin
+      out_sum  = #righe del bin il cui esito REALE == c
+    L'assemblatore (compute_ml_post_calibration) calcola poi
+    correction = (out_sum/n) / (pred_sum/n) per cella, con soglia min-n, e il
+    fallback globale = somma sulle leghe.
+
+    SICUREZZA: l'holdout NON e' mai usato per addestrare il modello => calibrazione
+    leak-free. Questa funzione SOLO LEGGE probabilita' gia' calcolate: non tocca il
+    training ne' i parametri del modello, quindi non puo' alterarne le performance.
+    """
+    cells: dict = {}
+    n_rows = int(cal_proba.shape[0])
+    for j, c in enumerate(classes):
+        c_str = str(c)
+        col = cal_proba[:, j]
+        cls_cells: dict = {}
+        for i in range(n_rows):
+            p = float(col[i])
+            if not (0.0 <= p <= 1.0):
+                continue
+            b = min(int(p * 10), 9)
+            cell = cls_cells.setdefault(str(b), {"n": 0, "pred_sum": 0.0, "out_sum": 0})
+            cell["n"] += 1
+            cell["pred_sum"] += p
+            cell["out_sum"] += 1 if (y_true_str[i] == c_str) else 0
+        if cls_cells:
+            for cell in cls_cells.values():
+                cell["pred_sum"] = round(cell["pred_sum"], 6)
+            cells[c_str] = cls_cells
+    return cells
+
+
 def _train_one_target(
     target: str,
     train_df: "pd.DataFrame",
@@ -350,6 +390,10 @@ def _train_one_target(
     #       is valid here; the deserialize-without-TF degenerate case cannot occur
     #       in this in-process path.
     calibration_metrics = {}
+    calibration_cells = None          # celle post-hoc per-lega (sotto, blocco separato)
+    _cal_proba = None                 # stash per il blocco celle (solo se metriche ok)
+    _y_metrics_str = None
+    _cal_classes = None
     try:
         # Minimum sample guard: fewer than 10 metrics samples produce unreliable
         # Brier/ECE estimates.  Raise early so the except handler stores None rather
@@ -379,9 +423,25 @@ def _train_one_target(
         brier = _brier_score(y_metrics_str, cal_proba, classes)
         ece = _ece_score(y_metrics_str, cal_proba, classes)
         calibration_metrics = {"brier": round(brier, 4), "ece": round(ece, 4)}
+        # Stash le predizioni holdout per il blocco celle qui sotto (solo su successo).
+        _cal_proba, _y_metrics_str, _cal_classes = cal_proba, y_metrics_str, classes
     except Exception as e:
         print(f"    Calibration metrics failed for {target}: {e}")
         calibration_metrics = {"brier": None, "ece": None}
+
+    # ── Celle di calibrazione post-hoc (per-lega) ────────────────────────────
+    # Blocco SEPARATO e DIFENSIVO: gira solo se le metriche sono riuscite (cosi'
+    # riusa l'holdout gia' predetto, ZERO costo extra) e un suo eventuale errore
+    # NON tocca brier/ece ne' il training (il modello e' gia' addestrato e salvato
+    # piu' sotto). L'holdout e' out-of-sample => nessun leak.
+    if _cal_proba is not None:
+        try:
+            calibration_cells = _compute_calibration_cells(
+                _cal_proba, _y_metrics_str, _cal_classes
+            )
+        except Exception as e:
+            print(f"    Calibration cells failed for {target}: {e}")
+            calibration_cells = None
 
     model_path = os.path.join(out_dir, f"{MODEL_NAME}_{target}.pkl.gz")
     save_payload = {
@@ -438,6 +498,7 @@ def _train_one_target(
         "league_id": league_id,
         "model_type": MODEL_NAME,
         "base_weights": payload.base_weights,
+        "calibration_cells": calibration_cells,
         "per_model_metrics": {
             k: v for k, v in metrics.items()
             if k.startswith(("rf_", "gb_", "lgb_", "xgb_", "logreg_"))
@@ -642,6 +703,10 @@ def upload_and_register(model_path: str, file_size: int, target: str, metrics: d
             "logloss": metrics.get("logloss"),
             "brier": metrics.get("brier"),
             "trained_range": metrics.get("trained_range"),
+            # Celle di calibrazione holdout (per-lega, out-of-sample): l'assemblatore
+            # ne ricava ml_post_calibration.json. None se non calcolabile (holdout
+            # piccolo): la colonna e' nullable, nessun impatto sul resto.
+            "calibration_cells": metrics.get("calibration_cells"),
             "notes": f"League {league_id} ensemble_v2 ({metrics.get('model_type', MODEL_NAME)})",
         }
     ).execute()
