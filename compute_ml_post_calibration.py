@@ -49,6 +49,14 @@ CF_FLOOR = 0.3       # clamp conservativo (coerente col valore storico ML)
 CF_CEIL = 3.0
 
 
+def _norm_ts(s: str) -> str:
+    """Normalizza un timestamp ISO per il confronto lessicografico: 'Z' -> '+00:00'
+    (cosi' due timestamp dello stesso istante con suffissi diversi si confrontano
+    correttamente). Stringhe vuote restano vuote (< di qualsiasi timestamp)."""
+    s = (s or "").strip()
+    return s[:-1] + "+00:00" if s.endswith("Z") else s
+
+
 def _new_cell() -> dict:
     return {"n": 0, "pred_sum": 0.0, "out_sum": 0}
 
@@ -76,7 +84,9 @@ def _cf_from_cell(cell: dict, min_n: int) -> Optional[float]:
 
 
 def _fetch_registry_cells() -> list:
-    """Scarica (league_id, target, calibration_cells) dal registry, solo non-null."""
+    """Scarica (league_id, target, calibration_cells, trained_at) dal registry,
+    solo righe con celle non-null. trained_at serve a capire quali leghe sono
+    state riaddestrate dall'ultima calibrazione."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
     sb = get_supabase_client()
@@ -87,7 +97,7 @@ def _fetch_registry_cells() -> list:
     while True:
         resp = (
             sb.table("ai_model_registry")
-            .select("league_id,target,calibration_cells")
+            .select("league_id,target,calibration_cells,trained_at")
             .not_.is_("calibration_cells", "null")
             .range(off, off + page - 1)
             .execute()
@@ -102,6 +112,22 @@ def _fetch_registry_cells() -> list:
     return rows
 
 
+def _fetch_cal_timestamps() -> dict:
+    """{league_id(str): generated_at} dalla tabella ml_post_calibration. Serve a
+    capire quali leghe hanno la calibrazione PIU' VECCHIA del loro ultimo
+    trained_at (= sono state riaddestrate dall'ultima calibrazione)."""
+    from db_client import get_supabase_client
+    sb = get_supabase_client()
+    out: Dict[str, str] = {}
+    try:
+        data = sb.table("ml_post_calibration").select("league_id,generated_at").execute().data or []
+        for r in data:
+            out[str(r.get("league_id"))] = str(r.get("generated_at") or "")
+    except Exception as e:
+        print(f"  [WARN] lettura timestamp calibrazione saltata: {e}")
+    return out
+
+
 def assemble(rows: list, min_n: int) -> dict:
     """Aggrega le celle del registry in calibrazione per-lega + globale."""
     # accumulatori raw: leghe[lid][target][cls][bin] e global[target][cls][bin]
@@ -109,12 +135,16 @@ def assemble(rows: list, min_n: int) -> dict:
         lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(_new_cell)))
     )
     global_raw: Dict[str, dict] = defaultdict(lambda: defaultdict(lambda: defaultdict(_new_cell)))
+    trained_at_map: Dict[str, str] = {}   # lid -> max(trained_at) tra i suoi modelli
 
     n_cells = 0
     for r in rows:
         lid = str(r.get("league_id"))
         if lid == "None":          # difesa: league_id NULL (non dovrebbe accadere, PK NOT NULL)
             continue
+        ta = str(r.get("trained_at") or "")
+        if ta and ta > trained_at_map.get(lid, ""):
+            trained_at_map[lid] = ta
         tgt = r.get("target")
         cells = r.get("calibration_cells")
         if not tgt or not isinstance(cells, dict):
@@ -154,6 +184,7 @@ def assemble(rows: list, min_n: int) -> dict:
         "n_cells_aggregated": n_cells,
         "leagues": leagues_out,
         "global": global_out,
+        "trained_at": trained_at_map,
     }
 
 
@@ -169,17 +200,31 @@ def _report(result: dict) -> None:
     print(f"  Correzioni GLOBALI attive: {n_global} (target globali: {sorted(g.keys())})")
 
 
-def _write_to_db(result: dict) -> int:
+def _write_to_db(result: dict, only_leagues=None) -> int:
     """Upsert delle correzioni nella tabella public.ml_post_calibration.
-    Una riga per lega + la riga league_id=0 (fallback globale). Usa service_role
-    (i nostri script): RLS bypassato. Idempotente (upsert su PK league_id)."""
+    Sempre la riga globale (league_id=0). Per le righe-lega:
+      - only_leagues=None  => TUTTE (modalita' full / rete di sicurezza) + pulizia obsolete;
+      - only_leagues={...}  => SOLO quelle leghe (modalita' incrementale: le riaddestrate),
+                               nessuna pulizia (non tocchiamo righe di leghe non coinvolte).
+    Usa service_role (RLS bypassato). Idempotente (upsert su PK league_id)."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
     sb = get_supabase_client()
     ga = result["generated_at"]
     mn = result["min_n"]
+    _only = None if only_leagues is None else {str(x) for x in only_leagues}
+    if _only is None:
+        # FULL: tutte le leghe con correzioni utili.
+        src = list(result["leagues"].items())
+    else:
+        # INCREMENTALE: una riga per OGNI lega stale (riaddestrata), ANCHE con
+        # correzioni vuote {} se ora non ne ha di utili (holdout troppo piccolo):
+        # cosi' la calibrazione vecchia viene INVALIDATA e il generated_at
+        # aggiornato (stop al re-processing infinito), e il serving ricade sul
+        # fallback globale per quella lega.
+        src = [(lid, result["leagues"].get(lid, {})) for lid in _only]
     league_rows = []
-    for lid, corr in result["leagues"].items():
+    for lid, corr in src:
         if str(lid) == "None":
             continue
         try:
@@ -202,24 +247,30 @@ def _write_to_db(result: dict) -> int:
             # un upsert parziale silenzioso.
             raise RuntimeError(f"Upsert ml_post_calibration fallito al batch offset {i}: {e}") from e
         written += len(batch)
-    # Pulizia: rimuove eventuali righe-lega obsolete (leghe che non hanno piu'
-    # correzioni utili) senza toccare la riga globale ne' quelle appena scritte.
-    try:
-        keep = {int(lid) for lid in result["leagues"].keys()} | {0}
-        existing = sb.table("ml_post_calibration").select("league_id").execute().data or []
-        obsolete = [r["league_id"] for r in existing if r["league_id"] not in keep]
-        for lid in obsolete:
-            sb.table("ml_post_calibration").delete().eq("league_id", lid).execute()
-        if obsolete:
-            print(f"  Righe obsolete rimosse: {len(obsolete)}")
-    except Exception as e:
-        print(f"  [WARN] pulizia righe obsolete saltata: {e}")
+    # Pulizia righe-lega obsolete: SOLO in modalita' full (only_leagues=None). In
+    # incrementale non tocchiamo le leghe non coinvolte, quindi non si puo' dedurre
+    # l'obsolescenza dal solo result.
+    if only_leagues is None:
+        try:
+            keep = {int(lid) for lid in result["leagues"].keys()} | {0}
+            existing = sb.table("ml_post_calibration").select("league_id").execute().data or []
+            obsolete = [r["league_id"] for r in existing if r["league_id"] not in keep]
+            for lid in obsolete:
+                sb.table("ml_post_calibration").delete().eq("league_id", lid).execute()
+            if obsolete:
+                print(f"  Righe obsolete rimosse: {len(obsolete)}")
+        except Exception as e:
+            print(f"  [WARN] pulizia righe obsolete saltata: {e}")
     return written
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-n", type=int, default=MIN_N_DEFAULT)
+    parser.add_argument("--full", action="store_true",
+                        help="Riscrive TUTTE le leghe + pulizia obsolete (rete di sicurezza "
+                             "giornaliera). Default: INCREMENTALE = solo le leghe riaddestrate "
+                             "dall'ultima calibrazione.")
     parser.add_argument("--out", type=str, default=None,
                         help="SOLO test: scrive il risultato su questo file JSON invece che sul DB.")
     args = parser.parse_args()
@@ -229,6 +280,24 @@ def main():
         print("  Nessuna cella nel registry: nulla da assemblare. Esco senza scrivere.")
         return
     result = assemble(rows, min_n=args.min_n)
+
+    # INCREMENTALE (default): aggiorna SOLO le leghe il cui modello e' piu' nuovo
+    # della loro calibrazione attuale (= riaddestrate dall'ultima volta). Se nessuna
+    # e' cambiata => non fa nulla. --full forza tutte (rete di sicurezza).
+    only = None
+    if not args.full and not args.out:
+        cal_ts = _fetch_cal_timestamps()
+        ta_map = result.get("trained_at", {})
+        stale = {
+            lid for lid, ta in ta_map.items()
+            if ta and _norm_ts(ta) > _norm_ts(cal_ts.get(lid, ""))
+        }
+        if not stale:
+            print("\n  Nessuna lega riaddestrata dall'ultima calibrazione: niente da fare.")
+            return
+        only = stale
+        print(f"\n  Modalita' INCREMENTALE: {len(stale)} leghe riaddestrate da ricalibrare.")
+
     _report(result)
 
     if args.out:
@@ -242,8 +311,9 @@ def main():
         os.replace(tmp, out_path)
         print(f"\n  [TEST] Salvato su file (DB NON toccato): {out_path}")
     else:
-        n = _write_to_db(result)
-        print(f"\n  Scritto su DB public.ml_post_calibration: {n} righe (incl. globale league_id=0).")
+        n = _write_to_db(result, only_leagues=only)
+        scope = "TUTTE (full)" if only is None else f"{len(only)} riaddestrate (incrementale)"
+        print(f"\n  Scritto su DB public.ml_post_calibration: {n} righe (globale + {scope}).")
 
 
 if __name__ == "__main__":

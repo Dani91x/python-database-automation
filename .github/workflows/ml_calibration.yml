@@ -8,14 +8,24 @@ name: ML Post-Calibration (assembla per-lega + globale)
 # emesse dal training), aggrega per-lega + fallback globale, UPSERT nella tabella.
 # Niente ri-predizione, niente file: solo aggregazione di numeri => leggero.
 #
-# CADENZA: ogni 6h. Durante la campagna di massa popola la tabella MAN MANO che le
-# leghe si addestrano; a regime tiene fresca la calibrazione quando il planner
-# incrementale riaddestra una lega. Idempotente (upsert su PK league_id).
+# QUANDO PARTE:
+#   - SUBITO DOPO ogni retrain (workflow_run): l'assemblatore gira in modalita'
+#     INCREMENTALE => aggiorna SOLO le leghe riaddestrate dall'ultima calibrazione,
+#     e se nulla e' cambiato non fa niente. Cosi' gira solo quando c'e' davvero un
+#     modello nuovo, e tocca solo le leghe coinvolte.
+#   - 1 volta al giorno (schedule): rete di sicurezza in modalita' FULL (ricostruisce
+#     tutte le righe + pulizia obsolete), nel caso un retrain venga saltato.
+# Idempotente (upsert su PK league_id).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  # parte alla FINE del workflow di retrain (modalita' incrementale)
+  workflow_run:
+    workflows: ["Retrain ML Models (cloud, all leagues)"]
+    types: [completed]
+  # rete di sicurezza giornaliera (modalita' full)
   schedule:
-    - cron: "0 */6 * * *"     # ogni 6 ore
+    - cron: "0 5 * * *"
   workflow_dispatch:
     inputs:
       min_n:
@@ -52,5 +62,9 @@ jobs:
           # min_n via env (mai interpolato direttamente nello shell: anti-injection,
           # stesso pattern di retrain_models.yml).
           MIN_N: ${{ inputs.min_n || '20' }}
+          EVENT: ${{ github.event_name }}
         run: |
-          python compute_ml_post_calibration.py --min-n "$MIN_N"
+          # schedule = rete di sicurezza giornaliera => FULL; altrimenti incrementale.
+          FULL=""
+          if [ "$EVENT" = "schedule" ]; then FULL="--full"; fi
+          python compute_ml_post_calibration.py --min-n "$MIN_N" $FULL
