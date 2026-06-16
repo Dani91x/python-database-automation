@@ -362,6 +362,53 @@ _MI_TARGET_MAP: Dict[tuple, str] = {
     ("target_btts",     "False"): "btts_no",
 }
 
+# ── Calibrazione post-hoc letta dal DB (tabella ml_post_calibration) ──────────
+# Cache di processo (TTL breve) per non interrogare il DB ad ogni fixture.
+_POST_CAL_CACHE: Dict[int, tuple] = {}
+_POST_CAL_TTL_S = 600.0
+
+
+def _load_post_calibration(league_id: int) -> tuple:
+    """Carica dal DB le correzioni post-hoc della lega + il fallback globale
+    (riga league_id=0). Ritorna (league_corr, global_corr), ciascuno
+    {target:{classe:{bin:cf}}}. Cache di processo con TTL. Errore => ({},{})."""
+    now = time.time()
+    cached = _POST_CAL_CACHE.get(league_id)
+    if cached and (now - cached[0]) < _POST_CAL_TTL_S:
+        return cached[1], cached[2]
+    league_corr: Dict = {}
+    global_corr: Dict = {}
+    try:
+        sb = get_supabase_client()
+        resp = (
+            sb.table("ml_post_calibration")
+            .select("league_id,corrections")
+            .in_("league_id", [int(league_id), 0])
+            .execute()
+        )
+        for r in (resp.data or []):
+            c = r.get("corrections") or {}
+            if r.get("league_id") == 0:
+                global_corr = c
+            else:
+                league_corr = c
+    except Exception as _e:
+        logger.warning(f"ml_post_calibration non leggibile dal DB: {_e}")
+        league_corr, global_corr = {}, {}
+    _POST_CAL_CACHE[league_id] = (now, league_corr, global_corr)
+    return league_corr, global_corr
+
+
+def _post_cf(lt: dict, gt: dict, cls: str, bin_str: str) -> float:
+    """Correction factor con fallback per-bin: lega -> globale -> 1.0."""
+    v = lt.get(cls, {}).get(bin_str)
+    if v is None:
+        v = gt.get(cls, {}).get(bin_str)
+    try:
+        return float(v) if v is not None else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+
 
 def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None) -> Dict[str, Any]:
     """
@@ -419,7 +466,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     sb = get_supabase_client()
     reg = (
         sb.table("ai_model_registry")
-        .select("target,model_name,storage_bucket,storage_path,features_version,targets_version")
+        .select("target,model_name,storage_bucket,storage_path,features_version,targets_version,trained_at")
         .eq("league_id", league_id)
         .execute()
     )
@@ -447,18 +494,45 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         target = m["target"]
         path = m["storage_path"]
         local_path = os.path.join(out_dir, os.path.basename(path))
+        # FRESCHEZZA per trained_at (fix 2026-06-16): il file modello ha sempre lo
+        # stesso nome anche dopo un retrain, quindi prima ci si affidava solo al
+        # TTL 24h => si poteva servire il modello VECCHIO fino a 24h. Ora si scrive
+        # un sidecar "<modello>.tat" con il trained_at del registry: se il registry
+        # e' piu' nuovo della cache, si riscarica SUBITO (TTL solo come rete di
+        # sicurezza secondaria). Garantisce: il serving usa sempre l'ultima versione.
+        _reg_tat = str(m.get("trained_at") or "")
+        _tat_path = local_path + ".tat"
         _needs_download = not os.path.exists(local_path)
         if not _needs_download:
-            age_hours = (time.time() - os.path.getmtime(local_path)) / 3600
-            if age_hours > _MODEL_CACHE_TTL_HOURS:
+            _cached_tat = ""
+            try:
+                with open(_tat_path, "r", encoding="utf-8") as _tf:
+                    _cached_tat = _tf.read().strip()
+            except OSError:
+                _cached_tat = ""
+            if _reg_tat and _reg_tat != _cached_tat:
                 logger.info(
-                    f"Model cache expired for {target} "
-                    f"(age={age_hours:.1f}h > TTL={_MODEL_CACHE_TTL_HOURS}h) — re-downloading"
+                    f"Model {target} retrained "
+                    f"({_cached_tat or 'unknown'} -> {_reg_tat}) — re-downloading"
                 )
                 _needs_download = True
+            else:
+                age_hours = (time.time() - os.path.getmtime(local_path)) / 3600
+                if age_hours > _MODEL_CACHE_TTL_HOURS:
+                    logger.info(
+                        f"Model cache expired for {target} "
+                        f"(age={age_hours:.1f}h > TTL={_MODEL_CACHE_TTL_HOURS}h) — re-downloading"
+                    )
+                    _needs_download = True
         if _needs_download:
             try:
                 _download_model(m_bucket, path, local_path)
+                # registra il trained_at scaricato (sidecar) per i confronti futuri
+                try:
+                    with open(_tat_path, "w", encoding="utf-8") as _tf:
+                        _tf.write(_reg_tat)
+                except OSError:
+                    pass
             except Exception as e:
                 logger.warning(f"Failed to download model {target} from {m_bucket}: {e}")
                 if not os.path.exists(local_path):
@@ -542,38 +616,39 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     # a feedback loop that compounds the adjustment on every regeneration.
     results_model_calibrated = {t: dict(p) for t, p in results.items()}
 
-    # ── ML POST-CALIBRATION (post-hoc correction layer) ──────────
-    # Carica ml_post_calibration.json e applica correzioni bin-based
-    # sulle probabilita' PRIMA del calcolo EV/Kelly, senza toccare i modelli.
-    _post_cal_path = os.path.join(ROOT, "ml_post_calibration.json")
-    if os.path.exists(_post_cal_path):
-        try:
-            with open(_post_cal_path, "r", encoding="utf-8") as _f:
-                _post_cal = json.load(_f).get("corrections", {})
+    # ── ML POST-CALIBRATION (post-hoc, dal DB: per-lega + fallback globale) ──
+    # Legge le correzioni dalla tabella ml_post_calibration (riga della lega +
+    # riga globale league_id=0) e le applica alle probabilita' PRIMA di EV/Kelly,
+    # senza toccare i modelli. Il binario e' rilevato dalle CLASSI ({True,False})
+    # cosi' copre TUTTI i mercati, non solo una lista fissa. Fallback per-bin:
+    # lega -> globale -> 1.0 (nessuna correzione). Tutto difensivo (try/except):
+    # un errore lascia le probabilita' invariate, niente rotture.
+    try:
+        _lg_cal, _gl_cal = _load_post_calibration(league_id)
+        if _lg_cal or _gl_cal:
             for _target, _probs in list(results.items()):
-                _tcal = _post_cal.get(_target)
-                if not _tcal:
+                _lt = _lg_cal.get(_target, {})
+                _gt = _gl_cal.get(_target, {})
+                if not _lt and not _gt:
                     continue
-                if _target in _BINARY_TARGETS:
-                    # Corregge "True", poi False = 1 - True
+                if set(_probs.keys()) == {"True", "False"}:
+                    # Binario: corregge "True", poi False = 1 - True
                     _p_true = _probs.get("True")
                     if _p_true is not None:
-                        _bin = min(int(float(_p_true) * 10), 9)
-                        _cf = _tcal.get("True", {}).get(str(_bin), 1.0)
-                        _new_true = max(0.01, min(float(_p_true) * _cf, 0.99))
+                        _bin = str(min(int(float(_p_true) * 10), 9))
+                        _new_true = max(0.01, min(float(_p_true) * _post_cf(_lt, _gt, "True", _bin), 0.99))
                         results[_target] = {"True": round(_new_true, 4), "False": round(1.0 - _new_true, 4)}
                 else:
-                    # Multi-classe (1x2): corregge ogni classe e rinormalizza
+                    # Multi-classe: corregge ogni classe e rinormalizza a somma 1
                     _corrected = {}
                     for _cls, _p in _probs.items():
-                        _bin = min(int(float(_p) * 10), 9)
-                        _cf = _tcal.get(_cls, {}).get(str(_bin), 1.0)
-                        _corrected[_cls] = max(0.001, float(_p) * _cf)
+                        _bin = str(min(int(float(_p) * 10), 9))
+                        _corrected[_cls] = max(0.001, float(_p) * _post_cf(_lt, _gt, _cls, _bin))
                     _tot = sum(_corrected.values())
                     if _tot > 0:
                         results[_target] = {k: round(v / _tot, 4) for k, v in _corrected.items()}
-        except Exception as _e:
-            logger.warning(f"ml_post_calibration.json non applicabile: {_e}")
+    except Exception as _e:
+        logger.warning(f"ml_post_calibration non applicabile: {_e}")
 
     odds_mapping = build_odds_mapping(raw_odds, results) if raw_odds else {}
     bet_signals, no_bet_reasons = evaluate_bet_opportunities(results, odds_mapping)

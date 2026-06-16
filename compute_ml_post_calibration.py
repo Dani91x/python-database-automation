@@ -1,19 +1,38 @@
 """
-compute_ml_post_calibration.py
--------------------------------
-Calcola fattori di correzione post-hoc per i target ML con bias sistematico.
+compute_ml_post_calibration.py  —  ASSEMBLATORE calibrazione post-hoc per-lega
+------------------------------------------------------------------------------
+Costruisce ml_post_calibration.json a partire dalle CELLE DI CALIBRAZIONE
+out-of-sample emesse dal training (colonna ai_model_registry.calibration_cells).
 
-Usa le predizioni REALI gia' salvate in model_predictions_json + i risultati
-effettivi per calcolare, per ogni target x classe x bin, il fattore correttivo:
+PERCHE' OUT-OF-SAMPLE / NO LEAK:
+  Le celle vengono dall'HOLDOUT di ogni modello (la fetta che il training NON usa
+  per imparare), gia' calcolata in seriea_model_export._train_one_target. Qui si
+  SOLO AGGREGANO numeri — nessuna ri-predizione dello storico (che sarebbe
+  in-sample = leak), nessun modello caricato.
 
-    correction[bin] = actual_hit_rate / avg_predicted_prob
+STRUTTURA CELLA (per riga registry = una coppia lega/target):
+  calibration_cells = { classe: { bin("0".."9"): {n, pred_sum, out_sum} } }
+    n        = #righe holdout la cui P(classe) cade nel bin
+    pred_sum = somma delle P(classe) previste nel bin
+    out_sum  = #righe del bin il cui esito reale == classe
 
-Output: ml_post_calibration.json nella root del progetto.
-predict_fixture.py lo carica automaticamente e corregge le probabilita' in uscita.
+CORREZIONE per cella (con abbastanza campioni):
+    hit_rate = out_sum / n ;  avg_pred = pred_sum / n
+    cf = hit_rate / avg_pred = out_sum / pred_sum        (clamp [0.3, 3.0])
+  Sotto la soglia min-n la cella e' OMESSA => il consumer cade sul fallback.
+
+OUTPUT (tutto su DB, tabella public.ml_post_calibration):
+  una riga per lega   -> {league_id, corrections={target:{classe:{bin:cf}}}, min_n, generated_at}
+  una riga league_id=0 -> il FALLBACK GLOBALE (somma su TUTTE le leghe)
+
+Il consumer (predict_fixture.py) legge 2 righe: quella della lega + quella globale
+(league_id IN (<lega>, 0)) e cerca: lega → bin; se assente → global → bin; se
+assente → cf=1.0. Copre TUTTI i mercati che hanno celle.
 
 Uso:
-    python compute_ml_post_calibration.py
-    python compute_ml_post_calibration.py --min-n 20   # bin con N<20 restano a 1.0
+    python compute_ml_post_calibration.py                  # scrive la tabella DB
+    python compute_ml_post_calibration.py --min-n 30       # soglia campioni per bin
+    python compute_ml_post_calibration.py --out prova.json # SOLO test: scrive su file, NON tocca il DB
 """
 from __future__ import annotations
 
@@ -23,258 +42,208 @@ import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
-MIN_N_DEFAULT = 20  # campioni minimi per bin per applicare correzione
-
-# Target binari (True/False): corregge "True", poi False = 1 - True
-BINARY_TARGETS = {
-    "target_over_2_5":  ("True", "False"),
-    "target_over_1_5":  ("True", "False"),
-    "target_over_3_5":  ("True", "False"),
-    "target_over_4_5":  ("True", "False"),
-    "target_btts":      ("True", "False"),
-}
-
-# Target multi-classe: corregge ogni classe indipendentemente poi rinormalizza
-MULTICLASS_TARGETS = {
-    "target_1x2":    ["H", "D", "A"],
-    "target_ft_1x2": ["H", "D", "A"],
-    "target_ht_1x2": ["H", "D", "A"],
-}
-
-ALL_TARGETS = {**{k: list(v) for k, v in BINARY_TARGETS.items()}, **MULTICLASS_TARGETS}
+MIN_N_DEFAULT = 20   # campioni minimi per bin per fidarsi della correzione
+CF_FLOOR = 0.3       # clamp conservativo (coerente col valore storico ML)
+CF_CEIL = 3.0
 
 
-def check_outcome(target: str, cls: str, h: int, a: int,
-                  hh: Optional[int], ha: Optional[int]) -> Optional[bool]:
-    """Ritorna True/False/None per la combinazione target+classe."""
-    if target in ("target_1x2", "target_ft_1x2"):
-        if cls == "H": return h > a
-        if cls == "D": return h == a
-        if cls == "A": return h < a
-    if target == "target_ht_1x2":
-        if hh is None or ha is None: return None
-        if cls == "H": return hh > ha
-        if cls == "D": return hh == ha
-        if cls == "A": return hh < ha
-    if target in ("target_over_2_5", "target_over_1_5",
-                  "target_over_3_5", "target_over_4_5"):
-        thr = {"target_over_0_5": 0, "target_over_1_5": 1,
-               "target_over_2_5": 2, "target_over_3_5": 3, "target_over_4_5": 4}
-        limit = thr.get(target, 2)
-        if cls == "True":  return h + a > limit
-        if cls == "False": return h + a <= limit
-    if target == "target_btts":
-        if cls == "True":  return h > 0 and a > 0
-        if cls == "False": return not (h > 0 and a > 0)
-    return None
+def _new_cell() -> dict:
+    return {"n": 0, "pred_sum": 0.0, "out_sum": 0}
 
 
-def fetch_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
+def _add_cell(dst: dict, src: dict) -> None:
+    """Somma una cella sorgente (da DB) in un accumulatore."""
+    try:
+        dst["n"] += int(src.get("n", 0) or 0)
+        dst["pred_sum"] += float(src.get("pred_sum", 0.0) or 0.0)
+        dst["out_sum"] += int(src.get("out_sum", 0) or 0)
+    except (TypeError, ValueError):
+        pass
+
+
+def _cf_from_cell(cell: dict, min_n: int) -> Optional[float]:
+    """Correzione per una cella aggregata. None se campioni insufficienti."""
+    n = int(cell.get("n", 0) or 0)
+    if n < min_n:
+        return None
+    ps = float(cell.get("pred_sum", 0.0) or 0.0)
+    if ps <= 0:
+        return 1.0
+    cf = round(float(cell.get("out_sum", 0) or 0) / ps, 3)
+    return max(CF_FLOOR, min(cf, CF_CEIL))
+
+
+def _fetch_registry_cells() -> list:
+    """Scarica (league_id, target, calibration_cells) dal registry, solo non-null."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from db_client import get_supabase_client
     sb = get_supabase_client()
-
-    rows: List[dict] = []
-    page_size = 1000
-    offset = 0
-    print("Fetching model_predictions_json + risultati...")
+    rows = []
+    page = 1000
+    off = 0
+    print("Fetching calibration_cells dal registry...")
     while True:
         resp = (
-            sb.table("fixture_predictions")
-            .select("fixture_id,result_home_goals,result_away_goals,model_predictions_json,league_id")
-            .in_("result_status_short", ["FT", "AET", "PEN"])
-            .not_.is_("model_predictions_json", "null")
-            .range(offset, offset + page_size - 1)
+            sb.table("ai_model_registry")
+            .select("league_id,target,calibration_cells")
+            .not_.is_("calibration_cells", "null")
+            .range(off, off + page - 1)
             .execute()
         )
         batch = resp.data or []
         rows.extend(batch)
-        print(f"  {len(rows)} righe...", end="\r")
-        if len(batch) < page_size:
+        print(f"  {len(rows)} righe con celle...", end="\r")
+        if len(batch) < page:
             break
-        offset += page_size
-    print(f"\n  Totale: {len(rows)}")
-
-    fids = [r["fixture_id"] for r in rows if r.get("fixture_id")]
-    ht_map: Dict[int, Tuple[int, int]] = {}
-    print("Fetching halftime data...")
-    for i in range(0, len(fids), 300):
-        resp2 = sb.table("matches").select("fixture_id,halftime_home,halftime_away").in_(
-            "fixture_id", fids[i:i+300]).execute()
-        for row in (resp2.data or []):
-            hh = row.get("halftime_home")
-            ha = row.get("halftime_away")
-            if hh is not None and ha is not None:
-                try:
-                    ht_map[row["fixture_id"]] = (int(hh), int(ha))
-                except (ValueError, TypeError):
-                    pass
-    print(f"  HT: {len(ht_map)} fixture\n")
-    return rows, ht_map
+        off += page
+    print(f"\n  Totale righe con celle: {len(rows)}")
+    return rows
 
 
-def compute_corrections(
-    rows: List[dict],
-    ht_map: Dict[int, Tuple[int, int]],
-    min_n: int,
-) -> Dict[str, Dict[str, Dict[int, float]]]:
-    """
-    Ritorna {target: {cls: {bin_idx: correction_factor}}}
-    """
-    # stats[target][cls][bin] = {n, sum_prob, hits}
-    stats: Dict[str, Dict[str, Dict[int, dict]]] = {}
-    for target, classes in ALL_TARGETS.items():
-        stats[target] = {}
-        for cls in classes:
-            stats[target][cls] = {b: {"n": 0, "sum_prob": 0.0, "hits": 0} for b in range(10)}
+def assemble(rows: list, min_n: int) -> dict:
+    """Aggrega le celle del registry in calibrazione per-lega + globale."""
+    # accumulatori raw: leghe[lid][target][cls][bin] e global[target][cls][bin]
+    leagues_raw: Dict[str, dict] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(_new_cell)))
+    )
+    global_raw: Dict[str, dict] = defaultdict(lambda: defaultdict(lambda: defaultdict(_new_cell)))
 
-    skipped = 0
-    for row in rows:
-        ml = row.get("model_predictions_json")
-        h = row.get("result_home_goals")
-        a = row.get("result_away_goals")
-        if not ml or not isinstance(ml, dict) or h is None or a is None:
-            skipped += 1
+    n_cells = 0
+    for r in rows:
+        lid = str(r.get("league_id"))
+        if lid == "None":          # difesa: league_id NULL (non dovrebbe accadere, PK NOT NULL)
+            continue
+        tgt = r.get("target")
+        cells = r.get("calibration_cells")
+        if not tgt or not isinstance(cells, dict):
+            continue
+        for cls, bins in cells.items():
+            if not isinstance(bins, dict):
+                continue
+            for b, cell in bins.items():
+                if not isinstance(cell, dict):
+                    continue
+                b = str(b)
+                _add_cell(leagues_raw[lid][tgt][cls][b], cell)
+                _add_cell(global_raw[tgt][cls][b], cell)
+                n_cells += 1
+
+    # calcola correction factor; OMETTE le celle sotto soglia (=> fallback)
+    def _finalize(raw: dict) -> dict:
+        out: Dict[str, dict] = {}
+        for tgt, cls_map in raw.items():
+            for cls, bin_map in cls_map.items():
+                for b, cell in bin_map.items():
+                    cf = _cf_from_cell(cell, min_n)
+                    if cf is None or cf == 1.0:
+                        continue  # niente correzione utile => non scrivere (fallback/identity)
+                    out.setdefault(tgt, {}).setdefault(cls, {})[b] = cf
+        return out
+
+    leagues_out = {lid: _finalize(cls_map) for lid, cls_map in leagues_raw.items()}
+    leagues_out = {lid: v for lid, v in leagues_out.items() if v}  # scarta leghe senza correzioni
+    global_out = _finalize(global_raw)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "min_n": min_n,
+        "n_leagues_total": len(leagues_raw),
+        "n_leagues_with_corrections": len(leagues_out),
+        "n_cells_aggregated": n_cells,
+        "leagues": leagues_out,
+        "global": global_out,
+    }
+
+
+def _report(result: dict) -> None:
+    print("\n" + "=" * 72)
+    print("  ASSEMBLATORE CALIBRAZIONE POST-HOC (per-lega + globale)")
+    print("=" * 72)
+    print(f"  Leghe con celle: {result['n_leagues_total']}")
+    print(f"  Leghe con correzioni utili (>= min_n): {result['n_leagues_with_corrections']}")
+    print(f"  Celle aggregate: {result['n_cells_aggregated']}")
+    g = result["global"]
+    n_global = sum(len(b) for t in g.values() for b in t.values())
+    print(f"  Correzioni GLOBALI attive: {n_global} (target globali: {sorted(g.keys())})")
+
+
+def _write_to_db(result: dict) -> int:
+    """Upsert delle correzioni nella tabella public.ml_post_calibration.
+    Una riga per lega + la riga league_id=0 (fallback globale). Usa service_role
+    (i nostri script): RLS bypassato. Idempotente (upsert su PK league_id)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from db_client import get_supabase_client
+    sb = get_supabase_client()
+    ga = result["generated_at"]
+    mn = result["min_n"]
+    league_rows = []
+    for lid, corr in result["leagues"].items():
+        if str(lid) == "None":
             continue
         try:
-            h, a = int(h), int(a)
-        except (ValueError, TypeError):
-            skipped += 1
+            league_rows.append(
+                {"league_id": int(lid), "corrections": corr, "min_n": mn, "generated_at": ga}
+            )
+        except (TypeError, ValueError):
             continue
-
-        fid = row.get("fixture_id")
-        hh, ha = ht_map.get(fid, (None, None))
-
-        # M2 fix (break the post-hoc feedback loop): learn the correction factors
-        # from the model-calibrated probabilities BEFORE the post-hoc layer was
-        # applied. `targets` already includes the post-hoc correction, so using it
-        # would stack corrections on every regeneration. Fall back to `targets`
-        # (and to the bare dict) only for older records without the new field.
-        targets_data = (
-            ml.get("targets_model_calibrated")
-            or ml.get("targets")
-            or ml
-        )
-
-        for target, classes in ALL_TARGETS.items():
-            target_probs = targets_data.get(target)
-            if not isinstance(target_probs, dict):
-                continue
-            for cls in classes:
-                prob = target_probs.get(cls) or target_probs.get(str(cls))
-                if prob is None:
-                    continue
-                try:
-                    prob = float(prob)
-                except (ValueError, TypeError):
-                    continue
-                if not (0.0 < prob < 1.0):
-                    continue
-
-                outcome = check_outcome(target, cls, h, a, hh, ha)
-                if outcome is None:
-                    continue
-
-                bin_idx = min(int(prob * 10), 9)
-                s = stats[target][cls][bin_idx]
-                s["n"] += 1
-                s["sum_prob"] += prob
-                if outcome:
-                    s["hits"] += 1
-
-    print(f"  Skipped: {skipped}")
-
-    # Costruisce tabella correzioni
-    corrections: Dict[str, Dict[str, Dict[int, float]]] = {}
-    for target, cls_bins in stats.items():
-        corrections[target] = {}
-        for cls, bins in cls_bins.items():
-            corrections[target][cls] = {}
-            for bin_idx, s in bins.items():
-                n = s["n"]
-                if n < min_n:
-                    corrections[target][cls][bin_idx] = 1.0
-                else:
-                    avg_prob = s["sum_prob"] / n
-                    hit_rate = s["hits"] / n
-                    if avg_prob > 0:
-                        cf = round(hit_rate / avg_prob, 3)
-                        cf = max(0.3, min(cf, 3.0))  # cap piu' conservativo per ML
-                    else:
-                        cf = 1.0
-                    corrections[target][cls][bin_idx] = cf
-
-    return corrections, stats
-
-
-def print_report(stats, corrections, min_n):
-    print("\n" + "=" * 80)
-    print("  CORREZIONI POST-HOC ML")
-    print(f"  Bin con N < {min_n} -> cf=1.0 (nessuna correzione)")
-    print("=" * 80)
-    for target in sorted(ALL_TARGETS.keys()):
-        classes = ALL_TARGETS[target]
-        has_bias = False
-        lines = []
-        for cls in classes:
-            bins = stats[target][cls]
-            for bin_idx in range(10):
-                s = bins[bin_idx]
-                n = s["n"]
-                if n == 0:
-                    continue
-                avg = s["sum_prob"] / n
-                hr = s["hits"] / n
-                bias = hr - avg
-                cf = corrections[target][cls].get(bin_idx, 1.0)
-                if abs(bias) > 0.05 and n >= min_n:
-                    has_bias = True
-                lines.append((cls, bin_idx, n, avg, hr, bias, cf))
-
-        if has_bias or any(abs(x[5]) > 0.05 for x in lines if x[2] >= min_n):
-            print(f"\n  {target}")
-            print(f"  {'Cls':>6} {'Bin':>4} {'N':>5} {'Pred%':>6} {'Real%':>6} {'Bias':>7} {'CF':>6}")
-            for cls, b, n, avg, hr, bias, cf in lines:
-                flag = " <-- BIAS" if abs(bias) > 0.07 and n >= min_n else ""
-                print(f"  {cls:>6} {b:>4} {n:>5} {avg*100:>5.1f}% {hr*100:>5.1f}% {bias*100:>+6.1f}% {cf:>6.3f}{flag}")
+    # La riga GLOBALE (league_id=0) va scritta PER PRIMA: il fallback deve esistere
+    # sempre, anche se l'upsert delle righe-lega fallisse a meta' (le leghe non
+    # ancora scritte ricadono sul globale, gia' presente).
+    rows = [{"league_id": 0, "corrections": result["global"], "min_n": mn, "generated_at": ga}] + league_rows
+    written = 0
+    for i in range(0, len(rows), 500):
+        batch = rows[i:i + 500]
+        try:
+            sb.table("ml_post_calibration").upsert(batch).execute()
+        except Exception as e:
+            # Fallire RUMOROSAMENTE (il workflow deve accorgersene), non lasciare
+            # un upsert parziale silenzioso.
+            raise RuntimeError(f"Upsert ml_post_calibration fallito al batch offset {i}: {e}") from e
+        written += len(batch)
+    # Pulizia: rimuove eventuali righe-lega obsolete (leghe che non hanno piu'
+    # correzioni utili) senza toccare la riga globale ne' quelle appena scritte.
+    try:
+        keep = {int(lid) for lid in result["leagues"].keys()} | {0}
+        existing = sb.table("ml_post_calibration").select("league_id").execute().data or []
+        obsolete = [r["league_id"] for r in existing if r["league_id"] not in keep]
+        for lid in obsolete:
+            sb.table("ml_post_calibration").delete().eq("league_id", lid).execute()
+        if obsolete:
+            print(f"  Righe obsolete rimosse: {len(obsolete)}")
+    except Exception as e:
+        print(f"  [WARN] pulizia righe obsolete saltata: {e}")
+    return written
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-n", type=int, default=MIN_N_DEFAULT)
+    parser.add_argument("--out", type=str, default=None,
+                        help="SOLO test: scrive il risultato su questo file JSON invece che sul DB.")
     args = parser.parse_args()
 
-    rows, ht_map = fetch_data()
-    print("Calcolando correzioni...")
-    corrections, stats = compute_corrections(rows, ht_map, min_n=args.min_n)
+    rows = _fetch_registry_cells()
+    if not rows:
+        print("  Nessuna cella nel registry: nulla da assemblare. Esco senza scrivere.")
+        return
+    result = assemble(rows, min_n=args.min_n)
+    _report(result)
 
-    print_report(stats, corrections, min_n=args.min_n)
-
-    # Conta quante correzioni significative (cf != 1.0)
-    n_active = sum(
-        1 for t in corrections.values()
-        for c in t.values()
-        for cf in c.values()
-        if cf != 1.0
-    )
-
-    # Salva
-    out = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "total_fixtures": len(rows),
-        "min_n": args.min_n,
-        "n_active_corrections": n_active,
-        "corrections": corrections,
-    }
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml_post_calibration.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-
-    print(f"\n  Salvato: {path}")
-    print(f"  Correzioni attive (cf != 1.0): {n_active}")
-    print(f"  predict_fixture.py le applica automaticamente al prossimo run.")
+    if args.out:
+        out_path = (
+            args.out if os.path.isabs(args.out)
+            else os.path.join(os.path.dirname(os.path.abspath(__file__)), args.out)
+        )
+        tmp = out_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, out_path)
+        print(f"\n  [TEST] Salvato su file (DB NON toccato): {out_path}")
+    else:
+        n = _write_to_db(result)
+        print(f"\n  Scritto su DB public.ml_post_calibration: {n} righe (incl. globale league_id=0).")
 
 
 if __name__ == "__main__":
