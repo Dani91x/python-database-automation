@@ -147,6 +147,10 @@ def _get_standard_drop_cols(df: pd.DataFrame) -> List[str]:
     drop += [c for c in df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
     drop += [c for c in df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
     drop += [c for c in df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
+    # LEAK standings (fine stagione): coerente con seriea_model_export.py:573.
+    # Senza questo il backtest userebbe rank/points/win/lose finali come feature
+    # => metriche gonfiate che non rispecchiano i modelli di produzione.
+    drop += [c for c in df.columns if c.startswith("home_standings_") or c.startswith("away_standings_")]
     return drop
 
 

@@ -79,13 +79,19 @@ def add_targets_from_matches(df: pd.DataFrame) -> pd.DataFrame:
     # First Half Over 0.5 (direct boolean target)
     # Use .where() to propagate NaN when halftime data is missing, instead of
     # silently coercing NaN > 0 to False (which creates false negatives).
-    # FIX 2026-06-16: cast a FLOAT (1.0/0.0/NaN) PRIMA di .where(). Un
-    # `(serie_bool).where(mask)` produce dtype `object` (bool + NaN) e quando la
-    # lega ha dati primo-tempo PARZIALI il classificatore lo rifiuta con
-    # "Unknown label type: unknown" => il mercato prioritario ht_over_0_5 non
-    # veniva addestrato. Con float, dopo dropna restano 1.0/0.0 => binary pulito.
+    # FIX 2026-06-16: label come STRINGA "True"/"False" (NaN se primo-tempo
+    # mancante). Motivi: (1) `(bool).where(mask)` produce dtype object (bool+NaN)
+    # che il classificatore rifiuta con "Unknown label type" sulle leghe con dati
+    # 1T parziali; (2) il serving e money_management cercano la classe ESATTA
+    # "True" per questo mercato (HT05, ai_path=(target_ht_over_0_5,"True")). Le
+    # stringhe "True"/"False" si addestrano come binario pulito (come target_1x2)
+    # e, via str(classes_), restano coerenti con tutti gli altri target binari
+    # (bool -> "True"/"False"). Un cast a float darebbe classi "1.0"/"0.0" e il
+    # segnale HT05 sparirebbe silenziosamente in scommessa.
     ht_total = out["halftime_home"] + out["halftime_away"]
-    out["target_ht_over_0_5"] = (ht_total > 0).astype("float64").where(ht_total.notna())
+    out["target_ht_over_0_5"] = (
+        (ht_total > 0).map({True: "True", False: "False"}).where(ht_total.notna())
+    )
 
     # Exact score — keep NaN when goals are missing instead of using "-1--1"
     has_goals = out["goals_home"].notna() & out["goals_away"].notna()

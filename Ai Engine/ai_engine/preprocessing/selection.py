@@ -123,9 +123,19 @@ def apply_feature_selection(
     keep_cols = drop_correlated(X_tr, threshold=correlation_threshold)
     X_tr = X_tr[keep_cols].copy()
 
-    # Step 3: Mutual information (only if we have more features than k)
-    if len(keep_cols) > mi_top_k:
-        mi_cols = select_by_mutual_info(X_tr, y_train, k=mi_top_k)
+    # Anti-overfitting (2026-06-16): limita il numero di feature alle righe di
+    # train. Su leghe piccole (~50-150 partite) selezionare fino a 60 feature da
+    # poche righe e' selezione di rumore (p≈n): la MI viene stimata su pochissimi
+    # campioni e le feature "vincenti" lo sono per caso, gonfiando il train e
+    # peggiorando l'out-of-sample. Regola: al massimo ~1 feature ogni 10 righe,
+    # con un minimo di 10 (per non sotto-rappresentare le leghe medie). Sulle
+    # leghe grandi resta il cap originale mi_top_k.
+    n_rows = int(len(y_train))
+    effective_k = min(mi_top_k, max(10, n_rows // 10))
+
+    # Step 3: Mutual information (only if we have more features than the cap)
+    if len(keep_cols) > effective_k:
+        mi_cols = select_by_mutual_info(X_tr, y_train, k=effective_k)
         X_tr = X_tr[mi_cols].copy()
         final_cols = mi_cols
     else:

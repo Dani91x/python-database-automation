@@ -91,6 +91,8 @@ def evaluate_holdout(league_id: int, last_n_seasons: int = 3, holdout_ratio: flo
     drop_cols += [c for c in df.columns if c.startswith("home_events_") or c.startswith("away_events_")]
     drop_cols += [c for c in df.columns if c.startswith("home_stats_") or c.startswith("away_stats_")]
     drop_cols += [c for c in df.columns if c.startswith("home_players_") or c.startswith("away_players_")]
+    # LEAK standings (fine stagione): coerente con seriea_model_export.py:573.
+    drop_cols += [c for c in df.columns if c.startswith("home_standings_") or c.startswith("away_standings_")]
 
     report_dir = os.path.join("Ai Engine", "reports")
     os.makedirs(report_dir, exist_ok=True)
