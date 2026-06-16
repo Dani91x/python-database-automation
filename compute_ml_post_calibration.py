@@ -1,8 +1,8 @@
 """
 compute_ml_post_calibration.py  —  ASSEMBLATORE calibrazione post-hoc per-lega
 ------------------------------------------------------------------------------
-Costruisce ml_post_calibration.json a partire dalle CELLE DI CALIBRAZIONE
-out-of-sample emesse dal training (colonna ai_model_registry.calibration_cells).
+Costruisce la tabella public.ml_post_calibration a partire dalle CELLE DI
+CALIBRAZIONE out-of-sample emesse dal training (col. ai_model_registry.calibration_cells).
 
 PERCHE' OUT-OF-SAMPLE / NO LEAK:
   Le celle vengono dall'HOLDOUT di ogni modello (la fetta che il training NON usa

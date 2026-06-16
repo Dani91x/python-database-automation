@@ -704,8 +704,8 @@ def upload_and_register(model_path: str, file_size: int, target: str, metrics: d
             "brier": metrics.get("brier"),
             "trained_range": metrics.get("trained_range"),
             # Celle di calibrazione holdout (per-lega, out-of-sample): l'assemblatore
-            # ne ricava ml_post_calibration.json. None se non calcolabile (holdout
-            # piccolo): la colonna e' nullable, nessun impatto sul resto.
+            # ne ricava la tabella ml_post_calibration. None se non calcolabile
+            # (holdout piccolo): la colonna e' nullable, nessun impatto sul resto.
             "calibration_cells": metrics.get("calibration_cells"),
             "notes": f"League {league_id} ensemble_v2 ({metrics.get('model_type', MODEL_NAME)})",
         }
