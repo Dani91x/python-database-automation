@@ -39,7 +39,7 @@ from db_client import get_supabase_client
 # al lancio della campagna FINALE => TUTTE le ~1014 leghe risultano da
 # riaddestrare col codice definitivo; solo i modelli nuovi (trained_at>13:52Z)
 # restano freschi fino a convergenza (da_fare=0).
-DEFAULT_CUTOFF = "2026-06-16T13:52:00+00:00"
+DEFAULT_CUTOFF = "2026-06-16T15:09:00+00:00"
 
 # Soglia minima di partite per considerare addestrabile una lega. REGOLA UTENTE
 # (2026-06-15): si esclude SOLO chi ha <50 partite GIOCATE COMPLESSIVE in TUTTE le
