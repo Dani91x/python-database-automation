@@ -134,7 +134,9 @@ def add_targets_from_events(df: pd.DataFrame) -> pd.DataFrame:
     def _series(col: str) -> pd.Series:
         if col in out.columns:
             return pd.to_numeric(out[col], errors="coerce")
-        return pd.Series([pd.NA] * len(out))
+        # index=out.index: evita disallineamento quando la colonna manca (il
+        # fallback con RangeIndex di default si misallineerebbe con out filtrato).
+        return pd.Series([pd.NA] * len(out), index=out.index)
 
     hy = _series("home_events_yellow_cards")
     ay = _series("away_events_yellow_cards")
@@ -145,19 +147,25 @@ def add_targets_from_events(df: pd.DataFrame) -> pd.DataFrame:
     out["target_home_cards"] = hy + hr
     out["target_away_cards"] = ay + ar
 
-    # Goal timing — use minimum (first) goal minute when available,
-    # fallback to average as proxy.  The original code used avg_goal_minute
-    # which is logically wrong: a team scoring at 10' and 70' has avg=40'
-    # and would be classified as "no first goal before 30'" even though it did.
+    # Goal timing — CORRETTO 2026-06-16 (bug di logica trovati in code-review):
+    # - target_first_goal_before_30 = il PRIMO gol del match e' prima del 30'.
+    #   Usa SOLO min_goal_minute (minuto del primo gol, eventi-gol). RIMOSSO il
+    #   fallback su avg_goal_minute: quest'ultimo e' la media di TUTTI gli eventi
+    #   (gol+cartellini+sostituzioni), quindi una squadra senza gol ma con un
+    #   giallo al 25' veniva etichettata "gol prima del 30'" => label corrotte.
+    # - target_goal_in_2h = c'e' stato un gol nel 2T = ULTIMO gol del match >= 46'.
+    #   Prima usava il PRIMO gol: una squadra che segna al 30' e al 70' risultava
+    #   "nessun gol nel 2T" (primo gol=30 < 46) pur avendo segnato nel 2T.
+    #   Serve il MAX del minuto-gol tra le due squadre.
+    # Nessun gol nel match => min/max NaN => (NaN<30)/(NaN>=46)=False => fillna(False):
+    # corretto (0-0 reale = nessun gol => entrambe le label False).
     hgm_min = _series("home_events_min_goal_minute")
     agm_min = _series("away_events_min_goal_minute")
-    hgm = hgm_min.combine_first(_series("home_events_avg_goal_minute"))
-    agm = agm_min.combine_first(_series("away_events_avg_goal_minute"))
-    # If both teams have no goal events at all, the target is False (no goal happened).
-    # Use .where() to preserve NaN only where we genuinely lack any timing data.
-    first_goal_raw = (hgm < 30) | (agm < 30)
-    out["target_first_goal_before_30"] = first_goal_raw.fillna(False)
-    goal_in_2h_raw = (hgm >= 46) | (agm >= 46)
-    out["target_goal_in_2h"] = goal_in_2h_raw.fillna(False)
+    hgm_max = _series("home_events_max_goal_minute")
+    agm_max = _series("away_events_max_goal_minute")
+    first_min = pd.concat([hgm_min, agm_min], axis=1).min(axis=1)
+    last_min = pd.concat([hgm_max, agm_max], axis=1).max(axis=1)
+    out["target_first_goal_before_30"] = (first_min < 30).fillna(False)
+    out["target_goal_in_2h"] = (last_min >= 46).fillna(False)
 
     return out

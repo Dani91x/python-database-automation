@@ -151,14 +151,18 @@ def _events_features(events_rows: List[Dict[str, Any]]) -> pd.DataFrame:
     # a team scoring at 10' and 70' has avg=40' which incorrectly signals "no early goal".
     goal_events = df[df["is_goal"]].copy()
     if not goal_events.empty:
+        # min = minuto del PRIMO gol (per target_first_goal_before_30),
+        # max = minuto dell'ULTIMO gol (per target_goal_in_2h: serve a sapere se
+        # c'e' stato un gol nel 2T anche quando la squadra ha gia' segnato nel 1T).
         goal_timing = (
             goal_events.groupby(["fixture_id", "team_id"], dropna=False)
-            .agg(min_goal_minute=("minute", "min"))
+            .agg(min_goal_minute=("minute", "min"), max_goal_minute=("minute", "max"))
             .reset_index()
         )
         agg = agg.merge(goal_timing, on=["fixture_id", "team_id"], how="left")
     else:
         agg["min_goal_minute"] = float("nan")
+        agg["max_goal_minute"] = float("nan")
 
     return agg
 
