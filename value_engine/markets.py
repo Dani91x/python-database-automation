@@ -8,6 +8,7 @@ il modulo e' disponibile; per ora sollevano NotImplementedError esplicito.
 from __future__ import annotations
 from typing import Optional, Callable
 from . import poisson_total as pt
+from . import bivariate as _bv
 
 # code -> (side, line, periodo_minuti)
 TOTALS = {
@@ -23,8 +24,8 @@ TOTALS = {
     "HT15": ("over", 1.5, 45), "HT_U15": ("under", 1.5, 45),
 }
 
-# NB: niente HT_H/HT_D/HT_A: il bivariato FT non li calcola (servirebbe un modello 1X2 di 1o tempo).
-SCORE_MARKETS = {"H", "D", "A", "DC_1X", "DC_12", "DC_X2", "DNB_H", "DNB_A", "BTTS", "BTTS_NO"}
+# Fonte unica: i mercati a punteggio sono definiti dal bivariato (FT + 1X2 di primo tempo).
+SCORE_MARKETS = _bv.SCORE_MARKETS
 
 
 def is_total(market: str) -> bool:

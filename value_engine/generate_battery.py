@@ -28,7 +28,8 @@ def total_case(market, q0, minute, goals, q_opp=None):
 def score_case(market, qH, qD, qA, qO, qU, minute, gh, ga):
     pH = devig_multiplicative({"H": qH, "D": qD, "A": qA})["H"]
     pO25 = devig_pair(qO, qU)
-    p = bv.evaluate(market, p_home=pH, p_over25=pO25, minute=minute, gh=gh, ga=ga, remaining_frac=RF)
+    p = bv.evaluate(market, p_home=pH, p_over25=pO25, minute=minute, gh=gh, ga=ga,
+                    remaining_frac=RF, ht_fraction=goal_timing.first_half_share())
     mp = price(market, p)
     return dict(kind="score", market=market, qH=qH, qD=qD, qA=qA, qO=qO, qU=qU,
                 minute=minute, gh=gh, ga=ga,
@@ -52,6 +53,16 @@ for mk in ["H", "D", "A", "BTTS", "BTTS_NO", "DC_1X", "DC_X2", "DNB_H", "DNB_A"]
         ((2.10, 3.40, 3.60), (30, 1, 0)),
         ((1.70, 3.80, 5.00), (55, 0, 1)),
         ((3.20, 3.30, 2.20), (70, 1, 1)),
+    ]:
+        cases.append(score_case(mk, qH, qD, qA, ou[0], ou[1], minute, gh, ga))
+
+# --- HT 1X2: solo minuto <= 45 (primo tempo), gol = gol del 1o tempo ---
+for mk in ["HT_H", "HT_D", "HT_A"]:
+    for (qH, qD, qA), (minute, gh, ga) in [
+        ((2.10, 3.40, 3.60), (0, 0, 0)),
+        ((2.10, 3.40, 3.60), (20, 1, 0)),
+        ((1.70, 3.80, 5.00), (35, 0, 1)),
+        ((3.20, 3.30, 2.20), (44, 0, 0)),
     ]:
         cases.append(score_case(mk, qH, qD, qA, ou[0], ou[1], minute, gh, ga))
 

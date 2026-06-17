@@ -34,6 +34,13 @@ def _load() -> list[float] | None:
     return _cdf
 
 
+def first_half_share() -> float:
+    """Frazione di gol-partita che cade nel 1o tempo = cdf[45] (per scalare i lambda all'HT).
+    Fallback 0.5 (lineare) se la CDF non c'e'."""
+    cdf = _load()
+    return cdf[45] if cdf is not None else 0.5
+
+
 def remaining_frac(t: float, T: float = 90.0) -> float:
     """Frazione di gol del PERIODO che si verifica DOPO il minuto t (0..1).
     T=90 -> intera partita; T~45 -> primo tempo. Fallback lineare se la CDF non c'e'.

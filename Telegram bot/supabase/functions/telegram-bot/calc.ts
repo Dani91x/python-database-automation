@@ -171,9 +171,18 @@ function conditionalMarkets(lam: number, mu: number, rho: number, minute: number
   for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) M[gh + a][ga + b] += R[a][b];
   return marketsFromMatrix(M);
 }
+// 1X2 di primo tempo: lambda scalati alla quota-gol del 1o tempo (= GOAL_CDF[45]), periodo 45'.
+const HT_1X2: Record<string, string> = { HT_H: "H", HT_D: "D", HT_A: "A" };
+const FIRST_HALF_SHARE = GOAL_CDF[45];
+
 function evalScoreMarket(market: string, pHome: number, pOver25: number, minute: number, gh: number, ga: number,
                          rf: (t: number, T: number) => number, rho = -0.13): number {
   const [lam, mu] = deriveLambdas(pHome, pOver25, rho);
+  if (market in HT_1X2) {
+    if (minute > 45) throw new Error(`${market}: minuto ${minute} > 45, primo tempo concluso (esito HT già deciso).`);
+    const mkHt = conditionalMarkets(lam * FIRST_HALF_SHARE, mu * FIRST_HALF_SHARE, rho, minute, gh, ga, 45.0, rf);
+    return mkHt[HT_1X2[market]];
+  }
   const mk = conditionalMarkets(lam, mu, rho, minute, gh, ga, 90.0, rf);
   if (!(market in mk)) throw new Error(`mercato bivariato sconosciuto: ${market}`);
   return mk[market];
@@ -193,7 +202,7 @@ export function price(market: string, prob: number, commission = 0.05): MarketPr
 }
 
 // ---- API pubblica per il bot -----------------------------------------------
-export const SCORE_MARKETS = new Set(["H", "D", "A", "DC_1X", "DC_12", "DC_X2", "DNB_H", "DNB_A", "BTTS", "BTTS_NO"]);
+export const SCORE_MARKETS = new Set(["H", "D", "A", "DC_1X", "DC_12", "DC_X2", "DNB_H", "DNB_A", "BTTS", "BTTS_NO", "HT_H", "HT_D", "HT_A"]);
 export function isTotal(market: string): boolean { return market in TOTALS; }
 
 /** Totali: quota pre-match (+opzionale opposta per de-vig), minuto, gol nel periodo. */

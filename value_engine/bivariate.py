@@ -182,17 +182,29 @@ def conditional_markets(lam: float, mu: float, rho: float, minute: float, gh: in
     return _markets_from_matrix(M)
 
 
-# codici mercato a punteggio derivati dalla matrice (self-documenting, niente set stantio)
-SCORE_MARKETS = frozenset(_markets_from_matrix([[1.0]]).keys())
+# mappa 1X2 di primo tempo -> chiavi 1X2 della matrice (calcolate sui gol del 1o tempo)
+HT_1X2 = {"HT_H": "H", "HT_D": "D", "HT_A": "A"}
+# codici mercato a punteggio (FT dalla matrice + 1X2 di primo tempo)
+SCORE_MARKETS = frozenset(_markets_from_matrix([[1.0]]).keys()) | set(HT_1X2.keys())
 
 
 def evaluate(market: str, *, p_home: float, p_over25: float, minute: float, gh: int, ga: int,
-             rho: float = -0.13, T: float = 90.0,
-             remaining_frac: Optional[Callable[[float, float], float]] = None) -> float:
+             rho: float = -0.13,
+             remaining_frac: Optional[Callable[[float, float], float]] = None,
+             ht_fraction: Optional[float] = None) -> float:
     """Prob condizionata di un mercato a punteggio. p_home/p_over25 = prob pre-match DE-VIGGATE.
-    Solleva ValueError se le quote sono incoerenti (vedi derive_lambdas)."""
-    lam, mu = derive_lambdas(p_home, p_over25, rho)
-    mk = conditional_markets(lam, mu, rho, minute, gh, ga, T=T, remaining_frac=remaining_frac)
-    if market not in mk:
+    Per i mercati FT gh/ga = gol totali correnti. Per HT_H/HT_D/HT_A (1X2 di primo tempo)
+    gh/ga = gol del 1o tempo e ht_fraction (= cdf[45]) e' OBBLIGATORIO; valido solo per minuto<=45."""
+    if market not in SCORE_MARKETS:
         raise KeyError(f"Mercato bivariato non gestito: {market}")
+    lam, mu = derive_lambdas(p_home, p_over25, rho)
+    if market in HT_1X2:
+        if ht_fraction is None:
+            raise ValueError("ht_fraction obbligatorio per i mercati HT (usa goal_timing.first_half_share()).")
+        if minute > 45:
+            raise ValueError(f"{market}: minuto {minute} > 45, primo tempo concluso (esito HT gia' deciso).")
+        mk = conditional_markets(lam * ht_fraction, mu * ht_fraction, rho, minute, gh, ga,
+                                 T=45.0, remaining_frac=remaining_frac)
+        return mk[HT_1X2[market]]
+    mk = conditional_markets(lam, mu, rho, minute, gh, ga, T=90.0, remaining_frac=remaining_frac)
     return mk[market]

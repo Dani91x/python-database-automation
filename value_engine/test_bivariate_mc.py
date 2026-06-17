@@ -100,6 +100,21 @@ check("cond H   rho0 (MC Poisson vero)", an0["H"], cH / N, 0.005)
 check("cond BTTS rho0 (MC Poisson vero)", an0["BTTS"], cBTTS / N, 0.005)
 check("cond O25 rho0 (MC Poisson vero)", an0["O25"], cO25 / N, 0.005)
 
+# 7b) MC HT 1X2 (rho=0): lambda scalati al 1o tempo + T=45 vs Poisson vero del 1o tempo
+fh = 0.45
+lam_ht, mu_ht = lam * fh, mu * fh
+an_ht = conditional_markets(lam_ht, mu_ht, 0.0, 20, 0, 0, T=45.0)   # remaining_frac=None -> lineare
+frac_ht = (45 - 20) / 45
+cH = cD = cA = 0
+for _ in range(N):
+    rh = poisson_sample(lam_ht * frac_ht); ra = poisson_sample(mu_ht * frac_ht)
+    if rh > ra: cH += 1
+    elif rh == ra: cD += 1
+    else: cA += 1
+check("HT_H rho0 (MC Poisson 1T)", an_ht["H"], cH / N, 0.005)
+check("HT_D rho0 (MC Poisson 1T)", an_ht["D"], cD / N, 0.005)
+check("HT_A rho0 (MC Poisson 1T)", an_ht["A"], cA / N, 0.005)
+
 # 8) derive_lambdas: round-trip dalle quote -> ricostruisce le prob de-viggate
 p = dv.devig_multiplicative({"H": 2.10, "D": 3.40, "A": 3.60})
 pO25 = dv.devig_pair(1.90, 2.00)

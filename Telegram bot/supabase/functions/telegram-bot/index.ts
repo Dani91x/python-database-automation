@@ -81,6 +81,7 @@ const calcMarketKeyboard = new InlineKeyboard()
   .text("1X", "calc_DC_1X").text("12", "calc_DC_12").text("X2", "calc_DC_X2").row()
   .text("DNB Casa", "calc_DNB_H").text("DNB Trasf", "calc_DNB_A").row()
   .text("Goal", "calc_BTTS").text("No Goal", "calc_BTTS_NO").row()
+  .text("1 HT", "calc_HT_H").text("X HT", "calc_HT_D").text("2 HT", "calc_HT_A").row()
   .text("🔙 Menù", "menu_main");
 
 const MKT_NAMES: Record<string, string> = {
@@ -88,6 +89,7 @@ const MKT_NAMES: Record<string, string> = {
   HT05: "Over 0.5 HT", HT_U05: "Under 0.5 HT",
   H: "1 (Casa)", D: "X (Pareggio)", A: "2 (Trasferta)", BTTS: "Goal (BTTS)", BTTS_NO: "No Goal",
   DC_1X: "1X", DC_X2: "X2", DC_12: "12", DNB_H: "Casa (DNB)", DNB_A: "Trasferta (DNB)",
+  HT_H: "1 Primo Tempo", HT_D: "X Primo Tempo", HT_A: "2 Primo Tempo",
 };
 
 function fmtResult(mp: MarketPrice, title: string): string {
@@ -139,6 +141,8 @@ function handleCalcScore(ctx: any) {
       !Number.isFinite(minute) || minute < 0 || minute > 130 ||
       !Number.isInteger(gh) || gh < 0 || !Number.isInteger(ga) || ga < 0)
     return ctx.reply("Numeri o punteggio non validi (quote>1, minuto 0-130, punteggio es. `1-0`).", { parse_mode: "Markdown" });
+  if (market.startsWith("HT_") && minute > 45)
+    return ctx.reply("Mercati 1X2 primo tempo: il minuto deve essere 0-45 (primo tempo in corso); le quote restano quelle FT.");
   try {
     const mp = evalScore(market, qH, qD, qA, qO, qU, minute, gh, ga);
     return ctx.reply(fmtResult(mp, `${MKT_NAMES[market] || market} — ${minute}' / ${gh}-${ga}`), { parse_mode: "Markdown" });
@@ -207,9 +211,13 @@ bot.on("callback_query:data", async (ctx) => {
         `Scrivi:\n\`/calc ${mk} <quota_prematch> <minuto> ${goalsLabel}\`\n\n` +
         `Esempio:\n\`/calc ${mk} 1.30 8 1\`\n\n${note}`;
     } else {
-      msg = `🧮 *${name}* — mercato 1X2/BTTS\n\n` +
+      const isHT = mk.startsWith("HT_");
+      const tipo = isHT ? "1X2 PRIMO TEMPO" : "1X2/BTTS";
+      const esempio = isHT ? `/scalc ${mk} 2.10 3.40 3.60 1.90 2.00 30 0-0` : `/scalc ${mk} 2.10 3.40 3.60 1.90 2.00 30 1-0`;
+      const htNote = isHT ? `\n\n⚠️ Primo tempo: minuto *0-45* e punteggio del *PRIMO TEMPO*. Le quote 1X2/OU sono quelle FT (di fine partita).` : "";
+      msg = `🧮 *${name}* — mercato ${tipo}\n\n` +
         `Scrivi:\n\`/scalc ${mk} <qHome> <qDraw> <qAway> <qOver2.5> <qUnder2.5> <minuto> <golCasa>-<golTrasf>\`\n\n` +
-        `Esempio:\n\`/scalc ${mk} 2.10 3.40 3.60 1.90 2.00 30 1-0\``;
+        `Esempio:\n\`${esempio}\`${htNote}`;
     }
     return ctx.reply(msg, { parse_mode: "Markdown", reply_markup: backToMainKeyboard });
   }
