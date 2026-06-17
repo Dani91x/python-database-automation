@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MatchesList } from '@/components/dashboard/MatchesList';
-import { MarketFrequencyPanel } from '@/components/dashboard/MarketFrequencyPanel';
+import { AnalyticsPanels } from '@/components/dashboard/AnalyticsPanels';
 
 export default function Dashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
@@ -153,13 +153,14 @@ export default function Dashboard() {
                                     leagueId={fixtureLeagueId ?? data.league.id}
                                 />
 
-                                {/* Frequenze Mercati: subito sotto il blocco Fixture ID / League ID */}
-                                {(fixtureLeagueId ?? data.league.id) && (
-                                    <MarketFrequencyPanel
-                                        leagueId={fixtureLeagueId ?? data.league.id}
-                                        leagueName={data.league.name}
-                                    />
-                                )}
+                                {/* Analisi motori: Frequenze Mercati + Poisson + Modelli ML, subito sotto Fixture/League ID */}
+                                <AnalyticsPanels
+                                    leagueId={fixtureLeagueId ?? data.league.id ?? null}
+                                    leagueName={data.league.name}
+                                    fixtureId={data.fixtureId}
+                                    homeName={data.home.name}
+                                    awayName={data.away.name}
+                                />
 
                                 <PredictionsCard
                                     predictions={data.predictions}
