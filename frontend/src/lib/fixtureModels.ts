@@ -101,6 +101,13 @@ export function colorForSelection(key: string): string {
     if (['H', 'TRUE', 'OVER', 'SI', 'SÌ', 'YES', '1'].includes(k)) return COL.green;
     if (['A', 'FALSE', 'UNDER', 'NO', '2'].includes(k)) return COL.amber;
     if (['D', 'X', 'DRAW', 'PARI'].includes(k)) return COL.gray;
+    // chiavi composte HT/FT (es. H_A): colora in base all'esito FT (2° carattere)
+    if (/^[HDA]_[HDA]$/.test(k)) {
+        const ft = k[2];
+        if (ft === 'H') return COL.green;
+        if (ft === 'A') return COL.amber;
+        return COL.gray;
+    }
     return COL.blue;
 }
 
@@ -118,6 +125,13 @@ export function mlTargetLabel(t: string): string {
         'first_goal_before_30': "1° Gol < 30'",
         'clean_sheet_home': 'Clean Sheet Casa',
         'clean_sheet_away': 'Clean Sheet Trasf.',
+        // target di conteggio (compaiono solo su fixture storiche via deep-link)
+        'total_goals': 'Gol totali',
+        'sot_total': 'Tiri in porta',
+        'corners_total': "Calci d'angolo",
+        'cards_total': 'Cartellini',
+        'home_cards': 'Cartellini casa',
+        'away_cards': 'Cartellini trasf.',
     };
     if (fixed[k]) return fixed[k];
     let m: RegExpMatchArray | null;

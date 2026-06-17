@@ -76,9 +76,13 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
     const bars: ProbBar[] = useMemo(() => {
         if (!data?.markets || !market) return [];
         const obj = data.markets[market.id] || {};
+        // includi solo le selezioni realmente presenti nel JSON (no 0 fittizi per chiavi assenti)
         return market.sel
-            .map(([key, label]) => ({ label, value: toNum(obj[key]) ?? 0, color: colorForSelection(key) }))
-            .filter(b => b.value > 0 || true); // mostra anche 0
+            .map(([key, label]) => {
+                const v = toNum(obj[key]);
+                return v !== null ? { label, value: v, color: colorForSelection(key) } : null;
+            })
+            .filter((b): b is ProbBar => b !== null);
     }, [data, market]);
 
     const topBar = useMemo(() => bars.reduce<ProbBar | null>((best, b) => (best && best.value >= b.value ? best : b), null), [bars]);

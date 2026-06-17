@@ -70,6 +70,7 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
             { label: 'Gol totali', test: k => /^target_over_/.test(k) || k === 'target_btts' },
             { label: 'Squadre', test: k => /^target_(home|away)_over_/.test(k) || /clean_sheet/.test(k) },
             { label: '1°T / Timing', test: k => ['target_ht_over_0_5', 'target_goal_in_2h', 'target_first_goal_before_30'].includes(k) },
+            { label: 'Statistiche', test: k => /^target_(total_goals|sot_total|corners_total|cards_total|home_cards|away_cards)$/.test(k) },
         ];
         const used = new Set<string>();
         const groups = defs.map(d => {
@@ -82,11 +83,15 @@ export function MLPanel({ fixtureId, leagueName, homeName, awayName }: Props) {
         return groups;
     }, [targets]);
 
-    // barre della distribuzione del target selezionato (ordinate desc)
+    // barre della distribuzione del target selezionato (ordinate desc).
+    // Per HT/FT scarta eventuali chiavi malformate (es. '_' nelle vecchie predizioni storiche):
+    // non devono mai comparire come "previsione".
     const bars: ProbBar[] = useMemo(() => {
         const obj = data?.targets?.[target];
         if (!obj) return [];
+        const validHtFt = /^[HDA]_[HDA]$/;
         return Object.entries(obj)
+            .filter(([key]) => target !== 'target_ht_ft' || validHtFt.test(key))
             .map(([key, val]) => ({ label: mlClassLabel(key), value: Number(val) || 0, color: colorForSelection(key) }))
             .sort((a, b) => b.value - a.value);
     }, [data, target]);
