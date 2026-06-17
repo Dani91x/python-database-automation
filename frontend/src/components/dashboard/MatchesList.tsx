@@ -44,13 +44,18 @@ interface MatchesListProps {
     onSelectMatch: (fixtureId: string) => void;
 }
 
+// Loghi API-Football: URL deterministici dall'ID. Evita di scaricare raw_json (~9KB/riga,
+// colonna TOAST) solo per estrarre 3 URL -> la lista resta leggerissima anche con migliaia di partite.
+const API_MEDIA = 'https://media.api-sports.io/football';
+const leagueLogo = (id?: number | null) => (id ? `${API_MEDIA}/leagues/${id}.png` : '');
+const teamLogo = (id?: number | null) => (id ? `${API_MEDIA}/teams/${id}.png` : '');
+
 export function MatchesList({ onSelectMatch }: MatchesListProps) {
     const [matches, setMatches] = useState<MatchPreview[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [page, setPage] = useState(0);
-    const [hasMore, setHasMore] = useState(true);
-    const PAGE_SIZE = 100;
+    // Supabase limita ogni richiesta a 1000 righe: scarichiamo a blocchi finche'
+    // un blocco torna < BATCH (= non c'e' altro). Cosi' OGNI lega mostra TUTTE le sue partite.
+    const BATCH = 1000;
 
     const [selectedLeague, setSelectedLeague] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -65,41 +70,50 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
         { id: 61, name: 'Ligue 1', flag: '🇫🇷' },
     ];
 
-    const fetchMatches = async (pageNum: number, isInitial: boolean = false, leagueId: number | null = null) => {
-        if (isInitial) setLoading(true);
-        else setLoadingMore(true);
+    const fetchMatches = async (leagueId: number | null = null) => {
+        setLoading(true);
 
         try {
             const today = format(new Date(), 'yyyy-MM-dd');
-            // If filtering by league, fetch ALL matches (increase limit), otherwise use pagination
-            const currentLimit = leagueId ? 100 : PAGE_SIZE;
-            const from = pageNum * currentLimit;
-            const to = from + currentLimit - 1;
 
-            let query = supabase
-                .from('fixture_predictions')
-                .select('fixture_id, fixture_date, home_team_name, away_team_name, league_name, league_id, status, raw_json')
-                .eq('status', 'ok')
-                .gte('fixture_date', `${today}T00:00:00Z`)
-                .order('fixture_date', { ascending: true });
+            // Scarica TUTTE le righe del giorno a blocchi (no cap a 100): ogni lega
+            // deve mostrare l'elenco completo, anche le partite serali.
+            let all: any[] = [];
+            let offset = 0;
+            // Guardia anti-loop infinito (backstop: 50 blocchi).
+            for (let guard = 0; guard < 50; guard++) {
+                let query = supabase
+                    .from('fixture_predictions')
+                    .select('fixture_id, fixture_date, home_team_name, away_team_name, home_team_id, away_team_id, league_name, league_id, status')
+                    .eq('status', 'ok')
+                    .gte('fixture_date', `${today}T00:00:00Z`)
+                    .order('fixture_date', { ascending: true })
+                    .range(offset, offset + BATCH - 1);
 
-            // Apply League Filter if selected
-            if (leagueId) {
-                query = query.eq('league_id', leagueId);
+                // Apply League Filter if selected
+                if (leagueId) {
+                    query = query.eq('league_id', leagueId);
+                }
+
+                const { data, error } = await query;
+
+                if (error) {
+                    console.error("Supabase Error:", error);
+                    toast.error("Errore database: " + error.message);
+                    break;
+                }
+
+                const batch = data || [];
+                all = all.concat(batch);
+                // Avanza dell'effettivo n. di righe tornate (robusto a qualunque cap del
+                // server: non assumiamo che il blocco sia sempre pieno) e fermati a blocco vuoto.
+                if (batch.length === 0) break;
+                offset += batch.length;
             }
 
-            const { data, error } = await query.range(from, to);
-
-            if (error) {
-                console.error("Supabase Error:", error);
-                toast.error("Errore database: " + error.message);
-                return;
-            }
-
-            const mapped: MatchPreview[] = (data || []).map((row: any) => {
+            const mapped: MatchPreview[] = all.map((row: any) => {
                 try {
                     const dateObj = new Date(row.fixture_date);
-                    const prediction = row.raw_json?.response?.[0];
                     return {
                         fixture_id: String(row.fixture_id),
                         date: dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }),
@@ -108,51 +122,36 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                         league: {
                             id: row.league_id,
                             name: row.league_name || 'N/A',
-                            logo: prediction?.league?.logo || '',
-                            flag: prediction?.league?.flag || '',
+                            logo: leagueLogo(row.league_id),
+                            flag: '',
                         },
                         home: {
                             name: row.home_team_name || 'N/A',
-                            logo: prediction?.teams?.home?.logo || '',
+                            logo: teamLogo(row.home_team_id),
                         },
                         away: {
                             name: row.away_team_name || 'N/A',
-                            logo: prediction?.teams?.away?.logo || '',
+                            logo: teamLogo(row.away_team_id),
                         },
                     };
                 } catch (e) { return null; }
             }).filter(Boolean) as MatchPreview[];
 
-            if (isInitial) {
-                setMatches(mapped);
-            } else {
-                setMatches(prev => [...prev, ...mapped]);
-            }
-
-            // Update hasMore based on the returned count and limit
-            setHasMore(data.length === currentLimit);
+            setMatches(mapped);
         } catch (e) {
             console.error("Error fetching matches:", e);
         } finally {
             setLoading(false);
-            setLoadingMore(false);
         }
     };
 
     useEffect(() => {
-        fetchMatches(0, true, selectedLeague);
+        fetchMatches(selectedLeague);
     }, [selectedLeague]);
-
-    const loadMore = () => {
-        const nextPage = page + 1;
-        setPage(nextPage);
-        fetchMatches(nextPage, false, selectedLeague);
-    };
 
     // Handle filter selection
     const handleLeagueSelect = (leagueId: number | null) => {
         setSelectedLeague(leagueId);
-        setPage(0);
         setIsFilterOpen(false);
     };
 
@@ -276,7 +275,7 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                             <div className="flex items-center gap-3 md:gap-4 text-left">
                                                 <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
                                                     {group.league.logo ? (
-                                                        <img src={group.league.logo} alt={group.league.name} className="w-6 h-6 md:w-8 md:h-8 object-contain" />
+                                                        <img src={group.league.logo} alt={group.league.name} loading="lazy" decoding="async" className="w-6 h-6 md:w-8 md:h-8 object-contain" />
                                                     ) : (
                                                         <Trophy className="w-4 h-4 md:w-5 md:h-5 text-primary/60" />
                                                     )}
@@ -319,13 +318,13 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                                                                         <span className="text-sm md:text-lg font-bold text-white">
                                                                             {match.home.name}
                                                                         </span>
-                                                                        <img src={match.home.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
+                                                                        <img src={match.home.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
                                                                     </div>
 
                                                                     <div className="text-muted-foreground font-display font-black text-xs md:text-sm shrink-0">VS</div>
 
                                                                     <div className="flex items-center gap-2 md:gap-3 text-left flex-1 justify-start">
-                                                                        <img src={match.away.logo} alt="" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
+                                                                        <img src={match.away.logo} alt="" loading="lazy" decoding="async" className="w-6 h-6 md:w-10 md:h-10 object-contain shrink-0" />
                                                                         <span className="text-sm md:text-lg font-bold text-white">
                                                                             {match.away.name}
                                                                         </span>
@@ -352,23 +351,6 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                             ))}
                         </AnimatePresence>
                     </Accordion>
-
-                    {hasMore && (
-                        <div className="py-6 flex justify-center">
-                            <Button
-                                onClick={loadMore}
-                                disabled={loadingMore}
-                                variant="outline"
-                                className="bg-white/5 border-white/10 hover:bg-white/10 text-white font-bold h-12 px-8 rounded-xl transition-all"
-                            >
-                                {loadingMore ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    "VEDI ALTRE LEGHE"
-                                )}
-                            </Button>
-                        </div>
-                    )}
                 </>
             )}
         </div>
