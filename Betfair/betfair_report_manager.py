@@ -220,6 +220,21 @@ class BetfairReportManager:
         logger.info("Fase 11: Aggiornamento foglio Analytics...")
         self.slot_manager.update_analytics_sheet()
 
+        # 12. Firehose: sincronizza engine_signals su Supabase (segnali emessi
+        #     piazzati+scartati+no_signal + esiti dei giorni risolti). Best-effort: non blocca mai.
+        #     Finestra recente (21 gg) per contenere l'I/O su Supabase: copre nuove emissioni e
+        #     risoluzioni recenti. Un re-sync COMPLETO si lancia a mano:
+        #       python migrations/backfill_engine_signals.py
+        try:
+            logger.info("Fase 12: Sync engine_signals (firehose)...")
+            from datetime import datetime, timedelta, timezone
+            from migrations.backfill_engine_signals import run_backfill
+            _since = (datetime.now(timezone.utc) - timedelta(days=21)).strftime("%Y-%m-%d")
+            _n = run_backfill(since=_since, quiet=True)
+            logger.info(f"engine_signals: {_n} righe sincronizzate (since {_since}).")
+        except Exception as e:
+            logger.warning(f"engine_signals sync fallito (non bloccante): {e}")
+
         logger.info("✅ Job completato con successo.")
 
     def _fetch_today_predictions(self, today, tomorrow):
@@ -1419,8 +1434,11 @@ class BetfairReportManager:
         almeno MIN_NEW_MATCHES_RETRAIN partite giocate nuove dall'ultimo training
         (nessun vincolo temporale). Solo allora scatta il retraining automatico.
         status = 'OK' | 'LEGA SALTATA PER DATI INSUFFICIENTI' | 'ERRORE AI'"""
-        # Invalida i modelli (e forza retrain) solo se ci sono abbastanza partite nuove
-        if league_id not in self._trained_leagues_this_run:
+        # Invalida i modelli (e forza retrain) solo se ci sono abbastanza partite nuove.
+        # Con --skip-training NON si tocca MAI il registry/cache: si usano SOLO i
+        # modelli gia' esistenti (nessuna DELETE, nessun retrain). Cosi' il report
+        # veloce e' 100% read-only sui modelli e non interferisce con la campagna.
+        if not self._skip_training and league_id not in self._trained_leagues_this_run:
             self._check_and_invalidate_stale_models(league_id)
 
         try:
@@ -1432,6 +1450,17 @@ class BetfairReportManager:
                 if league_id in self._trained_leagues_this_run:
                     logger.info(f"League {league_id} già processata in questa esecuzione. Salto.")
                     return None, "LEGA SALTATA PER DATI INSUFFICIENTI"
+
+                # Con --skip-training: nessun modello nel registry => si salta la lega
+                # SENZA alcuna azione sui modelli (no upload della cache locale, no
+                # training). Report 100% read-only: usa SOLO cio' che e' gia' servito.
+                if self._skip_training:
+                    logger.info(
+                        f"⚡ League {league_id}: nessun modello nel registry — saltata "
+                        f"(--skip-training: niente upload/training, nessuna azione sui modelli)."
+                    )
+                    self._trained_leagues_this_run.add(league_id)
+                    return None, "LEGA SALTATA - NO MODELLI"
 
                 logger.info(f"Modelli assenti nel registry per League {league_id}. Controllo cache locale...")
                 self._trained_leagues_this_run.add(league_id)

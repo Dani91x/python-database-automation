@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { supabase } from '@/integrations/supabase/client';
 import { normalizePredictionJson, NormalizedData } from '@/lib/normalize';
@@ -10,7 +10,7 @@ import { H2HSection } from '@/components/dashboard/H2HSection';
 import { Button } from '@/components/ui/button';
 import { Loader2, LogOut, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { MatchesList } from '@/components/dashboard/MatchesList';
 import { MarketFrequencyPanel } from '@/components/dashboard/MarketFrequencyPanel';
@@ -24,9 +24,14 @@ export default function Dashboard() {
 
     const { user } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
+        if (!/^\d+$/.test(fixtureId)) {
+            toast.error("ID partita non valido.");
+            return;
+        }
         setLoading(true);
         try {
             const { data: fixture, error } = await supabase
@@ -50,6 +55,15 @@ export default function Dashboard() {
             setLoading(false);
         }
     };
+
+    // Deep-link dal bot Telegram: /dashboard?fixture=<id> apre direttamente la scheda partita
+    useEffect(() => {
+        const fx = searchParams.get('fixture');
+        if (fx) {
+            loadFixture(fx);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
