@@ -227,7 +227,6 @@ class BetfairReportManager:
         #       python migrations/backfill_engine_signals.py
         try:
             logger.info("Fase 12: Sync engine_signals (firehose)...")
-            from datetime import datetime, timedelta, timezone
             from migrations.backfill_engine_signals import run_backfill
             _since = (datetime.now(timezone.utc) - timedelta(days=21)).strftime("%Y-%m-%d")
             _n = run_backfill(since=_since, quiet=True)
