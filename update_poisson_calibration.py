@@ -400,10 +400,18 @@ def apply_to_money_management(new_table: Dict[str, Dict[int, float]], total_rows
     new_block = "\n".join(lines)
 
     # Regex per trovare il blocco CALIBRATION_TABLE esistente.
+    # IMPORTANTE: il divider "# ----" deve essere ANCORATO alla riga
+    # "#  TABELLA DI CALIBRAZIONE" che lo segue immediatamente (stessa riga
+    # logica del commento). Senza l'ancoraggio (\n subito dopo il divider),
+    # con re.DOTALL il motore aggancia il PRIMO "# ----" del file (quello di
+    # "COSTANTI DI DEFAULT") e .*? attraversa tutte le costanti fino a
+    # "TABELLA DI CALIBRAZIONE": match.start() finirebbe sulle costanti e la
+    # sostituzione cancellerebbe DEFAULT_*, MARKET_MAP, ML_MARKET_MAP, ecc.
+    # (regressione vista nei commit 1bacc71 e 439c684).
     # La chiusura ^\} deve stare a colonna 0: corrisponde sempre all'outer dict close,
     # mai agli inner dict (che sono indentati e terminano con "},").
     pattern = re.compile(
-        r"# -{10,}.*?TABELLA DI CALIBRAZIONE.*?^CALIBRATION_TABLE\s*=\s*\{.*?^\}",
+        r"^# -{10,}\n#  TABELLA DI CALIBRAZIONE.*?^CALIBRATION_TABLE\s*=\s*\{.*?^\}",
         re.DOTALL | re.MULTILINE
     )
     match = pattern.search(content)
