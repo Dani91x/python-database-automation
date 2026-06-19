@@ -1,0 +1,45 @@
+name: _SelfTest Chain (usa-e-getta)
+
+# Prova ISOLATA della capacita' di auto-rilancio usata dall'auto-chain del
+# retrain: il GITHUB_TOKEN interno (permessi actions:write) riesce a fare
+# `gh workflow run` di se stesso? La concurrency serializza i giri e il cap li
+# ferma. Stessa identica meccanica del job `rechain` in retrain_models.yml.
+# DA CANCELLARE dopo la certificazione.
+
+on:
+  workflow_dispatch:
+    inputs:
+      depth:
+        description: "Giro corrente (interno)."
+        default: "0"
+        required: false
+
+concurrency:
+  group: selftest-chain
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Rilancia se sotto il cap
+        env:
+          DEPTH: ${{ inputs.depth || '0' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          MAX=3
+          echo "[SELFTEST] giro=$DEPTH (cap=$MAX)"
+          NEXT=$((DEPTH + 1))
+          if [ "$NEXT" -ge "$MAX" ]; then
+            echo "[SELFTEST] cap raggiunto -> STOP. Auto-rilancio dimostrato fino a $DEPTH."
+            exit 0
+          fi
+          echo "[SELFTEST] rilancio se stesso con depth=$NEXT ..."
+          gh workflow run _selftest_chain.yml -f depth="$NEXT"
+          echo "[SELFTEST] dispatch inviato (la concurrency lo fa partire appena questo finisce)."
