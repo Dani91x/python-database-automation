@@ -59,6 +59,10 @@ export interface DelayResult {
     ultime_10_serie: number[];
     storico_serie: StoricoSerie[];
     run_sopra_media: RunSopraMedia[];
+    // COLONNA BL: ultime 10 voci dello stream "strisce sopra media" (0 = serie
+    // chiusa entro la media; N = striscia di N serie sopra media consecutive).
+    // Opzionale per retro-compatibilità con RPC non ancora ridistribuita.
+    ultime_10_strisce_sopra_media?: number[];
     series: DelayPoint[];
 }
 

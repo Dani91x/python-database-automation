@@ -10,11 +10,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     LineChart, Line, XAxis, YAxis, ReferenceLine,
-    ResponsiveContainer, Tooltip, CartesianGrid,
+    ResponsiveContainer, Tooltip as RechartsTooltip, CartesianGrid,
 } from 'recharts';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { Loader2, Hourglass, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Hourglass, AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import {
     DELAY_MARKETS, DelayMarketDef, DelayResult, LeagueSeason,
     fetchMarketDelays, fetchLeagueSeasons, formatSeason, targetLabel,
@@ -50,6 +51,50 @@ function StatCard({ label, value, sub, accent }: {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
     return <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">{children}</div>;
+}
+
+// Iconcina "i" con tooltip: spiega la sezione + cita le colonne del file Excel.
+function InfoHint({ text }: { text: React.ReactNode }) {
+    return (
+        <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Informazioni sulla sezione"
+                    className="text-muted-foreground/60 hover:text-primary transition-colors shrink-0"
+                >
+                    <Info className="w-3.5 h-3.5" />
+                </button>
+            </TooltipTrigger>
+            <TooltipContent
+                side="top"
+                className="max-w-[280px] bg-black/95 border border-white/10 text-white/90 text-[11px] leading-snug font-normal whitespace-normal shadow-2xl"
+            >
+                {text}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+// Titolo di sezione con iconcina "i" allineata.
+function SectionTitleInfo({ children, hint }: { children: React.ReactNode; hint: React.ReactNode }) {
+    return (
+        <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">{children}</span>
+            <InfoHint text={hint} />
+        </div>
+    );
+}
+
+// Intestazione di "banda" (area tematica): barra-accento + titolo + sottotitolo.
+function BandTitle({ title, sub, accent }: { title: string; sub?: string; accent: string }) {
+    return (
+        <div className="flex items-center gap-2.5 mt-2 mb-1">
+            <span className="h-4 w-1 rounded-full" style={{ backgroundColor: accent }} />
+            <span className="text-xs font-black uppercase tracking-wider text-white">{title}</span>
+            {sub && <span className="text-[11px] text-muted-foreground font-medium normal-case tracking-normal">· {sub}</span>}
+        </div>
+    );
 }
 
 // ---------------------------------------------------------------- tooltip grafico RIT
@@ -285,7 +330,7 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                                                         <XAxis dataKey="idx" tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="rgba(255,255,255,0.1)" />
                                                         <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="rgba(255,255,255,0.1)" allowDecimals={false} />
-                                                        <Tooltip content={<RitTooltip />} />
+                                                        <RechartsTooltip content={<RitTooltip />} />
                                                         {st.media_storica != null && (
                                                             <ReferenceLine y={st.media_storica} stroke="#60a5fa" strokeDasharray="4 4"
                                                                 label={{ value: 'media', fill: '#60a5fa', fontSize: 10, position: 'insideTopLeft' }} />
@@ -300,11 +345,19 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                             </div>
                                         </div>
 
-                                        {/* DISTRIBUZIONE SERIE + ULTIME 10 + < / > MEDIA */}
+                                        {/* ============================================================
+                                            PANORAMICA SERIE — tutte le serie chiuse (sia sotto sia sopra
+                                            media). Distribuzione (F/G/H) · Storico (BE/BF/BG) · Ultime10 (AZ)
+                                           ============================================================ */}
+                                        <BandTitle title="Panoramica serie" sub="tutte le serie chiuse" accent="#60a5fa" />
                                         <div className="grid md:grid-cols-2 gap-3">
                                             {/* DISTRIBUZIONE SERIE (F/G/H) */}
                                             <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitle>Distribuzione serie (F/G/H)</SectionTitle>
+                                                <SectionTitleInfo hint={<>
+                                                    <b>Colonne F / G / H.</b> Per ogni valore di ritardo:
+                                                    <br /><b>Occ. (SUC)</b> = quante serie si sono chiuse a quel ritardo;
+                                                    <br /><b>Cnt (RIT)</b> = quante partite hanno avuto quel ritardo. Vista grezza di tutte le serie.
+                                                </>}>Distribuzione serie <span className="text-muted-foreground/50 normal-case tracking-normal">· F/G/H</span></SectionTitleInfo>
                                                 <div className="max-h-56 overflow-y-auto">
                                                     <table className="w-full text-xs font-mono">
                                                         <thead className="text-muted-foreground text-[10px] uppercase">
@@ -323,9 +376,12 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                                 </div>
                                             </div>
 
-                                            {/* STORICO SERIE (% sulla serie) */}
+                                            {/* STORICO SERIE (BE/BF/BG) */}
                                             <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitle>Storico serie (% sulla serie)</SectionTitle>
+                                                <SectionTitleInfo hint={<>
+                                                    <b>Colonne BE / BF / BG.</b> Distribuzione di <b>tutte</b> le serie chiuse per durata:
+                                                    quante volte (Tot) e in % l'evento è uscito dopo N partite di attesa, dalla più frequente.
+                                                </>}>Storico serie <span className="text-muted-foreground/50 normal-case tracking-normal">· BE/BF/BG · % sulla serie</span></SectionTitleInfo>
                                                 <div className="max-h-56 overflow-y-auto">
                                                     <table className="w-full text-xs font-mono">
                                                         <thead className="text-muted-foreground text-[10px] uppercase">
@@ -345,54 +401,98 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                             </div>
                                         </div>
 
-                                        {/* ULTIME 10 SERIE + < / > MEDIA + RUN SOPRA MEDIA */}
+                                        {/* ULTIME 10 SERIE (AZ) */}
+                                        <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                            <SectionTitleInfo hint={<>
+                                                <b>Colonna AZ.</b> Dopo quante partite di attesa è uscito l'evento nelle <b>ultime 10 uscite</b>
+                                                (in ordine cronologico; l'ultimo = più recente). Solo serie chiuse: il ritardo attuale ancora aperto non è qui.
+                                            </>}>Ultime 10 serie <span className="text-muted-foreground/50 normal-case tracking-normal">· AZ</span></SectionTitleInfo>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {data.ultime_10_serie.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                                                {data.ultime_10_serie.map((v, i) => (
+                                                    <span key={`l10-${i}`} className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white">{v}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* ============================================================
+                                            ENTRO LA MEDIA (sotto, BI) · OLTRE LA MEDIA (sopra BJ, BL, run BT/BU/BV)
+                                           ============================================================ */}
                                         <div className="grid md:grid-cols-3 gap-3">
-                                            <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitle>Ultime 10 serie</SectionTitle>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {data.ultime_10_serie.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                                                    {data.ultime_10_serie.map((v, i) => (
-                                                        <span key={`l10-${i}`} className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white">{v}</span>
-                                                    ))}
+                                            {/* ----- ENTRO LA MEDIA ----- */}
+                                            <div className="md:col-span-1 space-y-3">
+                                                <BandTitle title="Entro la media" sub="ritardo ≤ media" accent="hsl(155 84% 42%)" />
+                                                <div className="glass-card rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonna BI.</b> Quante serie si sono chiuse <b>entro</b> la media ritardi (ritardo ≤ media),
+                                                        cioè l'evento è uscito "in orario". Sotto, la % sul totale delle uscite.
+                                                    </>}>Sotto media <span className="text-emerald-400/60 normal-case tracking-normal">· BI</span></SectionTitleInfo>
+                                                    <div className="text-3xl font-black font-mono text-emerald-400 leading-none">{st.sotto_media}</div>
+                                                    <div className="mt-1 text-xs text-muted-foreground">{pct(st.sotto_media_pct, 1)} delle uscite</div>
                                                 </div>
                                             </div>
 
-                                            <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitle>Sotto / Sopra media rit.</SectionTitle>
-                                                <div className="flex gap-2">
-                                                    <div className="flex-1 rounded-lg bg-emerald-500/5 border border-emerald-500/20 px-3 py-2">
-                                                        <div className="text-[10px] text-muted-foreground">≤ media</div>
-                                                        <div className="text-lg font-black font-mono text-emerald-400">{st.sotto_media}</div>
-                                                        <div className="text-[10px] text-muted-foreground">{pct(st.sotto_media_pct, 1)}</div>
+                                            {/* ----- OLTRE LA MEDIA ----- */}
+                                            <div className="md:col-span-2 space-y-3">
+                                                <BandTitle title="Oltre la media" sub="ritardo > media" accent="#f87171" />
+                                                <div className="grid sm:grid-cols-2 gap-3">
+                                                    {/* SOPRA MEDIA (BJ) */}
+                                                    <div className="glass-card rounded-xl border border-red-500/20 bg-red-500/5 p-3 md:p-4">
+                                                        <SectionTitleInfo hint={<>
+                                                            <b>Colonna BJ.</b> Quante serie si sono chiuse <b>oltre</b> la media ritardi (ritardo &gt; media),
+                                                            cioè l'evento ha tardato più della sua media. Sotto, la % sul totale.
+                                                        </>}>Sopra media <span className="text-red-400/60 normal-case tracking-normal">· BJ</span></SectionTitleInfo>
+                                                        <div className="text-3xl font-black font-mono text-red-400 leading-none">{st.sopra_media}</div>
+                                                        <div className="mt-1 text-xs text-muted-foreground">{pct(st.sopra_media_pct, 1)} delle uscite</div>
                                                     </div>
-                                                    <div className="flex-1 rounded-lg bg-red-500/5 border border-red-500/20 px-3 py-2">
-                                                        <div className="text-[10px] text-muted-foreground">&gt; media</div>
-                                                        <div className="text-lg font-black font-mono text-red-400">{st.sopra_media}</div>
-                                                        <div className="text-[10px] text-muted-foreground">{pct(st.sopra_media_pct, 1)}</div>
+
+                                                    {/* RUN SOPRA MEDIA (BT/BU/BV) */}
+                                                    <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                                        <SectionTitleInfo hint={<>
+                                                            <b>Colonne BT / BU / BV.</b> Quanto si <b>raggruppano</b> i ritardi lunghi:
+                                                            lunghezza delle strisce di serie sopra-media consecutive (Run), quante volte (N) e in %.
+                                                            Non conta i ritardi lunghi (quello è "Sopra media").
+                                                        </>}>Run sopra media <span className="text-muted-foreground/50 normal-case tracking-normal">· BT/BU/BV</span></SectionTitleInfo>
+                                                        <div className="max-h-40 overflow-y-auto">
+                                                            <table className="w-full text-xs font-mono">
+                                                                <thead className="text-muted-foreground text-[10px] uppercase">
+                                                                    <tr><th className="text-left py-1">Run</th><th className="text-right">N</th><th className="text-right">%</th></tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {data.run_sopra_media.length === 0 && (
+                                                                        <tr><td className="py-1 text-muted-foreground" colSpan={3}>—</td></tr>
+                                                                    )}
+                                                                    {data.run_sopra_media.map(r => (
+                                                                        <tr key={r.run_len} className="border-t border-white/5">
+                                                                            <td className="py-1 text-white/80">{r.run_len}</td>
+                                                                            <td className="text-right text-white">{r.count}</td>
+                                                                            <td className="text-right text-primary">{pct(r.pct, 1)}</td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitle>&gt; Media ritardi (run)</SectionTitle>
-                                                <div className="max-h-40 overflow-y-auto">
-                                                    <table className="w-full text-xs font-mono">
-                                                        <thead className="text-muted-foreground text-[10px] uppercase">
-                                                            <tr><th className="text-left py-1">Run</th><th className="text-right">N</th><th className="text-right">%</th></tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {data.run_sopra_media.length === 0 && (
-                                                                <tr><td className="py-1 text-muted-foreground" colSpan={3}>—</td></tr>
-                                                            )}
-                                                            {data.run_sopra_media.map(r => (
-                                                                <tr key={r.run_len} className="border-t border-white/5">
-                                                                    <td className="py-1 text-white/80">{r.run_len}</td>
-                                                                    <td className="text-right text-white">{r.count}</td>
-                                                                    <td className="text-right text-primary">{pct(r.pct, 1)}</td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
+                                                {/* ULTIME 10 STRISCE SOPRA MEDIA (BL) — indipendente da AZ */}
+                                                <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonna BL</b> (indipendente da AZ). Stream cronologico delle ultime 10 serie:
+                                                        <br /><b>0</b> = l'evento è uscito entro la media;
+                                                        <br /><b>N</b> = striscia di N ritardi sopra media consecutivi prima del rientro.
+                                                    </>}>Ultime 10 strisce sopra media <span className="text-muted-foreground/50 normal-case tracking-normal">· BL</span></SectionTitleInfo>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {(data.ultime_10_strisce_sopra_media ?? []).length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                                                        {(data.ultime_10_strisce_sopra_media ?? []).map((v, i) => (
+                                                            <span
+                                                                key={`bl-${i}`}
+                                                                className={`px-2 py-1 rounded-md border text-xs font-mono ${v > 0
+                                                                    ? 'bg-red-500/10 border-red-500/30 text-red-400 font-bold'
+                                                                    : 'bg-white/5 border-white/10 text-white/40'}`}
+                                                            >{v}</span>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

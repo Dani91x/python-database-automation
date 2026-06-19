@@ -25,7 +25,7 @@
 --   RITARDO ATTUALE = ultimo valore di RIT             -> da quante gare manca
 --   MEDIA RIT.      = AVERAGEIF(RIT, "<>0")
 --   distribuzione serie / ultime 10 serie / storico serie % /
---   conteggio < e > media / run sopra-media
+--   conteggio < e > media / run sopra-media / ultime 10 strisce sopra media (BL)
 --
 -- EQUIVALENZA SQL DELLA MACCHINA A STATI (verificata, vedi test offline):
 --   Sulla serie cronologica di esiti validi (idx = 1..M):
@@ -259,6 +259,22 @@ begin
     runs_hist as (
         select run_len, count(*)::int as cnt
         from runs_len group by run_len
+    ),
+    -- COLONNA BL del foglio ("ULTIME 10 SERIE" sopra media, indipendente da AZ):
+    -- stream cronologico delle serie chiuse, dove
+    --   serie chiusa SOTTO media (suc < media_rit) -> token 0  (pos = hit_seq)
+    --   striscia di serie consecutive SOPRA media   -> token = lunghezza striscia
+    --                                                  (pos = hit_seq di fine striscia)
+    -- = trascrizione 1:1 della colonna BR/BL (BP/BQ -> FILTER): soglia a PIENA
+    -- precisione (media_rit, come BP usa $C$7), non INT come sotto/sopra (BI/BJ).
+    bl_tokens as (
+        select h.hit_seq as ord, 0 as token
+        from hits h
+        where h.suc < (select media_rit from derived)
+        union all
+        select max(ri.hit_seq) as ord, count(*)::int as token
+        from runs_island ri
+        group by ri.island
     )
     select jsonb_build_object(
         'meta', jsonb_build_object(
@@ -308,6 +324,11 @@ begin
                        'pct', round(cnt::numeric / nullif((select sum(cnt) from runs_hist),0), 4))
                    order by run_len asc)
             from runs_hist), '[]'::jsonb),
+        -- COLONNA BL: ultime 10 voci del token-stream (cronologico, vecchia->recente)
+        'ultime_10_strisce_sopra_media', coalesce((
+            select jsonb_agg(token order by ord)
+            from (select token, ord from bl_tokens order by ord desc limit 10) t),
+            '[]'::jsonb),
         -- DATI MATCH grezzo (per il confronto 1:1 con il foglio): tutte le
         -- colonne del foglio, incluse W/L, RIT, SUC del mercato selezionato.
         'series', coalesce((
