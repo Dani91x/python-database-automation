@@ -2,7 +2,7 @@ name: Today Predictions Backfill
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '18 2 * * *'   # 02:18 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
   workflow_dispatch:
 
 jobs:

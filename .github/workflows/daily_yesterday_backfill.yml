@@ -2,7 +2,7 @@ name: Daily Yesterday Backfill
 
 on:
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '12 1 * * *'   # 01:12 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
   workflow_dispatch:
 
 jobs:

@@ -2,8 +2,8 @@ name: Predictions Results Backfill
 
 on:
   schedule:
-    # Esegue ogni giorno alle 03:00 UTC (04:00 ora italiana invernale)
-    - cron: '0 3 * * *'
+    # Esegue ogni giorno alle 03:23 UTC (minuto off-peak: parte vicino all'orario, non in fila a :00)
+    - cron: '23 3 * * *'
   workflow_dispatch:
 
 jobs:

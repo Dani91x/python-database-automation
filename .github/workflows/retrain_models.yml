@@ -46,6 +46,13 @@ on:
   workflow_run:
     workflows: ["Daily Yesterday Backfill"]
     types: [completed]
+  # FALLBACK GIORNALIERO (gated): rete di sicurezza se l'evento workflow_run si
+  # perde (raro ma capita su GitHub). NON e' polling "a caso": e' UN solo check al
+  # giorno e, grazie al gate, se non c'e' lavoro skippa in ~30s senza accendere
+  # shard. 08:19 UTC = dopo che il backfill (01:12) e' sicuramente finito, anche
+  # con ritardi. Minuto off-peak per non finire in fila a :00.
+  schedule:
+    - cron: "19 8 * * *"
   workflow_dispatch:
     inputs:
       total_shards:
@@ -88,7 +95,7 @@ jobs:
     # Su workflow_run parte SOLO se il backfill a monte e' andato a buon fine
     # (inutile ricontrollare se l'ingest dei risultati e' fallito). I run manuali
     # (workflow_dispatch) passano sempre.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     outputs:
