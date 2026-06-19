@@ -30,21 +30,22 @@ name: Retrain ML Models (cloud, all leagues)
 
 on:
   # ───────────────────────────────────────────────────────────────────────────
-  # CAMPAGNA NUOVA METODOLOGIA (2026-06-15): storico PIENO + regolarizzazione, su
-  # TUTTE le leghe con >=50 partite totali. Cron progressivo "4h lavoro + 30min
-  # riposo" autonomo fino a convergenza (planner ritorna da_fare=0).
+  # TRIGGER EVENT-DRIVEN (2026-06-19): la campagna di massa e' CONVERSA, si passa
+  # alla MANUTENZIONE INCREMENTALE. I risultati settlati entrano nel DB UNA volta
+  # al giorno (workflow "Daily Yesterday Backfill", cron 0 1 * * *), quindi non ha
+  # senso pollare "ogni 4h a caso": tra un backfill e l'altro non c'e' nulla di
+  # nuovo da addestrare.
   #
-  # COME FUNZIONA L'AUTO-RIATTIVAZIONE (identica logica gentile di prima, 3 shard,
-  # 1 lega/shard, probe DB): il time-budget interno ferma le NUOVE leghe dopo 240
-  # min (4h), l'ultima lega in corso finisce, il run esce. Il cron sotto rilancia
-  # ~30 min dopo (slot a ~4h30). concurrency serializza eventuali sovrapposizioni.
+  # Percio' il retrain si aggancia alla FINE di quel backfill (workflow_run): gira
+  # UNA volta, il job `plan` esegue il planner e — se NESSUNA lega ha accumulato
+  # >=1 giornata di partite nuove (soglia adattiva max(10, squadre/2) nella RPC
+  # leagues_needing_retrain) — SALTA del tutto gli shard di training (has_work=false).
+  # Cosi' gli allenamenti partono SOLO quando c'e' lavoro vero.
   #
-  # SCHEDULE ATTIVO (2026-06-15, ok utente dopo smoke test): campagna autonoma
-  # "4h lavoro + ~30min riposo". Slot UTC ogni ~4h30. Per fermare: commentare
-  # queste righe (o `gh workflow disable retrain_models.yml`).
-  schedule:
-    - cron: "0 0,9,18 * * *"    # 00:00, 09:00, 18:00 UTC
-    - cron: "30 4,13,22 * * *"  # 04:30, 13:30, 22:30 UTC
+  # workflow_dispatch resta per i run manuali (override leghe / campagne cutoff).
+  workflow_run:
+    workflows: ["Daily Yesterday Backfill"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       total_shards:
@@ -72,6 +73,10 @@ on:
         description: "Stagioni di training per lega. 20 = STORICO PIENO (max 17 stagioni nel DB): massima profondita' di dati, fix overfitting."
         default: "20"
         required: true
+      chain_depth:
+        description: "USO INTERNO (auto-chain): profondita' della catena di run. Lascia 0 per i run manuali. Il job rechain lo incrementa quando rilancia per smaltire le leghe rimaste oltre il time-budget."
+        default: "0"
+        required: false
 
 # Mai due campagne sovrapposte: un run nuovo attende la fine di quello in corso.
 concurrency:
@@ -80,13 +85,71 @@ concurrency:
 
 jobs:
   plan:
+    # Su workflow_run parte SOLO se il backfill a monte e' andato a buon fine
+    # (inutile ricontrollare se l'ingest dei risultati e' fallito). I run manuali
+    # (workflow_dispatch) passano sempre.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     outputs:
       shards: ${{ steps.gen.outputs.shards }}
+      has_work: ${{ steps.gate.outputs.has_work }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install planner deps (leggere, niente training stack)
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase==2.28.0 python-dotenv
+
+      - name: Planner gate (allena solo se c'e' >=1 giornata di partite nuove)
+        id: gate
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          USE_PLANNER: ${{ inputs.use_planner || 'true' }}
+          LEAGUES_INPUT: ${{ inputs.leagues || '' }}
+          # 1 giornata = 10 partite (regola utente 2026-06-19). La RPC alza poi la
+          # soglia per-lega a max(10, squadre/2): leghe grandi => piu' segnale.
+          RETRAIN_INCREMENTAL_MIN_NEW: "10"
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python - <<'PY'
+          import os
+          leagues = os.environ.get("LEAGUES_INPUT", "").strip()
+          use_planner = os.environ.get("USE_PLANNER", "true").lower() == "true"
+          # Override manuale (leghe esplicite o planner OFF): rispetta l'intento
+          # dell'utente, niente gate — si allena comunque.
+          if not use_planner or leagues:
+              print(f"[GATE] override manuale (leagues='{leagues}', use_planner={use_planner}): training forzato.")
+              has_work = True
+          else:
+              from training_planner import select_leagues_to_train
+              plan = select_leagues_to_train()
+              n = len(plan["todo"])
+              has_work = n > 0
+              print(f"[GATE] mode={plan['mode']} | da_fare={n} "
+                    f"(missing={len(plan['missing'])}, stale={len(plan['stale'])}, "
+                    f"incremental={len(plan['incremental'])}) | "
+                    f"gia_fresche={plan['fresh_count']} | universe={plan['universe']}")
+              print(f"[GATE] prime 30 da fare: {plan['todo'][:30]}")
+          verdict = "true" if has_work else "false"
+          print(f"[GATE] has_work={verdict}"
+                + ("" if has_work else "  => NESSUNA lega con >=1 giornata nuova: salto il training."))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"has_work={verdict}\n")
+          PY
+
       - name: Genera matrice shard
         id: gen
+        if: steps.gate.outputs.has_work == 'true'
         env:
           TOTAL_SHARDS: ${{ inputs.total_shards || '5' }}
         run: |
@@ -96,6 +159,9 @@ jobs:
 
   train:
     needs: plan
+    # GATE: gli shard di training partono SOLO se il planner ha trovato lavoro
+    # (>=1 lega con >=1 giornata di partite nuove). Altrimenti il run finisce qui.
+    if: needs.plan.outputs.has_work == 'true'
     runs-on: ubuntu-latest
     # Rete di sicurezza. Il time-budget interno (240 min = 4h) ferma le NUOVE
     # leghe; l'ultima in corso finisce. Con lo STORICO PIENO una lega grande e'
@@ -195,3 +261,75 @@ jobs:
           path: retrain_log_*.txt
           if-no-files-found: ignore
           retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # AUTO-CHAIN: smaltisce TUTTE le leghe del giorno, anche oltre il time-budget.
+  # Quando il train job finisce (avendo allenato quante leghe stavano nelle 4h),
+  # questo job rigira il planner: se restano ancora leghe con >=1 giornata nuova,
+  # RILANCIA il workflow (workflow_dispatch via GITHUB_TOKEN). La concurrency
+  # 'retrain-models' serializza => il nuovo run parte appena questo finisce: 5
+  # shard -> 4h -> stop (finendo le leghe in corso) -> riparte, finche' la coda
+  # del giorno e' vuota. Poi ogni giorno il backfill riavvia il ciclo.
+  #
+  # TERMINAZIONE: si ferma quando il planner ritorna 0 da fare (tutto addestrato).
+  # FRENO ANTI-LOOP: MAX_CHAIN giri/giorno. Se dopo MAX_CHAIN restano ancora leghe
+  # sono probabilmente "stuck" (il training non produce modello => trained_at non
+  # avanza => restano selezionate): le logghiamo e ci fermiamo (riprese domani).
+  # Cosi' una lega rotta non puo' far girare la catena — e bruciare runner — all'infinito.
+  rechain:
+    needs: [plan, train]
+    # Solo se abbiamo davvero allenato qualcosa (train NON skippato). always() per
+    # rilanciare anche se qualche shard e' fallito: le altre leghe vanno avanti.
+    if: ${{ always() && needs.plan.outputs.has_work == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      actions: write      # necessario a `gh workflow run` per rilanciare
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install planner deps (leggere, niente training stack)
+        run: |
+          python -m pip install --upgrade pip
+          pip install supabase==2.28.0 python-dotenv
+
+      - name: Rilancia se restano leghe del giorno (auto-chain)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RETRAIN_INCREMENTAL_MIN_NEW: "10"
+          CHAIN_DEPTH: ${{ inputs.chain_depth || '0' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: "1"
+        run: |
+          MAX_CHAIN=8
+          python - <<'PY'
+          from training_planner import select_leagues_to_train
+          p = select_leagues_to_train()
+          todo = p["todo"]
+          print(f"[RECHAIN] mode={p['mode']} | restano={len(todo)} -> {todo[:50]}")
+          with open("remaining_count.txt", "w") as f:
+              f.write(str(len(todo)))
+          PY
+          REMAINING=$(cat remaining_count.txt)
+          echo "[RECHAIN] leghe rimaste=$REMAINING | chain_depth=$CHAIN_DEPTH | max=$MAX_CHAIN"
+          if [ "$REMAINING" -eq 0 ]; then
+            echo "[RECHAIN] OK: tutte le leghe del giorno sono addestrate. Stop."
+            exit 0
+          fi
+          NEXT=$((CHAIN_DEPTH + 1))
+          if [ "$NEXT" -ge "$MAX_CHAIN" ]; then
+            echo "[RECHAIN] ATTENZIONE: raggiunto il cap di $MAX_CHAIN giri ma restano $REMAINING leghe (probabili 'stuck')."
+            echo "[RECHAIN] Mi fermo: verranno riprese al prossimo backfill. Se sono sempre le stesse, valuta la blacklist."
+            exit 0
+          fi
+          echo "[RECHAIN] Restano $REMAINING leghe: rilancio il workflow (giro $NEXT/$MAX_CHAIN)."
+          gh workflow run retrain_models.yml -f chain_depth="$NEXT"

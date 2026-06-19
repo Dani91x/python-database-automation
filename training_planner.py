@@ -58,7 +58,18 @@ DEFAULT_LAST_N = 3  # mantenuto per retrocompat firma; l'eleggibilita' usa il TO
 # REGOLA UTENTE 2026-06-15: l'UNICO criterio di esclusione e' <50 partite totali.
 # Niente blacklist per "dati vecchi": con lo storico pieno si addestra comunque.
 # Resta solo l'override additivo via env RETRAIN_BLACKLIST (per emergenze manuali).
-DEFAULT_BLACKLIST = frozenset()
+#
+# ECCEZIONE 2026-06-19 (4 leghe ZOMBIE): queste 4 superano il filtro >=50 partite
+# ma il training non produce MAI un modello — la partita piu' recente e' vecchia
+# di ~1,5 anni e ogni target viene scartato ("insufficient data after temporal
+# split" / "min class count < 2"). Senza escluderle restano per sempre in
+# `missing`, quindi `todo` (cutoff) non e' MAI vuoto e il planner non passa mai in
+# modalita' incrementale => il cron continuerebbe a lanciare gli shard a vuoto ad
+# ogni run per ri-tentarle. Escludendole la campagna CONVERGE e il gate del
+# workflow (allena solo se ci sono leghe con >=1 giornata di partite nuove) puo'
+# finalmente skippare i run senza lavoro. Verificate sul campo (run 27804938284,
+# 0 modelli prodotti ripetutamente): 997, 1153, 1161, 1202.
+DEFAULT_BLACKLIST = frozenset({997, 1153, 1161, 1202})
 
 _PAGE = 1000
 
