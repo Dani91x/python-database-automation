@@ -36,6 +36,9 @@ export interface DelayStats {
     sotto_media_pct: number | null;
     sopra_media_pct: number | null;
     rit_vs_media: number | null;     // ritardo attuale / media storica
+    // valore di condizionamento dello storico (AZ13 = ultimo SUC): lo
+    // storico_serie elenca cosa è uscito DOPO una serie di questa lunghezza.
+    storico_cond_su?: number | null;
 }
 
 export interface SerieLen { len: number; occ_suc: number; cnt_rit: number }

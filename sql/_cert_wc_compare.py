@@ -18,7 +18,9 @@ Formule del foglio riprodotte (verificate sui dump del workbook):
   C6 MEDIA RIT.      = AVERAGEIF(RIT, "<>0")
   F/G/H              = k ; COUNTIF(SUC,k) ; COUNTIF(RIT,k)
   ULTIME 10 SERIE    = ultimi 10 SUC (cronologici)
-  STORICO SERIE      = SUC distinti ord. per COUNTIF desc (tie: valore asc); % = cnt/n_occ
+  STORICO SERIE      = CONDIZIONATO (BB/BC/BD/BE/BF/BG): successori delle serie di
+                       lunghezza = ultimo SUC (AZ13); ord. per COUNTIF desc (tie len asc);
+                       % = cnt / totale successori (|BD3|)
   < / > MEDIA RIT    = COUNTIF(SUC,"<="&INT(C6)) ; COUNTIF(SUC,">="&INT(C6)+1)
   RUN SOPRA MEDIA    = run consecutivi di SUC>=C6 ; istogramma lunghezze ; % = cnt/tot_run
 """
@@ -93,12 +95,19 @@ def oracle(events, market, target):
 
     ultime10 = suc[-10:]  # cronologici
 
-    # storico serie: distinti ord. per count desc, tie valore asc
+    # storico serie CONDIZIONATO (colonne BB/BC/BD/BE/BF/BG del foglio):
+    # successori delle serie la cui lunghezza = ultimo SUC (AZ13). Cioe' "dato il
+    # ritardo attuale, storicamente quale ritardo e' uscito subito dopo".
+    # % = conteggio / totale successori (|BD3|), ord. per count desc, tie len asc.
+    cond_su = suc[-1] if suc else None
+    bd = ([suc[i + 1] for i in range(len(suc) - 1) if suc[i] == cond_su]
+          if cond_su is not None else [])
     cnts = {}
-    for s in suc:
-        cnts[s] = cnts.get(s, 0) + 1
+    for v in bd:
+        cnts[v] = cnts.get(v, 0) + 1
+    tot_bd = len(bd)
     storico = sorted(cnts.items(), key=lambda kv: (-kv[1], kv[0]))
-    storico = [{"len": k, "count": c, "pct": (c / n_occ) if n_occ else None} for k, c in storico]
+    storico = [{"len": k, "count": c, "pct": (c / tot_bd) if tot_bd else None} for k, c in storico]
 
     # run sopra media: run consecutivi di SUC>=media_rit
     runs, cur = [], 0
@@ -135,7 +144,8 @@ def oracle(events, market, target):
     return dict(n_occ=n_occ, n_eff=M, frequency=frequency, media_storica=media_storica,
                 ritardo_attuale=ritardo_attuale, record=record, media_rit=media_rit,
                 sotto=sotto, sopra=sopra, distrib=distrib, ultime10=ultime10,
-                storico=storico, run_hist=run_hist, bl_ultime10=bl_ultime10)
+                storico=storico, storico_cond_su=cond_su, run_hist=run_hist,
+                bl_ultime10=bl_ultime10)
 
 
 # ----------------------------------------------------- confronto helpers
@@ -170,11 +180,13 @@ def compare(market, target, orc, rpc):
     # ultime 10
     if orc["ultime10"] != list(rpc["ultime_10_serie"]):
         m.append(f"ultime10 {orc['ultime10']} vs {rpc['ultime_10_serie']}")
-    # storico serie
+    # storico serie CONDIZIONATO (BE/BF/BG) + valore di condizionamento (AZ13)
     rs = [(s["len"], s["count"]) for s in rpc["storico_serie"]]
     os_ = [(s["len"], s["count"]) for s in orc["storico"]]
     if os_ != rs:
         m.append(f"storico {os_} vs {rs}")
+    if orc["storico_cond_su"] != st.get("storico_cond_su"):
+        m.append(f"storico_cond_su {orc['storico_cond_su']} vs {st.get('storico_cond_su')}")
     # run sopra media
     rr_ = [(r["run_len"], r["count"]) for r in rpc["run_sopra_media"]]
     or_ = [(r["run_len"], r["count"]) for r in orc["run_hist"]]

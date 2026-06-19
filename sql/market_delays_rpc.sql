@@ -226,10 +226,26 @@ begin
         select suc, hit_idx
         from hits order by hit_idx desc limit 10
     ),
-    -- storico serie: lunghezze ordinate per frequenza (la piu' comune in testa)
+    -- STORICO SERIE (colonne BB/BC/BD/BE/BF/BG del foglio) = distribuzione
+    -- CONDIZIONATA: BB/BC formano le coppie (serie_i, serie_i+1); BD filtra i
+    -- "successori" delle serie la cui lunghezza = $AZ$13 (l'ULTIMO SUC, cioe' il
+    -- ritardo dell'ultima uscita); BE/BF/BG = frequenza di quei successori.
+    -- Significato: "dato il ritardo attuale, storicamente quale ritardo e'
+    -- uscito SUBITO DOPO". % = conteggio / totale successori (|BD3|).
+    cond_last as (
+        select suc as last_suc from hits order by hit_seq desc limit 1
+    ),
+    cond_pairs as (
+        select h.suc as cur, lead(h.suc) over (order by h.hit_seq) as nxt
+        from hits h
+    ),
     storico as (
-        select suc as len, count(*)::int as cnt
-        from hits group by suc
+        -- cond_last ha 0 o 1 riga: il join-virgola e' un INNER JOIN (1 riga) o
+        -- restituisce 0 righe se non ci sono hit (n_occ=0) -> storico vuoto.
+        select cp.nxt as len, count(*)::int as cnt
+        from cond_pairs cp, cond_last cl
+        where cp.cur = cl.last_suc and cp.nxt is not null
+        group by cp.nxt
     ),
     -- conteggio occorrenze sotto / sopra la media ritardi (su INT(media)).
     -- media_rit (scalar, 1 sola riga in derived) valutata una volta sola.
@@ -305,17 +321,21 @@ begin
             'sopra_media_pct',  case when d.n_occ>0 then round(ou.sopra::numeric/d.n_occ,4) end,
             -- ritardo attuale vs media storica: il segnale "intercetta ritardo"
             'rit_vs_media',     case when d.media_storica>0
-                                     then round(d.ritardo_attuale::numeric/d.media_storica,3) end
+                                     then round(d.ritardo_attuale::numeric/d.media_storica,3) end,
+            -- valore di condizionamento dello storico (AZ13 = ultimo SUC):
+            -- lo storico_serie mostra cosa e' uscito DOPO una serie di questa lunghezza
+            'storico_cond_su',  (select last_suc from cond_last)
         ),
         'distribuzione_serie', coalesce((
             select jsonb_agg(jsonb_build_object('len',len,'occ_suc',occ_suc,'cnt_rit',cnt_rit) order by len)
             from distrib), '[]'::jsonb),
         'ultime_10_serie', coalesce((
             select jsonb_agg(suc order by hit_idx) from last10), '[]'::jsonb),
+        -- storico CONDIZIONATO (BE/BF/BG): % sul totale dei successori (|BD3|)
         'storico_serie', coalesce((
             select jsonb_agg(jsonb_build_object(
                        'len', len, 'count', cnt,
-                       'pct', case when d.n_occ>0 then round(cnt::numeric/d.n_occ,4) end)
+                       'pct', round(cnt::numeric / nullif((select sum(cnt) from storico),0), 4))
                    order by cnt desc, len asc)
             from storico), '[]'::jsonb),
         'run_sopra_media', coalesce((

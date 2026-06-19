@@ -346,82 +346,44 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                         </div>
 
                                         {/* ============================================================
-                                            PANORAMICA SERIE — tutte le serie chiuse (sia sotto sia sopra
-                                            media). Distribuzione (F/G/H) · Storico (BE/BF/BG) · Ultime10 (AZ)
+                                            DISTRIBUZIONE (F/G/H) — distribuzione GLOBALE di tutte le serie
+                                            (vale sia sotto sia sopra media). A tutta larghezza, in cima.
                                            ============================================================ */}
-                                        <BandTitle title="Panoramica serie" sub="tutte le serie chiuse" accent="#60a5fa" />
-                                        <div className="grid md:grid-cols-2 gap-3">
-                                            {/* DISTRIBUZIONE SERIE (F/G/H) */}
-                                            <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitleInfo hint={<>
-                                                    <b>Colonne F / G / H.</b> Per ogni valore di ritardo:
-                                                    <br /><b>Occ. (SUC)</b> = quante serie si sono chiuse a quel ritardo;
-                                                    <br /><b>Cnt (RIT)</b> = quante partite hanno avuto quel ritardo. Vista grezza di tutte le serie.
-                                                </>}>Distribuzione serie <span className="text-muted-foreground/50 normal-case tracking-normal">· F/G/H</span></SectionTitleInfo>
-                                                <div className="max-h-56 overflow-y-auto">
-                                                    <table className="w-full text-xs font-mono">
-                                                        <thead className="text-muted-foreground text-[10px] uppercase">
-                                                            <tr><th className="text-left py-1">Valore</th><th className="text-right">Occ. (SUC)</th><th className="text-right">Cnt (RIT)</th></tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {data.distribuzione_serie.map(d => (
-                                                                <tr key={d.len} className="border-t border-white/5">
-                                                                    <td className="py-1 text-white/80">{d.len}</td>
-                                                                    <td className="text-right text-white">{d.occ_suc}</td>
-                                                                    <td className="text-right text-white/60">{d.cnt_rit}</td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-
-                                            {/* STORICO SERIE (BE/BF/BG) */}
-                                            <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                <SectionTitleInfo hint={<>
-                                                    <b>Colonne BE / BF / BG.</b> Distribuzione di <b>tutte</b> le serie chiuse per durata:
-                                                    quante volte (Tot) e in % l'evento è uscito dopo N partite di attesa, dalla più frequente.
-                                                </>}>Storico serie <span className="text-muted-foreground/50 normal-case tracking-normal">· BE/BF/BG · % sulla serie</span></SectionTitleInfo>
-                                                <div className="max-h-56 overflow-y-auto">
-                                                    <table className="w-full text-xs font-mono">
-                                                        <thead className="text-muted-foreground text-[10px] uppercase">
-                                                            <tr><th className="text-left py-1">Lung.</th><th className="text-right">Tot</th><th className="text-right">%</th></tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {data.storico_serie.map(s => (
-                                                                <tr key={s.len} className="border-t border-white/5">
-                                                                    <td className="py-1 text-white/80">{s.len}</td>
-                                                                    <td className="text-right text-white">{s.count}</td>
-                                                                    <td className="text-right text-primary">{pct(s.pct, 1)}</td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* ULTIME 10 SERIE (AZ) */}
                                         <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
                                             <SectionTitleInfo hint={<>
-                                                <b>Colonna AZ.</b> Dopo quante partite di attesa è uscito l'evento nelle <b>ultime 10 uscite</b>
-                                                (in ordine cronologico; l'ultimo = più recente). Solo serie chiuse: il ritardo attuale ancora aperto non è qui.
-                                            </>}>Ultime 10 serie <span className="text-muted-foreground/50 normal-case tracking-normal">· AZ</span></SectionTitleInfo>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {data.ultime_10_serie.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
-                                                {data.ultime_10_serie.map((v, i) => (
-                                                    <span key={`l10-${i}`} className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white">{v}</span>
-                                                ))}
+                                                <b>Colonne F / G / H.</b> Distribuzione di <b>tutte</b> le serie:
+                                                <br /><b>Occ. (SUC)</b> = quante serie si sono chiuse a quel ritardo;
+                                                <br /><b>Cnt (RIT)</b> = quante partite hanno avuto quel ritardo. Vale sia sotto sia sopra media.
+                                            </>}>Distribuzione serie <span className="text-muted-foreground/50 normal-case tracking-normal">· F/G/H · tutte le serie</span></SectionTitleInfo>
+                                            <div className="max-h-44 overflow-y-auto">
+                                                <table className="w-full text-xs font-mono">
+                                                    <thead className="text-muted-foreground text-[10px] uppercase sticky top-0 bg-black/80">
+                                                        <tr><th className="text-left py-1">Valore</th><th className="text-right">Occ. (SUC)</th><th className="text-right">Cnt (RIT)</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {data.distribuzione_serie.map(d => (
+                                                            <tr key={d.len} className="border-t border-white/5">
+                                                                <td className="py-1 text-white/80">{d.len}</td>
+                                                                <td className="text-right text-white">{d.occ_suc}</td>
+                                                                <td className="text-right text-white/60">{d.cnt_rit}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
 
                                         {/* ============================================================
-                                            ENTRO LA MEDIA (sotto, BI) · OLTRE LA MEDIA (sopra BJ, BL, run BT/BU/BV)
+                                            DUE AREE AFFIANCATE, perfettamente divise:
+                                            SOTTO MEDIA (BI · AZ · BE/BF/BG)  |  SOPRA MEDIA (BJ · BL · BT/BU/BV)
                                            ============================================================ */}
-                                        <div className="grid md:grid-cols-3 gap-3">
-                                            {/* ----- ENTRO LA MEDIA ----- */}
-                                            <div className="md:col-span-1 space-y-3">
-                                                <BandTitle title="Entro la media" sub="ritardo ≤ media" accent="hsl(155 84% 42%)" />
+                                        <div className="grid md:grid-cols-2 gap-4 items-start">
+
+                                            {/* ===================== SOTTO LA MEDIA ===================== */}
+                                            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] p-3 md:p-4 space-y-3">
+                                                <BandTitle title="Sotto la media" sub="esce in orario o prima · BI · AZ · BE/BF/BG" accent="hsl(155 84% 42%)" />
+
+                                                {/* SOTTO MEDIA — conteggio (BI) */}
                                                 <div className="glass-card rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 md:p-4">
                                                     <SectionTitleInfo hint={<>
                                                         <b>Colonna BI.</b> Quante serie si sono chiuse <b>entro</b> la media ritardi (ritardo ≤ media),
@@ -430,58 +392,75 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                                     <div className="text-3xl font-black font-mono text-emerald-400 leading-none">{st.sotto_media}</div>
                                                     <div className="mt-1 text-xs text-muted-foreground">{pct(st.sotto_media_pct, 1)} delle uscite</div>
                                                 </div>
-                                            </div>
 
-                                            {/* ----- OLTRE LA MEDIA ----- */}
-                                            <div className="md:col-span-2 space-y-3">
-                                                <BandTitle title="Oltre la media" sub="ritardo > media" accent="#f87171" />
-                                                <div className="grid sm:grid-cols-2 gap-3">
-                                                    {/* SOPRA MEDIA (BJ) */}
-                                                    <div className="glass-card rounded-xl border border-red-500/20 bg-red-500/5 p-3 md:p-4">
-                                                        <SectionTitleInfo hint={<>
-                                                            <b>Colonna BJ.</b> Quante serie si sono chiuse <b>oltre</b> la media ritardi (ritardo &gt; media),
-                                                            cioè l'evento ha tardato più della sua media. Sotto, la % sul totale.
-                                                        </>}>Sopra media <span className="text-red-400/60 normal-case tracking-normal">· BJ</span></SectionTitleInfo>
-                                                        <div className="text-3xl font-black font-mono text-red-400 leading-none">{st.sopra_media}</div>
-                                                        <div className="mt-1 text-xs text-muted-foreground">{pct(st.sopra_media_pct, 1)} delle uscite</div>
+                                                {/* ULTIME 10 SERIE (AZ) */}
+                                                <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonna AZ.</b> Dopo quante partite di attesa è uscito l'evento nelle <b>ultime 10 uscite</b>
+                                                        (cronologico; l'ultimo = più recente). Solo serie chiuse: il ritardo attuale ancora aperto non è qui.
+                                                    </>}>Ultime 10 serie <span className="text-muted-foreground/50 normal-case tracking-normal">· AZ</span></SectionTitleInfo>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {data.ultime_10_serie.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
+                                                        {data.ultime_10_serie.map((v, i) => (
+                                                            <span key={`l10-${i}`} className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-white">{v}</span>
+                                                        ))}
                                                     </div>
+                                                </div>
 
-                                                    {/* RUN SOPRA MEDIA (BT/BU/BV) */}
-                                                    <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
-                                                        <SectionTitleInfo hint={<>
-                                                            <b>Colonne BT / BU / BV.</b> Quanto si <b>raggruppano</b> i ritardi lunghi:
-                                                            lunghezza delle strisce di serie sopra-media consecutive (Run), quante volte (N) e in %.
-                                                            Non conta i ritardi lunghi (quello è "Sopra media").
-                                                        </>}>Run sopra media <span className="text-muted-foreground/50 normal-case tracking-normal">· BT/BU/BV</span></SectionTitleInfo>
-                                                        <div className="max-h-40 overflow-y-auto">
+                                                {/* STORICO SERIE condizionato (BE/BF/BG) */}
+                                                <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonne BE / BF / BG.</b> <b>Condizionato</b> sull'ultimo ritardo ($AZ$13):
+                                                        dato un ritardo come l'attuale, storicamente quale ritardo è uscito <b>subito dopo</b>.
+                                                        Tot e % sui soli successori. Vuoto se quel ritardo non aveva precedenti con un seguito.
+                                                    </>}>Storico serie <span className="text-muted-foreground/50 normal-case tracking-normal">· BE/BF/BG · condizionato</span></SectionTitleInfo>
+                                                    <div className="text-[11px] text-muted-foreground mb-1.5">
+                                                        dopo un ritardo di <span className="font-mono text-white font-bold">{st.storico_cond_su ?? '—'}</span> partite, storicamente è uscito dopo:
+                                                    </div>
+                                                    {data.storico_serie.length === 0 ? (
+                                                        <div className="text-xs text-muted-foreground italic">Nessun precedente: questo ritardo non si era mai chiuso prima con un seguito.</div>
+                                                    ) : (
+                                                        <div className="max-h-44 overflow-y-auto">
                                                             <table className="w-full text-xs font-mono">
-                                                                <thead className="text-muted-foreground text-[10px] uppercase">
-                                                                    <tr><th className="text-left py-1">Run</th><th className="text-right">N</th><th className="text-right">%</th></tr>
+                                                                <thead className="text-muted-foreground text-[10px] uppercase sticky top-0 bg-black/80">
+                                                                    <tr><th className="text-left py-1">Lung.</th><th className="text-right">Tot</th><th className="text-right">%</th></tr>
                                                                 </thead>
                                                                 <tbody>
-                                                                    {data.run_sopra_media.length === 0 && (
-                                                                        <tr><td className="py-1 text-muted-foreground" colSpan={3}>—</td></tr>
-                                                                    )}
-                                                                    {data.run_sopra_media.map(r => (
-                                                                        <tr key={r.run_len} className="border-t border-white/5">
-                                                                            <td className="py-1 text-white/80">{r.run_len}</td>
-                                                                            <td className="text-right text-white">{r.count}</td>
-                                                                            <td className="text-right text-primary">{pct(r.pct, 1)}</td>
+                                                                    {data.storico_serie.map(s => (
+                                                                        <tr key={s.len} className="border-t border-white/5">
+                                                                            <td className="py-1 text-white/80">{s.len}</td>
+                                                                            <td className="text-right text-white">{s.count}</td>
+                                                                            <td className="text-right text-primary">{pct(s.pct, 1)}</td>
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
                                                             </table>
                                                         </div>
-                                                    </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* ===================== SOPRA LA MEDIA ===================== */}
+                                            <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.03] p-3 md:p-4 space-y-3">
+                                                <BandTitle title="Sopra la media" sub="tarda più del solito · BJ · BL · BT/BU/BV" accent="#f87171" />
+
+                                                {/* SOPRA MEDIA — conteggio (BJ) */}
+                                                <div className="glass-card rounded-xl border border-red-500/20 bg-red-500/5 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonna BJ.</b> Quante serie si sono chiuse <b>oltre</b> la media ritardi (ritardo &gt; media),
+                                                        cioè l'evento ha tardato più della sua media. Sotto, la % sul totale delle uscite.
+                                                    </>}>Sopra media <span className="text-red-400/60 normal-case tracking-normal">· BJ</span></SectionTitleInfo>
+                                                    <div className="text-3xl font-black font-mono text-red-400 leading-none">{st.sopra_media}</div>
+                                                    <div className="mt-1 text-xs text-muted-foreground">{pct(st.sopra_media_pct, 1)} delle uscite</div>
                                                 </div>
 
-                                                {/* ULTIME 10 STRISCE SOPRA MEDIA (BL) — indipendente da AZ */}
+                                                {/* ULTIME 10 STRISCE SOPRA MEDIA (BL) */}
                                                 <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
                                                     <SectionTitleInfo hint={<>
                                                         <b>Colonna BL</b> (indipendente da AZ). Stream cronologico delle ultime 10 serie:
                                                         <br /><b>0</b> = l'evento è uscito entro la media;
                                                         <br /><b>N</b> = striscia di N ritardi sopra media consecutivi prima del rientro.
-                                                    </>}>Ultime 10 strisce sopra media <span className="text-muted-foreground/50 normal-case tracking-normal">· BL</span></SectionTitleInfo>
+                                                    </>}>Ultime 10 strisce <span className="text-muted-foreground/50 normal-case tracking-normal">· BL</span></SectionTitleInfo>
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {(data.ultime_10_strisce_sopra_media ?? []).length === 0 && <span className="text-xs text-muted-foreground">—</span>}
                                                         {(data.ultime_10_strisce_sopra_media ?? []).map((v, i) => (
@@ -492,6 +471,34 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                                                     : 'bg-white/5 border-white/10 text-white/40'}`}
                                                             >{v}</span>
                                                         ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* RUN SOPRA MEDIA (BT/BU/BV) */}
+                                                <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
+                                                    <SectionTitleInfo hint={<>
+                                                        <b>Colonne BT / BU / BV.</b> Quanto si <b>raggruppano</b> i ritardi lunghi:
+                                                        lunghezza delle strisce di serie sopra-media consecutive (Run), quante volte (N) e in %.
+                                                        Non conta i ritardi lunghi (quello è "Sopra media").
+                                                    </>}>Run sopra media <span className="text-muted-foreground/50 normal-case tracking-normal">· BT/BU/BV</span></SectionTitleInfo>
+                                                    <div className="max-h-44 overflow-y-auto">
+                                                        <table className="w-full text-xs font-mono">
+                                                            <thead className="text-muted-foreground text-[10px] uppercase sticky top-0 bg-black/80">
+                                                                <tr><th className="text-left py-1">Run</th><th className="text-right">N</th><th className="text-right">%</th></tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {data.run_sopra_media.length === 0 && (
+                                                                    <tr><td className="py-1 text-muted-foreground" colSpan={3}>—</td></tr>
+                                                                )}
+                                                                {data.run_sopra_media.map(r => (
+                                                                    <tr key={r.run_len} className="border-t border-white/5">
+                                                                        <td className="py-1 text-white/80">{r.run_len}</td>
+                                                                        <td className="text-right text-white">{r.count}</td>
+                                                                        <td className="text-right text-primary">{pct(r.pct, 1)}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
                                                     </div>
                                                 </div>
                                             </div>
