@@ -351,10 +351,11 @@ export function RitardiPanel({ leagueId, leagueName }: Props) {
                                            ============================================================ */}
                                         <div className="glass-card rounded-xl border border-white/10 p-3 md:p-4">
                                             <SectionTitleInfo hint={<>
-                                                <b>Colonne F / G / H.</b> Distribuzione di <b>tutte</b> le serie:
-                                                <br /><b>Occ. (SUC)</b> = quante serie si sono chiuse a quel ritardo;
-                                                <br /><b>Cnt (RIT)</b> = quante partite hanno avuto quel ritardo. Vale sia sotto sia sopra media.
-                                            </>}>Distribuzione serie <span className="text-muted-foreground/50 normal-case tracking-normal">· F/G/H · tutte le serie</span></SectionTitleInfo>
+                                                Calcolata dalle colonne <b>SUC</b> e <b>RIT</b> (la macchina dei ritardi su DATI MATCH), per ogni valore di ritardo:
+                                                <br /><b>Occ. (SUC)</b> = COUNTIF sui SUC = quante serie si sono chiuse a quel ritardo;
+                                                <br /><b>Cnt (RIT)</b> = COUNTIF sui RIT = quante partite hanno quel ritardo. Vale sia sotto sia sopra media.
+                                                <br /><span className="text-amber-300/80">NB: non sono le colonne F/G/H del foglio (lì = sistema di puntata/martingala, escluso).</span>
+                                            </>}>Distribuzione serie <span className="text-muted-foreground/50 normal-case tracking-normal">· COUNTIF su SUC/RIT · tutte le serie</span></SectionTitleInfo>
                                             <div className="max-h-44 overflow-y-auto">
                                                 <table className="w-full text-xs font-mono">
                                                     <thead className="text-muted-foreground text-[10px] uppercase sticky top-0 bg-black/80">
