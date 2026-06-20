@@ -492,11 +492,45 @@ def upsert_odds_row(fixture_id: int, raw_json_odds: Optional[Dict[str, Any]]) ->
         logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
 
 
+_POISSON_CAL = None
+
+
+def _poisson_cal():
+    """Lazy-singleton del calibratore Poisson (carica i fattori una volta per run)."""
+    global _POISSON_CAL
+    if _POISSON_CAL is None:
+        try:
+            from poisson_calibrator import PoissonCalibrator
+            _POISSON_CAL = PoissonCalibrator()
+            logger.info("PoissonCalibrator pronto (sorgente=%s)", _POISSON_CAL.source)
+        except Exception as e:  # non bloccare la pipeline se il modulo non e' disponibile
+            logger.warning("PoissonCalibrator non disponibile: %s", e)
+            _POISSON_CAL = False  # sentinella: non riprovare a ogni fixture
+    return _POISSON_CAL or None
+
+
 def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]], ht_predictions: Optional[Dict[str, Any]]) -> None:
     """
     Salva sia l'analisi completa che quella specifica per l'HT.
     """
     sb = get_supabase_client()
+
+    # Calibrazione Poisson CENTRALIZZATA: arricchisce db_json_analisi con markets_calibrated
+    # (coerente con l'ML gia' calibrato nel DB) cosi' ogni partita nasce gia' calibrata.
+    # ADDITIVO e NON-FATALE: il grezzo `markets` resta INTATTO (serve al calibratore settimanale).
+    if isinstance(db_json_analisi, dict) and db_json_analisi.get("model") == "poisson_xg_hybrid_dc":
+        markets = db_json_analisi.get("markets")
+        cal = _poisson_cal()
+        if cal is not None and isinstance(markets, dict):
+            try:
+                db_json_analisi = dict(db_json_analisi)
+                db_json_analisi["markets_calibrated"] = cal.calibrate_markets(
+                    markets, db_json_analisi.get("league_id"))
+                db_json_analisi["calibrated_at"] = datetime.now(timezone.utc).isoformat()
+                db_json_analisi["calibration_source"] = cal.source
+            except Exception as e:
+                logger.warning("calibrazione markets fallita fixture_id=%s: %s", fixture_id, e)
+
     row = {
         "db_json_analisi": db_json_analisi,
         "ht_predictions": ht_predictions,

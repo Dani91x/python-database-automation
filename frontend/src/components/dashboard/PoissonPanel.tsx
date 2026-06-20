@@ -59,11 +59,15 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
             .finally(() => { if (req === reqRef.current) setLoading(false); });
     }, [open, fixtureId]);
 
+    // Probabilita' da mostrare: il CALIBRATO se presente (dato migliore), altrimenti il grezzo.
+    const mkts = useMemo(() => data?.markets_calibrated ?? data?.markets ?? null, [data]);
+    const isCalibrated = !!data?.markets_calibrated;
+
     // mercati realmente presenti nel JSON
     const available = useMemo(() => {
-        const m = data?.markets ?? {};
+        const m = mkts ?? {};
         return MARKETS.filter(def => m[def.id] && typeof m[def.id] === 'object');
-    }, [data]);
+    }, [mkts]);
 
     // assicura che il mercato selezionato esista
     useEffect(() => {
@@ -74,8 +78,8 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
     const market = available.find(a => a.id === marketId) ?? null;
 
     const bars: ProbBar[] = useMemo(() => {
-        if (!data?.markets || !market) return [];
-        const obj = data.markets[market.id] || {};
+        if (!mkts || !market) return [];
+        const obj = mkts[market.id] || {};
         // includi solo le selezioni realmente presenti nel JSON (no 0 fittizi per chiavi assenti)
         return market.sel
             .map(([key, label]) => {
@@ -83,12 +87,12 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
                 return v !== null ? { label, value: v, color: colorForSelection(key) } : null;
             })
             .filter((b): b is ProbBar => b !== null);
-    }, [data, market]);
+    }, [mkts, market]);
 
     const topBar = useMemo(() => bars.reduce<ProbBar | null>((best, b) => (best && best.value >= b.value ? best : b), null), [bars]);
 
     const inp = data?.inputs ?? {};
-    const fhDetails = market?.id === 'first_half_over_0_5' ? (data?.markets?.first_half_over_0_5?.details ?? null) : null;
+    const fhDetails = market?.id === 'first_half_over_0_5' ? (mkts?.first_half_over_0_5?.details ?? null) : null;
     const genDate = data?.generated_at ? new Date(data.generated_at) : null;
 
     return (
@@ -140,6 +144,9 @@ export function PoissonPanel({ fixtureId, leagueName, homeName, awayName }: Prop
                                 {/* meta bar diagnostica */}
                                 <div className="glass-card rounded-xl border border-white/10 px-4 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
                                     <span className="text-sm font-bold text-white">{data.model ?? 'poisson_xg_hybrid_dc'}</span>
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${isCalibrated ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-white/5 text-white/50 border-white/10'}`}>
+                                        {isCalibrated ? '✓ calibrato' : 'grezzo'}
+                                    </span>
                                     <span>λ casa <span className="text-primary font-mono font-bold">{numFmt(toNum(inp.lambda_home))}</span></span>
                                     <span>λ trasf. <span className="text-amber-400 font-mono font-bold">{numFmt(toNum(inp.lambda_away))}</span></span>
                                     <span>ρ DC <span className="font-mono">{numFmt(toNum(inp.dc_rho))}</span></span>

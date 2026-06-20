@@ -15,6 +15,11 @@ export interface PoissonData {
     fixture_id?: number;
     inputs?: Record<string, any>;
     markets?: Record<string, Record<string, any>>;
+    // Probabilita' CALIBRATE (stessa struttura di markets) aggiunte in scrittura dalla
+    // pipeline / backfill via poisson_calibrator. Quando presenti sono il dato "migliore".
+    markets_calibrated?: Record<string, Record<string, any>>;
+    calibration_source?: string;
+    calibrated_at?: string;
     coverage?: Record<string, any>;
 }
 

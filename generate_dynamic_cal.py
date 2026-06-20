@@ -48,6 +48,10 @@ MARKET_CONFIG = {
     "HT_H":    ("ht_1x2",               "H",     "HT Casa"),
     "HT_D":    ("ht_1x2",               "D",     "HT Pareggio"),
     "HT_A":    ("ht_1x2",               "A",     "HT Trasferta"),
+    # 1T Under 0.5 — classe "False" di first_half_over_0_5. Allineato a
+    # update_poisson_calibration.py e money_management.CALIBRATION_TABLE (che gia' lo
+    # includono): senza, il lato Under del 1T non aveva fattori per-lega/globali dinamici.
+    "HT_U05":  ("first_half_over_0_5",  "False", "1T Under 0.5"),
 }
 
 DEFAULT_DIVERGENCE_STD = 0.3287  # fallback se n_campioni < 30; allineato a money_management.py
@@ -85,6 +89,10 @@ def check_result(cal_key: str, h: int, a: int,
         if hh is None or ha is None:
             return None
         return hh < ha
+    if cal_key == "HT_U05":
+        if hh is None or ha is None:
+            return None
+        return hh + ha == 0
     return None
 
 
@@ -389,6 +397,36 @@ def build_correction(
 
 
 # ---------------------------------------------------------------------------
+# UPSERT DB (centralizzazione: gemella di ml_post_calibration)
+# ---------------------------------------------------------------------------
+def _upsert_poisson_calibration_db(output: dict) -> None:
+    """Scrive i fattori in public.poisson_calibration: riga globale (league_id=0) +
+    una riga per ogni lega. Idempotente (upsert su PK league_id)."""
+    from db_client import get_supabase_client
+    sb = get_supabase_client()
+    ga = output.get("generated_at")
+    rows = [{
+        "league_id": 0,
+        "corrections": output.get("global", {}) or {},
+        "min_n": output.get("min_n_global"),
+        "total_fixtures": output.get("total_fixtures"),
+        "generated_at": ga,
+    }]
+    for lid, corr in (output.get("by_league", {}) or {}).items():
+        try:
+            rows.append({"league_id": int(lid), "corrections": corr or {},
+                         "min_n": output.get("min_n_per_league"), "generated_at": ga})
+        except (TypeError, ValueError):
+            continue
+    written = 0
+    for i in range(0, len(rows), 500):
+        sb.table("poisson_calibration").upsert(rows[i:i + 500]).execute()
+        written += len(rows[i:i + 500])
+    print(f"  [DB] public.poisson_calibration aggiornata: {written} righe "
+          f"(globale + {len(rows) - 1} leghe).")
+
+
+# ---------------------------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -469,6 +507,16 @@ def main() -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     print(f"\n  Salvato: {out_path}")
+
+    # Centralizzazione DB: replica i fattori anche in public.poisson_calibration
+    # (gemella di ml_post_calibration) cosi' il percorso DB->dashboard->ventaglio serve
+    # Poisson calibrato. NON-FATALE: se la tabella non esiste o l'upsert fallisce, il
+    # file json (consumato da money_management/Sheets) resta valido e il workflow non si blocca.
+    try:
+        _upsert_poisson_calibration_db(output)
+    except Exception as _e:
+        print(f"  [WARN] upsert poisson_calibration saltato ({type(_e).__name__}: {_e}). "
+              f"dynamic_cal.json comunque salvato.")
 
     # 7. Riepilogo
     print("\n" + "=" * 70)
