@@ -7,6 +7,7 @@
 import { MarketFrequencyPanel } from './MarketFrequencyPanel';
 import { RitardiPanel } from './RitardiPanel';
 import { PoissonPanel } from './PoissonPanel';
+import { TacticalEnginePanel } from './TacticalEnginePanel';
 import { MLPanel } from './MLPanel';
 
 interface Props {
@@ -27,6 +28,7 @@ export function AnalyticsPanels({ leagueId, leagueName, fixtureId, homeName, awa
                 <RitardiPanel leagueId={leagueId} leagueName={leagueName} />
             )}
             <PoissonPanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
+            <TacticalEnginePanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
             <MLPanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
         </div>
     );

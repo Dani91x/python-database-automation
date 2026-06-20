@@ -1650,6 +1650,18 @@ def run_for_date(target_date: str) -> None:
         target_date, ok_count, empty_count, no_cov_count, err_count, skipped_count, skipped_existing_count
     )
 
+    # --- TERZO MOTORE: Tactical Engine (GSG), aggiunta ADDITIVA e NON-FATALE ---
+    # Scrive le predizioni del nuovo motore nella colonna `tactical_engine_json`
+    # della STESSA tabella fixture_predictions (come Poisson->db_json_analisi e
+    # ML->model_predictions_json). Gira sulle stesse partite del giorno appena
+    # processate. Avvolto in try/except: un suo errore NON impatta il motore principale.
+    try:
+        from tactical_engine.serving import run_for_date as _tactical_run
+        _te_res = _tactical_run(target_date)
+        logger.info("🧠 tactical_engine %s → %s", target_date, _te_res)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("tactical_engine non eseguito per %s: %s", target_date, e)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
