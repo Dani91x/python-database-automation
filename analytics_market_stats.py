@@ -144,6 +144,42 @@ def _delays(series: list[int]) -> tuple[list[int], Optional[int], Optional[float
     return rits, record, media
 
 
+def _freq_in_entrata(series: list[int]) -> list[tuple]:
+    """Per ogni posizione k (1-based), (baseline, mm10) IN ENTRATA = calcolati
+    sulle SOLE partite PRECEDENTI (o_1..o_{k-1}). NIENTE LOOK-AHEAD: la partita k
+    NON contribuisce al proprio snapshot (è ciò che il mercato "sapeva" prima del
+    kickoff). None dove la storia precedente è insufficiente (mm10: < 10 partite)."""
+    out: list[tuple] = []
+    csum = 0
+    for k in range(1, len(series) + 1):
+        cnt = k - 1
+        baseline = (csum / cnt) if cnt > 0 else None
+        mm10 = (sum(series[k - 11:k - 1]) / 10.0) if cnt >= 10 else None
+        out.append((baseline, mm10))
+        csum += series[k - 1]
+    return out
+
+
+def _delays_in_entrata(series: list[int]) -> list[tuple]:
+    """Per ogni posizione k (1-based), (rit, record, media) IN ENTRATA = stato dei
+    ritardi DOPO le partite precedenti (o_1..o_{k-1}), PRIMA di o_k. La partita k
+    non si include → il delay_current non è più tautologico con l'esito.
+    Coerente con compute_current_state: lo snapshot di k == stato dopo k-1 partite."""
+    out: list[tuple] = []
+    last_hit = 0; prev_hit = 0
+    sucs: list[int] = []; rits_acc: list[int] = []
+    for k in range(1, len(series) + 1):
+        rit_e = (k - 1 - last_hit) if k > 1 else None
+        rec_e = max(sucs) if sucs else None
+        nz = [r for r in rits_acc if r != 0]
+        med_e = (sum(nz) / len(nz)) if nz else None
+        out.append((rit_e, rec_e, med_e))
+        if series[k - 1] == 1:
+            sucs.append((k - prev_hit) - 1); prev_hit = k; last_hit = k
+        rits_acc.append(k - last_hit)
+    return out
+
+
 def compute_market_snapshots(
     market: str,
     selection: str,
@@ -169,7 +205,7 @@ def compute_market_snapshots(
             continue
         freq_fids.append(m["fixture_id"])
         freq_series.append(1 if h else 0)
-    baseline, mm10 = _baseline_mm10(freq_series)
+    freq_in = _freq_in_entrata(freq_series)        # (baseline, mm10) PRE-MATCH per posizione
 
     # ---- SERIE RITARDI (HT-dipendenti: coalesce HT=0) ----
     delay_fids: list[int] = []
@@ -180,26 +216,29 @@ def compute_market_snapshots(
             continue
         delay_fids.append(m["fixture_id"])
         delay_series.append(1 if h else 0)
-    rits, record, media = _delays(delay_series)
+    delay_in = _delays_in_entrata(delay_series)    # (rit, record, media) PRE-MATCH per posizione
 
-    # ---- assembla per-fixture ----
+    # ---- assembla per-fixture: ogni partita riceve lo stato IN ENTRATA
+    #      (pre-match, dalle partite PRECEDENTI). Identico a ciò che il forward
+    #      (compute_current_state) avrebbe dato guardando QUELLA partita prima del
+    #      kickoff → niente look-ahead (delay_current non più tautologico). ----
     out: dict[int, Snapshot] = {}
-    # base freq
-    freq_map: dict[int, tuple[Optional[float], Optional[float]]] = {}
-    for fid, mm in zip(freq_fids, mm10):
-        freq_map[fid] = (mm, (mm - baseline) if (mm is not None and baseline is not None) else None)
-    delay_map: dict[int, int] = {fid: r for fid, r in zip(delay_fids, rits)}
+    freq_map: dict[int, tuple] = {}
+    for fid, (bl, mm) in zip(freq_fids, freq_in):
+        dev = (mm - bl) if (mm is not None and bl is not None) else None
+        freq_map[fid] = (bl, mm, dev)
+    delay_map: dict[int, tuple] = {fid: t for fid, t in zip(delay_fids, delay_in)}
 
-    all_fids = set(freq_map) | set(delay_map)
-    for fid in all_fids:
-        mm, dev = freq_map.get(fid, (None, None))
+    for fid in set(freq_map) | set(delay_map):
+        bl, mm, dev = freq_map.get(fid, (None, None, None))
+        rit_e, rec_e, med_e = delay_map.get(fid, (None, None, None))
         out[fid] = Snapshot(
-            freq_baseline=_r(baseline) if fid in freq_map else None,
+            freq_baseline=_r(bl),
             freq_current=_r(mm),
             freq_deviation=_r(dev),
-            delay_current=delay_map.get(fid),
-            delay_record=record if fid in delay_map else None,
-            delay_avg=_r(media) if fid in delay_map else None,
+            delay_current=rit_e,
+            delay_record=rec_e,
+            delay_avg=_r(med_e),
         )
     return out
 

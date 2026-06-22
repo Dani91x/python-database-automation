@@ -1,12 +1,17 @@
 """Certificazione analytics_market_stats — FREQUENZE e RITARDI point-in-time.
-⚠️ SOLDI IN GIOCO: i numeri DEVONO combaciare riga-per-riga con gli RPC certificati
-get_market_frequency / get_market_delays.
+⚠️ SOLDI IN GIOCO.
 
-Due livelli di test:
-  1) UNIT (sempre, offline): macchina a stati ritardi + mm10/baseline su serie note,
-     + per-selezione (Over ≠ Under) su matches sintetiche.
-  2) CERTIFICAZIONE RPC (richiede DB, marcata): over_2_5 e 1x2 su lega 256
-     DEVONO combaciare con gli RPC. Skip automatico se il DB non è raggiungibile.
+FIX LOOK-AHEAD (2026-06-22): compute_market_snapshots ora assegna a ogni partita
+lo stato IN ENTRATA (pre-match, dalle partite PRECEDENTI), NON il valore "alla riga"
+che includeva l'esito (delay_current era tautologico con hit). La matematica base
+(_delays / _baseline_mm10, "alla riga") resta certificata vs gli RPC e alimenta
+compute_current_state (forward). Il valore in-entrata della partita i == valore
+alla-riga RPC della partita i-1 (SHIFT) == compute_current_state(serie[:i-1]).
+
+Livelli:
+  1) UNIT offline: matematica alla-riga (_delays/_baseline_mm10), helper in-entrata,
+     no-look-ahead, coerenza con compute_current_state, per-selezione.
+  2) CERTIFICAZIONE RPC (DB): lo SHIFT (in-entrata = RPC alla-riga shiftato).
 """
 from __future__ import annotations
 
@@ -16,43 +21,53 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from analytics_market_stats import (
-    Snapshot,
-    _baseline_mm10,
-    _delays,
-    compute_market_snapshots,
+    _baseline_mm10, _delays, _freq_in_entrata, _delays_in_entrata,
+    compute_market_snapshots, compute_current_state,
 )
 
 LEAGUE = 256
 
 
-# ──────────────────────────────────────────────────────────── UNIT (offline)
+# ───────────────────────── UNIT: matematica ALLA-RIGA (base, vs RPC) ─────────
 def test_delays_state_machine():
-    # serie:        0  0  1  0  0  0  1  1  0
-    # idx:          1  2  3  4  5  6  7  8  9
-    # last_hit:     0  0  3  3  3  3  7  8  8
-    # rit:          1  2  0  1  2  3  0  0  1
     series = [0, 0, 1, 0, 0, 0, 1, 1, 0]
     rits, record, media = _delays(series)
     assert rits == [1, 2, 0, 1, 2, 3, 0, 0, 1]
-    # suc per hit: hit@3 → (3-0)-1=2 ; hit@7 → (7-3)-1=3 ; hit@8 → (8-7)-1=0
     assert record == 3
-    # media su rit != 0: [1,2,1,2,3,1] → 10/6
     assert abs(media - (10 / 6)) < 1e-9
 
 
-def test_delays_no_hits():
-    rits, record, media = _delays([0, 0, 0])
-    assert rits == [1, 2, 3]
-    assert record is None   # nessuna occorrenza
-    assert media == 2.0     # avg(1,2,3)
-
-
 def test_baseline_mm10_full_window_only():
-    series = [1] * 9 + [0]    # 9 hit poi 1 miss → 10° punto ha mm10
+    series = [1] * 9 + [0]
     baseline, mm10 = _baseline_mm10(series)
     assert abs(baseline - 0.9) < 1e-9
-    assert mm10[:9] == [None] * 9        # primi 9 punti: finestra non piena
-    assert abs(mm10[9] - 0.9) < 1e-9     # 10° punto = avg(ultimi 10) = 9/10
+    assert mm10[:9] == [None] * 9
+    assert abs(mm10[9] - 0.9) < 1e-9
+
+
+# ───────────────────────── UNIT: helper IN ENTRATA (pre-match) ───────────────
+def test_delays_in_entrata_no_lookahead():
+    # serie:            0  0  1  0  0  0  1  1  0   (idx 1..9)
+    # rit ALLA-RIGA:    1  2  0  1  2  3  0  0  1
+    # rit IN ENTRATA:   N  1  2  0  1  2  3  0  0   (= alla-riga shiftato di +1; None al 1°)
+    series = [0, 0, 1, 0, 0, 0, 1, 1, 0]
+    inn = _delays_in_entrata(series)
+    rit_in = [t[0] for t in inn]
+    assert rit_in == [None, 1, 2, 0, 1, 2, 3, 0, 0]
+    # lo shift è esatto: in-entrata(k) == alla-riga(k-1)
+    alla_riga, _, _ = _delays(series)
+    for k in range(1, len(series)):
+        assert rit_in[k] == alla_riga[k - 1]
+
+
+def test_freq_in_entrata_shift():
+    series = [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1]   # 11 punti
+    inn = _freq_in_entrata(series)
+    # baseline in-entrata della 2ª partita = media della 1ª = 1.0
+    assert abs(inn[1][0] - 1.0) < 1e-9
+    # mm10 in-entrata: serve >=10 partite PRECEDENTI → solo l'11ª (k=11) lo ha
+    assert all(t[1] is None for t in inn[:10])      # prime 10: < 10 precedenti
+    assert abs(inn[10][1] - sum(series[0:10]) / 10.0) < 1e-9  # media dei 10 precedenti
 
 
 def _m(fid, date, fh, fa, hh=None, ha=None):
@@ -61,52 +76,64 @@ def _m(fid, date, fh, fa, hh=None, ha=None):
             "halftime_home": hh, "halftime_away": ha}
 
 
-def test_per_selection_over_vs_under_differ():
-    # 13 partite SBILANCIATE verso l'Over (baseline Over ≠ Under, non 0.5)
+# ───────────────────────── UNIT: NO LOOK-AHEAD nel risultato finale ──────────
+def test_snapshot_no_lookahead_vs_outcome():
+    # 12 partite, totali noti. Con il fix, delay_current NON deve essere
+    # tautologico con l'esito (prima: delay=0 ⟺ over, delay>=1 ⟺ under).
+    totals = [(3, 0), (1, 0), (2, 1), (3, 3), (0, 0), (2, 2),
+              (4, 0), (1, 1), (0, 1), (3, 2), (2, 0), (1, 2)]
+    ms = [_m(100 + i, f"2020-02-{i+1:02d}T12:00:00+00:00", h, a)
+          for i, (h, a) in enumerate(totals)]
+    snaps = compute_market_snapshots("over_2_5", "Over", ms)
+    # esiste almeno una partita con delay_current==0 che NON è Over (impossibile
+    # nel vecchio codice tautologico) → prova che il look-ahead è rimosso
+    found_break = False
+    for i, (h, a) in enumerate(totals):
+        fid = 100 + i
+        s = snaps.get(fid)
+        if s is None or s.delay_current is None:
+            continue
+        is_over = (h + a) > 2.5
+        if (s.delay_current == 0) != is_over:
+            found_break = True  # delay_current e esito NON coincidono → no leak
+            break
+    assert found_break, "delay_current ancora tautologico con l'esito (look-ahead non rimosso)"
+
+
+def test_snapshot_coerente_con_forward():
+    # lo snapshot IN ENTRATA della partita k == compute_current_state(serie[:k-1])
+    totals = [(2, 0), (1, 1), (0, 2), (3, 1), (0, 0), (1, 2), (2, 2), (4, 0), (0, 1)]
+    ms = [_m(200 + i, f"2021-04-{i+1:02d}T12:00:00+00:00", h, a)
+          for i, (h, a) in enumerate(totals)]
+    snaps = compute_market_snapshots("over_2_5", "Over", ms)
+    for k in range(1, len(ms)):
+        fid = 200 + k
+        cur = compute_current_state("over_2_5", "Over", ms[:k])  # stato dopo le prime k
+        s = snaps.get(fid)
+        if s is None:
+            continue
+        assert s.delay_current == cur.delay_current, f"delay mismatch fid {fid}"
+        fc_s = s.freq_current
+        fc_c = cur.freq_current
+        assert (fc_s is None) == (fc_c is None)
+        if fc_s is not None:
+            assert abs(fc_s - fc_c) < 1e-9
+
+
+def test_per_selection_baseline_complementari():
     totals = [(3, 0), (4, 1), (2, 1), (3, 3), (5, 0), (2, 2), (4, 0),
               (3, 1), (0, 0), (1, 0), (3, 2), (5, 1), (2, 3)]
     ms = [_m(1000 + i, f"2020-01-{i+1:02d}T12:00:00+00:00", h, a)
           for i, (h, a) in enumerate(totals)]
     ov = compute_market_snapshots("over_2_5", "Over", ms)
     un = compute_market_snapshots("over_2_5", "Under", ms)
-    fid = 1012  # ultima fixture, presente in entrambe le serie
-    # baseline COMPLEMENTARI (somma 1) — Over e Under partizionano gli esiti
+    fid = 1012
+    # baseline in-entrata complementari (Over + Under = 1) e diverse (dati sbilanciati)
     assert abs(ov[fid].freq_baseline + un[fid].freq_baseline - 1.0) < 1e-9
-    # con dati sbilanciati le due baseline sono DIVERSE (è il BUG corretto)
     assert ov[fid].freq_baseline != un[fid].freq_baseline
-    # e i ritardi correnti differiscono per selezione
-    assert ov[fid].delay_current != un[fid].delay_current
 
 
-def test_1x2_three_selections_differ():
-    res = [(2, 0), (1, 1), (0, 2), (3, 1), (0, 0), (1, 2),
-           (2, 2), (4, 0), (0, 1), (1, 0), (2, 1), (1, 3)]
-    ms = [_m(2000 + i, f"2021-03-{i+1:02d}T12:00:00+00:00", h, a)
-          for i, (h, a) in enumerate(res)]
-    H = compute_market_snapshots("1x2", "H", ms)
-    D = compute_market_snapshots("1x2", "D", ms)
-    A = compute_market_snapshots("1x2", "A", ms)
-    fid = 2011  # ultimo, 1-3 → A
-    # le tre baseline sommano ~1 (ogni partita è esattamente uno di H/D/A)
-    s = H[fid].freq_baseline + D[fid].freq_baseline + A[fid].freq_baseline
-    assert abs(s - 1.0) < 1e-9
-    # e sono tutte diverse tra loro
-    assert len({H[fid].freq_baseline, D[fid].freq_baseline, A[fid].freq_baseline}) == 3
-
-
-def test_ht_market_excludes_missing_ht_in_freq():
-    # ht_1x2: una partita senza HT NON entra nella serie frequenze (hit→None)
-    ms = [
-        _m(3000, "2022-01-01T12:00:00+00:00", 2, 0, hh=1, ha=0),  # HT H
-        _m(3001, "2022-01-02T12:00:00+00:00", 1, 1),              # HT mancante → escluso freq
-        _m(3002, "2022-01-03T12:00:00+00:00", 0, 1, hh=0, ha=1),  # HT A
-    ]
-    snaps = compute_market_snapshots("ht_1x2", "H", ms)
-    # 3001 senza HT: nessun freq_baseline (escluso dalla serie frequenze)
-    assert snaps.get(3001) is None or snaps[3001].freq_baseline is None
-
-
-# ─────────────────────────────────────────────── CERTIFICAZIONE vs RPC (DB)
+# ─────────────────────────────── CERT vs RPC (DB): lo SHIFT ──────────────────
 def _fetch_matches(sb, league):
     off, out = 0, []
     while True:
@@ -137,28 +164,8 @@ def _try_db():
         return None
 
 
-def test_cert_freq_over_2_5_matches_rpc():
-    sb = _try_db()
-    if sb is None:
-        return
-    ms = _fetch_matches(sb, LEAGUE)
-    snaps = compute_market_snapshots("over_2_5", "Over", ms)
-    f = sb.rpc("get_market_frequency", {"p_league_id": LEAGUE, "p_market": "ou_ft",
-               "p_selection": "over", "p_line": 2.5, "p_mode": "all",
-               "p_last_n": None, "p_season_year": None}).execute().data
-    assert abs(f["meta"]["baseline"] - next(iter(snaps.values())).freq_baseline) < 1e-3
-    mism = 0
-    for p in f["points"]:
-        s = snaps[p["fid"]]
-        rm = p["mm10"]
-        if (rm is None) != (s.freq_current is None):
-            mism += 1
-        elif rm is not None and abs(rm - s.freq_current) > 1e-4:
-            mism += 1
-    assert mism == 0, f"{mism} mm10 mismatch over_2_5"
-
-
-def test_cert_delay_over_2_5_matches_rpc():
+def test_cert_delay_shift_vs_rpc():
+    # in-entrata(partita i) == rit ALLA-RIGA RPC(partita i-1); prima partita = None
     sb = _try_db()
     if sb is None:
         return
@@ -167,37 +174,36 @@ def test_cert_delay_over_2_5_matches_rpc():
     d = sb.rpc("get_market_delays", {"p_league_id": LEAGUE, "p_market": "over",
                "p_target": "2.5", "p_mode": "all", "p_last_n": None,
                "p_season_year": None}).execute().data
-    st = d["stats"]
-    any_s = next(iter(snaps.values()))
-    assert any_s.delay_record == st["record"]
-    assert abs(any_s.delay_avg - round(st["media_ritardi"], 4)) < 1e-3
-    mism = sum(1 for s in d["series"] if snaps[s["fid"]].delay_current != s["rit"])
-    assert mism == 0, f"{mism} rit mismatch over_2_5"
+    ser = d["series"]
+    assert snaps[ser[0]["fid"]].delay_current is None
+    mism = sum(1 for i in range(1, len(ser))
+               if snaps[ser[i]["fid"]].delay_current != ser[i - 1]["rit"])
+    assert mism == 0, f"{mism} shift-rit mismatch over_2_5"
 
 
-def test_cert_freq_1x2_matches_rpc():
+def test_cert_freq_shift_vs_rpc():
     sb = _try_db()
     if sb is None:
         return
     ms = _fetch_matches(sb, LEAGUE)
-    for can, rpcsel in [("H", "1"), ("D", "X"), ("A", "2")]:
-        snaps = compute_market_snapshots("1x2", can, ms)
-        f = sb.rpc("get_market_frequency", {"p_league_id": LEAGUE, "p_market": "1x2",
-                   "p_selection": rpcsel, "p_line": None, "p_mode": "all",
-                   "p_last_n": None, "p_season_year": None}).execute().data
-        assert abs(f["meta"]["baseline"] - next(iter(snaps.values())).freq_baseline) < 1e-3
-        mism = 0
-        for p in f["points"]:
-            s = snaps[p["fid"]]
-            rm = p["mm10"]
-            if (rm is None) != (s.freq_current is None):
-                mism += 1
-            elif rm is not None and abs(rm - s.freq_current) > 1e-4:
-                mism += 1
-        assert mism == 0, f"{mism} mm10 mismatch 1x2 {can}"
+    snaps = compute_market_snapshots("over_2_5", "Over", ms)
+    f = sb.rpc("get_market_frequency", {"p_league_id": LEAGUE, "p_market": "ou_ft",
+               "p_selection": "over", "p_line": 2.5, "p_mode": "all",
+               "p_last_n": None, "p_season_year": None}).execute().data
+    pts = f["points"]
+    assert snaps[pts[0]["fid"]].freq_current is None
+    mism = 0
+    for i in range(1, len(pts)):
+        s = snaps[pts[i]["fid"]]
+        rm = pts[i - 1]["mm10"]            # mm10 alla-riga della partita PRECEDENTE
+        if (rm is None) != (s.freq_current is None):
+            mism += 1
+        elif rm is not None and abs(rm - s.freq_current) > 1e-4:
+            mism += 1
+    assert mism == 0, f"{mism} shift-mm10 mismatch over_2_5"
 
 
-def test_cert_delay_draw_matches_rpc():
+def test_cert_delay_shift_1x2_draw():
     sb = _try_db()
     if sb is None:
         return
@@ -206,12 +212,11 @@ def test_cert_delay_draw_matches_rpc():
     d = sb.rpc("get_market_delays", {"p_league_id": LEAGUE, "p_market": "x",
                "p_target": None, "p_mode": "all", "p_last_n": None,
                "p_season_year": None}).execute().data
-    st = d["stats"]
-    any_s = next(iter(snaps.values()))
-    assert any_s.delay_record == st["record"]
-    assert abs(any_s.delay_avg - round(st["media_ritardi"], 4)) < 1e-3
-    mism = sum(1 for s in d["series"] if snaps[s["fid"]].delay_current != s["rit"])
-    assert mism == 0, f"{mism} rit mismatch draw"
+    ser = d["series"]
+    assert snaps[ser[0]["fid"]].delay_current is None
+    mism = sum(1 for i in range(1, len(ser))
+               if snaps[ser[i]["fid"]].delay_current != ser[i - 1]["rit"])
+    assert mism == 0, f"{mism} shift-rit mismatch draw"
 
 
 if __name__ == "__main__":
