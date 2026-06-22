@@ -145,6 +145,22 @@ def extract_tacticai(tj: dict) -> dict:
     return out
 
 
+def extract_api(fp: dict) -> dict:
+    """Motore API (API-Football /predictions): 1x2 da percent_home/draw/away.
+    Le percentuali sono PRE-MATCH (point-in-time safe). Le normalizzo per la loro
+    somma → distribuzione propria in [0,1] con argmax = pronostico API (winner_name).
+    Solo 1x2 esito finale a 90' (settlement già certificato per '1x2')."""
+    ph, pd, pa = _num(fp.get("percent_home")), _num(fp.get("percent_draw")), _num(fp.get("percent_away"))
+    if ph is None or pd is None or pa is None:
+        return {}
+    tot = ph + pd + pa
+    if tot <= 0:
+        return {}
+    return {"1x2": {"H": (round(ph / tot, 6), None),
+                    "D": (round(pd / tot, 6), None),
+                    "A": (round(pa / tot, 6), None)}}
+
+
 _LINE_RE = re.compile(r"(?:home_|away_|first_half_)?over_(\d)_5$")
 
 
@@ -171,6 +187,13 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
         if ht is not None:
             g["ht_home"], g["ht_away"] = ht[0], ht[1]
 
+    # COERENZA TIMING (allineata al backfill SQL analytics_first_goal_backfill.sql:42):
+    # niente "primo gol" se il punteggio a 90' è 0 — match_events può contenere un
+    # 'Goal' annullato dal VAR / discrepante col risultato finale (0-0). Senza questo
+    # gate il forward scriverebbe first_goal_minute su una 0-0, divergendo dallo storico.
+    if not g["total_goals"]:
+        first_goal = None
+
     # estrai i 3 motori in forma canonica
     analisi = fp.get("db_json_analisi") or {}
     engines: dict = {}
@@ -186,6 +209,9 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
     tj = fp.get("tactical_engine_json")
     if isinstance(tj, dict) and tj.get("markets"):
         engines["tacticai"] = (extract_tacticai(tj), tj.get("generated_at"))
+    api_mkts = extract_api(fp)  # 1x2 da percent_* (colonne dirette su fixture_predictions)
+    if api_mkts:
+        engines["api"] = (api_mkts, fp.get("created_at"))
 
     rows: list[dict] = []
     eng_prob: dict = {}   # (market, selection, engine) -> prob
@@ -229,7 +255,8 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
 
 def _fetch_fixtures(sb, league_id: Optional[int], days: Optional[int], page=500):
     sel = ("fixture_id,league_id,league_name,season_year,fixture_date,home_team_name,away_team_name,"
-           "db_json_analisi,model_predictions_json,tactical_engine_json")
+           "db_json_analisi,model_predictions_json,tactical_engine_json,"
+           "percent_home,percent_draw,percent_away,created_at")
     off = 0
     since = None
     if days:

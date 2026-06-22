@@ -123,9 +123,14 @@ def _build(es: dict, match: Optional[dict]) -> tuple[dict, Optional[dict]]:
     # POPULATOR. Il merger NON la tocca più → niente direzione invertita. La prob
     # per-scommessa resta in analytics_decisions (record `decision`), dove è corretta.
     # NON tocca neppure: fair_odds, line, prob_raw, n_engines_agree, consensus_prob,
-    # first_goal_minute, reliable, freq_*/delay_* → l'upsert preserva i valori del
-    # populator; sulle righe solo-merge (es. ML storico) restano NULL finché un fix
-    # dedicato (fix_storico_prob) non le ripopola dalla fonte pura.
+    # first_goal_minute, reliable, freq_*/delay_* → l'upsert preserva i valori già
+    # presenti. PROVENIENZA prob delle righe SOLO-merge:
+    #   • Poisson storico → ripopolato PURO da fix_storico_prob (markets_calibrated);
+    #   • ML storico → prob CALIBRATA del modello (engine_signals.prob_calibrated,
+    #     mappata su (fixture,market,selezione) canonici): distribuzione che somma a 1
+    #     quando tutte le selezioni sono presenti (softmax, NON overround → argmax
+    #     corretto), prob grezza per-selezione quando engine_signals ne aveva solo alcune.
+    #   • Forward → la prob la scrive il populator (extract_*), questo ramo non serve.
     prediction = None
     if canon and es.get("prob_calibrated") is not None:
         result = "WON" if h is True else ("LOST" if h is False else None)
