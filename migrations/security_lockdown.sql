@@ -25,6 +25,9 @@ revoke execute on function public.get_analytics_filters() from anon;
 revoke execute on function public.get_market_delays(integer,text,text,text,integer,integer) from anon;
 revoke execute on function public.get_market_frequency(integer,text,text,numeric,text,integer,integer) from anon;
 revoke execute on function public.get_league_seasons(integer) from anon;
+-- RPC del layer decisioni (analytics_decisions): solo authenticated + service_role
+revoke execute on function public.get_decisions(text,text,text,text,text,integer,integer,text,timestamptz,timestamptz,text) from anon;
+revoke execute on function public.get_decisions_filters() from anon;
 
 -- Se in futuro aggiungi altre RPC che leggono dati, ricordati di NON concederle
 -- ad anon: usa sempre solo "to authenticated, service_role".

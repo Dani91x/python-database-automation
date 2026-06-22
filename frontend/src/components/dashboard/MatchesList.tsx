@@ -59,6 +59,9 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
 
     const [selectedLeague, setSelectedLeague] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    // Accordion CONTROLLATO: necessario perché defaultValue si applica solo al
+    // mount (l'auto-open non funzionava al cambio lega). openItems guida l'apertura.
+    const [openItems, setOpenItems] = useState<string[]>([]);
 
     // Top Leagues Configuration
     const TOP_LEAGUES = [
@@ -149,10 +152,12 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
         fetchMatches(selectedLeague);
     }, [selectedLeague]);
 
-    // Handle filter selection
+    // Handle filter selection: imposta la lega e riporta la vista in cima (evita
+    // il fastidioso salto di scroll quando la lista si ricarica filtrata).
     const handleLeagueSelect = (leagueId: number | null) => {
         setSelectedLeague(leagueId);
         setIsFilterOpen(false);
+        if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const groupedMatches = useMemo(() => {
@@ -169,6 +174,12 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
         });
         return Object.values(groups);
     }, [matches]);
+
+    // Auto-open dei gruppi quando si filtra per lega (così la selezione mostra
+    // subito le partite, com'era previsto); nessun auto-open con "tutti i campionati".
+    useEffect(() => {
+        setOpenItems(selectedLeague ? groupedMatches.map((g, i) => `${g.league.id}-${i}`) : []);
+    }, [groupedMatches, selectedLeague]);
 
     return (
         <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto px-4">
@@ -261,7 +272,7 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                 </div>
             ) : (
                 <>
-                    <Accordion type="multiple" className="space-y-4" defaultValue={selectedLeague ? matches.map((_, i) => `${selectedLeague}-${i}`) : undefined}>
+                    <Accordion type="multiple" className="space-y-4" value={openItems} onValueChange={setOpenItems}>
                         <AnimatePresence>
                             {groupedMatches.map((group, groupIndex) => (
                                 <motion.div
