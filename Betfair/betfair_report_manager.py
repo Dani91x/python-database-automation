@@ -124,6 +124,13 @@ class BetfairReportManager:
         return " ".join(sorted(words))
 
     def run_daily_report(self, skip_training: bool = False):
+        # BLINDATURA: report SOLO-LETTURA sui modelli (vedi FORCE_READ_ONLY_MODELS).
+        # Forziamo skip_training=True a prescindere dal flag CLI, così il pre-flight
+        # e ogni ramo di training/upload/DELETE-registry restano sempre disattivati.
+        # I pronostici usano comunque i modelli FRESCHI del DB (predict_fixture li
+        # riscarica dal registry quando trained_at è più recente della cache locale).
+        if self.FORCE_READ_ONLY_MODELS:
+            skip_training = True
         self._skip_training = skip_training
         logger.info("Avvio report giornaliero completo..." + (" [SKIP-TRAINING]" if skip_training else ""))
         
@@ -233,6 +240,40 @@ class BetfairReportManager:
             logger.info(f"engine_signals: {_n} righe sincronizzate (since {_since}).")
         except Exception as e:
             logger.warning(f"engine_signals sync fallito (non bloccante): {e}")
+
+        # 13. Merge della finestra recente engine_signals -> tabelle analytics
+        #     (analytics_decisions + analytics_signals). Va DOPO la Fase 12, così le
+        #     decisioni+quote Betfair appena sincronizzate finiscono subito anche nella
+        #     nuova tabella; l'action notturna ne aggiorna gli esiti il giorno dopo.
+        #     Best-effort: NON blocca mai il report. Riusa merge_engine_signals.py senza
+        #     modificarlo (subprocess) — finestra 4 gg, coerente con la --days incrementale.
+        #     Un merge COMPLETO/storico si lancia a mano:
+        #       python merge_engine_signals.py --since YYYY-MM-DD
+        try:
+            logger.info("Fase 13: Merge engine_signals -> analytics (decisions+signals)...")
+            import subprocess
+            _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            _merge_script = os.path.join(_repo_root, "merge_engine_signals.py")
+            _ret = subprocess.run(
+                [sys.executable, _merge_script, "--days", "4"],
+                cwd=_repo_root,
+                capture_output=True,
+                text=True,
+                # Il child stampa emoji (es. ⚠️): su Windows il locale cp1252
+                # romperebbe la decodifica di stdout. Forziamo UTF-8 + replace.
+                encoding="utf-8",
+                errors="replace",
+                timeout=600,
+            )
+            if _ret.returncode == 0:
+                logger.info("analytics: merge engine_signals completato (finestra 4 gg).")
+            else:
+                logger.warning(
+                    f"analytics merge: exit code {_ret.returncode} (non bloccante). "
+                    f"stderr: {(_ret.stderr or '').strip()[-500:]}"
+                )
+        except Exception as e:
+            logger.warning(f"analytics merge fallito (non bloccante): {e}")
 
         logger.info("✅ Job completato con successo.")
 
@@ -1133,6 +1174,20 @@ class BetfairReportManager:
     # Stati API-Football che indicano una partita conclusa con risultato valido.
     _FINISHED_STATUSES = ("FT", "AET", "PEN")
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # BLINDATURA SOLO-LETTURA SUI MODELLI (2026-06-19)
+    # I modelli freschi vivono SUL DB (ai_model_registry) e vengono addestrati
+    # ESCLUSIVAMENTE dalla pipeline cloud (training_planner / retrain_models.yml).
+    # Questo report NON deve MAI addestrare, caricare (upload) o cancellare
+    # (DELETE registry) un modello: deve solo LEGGERE i modelli del DB e produrre
+    # i pronostici. Con questo flag a True lo stato read-only è forzato a
+    # prescindere dagli argomenti CLI, così nessun ramo di training/upload/delete
+    # può partire neppure se qualcuno lancia lo script senza --skip-training.
+    # (NB: predict_fixture continua a riscaricare dal registry i modelli freschi
+    #  grazie al confronto trained_at vs sidecar .tat — quindi i pronostici usano
+    #  sempre l'ultima versione presente sul DB.)
+    FORCE_READ_ONLY_MODELS = True
+
     @staticmethod
     def _parse_ts(ts):
         """Parsa un timestamp ISO (con o senza 'Z') in datetime aware UTC. None se vuoto/invalido."""
@@ -1192,6 +1247,12 @@ class BetfairReportManager:
         training. NESSUN vincolo temporale.
         Ritorna True se i modelli sono stati invalidati (→ va riaddestrato).
         """
+        # BLINDATURA read-only: il report non deve MAI invalidare/cancellare i
+        # modelli del registry (l'unico punto che esegue un DELETE su
+        # ai_model_registry). Anche se per refactoring qualcuno la chiamasse, qui
+        # esce subito: il training/invalidazione è competenza della sola pipeline cloud.
+        if self.FORCE_READ_ONLY_MODELS:
+            return False
         last_trained = self._league_last_trained_at(league_id)
         if last_trained is None:
             return False  # Nessun modello nel registry: gestito da "No models found".
