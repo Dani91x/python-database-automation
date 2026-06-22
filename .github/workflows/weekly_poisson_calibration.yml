@@ -69,5 +69,18 @@ jobs:
             - CALIBRATION_TABLE: aggiornata in money_management.py
             - Filtro: solo modello poisson_xg_hybrid_dc
             - Cap correction factor: [0.2, 3.0]"
-            git push
+            # Push resiliente: un altro workflow schedulato può aver pushato su master
+            # mentre questo job girava (~9 min). Rebase + retry invece di fallire.
+            for i in 1 2 3 4 5; do
+              if git push; then
+                echo "Push riuscito al tentativo $i."
+                break
+              fi
+              if [ "$i" -eq 5 ]; then
+                echo "Push fallito dopo 5 tentativi." >&2
+                exit 1
+              fi
+              echo "Push rifiutato (probabile race con altro workflow), rebase e retry ($i)..."
+              git pull --rebase origin master
+            done
           fi
