@@ -145,20 +145,9 @@ def extract_tacticai(tj: dict) -> dict:
     return out
 
 
-def extract_api(fp: dict) -> dict:
-    """Motore API (API-Football /predictions): 1x2 da percent_home/draw/away.
-    Le percentuali sono PRE-MATCH (point-in-time safe). Le normalizzo per la loro
-    somma → distribuzione propria in [0,1] con argmax = pronostico API (winner_name).
-    Solo 1x2 esito finale a 90' (settlement già certificato per '1x2')."""
-    ph, pd, pa = _num(fp.get("percent_home")), _num(fp.get("percent_draw")), _num(fp.get("percent_away"))
-    if ph is None or pd is None or pa is None:
-        return {}
-    tot = ph + pd + pa
-    if tot <= 0:
-        return {}
-    return {"1x2": {"H": (round(ph / tot, 6), None),
-                    "D": (round(pd / tot, 6), None),
-                    "A": (round(pa / tot, 6), None)}}
+# NB: il motore API NON è una riga di analytics_signals — è VIRTUALE, sintetizzato
+# live nell'RPC get_analytics da fixture_predictions.percent_* (copertura ampia su
+# tutte le predizioni). Qui il populator gestisce solo poisson/ml/tacticai.
 
 
 _LINE_RE = re.compile(r"(?:home_|away_|first_half_)?over_(\d)_5$")
@@ -209,9 +198,6 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
     tj = fp.get("tactical_engine_json")
     if isinstance(tj, dict) and tj.get("markets"):
         engines["tacticai"] = (extract_tacticai(tj), tj.get("generated_at"))
-    api_mkts = extract_api(fp)  # 1x2 da percent_* (colonne dirette su fixture_predictions)
-    if api_mkts:
-        engines["api"] = (api_mkts, fp.get("created_at"))
 
     rows: list[dict] = []
     eng_prob: dict = {}   # (market, selection, engine) -> prob
@@ -255,8 +241,7 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
 
 def _fetch_fixtures(sb, league_id: Optional[int], days: Optional[int], page=500):
     sel = ("fixture_id,league_id,league_name,season_year,fixture_date,home_team_name,away_team_name,"
-           "db_json_analisi,model_predictions_json,tactical_engine_json,"
-           "percent_home,percent_draw,percent_away,created_at")
+           "db_json_analisi,model_predictions_json,tactical_engine_json")
     off = 0
     since = None
     if days:
