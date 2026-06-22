@@ -204,5 +204,65 @@ def compute_market_snapshots(
     return out
 
 
+def compute_current_state(
+    market: str,
+    selection: str,
+    matches: list[dict],
+) -> Snapshot:
+    """STATO CORRENTE del mercato (lo snapshot "in entrata") da applicare alle
+    fixture FUTURE / non-settlate della lega — un punto in più ALLA FINE della
+    stessa serie cronologica delle settlate.
+
+    ⚠️ POINT-IN-TIME: una partita non ancora giocata NON ha un suo esito. Il suo
+    freq/ritardo è lo STATO del mercato dopo l'ULTIMA partita settlata:
+      delay_current = ritardo corrente = (n. esiti della serie) - last_hit
+                      = il ritardo "standing" dopo l'ultima settlata
+                      = rit dell'ultima riga della serie ritardi (rits[-1])
+      freq_current  = mm10 corrente = media mobile sugli ultimi 10 esiti settlati
+                      (= mm10[-1]; None se < 10 settlate)
+      freq_baseline = baseline sull'INTERA serie settlata
+      delay_record/delay_avg = scalari di tutta la serie settlata (invariati)
+
+    NESSUNA MATEMATICA NUOVA: riusa _baseline_mm10 e _delays sulla stessa serie
+    binaria che costruisce compute_market_snapshots. È la continuazione naturale
+    della serie (il "next index").
+
+    `matches`: SOLO le partite SETTLATE a 90' della lega (la storia su cui si
+    basa lo stato corrente). Le non-settlate NON entrano nella serie.
+    Ritorna uno Snapshot scalare (lo stesso valore per tutte le fixture future).
+    """
+    ordered = sorted(matches, key=chrono_key)
+
+    # ---- SERIE FREQUENZE (hit None-escludente) — identica a compute_market_snapshots
+    freq_series: list[int] = []
+    for m in ordered:
+        h = _hit_freq(market, selection, m)
+        if h is None:
+            continue
+        freq_series.append(1 if h else 0)
+    baseline, mm10 = _baseline_mm10(freq_series)
+    freq_current = mm10[-1] if mm10 else None  # mm10 corrente = ultimo punto
+
+    # ---- SERIE RITARDI (HT-dipendenti: coalesce HT=0) — identica a sopra
+    delay_series: list[int] = []
+    for m in ordered:
+        h = _hit_delay(market, selection, m)
+        if h is None:
+            continue
+        delay_series.append(1 if h else 0)
+    rits, record, media = _delays(delay_series)
+    delay_current = rits[-1] if rits else None  # ritardo standing dopo l'ultima settlata
+
+    dev = (freq_current - baseline) if (freq_current is not None and baseline is not None) else None
+    return Snapshot(
+        freq_baseline=_r(baseline) if freq_series else None,
+        freq_current=_r(freq_current),
+        freq_deviation=_r(dev),
+        delay_current=delay_current,
+        delay_record=record if delay_series else None,
+        delay_avg=_r(media) if delay_series else None,
+    )
+
+
 def _r(v: Optional[float], nd: int = 4) -> Optional[float]:
     return round(v, nd) if v is not None else None

@@ -55,3 +55,19 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python merge_engine_signals.py --days 4
+
+      # ADDITIVO E NON-FATALE: arricchisce freq/ritardi (snapshot contesto mercato)
+      # SOLO sulle partite recenti presenti in analytics_signals (modo INCREMENTALE).
+      # Le partite del giorno non ancora settlate ricevono lo STATO CORRENTE del
+      # mercato (valore "in entrata", calcolato sulla storia settlata precedente);
+      # quelle appena giocate ricevono il loro snapshot point-in-time. Scrittura
+      # BULK (staging + 1 UPDATE/lega) → veloce e poco stressante. NON lancia mai
+      # l'enrich STORICO completo (46k): quello è on-demand dall'utente. Un errore
+      # qui NON deve far fallire la pipeline risultati.
+      - name: Enrich freq/ritardi (incrementale, BULK)
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python enrich_analytics_snapshots.py --days 4
