@@ -114,14 +114,20 @@ def _build(es: dict, match: Optional[dict]) -> tuple[dict, Optional[dict]]:
     }
 
     # PREVISIONE: solo se il mercato è canonico (NO_SIGNAL non è una previsione).
-    # OWNERSHIP COLONNE (evita di azzerare i dati del populator su signal_uid in
-    # overlap): il merger scrive SOLO il nucleo previsione + placed/status (sue).
-    # NON tocca: line, prob_raw, n_engines_agree, consensus_prob, first_goal_minute,
-    # reliable, freq_*/delay_* → l'upsert lascia intatti i valori del populator;
-    # sulle righe solo-merge restano al default (NULL).
+    # OWNERSHIP COLONNE — il merger scrive SOLO placed/status (sue) + l'esito a 90'
+    # (coerente, stesso calcolo del populator) + il contesto. NON scrive la `prob`:
+    # ⚠️ FIX C1 (look-ahead-free): engine_signals.prob_calibrated è la prob calibrata
+    # PER-SCOMMESSA (money_management, calibrazione per-bin NON-uniforme → overround,
+    # somma>1, può INVERTIRE l'argmax/top-pick). La `prob` di analytics_signals deve
+    # essere la PREVISIONE PURA del motore (markets_calibrated/targets), scritta dal
+    # POPULATOR. Il merger NON la tocca più → niente direzione invertita. La prob
+    # per-scommessa resta in analytics_decisions (record `decision`), dove è corretta.
+    # NON tocca neppure: fair_odds, line, prob_raw, n_engines_agree, consensus_prob,
+    # first_goal_minute, reliable, freq_*/delay_* → l'upsert preserva i valori del
+    # populator; sulle righe solo-merge (es. ML storico) restano NULL finché un fix
+    # dedicato (fix_storico_prob) non le ripopola dalla fonte pura.
     prediction = None
     if canon and es.get("prob_calibrated") is not None:
-        p = es.get("prob_calibrated")
         result = "WON" if h is True else ("LOST" if h is False else None)
         prediction = {
             "signal_uid": f"{es.get('engine')}|{fid}|{market}|{selection}",
@@ -130,7 +136,6 @@ def _build(es: dict, match: Optional[dict]) -> tuple[dict, Optional[dict]]:
             "season_year": es.get("season_year"), "home_team": es.get("home_team"),
             "away_team": es.get("away_team"), "kickoff": es.get("kickoff"),
             "market": market, "selection": selection, "direction": es.get("direction") or "back",
-            "prob": p, "fair_odds": round(1.0 / p, 4) if p and p > 0 else None,
             "placed": es.get("status") == "PLACED", "status": es.get("status"),
             "settled": settled, "result": result, "hit": h, **g,
             "oos_valid": True,

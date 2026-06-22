@@ -261,11 +261,13 @@ def _fetch_first_goals(sb, fids: list[int]) -> dict[int, int]:
     out: dict[int, int] = {}
     for i in range(0, len(fids), 300):
         chunk = fids[i:i + 300]
-        r = (sb.table("match_events").select("fixture_id,minute")
+        r = (sb.table("match_events").select("fixture_id,minute,detail")
              .in_("fixture_id", chunk).eq("event_type", "Goal").execute())
         for e in r.data or []:
             mn = e.get("minute")
-            if mn is None:
+            # FIX H1: i rigori SBAGLIATI ('Missed Penalty') NON sono gol → esclusi.
+            # I rigori segnati ('Penalty'), gli autogol e i gol normali restano.
+            if mn is None or e.get("detail") == "Missed Penalty":
                 continue
             cur = out.get(e["fixture_id"])
             if cur is None or mn < cur:
