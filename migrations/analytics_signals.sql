@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS analytics_signals (
     total_goals     SMALLINT,
     ht_home         SMALLINT,
     ht_away         SMALLINT,
+    first_goal_minute SMALLINT,                          -- timing: minuto del 1° gol (da match_events; NULL se non coperto)
 
     -- qualita' / validita'
     oos_valid       BOOLEAN      NOT NULL DEFAULT TRUE,  -- predizione out-of-sample pulita? (ML può essere false)

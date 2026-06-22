@@ -42,7 +42,30 @@ export interface AnalyticsQuery {
     placedOnly?: boolean;
     dateFrom?: string | null;
     dateTo?: string | null;
+    delayMin?: number | null;       // ritardo attuale minimo del mercato
+    freqDev?: string | null;        // 'pos' | 'neg' | null
+    timingMax?: number | null;      // primo gol entro il minuto X
+    confBin?: number | null;        // drill: bin di confidenza (inizio %, es 60) — SOLO get_analytics_rows
     groupBy?: string;          // overall|engine|market|selection|league|confidence
+}
+
+// 1 partita del drill-down
+export interface AnalyticsRow {
+    engine: string;
+    league_name: string | null;
+    home_team: string | null;
+    away_team: string | null;
+    kickoff: string | null;
+    market: string;
+    selection: string;
+    prob: number;
+    hit: boolean;
+    result: string | null;
+    freq_baseline: number | null;
+    freq_current: number | null;
+    freq_deviation: number | null;
+    delay_current: number | null;
+    first_goal_minute: number | null;
 }
 
 export async function fetchAnalyticsFilters(): Promise<AnalyticsFilters> {
@@ -51,8 +74,8 @@ export async function fetchAnalyticsFilters(): Promise<AnalyticsFilters> {
     return data as AnalyticsFilters;
 }
 
-export async function fetchAnalytics(q: AnalyticsQuery): Promise<AnalyticsResult> {
-    const { data, error } = await supabase.rpc('get_analytics', {
+function rpcParams(q: AnalyticsQuery) {
+    return {
         p_engine: q.engine ?? null,
         p_market: q.market ?? null,
         p_selection: q.selection ?? null,
@@ -64,10 +87,50 @@ export async function fetchAnalytics(q: AnalyticsQuery): Promise<AnalyticsResult
         p_placed_only: q.placedOnly ?? false,
         p_date_from: q.dateFrom ?? null,
         p_date_to: q.dateTo ?? null,
+        p_delay_min: q.delayMin ?? null,
+        p_freq_dev: q.freqDev ?? null,
+        p_timing_max: q.timingMax ?? null,
+    };
+}
+
+export async function fetchAnalytics(q: AnalyticsQuery): Promise<AnalyticsResult> {
+    const { data, error } = await supabase.rpc('get_analytics', {
+        ...rpcParams(q),
         p_group_by: q.groupBy ?? 'overall',
     });
     if (error) throw new Error(error.message);
     return data as AnalyticsResult;
+}
+
+export async function fetchAnalyticsRows(q: AnalyticsQuery, limit = 100): Promise<AnalyticsRow[]> {
+    const { data, error } = await supabase.rpc('get_analytics_rows', {
+        ...rpcParams(q),
+        p_conf_bin: q.confBin ?? null,
+        p_limit: limit,
+        p_offset: 0,
+    });
+    if (error) throw new Error(error.message);
+    return (data?.rows ?? []) as AnalyticsRow[];
+}
+
+// Export CSV (client-side) di un insieme di gruppi della pagella.
+export function groupsToCsv(groups: AnalyticsGroup[], dim: string): string {
+    const head = [dim, 'N', 'hit_rate', 'wilson_low', 'wilson_high', 'avg_prob', 'calib_gap'];
+    const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+    const lines = [head.join(',')];
+    for (const g of groups) {
+        lines.push([esc(g.grp), g.n, g.hit_rate, g.wilson_low, g.wilson_high, g.avg_prob, g.calib_gap].join(','));
+    }
+    return lines.join('\n');
+}
+
+export function downloadCsv(filename: string, csv: string): void {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------- etichette

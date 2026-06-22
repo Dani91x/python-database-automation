@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -72,48 +73,81 @@ def extract_poisson(analisi: dict) -> dict:
     return out
 
 
-def extract_ml(mpj: dict) -> tuple[dict, set]:
+def extract_ml(mpj: dict) -> tuple[dict, dict]:
+    """COPERTURA MASSIMA ML: 1x2, ht_1x2, over_0.5-4.5, home/away_over_0.5-2.5,
+    btts, clean_sheet_home/away, ht_ft (9 esiti), first_half_over_0_5 (se presente)."""
     targets = mpj.get("targets") or {}
     not_rel = {x.get("target") for x in (mpj.get("targets_not_reliable") or []) if isinstance(x, dict)}
-    M = {
-        "1x2": ("target_1x2", [("H", "H"), ("D", "D"), ("A", "A")]),
-        "ht_1x2": ("target_ht_1x2", [("H", "H"), ("D", "D"), ("A", "A")]),
-        "over_1_5": ("target_over_1_5", [("Over", "True"), ("Under", "False")]),
-        "over_2_5": ("target_over_2_5", [("Over", "True"), ("Under", "False")]),
-        "over_3_5": ("target_over_3_5", [("Over", "True"), ("Under", "False")]),
-        "btts": ("target_btts", [("Yes", "True"), ("No", "False")]),
-        "first_half_over_0_5": ("target_ht_over_0_5", [("Over", "True"), ("Under", "False")]),
-    }
     out: dict = {}
-    rel_by_market: dict = {}
-    for market, (tname, sels) in M.items():
+    rel: dict = {}
+
+    def _hda(market, tname):
         tk = targets.get(tname)
-        if not isinstance(tk, dict):
-            continue
-        out[market] = {c: (_num(tk.get(j)), None) for c, j in sels}
-        rel_by_market[market] = tname not in not_rel  # affidabile se non nel gate
-    return out, rel_by_market
+        if isinstance(tk, dict):
+            out[market] = {c: (_num(tk.get(c)), None) for c in ("H", "D", "A")}
+            rel[market] = tname not in not_rel
+
+    def _tf(market, tname, pos, neg):  # target {True/False} → due selezioni
+        tk = targets.get(tname)
+        if isinstance(tk, dict):
+            out[market] = {pos: (_num(tk.get("True")), None), neg: (_num(tk.get("False")), None)}
+            rel[market] = tname not in not_rel
+
+    _hda("1x2", "target_1x2")
+    _hda("ht_1x2", "target_ht_1x2")
+    for lab in ("0_5", "1_5", "2_5", "3_5", "4_5"):
+        _tf(f"over_{lab}", f"target_over_{lab}", "Over", "Under")
+    for lab in ("0_5", "1_5", "2_5"):
+        _tf(f"home_over_{lab}", f"target_home_over_{lab}", "Over", "Under")
+        _tf(f"away_over_{lab}", f"target_away_over_{lab}", "Over", "Under")
+    _tf("btts", "target_btts", "Yes", "No")
+    _tf("clean_sheet_home", "target_clean_sheet_home", "Yes", "No")
+    _tf("clean_sheet_away", "target_clean_sheet_away", "Yes", "No")
+    _tf("first_half_over_0_5", "target_ht_over_0_5", "Over", "Under")  # spesso assente
+    htft = targets.get("target_ht_ft")
+    if isinstance(htft, dict):  # 9 esiti "{HT}_{FT}" (scarta '_' placeholder)
+        cells = {k: (_num(v), None) for k, v in htft.items() if k != "_" and _num(v) is not None}
+        if cells:
+            out["ht_ft"] = cells
+            rel["ht_ft"] = "target_ht_ft" not in not_rel
+    return out, rel
 
 
 def extract_tacticai(tj: dict) -> dict:
+    """COPERTURA MASSIMA TacticAI: 1x2, doppia chance, over_0.5-3.5, btts (FT);
+    + versioni HT (ht_1x2, first_half_double_chance, first_half_over_0.5-3.5, first_half_btts)."""
     mk = tj.get("markets") or {}
     ht = tj.get("markets_ht") or {}
     out: dict = {}
-    if mk:
-        out["1x2"] = {"H": (_num(mk.get("home")), None), "D": (_num(mk.get("draw")), None), "A": (_num(mk.get("away")), None)}
-        out["btts"] = {"Yes": (_num(mk.get("btts_yes")), None), "No": (_num(mk.get("btts_no")), None)}
-        for lab in ("1_5", "2_5", "3_5"):
-            out[f"over_{lab}"] = {"Over": (_num(mk.get(f"over_{lab}")), None), "Under": (_num(mk.get(f"under_{lab}")), None)}
-    if ht:
-        out["ht_1x2"] = {"H": (_num(ht.get("home")), None), "D": (_num(ht.get("draw")), None), "A": (_num(ht.get("away")), None)}
-        out["first_half_over_0_5"] = {"Over": (_num(ht.get("over_0_5")), None), "Under": (_num(ht.get("under_0_5")), None)}
+
+    def _block(d, prefix_ft):  # prefix_ft="" per FT, "first_half_" per HT
+        if not d:
+            return
+        m1x2 = "1x2" if prefix_ft == "" else "ht_1x2"
+        out[m1x2] = {"H": (_num(d.get("home")), None), "D": (_num(d.get("draw")), None), "A": (_num(d.get("away")), None)}
+        out[f"{prefix_ft}btts"] = {"Yes": (_num(d.get("btts_yes")), None), "No": (_num(d.get("btts_no")), None)}
+        out[f"{prefix_ft}double_chance"] = {"1X": (_num(d.get("double_1x")), None),
+                                            "X2": (_num(d.get("double_x2")), None),
+                                            "12": (_num(d.get("double_12")), None)}
+        for lab in ("0_5", "1_5", "2_5", "3_5"):
+            o, u = _num(d.get(f"over_{lab}")), _num(d.get(f"under_{lab}"))
+            if o is not None or u is not None:
+                out[f"{prefix_ft}over_{lab}"] = {"Over": (o, None), "Under": (u, None)}
+
+    _block(mk, "")
+    _block(ht, "first_half_")
     return out
 
 
-_LINE = {"over_1_5": 1.5, "over_2_5": 2.5, "over_3_5": 3.5, "first_half_over_0_5": 0.5}
+_LINE_RE = re.compile(r"(?:home_|away_|first_half_)?over_(\d)_5$")
 
 
-def _rows_for_fixture(fp: dict, match: Optional[dict]) -> list[dict]:
+def _line_of(market: str):
+    m = _LINE_RE.fullmatch(market)
+    return float(m.group(1)) + 0.5 if m else None
+
+
+def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int] = None) -> list[dict]:
     fid = fp["fixture_id"]
     ctx = {
         "fixture_id": fid, "league_id": fp.get("league_id"), "league_name": fp.get("league_name"),
@@ -160,11 +194,12 @@ def _rows_for_fixture(fp: dict, match: Optional[dict]) -> list[dict]:
                 rows.append({
                     "signal_uid": f"{engine}|{fid}|{market}|{selection}",
                     "engine": engine, "generated_at": gen_at, **ctx,
-                    "market": market, "selection": selection, "line": _LINE.get(market),
+                    "market": market, "selection": selection, "line": _line_of(market),
                     "direction": "back", "prob": prob, "prob_raw": prob_raw, "fair_odds": _fair(prob),
                     "n_engines_agree": None, "consensus_prob": None,
                     "placed": False, "status": None,
                     "settled": settled, "result": result, "hit": h, **g,
+                    "first_goal_minute": first_goal,
                     "oos_valid": True, "reliable": reliable,
                 })
                 if prob is not None:
@@ -219,6 +254,24 @@ def _fetch_matches(sb, fids: list[int]) -> dict[int, dict]:
     return out
 
 
+def _fetch_first_goals(sb, fids: list[int]) -> dict[int, int]:
+    """Minuto del PRIMO gol per fixture (timing), da match_events. Copertura ~90%
+    nelle leghe reali; assente in alcune minori → first_goal_minute resta NULL."""
+    out: dict[int, int] = {}
+    for i in range(0, len(fids), 300):
+        chunk = fids[i:i + 300]
+        r = (sb.table("match_events").select("fixture_id,minute")
+             .in_("fixture_id", chunk).eq("event_type", "Goal").execute())
+        for e in r.data or []:
+            mn = e.get("minute")
+            if mn is None:
+                continue
+            cur = out.get(e["fixture_id"])
+            if cur is None or mn < cur:
+                out[e["fixture_id"]] = mn
+    return out
+
+
 def _upsert(sb, rows: list[dict], dry: bool, counters: dict) -> int:
     if dry or not rows:
         return len(rows)
@@ -259,12 +312,13 @@ def main() -> None:
     for batch in _fetch_fixtures(sb, args.league, args.days):
         fids = [b["fixture_id"] for b in batch]
         matches = _fetch_matches(sb, fids)
+        first_goals = _fetch_first_goals(sb, fids)
         rows = []
         for fp in batch:
             m = matches.get(fp["fixture_id"])
             if m and m.get("status_short") in ("FT", "AET", "PEN"):
                 settled_fix += 1
-            rows.extend(_rows_for_fixture(fp, m))
+            rows.extend(_rows_for_fixture(fp, m, first_goals.get(fp["fixture_id"])))
         tot_fix += len(batch)
         tot_rows += _upsert(sb, rows, args.dry_run, counters)
         print(f"  ...fixture {tot_fix} | righe {tot_rows} | settlate {settled_fix}", end="\r")
