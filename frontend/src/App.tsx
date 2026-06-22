@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from 'react-helmet-async';
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
 import Analytics from "@/pages/Analytics";
 import CheckEmail from "@/pages/CheckEmail";
+import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,13 +22,11 @@ function App() {
                     <Toaster />
                     <BrowserRouter>
                         <Routes>
-                            {/* AUTH DISABILITATA: la root porta direttamente alla dashboard.
-                                La landing con login resta raggiungibile a /landing.
-                                Per ripristinare il comportamento originale, rimettere
-                                LandingPage su path="/" ed eliminare il redirect. */}
-                            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                            <Route path="/landing" element={<LandingPage />} />
+                            {/* AUTH ATTIVA: la landing (con login/registrazione) è la root.
+                                La dashboard e analytics sono protette da ProtectedRoute. */}
+                            <Route path="/" element={<LandingPage />} />
                             <Route path="/check-email" element={<CheckEmail />} />
+                            <Route path="/reset-password" element={<ResetPassword />} />
                             <Route
                                 path="/dashboard"
                                 element={

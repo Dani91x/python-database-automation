@@ -1,17 +1,11 @@
-// ⚠️ AUTENTICAZIONE TEMPORANEAMENTE DISABILITATA — accesso libero alla dashboard.
-// Il sistema di auth (useAuth, AuthSection, supabase.auth) NON è stato rimosso:
-// è solo bypassato qui. Per riattivare il login, ripristinare il blocco
-// "AUTH ORIGINALE" qui sotto (ri-aggiungendo gli import di Navigate/useAuth/Loader2)
-// e rimuovere il bypass.
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    // --- BYPASS: accesso libero, nessun controllo login ---
-    return <>{children}</>;
-}
-
-/* AUTH ORIGINALE — riattivare insieme ai seguenti import:
+// AUTENTICAZIONE ATTIVA — early access: accede SOLO l'owner.
+// La dashboard è protetta: serve una sessione valida E che l'utente loggato
+// sia l'owner (isOwnerEmail). Qualunque altra sessione viene rimandata alla
+// landing. Per aprire al pubblico vedi NOTE in src/lib/auth-config.ts.
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { isOwnerEmail } from '@/lib/auth-config';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();
@@ -24,10 +18,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         );
     }
 
-    if (!user) {
+    // Nessuna sessione, oppure sessione di un utente NON autorizzato → landing.
+    if (!user || !isOwnerEmail(user.email)) {
         return <Navigate to="/" replace />;
     }
 
     return <>{children}</>;
 }
-*/

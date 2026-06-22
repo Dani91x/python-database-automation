@@ -14,6 +14,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
     Form, FormControl, FormField, FormItem, FormLabel, FormMessage
 } from '@/components/ui/form';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from '@/components/ui/dialog';
+import { isOwnerEmail, NOT_READY_TITLE, NOT_READY_MESSAGE } from '@/lib/auth-config';
+import { Rocket } from 'lucide-react';
 
 // --- SCHEMAS (INVARIATI) ---
 const registerSchema = z.object({
@@ -46,6 +51,8 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
         const navigate = useNavigate();
         const [isLoading, setIsLoading] = useState(false);
         const [activeTab, setActiveTab] = useState(defaultTab);
+        // Banner "early access": mostrato a chiunque non sia l'owner.
+        const [showNotReady, setShowNotReady] = useState(false);
 
         // --- REGISTER FORM (LOGICA INVARIATA) ---
         const registerForm = useForm<z.infer<typeof registerSchema>>({
@@ -57,25 +64,11 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
         });
 
         async function onRegisterSubmit(values: z.infer<typeof registerSchema>) {
+            // EARLY ACCESS: le registrazioni pubbliche sono chiuse. Non creiamo
+            // alcun account: salviamo (best-effort) il lead per ricontattarlo e
+            // mostriamo il banner "non ancora pronti".
             setIsLoading(true);
             try {
-                const { error } = await supabase.auth.signUp({
-                    email: values.email,
-                    password: values.password,
-                    options: {
-                        emailRedirectTo: window.location.origin + '/dashboard',
-                        data: {
-                            first_name: values.firstName,
-                            last_name: values.lastName,
-                            phone: values.phone,
-                            telegram: values.telegram || null,
-                        },
-                    },
-                });
-
-                if (error) throw error;
-
-                // Salva il lead nella tabella leads (non bloccante)
                 try {
                     await supabase.from('leads').insert({
                         first_name: values.firstName,
@@ -88,16 +81,9 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
                 } catch (leadError) {
                     console.warn('Errore salvataggio lead (non bloccante):', leadError);
                 }
-
-                toast.success("Registrazione completata!", {
-                    description: "Controlla la tua email per confermare l'account."
-                });
-                navigate('/check-email');
-
-            } catch (error: any) {
-                toast.error("Errore registrazione", { description: error.message });
             } finally {
                 setIsLoading(false);
+                setShowNotReady(true);
             }
         }
 
@@ -108,6 +94,13 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
         });
 
         async function onLoginSubmit(values: z.infer<typeof loginSchema>) {
+            // EARLY ACCESS: solo l'owner può accedere. Qualunque altra email →
+            // banner, senza nemmeno interrogare Supabase.
+            if (!isOwnerEmail(values.email)) {
+                setShowNotReady(true);
+                return;
+            }
+
             setIsLoading(true);
             try {
                 const { error } = await supabase.auth.signInWithPassword({
@@ -324,15 +317,23 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
                                                         toast.error("Inserisci la tua email prima di richiedere il reset.");
                                                         return;
                                                     }
+                                                    // Early access: reset solo per l'owner.
+                                                    if (!isOwnerEmail(email)) {
+                                                        setShowNotReady(true);
+                                                        return;
+                                                    }
                                                     try {
-                                                        await supabase.auth.resetPasswordForEmail(email, {
-                                                            redirectTo: window.location.origin + '/dashboard',
+                                                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                                                            redirectTo: window.location.origin + '/reset-password',
                                                         });
+                                                        if (error) throw error;
                                                         toast.success("Email di reset inviata!", {
-                                                            description: "Controlla la tua casella di posta."
+                                                            description: "Controlla la tua casella di posta (anche Spam)."
                                                         });
-                                                    } catch {
-                                                        toast.error("Errore nell'invio dell'email di reset.");
+                                                    } catch (err: any) {
+                                                        toast.error("Errore nell'invio dell'email di reset.", {
+                                                            description: err?.message,
+                                                        });
                                                     }
                                                 }}
                                                 className="text-xs text-muted-foreground hover:text-primary transition-colors"
@@ -361,6 +362,33 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
                         </Tabs>
                     </motion.div>
                 </div>
+
+                {/* BANNER EARLY ACCESS — mostrato a chi non è l'owner */}
+                <Dialog open={showNotReady} onOpenChange={setShowNotReady}>
+                    <DialogContent className="glass-card border-glass-border text-center sm:max-w-md">
+                        <DialogHeader className="items-center space-y-4">
+                            <div className="flex justify-center">
+                                <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center neon-glow-cyan">
+                                    <Rocket className="w-8 h-8 text-primary" strokeWidth={1.5} />
+                                </div>
+                            </div>
+                            <DialogTitle className="text-2xl font-display font-bold text-foreground">
+                                {NOT_READY_TITLE}
+                            </DialogTitle>
+                            <DialogDescription className="text-base text-muted-foreground">
+                                {NOT_READY_MESSAGE}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter className="sm:justify-center">
+                            <Button
+                                onClick={() => setShowNotReady(false)}
+                                className="font-heading font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+                            >
+                                Ho capito
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </section>
         );
     }

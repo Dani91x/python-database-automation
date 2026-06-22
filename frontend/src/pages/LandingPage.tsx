@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { isOwnerEmail } from '@/lib/auth-config';
 import { HeroSection } from '@/components/landing/HeroSection';
 import { StatsBar } from '@/components/landing/StatsBar';
 import { FeaturesGrid } from '@/components/landing/FeaturesGrid';
@@ -16,7 +17,7 @@ export default function LandingPage() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (!loading && user) {
+        if (!loading && user && isOwnerEmail(user.email)) {
             navigate('/dashboard', { replace: true });
         }
     }, [user, loading, navigate]);
