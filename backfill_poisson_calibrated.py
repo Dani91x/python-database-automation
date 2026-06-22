@@ -57,17 +57,30 @@ def _fetch(sb, fids=None, days=None):
     return rows
 
 
-def _iter_all_pages(sb, page=1000):
-    """Stream di TUTTE le righe con db_json_analisi non-null (per --all, bassa memoria)."""
+def _iter_all_pages(sb, page=1000, resume=False):
+    """Stream di righe con db_json_analisi non-null (bassa memoria).
+
+    resume=True: SOLO le righe Poisson ancora prive di markets_calibrated, cosi'
+    una ripresa non riscrive le partite gia' calibrate (gentile sull'I/O Supabase).
+    Nota: l'offset NON avanza in modalita' resume perche' ogni riga scritta esce
+    dal filtro -> si ri-legge sempre dalla cima del residuo.
+    """
     off = 0
     while True:
-        r = (sb.table("fixture_predictions").select("fixture_id,league_id,db_json_analisi")
-             .not_.is_("db_json_analisi", "null")
-             .range(off, off + page - 1).execute())
+        q = (sb.table("fixture_predictions").select("fixture_id,league_id,db_json_analisi")
+             .not_.is_("db_json_analisi", "null"))
+        if resume:
+            q = (q.eq("db_json_analisi->>model", "poisson_xg_hybrid_dc")
+                 .is_("db_json_analisi->markets_calibrated", "null"))
+        else:
+            q = q.range(off, off + page - 1)
+        r = q.limit(page).execute() if resume else q.execute()
         batch = r.data or []
         if not batch:
             break
         yield batch
+        if resume:
+            continue  # filtro auto-restringente: la prossima query parte dal nuovo residuo
         if len(batch) < page:
             break
         off += page
@@ -140,6 +153,8 @@ def main() -> None:
     ap.add_argument("--fids", type=int, nargs="*", default=None)
     ap.add_argument("--days", type=int, default=None)
     ap.add_argument("--all", action="store_true", help="TUTTO lo storico (streaming)")
+    ap.add_argument("--resume", action="store_true",
+                    help="SOLO le righe Poisson senza markets_calibrated (ripresa mirata)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -155,16 +170,28 @@ def main() -> None:
     counters = {"updated": 0, "skipped": 0, "errors": 0}
     sample_state = {"n": 0}
 
-    if args.all:
-        print("Modalita' --all: streaming di tutto lo storico...\n")
+    if args.all or args.resume:
+        mode = "--resume (solo mancanti)" if args.resume else "--all"
+        print(f"Modalita' {mode}: streaming...\n")
         n_pages = 0
-        for page in _iter_all_pages(sb):
+        for page in _iter_all_pages(sb, resume=args.resume):
             n_pages += 1
+            prev_updated = counters["updated"]
             _process(page, cal, sb, now_iso, args.dry_run, counters, sample_state)
             done = counters["updated"] + counters["skipped"] + counters["errors"]
             print(f"  ...pagina {n_pages}: processate {done} righe "
                   f"(calibrate {counters['updated']}, saltate {counters['skipped']}, "
                   f"errori {counters['errors']})", end="\r")
+            # Anti-loop (resume): il filtro `markets_calibrated IS NULL` re-legge sempre
+            # dalla cima del residuo. In dry-run NIENTE viene scritto -> le righe NON escono
+            # mai dal filtro -> giro infinito: mostriamo 1 pagina di anteprima e stop.
+            # In esecuzione reale: se una pagina non calibra nulla di nuovo, sono righe che
+            # falliscono in scrittura -> stop per non ripetere all'infinito.
+            if args.resume and (args.dry_run or counters["updated"] == prev_updated):
+                reason = ("dry-run: 1 pagina di anteprima (nessuna scrittura)" if args.dry_run
+                          else f"pagina {n_pages} senza progressi ({len(page)} righe non scrivibili)")
+                print(f"\n[STOP] resume interrotto: {reason}.")
+                break
         print()
     else:
         fids = args.fids if args.fids is not None else (None if args.days else DEFAULT_FIDS)

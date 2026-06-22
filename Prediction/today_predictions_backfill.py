@@ -1650,6 +1650,24 @@ def run_for_date(target_date: str) -> None:
         target_date, ok_count, empty_count, no_cov_count, err_count, skipped_count, skipped_existing_count
     )
 
+    # --- SECONDO MOTORE: ML ensemble, aggiunta ADDITIVA e NON-FATALE ---
+    # Popola `model_predictions_json` per le partite del giorno (come Poisson->
+    # db_json_analisi). Gira DOPO il loop principale, così le righe fixture_predictions
+    # esistono già (predict_fixture le rilegge). NESSUNA quota Betfair (live_odds=None):
+    # gira interamente in cloud. Avvolto in try/except: un errore NON impatta gli altri motori.
+    try:
+        import os as _os
+        import sys as _sys
+        _aieng = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "Ai Engine")
+        if _aieng not in _sys.path:
+            _sys.path.append(_aieng)
+        from ai_engine.serving_batch import run_for_date as _ml_run
+        _ml_res = _ml_run(target_date)
+        logger.info("🤖 ml_engine %s → %s", target_date, _ml_res)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ml_engine non eseguito per %s: %s", target_date, e)
+
     # --- TERZO MOTORE: Tactical Engine (GSG), aggiunta ADDITIVA e NON-FATALE ---
     # Scrive le predizioni del nuovo motore nella colonna `tactical_engine_json`
     # della STESSA tabella fixture_predictions (come Poisson->db_json_analisi e

@@ -513,9 +513,10 @@ bot.on("callback_query:data", async (ctx) => {
       const formatDbAnalysis = (parsedData: any): string => {
         let output = "";
 
-        if (parsedData.markets) {
+        // Usa i mercati CALIBRATI (come dashboard, ventaglio e report); fallback al grezzo
+        const m = parsedData.markets_calibrated || parsedData.markets;
+        if (m) {
           output += `\n📈 <b>Probabilità Matematiche:</b>\n`;
-          const m = parsedData.markets;
           if (m['1x2']) {
             output += `   • <b>Esito Finale:</b> 1 (${(m['1x2'].H * 100).toFixed(0)}%) | X (${(m['1x2'].D * 100).toFixed(0)}%) | 2 (${(m['1x2'].A * 100).toFixed(0)}%)\n`;
           }
