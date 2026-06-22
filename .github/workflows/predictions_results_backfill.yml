@@ -30,3 +30,17 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: python -m Prediction.predictions_results_backfill
+
+      # ADDITIVO E NON-FATALE: dopo che i risultati sono settlati, aggiorna la
+      # tabella analytics_signals (centro di controllo) per le partite recenti —
+      # nuove predizioni Poisson/ML/TacticAI + quelle appena giocate (settlate a
+      # 90'). Idempotente (upsert). Una finestra di 4 giorni copre sia le predizioni
+      # in arrivo sia le partite appena concluse. Un errore qui NON deve far fallire
+      # la pipeline risultati (critica).
+      - name: Aggiorna analytics_signals (incrementale)
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python build_analytics_signals.py --days 4

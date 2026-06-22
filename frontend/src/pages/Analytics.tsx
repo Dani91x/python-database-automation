@@ -259,9 +259,12 @@ export default function Analytics() {
                 {/* ---- DISCLAIMER (soldi in gioco) ---- */}
                 <p className="text-[11px] text-muted-foreground/70 mt-6 leading-relaxed">
                     <strong className="text-muted-foreground">Nota.</strong> Hit-rate = % direzione azzeccata sulle partite
-                    <em> settlate</em> (esito a 90'). Intervallo di Wilson 95%: con pochi dati (N basso) la stima è incerta —
-                    guarda l'ampiezza dell'intervallo. <em>Scarto calib.</em> = hit-rate − probabilità media: positivo = il motore
-                    <em> sottostima</em>, negativo = <em>sovrastima</em>. I dati storici non garantiscono risultati futuri.
+                    <em> settlate</em>. Motori <strong>Poisson/ML/Tactics</strong> = esito ai <strong>90'</strong> (no
+                    supplementari/rigori). Motore <strong>API</strong> = solo 1X2, esito a <strong>tempo pieno</strong> (include
+                    i supplementari nelle coppe) → confrontalo con cautela rispetto agli altri. Intervallo di Wilson 95%: con
+                    pochi dati (N basso) la stima è incerta — guarda l'ampiezza. <em>Scarto calib.</em> = hit-rate − prob. media:
+                    positivo = il motore <em>sottostima</em>, negativo = <em>sovrastima</em>. Dati storici, non garanzia di
+                    risultati futuri.
                 </p>
             </main>
         </div>
