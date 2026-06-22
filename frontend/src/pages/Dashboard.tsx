@@ -8,7 +8,7 @@ import { TeamPanel } from '@/components/dashboard/TeamPanel';
 import { ComparisonSection } from '@/components/dashboard/ComparisonSection';
 import { H2HSection } from '@/components/dashboard/H2HSection';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, ChevronLeft } from 'lucide-react';
+import { Loader2, LogOut, ChevronLeft, BarChart3 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -107,6 +107,11 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        <Button variant="outline" size="sm" onClick={() => navigate('/analytics')}
+                            className="border-primary/30 text-primary hover:bg-primary/10" aria-label="Analytics">
+                            <BarChart3 className="w-4 h-4 md:mr-2" />
+                            <span className="hidden md:inline">Analytics</span>
+                        </Button>
                         <span className="text-xs text-muted-foreground hidden md:inline-block">
                             {user?.email}
                         </span>

@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import LandingPage from "@/pages/LandingPage";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
+import Analytics from "@/pages/Analytics";
 import CheckEmail from "@/pages/CheckEmail";
 import NotFound from "@/pages/NotFound";
 
@@ -32,6 +33,14 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <Dashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/analytics"
+                                element={
+                                    <ProtectedRoute>
+                                        <Analytics />
                                     </ProtectedRoute>
                                 }
                             />
