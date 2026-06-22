@@ -67,6 +67,12 @@ def extract_poisson(analisi: dict) -> dict:
     for market, sels in M.items():
         mk = mc.get(market)
         if not isinstance(mk, dict):
+            # FALLBACK al grezzo `markets` se manca il calibrato (alcune fixture
+            # vecchie/leghe hanno markets ma non markets_calibrated). Il grezzo è
+            # comunque la PREVISIONE PURA del Poisson (normalizzata, argmax corretto),
+            # NON la prob per-scommessa di engine_signals che invertiva l'argmax.
+            mk = raw.get(market)
+        if not isinstance(mk, dict):
             continue
         rk = raw.get(market) if isinstance(raw.get(market), dict) else {}
         out[market] = {c: (_num(mk.get(j)), _num(rk.get(j))) for c, j in sels}
@@ -169,7 +175,8 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
     analisi = fp.get("db_json_analisi") or {}
     engines: dict = {}
     rel_flags: dict = {}
-    if isinstance(analisi, dict) and analisi.get("markets_calibrated"):
+    # Poisson presente se c'è il calibrato O il grezzo (extract_poisson fa il fallback).
+    if isinstance(analisi, dict) and (analisi.get("markets_calibrated") or analisi.get("markets")):
         engines["poisson"] = (extract_poisson(analisi), analisi.get("generated_at"))
     mpj = fp.get("model_predictions_json")
     if isinstance(mpj, dict) and mpj.get("targets"):
@@ -261,13 +268,15 @@ def _fetch_first_goals(sb, fids: list[int]) -> dict[int, int]:
     out: dict[int, int] = {}
     for i in range(0, len(fids), 300):
         chunk = fids[i:i + 300]
-        r = (sb.table("match_events").select("fixture_id,minute,detail")
+        r = (sb.table("match_events").select("fixture_id,minute,detail,comments")
              .in_("fixture_id", chunk).eq("event_type", "Goal").execute())
         for e in r.data or []:
             mn = e.get("minute")
-            # FIX H1: i rigori SBAGLIATI ('Missed Penalty') NON sono gol → esclusi.
-            # I rigori segnati ('Penalty'), gli autogol e i gol normali restano.
-            if mn is None or e.get("detail") == "Missed Penalty":
+            # FIX H1: primo gol nei 90' REGOLAMENTARI. Esclusi: 'Missed Penalty'
+            # (rigori sbagliati), 'Penalty Shootout' (lotteria finale), e minute>90
+            # (supplementari). TENUTI: rigori segnati, autogol, gol normali nei 90'.
+            if (mn is None or mn > 90 or e.get("detail") == "Missed Penalty"
+                    or e.get("comments") == "Penalty Shootout"):
                 continue
             cur = out.get(e["fixture_id"])
             if cur is None or mn < cur:

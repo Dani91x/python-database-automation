@@ -44,8 +44,10 @@ targets as (
       on a.fixture_id = s.fixture_id
      and a.market     = s.market
      and a.selection  = s.selection
-    where s.n_engines_agree is null
-      and s.prob is not null            -- NO_SIGNAL (prob null) resta NULL
+    where s.prob is not null            -- NO_SIGNAL (prob null) resta NULL
+    -- NB: ricalcolo FORZATO (no filtro IS NULL) — strumento di FIX storico, da
+    -- eseguire DOPO aver completato la distribuzione Poisson (fix_storico_prob).
+    -- Il forward usa la concordanza del populator, non questo backfill.
 )
 update analytics_signals s
    set n_engines_agree = t.n_agree,

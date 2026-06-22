@@ -19,15 +19,25 @@
 --    — es. 0-0 decise ai rigori — tornano NULL invece di restare col minuto sbagliato).
 update analytics_signals set first_goal_minute = null where first_goal_minute is not null;
 -- 2) BACKFILL con il filtro corretto.
+-- "primo gol nei 90' REGOLAMENTARI" (coerente col settlement a 90'):
+--   • escludi 'Missed Penalty' (rigori sbagliati, non gol);
+--   • escludi 'Penalty Shootout' (lotteria finale, minute=120, non nei 90');
+--   • minute <= 90 → esclude supplementari/shootout, TIENE il recupero (codificato 90)
+--     e i rigori SEGNATI / autogol / gol normali nei 90'.
+-- Così una 0-0 nei 90' decisa ai supplementari/rigori resta first_goal = NULL.
 with fg as (
     select fixture_id, min(minute) as first_goal
     from match_events
     where event_type = 'Goal'
-      and detail is distinct from 'Missed Penalty'
+      and detail   is distinct from 'Missed Penalty'
+      and comments is distinct from 'Penalty Shootout'
       and minute is not null
+      and minute <= 90
     group by fixture_id
 )
 update analytics_signals s
    set first_goal_minute = fg.first_goal
   from fg
- where s.fixture_id = fg.fixture_id;
+ where s.fixture_id = fg.fixture_id
+   and s.total_goals > 0;   -- coerenza: niente "primo gol" se il punteggio 90' è 0
+                            -- (match_events può avere gol annullati VAR / discrepanze)

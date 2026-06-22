@@ -303,7 +303,9 @@ export default function Analytics() {
                                 value={q.delayMin ?? ''} onChange={e => set({ delayMin: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
                         </div>
                         <div>
-                            <label className={LABEL_CLS}>1° gol entro min.</label>
+                            <label className={LABEL_CLS} title="ATTENZIONE: il minuto del 1° gol è un ESITO della partita, non noto pre-match. Filtro RETROSPETTIVO / conferma in-play — NON un edge giocabile prima del fischio d'inizio.">
+                                1° gol entro min. <span className="text-amber-400" title="Filtro retrospettivo / in-play (esito noto)">⚠ retrosp.</span>
+                            </label>
                             <input type="number" min={0} max={130} placeholder="qualsiasi" className={SELECT_CLS}
                                 value={q.timingMax ?? ''} onChange={e => set({ timingMax: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
                         </div>
@@ -449,7 +451,9 @@ export default function Analytics() {
                     supplementari/rigori). Motore <strong>API</strong> = solo 1X2, esito a <strong>tempo pieno</strong> →
                     confrontalo con cautela. Intervallo di Wilson 95%: con N basso la stima è incerta — guarda l'ampiezza.
                     <em> Scarto calib.</em> = hit-rate − prob. media: positivo = il motore <em>sottostima</em>, negativo =
-                    <em> sovrastima</em>. Clic su un gruppo per le partite. Dati storici, non garanzia di risultati futuri.
+                    <em> sovrastima</em>. Clic su un gruppo per le partite. <strong className="text-amber-400">⚠ Il filtro "1° gol entro min."
+                    è RETROSPETTIVO</strong>: il minuto del primo gol è un esito della partita, non noto pre-match — usalo per analisi
+                    storica / conferma in-play, NON come edge giocabile prima del fischio. Dati storici, non garanzia di risultati futuri.
                 </p>
 
                 </>}
