@@ -44,3 +44,14 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python build_analytics_signals.py --days 4
+
+      # Sincronizza il firehose engine_signals → layer decisioni analytics_decisions
+      # (+ previsioni in analytics_signals): porta piazzate/scartate/no_signal +
+      # valore/motivo nel centro di controllo. Additivo, non-fatale, idempotente.
+      - name: Sync decisioni (engine_signals → analytics_decisions)
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python merge_engine_signals.py --days 4

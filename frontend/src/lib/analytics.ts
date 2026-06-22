@@ -124,6 +124,66 @@ export function groupsToCsv(groups: AnalyticsGroup[], dim: string): string {
     return lines.join('\n');
 }
 
+// ============================== LAYER DECISIONI ==============================
+export interface DecisionGroup {
+    grp: string;
+    n: number;
+    placed: number;
+    rejected: number;
+    no_signal: number;
+    settled_placed: number;
+    hits: number;
+    stake: number;
+    pnl: number;
+    hit_rate: number | null;   // delle piazzate settlate
+    roi: number | null;        // pnl/stake
+    avg_edge: number | null;
+    avg_odds: number | null;
+    avg_prob: number | null;
+}
+export interface DecisionsResult { group_by: string; groups: DecisionGroup[]; }
+export interface DecisionsFilters {
+    logics: { value: string; n: number }[];
+    statuses: { value: string; n: number }[];
+    engines: { value: string; n: number }[];
+    markets: { value: string; n: number }[];
+    rejects: { value: string; n: number }[];
+    total: number;
+}
+export interface DecisionsQuery {
+    logic?: string | null; status?: string | null; engine?: string | null;
+    market?: string | null; selection?: string | null; leagueId?: number | null;
+    seasonYear?: number | null; reject?: string | null;
+    dateFrom?: string | null; dateTo?: string | null; groupBy?: string;
+}
+
+export async function fetchDecisionsFilters(): Promise<DecisionsFilters> {
+    const { data, error } = await supabase.rpc('get_decisions_filters');
+    if (error) throw new Error(error.message);
+    return data as DecisionsFilters;
+}
+export async function fetchDecisions(q: DecisionsQuery): Promise<DecisionsResult> {
+    const { data, error } = await supabase.rpc('get_decisions', {
+        p_logic: q.logic ?? null, p_status: q.status ?? null, p_engine: q.engine ?? null,
+        p_market: q.market ?? null, p_selection: q.selection ?? null, p_league_id: q.leagueId ?? null,
+        p_season_year: q.seasonYear ?? null, p_reject: q.reject ?? null,
+        p_date_from: q.dateFrom ?? null, p_date_to: q.dateTo ?? null, p_group_by: q.groupBy ?? 'logic',
+    });
+    if (error) throw new Error(error.message);
+    return data as DecisionsResult;
+}
+
+export const DECISIONS_GROUP_OPTIONS = [
+    { value: 'logic', label: 'Per logica decisionale' },
+    { value: 'engine', label: 'Per motore' },
+    { value: 'market', label: 'Per mercato' },
+    { value: 'reject', label: 'Per motivo scarto' },
+    { value: 'status', label: 'Per stato' },
+    { value: 'selection', label: 'Per selezione' },
+    { value: 'league', label: 'Per lega' },
+    { value: 'confidence', label: 'Per fascia confidenza' },
+];
+
 export function downloadCsv(filename: string, csv: string): void {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);

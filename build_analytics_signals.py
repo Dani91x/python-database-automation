@@ -197,7 +197,8 @@ def _rows_for_fixture(fp: dict, match: Optional[dict], first_goal: Optional[int]
                     "market": market, "selection": selection, "line": _line_of(market),
                     "direction": "back", "prob": prob, "prob_raw": prob_raw, "fair_odds": _fair(prob),
                     "n_engines_agree": None, "consensus_prob": None,
-                    "placed": False, "status": None,
+                    # NB: placed/status NON sono scritti qui — li possiede il merger
+                    # (engine_signals → decisione). L'upsert li preserva su conflitto.
                     "settled": settled, "result": result, "hit": h, **g,
                     "first_goal_minute": first_goal,
                     "oos_valid": True, "reliable": reliable,

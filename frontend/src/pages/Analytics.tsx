@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
+import DecisionsView from '@/components/dashboard/DecisionsView';
 import {
     fetchAnalytics, fetchAnalyticsFilters, fetchAnalyticsRows, groupsToCsv, downloadCsv,
     ENGINE_LABEL, MARKET_LABEL, GROUP_BY_OPTIONS, pct,
@@ -82,6 +83,7 @@ export default function Analytics() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const [tab, setTab] = useState<'engines' | 'decisions'>('engines');
     const [q, setQ] = useState<AnalyticsQuery>({ groupBy: 'confidence' });
     const set = (patch: Partial<AnalyticsQuery>) => setQ(prev => ({ ...prev, ...patch }));
     const reset = () => setQ({ groupBy: 'confidence' });
@@ -201,6 +203,24 @@ export default function Analytics() {
                         {filters && <> {' '}<span className="text-white/70">{filters.total_settled.toLocaleString('it')}</span> segnali settlati.</>}
                     </p>
                 </div>
+
+                {/* ---- TAB ---- */}
+                <div className="flex gap-2 mb-5">
+                    <Button variant={tab === 'engines' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setTab('engines')}
+                        className={tab === 'engines' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        Performance Motori
+                    </Button>
+                    <Button variant={tab === 'decisions' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setTab('decisions')}
+                        className={tab === 'decisions' ? 'bg-secondary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        Decisioni / Strategie
+                    </Button>
+                </div>
+
+                {tab === 'decisions' && <DecisionsView />}
+
+                {tab === 'engines' && <>
 
                 {/* ---- FILTRI ---- */}
                 <Card className="glass-card border-white/10 p-4 md:p-5 mb-6">
@@ -431,6 +451,8 @@ export default function Analytics() {
                     <em> Scarto calib.</em> = hit-rate − prob. media: positivo = il motore <em>sottostima</em>, negativo =
                     <em> sovrastima</em>. Clic su un gruppo per le partite. Dati storici, non garanzia di risultati futuri.
                 </p>
+
+                </>}
             </main>
         </div>
     );
