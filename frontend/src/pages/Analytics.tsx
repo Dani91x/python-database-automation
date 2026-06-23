@@ -12,7 +12,8 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import DecisionsView from '@/components/dashboard/DecisionsView';
+import DecisionsTab from '@/components/dashboard/DecisionsTab';
+import CreateStrategy from '@/components/dashboard/CreateStrategy';
 import {
     fetchAnalytics, fetchAnalyticsFilters, fetchAnalyticsRows, groupsToCsv, downloadCsv,
     ENGINE_LABEL, MARKET_LABEL, GROUP_BY_OPTIONS, pct,
@@ -83,7 +84,7 @@ export default function Analytics() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [tab, setTab] = useState<'engines' | 'decisions'>('engines');
+    const [tab, setTab] = useState<'engines' | 'decisions' | 'create'>('engines');
     const [q, setQ] = useState<AnalyticsQuery>({ groupBy: 'confidence' });
     const set = (patch: Partial<AnalyticsQuery>) => setQ(prev => ({ ...prev, ...patch }));
     const reset = () => setQ({ groupBy: 'confidence' });
@@ -214,11 +215,17 @@ export default function Analytics() {
                     <Button variant={tab === 'decisions' ? 'default' : 'outline'} size="sm"
                         onClick={() => setTab('decisions')}
                         className={tab === 'decisions' ? 'bg-secondary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
-                        Decisioni / Strategie
+                        Decisioni
+                    </Button>
+                    <Button variant={tab === 'create' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setTab('create')}
+                        className={tab === 'create' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        Crea Strategia
                     </Button>
                 </div>
 
-                {tab === 'decisions' && <DecisionsView />}
+                {tab === 'decisions' && <DecisionsTab />}
+                {tab === 'create' && <CreateStrategy filters={filters} />}
 
                 {tab === 'engines' && <>
 

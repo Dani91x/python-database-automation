@@ -219,3 +219,123 @@ export const GROUP_BY_OPTIONS = [
 
 export const pct = (v: number | null | undefined, d = 1) =>
     v === null || v === undefined || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(d)}%`;
+
+// ============================== MOTORE STRATEGIE =============================
+// Backtest parametrico (backtest_strategy) + storage virtuale (strategies).
+// Le chiavi di StrategyFilters sono snake_case: vengono salvate AS-IS nel JSON
+// e lette da run_strategy lato DB (unica mappatura filtri→RPC, certificata).
+export interface StrategyFilters {
+    date_from?: string | null;
+    date_to?: string | null;
+    market?: string | null;
+    selection?: string | null;
+    leagues?: number[] | null;
+    direction?: 'back' | 'lay';
+    odds_source?: 'betfair_book' | 'betfair' | 'book';
+    commission?: number;          // 0..1 (default 0.05)
+    min_odds?: number | null;
+    max_odds?: number | null;
+    poisson_min?: number | null;  // 0..1
+    ml_min?: number | null;
+    tacticai_min?: number | null;
+    api_over?: boolean;
+    n_engines_min?: number | null;
+    min_edge?: number | null;
+    delay_eq?: number | null;
+    delay_min?: number | null;
+    freq_dir?: 'below' | 'above' | null;
+    ml_clean?: boolean;
+    status?: string | null;       // PLACED|REJECTED|NO_SIGNAL
+    group_by?: string;            // market_league|market|league|overall|month
+}
+
+export interface BacktestRow {
+    grp: string;
+    n: number;
+    n_settled: number;
+    n_hit: number;
+    hit_rate: number | null;
+    wilson_low: number | null;
+    wilson_high: number | null;
+    n_priced: number;
+    n_unpriced: number;
+    profit: number | null;
+    turnover: number | null;
+    roi: number | null;
+    roi_low: number | null;
+    roi_high: number | null;
+    avg_odds: number | null;
+}
+
+export interface Strategy {
+    id: string;
+    name: string;
+    filters: StrategyFilters;
+    created_at: string;
+    updated_at: string;
+}
+
+function backtestParams(f: StrategyFilters) {
+    const num = (v: number | null | undefined) => (v === undefined ? null : v);
+    return {
+        p_date_from: f.date_from ?? null,
+        p_date_to: f.date_to ?? null,
+        p_market: f.market ?? null,
+        p_selection: f.selection ?? null,
+        p_leagues: f.leagues && f.leagues.length ? f.leagues : null,
+        p_direction: f.direction ?? 'back',
+        p_odds_source: f.odds_source ?? 'betfair_book',
+        p_commission: f.commission ?? 0.05,
+        p_min_odds: num(f.min_odds),
+        p_max_odds: num(f.max_odds),
+        p_poisson_min: num(f.poisson_min),
+        p_ml_min: num(f.ml_min),
+        p_tacticai_min: num(f.tacticai_min),
+        p_api_over: f.api_over ?? false,
+        p_n_engines_min: num(f.n_engines_min),
+        p_min_edge: num(f.min_edge),
+        p_delay_eq: num(f.delay_eq),
+        p_delay_min: num(f.delay_min),
+        p_freq_dir: f.freq_dir ?? null,
+        p_ml_clean: f.ml_clean ?? false,
+        p_status: f.status ?? null,
+        p_group_by: f.group_by ?? 'market_league',
+    };
+}
+
+export async function fetchBacktest(f: StrategyFilters): Promise<BacktestRow[]> {
+    const { data, error } = await supabase.rpc('backtest_strategy', backtestParams(f));
+    if (error) throw new Error(error.message);
+    return (data ?? []) as BacktestRow[];
+}
+
+export async function listStrategies(): Promise<Strategy[]> {
+    const { data, error } = await supabase.rpc('list_strategies');
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Strategy[];
+}
+
+export async function saveStrategy(name: string, filters: StrategyFilters): Promise<string> {
+    const { data, error } = await supabase.rpc('save_strategy', { p_name: name, p_filters: filters });
+    if (error) throw new Error(error.message);
+    return data as string;
+}
+
+export async function deleteStrategy(id: string): Promise<void> {
+    const { error } = await supabase.rpc('delete_strategy', { p_id: id });
+    if (error) throw new Error(error.message);
+}
+
+export async function runStrategy(id: string, groupBy?: string): Promise<BacktestRow[]> {
+    const { data, error } = await supabase.rpc('run_strategy', { p_id: id, p_group_by: groupBy ?? null });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as BacktestRow[];
+}
+
+export const STRATEGY_GROUP_OPTIONS = [
+    { value: 'market_league', label: 'Per mercato × lega' },
+    { value: 'market', label: 'Per mercato' },
+    { value: 'league', label: 'Per lega' },
+    { value: 'month', label: 'Per mese' },
+    { value: 'overall', label: 'Totale' },
+];
