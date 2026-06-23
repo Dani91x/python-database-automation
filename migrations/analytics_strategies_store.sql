@@ -111,7 +111,44 @@ begin
 end;
 $$;
 
+-- ---- drill-down: partite della strategia salvata (tutti i dati, per certificare a occhio) ----
+create or replace function public.run_strategy_rows(p_id uuid, p_limit int default 300, p_offset int default 0)
+returns table(
+    kickoff timestamptz, league_name text, home_team text, away_team text,
+    market text, selection text, poisson_prob numeric, ml_prob numeric, tacticai_prob numeric,
+    api_over_line numeric, n_engines_agree smallint, delay_current integer, freq_deviation numeric,
+    odds numeric, odds_src text, edge numeric, status text,
+    settled boolean, hit boolean, total_goals smallint, goals_home smallint, goals_away smallint,
+    first_goal_minute smallint, pnl numeric
+)
+language plpgsql stable security definer set search_path = public set statement_timeout = '60s'
+as $$
+declare f jsonb;
+begin
+    select filters into f from public.strategies where id = p_id;
+    if f is null then raise exception 'strategia % inesistente', p_id; end if;
+    return query select * from public.backtest_strategy_rows(
+        p_date_from => nullif(f->>'date_from','')::date, p_date_to => nullif(f->>'date_to','')::date,
+        p_market => nullif(f->>'market',''), p_selection => nullif(f->>'selection',''),
+        p_leagues => case when f ? 'leagues' and jsonb_typeof(f->'leagues')='array'
+                          then (select array_agg((x)::bigint) from jsonb_array_elements_text(f->'leagues') x) end,
+        p_direction => coalesce(nullif(f->>'direction',''),'back'),
+        p_odds_source => coalesce(nullif(f->>'odds_source',''),'betfair_book'),
+        p_commission => coalesce(nullif(f->>'commission','')::numeric, 0.05),
+        p_min_odds => nullif(f->>'min_odds','')::numeric, p_max_odds => nullif(f->>'max_odds','')::numeric,
+        p_poisson_min => nullif(f->>'poisson_min','')::numeric, p_ml_min => nullif(f->>'ml_min','')::numeric,
+        p_tacticai_min => nullif(f->>'tacticai_min','')::numeric, p_api_over => coalesce((f->>'api_over')::boolean,false),
+        p_n_engines_min => nullif(f->>'n_engines_min','')::int, p_min_edge => nullif(f->>'min_edge','')::numeric,
+        p_delay_eq => nullif(f->>'delay_eq','')::int, p_delay_min => nullif(f->>'delay_min','')::int,
+        p_freq_dir => nullif(f->>'freq_dir',''), p_ml_clean => coalesce((f->>'ml_clean')::boolean,false),
+        p_status => nullif(f->>'status',''), p_limit => p_limit, p_offset => p_offset
+    );
+end;
+$$;
+
 revoke all on function public.save_strategy(text, jsonb)   from public, anon;
+revoke all on function public.run_strategy_rows(uuid, int, int) from public, anon;
+grant execute on function public.run_strategy_rows(uuid, int, int) to authenticated, service_role;
 revoke all on function public.list_strategies()             from public, anon;
 revoke all on function public.delete_strategy(uuid)         from public, anon;
 revoke all on function public.run_strategy(uuid, text)      from public, anon;

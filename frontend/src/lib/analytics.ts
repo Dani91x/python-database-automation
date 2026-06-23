@@ -332,6 +332,40 @@ export async function runStrategy(id: string, groupBy?: string): Promise<Backtes
     return (data ?? []) as BacktestRow[];
 }
 
+// Singola partita (drill-down della strategia) con TUTTI i dati per certificare a occhio.
+export interface StrategyBetRow {
+    kickoff: string | null;
+    league_name: string | null;
+    home_team: string | null;
+    away_team: string | null;
+    market: string;
+    selection: string;
+    poisson_prob: number | null;
+    ml_prob: number | null;
+    tacticai_prob: number | null;
+    api_over_line: number | null;
+    n_engines_agree: number | null;
+    delay_current: number | null;
+    freq_deviation: number | null;
+    odds: number | null;
+    odds_src: string | null;
+    edge: number | null;
+    status: string | null;
+    settled: boolean | null;
+    hit: boolean | null;
+    total_goals: number | null;
+    goals_home: number | null;
+    goals_away: number | null;
+    first_goal_minute: number | null;
+    pnl: number | null;
+}
+
+export async function runStrategyRows(id: string, limit = 500, offset = 0): Promise<StrategyBetRow[]> {
+    const { data, error } = await supabase.rpc('run_strategy_rows', { p_id: id, p_limit: limit, p_offset: offset });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as StrategyBetRow[];
+}
+
 export const STRATEGY_GROUP_OPTIONS = [
     { value: 'market_league', label: 'Per mercato × lega' },
     { value: 'market', label: 'Per mercato' },
