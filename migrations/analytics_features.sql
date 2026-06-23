@@ -74,19 +74,19 @@ as $fn$
 declare v_col text := public._feat_expr(p_feature); v_sql text;
 begin
     if v_col is null then raise exception 'feature non valida: %', p_feature; end if;
+    -- popolazione = scommesse SETTLATE e PREZZATE (quelle realmente bettabili): hit-rate,
+    -- quota ed EV calcolati sulla STESSA popolazione (niente mismatch che falsa l'EV).
     v_sql := format($q$
         with f as (
-            select %s::numeric as x, hit, settled, odds
+            select %s::numeric as x, hit, odds
             from public.bet_features
-            where market = %L and selection = %L and settled = true and %s is not null
+            where market = %L and selection = %L and settled = true and odds is not null and %s is not null
         ),
         b as (select x, hit, odds, ntile(%s) over (order by x) as bin from f)
-        select bin::int, min(x), max(x), count(*)::bigint,
-               count(*) filter (where odds is not null)::bigint,
-               avg(hit::int)::numeric,
-               avg(odds) filter (where odds is not null),
-               avg(hit::int)*(avg(odds) filter (where odds is not null)-1)*(1-%s) - (1-avg(hit::int)),
-               (1-avg(hit::int))*(1-%s) - avg(hit::int)*(avg(odds) filter (where odds is not null)-1)
+        select bin::int, min(x), max(x), count(*)::bigint, count(*)::bigint,
+               avg(hit::int)::numeric, avg(odds),
+               avg(hit::int)*(avg(odds)-1)*(1-%s) - (1-avg(hit::int)),
+               (1-avg(hit::int))*(1-%s) - avg(hit::int)*(avg(odds)-1)
         from b group by bin order by bin
     $q$, v_col, p_market, p_selection, v_col, p_bins, p_comm, p_comm);
     return query execute v_sql;
@@ -101,15 +101,17 @@ returns table(league_id bigint, league_name text, n bigint, n_priced bigint,
               hit_rate numeric, avg_odds numeric, ev_back numeric)
 language sql stable security definer set search_path = public set statement_timeout = '60s'
 as $$
+    -- popolazione = settlate E prezzate (bettabili): hit/quota/EV sulla STESSA popolazione
     select league_id, max(league_name), count(*)::bigint,
            count(*) filter (where odds is not null)::bigint,
-           avg(hit::int)::numeric,
+           avg(hit::int) filter (where odds is not null)::numeric,
            avg(odds) filter (where odds is not null),
-           avg(hit::int)*(avg(odds) filter (where odds is not null)-1)*(1-p_comm) - (1-avg(hit::int))
+           (avg(hit::int) filter (where odds is not null))*((avg(odds) filter (where odds is not null))-1)*(1-p_comm)
+             - (1-(avg(hit::int) filter (where odds is not null)))
     from public.bet_features
     where market = p_market and selection = p_selection and settled = true
     group by league_id
-    having count(*) >= p_min_n
+    having count(*) filter (where odds is not null) >= p_min_n
     order by 7 desc nulls last;
 $$;
 
