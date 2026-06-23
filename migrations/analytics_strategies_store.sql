@@ -77,6 +77,7 @@ language plpgsql
 stable
 security definer
 set search_path = public
+set statement_timeout = '60s'
 as $$
 declare f jsonb;
 begin

@@ -61,6 +61,7 @@ language plpgsql
 stable
 security definer
 set search_path = public
+set statement_timeout = '60s'
 as $fn$
 declare
     v_dir  text := lower(coalesce(p_direction, 'back'));
@@ -80,8 +81,8 @@ begin
     -- espressione quota secondo la fonte scelta (catena di fallback)
     v_odds := case v_src
         when 'betfair' then 'b.odds_betfair'
-        when 'book'    then 'book_odds(fp.raw_json_odds, b.market, b.selection)'
-        else                'coalesce(b.odds_betfair, book_odds(fp.raw_json_odds, b.market, b.selection))'
+        when 'book'    then 'b.odds_book'
+        else                'coalesce(b.odds_betfair, b.odds_book)'   -- catena Betfair → bookmaker
     end;
 
     -- chiave di raggruppamento
@@ -114,16 +115,13 @@ begin
     if p_status       is not null then v_w := v_w || format(' and b.dec_status = %L', p_status); end if;
     if p_min_odds     is not null then v_w := v_w || format(' and (%s) >= %L', v_odds, p_min_odds); end if;
     if p_max_odds     is not null then v_w := v_w || format(' and (%s) <= %L', v_odds, p_max_odds); end if;
-    if p_api_over then
-        v_w := v_w || ' and (fp.flat_summary->>''prediction_under_over'') ~ ''^\+'''
-                   || ' and nullif(regexp_replace(fp.flat_summary->>''prediction_under_over'', ''[^0-9.]'', '''', ''g''), '''')::numeric >= b.line';
-    end if;
+    -- API dice over la linea della scommessa (segnale pre-calcolato nella matview)
+    if p_api_over then v_w := v_w || ' and b.api_over_line is not null and b.api_over_line >= b.line'; end if;
 
     v_sql :=
       'with base as ('
       || ' select b.*, (' || v_odds || ') as odds'
       || ' from analytics_bets b'
-      || ' left join fixture_predictions fp on fp.fixture_id = b.fixture_id'
       || v_w || '),'
       || ' pnl as (select ' || v_grp || ' as grp, settled, hit, odds,'
       || '   case when settled and odds is not null then'

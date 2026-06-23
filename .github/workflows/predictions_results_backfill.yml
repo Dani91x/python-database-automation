@@ -71,3 +71,15 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: python enrich_analytics_snapshots.py --days 4
+
+      # ADDITIVO E NON-FATALE: rinfresca la tabella materializzata analytics_bets
+      # (motore strategie) per i giorni recenti — incrementale per intervallo di date,
+      # veloce e scalabile. Va DOPO build/merge/enrich così le scommesse riflettono
+      # previsioni, decisioni+quote e snapshot aggiornati. Un errore qui NON blocca.
+      - name: Refresh analytics_bets (motore strategie, incrementale)
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python -c "from db_client import get_supabase_client; print('analytics_bets refresh:', get_supabase_client().rpc('refresh_analytics_bets', {'p_days': 5}).execute().data)"
