@@ -1,0 +1,614 @@
+// ============================================================================
+// /report-personale — Report Personale: KPI + equity curve + underwater/drawdown
+// + breakdown per strategia/lega + heatmap-calendario P&L giornaliero + consigli
+// seguiti vs fuori-consiglio + tabella trade con drill-down (scheda + segnali
+// snapshot + settle). Tutta la matematica è server-side (RPC get_personal_report
+// / get_personal_trades, certificate oracle==RPC). Qui solo rendering + filtri.
+// Stesso design system della Dashboard/Analytics.
+// ============================================================================
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Helmet } from 'react-helmet-async';
+import { Link } from 'react-router-dom';
+import {
+    LineChart, Line, Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip,
+    ResponsiveContainer, ReferenceLine,
+} from 'recharts';
+import {
+    ChevronLeft, Wallet, Bookmark, AlertTriangle, Filter, RotateCcw,
+    ChevronDown, ChevronUp, TrendingUp, TrendingDown, Loader2, CheckCircle2,
+} from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
+import {
+    getPersonalReport, getPersonalTrades, settlePersonalTrade,
+    type ReportData, type PersonalTrade, type ReportFilters, type Metrics,
+    type TradeStatus,
+} from '@/lib/personalReport';
+
+const SELECT_CLS =
+    'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
+    'focus:outline-none focus:border-primary/60 transition-colors';
+const LABEL_CLS = 'text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block';
+
+const eur = (v: number | null | undefined, d = 2) =>
+    v == null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '' : '-'}€${Math.abs(v).toFixed(d)}`;
+const num = (v: number | null | undefined, d = 2) =>
+    v == null || !Number.isFinite(v) ? '—' : v.toFixed(d);
+const pct = (v: number | null | undefined, d = 1) =>
+    v == null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`;
+const signColor = (v: number | null | undefined) =>
+    v == null ? 'text-white' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-white';
+
+// ---- KPI card ----
+function Kpi({ label, value, color, hint }: { label: string; value: string; color?: string; hint?: string }) {
+    return (
+        <Card className="glass-card border-white/10 p-4" title={hint}>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+            <div className={`text-xl md:text-2xl font-black font-display tabular-nums ${color ?? 'text-white'}`}>{value}</div>
+        </Card>
+    );
+}
+
+// ---- tooltip equity/dd ----
+function ChartTooltip({ active, payload, label }: any) {
+    if (!active || !payload?.length) return null;
+    const p = payload[0]?.payload;
+    if (!p) return null;
+    return (
+        <div className="glass-card border border-white/10 rounded-lg px-3 py-2 text-xs">
+            <div className="font-bold text-white mb-1">{label}</div>
+            <div className="space-y-0.5 font-mono">
+                <div className={signColor(p.pnl)}>P&L giorno: {eur(p.pnl)}</div>
+                <div className="text-white/80">Equity: {eur(p.equity)}</div>
+                <div className="text-red-300">Drawdown: {eur(p.drawdown)}</div>
+                <div className="text-muted-foreground">{p.n_trades} trade</div>
+            </div>
+        </div>
+    );
+}
+
+// ---- calendar heatmap (P&L giornaliero) ----
+function CalendarHeatmap({ daily }: { daily: ReportData['daily'] }) {
+    const max = useMemo(() => Math.max(1, ...daily.map(d => Math.abs(d.pnl))), [daily]);
+    const cellColor = (pnlV: number) => {
+        const t = Math.min(1, Math.abs(pnlV) / max);
+        if (pnlV > 0) return `hsla(155, 84%, 42%, ${0.15 + t * 0.7})`;
+        if (pnlV < 0) return `hsla(0, 80%, 55%, ${0.15 + t * 0.7})`;
+        return 'rgba(255,255,255,0.04)';
+    };
+    if (!daily.length) return <p className="text-xs text-muted-foreground">Nessun giorno operativo.</p>;
+    return (
+        <div className="flex flex-wrap gap-1.5">
+            {daily.map(d => (
+                <div key={d.day}
+                    className="w-9 h-9 rounded-md flex items-center justify-center border border-white/5"
+                    style={{ background: cellColor(d.pnl) }}
+                    title={`${d.day} · ${eur(d.pnl)} · ${d.n_trades} trade`}
+                >
+                    <span className="text-[8px] font-mono text-white/70">
+                        {(() => { try { return new Date(d.day).getDate(); } catch { return ''; } })()}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// ---- settle dialog ----
+function SettleDialog({ open, onOpenChange, trade, onSaved }: {
+    open: boolean; onOpenChange: (o: boolean) => void; trade: PersonalTrade; onSaved?: () => void;
+}) {
+    const [status, setStatus] = useState<TradeStatus>('WON');
+    const [resultFt, setResultFt] = useState('');
+    const [exitOdds, setExitOdds] = useState('');
+    const [timeMin, setTimeMin] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const handleSettle = async () => {
+        setSaving(true);
+        try {
+            await settlePersonalTrade({
+                id: trade.id,
+                status,
+                resultFt: resultFt.trim() || null,
+                exitOdds: exitOdds.trim() === '' ? null : Number(exitOdds),
+                timeMin: timeMin.trim() === '' ? null : Number(timeMin),
+            });
+            toast.success('Trade chiuso', { description: `Esito ${status}.` });
+            onOpenChange(false);
+            onSaved?.();
+        } catch (e: any) {
+            toast.error('Errore chiusura trade', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="glass-card bg-black/95 border-white/10 backdrop-blur-2xl max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="font-display font-black text-lg text-white">Chiudi trade</DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground">
+                        {trade.home_team} vs {trade.away_team} · {trade.strategia}. Il P&L viene ricalcolato dal server.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <Label className={LABEL_CLS}>Esito *</Label>
+                        <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as TradeStatus)}>
+                            <option value="WON">Vinto</option>
+                            <option value="LOST">Perso</option>
+                            <option value="VOID">Annullato</option>
+                            <option value="PARTIAL">Parziale (cash-out)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <Label className={LABEL_CLS}>Risultato FT</Label>
+                        <Input value={resultFt} onChange={e => setResultFt(e.target.value)} placeholder="es. 2-1"
+                            className="bg-black/60 border-white/10" />
+                    </div>
+                    <div>
+                        <Label className={LABEL_CLS}>Quota uscita</Label>
+                        <Input type="number" step="0.01" value={exitOdds} onChange={e => setExitOdds(e.target.value)}
+                            placeholder="cash-out" className="bg-black/60 border-white/10" />
+                    </div>
+                    <div>
+                        <Label className={LABEL_CLS}>Tempo operativo (min)</Label>
+                        <Input type="number" value={timeMin} onChange={e => setTimeMin(e.target.value)}
+                            placeholder="es. 45" className="bg-black/60 border-white/10" />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}
+                        className="text-muted-foreground hover:text-white">Annulla</Button>
+                    <Button onClick={handleSettle} disabled={saving}
+                        className="bg-primary text-primary-foreground font-bold hover:bg-primary/90">
+                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                        Chiudi trade
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ---- riga trade + drill-down ----
+function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }) {
+    const [open, setOpen] = useState(false);
+    const [settleOpen, setSettleOpen] = useState(false);
+    const statusBadge: Record<TradeStatus, string> = {
+        OPEN: 'text-amber-300', WON: 'text-emerald-400', LOST: 'text-red-400',
+        VOID: 'text-muted-foreground', PARTIAL: 'text-sky-300',
+    };
+    return (
+        <Fragment>
+            <tr className={`border-b border-white/5 cursor-pointer hover:bg-white/[0.04] ${open ? 'bg-white/[0.04]' : ''}`}
+                onClick={() => setOpen(v => !v)}>
+                <td className="px-3 py-2.5">
+                    <span className="inline-flex items-center gap-1.5">
+                        {open ? <ChevronDown className="w-3 h-3 text-primary" /> : <ChevronUp className="w-3 h-3 opacity-30 rotate-180" />}
+                        <span className="text-white">{t.home_team} v {t.away_team}</span>
+                    </span>
+                </td>
+                <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell">{t.strategia}</td>
+                <td className="px-3 py-2.5 text-center">
+                    <span className={`uppercase text-[10px] font-bold ${t.side === 'lay' ? 'text-rose-300' : 'text-sky-300'}`}>{t.side}</span>
+                </td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-white/80">{num(t.entry_odds)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{eur(t.stake)}</td>
+                <td className={`px-3 py-2.5 text-center font-bold text-[11px] uppercase ${statusBadge[t.status]}`}>{t.status}</td>
+                <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</td>
+            </tr>
+            {open && (
+                <tr className="bg-black/40">
+                    <td colSpan={7} className="px-4 py-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                            <div><span className="text-muted-foreground">Mercato/Sel.</span><div className="text-white">{t.market ?? '—'} · {t.selection ?? '—'}</div></div>
+                            <div><span className="text-muted-foreground">Timing</span><div className="text-white">{t.timing}{t.entry_minute != null ? ` · ${t.entry_minute}'` : ''}</div></div>
+                            <div><span className="text-muted-foreground">ROI</span><div className={signColor(t.roi)}>{pct(t.roi)}</div></div>
+                            <div><span className="text-muted-foreground">Resa oraria</span><div className={signColor(t.hourly_yield)}>{eur(t.hourly_yield)}</div></div>
+                            <div><span className="text-muted-foreground">Edge entry</span><div className="text-white">{t.edge_at_entry != null ? pct(t.edge_at_entry) : '—'}</div></div>
+                            <div><span className="text-muted-foreground">Affidabilità</span><div className="text-white">{t.affidabilita != null ? pct(t.affidabilita) : '—'}</div></div>
+                            <div><span className="text-muted-foreground">Concordi</span><div className="text-white">{t.concordi != null ? `${t.concordi}/${t.motori_totali ?? '?'}` : '—'}</div></div>
+                            <div>
+                                <span className="text-muted-foreground">Consiglio</span>
+                                <div className={t.followed_advice == null ? 'text-muted-foreground' : t.followed_advice ? 'text-emerald-400' : 'text-amber-300'}>
+                                    {t.followed_advice == null ? '—' : t.followed_advice ? 'seguito' : 'fuori-consiglio'}
+                                </div>
+                            </div>
+                            {t.result_ft && <div><span className="text-muted-foreground">Risultato</span><div className="text-white">{t.result_ft}</div></div>}
+                            {t.comment && <div className="col-span-2 md:col-span-4"><span className="text-muted-foreground">Nota</span><div className="text-white/80">{t.comment}</div></div>}
+                        </div>
+
+                        {/* legs */}
+                        {t.legs && t.legs.length > 0 && (
+                            <div className="mt-3">
+                                <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 font-bold">Coperture / Hedge</div>
+                                <div className="space-y-1">
+                                    {t.legs.map(l => (
+                                        <div key={l.id} className="flex items-center gap-3 text-[11px] text-white/80">
+                                            <span className="uppercase font-bold text-white/60 w-20">{l.leg_type}</span>
+                                            <span>{l.side ?? '—'} · {l.market ?? '—'} {l.selection ?? ''}</span>
+                                            <span className="font-mono">q {num(l.odds)}</span>
+                                            <span className="font-mono">{eur(l.stake)}</span>
+                                            <span className={`font-mono ml-auto font-bold ${signColor(l.net_pnl)}`}>{eur(l.net_pnl)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {(t.status === 'OPEN' || t.status === 'PARTIAL') && (
+                            <div className="mt-3">
+                                <Button size="sm" onClick={(e) => { e.stopPropagation(); setSettleOpen(true); }}
+                                    className="bg-primary text-primary-foreground font-bold hover:bg-primary/90">
+                                    <CheckCircle2 className="w-4 h-4 mr-2" /> Chiudi trade
+                                </Button>
+                            </div>
+                        )}
+                    </td>
+                </tr>
+            )}
+            <SettleDialog open={settleOpen} onOpenChange={setSettleOpen} trade={t} onSaved={onChanged} />
+        </Fragment>
+    );
+}
+
+// ---- breakdown table ----
+function BreakdownTable<T extends Record<string, any>>({ title, rows, nameKey, nameLabel }: {
+    title: string; rows: T[]; nameKey: keyof T; nameLabel: string;
+}) {
+    return (
+        <Card className="glass-card border-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/5 font-heading font-bold text-sm">{title}</div>
+            {rows.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">Nessun dato.</div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
+                                <th className="text-left px-3 py-2 font-medium">{nameLabel}</th>
+                                <th className="text-right px-3 py-2 font-medium">N</th>
+                                <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Win%</th>
+                                <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Stake</th>
+                                <th className="text-right px-3 py-2 font-medium">P&L</th>
+                                <th className="text-right px-3 py-2 font-medium">ROI</th>
+                                <th className="text-right px-3 py-2 font-medium hidden md:table-cell">PF</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((r, i) => (
+                                <tr key={i} className="border-b border-white/5">
+                                    <td className="px-3 py-2 text-white truncate max-w-[180px]">{String(r[nameKey] ?? '—')}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.n}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden md:table-cell">{pct(r.win_rate, 0)}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden md:table-cell">{eur(r.stake, 0)}</td>
+                                    <td className={`px-3 py-2 text-right tabular-nums font-bold ${signColor(r.net_pnl)}`}>{eur(r.net_pnl)}</td>
+                                    <td className={`px-3 py-2 text-right tabular-nums ${signColor(r.roi)}`}>{pct(r.roi)}</td>
+                                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden md:table-cell">{num(r.profit_factor, 2)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </Card>
+    );
+}
+
+// ---- metriche di rischio (griglia) ----
+function RiskGrid({ m }: { m: Metrics }) {
+    const items: { label: string; value: string; hint?: string }[] = [
+        { label: 'Volatilità', value: eur(m.vol), hint: 'Deviazione standard campionaria (n-1) del P&L giornaliero' },
+        { label: 'Sharpe', value: num(m.sharpe), hint: 'mean / vol' },
+        { label: 'Sortino', value: num(m.sortino), hint: 'mean / downside deviation' },
+        { label: 'Calmar', value: num(m.calmar), hint: 'tot / |max drawdown|' },
+        { label: 'Recovery factor', value: num(m.recovery_factor) },
+        { label: 'Ulcer index', value: num(m.ulcer_index) },
+        { label: 'UPI', value: num(m.upi), hint: 'mean / ulcer index' },
+        { label: 'Downside dev', value: eur(m.downside_dev) },
+        { label: 'CVaR 5%', value: eur(m.cvar_5), hint: 'media del 5% dei giorni peggiori' },
+        { label: 'Max DD', value: eur(m.max_drawdown) },
+        { label: 'DD max (gg)', value: num(m.max_dd_duration_days, 0) },
+        { label: 'Kurtosis', value: num(m.kurtosis) },
+        { label: 'Profit factor', value: num(m.profit_factor) },
+        { label: 'Mediana giorno', value: eur(m.median) },
+        { label: 'Miglior giorno', value: eur(m.max_day) },
+        { label: 'Peggior giorno', value: eur(m.min_day) },
+        { label: 'Profit/stake', value: pct(m.profit_per_stake) },
+        { label: 'Trade/giorno', value: num(m.media_trade_giorno, 1) },
+    ];
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+            {items.map(it => (
+                <div key={it.label} className="glass-card rounded-lg border border-white/10 px-3 py-2" title={it.hint}>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{it.label}</div>
+                    <div className="text-sm font-bold font-mono tabular-nums text-white">{it.value}</div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+export default function ReportPersonale() {
+    const [report, setReport] = useState<ReportData | null>(null);
+    const [trades, setTrades] = useState<PersonalTrade[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const [filters, setFilters] = useState<ReportFilters>({});
+    const set = (patch: Partial<ReportFilters>) => setFilters(prev => ({ ...prev, ...patch }));
+    const reset = () => setFilters({});
+
+    const load = async (f: ReportFilters) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const [r, t] = await Promise.all([
+                getPersonalReport(f),
+                getPersonalTrades({ ...f, limit: 200 }),
+            ]);
+            setReport(r);
+            setTrades(t);
+        } catch (e: any) {
+            setError(e?.message ?? 'errore sconosciuto');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const id = setTimeout(() => load(filters), 250);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters]);
+
+    const m = report?.metrics;
+    const totColor = m ? signColor(m.tot) : 'text-white';
+    const advice = report?.advice;
+
+    return (
+        <div className="min-h-screen bg-background relative pb-24">
+            <Helmet><title>Report Personale | Alpha Score</title></Helmet>
+            <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
+
+            <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
+                <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Link to="/dashboard" className="font-display font-black text-xl tracking-tighter">AI <span className="text-primary">TERMINAL</span></Link>
+                        <span className="hidden md:flex items-center gap-2 text-sm text-primary font-heading font-bold ml-4">
+                            <Wallet className="w-4 h-4" /> REPORT PERSONALE
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Link to="/watchlist">
+                            <Button variant="outline" size="sm" className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10">
+                                <Bookmark className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Watchlist</span>
+                            </Button>
+                        </Link>
+                        <Link to="/dashboard">
+                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                                <ChevronLeft className="w-4 h-4 mr-1" /> Dashboard
+                            </Button>
+                        </Link>
+                    </div>
+                </div>
+            </nav>
+
+            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 space-y-6">
+                <div>
+                    <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
+                        Report <span className="text-primary">Personale</span>
+                    </h1>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        La tua operatività reale (pre-match + live). Metriche calcolate lato DB.
+                    </p>
+                </div>
+
+                {/* filtri */}
+                <Card className="glass-card border-white/10 p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Filter className="w-4 h-4 text-primary" />
+                        <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri</span>
+                        <Button variant="ghost" size="sm" onClick={reset} className="ml-auto text-xs text-muted-foreground hover:text-white">
+                            <RotateCcw className="w-3 h-3 mr-1" /> Reset
+                        </Button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                            <label className={LABEL_CLS}>Dal</label>
+                            <input type="date" className={SELECT_CLS} value={filters.from ?? ''}
+                                onChange={e => set({ from: e.target.value || null })} />
+                        </div>
+                        <div>
+                            <label className={LABEL_CLS}>Al</label>
+                            <input type="date" className={SELECT_CLS} value={filters.to ?? ''}
+                                onChange={e => set({ to: e.target.value || null })} />
+                        </div>
+                        <div>
+                            <label className={LABEL_CLS}>Strategia</label>
+                            <input className={SELECT_CLS} value={filters.strategia ?? ''} placeholder="tutte"
+                                onChange={e => set({ strategia: e.target.value || null })} />
+                        </div>
+                        <div>
+                            <label className={LABEL_CLS}>Stato</label>
+                            <select className={SELECT_CLS} value={filters.status ?? ''}
+                                onChange={e => set({ status: e.target.value || null })}>
+                                <option value="">Tutti (chiusi)</option>
+                                <option value="WON">Vinti</option>
+                                <option value="LOST">Persi</option>
+                                <option value="VOID">Annullati</option>
+                                <option value="PARTIAL">Parziali</option>
+                                <option value="OPEN">Aperti</option>
+                            </select>
+                        </div>
+                    </div>
+                </Card>
+
+                {error && (
+                    <Card className="glass-card border-red-500/30 p-4 flex items-center gap-2 text-red-400 text-sm">
+                        <AlertTriangle className="w-4 h-4" /> {error}
+                    </Card>
+                )}
+
+                {loading ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                            <div key={i} className="glass-card rounded-xl border border-white/10 h-24 animate-pulse bg-white/[0.02]" />
+                        ))}
+                    </div>
+                ) : !m || m.giorni === 0 ? (
+                    <Card className="glass-card border-white/10 p-10 text-center">
+                        <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+                        <h3 className="text-lg font-bold font-display text-white mb-1">Nessun trade nel periodo</h3>
+                        <p className="text-sm text-muted-foreground">
+                            Registra i trade dalla Watchlist (azione "Giocata") per popolare il report.
+                        </p>
+                    </Card>
+                ) : (
+                    <>
+                        {/* KPI principali */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                            <Kpi label="P&L Totale" value={eur(m.tot)} color={totColor} />
+                            <Kpi label="Giorni" value={String(m.giorni)} hint="giorni operativi" />
+                            <Kpi label="% giorni positivi" value={pct(m.pct_profit / 100, 1)} color="text-emerald-400" />
+                            <Kpi label="Media/giorno" value={eur(m.mean)} color={signColor(m.mean)} />
+                            <Kpi label="Max Drawdown" value={eur(m.max_drawdown)} color="text-red-400" />
+                            <Kpi label="Sharpe" value={num(m.sharpe)} hint="mean / volatilità" />
+                        </div>
+
+                        {/* equity curve */}
+                        <Card className="glass-card border-white/10 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <TrendingUp className="w-4 h-4 text-primary" />
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide">Equity Curve</span>
+                            </div>
+                            <ResponsiveContainer width="100%" height={260}>
+                                <LineChart data={report!.daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} width={48} />
+                                    <Tooltip content={<ChartTooltip />} />
+                                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" />
+                                    <Line type="monotone" dataKey="equity" stroke="hsl(155 84% 42%)" strokeWidth={2} dot={false} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </Card>
+
+                        {/* underwater / drawdown */}
+                        <Card className="glass-card border-white/10 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <TrendingDown className="w-4 h-4 text-red-400" />
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide">Underwater (Drawdown)</span>
+                            </div>
+                            <ResponsiveContainer width="100%" height={180}>
+                                <AreaChart data={report!.daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="hsl(0 80% 55%)" stopOpacity={0.05} />
+                                            <stop offset="100%" stopColor="hsl(0 80% 55%)" stopOpacity={0.5} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} width={48} />
+                                    <Tooltip content={<ChartTooltip />} />
+                                    <Area type="monotone" dataKey="drawdown" stroke="hsl(0 80% 55%)" strokeWidth={1.5} fill="url(#ddGrad)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </Card>
+
+                        {/* metriche di rischio */}
+                        <Card className="glass-card border-white/10 p-4">
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Metriche di rischio</span>
+                            <RiskGrid m={m} />
+                        </Card>
+
+                        {/* consigli seguiti vs fuori-consiglio + heatmap */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <Card className="glass-card border-white/10 p-4">
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Consigli seguiti vs fuori-consiglio</span>
+                                {advice ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 px-4 py-3">
+                                            <div className="text-[10px] uppercase text-emerald-300 font-bold">Consiglio seguito</div>
+                                            <div className="text-2xl font-black font-display text-white">{advice.n_followed}</div>
+                                            <div className={`text-sm font-mono ${signColor(advice.roi_followed)}`}>ROI {pct(advice.roi_followed)}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3">
+                                            <div className="text-[10px] uppercase text-amber-300 font-bold">Fuori-consiglio</div>
+                                            <div className="text-2xl font-black font-display text-white">{advice.n_off_advice}</div>
+                                            <div className={`text-sm font-mono ${signColor(advice.roi_off_advice)}`}>ROI {pct(advice.roi_off_advice)}</div>
+                                        </div>
+                                    </div>
+                                ) : <p className="text-xs text-muted-foreground">Nessun dato.</p>}
+                                {report?.discarded && report.discarded.n > 0 && (
+                                    <p className="text-[11px] text-muted-foreground mt-3">
+                                        Partite scartate nel periodo: <span className="text-white font-bold">{report.discarded.n}</span>.
+                                    </p>
+                                )}
+                            </Card>
+
+                            <Card className="glass-card border-white/10 p-4">
+                                <span className="font-heading font-bold text-sm uppercase tracking-wide block mb-3">Calendario P&L giornaliero</span>
+                                <CalendarHeatmap daily={report!.daily} />
+                                <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-400/70" /> profitto</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400/70" /> perdita</span>
+                                </div>
+                            </Card>
+                        </div>
+
+                        {/* breakdown */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <BreakdownTable title="Per strategia" rows={report!.by_strategia} nameKey="strategia" nameLabel="Strategia" />
+                            <BreakdownTable title="Per lega" rows={report!.by_league} nameKey="league_name" nameLabel="Lega" />
+                        </div>
+
+                        {/* tabella trade con drill-down */}
+                        <Card className="glass-card border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                                <span className="font-heading font-bold text-sm">Trade ({trades.length})</span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider hidden md:inline">clic = dettaglio + segnali snapshot</span>
+                            </div>
+                            {trades.length === 0 ? (
+                                <div className="p-6 text-center text-muted-foreground text-sm">Nessun trade per questi filtri.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
+                                                <th className="text-left px-3 py-2 font-medium">Partita</th>
+                                                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Strategia</th>
+                                                <th className="text-center px-3 py-2 font-medium">Lato</th>
+                                                <th className="text-right px-3 py-2 font-medium">Quota</th>
+                                                <th className="text-right px-3 py-2 font-medium">Stake</th>
+                                                <th className="text-center px-3 py-2 font-medium">Stato</th>
+                                                <th className="text-right px-3 py-2 font-medium">P&L netto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {trades.map(t => <TradeRow key={t.id} t={t} onChanged={() => load(filters)} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </Card>
+                    </>
+                )}
+            </main>
+
+            <footer className="border-t border-white/5 py-8 text-center text-xs text-muted-foreground">
+                <p>&copy; {new Date().getFullYear()} Alpha Score AI. All rights reserved.</p>
+            </footer>
+        </div>
+    );
+}

@@ -1,11 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, ArrowRight, Trophy, Coins } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Loader2, Calendar, ArrowRight, Trophy, Coins, Bookmark, X } from 'lucide-react';
 import { fetchBetfairFixtures, BetfairFixtureRow } from '@/lib/betfair';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { addToWatchlist } from '@/lib/watchlist';
 import {
     Accordion,
     AccordionContent,
@@ -64,6 +66,49 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
     // Accordion CONTROLLATO: necessario perché defaultValue si applica solo al
     // mount (l'auto-open non funzionava al cambio lega). openItems guida l'apertura.
     const [openItems, setOpenItems] = useState<string[]>([]);
+
+    // Selezione multipla per "Aggiungi a Watchlist": set di fixture_id spuntati.
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [addingWatchlist, setAddingWatchlist] = useState(false);
+
+    const toggleSelected = (fixtureId: string) => {
+        setSelected(prev => {
+            const next = new Set(prev);
+            if (next.has(fixtureId)) next.delete(fixtureId);
+            else next.add(fixtureId);
+            return next;
+        });
+    };
+
+    const clearSelected = () => setSelected(new Set());
+
+    // Congela lo snapshot pre-match per ogni partita spuntata (RPC add_to_watchlist).
+    const addSelectedToWatchlist = async () => {
+        if (selected.size === 0 || addingWatchlist) return;
+        setAddingWatchlist(true);
+        const ids = Array.from(selected);
+        let ok = 0;
+        let fail = 0;
+        for (const id of ids) {
+            try {
+                await addToWatchlist(Number(id));
+                ok++;
+            } catch (e: any) {
+                fail++;
+                console.error('add_to_watchlist', id, e);
+            }
+        }
+        setAddingWatchlist(false);
+        clearSelected();
+        if (ok > 0) {
+            toast.success(
+                `${ok} ${ok === 1 ? 'partita aggiunta' : 'partite aggiunte'} alla Watchlist`,
+                { description: fail > 0 ? `${fail} non aggiunte (errore).` : 'Snapshot pre-match congelato.' },
+            );
+        } else {
+            toast.error('Nessuna partita aggiunta alla Watchlist.');
+        }
+    };
 
     // Top Leagues Configuration
     const TOP_LEAGUES = [
@@ -345,6 +390,19 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
 
                                                             {/* Content Wrapper */}
                                                             <div className="flex items-center justify-between w-full gap-4">
+                                                                {/* Checkbox selezione per Watchlist */}
+                                                                <div
+                                                                    className="flex items-center justify-center shrink-0"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    title="Seleziona per la Watchlist"
+                                                                >
+                                                                    <Checkbox
+                                                                        checked={selected.has(match.fixture_id)}
+                                                                        onCheckedChange={() => toggleSelected(match.fixture_id)}
+                                                                        aria-label={`Seleziona ${match.home.name} vs ${match.away.name} per la watchlist`}
+                                                                        className="border-amber-400/40 data-[state=checked]:bg-amber-400 data-[state=checked]:text-black data-[state=checked]:border-amber-400"
+                                                                    />
+                                                                </div>
                                                                 {/* Time - Desktop */}
                                                                 <div className="hidden md:flex items-center justify-center w-12 h-12 rounded-lg bg-black/40 border border-white/10 flex-shrink-0">
                                                                     <span className="text-xs font-bold text-white">{match.time}</span>
@@ -391,6 +449,43 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                     </Accordion>
                 </>
             )}
+
+            {/* Barra fissa "Aggiungi a Watchlist": appare quando c'è almeno 1 selezione */}
+            <AnimatePresence>
+                {selected.size > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-xl"
+                    >
+                        <div className="glass-card rounded-2xl border border-amber-400/40 bg-black/90 backdrop-blur-xl shadow-2xl px-4 py-3 flex items-center gap-3">
+                            <span className="text-sm font-bold text-white">
+                                {selected.size} {selected.size === 1 ? 'partita selezionata' : 'partite selezionate'}
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearSelected}
+                                disabled={addingWatchlist}
+                                className="text-muted-foreground hover:text-white"
+                            >
+                                <X className="w-4 h-4 mr-1" /> Annulla
+                            </Button>
+                            <Button
+                                onClick={addSelectedToWatchlist}
+                                disabled={addingWatchlist}
+                                className="ml-auto bg-amber-400 text-black font-bold hover:bg-amber-400/90"
+                            >
+                                {addingWatchlist
+                                    ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    : <Bookmark className="w-4 h-4 mr-2" />}
+                                Aggiungi a Watchlist ({selected.size})
+                            </Button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

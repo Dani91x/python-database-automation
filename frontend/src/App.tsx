@@ -8,6 +8,8 @@ import LandingPage from "@/pages/LandingPage";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
 import Analytics from "@/pages/Analytics";
+import Watchlist from "@/pages/Watchlist";
+import ReportPersonale from "@/pages/ReportPersonale";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
@@ -40,6 +42,22 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <Analytics />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/watchlist"
+                                element={
+                                    <ProtectedRoute>
+                                        <Watchlist />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/report-personale"
+                                element={
+                                    <ProtectedRoute>
+                                        <ReportPersonale />
                                     </ProtectedRoute>
                                 }
                             />
