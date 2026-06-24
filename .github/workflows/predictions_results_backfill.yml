@@ -84,3 +84,17 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python -c "from db_client import get_supabase_client; print('analytics_bets refresh:', get_supabase_client().rpc('refresh_analytics_bets', {'p_days': 5}).execute().data)"
+
+      # ADDITIVO E NON-FATALE: rinfresca la PAGELLA (direction_pagella) DOPO il refresh
+      # di analytics_bets — da cui dipende via la vista bet_features. Ricalcola l'hit-rate
+      # storico dei motori includendo le partite appena chiuse, cosi' l'affidabilita' del
+      # cruscotto Direzione resta sempre fresca. Upsert sicuro (mai una finestra vuota).
+      # Un errore qui NON deve far fallire la pipeline risultati: la pagella resta quella
+      # del giorno precedente.
+      - name: Refresh pagella Direzione
+        if: always()
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python build_direzione.py
