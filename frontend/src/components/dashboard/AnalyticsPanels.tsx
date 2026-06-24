@@ -3,12 +3,14 @@
 //  - Studio Ritardi    (per-lega, storico)  [RitardiPanel — copia 1:1 del file Excel]
 //  - Poisson           (per-partita, snapshot)
 //  - Modelli ML        (per-partita, snapshot)
+//  - Direzione         (per-partita, RPC get_direction: unione motori + pagella storica)
 // Ogni pannello e' autonomo (fetch proprio). MarketFrequencyPanel.tsx NON e' toccato.
 import { MarketFrequencyPanel } from './MarketFrequencyPanel';
 import { RitardiPanel } from './RitardiPanel';
 import { PoissonPanel } from './PoissonPanel';
 import { TacticalEnginePanel } from './TacticalEnginePanel';
 import { MLPanel } from './MLPanel';
+import { DirezioneDashboard } from './DirezioneDashboard';
 
 interface Props {
     leagueId: number | null;
@@ -30,6 +32,7 @@ export function AnalyticsPanels({ leagueId, leagueName, fixtureId, homeName, awa
             <PoissonPanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
             <TacticalEnginePanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
             <MLPanel fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
+            <DirezioneDashboard fixtureId={fixtureId} leagueName={leagueName} homeName={homeName} awayName={awayName} />
         </div>
     );
 }
