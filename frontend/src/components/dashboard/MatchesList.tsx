@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, ArrowRight, Trophy } from 'lucide-react';
+import { Loader2, Calendar, ArrowRight, Trophy, Coins } from 'lucide-react';
+import { fetchBetfairFixtures, BetfairFixtureRow } from '@/lib/betfair';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -58,6 +59,7 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
     const BATCH = 1000;
 
     const [selectedLeague, setSelectedLeague] = useState<number | null>(null);
+    const [betfairOnly, setBetfairOnly] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     // Accordion CONTROLLATO: necessario perché defaultValue si applica solo al
     // mount (l'auto-open non funzionava al cambio lega). openItems guida l'apertura.
@@ -73,48 +75,56 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
         { id: 61, name: 'Ligue 1', flag: '🇫🇷' },
     ];
 
-    const fetchMatches = async (leagueId: number | null = null) => {
+    const fetchMatches = async (leagueId: number | null, betfair: boolean) => {
         setLoading(true);
 
         try {
             const today = format(new Date(), 'yyyy-MM-dd');
+            let all: BetfairFixtureRow[] = [];
 
-            // Scarica TUTTE le righe del giorno a blocchi (no cap a 100): ogni lega
-            // deve mostrare l'elenco completo, anche le partite serali.
-            let all: any[] = [];
-            let offset = 0;
-            // Guardia anti-loop infinito (backstop: 50 blocchi).
-            for (let guard = 0; guard < 50; guard++) {
-                let query = supabase
-                    .from('fixture_predictions')
-                    .select('fixture_id, fixture_date, home_team_name, away_team_name, home_team_id, away_team_id, league_name, league_id, status')
-                    .eq('status', 'ok')
-                    .gte('fixture_date', `${today}T00:00:00Z`)
-                    .order('fixture_date', { ascending: true })
-                    .range(offset, offset + BATCH - 1);
+            if (betfair) {
+                // SOLO i match Betfair di oggi (engine_signals via RPC). Stessa forma di
+                // colonne della query normale -> il mapping sotto e' identico. Il filtro
+                // per campionato resta lato client.
+                const rows = await fetchBetfairFixtures(today);
+                all = leagueId ? rows.filter(r => r.league_id === leagueId) : rows;
+            } else {
+                // Scarica TUTTE le righe del giorno a blocchi (no cap a 100): ogni lega
+                // deve mostrare l'elenco completo, anche le partite serali.
+                let offset = 0;
+                // Guardia anti-loop infinito (backstop: 50 blocchi).
+                for (let guard = 0; guard < 50; guard++) {
+                    let query = supabase
+                        .from('fixture_predictions')
+                        .select('fixture_id, fixture_date, home_team_name, away_team_name, home_team_id, away_team_id, league_name, league_id, status')
+                        .eq('status', 'ok')
+                        .gte('fixture_date', `${today}T00:00:00Z`)
+                        .order('fixture_date', { ascending: true })
+                        .range(offset, offset + BATCH - 1);
 
-                // Apply League Filter if selected
-                if (leagueId) {
-                    query = query.eq('league_id', leagueId);
+                    // Apply League Filter if selected
+                    if (leagueId) {
+                        query = query.eq('league_id', leagueId);
+                    }
+
+                    const { data, error } = await query;
+
+                    if (error) {
+                        console.error("Supabase Error:", error);
+                        toast.error("Errore database: " + error.message);
+                        break;
+                    }
+
+                    const batch = (data || []) as BetfairFixtureRow[];
+                    all = all.concat(batch);
+                    // Avanza dell'effettivo n. di righe tornate (robusto a qualunque cap del
+                    // server: non assumiamo che il blocco sia sempre pieno) e fermati a blocco vuoto.
+                    if (batch.length === 0) break;
+                    offset += batch.length;
                 }
-
-                const { data, error } = await query;
-
-                if (error) {
-                    console.error("Supabase Error:", error);
-                    toast.error("Errore database: " + error.message);
-                    break;
-                }
-
-                const batch = data || [];
-                all = all.concat(batch);
-                // Avanza dell'effettivo n. di righe tornate (robusto a qualunque cap del
-                // server: non assumiamo che il blocco sia sempre pieno) e fermati a blocco vuoto.
-                if (batch.length === 0) break;
-                offset += batch.length;
             }
 
-            const mapped: MatchPreview[] = all.map((row: any) => {
+            const mapped: MatchPreview[] = all.map((row) => {
                 try {
                     const dateObj = new Date(row.fixture_date);
                     return {
@@ -141,16 +151,17 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
             }).filter(Boolean) as MatchPreview[];
 
             setMatches(mapped);
-        } catch (e) {
+        } catch (e: any) {
             console.error("Error fetching matches:", e);
+            toast.error((betfair ? "Errore caricamento match Betfair: " : "Errore caricamento partite: ") + (e?.message ?? 'errore sconosciuto'));
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchMatches(selectedLeague);
-    }, [selectedLeague]);
+        fetchMatches(selectedLeague, betfairOnly);
+    }, [selectedLeague, betfairOnly]);
 
     // Handle filter selection: imposta la lega e riporta la vista in cima (evita
     // il fastidioso salto di scroll quando la lista si ricarica filtrata).
@@ -189,13 +200,27 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                         Partite del Giorno <span className="text-primary">.</span>
                     </h1>
                     <p className="text-muted-foreground text-sm mt-1">
-                        {selectedLeague
-                            ? `Visualizzazione filtrata: ${TOP_LEAGUES.find(l => l.id === selectedLeague)?.name}`
-                            : 'Tutte le partite in programma oggi'}
+                        {betfairOnly
+                            ? `Solo match Betfair di oggi${selectedLeague ? ` · ${TOP_LEAGUES.find(l => l.id === selectedLeague)?.name ?? ''}` : ''}`
+                            : selectedLeague
+                                ? `Visualizzazione filtrata: ${TOP_LEAGUES.find(l => l.id === selectedLeague)?.name}`
+                                : 'Tutte le partite in programma oggi'}
                     </p>
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto relative">
+                    {/* Toggle: mostra SOLO le partite che matchano con Betfair (engine_signals).
+                        Si popola dopo aver lanciato aggiorna_report.bat. */}
+                    <Button
+                        variant="outline"
+                        onClick={() => setBetfairOnly(v => !v)}
+                        className={`justify-center font-bold whitespace-nowrap ${betfairOnly
+                            ? 'bg-amber-400/20 border-amber-400/50 text-amber-300 hover:bg-amber-400/30'
+                            : 'bg-black/40 border-white/10 text-white hover:bg-white/5 hover:text-amber-300'}`}
+                    >
+                        <Coins className="w-4 h-4 mr-2" />
+                        Match Betfair
+                    </Button>
                     <div className="relative z-50 w-full md:w-64">
                         <Button
                             variant="outline"
@@ -260,9 +285,11 @@ export function MatchesList({ onSelectMatch }: MatchesListProps) {
                     <Calendar className="w-12 h-12 md:w-16 md:h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                     <h2 className="text-xl md:text-2xl font-bold font-display text-white mb-2">Nessuna partita trovata</h2>
                     <p className="text-muted-foreground text-sm md:text-base">
-                        {selectedLeague
-                            ? "Non ci sono partite in programma oggi per questo campionato."
-                            : "Non ci sono pronostici disponibili per oggi."}
+                        {betfairOnly
+                            ? "Nessun match Betfair per oggi. Lancia aggiorna_report.bat per popolarli."
+                            : selectedLeague
+                                ? "Non ci sono partite in programma oggi per questo campionato."
+                                : "Non ci sono pronostici disponibili per oggi."}
                     </p>
                     {selectedLeague && (
                         <Button variant="link" onClick={() => handleLeagueSelect(null)} className="mt-4 text-primary">
