@@ -151,8 +151,11 @@ BEGIN
            (v_fs->>'percent_away')::numeric AS pa
   ),
   apidir AS (
+    -- API = consensus book di flat_summary.percent_*: e' SOLO 1x2 a TEMPO PIENO.
+    -- NON esiste un consensus API di primo tempo -> niente API su ht_1x2 (sarebbe il
+    -- dato FT spacciato per HT). Niente API neppure su over/btts (nessun campo affidabile).
     SELECT d.market,
-      CASE WHEN d.market IN ('1x2','ht_1x2') THEN
+      CASE WHEN d.market = '1x2' THEN
         CASE
           WHEN a.ph IS NULL AND a.pd IS NULL AND a.pa IS NULL THEN NULL
           WHEN a.ph > COALESCE(a.pd,-1) AND a.ph > COALESCE(a.pa,-1) THEN 'H'
@@ -161,7 +164,7 @@ BEGIN
           ELSE NULL   -- pareggio fra esiti: niente direzione
         END
       ELSE NULL END AS api_dir,
-      (d.market IN ('1x2','ht_1x2') AND (a.ph IS NOT NULL OR a.pd IS NOT NULL OR a.pa IS NOT NULL)) AS has_api
+      (d.market = '1x2' AND (a.ph IS NOT NULL OR a.pd IS NOT NULL OR a.pa IS NOT NULL)) AS has_api
     FROM dir d CROSS JOIN api a
   )
   SELECT jsonb_build_object(

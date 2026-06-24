@@ -94,7 +94,7 @@ def oracle(fid, pag):
         base = float(pg["base_rate"])
         # concordanza
         api_dir, has_api = None, False
-        if mk in ("1x2", "ht_1x2"):
+        if mk == "1x2":  # API = solo 1x2 a tempo pieno (flat_summary.percent_*); niente HT
             vals = {"H": ph, "D": pd_, "A": pa}
             present = {k: v for k, v in vals.items() if v is not None}
             has_api = len(present) > 0
