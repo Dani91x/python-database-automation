@@ -126,7 +126,7 @@ function SignalContextBlock({ leagueId, market, direction }: { leagueId: number 
                     {/* RITARDO del mercato nella lega */}
                     <div className="glass-card rounded-lg border border-white/10 px-3 py-2">
                         <div className="text-[10px] uppercase text-muted-foreground/70 font-bold mb-1">Ritardo</div>
-                        {ctx.delayAvailable && ctx.delay ? (
+                        {ctx.delay ? (
                             <div className="text-[11px] text-white/80 space-y-0.5">
                                 <div>attuale <b className="font-mono">{numFmt(ctx.delay.current, 0)}</b> · media <span className="font-mono">{numFmt(ctx.delay.media, 1)}</span> · record <span className="font-mono">{numFmt(ctx.delay.record, 0)}</span></div>
                                 {ctx.delay.ratio != null && (

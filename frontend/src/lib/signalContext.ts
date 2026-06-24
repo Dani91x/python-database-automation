@@ -1,18 +1,23 @@
 // ============================================================================
 // Contesto del segnale (cruscotto Direzione) — FREQUENZA e RITARDO allo STATO
-// ATTUALE per la lega + il mercato di un segnale. Riusa le RPC esistenti
-// get_market_frequency / get_market_delays mappando i mercati del cruscotto
-// (1x2, over_2_5, btts, ...) sui codici di quelle RPC (che hanno tassonomie diverse).
+// ATTUALE per la lega + il mercato di un segnale.
+//
+// FONTE UNICA E CORRETTA: la serie binaria di get_market_frequency (un punto per
+// partita SETTLATA, esito 0/1). Questa serie ESCLUDE correttamente le partite senza
+// dati di primo tempo (per i mercati HT), quindi frequenza e ritardo sono coerenti e
+// matematicamente validi. Il ritardo lo calcoliamo QUI dalla serie (corse di "non
+// uscite"), NON da get_market_delays: quella RPC riproduce 1:1 il foglio Excel
+// (HT vuoto = 0-0) e su leghe con HT mancanti gonfia il ritardo (es. 547 su over 0.5
+// 1°T). Il pannello Ritardi continua a usare quella RPC per fedelta' al foglio; il
+// cruscotto usa il calcolo corretto qui sotto.
 // Caricato pigro: solo quando l'utente espande un mercato.
 // ============================================================================
-import { fetchMarketFrequency } from './marketFrequency';
-import { fetchMarketDelays } from './marketDelays';
+import { fetchMarketFrequency, FrequencyPoint } from './marketFrequency';
 
 const SEL3: Record<string, string> = { H: '1', D: 'X', A: '2' };
 
 // NB: `dir` e' SEMPRE il codice selezione esatto del cruscotto (H/D/A/Over/Under/Yes/No),
-// fissato dalla mappa VALUES della RPC get_direction. I confronti case-sensitive qui sotto
-// sono quindi corretti per contratto (certificato: 8/8 ritardi mappati, 0 errori).
+// fissato dalla mappa VALUES della RPC get_direction (confronti case-sensitive corretti per contratto).
 
 // cruscotto (market, direction) -> parametri get_market_frequency (copre TUTTI i 7 mercati)
 function freqMap(market: string, dir: string): { market: string; selection: string; line: number | null } | null {
@@ -26,56 +31,50 @@ function freqMap(market: string, dir: string): { market: string; selection: stri
     return null;
 }
 
-// cruscotto (market, direction) -> parametri get_market_delays (catalogo ritardi: PARZIALE)
-function delayMap(market: string, dir: string): { market: string; target: string | null } | null {
-    // Invariante: solo i mercati 'over_N_5' arrivano qui -> split produce "N.5".
-    if (['over_1_5', 'over_2_5', 'over_3_5'].includes(market)) {
-        const target = market.split('_').slice(1).join('.'); // over_2_5 -> "2.5"
-        return { market: dir === 'Over' ? 'over' : 'under', target };
-    }
-    if (market === 'first_half_over_0_5' && dir === 'Over') return { market: 'ovpt', target: '0.5' };
-    if (market === '1x2' && dir === 'D') return { market: 'x', target: null }; // Pareggio
-    return null; // 1x2 H/A, ht_1x2, btts, first_half Under: nessun mercato-ritardo pulito
-}
-
 export interface SignalContext {
     freq: { current: number | null; baseline: number | null; z: number | null; n: number } | null;
-    delay: { current: number | null; media: number | null; record: number | null; ratio: number | null } | null;
-    freqAvailable: boolean;
-    delayAvailable: boolean;
+    delay: { current: number; media: number | null; record: number; ratio: number | null } | null;
+    available: boolean;  // il mercato e' mappabile su una serie di frequenza
+}
+
+// Ritardo dalla serie binaria (out 0/1, ordine cronologico per idx).
+//   current = "non uscite" consecutive in coda (ritardo attuale)
+//   record  = corsa massima di "non uscite"
+//   media   = media dei gap fra uscite consecutive (ritardo medio)
+function computeDelay(points: FrequencyPoint[]): SignalContext['delay'] {
+    const pts = points.filter(p => p.out === 0 || p.out === 1).sort((a, b) => a.idx - b.idx);
+    if (!pts.length) return null;
+    const gaps: number[] = [];   // lunghezza di ogni gap fra due uscite
+    let run = 0;
+    for (const p of pts) {
+        if (p.out === 1) { gaps.push(run); run = 0; }  // uscita: chiude il gap (anche 0)
+        else run++;                                    // non-uscita: il ritardo cresce
+    }
+    const current = run;                               // gap aperto in coda = ritardo attuale
+    const record = Math.max(current, ...gaps, 0);
+    const media = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+    const ratio = media && media > 0 ? current / media : null;
+    return { current, media, record, ratio };
 }
 
 export async function fetchSignalContext(leagueId: number, market: string, dir: string): Promise<SignalContext> {
     const fm = freqMap(market, dir);
-    const dm = delayMap(market, dir);
-    const out: SignalContext = { freq: null, delay: null, freqAvailable: !!fm, delayAvailable: !!dm };
-
-    if (fm) {
-        try {
-            const fs = await fetchMarketFrequency({
-                leagueId, market: fm.market, selection: fm.selection, line: fm.line, mode: 'last_n', lastN: 300,
-            });
-            const pts = fs.points || [];
-            const last = pts.length ? pts[pts.length - 1] : null;
-            out.freq = {
-                current: last?.mm10 ?? last?.mm5 ?? null,
-                baseline: fs.meta.baseline,
-                z: last?.z ?? null,
-                n: fs.meta.n_effective,
-            };
-        } catch { /* lascia freq=null: mostrato come non disponibile */ }
-    }
-    if (dm) {
-        try {
-            const dr = await fetchMarketDelays({ leagueId, market: dm.market, target: dm.target, mode: 'all' });
-            const s = dr.stats;
-            out.delay = {
-                current: s.ritardo_attuale,
-                media: s.media_ritardi ?? s.media_storica,
-                record: s.record,
-                ratio: s.rit_vs_media,
-            };
-        } catch { /* lascia delay=null */ }
-    }
+    const out: SignalContext = { freq: null, delay: null, available: !!fm };
+    if (!fm) return out;
+    try {
+        // mode 'all' = tutta la storia settlata della lega -> ritardo record/media accurati.
+        const fs = await fetchMarketFrequency({
+            leagueId, market: fm.market, selection: fm.selection, line: fm.line, mode: 'all',
+        });
+        const pts = fs.points || [];
+        const last = pts.length ? pts[pts.length - 1] : null;
+        out.freq = {
+            current: last?.mm10 ?? last?.mm5 ?? null,
+            baseline: fs.meta.baseline,
+            z: last?.z ?? null,
+            n: fs.meta.n_effective,
+        };
+        out.delay = computeDelay(pts);
+    } catch { /* lascia null: mostrato come non disponibile */ }
     return out;
 }
