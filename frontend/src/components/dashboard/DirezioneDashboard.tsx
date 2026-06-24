@@ -15,6 +15,7 @@ import {
     ENGINE_LABELS, strength, enginePick,
 } from '@/lib/direzione';
 import type { EngineProbs } from '@/lib/direzione';
+import { fetchSignalContext, SignalContext } from '@/lib/signalContext';
 import { pctFmt, numFmt, colorForSelection } from '@/lib/fixtureModels';
 
 interface Props {
@@ -72,7 +73,77 @@ function EngineRow({ market, name, probs, direction }: { market: string; name: s
     );
 }
 
-function MarketCard({ m, expanded, onToggle }: { m: DirMarket; expanded: boolean; onToggle: () => void }) {
+// Stato ATTUALE (frequenza + ritardo) per la lega + il mercato del segnale.
+// Caricato pigro all'apertura del dettaglio. Riusa le RPC get_market_frequency / get_market_delays.
+function SignalContextBlock({ leagueId, market, direction }: { leagueId: number | null; market: string; direction: string }) {
+    const [ctx, setCtx] = useState<SignalContext | null>(null);
+    const [loading, setLoading] = useState(false);
+    const reqRef = useRef(0);
+
+    useEffect(() => {
+        if (leagueId == null) return;
+        let alive = true;
+        const req = ++reqRef.current;
+        setLoading(true);
+        setCtx(null);
+        fetchSignalContext(leagueId, market, direction)
+            .then(c => { if (alive && req === reqRef.current) setCtx(c); })
+            .catch(() => { if (alive && req === reqRef.current) setCtx(null); })
+            .finally(() => { if (alive && req === reqRef.current) setLoading(false); });
+        return () => { alive = false; };
+    }, [leagueId, market, direction]);
+
+    if (leagueId == null) {
+        return (
+            <div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 font-bold">Stato attuale in questa lega</div>
+                <p className="text-[11px] text-white/30">Lega non disponibile per questa partita.</p>
+            </div>
+        );
+    }
+    return (
+        <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 font-bold">Stato attuale in questa lega</div>
+            {loading && <div className="text-[11px] text-muted-foreground/60">caricamento…</div>}
+            {!loading && !ctx && <p className="text-[11px] text-white/30">dati non disponibili al momento.</p>}
+            {!loading && ctx && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* FREQUENZA del mercato nella lega */}
+                    <div className="glass-card rounded-lg border border-white/10 px-3 py-2">
+                        <div className="text-[10px] uppercase text-muted-foreground/70 font-bold mb-1">Frequenza</div>
+                        {ctx.freq ? (
+                            <div className="text-[11px] text-white/80 space-y-0.5">
+                                <div>attuale <b className="font-mono">{pctFmt(ctx.freq.current, 0)}</b> · media <span className="font-mono">{pctFmt(ctx.freq.baseline, 0)}</span></div>
+                                <div className="text-muted-foreground">
+                                    {ctx.freq.z != null
+                                        ? <>z {numFmt(ctx.freq.z, 1)} · <span className={ctx.freq.z >= 1 ? 'text-emerald-400' : ctx.freq.z <= -1 ? 'text-sky-400' : ''}>{ctx.freq.z >= 1 ? 'sopra media' : ctx.freq.z <= -1 ? 'sotto media' : 'in media'}</span></>
+                                        : 'tendenza n/d'}
+                                    <span className="ml-1">({ctx.freq.n} partite)</span>
+                                </div>
+                            </div>
+                        ) : <div className="text-[11px] text-white/30">non disponibile</div>}
+                    </div>
+                    {/* RITARDO del mercato nella lega */}
+                    <div className="glass-card rounded-lg border border-white/10 px-3 py-2">
+                        <div className="text-[10px] uppercase text-muted-foreground/70 font-bold mb-1">Ritardo</div>
+                        {ctx.delayAvailable && ctx.delay ? (
+                            <div className="text-[11px] text-white/80 space-y-0.5">
+                                <div>attuale <b className="font-mono">{numFmt(ctx.delay.current, 0)}</b> · media <span className="font-mono">{numFmt(ctx.delay.media, 1)}</span> · record <span className="font-mono">{numFmt(ctx.delay.record, 0)}</span></div>
+                                {ctx.delay.ratio != null && (
+                                    <div className={ctx.delay.ratio >= 1.5 ? 'text-amber-400' : 'text-muted-foreground'}>
+                                        {ctx.delay.ratio >= 1.5 ? 'molto in ritardo' : ctx.delay.ratio >= 1 ? 'sopra la media' : 'sotto la media'} (×{numFmt(ctx.delay.ratio, 1)})
+                                    </div>
+                                )}
+                            </div>
+                        ) : <div className="text-[11px] text-white/30">non disponibile per questo mercato</div>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function MarketCard({ m, leagueId, expanded, onToggle }: { m: DirMarket; leagueId: number | null; expanded: boolean; onToggle: () => void }) {
     const s = strength(m.lift);
     const imp = implied(m.odds);
     const value = hasValue(m);
@@ -157,6 +228,9 @@ function MarketCard({ m, expanded, onToggle }: { m: DirMarket; expanded: boolean
                             </div>
                         </div>
                     </div>
+
+                    {/* Stato attuale: frequenza + ritardo della LEGA per questo mercato */}
+                    <SignalContextBlock leagueId={leagueId} market={m.market} direction={m.direction} />
                 </div>
             )}
         </div>
@@ -260,6 +334,7 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
                                         <MarketCard
                                             key={m.market}
                                             m={m}
+                                            leagueId={data?.league_id ?? null}
                                             expanded={openMarket === m.market}
                                             onToggle={() => setOpenMarket(openMarket === m.market ? null : m.market)}
                                         />
