@@ -11,6 +11,12 @@ ENV/
 .env
 secrets.txt
 
+# Dati di betting privati (storico/stato/calibrazione) — NON in repo pubblica
+Betfair/mm_history.json
+Betfair/money_management_state.json
+Betfair/bss_monitor_state.json
+Betfair/betfair_matcher.log
+
 # OS
 .DS_Store
 Thumbs.db
