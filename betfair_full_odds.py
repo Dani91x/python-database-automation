@@ -10,8 +10,24 @@ Uso:
   python betfair_full_odds.py --filter switzerland   # solo eventi che contengono "switzerland" (test)
   python betfair_full_odds.py                         # tutti gli eventi calcio del giorno matchabili
 """
-import sys, re, argparse, datetime as dt, unicodedata
+import sys, re, time, argparse, datetime as dt, unicodedata
 sys.stdout.reconfigure(encoding="utf-8")
+
+# --- RISPETTO LIMITI BETFAIR (tassativo: niente ban) ---
+# listMarketBook: peso max 200/chiamata, EX_BEST_OFFERS = 5/mercato -> batch 20 = peso 100 (margine 2x).
+# Delay 0.6s tra OGNI chiamata (best-practice anti-throttling). Stop immediato sui limiti.
+BATCH = 20            # mercati per listMarketBook (peso 100 < 200)
+REQ_DELAY = 0.6       # secondi tra chiamate
+EVENT_DELAY = 0.4     # secondi extra tra eventi
+LIMIT_MARKERS = ("TOO_MANY_REQUESTS", "TOO_MUCH_DATA")
+
+
+class BetfairLimitHit(RuntimeError):
+    pass
+
+
+def _is_limit(ex) -> bool:
+    return any(m in str(ex) for m in LIMIT_MARKERS)
 
 
 def norm(s: str) -> frozenset:
@@ -65,9 +81,15 @@ def main():
             continue
         fid = match["fixture_id"]
 
-        cats = c.betting_rpc("SportsAPING/v1.0/listMarketCatalogue",
-                             {"filter": {"eventIds": [eid]}, "maxResults": 1000,
-                              "marketProjection": ["RUNNER_DESCRIPTION"]}) or []
+        try:
+            cats = c.betting_rpc("SportsAPING/v1.0/listMarketCatalogue",
+                                 {"filter": {"eventIds": [eid]}, "maxResults": 1000,
+                                  "marketProjection": ["RUNNER_DESCRIPTION"]}) or []
+        except Exception as ex:
+            if _is_limit(ex):
+                raise BetfairLimitHit(str(ex))
+            raise
+        time.sleep(REQ_DELAY)
         meta = {}
         mids = []
         for m in cats:
@@ -76,8 +98,14 @@ def main():
                          "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
                                      for r in m.get("runners", [])}}
         books = []
-        for i in range(0, len(mids), 25):  # EX_BEST_OFFERS (peso 5) -> 25/batch sicuro
-            books += c.list_market_book(mids[i:i + 25]) or []
+        for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 100 < 200
+            try:
+                books += c.list_market_book(mids[i:i + BATCH]) or []
+            except Exception as ex:
+                if _is_limit(ex):
+                    raise BetfairLimitHit(str(ex))
+                raise
+            time.sleep(REQ_DELAY)
 
         rows = []
         for b in books:
@@ -102,9 +130,14 @@ def main():
             sb.table("betfair_market_odds").insert(rows[i:i + 500]).execute()
         written_fixtures += 1
         print(f"  [ok] {name} -> fixture {fid}: {len(rows)} righe ({len(set(x['market_name'] for x in rows))} mercati)")
+        time.sleep(EVENT_DELAY)
 
     print(f"\nFatto. Fixture scritte: {written_fixtures}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BetfairLimitHit as ex:
+        # mai retry-storm sui limiti: stop pulito (le fixture gia' scritte restano).
+        print(f"\n[STOP LIMITE BETFAIR] interrotto per sicurezza (niente ban): {str(ex)[:140]}")
