@@ -16,6 +16,7 @@ import {
 } from '@/lib/direzione';
 import type { EngineProbs } from '@/lib/direzione';
 import { fetchSignalContext, SignalContext } from '@/lib/signalContext';
+import { fetchBetfairDirectionOdds, DirectionOdds } from '@/lib/betfair';
 import { pctFmt, numFmt, colorForSelection } from '@/lib/fixtureModels';
 
 interface Props {
@@ -143,7 +144,7 @@ function SignalContextBlock({ leagueId, market, direction }: { leagueId: number 
     );
 }
 
-function MarketCard({ m, leagueId, expanded, onToggle }: { m: DirMarket; leagueId: number | null; expanded: boolean; onToggle: () => void }) {
+function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirMarket; leagueId: number | null; bfMarketOdds?: DirectionOdds[string]; expanded: boolean; onToggle: () => void }) {
     const s = strength(m.lift);
     const imp = implied(m.odds);
     const value = hasValue(m);
@@ -231,6 +232,24 @@ function MarketCard({ m, leagueId, expanded, onToggle }: { m: DirMarket; leagueI
 
                     {/* Stato attuale: frequenza + ritardo della LEGA per questo mercato */}
                     <SignalContextBlock leagueId={leagueId} market={m.market} direction={m.direction} />
+
+                    {/* Quote Betfair (back/lay) per le selezioni di questo mercato */}
+                    {bfMarketOdds && Object.keys(bfMarketOdds).length > 0 && (
+                        <div>
+                            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5 font-bold">
+                                Quote Betfair <span className="text-sky-300">back</span> / <span className="text-rose-300">lay</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {Object.entries(bfMarketOdds).map(([sel, bl]) => (
+                                    <div key={sel} className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border text-[11px] ${sel === m.direction ? 'bg-white/10 border-white/30' : 'bg-white/[0.03] border-white/10'}`}>
+                                        <span className="text-white/70">{selectionLabel(m.market, sel)}</span>
+                                        <span className="font-mono font-bold text-sky-300">{numFmt(bl.back?.[0]?.price, 2)}</span>
+                                        <span className="font-mono font-bold text-rose-300">{numFmt(bl.lay?.[0]?.price, 2)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -243,6 +262,7 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [openMarket, setOpenMarket] = useState<string | null>(null);
+    const [bfOdds, setBfOdds] = useState<DirectionOdds>({});
     const reqRef = useRef(0);
 
     useEffect(() => {
@@ -250,12 +270,17 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
         const req = ++reqRef.current;
         setData(null);          // non mostrare i dati della partita precedente durante il caricamento
         setOpenMarket(null);    // chiudi eventuale mercato espanso di un'altra partita
+        setBfOdds({});
         setLoading(true);
         setError(null);
         fetchDirezione(fixtureId)
             .then(d => { if (req === reqRef.current) setData(d); })
             .catch(e => { if (req === reqRef.current) { setError(e.message || 'Errore di caricamento'); setData(null); } })
             .finally(() => { if (req === reqRef.current) setLoading(false); });
+        // quote Betfair back/lay (parallelo, non bloccante)
+        fetchBetfairDirectionOdds(fixtureId)
+            .then(o => { if (req === reqRef.current) setBfOdds(o); })
+            .catch(() => { if (req === reqRef.current) setBfOdds({}); });
     }, [open, fixtureId]);
 
     // mercati ordinati per lift (la RPC li manda gia' ordinati, ma restiamo robusti)
@@ -335,6 +360,7 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
                                             key={m.market}
                                             m={m}
                                             leagueId={data?.league_id ?? null}
+                                            bfMarketOdds={bfOdds[m.market]}
                                             expanded={openMarket === m.market}
                                             onToggle={() => setOpenMarket(openMarket === m.market ? null : m.market)}
                                         />
