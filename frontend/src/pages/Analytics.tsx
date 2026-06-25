@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import DecisionsTab from '@/components/dashboard/DecisionsTab';
 import CreateStrategy from '@/components/dashboard/CreateStrategy';
+import ReportisticheTab from '@/components/dashboard/ReportisticheTab';
 import {
     fetchAnalytics, fetchAnalyticsFilters, fetchAnalyticsRows, groupsToCsv, downloadCsv,
     ENGINE_LABEL, MARKET_LABEL, GROUP_BY_OPTIONS, pct,
@@ -84,7 +85,7 @@ export default function Analytics() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [tab, setTab] = useState<'engines' | 'decisions' | 'create'>('engines');
+    const [tab, setTab] = useState<'engines' | 'decisions' | 'create' | 'reports'>('engines');
     const [q, setQ] = useState<AnalyticsQuery>({ groupBy: 'confidence' });
     const set = (patch: Partial<AnalyticsQuery>) => setQ(prev => ({ ...prev, ...patch }));
     const reset = () => setQ({ groupBy: 'confidence' });
@@ -222,10 +223,16 @@ export default function Analytics() {
                         className={tab === 'create' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
                         Crea Strategia
                     </Button>
+                    <Button variant={tab === 'reports' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setTab('reports')}
+                        className={tab === 'reports' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        Reportistiche
+                    </Button>
                 </div>
 
                 {tab === 'decisions' && <DecisionsTab />}
                 {tab === 'create' && <CreateStrategy filters={filters} />}
+                {tab === 'reports' && <ReportisticheTab />}
 
                 {tab === 'engines' && <>
 
