@@ -1,16 +1,32 @@
 """
 betfair_full_odds.py — fetch ADDITIVO delle quote Betfair COMPLETE (tutti i mercati,
-back + lay) per le partite del giorno, in tabella betfair_market_odds.
+back + lay) per le partite di OGGI, in tabella betfair_market_odds.
 
 NON e' il report .bat: NON tocca Google Sheets ne' il Money Management. Fa solo:
-login Betfair -> per ogni evento (matchato a una nostra fixture) scarica TUTTI i
-mercati + back/lay (EX_BEST_OFFERS, 3 livelli) -> upsert in betfair_market_odds.
+login Betfair -> abbina ogni evento Betfair a UNA fixture del DB (matching
+affidabile, 1:1) -> scarica TUTTI i mercati + back/lay (EX_BEST_OFFERS, 3 livelli)
+-> upsert in betfair_market_odds.
+
+MONEY-CRITICAL: le quote DEVONO essere abbinate alla partita giusta. Vedi
+Betfair/betfair_match.py per le garanzie (fuzzy come il foglio + gate temporale +
+assegnazione 1:1, niente collisioni/sovrascritture).
+
+FINESTRA: SOLO eventi di OGGI (to_date = fine giornata UTC), identica al report.
+NON include il giorno successivo.
 
 Uso:
-  python betfair_full_odds.py --filter switzerland   # solo eventi che contengono "switzerland" (test)
-  python betfair_full_odds.py                         # tutti gli eventi calcio del giorno matchabili
+  python betfair_full_odds.py                 # tutti gli eventi calcio di oggi
+  python betfair_full_odds.py --filter kuwait # solo eventi che contengono "kuwait" (test)
+
+NOTA: le quote di OGGI vengono SEMPRE cancellate e riscritte da zero (idempotente).
+La run riparte sempre pulita: niente resume parziale (evita mix stale+fresh).
 """
-import sys, re, time, argparse, datetime as dt, unicodedata
+import sys
+import time
+import argparse
+import datetime as dt
+from datetime import datetime, timezone
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 # --- RISPETTO LIMITI BETFAIR (tassativo: niente ban) ---
@@ -30,14 +46,6 @@ def _is_limit(ex) -> bool:
     return any(m in str(ex) for m in LIMIT_MARKERS)
 
 
-def norm(s: str) -> frozenset:
-    s = unicodedata.normalize("NFD", (s or "").lower())
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    s = re.sub(r"[^a-z0-9 ]", " ", s)
-    drop = {"fc", "cf", "sc", "ac", "as", "if", "sk", "fk", "club", "the", "u23", "u21", "women", "w"}
-    return frozenset(t for t in s.split() if t and t not in drop)
-
-
 def best_levels(arr, n=3):
     return [{"price": x.get("price"), "size": x.get("size")} for x in (arr or [])[:n]]
 
@@ -49,37 +57,68 @@ def main():
 
     from db_client import get_supabase_client
     from Betfair.client import BetfairClient
+    from Betfair.betfair_match import resolve_matches, load_name_map
+
     sb = get_supabase_client()
     today = dt.date.today().isoformat()
     tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
 
-    # mappa fixture del giorno: (norm_home, norm_away) -> (fixture_id, home, away)
-    fx = sb.table("fixture_predictions").select("fixture_id,home_team_name,away_team_name") \
-        .gte("fixture_date", today + "T00:00:00").lt("fixture_date", tomorrow + "T00:00:00").execute().data
-    fmap = {(norm(r["home_team_name"]), norm(r["away_team_name"])): r for r in fx}
+    # Fixture di OGGI (stessa finestra del report: [today 00:00, tomorrow 00:00) UTC)
+    fx = sb.table("fixture_predictions").select(
+        "fixture_id,home_team_name,away_team_name,fixture_date"
+    ).gte("fixture_date", today + "T00:00:00").lt("fixture_date", tomorrow + "T00:00:00").execute().data
+    print(f"Fixture DB di oggi ({today}): {len(fx)}")
 
-    c = BetfairClient(); c.login_cert()
-    evs = c.list_events(["1"], days_ahead=2) or []
+    c = BetfairClient()
+    c.login_cert()
+
+    # SOLO eventi di OGGI: to_date = fine giornata UTC (identico a betfair_report_manager).
+    # NIENTE giorno successivo.
+    now_utc = datetime.now(timezone.utc)
+    end_today = now_utc.replace(hour=23, minute=59, second=59, microsecond=0)
+    to_date_str = end_today.strftime("%Y-%m-%dT%H:%M:%SZ")
+    raw_evs = c.list_events(["1"], to_date=to_date_str) or []
+
+    events = []
+    for e in raw_evs:
+        ev = e.get("event", {})
+        events.append({
+            "id": ev.get("id"),
+            "name": ev.get("name", "") or "",
+            "openDate": ev.get("openDate"),
+        })
     if args.filter:
-        evs = [e for e in evs if args.filter.lower() in e["event"]["name"].lower()]
-    print(f"Eventi Betfair da processare: {len(evs)}")
+        events = [e for e in events if args.filter.lower() in e["name"].lower()]
+    print(f"Eventi Betfair di OGGI (fino a {to_date_str}): {len(events)}")
 
-    written_fixtures = 0
-    for e in evs:
-        ev = e["event"]; name = ev["name"]; eid = ev["id"]
-        if " v " not in name:
+    # MATCH 1:1 affidabile (fuzzy come il foglio + gate temporale + assegnazione unica)
+    matched, unmatched = resolve_matches(events, fx, name_map=load_name_map())
+    print(f"Match trovati: {len(matched)} | non matchati: {len(unmatched)}")
+
+    # SICUREZZA anti-collisione: invariante garantito da resolve_matches (used_fx),
+    # qui come tripwire money-critical: se mai saltasse, STOP prima di scrivere.
+    fids = [m["fixture"]["fixture_id"] for m in matched]
+    if len(fids) != len(set(fids)):
+        raise RuntimeError("COLLISIONE fatale: stesso fixture_id assegnato a piu' eventi. STOP.")
+
+    # PURGE quote di oggi: SEMPRE. La run riparte pulita (la precedente aveva
+    # abbinamenti errati). Niente resume parziale -> niente mix stale+fresh.
+    sb.table("betfair_market_odds").delete().eq("run_date", today).execute()
+    print(f"[purge] cancellate tutte le quote run_date={today}")
+
+    written = 0
+    written_fids = set()
+    for m in matched:
+        ev = m["event"]
+        fixture = m["fixture"]
+        eid = ev["id"]
+        fid = fixture["fixture_id"]
+        name = ev["name"]
+
+        # difensivo: mai riscrivere due volte la stessa fixture nella stessa run
+        if fid in written_fids:
+            print(f"  [WARN] fixture {fid} gia' scritto in questa run: salto (anti-sovrascrittura).")
             continue
-        h, a = name.split(" v ", 1)
-        nh, na = norm(h), norm(a)
-        match = fmap.get((nh, na))
-        if not match:  # fallback: overlap forte dei token
-            for (kh, ka), r in fmap.items():
-                if len(nh & kh) >= 1 and len(na & ka) >= 1 and (nh & kh) and (na & ka):
-                    match = r; break
-        if not match:
-            print(f"  [skip] '{name}': nessuna fixture corrispondente")
-            continue
-        fid = match["fixture_id"]
 
         try:
             cats = c.betting_rpc("SportsAPING/v1.0/listMarketCatalogue",
@@ -90,13 +129,16 @@ def main():
                 raise BetfairLimitHit(str(ex))
             raise
         time.sleep(REQ_DELAY)
+
         meta = {}
         mids = []
-        for m in cats:
-            mid = m["marketId"]; mids.append(mid)
-            meta[mid] = {"name": m["marketName"],
+        for mk in cats:
+            mid = mk["marketId"]
+            mids.append(mid)
+            meta[mid] = {"name": mk["marketName"],
                          "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
-                                     for r in m.get("runners", [])}}
+                                     for r in mk.get("runners", [])}}
+
         books = []
         for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 100 < 200
             try:
@@ -122,17 +164,28 @@ def main():
                     "lay": best_levels(ex.get("availableToLay")),
                 })
         if not rows:
-            print(f"  [skip] '{name}': nessuna quota")
+            print(f"  [skip] '{name}' (fid {fid}): nessuna quota")
             continue
-        # sostituisci le righe del fixture (idempotente per il giorno)
-        sb.table("betfair_market_odds").delete().eq("fixture_id", fid).execute()
+
+        # Idempotenza: sostituisci SOLO le righe di QUESTO fixture per OGGI.
+        sb.table("betfair_market_odds").delete().eq("fixture_id", fid).eq("run_date", today).execute()
         for i in range(0, len(rows), 500):
             sb.table("betfair_market_odds").insert(rows[i:i + 500]).execute()
-        written_fixtures += 1
-        print(f"  [ok] {name} -> fixture {fid}: {len(rows)} righe ({len(set(x['market_name'] for x in rows))} mercati)")
+        written_fids.add(fid)
+        written += 1
+
+        tag = "strong" if m["strong"] else f"weak/{m['score']}"
+        dtm = f"Δt={m['dt_min']}m" if m["dt_min"] is not None else "Δt=?"
+        print(f"  [ok] {name} -> fid {fid} [{tag},{dtm}]: {len(rows)} righe "
+              f"({len(set(x['market_name'] for x in rows))} mercati) | DB: "
+              f"{fixture.get('home_team_name')} v {fixture.get('away_team_name')}")
         time.sleep(EVENT_DELAY)
 
-    print(f"\nFatto. Fixture scritte: {written_fixtures}")
+    print(f"\nFatto. Eventi oggi: {len(events)} | match: {len(matched)} | fixture scritte: {written}")
+    if unmatched:
+        print(f"\nEventi NON matchati ({len(unmatched)}):")
+        for u in unmatched:
+            print(f"  [skip] '{u['event']['name']}'  ({u['reason']}, best={u['best_score']})")
 
 
 if __name__ == "__main__":
