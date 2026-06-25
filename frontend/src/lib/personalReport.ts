@@ -300,6 +300,15 @@ export async function getPersonalReport(filters: ReportFilters = {}): Promise<Re
     return data as ReportData;
 }
 
+// §2.11 — SVUOTA tutta la reportistica personale (trade + leg + watchlist, ogni
+// stato). Operazione distruttiva: tocca SOLO le tabelle personal_*. Ritorna i
+// conteggi eliminati.
+export async function resetPersonalReport(): Promise<{ legs: number; trades: number; watchlist: number }> {
+    const { data, error } = await supabase.rpc('reset_personal_report');
+    if (error) throw new Error(error.message);
+    return data as { legs: number; trades: number; watchlist: number };
+}
+
 // §2.8 — drill-down righe trade (tutti i campi + contesto snapshot).
 export async function getPersonalTrades(filters: ReportFilters = {}): Promise<PersonalTrade[]> {
     const { data, error } = await supabase.rpc('get_personal_trades', {

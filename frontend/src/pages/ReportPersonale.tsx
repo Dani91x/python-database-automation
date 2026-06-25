@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import {
     ChevronLeft, Wallet, Bookmark, AlertTriangle, Filter, RotateCcw,
-    ChevronDown, ChevronUp, TrendingUp, TrendingDown, Loader2, CheckCircle2,
+    ChevronDown, ChevronUp, TrendingUp, TrendingDown, Loader2, CheckCircle2, Trash2,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
-    getPersonalReport, getPersonalTrades, settlePersonalTrade,
+    getPersonalReport, getPersonalTrades, settlePersonalTrade, resetPersonalReport,
     type ReportData, type PersonalTrade, type ReportFilters, type Metrics,
     type TradeStatus,
 } from '@/lib/personalReport';
@@ -348,6 +348,63 @@ function RiskGrid({ m }: { m: Metrics }) {
     );
 }
 
+// ---- dialog SVUOTA REPORT (distruttivo: trade + leg + watchlist) ----
+function PurgeDialog({ open, onOpenChange, onPurged }: {
+    open: boolean; onOpenChange: (o: boolean) => void; onPurged?: () => void;
+}) {
+    const [confirm, setConfirm] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const handlePurge = async () => {
+        setSaving(true);
+        try {
+            const r = await resetPersonalReport();
+            toast.success('Report svuotato', {
+                description: `Eliminati ${r.trades} trade, ${r.legs} coperture, ${r.watchlist} partite in watchlist.`,
+            });
+            setConfirm('');
+            onOpenChange(false);
+            onPurged?.();
+        } catch (e: any) {
+            toast.error('Errore svuotamento', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="glass-card bg-black/95 border-red-500/30 backdrop-blur-2xl max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="font-display font-black text-lg text-red-400 flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5" /> Svuota Report
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground">
+                        Elimina <span className="text-white font-semibold">definitivamente</span> tutta la reportistica
+                        personale: tutti i <span className="text-white">trade</span>, le coperture/hedge e
+                        l'intera <span className="text-white">watchlist</span> (Da valutare, Giocate, Scartate).
+                        Non tocca nient'altro. Operazione <span className="text-red-300 font-semibold">non reversibile</span>.
+                    </DialogDescription>
+                </DialogHeader>
+                <div>
+                    <Label className={LABEL_CLS}>Scrivi <span className="text-red-300 font-mono">SVUOTA</span> per confermare</Label>
+                    <Input value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="SVUOTA"
+                        className="bg-black/60 border-white/10" autoFocus />
+                </div>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}
+                        className="text-muted-foreground hover:text-white">Annulla</Button>
+                    <Button onClick={handlePurge} disabled={saving || confirm.trim().toUpperCase() !== 'SVUOTA'}
+                        className="bg-destructive text-destructive-foreground font-bold hover:bg-destructive/90 disabled:opacity-40">
+                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                        Svuota tutto
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function ReportPersonale() {
     const [report, setReport] = useState<ReportData | null>(null);
     const [trades, setTrades] = useState<PersonalTrade[]>([]);
@@ -355,6 +412,7 @@ export default function ReportPersonale() {
     const [error, setError] = useState<string | null>(null);
 
     const [filters, setFilters] = useState<ReportFilters>({});
+    const [purgeOpen, setPurgeOpen] = useState(false);
     const set = (patch: Partial<ReportFilters>) => setFilters(prev => ({ ...prev, ...patch }));
     const reset = () => setFilters({});
 
@@ -420,13 +478,19 @@ export default function ReportPersonale() {
             </nav>
 
             <main className="container mx-auto px-4 lg:px-6 py-8 max-w-7xl relative z-10 space-y-6">
-                <div>
-                    <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
-                        Report <span className="text-primary">Personale</span>
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        La tua operatività reale (pre-match + live). Metriche calcolate lato DB.
-                    </p>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
+                            Report <span className="text-primary">Personale</span>
+                        </h1>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            La tua operatività reale (pre-match + live). Metriche calcolate lato DB.
+                        </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setPurgeOpen(true)}
+                        className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10">
+                        <Trash2 className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Svuota Report</span>
+                    </Button>
                 </div>
 
                 {/* filtri */}
@@ -634,6 +698,8 @@ export default function ReportPersonale() {
                     </>
                 )}
             </main>
+
+            <PurgeDialog open={purgeOpen} onOpenChange={setPurgeOpen} onPurged={() => load(filters)} />
 
             <footer className="border-t border-white/5 py-8 text-center text-xs text-muted-foreground">
                 <p>&copy; {new Date().getFullYear()} Alpha Score AI. All rights reserved.</p>

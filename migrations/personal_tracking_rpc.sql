@@ -920,6 +920,36 @@ $$;
 
 
 -- ============================================================================
+-- 2.11 reset_personal_report — SVUOTA tutta la reportistica personale: trade,
+-- leg (coperture/hedge) e watchlist (ogni stato). Operazione manuale dell'utente
+-- (con conferma in UI) per ripartire da zero dopo i test. Tocca SOLO le tabelle
+-- personal_* (NIENTE matches/fixture_predictions/analytics/ecc.).
+-- Ritorna i conteggi delle righe eliminate.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.reset_personal_report()
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    n_legs   int;
+    n_trades int;
+    n_wl     int;
+BEGIN
+    -- ordine FK-safe: prima le leg (FK -> trades), poi i trade (FK -> watchlist),
+    -- infine la watchlist.
+    WITH d AS (DELETE FROM public.personal_trade_legs RETURNING 1) SELECT count(*) INTO n_legs   FROM d;
+    WITH d AS (DELETE FROM public.personal_trades     RETURNING 1) SELECT count(*) INTO n_trades FROM d;
+    WITH d AS (DELETE FROM public.personal_watchlist  RETURNING 1) SELECT count(*) INTO n_wl     FROM d;
+
+    RETURN jsonb_build_object('legs', n_legs, 'trades', n_trades, 'watchlist', n_wl);
+END;
+$$;
+
+
+-- ============================================================================
 -- GRANTS — REVOKE ALL FROM public; GRANT EXECUTE TO authenticated, service_role
 -- ============================================================================
 REVOKE ALL ON FUNCTION public.add_to_watchlist(bigint)                                          FROM public;
@@ -932,6 +962,7 @@ REVOKE ALL ON FUNCTION public.recompute_personal_trade(bigint)                  
 REVOKE ALL ON FUNCTION public.get_personal_report(date,date,text,integer,text)                  FROM public;
 REVOKE ALL ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)          FROM public;
 REVOKE ALL ON FUNCTION public.delete_from_watchlist(bigint)                                     FROM public;
+REVOKE ALL ON FUNCTION public.reset_personal_report()                                           FROM public;
 
 GRANT EXECUTE ON FUNCTION public.add_to_watchlist(bigint)                                        TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_watchlist(text)                                             TO authenticated, service_role;
@@ -948,6 +979,7 @@ REVOKE EXECUTE ON FUNCTION public.recompute_personal_trade(bigint)              
 GRANT EXECUTE ON FUNCTION public.get_personal_report(date,date,text,integer,text)                TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)        TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.delete_from_watchlist(bigint)                                   TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.reset_personal_report()                                         TO authenticated, service_role;
 
 -- ============================================================================
 -- 2.9 LOCKDOWN — revoca esecuzione ad anon per TUTTE le RPC sopra (MAI anon).
@@ -963,3 +995,4 @@ REVOKE EXECUTE ON FUNCTION public.recompute_personal_trade(bigint)              
 REVOKE EXECUTE ON FUNCTION public.get_personal_report(date,date,text,integer,text)               FROM anon;
 REVOKE EXECUTE ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)       FROM anon;
 REVOKE EXECUTE ON FUNCTION public.delete_from_watchlist(bigint)                                  FROM anon;
+REVOKE EXECUTE ON FUNCTION public.reset_personal_report()                                        FROM anon;
