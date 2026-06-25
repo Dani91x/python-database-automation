@@ -242,15 +242,22 @@ $$;
 -- ============================================================================
 -- get_direction_report_matches — DRILL: lo scorecard per singola partita.
 -- Per ogni fixture (nel filtro): direzioni prese/totali e buone prese/totali.
+-- PAGINATO: ritorna { total, offset, limit, rows } così il client può scorrere
+-- TUTTE le partite del periodo (anche migliaia) caricandole a blocchi ("carica
+-- altre"). total = partite totali nel filtro (ignora limit/offset). Ordinamento
+-- DETERMINISTICO (giorno desc, lega, casa, fixture_id) per paginazione stabile.
 -- Click su una riga → il client chiama get_direction(fixture_id) per le 7 direzioni.
 -- ============================================================================
+drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer);
+
 create or replace function public.get_direction_report_matches(
     p_from        date    default (now() at time zone 'Europe/Rome')::date - 7,
     p_to          date    default (now() at time zone 'Europe/Rome')::date,
     p_league_id   bigint  default null,
     p_market      text    default null,
     p_only_good   boolean default false,
-    p_limit       integer default 500
+    p_limit       integer default 500,
+    p_offset      integer default 0
 ) returns jsonb
 language plpgsql
 stable
@@ -262,6 +269,7 @@ declare
     v_from_ts timestamptz;
     v_to_ts   timestamptz;
     v_lim     integer := least(greatest(coalesce(p_limit, 500), 1), 2000);
+    v_off     integer := greatest(coalesce(p_offset, 0), 0);
     v_out     jsonb;
 begin
     if p_from is null or p_to is null then
@@ -311,10 +319,16 @@ begin
         from b
         group by fixture_id
         having count(*) filter (where hit is not null) > 0
-        order by max(giorno) desc, max(league_name) nulls last, max(home_team)
-        limit v_lim
+    ),
+    page as (
+        select * from per_match
+        order by giorno desc, league_name nulls last, home_team, fixture_id
+        offset v_off limit v_lim
     )
     select jsonb_build_object(
+        'total',  (select count(*) from per_match),
+        'offset', v_off,
+        'limit',  v_lim,
         'rows', coalesce((
             select jsonb_agg(jsonb_build_object(
                 'fixture_id', fixture_id,
@@ -329,7 +343,7 @@ begin
                 'dir_ok', dir_ok,
                 'good_tot', good_tot,
                 'good_ok', good_ok
-            ) order by giorno desc, league_name nulls last, home_team) from per_match), '[]'::jsonb)
+            ) order by giorno desc, league_name nulls last, home_team, fixture_id) from page), '[]'::jsonb)
     ) into v_out;
 
     return v_out;
@@ -394,13 +408,13 @@ $$;
 -- GRANTS — REVOKE ALL FROM public/anon; EXECUTE solo authenticated + service_role
 -- ============================================================================
 revoke all on function public.get_direction_report(date,date,bigint,text,boolean)                 from public;
-revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer) from public;
+revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) from public;
 revoke all on function public.get_direction_report_fixture(bigint)                                 from public;
 
 grant execute on function public.get_direction_report(date,date,bigint,text,boolean)                 to authenticated, service_role;
-grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer) to authenticated, service_role;
+grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) to authenticated, service_role;
 grant execute on function public.get_direction_report_fixture(bigint)                                to authenticated, service_role;
 
 revoke execute on function public.get_direction_report(date,date,bigint,text,boolean)                 from anon;
-revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer) from anon;
+revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) from anon;
 revoke execute on function public.get_direction_report_fixture(bigint)                                from anon;

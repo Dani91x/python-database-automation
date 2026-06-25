@@ -31,11 +31,14 @@ const today = () => isoDate(new Date());
 const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDate(d); };
 const dayShort = (iso: string) => { const [, m, d] = iso.split('-'); return `${d}/${m}`; };
 
+// data minima ragionevole per "tutto lo storico" (la RPC restituisce solo ciò che esiste)
+const EARLIEST = '2020-01-01';
 const PRESETS = [
     { id: '7', label: '7 giorni', days: 6 },
     { id: '14', label: '14 giorni', days: 13 },
     { id: '30', label: '30 giorni', days: 29 },
     { id: '90', label: '90 giorni', days: 89 },
+    { id: 'all', label: 'Tutto lo storico', days: -1 },
     { id: 'custom', label: 'Personalizza', days: 0 },
 ] as const;
 
@@ -53,8 +56,8 @@ const fixScore = (h: number | null, a: number | null) =>
     h == null || a == null ? '—' : `${h}-${a}`;
 
 // Gli AGGREGATI (KPI/trend/heatmap/classifica) sono calcolati server-side su TUTTE
-// le direzioni del periodo; solo la LISTA partite del drill è limitata (paginazione).
-const MATCH_LIMIT = 1000;
+// le direzioni del periodo. La LISTA partite si carica a blocchi ("carica altre").
+const PAGE_SIZE = 500;
 
 // =================== TREND CHART (hit% vs atteso, per giorno) ===================
 function TrendChart({ daily }: { daily: DirReport['daily'] }) {
@@ -106,6 +109,9 @@ export default function DirezioniReport() {
     const [error, setError] = useState<string | null>(null);
 
     const [matches, setMatches] = useState<DirMatchRow[]>([]);
+    const [matchTotal, setMatchTotal] = useState(0);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const matchGenRef = useRef(0);   // generazione filtri: scarta pagine di filtri vecchi
 
     const [openFix, setOpenFix] = useState<number | null>(null);
     const [fixDetail, setFixDetail] = useState<DirFixtureDetail | null>(null);
@@ -117,6 +123,7 @@ export default function DirezioniReport() {
 
     function applyPreset(id: string) {
         setPreset(id);
+        if (id === 'all') { setFrom(EARLIEST); setTo(today()); return; }
         const p = PRESETS.find(x => x.id === id);
         if (p && id !== 'custom') { setFrom(daysAgo(p.days)); setTo(today()); }
     }
@@ -128,15 +135,25 @@ export default function DirezioniReport() {
 
     useEffect(() => {
         let alive = true;
+        matchGenRef.current += 1;   // invalida eventuali "carica altre" in volo
         setLoading(true); setError(null); setOpenFix(null); setFixDetail(null);
         const t = setTimeout(() => {
-            Promise.all([fetchDirReport(query), fetchDirMatches(query, MATCH_LIMIT)])
-                .then(([rep, mts]) => { if (alive) { setReport(rep); setMatches(mts); } })
+            Promise.all([fetchDirReport(query), fetchDirMatches(query, PAGE_SIZE, 0)])
+                .then(([rep, m]) => { if (alive) { setReport(rep); setMatches(m.rows); setMatchTotal(m.total); } })
                 .catch(e => { if (alive) setError(String(e.message || e)); })
                 .finally(() => { if (alive) setLoading(false); });
         }, 250);
         return () => { alive = false; clearTimeout(t); };
     }, [query]);
+
+    function loadMore() {
+        const gen = matchGenRef.current;   // se i filtri cambiano, scarta questa pagina
+        setLoadingMore(true);
+        fetchDirMatches(query, PAGE_SIZE, matches.length)
+            .then(m => { if (gen === matchGenRef.current) { setMatches(prev => [...prev, ...m.rows]); setMatchTotal(m.total); } })
+            .catch(e => { if (gen === matchGenRef.current) setError(String(e.message || e)); })
+            .finally(() => { if (gen === matchGenRef.current) setLoadingMore(false); });
+    }
 
     function openFixture(fid: number) {
         if (openFix === fid) { setOpenFix(null); return; }
@@ -371,7 +388,7 @@ export default function DirezioniReport() {
                     {/* ---------------- DETTAGLIO PARTITE (drill) ---------------- */}
                     <Card className="glass-card border-white/10 overflow-hidden">
                         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                            <span className="font-heading font-bold text-sm">Partite ({matches.length}) · clic per le direzioni</span>
+                            <span className="font-heading font-bold text-sm">Partite ({matches.length.toLocaleString('it')}{matchTotal > matches.length ? ` di ${matchTotal.toLocaleString('it')}` : ''}) · clic per le direzioni</span>
                             <span className="text-[10px] text-muted-foreground">tutte = direzioni prese/tot · buone = conc.≥2</span>
                         </div>
                         <div className="overflow-x-auto">
@@ -447,9 +464,13 @@ export default function DirezioniReport() {
                                 </tbody>
                             </table>
                         </div>
-                        {matches.length >= MATCH_LIMIT && (
-                            <div className="px-4 py-2 text-[10px] text-amber-400/80 border-t border-white/5">
-                                Mostrate le prime {MATCH_LIMIT} partite (gli aggregati sopra includono comunque TUTTO il periodo). Restringi il periodo o la lega per vederle tutte.
+                        {matches.length < matchTotal && (
+                            <div className="px-4 py-3 border-t border-white/5 flex items-center justify-center">
+                                <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}
+                                    className="border-white/10 text-muted-foreground hover:text-white">
+                                    {loadingMore ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                                    Carica altre {Math.min(PAGE_SIZE, matchTotal - matches.length).toLocaleString('it')} · mostrate {matches.length.toLocaleString('it')} di {matchTotal.toLocaleString('it')}
+                                </Button>
                             </div>
                         )}
                     </Card>

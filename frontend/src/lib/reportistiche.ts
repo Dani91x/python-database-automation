@@ -102,15 +102,18 @@ export async function fetchDirReport(q: DirReportQuery): Promise<DirReport> {
     return data as DirReport;
 }
 
-export async function fetchDirMatches(q: DirReportQuery, limit = 500): Promise<DirMatchRow[]> {
+export interface DirMatchesPage { rows: DirMatchRow[]; total: number; }
+export async function fetchDirMatches(q: DirReportQuery, limit = 500, offset = 0): Promise<DirMatchesPage> {
     const { data, error } = await supabase.rpc('get_direction_report_matches', {
         ...rpcParams(q),
         p_limit: limit,
+        p_offset: offset,
     });
     if (error) throw new Error(error.message);
-    // la RPC ritorna { rows: [...] }; difesa anche se tornasse un array nudo
-    const raw = data as DirMatchRow[] | { rows?: DirMatchRow[] } | null;
-    return Array.isArray(raw) ? raw : (raw?.rows ?? []);
+    // la RPC ritorna { total, offset, limit, rows }; difesa anche se tornasse un array nudo
+    const raw = data as DirMatchRow[] | { rows?: DirMatchRow[]; total?: number } | null;
+    if (Array.isArray(raw)) return { rows: raw, total: raw.length };
+    return { rows: raw?.rows ?? [], total: raw?.total ?? 0 };
 }
 
 // drill fine: le 7 direzioni di UNA partita con esito ✓/✗

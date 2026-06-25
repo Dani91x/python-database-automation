@@ -352,11 +352,11 @@ def call_report(d_from, d_to, league_id, market, only_good):
     }).execute().data
 
 
-def call_matches(d_from, d_to, league_id, market, only_good, limit=2000):
+def call_matches(d_from, d_to, league_id, market, only_good, limit=2000, offset=0):
     return sb.rpc("get_direction_report_matches", {
         "p_from": d_from.isoformat(), "p_to": d_to.isoformat(),
         "p_league_id": league_id, "p_market": market, "p_only_good": only_good,
-        "p_limit": limit,
+        "p_limit": limit, "p_offset": offset,
     }).execute().data
 
 
@@ -367,9 +367,10 @@ def run_scenario(label, d_from, d_to, league_id=None, market=None, only_good=Fal
     cmp_report(label, rpc, ora)
     cmp_hit_rederive(label, rows)
     if do_matches:
-        rpc_m = call_matches(d_from, d_to, league_id, market, only_good)["rows"]
+        resp = call_matches(d_from, d_to, league_id, market, only_good)
         ora_m = oracle_matches(rows, league_id, only_good)
-        cmp_matches(label, rpc_m, ora_m)
+        cmp_matches(label, resp["rows"], ora_m)
+        cmp_field(f"matches.total ({label})", resp["total"], len(ora_m))
 
 
 def main():
@@ -421,6 +422,33 @@ def main():
     for fid in fids:
         cmp_fixture(fid, rows24)
     print(f"  {len(fids)} partite (7 direzioni cad.) confrontate")
+    print("  --> 0 mismatch" if nb == len(_fails) else f"  --> {len(_fails)-nb} MISMATCH")
+
+    # scenario 8: PAGINAZIONE completa — pagine piccole, nessun buco/duplicato,
+    # unione == insieme intero, total coerente. (range 18-24/06, molte partite)
+    print("\n=== (e) paginazione matches — range 18-24/06 (pagine da 40) ===")
+    nb = len(_fails)
+    full_rows = pull_rows(d18, d24, None)
+    ora_full = oracle_matches(full_rows, None, False)
+    page_sz, off, seen, totals = 40, 0, [], set()
+    while True:
+        resp = call_matches(d18, d24, None, None, False, limit=page_sz, offset=off)
+        totals.add(resp["total"])
+        ids = [r["fixture_id"] for r in resp["rows"]]
+        seen += ids
+        if len(resp["rows"]) < page_sz:
+            break
+        off += page_sz
+    if len(totals) != 1:
+        fail(f"paginazione: 'total' incoerente tra le pagine: {totals}")
+    cmp_field("paginazione.total==oracolo", next(iter(totals)), len(ora_full))
+    if len(seen) != len(set(seen)):
+        fail(f"paginazione: {len(seen)-len(set(seen))} fixture DUPLICATE tra le pagine")
+    if set(seen) != set(ora_full.keys()):
+        miss = set(ora_full.keys()) - set(seen)
+        extra = set(seen) - set(ora_full.keys())
+        fail(f"paginazione: insieme != oracolo (mancanti={len(miss)} extra={len(extra)})")
+    print(f"  {len(seen)} partite raccolte in {off//page_sz + 1} pagine · total={next(iter(totals))}")
     print("  --> 0 mismatch" if nb == len(_fails) else f"  --> {len(_fails)-nb} MISMATCH")
 
     print("\n" + "=" * 74)
