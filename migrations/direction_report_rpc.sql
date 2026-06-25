@@ -42,12 +42,18 @@ create index if not exists idx_as_poisson_report
              home_team, away_team, goals_home, goals_away)
     where engine = 'poisson' and settled;
 
+-- p_betfair_only: se true, SOLO le partite presenti in engine_signals (= partite
+-- realmente su Betfair, stesso criterio di get_betfair_fixtures). Filtro primario:
+-- agisce su tutto (KPI, andamento, heatmap, leghe, lista).
+drop function if exists public.get_direction_report(date,date,bigint,text,boolean);
+
 create or replace function public.get_direction_report(
     p_from        date    default (now() at time zone 'Europe/Rome')::date - 7,
     p_to          date    default (now() at time zone 'Europe/Rome')::date,
     p_league_id   bigint  default null,
     p_market      text    default null,
-    p_only_good   boolean default false
+    p_only_good   boolean default false,
+    p_betfair_only boolean default false
 ) returns jsonb
 language plpgsql
 stable
@@ -95,6 +101,7 @@ begin
           and s.kickoff >= v_from_ts
           and s.kickoff <  v_to_ts
           and (p_market is null or s.market = p_market)
+          and (not p_betfair_only or s.fixture_id in (select fixture_id from public.engine_signals))
         order by s.fixture_id, s.market, s.prob desc nulls last, s.selection
     ),
     -- insieme valutato: + filtro lega + filtro "solo buone"
@@ -248,6 +255,9 @@ $$;
 -- DETERMINISTICO (giorno desc, lega, casa, fixture_id) per paginazione stabile.
 -- Click su una riga → il client chiama get_direction(fixture_id) per le 7 direzioni.
 -- ============================================================================
+-- drop di TUTTE le firme storiche (no overload orfani): originale (solo p_limit) e
+-- versione paginata (p_limit,p_offset), prima di creare quella attuale (+p_betfair_only).
+drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,integer);
 drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer);
 
 create or replace function public.get_direction_report_matches(
@@ -256,6 +266,7 @@ create or replace function public.get_direction_report_matches(
     p_league_id   bigint  default null,
     p_market      text    default null,
     p_only_good   boolean default false,
+    p_betfair_only boolean default false,
     p_limit       integer default 500,
     p_offset      integer default 0
 ) returns jsonb
@@ -295,6 +306,7 @@ begin
           and s.kickoff >= v_from_ts
           and s.kickoff <  v_to_ts
           and (p_market is null or s.market = p_market)
+          and (not p_betfair_only or s.fixture_id in (select fixture_id from public.engine_signals))
         order by s.fixture_id, s.market, s.prob desc nulls last, s.selection
     ),
     b as (
@@ -407,14 +419,14 @@ $$;
 -- ============================================================================
 -- GRANTS — REVOKE ALL FROM public/anon; EXECUTE solo authenticated + service_role
 -- ============================================================================
-revoke all on function public.get_direction_report(date,date,bigint,text,boolean)                 from public;
-revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) from public;
+revoke all on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 from public;
+revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) from public;
 revoke all on function public.get_direction_report_fixture(bigint)                                 from public;
 
-grant execute on function public.get_direction_report(date,date,bigint,text,boolean)                 to authenticated, service_role;
-grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) to authenticated, service_role;
+grant execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 to authenticated, service_role;
+grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) to authenticated, service_role;
 grant execute on function public.get_direction_report_fixture(bigint)                                to authenticated, service_role;
 
-revoke execute on function public.get_direction_report(date,date,bigint,text,boolean)                 from anon;
-revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer) from anon;
+revoke execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 from anon;
+revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) from anon;
 revoke execute on function public.get_direction_report_fixture(bigint)                                from anon;

@@ -84,6 +84,7 @@ export interface DirReportQuery {
     leagueId?: number | null;
     market?: string | null;
     onlyGood?: boolean;
+    betfairOnly?: boolean;         // solo partite presenti su Betfair (engine_signals)
 }
 
 function rpcParams(q: DirReportQuery) {
@@ -93,6 +94,7 @@ function rpcParams(q: DirReportQuery) {
         p_league_id: q.leagueId ?? null,
         p_market: q.market ?? null,
         p_only_good: q.onlyGood ?? false,
+        p_betfair_only: q.betfairOnly ?? false,
     };
 }
 

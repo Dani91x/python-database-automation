@@ -103,6 +103,7 @@ export default function DirezioniReport() {
     const [leagueId, setLeagueId] = useState<number | null>(null);
     const [market, setMarket] = useState<string | null>(null);
     const [onlyGood, setOnlyGood] = useState<boolean>(false);
+    const [betfairOnly, setBetfairOnly] = useState<boolean>(false);
 
     const [report, setReport] = useState<DirReport | null>(null);
     const [loading, setLoading] = useState(false);
@@ -128,10 +129,11 @@ export default function DirezioniReport() {
         if (p && id !== 'custom') { setFrom(daysAgo(p.days)); setTo(today()); }
     }
     function reset() {
-        setLeagueId(null); setMarket(null); setOnlyGood(false); applyPreset('7'); setMinN(14);
+        setLeagueId(null); setMarket(null); setOnlyGood(false); setBetfairOnly(false); applyPreset('7'); setMinN(14);
     }
 
-    const query = useMemo(() => ({ from, to, leagueId, market, onlyGood }), [from, to, leagueId, market, onlyGood]);
+    const query = useMemo(() => ({ from, to, leagueId, market, onlyGood, betfairOnly }),
+        [from, to, leagueId, market, onlyGood, betfairOnly]);
 
     useEffect(() => {
         let alive = true;
@@ -237,11 +239,19 @@ export default function DirezioniReport() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 mt-4">
-                    <Checkbox id="onlyGood" checked={onlyGood} onCheckedChange={v => setOnlyGood(!!v)} />
-                    <label htmlFor="onlyGood" className="text-xs text-muted-foreground cursor-pointer">
-                        Solo segnali <span className="text-white">"buoni"</span> (≥ 2 motori concordi)
-                    </label>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-4">
+                    <div className="flex items-center gap-2">
+                        <Checkbox id="onlyGood" checked={onlyGood} onCheckedChange={v => setOnlyGood(!!v)} />
+                        <label htmlFor="onlyGood" className="text-xs text-muted-foreground cursor-pointer">
+                            Solo segnali <span className="text-white">"buoni"</span> (≥ 2 motori concordi)
+                        </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Checkbox id="betfairOnly" checked={betfairOnly} onCheckedChange={v => setBetfairOnly(!!v)} />
+                        <label htmlFor="betfairOnly" className="text-xs text-muted-foreground cursor-pointer">
+                            Solo partite <span className="text-white">Betfair</span>
+                        </label>
+                    </div>
                 </div>
             </Card>
 

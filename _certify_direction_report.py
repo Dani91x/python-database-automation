@@ -95,6 +95,29 @@ def pull_rows(d_from: date, d_to: date, market: str | None):
     return rows
 
 
+def load_betfair_fixtures() -> set:
+    """Insieme dei fixture_id presenti in engine_signals (= partite su Betfair),
+    stesso criterio di get_betfair_fixtures e del filtro p_betfair_only."""
+    ids, start = set(), 0
+    while True:
+        d = sb.table("engine_signals").select("fixture_id").range(start, start + 999).execute().data
+        for r in d:
+            if r["fixture_id"] is not None:
+                ids.add(r["fixture_id"])
+        if len(d) < 1000:
+            break
+        start += 1000
+    return ids
+
+
+_BF: set | None = None
+def betfair_set() -> set:
+    global _BF
+    if _BF is None:
+        _BF = load_betfair_fixtures()
+    return _BF
+
+
 def giorno_of(kickoff_iso: str) -> date:
     return datetime.fromisoformat(kickoff_iso).astimezone(ROME).date()
 
@@ -345,29 +368,34 @@ def cmp_fixture(fid, rows):
             cmp_field(f"fixture[{fid}].{oo['market']}.{f}", rr.get(f), oo[f])
 
 
-def call_report(d_from, d_to, league_id, market, only_good):
+def call_report(d_from, d_to, league_id, market, only_good, betfair_only=False):
     return sb.rpc("get_direction_report", {
         "p_from": d_from.isoformat(), "p_to": d_to.isoformat(),
         "p_league_id": league_id, "p_market": market, "p_only_good": only_good,
+        "p_betfair_only": betfair_only,
     }).execute().data
 
 
-def call_matches(d_from, d_to, league_id, market, only_good, limit=2000, offset=0):
+def call_matches(d_from, d_to, league_id, market, only_good, limit=2000, offset=0, betfair_only=False):
     return sb.rpc("get_direction_report_matches", {
         "p_from": d_from.isoformat(), "p_to": d_to.isoformat(),
         "p_league_id": league_id, "p_market": market, "p_only_good": only_good,
-        "p_limit": limit, "p_offset": offset,
+        "p_betfair_only": betfair_only, "p_limit": limit, "p_offset": offset,
     }).execute().data
 
 
-def run_scenario(label, d_from, d_to, league_id=None, market=None, only_good=False, do_matches=False):
+def run_scenario(label, d_from, d_to, league_id=None, market=None, only_good=False,
+                 do_matches=False, betfair_only=False):
     rows = pull_rows(d_from, d_to, market)
+    if betfair_only:   # filtro fixture-level == p_betfair_only nel base_all della RPC
+        bf = betfair_set()
+        rows = [r for r in rows if r["fixture_id"] in bf]
     ora = oracle_report(rows, league_id, only_good)
-    rpc = call_report(d_from, d_to, league_id, market, only_good)
+    rpc = call_report(d_from, d_to, league_id, market, only_good, betfair_only)
     cmp_report(label, rpc, ora)
     cmp_hit_rederive(label, rows)
     if do_matches:
-        resp = call_matches(d_from, d_to, league_id, market, only_good)
+        resp = call_matches(d_from, d_to, league_id, market, only_good, betfair_only=betfair_only)
         ora_m = oracle_matches(rows, league_id, only_good)
         cmp_matches(label, resp["rows"], ora_m)
         cmp_field(f"matches.total ({label})", resp["total"], len(ora_m))
@@ -413,6 +441,13 @@ def main():
 
     # scenario 6c: range vuoto (futuro, 0 direzioni settlate → denominatore 0)
     run_scenario("range vuoto 01-02/01/2030 (denominatore 0)", date(2030, 1, 1), date(2030, 1, 2))
+
+    # scenario 6d: SOLO Betfair (fixture in engine_signals) — anche matches
+    run_scenario("range 18-24/06, SOLO Betfair", d18, d24, betfair_only=True, do_matches=True)
+
+    # scenario 6e: SOLO Betfair + mercato + solo buone (filtri combinati)
+    run_scenario("range 18-24/06, Betfair + over_2_5 + buone", d18, d24,
+                 market="over_2_5", only_good=True, betfair_only=True)
 
     # scenario 7: drill fine per partita (3 fixtures del 24/06)
     print("\n=== (d) get_direction_report_fixture — drill 3 partite del 24/06 ===")
