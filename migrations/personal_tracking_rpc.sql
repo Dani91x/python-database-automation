@@ -76,7 +76,12 @@ BEGIN
                 COALESCE(m->'concordi','[]'::jsonb)            AS concordi_list,
                 COALESCE((m->>'motori_totali')::int,0)         AS motori_totali,
                 m->'engines'->'poisson'                        AS poisson_obj
-        FROM jsonb_array_elements(COALESCE(v_dir->'markets','[]'::jsonb)) m
+        -- guard anti-scalar: COALESCE non cattura il JSON null (solo SQL NULL);
+        -- se 'markets' non e' un array (null/scalar) usa '[]' per non far esplodere
+        -- jsonb_array_elements ("cannot extract elements from a scalar").
+        FROM jsonb_array_elements(
+                 CASE WHEN jsonb_typeof(v_dir->'markets')='array'
+                      THEN v_dir->'markets' ELSE '[]'::jsonb END) m
     ),
     ed AS (
         SELECT
@@ -412,7 +417,9 @@ BEGIN
 
         -- congela edge/model_prob/implied/affidabilita/concordi/motori per (market,selection)
         SELECT e INTO v_ctx
-          FROM jsonb_array_elements(COALESCE(v_wl.snapshot->'edges','[]'::jsonb)) e
+          FROM jsonb_array_elements(
+                   CASE WHEN jsonb_typeof(v_wl.snapshot->'edges')='array'
+                        THEN v_wl.snapshot->'edges' ELSE '[]'::jsonb END) e
          WHERE e->>'market' = v_market AND e->>'selection' = v_selection
          LIMIT 1;
         IF v_ctx IS NOT NULL THEN
@@ -420,12 +427,16 @@ BEGIN
             v_mprob := NULLIF(v_ctx->>'model_prob','')::numeric;
             v_iprob := NULLIF(v_ctx->>'implied_prob','')::numeric;
             v_affid := NULLIF(v_ctx->>'affidabilita','')::numeric;
-            v_conc  := COALESCE(jsonb_array_length(v_ctx->'concordi'),0);
+            v_conc  := COALESCE(jsonb_array_length(
+                          CASE WHEN jsonb_typeof(v_ctx->'concordi')='array'
+                               THEN v_ctx->'concordi' ELSE '[]'::jsonb END),0);
             v_mot   := NULLIF(v_ctx->>'motori_totali','')::smallint;
         END IF;
         -- followed_advice: la selezione è tra i consigli?
         SELECT EXISTS (
-            SELECT 1 FROM jsonb_array_elements(COALESCE(v_wl.consigli,'[]'::jsonb)) c
+            SELECT 1 FROM jsonb_array_elements(
+                       CASE WHEN jsonb_typeof(v_wl.consigli)='array'
+                            THEN v_wl.consigli ELSE '[]'::jsonb END) c
             WHERE c->>'market' = v_market AND c->>'selection' = v_selection
         ) INTO v_followed;
     END IF;
@@ -460,7 +471,11 @@ BEGIN
         v_status, p->>'result_ft',
         v_edge, v_mprob, v_iprob, v_affid, v_conc, v_mot,
         v_followed, p->>'comment',
-        COALESCE((SELECT array_agg(x) FROM jsonb_array_elements_text(p->'tags') x), '{}'::text[]),
+        -- FIX "cannot extract elements from a scalar": il frontend invia tags:null
+        -- (JSON null = scalare) quando non ci sono tag. jsonb_array_elements_text su
+        -- uno scalare esplode; il guard lo tratta come array vuoto -> '{}'::text[].
+        COALESCE((SELECT array_agg(x) FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(p->'tags')='array' THEN p->'tags' ELSE '[]'::jsonb END) x), '{}'::text[]),
         v_trade_date)
     RETURNING id INTO v_new_id;
 
@@ -862,6 +877,49 @@ $$;
 
 
 -- ============================================================================
+-- 2.10 delete_from_watchlist — elimina una riga watchlist SOLO se DA_VALUTARE e
+-- senza trade collegati. Serve a ripulire la sezione "Da valutare" senza toccare
+-- giocate/scartate (le decisioni prese restano tracciate) ne' i P&L (i trade
+-- collegati alimentano le analitiche: vietato cancellarli da qui).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.delete_from_watchlist(p_id bigint)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_status text;
+    v_ntr    int;
+BEGIN
+    IF p_id IS NULL THEN
+        RAISE EXCEPTION 'p_id nullo';
+    END IF;
+
+    SELECT status INTO v_status FROM public.personal_watchlist WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'watchlist id % non trovato', p_id;
+    END IF;
+
+    -- protezione P&L: mai eliminare partite con trade collegati
+    SELECT count(*) INTO v_ntr FROM public.personal_trades WHERE watchlist_id = p_id;
+    IF v_ntr > 0 THEN
+        RAISE EXCEPTION 'Impossibile eliminare: % trade collegati (i P&L ne dipendono)', v_ntr;
+    END IF;
+
+    -- eliminabili solo le partite ancora DA_VALUTARE
+    IF v_status <> 'DA_VALUTARE' THEN
+        RAISE EXCEPTION 'Eliminabili solo le partite DA_VALUTARE (stato attuale: %)', v_status;
+    END IF;
+
+    DELETE FROM public.personal_watchlist WHERE id = p_id;
+    RETURN jsonb_build_object('deleted', p_id);
+END;
+$$;
+
+
+-- ============================================================================
 -- GRANTS — REVOKE ALL FROM public; GRANT EXECUTE TO authenticated, service_role
 -- ============================================================================
 REVOKE ALL ON FUNCTION public.add_to_watchlist(bigint)                                          FROM public;
@@ -873,6 +931,7 @@ REVOKE ALL ON FUNCTION public.settle_personal_trade(bigint,text,text,numeric,num
 REVOKE ALL ON FUNCTION public.recompute_personal_trade(bigint)                                  FROM public;
 REVOKE ALL ON FUNCTION public.get_personal_report(date,date,text,integer,text)                  FROM public;
 REVOKE ALL ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)          FROM public;
+REVOKE ALL ON FUNCTION public.delete_from_watchlist(bigint)                                     FROM public;
 
 GRANT EXECUTE ON FUNCTION public.add_to_watchlist(bigint)                                        TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_watchlist(text)                                             TO authenticated, service_role;
@@ -883,8 +942,12 @@ GRANT EXECUTE ON FUNCTION public.settle_personal_trade(bigint,text,text,numeric,
 -- recompute_personal_trade è INTERNA (§2.6): chiamata solo via PERFORM dalle altre
 -- funzioni SECURITY DEFINER (girano come definer/postgres). NON va esposta al client.
 GRANT EXECUTE ON FUNCTION public.recompute_personal_trade(bigint)                                TO service_role;
+-- Supabase concede EXECUTE ad authenticated di default su ogni funzione: lo revochiamo
+-- esplicitamente (recompute è interna, deve restare solo service_role/definer).
+REVOKE EXECUTE ON FUNCTION public.recompute_personal_trade(bigint)                              FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.get_personal_report(date,date,text,integer,text)                TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)        TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.delete_from_watchlist(bigint)                                   TO authenticated, service_role;
 
 -- ============================================================================
 -- 2.9 LOCKDOWN — revoca esecuzione ad anon per TUTTE le RPC sopra (MAI anon).
@@ -899,3 +962,4 @@ REVOKE EXECUTE ON FUNCTION public.settle_personal_trade(bigint,text,text,numeric
 REVOKE EXECUTE ON FUNCTION public.recompute_personal_trade(bigint)                               FROM anon;
 REVOKE EXECUTE ON FUNCTION public.get_personal_report(date,date,text,integer,text)               FROM anon;
 REVOKE EXECUTE ON FUNCTION public.get_personal_trades(date,date,text,integer,text,integer)       FROM anon;
+REVOKE EXECUTE ON FUNCTION public.delete_from_watchlist(bigint)                                  FROM anon;

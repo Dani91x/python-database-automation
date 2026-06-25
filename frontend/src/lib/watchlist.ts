@@ -118,6 +118,15 @@ export async function getWatchlist(status?: WatchlistStatus | null): Promise<Wat
     return (data ?? []) as WatchlistRow[];
 }
 
+// §2.10 — elimina una riga watchlist. Lato DB e' consentito SOLO per partite
+// DA_VALUTARE e senza trade collegati (protezione P&L): un eventuale tentativo su
+// giocate/scartate viene rifiutato dalla RPC con eccezione.
+export async function deleteFromWatchlist(id: number): Promise<{ deleted: number }> {
+    const { data, error } = await supabase.rpc('delete_from_watchlist', { p_id: Number(id) });
+    if (error) throw new Error(error.message);
+    return data as { deleted: number };
+}
+
 // §2.3 — registra la decisione dell'utente (GIOCATA / SCARTATA / DA_VALUTARE).
 export async function setWatchlistDecision(d: WatchlistDecision): Promise<WatchlistRow> {
     const { data, error } = await supabase.rpc('set_watchlist_decision', {

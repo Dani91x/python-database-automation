@@ -146,7 +146,11 @@ export function TradeForm({ open, onOpenChange, row, onSaved }: Props) {
                 entry_score: entryScore.trim() || null,
                 commission: num(commission) ?? 0.05,
                 comment: comment.trim() || null,
-                tags: row.tags && row.tags.length ? row.tags : null,
+                // NON inviare `null`: nel payload jsonb diventerebbe JSON null (scalare)
+                // e la RPC su jsonb_array_elements_text esploderebbe ("cannot extract
+                // elements from a scalar"). `undefined` → chiave omessa → SQL NULL = ok.
+                // (la RPC e' comunque blindata, questa e' difesa lato client.)
+                tags: row.tags && row.tags.length ? row.tags : undefined,
             };
             // 1) crea il trade. Se fallisce QUI, nulla è stato salvato → si può ritentare.
             const trade = await addPersonalTrade(payload);

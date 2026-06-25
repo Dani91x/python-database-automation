@@ -17,11 +17,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-    Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Calendar, Trophy, Sparkles,
+    Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Calendar, Trophy, Sparkles, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-    setWatchlistDecision, REJECT_REASON_LABELS,
+    setWatchlistDecision, deleteFromWatchlist, REJECT_REASON_LABELS,
     type WatchlistRow, type RejectReason, type SnapshotEdge, type WatchlistStatus,
 } from '@/lib/watchlist';
 import { TradeForm } from '@/components/watchlist/TradeForm';
@@ -94,6 +94,7 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
     const [expanded, setExpanded] = useState(false);
     const [tradeOpen, setTradeOpen] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
+    const [delOpen, setDelOpen] = useState(false);
 
     // set delle selezioni consigliate (per evidenziare le righe edges)
     const consigliKeys = useMemo(() => {
@@ -208,6 +209,19 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                 >
                     <XCircle className="w-4 h-4 mr-2" /> Scartata
                 </Button>
+                {/* Elimina: solo da "Da valutare" (snapshot di prova). Le giocate/scartate
+                    NON sono eliminabili (P&L e analisi scartate ne dipendono). */}
+                {row.status === 'DA_VALUTARE' && (
+                    <Button
+                        onClick={() => setDelOpen(true)}
+                        size="sm"
+                        variant="ghost"
+                        title="Elimina dalla watchlist"
+                        className="ml-auto text-muted-foreground hover:text-red-400 hover:bg-red-400/10"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </Button>
+                )}
                 {isDecided && (
                     <span className="ml-auto text-[10px] text-muted-foreground">
                         Decisa il {fmtKickoff(row.decided_at)}
@@ -217,6 +231,7 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
 
             <TradeForm open={tradeOpen} onOpenChange={setTradeOpen} row={row} onSaved={onChanged} />
             <RejectDialog open={rejectOpen} onOpenChange={setRejectOpen} row={row} onSaved={onChanged} />
+            <DeleteDialog open={delOpen} onOpenChange={setDelOpen} row={row} onSaved={onChanged} />
         </motion.div>
     );
 }
@@ -284,6 +299,54 @@ function RejectDialog({ open, onOpenChange, row, onSaved }: {
                         className="bg-destructive text-destructive-foreground font-bold hover:bg-destructive/90">
                         {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                         Scarta
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// Dialog ELIMINA: conferma rimozione di una partita DA_VALUTARE dalla watchlist.
+function DeleteDialog({ open, onOpenChange, row, onSaved }: {
+    open: boolean; onOpenChange: (o: boolean) => void; row: WatchlistRow; onSaved?: () => void;
+}) {
+    const [saving, setSaving] = useState(false);
+
+    const handleDelete = async () => {
+        setSaving(true);
+        try {
+            await deleteFromWatchlist(row.id);
+            toast.success('Partita eliminata dalla watchlist', {
+                description: `${row.home_team} vs ${row.away_team}.`,
+            });
+            onOpenChange(false);
+            onSaved?.();
+        } catch (e: any) {
+            toast.error('Errore eliminazione', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="glass-card bg-black/95 border-white/10 backdrop-blur-2xl max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="font-display font-black text-lg text-white">
+                        Elimina partita
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground">
+                        {row.home_team} vs {row.away_team}. Rimuove definitivamente lo snapshot dalla watchlist.
+                        Consentito solo per le partite “Da valutare” senza trade collegati. Operazione non reversibile.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}
+                        className="text-muted-foreground hover:text-white">Annulla</Button>
+                    <Button onClick={handleDelete} disabled={saving}
+                        className="bg-destructive text-destructive-foreground font-bold hover:bg-destructive/90">
+                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                        Elimina
                     </Button>
                 </DialogFooter>
             </DialogContent>
