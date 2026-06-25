@@ -7,6 +7,8 @@
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
 
+// Rendimento (ROI) = P&L back puntata fissa=1 alle quote Betfair reali, commissione
+// 5% sulla vincita. priced_n = direzioni con quota disponibile (denominatore ROI).
 export interface DirReportKpi {
     n: number;
     hits: number;
@@ -18,6 +20,12 @@ export interface DirReportKpi {
     good_n: number;
     good_hits: number;
     good_hit_rate: number | null;
+    priced_n: number;              // direzioni con quota Betfair (denom. ROI)
+    profit: number | null;         // somma P&L (stake=1)
+    roi: number | null;            // profit/priced_n
+    avg_odds: number | null;
+    good_priced_n: number;
+    good_roi: number | null;
 }
 export interface DirDaily {
     giorno: string;                // YYYY-MM-DD (fuso Europe/Rome)
@@ -26,6 +34,8 @@ export interface DirDaily {
     avg_prob: number | null;
     good_n: number;
     good_hit_rate: number | null;
+    priced_n: number;
+    roi: number | null;
 }
 export interface DirByMarket {
     market: string;
@@ -34,6 +44,9 @@ export interface DirByMarket {
     avg_prob: number | null;
     good_n: number;
     good_hit_rate: number | null;
+    priced_n: number;
+    roi: number | null;
+    avg_odds: number | null;
 }
 export interface DirByMarketDay {
     market: string; giorno: string;
@@ -47,6 +60,24 @@ export interface DirByLeague {
     avg_prob: number | null;
     good_n: number;
     good_hit_rate: number | null;
+    priced_n: number;
+    roi: number | null;
+    avg_odds: number | null;
+}
+export interface DirByConcordance {
+    agree: number | null;          // motori concordi (1/2/3)
+    n: number; hits: number;
+    hit_rate: number | null;
+    priced_n: number;
+    roi: number | null;
+    avg_odds: number | null;
+}
+export interface DirByOddsBand {
+    band: string; ord: number;
+    priced_n: number; hits: number;
+    hit_rate: number | null;
+    roi: number | null;
+    avg_odds: number | null;
 }
 export interface DirLeagueOpt { id: number | null; name: string | null; n: number; }
 export interface DirReportMeta {
@@ -54,6 +85,8 @@ export interface DirReportMeta {
     league_id: number | null;
     market: string | null;
     only_good: boolean;
+    betfair_only: boolean;
+    commission: number;
     generated_at: string;
     leagues: DirLeagueOpt[];
 }
@@ -64,6 +97,8 @@ export interface DirReport {
     by_market: DirByMarket[];
     by_market_day: DirByMarketDay[];
     by_league: DirByLeague[];
+    by_concordance: DirByConcordance[];
+    by_odds_band: DirByOddsBand[];
 }
 export interface DirMatchRow {
     fixture_id: number;
@@ -76,6 +111,9 @@ export interface DirMatchRow {
     goals_away: number | null;
     dir_tot: number; dir_ok: number;
     good_tot: number; good_ok: number;
+    priced_n: number;
+    profit: number | null;
+    roi: number | null;
 }
 
 export interface DirReportQuery {
@@ -125,6 +163,8 @@ export interface DirFixtureRow {
     prob: number | null;
     n_engines_agree: number | null;
     hit: boolean | null;
+    odds: number | null;
+    pnl: number | null;
 }
 export interface DirFixtureDetail {
     fixture_id: number;

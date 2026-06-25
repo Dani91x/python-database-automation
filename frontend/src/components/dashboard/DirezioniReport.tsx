@@ -8,17 +8,23 @@
 // legge analytics_signals, settlata dalla pipeline giornaliera esistente.
 // ============================================================================
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Filter, RotateCcw, AlertTriangle, ChevronDown, ChevronRight, Loader2, TrendingUp } from 'lucide-react';
+import { Filter, RotateCcw, AlertTriangle, ChevronDown, ChevronRight, Loader2, TrendingUp, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { pct } from '@/lib/analytics';
+import { pct, downloadCsv } from '@/lib/analytics';
 import {
     fetchDirReport, fetchDirMatches, fetchDirFixture,
     DIR_MARKETS, DIR_MARKET_SHORT, DIR_MARKET_LABEL,
     type DirReport, type DirMatchRow, type DirFixtureDetail,
 } from '@/lib/reportistiche';
+
+// ROI è una frazione (es. -0.05 = -5%). Verde se >0, rosso se <0.
+const roiText = (r: number | null) =>
+    r == null ? 'text-muted-foreground' : r > 0.0005 ? 'text-emerald-400' : r < -0.0005 ? 'text-red-400' : 'text-muted-foreground';
+const signPct = (r: number | null, d = 1) => (r != null && r > 0 ? '+' : '') + pct(r, d);
+const oddsFmt = (o: number | null) => (o == null ? '—' : o.toFixed(2));
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
@@ -157,6 +163,25 @@ export default function DirezioniReport() {
             .finally(() => { if (gen === matchGenRef.current) setLoadingMore(false); });
     }
 
+    function exportCsv(kind: 'segnale' | 'partite') {
+        if (!report) return;
+        const esc = (s: unknown) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+        const BOM = '﻿';   // apre bene su Excel IT (accenti squadre)
+        if (kind === 'segnale') {
+            const head = ['segnale', 'n', 'hit_rate', 'avg_prob', 'good_hit_rate', 'priced_n', 'roi', 'avg_odds'];
+            const lines = [head.join(',')];
+            for (const m of report.by_market)
+                lines.push([esc(DIR_MARKET_LABEL[m.market] ?? m.market), m.n, m.hit_rate ?? '', m.avg_prob ?? '', m.good_hit_rate ?? '', m.priced_n, m.roi ?? '', m.avg_odds ?? ''].join(','));
+            downloadCsv(`direzioni_segnali_${from}_${to}.csv`, BOM + lines.join('\n'));
+        } else {
+            const head = ['giorno', 'lega', 'casa', 'trasferta', 'ft', 'dir_ok', 'dir_tot', 'good_ok', 'good_tot', 'priced_n', 'profit', 'roi'];
+            const lines = [head.join(',')];
+            for (const mt of matches)
+                lines.push([mt.giorno, esc(mt.league_name), esc(mt.home_team), esc(mt.away_team), `${mt.goals_home ?? ''}-${mt.goals_away ?? ''}`, mt.dir_ok, mt.dir_tot, mt.good_ok, mt.good_tot, mt.priced_n, mt.profit ?? '', mt.roi ?? ''].join(','));
+            downloadCsv(`direzioni_partite_${from}_${to}.csv`, BOM + lines.join('\n'));
+        }
+    }
+
     function openFixture(fid: number) {
         if (openFix === fid) { setOpenFix(null); return; }
         setOpenFix(fid); setFixLoading(true); setFixDetail(null); setFixError(null);
@@ -274,7 +299,7 @@ export default function DirezioniReport() {
             ) : (
                 <>
                     {/* ---------------- KPI ---------------- */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         <Card className="glass-card border-white/10 p-4">
                             <div className={LABEL_CLS}>Direzioni</div>
                             <div className="font-display font-black text-2xl">{k.n.toLocaleString('it')}</div>
@@ -297,7 +322,34 @@ export default function DirezioniReport() {
                             <div className={`font-display font-black text-2xl ${hitText(k.good_hit_rate)}`}>{pct(k.good_hit_rate)}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">{k.good_n.toLocaleString('it')} direzioni</div>
                         </Card>
+                        <Card className="glass-card border-white/10 p-4">
+                            <div className={LABEL_CLS}>Rendimento (ROI)</div>
+                            <div className={`font-display font-black text-2xl ${roiText(k.roi)}`}>{signPct(k.roi)}</div>
+                            <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                                buone {signPct(k.good_roi, 0)} · q.media {oddsFmt(k.avg_odds)}
+                            </div>
+                        </Card>
+                        <Card className="glass-card border-white/10 p-4">
+                            <div className={LABEL_CLS}>Quote Betfair</div>
+                            <div className="font-display font-black text-2xl text-white/80">
+                                {k.n > 0 ? Math.round(100 * k.priced_n / k.n) : 0}%
+                            </div>
+                            <div className="text-[10px] text-muted-foreground mt-1 tabular-nums">
+                                {k.priced_n.toLocaleString('it')}/{k.n.toLocaleString('it')} prezzate
+                            </div>
+                        </Card>
                     </div>
+                    {k.priced_n === 0 ? (
+                        <p className="text-[11px] text-amber-400/80 -mt-2">
+                            ⚠ Nessuna direzione con quota Betfair in questo periodo/filtro: il <strong>ROI non è calcolabile</strong>.
+                        </p>
+                    ) : k.priced_n < k.n && (
+                        <p className="text-[11px] -mt-2 text-muted-foreground/80">
+                            ℹ Il ROI è calcolato sulle sole <strong>{k.priced_n.toLocaleString('it')}/{k.n.toLocaleString('it')}</strong> direzioni
+                            con quota Betfair ({Math.round(100 * k.priced_n / k.n)}%) — le altre non hanno un prezzo su cui calcolarlo.
+                            {k.priced_n < k.n * 0.5 && <strong className="text-amber-400"> Copertura bassa, leggi con cautela.</strong>}
+                        </p>
+                    )}
 
                     {/* ---------------- ANDAMENTO + HEATMAP ---------------- */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -340,7 +392,12 @@ export default function DirezioniReport() {
 
                     {/* ---------------- PER SEGNALE (riepilogo) ---------------- */}
                     <Card className="glass-card border-white/10 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-white/5 font-heading font-bold text-sm">Riepilogo per segnale</div>
+                        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                            <span className="font-heading font-bold text-sm">Riepilogo per segnale</span>
+                            <Button variant="outline" size="sm" onClick={() => exportCsv('segnale')} className="h-7 border-white/10 text-xs text-muted-foreground hover:text-white">
+                                <Download className="w-3 h-3 mr-1" /> CSV
+                            </Button>
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead><tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
@@ -349,6 +406,8 @@ export default function DirezioniReport() {
                                     <th className="text-right px-3 py-2 font-medium">Hit</th>
                                     <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Atteso</th>
                                     <th className="text-right px-3 py-2 font-medium">Buone</th>
+                                    <th className="text-right px-3 py-2 font-medium">ROI</th>
+                                    <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Q.media</th>
                                 </tr></thead>
                                 <tbody>
                                     {[...report.by_market].sort((a, b) => (b.hit_rate ?? 0) - (a.hit_rate ?? 0)).map(mk => (
@@ -358,12 +417,72 @@ export default function DirezioniReport() {
                                             <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${hitText(mk.hit_rate)}`}>{pct(mk.hit_rate)}</td>
                                             <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground hidden md:table-cell">{pct(mk.avg_prob)}</td>
                                             <td className={`px-3 py-2.5 text-right tabular-nums ${hitText(mk.good_hit_rate)}`}>{pct(mk.good_hit_rate)} <span className="text-[10px] text-muted-foreground">({mk.good_n})</span></td>
+                                            <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${roiText(mk.roi)}`}>{mk.priced_n > 0 ? signPct(mk.roi) : '—'}<span className="text-[10px] text-muted-foreground"> ({mk.priced_n})</span></td>
+                                            <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground hidden md:table-cell">{oddsFmt(mk.avg_odds)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
                     </Card>
+
+                    {/* ---------------- FASCE: CONVINZIONE + QUOTA ---------------- */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <Card className="glass-card border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/5 font-heading font-bold text-sm">Per convinzione (motori concordi)</div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead><tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
+                                        <th className="text-left px-4 py-2 font-medium">Concordi</th>
+                                        <th className="text-right px-3 py-2 font-medium">N</th>
+                                        <th className="text-right px-3 py-2 font-medium">Hit</th>
+                                        <th className="text-right px-3 py-2 font-medium">ROI</th>
+                                        <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Q.media</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {report.by_concordance.map(c => (
+                                            <tr key={`conc-${c.agree ?? 'na'}`} className="border-b border-white/5">
+                                                <td className="px-4 py-2.5 font-medium">{c.agree ?? '—'}/4 motori</td>
+                                                <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{c.n.toLocaleString('it')}</td>
+                                                <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${hitText(c.hit_rate)}`}>{pct(c.hit_rate)}</td>
+                                                <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${roiText(c.roi)}`}>{c.priced_n > 0 ? signPct(c.roi) : '—'}<span className="text-[10px] text-muted-foreground"> ({c.priced_n})</span></td>
+                                                <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground hidden md:table-cell">{oddsFmt(c.avg_odds)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                        <Card className="glass-card border-white/10 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-white/5 font-heading font-bold text-sm">Per fascia di quota (solo prezzabili)</div>
+                            {report.by_odds_band.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-muted-foreground">Nessuna direzione con quota Betfair nel periodo.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead><tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
+                                            <th className="text-left px-4 py-2 font-medium">Quota</th>
+                                            <th className="text-right px-3 py-2 font-medium">Prezzate</th>
+                                            <th className="text-right px-3 py-2 font-medium">Hit</th>
+                                            <th className="text-right px-3 py-2 font-medium">ROI</th>
+                                            <th className="text-right px-3 py-2 font-medium hidden md:table-cell">Q.media</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {report.by_odds_band.map(bnd => (
+                                                <tr key={bnd.ord} className="border-b border-white/5">
+                                                    <td className="px-4 py-2.5 font-medium tabular-nums">{bnd.band}</td>
+                                                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{bnd.priced_n.toLocaleString('it')}</td>
+                                                    <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${hitText(bnd.hit_rate)}`}>{pct(bnd.hit_rate)}</td>
+                                                    <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${roiText(bnd.roi)}`}>{bnd.priced_n > 0 ? signPct(bnd.roi) : '—'}</td>
+                                                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground hidden md:table-cell">{oddsFmt(bnd.avg_odds)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </Card>
+                    </div>
 
                     {/* ---------------- CLASSIFICA LEGHE ---------------- */}
                     <Card className="glass-card border-white/10 p-4">
@@ -388,6 +507,7 @@ export default function DirezioniReport() {
                                                 style={{ width: `${(l.hit_rate ?? 0) * 100}%` }} />
                                         </div>
                                         <div className={`w-12 text-right tabular-nums font-bold ${hitText(l.hit_rate)}`}>{pct(l.hit_rate, 0)}</div>
+                                        <div className={`w-14 text-right tabular-nums font-bold ${roiText(l.roi)}`} title="ROI alle quote Betfair (sulle prezzate)">{l.priced_n > 0 ? signPct(l.roi, 0) : '—'}</div>
                                         <div className="w-10 text-right tabular-nums text-muted-foreground/60 hidden md:block">{l.n}</div>
                                     </div>
                                 ))}
@@ -397,9 +517,18 @@ export default function DirezioniReport() {
 
                     {/* ---------------- DETTAGLIO PARTITE (drill) ---------------- */}
                     <Card className="glass-card border-white/10 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-2">
                             <span className="font-heading font-bold text-sm">Partite ({matches.length.toLocaleString('it')}{matchTotal > matches.length ? ` di ${matchTotal.toLocaleString('it')}` : ''}) · clic per le direzioni</span>
-                            <span className="text-[10px] text-muted-foreground">tutte = direzioni prese/tot · buone = conc.≥2</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground hidden md:inline">tutte=prese/tot · ROI alle quote Betfair</span>
+                                <Button variant="outline" size="sm" onClick={() => exportCsv('partite')}
+                                    title={matchTotal > matches.length
+                                        ? `Esporta le ${matches.length.toLocaleString('it')} partite caricate (${matchTotal.toLocaleString('it')} totali — carica le altre prima per un CSV completo)`
+                                        : 'Esporta tutte le partite in CSV'}
+                                    className="h-7 border-white/10 text-xs text-muted-foreground hover:text-white">
+                                    <Download className="w-3 h-3 mr-1" /> CSV{matchTotal > matches.length ? ` (${matches.length})` : ''}
+                                </Button>
+                            </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -409,7 +538,8 @@ export default function DirezioniReport() {
                                     <th className="text-left px-3 py-2 font-medium">Partita</th>
                                     <th className="text-center px-3 py-2 font-medium">FT</th>
                                     <th className="text-right px-3 py-2 font-medium">Tutte</th>
-                                    <th className="text-right px-4 py-2 font-medium">Buone</th>
+                                    <th className="text-right px-3 py-2 font-medium">Buone</th>
+                                    <th className="text-right px-4 py-2 font-medium">ROI</th>
                                 </tr></thead>
                                 <tbody>
                                     {matches.map(mt => {
@@ -428,11 +558,12 @@ export default function DirezioniReport() {
                                                     <td className="px-3 py-2.5">{mt.home_team} - {mt.away_team}</td>
                                                     <td className="px-3 py-2.5 text-center tabular-nums text-muted-foreground">{fixScore(mt.goals_home, mt.goals_away)}</td>
                                                     <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${hitText(allRate)}`}>{mt.dir_ok}/{mt.dir_tot}</td>
-                                                    <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{mt.good_ok}/{mt.good_tot}</td>
+                                                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{mt.good_ok}/{mt.good_tot}</td>
+                                                    <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${roiText(mt.roi)}`} title={mt.priced_n > 0 ? `${mt.priced_n} prezzate` : 'nessuna quota'}>{mt.priced_n > 0 ? signPct(mt.roi, 0) : '—'}</td>
                                                 </tr>
                                                 {open && (
                                                     <tr className="bg-black/40">
-                                                        <td colSpan={6} className="px-4 py-3">
+                                                        <td colSpan={7} className="px-4 py-3">
                                                             {fixLoading ? (
                                                                 <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Carico le direzioni…</div>
                                                             ) : fixError ? (
@@ -447,7 +578,9 @@ export default function DirezioniReport() {
                                                                             <th className="text-left px-2 py-1">Direzione</th>
                                                                             <th className="text-right px-2 py-1">Prob</th>
                                                                             <th className="text-center px-2 py-1">Concordi</th>
+                                                                            <th className="text-right px-2 py-1">Quota</th>
                                                                             <th className="text-center px-2 py-1">Esito</th>
+                                                                            <th className="text-right px-2 py-1">P&L</th>
                                                                         </tr></thead>
                                                                         <tbody>
                                                                             {[...fixDetail.rows].sort((a, b) => (b.n_engines_agree ?? 0) - (a.n_engines_agree ?? 0)).map(r => (
@@ -456,8 +589,12 @@ export default function DirezioniReport() {
                                                                                     <td className="px-2 py-1 text-white">{r.selection}</td>
                                                                                     <td className="px-2 py-1 text-right tabular-nums">{pct(r.prob)}</td>
                                                                                     <td className="px-2 py-1 text-center tabular-nums text-muted-foreground">{r.n_engines_agree ?? '—'}/4</td>
+                                                                                    <td className="px-2 py-1 text-right tabular-nums text-sky-300">{oddsFmt(r.odds)}</td>
                                                                                     <td className={`px-2 py-1 text-center font-bold ${r.hit == null ? 'text-muted-foreground' : r.hit ? 'text-emerald-400' : 'text-red-400'}`}>
                                                                                         {r.hit == null ? '—' : r.hit ? '✓' : '✗'}
+                                                                                    </td>
+                                                                                    <td className={`px-2 py-1 text-right tabular-nums font-bold ${r.pnl == null ? 'text-muted-foreground' : r.pnl > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                                                        {r.pnl == null ? '—' : (r.pnl > 0 ? '+' : '') + r.pnl.toFixed(2)}
                                                                                     </td>
                                                                                 </tr>
                                                                             ))}
@@ -492,7 +629,9 @@ export default function DirezioniReport() {
                         sulle partite <em>settlate</em> ai <strong>90'</strong>. Denominatore = solo direzioni con esito noto (HT mancante
                         escluso, mai contato come errore). <em>"Buone"</em> = almeno 2 motori concordi. <em>Atteso</em> = probabilità media
                         dichiarata dai motori: se Hit ≈ Atteso il sistema è ben calibrato. Intervallo di Wilson 95%: con N basso la stima è
-                        incerta. Si aggiorna da solo man mano che i risultati entrano. Dati storici, non garanzia di risultati futuri.
+                        incerta. <strong>Rendimento (ROI)</strong> = P&amp;L di un <em>back</em> a puntata fissa alla quota Betfair (commissione 5% sulla
+                        vincita), calcolato solo sulle direzioni con quota disponibile (la stessa quota mostrata nel resto dell'app, miglior
+                        prezzo registrato). Si aggiorna da solo man mano che i risultati entrano. Dati storici, non garanzia di risultati futuri.
                     </p>
                 </>
             )}

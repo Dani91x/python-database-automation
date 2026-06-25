@@ -42,10 +42,21 @@ create index if not exists idx_as_poisson_report
              home_team, away_team, goals_home, goals_away)
     where engine = 'poisson' and settled;
 
+-- engine_signals(fixture_id): velocizza il filtro p_betfair_only e la CTE bf (aggancio quote).
+create index if not exists idx_es_fixture_id on public.engine_signals (fixture_id);
+
 -- p_betfair_only: se true, SOLO le partite presenti in engine_signals (= partite
--- realmente su Betfair, stesso criterio di get_betfair_fixtures). Filtro primario:
--- agisce su tutto (KPI, andamento, heatmap, leghe, lista).
+-- realmente su Betfair, stesso criterio di get_betfair_fixtures). Filtro primario.
+-- p_commission: commissione Betfair sulla vincita (default 0.05 = 5%), come
+-- backtest_strategy / personal_report.
+--
+-- RENDIMENTO (money-critical, formula canonica del progetto, BACK puntata fissa=1):
+--   pnl = (quota-1)*(1-comm)  se hit  |  -1  se miss  |  NULL se non prezzabile.
+--   "prezzabile" = direzione con quota Betfair (max(odds) su engine_signals mappato
+--   ai 7 mercati, stesso schema di get_betfair_odds) E esito noto (hit not null).
+--   roi = somma(pnl)/N_prezzate.  Quote/esiti mancanti NON entrano nel ROI.
 drop function if exists public.get_direction_report(date,date,bigint,text,boolean);
+drop function if exists public.get_direction_report(date,date,bigint,text,boolean,boolean);
 
 create or replace function public.get_direction_report(
     p_from        date    default (now() at time zone 'Europe/Rome')::date - 7,
@@ -53,7 +64,8 @@ create or replace function public.get_direction_report(
     p_league_id   bigint  default null,
     p_market      text    default null,
     p_only_good   boolean default false,
-    p_betfair_only boolean default false
+    p_betfair_only boolean default false,
+    p_commission  numeric default 0.05
 ) returns jsonb
 language plpgsql
 stable
@@ -63,6 +75,7 @@ set statement_timeout = '30s'
 as $$
 declare
     v_z       constant numeric := 1.96;
+    v_comm    numeric := coalesce(p_commission, 0.05);
     v_from_ts timestamptz;
     v_to_ts   timestamptz;   -- esclusivo (giorno successivo a p_to)
     v_out     jsonb;
@@ -75,16 +88,34 @@ begin
     if p_market is not null and p_market not in
         ('1x2','ht_1x2','over_1_5','over_2_5','over_3_5','btts','first_half_over_0_5') then
         raise exception 'p_market non canonico: %', p_market; end if;
+    if v_comm < 0 or v_comm >= 1 then
+        raise exception 'p_commission fuori [0,1): %', v_comm; end if;
 
     -- finestra su kickoff (mezzanotte di Roma → timestamptz): usa l'indice su kickoff
     v_from_ts := (p_from::timestamp) at time zone 'Europe/Rome';
     v_to_ts   := ((p_to + 1)::timestamp) at time zone 'Europe/Rome';
 
     with
+    -- quote Betfair: max(odds) per (fixture, codice) mappato sui 7 mercati canonici.
+    -- STESSO schema di get_betfair_odds (fonte di verità): nessun filtro su direction,
+    -- max() aggrega i motori. 1 riga = (fixture, mercato, selezione) → quota back.
+    bf as (
+        select es.fixture_id, mp.market, mp.selection, max(es.odds) as odds
+        from public.engine_signals es
+        join (values
+            ('H','1x2','H'),('D','1x2','D'),('A','1x2','A'),
+            ('HT_H','ht_1x2','H'),('HT_D','ht_1x2','D'),('HT_A','ht_1x2','A'),
+            ('O15','over_1_5','Over'),('U15','over_1_5','Under'),
+            ('O25','over_2_5','Over'),('U25','over_2_5','Under'),
+            ('O35','over_3_5','Over'),('U35','over_3_5','Under'),
+            ('BTTS','btts','Yes'),('BTTS_NO','btts','No'),
+            ('HT05','first_half_over_0_5','Over'),('HT_U05','first_half_over_0_5','Under')
+        ) as mp(code, market, selection) on es.market = mp.code
+        where es.odds is not null
+        group by es.fixture_id, mp.market, mp.selection
+    ),
     -- 1 riga = la DIREZIONE (argmax Poisson) per (fixture, mercato).
-    -- Filtro lega/mercato applicato sullo scan; only_good lo si applica dopo
-    -- (così meta.leagues resta stabile a prescindere dal toggle "solo buone").
-    base_all as (
+    base_raw as (
         select distinct on (s.fixture_id, s.market)
                s.fixture_id,
                s.market,
@@ -104,6 +135,32 @@ begin
           and (not p_betfair_only or s.fixture_id in (select fixture_id from public.engine_signals))
         order by s.fixture_id, s.market, s.prob desc nulls last, s.selection
     ),
+    -- aggancio quota + P&L back (puntata fissa = 1). pnl NULL se non prezzabile.
+    base_all as (
+        select r.*,
+               bf.odds,
+               case when r.hit is null or bf.odds is null then null
+                    when r.hit then (bf.odds - 1) * (1 - v_comm)
+                    else -1::numeric end                                       as pnl,
+               case when odds_band.ord is not null then odds_band.ord end      as odds_ord,
+               odds_band.band                                                  as odds_band
+        from base_raw r
+        left join bf
+               on bf.fixture_id = r.fixture_id
+              and bf.market     = r.market
+              and bf.selection  = r.selection
+        left join lateral (
+            select case
+                       when bf.odds is null then null
+                       when bf.odds < 1.5 then 1 when bf.odds < 2.0 then 2
+                       when bf.odds < 3.0 then 3 when bf.odds < 5.0 then 4 else 5 end as ord,
+                   case
+                       when bf.odds is null then null
+                       when bf.odds < 1.5 then '1.01-1.50' when bf.odds < 2.0 then '1.50-2.00'
+                       when bf.odds < 3.0 then '2.00-3.00' when bf.odds < 5.0 then '3.00-5.00'
+                       else '5.00+' end as band
+        ) odds_band on true
+    ),
     -- insieme valutato: + filtro lega + filtro "solo buone"
     b as (
         select *
@@ -111,8 +168,7 @@ begin
         where (p_league_id is null or league_id = p_league_id)
           and (not p_only_good or n_engines_agree >= 2)
     ),
-    -- elenco leghe disponibili (per il menu a tendina): su date+mercato, NON
-    -- filtrato per lega né per only_good → stabile.
+    -- elenco leghe disponibili (menu a tendina): su date+mercato, NON filtrato.
     leagues as (
         select league_id,
                max(league_name) as league_name,
@@ -121,50 +177,52 @@ begin
         group by league_id
         having count(*) filter (where hit is not null) > 0
     ),
-    -- KPI totali
     kpi as (
         select
             count(*) filter (where hit is not null)                          as n,
             count(*) filter (where hit)                                      as hits,
             avg(prob) filter (where hit is not null)                         as avg_prob,
             count(*) filter (where hit is not null and n_engines_agree >= 2) as good_n,
-            count(*) filter (where hit and n_engines_agree >= 2)             as good_hits
+            count(*) filter (where hit and n_engines_agree >= 2)             as good_hits,
+            count(*) filter (where pnl is not null)                          as priced_n,
+            sum(pnl)                                                         as profit,
+            avg(odds) filter (where pnl is not null)                         as avg_odds,
+            count(*) filter (where pnl is not null and n_engines_agree >= 2) as good_priced_n,
+            sum(pnl) filter (where pnl is not null and n_engines_agree >= 2) as good_profit
         from b
     ),
-    -- per giorno (andamento nel tempo)
     daily as (
         select giorno,
                count(*) filter (where hit is not null)                          as n,
                count(*) filter (where hit)                                      as hits,
                avg(prob) filter (where hit is not null)                         as avg_prob,
                count(*) filter (where hit is not null and n_engines_agree >= 2) as good_n,
-               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits
+               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits,
+               count(*) filter (where pnl is not null)                          as priced_n,
+               sum(pnl)                                                         as profit
         from b
         group by giorno
-        order by giorno
     ),
-    -- per mercato (segnale)
     by_market as (
         select market,
                count(*) filter (where hit is not null)                          as n,
                count(*) filter (where hit)                                      as hits,
                avg(prob) filter (where hit is not null)                         as avg_prob,
                count(*) filter (where hit is not null and n_engines_agree >= 2) as good_n,
-               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits
+               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits,
+               count(*) filter (where pnl is not null)                          as priced_n,
+               sum(pnl)                                                         as profit,
+               avg(odds) filter (where pnl is not null)                         as avg_odds
         from b
         group by market
-        order by market
     ),
-    -- per mercato × giorno (mappa di calore)
     by_market_day as (
         select market, giorno,
                count(*) filter (where hit is not null) as n,
                count(*) filter (where hit)             as hits
         from b
         group by market, giorno
-        order by market, giorno
     ),
-    -- per lega (classifica)
     by_league as (
         select league_id,
                max(league_name)                                                as league_name,
@@ -172,10 +230,34 @@ begin
                count(*) filter (where hit)                                      as hits,
                avg(prob) filter (where hit is not null)                         as avg_prob,
                count(*) filter (where hit is not null and n_engines_agree >= 2) as good_n,
-               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits
+               count(*) filter (where hit and n_engines_agree >= 2)             as good_hits,
+               count(*) filter (where pnl is not null)                          as priced_n,
+               sum(pnl)                                                         as profit,
+               avg(odds) filter (where pnl is not null)                         as avg_odds
         from b
         group by league_id
-        order by league_id
+    ),
+    -- spaccato per CONCORDANZA (motori d'accordo): hit + rendimento per livello
+    by_concordance as (
+        select n_engines_agree                                                 as agree,
+               count(*) filter (where hit is not null)                          as n,
+               count(*) filter (where hit)                                      as hits,
+               count(*) filter (where pnl is not null)                          as priced_n,
+               sum(pnl)                                                         as profit,
+               avg(odds) filter (where pnl is not null)                         as avg_odds
+        from b
+        group by n_engines_agree
+    ),
+    -- spaccato per FASCIA DI QUOTA (solo prezzabili): hit + rendimento per banda
+    by_odds_band as (
+        select odds_ord as ord, max(odds_band) as band,
+               count(*)                                  as priced_n,
+               count(*) filter (where hit)               as hits,
+               sum(pnl)                                  as profit,
+               avg(odds)                                 as avg_odds
+        from b
+        where pnl is not null
+        group by odds_ord
     )
     select jsonb_build_object(
         'meta', jsonb_build_object(
@@ -184,6 +266,8 @@ begin
             'league_id', p_league_id,
             'market', p_market,
             'only_good', p_only_good,
+            'betfair_only', p_betfair_only,
+            'commission', v_comm,
             'generated_at', now(),
             'leagues', coalesce((
                 select jsonb_agg(jsonb_build_object('id', league_id, 'name', league_name, 'n', n)
@@ -207,7 +291,13 @@ begin
                     / (1 + v_z*v_z/k.n)) end,
                 'good_n', k.good_n,
                 'good_hits', k.good_hits,
-                'good_hit_rate', case when k.good_n > 0 then k.good_hits::numeric / k.good_n end
+                'good_hit_rate', case when k.good_n > 0 then k.good_hits::numeric / k.good_n end,
+                'priced_n', k.priced_n,
+                'profit', k.profit,
+                'roi', case when k.priced_n > 0 then k.profit / k.priced_n end,
+                'avg_odds', k.avg_odds,
+                'good_priced_n', k.good_priced_n,
+                'good_roi', case when k.good_priced_n > 0 then k.good_profit / k.good_priced_n end
             ) from kpi k
         ),
         'daily', coalesce((
@@ -216,7 +306,9 @@ begin
                 'hit_rate', case when n > 0 then hits::numeric/n end,
                 'avg_prob', avg_prob,
                 'good_n', good_n,
-                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end
+                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end,
+                'priced_n', priced_n,
+                'roi', case when priced_n > 0 then profit / priced_n end
             ) order by giorno) from daily), '[]'::jsonb),
         'by_market', coalesce((
             select jsonb_agg(jsonb_build_object(
@@ -224,7 +316,10 @@ begin
                 'hit_rate', case when n > 0 then hits::numeric/n end,
                 'avg_prob', avg_prob,
                 'good_n', good_n,
-                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end
+                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end,
+                'priced_n', priced_n,
+                'roi', case when priced_n > 0 then profit / priced_n end,
+                'avg_odds', avg_odds
             ) order by market) from by_market), '[]'::jsonb),
         'by_market_day', coalesce((
             select jsonb_agg(jsonb_build_object(
@@ -238,8 +333,28 @@ begin
                 'hit_rate', case when n > 0 then hits::numeric/n end,
                 'avg_prob', avg_prob,
                 'good_n', good_n,
-                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end
-            ) order by league_id) from by_league), '[]'::jsonb)
+                'good_hit_rate', case when good_n > 0 then good_hits::numeric/good_n end,
+                'priced_n', priced_n,
+                'roi', case when priced_n > 0 then profit / priced_n end,
+                'avg_odds', avg_odds
+            ) order by league_id) from by_league), '[]'::jsonb),
+        'by_concordance', coalesce((
+            select jsonb_agg(jsonb_build_object(
+                'agree', agree, 'n', n, 'hits', hits,
+                'hit_rate', case when n > 0 then hits::numeric/n end,
+                'priced_n', priced_n,
+                'roi', case when priced_n > 0 then profit / priced_n end,
+                'avg_odds', avg_odds
+            ) order by agree nulls last) from by_concordance), '[]'::jsonb),
+        'by_odds_band', coalesce((
+            select jsonb_agg(jsonb_build_object(
+                'band', band, 'ord', ord,
+                'priced_n', priced_n,
+                'hits', hits,
+                'hit_rate', case when priced_n > 0 then hits::numeric/priced_n end,
+                'roi', case when priced_n > 0 then profit / priced_n end,
+                'avg_odds', avg_odds
+            ) order by ord) from by_odds_band), '[]'::jsonb)
     ) into v_out;
 
     return v_out;
@@ -259,6 +374,7 @@ $$;
 -- versione paginata (p_limit,p_offset), prima di creare quella attuale (+p_betfair_only).
 drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,integer);
 drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,integer,integer);
+drop function if exists public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,numeric,integer,integer);
 
 create or replace function public.get_direction_report_matches(
     p_from        date    default (now() at time zone 'Europe/Rome')::date - 7,
@@ -267,6 +383,7 @@ create or replace function public.get_direction_report_matches(
     p_market      text    default null,
     p_only_good   boolean default false,
     p_betfair_only boolean default false,
+    p_commission  numeric default 0.05,
     p_limit       integer default 500,
     p_offset      integer default 0
 ) returns jsonb
@@ -277,6 +394,7 @@ set search_path = public, pg_temp
 set statement_timeout = '30s'
 as $$
 declare
+    v_comm    numeric := coalesce(p_commission, 0.05);
     v_from_ts timestamptz;
     v_to_ts   timestamptz;
     v_lim     integer := least(greatest(coalesce(p_limit, 500), 1), 2000);
@@ -290,11 +408,28 @@ begin
     if p_market is not null and p_market not in
         ('1x2','ht_1x2','over_1_5','over_2_5','over_3_5','btts','first_half_over_0_5') then
         raise exception 'p_market non canonico: %', p_market; end if;
+    if v_comm < 0 or v_comm >= 1 then
+        raise exception 'p_commission fuori [0,1): %', v_comm; end if;
 
     v_from_ts := (p_from::timestamp) at time zone 'Europe/Rome';
     v_to_ts   := ((p_to + 1)::timestamp) at time zone 'Europe/Rome';
 
-    with base_all as (
+    with bf as (   -- quote Betfair (stesso schema di get_betfair_odds)
+        select es.fixture_id, mp.market, mp.selection, max(es.odds) as odds
+        from public.engine_signals es
+        join (values
+            ('H','1x2','H'),('D','1x2','D'),('A','1x2','A'),
+            ('HT_H','ht_1x2','H'),('HT_D','ht_1x2','D'),('HT_A','ht_1x2','A'),
+            ('O15','over_1_5','Over'),('U15','over_1_5','Under'),
+            ('O25','over_2_5','Over'),('U25','over_2_5','Under'),
+            ('O35','over_3_5','Over'),('U35','over_3_5','Under'),
+            ('BTTS','btts','Yes'),('BTTS_NO','btts','No'),
+            ('HT05','first_half_over_0_5','Over'),('HT_U05','first_half_over_0_5','Under')
+        ) as mp(code, market, selection) on es.market = mp.code
+        where es.odds is not null
+        group by es.fixture_id, mp.market, mp.selection
+    ),
+    base_raw as (
         select distinct on (s.fixture_id, s.market)
                s.fixture_id, s.market, s.selection, s.prob, s.hit, s.n_engines_agree,
                s.league_id, s.league_name, s.home_team, s.away_team,
@@ -308,6 +443,14 @@ begin
           and (p_market is null or s.market = p_market)
           and (not p_betfair_only or s.fixture_id in (select fixture_id from public.engine_signals))
         order by s.fixture_id, s.market, s.prob desc nulls last, s.selection
+    ),
+    base_all as (
+        select r.*,
+               case when r.hit is null or bf.odds is null then null
+                    when r.hit then (bf.odds - 1) * (1 - v_comm)
+                    else -1::numeric end as pnl
+        from base_raw r
+        left join bf on bf.fixture_id = r.fixture_id and bf.market = r.market and bf.selection = r.selection
     ),
     b as (
         select *
@@ -327,7 +470,9 @@ begin
                count(*) filter (where hit is not null)                          as dir_tot,
                count(*) filter (where hit)                                      as dir_ok,
                count(*) filter (where hit is not null and n_engines_agree >= 2) as good_tot,
-               count(*) filter (where hit and n_engines_agree >= 2)             as good_ok
+               count(*) filter (where hit and n_engines_agree >= 2)             as good_ok,
+               count(*) filter (where pnl is not null)                          as priced_n,
+               sum(pnl)                                                         as profit
         from b
         group by fixture_id
         having count(*) filter (where hit is not null) > 0
@@ -354,7 +499,10 @@ begin
                 'dir_tot', dir_tot,
                 'dir_ok', dir_ok,
                 'good_tot', good_tot,
-                'good_ok', good_ok
+                'good_ok', good_ok,
+                'priced_n', priced_n,
+                'profit', profit,
+                'roi', case when priced_n > 0 then profit / priced_n end
             ) order by giorno desc, league_name nulls last, home_team, fixture_id) from page), '[]'::jsonb)
     ) into v_out;
 
@@ -367,8 +515,11 @@ $$;
 -- esito ✓/✗ (stessa unità del report: argmax Poisson per mercato). Per il
 -- pannello "apri partita" del rendiconto. Esito = colonna hit di produzione.
 -- ============================================================================
+drop function if exists public.get_direction_report_fixture(bigint);
+
 create or replace function public.get_direction_report_fixture(
-    p_fixture_id bigint
+    p_fixture_id bigint,
+    p_commission numeric default 0.05
 ) returns jsonb
 language plpgsql
 stable
@@ -377,12 +528,30 @@ set search_path = public, pg_temp
 set statement_timeout = '15s'
 as $$
 declare
-    v_out jsonb;
+    v_comm numeric := coalesce(p_commission, 0.05);
+    v_out  jsonb;
 begin
     if p_fixture_id is null then
         raise exception 'p_fixture_id obbligatorio'; end if;
+    if v_comm < 0 or v_comm >= 1 then
+        raise exception 'p_commission fuori [0,1): %', v_comm; end if;
 
-    with dir as (
+    with bf as (   -- quote Betfair della fixture (stesso schema di get_betfair_odds)
+        select mp.market, mp.selection, max(es.odds) as odds
+        from public.engine_signals es
+        join (values
+            ('H','1x2','H'),('D','1x2','D'),('A','1x2','A'),
+            ('HT_H','ht_1x2','H'),('HT_D','ht_1x2','D'),('HT_A','ht_1x2','A'),
+            ('O15','over_1_5','Over'),('U15','over_1_5','Under'),
+            ('O25','over_2_5','Over'),('U25','over_2_5','Under'),
+            ('O35','over_3_5','Over'),('U35','over_3_5','Under'),
+            ('BTTS','btts','Yes'),('BTTS_NO','btts','No'),
+            ('HT05','first_half_over_0_5','Over'),('HT_U05','first_half_over_0_5','Under')
+        ) as mp(code, market, selection) on es.market = mp.code
+        where es.fixture_id = p_fixture_id and es.odds is not null
+        group by mp.market, mp.selection
+    ),
+    dir0 as (
         select distinct on (s.market)
                s.market, s.selection, s.prob, s.n_engines_agree, s.hit,
                s.goals_home, s.goals_away,
@@ -393,6 +562,14 @@ begin
           and s.settled
           and s.fixture_id = p_fixture_id
         order by s.market, s.prob desc nulls last, s.selection
+    ),
+    dir as (
+        select d.*, bf.odds,
+               case when d.hit is null or bf.odds is null then null
+                    when d.hit then (bf.odds - 1) * (1 - v_comm)
+                    else -1::numeric end as pnl
+        from dir0 d
+        left join bf on bf.market = d.market and bf.selection = d.selection
     )
     select jsonb_build_object(
         'fixture_id', p_fixture_id,
@@ -408,7 +585,9 @@ begin
                 'selection', selection,
                 'prob', prob,
                 'n_engines_agree', n_engines_agree,
-                'hit', hit
+                'hit', hit,
+                'odds', odds,
+                'pnl', pnl
             ) order by market) from dir), '[]'::jsonb)
     ) into v_out;
 
@@ -419,14 +598,14 @@ $$;
 -- ============================================================================
 -- GRANTS — REVOKE ALL FROM public/anon; EXECUTE solo authenticated + service_role
 -- ============================================================================
-revoke all on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 from public;
-revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) from public;
-revoke all on function public.get_direction_report_fixture(bigint)                                 from public;
+revoke all on function public.get_direction_report(date,date,bigint,text,boolean,boolean,numeric)                 from public;
+revoke all on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,numeric,integer,integer) from public;
+revoke all on function public.get_direction_report_fixture(bigint,numeric)                                 from public;
 
-grant execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 to authenticated, service_role;
-grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) to authenticated, service_role;
-grant execute on function public.get_direction_report_fixture(bigint)                                to authenticated, service_role;
+grant execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean,numeric)                 to authenticated, service_role;
+grant execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,numeric,integer,integer) to authenticated, service_role;
+grant execute on function public.get_direction_report_fixture(bigint,numeric)                                to authenticated, service_role;
 
-revoke execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean)                 from anon;
-revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,integer,integer) from anon;
-revoke execute on function public.get_direction_report_fixture(bigint)                                from anon;
+revoke execute on function public.get_direction_report(date,date,bigint,text,boolean,boolean,numeric)                 from anon;
+revoke execute on function public.get_direction_report_matches(date,date,bigint,text,boolean,boolean,numeric,integer,integer) from anon;
+revoke execute on function public.get_direction_report_fixture(bigint,numeric)                                from anon;

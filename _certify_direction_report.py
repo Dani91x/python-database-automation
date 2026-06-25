@@ -118,6 +118,75 @@ def betfair_set() -> set:
     return _BF
 
 
+# mappa codici engine_signals → (mercato canonico, selezione) — STESSA di get_betfair_odds
+DECODE = {
+    "H": ("1x2", "H"), "D": ("1x2", "D"), "A": ("1x2", "A"),
+    "HT_H": ("ht_1x2", "H"), "HT_D": ("ht_1x2", "D"), "HT_A": ("ht_1x2", "A"),
+    "O15": ("over_1_5", "Over"), "U15": ("over_1_5", "Under"),
+    "O25": ("over_2_5", "Over"), "U25": ("over_2_5", "Under"),
+    "O35": ("over_3_5", "Over"), "U35": ("over_3_5", "Under"),
+    "BTTS": ("btts", "Yes"), "BTTS_NO": ("btts", "No"),
+    "HT05": ("first_half_over_0_5", "Over"), "HT_U05": ("first_half_over_0_5", "Under"),
+}
+DEFAULT_COMM = 0.05
+
+
+def load_betfair_odds() -> dict:
+    """{(fixture_id, mercato, selezione): max(odds)} da engine_signals (== get_betfair_odds)."""
+    odds: dict = {}
+    start = 0
+    while True:
+        d = sb.table("engine_signals").select("fixture_id,market,odds").range(start, start + 999).execute().data
+        for r in d:
+            o = r.get("odds")
+            code = r.get("market")
+            if o is None or code not in DECODE:
+                continue
+            mk, sel = DECODE[code]
+            key = (r["fixture_id"], mk, sel)
+            of = float(o)
+            odds[key] = of if key not in odds else max(odds[key], of)
+        if len(d) < 1000:
+            break
+        start += 1000
+    return odds
+
+
+_ODDS: dict | None = None
+def odds_map() -> dict:
+    global _ODDS
+    if _ODDS is None:
+        _ODDS = load_betfair_odds()
+    return _ODDS
+
+
+def odds_band(o):
+    """(ord, band) come la RPC. None se quota assente."""
+    if o is None:
+        return None, None
+    if o < 1.5:  return 1, "1.01-1.50"
+    if o < 2.0:  return 2, "1.50-2.00"
+    if o < 3.0:  return 3, "2.00-3.00"
+    if o < 5.0:  return 4, "3.00-5.00"
+    return 5, "5.00+"
+
+
+def attach_pnl(directions, comm):
+    """Aggancia quota Betfair + P&L back (stake=1) a ogni direzione."""
+    om = odds_map()
+    for r in directions:
+        o = om.get((r["fixture_id"], r["market"], r["selection"]))
+        r["odds"] = o
+        if r["hit"] is None or o is None:
+            r["pnl"] = None
+        elif r["hit"]:
+            r["pnl"] = (o - 1) * (1 - comm)
+        else:
+            r["pnl"] = -1.0
+        r["ord"], r["band"] = odds_band(o)
+    return directions
+
+
 def giorno_of(kickoff_iso: str) -> date:
     return datetime.fromisoformat(kickoff_iso).astimezone(ROME).date()
 
@@ -152,8 +221,12 @@ def rate(hits: int, n: int):
     return hits / n if n > 0 else None
 
 
-def agg_block(items):
-    """Calcola n/hits/avg_prob/good_n/good_hits su una lista di direzioni."""
+def roi_of(profit, priced_n):
+    return (profit / priced_n) if priced_n and priced_n > 0 else None
+
+
+def block(items):
+    """Metriche complete su una lista di direzioni (con odds/pnl già agganciati)."""
     valid = [r for r in items if r["hit"] is not None]
     n = len(valid)
     hits = sum(1 for r in valid if r["hit"])
@@ -161,24 +234,36 @@ def agg_block(items):
     good_valid = [r for r in valid if is_good(r)]
     good_n = len(good_valid)
     good_hits = sum(1 for r in good_valid if r["hit"])
-    return n, hits, avg_prob, good_n, good_hits
+    priced = [r for r in items if r["pnl"] is not None]
+    priced_n = len(priced)
+    profit = sum(r["pnl"] for r in priced) if priced_n else None
+    avg_odds = (sum(r["odds"] for r in priced) / priced_n) if priced_n else None
+    good_priced = [r for r in priced if is_good(r)]
+    good_priced_n = len(good_priced)
+    good_profit = sum(r["pnl"] for r in good_priced) if good_priced_n else None
+    return {"n": n, "hits": hits, "avg_prob": avg_prob, "good_n": good_n, "good_hits": good_hits,
+            "priced_n": priced_n, "profit": profit, "avg_odds": avg_odds,
+            "good_priced_n": good_priced_n, "good_profit": good_profit}
 
 
 # --------------------------------------------------------------------------- oracolo
-def oracle_report(rows, league_id, only_good):
-    base_all = argmax_directions(rows)
+def oracle_report(rows, league_id, only_good, comm=DEFAULT_COMM):
+    base_all = attach_pnl(argmax_directions(rows), comm)
     b = [r for r in base_all
          if (league_id is None or r["league_id"] == league_id)
          and (not only_good or is_good(r))]
 
     # KPI
-    n, hits, avg_prob, good_n, good_hits = agg_block(b)
-    lo, hi = wilson(hits, n)
+    m = block(b)
+    lo, hi = wilson(m["hits"], m["n"])
     kpi = {
-        "n": n, "hits": hits, "hit_rate": rate(hits, n), "avg_prob": avg_prob,
-        "calib_gap": (rate(hits, n) - avg_prob) if n > 0 else None,
+        "n": m["n"], "hits": m["hits"], "hit_rate": rate(m["hits"], m["n"]), "avg_prob": m["avg_prob"],
+        "calib_gap": (rate(m["hits"], m["n"]) - m["avg_prob"]) if m["n"] > 0 else None,
         "wilson_low": lo, "wilson_high": hi,
-        "good_n": good_n, "good_hits": good_hits, "good_hit_rate": rate(good_hits, good_n),
+        "good_n": m["good_n"], "good_hits": m["good_hits"], "good_hit_rate": rate(m["good_hits"], m["good_n"]),
+        "priced_n": m["priced_n"], "profit": m["profit"], "roi": roi_of(m["profit"], m["priced_n"]),
+        "avg_odds": m["avg_odds"],
+        "good_priced_n": m["good_priced_n"], "good_roi": roi_of(m["good_profit"], m["good_priced_n"]),
     }
 
     # daily
@@ -187,29 +272,31 @@ def oracle_report(rows, league_id, only_good):
         by_day.setdefault(giorno_of(r["kickoff"]), []).append(r)
     daily = []
     for g in sorted(by_day):
-        n_, h_, ap_, gn_, gh_ = agg_block(by_day[g])
-        daily.append({"giorno": g.isoformat(), "n": n_, "hits": h_, "hit_rate": rate(h_, n_),
-                      "avg_prob": ap_, "good_n": gn_, "good_hit_rate": rate(gh_, gn_)})
+        d = block(by_day[g])
+        daily.append({"giorno": g.isoformat(), "n": d["n"], "hits": d["hits"], "hit_rate": rate(d["hits"], d["n"]),
+                      "avg_prob": d["avg_prob"], "good_n": d["good_n"], "good_hit_rate": rate(d["good_hits"], d["good_n"]),
+                      "priced_n": d["priced_n"], "roi": roi_of(d["profit"], d["priced_n"])})
 
     # by_market
     by_mkt: dict[str, list] = {}
     for r in b:
         by_mkt.setdefault(r["market"], []).append(r)
     by_market = []
-    for m in sorted(by_mkt):
-        n_, h_, ap_, gn_, gh_ = agg_block(by_mkt[m])
-        by_market.append({"market": m, "n": n_, "hits": h_, "hit_rate": rate(h_, n_),
-                          "avg_prob": ap_, "good_n": gn_, "good_hit_rate": rate(gh_, gn_)})
+    for mk in sorted(by_mkt):
+        d = block(by_mkt[mk])
+        by_market.append({"market": mk, "n": d["n"], "hits": d["hits"], "hit_rate": rate(d["hits"], d["n"]),
+                          "avg_prob": d["avg_prob"], "good_n": d["good_n"], "good_hit_rate": rate(d["good_hits"], d["good_n"]),
+                          "priced_n": d["priced_n"], "roi": roi_of(d["profit"], d["priced_n"]), "avg_odds": d["avg_odds"]})
 
-    # by_market_day (heatmap)
+    # by_market_day (heatmap) — solo hit, niente pnl
     by_md: dict[tuple, list] = {}
     for r in b:
         by_md.setdefault((r["market"], giorno_of(r["kickoff"])), []).append(r)
     by_market_day = []
-    for (m, g) in sorted(by_md, key=lambda k: (k[0], k[1])):
-        valid = [r for r in by_md[(m, g)] if r["hit"] is not None]
+    for (mk, g) in sorted(by_md, key=lambda k: (k[0], k[1])):
+        valid = [r for r in by_md[(mk, g)] if r["hit"] is not None]
         n_ = len(valid); h_ = sum(1 for r in valid if r["hit"])
-        by_market_day.append({"market": m, "giorno": g.isoformat(), "n": n_, "hit_rate": rate(h_, n_)})
+        by_market_day.append({"market": mk, "giorno": g.isoformat(), "n": n_, "hit_rate": rate(h_, n_)})
 
     # by_league
     by_lg: dict = {}
@@ -218,11 +305,37 @@ def oracle_report(rows, league_id, only_good):
     by_league = []
     for lid in sorted(by_lg, key=lambda x: (x is None, x if x is not None else 0)):
         items = by_lg[lid]
-        n_, h_, ap_, gn_, gh_ = agg_block(items)
+        d = block(items)
         lname = next((r["league_name"] for r in items if r["league_name"] is not None), None)
-        by_league.append({"league_id": lid, "league_name": lname, "n": n_, "hits": h_,
-                          "hit_rate": rate(h_, n_), "avg_prob": ap_, "good_n": gn_,
-                          "good_hit_rate": rate(gh_, gn_)})
+        by_league.append({"league_id": lid, "league_name": lname, "n": d["n"], "hits": d["hits"],
+                          "hit_rate": rate(d["hits"], d["n"]), "avg_prob": d["avg_prob"], "good_n": d["good_n"],
+                          "good_hit_rate": rate(d["good_hits"], d["good_n"]),
+                          "priced_n": d["priced_n"], "roi": roi_of(d["profit"], d["priced_n"]), "avg_odds": d["avg_odds"]})
+
+    # by_concordance
+    by_conc: dict = {}
+    for r in b:
+        by_conc.setdefault(r["n_engines_agree"], []).append(r)
+    by_concordance = []
+    for ag in sorted(by_conc, key=lambda x: (x is None, x if x is not None else 0)):
+        d = block(by_conc[ag])
+        by_concordance.append({"agree": ag, "n": d["n"], "hits": d["hits"], "hit_rate": rate(d["hits"], d["n"]),
+                               "priced_n": d["priced_n"], "roi": roi_of(d["profit"], d["priced_n"]), "avg_odds": d["avg_odds"]})
+
+    # by_odds_band — solo direzioni prezzabili (pnl not null)
+    by_band: dict = {}
+    for r in b:
+        if r["pnl"] is not None:
+            by_band.setdefault(r["ord"], []).append(r)
+    by_odds_band = []
+    for ordv in sorted(by_band):
+        items = by_band[ordv]
+        priced_n = len(items)
+        h_ = sum(1 for r in items if r["hit"])
+        profit = sum(r["pnl"] for r in items)
+        avg_o = sum(r["odds"] for r in items) / priced_n
+        by_odds_band.append({"band": items[0]["band"], "ord": ordv, "priced_n": priced_n, "hits": h_,
+                             "hit_rate": rate(h_, priced_n), "roi": roi_of(profit, priced_n), "avg_odds": avg_o})
 
     # meta.leagues (su base_all: NON filtrato per lega/only_good)
     lg_meta: dict = {}
@@ -236,12 +349,13 @@ def oracle_report(rows, league_id, only_good):
             leagues.append({"id": lid, "name": lname, "n": n_})
     leagues.sort(key=lambda x: (x["id"] is None, x["id"]))
 
-    return {"kpi": kpi, "daily": daily, "by_market": by_market,
-            "by_market_day": by_market_day, "by_league": by_league, "leagues": leagues}
+    return {"kpi": kpi, "daily": daily, "by_market": by_market, "by_market_day": by_market_day,
+            "by_league": by_league, "by_concordance": by_concordance, "by_odds_band": by_odds_band,
+            "leagues": leagues}
 
 
-def oracle_matches(rows, league_id, only_good):
-    base_all = argmax_directions(rows)
+def oracle_matches(rows, league_id, only_good, comm=DEFAULT_COMM):
+    base_all = attach_pnl(argmax_directions(rows), comm)
     b = [r for r in base_all
          if (league_id is None or r["league_id"] == league_id)
          and (not only_good or is_good(r))]
@@ -254,14 +368,23 @@ def oracle_matches(rows, league_id, only_good):
         if not valid:
             continue
         good_valid = [r for r in valid if is_good(r)]
+        priced = [r for r in items if r["pnl"] is not None]
+        priced_n = len(priced)
+        profit = sum(r["pnl"] for r in priced) if priced_n else None
+        # max() NULL-safe come SQL max(): ignora i None, None se tutti None
+        def maxnn(vals):
+            v = [x for x in vals if x is not None]
+            return max(v) if v else None
         any_r = items[0]
         res.append({
             "fixture_id": fid,
             "giorno": giorno_of(any_r["kickoff"]).isoformat(),
-            "league_id": max(r["league_id"] for r in items),
-            "home_team": any_r["home_team"], "away_team": any_r["away_team"],
+            "league_id": maxnn([r["league_id"] for r in items]),
+            "home_team": maxnn([r["home_team"] for r in items]),
+            "away_team": maxnn([r["away_team"] for r in items]),
             "dir_tot": len(valid), "dir_ok": sum(1 for r in valid if r["hit"]),
             "good_tot": len(good_valid), "good_ok": sum(1 for r in good_valid if r["hit"]),
+            "priced_n": priced_n, "profit": profit, "roi": roi_of(profit, priced_n),
         })
     return {r["fixture_id"]: r for r in res}
 
@@ -269,13 +392,18 @@ def oracle_matches(rows, league_id, only_good):
 # --------------------------------------------------------------------------- compare
 def cmp_report(label, rpc, ora):
     print(f"\n=== (a) get_direction_report — {label} ===")
-    # KPI
+    if rpc is None or not isinstance(rpc, dict) or "kpi" not in rpc:
+        fail(f"{label}: RPC ha restituito una forma inattesa (atteso jsonb con kpi): {type(rpc).__name__}")
+        return
+    # KPI (incl. rendimento)
     for k in ("n", "hits", "hit_rate", "avg_prob", "calib_gap", "wilson_low",
-              "wilson_high", "good_n", "good_hits", "good_hit_rate"):
+              "wilson_high", "good_n", "good_hits", "good_hit_rate",
+              "priced_n", "profit", "roi", "avg_odds", "good_priced_n", "good_roi"):
         cmp_field(f"kpi.{k}", rpc["kpi"].get(k), ora["kpi"][k])
-    # array allineati
+    # array allineati (confronta TUTTI i campi di ogni elemento, inclusi roi/priced_n/avg_odds)
     for arr, key in (("daily", "giorno"), ("by_market", "market"),
-                     ("by_league", "league_id")):
+                     ("by_league", "league_id"), ("by_concordance", "agree"),
+                     ("by_odds_band", "ord")):
         r_list, o_list = rpc.get(arr, []), ora[arr]
         if len(r_list) != len(o_list):
             fail(f"{arr}: lunghezza RPC={len(r_list)} oracolo={len(o_list)}")
@@ -318,7 +446,8 @@ def cmp_matches(label, rpc_rows, ora_map):
         oo = ora_map.get(rr["fixture_id"])
         if oo is None:
             fail(f"matches: fixture {rr['fixture_id']} assente nell'oracolo"); continue
-        for f in ("dir_tot", "dir_ok", "good_tot", "good_ok", "giorno", "home_team", "away_team"):
+        for f in ("dir_tot", "dir_ok", "good_tot", "good_ok", "giorno", "home_team", "away_team",
+                  "priced_n", "profit", "roi"):
             cmp_field(f"match[{rr['fixture_id']}].{f}", rr.get(f), oo[f])
     print(f"  {len(rpc_rows)} partite confrontate")
     print("  --> 0 mismatch" if n_before == len(_fails) else f"  --> {len(_fails)-n_before} MISMATCH")
@@ -346,10 +475,10 @@ def cmp_hit_rederive(label, rows):
     print("  --> 0 mismatch" if n_before == len(_fails) else f"  --> {len(_fails)-n_before} MISMATCH")
 
 
-def cmp_fixture(fid, rows):
-    """(d) get_direction_report_fixture: argmax per mercato di UNA partita + hit."""
+def cmp_fixture(fid, rows, comm=DEFAULT_COMM):
+    """(d) get_direction_report_fixture: argmax per mercato di UNA partita + hit + quota + pnl."""
     rpc = sb.rpc("get_direction_report_fixture", {"p_fixture_id": fid}).execute().data
-    # oracolo: argmax per mercato sulle righe di questa fixture
+    om = odds_map()
     frows = [r for r in rows if r["fixture_id"] == fid]
     by_mkt: dict = {}
     for r in frows:
@@ -357,46 +486,56 @@ def cmp_fixture(fid, rows):
     ora = []
     for m in sorted(by_mkt):
         cand = sorted(by_mkt[m], key=lambda r: (r["prob"] is None, -(r["prob"] or 0.0), r["selection"]))[0]
+        o = om.get((fid, m, cand["selection"]))
+        if cand["hit"] is None or o is None:
+            pnl = None
+        elif cand["hit"]:
+            pnl = (o - 1) * (1 - comm)
+        else:
+            pnl = -1.0
         ora.append({"market": m, "selection": cand["selection"], "prob": cand["prob"],
-                    "n_engines_agree": cand["n_engines_agree"], "hit": cand["hit"]})
+                    "n_engines_agree": cand["n_engines_agree"], "hit": cand["hit"],
+                    "odds": o, "pnl": pnl})
     rpc_rows = rpc.get("rows", [])
     if len(rpc_rows) != len(ora):
         fail(f"fixture[{fid}]: righe RPC={len(rpc_rows)} oracolo={len(ora)}")
         return
     for rr, oo in zip(rpc_rows, ora):
-        for f in ("market", "selection", "prob", "n_engines_agree", "hit"):
+        for f in ("market", "selection", "prob", "n_engines_agree", "hit", "odds", "pnl"):
             cmp_field(f"fixture[{fid}].{oo['market']}.{f}", rr.get(f), oo[f])
 
 
-def call_report(d_from, d_to, league_id, market, only_good, betfair_only=False):
+def call_report(d_from, d_to, league_id, market, only_good, betfair_only=False, commission=DEFAULT_COMM):
     return sb.rpc("get_direction_report", {
         "p_from": d_from.isoformat(), "p_to": d_to.isoformat(),
         "p_league_id": league_id, "p_market": market, "p_only_good": only_good,
-        "p_betfair_only": betfair_only,
+        "p_betfair_only": betfair_only, "p_commission": commission,
     }).execute().data
 
 
-def call_matches(d_from, d_to, league_id, market, only_good, limit=2000, offset=0, betfair_only=False):
+def call_matches(d_from, d_to, league_id, market, only_good, limit=2000, offset=0,
+                 betfair_only=False, commission=DEFAULT_COMM):
     return sb.rpc("get_direction_report_matches", {
         "p_from": d_from.isoformat(), "p_to": d_to.isoformat(),
         "p_league_id": league_id, "p_market": market, "p_only_good": only_good,
-        "p_betfair_only": betfair_only, "p_limit": limit, "p_offset": offset,
+        "p_betfair_only": betfair_only, "p_commission": commission, "p_limit": limit, "p_offset": offset,
     }).execute().data
 
 
 def run_scenario(label, d_from, d_to, league_id=None, market=None, only_good=False,
-                 do_matches=False, betfair_only=False):
+                 do_matches=False, betfair_only=False, commission=DEFAULT_COMM):
     rows = pull_rows(d_from, d_to, market)
     if betfair_only:   # filtro fixture-level == p_betfair_only nel base_all della RPC
         bf = betfair_set()
         rows = [r for r in rows if r["fixture_id"] in bf]
-    ora = oracle_report(rows, league_id, only_good)
-    rpc = call_report(d_from, d_to, league_id, market, only_good, betfair_only)
+    ora = oracle_report(rows, league_id, only_good, commission)
+    rpc = call_report(d_from, d_to, league_id, market, only_good, betfair_only, commission)
     cmp_report(label, rpc, ora)
     cmp_hit_rederive(label, rows)
     if do_matches:
-        resp = call_matches(d_from, d_to, league_id, market, only_good, betfair_only=betfair_only)
-        ora_m = oracle_matches(rows, league_id, only_good)
+        resp = call_matches(d_from, d_to, league_id, market, only_good,
+                            betfair_only=betfair_only, commission=commission)
+        ora_m = oracle_matches(rows, league_id, only_good, commission)
         cmp_matches(label, resp["rows"], ora_m)
         cmp_field(f"matches.total ({label})", resp["total"], len(ora_m))
 
@@ -445,9 +584,12 @@ def main():
     # scenario 6d: SOLO Betfair (fixture in engine_signals) — anche matches
     run_scenario("range 18-24/06, SOLO Betfair", d18, d24, betfair_only=True, do_matches=True)
 
-    # scenario 6e: SOLO Betfair + mercato + solo buone (filtri combinati)
+    # scenario 6e: SOLO Betfair + mercato + solo buone (filtri combinati) + matches
     run_scenario("range 18-24/06, Betfair + over_2_5 + buone", d18, d24,
-                 market="over_2_5", only_good=True, betfair_only=True)
+                 market="over_2_5", only_good=True, betfair_only=True, do_matches=True)
+
+    # scenario 6f: commissione personalizzata 2% (verifica p_commission nel P&L)
+    run_scenario("range 18-24/06, commissione 0.02", d18, d24, commission=0.02, do_matches=True)
 
     # scenario 7: drill fine per partita (3 fixtures del 24/06)
     print("\n=== (d) get_direction_report_fixture — drill 3 partite del 24/06 ===")
