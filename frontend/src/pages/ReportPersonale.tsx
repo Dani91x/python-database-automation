@@ -204,7 +204,17 @@ function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }
                 <td className="px-3 py-2.5 text-right tabular-nums text-white/80">{num(t.entry_odds)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{eur(t.stake)}</td>
                 <td className={`px-3 py-2.5 text-center font-bold text-[11px] uppercase ${statusBadge[t.status]}`}>{t.status}</td>
-                <td className={`px-3 py-2.5 text-right tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</td>
+                <td className="px-3 py-2.5 text-right">
+                    {(t.status === 'OPEN' || t.status === 'PARTIAL') ? (
+                        <Button size="sm" variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); setSettleOpen(true); }}
+                            className="h-7 px-2 text-[11px] text-primary hover:bg-primary/10 font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Chiudi
+                        </Button>
+                    ) : (
+                        <span className={`tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</span>
+                    )}
+                </td>
             </tr>
             {open && (
                 <tr className="bg-black/40">
@@ -352,8 +362,12 @@ export default function ReportPersonale() {
         setLoading(true);
         setError(null);
         try {
+            // get_personal_report accetta solo stati CHIUSI (WON/LOST/VOID/PARTIAL):
+            // se il filtro e' "Aperti", non lo passo al report (altrimenti la RPC
+            // solleva "p_status invalido"); resta applicato alla tabella trade.
+            const reportFilters = f.status === 'OPEN' ? { ...f, status: null } : f;
             const [r, t] = await Promise.all([
-                getPersonalReport(f),
+                getPersonalReport(reportFilters),
                 getPersonalTrades({ ...f, limit: 200 }),
             ]);
             setReport(r);
@@ -374,6 +388,8 @@ export default function ReportPersonale() {
     const m = report?.metrics;
     const totColor = m ? signColor(m.tot) : 'text-white';
     const advice = report?.advice;
+    // trade ancora aperti (status OPEN): vanno chiusi per entrare nel report.
+    const openCount = trades.filter(t => t.status === 'OPEN').length;
 
     return (
         <div className="min-h-screen bg-background relative pb-24">
@@ -465,15 +481,19 @@ export default function ReportPersonale() {
                             <div key={i} className="glass-card rounded-xl border border-white/10 h-24 animate-pulse bg-white/[0.02]" />
                         ))}
                     </div>
-                ) : !m || m.giorni === 0 ? (
-                    <Card className="glass-card border-white/10 p-10 text-center">
-                        <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                        <h3 className="text-lg font-bold font-display text-white mb-1">Nessun trade nel periodo</h3>
-                        <p className="text-sm text-muted-foreground">
-                            Registra i trade dalla Watchlist (azione "Giocata") per popolare il report.
-                        </p>
-                    </Card>
                 ) : (
+                  <>
+                    {(!m || m.giorni === 0) ? (
+                        <Card className="glass-card border-white/10 p-10 text-center">
+                            <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+                            <h3 className="text-lg font-bold font-display text-white mb-1">Nessun trade chiuso nel periodo</h3>
+                            <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                                Le metriche P&amp;L si calcolano sui trade <span className="text-white font-semibold">chiusi</span>.
+                                Registra il trade dalla Watchlist ("Giocata"), poi <span className="text-white font-semibold">chiudilo
+                                con l'esito</span> dalla tabella qui sotto (pulsante "Chiudi trade"): allora il report si popola.
+                            </p>
+                        </Card>
+                    ) : (
                     <>
                         {/* KPI principali */}
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -573,11 +593,20 @@ export default function ReportPersonale() {
                             <BreakdownTable title="Per lega" rows={report!.by_league} nameKey="league_name" nameLabel="Lega" />
                         </div>
 
-                        {/* tabella trade con drill-down */}
+                    </>
+                    )}
+
+                        {/* tabella trade con drill-down — SEMPRE visibile (anche con soli trade aperti),
+                            cosi' puoi vedere lo storico e CHIUDERE i trade aperti per popolare il report. */}
                         <Card className="glass-card border-white/10 overflow-hidden">
                             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                                <span className="font-heading font-bold text-sm">Trade ({trades.length})</span>
-                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider hidden md:inline">clic = dettaglio + segnali snapshot</span>
+                                <span className="font-heading font-bold text-sm">
+                                    Trade ({trades.length})
+                                    {openCount > 0 && (
+                                        <span className="text-amber-300 font-normal"> · {openCount} da chiudere</span>
+                                    )}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider hidden md:inline">clic = dettaglio + “Chiudi trade”</span>
                             </div>
                             {trades.length === 0 ? (
                                 <div className="p-6 text-center text-muted-foreground text-sm">Nessun trade per questi filtri.</div>
