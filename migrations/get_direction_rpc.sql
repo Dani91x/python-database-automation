@@ -1,17 +1,24 @@
 -- get_direction_rpc.sql
--- RPC del cruscotto DIREZIONE. Per una partita, per ogni mercato calibrato:
---   direzione  = argmax Poisson (motore leader, certificato dai test come il migliore)
---   affidabilita = hit-rate reale dalla pagella (direction_pagella), per-lega con SHRINKAGE
---                  empirical-Bayes verso il globale (K=50)
+-- RPC del cruscotto DIREZIONE. Per una partita, per ogni mercato:
+--   direzione  = leader con FALLBACK Poisson -> ML -> TacticAI -> API
+--                (il cruscotto resta visibile anche se manca Poisson).
+--   affidabilita = hit-rate reale dalla pagella (direction_pagella) SOLO quando c'e'
+--                  la previsione Poisson (per-lega con SHRINKAGE empirical-Bayes verso
+--                  il globale, K=50). Quando manca Poisson -> affidabilita/wilson/lift
+--                  NULL e il mercato e' marcato poisson_missing/calibrated=false.
 --   banda Wilson 95%, lift = affid - base, concordanza motori, quota, dettaglio per-motore.
 --
--- I VALORI LIVE DEI MOTORI (poisson/ml/tacticai/api) sono letti DIRETTAMENTE dai json di
--- fixture_predictions (db_json_analisi / model_predictions_json / tactical_engine_json /
--- flat_summary), con la STESSA normalizzazione di build_analytics_signals.py (extract_*),
--- cosi' la concordanza e' IMMEDIATA (niente attesa della catena analytics_signals/_bets).
--- L'affidabilita' resta calibrata sullo storico (pagella). La quota e' best-effort da
--- analytics_bets (puo' mancare su partite freschissime).
--- Idempotente: CREATE OR REPLACE. SECURITY DEFINER (legge fixture_predictions/pagella).
+-- API (motore "book/consenso") preso da fixture_predictions:
+--   * 1x2 dall'advice testuale: "Winner : <team>" -> H/A ; "Double chance : draw or
+--     <away>" -> X2 ; "<home> or draw" -> 1X. (prefisso "Combo " e suffisso
+--     " and +/-X.5 goals" rimossi).
+--   * over_1_5/2_5/3_5 da under_over_line: "+X.5" -> Over, "-X.5" -> Under, applicato
+--     SOLO al mercato la cui linea coincide.
+--   * btts / ht_1x2 / first_half_over_0_5: NON presenti nell'API -> nessuna direzione API.
+--
+-- I VALORI LIVE DEI MOTORI poisson/ml/tacticai sono letti dai json di fixture_predictions
+-- con la STESSA normalizzazione di build_analytics_signals.py (extract_*).
+-- Idempotente: CREATE OR REPLACE. SECURITY DEFINER. Certificata da _certify_direction.py.
 
 -- helper: fascia di probabilita' [lo,hi) — STESSA convenzione del builder build_direzione.py
 CREATE OR REPLACE FUNCTION public._prob_bucket(p numeric)
@@ -39,6 +46,11 @@ AS $$
 DECLARE
   v_league  bigint;
   v_dj jsonb; v_mp jsonb; v_tj jsonb; v_fs jsonb;
+  v_home text; v_away text; v_advice text; v_uol text;
+  v_adv_main text;     -- advice ripulito da "Combo " e " and +/-X.5 goals"
+  v_uo_dir text;       -- 'Over' / 'Under' / NULL
+  v_uo_line numeric;   -- 1.5 / 2.5 / 3.5 / NULL
+  v_api1x2 text;       -- 'H'/'A'/'1X'/'X2'/NULL
   v_result  jsonb;
   K  constant numeric := 50;     -- forza shrinkage (partite-equivalenti del prior globale)
   z  constant numeric := 1.96;   -- 95%
@@ -46,13 +58,43 @@ BEGIN
   IF p_fixture_id IS NULL THEN
     RAISE EXCEPTION 'p_fixture_id nullo';
   END IF;
-  SELECT league_id, db_json_analisi, model_predictions_json, tactical_engine_json, flat_summary
-    INTO v_league, v_dj, v_mp, v_tj, v_fs
+  SELECT league_id, db_json_analisi, model_predictions_json, tactical_engine_json, flat_summary,
+         home_team_name, away_team_name, advice, under_over_line
+    INTO v_league, v_dj, v_mp, v_tj, v_fs, v_home, v_away, v_advice, v_uol
     FROM public.fixture_predictions WHERE fixture_id = p_fixture_id;
   IF NOT FOUND THEN   -- fixture inesistente: errore esplicito, niente degrado silenzioso
     RETURN jsonb_build_object('fixture_id', p_fixture_id, 'league_id', NULL,
                               'error', 'fixture_id non trovato', 'markets', '[]'::jsonb);
   END IF;
+
+  -- ---- API 1x2 dall'advice -------------------------------------------------
+  -- togli prefisso "Combo " e suffisso " and +/-X.5 goals" (robusto a team con " and ")
+  v_adv_main := btrim(regexp_replace(
+                  regexp_replace(coalesce(v_advice,''), '^Combo[[:space:]]+', ''),
+                  '[[:space:]]+and[[:space:]]+[+-][0-9.]+[[:space:]]+goals[[:space:]]*$', ''));
+  v_api1x2 := CASE
+    WHEN v_adv_main ILIKE 'Winner : %' THEN
+      CASE
+        WHEN btrim(substring(v_adv_main from 'Winner : (.*)$')) = v_home THEN 'H'
+        WHEN btrim(substring(v_adv_main from 'Winner : (.*)$')) = v_away THEN 'A'
+        ELSE NULL END
+    WHEN v_adv_main ILIKE 'Double chance : %' THEN
+      CASE
+        WHEN btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',1)) = 'draw'
+             AND btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',2)) = v_home THEN '1X'
+        WHEN btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',1)) = 'draw'
+             AND btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',2)) = v_away THEN 'X2'
+        WHEN btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',2)) = 'draw'
+             AND btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',1)) = v_home THEN '1X'
+        WHEN btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',2)) = 'draw'
+             AND btrim(split_part(substring(v_adv_main from 'Double chance : (.*)$'),' or ',1)) = v_away THEN 'X2'
+        ELSE NULL END
+    ELSE NULL END;
+
+  -- ---- API over da under_over_line ("+2.5" -> Over 2.5 ; "-3.5" -> Under 3.5) ----
+  v_uo_dir  := CASE WHEN left(btrim(coalesce(v_uol,'')),1)='+' THEN 'Over'
+                    WHEN left(btrim(coalesce(v_uol,'')),1)='-' THEN 'Under' ELSE NULL END;
+  v_uo_line := NULLIF(regexp_replace(coalesce(v_uol,''), '[^0-9.]', '', 'g'), '')::numeric;
 
   WITH
   -- mappa canonica mercato/selezione -> chiave json di OGNI motore (specchio di extract_*)
@@ -78,31 +120,55 @@ BEGIN
   -- prob LIVE dei 3 motori per ogni (mercato, selezione), dai json di fixture_predictions
   bf AS (
     SELECT m.market, m.selection,
-      -- Poisson: markets_calibrated.<market> se presente, altrimenti markets.<market>
-      -- (fallback a livello di MERCATO, come extract_poisson), poi ->> chiave selezione
       (COALESCE(v_dj->'markets_calibrated'->m.market, v_dj->'markets'->m.market)->>m.pois_key)::numeric AS pp,
-      -- ML: targets.<target>.<class>
       (v_mp->'targets'->m.ml_target->>m.ml_class)::numeric AS mlp,
-      -- TacticAI: markets.<key> (FT) oppure markets_ht.<key> (HT)
       (CASE WHEN m.tac_scope='ft' THEN (v_tj->'markets'->>m.tac_key)
             ELSE (v_tj->'markets_ht'->>m.tac_key) END)::numeric AS tap
     FROM map m
   ),
-  dir AS (   -- direzione = argmax Poisson per mercato (tiebreaker 'selection')
-    SELECT DISTINCT ON (market) market, selection AS direction, pp AS p
-    FROM bf WHERE pp IS NOT NULL
-    ORDER BY market, pp DESC, selection
+  -- direzione API per mercato (1x2 dall'advice; over da under_over_line)
+  apimkt AS (
+    SELECT DISTINCT m.market,
+      CASE m.market
+        WHEN '1x2'      THEN v_api1x2
+        WHEN 'over_1_5' THEN CASE WHEN v_uo_line = 1.5 THEN v_uo_dir END
+        WHEN 'over_2_5' THEN CASE WHEN v_uo_line = 2.5 THEN v_uo_dir END
+        WHEN 'over_3_5' THEN CASE WHEN v_uo_line = 3.5 THEN v_uo_dir END
+        ELSE NULL END AS api_dir
+    FROM map m
   ),
-  -- quota best-effort dalla tabella analytics_bets (puo' mancare su partite freschissime).
-  -- odds_betfair/odds_book sono colonne NUMERIC nel DDL -> il cast e' sicuro (no parse di stringhe).
+  -- direzione di ogni motore (argmax) + presenza motori
+  amax AS (
+    SELECT b.market,
+      (SELECT selection FROM bf x WHERE x.market=b.market AND x.pp  IS NOT NULL ORDER BY x.pp  DESC, selection LIMIT 1) AS poisson_dir,
+      (SELECT selection FROM bf x WHERE x.market=b.market AND x.mlp IS NOT NULL ORDER BY x.mlp DESC, selection LIMIT 1) AS ml_dir,
+      (SELECT selection FROM bf x WHERE x.market=b.market AND x.tap IS NOT NULL ORDER BY x.tap DESC, selection LIMIT 1) AS tacticai_dir,
+      bool_or(b.pp  IS NOT NULL) AS has_pois,
+      bool_or(b.mlp IS NOT NULL) AS has_ml,
+      bool_or(b.tap IS NOT NULL) AS has_tac
+    FROM bf b GROUP BY b.market
+  ),
+  -- LEADER con fallback Poisson -> ML -> TacticAI -> API. Tiene la prob Poisson della
+  -- direzione (per la pagella): NULL se il leader non e' Poisson o Poisson assente.
+  dir AS (
+    SELECT a.market,
+      COALESCE(a.poisson_dir, a.ml_dir, a.tacticai_dir, ap.api_dir) AS direction,
+      a.has_pois AS has_poisson,
+      (SELECT x.pp FROM bf x WHERE x.market=a.market
+         AND x.selection = COALESCE(a.poisson_dir, a.ml_dir, a.tacticai_dir, ap.api_dir)) AS p
+    FROM amax a
+    LEFT JOIN apimkt ap ON ap.market = a.market
+    WHERE COALESCE(a.poisson_dir, a.ml_dir, a.tacticai_dir, ap.api_dir) IS NOT NULL
+  ),
+  -- quota best-effort dalla tabella analytics_bets (puo' mancare su partite freschissime)
   od AS (
     SELECT d.market, coalesce(ab.odds_betfair, ab.odds_book)::numeric AS odds
     FROM dir d
     LEFT JOIN public.analytics_bets ab
       ON ab.fixture_id = p_fixture_id AND ab.market = d.market AND ab.selection = d.direction
   ),
-  pag AS (   -- pagella Poisson per la direzione: riga della lega + riga globale
-    SELECT d.market, d.direction, d.p, public._prob_bucket(d.p) AS bkt,
+  pag AS (   -- pagella Poisson per la direzione (solo se c'e' prob Poisson): lega + globale
+    SELECT d.market, d.direction, d.p,
            pl.n AS n_l, pl.hit_rate AS hr_l,
            pg.n AS n_g, pg.hit_rate AS hr_g, pg.base_rate AS base_g
     FROM dir d
@@ -120,8 +186,7 @@ BEGIN
       CASE WHEN n_l IS NOT NULL THEN 'lega' ELSE 'globale' END AS scope
     FROM pag
   ),
-  wil AS (   -- Wilson 95%. Il WHERE esclude (INTENZIONALMENTE) i mercati senza pagella:
-    --        il cruscotto mostra solo i mercati con affidabilita' storica calibrata.
+  wil AS (   -- Wilson 95% — SOLO i mercati con affidabilita' (pagella) calibrata.
     SELECT *,
       (affid + z*z/(2*eff_n)) / (1 + z*z/eff_n) AS wc,
       z*sqrt(affid*(1-affid)/eff_n + z*z/(4*eff_n*eff_n)) / (1 + z*z/eff_n) AS wh
@@ -134,76 +199,50 @@ BEGIN
       jsonb_object_agg(selection, mlp) FILTER (WHERE mlp IS NOT NULL) AS ml,
       jsonb_object_agg(selection, tap) FILTER (WHERE tap IS NOT NULL) AS tacticai
     FROM bf GROUP BY market
-  ),
-  amax AS (  -- direzione di ogni motore (per la concordanza). NB: bf ha al piu' 16 righe
-    --        (mappa fissa) -> le subquery correlate qui sotto sono trascurabili.
-    SELECT b.market,
-      (SELECT selection FROM bf x WHERE x.market=b.market AND x.pp  IS NOT NULL ORDER BY x.pp  DESC, selection LIMIT 1) AS poisson_dir,
-      (SELECT selection FROM bf x WHERE x.market=b.market AND x.mlp IS NOT NULL ORDER BY x.mlp DESC, selection LIMIT 1) AS ml_dir,
-      (SELECT selection FROM bf x WHERE x.market=b.market AND x.tap IS NOT NULL ORDER BY x.tap DESC, selection LIMIT 1) AS tacticai_dir,
-      bool_or(b.mlp IS NOT NULL) AS has_ml,
-      bool_or(b.tap IS NOT NULL) AS has_tac
-    FROM bf b GROUP BY b.market
-  ),
-  api AS (   -- consensus book (flat_summary): direzione SOLO su 1x2/ht_1x2
-    SELECT (v_fs->>'percent_home')::numeric AS ph,
-           (v_fs->>'percent_draw')::numeric AS pd,
-           (v_fs->>'percent_away')::numeric AS pa
-  ),
-  apidir AS (
-    -- API = consensus book di flat_summary.percent_*: e' SOLO 1x2 a TEMPO PIENO.
-    -- NON esiste un consensus API di primo tempo -> niente API su ht_1x2 (sarebbe il
-    -- dato FT spacciato per HT). Niente API neppure su over/btts (nessun campo affidabile).
-    SELECT d.market,
-      CASE WHEN d.market = '1x2' THEN
-        CASE
-          WHEN a.ph IS NULL AND a.pd IS NULL AND a.pa IS NULL THEN NULL
-          WHEN a.ph > COALESCE(a.pd,-1) AND a.ph > COALESCE(a.pa,-1) THEN 'H'
-          WHEN a.pd > COALESCE(a.ph,-1) AND a.pd > COALESCE(a.pa,-1) THEN 'D'
-          WHEN a.pa > COALESCE(a.ph,-1) AND a.pa > COALESCE(a.pd,-1) THEN 'A'
-          ELSE NULL   -- pareggio fra esiti: niente direzione
-        END
-      ELSE NULL END AS api_dir,
-      (d.market = '1x2' AND (a.ph IS NOT NULL OR a.pd IS NOT NULL OR a.pa IS NOT NULL)) AS has_api
-    FROM dir d CROSS JOIN api a
   )
   SELECT jsonb_build_object(
     'fixture_id', p_fixture_id,
     'league_id', v_league,
     'generated_at', now(),
+    'poisson_present', COALESCE((SELECT bool_or(has_poisson) FROM dir), false),
     'markets', COALESCE(jsonb_agg(jsonb_build_object(
-        'market', w.market,
-        'direction', w.direction,
+        'market', d.market,
+        'direction', d.direction,
+        'calibrated', (w.affid IS NOT NULL),
+        'poisson_missing', NOT d.has_poisson,
         'affidabilita', round(w.affid, 4),
-        'wilson_low',  round(GREATEST(0, w.wc - w.wh), 4),
-        'wilson_high', round(LEAST(1,  w.wc + w.wh), 4),
-        'n', round(w.eff_n)::int,
+        'wilson_low',  CASE WHEN w.affid IS NOT NULL THEN round(GREATEST(0, w.wc - w.wh), 4) END,
+        'wilson_high', CASE WHEN w.affid IS NOT NULL THEN round(LEAST(1,  w.wc + w.wh), 4) END,
+        'n', CASE WHEN w.affid IS NOT NULL THEN round(w.eff_n)::int END,
         'base', round(w.base_g, 4),
-        'lift', round(w.affid - w.base_g, 4),
+        'lift', CASE WHEN w.affid IS NOT NULL THEN round(w.affid - w.base_g, 4) END,
         'odds', o.odds,
         'scope', w.scope,
         'concordi',
-          (CASE WHEN am.poisson_dir  = w.direction THEN jsonb_build_array('poisson')  ELSE '[]'::jsonb END) ||
-          (CASE WHEN am.ml_dir       = w.direction THEN jsonb_build_array('ml')       ELSE '[]'::jsonb END) ||
-          (CASE WHEN am.tacticai_dir = w.direction THEN jsonb_build_array('tacticai') ELSE '[]'::jsonb END) ||
-          (CASE WHEN ap.api_dir      = w.direction THEN jsonb_build_array('api')      ELSE '[]'::jsonb END),
-        'motori_totali', 1
-          + (CASE WHEN am.has_ml  THEN 1 ELSE 0 END)
-          + (CASE WHEN am.has_tac THEN 1 ELSE 0 END)
-          + (CASE WHEN ap.has_api THEN 1 ELSE 0 END),
+          (CASE WHEN am.poisson_dir  = d.direction THEN jsonb_build_array('poisson')  ELSE '[]'::jsonb END) ||
+          (CASE WHEN am.ml_dir       = d.direction THEN jsonb_build_array('ml')       ELSE '[]'::jsonb END) ||
+          (CASE WHEN am.tacticai_dir = d.direction THEN jsonb_build_array('tacticai') ELSE '[]'::jsonb END) ||
+          (CASE WHEN ap.api_dir      = d.direction THEN jsonb_build_array('api')      ELSE '[]'::jsonb END),
+        'motori_totali',
+            (CASE WHEN am.has_pois THEN 1 ELSE 0 END)
+          + (CASE WHEN am.has_ml   THEN 1 ELSE 0 END)
+          + (CASE WHEN am.has_tac  THEN 1 ELSE 0 END)
+          + (CASE WHEN ap.api_dir IS NOT NULL THEN 1 ELSE 0 END),
         'engines', jsonb_build_object(
             'poisson', e.poisson, 'ml', e.ml, 'tacticai', e.tacticai,
             'api', CASE WHEN ap.api_dir IS NOT NULL THEN jsonb_build_object('dir', ap.api_dir) ELSE NULL END)
-      ) ORDER BY (w.affid - w.base_g) DESC), '[]'::jsonb)
+      ) ORDER BY (w.affid IS NULL), (w.affid - w.base_g) DESC NULLS LAST, d.market), '[]'::jsonb)
   ) INTO v_result
-  FROM wil w
-  LEFT JOIN eng    e  ON e.market  = w.market
-  LEFT JOIN amax   am ON am.market = w.market
-  LEFT JOIN apidir ap ON ap.market = w.market
-  LEFT JOIN od     o  ON o.market  = w.market;
+  FROM dir d
+  LEFT JOIN wil    w  ON w.market  = d.market
+  LEFT JOIN eng    e  ON e.market  = d.market
+  LEFT JOIN amax   am ON am.market = d.market
+  LEFT JOIN apimkt ap ON ap.market = d.market
+  LEFT JOIN od     o  ON o.market  = d.market;
 
   RETURN COALESCE(v_result,
-                  jsonb_build_object('fixture_id', p_fixture_id, 'league_id', v_league, 'markets', '[]'::jsonb));
+                  jsonb_build_object('fixture_id', p_fixture_id, 'league_id', v_league,
+                                     'poisson_present', false, 'markets', '[]'::jsonb));
 END;
 $$;
 

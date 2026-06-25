@@ -26,17 +26,18 @@ interface Props {
     awayName: string;
 }
 
-// colore del semaforo per forza del segnale
-const dotColor = (s: string) => (s === 'forte' ? 'bg-emerald-400' : s === 'medio' ? 'bg-amber-400' : 'bg-red-400');
-const liftColor = (lift: number) => (lift >= 0.10 ? 'text-emerald-400' : lift > 0 ? 'text-amber-400' : 'text-red-400');
-// lift in punti interi, segno esplicito, mai "-0"
-const fmtLift = (lift: number) => { const v = Math.round(lift * 100); return v > 0 ? `+${v}` : `${v}`; };
+// colore del semaforo per forza del segnale ('nd' = non calibrato → neutro)
+const dotColor = (s: string) => (s === 'forte' ? 'bg-emerald-400' : s === 'medio' ? 'bg-amber-400' : s === 'nd' ? 'bg-white/30' : 'bg-red-400');
+const liftColor = (lift: number | null) => (lift == null ? 'text-muted-foreground' : lift >= 0.10 ? 'text-emerald-400' : lift > 0 ? 'text-amber-400' : 'text-red-400');
+// lift in punti interi, segno esplicito, mai "-0"; '—' se non calibrato
+const fmtLift = (lift: number | null) => { if (lift == null) return '—'; const v = Math.round(lift * 100); return v > 0 ? `+${v}` : `${v}`; };
 
 // implied prob della quota; valore = anche l'estremo BASSO della banda batte la quota
 const implied = (odds: number | null) => (odds && odds > 1 ? 1 / odds : null);
 const hasValue = (m: DirMarket) => {
     const imp = implied(m.odds);
-    return imp != null && m.wilson_low > imp;
+    // valore solo se calibrato: serve la banda bassa di affidabilita'
+    return imp != null && m.wilson_low != null && m.wilson_low > imp;
 };
 
 function EngineRow({ market, name, probs, direction }: { market: string; name: string; probs?: EngineProbs | null; direction: string }) {
@@ -158,10 +159,19 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
                         direzione <span className="font-bold" style={{ color: colorForSelection(m.direction) }}>{selectionLabel(m.market, m.direction)}</span>
                     </div>
                 </div>
-                {/* affidabilita + banda */}
+                {/* affidabilita + banda (oppure "non calibrato" se manca Poisson) */}
                 <div className="text-right shrink-0 w-24">
-                    <div className="text-lg font-black font-mono text-white leading-none">{pctFmt(m.affidabilita, 0)}</div>
-                    <div className="text-[10px] text-muted-foreground/70 font-mono">{pctFmt(m.wilson_low, 0)}–{pctFmt(m.wilson_high, 0)}</div>
+                    {m.calibrated ? (
+                        <>
+                            <div className="text-lg font-black font-mono text-white leading-none">{pctFmt(m.affidabilita, 0)}</div>
+                            <div className="text-[10px] text-muted-foreground/70 font-mono">{pctFmt(m.wilson_low, 0)}–{pctFmt(m.wilson_high, 0)}</div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="text-sm font-bold text-amber-300/80 leading-tight">n.d.</div>
+                            <div className="text-[9px] text-muted-foreground/60 uppercase">non calibrato</div>
+                        </>
+                    )}
                 </div>
                 {/* lift */}
                 <div className={`text-right shrink-0 w-14 font-mono font-black ${liftColor(m.lift)}`}>
@@ -185,22 +195,31 @@ function MarketCard({ m, leagueId, bfMarketOdds, expanded, onToggle }: { m: DirM
 
             {expanded && (
                 <div className="px-4 pb-4 pt-1 border-t border-white/5 space-y-3">
-                    {/* spiegazione affidabilita */}
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        Storicamente, quando i motori indicavano così, l'esito si è verificato il{' '}
-                        <span className="text-white font-bold">{pctFmt(m.affidabilita, 0)}</span> delle volte
-                        (banda 95%: {pctFmt(m.wilson_low, 0)}–{pctFmt(m.wilson_high, 0)}, su ~{m.n} partite{' '}
-                        {m.scope === 'lega' ? 'della lega' : 'globali'}). Media del mercato: {pctFmt(m.base, 0)} →{' '}
-                        <span className={`font-bold ${liftColor(m.lift)}`}>{fmtLift(m.lift)} punti</span>.
-                        {m.odds && m.odds > 1 && (
-                            <> Quota {numFmt(m.odds, 2)} (prob. implicita {pctFmt(imp, 0)}):{' '}
-                                {hasValue(m)
-                                    ? <span className="text-emerald-400 font-bold">l'affidabilità batte la quota → possibile valore.</span>
-                                    : <span className="text-muted-foreground">la quota già copre l'affidabilità → niente valore.</span>}
-                            </>
-                        )}
-                    </p>
-                    {m.lift < 0 && (
+                    {/* spiegazione affidabilita (calibrato) oppure avviso non-calibrato */}
+                    {m.calibrated ? (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            Storicamente, quando i motori indicavano così, l'esito si è verificato il{' '}
+                            <span className="text-white font-bold">{pctFmt(m.affidabilita, 0)}</span> delle volte
+                            (banda 95%: {pctFmt(m.wilson_low, 0)}–{pctFmt(m.wilson_high, 0)}, su ~{m.n} partite{' '}
+                            {m.scope === 'lega' ? 'della lega' : 'globali'}). Media del mercato: {pctFmt(m.base, 0)} →{' '}
+                            <span className={`font-bold ${liftColor(m.lift)}`}>{fmtLift(m.lift)} punti</span>.
+                            {m.odds && m.odds > 1 && (
+                                <> Quota {numFmt(m.odds, 2)} (prob. implicita {pctFmt(imp, 0)}):{' '}
+                                    {hasValue(m)
+                                        ? <span className="text-emerald-400 font-bold">l'affidabilità batte la quota → possibile valore.</span>
+                                        : <span className="text-muted-foreground">la quota già copre l'affidabilità → niente valore.</span>}
+                                </>
+                            )}
+                        </p>
+                    ) : (
+                        <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                            <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />
+                            Manca la previsione <b>Poisson</b> per questo mercato: la direzione viene dai motori disponibili
+                            (ML/TacticAI/API) ma <b>senza affidabilità storica calibrata</b> — consiglio poco affidabile.
+                            {m.odds && m.odds > 1 && <> Quota {numFmt(m.odds, 2)}.</>}
+                        </p>
+                    )}
+                    {m.lift != null && m.lift < 0 && (
                         <p className="text-[11px] text-red-400/80">
                             Attenzione: lo storico va nella direzione opposta per questo mercato — meglio evitarlo.
                         </p>
@@ -283,11 +302,10 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
             .catch(() => { if (req === reqRef.current) setBfOdds({}); });
     }, [open, fixtureId]);
 
-    // mercati ordinati per lift (la RPC li manda gia' ordinati, ma restiamo robusti)
-    const markets = useMemo(
-        () => [...(data?.markets ?? [])].sort((a, b) => b.lift - a.lift),
-        [data],
-    );
+    // ordine dalla RPC: calibrati per lift desc, poi i degradati (non-calibrati).
+    // NON ri-ordino lato client (lift puo' essere null sui degradati).
+    const markets = useMemo(() => data?.markets ?? [], [data]);
+    const poissonMissing = !!data && data.poisson_present === false;
 
     return (
         <>
@@ -328,13 +346,25 @@ export function DirezioneDashboard({ fixtureId, leagueName, homeName, awayName }
                                 <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
                                 <p className="text-amber-400 font-bold">Direzione non disponibile per questa partita</p>
                                 <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
-                                    Serve la previsione Poisson della partita più la calibrazione storica del mercato. Per questa partita non sono ancora presenti.
+                                    Nessun motore disponibile (né Poisson, né ML, né TacticAI, né API) per questa partita.
                                 </p>
                             </div>
                         )}
 
                         {!loading && !error && markets.length > 0 && (
                             <>
+                                {/* AVVISO: manca Poisson → consigli poco affidabili */}
+                                {poissonMissing && (
+                                    <div className="glass-card rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-start gap-2">
+                                        <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                                        <div className="text-[12px] text-amber-200/90 leading-relaxed">
+                                            <b className="text-amber-300">Manca la previsione Poisson</b> per questa partita: le direzioni
+                                            vengono dagli altri motori (ML / TacticAI / API), ma <b>senza affidabilità storica calibrata</b>.
+                                            Considera i consigli <b>poco affidabili</b>.
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* legenda — capibile a colpo d'occhio */}
                                 <div className="glass-card rounded-xl border border-white/10 px-4 py-3 text-[11px] text-muted-foreground space-y-1.5">
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">

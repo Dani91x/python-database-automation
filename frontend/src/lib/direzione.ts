@@ -14,16 +14,21 @@ export type EngineProbs = Record<string, number>;           // { selezione: prob
 export interface DirMarket {
     market: string;
     direction: string;
-    affidabilita: number;        // 0..1  hit-rate reale calibrato
-    wilson_low: number;          // 0..1  estremo basso banda 95%
-    wilson_high: number;         // 0..1  estremo alto banda 95%
-    n: number;                   // partite-equivalenti della stima
-    base: number;                // 0..1  frequenza base del mercato
-    lift: number;                // affid - base (il VERO segnale)
-    odds: number | null;         // quota della direzione
-    scope: 'lega' | 'globale';   // fonte dell'affidabilita'
-    concordi: string[];          // motori che puntano la stessa direzione
-    motori_totali: number;       // motori disponibili per il mercato
+    // calibrated=false quando manca la previsione Poisson: i campi di affidabilita'
+    // (affidabilita/wilson/n/base/lift/scope) sono NULL e la direzione viene dai motori
+    // disponibili (ML/TacticAI/API). poisson_missing = quel mercato non ha Poisson.
+    calibrated: boolean;
+    poisson_missing: boolean;
+    affidabilita: number | null;        // 0..1  hit-rate reale calibrato (null se non calibrato)
+    wilson_low: number | null;          // 0..1  estremo basso banda 95%
+    wilson_high: number | null;         // 0..1  estremo alto banda 95%
+    n: number | null;                   // partite-equivalenti della stima
+    base: number | null;                // 0..1  frequenza base del mercato
+    lift: number | null;                // affid - base (il VERO segnale)
+    odds: number | null;                // quota della direzione
+    scope: 'lega' | 'globale' | null;   // fonte dell'affidabilita'
+    concordi: string[];                 // motori che puntano la stessa direzione
+    motori_totali: number;              // motori disponibili per il mercato
     engines: {
         poisson?: EngineProbs | null;
         ml?: EngineProbs | null;
@@ -36,6 +41,7 @@ export interface DirezioneData {
     fixture_id: number;
     league_id: number | null;
     generated_at?: string;
+    poisson_present?: boolean;   // false => avviso: consigli poco affidabili (manca Poisson)
     markets: DirMarket[];
 }
 
@@ -61,7 +67,11 @@ export const marketLabel = (m: string): string => MARKET_LABELS[m] ?? m;
 
 export function selectionLabel(market: string, sel: string): string {
     if (market === '1x2' || market === 'ht_1x2') {
-        return { H: '1 (Casa)', D: 'X (Pari)', A: '2 (Trasf.)' }[sel] ?? sel;
+        return ({
+            H: '1 (Casa)', D: 'X (Pari)', A: '2 (Trasf.)',
+            // doppia chance dall'advice API (1X = casa o pari, X2 = pari o trasf.)
+            '1X': '1X (Casa/Pari)', X2: 'X2 (Pari/Trasf.)', '12': '12 (no Pari)',
+        } as Record<string, string>)[sel] ?? sel;
     }
     if (market === 'btts') return { Yes: 'Sì', No: 'No' }[sel] ?? sel;
     return sel; // Over / Under
@@ -75,8 +85,10 @@ export const ENGINE_LABELS: Record<string, string> = {
 };
 
 // ---------- Semaforo: forza del segnale (basata sul lift) ----------
-export type Strength = 'forte' | 'medio' | 'debole';
-export function strength(lift: number): Strength {
+// 'nd' = non calibrato (manca Poisson): nessun lift -> indicatore neutro.
+export type Strength = 'forte' | 'medio' | 'debole' | 'nd';
+export function strength(lift: number | null | undefined): Strength {
+    if (lift == null) return 'nd';
     if (lift >= 0.10) return 'forte';
     if (lift > 0) return 'medio';
     return 'debole';

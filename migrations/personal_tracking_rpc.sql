@@ -82,6 +82,11 @@ BEGIN
         FROM jsonb_array_elements(
                  CASE WHEN jsonb_typeof(v_dir->'markets')='array'
                       THEN v_dir->'markets' ELSE '[]'::jsonb END) m
+        -- SOLO mercati CALIBRATI (con Poisson + pagella): gli edges sono opportunita'
+        -- di valore (servono model_prob/edge). I mercati "degradati" senza Poisson che
+        -- get_direction ora mostra nel cruscotto NON sono edge di scommessa -> esclusi
+        -- qui per non sporcare snapshot/consigli della watchlist.
+        WHERE COALESCE((m->>'calibrated')::boolean, false)
     ),
     ed AS (
         SELECT
