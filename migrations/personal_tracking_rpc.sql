@@ -940,9 +940,14 @@ DECLARE
 BEGIN
     -- ordine FK-safe: prima le leg (FK -> trades), poi i trade (FK -> watchlist),
     -- infine la watchlist.
-    WITH d AS (DELETE FROM public.personal_trade_legs RETURNING 1) SELECT count(*) INTO n_legs   FROM d;
-    WITH d AS (DELETE FROM public.personal_trades     RETURNING 1) SELECT count(*) INTO n_trades FROM d;
-    WITH d AS (DELETE FROM public.personal_watchlist  RETURNING 1) SELECT count(*) INTO n_wl     FROM d;
+    -- NB: il WHERE e' OBBLIGATORIO -> Supabase carica pg_safeupdate sul ruolo
+    -- authenticated, che blocca DELETE/UPDATE senza filtro ("DELETE requires a
+    -- WHERE clause") anche dentro le funzioni. Uso "id > 0" (non "id IS NOT NULL")
+    -- perche' il planner NON puo' semplificarlo a costante: gli id PK sono sempre
+    -- >= 1, quindi elimina comunque TUTTE le righe.
+    WITH d AS (DELETE FROM public.personal_trade_legs WHERE id > 0 RETURNING 1) SELECT count(*) INTO n_legs   FROM d;
+    WITH d AS (DELETE FROM public.personal_trades     WHERE id > 0 RETURNING 1) SELECT count(*) INTO n_trades FROM d;
+    WITH d AS (DELETE FROM public.personal_watchlist  WHERE id > 0 RETURNING 1) SELECT count(*) INTO n_wl     FROM d;
 
     RETURN jsonb_build_object('legs', n_legs, 'trades', n_trades, 'watchlist', n_wl);
 END;
