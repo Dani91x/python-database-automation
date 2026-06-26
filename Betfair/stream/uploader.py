@@ -31,6 +31,40 @@ def scores_file(event_id: str) -> str:
     return os.path.join(DATA_DIR, event_id, f"{event_id}.scores.jsonl")
 
 
+def timeline_file(event_id: str) -> str:
+    return os.path.join(DATA_DIR, event_id, f"{event_id}.timeline.jsonl")
+
+
+def _read_timeline_events(event_id: str) -> List[Dict[str, Any]]:
+    """Eventi cronologia (gol/cartellini/...) → righe live_score_timeline."""
+    path = timeline_file(event_id)
+    rows: List[Dict[str, Any]] = []
+    if not os.path.exists(path):
+        return rows
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            rows.append(
+                {
+                    "event_id": event_id,
+                    "ts": ev.get("ts"),
+                    "source": "betfair",
+                    "minute": ev.get("minute"),
+                    "score_home": None,
+                    "score_away": None,
+                    "event_type": ev.get("type"),
+                    "payload": ev,
+                }
+            )
+    return rows
+
+
 def _read_scores(event_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Ritorna (timeline_rows_per_DB, minute_map_per_curator)."""
     path = scores_file(event_id)
@@ -72,6 +106,8 @@ def upload_event(event_id: str, raw_file: Optional[str] = None) -> Dict[str, Any
         raise FileNotFoundError(f"File grezzo mancante per {event_id}: {raw}")
 
     timeline_rows, minute_map = _read_scores(event_id)
+    # aggiunge gli eventi cronologia (gol/cartellini) catturati da get_event_timeline
+    timeline_rows = timeline_rows + _read_timeline_events(event_id)
     snapshots = curate_event(
         raw, event_id, cadence_sec=UPLOAD_CADENCE_SEC, timeline=minute_map or None
     )

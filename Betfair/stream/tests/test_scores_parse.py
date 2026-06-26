@@ -40,6 +40,28 @@ def test_betfair_parse_missing_score_is_tolerant():
     assert snap.status == "X"
 
 
+def test_betfair_parse_stats_corners_cards():
+    # struttura reale get_scores: corner per tempo + cartellini per squadra
+    raw = {
+        "eventId": "e", "matchStatus": "SecondHalf", "timeElapsed": 64,
+        "score": {
+            "home": {"score": "4", "numberOfYellowCards": 2, "numberOfRedCards": 0,
+                     "numberOfCorners": 5, "numberOfCornersFirstHalf": 3, "numberOfCornersSecondHalf": 2},
+            "away": {"score": "2", "numberOfYellowCards": 1, "numberOfRedCards": 1,
+                     "numberOfCorners": 3, "numberOfCornersFirstHalf": 1, "numberOfCornersSecondHalf": 2},
+            "bookingPoints": 30,
+        },
+    }
+    snap = parse_score_dict("e", raw)
+    assert (snap.score_home, snap.score_away) == (4, 2)
+    assert (snap.corners_home, snap.corners_away) == (5, 3)
+    assert (snap.yellow_home, snap.yellow_away) == (2, 1)
+    assert (snap.red_home, snap.red_away) == (0, 1)
+    assert snap.booking_points == 30
+    assert snap.stats["corners"]["home_1h"] == 3
+    assert snap.stats["cards"]["red_away"] == 1
+
+
 def test_apifootball_parse():
     data = {
         "response": [

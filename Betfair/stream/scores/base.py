@@ -12,7 +12,12 @@ from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 @dataclass(frozen=True)
 class ScoreSnapshot:
-    """Fotografia immutabile del punteggio a un istante."""
+    """Fotografia immutabile dello stato partita a un istante.
+
+    Oltre al punteggio cattura TUTTE le statistiche disponibili dal provider
+    (corner, cartellini, booking points, match status) — su Betfair arrivano nella
+    stessa risposta di get_scores. payload conserva sempre il dict grezzo integrale.
+    """
 
     event_id: str
     ts: str                       # ISO8601 UTC
@@ -22,6 +27,15 @@ class ScoreSnapshot:
     score_away: Optional[int] = None
     status: Optional[str] = None  # es. 'FirstHalf'|'HalfTime'|'SecondHalf'|'Finished'
     event_type: Optional[str] = None  # 'GOAL'|'RED_CARD'|... se disponibile
+    # --- statistiche live (Betfair in-play: corner + cartellini) ---
+    corners_home: Optional[int] = None
+    corners_away: Optional[int] = None
+    yellow_home: Optional[int] = None
+    yellow_away: Optional[int] = None
+    red_home: Optional[int] = None
+    red_away: Optional[int] = None
+    booking_points: Optional[int] = None
+    stats: Dict[str, Any] = field(default_factory=dict)  # blocco statistiche normalizzato
     payload: Dict[str, Any] = field(default_factory=dict)  # raw del provider (audit)
 
     def score_tuple(self) -> tuple[Optional[int], Optional[int]]:

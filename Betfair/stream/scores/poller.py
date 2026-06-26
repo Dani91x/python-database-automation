@@ -46,6 +46,10 @@ class ScorePoller:
     def circuit_open(self) -> bool:
         return self._circuit_open
 
+    @property
+    def primary(self) -> ScoreProvider:
+        return self._primary
+
     def _try_primary(self, event_id: str) -> Optional[ScoreSnapshot]:
         snap = self._primary.get_score(event_id)
         if snap is not None:

@@ -41,13 +41,16 @@ UPLOAD_CHUNK: int = int(os.getenv("LIVE_UPLOAD_CHUNK", "500"))
 # conflazione lato server (ms): 0 = nessuna, gli aggiornamenti arrivano grezzi.
 # Tenuto basso per la dinamica; la curazione dirada poi in scrittura DB.
 STREAM_CONFLATE_MS: int = int(os.getenv("LIVE_STREAM_CONFLATE_MS", "0"))
-# tipi di dato del mercato richiesti allo stream (ladder completo + traded + def)
+# TUTTI i tipi di dato del mercato (registra ogni singola cosa quando è live):
+# ladder completo + traded + traded volume + LTP + market definition + starting price.
 STREAM_FIELDS: tuple[str, ...] = (
-    "EX_ALL_OFFERS",
-    "EX_TRADED",
-    "EX_TRADED_VOL",
-    "EX_LTP",
-    "EX_MARKET_DEF",
+    "EX_ALL_OFFERS",   # ladder completo (tutti i livelli back/lay)
+    "EX_TRADED",       # volume scambiato per prezzo
+    "EX_TRADED_VOL",   # volume scambiato totale
+    "EX_LTP",          # last traded price
+    "EX_MARKET_DEF",   # market definition (status, inplay, betDelay, ...)
+    "SP_TRADED",       # starting price - matched
+    "SP_PROJECTED",    # starting price - proiettato
 )
 
 # ----------------------------------------------------------------------------

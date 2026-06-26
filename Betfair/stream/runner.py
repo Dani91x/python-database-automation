@@ -118,6 +118,9 @@ class LiveSession:
         self.finished_events: set = set()                     # eventi finalizzati
         self.cataloged_events: set = set()                    # eventi con catalogo già scaricato
         self._score_files: Dict[str, Any] = {}
+        self._timeline_files: Dict[str, Any] = {}
+        self._seen_events: Dict[str, set] = {}     # event_id -> set(update_id) già scritti
+        self._recent_events: Dict[str, list] = {}  # event_id -> ultimi eventi (per live_now)
         self._last_score_sig: Dict[str, tuple] = {}
         self._last_signal_sig: Dict[str, Any] = {}
         self._finalize_lock = threading.Lock()
@@ -134,13 +137,23 @@ class LiveSession:
             self._score_files[event_id] = fh
         return fh
 
+    def timeline_file(self, event_id: str) -> Any:
+        fh = self._timeline_files.get(event_id)
+        if fh is None:
+            ev_dir = os.path.join(DATA_DIR, event_id)
+            os.makedirs(ev_dir, exist_ok=True)
+            fh = open(os.path.join(ev_dir, f"{event_id}.timeline.jsonl"), "a", encoding="utf-8")  # noqa: SIM115
+            self._timeline_files[event_id] = fh
+        return fh
+
     def close_score_files(self) -> None:
-        for fh in self._score_files.values():
+        for fh in list(self._score_files.values()) + list(self._timeline_files.values()):
             try:
                 fh.close()
             except Exception:  # noqa: BLE001
                 pass
         self._score_files.clear()
+        self._timeline_files.clear()
 
     def all_market_ids(self) -> List[str]:
         return list(self.market_to_event.keys())
@@ -214,6 +227,11 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
             (latest.get(m["market_id"], {}) or {}).get("inplay")
             for m in session.markets_by_event.get(event_id, [])
         )
+        # cattura cronologia eventi Betfair (gol/cartellini/kickoff col minuto)
+        _capture_timeline(event_id, session)
+        # arricchisci live_now con statistiche live (corner/cartellini) + eventi recenti
+        state["stats"] = snap.stats if snap is not None else {}
+        state["events"] = session._recent_events.get(event_id, [])
 
         if snap is not None:
             try:
@@ -224,7 +242,10 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning("[score-worker] update_live_now KO %s: %s", event_id, e)
-            sig = (snap.minute, snap.score_home, snap.score_away)
+            # write-on-change su punteggio O statistiche (corner/cartellini)
+            sig = (snap.minute, snap.score_home, snap.score_away,
+                   snap.corners_home, snap.corners_away,
+                   snap.yellow_home, snap.yellow_away, snap.red_home, snap.red_away)
             if session._last_score_sig.get(event_id) != sig:
                 session._last_score_sig[event_id] = sig
                 try:
@@ -234,7 +255,7 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
                 rec = {
                     "ts": snap.ts, "ts_ms": ts_ms, "source": snap.source, "minute": snap.minute,
                     "score_home": snap.score_home, "score_away": snap.score_away,
-                    "event_type": snap.event_type, "payload": snap.payload,
+                    "event_type": snap.event_type, "stats": snap.stats, "payload": snap.payload,
                 }
                 fh = session.score_file(event_id)
                 fh.write(json.dumps(rec, default=str) + "\n")
@@ -248,6 +269,40 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
         # --- F2: motore segnali live (write-on-change) ---
         if SIGNALS_ENABLED:
             _compute_and_write_signals(event_id, session, snap)
+
+
+def _capture_timeline(event_id: str, session: LiveSession) -> None:
+    """Cattura la cronologia eventi Betfair (gol/cartellini/...) e registra i nuovi.
+
+    Scrive ogni evento NUOVO (per update_id) su <event>.timeline.jsonl e mantiene
+    gli ultimi eventi in memoria per live_now. Best-effort: non rompe mai il worker.
+    """
+    poller = session.pollers.get(event_id)
+    primary = getattr(poller, "primary", None) if poller else None
+    if not isinstance(primary, BetfairInPlayProvider):
+        return
+    try:
+        events = primary.get_timeline(event_id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[timeline] KO %s: %s", event_id, e)
+        return
+    if not events:
+        return
+    seen = session._seen_events.setdefault(event_id, set())
+    fh = None
+    for ev in events:
+        uid = ev.get("update_id")
+        if uid in seen:
+            continue
+        seen.add(uid)
+        ev_rec = {**ev, "ts": datetime.now(timezone.utc).isoformat()}
+        if fh is None:
+            fh = session.timeline_file(event_id)
+        fh.write(json.dumps(ev_rec, default=str) + "\n")
+    if fh is not None:
+        fh.flush()
+    # ultimi eventi per il pannello live (gol/cartellini ordinati per minuto)
+    session._recent_events[event_id] = events[-8:]
 
 
 def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -> None:
