@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, History, AlertTriangle, Radio, Square } from 'lucide-react';
+import { ChevronLeft, History, AlertTriangle, Radio, Square, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -86,6 +86,8 @@ export default function MatchReplay() {
     const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS); // base (normale/veloce); l'intervallo reale = playSpeed/speedMult
     const [speedMult, setSpeedMult] = useState(1);              // moltiplicatore x1..x5
     const [activeCategory, setActiveCategory] = useState<CatKey>('MATCH_ODDS');
+    // vista del pannello sotto la timeline: 'markets' (tab mercati) | 'opps' (Opportunità).
+    const [view, setView] = useState<'markets' | 'opps'>('markets');
     const [bets, setBets] = useState<SimBet[]>([]);
     const [stakes, setStakes] = useState<Record<string, number>>({});
     // P&L già REALIZZATO da cash-out precedenti (le bet vengono rimosse, ma il
@@ -113,6 +115,7 @@ export default function MatchReplay() {
             setIsPlaying(false);
             setSpeedMult(1);
             setActiveCategory('MATCH_ODDS');
+            setView('markets');
             setBets([]);
             setStakes({});
             setRealizedPnl(0);
@@ -128,6 +131,7 @@ export default function MatchReplay() {
         setIsPlaying(false);
         setSpeedMult(1);
         setActiveCategory('MATCH_ODDS');
+        setView('markets');
         setBets([]);
         setStakes({});
         setCurrentIndex(0);
@@ -779,68 +783,88 @@ export default function MatchReplay() {
                             />
                         </Card>
 
-                        {/* card Validazione (collassabile): prova del motore su dati reali */}
-                        {validationReport && validationReport.totalOpportunities > 0 && (
-                            <ValidationCard report={validationReport} />
-                        )}
-
-                        {/* OPPORTUNITÀ rilevate per la snapshot corrente (card amichevoli) */}
-                        <OpportunitaPanel opportunities={currentOpps} />
-
-                        {/* menu categorie mercato (tab) */}
-                        {presentCategories.length > 0 && (
-                            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
-                                {presentCategories.map(c => (
-                                    <button
-                                        key={c.key}
-                                        onClick={() => setActiveCategory(c.key)}
-                                        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
-                                            activeCat === c.key
-                                                ? 'bg-primary text-black border-primary'
-                                                : 'border-white/10 text-muted-foreground hover:text-white'
-                                        }`}
-                                    >
-                                        {c.label}
-                                        <span className="ml-1 opacity-60 tabular-nums">{categorized.get(c.key)?.length ?? 0}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* griglia mercati (solo categoria attiva) */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {activeMarkets.map(m => {
-                                const ev = marketEval(m);
-                                return (
-                                    <MarketPanel
-                                        key={m.market_id}
-                                        market={m}
-                                        ladder={currentLadder(m.market_id)}
-                                        stake={getStake(m.market_id)}
-                                        onStakeChange={(n) => setStakes(prev => ({ ...prev, [m.market_id]: n }))}
-                                        bets={bets.filter(b => b.marketId === m.market_id && !b.closed)}
-                                        onPlaceBet={placeBet(m)}
-                                        onCashOut={() => cashOutMarket(m.market_id)}
-                                        marketValue={ev.value}
-                                        settled={ev.settled}
-                                        winnerId={ev.winnerId}
-                                        status={currentStatus(m.market_id)}
-                                    />
-                                );
-                            })}
+                        {/* menu SOTTO LA TIMELINE: tab categorie mercato + pulsante Opportunità.
+                            Clic su una categoria → vista mercati; clic su Opportunità → vista
+                            opportunità divisa nelle 3 fasce di rischio (🟢/🟡/🟠). */}
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+                            {presentCategories.map(c => (
+                                <button
+                                    key={c.key}
+                                    onClick={() => { setView('markets'); setActiveCategory(c.key); }}
+                                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+                                        view === 'markets' && activeCat === c.key
+                                            ? 'bg-primary text-black border-primary'
+                                            : 'border-white/10 text-muted-foreground hover:text-white'
+                                    }`}
+                                >
+                                    {c.label}
+                                    <span className="ml-1 opacity-60 tabular-nums">{categorized.get(c.key)?.length ?? 0}</span>
+                                </button>
+                            ))}
+                            {/* separatore verticale tra mercati e Opportunità */}
+                            <span className="shrink-0 w-px h-5 bg-white/10 mx-0.5" />
+                            {/* pulsante OPPORTUNITÀ (fascia distinta, accento emerald) */}
+                            <button
+                                onClick={() => setView('opps')}
+                                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+                                    view === 'opps'
+                                        ? 'bg-emerald-500 text-black border-emerald-500'
+                                        : 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10'
+                                }`}
+                            >
+                                <Sparkles className="w-3.5 h-3.5" /> Opportunità
+                                {currentOpps.length > 0 && (
+                                    <span className="ml-0.5 opacity-70 tabular-nums">{currentOpps.length}</span>
+                                )}
+                            </button>
                         </div>
 
-                        {/* trades */}
-                        <TradesPanel bets={bets} onRemove={removeBet} />
+                        {view === 'opps' ? (
+                            /* ===== VISTA OPPORTUNITÀ: card validazione + 3 fasce di rischio ===== */
+                            <div className="space-y-4">
+                                {validationReport && validationReport.totalOpportunities > 0 && (
+                                    <ValidationCard report={validationReport} />
+                                )}
+                                <OpportunitaPanel opportunities={currentOpps} grouped />
+                            </div>
+                        ) : (
+                            /* ===== VISTA MERCATI: griglia (categoria attiva) + trades + nota ===== */
+                            <>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    {activeMarkets.map(m => {
+                                        const ev = marketEval(m);
+                                        return (
+                                            <MarketPanel
+                                                key={m.market_id}
+                                                market={m}
+                                                ladder={currentLadder(m.market_id)}
+                                                stake={getStake(m.market_id)}
+                                                onStakeChange={(n) => setStakes(prev => ({ ...prev, [m.market_id]: n }))}
+                                                bets={bets.filter(b => b.marketId === m.market_id && !b.closed)}
+                                                onPlaceBet={placeBet(m)}
+                                                onCashOut={() => cashOutMarket(m.market_id)}
+                                                marketValue={ev.value}
+                                                settled={ev.settled}
+                                                winnerId={ev.winnerId}
+                                                status={currentStatus(m.market_id)}
+                                            />
+                                        );
+                                    })}
+                                </div>
 
-                        <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-                            <strong className="text-muted-foreground">Nota P&L.</strong> Semantica Betfair Exchange.
-                            BACK stake S a quota O: vince → +S·(O-1), perde → -S. LAY stake S a quota O: la selezione vince
-                            → -S·(O-1) (liability), perde → +S. <em>Position</em> di una selezione = P&L del mercato se quella
-                            selezione fosse l'esito vincente. <em>Cash out</em>/<em>Overall Position</em> = valore atteso del
-                            libro sotto le probabilità implicite normalizzate (overround rimosso) alle quote correnti.
-                            Simulazione didattica su dati storici.
-                        </p>
+                                {/* trades */}
+                                <TradesPanel bets={bets} onRemove={removeBet} />
+
+                                <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+                                    <strong className="text-muted-foreground">Nota P&L.</strong> Semantica Betfair Exchange.
+                                    BACK stake S a quota O: vince → +S·(O-1), perde → -S. LAY stake S a quota O: la selezione vince
+                                    → -S·(O-1) (liability), perde → +S. <em>Position</em> di una selezione = P&L del mercato se quella
+                                    selezione fosse l'esito vincente. <em>Cash out</em>/<em>Overall Position</em> = valore atteso del
+                                    libro sotto le probabilità implicite normalizzate (overround rimosso) alle quote correnti.
+                                    Simulazione didattica su dati storici.
+                                </p>
+                            </>
+                        )}
                     </div>
                 )}
             </main>

@@ -19,40 +19,50 @@ import { formatGbp } from '@/lib/replay-pnl';
 
 // Stile per tier di rischio (allineato al design system: emerald=primary, gold=secondary).
 interface TierStyle {
+    emoji: string;   // pallino colore per la sezione (🟢/🟡/🟠)
     label: string;
     sub: string;
     badge: string;   // classi badge
     bar: string;     // colore barra confidenza
     ring: string;    // bordo card
+    head: string;    // classi header sezione raggruppata
     Icon: typeof ShieldCheck;
 }
 const TIER_STYLE: Record<RiskTier, TierStyle> = {
     arb: {
+        emoji: '🟢',
         label: 'Rischio ~zero',
         sub: 'Profitto bloccato qualunque esito',
         badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
         bar: 'bg-emerald-400',
         ring: 'border-emerald-500/30',
+        head: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/[0.07]',
         Icon: ShieldCheck,
     },
     low: {
+        emoji: '🟡',
         label: 'Rischio basso',
         sub: 'Quasi sicuro, con rischio residuo dichiarato',
         badge: 'bg-secondary/15 text-secondary border-secondary/40',
         bar: 'bg-secondary',
         ring: 'border-secondary/30',
+        head: 'text-secondary border-secondary/30 bg-secondary/[0.07]',
         Icon: Gauge,
     },
     directional: {
+        emoji: '🟠',
         label: 'Direzionale',
         sub: 'Scommessa sul movimento: profitto potenziale',
         badge: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
         bar: 'bg-orange-400',
         ring: 'border-orange-500/30',
+        head: 'text-orange-300 border-orange-500/30 bg-orange-500/[0.07]',
         Icon: TrendingUp,
     },
 };
 const TIER_ORDER: Record<RiskTier, number> = { arb: 0, low: 1, directional: 2 };
+// quante card mostrare al massimo per sezione (il direzionale può esserne pieno).
+const MAX_PER_TIER = 25;
 
 function ConfidenceBar({ value, color }: { value: number; color: string }) {
     const pct = Math.max(0, Math.min(1, value)) * 100;
@@ -172,11 +182,45 @@ function OppCard({ opp }: { opp: Opportunity }) {
     );
 }
 
-export interface OpportunitaPanelProps {
-    opportunities: Opportunity[];
+// Sezione di un singolo tier (header colorato + card del tier). Mostra SEMPRE
+// l'header (così le 3 fasce restano visibili e distinte anche se vuote); il corpo
+// elenca le card del tier (cap a MAX_PER_TIER, con nota "+N altre").
+function TierSection({ tier, opps }: { tier: RiskTier; opps: Opportunity[] }) {
+    const st = TIER_STYLE[tier];
+    const shown = opps.slice(0, MAX_PER_TIER);
+    const extra = opps.length - shown.length;
+    return (
+        <div className="space-y-2">
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${st.head}`}>
+                <span className="text-base leading-none">{st.emoji}</span>
+                <span className="font-heading font-bold text-sm">{st.label}</span>
+                <span className="text-[11px] opacity-70 tabular-nums">({opps.length})</span>
+                <span className="text-[11px] text-muted-foreground hidden sm:inline ml-1 truncate">— {st.sub}</span>
+            </div>
+            {opps.length === 0 ? (
+                <p className="px-3 pb-1 text-[12px] text-muted-foreground">Nessuna in questo momento.</p>
+            ) : (
+                <div className="space-y-2.5">
+                    {shown.map(o => <OppCard key={o.id} opp={o} />)}
+                    {extra > 0 && (
+                        <p className="px-1 text-[11px] text-muted-foreground tabular-nums">
+                            + altre {extra} opportunità {st.label.toLowerCase()} (mostrate le {MAX_PER_TIER} a profitto maggiore).
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 }
 
-export function OpportunitaPanel({ opportunities }: OpportunitaPanelProps) {
+export interface OpportunitaPanelProps {
+    opportunities: Opportunity[];
+    // grouped: divide le opportunità nelle 3 fasce di rischio (🟢/🟡/🟠) con header
+    // dedicati. false (default) = lista unica ordinata per tier (uso legacy).
+    grouped?: boolean;
+}
+
+export function OpportunitaPanel({ opportunities, grouped = false }: OpportunitaPanelProps) {
     // ordina: arb → low → directional, poi profitto decrescente.
     // (runDetectors ordina già così a monte: questo re-sort è DIFENSIVO e rende il
     //  componente indipendente dall'ordine della prop in ingresso.)
@@ -185,6 +229,29 @@ export function OpportunitaPanel({ opportunities }: OpportunitaPanelProps) {
         return t !== 0 ? t : b.profit - a.profit;
     });
 
+    // --- modalità RAGGRUPPATA: 3 sezioni distinte per fascia di rischio ---
+    if (grouped) {
+        const byTier: Record<RiskTier, Opportunity[]> = { arb: [], low: [], directional: [] };
+        for (const o of sorted) byTier[o.tier].push(o);
+        return (
+            <div className="space-y-4">
+                <div className="flex items-center gap-2 font-heading font-bold text-sm">
+                    <Sparkles className="w-4 h-4 text-primary" /> Opportunità
+                    <span className="text-muted-foreground font-normal tabular-nums">({sorted.length})</span>
+                </div>
+                {sorted.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        Nessuna opportunità rilevata in questo istante. Scorri la timeline per cercarne.
+                    </p>
+                )}
+                <TierSection tier="arb" opps={byTier.arb} />
+                <TierSection tier="low" opps={byTier.low} />
+                <TierSection tier="directional" opps={byTier.directional} />
+            </div>
+        );
+    }
+
+    // --- modalità LISTA (legacy): card in un'unica colonna ordinata per tier ---
     return (
         <Card className="glass-card border-white/10 overflow-hidden">
             <div className="px-4 py-2.5 border-b border-white/5 font-heading font-bold text-sm flex items-center gap-2">
