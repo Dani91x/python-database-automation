@@ -201,7 +201,8 @@ BEGIN
                'score_home', t.score_home,
                'score_away', t.score_away,
                'event_type', t.event_type,
-               'source',     t.source
+               'source',     t.source,
+               'payload',    t.payload   -- include i conteggi (corner/cartellini) per derivare gli eventi
              ) ORDER BY t.ts
            ), '[]'::jsonb)
       INTO v_timeline

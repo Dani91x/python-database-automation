@@ -261,39 +261,61 @@ export default function MatchReplay() {
             const p = (new Date(ts).getTime() - firstTs) / span;
             return p < 0 ? 0 : p > 1 ? 1 : p;
         };
-        type Marker = { pctLeft: number; kind: string; team?: string | null; minute: number | null; label: string };
+        type Marker = { ts: string; pctLeft: number; kind: string; team?: string | null; minute: number | null; label: string };
         const out: Marker[] = [];
-        let prevHome = 0;
-        let prevAway = 0;
+        const teamName = (t: string | null | undefined) => (t === 'home' ? homeName : t === 'away' ? awayName : null);
+        const numH = (p: any, k: string) => Number(p?.score?.home?.[k] ?? 0) || 0;
+        const numA = (p: any, k: string) => Number(p?.score?.away?.[k] ?? 0) || 0;
+        const add = (ev: typeof sortedScoreTimeline[number], kind: string, team: string | null, label: string) =>
+            out.push({ ts: ev.ts, pctLeft: pctOf(ev.ts), kind, team, minute: ev.minute, label });
+
+        // se ci sono eventi DISCRETI (get_event_timeline) usiamo SOLO quelli; altrimenti
+        // deriviamo TUTTO dai delta (punteggio → gol; conteggi payload → cartellini/angoli).
+        const hasDiscrete = sortedScoreTimeline.some(e => !!e.event_type);
+        let prevHome = 0, prevAway = 0;
+        let pYH = 0, pYA = 0, pRH = 0, pRA = 0, pCH = 0, pCA = 0;
+
         for (const ev of sortedScoreTimeline) {
-            const t = (ev.event_type || '').toLowerCase();
+            const ty = (ev.event_type || '').toLowerCase();
             const curHome = ev.score_home ?? prevHome;
             const curAway = ev.score_away ?? prevAway;
             const dHome = curHome - prevHome;
             const dAway = curAway - prevAway;
 
-            if (t === 'goal') {
-                // gol esplicito: squadra dal delta di punteggio (fallback null)
-                const team = dHome > 0 ? 'home' : dAway > 0 ? 'away' : null;
-                const who = team === 'home' ? homeName : team === 'away' ? awayName : null;
-                out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team, minute: ev.minute, label: who ? `Gol ${who}` : 'Gol' });
-            } else if (t === 'yellowcard' || t === 'yellow_card') {
-                out.push({ pctLeft: pctOf(ev.ts), kind: 'yellow', team: null, minute: ev.minute, label: 'Cartellino giallo' });
-            } else if (t === 'redcard' || t === 'red_card') {
-                out.push({ pctLeft: pctOf(ev.ts), kind: 'red', team: null, minute: ev.minute, label: 'Cartellino rosso' });
-            } else if (t === 'corner') {
-                out.push({ pctLeft: pctOf(ev.ts), kind: 'corner', team: null, minute: ev.minute, label: "Calcio d'angolo" });
-            } else if (!ev.event_type) {
-                // event_type assente → DERIVA i gol dagli incrementi di punteggio.
-                if (dHome > 0) {
-                    out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team: 'home', minute: ev.minute, label: `Gol ${homeName}` });
+            if (hasDiscrete) {
+                if (ty === 'goal') {
+                    const team = ev.payload?.team ?? (dHome > 0 ? 'home' : dAway > 0 ? 'away' : null);
+                    const who = teamName(team);
+                    add(ev, 'goal', team, who ? `Gol ${who}` : 'Gol');
+                } else if (ty === 'yellowcard' || ty === 'yellow_card') {
+                    const who = teamName(ev.payload?.team);
+                    add(ev, 'yellow', ev.payload?.team ?? null, who ? `Giallo ${who}` : 'Cartellino giallo');
+                } else if (ty === 'redcard' || ty === 'red_card') {
+                    const who = teamName(ev.payload?.team);
+                    add(ev, 'red', ev.payload?.team ?? null, who ? `Rosso ${who}` : 'Cartellino rosso');
+                } else if (ty === 'corner') {
+                    const who = teamName(ev.payload?.team);
+                    add(ev, 'corner', ev.payload?.team ?? null, who ? `Angolo ${who}` : "Calcio d'angolo");
                 }
-                if (dAway > 0) {
-                    out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team: 'away', minute: ev.minute, label: `Gol ${awayName}` });
-                }
+                // KickOff/HalfTime/... = fasi: non renderizzate.
+            } else {
+                // GOL dai delta di punteggio
+                if (dHome > 0) add(ev, 'goal', 'home', `Gol ${homeName}`);
+                if (dAway > 0) add(ev, 'goal', 'away', `Gol ${awayName}`);
+                // CARTELLINI / ANGOLI dai conteggi cumulativi nel payload
+                const yh = numH(ev.payload, 'numberOfYellowCards'), ya = numA(ev.payload, 'numberOfYellowCards');
+                const rh = numH(ev.payload, 'numberOfRedCards'), ra = numA(ev.payload, 'numberOfRedCards');
+                const ch = numH(ev.payload, 'numberOfCorners'), ca = numA(ev.payload, 'numberOfCorners');
+                if (yh > pYH) add(ev, 'yellow', 'home', `Giallo ${homeName}`);
+                if (ya > pYA) add(ev, 'yellow', 'away', `Giallo ${awayName}`);
+                if (rh > pRH) add(ev, 'red', 'home', `Rosso ${homeName}`);
+                if (ra > pRA) add(ev, 'red', 'away', `Rosso ${awayName}`);
+                if (ch > pCH) add(ev, 'corner', 'home', `Angolo ${homeName}`);
+                if (ca > pCA) add(ev, 'corner', 'away', `Angolo ${awayName}`);
+                pYH = Math.max(pYH, yh); pYA = Math.max(pYA, ya);
+                pRH = Math.max(pRH, rh); pRA = Math.max(pRA, ra);
+                pCH = Math.max(pCH, ch); pCA = Math.max(pCA, ca);
             }
-            // (KickOff/HalfTime/SecondHalfKickOff ecc. = fasi: non renderizzate come marker)
-
             if (ev.score_home != null) prevHome = ev.score_home;
             if (ev.score_away != null) prevAway = ev.score_away;
         }
@@ -658,7 +680,7 @@ export default function MatchReplay() {
                             <TimelineSlider
                                 min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
                                 suspended={suspended}
-                                events={timelineEvents}
+                                events={timelineEvents.filter(m => !currentTs || m.ts <= currentTs)}
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>

@@ -163,6 +163,9 @@ export interface ScoreEvent {
     score_away: number | null;
     event_type: string | null;
     source: string;
+    // dict grezzo del provider (get_scores): contiene i conteggi corner/cartellini
+    // per derivare gli eventi quando non sono presenti come event_type discreti.
+    payload?: any;
 }
 export interface ReplayEvent {
     event_id: string;
