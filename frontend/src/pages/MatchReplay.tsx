@@ -242,6 +242,65 @@ export default function MatchReplay() {
         return [...replay.score_timeline].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }, [replay]);
 
+    // ---- EVENTI DELLA PARTITA sulla barra timeline (gol/cartellini/angoli) ----
+    // Normalizza score_timeline in marker posizionati lungo la track:
+    //  • usa event_type quando presente (Goal/YellowCard/RedCard/Corner/…);
+    //  • DERIVA i gol dagli incrementi di punteggio quando event_type è null
+    //    (registrazioni precedenti alla cattura eventi: solo i SCORE cambiano).
+    // Dedup: se un'entry ha event_type 'Goal' la usiamo come gol e NON deriviamo
+    // anche dal suo delta di punteggio (l'esplicito ha precedenza sul derivato).
+    const timelineEvents = useMemo(() => {
+        if (!replay || timeline.length === 0) return [];
+        const homeName = replay.event.home_name || 'Casa';
+        const awayName = replay.event.away_name || 'Ospiti';
+        const firstTs = new Date(timeline[0].ts).getTime();
+        const lastTs = new Date(timeline[maxIndex].ts).getTime();
+        const span = lastTs - firstTs;
+        const pctOf = (ts: string) => {
+            if (!Number.isFinite(span) || span <= 0) return 0;
+            const p = (new Date(ts).getTime() - firstTs) / span;
+            return p < 0 ? 0 : p > 1 ? 1 : p;
+        };
+        type Marker = { pctLeft: number; kind: string; team?: string | null; minute: number | null; label: string };
+        const out: Marker[] = [];
+        let prevHome = 0;
+        let prevAway = 0;
+        for (const ev of sortedScoreTimeline) {
+            const t = (ev.event_type || '').toLowerCase();
+            const curHome = ev.score_home ?? prevHome;
+            const curAway = ev.score_away ?? prevAway;
+            const dHome = curHome - prevHome;
+            const dAway = curAway - prevAway;
+
+            if (t === 'goal') {
+                // gol esplicito: squadra dal delta di punteggio (fallback null)
+                const team = dHome > 0 ? 'home' : dAway > 0 ? 'away' : null;
+                const who = team === 'home' ? homeName : team === 'away' ? awayName : null;
+                out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team, minute: ev.minute, label: who ? `Gol ${who}` : 'Gol' });
+            } else if (t === 'yellowcard' || t === 'yellow_card') {
+                out.push({ pctLeft: pctOf(ev.ts), kind: 'yellow', team: null, minute: ev.minute, label: 'Cartellino giallo' });
+            } else if (t === 'redcard' || t === 'red_card') {
+                out.push({ pctLeft: pctOf(ev.ts), kind: 'red', team: null, minute: ev.minute, label: 'Cartellino rosso' });
+            } else if (t === 'corner') {
+                out.push({ pctLeft: pctOf(ev.ts), kind: 'corner', team: null, minute: ev.minute, label: "Calcio d'angolo" });
+            } else if (!ev.event_type) {
+                // event_type assente → DERIVA i gol dagli incrementi di punteggio.
+                if (dHome > 0) {
+                    out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team: 'home', minute: ev.minute, label: `Gol ${homeName}` });
+                }
+                if (dAway > 0) {
+                    out.push({ pctLeft: pctOf(ev.ts), kind: 'goal', team: 'away', minute: ev.minute, label: `Gol ${awayName}` });
+                }
+            }
+            // (KickOff/HalfTime/SecondHalfKickOff ecc. = fasi: non renderizzate come marker)
+
+            if (ev.score_home != null) prevHome = ev.score_home;
+            if (ev.score_away != null) prevAway = ev.score_away;
+        }
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [replay, sortedScoreTimeline, timeline, maxIndex]);
+
     // ---- punteggio + minuto all'istante corrente: ultima voce con ts <= currentTs.
     // (FIX: prima usava il minuto con fallback +Infinity → in pre-match mostrava il
     //  punteggio finale; ora è ancorato al timestamp del replay.) ----
@@ -599,6 +658,7 @@ export default function MatchReplay() {
                             <TimelineSlider
                                 min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
                                 suspended={suspended}
+                                events={timelineEvents}
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>
