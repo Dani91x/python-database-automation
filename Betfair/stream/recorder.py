@@ -136,6 +136,11 @@ class MarketRecorderStrategy(BaseStrategy):
         return os.path.join(self.data_dir, event_id, f"{event_id}.jsonl")
 
     # --- flumine hooks -----------------------------------------------------
+    def check_market_book(self, market: Market, market_book: MarketBook) -> bool:
+        # flumine esegue process_market_book SOLO se questo ritorna True.
+        # Vogliamo processare ogni aggiornamento di ogni mercato seguito.
+        return True
+
     def process_market_book(self, market: Market, market_book: MarketBook) -> None:
         event_id = self.market_to_event.get(market_book.market_id)
         if event_id is None:

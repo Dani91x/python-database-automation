@@ -477,7 +477,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             session.recorder = recorder
             configure_raw(DATA_DIR, session.market_to_event, RAW_RECORDING)
 
-            client = clients.BetfairClient(api_client, market_recording_mode=True, order_stream=False)
+            # NB: NON usare market_recording_mode=True → sopprime process_market_book
+            # (i book parsati servono a live_now + segnali). Il raw nativo è comunque
+            # registrato dal tee nel listener. order_stream=False: non piazziamo ordini.
+            client = clients.BetfairClient(api_client, order_stream=False)
             framework = Flumine(client=client)
             framework.add_strategy(recorder)
             framework.add_worker(BackgroundWorker(
