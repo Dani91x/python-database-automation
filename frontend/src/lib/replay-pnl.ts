@@ -35,6 +35,9 @@ export interface SimBet {
     odds: number;        // quota decimale a cui è stata piazzata
     stake: number;       // stake del backer (per lay = backer's stake)
     minute: number | null;
+    // --- post cash-out (solo in-memory, finché la pagina resta aperta) ---
+    closed?: boolean;       // true = posizione chiusa con cash-out (resta visibile, esclusa dai calcoli aperti)
+    realizedPnl?: number;   // P&L bloccato del MERCATO al cash-out (registrato una sola volta per gruppo)
 }
 
 // --------------------------------------------------------------- primitive P&L

@@ -25,7 +25,7 @@ def get_played_fixtures() -> List[Dict[str, Any]]:
     sb = get_supabase_client()
     resp = (
         sb.table("personal_watchlist")
-        .select("id, fixture_id, league_name, home_team, away_team, kickoff")
+        .select("id, fixture_id, league_id, league_name, home_team, away_team, kickoff")
         .eq("status", "GIOCATA")
         .execute()
     )
@@ -36,6 +36,7 @@ def get_played_fixtures() -> List[Dict[str, Any]]:
             {
                 "watchlist_id": r["id"],
                 "fixture_id": r["fixture_id"],
+                "league_id": r.get("league_id"),
                 "league_name": r.get("league_name"),
                 "home_team_name": r.get("home_team"),
                 "away_team_name": r.get("away_team"),
@@ -85,6 +86,7 @@ def resolve_and_register(client: Any, days_ahead: int = 1) -> List[Dict[str, Any
             fixture_id=fixture_id,
             watchlist_id=src.get("watchlist_id"),
             league_name=src.get("league_name"),
+            league_id=src.get("league_id"),
             status="PENDING",
         )
         registered.append(

@@ -106,6 +106,7 @@ export function subscribeLiveNow(
 export interface ReplayItem {
     event_id: string;
     fixture_id: number | null;
+    league_id: number | null;   // per logo lega (può essere null finché il backend non lo espone)
     league_name: string | null;
     home_name: string;
     away_name: string;

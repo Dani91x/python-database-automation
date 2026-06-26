@@ -27,6 +27,35 @@ import {
 
 const PLAY_NORMAL_MS = 1000;
 const PLAY_FAST_MS = 300;
+const SPEED_OPTIONS = [1, 2, 3, 4, 5] as const;
+
+// URL logo lega (API-Football) dall'id; '' se mancante.
+const leagueLogo = (id?: number | null) => (id ? `https://media.api-sports.io/football/leagues/${id}.png` : '');
+
+// ---- categorie mercato (menu a tab) ----
+type CatKey = 'MATCH_ODDS' | 'OVER_UNDER' | 'CORRECT_SCORE' | 'FIRST_HALF' | 'BTTS' | 'OTHER';
+const CATEGORIES: { key: CatKey; label: string }[] = [
+    { key: 'MATCH_ODDS', label: 'Match Odds' },
+    { key: 'OVER_UNDER', label: 'Over/Under' },
+    { key: 'CORRECT_SCORE', label: 'Correct Score' },
+    { key: 'FIRST_HALF', label: 'First Half' },
+    { key: 'BTTS', label: 'BTTS' },
+    { key: 'OTHER', label: 'Squadre/Altri' },
+];
+function categoryOf(type: string | null): CatKey {
+    const t = (type || '').toUpperCase();
+    if (t === 'MATCH_ODDS' || t === 'DOUBLE_CHANCE' || t === 'HALF_TIME_FULL_TIME') return 'MATCH_ODDS';
+    if (t.startsWith('FIRST_HALF_GOALS') || t === 'HALF_TIME') return 'FIRST_HALF';
+    if (t.startsWith('OVER_UNDER')) return 'OVER_UNDER';
+    if (t === 'CORRECT_SCORE' || t === 'HALF_TIME_SCORE') return 'CORRECT_SCORE';
+    if (t === 'BOTH_TEAMS_TO_SCORE' || t === 'BTTS') return 'BTTS';
+    return 'OTHER';
+}
+// linea numerica da un market_type tipo OVER_UNDER_25 -> 2.5 (per ordinamento ASC).
+function lineOf(type: string | null): number {
+    const m = /(\d)(\d)$/.exec((type || '').toUpperCase());
+    return m ? Number(`${m[1]}.${m[2]}`) : Number.MAX_SAFE_INTEGER;
+}
 
 // genera un id univoco per le bet simulate
 function uid(): string {
@@ -47,7 +76,9 @@ export default function MatchReplay() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playDir, setPlayDir] = useState<1 | -1>(1);
-    const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS);
+    const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS); // base (normale/veloce); l'intervallo reale = playSpeed/speedMult
+    const [speedMult, setSpeedMult] = useState(1);              // moltiplicatore x1..x5
+    const [activeCategory, setActiveCategory] = useState<CatKey>('MATCH_ODDS');
     const [bets, setBets] = useState<SimBet[]>([]);
     const [stakes, setStakes] = useState<Record<string, number>>({});
     // P&L già REALIZZATO da cash-out precedenti (le bet vengono rimosse, ma il
@@ -73,6 +104,8 @@ export default function MatchReplay() {
             setReplay(data);
             setCurrentIndex(0);
             setIsPlaying(false);
+            setSpeedMult(1);
+            setActiveCategory('MATCH_ODDS');
             setBets([]);
             setStakes({});
             setRealizedPnl(0);
@@ -86,15 +119,56 @@ export default function MatchReplay() {
     const endSimulation = () => {
         setReplay(null);
         setIsPlaying(false);
+        setSpeedMult(1);
+        setActiveCategory('MATCH_ODDS');
         setBets([]);
         setStakes({});
         setCurrentIndex(0);
         setRealizedPnl(0);
     };
 
+    // ---- lista replay raggruppata per LEGA → ANNO (per la vista selettore) ----
+    const groupedList = useMemo(() => {
+        const byLeague = new Map<string, { league_id: number | null; league_name: string | null; years: Map<number, ReplayItem[]> }>();
+        for (const it of list) {
+            const key = it.league_name ?? (it.league_id != null ? `Lega ${it.league_id}` : 'Lega sconosciuta');
+            let g = byLeague.get(key);
+            if (!g) { g = { league_id: it.league_id ?? null, league_name: it.league_name ?? null, years: new Map() }; byLeague.set(key, g); }
+            if (g.league_id == null && it.league_id != null) g.league_id = it.league_id;
+            let y = 0;
+            try { const yy = new Date(it.open_date).getFullYear(); if (Number.isFinite(yy)) y = yy; } catch { /* noop */ }
+            const arr = g.years.get(y) ?? [];
+            arr.push(it);
+            g.years.set(y, arr);
+        }
+        return Array.from(byLeague.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([key, g]) => ({
+                key,
+                league_id: g.league_id,
+                league_name: g.league_name ?? key,
+                years: Array.from(g.years.entries())
+                    .sort((a, b) => b[0] - a[0])
+                    .map(([year, items]) => ({ year, items })),
+            }));
+    }, [list]);
+
+    // ---- KICKOFF: la timeline parte dal calcio d'inizio (minuto 0), non dal pre-match.
+    // kickoffTs = ts della prima voce score_timeline con minute===0;
+    // fallback: primo frame con inplay===true; ultimo fallback: primo frame in assoluto.
+    const kickoffTs = useMemo(() => {
+        if (!replay) return null;
+        const zero = replay.score_timeline.find(e => e.minute === 0);
+        if (zero?.ts) return zero.ts;
+        const sorted = [...replay.frames].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        const ip = sorted.find(f => f.inplay === true);
+        return ip?.ts ?? sorted[0]?.ts ?? null;
+    }, [replay]);
+
     // ---- timeline: griglia temporale ~10s (scorribile), non ogni singolo tick ----
     // (i frame sono migliaia; raggruppiamo a bucket di 10s per un playback usabile;
     //  currentLadder usa comunque l'ultimo frame <= currentTs, quindi è preciso).
+    // I bucket PRIMA del kickoff vengono scartati → index 0 = calcio d'inizio.
     const TIMELINE_BUCKET_MS = 10_000;
     const timeline = useMemo(() => {
         if (!replay) return [] as { ts: string; minute: number | null }[];
@@ -105,8 +179,15 @@ export default function MatchReplay() {
             if (!cur) byBucket.set(b, { ts: f.ts, minute: f.minute });
             else if (cur.minute == null && f.minute != null) cur.minute = f.minute;
         }
-        return Array.from(byBucket.values()).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-    }, [replay]);
+        // scarta i bucket PRIMA del kickoff confrontando la CHIAVE-bucket (non il ts
+        // del primo frame del bucket): così il bucket che contiene il kickoff resta
+        // anche se include frame pre-match nello stesso intervallo di 10s.
+        const kBucket = kickoffTs ? Math.floor(new Date(kickoffTs).getTime() / TIMELINE_BUCKET_MS) : null;
+        return Array.from(byBucket.entries())
+            .filter(([k]) => kBucket == null || k >= kBucket)
+            .sort(([, a], [, b]) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+            .map(([, step]) => step);
+    }, [replay, kickoffTs]);
 
     const maxIndex = Math.max(0, timeline.length - 1);
     const safeIndex = Math.min(currentIndex, maxIndex);
@@ -141,6 +222,20 @@ export default function MatchReplay() {
         return found?.ladder;
     };
 
+    // status di un mercato a un dato ts = status dell'ultimo frame con ts <= ts (bisect).
+    const statusAtTs = (arr: Frame[] | undefined, ts: string): string | null => {
+        if (!arr || arr.length === 0 || !ts) return null;
+        let lo = 0, hi = arr.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (arr[mid].ts <= ts) lo = mid + 1; else hi = mid;
+        }
+        return lo > 0 ? arr[lo - 1].status : null;
+    };
+    // status corrente (frame <= currentTs) di un mercato — per il badge SOSPESO/CHIUSO.
+    const currentStatus = (marketId: string): string | undefined =>
+        statusAtTs(framesByMarket.get(marketId), currentTs) ?? undefined;
+
     // ---- score timeline pre-ordinata PER TIMESTAMP (non per minuto) ----
     const sortedScoreTimeline = useMemo(() => {
         if (!replay) return [];
@@ -172,14 +267,62 @@ export default function MatchReplay() {
         );
     }, [replay]);
 
-    // ---- contesto esito: punteggio corrente + partita finita (per il settlement) ----
-    const finished = safeIndex >= maxIndex || (displayMinute != null && displayMinute >= 90);
+    // ---- SOSPENSIONI sulla barra: per ogni step della timeline, MATCH_ODDS sospeso?
+    // (ultimo frame MATCH_ODDS con ts <= step.ts === 'SUSPENDED'; se non c'è MATCH_ODDS,
+    //  usa: QUALSIASI mercato sospeso a quell'istante). Allineato agli indici della timeline.
+    const suspended = useMemo(() => {
+        const matchOddsIds = markets.filter(m => (m.market_type || '').toUpperCase() === 'MATCH_ODDS').map(m => m.market_id);
+        return timeline.map(step => {
+            if (matchOddsIds.length > 0) {
+                return matchOddsIds.some(id => statusAtTs(framesByMarket.get(id), step.ts) === 'SUSPENDED');
+            }
+            for (const arr of framesByMarket.values()) {
+                if (statusAtTs(arr, step.ts) === 'SUSPENDED') return true;
+            }
+            return false;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [timeline, framesByMarket, markets]);
+
+    // ---- categorizzazione mercati in tab ----
+    const categorized = useMemo(() => {
+        const byCat = new Map<CatKey, typeof markets>();
+        for (const m of markets) {
+            const k = categoryOf(m.market_type);
+            const arr = byCat.get(k) ?? [];
+            arr.push(m);
+            byCat.set(k, arr);
+        }
+        // ordinamento: Over/Under e First Half per linea ASC; gli altri restano per sort_priority.
+        for (const [k, arr] of byCat) {
+            if (k === 'OVER_UNDER' || k === 'FIRST_HALF') {
+                arr.sort((a, b) => lineOf(a.market_type) - lineOf(b.market_type));
+            }
+        }
+        return byCat;
+    }, [markets]);
+
+    // tab presenti, nell'ordine canonico, solo categorie con >=1 mercato.
+    const presentCategories = useMemo(
+        () => CATEGORIES.filter(c => (categorized.get(c.key)?.length ?? 0) > 0),
+        [categorized],
+    );
+    // categoria attiva "sicura": se quella selezionata non è presente, ripiega sulla prima.
+    const activeCat: CatKey = presentCategories.some(c => c.key === activeCategory)
+        ? activeCategory
+        : (presentCategories[0]?.key ?? 'MATCH_ODDS');
+    const activeMarkets = categorized.get(activeCat) ?? [];
+
+    // ---- contesto esito: partita finita = fine del replay (ultimo frame, mercati
+    // chiusi). NON usiamo "minuto>=90": col recupero si settlerebbero in anticipo i
+    // mercati a fine-gara (Match Odds/Under) mentre possono ancora entrare gol. ----
+    const finished = safeIndex >= maxIndex;
     const ctx: SettleCtx = { home: currentScore.home, away: currentScore.away, finished };
 
     // valutazione per-mercato: P&L DEFINITIVO se l'esito è deciso, altrimenti cash-out.
     const marketEval = (m: typeof markets[number]) => settleOrCashOut(
         {
-            bets: bets.filter(b => b.marketId === m.market_id),
+            bets: bets.filter(b => b.marketId === m.market_id && !b.closed),
             ladder: currentLadder(m.market_id),
             selectionIds: m.selections.map(s => s.selection_id),
             market: { market_type: m.market_type, selections: m.selections },
@@ -192,7 +335,7 @@ export default function MatchReplay() {
         if (!replay) return realizedPnl;
         const evals: MarketSettleEval[] = markets
             .map(m => ({
-                bets: bets.filter(b => b.marketId === m.market_id),
+                bets: bets.filter(b => b.marketId === m.market_id && !b.closed),
                 ladder: currentLadder(m.market_id),
                 selectionIds: m.selections.map(s => s.selection_id),
                 market: { market_type: m.market_type, selections: m.selections },
@@ -207,17 +350,18 @@ export default function MatchReplay() {
     idxRef.current = safeIndex;
     useEffect(() => {
         if (!isPlaying) return;
+        const interval = Math.max(50, Math.round(playSpeed / speedMult));
         const id = setInterval(() => {
             const next = idxRef.current + playDir;
             if (next < 0 || next > maxIndex) { setIsPlaying(false); return; }
             idxRef.current = next;
             setCurrentIndex(next);
-        }, playSpeed);
+        }, interval);
         return () => clearInterval(id);
-    }, [isPlaying, playDir, playSpeed, maxIndex]);
+    }, [isPlaying, playDir, playSpeed, speedMult, maxIndex]);
 
     // ---- controlli ----
-    const togglePlay = () => { setPlayDir(1); setPlaySpeed(PLAY_NORMAL_MS); setIsPlaying(p => !p); };
+    const togglePlay = () => { setPlayDir(1); setIsPlaying(p => !p); };
     const fastForward = () => { setPlayDir(1); setPlaySpeed(PLAY_FAST_MS); setIsPlaying(true); };
     const rewind = () => { setPlayDir(-1); setPlaySpeed(PLAY_FAST_MS); setIsPlaying(true); };
     const stepFwd = () => { setIsPlaying(false); setCurrentIndex(i => Math.min(maxIndex, i + 1)); };
@@ -249,12 +393,26 @@ export default function MatchReplay() {
     const cashOutMarket = (marketId: string) => {
         const m = markets.find(mk => mk.market_id === marketId);
         if (!m) return;
-        if (bets.filter(b => b.marketId === marketId).length === 0) return;
+        if (bets.filter(b => b.marketId === marketId && !b.closed).length === 0) return;
         // blocca il valore corrente del mercato (definitivo se l'esito è deciso,
         // altrimenti cash-out alle quote correnti).
         const locked = marketEval(m).value;
         setRealizedPnl(p => p + locked);
-        setBets(prev => prev.filter(b => b.marketId !== marketId));
+        // le posizioni NON vengono rimosse: vengono marcate `closed` (restano visibili
+        // nei Trades). Il valore bloccato è registrato una sola volta (prima bet del gruppo).
+        setBets(prev => {
+            let first = true;
+            return prev.map(b => {
+                if (b.marketId === marketId && !b.closed) {
+                    // il P&L bloccato del gruppo è registrato SOLO sulla prima bet;
+                    // le altre restano undefined (niente "· £0.00" spurio nei Trades).
+                    const rp = first ? locked : undefined;
+                    first = false;
+                    return { ...b, closed: true, realizedPnl: rp };
+                }
+                return b;
+            });
+        });
     };
 
     // ---- badge Overall Position ----
@@ -320,30 +478,59 @@ export default function MatchReplay() {
                             <p className="text-sm text-muted-foreground">Nessun replay registrato disponibile.</p>
                         </Card>
                     ) : (
-                        <div className="space-y-3">
-                            {list.map(item => (
-                                <Card key={item.event_id} onClick={() => selectReplay(item)}
-                                    className="glass-card border-white/10 p-4 cursor-pointer transition-colors hover:bg-white/[0.04]">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <div className="text-[11px] uppercase tracking-wider text-muted-foreground truncate">
-                                                {item.league_name ?? 'Lega sconosciuta'}
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                <span className="text-emerald-400 font-bold truncate">{item.home_name}</span>
-                                                <span className="text-white/30 text-xs">vs</span>
-                                                <span className="text-amber-400 font-bold truncate">{item.away_name}</span>
-                                            </div>
-                                            <div className="text-[11px] text-muted-foreground mt-1">
-                                                {(() => { try { return new Date(item.open_date).toLocaleString('it'); } catch { return item.open_date; } })()}
-                                            </div>
+                        <div className="space-y-6">
+                            {groupedList.map(group => (
+                                <div key={group.key} className="space-y-3">
+                                    {/* header lega con logo */}
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative w-8 h-8 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                            {/* fallback sempre presente dietro: se il logo manca/404 resta l'icona */}
+                                            <History className="w-4 h-4 text-primary/60" />
+                                            {group.league_id != null && (
+                                                <img
+                                                    src={leagueLogo(group.league_id)}
+                                                    alt={group.league_name ?? ''}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    className="absolute inset-0 m-auto w-6 h-6 object-contain bg-black/40"
+                                                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                                />
+                                            )}
                                         </div>
-                                        <div className="text-right shrink-0">
-                                            <div className="text-sm font-bold tabular-nums text-white">{item.n_markets ?? 0} mercati</div>
-                                            <div className="text-[11px] text-muted-foreground tabular-nums">{item.n_snapshots ?? 0} snapshot</div>
-                                        </div>
+                                        <h2 className="font-heading font-bold text-sm md:text-base text-white truncate">{group.league_name}</h2>
                                     </div>
-                                </Card>
+
+                                    {group.years.map(yg => (
+                                        <div key={yg.year} className="space-y-2 pl-1">
+                                            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-bold">
+                                                {yg.year > 0 ? yg.year : '—'}
+                                            </div>
+                                            <div className="space-y-2">
+                                                {yg.items.map(item => (
+                                                    <Card key={item.event_id} onClick={() => selectReplay(item)}
+                                                        className="glass-card border-white/10 p-4 cursor-pointer transition-colors hover:bg-white/[0.04]">
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 mt-0.5">
+                                                                    <span className="text-emerald-400 font-bold truncate">{item.home_name}</span>
+                                                                    <span className="text-white/30 text-xs">vs</span>
+                                                                    <span className="text-amber-400 font-bold truncate">{item.away_name}</span>
+                                                                </div>
+                                                                <div className="text-[11px] text-muted-foreground mt-1">
+                                                                    {(() => { try { return new Date(item.open_date).toLocaleString('it'); } catch { return item.open_date; } })()}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right shrink-0">
+                                                                <div className="text-sm font-bold tabular-nums text-white">{item.n_markets ?? 0} mercati</div>
+                                                                <div className="text-[11px] text-muted-foreground tabular-nums">{item.n_snapshots ?? 0} snapshot</div>
+                                                            </div>
+                                                        </div>
+                                                    </Card>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             ))}
                         </div>
                     )
@@ -390,15 +577,55 @@ export default function MatchReplay() {
                                 onFastForward={fastForward}
                                 onSkipEnd={skipEnd}
                             />
+                            {/* moltiplicatore velocità x1..x5 */}
+                            <div className="flex items-center justify-center gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Velocità</span>
+                                <div className="flex items-center gap-1">
+                                    {SPEED_OPTIONS.map(s => (
+                                        <button
+                                            key={s}
+                                            onClick={() => setSpeedMult(s)}
+                                            className={`px-2.5 py-1 rounded-md text-xs font-bold tabular-nums border transition-colors ${
+                                                speedMult === s
+                                                    ? 'bg-primary text-black border-primary'
+                                                    : 'border-white/10 text-muted-foreground hover:text-white'
+                                            }`}
+                                        >
+                                            x{s}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                             <TimelineSlider
                                 min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
+                                suspended={suspended}
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>
 
-                        {/* griglia mercati */}
+                        {/* menu categorie mercato (tab) */}
+                        {presentCategories.length > 0 && (
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+                                {presentCategories.map(c => (
+                                    <button
+                                        key={c.key}
+                                        onClick={() => setActiveCategory(c.key)}
+                                        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+                                            activeCat === c.key
+                                                ? 'bg-primary text-black border-primary'
+                                                : 'border-white/10 text-muted-foreground hover:text-white'
+                                        }`}
+                                    >
+                                        {c.label}
+                                        <span className="ml-1 opacity-60 tabular-nums">{categorized.get(c.key)?.length ?? 0}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* griglia mercati (solo categoria attiva) */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {markets.map(m => {
+                            {activeMarkets.map(m => {
                                 const ev = marketEval(m);
                                 return (
                                     <MarketPanel
@@ -407,12 +634,13 @@ export default function MatchReplay() {
                                         ladder={currentLadder(m.market_id)}
                                         stake={getStake(m.market_id)}
                                         onStakeChange={(n) => setStakes(prev => ({ ...prev, [m.market_id]: n }))}
-                                        bets={bets.filter(b => b.marketId === m.market_id)}
+                                        bets={bets.filter(b => b.marketId === m.market_id && !b.closed)}
                                         onPlaceBet={placeBet(m)}
                                         onCashOut={() => cashOutMarket(m.market_id)}
                                         marketValue={ev.value}
                                         settled={ev.settled}
                                         winnerId={ev.winnerId}
+                                        status={currentStatus(m.market_id)}
                                     />
                                 );
                             })}

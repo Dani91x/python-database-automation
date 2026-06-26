@@ -33,6 +33,7 @@ def register_follow(
     fixture_id: Optional[int] = None,
     watchlist_id: Optional[int] = None,
     league_name: Optional[str] = None,
+    league_id: Optional[int] = None,
     status: str = "PENDING",
 ) -> None:
     sb = get_supabase_client()
@@ -41,6 +42,7 @@ def register_follow(
         "fixture_id": fixture_id,
         "watchlist_id": watchlist_id,
         "league_name": league_name,
+        "league_id": league_id,
         "home_name": home_name,
         "away_name": away_name,
         "open_date": open_date,

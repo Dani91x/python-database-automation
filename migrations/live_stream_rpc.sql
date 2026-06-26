@@ -79,6 +79,7 @@ BEGIN
         SELECT jsonb_build_object(
                  'event_id',    f.event_id,
                  'fixture_id',  f.fixture_id,
+                 'league_id',   f.league_id,
                  'league_name', f.league_name,
                  'home_name',   f.home_name,
                  'away_name',   f.away_name,
