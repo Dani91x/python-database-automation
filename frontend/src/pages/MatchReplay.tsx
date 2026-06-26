@@ -16,6 +16,8 @@ import { PlaybackControls } from '@/components/replay/PlaybackControls';
 import { TimelineSlider } from '@/components/replay/TimelineSlider';
 import { MarketPanel } from '@/components/replay/MarketPanel';
 import { TradesPanel } from '@/components/replay/TradesPanel';
+import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
+import { ValidationCard } from '@/components/replay/ValidationCard';
 import {
     fetchReplayList, fetchReplay,
     type ReplayItem, type ReplayData, type Frame,
@@ -24,6 +26,11 @@ import {
     formatGbp, settleOrCashOut, overallSettled,
     type SimBet, type BetSide, type LadderMap, type SettleCtx, type MarketSettleEval,
 } from '@/lib/replay-pnl';
+import { buildSnapshots } from '@/lib/opportunities/snapshot';
+import { runDetectors, DEFAULT_OPP_CONFIG } from '@/lib/opportunities/engine';
+import { harnessDetectors, validateFromDetections } from '@/lib/opportunities/validate';
+import { matchedStake } from '@/lib/opportunities/fill';
+import type { Opportunity } from '@/lib/opportunities/types';
 
 const PLAY_NORMAL_MS = 1000;
 const PLAY_FAST_MS = 300;
@@ -208,19 +215,21 @@ export default function MatchReplay() {
         return map;
     }, [replay]);
 
-    // ladder corrente di un mercato = ultimo frame con ts <= currentTs.
-    // bisect-right sui frame ordinati per ts → O(log n) per tick di playback.
-    const currentLadder = (marketId: string): LadderMap | undefined => {
+    // ladder di un mercato a un dato ts = ultimo frame con frame.ts <= ts.
+    // bisect-right sui frame ordinati per ts → O(log n).
+    const ladderAtTs = (marketId: string, ts: string): LadderMap | undefined => {
         const arr = framesByMarket.get(marketId);
-        if (!arr || arr.length === 0 || !currentTs) return undefined;
-        let lo = 0, hi = arr.length; // cerchiamo il primo indice con ts > currentTs
+        if (!arr || arr.length === 0 || !ts) return undefined;
+        let lo = 0, hi = arr.length; // primo indice con ts > target
         while (lo < hi) {
             const mid = (lo + hi) >> 1;
-            if (arr[mid].ts <= currentTs) lo = mid + 1; else hi = mid;
+            if (arr[mid].ts <= ts) lo = mid + 1; else hi = mid;
         }
         const found: Frame | undefined = lo > 0 ? arr[lo - 1] : undefined;
         return found?.ladder;
     };
+    // ladder corrente di un mercato = ultimo frame con ts <= currentTs.
+    const currentLadder = (marketId: string): LadderMap | undefined => ladderAtTs(marketId, currentTs);
 
     // status di un mercato a un dato ts = status dell'ultimo frame con ts <= ts (bisect).
     const statusAtTs = (arr: Frame[] | undefined, ts: string): string | null => {
@@ -348,6 +357,75 @@ export default function MatchReplay() {
         );
     }, [replay]);
 
+    // ========================================================================
+    // MOTORE OPPORTUNITÀ — snapshot a bucket 10s (stessa granularità della timeline),
+    // detection completa per snapshot (memoizzata), marker arbitraggi sulla barra,
+    // e Report di validazione su tutta la partita.
+    // ========================================================================
+    const OPP_CFG = DEFAULT_OPP_CONFIG; // stake 100, minProfitPct 0.5, comm 5%, delay 6s
+
+    const snapshots = useMemo(
+        () => (replay ? buildSnapshots(replay, TIMELINE_BUCKET_MS) : []),
+        [replay],
+    );
+
+    // detection completa (Opportunity[]) per ogni snapshot; i factory tier1 ricevono
+    // lo storico = snapshot precedenti. Una sola passata per replay (memoizzata),
+    // con storico INCREMENTALE (push dopo la detection) → O(n), niente slice(0,i).
+    const detectionsPerSnap = useMemo<Opportunity[][]>(
+        () => {
+            const history: typeof snapshots = [];
+            const out: Opportunity[][] = [];
+            for (const s of snapshots) {
+                out.push(runDetectors(s, harnessDetectors(history), OPP_CFG));
+                history.push(s);
+            }
+            return out;
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [snapshots],
+    );
+
+    // indice della snapshot corrispondente al ts corrente (ultima con ts <= currentTs).
+    const curSnapIdx = useMemo(() => {
+        if (!currentTs || snapshots.length === 0) return -1;
+        const cur = new Date(currentTs).getTime();
+        let idx = -1;
+        for (let i = 0; i < snapshots.length; i++) {
+            if (new Date(snapshots[i].ts).getTime() <= cur) idx = i; else break;
+        }
+        return idx;
+    }, [snapshots, currentTs]);
+
+    const currentOpps = curSnapIdx >= 0 ? (detectionsPerSnap[curSnapIdx] ?? []) : [];
+
+    // marker degli istanti con un arbitraggio rilevato (rombi verdi sulla barra).
+    const arbMarkers = useMemo(() => {
+        if (snapshots.length === 0 || timeline.length === 0) return [];
+        const firstTs = new Date(timeline[0].ts).getTime();
+        const lastTs = new Date(timeline[maxIndex].ts).getTime();
+        const span = lastTs - firstTs;
+        const out: { pctLeft: number; minute: number | null; label: string }[] = [];
+        for (let i = 0; i < snapshots.length; i++) {
+            const arb = detectionsPerSnap[i]?.find(o => o.tier === 'arb');
+            if (!arb) continue;
+            const t = new Date(snapshots[i].ts).getTime();
+            if (span > 0 && t < firstTs) continue; // pre-kickoff
+            const p = span > 0 ? (t - firstTs) / span : 0;
+            out.push({ pctLeft: Math.min(Math.max(p, 0), 1), minute: snapshots[i].minute, label: arb.title });
+        }
+        return out;
+    }, [snapshots, detectionsPerSnap, timeline, maxIndex]);
+
+    // Report di validazione (eseguibili vs teoriche, % media, per fase).
+    // Riusa snapshots + detectionsPerSnap già calcolati → nessuna seconda passata
+    // di detection né ricostruzione delle snapshot.
+    const validationReport = useMemo(
+        () => (snapshots.length > 0 ? validateFromDetections(snapshots, detectionsPerSnap, OPP_CFG, TIMELINE_BUCKET_MS) : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [snapshots, detectionsPerSnap],
+    );
+
     // ---- SOSPENSIONI sulla barra: per ogni step della timeline, MATCH_ODDS sospeso?
     // (ultimo frame MATCH_ODDS con ts <= step.ts === 'SUSPENDED'; se non c'è MATCH_ODDS,
     //  usa: QUALSIASI mercato sospeso a quell'istante). Allineato agli indici della timeline.
@@ -452,10 +530,24 @@ export default function MatchReplay() {
 
     // ---- gestione bet ----
     const getStake = (marketId: string) => stakes[marketId] ?? 100;
+    // Piazzamento REALISTICO: lo stake abbinato = liquidità disponibile nel book al
+    // prezzo scelto (fill.ts). In-play si applica il RITARDO Betfair (~delaySec): la
+    // bet si matcha contro il book DOPO il ritardo → può essere parziale o non
+    // abbinarsi se il prezzo è scappato. Il P&L (replay-pnl) usa lo stake abbinato.
     const placeBet = (m: { market_id: string; market_name: string | null; market_type: string | null }) =>
         (selectionId: number, selectionName: string, side: BetSide, price: number) => {
-            const stake = getStake(m.market_id);
-            if (stake <= 0 || price <= 1) return;
+            const requested = getStake(m.market_id);
+            if (requested <= 0 || price <= 1) return;
+            // pre-match → match immediato; in-play (dal kickoff, minuto 0 incluso) →
+            // match al book a +delaySec (ritardo Betfair).
+            const inplay = currentMinute != null && currentMinute >= 0;
+            const matchTs = inplay && currentTs
+                ? new Date(new Date(currentTs).getTime() + OPP_CFG.delaySec * 1000).toISOString()
+                : currentTs;
+            const matchLadder = ladderAtTs(m.market_id, matchTs) ?? currentLadder(m.market_id);
+            const entry = matchLadder?.[String(selectionId)];
+            const levels = side === 'back' ? entry?.back : entry?.lay;
+            const matched = matchedStake(levels, price, requested, side);
             setBets(prev => [...prev, {
                 id: uid(),
                 marketId: m.market_id,
@@ -464,7 +556,8 @@ export default function MatchReplay() {
                 marketName: m.market_name || m.market_type || 'Mercato',
                 side,
                 odds: price,
-                stake,
+                stake: matched,
+                requestedStake: requested,
                 minute: currentMinute,
             }]);
         };
@@ -681,9 +774,18 @@ export default function MatchReplay() {
                                 min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
                                 suspended={suspended}
                                 events={timelineEvents.filter(m => !currentTs || m.ts <= currentTs)}
+                                arbMarkers={arbMarkers}
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>
+
+                        {/* card Validazione (collassabile): prova del motore su dati reali */}
+                        {validationReport && validationReport.totalOpportunities > 0 && (
+                            <ValidationCard report={validationReport} />
+                        )}
+
+                        {/* OPPORTUNITÀ rilevate per la snapshot corrente (card amichevoli) */}
+                        <OpportunitaPanel opportunities={currentOpps} />
 
                         {/* menu categorie mercato (tab) */}
                         {presentCategories.length > 0 && (

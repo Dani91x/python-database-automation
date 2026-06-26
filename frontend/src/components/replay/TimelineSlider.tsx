@@ -16,6 +16,13 @@ export interface TimelineEventMarker {
     label: string;             // descrizione (tooltip)
 }
 
+// Marker di un'OPPORTUNITÀ di arbitraggio lungo la track (rombo verde).
+export interface TimelineArbMarker {
+    pctLeft: number;        // 0..1 — posizione lungo la track
+    minute: number | null;
+    label: string;          // descrizione (tooltip)
+}
+
 export interface TimelineSliderProps {
     min: number;          // 0
     max: number;          // timeline.length - 1
@@ -24,6 +31,7 @@ export interface TimelineSliderProps {
     onChange: (v: number) => void;
     suspended?: boolean[]; // allineato agli indici della timeline: true = mercato SOSPESO a quell'istante
     events?: TimelineEventMarker[]; // marker eventi (gol, cartellini, angoli, …)
+    arbMarkers?: TimelineArbMarker[]; // istanti con un arbitraggio rilevato (rombi verdi)
 }
 
 // Render del singolo marker-icona (sopra la track, non blocca la drag).
@@ -45,10 +53,11 @@ function EventIcon({ kind }: { kind: string }) {
     return <span className="block w-1.5 h-1.5 rounded-full bg-white/70" />;
 }
 
-export function TimelineSlider({ min, max, value, minute, onChange, suspended, events }: TimelineSliderProps) {
+export function TimelineSlider({ min, max, value, minute, onChange, suspended, events, arbMarkers }: TimelineSliderProps) {
     const span = Math.max(1, max - min);
     const pct = ((value - min) / span) * 100;
     const steps = (max - min) + 1; // numero di bucket della timeline
+    const hasArb = !!arbMarkers?.length;
 
     const hasGoal = !!events?.some(e => e.kind === 'goal');
     const hasYellow = !!events?.some(e => e.kind === 'yellow');
@@ -93,6 +102,18 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                     )}
                 </div>
 
+                {/* marker ARBITRAGGI sotto la track (rombi verdi, non bloccano la drag) */}
+                {arbMarkers && arbMarkers.map((m, i) => (
+                    <div
+                        key={`arb-${i}`}
+                        className="absolute -translate-x-1/2 z-10 pointer-events-none"
+                        style={{ left: `${Math.min(Math.max(m.pctLeft, 0), 1) * 100}%`, bottom: '0px' }}
+                        title={`${m.minute != null ? `${m.minute}' ` : ''}${m.label}`}
+                    >
+                        <span className="block w-2 h-2 rotate-45 bg-emerald-400 border border-emerald-200/60 shadow shadow-emerald-500/40" />
+                    </div>
+                ))}
+
                 {/* knob circolare con minuto */}
                 <div
                     className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-secondary text-black
@@ -117,8 +138,13 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
             </div>
 
             {/* legenda eventi (solo se presenti) */}
-            {hasLegend && (
+            {(hasLegend || hasArb) && (
                 <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-muted-foreground">
+                    {hasArb && (
+                        <span className="inline-flex items-center gap-1">
+                            <span className="inline-block w-2 h-2 rotate-45 bg-emerald-400 border border-emerald-200/60" /> Arbitraggio
+                        </span>
+                    )}
                     {hasGoal && <span className="inline-flex items-center gap-1">⚽ Gol</span>}
                     {hasYellow && (
                         <span className="inline-flex items-center gap-1">

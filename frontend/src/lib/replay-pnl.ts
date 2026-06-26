@@ -33,7 +33,8 @@ export interface SimBet {
     marketName: string;
     side: BetSide;
     odds: number;        // quota decimale a cui è stata piazzata
-    stake: number;       // stake del backer (per lay = backer's stake)
+    stake: number;       // stake EFFETTIVAMENTE abbinato (backer's stake) → base del P&L
+    requestedStake?: number; // stake richiesto dall'utente (se > stake = fill PARZIALE)
     minute: number | null;
     // --- post cash-out (solo in-memory, finché la pagina resta aperta) ---
     closed?: boolean;       // true = posizione chiusa con cash-out (resta visibile, esclusa dai calcoli aperti)

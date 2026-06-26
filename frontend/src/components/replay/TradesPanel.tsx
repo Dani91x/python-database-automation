@@ -43,6 +43,8 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                             {bets.map(b => {
                                 const amount = b.stake * (b.odds - 1);
                                 const closed = !!b.closed;
+                                const partial = b.requestedStake != null && b.requestedStake - b.stake > 1e-6;
+                                const unmatched = b.stake <= 1e-9;
                                 return (
                                     <tr key={b.id} className={`border-b border-white/5 ${closed ? 'opacity-45' : ''}`}>
                                         <td className="px-3 py-2 tabular-nums text-muted-foreground">{b.minute != null ? `${b.minute}'` : '—'}</td>
@@ -68,7 +70,22 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                             <span className={`uppercase text-[10px] font-bold ${b.side === 'lay' ? 'text-pink-300' : 'text-blue-300'}`}>{b.side}</span>
                                         </td>
                                         <td className="px-2 py-2 text-right tabular-nums text-white/80">{b.odds.toFixed(2)}</td>
-                                        <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{formatGbp(b.stake)}</td>
+                                        <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">
+                                            {unmatched ? (
+                                                <span className="text-amber-400" title="Nessun abbinamento: liquidità insufficiente al prezzo">
+                                                    non abbinato
+                                                </span>
+                                            ) : (
+                                                <>
+                                                    {formatGbp(b.stake)}
+                                                    {partial && (
+                                                        <span className="block text-[9px] text-amber-400" title="Fill parziale per liquidità limitata">
+                                                            abbinato di {formatGbp(b.requestedStake!)}
+                                                        </span>
+                                                    )}
+                                                </>
+                                            )}
+                                        </td>
                                         <td className={`px-3 py-2 text-right tabular-nums ${b.side === 'lay' ? 'text-red-400' : 'text-emerald-400'}`}>
                                             {formatGbp(amount)}
                                         </td>
