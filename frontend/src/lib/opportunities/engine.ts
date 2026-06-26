@@ -4,6 +4,7 @@
 // tier (arb > low > directional) e profitto decrescente, dedup per type+legs.
 // ============================================================================
 import type { Detector, Opportunity, OppConfig, RiskTier, Snapshot, Leg } from './types';
+import { isExecutableNow } from './tradeable';
 
 // Config di default del motore.
 export const DEFAULT_OPP_CONFIG: OppConfig = {
@@ -36,10 +37,14 @@ export function opportunitySignature(o: Opportunity): string {
  * runDetectors — esegue i detector e produce la lista finale ordinata e deduplicata.
  *
  * 1. concat di tutti gli output
- * 2. filtro: per tier 'arb' tieni solo profitPct >= minProfitPct (gli altri tier
+ * 2. GATE "SPECCHIO DELLA REALTÀ" (isExecutableNow): scarta ogni opportunità i cui
+ *    mercati non siano OPEN o che abbia anche UNA sola gamba senza controparte
+ *    reale (matchedStake>0). È la difesa centrale: nessun detector può mostrare
+ *    un'opportunità non piazzabile (mercato sospeso, prezzo fantasma, "abbinato £0").
+ * 3. filtro: per tier 'arb' tieni solo profitPct >= minProfitPct (gli altri tier
  *    passano: low/directional non sono arbitraggi garantiti)
- * 3. ordina per tier (arb>low>directional), poi profit desc
- * 4. dedup per (type + firma gambe), tenendo la PRIMA occorrenza (già la migliore
+ * 4. ordina per tier (arb>low>directional), poi profit desc
+ * 5. dedup per (type + firma gambe), tenendo la PRIMA occorrenza (già la migliore
  *    dopo l'ordinamento)
  */
 export function runDetectors(
@@ -54,7 +59,10 @@ export function runDetectors(
     }
 
     const filtered = all.filter((o) =>
-        o.tier === 'arb' ? o.profitPct >= cfg.minProfitPct : true,
+        // GATE realtà: mercati OPEN + controparte reale su ogni gamba mostrata.
+        isExecutableNow(snap, o)
+        // soglia profitto solo per gli arbitraggi.
+        && (o.tier === 'arb' ? o.profitPct >= cfg.minProfitPct : true),
     );
 
     filtered.sort((a, b) => {

@@ -2,10 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { runDetectors, DEFAULT_OPP_CONFIG, TIER_ORDER, opportunitySignature } from './engine';
 import type { Detector, Opportunity, Snapshot, RiskTier, Leg } from './types';
 
+// Il gate "specchio della realtà" del motore richiede mercato OPEN + controparte
+// reale su ogni gamba: la snapshot espone m1 OPEN (le gambe di default usano m1 e
+// hanno matchedStake>0), così questi test isolano filtro/ordinamento/dedup.
 const snap: Snapshot = {
     ts: '2026-01-01T00:00:00.000Z',
     minute: 1, scoreHome: 0, scoreAway: 0,
-    markets: [], state: {},
+    markets: [],
+    state: { m1: { market_id: 'm1', market_type: 'MATCH_ODDS', status: 'OPEN', ladder: {} } },
 };
 
 function leg(over: Partial<Leg> = {}): Leg {

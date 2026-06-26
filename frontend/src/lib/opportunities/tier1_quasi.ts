@@ -23,12 +23,13 @@
 import type {
     Detector, Opportunity, OppConfig, Snapshot, MarketLite, MarketState, SelLite, Leg,
 } from './types';
-import { matchedStake, fillRatio, netWin } from './fill';
+import { matchedStake, netWin } from './fill';
 import {
     bestBack, bestLay, ltp,
     isMatchOdds, isOverUnder, isCorrectScore, isOver,
     matchOddsTriple, selectionMatchesScore,
 } from './helpers';
+import { isMarketOpen, tradeableSelection } from './tradeable';
 
 // ----------------------------------------------------------------- costanti
 // Spike tipico della quota del pareggio/scorer quando arriva un gol (per stima
@@ -143,12 +144,16 @@ export function dutchLayField(
 // --------------------------------------------------------------- helper book
 interface MV { lite: MarketLite; state: MarketState }
 
+// Itera i mercati che soddisfano `pred` E sono OPEN (specchio della realtà: i
+// mercati SOSPESI/CHIUSI non sono operabili → niente opportunità su prezzi non
+// abbinabili). Il gate centrale del motore lo riconferma sulle gambe.
 function marketsBy(snap: Snapshot, pred: (m: MarketLite) => boolean): MV[] {
     const out: MV[] = [];
     for (const lite of snap.markets) {
         if (!pred(lite)) continue;
         const state = snap.state[lite.market_id];
         if (!state) continue;
+        if (!isMarketOpen(state)) continue;
         out.push({ lite, state });
     }
     return out;
@@ -220,26 +225,29 @@ export function thetaDecay(history: Snapshot[] = []): Detector {
             const trip = matchOddsTriple(lite.selections);
             const draw = trip.draw;
             if (!draw) continue;
-            const B = bestBack(state.ladder, draw.selection_id);
-            if (B == null || B <= 1) continue;
+            // mercato REALE a due lati (OPEN + best back/lay con size + spread sano).
+            const book = tradeableSelection(state, draw.selection_id);
+            if (!book) continue;
+            const B = book.bestBack;
             const prev = prevBack(history, lite.market_id, draw.selection_id);
             if (!prev) continue;
             // time-decay = nessun gol nuovo dal frame precedente + quota in calo.
             if (prev.total !== currentTotal) continue;
             const decay = prev.price - B;
             if (decay < DEFAULT_MIN_DECAY) continue;
-            const L = Math.max(1.01, B - decay);
-            if (!(L < B)) continue;
+            // target di uscita LIMITATO: ulteriore passo di calo plausibile, mai oltre
+            // il 10% sotto la quota attuale (no proiezioni fantasma).
+            const L = Math.max(B * 0.9, B - decay);
+            if (!(L > 1.01) || !(L < B)) continue;
 
             const matchedBack = matchedStake(levels(state, draw.selection_id, 'back'), B, cfg.stake, 'back');
             if (matchedBack <= 0) continue;
-            const lock = backLayLock(matchedBack, B, L, cfg.commission);
-            if (lock.profit <= 0) continue;
-            const layFill = fillRatio(levels(state, draw.selection_id, 'lay'), L, lock.layStake, 'lay');
-            const backFill = matchedBack / cfg.stake;
-            const minFill = Math.min(backFill, Math.max(layFill, 0));
-            const profitPct = r6((lock.profit / matchedBack) * 100);
-            const confidence = r6(clamp(0.3 + 0.4 * minFill, 0.3, 0.8));
+            // profitto PROIETTATO di greening (back ora @B, lay al target @L): l'uscita
+            // è futura → NON è una gamba mostrata (a L<mercato non c'è controparte ORA).
+            const projProfit = r6(netWin((matchedBack * (B - L)) / L, cfg.commission));
+            if (projProfit <= 0) continue;
+            const profitPct = r6((projProfit / matchedBack) * 100);
+            const confidence = r6(clamp(0.3 + 0.3 * (matchedBack / cfg.stake), 0.3, 0.6));
 
             // stima costo di hedge se arriva un gol (stop-loss): BANCO a B*spike.
             const G = B * GOAL_SPIKE_FACTOR;
@@ -247,23 +255,21 @@ export function thetaDecay(history: Snapshot[] = []): Detector {
 
             out.push({
                 id: `theta_decay:${lite.market_id}:${draw.selection_id}:${snap.ts}`,
-                tier: 'low',
+                tier: 'directional',
                 type: 'theta_decay',
                 title: 'Time-decay sul Pareggio (partita senza gol)',
-                instruction: `PUNTA il Pareggio ${gbp(matchedBack)} @${B} ora; appena la quota cala BANCA `
-                    + `${gbp(lock.layStake)} @${L} → profitto atteso ${gbp(lock.profit)}.`,
+                instruction: `PUNTA il Pareggio ${gbp(matchedBack)} @${r6(B)} ora; se la quota cala BANCA `
+                    + `al target @${r6(L)} → profitto atteso ${gbp(projProfit)}.`,
                 legs: [
                     mkLeg(lite, draw, 'back', B, matchedBack, matchedBack),
-                    mkLeg(lite, draw, 'lay', L, lock.layStake,
-                        matchedStake(levels(state, draw.selection_id, 'lay'), L, lock.layStake, 'lay')),
                 ],
-                profit: lock.profit,
+                profit: projProfit,
                 profitPct,
                 confidence,
-                explanation: `Quota Pareggio scesa da ${prev.price} a ${B} senza gol: decadimento temporale `
-                    + `${decay.toFixed(2)}. Profitto NON garantito: dipende dal completamento del calo.`,
+                explanation: `Quota Pareggio scesa da ${prev.price} a ${r6(B)} senza gol: decadimento temporale `
+                    + `${decay.toFixed(2)}. Segnale DIREZIONALE, NON garantito: profitto solo se il calo prosegue fino a @${r6(L)}.`,
                 phase: phaseFromMinute(snap.minute),
-                exitPlan: `Chiudi BANCANDO @${L}. STOP se arriva un gol: la quota schizza (~${G.toFixed(2)}), `
+                exitPlan: `Chiudi BANCANDO @${r6(L)}. STOP se arriva un gol: la quota schizza (~${G.toFixed(2)}), `
                     + `costo di hedge ~${gbp(hedge.gross)}.`,
             });
         }
@@ -363,17 +369,19 @@ export function layTheFieldCorrectScore(opts?: { minLayPrice?: number }): Detect
             // stake DESIDERATI ma su quelli REALMENTE abbinabili (matched). Con
             // liquidità sottile su una selezione, il return crolla: si ricalcola
             // bestReturn/worstLiability dagli stake effettivi (Si_eff = matched).
+            // SPECCHIO DELLA REALTÀ: si tengono SOLO le selezioni con controparte
+            // reale (matched > 0) — niente gambe "abbinato £0" senza chi banca contro.
             const eff = picks.map((p, i) => ({
                 p,
                 stake: dl.stakes[i],
                 matched: matchedStake(levels(state, p.sel.selection_id, 'lay'), p.Ol, dl.stakes[i], 'lay'),
-            }));
+            })).filter((x) => x.matched > 0);
+            if (eff.length < 2) continue; // un dutch-lay su <2 selezioni reali non ha senso
             const sumEff = eff.reduce((s, x) => s + x.matched, 0);
             const bestReturn = r6(netWin(sumEff, cfg.commission));
             let worst = 0;
             let anyWorst = false;
             for (const x of eff) {
-                if (!(x.matched > 0)) continue;
                 // esce lo score x: incassi gli altri stake, paghi la liability di x.
                 const grossJ = (sumEff - x.matched) - x.matched * (x.p.Ol - 1);
                 if (!anyWorst || grossJ < worst) { worst = grossJ; anyWorst = true; }
@@ -383,10 +391,10 @@ export function layTheFieldCorrectScore(opts?: { minLayPrice?: number }): Detect
 
             const legs: Leg[] = eff.map((x) => mkLeg(lite, x.p.sel, 'lay', x.p.Ol, x.stake, x.matched));
 
-            const sumImplied = picks.reduce((s, p) => s + 1 / p.Ol, 0);
+            const sumImplied = eff.reduce((s, x) => s + 1 / x.p.Ol, 0);
             const confidence = r6(clamp(1 - sumImplied, 0.5, 0.97));
             const profitPct = r6((bestReturn / (-worst)) * 100);
-            const list = picks.map((p) => `${p.sel.name}@${p.Ol}`).join(', ');
+            const list = eff.map((x) => `${x.p.sel.name}@${x.p.Ol}`).join(', ');
 
             out.push({
                 id: `lay_field_cs:${lite.market_id}:${snap.ts}`,
@@ -489,42 +497,47 @@ export function backToLay(history: Snapshot[] = []): Detector {
                     continue;
                 }
 
-                // (B) momentum: solo selezioni "direzionali" (favorita MO / Over O/U),
-                // quota in calo nello storico.
+                // (B) momentum: SEGNALE DIREZIONALE (NON un lock). L'uscita (lay più
+                // in basso) è una PROIEZIONE futura: a un prezzo sotto il mercato
+                // attuale NON esiste controparte ORA, quindi NON si mostra come gamba.
+                // Si PUNTA ora su un MERCATO REALE a due lati e il profitto è una
+                // proiezione a un target di calo LIMITATO (no collasso a 1.01).
                 if (!momentumSels.has(sel.selection_id)) continue;
+                const book = tradeableSelection(state, sel.selection_id);
+                if (!book) continue; // niente mercato vero a due lati → non operabile
+                const Bb = book.bestBack;
                 const prev = prevBack(history, lite.market_id, sel.selection_id);
                 if (!prev) continue;
-                const decay = prev.price - B;
+                const decay = prev.price - Bb;
                 if (decay < DEFAULT_MIN_DECAY) continue;
-                const L = Math.max(1.01, 2 * B - prev.price); // estrapola un altro passo di calo
-                if (!(L < B) || L <= 1) continue;
-                const matchedBack = matchedStake(levels(state, sel.selection_id, 'back'), B, cfg.stake, 'back');
+                // target di uscita = un ulteriore passo di calo PLAUSIBILE, mai oltre
+                // il 10% sotto la quota attuale (evita proiezioni fantasma da letture
+                // storiche illiquide tipo 85→5→1.01).
+                const Ltgt = Math.max(Bb * 0.9, Bb - decay);
+                if (!(Ltgt > 1.01) || !(Ltgt < Bb)) continue;
+                const matchedBack = matchedStake(levels(state, sel.selection_id, 'back'), Bb, cfg.stake, 'back');
                 if (matchedBack <= 0) continue;
-                const lock = backLayLock(matchedBack, B, L, cfg.commission);
-                if (lock.profit <= 0) continue;
-                const layFill = fillRatio(levels(state, sel.selection_id, 'lay'), L, lock.layStake, 'lay');
-                const minFill = Math.min(matchedBack / cfg.stake, Math.max(layFill, 0));
-                const confidence = r6(clamp(0.3 + 0.3 * minFill, 0.3, 0.7));
+                const projProfit = r6(netWin((matchedBack * (Bb - Ltgt)) / Ltgt, cfg.commission));
+                if (projProfit <= 0) continue;
+                const confidence = r6(clamp(0.25 + 0.25 * (matchedBack / cfg.stake), 0.25, 0.6));
 
                 out.push({
                     id: `back_to_lay:${lite.market_id}:${sel.selection_id}:${snap.ts}`,
-                    tier: 'low',
+                    tier: 'directional',
                     type: 'back_to_lay',
                     title: 'Back-to-Lay su momentum (quota in calo)',
-                    instruction: `PUNTA ${sel.name} ${gbp(matchedBack)} @${B} ora; quando la quota cala BANCA `
-                        + `${gbp(lock.layStake)} @${L} → profitto atteso ${gbp(lock.profit)}.`,
+                    instruction: `PUNTA ${sel.name} ${gbp(matchedBack)} @${r6(Bb)} ora (quota in calo); `
+                        + `se il calo prosegue, BANCA al target @${r6(Ltgt)} → profitto atteso ${gbp(projProfit)}.`,
                     legs: [
-                        mkLeg(lite, sel, 'back', B, matchedBack, matchedBack),
-                        mkLeg(lite, sel, 'lay', L, lock.layStake,
-                            matchedStake(levels(state, sel.selection_id, 'lay'), L, lock.layStake, 'lay')),
+                        mkLeg(lite, sel, 'back', Bb, matchedBack, matchedBack),
                     ],
-                    profit: lock.profit,
-                    profitPct: r6((lock.profit / matchedBack) * 100),
+                    profit: projProfit,
+                    profitPct: r6((projProfit / matchedBack) * 100),
                     confidence,
-                    explanation: `Quota ${sel.name} scesa da ${prev.price} a ${B} (momentum ${decay.toFixed(2)}). `
-                        + `Lock NON garantito: dipende dal proseguire del calo fino a @${L}.`,
+                    explanation: `Quota ${sel.name} scesa da ${prev.price} a ${r6(Bb)} (momentum ${decay.toFixed(2)}). `
+                        + `Segnale DIREZIONALE, NON garantito: profitto solo se il calo prosegue fino al target @${r6(Ltgt)}.`,
                     phase: phaseFromMinute(snap.minute),
-                    exitPlan: `Chiudi BANCANDO @${L}. STOP se la quota inverte e risale sopra ${B}.`,
+                    exitPlan: `Chiudi BANCANDO @${r6(Ltgt)} (~${gbp(projProfit)}). STOP se la quota inverte e risale sopra ${r6(Bb)}.`,
                 });
             }
         }
@@ -568,6 +581,9 @@ export function meanReversionPostEvent(history: Snapshot[] = []): Detector {
             if (move > -DEFAULT_OVERSHOOT) continue; // overshoot verso il basso insufficiente
             const overshootFrac = Math.abs(move);
 
+            // mercato REALE a due lati: dopo un gol il book può riaprire largo/illiquido.
+            if (!tradeableSelection(state, scorer.selection_id)) continue;
+
             const Bexit = curOdds + DEFAULT_REVERT_FRAC * (preOdds - curOdds);
             if (!(Bexit > Lnow)) continue; // serve rientro sopra la quota di lay attuale
 
@@ -585,11 +601,11 @@ export function meanReversionPostEvent(history: Snapshot[] = []): Detector {
                 type: 'mean_reversion',
                 title: 'Mean-reversion post-gol (fade overreaction)',
                 instruction: `BANCA ${scorer.name} ${gbp(layMatched)} @${Lnow} (reazione eccessiva al gol), `
-                    + `obiettivo PUNTARE @${r6(Bexit)} → profitto atteso ${gbp(lock.profit)}.`,
+                    + `obiettivo PUNTARE al target @${r6(Bexit)} → profitto atteso ${gbp(lock.profit)}.`,
+                // l'uscita (back @Bexit, sopra il mercato attuale) è una PROIEZIONE
+                // futura: niente controparte ORA → NON mostrata come gamba.
                 legs: [
                     mkLeg(lite, scorer, 'lay', Lnow, layMatched, layMatched),
-                    mkLeg(lite, scorer, 'back', r6(Bexit), lock.backStake,
-                        matchedStake(levels(state, scorer.selection_id, 'back'), Bexit, lock.backStake, 'back')),
                 ],
                 profit: lock.profit,
                 profitPct,

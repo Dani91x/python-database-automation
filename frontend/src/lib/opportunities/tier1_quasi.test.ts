@@ -104,34 +104,36 @@ describe('pure math helpers', () => {
 
 // =================================================================== thetaDecay
 describe('thetaDecay', () => {
+    // Libri REALI a due lati (best lay > best back): la quota del Pareggio CALA
+    // (back 3.6 → 3.5). thetaDecay è ora un segnale DIREZIONALE a gamba singola.
     const cur = (): Snapshot => snap({
         markets: [moLite()],
-        state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.5, 500]], lay: [[3.4, 500]] } }) },
+        state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.5, 500]], lay: [[3.55, 500]] } }) },
     });
     const prev = (total = 0): Snapshot => snap({
         scoreHome: total, scoreAway: 0,
         markets: [moLite()],
-        state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.6, 500]], lay: [[3.5, 500]] } }) },
+        state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.6, 500]], lay: [[3.65, 500]] } }) },
     });
 
     it('fires on decaying draw with no new goal', () => {
         const res = thetaDecay([prev()])(cur(), CFG);
         expect(res).toHaveLength(1);
         const o = res[0];
-        expect(o.tier).toBe('low');
+        expect(o.tier).toBe('directional');
         expect(o.type).toBe('theta_decay');
-        expect(o.profit).toBeCloseTo(2.794118, 5);     // backLayLock(100,3.5,3.4).net
+        // target L = max(3.5*0.9, 3.5-0.1) = 3.4 ; netWin(100*(3.5-3.4)/3.4) = 2.794118
+        expect(o.profit).toBeCloseTo(2.794118, 5);
         expect(o.profitPct).toBeCloseTo(2.794118, 5);
-        expect(o.confidence).toBeCloseTo(0.7, 5);       // 0.3 + 0.4*1
+        expect(o.confidence).toBeCloseTo(0.6, 5);       // 0.3 + 0.3*1
+        expect(o.legs).toHaveLength(1);                 // solo l'ingresso (uscita = proiezione futura)
         expect(o.legs[0]).toMatchObject({ side: 'back', price: 3.5, matchedStake: 100 });
-        expect(o.legs[1].side).toBe('lay');
-        expect(o.legs[1].price).toBeCloseTo(3.4, 6);
     });
 
     it('does NOT fire if price did not decay', () => {
         const flat = snap({
             markets: [moLite()],
-            state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.6, 500]], lay: [[3.5, 500]] } }) },
+            state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.6, 500]], lay: [[3.65, 500]] } }) },
         });
         expect(thetaDecay([prev()])(flat, CFG)).toHaveLength(0);
     });
@@ -148,12 +150,12 @@ describe('thetaDecay', () => {
     it('thin liquidity caps matchedStake (30 of 100) → scaled profit & lower confidence', () => {
         const thin = snap({
             markets: [moLite()],
-            state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.5, 30]], lay: [[3.4, 500]] } }) },
+            state: { m1: mkState('m1', 'MATCH_ODDS', { 3: { back: [[3.5, 30]], lay: [[3.55, 500]] } }) },
         });
         const o = thetaDecay([prev()])(thin, CFG)[0];
         expect(o.legs[0].matchedStake).toBeCloseTo(30, 6);
-        expect(o.profit).toBeCloseTo(0.838235, 5);     // backLayLock(30,3.5,3.4).net
-        expect(o.confidence).toBeCloseTo(0.42, 5);      // 0.3 + 0.4*0.3
+        expect(o.profit).toBeCloseTo(0.838235, 5);     // netWin(30*(3.5-3.4)/3.4)
+        expect(o.confidence).toBeCloseTo(0.39, 5);      // 0.3 + 0.3*0.3
     });
 });
 
@@ -286,7 +288,7 @@ describe('backToLay', () => {
         expect(backToLay([])(s, CFG)).toHaveLength(0);
     });
 
-    it('MOMENTUM: favourite shortening 2.1→2.0 → expected back-to-lay (tier low)', () => {
+    it('MOMENTUM: favourite shortening 2.1→2.0 → directional back-to-lay (gamba singola)', () => {
         const prev = snap({
             markets: [moLite()],
             state: { m1: mkState('m1', 'MATCH_ODDS', { 1: { back: [[2.1, 500]], lay: [[2.15, 500]] } }) },
@@ -298,12 +300,12 @@ describe('backToLay', () => {
         const res = backToLay([prev])(cur, CFG);
         const o = res.find((x) => x.type === 'back_to_lay');
         expect(o).toBeDefined();
-        expect(o!.tier).toBe('low');
-        // L = max(1.01, 2*2.0 - 2.1) = 1.9 ; backLayLock(100,2.0,1.9,0.05).net = 9.5/1.9 = 5.0
+        expect(o!.tier).toBe('directional');
+        // target L = max(2.0*0.9, 2.0-0.1) = 1.9 ; netWin(100*(2.0-1.9)/1.9) = 5.0
         expect(o!.profit).toBeCloseTo(5.0, 6);
         expect(o!.profitPct).toBeCloseTo(5.0, 6);
+        expect(o!.legs).toHaveLength(1);                // solo l'ingresso (uscita = proiezione futura)
         expect(o!.legs[0]).toMatchObject({ side: 'back', price: 2.0 });
-        expect(o!.legs[1].price).toBeCloseTo(1.9, 6);
     });
 });
 
@@ -331,9 +333,8 @@ describe('meanReversionPostEvent', () => {
         expect(o.profit).toBeCloseTo(12.69802, 5);
         expect(o.profitPct).toBeCloseTo(12.69802, 5);
         expect(o.confidence).toBeCloseTo(0.52, 5);      // 0.2 + 0.32
+        expect(o.legs).toHaveLength(1);                 // solo l'ingresso (uscita = proiezione futura)
         expect(o.legs[0]).toMatchObject({ side: 'lay', price: 1.75, matchedStake: 100 });
-        expect(o.legs[1].side).toBe('back');
-        expect(o.legs[1].price).toBeCloseTo(2.02, 6);
     });
 
     it('does NOT fire without a goal (no score delta in history)', () => {

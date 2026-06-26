@@ -26,6 +26,7 @@ import { matchedStake } from './fill';
 import { TIER0_DETECTORS } from './tier0_arb';
 import { tier1Detectors } from './tier1_quasi';
 import { orderFlowImbalance, weightOfMoney, spreadScalp } from './tier2_micro';
+import { entryLegs } from './tradeable';
 
 // ----------------------------------------------------------------- tipi report
 export interface ExecCheck {
@@ -120,19 +121,8 @@ export function harnessDetectors(history: Snapshot[]): Detector[] {
     ];
 }
 
-// Tipi di opportunità tier1 le cui gambe sono piazzate SIMULTANEAMENTE (struttura
-// bloccata): l'assicurazione lay-the-draw + 0-0 e il dutch-lay dei correct-score.
-// Per queste l'ingresso richiede TUTTE le gambe, non solo la prima.
-const MULTI_LEG_ENTRY_TYPES = new Set(['ltd_insurance', 'lay_field_cs']);
-
-// Gambe d'INGRESSO (piazzate ORA) di un'opportunità:
-//  - tier 'arb': tutte le gambe (il lock richiede tutte le bet contestualmente);
-//  - strutture simultanee multi-gamba (ltd_insurance / lay_field_cs): tutte le gambe;
-//  - altrimenti: solo la prima (l'azione immediata; l'uscita è un piano futuro).
-function entryLegs(o: Opportunity): Leg[] {
-    if (o.tier === 'arb' || MULTI_LEG_ENTRY_TYPES.has(o.type)) return o.legs;
-    return o.legs.length > 0 ? [o.legs[0]] : [];
-}
+// `entryLegs` (gambe d'ingresso da piazzare ORA) è importato da tradeable.ts —
+// unica fonte condivisa col gate del motore.
 
 // Stake abbinabile per una gamba sullo stato di mercato di una snapshot.
 function legMatchedOn(snap: Snapshot, leg: Leg): number {

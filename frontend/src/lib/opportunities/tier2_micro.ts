@@ -23,6 +23,7 @@
 import type { Detector, Leg, MarketLite, Opportunity, OppConfig, SelLite, Snapshot } from './types';
 import { matchedStake, fillRatio, netWin } from './fill';
 import { bestBack, bestLay, isMatchOdds, isOverUnder, isOver, isDraw } from './helpers';
+import { isMarketOpen, tradeableSelection } from './tradeable';
 
 // ------------------------------------------------------------------ costanti
 // Soglie esportate così i test possono ricalcolare gli stessi valori.
@@ -193,8 +194,10 @@ export const orderFlowImbalance: Detector = (snap: Snapshot, cfg: OppConfig): Op
     for (const marketId of Object.keys(snap.state)) {
         const st = snap.state[marketId];
         if (!st?.ladder) continue;
+        if (!isMarketOpen(st)) continue; // mercato non operabile (SOSPESO/CHIUSO)
         const mkt = mkIdx.get(marketId);
         for (const selId of ladderSelIds(st.ladder)) {
+            if (!tradeableSelection(st, selId)) continue; // mercato reale a due lati + prezzo plausibile
             const e = st.ladder[String(selId)];
             const backSize = e?.back?.[0]?.[1];
             const laySize = e?.lay?.[0]?.[1];
@@ -269,8 +272,10 @@ export const weightOfMoney: Detector = (snap: Snapshot, cfg: OppConfig): Opportu
     for (const marketId of Object.keys(snap.state)) {
         const st = snap.state[marketId];
         if (!st?.ladder) continue;
+        if (!isMarketOpen(st)) continue; // mercato non operabile (SOSPESO/CHIUSO)
         const mkt = mkIdx.get(marketId);
         for (const selId of ladderSelIds(st.ladder)) {
+            if (!tradeableSelection(st, selId)) continue; // mercato reale a due lati + prezzo plausibile
             const e = st.ladder[String(selId)];
             const backVol = sumTopK(e?.back);
             const layVol = sumTopK(e?.lay);
@@ -351,13 +356,14 @@ export function makeMomentumPressure(getPressure?: PressureProvider): Detector {
         for (const marketId of Object.keys(snap.state)) {
             const st = snap.state[marketId];
             if (!st?.ladder) continue;
+            if (!isMarketOpen(st)) continue; // mercato non operabile (SOSPESO/CHIUSO)
             const mkt = mkIdx.get(marketId);
             if (!mkt) continue;
 
             // --- OVER_UNDER: BACK l'Over (un gol accorcia la quota Over).
             if (isOverUnder(mkt)) {
                 const over: SelLite | undefined = mkt.selections.find((s) => isOver(s.name));
-                if (over) {
+                if (over && tradeableSelection(st, over.selection_id)) {
                     const entryPx = bestBack(st.ladder, over.selection_id);
                     if (entryPx != null && entryPx > 1) {
                         const target = tickDown(entryPx, TARGET_TICKS);
@@ -390,7 +396,7 @@ export function makeMomentumPressure(getPressure?: PressureProvider): Detector {
             // --- MATCH_ODDS: LAY il Draw (un gol allunga la quota del Pareggio).
             if (isMatchOdds(mkt)) {
                 const draw: SelLite | undefined = mkt.selections.find((s) => isDraw(s.name));
-                if (draw) {
+                if (draw && tradeableSelection(st, draw.selection_id)) {
                     const entryPx = bestLay(st.ladder, draw.selection_id);
                     if (entryPx != null && entryPx > 1) {
                         const target = tickUp(entryPx, TARGET_TICKS);
@@ -441,8 +447,10 @@ export function makeValueVsModel(getFairProb?: FairProbProvider): Detector {
         for (const marketId of Object.keys(snap.state)) {
             const st = snap.state[marketId];
             if (!st?.ladder) continue;
+            if (!isMarketOpen(st)) continue; // mercato non operabile (SOSPESO/CHIUSO)
             const mkt = mkIdx.get(marketId);
             for (const selId of ladderSelIds(st.ladder)) {
+                if (!tradeableSelection(st, selId)) continue; // mercato reale a due lati + prezzo plausibile
                 const p = getFairProb(snap, marketId, selId);
                 if (p == null || !(p > 0) || !(p < 1)) continue;
                 const oBack = bestBack(st.ladder, selId);
@@ -501,8 +509,10 @@ export const spreadScalp: Detector = (snap: Snapshot, cfg: OppConfig): Opportuni
     for (const marketId of Object.keys(snap.state)) {
         const st = snap.state[marketId];
         if (!st?.ladder) continue;
+        if (!isMarketOpen(st)) continue; // mercato non operabile (SOSPESO/CHIUSO)
         const mkt = mkIdx.get(marketId);
         for (const selId of ladderSelIds(st.ladder)) {
+            if (!tradeableSelection(st, selId)) continue; // mercato reale a due lati + prezzo plausibile
             const e = st.ladder[String(selId)];
             const bb = bestBack(st.ladder, selId);
             const bl = bestLay(st.ladder, selId);
