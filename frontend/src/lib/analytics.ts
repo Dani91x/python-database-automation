@@ -366,6 +366,121 @@ export async function runStrategyRows(id: string, limit = 500, offset = 0): Prom
     return (data ?? []) as StrategyBetRow[];
 }
 
+// ====================== BACKTEST AUTOMATICO (flumine) =======================
+// Backtest UFFICIALE via FlumineSimulation eseguito da un worker locale: la
+// dashboard inserisce una richiesta (request_backtest), segue lo stato in
+// realtime (live_backtest_requests) e, a DONE, carica i risultati aggregati
+// (list_backtest_results). Le metriche derivano SOLO dal settlement flumine.
+export type BacktestMode = 'engine' | 'sandbox';
+export type BacktestStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'ERROR';
+
+export interface BacktestRequestParams {
+    event_ids: string[];
+    mode: BacktestMode;
+    bankroll?: number;
+    min_edge?: number;             // frazionario (0.05 = 5%)
+    rules?: Record<string, unknown>;  // sandbox: campi regola semplici
+}
+
+export interface BacktestRunRequest {
+    id: string;                    // uuid
+    status: BacktestStatus;
+    params: BacktestRequestParams;
+    created_at: string;
+    updated_at: string;
+    error_detail: string | null;
+}
+
+// Riga risultato grezza dall'RPC (list_backtest_results).
+export interface BacktestResultRow {
+    scope: string;
+    grp: string;
+    n_bets: number;
+    n_won: number;
+    hit_rate: number;              // 0..1
+    roi: number;                   // frazionario
+    total_pnl: number;
+    max_drawdown: number;
+    avg_odds: number;
+    metrics: Record<string, unknown>;
+}
+
+// request_backtest(p_params jsonb) -> uuid (id richiesta)
+export async function requestBacktest(params: BacktestRequestParams): Promise<string> {
+    const { data, error } = await supabase.rpc('request_backtest', { p_params: params });
+    if (error) throw new Error(error.message);
+    return data as string;
+}
+
+// list_backtest_runs() -> { rows: BacktestRunRequest[] }
+export async function fetchBacktestRuns(): Promise<BacktestRunRequest[]> {
+    const { data, error } = await supabase.rpc('list_backtest_runs');
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: BacktestRunRequest[] } | BacktestRunRequest[] | null;
+    if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
+// list_backtest_results(p_request_id) -> { rows: BacktestResultRow[] }, mappate
+// sulla forma BacktestRow così che il componente <BacktestResults> le renderizzi.
+export async function fetchBacktestResults(requestId: string): Promise<BacktestRow[]> {
+    const { data, error } = await supabase.rpc('list_backtest_results', { p_request_id: requestId });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: BacktestResultRow[] } | BacktestResultRow[] | null;
+    const rows = Array.isArray(raw) ? raw : (raw?.rows ?? []);
+    return rows.map(mapResultToBacktestRow);
+}
+
+// Adatta una ResultRow flumine alla forma BacktestRow attesa da <BacktestResults>.
+// Campi non disponibili dal settlement flumine (Wilson/CI/no-quota) → null/0.
+function mapResultToBacktestRow(r: BacktestResultRow): BacktestRow {
+    return {
+        grp: r.scope && r.scope !== r.grp ? `${r.scope} · ${r.grp}` : r.grp,
+        n: r.n_bets,
+        n_settled: r.n_bets,        // flumine settla ogni ordine simulato
+        n_hit: r.n_won,
+        hit_rate: r.hit_rate ?? null,
+        wilson_low: null,
+        wilson_high: null,
+        n_priced: r.n_bets,
+        n_unpriced: 0,
+        profit: r.total_pnl ?? null,
+        turnover: r.roi ? (r.total_pnl ?? 0) / r.roi : null,  // turnover ≈ pnl/roi
+        roi: r.roi ?? null,
+        roi_low: null,
+        roi_high: null,
+        avg_odds: r.avg_odds ?? null,
+    };
+}
+
+// Sottoscrizione realtime alla riga di richiesta (stato PENDING→RUNNING→DONE/ERROR).
+export function subscribeBacktestRequest(
+    id: string,
+    cb: (row: BacktestRunRequest | null) => void,
+): () => void {
+    const channel = supabase
+        .channel(`live_backtest_requests:${id}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'live_backtest_requests', filter: `id=eq.${id}` },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as BacktestRunRequest | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+}
+
+export const BACKTEST_STATUS_LABEL: Record<BacktestStatus, string> = {
+    PENDING: 'In coda',
+    RUNNING: 'In esecuzione',
+    DONE: 'Completato',
+    ERROR: 'Errore',
+};
+
 export const STRATEGY_GROUP_OPTIONS = [
     { value: 'market_league', label: 'Per mercato × lega' },
     { value: 'market', label: 'Per mercato' },

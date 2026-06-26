@@ -10,6 +10,15 @@ ENV/
 # Secrets
 .env
 secrets.txt
+# Certificati Betfair (cert login) — MAI in repo pubblica
+*.crt
+*.key
+*.pem
+certs/
+
+# Stream live: firehose grezzo locale (source of truth, NON in repo)
+_live_raw/
+*.raw.jsonl
 
 # Dati di betting privati (storico/stato/calibrazione) — NON in repo pubblica
 Betfair/mm_history.json

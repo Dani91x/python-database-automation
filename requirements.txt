@@ -18,6 +18,11 @@ gspread             # Google Sheets (report / money_management)
 thefuzz             # fuzzy matching nomi squadre/leghe
 python-Levenshtein  # backend veloce per thefuzz
 
+# ── Stream live Betfair (Betfair/stream/*) ───────────────────────────────────
+# flumine porta dietro betfairlightweight (streaming + in_play_service).
+# Eseguito SOLO in locale durante le partite (vedi Betfair/PIANO_STREAM_LIVE.md).
+flumine             # framework streaming/recording (sopra betfairlightweight)
+
 # ── Opzionale / heavy (meta-learner neurale) ─────────────────────────────────
 # L'ensemble degrada con grazia a LogisticRegression se assenti (try/except import).
 # tensorflow

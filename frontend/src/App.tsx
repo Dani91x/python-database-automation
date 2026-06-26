@@ -10,6 +10,8 @@ import Dashboard from "@/pages/Dashboard";
 import Analytics from "@/pages/Analytics";
 import Watchlist from "@/pages/Watchlist";
 import ReportPersonale from "@/pages/ReportPersonale";
+import SeguiLive from "@/pages/SeguiLive";
+import MatchReplay from "@/pages/MatchReplay";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
@@ -58,6 +60,22 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <ReportPersonale />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/segui-live"
+                                element={
+                                    <ProtectedRoute>
+                                        <SeguiLive />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/match-replay"
+                                element={
+                                    <ProtectedRoute>
+                                        <MatchReplay />
                                     </ProtectedRoute>
                                 }
                             />

@@ -7,7 +7,7 @@
 // ============================================================================
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3, ChevronLeft, Filter, RotateCcw, AlertTriangle, Download, ChevronDown, ChevronUp, ArrowUpDown } from 'lucide-react';
+import { BarChart3, ChevronLeft, Filter, RotateCcw, AlertTriangle, Download, ChevronDown, ChevronUp, ArrowUpDown, FlaskConical } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import DecisionsTab from '@/components/dashboard/DecisionsTab';
 import CreateStrategy from '@/components/dashboard/CreateStrategy';
 import ReportisticheTab from '@/components/dashboard/ReportisticheTab';
+import BacktestAutomatico from '@/components/dashboard/BacktestAutomatico';
 import {
     fetchAnalytics, fetchAnalyticsFilters, fetchAnalyticsRows, groupsToCsv, downloadCsv,
     ENGINE_LABEL, MARKET_LABEL, GROUP_BY_OPTIONS, pct,
@@ -85,7 +86,7 @@ export default function Analytics() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [tab, setTab] = useState<'engines' | 'decisions' | 'create' | 'reports'>('engines');
+    const [tab, setTab] = useState<'engines' | 'decisions' | 'create' | 'reports' | 'backtest_auto'>('engines');
     const [q, setQ] = useState<AnalyticsQuery>({ groupBy: 'confidence' });
     const set = (patch: Partial<AnalyticsQuery>) => setQ(prev => ({ ...prev, ...patch }));
     const reset = () => setQ({ groupBy: 'confidence' });
@@ -228,11 +229,17 @@ export default function Analytics() {
                         className={tab === 'reports' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
                         Reportistiche
                     </Button>
+                    <Button variant={tab === 'backtest_auto' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setTab('backtest_auto')}
+                        className={tab === 'backtest_auto' ? 'bg-primary text-black' : 'border-white/10 text-muted-foreground hover:text-white'}>
+                        <FlaskConical className="w-4 h-4 mr-1" /> Backtest Automatico
+                    </Button>
                 </div>
 
                 {tab === 'decisions' && <DecisionsTab />}
                 {tab === 'create' && <CreateStrategy filters={filters} />}
                 {tab === 'reports' && <ReportisticheTab />}
+                {tab === 'backtest_auto' && <BacktestAutomatico />}
 
                 {tab === 'engines' && <>
 
