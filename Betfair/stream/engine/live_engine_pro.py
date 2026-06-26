@@ -111,38 +111,39 @@ def _best_back(ladder_sel: Dict[str, Any]) -> Optional[float]:
 
 
 def _best_lay(ladder_sel: Dict[str, Any]) -> Optional[float]:
-    l = (ladder_sel or {}).get("lay") or []
-    return l[0][0] if l else None
+    lay_levels = (ladder_sel or {}).get("lay") or []
+    return lay_levels[0][0] if lay_levels else None
+
+
+def _ladder_sel(ladder: Dict[str, Any], sel_id: Any) -> Dict[str, Any]:
+    return ladder.get(str(sel_id)) or ladder.get(sel_id) or {}
 
 
 def get_prematch_lambdas(
     event_id: str,
     fixture_id: Optional[int],
-    match_odds_ladder: Optional[Dict[str, Any]] = None,
+    match_odds_market: Optional[Dict[str, Any]] = None,
+    ladder: Optional[Dict[str, Any]] = None,
     league_id: Optional[int] = None,
 ) -> Tuple[float, float, Optional[int]]:
     """Ritorna (λ_casa, λ_trasferta, league_id).
 
-    Preferenza: λ da predizioni/DC esterne per fixture_id (non caricate qui per
-    restare puri — il chiamante può passarle pre-calcolate). Fallback: stima dalle
-    quote 1X2 di apertura (best back di home/away nel ladder MATCH_ODDS).
+    Identifica CASA e TRASFERTA per sort_priority del MATCH_ODDS (1=casa, 2=trasferta,
+    3=pareggio), NON per probabilità (altrimenti con favorita in trasferta i λ si
+    invertirebbero). Stima i λ dalle quote back di apertura delle due squadre.
     """
-    if match_odds_ladder:
-        backs = []
-        for sel in match_odds_ladder.values():
-            bb = _best_back(sel)
-            if bb:
-                backs.append(bb)
-        # MATCH_ODDS: 3 selezioni; prob implicite normalizzate
-        if len(backs) >= 2:
-            probs = [1.0 / b for b in backs if b and b > 1]
-            # ordinamento per selezione non garantito qui → usa la più probabile come "casa"
-            probs_sorted = sorted(probs, reverse=True)
-            p_home = probs_sorted[0]
-            p_away = probs_sorted[1] if len(probs_sorted) > 1 else probs_sorted[0]
-            lam_h, lam_a = estimate_prematch_lambdas(p_home, p_away)
-            return lam_h, lam_a, league_id
-    # default neutro
+    if match_odds_market and ladder:
+        sels = match_odds_market.get("selections") or []
+        non_draw = [s for s in sels if not _name_is_draw(s.get("name"))]
+        non_draw.sort(key=lambda s: s.get("sort_priority") or 0)
+        if len(non_draw) >= 2:
+            home_id, away_id = non_draw[0]["selection_id"], non_draw[1]["selection_id"]
+            bh = _best_back(_ladder_sel(ladder, home_id))
+            ba = _best_back(_ladder_sel(ladder, away_id))
+            if bh and ba and bh > 1 and ba > 1:
+                lam_h, lam_a = estimate_prematch_lambdas(1.0 / bh, 1.0 / ba)
+                return lam_h, lam_a, league_id
+    # default neutro (lieve vantaggio casa)
     return 1.35, 1.15, league_id
 
 
@@ -200,12 +201,13 @@ def _kelly_back(prob: float, odds: float, fraction: float, bankroll: float) -> f
 
 
 def _kelly_lay(prob: float, lay_odds: float, fraction: float, bankroll: float) -> float:
-    # heuristica simmetrica: lay = back dell'esito complementare alla quota lay
+    # Kelly per il lay: vinci lo stake con prob (1-prob), perdi stake*(odds-1) con prob.
+    # f* = p_comp/(odds-1) - prob  (simmetrico al back; a quota equa torna 0).
     if not lay_odds or lay_odds <= 1:
         return 0.0
     b = lay_odds - 1.0
     p_comp = 1.0 - prob
-    f = p_comp - prob / b
+    f = p_comp / b - prob
     return max(0.0, f) * fraction * bankroll
 
 
@@ -265,7 +267,14 @@ def evaluate_event(
     rho = rho_for_league(league_id)
     grid = score_matrix(max(0.01, lam_h), max(0.01, lam_a), rho)
 
-    lines = [0.5, 1.5, 2.5, 3.5]
+    # calcola TUTTE le linee O/U realmente presenti (non solo 0.5–3.5), così le
+    # linee alte non ricevono prob=0.0 di default → niente segnali falsi.
+    lines = {0.5, 1.5, 2.5, 3.5}
+    for m in markets:
+        ln = _line_from_market_type(m.get("market_type"))
+        if ln is not None:
+            lines.add(ln)
+    lines = sorted(lines)
     probs = _markets_from_residual(grid, sh, sa, lines)
 
     signals: List[MarketSignal] = []
@@ -310,7 +319,7 @@ def evaluate_event(
         names = {int(s["selection_id"]): s.get("name") for s in sels}
         for sel_id, (raw_prob, mkey) in prob_for.items():
             prob = calibrate(raw_prob, mkey, league_id)
-            ladder_sel = ladder.get(str(sel_id)) or ladder.get(sel_id) or {}
+            ladder_sel = _ladder_sel(ladder, sel_id)
             back = _best_back(ladder_sel)
             lay = _best_lay(ladder_sel)
             imp = implied_prob(back)

@@ -252,25 +252,30 @@ def _run_one_event(
     scores = _load_scores(data_dir, event_id)
     catalogue = _load_catalogue(data_dir, event_id)
 
-    # richiesto da questa versione per il path di simulazione/ordini
+    # richiesto da questa versione per il path di simulazione/ordini.
+    # Ripristina il valore precedente in finally → non lascia il flag globale
+    # "simulated" attivo per eventuali processi/test successivi.
+    _prev_simulated = getattr(flumine.config, "simulated", False)
     flumine.config.simulated = True
+    try:
+        framework = FlumineSimulation(client=clients.SimulatedClient())
+        framework.add_market_middleware(SimulatedMiddleware())
 
-    framework = FlumineSimulation(client=clients.SimulatedClient())
-    framework.add_market_middleware(SimulatedMiddleware())
-
-    strategy = SimStrategy(
-        params=params,
-        event_id=str(event_id),
-        scores=scores,
-        catalogue=catalogue,
-        market_filter={"markets": [raw_path]},
-        max_selection_exposure=_MAX_EXPOSURE,
-        max_order_exposure=_MAX_EXPOSURE,
-        max_trade_count=int(1e9),
-        max_live_trade_count=int(1e9),
-    )
-    framework.add_strategy(strategy)
-    framework.run()
+        strategy = SimStrategy(
+            params=params,
+            event_id=str(event_id),
+            scores=scores,
+            catalogue=catalogue,
+            market_filter={"markets": [raw_path]},
+            max_selection_exposure=_MAX_EXPOSURE,
+            max_order_exposure=_MAX_EXPOSURE,
+            max_trade_count=int(1e9),
+            max_live_trade_count=int(1e9),
+        )
+        framework.add_strategy(strategy)
+        framework.run()
+    finally:
+        flumine.config.simulated = _prev_simulated
 
     logger.info(
         "[backtest] evento %s: %d ordini regolati",

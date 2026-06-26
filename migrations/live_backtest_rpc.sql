@@ -119,6 +119,7 @@ BEGIN
           FROM public.live_backtest_results res
          WHERE res.request_id = p_request_id
          ORDER BY res.id
+         LIMIT 5000
       ) s;
 
     RETURN jsonb_build_object('rows', v_rows);

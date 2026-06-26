@@ -106,6 +106,8 @@ def fetch_event_markets(rest: BetfairClient, event_id: str) -> List[Dict[str, An
 class LiveSession:
     def __init__(self) -> None:
         self.recorder: Optional[MarketRecorderStrategy] = None
+        self.context_api_client: Optional[Any] = None         # APIClient (set dal runner)
+        self.only_event: Optional[str] = None
         self.pollers: Dict[str, ScorePoller] = {}             # event_id -> poller
         self.markets_by_event: Dict[str, List[Dict[str, Any]]] = {}
         self.market_to_event: Dict[str, str] = {}             # riferimento vivo (raw tee)
@@ -206,10 +208,12 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
             continue
 
         state = session.build_live_state(event_id)
+        # un solo snapshot della cache (evita N acquisizioni di lock per evento)
+        latest = session.recorder.latest_books() if session.recorder else {}
         inplay = any(
-            (session.recorder.latest_books().get(m["market_id"], {}) or {}).get("inplay")
+            (latest.get(m["market_id"], {}) or {}).get("inplay")
             for m in session.markets_by_event.get(event_id, [])
-        ) if session.recorder else False
+        )
 
         if snap is not None:
             try:
@@ -256,17 +260,22 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
         lam = session.prematch_lambdas.get(event_id)
         ladder = session.ladder_by_market(event_id)
         if lam is None:
-            # ricava λ dal mercato MATCH_ODDS se già disponibile
+            # ricava λ dal mercato MATCH_ODDS se già disponibile (home/away per
+            # sort_priority, non per probabilità → niente inversione casa/trasferta)
+            mo_market = None
             mo_ladder = None
             for m in session.markets_by_event.get(event_id, []):
                 if m.get("market_type") == "MATCH_ODDS":
+                    mo_market = m
                     mo_ladder = ladder.get(m["market_id"])
                     break
-            lh, la, league = pro.get_prematch_lambdas(event_id, None, mo_ladder)
+            lh, la, league = pro.get_prematch_lambdas(
+                event_id, None, match_odds_market=mo_market, ladder=mo_ladder
+            )
             lam = (lh, la, league)
             # CACHE solo se i λ provengono da dati reali; altrimenti ricalcola al
             # prossimo tick (evita di restare bloccati su λ di default).
-            if mo_ladder:
+            if mo_market and mo_ladder:
                 session.prematch_lambdas[event_id] = lam
         signals = pro.evaluate_event(
             score_home=getattr(snap, "score_home", None) or 0,
@@ -303,6 +312,13 @@ def finalize_worker(context: dict, flumine: Flumine, session: LiveSession) -> No
             continue
         _finalize_event(event_id, session)
         time.sleep(FINALIZE_SPACING_SEC)  # distanzia gli upload (anti-stress DB)
+    # auto-exit (modalità --event): a partita finita ferma il framework → il
+    # processo esce e notifica. In multi-match il supervisore continua a girare.
+    if finished and getattr(session, "only_event", None):
+        active = [e for e in session.cataloged_events if e not in session.finished_events]
+        if not active:
+            logger.info("[finalize] tutte le partite finite (modalità --event): stop.")
+            _stop_framework(flumine)
 
 
 def _finalize_event(event_id: str, session: LiveSession) -> None:
@@ -357,7 +373,10 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
     if (now - session.last_resubscribe_ts) < MIN_RESUBSCRIBE_INTERVAL_SEC:
         return
     logger.info("[sub-worker] %d nuove partite GIOCATA → ricostruzione subscription.", len(new_events))
-    db.insert_alert("INFO", "NEW_MATCHES", f"{len(new_events)} nuove partite agganciate al live.")
+    try:
+        db.insert_alert("INFO", "NEW_MATCHES", f"{len(new_events)} nuove partite agganciate al live.")
+    except Exception as e:  # noqa: BLE001 - un errore di alert NON deve bloccare la ri-subscription
+        logger.warning("[sub-worker] insert_alert KO (ignorato): %s", e)
     session.last_resubscribe_ts = now
     session.restart_requested.set()
     _stop_framework(flumine)
@@ -433,6 +452,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
 
     session = LiveSession()
     session.context_api_client = api_client  # type: ignore[attr-defined]
+    session.only_event = only_event  # type: ignore[attr-defined]
     interrupted = False
 
     try:
@@ -501,6 +521,15 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             except KeyboardInterrupt:
                 logger.info("[runner] interruzione richiesta: finalizzo tutto...")
                 interrupted = True
+            except Exception as e:  # noqa: BLE001 - errore stream non gestito da flumine
+                logger.exception("[runner] errore framework.run: %s", e)
+                if only_event:
+                    interrupted = True
+                else:
+                    delay = session.backoff.next_delay()
+                    logger.warning("[runner] retry tra %.0fs (backoff)...", delay)
+                    time.sleep(delay)
+                    continue  # ricostruisce e ritenta (multi-match)
 
             if session.restart_requested.is_set() and not interrupted:
                 logger.info("[runner] ricostruisco la subscription con le nuove partite...")

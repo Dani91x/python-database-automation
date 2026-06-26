@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from Betfair.stream.engine.live_engine_pro import (
     MarketSignal,
+    _kelly_lay,
     evaluate_event,
+    get_prematch_lambdas,
     rho_for_league,
     signals_to_json,
 )
@@ -107,6 +109,51 @@ def test_unmodeled_market_skipped():
         markets=markets, ladder_by_market=ladder,
     )
     assert sigs == []  # mercato non modellato → nessun segnale
+
+
+def test_kelly_lay_zero_at_fair_value():
+    # a quota equa (lay_odds = 1/prob) il Kelly lay deve essere 0 (no edge)
+    for prob, lay in [(0.5, 2.0), (1 / 3, 3.0), (0.25, 4.0), (0.2, 5.0)]:
+        assert _kelly_lay(prob, lay, fraction=1.0, bankroll=100.0) < 1e-6
+    # con vero valore (modello < implicita) il lay è positivo ma ragionevole
+    stake = _kelly_lay(0.20, 4.0, fraction=1.0, bankroll=100.0)
+    assert 0 < stake < 20  # NON i ~73 del bug
+
+
+def test_prematch_lambdas_not_swapped_for_away_favourite():
+    # away favorita (back più basso) → λ_away deve essere > λ_home
+    market = {
+        "market_id": "1.1", "market_type": "MATCH_ODDS",
+        "selections": [
+            {"selection_id": 11, "name": "Home FC", "sort_priority": 1},
+            {"selection_id": 12, "name": "Away FC", "sort_priority": 2},
+            {"selection_id": 13, "name": "The Draw", "sort_priority": 3},
+        ],
+    }
+    ladder = {"11": _ladder(5.0, 5.2), "12": _ladder(1.8, 1.85), "13": _ladder(4.0, 4.1)}
+    lh, la, _ = get_prematch_lambdas("e", None, match_odds_market=market, ladder=ladder)
+    assert la > lh  # trasferta favorita → più gol attesi trasferta
+    # caso opposto (casa favorita) → λ_home > λ_away
+    ladder2 = {"11": _ladder(1.8, 1.85), "12": _ladder(5.0, 5.2), "13": _ladder(4.0, 4.1)}
+    lh2, la2, _ = get_prematch_lambdas("e", None, match_odds_market=market, ladder=ladder2)
+    assert lh2 > la2
+
+
+def test_over_under_high_line_not_zero():
+    # Under 6.5 a inizio partita deve essere ~certo (non 0.0 come nel bug)
+    markets = [_ou_market(line_key="65", line_name="6.5")]
+    ladder = {"1.65": {"100": _ladder(1.02, 1.03), "101": _ladder(20.0, 30.0)}}
+    sigs = evaluate_event(
+        score_home=0, score_away=0, minute=0,
+        prematch_lambda_home=1.4, prematch_lambda_away=1.2, league_id=135,
+        markets=markets, ladder_by_market=ladder,
+    )
+    under = next(s for s in sigs if s.selection_id == 100)
+    over = next(s for s in sigs if s.selection_id == 101)
+    assert under.model_prob > 0.95   # quasi certo
+    assert over.model_prob < 0.05
+    # niente più LAY confidente fasullo su Under 6.5
+    assert not (under.direction == "LAY" and under.model_prob == 0.0)
 
 
 def test_rho_for_league_lookup_and_fallback():
