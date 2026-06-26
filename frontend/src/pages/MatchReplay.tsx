@@ -21,8 +21,8 @@ import {
     type ReplayItem, type ReplayData, type Frame,
 } from '@/lib/live';
 import {
-    overallPosition, marketCashOut, formatGbp,
-    type SimBet, type BetSide, type LadderMap, type MarketEval,
+    formatGbp, settleOrCashOut, overallSettled,
+    type SimBet, type BetSide, type LadderMap, type SettleCtx, type MarketSettleEval,
 } from '@/lib/replay-pnl';
 
 const PLAY_NORMAL_MS = 1000;
@@ -92,17 +92,20 @@ export default function MatchReplay() {
         setRealizedPnl(0);
     };
 
-    // ---- timeline: timestamp distinti dei frame, ordinati ----
+    // ---- timeline: griglia temporale ~10s (scorribile), non ogni singolo tick ----
+    // (i frame sono migliaia; raggruppiamo a bucket di 10s per un playback usabile;
+    //  currentLadder usa comunque l'ultimo frame <= currentTs, quindi è preciso).
+    const TIMELINE_BUCKET_MS = 10_000;
     const timeline = useMemo(() => {
         if (!replay) return [] as { ts: string; minute: number | null }[];
-        const byTs = new Map<string, number | null>();
+        const byBucket = new Map<number, { ts: string; minute: number | null }>();
         for (const f of replay.frames) {
-            if (!byTs.has(f.ts)) byTs.set(f.ts, f.minute);
-            else if (byTs.get(f.ts) == null && f.minute != null) byTs.set(f.ts, f.minute);
+            const b = Math.floor(new Date(f.ts).getTime() / TIMELINE_BUCKET_MS);
+            const cur = byBucket.get(b);
+            if (!cur) byBucket.set(b, { ts: f.ts, minute: f.minute });
+            else if (cur.minute == null && f.minute != null) cur.minute = f.minute;
         }
-        return Array.from(byTs.entries())
-            .map(([ts, minute]) => ({ ts, minute }))
-            .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        return Array.from(byBucket.values()).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }, [replay]);
 
     const maxIndex = Math.max(0, timeline.length - 1);
@@ -138,27 +141,28 @@ export default function MatchReplay() {
         return found?.ladder;
     };
 
-    // ---- score timeline pre-ordinata (calcolata UNA volta per replay, non a ogni tick) ----
+    // ---- score timeline pre-ordinata PER TIMESTAMP (non per minuto) ----
     const sortedScoreTimeline = useMemo(() => {
         if (!replay) return [];
-        return [...replay.score_timeline].sort((a, b) => {
-            const ma = a.minute ?? -1, mb = b.minute ?? -1;
-            if (ma !== mb) return ma - mb;
-            return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
-        });
+        return [...replay.score_timeline].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }, [replay]);
 
-    // ---- score al minuto corrente (legge l'array già ordinato) ----
-    const currentScore = useMemo(() => {
-        const minute = currentMinute ?? Number.POSITIVE_INFINITY;
-        let best: { home: number; away: number } | null = null;
+    // ---- punteggio + minuto all'istante corrente: ultima voce con ts <= currentTs.
+    // (FIX: prima usava il minuto con fallback +Infinity → in pre-match mostrava il
+    //  punteggio finale; ora è ancorato al timestamp del replay.) ----
+    const currentScoreEntry = useMemo(() => {
+        if (!currentTs) return null;
+        let best: typeof sortedScoreTimeline[number] | null = null;
         for (const ev of sortedScoreTimeline) {
-            if ((ev.minute ?? -1) <= minute) {
-                best = { home: ev.score_home ?? 0, away: ev.score_away ?? 0 };
-            } else break;
+            if (ev.ts <= currentTs) best = ev; else break;
         }
-        return best ?? { home: 0, away: 0 };
-    }, [sortedScoreTimeline, currentMinute]);
+        return best;
+    }, [sortedScoreTimeline, currentTs]);
+
+    const currentScore = currentScoreEntry
+        ? { home: currentScoreEntry.score_home ?? 0, away: currentScoreEntry.score_away ?? 0 }
+        : { home: 0, away: 0 };
+    const displayMinute = currentScoreEntry?.minute ?? currentMinute;
 
     // ---- mercati ordinati per sort_priority ----
     const markets = useMemo(() => {
@@ -168,20 +172,35 @@ export default function MatchReplay() {
         );
     }, [replay]);
 
-    // ---- overall position = P&L realizzato (da cash-out) + cash-out corrente dei
-    // mercati che hanno ancora bet aperte ----
+    // ---- contesto esito: punteggio corrente + partita finita (per il settlement) ----
+    const finished = safeIndex >= maxIndex || (displayMinute != null && displayMinute >= 90);
+    const ctx: SettleCtx = { home: currentScore.home, away: currentScore.away, finished };
+
+    // valutazione per-mercato: P&L DEFINITIVO se l'esito è deciso, altrimenti cash-out.
+    const marketEval = (m: typeof markets[number]) => settleOrCashOut(
+        {
+            bets: bets.filter(b => b.marketId === m.market_id),
+            ladder: currentLadder(m.market_id),
+            selectionIds: m.selections.map(s => s.selection_id),
+            market: { market_type: m.market_type, selections: m.selections },
+        } as MarketSettleEval,
+        ctx,
+    );
+
+    // ---- overall = P&L realizzato (cash-out passati) + settlement/cash-out dei mercati aperti ----
     const overall = useMemo(() => {
         if (!replay) return realizedPnl;
-        const evals: MarketEval[] = markets
+        const evals: MarketSettleEval[] = markets
             .map(m => ({
                 bets: bets.filter(b => b.marketId === m.market_id),
                 ladder: currentLadder(m.market_id),
                 selectionIds: m.selections.map(s => s.selection_id),
+                market: { market_type: m.market_type, selections: m.selections },
             }))
             .filter(e => e.bets.length > 0);
-        return realizedPnl + overallPosition(evals);
+        return realizedPnl + overallSettled(evals, ctx);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bets, markets, safeIndex, framesByMarket, realizedPnl]);
+    }, [bets, markets, safeIndex, framesByMarket, realizedPnl, ctx.home, ctx.away, ctx.finished]);
 
     // ---- loop di riproduzione ----
     const idxRef = useRef(safeIndex);
@@ -230,9 +249,10 @@ export default function MatchReplay() {
     const cashOutMarket = (marketId: string) => {
         const m = markets.find(mk => mk.market_id === marketId);
         if (!m) return;
-        const marketBets = bets.filter(b => b.marketId === marketId);
-        if (marketBets.length === 0) return;
-        const locked = marketCashOut(marketBets, currentLadder(marketId), m.selections.map(s => s.selection_id));
+        if (bets.filter(b => b.marketId === marketId).length === 0) return;
+        // blocca il valore corrente del mercato (definitivo se l'esito è deciso,
+        // altrimenti cash-out alle quote correnti).
+        const locked = marketEval(m).value;
         setRealizedPnl(p => p + locked);
         setBets(prev => prev.filter(b => b.marketId !== marketId));
     };
@@ -354,7 +374,7 @@ export default function MatchReplay() {
                                 <span className="text-amber-400 font-bold text-lg truncate max-w-[36%]">{replay.event.away_name}</span>
                             </div>
                             <div className="text-center text-xs text-muted-foreground mt-1 tabular-nums">
-                                {currentMinute != null ? `${currentMinute}'` : '—'}
+                                {displayMinute != null ? `${displayMinute}'` : '—'}{finished ? ' · FT' : ''}
                             </div>
                         </Card>
 
@@ -371,25 +391,31 @@ export default function MatchReplay() {
                                 onSkipEnd={skipEnd}
                             />
                             <TimelineSlider
-                                min={0} max={maxIndex} value={safeIndex} minute={currentMinute}
+                                min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
                                 onChange={(v) => { setIsPlaying(false); setCurrentIndex(v); }}
                             />
                         </Card>
 
                         {/* griglia mercati */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {markets.map(m => (
-                                <MarketPanel
-                                    key={m.market_id}
-                                    market={m}
-                                    ladder={currentLadder(m.market_id)}
-                                    stake={getStake(m.market_id)}
-                                    onStakeChange={(n) => setStakes(prev => ({ ...prev, [m.market_id]: n }))}
-                                    bets={bets.filter(b => b.marketId === m.market_id)}
-                                    onPlaceBet={placeBet(m)}
-                                    onCashOut={() => cashOutMarket(m.market_id)}
-                                />
-                            ))}
+                            {markets.map(m => {
+                                const ev = marketEval(m);
+                                return (
+                                    <MarketPanel
+                                        key={m.market_id}
+                                        market={m}
+                                        ladder={currentLadder(m.market_id)}
+                                        stake={getStake(m.market_id)}
+                                        onStakeChange={(n) => setStakes(prev => ({ ...prev, [m.market_id]: n }))}
+                                        bets={bets.filter(b => b.marketId === m.market_id)}
+                                        onPlaceBet={placeBet(m)}
+                                        onCashOut={() => cashOutMarket(m.market_id)}
+                                        marketValue={ev.value}
+                                        settled={ev.settled}
+                                        winnerId={ev.winnerId}
+                                    />
+                                );
+                            })}
                         </div>
 
                         {/* trades */}

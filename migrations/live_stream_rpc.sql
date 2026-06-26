@@ -109,7 +109,14 @@ $$;
 -- frames    = snapshot curati in ordine cronologico (ladder per mercato/istante).
 -- timeline  = punteggio/eventi nel tempo (overlay sul replay).
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.get_replay(p_event_id text, p_max_frames integer DEFAULT 8000)
+-- p_bucket_sec: downsampling per coprire TUTTA la partita con payload limitato →
+-- max 1 frame per mercato ogni p_bucket_sec secondi (default 6s). Così il replay
+-- arriva fino a fine partita (niente troncamento alla prima parte).
+CREATE OR REPLACE FUNCTION public.get_replay(
+    p_event_id text,
+    p_max_frames integer DEFAULT 40000,
+    p_bucket_sec integer DEFAULT 6
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -121,7 +128,8 @@ DECLARE
     v_markets  jsonb;
     v_frames   jsonb;
     v_timeline jsonb;
-    v_lim      integer := least(greatest(coalesce(p_max_frames, 8000), 1), 20000);
+    v_lim      integer := least(greatest(coalesce(p_max_frames, 40000), 1), 60000);
+    v_bucket   integer := greatest(coalesce(p_bucket_sec, 6), 1);
 BEGIN
     IF p_event_id IS NULL THEN
         RAISE EXCEPTION 'p_event_id nullo';
@@ -162,8 +170,9 @@ BEGIN
       FROM public.live_markets m
      WHERE m.event_id = p_event_id;
 
-    -- frames limitati (difesa: una partita può avere migliaia di snapshot;
-    -- evita payload multi-MB e saturazione statement-timeout).
+    -- frames DOWNSAMPLED su bucket temporali: max 1 frame per mercato ogni
+    -- v_bucket secondi → copre l'INTERA partita (no troncamento) con payload
+    -- limitato. DISTINCT ON tiene il primo frame di ogni (mercato, bucket).
     SELECT coalesce(jsonb_agg(
              jsonb_build_object(
                'market_id', x.market_id,
@@ -176,10 +185,11 @@ BEGIN
            ), '[]'::jsonb)
       INTO v_frames
       FROM (
-        SELECT s.market_id, s.ts, s.minute, s.inplay, s.status, s.ladder
+        SELECT DISTINCT ON (s.market_id, floor(extract(epoch FROM s.ts) / v_bucket))
+               s.market_id, s.ts, s.minute, s.inplay, s.status, s.ladder
           FROM public.live_market_snapshots s
          WHERE s.event_id = p_event_id
-         ORDER BY s.ts, s.market_id
+         ORDER BY s.market_id, floor(extract(epoch FROM s.ts) / v_bucket), s.ts
          LIMIT v_lim
       ) x;
 
@@ -213,10 +223,14 @@ $$;
 -- ============================================================================
 -- REVOKE ALL FROM public rimuove il grant EXECUTE di default che CREATE FUNCTION
 -- assegna a PUBLIC; il REVOKE FROM anon è ridondante ma esplicito (belt-and-suspenders).
-REVOKE ALL ON FUNCTION public.get_live_follows()         FROM public, anon;
-REVOKE ALL ON FUNCTION public.list_replays(integer)      FROM public, anon;
-REVOKE ALL ON FUNCTION public.get_replay(text, integer)  FROM public, anon;
+-- rimuovi le vecchie firme di get_replay (overload) prima di concedere la nuova
+DROP FUNCTION IF EXISTS public.get_replay(text);
+DROP FUNCTION IF EXISTS public.get_replay(text, integer);
 
-GRANT EXECUTE ON FUNCTION public.get_live_follows()         TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.list_replays(integer)      TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.get_replay(text, integer)  TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_live_follows()                  FROM public, anon;
+REVOKE ALL ON FUNCTION public.list_replays(integer)               FROM public, anon;
+REVOKE ALL ON FUNCTION public.get_replay(text, integer, integer)  FROM public, anon;
+
+GRANT EXECUTE ON FUNCTION public.get_live_follows()                  TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_replays(integer)              TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_replay(text, integer, integer)  TO authenticated, service_role;

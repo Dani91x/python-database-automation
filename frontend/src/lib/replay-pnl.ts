@@ -127,6 +127,95 @@ export function overallPosition(markets: MarketEval[]): number {
     return markets.reduce((sum, m) => sum + marketCashOut(m.bets, m.ladder, m.selectionIds), 0);
 }
 
+// ====================================================================
+// SETTLEMENT sull'ESITO REALE (P&L "completo" dell'operazione)
+// Quando l'esito di un mercato è DECISO dal punteggio, il P&L non è più
+// mark-to-market ma quello DEFINITIVO (vince/perde davvero). Es: BTTS "Sì" è
+// certo appena entrambe segnano; Over X.5 appena i gol superano la linea;
+// Match Odds / Correct Score / Double Chance a fine partita.
+// ====================================================================
+export interface SelectionMeta {
+    selection_id: number;
+    name: string | null;
+    sort_priority?: number | null;
+}
+export interface MarketMeta {
+    market_type: string | null;
+    selections: SelectionMeta[];
+}
+export interface SettleCtx {
+    home: number;
+    away: number;
+    finished: boolean;   // la partita è terminata (fine replay / >=90')
+}
+
+function lineFromType(t: string): number | null {
+    const m = /(\d)(\d)$/.exec(t); // OVER_UNDER_25 -> 2.5, OVER_UNDER_05 -> 0.5
+    if (!m) return null;
+    return Number(`${m[1]}.${m[2]}`);
+}
+const isDraw = (n: string | null) => !!n && /draw|pareggio/i.test(n);
+const isYes = (n: string | null) => !!n && /^(yes|si|s[iì])$/i.test(n.trim());
+const isNo = (n: string | null) => !!n && /^no$/i.test(n.trim());
+const isOver = (n: string | null) => !!n && /over/i.test(n);
+const isUnder = (n: string | null) => !!n && /under/i.test(n);
+
+// Selezione vincente se il mercato è DECISO ora, altrimenti null (non deciso).
+export function decideWinner(market: MarketMeta, ctx: SettleCtx): number | null {
+    const t = (market.market_type || '').toUpperCase();
+    const sels = market.selections;
+    const total = ctx.home + ctx.away;
+    const bothScored = ctx.home >= 1 && ctx.away >= 1;
+
+    if (t === 'BOTH_TEAMS_TO_SCORE' || t === 'BTTS') {
+        if (bothScored) return sels.find(s => isYes(s.name))?.selection_id ?? null;
+        if (ctx.finished) return sels.find(s => isNo(s.name))?.selection_id ?? null;
+        return null;
+    }
+    if (t.startsWith('OVER_UNDER')) {
+        const line = lineFromType(t);
+        if (line == null) return null;
+        if (total > line) return sels.find(s => isOver(s.name))?.selection_id ?? null;
+        if (ctx.finished) return sels.find(s => isUnder(s.name))?.selection_id ?? null;
+        return null;
+    }
+    if (t === 'MATCH_ODDS') {
+        if (!ctx.finished) return null;
+        const draw = sels.find(s => isDraw(s.name));
+        const nd = sels.filter(s => !isDraw(s.name))
+            .sort((a, b) => (a.sort_priority ?? 0) - (b.sort_priority ?? 0));
+        if (ctx.home > ctx.away) return nd[0]?.selection_id ?? null;
+        if (ctx.home < ctx.away) return nd[1]?.selection_id ?? null;
+        return draw?.selection_id ?? null;
+    }
+    if (t === 'CORRECT_SCORE') {
+        if (!ctx.finished) return null;
+        const key = `${ctx.home}-${ctx.away}`;
+        return sels.find(s => (s.name || '').replace(/\s/g, '') === key)?.selection_id ?? null;
+    }
+    return null; // mercati non gestiti (HT, ecc.) → mark-to-market
+}
+
+// Valore di un mercato: P&L DEFINITIVO se l'esito è deciso, altrimenti cash-out.
+export interface MarketSettleEval extends MarketEval {
+    market: MarketMeta;
+}
+export function settleOrCashOut(
+    e: MarketSettleEval, ctx: SettleCtx,
+): { value: number; settled: boolean; winnerId: number | null } {
+    if (e.bets.length === 0) return { value: 0, settled: false, winnerId: null };
+    const winner = decideWinner(e.market, ctx);
+    if (winner != null) {
+        return { value: positionIfWins(e.bets, winner), settled: true, winnerId: winner };
+    }
+    return { value: marketCashOut(e.bets, e.ladder, e.selectionIds), settled: false, winnerId: null };
+}
+
+// Posizione complessiva con SETTLEMENT: somma dei valori (definitivi o cash-out).
+export function overallSettled(markets: MarketSettleEval[], ctx: SettleCtx): number {
+    return markets.reduce((sum, e) => sum + settleOrCashOut(e, ctx).value, 0);
+}
+
 // ----------------------------------------------------------------- formatting
 // Importi in sterline: £12.31 / £-12.31.
 export function formatGbp(v: number | null | undefined, decimals = 2): string {

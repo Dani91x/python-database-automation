@@ -7,7 +7,7 @@
 import { Card } from '@/components/ui/card';
 import type { Market } from '@/lib/live';
 import {
-    bestBack, bestLay, winPercent, positionIfWins, marketCashOut, formatGbp,
+    bestBack, bestLay, winPercent, positionIfWins, formatGbp,
     type LadderMap, type SimBet, type BetSide,
 } from '@/lib/replay-pnl';
 
@@ -21,12 +21,12 @@ export interface MarketPanelProps {
     bets: SimBet[];                    // bet già piazzate su questo mercato
     onPlaceBet: (selectionId: number, selectionName: string, side: BetSide, price: number) => void;
     onCashOut: () => void;
+    marketValue: number;              // P&L del mercato: definitivo se settled, altrimenti cash-out
+    settled: boolean;                 // true = esito DECISO (P&L definitivo)
+    winnerId: number | null;          // selezione vincente (se settled)
 }
 
-export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlaceBet, onCashOut }: MarketPanelProps) {
-    const selectionIds = market.selections.map(s => s.selection_id);
-    const cashOut = marketCashOut(bets, ladder, selectionIds);
-
+export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlaceBet, onCashOut, marketValue, settled, winnerId }: MarketPanelProps) {
     const fmtStake = (n: number) => `£${n.toLocaleString('it', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     return (
@@ -52,10 +52,14 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                     <button
                         onClick={onCashOut}
                         disabled={bets.length === 0}
-                        className="px-2.5 py-1 rounded-md bg-secondary text-black text-xs font-bold hover:bg-secondary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="Chiude le posizioni di questo mercato alle quote correnti"
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
+                            settled
+                                ? (marketValue >= 0 ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : 'bg-red-500/20 text-red-200 hover:bg-red-500/30')
+                                : 'bg-secondary text-black hover:bg-secondary/90'
+                        }`}
+                        title={settled ? 'Esito deciso: P&L definitivo (clic per incassare)' : 'Chiude le posizioni di questo mercato alle quote correnti'}
                     >
-                        Cash out: {formatGbp(cashOut)}
+                        {settled ? `Esito: ${formatGbp(marketValue)}` : `Cash out: ${formatGbp(marketValue)}`}
                     </button>
                 </div>
             </div>
@@ -79,9 +83,12 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                             const wp = winPercent(back);
                             const pos = positionIfWins(bets, s.selection_id);
                             const posCls = pos > 0 ? 'text-emerald-400' : pos < 0 ? 'text-red-400' : 'text-muted-foreground';
+                            const isWinner = settled && winnerId === s.selection_id;
                             return (
-                                <tr key={s.selection_id} className="border-b border-white/5">
-                                    <td className="px-3 py-2 text-white truncate max-w-[160px]">{s.name}</td>
+                                <tr key={s.selection_id} className={`border-b border-white/5 ${isWinner ? 'bg-emerald-500/10' : ''}`}>
+                                    <td className="px-3 py-2 text-white truncate max-w-[160px]">
+                                        {isWinner && <span className="text-emerald-400 mr-1">✓</span>}{s.name}
+                                    </td>
                                     <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{wp != null ? `${wp}%` : '—'}</td>
                                     <td className="px-2 py-1.5">
                                         <button
