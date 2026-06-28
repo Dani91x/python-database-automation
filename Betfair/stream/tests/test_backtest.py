@@ -184,14 +184,22 @@ class _FakeOrder:
     side: str
     average_price_matched: Optional[float]
     simulated: _FakeSimulated
+    market_id: str = "1.0"
 
 
-def _mk(size: float, profit: float, side: str = "BACK", price: float = 2.0) -> _FakeOrder:
+def _mk(
+    size: float,
+    profit: float,
+    side: str = "BACK",
+    price: float = 2.0,
+    market_id: str = "1.0",
+) -> _FakeOrder:
     return _FakeOrder(
         size_matched=size,
         side=side,
         average_price_matched=price,
         simulated=_FakeSimulated(profit=profit),
+        market_id=market_id,
     )
 
 
@@ -228,6 +236,45 @@ def test_compute_group_metrics_empty() -> None:
     assert m["total_pnl"] == 0.0
     assert m["roi"] == 0.0
     assert m["max_drawdown"] == 0.0
+
+
+def test_compute_group_metrics_commission_per_market() -> None:
+    """Commissione Betfair: PER MERCATO, solo sul netto positivo.
+
+    Mercato A: +20 e -10 -> netto +10 -> comm = 10*5% = 0.5.
+    Mercato B: -5 -> netto negativo -> comm = 0.
+    Lordo = 5; commissione = 0.5; netto = 4.5.
+    """
+    orders = [
+        _mk(size=10.0, profit=20.0, price=3.0, market_id="1.A"),
+        _mk(size=10.0, profit=-10.0, price=2.0, market_id="1.A"),
+        _mk(size=5.0, profit=-5.0, side="LAY", price=4.0, market_id="1.B"),
+    ]
+    m = compute_group_metrics(orders, commission_rate=0.05)
+
+    assert m["metrics"]["gross_pnl"] == pytest.approx(5.0, abs=1e-6)
+    assert m["metrics"]["commission"] == pytest.approx(0.5, abs=1e-6)
+    assert m["total_pnl"] == pytest.approx(4.5, abs=1e-6)
+    # senza commissione il netto coincide col lordo
+    m0 = compute_group_metrics(orders, commission_rate=0.0)
+    assert m0["total_pnl"] == pytest.approx(5.0, abs=1e-6)
+    assert m0["metrics"]["commission"] == 0.0
+
+
+def test_aggregate_results_commission_threaded() -> None:
+    """commission_rate viene propagato a tutte le righe (ALL + per market_type)."""
+    tagged = [
+        (_mk(size=10.0, profit=20.0, price=3.0, market_id="1.A"), "MATCH_ODDS"),
+        (_mk(size=10.0, profit=-4.0, price=2.0, market_id="1.B"), "OVER_UNDER_25"),
+    ]
+    rows = aggregate_results(tagged, commission_rate=0.05)
+    all_row = next(r for r in rows if r["scope"] == "ALL")
+    # mercato A netto +20 -> comm 1.0; mercato B negativo -> comm 0. Lordo 16, netto 15.
+    assert all_row["metrics"]["commission"] == pytest.approx(1.0, abs=1e-6)
+    assert all_row["total_pnl"] == pytest.approx(15.0, abs=1e-6)
+    mo_row = next(r for r in rows if r["grp"] == "MATCH_ODDS")
+    assert mo_row["metrics"]["commission"] == pytest.approx(1.0, abs=1e-6)
+    assert mo_row["total_pnl"] == pytest.approx(19.0, abs=1e-6)
 
 
 def test_aggregate_results_scopes() -> None:

@@ -17,6 +17,7 @@ import {
     requestBacktest, fetchBacktestRuns, fetchBacktestResults, subscribeBacktestRequest,
     BACKTEST_STATUS_LABEL,
     type BacktestMode, type BacktestStatus, type BacktestRunRequest, type BacktestRow,
+    type SandboxRules, type PersistenceType,
 } from '@/lib/analytics';
 
 const SELECT_CLS = 'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60 transition-colors';
@@ -41,11 +42,21 @@ export default function BacktestAutomatico() {
     // --- parametri richiesta ---
     const [mode, setMode] = useState<BacktestMode>('engine');
     const [bankroll, setBankroll] = useState('1000');
-    const [minEdge, setMinEdge] = useState('');           // % (UI) → frazione
-    // sandbox: regole semplici
-    const [ruleMarket, setRuleMarket] = useState('');     // es. MATCH_ODDS
-    const [ruleProbMin, setRuleProbMin] = useState('');   // % min prob modello
+    const [minEdge, setMinEdge] = useState('');           // % (UI) → frazione (engine)
+    const [kellyFraction, setKellyFraction] = useState('0.25'); // frazione di Kelly (engine)
+    // sandbox: regola meccanica semplice
+    const [ruleMarket, setRuleMarket] = useState('');     // market_type, es. MATCH_ODDS
+    const [ruleSide, setRuleSide] = useState<'BACK' | 'LAY'>('BACK');
+    const [ruleEntryMinute, setRuleEntryMinute] = useState(''); // entra dopo minuto
+    const [ruleEntryPriceMax, setRuleEntryPriceMax] = useState(''); // prezzo max ingresso
+    const [ruleSelectionId, setRuleSelectionId] = useState('');     // selezione specifica
     const [ruleStake, setRuleStake] = useState('');       // stake fisso £
+    // --- esecuzione (realismo flumine), entrambe le modalità ---
+    const [commissionPct, setCommissionPct] = useState('5');   // % commissione Betfair
+    const [persistenceType, setPersistenceType] = useState<PersistenceType>('LAPSE');
+    const [availablePrices, setAvailablePrices] = useState(true);
+    const [placeLatency, setPlaceLatency] = useState('0.12');  // s
+    const [cancelLatency, setCancelLatency] = useState('0.17'); // s
 
     // --- esecuzione corrente ---
     const [submitting, setSubmitting] = useState(false);
@@ -55,7 +66,9 @@ export default function BacktestAutomatico() {
     const [activeErr, setActiveErr] = useState<string | null>(null);
     const [results, setResults] = useState<BacktestRow[] | null>(null);
     const [resultsLoading, setResultsLoading] = useState(false);
+    const [workerWarn, setWorkerWarn] = useState(false);   // PENDING troppo a lungo → worker giù?
     const unsubRef = useRef<(() => void) | null>(null);
+    const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // --- esecuzioni recenti ---
     const [runs, setRuns] = useState<BacktestRunRequest[]>([]);
@@ -74,8 +87,11 @@ export default function BacktestAutomatico() {
         fetchBacktestRuns().then(setRuns).catch(e => console.warn('[BacktestAutomatico] fetchBacktestRuns:', e));
     }
 
-    // pulizia della sottoscrizione a smontaggio
-    useEffect(() => () => { if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; } }, []);
+    // pulizia della sottoscrizione e del timer a smontaggio
+    useEffect(() => () => {
+        if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+        if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
+    }, []);
 
     function toggle(eventId: string) {
         setSelected(prev => {
@@ -88,14 +104,26 @@ export default function BacktestAutomatico() {
     // segue una richiesta: realtime → a DONE carica i risultati
     function track(id: string, initialStatus: BacktestStatus = 'PENDING') {
         if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+        if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
         setActiveId(id);
         setActiveStatus(initialStatus);
         setActiveErr(null);
         setResults(null);
+        setWorkerWarn(false);
+
+        // se entro 15s la richiesta non passa a RUNNING, il worker locale
+        // probabilmente non è in esecuzione → mostra come avviarlo.
+        if (initialStatus === 'PENDING') {
+            pendingTimerRef.current = setTimeout(() => setWorkerWarn(true), 15_000);
+        }
 
         const onStatus = (status: BacktestStatus, errDetail: string | null) => {
             setActiveStatus(status);
             setActiveErr(errDetail);
+            if (status !== 'PENDING') {
+                setWorkerWarn(false);
+                if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
+            }
             if (status === 'DONE') {
                 setResultsLoading(true);
                 fetchBacktestResults(id)
@@ -117,10 +145,13 @@ export default function BacktestAutomatico() {
         if (selected.size === 0) { setError('Seleziona almeno una partita registrata.'); return; }
         setSubmitting(true); setError(null);
         try {
-            const rules = mode === 'sandbox'
+            const rules: SandboxRules | undefined = mode === 'sandbox'
                 ? {
-                    market: ruleMarket || null,
-                    prob_min: ruleProbMin.trim() === '' ? null : Number(ruleProbMin) / 100,
+                    market_type: ruleMarket || null,
+                    side: ruleSide,
+                    selection_id: numOrUndef(ruleSelectionId) ?? null,
+                    entry_minute: numOrUndef(ruleEntryMinute) ?? null,
+                    entry_price_max: numOrUndef(ruleEntryPriceMax) ?? null,
                     stake: numOrUndef(ruleStake) ?? null,
                 }
                 : undefined;
@@ -129,7 +160,14 @@ export default function BacktestAutomatico() {
                 mode,
                 bankroll: numOrUndef(bankroll),
                 min_edge: minEdge.trim() === '' ? undefined : Number(minEdge) / 100,
+                kelly_fraction: mode === 'engine' ? (numOrUndef(kellyFraction) ?? undefined) : undefined,
                 rules,
+                // esecuzione (realismo flumine)
+                commission_rate: commissionPct.trim() === '' ? undefined : Number(commissionPct) / 100,
+                persistence_type: persistenceType,
+                simulation_available_prices: availablePrices,
+                place_latency: numOrUndef(placeLatency) ?? undefined,
+                cancel_latency: numOrUndef(cancelLatency) ?? undefined,
             });
             track(id, 'PENDING');
             loadRuns();
@@ -202,13 +240,51 @@ export default function BacktestAutomatico() {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div><label className={LABEL_CLS}>Bankroll (£)</label><input type="number" min={0} step="1" className={INPUT_CLS} value={bankroll} onChange={e => setBankroll(e.target.value)} /></div>
-                    <div><label className={LABEL_CLS}>Edge min %</label><input type="number" step="0.1" placeholder="nessuno" className={INPUT_CLS} value={minEdge} onChange={e => setMinEdge(e.target.value)} /></div>
+
+                    {mode === 'engine' && <>
+                        <div><label className={LABEL_CLS}>Edge min %</label><input type="number" step="0.1" placeholder="nessuno" className={INPUT_CLS} value={minEdge} onChange={e => setMinEdge(e.target.value)} /></div>
+                        <div><label className={LABEL_CLS}>Frazione Kelly</label><input type="number" min={0} max={1} step="0.05" placeholder="0.25" className={INPUT_CLS} value={kellyFraction} onChange={e => setKellyFraction(e.target.value)} /></div>
+                    </>}
 
                     {mode === 'sandbox' && <>
-                        <div><label className={LABEL_CLS}>Mercato (tipo)</label><input type="text" placeholder="es. MATCH_ODDS" className={INPUT_CLS} value={ruleMarket} onChange={e => setRuleMarket(e.target.value)} /></div>
-                        <div><label className={LABEL_CLS}>Prob. modello ≥ %</label><input type="number" min={0} max={100} placeholder="es. 60" className={INPUT_CLS} value={ruleProbMin} onChange={e => setRuleProbMin(e.target.value)} /></div>
+                        <div><label className={LABEL_CLS}>Mercato (tipo)</label><input type="text" placeholder="tutti — es. MATCH_ODDS" className={INPUT_CLS} value={ruleMarket} onChange={e => setRuleMarket(e.target.value)} /></div>
+                        <div>
+                            <label className={LABEL_CLS}>Direzione</label>
+                            <select className={SELECT_CLS} value={ruleSide} onChange={e => setRuleSide(e.target.value as 'BACK' | 'LAY')}>
+                                <option value="BACK">BACK (punta)</option>
+                                <option value="LAY">LAY (banca)</option>
+                            </select>
+                        </div>
+                        <div><label className={LABEL_CLS}>Selezione (id)</label><input type="number" placeholder="tutte" className={INPUT_CLS} value={ruleSelectionId} onChange={e => setRuleSelectionId(e.target.value)} /></div>
+                        <div><label className={LABEL_CLS}>Minuto ingresso ≥</label><input type="number" min={0} max={130} placeholder="dal 1°" className={INPUT_CLS} value={ruleEntryMinute} onChange={e => setRuleEntryMinute(e.target.value)} /></div>
+                        <div><label className={LABEL_CLS}>Prezzo max ingresso</label><input type="number" min={1} step="0.1" placeholder="qualsiasi" className={INPUT_CLS} value={ruleEntryPriceMax} onChange={e => setRuleEntryPriceMax(e.target.value)} /></div>
                         <div><label className={LABEL_CLS}>Stake fisso (£)</label><input type="number" min={0} step="0.5" placeholder="es. 10" className={INPUT_CLS} value={ruleStake} onChange={e => setRuleStake(e.target.value)} /></div>
                     </>}
+                </div>
+
+                {/* ---- ESECUZIONE (realismo flumine) ---- */}
+                <div className="mt-5 pt-4 border-t border-white/5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Esecuzione (realismo)</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><label className={LABEL_CLS}>Commissione %</label><input type="number" min={0} max={20} step="0.5" placeholder="es. 5" className={INPUT_CLS} value={commissionPct} onChange={e => setCommissionPct(e.target.value)} /></div>
+                        <div>
+                            <label className={LABEL_CLS}>Inmatchato a fine mercato</label>
+                            <select className={SELECT_CLS} value={persistenceType} onChange={e => setPersistenceType(e.target.value as PersistenceType)}>
+                                <option value="LAPSE">LAPSE (annulla)</option>
+                                <option value="PERSIST">PERSIST (porta in-play)</option>
+                                <option value="MARKET_ON_CLOSE">MARKET_ON_CLOSE (SP)</option>
+                            </select>
+                        </div>
+                        <div><label className={LABEL_CLS}>Latenza piazz. (s)</label><input type="number" min={0} step="0.01" placeholder="0.12" className={INPUT_CLS} value={placeLatency} onChange={e => setPlaceLatency(e.target.value)} /></div>
+                        <div><label className={LABEL_CLS}>Latenza cancel. (s)</label><input type="number" min={0} step="0.01" placeholder="0.17" className={INPUT_CLS} value={cancelLatency} onChange={e => setCancelLatency(e.target.value)} /></div>
+                        <div className="col-span-2 md:col-span-4 flex items-center gap-2 mt-1">
+                            <input id="availPrices" type="checkbox" checked={availablePrices} onChange={e => setAvailablePrices(e.target.checked)} className="accent-primary" />
+                            <label htmlFor="availPrices" className="text-xs text-muted-foreground cursor-pointer">Matcha anche contro i prezzi disponibili (fill più realistici dell'inmatchato)</label>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 mt-4">
@@ -247,7 +323,18 @@ export default function BacktestAutomatico() {
                         <p className="text-sm text-red-400 flex items-center gap-2 mb-3"><AlertTriangle className="w-4 h-4" /> {activeErr}</p>
                     )}
 
-                    {running && <p className="text-xs text-muted-foreground">Il worker locale sta elaborando la simulazione flumine…</p>}
+                    {running && !workerWarn && <p className="text-xs text-muted-foreground">Il worker locale sta elaborando la simulazione flumine…</p>}
+
+                    {workerWarn && activeStatus === 'PENDING' && (
+                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                            <p className="text-sm text-amber-300 flex items-center gap-2 mb-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" /> Richiesta in coda da oltre 15s: il worker locale non sembra in esecuzione.
+                            </p>
+                            <p className="text-xs text-muted-foreground mb-1">Avvialo nel terminale (sul PC che ha le registrazioni) e lascialo aperto:</p>
+                            <code className="block text-xs bg-black/60 border border-white/10 rounded px-2 py-1.5 text-primary select-all">python -m Betfair.stream.backtest.worker</code>
+                            <p className="text-[11px] text-muted-foreground mt-2">Appena parte, prende automaticamente questa richiesta e le successive.</p>
+                        </div>
+                    )}
 
                     {activeStatus === 'DONE' && (
                         resultsLoading ? (

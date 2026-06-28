@@ -374,12 +374,32 @@ export async function runStrategyRows(id: string, limit = 500, offset = 0): Prom
 export type BacktestMode = 'engine' | 'sandbox';
 export type BacktestStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'ERROR';
 
+export type PersistenceType = 'LAPSE' | 'PERSIST' | 'MARKET_ON_CLOSE';
+
 export interface BacktestRequestParams {
     event_ids: string[];
     mode: BacktestMode;
     bankroll?: number;
-    min_edge?: number;             // frazionario (0.05 = 5%)
-    rules?: Record<string, unknown>;  // sandbox: campi regola semplici
+    min_edge?: number;             // engine: frazionario (0.05 = 5%)
+    kelly_fraction?: number;       // engine: frazione di Kelly (0.25 = quarter Kelly)
+    rules?: SandboxRules;          // sandbox: regola meccanica configurabile
+    // --- esecuzione (realismo flumine), validi per entrambe le modalità ---
+    commission_rate?: number;      // commissione Betfair (0.05 = 5% sul netto/mercato)
+    persistence_type?: PersistenceType;        // sorte dell'inmatchato a fine mercato
+    simulation_available_prices?: boolean;     // matcha anche contro i prezzi disponibili
+    place_latency?: number;        // latenza simulata di piazzamento (secondi)
+    cancel_latency?: number;       // latenza simulata di cancellazione (secondi)
+}
+
+// Sandbox = regola meccanica semplice (nessun modello). Tutti i campi opzionali:
+// l'assenza di un filtro = nessun vincolo su quella dimensione.
+export interface SandboxRules {
+    market_type?: string | null;   // es. MATCH_ODDS, OVER_UNDER_25 (vuoto = tutti)
+    side?: 'BACK' | 'LAY';         // direzione ordine
+    selection_id?: number | null;  // selezione specifica (vuoto = tutte)
+    entry_minute?: number | null;  // entra solo dopo questo minuto di gioco
+    entry_price_max?: number | null; // entra solo se prezzo disponibile <= soglia
+    stake?: number | null;         // stake fisso £
 }
 
 export interface BacktestRunRequest {

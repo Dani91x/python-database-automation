@@ -112,6 +112,12 @@ class SimStrategy(BaseStrategy):
         self.min_edge: float = float(self.params.get("min_edge", 0.03))
         self.kelly_fraction: float = float(self.params.get("kelly_fraction", 0.25))
         self.rules: Dict[str, Any] = dict(self.params.get("rules") or {})
+        # parametri di ESECUZIONE (realismo flumine): tipo di persistenza degli
+        # ordini non matchati a fine mercato. LAPSE = annulla l'inmatchato (default
+        # Betfair), PERSIST = lo porta in-play, MARKET_ON_CLOSE = SP a chiusura.
+        self.persistence_type: str = str(
+            self.params.get("persistence_type") or "LAPSE"
+        ).upper()
 
         # scores ordinati per ts_ms: lista di (ts_ms, minute, score_home, score_away)
         self._scores: List[Tuple[int, Optional[int], int, int]] = sorted(
@@ -125,10 +131,23 @@ class SimStrategy(BaseStrategy):
         self._placed: set = set()
         # lambda pre-match per evento (cache)
         self._lambdas: Optional[Tuple[float, float, Optional[int]]] = None
-        # ordini regolati raccolti alla chiusura mercato: [(order, market_type)]
-        self.settled_orders: List[Tuple[Any, str]] = []
+        # ordini regolati raccolti alla chiusura mercato, DEDUPLICATI per order.id:
+        # {order_id: (order, market_type)}
+        self._settled_by_id: Dict[str, Tuple[Any, str]] = {}
 
         super().__init__(**kwargs)
+
+    @property
+    def settled_orders(self) -> List[Tuple[Any, str]]:
+        """Ordini regolati UNICI (deduplicati per ``order.id``).
+
+        ``process_closed_market`` puo' essere invocato decine di migliaia di volte
+        per lo stesso mercato durante il replay del raw Betfair (chiusure/market
+        definition ri-emesse di continuo). Senza dedup ogni ordine verrebbe
+        conteggiato ~10^4 volte, gonfiando P&L/stake dello stesso fattore. La
+        dedup per ``id`` garantisce un solo settlement per ordine.
+        """
+        return list(self._settled_by_id.values())
 
     # ------------------------------------------------------------------ utils
     def _score_at(self, pt_ms: Optional[int]) -> Tuple[int, int, Optional[int]]:
@@ -190,7 +209,11 @@ class SimStrategy(BaseStrategy):
         )
         order = trade.create_order(
             side=side,
-            order_type=LimitOrder(price=float(price), size=round(float(size), 2)),
+            order_type=LimitOrder(
+                price=float(price),
+                size=round(float(size), 2),
+                persistence_type=self.persistence_type,
+            ),
         )
         market.place_order(order)
 
@@ -221,7 +244,8 @@ class SimStrategy(BaseStrategy):
         except Exception:  # noqa: BLE001 - blotter puo' non avere ordini
             orders = []
         for order in orders:
-            self.settled_orders.append((order, mtype))
+            oid = getattr(order, "id", None) or id(order)
+            self._settled_by_id[oid] = (order, mtype)
 
     # --------------------------------------------------------------- engine
     def _process_engine(self, market: Any, market_book: Any) -> None:
@@ -231,12 +255,21 @@ class SimStrategy(BaseStrategy):
         mtype = (mstruct.get("market_type") or "").upper()
 
         if self._lambdas is None:
-            mo_ladder = ladder[mid] if mtype == "MATCH_ODDS" else None
-            lh, la, league = get_prematch_lambdas(self.event_id, None, mo_ladder)
-            # cache solo se i lambda vengono da dati reali (MATCH_ODDS presente)
-            if mo_ladder:
+            if mtype == "MATCH_ODDS":
+                # dati reali: il MATCH_ODDS fornisce struttura (selezioni+sort_priority)
+                # E ladder (quote back di apertura) → lambda stimati dalle quote.
+                lh, la, league = get_prematch_lambdas(
+                    self.event_id,
+                    None,
+                    match_odds_market=mstruct,
+                    ladder=ladder[mid],
+                )
+                # cache solo quando vengono da dati reali (MATCH_ODDS presente)
                 self._lambdas = (lh, la, league)
-            lam = (lh, la, league)
+                lam = self._lambdas
+            else:
+                # transitorio finche' non arriva un MATCH_ODDS: default neutro
+                lam = get_prematch_lambdas(self.event_id, None)
         else:
             lam = self._lambdas
 
@@ -274,7 +307,8 @@ class SimStrategy(BaseStrategy):
     # -------------------------------------------------------------- sandbox
     def _process_sandbox(self, market: Any, market_book: Any) -> None:
         r = self.rules
-        want_mtype = (r.get("market_type") or "").upper()
+        # accetta sia "market_type" (canonico) sia "market" (alias dalla UI)
+        want_mtype = (r.get("market_type") or r.get("market") or "").upper()
         md = getattr(market_book, "market_definition", None)
         mtype = (
             getattr(md, "market_type", None)
