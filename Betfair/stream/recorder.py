@@ -4,7 +4,8 @@ Il file locale per-evento è la SOURCE OF TRUTH (resiste ai crash). Il curator l
 rilegge a fine partita per produrre gli snapshot curati su Supabase.
 
 serialize_book() è una funzione PURA (testabile senza rete): MarketBook → dict
-compatto { market_id, pt, status, inplay, tv, runners:{sel_id:{b,l,ltp,tv}} }.
+compatto { market_id, pt, status, inplay, tv, runners:{sel_id:{b,l,ltp,tv,trd}} }
+dove `trd` = volume tradato per-prezzo (per gli abbinamenti maker nel simulatore).
 
 La strategia mantiene anche una cache in-memory dell'ultimo book per mercato,
 letta dal worker punteggio per aggiornare live_now (live glance).
@@ -15,7 +16,7 @@ import json
 import logging
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from betfairlightweight.resources.bettingresources import MarketBook
 from flumine import BaseStrategy
@@ -27,12 +28,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _price_sizes(level_list: Any, depth: int) -> List[List[float]]:
-    """Converte una lista di PriceSize in [[price, size], ...] limitata a `depth`."""
+def _price_sizes(level_list: Any, depth: Optional[int]) -> List[List[float]]:
+    """Converte una lista di PriceSize in [[price, size], ...].
+
+    `depth` limita ai primi N livelli; None/<=0 = TUTTI i livelli (full depth).
+    """
     out: List[List[float]] = []
     if not level_list:
         return out
-    for ps in level_list[:depth]:
+    seq = level_list if (depth is None or depth <= 0) else level_list[:depth]
+    for ps in seq:
         price = getattr(ps, "price", None)
         size = getattr(ps, "size", None)
         if price is None and isinstance(ps, dict):  # tolleranza forma dict
@@ -43,18 +48,29 @@ def _price_sizes(level_list: Any, depth: int) -> List[List[float]]:
 
 
 def serialize_book(market_book: Any, depth: int = 3) -> Dict[str, Any]:
-    """MarketBook betfairlightweight → dict compatto serializzabile."""
+    """MarketBook betfairlightweight → dict compatto serializzabile.
+
+    Per ogni selezione: `b`/`l` = available-to-back/lay (fino a `depth` livelli),
+    `ltp` = last traded price, `tv` = volume tradato TOTALE, `trd` = volume tradato
+    per-prezzo (FULL, da ex.traded_volume) — quest'ultimo abilita gli abbinamenti
+    "maker" tick-perfetti nel simulatore/live (matching.ts).
+    """
     runners: Dict[str, Any] = {}
     for r in getattr(market_book, "runners", []) or []:
         ex = getattr(r, "ex", None)
         back = _price_sizes(getattr(ex, "available_to_back", None), depth) if ex else []
         lay = _price_sizes(getattr(ex, "available_to_lay", None), depth) if ex else []
-        runners[str(r.selection_id)] = {
+        # volume tradato per-prezzo: FULL (nessun limite di profondità)
+        trd = _price_sizes(getattr(ex, "traded_volume", None), None) if ex else []
+        runner: Dict[str, Any] = {
             "b": back,
             "l": lay,
             "ltp": getattr(r, "last_price_traded", None),
             "tv": getattr(r, "total_matched", None),
         }
+        if trd:
+            runner["trd"] = trd
+        runners[str(r.selection_id)] = runner
     return {
         "market_id": market_book.market_id,
         "pt": getattr(market_book, "publish_time_epoch", None),

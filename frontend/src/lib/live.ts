@@ -146,6 +146,9 @@ export interface LadderEntry {
     lay: [number, number][];
     ltp: number | null;
     tv: number | null;
+    // volume tradato per-prezzo [prezzo, volume] (cumulativo). Presente solo nelle
+    // registrazioni recenti (recorder full-depth) → abilita i fill maker tick-perfetti.
+    trd?: [number, number][];
 }
 export type Ladder = Record<string /* selection_id */, LadderEntry>;
 export interface Frame {

@@ -43,15 +43,23 @@ def _ms_to_iso(pt_ms: Optional[int]) -> Optional[str]:
 
 
 def ladder_db_format(runners: Dict[str, Any]) -> Dict[str, Any]:
-    """runners del JSONL ({b,l,ltp,tv}) → ladder DB ({back,lay,ltp,tv})."""
+    """runners del JSONL ({b,l,ltp,tv,trd}) → ladder DB ({back,lay,ltp,tv,trd}).
+
+    `trd` (volume tradato per-prezzo) viene incluso SOLO se presente, così i replay
+    vecchi restano leggeri e il motore di matching ricade sul proxy ltp/Δtv.
+    """
     out: Dict[str, Any] = {}
     for sel_id, r in (runners or {}).items():
-        out[str(sel_id)] = {
+        entry: Dict[str, Any] = {
             "back": r.get("b", []),
             "lay": r.get("l", []),
             "ltp": r.get("ltp"),
             "tv": r.get("tv"),
         }
+        trd = r.get("trd")
+        if trd:
+            entry["trd"] = trd
+        out[str(sel_id)] = entry
     return out
 
 

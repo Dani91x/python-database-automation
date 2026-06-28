@@ -109,3 +109,9 @@ def test_pt_none_unchanged_dropped(tmp_path):
 def test_ladder_db_format():
     out = ladder_db_format({"7": {"b": [[2.0, 5.0]], "l": [[2.1, 5.0]], "ltp": 2.0, "tv": 9.0}})
     assert out == {"7": {"back": [[2.0, 5.0]], "lay": [[2.1, 5.0]], "ltp": 2.0, "tv": 9.0}}
+
+
+def test_ladder_db_format_passa_trd():
+    out = ladder_db_format({"7": {"b": [[2.0, 5.0]], "l": [], "ltp": 2.0, "tv": 9.0,
+                                  "trd": [[1.99, 30.0], [2.0, 60.0]]}})
+    assert out["7"]["trd"] == [[1.99, 30.0], [2.0, 60.0]]

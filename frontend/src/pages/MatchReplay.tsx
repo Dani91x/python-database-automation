@@ -26,11 +26,33 @@ import {
     formatGbp, settleOrCashOut, overallSettled,
     type SimBet, type BetSide, type LadderMap, type SettleCtx, type MarketSettleEval,
 } from '@/lib/replay-pnl';
+import { simulateOrder, type BookSnapshot, type OrderRequest, type Persistence } from '@/lib/matching';
 import { buildSnapshots } from '@/lib/opportunities/snapshot';
 import { runDetectors, DEFAULT_OPP_CONFIG } from '@/lib/opportunities/engine';
 import { harnessDetectors, validateFromDetections } from '@/lib/opportunities/validate';
-import { matchedStake } from '@/lib/opportunities/fill';
 import type { Opportunity } from '@/lib/opportunities/types';
+
+// Ordine simulato (richiesta immutabile dell'utente). I fill REALI vengono calcolati
+// in modo deterministico dal motore di matching (matching.ts) contro gli snapshot del
+// book fino all'istante corrente → lo stato (matched/quota media/resto) è derivato.
+interface SimOrder {
+    id: string;
+    marketId: string;
+    selectionId: number;
+    selectionName: string;
+    marketName: string;
+    side: BetSide;
+    limitPrice: number;      // quota cliccata (limite)
+    requested: number;       // stake richiesto (£)
+    placedTs: number;        // ms epoch di piazzamento
+    inPlay: boolean;         // true → ritardo Betfair applicato dal motore
+    minute: number | null;
+    persistence: Persistence;
+    cancelledTs?: number | null; // istante di cancellazione del resto non abbinato
+    closedTs?: number | null;    // istante di cash-out (congela la simulazione)
+    closed?: boolean;            // cash-out effettuato
+    realizedPnl?: number;        // P&L bloccato del mercato (1 volta per gruppo)
+}
 
 const PLAY_NORMAL_MS = 1000;
 const PLAY_FAST_MS = 300;
@@ -88,7 +110,7 @@ export default function MatchReplay() {
     const [activeCategory, setActiveCategory] = useState<CatKey>('MATCH_ODDS');
     // vista del pannello sotto la timeline: 'markets' (tab mercati) | 'opps' (Opportunità).
     const [view, setView] = useState<'markets' | 'opps'>('markets');
-    const [bets, setBets] = useState<SimBet[]>([]);
+    const [orders, setOrders] = useState<SimOrder[]>([]);
     const [stakes, setStakes] = useState<Record<string, number>>({});
     // P&L già REALIZZATO da cash-out precedenti (le bet vengono rimosse, ma il
     // valore bloccato al momento del cash-out resta nella posizione complessiva).
@@ -116,7 +138,7 @@ export default function MatchReplay() {
             setSpeedMult(1);
             setActiveCategory('MATCH_ODDS');
             setView('markets');
-            setBets([]);
+            setOrders([]);
             setStakes({});
             setRealizedPnl(0);
         } catch (e: any) {
@@ -132,7 +154,7 @@ export default function MatchReplay() {
         setSpeedMult(1);
         setActiveCategory('MATCH_ODDS');
         setView('markets');
-        setBets([]);
+        setOrders([]);
         setStakes({});
         setCurrentIndex(0);
         setRealizedPnl(0);
@@ -482,6 +504,70 @@ export default function MatchReplay() {
     const finished = safeIndex >= maxIndex;
     const ctx: SettleCtx = { home: currentScore.home, away: currentScore.away, finished };
 
+    // ---- FILL REALI: ogni ordine viene risolto dal motore di matching (matching.ts)
+    // contro la sequenza di snapshot del book fino all'istante corrente. È pura e
+    // deterministica → lo scrubbing avanti/indietro è coerente. La `bets` derivata
+    // (porzioni ABBINATE, quota = VWAP) alimenta posizioni, cash-out e Trades.
+    const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
+    const bets: SimBet[] = useMemo(() => {
+        if (!replay) return [];
+        const snapCache = new Map<string, BookSnapshot[]>();
+        const snapsFor = (marketId: string, sid: number): BookSnapshot[] => {
+            const key = `${marketId}:${sid}`;
+            let s = snapCache.get(key);
+            if (!s) {
+                const arr = framesByMarket.get(marketId) ?? [];
+                s = arr.map(f => {
+                    const e = f.ladder?.[String(sid)];
+                    return {
+                        ts: new Date(f.ts).getTime(),
+                        back: e?.back ?? [],
+                        lay: e?.lay ?? [],
+                        ltp: e?.ltp ?? null,
+                        tv: e?.tv ?? null,
+                        trd: e?.trd,
+                        status: f.status,
+                    };
+                });
+                snapCache.set(key, s);
+            }
+            return s;
+        };
+        return orders.map(o => {
+            // un ordine chiuso (cash-out) congela la simulazione al suo istante di chiusura
+            const upto = o.closed && o.closedTs != null ? Math.min(currentMs, o.closedTs) : currentMs;
+            const req: OrderRequest = {
+                side: o.side,
+                limitPrice: o.limitPrice,
+                stake: o.requested,
+                placedTs: o.placedTs,
+                inPlay: o.inPlay,
+                delayMs: o.inPlay ? OPP_CFG.delaySec * 1000 : 0,
+                persistence: o.persistence,
+                cancelledTs: o.cancelledTs ?? null,
+            };
+            const res = simulateOrder(req, snapsFor(o.marketId, o.selectionId), upto);
+            return {
+                id: o.id,
+                marketId: o.marketId,
+                selectionId: o.selectionId,
+                selectionName: o.selectionName,
+                marketName: o.marketName,
+                side: o.side,
+                odds: res.avgPrice ?? o.limitPrice,
+                stake: res.matched,
+                requestedStake: o.requested,
+                minute: o.minute,
+                limitPrice: o.limitPrice,
+                remaining: res.remaining,
+                matchStatus: res.status,
+                closed: o.closed,
+                realizedPnl: o.realizedPnl,
+            } satisfies SimBet;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [replay, orders, framesByMarket, currentMs]);
+
     // valutazione per-mercato: P&L DEFINITIVO se l'esito è deciso, altrimenti cash-out.
     const marketEval = (m: typeof markets[number]) => settleOrCashOut(
         {
@@ -532,63 +618,58 @@ export default function MatchReplay() {
     const skipStart = () => { setIsPlaying(false); setCurrentIndex(0); };
     const skipEnd = () => { setIsPlaying(false); setCurrentIndex(maxIndex); };
 
-    // ---- gestione bet ----
+    // ---- gestione ordini ----
     const getStake = (marketId: string) => stakes[marketId] ?? 100;
-    // Piazzamento REALISTICO: lo stake abbinato = liquidità disponibile nel book al
-    // prezzo scelto (fill.ts). In-play si applica il RITARDO Betfair (~delaySec): la
-    // bet si matcha contro il book DOPO il ritardo → può essere parziale o non
-    // abbinarsi se il prezzo è scappato. Il P&L (replay-pnl) usa lo stake abbinato.
+    // Piazzamento REALE: l'utente clicca una quota O (il best back/lay visibile) con
+    // stake S → si crea un ORDINE a quota limite O. Gli abbinamenti effettivi (quanto,
+    // a quale quota media, quando) li calcola il motore di matching (matching.ts) contro
+    // il book registrato, esattamente come farebbe Betfair: taker immediato col ritardo
+    // in-play + resto a riposo che si riempie nel tempo. Lo stesso codice andrà in live.
     const placeBet = (m: { market_id: string; market_name: string | null; market_type: string | null }) =>
         (selectionId: number, selectionName: string, side: BetSide, price: number) => {
             const requested = getStake(m.market_id);
             if (requested <= 0 || price <= 1) return;
-            // pre-match → match immediato; in-play (dal kickoff, minuto 0 incluso) →
-            // match al book a +delaySec (ritardo Betfair).
-            const inplay = currentMinute != null && currentMinute >= 0;
-            const matchTs = inplay && currentTs
-                ? new Date(new Date(currentTs).getTime() + OPP_CFG.delaySec * 1000).toISOString()
-                : currentTs;
-            const matchLadder = ladderAtTs(m.market_id, matchTs) ?? currentLadder(m.market_id);
-            const entry = matchLadder?.[String(selectionId)];
-            const levels = side === 'back' ? entry?.back : entry?.lay;
-            const matched = matchedStake(levels, price, requested, side);
-            setBets(prev => [...prev, {
+            const inPlay = currentMinute != null && currentMinute >= 0;
+            setOrders(prev => [...prev, {
                 id: uid(),
                 marketId: m.market_id,
                 selectionId,
                 selectionName,
                 marketName: m.market_name || m.market_type || 'Mercato',
                 side,
-                odds: price,
-                stake: matched,
-                requestedStake: requested,
+                limitPrice: price,
+                requested,
+                placedTs: currentMs,
+                inPlay,
                 minute: currentMinute,
+                persistence: 'LAPSE',
             }]);
         };
-    const removeBet = (id: string) => setBets(prev => prev.filter(b => b.id !== id));
-    // cash out: BLOCCA il valore corrente del mercato nel P&L realizzato, poi
-    // chiude (rimuove) le posizioni del mercato alle quote correnti.
+    // Annulla un ordine: se ha già una parte ABBINATA, resta (si annulla solo il resto a
+    // riposo, come su Betfair); se non è abbinato nulla, sparisce dalla lista.
+    const removeBet = (id: string) => setOrders(prev => prev.flatMap(o => {
+        if (o.id !== id) return [o];
+        const b = bets.find(x => x.id === id);
+        if (b && b.stake > 1e-9) return [{ ...o, cancelledTs: currentMs }]; // tieni l'abbinato, annulla il resto
+        return []; // niente abbinato → rimuovi
+    }));
+    // cash out: BLOCCA il valore corrente del mercato nel P&L realizzato e marca gli
+    // ordini del mercato come chiusi (restano visibili nei Trades, congelati al cash-out).
     const cashOutMarket = (marketId: string) => {
         const m = markets.find(mk => mk.market_id === marketId);
         if (!m) return;
-        if (bets.filter(b => b.marketId === marketId && !b.closed).length === 0) return;
-        // blocca il valore corrente del mercato (definitivo se l'esito è deciso,
-        // altrimenti cash-out alle quote correnti).
+        if (bets.filter(b => b.marketId === marketId && !b.closed && b.stake > 1e-9).length === 0) return;
         const locked = marketEval(m).value;
         setRealizedPnl(p => p + locked);
-        // le posizioni NON vengono rimosse: vengono marcate `closed` (restano visibili
-        // nei Trades). Il valore bloccato è registrato una sola volta (prima bet del gruppo).
-        setBets(prev => {
+        setOrders(prev => {
             let first = true;
-            return prev.map(b => {
-                if (b.marketId === marketId && !b.closed) {
-                    // il P&L bloccato del gruppo è registrato SOLO sulla prima bet;
-                    // le altre restano undefined (niente "· £0.00" spurio nei Trades).
+            return prev.map(o => {
+                if (o.marketId === marketId && !o.closed) {
                     const rp = first ? locked : undefined;
                     first = false;
-                    return { ...b, closed: true, realizedPnl: rp };
+                    return { ...o, closed: true, closedTs: currentMs, realizedPnl: rp };
                 }
-                return b;
+                return o;
             });
         });
     };

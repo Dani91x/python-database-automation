@@ -30,8 +30,10 @@ FALLBACK_RETRY_PRIMARY_SEC: float = float(os.getenv("LIVE_FALLBACK_RETRY_PRIMARY
 # intervallo minimo (secondi) tra due snapshot conservati per lo STESSO mercato
 # (write-on-change con throttle): riduce le righe senza perdere la dinamica.
 UPLOAD_CADENCE_SEC: float = float(os.getenv("LIVE_UPLOAD_CADENCE_SEC", "10"))
-# dimensione massima del ladder per lato conservata in DB (livelli best offers)
-LADDER_DEPTH: int = int(os.getenv("LIVE_LADDER_DEPTH", "3"))
+# profondità del ladder per lato (livelli best offers) conservata e sottoscritta.
+# 10 = massimo best-offers Betfair → matching "taker" realistico anche su stake
+# grossi che sfondano più livelli. Il volume tradato per-prezzo (trd) è sempre full.
+LADDER_DEPTH: int = int(os.getenv("LIVE_LADDER_DEPTH", "10"))
 # chunk di righe per upsert (come db_adapter del progetto)
 UPLOAD_CHUNK: int = int(os.getenv("LIVE_UPLOAD_CHUNK", "500"))
 

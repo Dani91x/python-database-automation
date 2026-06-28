@@ -32,10 +32,14 @@ export interface SimBet {
     selectionName: string;
     marketName: string;
     side: BetSide;
-    odds: number;        // quota decimale a cui è stata piazzata
+    odds: number;        // quota MEDIA (VWAP) degli abbinamenti → base del P&L
     stake: number;       // stake EFFETTIVAMENTE abbinato (backer's stake) → base del P&L
     requestedStake?: number; // stake richiesto dall'utente (se > stake = fill PARZIALE)
     minute: number | null;
+    // --- stato di matching (display-only, NON usato dalla matematica P&L) ---
+    limitPrice?: number;    // quota limite richiesta (prezzo cliccato)
+    remaining?: number;     // stake non ancora abbinato (a riposo / in ritardo / annullato)
+    matchStatus?: 'PENDING' | 'OPEN' | 'MATCHED' | 'CANCELLED' | 'LAPSED';
     // --- post cash-out (solo in-memory, finché la pagina resta aperta) ---
     closed?: boolean;       // true = posizione chiusa con cash-out (resta visibile, esclusa dai calcoli aperti)
     realizedPnl?: number;   // P&L bloccato del MERCATO al cash-out (registrato una sola volta per gruppo)

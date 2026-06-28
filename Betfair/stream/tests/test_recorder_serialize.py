@@ -11,15 +11,16 @@ class _PS:
 
 
 class _Ex:
-    def __init__(self, back, lay):
+    def __init__(self, back, lay, traded=None):
         self.available_to_back = [_PS(p, s) for p, s in back]
         self.available_to_lay = [_PS(p, s) for p, s in lay]
+        self.traded_volume = [_PS(p, s) for p, s in (traded or [])]
 
 
 class _Runner:
-    def __init__(self, selection_id, back, lay, ltp, tv):
+    def __init__(self, selection_id, back, lay, ltp, tv, traded=None):
         self.selection_id = selection_id
-        self.ex = _Ex(back, lay)
+        self.ex = _Ex(back, lay, traded)
         self.last_price_traded = ltp
         self.total_matched = tv
 
@@ -68,3 +69,17 @@ def test_serialize_empty_ladder():
     out = serialize_book(book, depth=3)
     assert out["runners"]["1"]["b"] == []
     assert out["runners"]["1"]["l"] == []
+    assert "trd" not in out["runners"]["1"]  # nessun traded → chiave assente
+
+
+def test_serialize_traded_volume_full():
+    # il volume tradato per-prezzo è FULL (non limitato da `depth`)
+    book = _Book(
+        "1.5", 1, "OPEN", True, 300.0,
+        [_Runner(7, [(2.0, 10), (1.9, 10), (1.8, 10)], [(2.1, 5)], 2.0, 300.0,
+                 traded=[(1.95, 100), (2.0, 150), (2.05, 50), (2.1, 20)])],
+    )
+    out = serialize_book(book, depth=2)
+    r = out["runners"]["7"]
+    assert len(r["b"]) == 2                       # b/l limitati a depth=2
+    assert r["trd"] == [[1.95, 100.0], [2.0, 150.0], [2.05, 50.0], [2.1, 20.0]]  # trd full

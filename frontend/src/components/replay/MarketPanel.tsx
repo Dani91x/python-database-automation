@@ -63,7 +63,7 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                     />
                     <button
                         onClick={onCashOut}
-                        disabled={bets.length === 0}
+                        disabled={bets.every(b => (b.stake ?? 0) <= 1e-9)}
                         className={`px-2.5 py-1 rounded-md text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
                             settled
                                 ? (marketValue >= 0 ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : 'bg-red-500/20 text-red-200 hover:bg-red-500/30')

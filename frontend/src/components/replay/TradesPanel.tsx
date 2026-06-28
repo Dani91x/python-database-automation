@@ -1,9 +1,10 @@
 // ============================================================================
-// TradesPanel — elenco di tutte le bet simulate piazzate (aperte + chiuse).
-// Colonne: Min | Selezione | Tipo (Back/Lay) | Quota | Stake | Return/Liab.
-// Le bet APERTE hanno una X rossa per rimuoverle; le bet CHIUSE (cash-out) restano
-// visibili, grigie, con badge "CASH OUT" e (se disponibile) il P&L realizzato.
-//   Return/Liab = stake*(quota-1) (potenziale profitto per back, liability per lay).
+// TradesPanel — elenco di tutti gli ordini simulati (aperti + chiusi).
+// Colonne: Min | Selezione | Tipo (Back/Lay) | Quota (media) | Stake | Return/Liab.
+// Lo stake mostra la parte ABBINATA + lo stato di matching (in ritardo / in coda /
+// parziale / annullato / lapsed). La X annulla il RESTO non abbinato (la parte già
+// abbinata resta, come su Betfair). Le posizioni chiuse (cash-out) restano grigie.
+//   Return/Liab = stake_abbinato*(quota-1) (profitto potenziale back / liability lay).
 // ============================================================================
 import { Card } from '@/components/ui/card';
 import { X } from 'lucide-react';
@@ -43,8 +44,18 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                             {bets.map(b => {
                                 const amount = b.stake * (b.odds - 1);
                                 const closed = !!b.closed;
-                                const partial = b.requestedStake != null && b.requestedStake - b.stake > 1e-6;
-                                const unmatched = b.stake <= 1e-9;
+                                const matched = b.stake > 1e-9;
+                                const remaining = b.remaining ?? 0;
+                                const hasRemaining = remaining > 1e-6;
+                                const status = b.matchStatus;
+                                // etichetta di stato per la parte NON ancora abbinata
+                                const stateLabel =
+                                    status === 'PENDING' ? 'in ritardo…'
+                                        : status === 'CANCELLED' ? 'annullato'
+                                            : status === 'LAPSED' ? 'annullato (sospensione)'
+                                                : hasRemaining ? `£${remaining.toLocaleString('it', { maximumFractionDigits: 2 })} in coda`
+                                                    : null;
+                                const canCancel = !closed && (hasRemaining || status === 'PENDING');
                                 return (
                                     <tr key={b.id} className={`border-b border-white/5 ${closed ? 'opacity-45' : ''}`}>
                                         <td className="px-3 py-2 tabular-nums text-muted-foreground">{b.minute != null ? `${b.minute}'` : '—'}</td>
@@ -71,35 +82,37 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                         </td>
                                         <td className="px-2 py-2 text-right tabular-nums text-white/80">{b.odds.toFixed(2)}</td>
                                         <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">
-                                            {unmatched ? (
-                                                <span className="text-amber-400" title="Nessun abbinamento: liquidità insufficiente al prezzo">
-                                                    non abbinato
-                                                </span>
-                                            ) : (
+                                            {matched ? (
                                                 <>
                                                     {formatGbp(b.stake)}
-                                                    {partial && (
-                                                        <span className="block text-[9px] text-amber-400" title="Fill parziale per liquidità limitata">
-                                                            abbinato di {formatGbp(b.requestedStake!)}
+                                                    {stateLabel && (
+                                                        <span className="block text-[9px] text-amber-400" title={`Su £${b.requestedStake ?? b.stake} richiesti`}>
+                                                            + {stateLabel}
                                                         </span>
                                                     )}
                                                 </>
+                                            ) : (
+                                                <span className="text-amber-400" title="Parte non ancora abbinata">
+                                                    {stateLabel ?? 'non abbinato'}
+                                                </span>
                                             )}
                                         </td>
                                         <td className={`px-3 py-2 text-right tabular-nums ${b.side === 'lay' ? 'text-red-400' : 'text-emerald-400'}`}>
-                                            {formatGbp(amount)}
+                                            {matched ? formatGbp(amount) : '—'}
                                         </td>
                                         <td className="px-2 py-2 text-right">
                                             {closed ? (
                                                 <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold">Chiusa</span>
-                                            ) : (
+                                            ) : canCancel ? (
                                                 <button
                                                     onClick={() => onRemove(b.id)}
                                                     className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500/15 text-red-300 hover:bg-red-500/30 transition-colors"
-                                                    title="Rimuovi"
+                                                    title={matched ? 'Annulla il resto non abbinato' : 'Annulla ordine'}
                                                 >
                                                     <X className="w-3.5 h-3.5" />
                                                 </button>
+                                            ) : (
+                                                <span className="text-[9px] uppercase tracking-wider text-emerald-400/70 font-bold" title="Interamente abbinato">abbinato</span>
                                             )}
                                         </td>
                                     </tr>
