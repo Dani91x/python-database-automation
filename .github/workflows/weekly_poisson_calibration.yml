@@ -81,6 +81,9 @@ jobs:
                 exit 1
               fi
               echo "Push rifiutato (probabile race con altro workflow), rebase e retry ($i)..."
-              git pull --rebase origin master
+              # --autostash: gli step di calibrazione possono lasciare modifiche
+              # non-staged nel working tree (file extra rigenerati). Senza autostash
+              # il rebase aborta con "cannot pull with rebase: You have unstaged changes".
+              git pull --rebase --autostash origin master
             done
           fi
