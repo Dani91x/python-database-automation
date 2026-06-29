@@ -51,6 +51,7 @@ export interface LiveNowMarket {
     market_id: string;
     market_type: string;
     market_name: string;
+    status?: string | null;   // OPEN | SUSPENDED | CLOSED (per il badge/banner)
     selections: LiveNowSelection[];
 }
 export interface LiveNowState {

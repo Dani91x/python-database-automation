@@ -186,6 +186,7 @@ class LiveSession:
                     "market_id": mid,
                     "market_type": m.get("market_type"),
                     "market_name": m.get("market_name"),
+                    "status": book.get("status"),  # OPEN/SUSPENDED/CLOSED → badge/banner UI
                     "selections": sels,
                 }
             )

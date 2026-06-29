@@ -32,6 +32,7 @@ import { runDetectors, DEFAULT_OPP_CONFIG } from '@/lib/opportunities/engine';
 import { harnessDetectors, validateFromDetections } from '@/lib/opportunities/validate';
 import { arbExecutableUnderDelay } from '@/lib/opportunities/arb_exec';
 import type { Opportunity } from '@/lib/opportunities/types';
+import { type CatKey, CATEGORIES, categoryOf, lineOf } from '@/lib/market-categories';
 
 // Ordine simulato (richiesta immutabile dell'utente). I fill REALI vengono calcolati
 // in modo deterministico dal motore di matching (matching.ts) contro gli snapshot del
@@ -62,30 +63,7 @@ const SPEED_OPTIONS = [1, 2, 3, 4, 5] as const;
 // URL logo lega (API-Football) dall'id; '' se mancante.
 const leagueLogo = (id?: number | null) => (id ? `https://media.api-sports.io/football/leagues/${id}.png` : '');
 
-// ---- categorie mercato (menu a tab) ----
-type CatKey = 'MATCH_ODDS' | 'OVER_UNDER' | 'CORRECT_SCORE' | 'FIRST_HALF' | 'BTTS' | 'OTHER';
-const CATEGORIES: { key: CatKey; label: string }[] = [
-    { key: 'MATCH_ODDS', label: 'Match Odds' },
-    { key: 'OVER_UNDER', label: 'Over/Under' },
-    { key: 'CORRECT_SCORE', label: 'Correct Score' },
-    { key: 'FIRST_HALF', label: 'First Half' },
-    { key: 'BTTS', label: 'BTTS' },
-    { key: 'OTHER', label: 'Squadre/Altri' },
-];
-function categoryOf(type: string | null): CatKey {
-    const t = (type || '').toUpperCase();
-    if (t === 'MATCH_ODDS' || t === 'DOUBLE_CHANCE' || t === 'HALF_TIME_FULL_TIME') return 'MATCH_ODDS';
-    if (t.startsWith('FIRST_HALF_GOALS') || t === 'HALF_TIME') return 'FIRST_HALF';
-    if (t.startsWith('OVER_UNDER')) return 'OVER_UNDER';
-    if (t === 'CORRECT_SCORE' || t === 'HALF_TIME_SCORE') return 'CORRECT_SCORE';
-    if (t === 'BOTH_TEAMS_TO_SCORE' || t === 'BTTS') return 'BTTS';
-    return 'OTHER';
-}
-// linea numerica da un market_type tipo OVER_UNDER_25 -> 2.5 (per ordinamento ASC).
-function lineOf(type: string | null): number {
-    const m = /(\d)(\d)$/.exec((type || '').toUpperCase());
-    return m ? Number(`${m[1]}.${m[2]}`) : Number.MAX_SAFE_INTEGER;
-}
+// ---- categorie mercato (menu a tab) — definizioni CONDIVISE con Segui Live ----
 
 // genera un id univoco per le bet simulate
 function uid(): string {

@@ -182,6 +182,11 @@ class MarketRecorderStrategy(BaseStrategy):
             getattr(market_book, "market_definition", None), "market_type", None
         )
         with self._lock:
+            # marca l'ultimo book in cache come CLOSED → il tabellone live mostra
+            # il banner "Chiuso" sul mercato risolto (altrimenti resterebbe SUSPENDED).
+            rec = self._latest.get(mid)
+            if rec is not None:
+                rec["status"] = getattr(market_book, "status", None) or "CLOSED"
             self._closed_markets.setdefault(event_id, set()).add(mid)
             all_markets = self.event_markets.get(event_id, set())
             all_closed = bool(all_markets) and all_markets.issubset(self._closed_markets[event_id])
