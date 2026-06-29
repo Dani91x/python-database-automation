@@ -79,6 +79,34 @@ export function isValidTick(price: number): boolean {
     return Math.abs(price - roundToTick(price)) < 1e-6;
 }
 
+// step di UN tick: per salire si usa lo step della banda che contiene il prezzo,
+// per scendere quello della banda appena SOTTO (gestione corretta dei confini di
+// banda, es. 3.00 → giù = 2.98 con step 0.02, su = 3.05 con step 0.05).
+function stepOneTick(price: number, dir: 1 | -1): number {
+    const p = roundToTick(price);
+    if (!Number.isFinite(p)) return NaN;
+    const probe = dir > 0 ? p + 1e-6 : p - 1e-6;
+    let step = 0.01;
+    for (const [lo, hi, s] of TICK_BANDS) {
+        if (probe >= lo - PRICE_EPS && probe < hi - PRICE_EPS) { step = s; break; }
+    }
+    return roundToTick(Math.min(1000, Math.max(1.01, p + dir * step)));
+}
+
+/** Quota di `n` tick PIÙ ALTA sulla scala Betfair (clamp a 1000). */
+export function tickUp(price: number, n = 1): number {
+    let p = roundToTick(price);
+    for (let i = 0; i < n; i++) p = stepOneTick(p, 1);
+    return p;
+}
+
+/** Quota di `n` tick PIÙ BASSA sulla scala Betfair (clamp a 1.01). */
+export function tickDown(price: number, n = 1): number {
+    let p = roundToTick(price);
+    for (let i = 0; i < n; i++) p = stepOneTick(p, -1);
+    return p;
+}
+
 // ------------------------------------------------------------------ snapshots
 // Snapshot del book di UNA selezione a un istante (derivato da Frame.ladder[sid]).
 export interface BookSnapshot {

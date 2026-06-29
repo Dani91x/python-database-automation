@@ -3,7 +3,7 @@
 // cap su volume tradato, queue position, cancel, lapse, tick e determinismo.
 import { describe, it, expect } from 'vitest';
 import {
-    roundToTick, isValidTick, matchMarketable, simulateOrder,
+    roundToTick, isValidTick, tickUp, tickDown, matchMarketable, simulateOrder,
     type BookSnapshot, type OrderRequest,
 } from './matching';
 
@@ -24,6 +24,13 @@ describe('roundToTick / isValidTick', () => {
         expect(isValidTick(2.82)).toBe(true);
         expect(isValidTick(2.83)).toBe(false);
         expect(isValidTick(3.05)).toBe(true);
+    });
+    it('tickUp/tickDown rispettano i confini di banda', () => {
+        expect(tickUp(2.98)).toBe(3.0);   // confine: 2-3 step 0.02 → 3.00
+        expect(tickUp(3.0)).toBe(3.05);   // 3-4 step 0.05
+        expect(tickDown(3.0)).toBe(2.98); // scendendo si usa lo step della banda sotto
+        expect(tickUp(2.0, 3)).toBe(2.06);
+        expect(tickDown(1.01)).toBe(1.01); // clamp basso
     });
 });
 
