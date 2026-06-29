@@ -73,6 +73,50 @@ def list_pending_follows() -> List[Dict[str, Any]]:
     return getattr(resp, "data", None) or []
 
 
+def get_fixture_prematch_lambdas(
+    fixture_id: Optional[int],
+) -> Optional[tuple]:
+    """λ pre-match PER-SQUADRA (Dixon-Coles) dal DB → (λ_casa, λ_trasferta, league_id).
+
+    È il PRIOR migliore per il motore live: forza attacco/difesa per-squadra stimata
+    sullo storico di lega (tactical_engine), non un totale generico. Catena:
+    ``tactical_engine_json.lambda_*`` → ``db_json_analisi.inputs.lambda_*``. None se assente.
+    """
+    if fixture_id is None:
+        return None
+    sb = get_supabase_client()
+    resp = (
+        sb.table("fixture_predictions")
+        .select("league_id,tactical_engine_json,db_json_analisi")
+        .eq("fixture_id", int(fixture_id))
+        .limit(1)
+        .execute()
+    )
+    rows = getattr(resp, "data", None) or []
+    if not rows:
+        return None
+    row = rows[0]
+    league_id = row.get("league_id")
+    for key, path in (("tactical_engine_json", None), ("db_json_analisi", "inputs")):
+        node = row.get(key)
+        if isinstance(node, str):
+            try:
+                import json as _json
+                node = _json.loads(node)
+            except (ValueError, TypeError):
+                node = None
+        if path and isinstance(node, dict):
+            node = node.get(path)
+        if isinstance(node, dict):
+            lh, la = node.get("lambda_home"), node.get("lambda_away")
+            try:
+                if lh is not None and la is not None and float(lh) > 0 and float(la) > 0:
+                    return (float(lh), float(la), league_id)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 # ----------------------------------------------------------------------------
 # live_markets (catalogo)
 # ----------------------------------------------------------------------------

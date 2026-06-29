@@ -110,6 +110,7 @@ class LiveSession:
         self.only_event: Optional[str] = None
         self.pollers: Dict[str, ScorePoller] = {}             # event_id -> poller
         self.markets_by_event: Dict[str, List[Dict[str, Any]]] = {}
+        self.fixture_by_event: Dict[str, Any] = {}            # event_id -> fixture_id (per λ DB)
         self.market_to_event: Dict[str, str] = {}             # riferimento vivo (raw tee)
         self.market_type_by_id: Dict[str, str] = {}
         self.event_markets: Dict[str, set] = {}               # event_id -> set(market_id)
@@ -316,23 +317,32 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
         lam = session.prematch_lambdas.get(event_id)
         ladder = session.ladder_by_market(event_id)
         if lam is None:
-            # ricava λ dal mercato MATCH_ODDS se già disponibile (home/away per
-            # sort_priority, non per probabilità → niente inversione casa/trasferta)
-            mo_market = None
-            mo_ladder = None
-            for m in session.markets_by_event.get(event_id, []):
-                if m.get("market_type") == "MATCH_ODDS":
-                    mo_market = m
-                    mo_ladder = ladder.get(m["market_id"])
-                    break
-            lh, la, league = pro.get_prematch_lambdas(
-                event_id, None, match_odds_market=mo_market, ladder=mo_ladder
-            )
-            lam = (lh, la, league)
-            # CACHE solo se i λ provengono da dati reali; altrimenti ricalcola al
-            # prossimo tick (evita di restare bloccati su λ di default).
-            if mo_market and mo_ladder:
-                session.prematch_lambdas[event_id] = lam
+            # PRIOR #1 (migliore): λ PER-SQUADRA Dixon-Coles dal pre-match DB.
+            db_lam = None
+            try:
+                db_lam = db.get_fixture_prematch_lambdas(session.fixture_by_event.get(event_id))
+            except Exception as e:  # noqa: BLE001 - mai bloccare i segnali per il DB
+                logger.debug("[signals] λ DB KO %s: %s", event_id, e)
+            if db_lam:
+                lam = db_lam
+                session.prematch_lambdas[event_id] = lam   # storico per-squadra: stabile
+            else:
+                # PRIOR #2: TOTALE gol DATA-DRIVEN dal mercato O/U; split dal 1X2.
+                total = pro.total_goals_from_ou(session.markets_by_event.get(event_id, []), ladder)
+                mo_market = mo_ladder = None
+                for m in session.markets_by_event.get(event_id, []):
+                    if m.get("market_type") == "MATCH_ODDS":
+                        mo_market = m
+                        mo_ladder = ladder.get(m["market_id"])
+                        break
+                lh, la, league = pro.get_prematch_lambdas(
+                    event_id, None, match_odds_market=mo_market, ladder=mo_ladder,
+                    expected_total_goals=total,
+                )
+                lam = (lh, la, league)
+                # cache solo con totale data-driven (no lock sul default)
+                if mo_market and mo_ladder and total is not None:
+                    session.prematch_lambdas[event_id] = lam
         signals = pro.evaluate_event(
             score_home=getattr(snap, "score_home", None) or 0,
             score_away=getattr(snap, "score_away", None) or 0,
@@ -341,6 +351,10 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
             markets=session.markets_by_event.get(event_id, []),
             ladder_by_market=ladder, bankroll=BANKROLL,
             min_edge=SIGNAL_MIN_EDGE, kelly_fraction=KELLY_FRACTION,
+            # stato LIVE: cartellini rossi correnti (la pressione corner/tiri è un
+            # hook neutro finché non calibrata).
+            red_home=getattr(snap, "red_home", 0) or 0,
+            red_away=getattr(snap, "red_away", 0) or 0,
         )
         payload = pro.signals_to_json(signals)
         payload["updated_ms"] = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -480,6 +494,7 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
 
         db.upsert_markets(event_id, markets)
         session.markets_by_event[event_id] = markets
+        session.fixture_by_event[event_id] = f.get("fixture_id")  # per λ pre-match DB
         session.event_markets[event_id] = set()
         for m in markets:
             mid = m["market_id"]

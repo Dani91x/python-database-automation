@@ -5,8 +5,12 @@ from Betfair.stream.engine.live_engine import (
     compute_inplay_probs,
     direction,
     estimate_prematch_lambdas,
+    game_state_multipliers,
     implied_prob,
+    inplay_residual_rates,
+    red_card_multipliers,
     remaining_fraction,
+    residual_time_weight,
 )
 
 

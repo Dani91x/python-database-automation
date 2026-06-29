@@ -35,7 +35,11 @@ from flumine import BaseStrategy
 from flumine.order.ordertype import LimitOrder
 from flumine.order.trade import Trade
 
-from ..engine.live_engine_pro import evaluate_event, get_prematch_lambdas
+from ..engine.live_engine_pro import (
+    evaluate_event,
+    get_prematch_lambdas,
+    total_goals_from_ou,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +135,9 @@ class SimStrategy(BaseStrategy):
         self._placed: set = set()
         # lambda pre-match per evento (cache)
         self._lambdas: Optional[Tuple[float, float, Optional[int]]] = None
+        # cache ultimi book/struct per stimare il TOTALE gol dal mercato O/U (data-driven)
+        self._latest_ladder: Dict[str, Any] = {}
+        self._latest_struct: Dict[str, Any] = {}
         # ordini regolati raccolti alla chiusura mercato, DEDUPLICATI per order.id:
         # {order_id: (order, market_type)}
         self._settled_by_id: Dict[str, Tuple[Any, str]] = {}
@@ -253,25 +260,27 @@ class SimStrategy(BaseStrategy):
         ladder = {mid: self._ladder_for_book(market_book)}
         mstruct = self._market_struct(market, market_book)
         mtype = (mstruct.get("market_type") or "").upper()
+        # cache per stimare il totale gol atteso dal mercato O/U (data-driven, no 2.6)
+        self._latest_ladder[mid] = ladder[mid]
+        self._latest_struct[mid] = {**mstruct, "market_id": mid}
 
-        if self._lambdas is None:
-            if mtype == "MATCH_ODDS":
-                # dati reali: il MATCH_ODDS fornisce struttura (selezioni+sort_priority)
-                # E ladder (quote back di apertura) → lambda stimati dalle quote.
-                lh, la, league = get_prematch_lambdas(
-                    self.event_id,
-                    None,
-                    match_odds_market=mstruct,
-                    ladder=ladder[mid],
-                )
-                # cache solo quando vengono da dati reali (MATCH_ODDS presente)
-                self._lambdas = (lh, la, league)
-                lam = self._lambdas
-            else:
-                # transitorio finche' non arriva un MATCH_ODDS: default neutro
-                lam = get_prematch_lambdas(self.event_id, None)
-        else:
+        if self._lambdas is not None:
             lam = self._lambdas
+        elif mtype == "MATCH_ODDS":
+            # totale gol DATA-DRIVEN dal mercato O/U; split dal 1X2. Cache SOLO quando
+            # il totale viene da dati reali (O/U disponibile) → niente lock sul 2.6.
+            total = total_goals_from_ou(list(self._latest_struct.values()), self._latest_ladder)
+            lh, la, league = get_prematch_lambdas(
+                self.event_id, None,
+                match_odds_market=mstruct, ladder=ladder[mid],
+                expected_total_goals=total,
+            )
+            lam = (lh, la, league)
+            if total is not None:
+                self._lambdas = lam
+        else:
+            # transitorio finche' non arriva un MATCH_ODDS
+            lam = get_prematch_lambdas(self.event_id, None)
 
         sh, sa, minute = self._score_at(getattr(market_book, "publish_time_epoch", None))
 
