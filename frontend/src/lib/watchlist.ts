@@ -77,6 +77,7 @@ export interface WatchlistRow {
     away_team: string | null;
     kickoff: string | null;
     status: WatchlistStatus;
+    follow_live: boolean;                       // "Segui live": iscrizione allo stream (no ordini)
     snapshot: WatchlistSnapshot;
     consigli: SnapshotEdge[];                   // top selezioni consigliate (sottoinsieme di snapshot.edges)
     snapshot_at: string;
@@ -125,6 +126,17 @@ export async function deleteFromWatchlist(id: number): Promise<{ deleted: number
     const { data, error } = await supabase.rpc('delete_from_watchlist', { p_id: Number(id) });
     if (error) throw new Error(error.message);
     return data as { deleted: number };
+}
+
+// Accende/spegne il flag "Segui live" (iscrizione allo stream, nessun ordine reale).
+// Ortogonale allo stato: vale per qualunque DA_VALUTARE/GIOCATA/SCARTATA.
+export async function setWatchlistFollowLive(id: number, follow: boolean): Promise<WatchlistRow> {
+    const { data, error } = await supabase.rpc('set_watchlist_follow_live', {
+        p_id: Number(id),
+        p_follow: follow,
+    });
+    if (error) throw new Error(error.message);
+    return data as WatchlistRow;
 }
 
 // §2.3 — registra la decisione dell'utente (GIOCATA / SCARTATA / DA_VALUTARE).

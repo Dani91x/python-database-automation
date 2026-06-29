@@ -1,8 +1,9 @@
-"""Watchlist live: partite GIOCATA → eventi Betfair → live_follow.
+"""Watchlist live: partite da seguire → eventi Betfair → live_follow.
 
-Legge le partite marcate 'GIOCATA' in personal_watchlist, le aggancia agli
-eventi Betfair del giorno (riusando il matcher money-critical betfair_match.py)
-e le registra in live_follow (PENDING). Il runner poi le streamma.
+Legge le partite da SEGUIRE in personal_watchlist — quelle GIOCATA OPPURE con il
+flag follow_live ("Segui live") — le aggancia agli eventi Betfair del giorno
+(riusando il matcher money-critical betfair_match.py) e le registra in live_follow
+(PENDING). Il runner poi le streamma. Lo stream è SOLO advisory: nessun ordine reale.
 """
 from __future__ import annotations
 
@@ -20,13 +21,14 @@ logger = logging.getLogger(__name__)
 SOCCER_EVENT_TYPE_ID = "1"
 
 
-def get_played_fixtures() -> List[Dict[str, Any]]:
-    """Partite marcate GIOCATA in personal_watchlist (per il matching Betfair)."""
+def get_followable_fixtures() -> List[Dict[str, Any]]:
+    """Partite da seguire in personal_watchlist: GIOCATA OPPURE follow_live=true.
+    (Il filtro OR di Supabase: status.eq.GIOCATA,follow_live.eq.true.)"""
     sb = get_supabase_client()
     resp = (
         sb.table("personal_watchlist")
-        .select("id, fixture_id, league_id, league_name, home_team, away_team, kickoff")
-        .eq("status", "GIOCATA")
+        .select("id, fixture_id, league_id, league_name, home_team, away_team, kickoff, status, follow_live")
+        .or_("status.eq.GIOCATA,follow_live.eq.true")
         .execute()
     )
     rows = getattr(resp, "data", None) or []
@@ -52,9 +54,9 @@ def resolve_and_register(client: Any, days_ahead: int = 1) -> List[Dict[str, Any
     :param client: Betfair/client.py BetfairClient già loggato (REST JSON-RPC).
     :returns: lista dei follow registrati [{event_id, fixture_id, home, away, open_date}].
     """
-    fixtures = get_played_fixtures()
+    fixtures = get_followable_fixtures()
     if not fixtures:
-        logger.info("[watchlist] nessuna partita GIOCATA da agganciare.")
+        logger.info("[watchlist] nessuna partita da seguire (GIOCATA o follow_live).")
         return []
 
     raw_events = client.list_events([SOCCER_EVENT_TYPE_ID], days_ahead=days_ahead) or []
@@ -67,7 +69,7 @@ def resolve_and_register(client: Any, days_ahead: int = 1) -> List[Dict[str, Any
         for e in raw_events
         if e.get("event")
     ]
-    logger.info("[watchlist] %d GIOCATA vs %d eventi Betfair.", len(fixtures), len(events))
+    logger.info("[watchlist] %d partite da seguire vs %d eventi Betfair.", len(fixtures), len(events))
 
     matched, unmatched = resolve_matches(events, fixtures)
 

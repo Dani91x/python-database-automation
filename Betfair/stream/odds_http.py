@@ -1,7 +1,8 @@
 """
-odds_http.py — micro-endpoint HTTP LOCALE per il pulsante "Aggiorna quote" della
-watchlist. Riusa il processo del runner live (sempre acceso) senza toccarne il
-loop flumine: un ThreadingHTTPServer su 127.0.0.1 in un thread daemon.
+odds_http.py — micro-endpoint HTTP LOCALE per "Aggiorna quote" e "Invia Giocate"
+della watchlist. Avviato da start_order_server.py (aggiorna_quote_betfair.bat):
+un ThreadingHTTPServer su 127.0.0.1 in un thread daemon. NON è ospitato dal runner
+stream, così i due possono girare insieme senza contendersi la porta.
 
 Solo stdlib (http.server), nessuna dipendenza aggiuntiva. Espone:
     POST /refresh-odds   body JSON {"fixture_id": <int>}  (o ?fixture_id=<int>)

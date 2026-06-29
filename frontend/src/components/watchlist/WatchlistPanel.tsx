@@ -19,11 +19,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
     Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Calendar, Trophy, Sparkles, Trash2, BarChart3,
-    Circle, Send, RefreshCw,
+    Circle, Send, RefreshCw, Radio,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-    setWatchlistDecision, deleteFromWatchlist, REJECT_REASON_LABELS,
+    setWatchlistDecision, deleteFromWatchlist, setWatchlistFollowLive, REJECT_REASON_LABELS,
     type WatchlistRow, type RejectReason, type SnapshotEdge, type WatchlistStatus,
 } from '@/lib/watchlist';
 import { refreshBetfairOdds, fetchBetfairDirectionOdds } from '@/lib/betfair';
@@ -133,6 +133,8 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
     // "Aggiorna quote": overlay delle ultime back/lay (non muta lo snapshot congelato)
     const [refreshing, setRefreshing] = useState(false);
     const [oddsOverlay, setOddsOverlay] = useState<OddsOverlay>({});
+    // "Segui live": toggle del flag follow_live (iscrizione stream, nessun ordine)
+    const [followBusy, setFollowBusy] = useState(false);
 
     // set delle selezioni consigliate (per evidenziare le righe edges)
     const consigliKeys = useMemo(() => {
@@ -212,6 +214,27 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
         }
     };
 
+    // Accende/spegne "Segui live" (iscrizione allo stream; NESSUN ordine reale).
+    const handleToggleFollow = async () => {
+        const next = !row.follow_live;
+        setFollowBusy(true);
+        try {
+            await setWatchlistFollowLive(row.id, next);
+            toast.success(next ? 'Segui live attivato' : 'Segui live disattivato', {
+                description: next
+                    ? 'La partita entra nello stream al prossimo ciclo del runner (nessun ordine).'
+                    : undefined,
+            });
+            onChanged?.();
+        } catch (err: unknown) {
+            toast.error('Errore Segui live', {
+                description: err instanceof Error ? err.message : 'errore sconosciuto',
+            });
+        } finally {
+            setFollowBusy(false);
+        }
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -259,6 +282,25 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                             ? <Loader2 className="w-3.5 h-3.5 md:mr-1.5 animate-spin" />
                             : <RefreshCw className="w-3.5 h-3.5 md:mr-1.5" />}
                         <span className="hidden md:inline">Aggiorna quote</span>
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleToggleFollow}
+                        disabled={followBusy}
+                        aria-pressed={row.follow_live}
+                        className={row.follow_live
+                            ? 'h-8 border-emerald-400/50 text-emerald-300 bg-emerald-400/10 hover:bg-emerald-400/20'
+                            : 'h-8 border-white/15 text-muted-foreground hover:text-white'}
+                        title={row.follow_live
+                            ? 'Segui live ATTIVO — clic per disattivare (nessun ordine)'
+                            : 'Segui live — iscrivi la partita allo stream (solo dati, nessun ordine)'}
+                        aria-label={row.follow_live ? 'Segui live attivo' : 'Segui live inattivo'}
+                    >
+                        {followBusy
+                            ? <Loader2 className="w-3.5 h-3.5 md:mr-1.5 animate-spin" />
+                            : <Radio className="w-3.5 h-3.5 md:mr-1.5" />}
+                        <span className="hidden md:inline">{row.follow_live ? 'Segui live ✓' : 'Segui live'}</span>
                     </Button>
                 </div>
                 <button

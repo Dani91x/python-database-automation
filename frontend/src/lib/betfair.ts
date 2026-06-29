@@ -90,9 +90,9 @@ export async function refreshBetfairOdds(fixtureId: number): Promise<RefreshOdds
         });
     } catch (e) {
         if (e instanceof DOMException && e.name === 'TimeoutError') {
-            throw new Error('Aggiornamento quote scaduto (45s): runner occupato o Betfair lento. Riprova.');
+            throw new Error('Aggiornamento quote scaduto (45s): server occupato o Betfair lento. Riprova.');
         }
-        throw new Error('Runner locale non raggiungibile: avvia lo stream live per aggiornare le quote.');
+        throw new Error('Server quote non attivo: avvia "aggiorna_quote_betfair.bat" e riprova.');
     }
     const data = (await resp.json().catch(() => ({}))) as RefreshOddsResult;
     if (!resp.ok) {
@@ -163,9 +163,9 @@ export async function placeBetfairOrder(payload: PlaceOrderPayload): Promise<Pla
         });
     } catch (e) {
         if (e instanceof DOMException && e.name === 'TimeoutError') {
-            throw new Error('Piazzamento scaduto (30s): runner occupato o Betfair lento.');
+            throw new Error('Piazzamento scaduto (30s): server occupato o Betfair lento.');
         }
-        throw new Error('Runner locale non raggiungibile: avvia lo stream live per piazzare ordini.');
+        throw new Error('Server ordini non attivo: avvia "aggiorna_quote_betfair.bat" e riprova.');
     }
     const data = (await resp.json().catch(() => ({}))) as PlaceOrderResult;
     if (!resp.ok) {

@@ -635,15 +635,9 @@ def _main() -> None:
     ap.add_argument("--event", default=None, help="streamma solo questo event_id (test)")
     ap.add_argument("--no-auto-subscribe", action="store_true", help="disabilita la ri-subscription dinamica")
     args = ap.parse_args()
-
-    # Endpoint HTTP locale per "Aggiorna quote" on-demand della watchlist.
-    # Isolato e best-effort: un suo fallimento NON deve mai fermare il runner.
-    try:
-        from .odds_http import start_odds_http_server
-        start_odds_http_server()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[runner] odds HTTP server non avviato: %s", e)
-
+    # NB: l'endpoint HTTP quote/ordini (8787) NON è ospitato qui: vive solo in
+    # start_order_server.py (aggiorna_quote_betfair.bat). Così questo runner e il
+    # server quote/ordini possono girare INSIEME senza contendersi la porta.
     done = setup_and_run(only_event=args.event, auto_subscribe=not args.no_auto_subscribe)
     logger.info("[runner] terminato. Eventi finalizzati: %s", done)
 
