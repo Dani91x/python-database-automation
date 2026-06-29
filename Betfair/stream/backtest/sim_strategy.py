@@ -267,9 +267,12 @@ class SimStrategy(BaseStrategy):
         if self._lambdas is not None:
             lam = self._lambdas
         elif mtype == "MATCH_ODDS":
-            # totale gol DATA-DRIVEN dal mercato O/U; split dal 1X2. Cache SOLO quando
-            # il totale viene da dati reali (O/U disponibile) → niente lock sul 2.6.
-            total = total_goals_from_ou(list(self._latest_struct.values()), self._latest_ladder)
+            # totale gol dal mercato O/U: VALIDO SOLO PRE-MATCH (a 0-0). In-play l'O/U
+            # prezza i gol RIMANENTI → distorto. Il λ viene BLOCCATO nella fase 0-0
+            # iniziale e riusato per tutto il match (come in live).
+            _sh, _sa, _ = self._score_at(getattr(market_book, "publish_time_epoch", None))
+            total = (total_goals_from_ou(list(self._latest_struct.values()), self._latest_ladder)
+                     if (_sh == 0 and _sa == 0) else None)
             lh, la, league = get_prematch_lambdas(
                 self.event_id, None,
                 match_odds_market=mstruct, ladder=ladder[mid],

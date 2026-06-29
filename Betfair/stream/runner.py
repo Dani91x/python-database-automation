@@ -51,6 +51,7 @@ from .config_stream import (
     SAFE_MARKET_THRESHOLD,
     SCORE_POLL_SEC,
     SIGNAL_MIN_EDGE,
+    SIGNAL_MIN_LIQUIDITY,
     SIGNALS_ENABLED,
     STREAM_CONFLATE_MS,
     STREAM_FIELDS,
@@ -327,8 +328,15 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
                 lam = db_lam
                 session.prematch_lambdas[event_id] = lam   # storico per-squadra: stabile
             else:
-                # PRIOR #2: TOTALE gol DATA-DRIVEN dal mercato O/U; split dal 1X2.
-                total = pro.total_goals_from_ou(session.markets_by_event.get(event_id, []), ladder)
+                # PRIOR #2: TOTALE gol dal mercato O/U — VALIDO SOLO PRE-MATCH (a 0-0,
+                # prima del kickoff l'O/U prezza i gol di TUTTA la partita). In-play
+                # l'O/U prezza i gol RIMANENTI → invertirlo come totale è distorto
+                # (caveat double-counting). Quindi lo usiamo solo a inizio partita;
+                # il λ viene poi BLOCCATO e riusato per tutto il match.
+                _mn = getattr(snap, "minute", None)
+                _sc = (getattr(snap, "score_home", 0) or 0) + (getattr(snap, "score_away", 0) or 0)
+                prematch = (_mn is None or _mn <= 3) and _sc == 0
+                total = pro.total_goals_from_ou(session.markets_by_event.get(event_id, []), ladder) if prematch else None
                 mo_market = mo_ladder = None
                 for m in session.markets_by_event.get(event_id, []):
                     if m.get("market_type") == "MATCH_ODDS":
@@ -351,6 +359,7 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
             markets=session.markets_by_event.get(event_id, []),
             ladder_by_market=ladder, bankroll=BANKROLL,
             min_edge=SIGNAL_MIN_EDGE, kelly_fraction=KELLY_FRACTION,
+            min_liquidity=SIGNAL_MIN_LIQUIDITY,
             # stato LIVE: cartellini rossi correnti (la pressione corner/tiri è un
             # hook neutro finché non calibrata).
             red_home=getattr(snap, "red_home", 0) or 0,

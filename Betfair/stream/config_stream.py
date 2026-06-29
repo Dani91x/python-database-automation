@@ -69,6 +69,9 @@ SIGNALS_ENABLED: bool = os.getenv("LIVE_SIGNALS_ENABLED", "true").lower() == "tr
 BANKROLL: float = float(os.getenv("LIVE_BANKROLL", "100"))
 SIGNAL_MIN_EDGE: float = float(os.getenv("LIVE_SIGNAL_MIN_EDGE", "0.03"))
 KELLY_FRACTION: float = float(os.getenv("LIVE_KELLY_FRACTION", "0.25"))
+# size minima disponibile al prezzo perché un segnale sia AZIONABILE (controparte reale):
+# evita segnali su mercati illiquidi/quote-fantasma, dove l'edge del modello è inaffidabile.
+SIGNAL_MIN_LIQUIDITY: float = float(os.getenv("LIVE_SIGNAL_MIN_LIQUIDITY", "50"))
 
 # ----------------------------------------------------------------------------
 # Sottoscrizione automatica (F3)

@@ -357,6 +357,7 @@ def evaluate_event(
     min_edge: float = 0.03,
     kelly_fraction: float = 0.25,
     commission: float = 0.05,
+    min_liquidity: float = 0.0,   # size minima disponibile al prezzo per un segnale azionabile
     red_home: int = 0,
     red_away: int = 0,
     yellow_home: int = 0,
@@ -441,6 +442,11 @@ def evaluate_event(
             ladder_sel = _ladder_sel(ladder, sel_id)
             back = _best_back(ladder_sel)
             lay = _best_lay(ladder_sel)
+            # size DISPONIBILE al miglior prezzo (controparte reale): serve al gate liquidità
+            _bl = (ladder_sel or {}).get("back") or []
+            _ll = (ladder_sel or {}).get("lay") or []
+            back_sz = float(_bl[0][1]) if _bl and len(_bl[0]) > 1 else 0.0
+            lay_sz = float(_ll[0][1]) if _ll and len(_ll[0]) > 1 else 0.0
             fair = (1.0 / prob) if prob > 0 else None
             c = commission
 
@@ -448,8 +454,12 @@ def evaluate_event(
             #   BACK: vinci (back-1)*(1-c) con prob ; perdi 1 con (1-prob)
             #   LAY : vinci 1*(1-c) con (1-prob)    ; perdi (lay-1) con prob
             # Ogni lato è valutato sul PROPRIO prezzo (il lay NON usa più il back).
-            back_ev = (prob * (back - 1.0) * (1.0 - c) - (1.0 - prob)) if (back and back > 1) else None
-            lay_ev = ((1.0 - prob) * (1.0 - c) - prob * (lay - 1.0)) if (lay and lay > 1) else None
+            # mercato già DECISO (prob ~0 o ~1): NESSUN segnale azionabile. Evita i
+            # falsi "soldi gratis" (es. LAY Under quando i gol l'hanno già superato):
+            # dal vivo quei mercati sono sospesi/chiusi → non si tradano davvero.
+            decided = prob <= 0.03 or prob >= 0.97
+            back_ev = (prob * (back - 1.0) * (1.0 - c) - (1.0 - prob)) if (not decided and back and back > 1) else None
+            lay_ev = ((1.0 - prob) * (1.0 - c) - prob * (lay - 1.0)) if (not decided and lay and lay > 1) else None
 
             # scegli il lato col miglior EV; segnala solo se supera la soglia (min_edge = EV minimo).
             direction = "HOLD"
@@ -459,7 +469,10 @@ def evaluate_event(
             if cands:
                 best_side, best_ev = max(cands, key=lambda x: x[1])
                 edge = best_ev
-                if best_ev >= min_edge:
+                # azionabile solo se EV ≥ soglia E c'è CONTROPARTE REALE (size disponibile
+                # al prezzo ≥ min_liquidity): niente segnali su mercati illiquidi/quote-fantasma.
+                side_size = back_sz if best_side == "BACK" else lay_sz
+                if best_ev >= min_edge and side_size >= min_liquidity:
                     direction = best_side
                     if best_side == "BACK":
                         kelly = _kelly_back(prob, back, kelly_fraction, bankroll, c)
