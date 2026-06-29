@@ -84,7 +84,7 @@ describe('runDetectors — dedupe', () => {
 
 describe('config + constants', () => {
     it('DEFAULT_OPP_CONFIG matches the contract', () => {
-        expect(DEFAULT_OPP_CONFIG).toEqual({ stake: 100, minProfitPct: 0.5, commission: 0.05, delaySec: 6 });
+        expect(DEFAULT_OPP_CONFIG).toEqual({ stake: 100, minProfitPct: 0.5, commission: 0.05, delaySec: 6, minFillRatio: 0.5 });
     });
     it('TIER_ORDER ranks arb>low>directional', () => {
         expect(TIER_ORDER.arb).toBeLessThan(TIER_ORDER.low);

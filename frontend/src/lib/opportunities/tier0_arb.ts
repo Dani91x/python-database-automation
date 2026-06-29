@@ -244,6 +244,13 @@ function assembleArb(args: {
     const { type, title, explanation, phase, legs, scenarios, cfg, idSuffix, riskNote, exitPlan } = args;
     const tier: RiskTier = args.tier ?? 'arb';
     if (legs.some((l) => l.matchedStake <= 0)) return null;
+    // QUALITÀ DEL FILL (solo arb): con liquidità sottile su una gamba le proporzioni
+    // del dutching saltano e l'arb diventa uno sbilancio rischioso. Richiedi che ogni
+    // gamba sia riempita almeno per `minFillRatio` dello stake desiderato.
+    if (tier === 'arb') {
+        const floor = cfg.minFillRatio ?? 0;
+        if (floor > 0 && legs.some((l) => l.stake > 0 && l.matchedStake / l.stake < floor)) return null;
+    }
 
     const profit = guaranteedProfit(legs, scenarios, cfg.commission);
     if (!(profit > PROFIT_EPS)) return null;

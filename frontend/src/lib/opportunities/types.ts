@@ -83,6 +83,10 @@ export interface OppConfig {
     minProfitPct: number;
     commission: number;
     delaySec: number;
+    // Frazione MINIMA di fill richiesta su OGNI gamba di un arbitraggio (tier 'arb')
+    // perché sia considerato affidabile: con liquidità sottile le proporzioni del
+    // dutching saltano. Assente/0 = nessun vincolo (retro-compatibile coi test).
+    minFillRatio?: number;
 }
 
 // Firma di un detector: data una fotografia + config → lista di opportunità.

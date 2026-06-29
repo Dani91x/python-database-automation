@@ -12,6 +12,7 @@ export const DEFAULT_OPP_CONFIG: OppConfig = {
     minProfitPct: 0.5,
     commission: 0.05,
     delaySec: 6,
+    minFillRatio: 0.5, // ogni gamba di un arb dev'essere riempita ≥50% per essere affidabile
 };
 
 // Ordine di priorità dei tier (più basso = più in alto in lista).

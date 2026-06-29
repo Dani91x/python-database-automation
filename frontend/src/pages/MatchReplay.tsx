@@ -30,6 +30,7 @@ import { simulateOrder, type BookSnapshot, type OrderRequest, type Persistence }
 import { buildSnapshots } from '@/lib/opportunities/snapshot';
 import { runDetectors, DEFAULT_OPP_CONFIG } from '@/lib/opportunities/engine';
 import { harnessDetectors, validateFromDetections } from '@/lib/opportunities/validate';
+import { arbExecutableUnderDelay } from '@/lib/opportunities/arb_exec';
 import type { Opportunity } from '@/lib/opportunities/types';
 
 // Ordine simulato (richiesta immutabile dell'utente). I fill REALI vengono calcolati
@@ -227,6 +228,7 @@ export default function MatchReplay() {
     const current = timeline[safeIndex] ?? { ts: '', minute: null };
     const currentTs = current.ts;
     const currentMinute = current.minute;
+    const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
 
     // ---- frame raggruppati per mercato (ordinati per ts) ----
     const framesByMarket = useMemo(() => {
@@ -240,6 +242,34 @@ export default function MatchReplay() {
         for (const arr of map.values()) arr.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
         return map;
     }, [replay]);
+
+    // ---- snapshot del book per (mercato, selezione) per il motore di matching ----
+    // sequenza BookSnapshot ordinata per ts, costruita una volta e cache-ata: la usano
+    // sia i fill reali degli ordini sia la validazione esecuzione degli arbitraggi.
+    const selectionSnaps = useMemo(() => {
+        const cache = new Map<string, BookSnapshot[]>();
+        return (marketId: string, sid: number): BookSnapshot[] => {
+            const key = `${marketId}:${sid}`;
+            let s = cache.get(key);
+            if (!s) {
+                const arr = framesByMarket.get(marketId) ?? [];
+                s = arr.map(f => {
+                    const e = f.ladder?.[String(sid)];
+                    return {
+                        ts: new Date(f.ts).getTime(),
+                        back: e?.back ?? [],
+                        lay: e?.lay ?? [],
+                        ltp: e?.ltp ?? null,
+                        tv: e?.tv ?? null,
+                        trd: e?.trd,
+                        status: f.status,
+                    };
+                });
+                cache.set(key, s);
+            }
+            return s;
+        };
+    }, [framesByMarket]);
 
     // ladder di un mercato a un dato ts = ultimo frame con frame.ts <= ts.
     // bisect-right sui frame ordinati per ts → O(log n).
@@ -423,7 +453,22 @@ export default function MatchReplay() {
         return idx;
     }, [snapshots, currentTs]);
 
-    const currentOpps = curSnapIdx >= 0 ? (detectionsPerSnap[curSnapIdx] ?? []) : [];
+    const rawOpps = curSnapIdx >= 0 ? (detectionsPerSnap[curSnapIdx] ?? []) : [];
+
+    // GATE ESECUZIONE ARBITRAGGI: un arb (tier 'arb') è "garantito" solo se TUTTE le
+    // gambe si abbinerebbero ai prezzi mostrati anche DOPO il ritardo Betfair. Lo
+    // verifichiamo col motore di matching (selectionSnaps + ritardo in-play): se anche
+    // una gamba non reggerebbe, l'arb non è affidabile e viene nascosto. Gli altri tier
+    // (low/directional) passano invariati.
+    const currentOpps = useMemo(() => {
+        if (rawOpps.length === 0) return rawOpps;
+        const inPlay = currentMinute != null && currentMinute >= 0;
+        return rawOpps.filter(o =>
+            o.tier !== 'arb'
+            || arbExecutableUnderDelay(o, selectionSnaps, currentMs, inPlay, OPP_CFG.delaySec * 1000),
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rawOpps, selectionSnaps, currentMs, currentMinute]);
 
     // marker degli istanti con un arbitraggio rilevato (rombi verdi sulla barra).
     const arbMarkers = useMemo(() => {
@@ -508,31 +553,8 @@ export default function MatchReplay() {
     // contro la sequenza di snapshot del book fino all'istante corrente. È pura e
     // deterministica → lo scrubbing avanti/indietro è coerente. La `bets` derivata
     // (porzioni ABBINATE, quota = VWAP) alimenta posizioni, cash-out e Trades.
-    const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
     const bets: SimBet[] = useMemo(() => {
         if (!replay) return [];
-        const snapCache = new Map<string, BookSnapshot[]>();
-        const snapsFor = (marketId: string, sid: number): BookSnapshot[] => {
-            const key = `${marketId}:${sid}`;
-            let s = snapCache.get(key);
-            if (!s) {
-                const arr = framesByMarket.get(marketId) ?? [];
-                s = arr.map(f => {
-                    const e = f.ladder?.[String(sid)];
-                    return {
-                        ts: new Date(f.ts).getTime(),
-                        back: e?.back ?? [],
-                        lay: e?.lay ?? [],
-                        ltp: e?.ltp ?? null,
-                        tv: e?.tv ?? null,
-                        trd: e?.trd,
-                        status: f.status,
-                    };
-                });
-                snapCache.set(key, s);
-            }
-            return s;
-        };
         return orders.map(o => {
             // un ordine chiuso (cash-out) congela la simulazione al suo istante di chiusura
             const upto = o.closed && o.closedTs != null ? Math.min(currentMs, o.closedTs) : currentMs;
@@ -546,7 +568,7 @@ export default function MatchReplay() {
                 persistence: o.persistence,
                 cancelledTs: o.cancelledTs ?? null,
             };
-            const res = simulateOrder(req, snapsFor(o.marketId, o.selectionId), upto);
+            const res = simulateOrder(req, selectionSnaps(o.marketId, o.selectionId), upto);
             return {
                 id: o.id,
                 marketId: o.marketId,
@@ -566,7 +588,7 @@ export default function MatchReplay() {
             } satisfies SimBet;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [replay, orders, framesByMarket, currentMs]);
+    }, [replay, orders, selectionSnaps, currentMs]);
 
     // valutazione per-mercato: P&L DEFINITIVO se l'esito è deciso, altrimenti cash-out.
     const marketEval = (m: typeof markets[number]) => settleOrCashOut(
