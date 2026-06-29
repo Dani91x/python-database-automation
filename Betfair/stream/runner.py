@@ -355,6 +355,8 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
             # hook neutro finché non calibrata).
             red_home=getattr(snap, "red_home", 0) or 0,
             red_away=getattr(snap, "red_away", 0) or 0,
+            yellow_home=getattr(snap, "yellow_home", 0) or 0,
+            yellow_away=getattr(snap, "yellow_away", 0) or 0,
         )
         payload = pro.signals_to_json(signals)
         payload["updated_ms"] = int(datetime.now(timezone.utc).timestamp() * 1000)

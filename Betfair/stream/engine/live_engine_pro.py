@@ -359,6 +359,8 @@ def evaluate_event(
     commission: float = 0.05,
     red_home: int = 0,
     red_away: int = 0,
+    yellow_home: int = 0,
+    yellow_away: int = 0,
     pressure_home: float = 1.0,
     pressure_away: float = 1.0,
 ) -> List[MarketSignal]:
@@ -368,7 +370,8 @@ def evaluate_event(
     # stato di gioco (chi insegue/è avanti) × cartellini rossi × pressione.
     lam_h, lam_a = inplay_residual_rates(
         prematch_lambda_home, prematch_lambda_away, minute, sh, sa,
-        red_home=red_home, red_away=red_away, league_id=league_id,
+        red_home=red_home, red_away=red_away,
+        yellow_home=yellow_home, yellow_away=yellow_away, league_id=league_id,
         pressure_home=pressure_home, pressure_away=pressure_away,
     )
     rho = rho_for_league(league_id)

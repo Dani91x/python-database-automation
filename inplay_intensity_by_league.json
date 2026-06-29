@@ -1,0 +1,487 @@
+{
+  "generated_from": "match_events (team-fixed-effects + time-normalized)",
+  "n_fixtures": 206261,
+  "n_leagues_calibrated": 29,
+  "global": {
+    "game_state": {
+      "leader_per_goal": 0.0436,
+      "chaser_per_goal": 0.02,
+      "max_lead": 2,
+      "late_amp": 0.0
+    },
+    "red_card": {
+      "carded_factor": 0.7461,
+      "opponent_factor": 1.3832
+    },
+    "yellow_card": {
+      "carded_factor": 0.9938,
+      "opponent_factor": 1.0959
+    }
+  },
+  "by_league": {
+    "4": {
+      "game_state": {
+        "leader_per_goal": 0.0433,
+        "chaser_per_goal": 0.0174,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9525,
+        "opponent_factor": 1.0843
+      }
+    },
+    "135": {
+      "game_state": {
+        "leader_per_goal": 0.0309,
+        "chaser_per_goal": 0.034,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7096,
+        "opponent_factor": 1.4122
+      },
+      "yellow_card": {
+        "carded_factor": 0.9521,
+        "opponent_factor": 1.0759
+      }
+    },
+    "39": {
+      "game_state": {
+        "leader_per_goal": 0.0448,
+        "chaser_per_goal": 0.0031,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.691,
+        "opponent_factor": 1.455
+      },
+      "yellow_card": {
+        "carded_factor": 0.9883,
+        "opponent_factor": 1.0482
+      }
+    },
+    "6": {
+      "game_state": {
+        "leader_per_goal": 0.0273,
+        "chaser_per_goal": 0.0448,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 1.1447,
+        "opponent_factor": 1.3177
+      }
+    },
+    "2": {
+      "game_state": {
+        "leader_per_goal": 0.0745,
+        "chaser_per_goal": -0.011,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.826,
+        "opponent_factor": 1.513
+      },
+      "yellow_card": {
+        "carded_factor": 0.971,
+        "opponent_factor": 1.0766
+      }
+    },
+    "13": {
+      "game_state": {
+        "leader_per_goal": 0.0541,
+        "chaser_per_goal": 0.0208,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.8858,
+        "opponent_factor": 1.3743
+      },
+      "yellow_card": {
+        "carded_factor": 1.0178,
+        "opponent_factor": 1.1398
+      }
+    },
+    "78": {
+      "game_state": {
+        "leader_per_goal": 0.0568,
+        "chaser_per_goal": -0.0026,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6469,
+        "opponent_factor": 1.4881
+      },
+      "yellow_card": {
+        "carded_factor": 0.9674,
+        "opponent_factor": 1.0297
+      }
+    },
+    "61": {
+      "game_state": {
+        "leader_per_goal": 0.0256,
+        "chaser_per_goal": 0.008,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6988,
+        "opponent_factor": 1.3128
+      },
+      "yellow_card": {
+        "carded_factor": 0.9754,
+        "opponent_factor": 1.0495
+      }
+    },
+    "144": {
+      "game_state": {
+        "leader_per_goal": 0.0384,
+        "chaser_per_goal": 0.0126,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7261,
+        "opponent_factor": 1.2337
+      },
+      "yellow_card": {
+        "carded_factor": 0.9757,
+        "opponent_factor": 1.0571
+      }
+    },
+    "62": {
+      "game_state": {
+        "leader_per_goal": 0.0236,
+        "chaser_per_goal": 0.0409,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7804,
+        "opponent_factor": 1.4164
+      },
+      "yellow_card": {
+        "carded_factor": 0.9807,
+        "opponent_factor": 1.0728
+      }
+    },
+    "71": {
+      "game_state": {
+        "leader_per_goal": 0.0148,
+        "chaser_per_goal": 0.0338,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.8161,
+        "opponent_factor": 1.1432
+      },
+      "yellow_card": {
+        "carded_factor": 0.9538,
+        "opponent_factor": 1.1289
+      }
+    },
+    "140": {
+      "game_state": {
+        "leader_per_goal": 0.0283,
+        "chaser_per_goal": 0.025,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7224,
+        "opponent_factor": 1.3785
+      },
+      "yellow_card": {
+        "carded_factor": 0.9272,
+        "opponent_factor": 1.0843
+      }
+    },
+    "88": {
+      "game_state": {
+        "leader_per_goal": 0.0573,
+        "chaser_per_goal": 0.0071,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7068,
+        "opponent_factor": 1.4634
+      },
+      "yellow_card": {
+        "carded_factor": 0.9918,
+        "opponent_factor": 1.074
+      }
+    },
+    "94": {
+      "game_state": {
+        "leader_per_goal": 0.0164,
+        "chaser_per_goal": 0.0032,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6995,
+        "opponent_factor": 1.4355
+      },
+      "yellow_card": {
+        "carded_factor": 0.9532,
+        "opponent_factor": 1.0767
+      }
+    },
+    "1": {
+      "game_state": {
+        "leader_per_goal": 0.0286,
+        "chaser_per_goal": 0.0465,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    },
+    "803": {
+      "game_state": {
+        "leader_per_goal": 0.051,
+        "chaser_per_goal": 0.0032,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    },
+    "45": {
+      "game_state": {
+        "leader_per_goal": 0.0358,
+        "chaser_per_goal": 0.003,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.9605,
+        "opponent_factor": 1.4812
+      },
+      "yellow_card": {
+        "carded_factor": 1.2791,
+        "opponent_factor": 1.3364
+      }
+    },
+    "179": {
+      "game_state": {
+        "leader_per_goal": 0.0337,
+        "chaser_per_goal": -0.0123,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7192,
+        "opponent_factor": 1.317
+      },
+      "yellow_card": {
+        "carded_factor": 0.9171,
+        "opponent_factor": 1.0724
+      }
+    },
+    "180": {
+      "game_state": {
+        "leader_per_goal": 0.0332,
+        "chaser_per_goal": 0.0062,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6417,
+        "opponent_factor": 1.3447
+      },
+      "yellow_card": {
+        "carded_factor": 0.9238,
+        "opponent_factor": 1.0649
+      }
+    },
+    "390": {
+      "game_state": {
+        "leader_per_goal": 0.0391,
+        "chaser_per_goal": -0.0169,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    },
+    "261": {
+      "game_state": {
+        "leader_per_goal": 0.0606,
+        "chaser_per_goal": -0.0189,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.783,
+        "opponent_factor": 1.3524
+      },
+      "yellow_card": {
+        "carded_factor": 1.1987,
+        "opponent_factor": 1.143
+      }
+    },
+    "305": {
+      "game_state": {
+        "leader_per_goal": 0.029,
+        "chaser_per_goal": 0.007,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.9434,
+        "opponent_factor": 1.5263
+      },
+      "yellow_card": {
+        "carded_factor": 0.9953,
+        "opponent_factor": 1.1304
+      }
+    },
+    "40": {
+      "game_state": {
+        "leader_per_goal": 0.0254,
+        "chaser_per_goal": 0.0199,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6657,
+        "opponent_factor": 1.3968
+      },
+      "yellow_card": {
+        "carded_factor": 0.9789,
+        "opponent_factor": 1.0494
+      }
+    },
+    "46": {
+      "game_state": {
+        "leader_per_goal": -0.0188,
+        "chaser_per_goal": 0.0927,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.9606,
+        "opponent_factor": 1.5911
+      },
+      "yellow_card": {
+        "carded_factor": 1.8066,
+        "opponent_factor": 1.9836
+      }
+    },
+    "47": {
+      "game_state": {
+        "leader_per_goal": 0.0297,
+        "chaser_per_goal": 0.0002,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7785,
+        "opponent_factor": 1.6195
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    },
+    "48": {
+      "game_state": {
+        "leader_per_goal": 0.0103,
+        "chaser_per_goal": 0.071,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 1.2833,
+        "opponent_factor": 1.5285
+      },
+      "yellow_card": {
+        "carded_factor": 1.5529,
+        "opponent_factor": 1.7047
+      }
+    },
+    "43": {
+      "game_state": {
+        "leader_per_goal": 0.0082,
+        "chaser_per_goal": 0.0006,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.6696,
+        "opponent_factor": 1.4442
+      },
+      "yellow_card": {
+        "carded_factor": 0.9277,
+        "opponent_factor": 1.0529
+      }
+    },
+    "41": {
+      "game_state": {
+        "leader_per_goal": 0.0436,
+        "chaser_per_goal": 0.02,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    },
+    "42": {
+      "game_state": {
+        "leader_per_goal": 0.0436,
+        "chaser_per_goal": 0.02,
+        "max_lead": 2,
+        "late_amp": 0.0
+      },
+      "red_card": {
+        "carded_factor": 0.7461,
+        "opponent_factor": 1.3832
+      },
+      "yellow_card": {
+        "carded_factor": 0.9938,
+        "opponent_factor": 1.0959
+      }
+    }
+  }
+}

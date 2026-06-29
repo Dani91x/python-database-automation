@@ -140,6 +140,27 @@ def red_card_multipliers(
     return max(0.25, min(2.0, home)), max(0.25, min(2.0, away))
 
 
+def yellow_card_multipliers(
+    yellow_home: int, yellow_away: int, league_id: Optional[int] = None
+) -> tuple[float, float]:
+    """Moltiplicatori (casa, trasferta) per i CARTELLINI GIALLI, CALIBRATI per-lega.
+
+    Effetto debole (il giallo rende cauti). L'esponente è SATURATO a 2 (la
+    calibrazione misura lo stato "ammonita", non un effetto per-cartellino) → niente
+    estrapolazione. NEUTRO (1.0) se assente la calibrazione."""
+    yh, ya = max(0, int(yellow_home or 0)), max(0, int(yellow_away or 0))
+    if yh == 0 and ya == 0:
+        return 1.0, 1.0
+    p = _intensity_params(league_id, "yellow_card")
+    carded, opp = p.get("carded_factor"), p.get("opponent_factor")
+    if carded is None or opp is None:
+        return 1.0, 1.0
+    yh, ya = min(yh, 2), min(ya, 2)
+    home = (float(carded) ** yh) * (float(opp) ** ya)
+    away = (float(carded) ** ya) * (float(opp) ** yh)
+    return max(0.5, min(1.5, home)), max(0.5, min(1.5, away))
+
+
 def inplay_residual_rates(
     prematch_lambda_home: float,
     prematch_lambda_away: float,
@@ -148,19 +169,22 @@ def inplay_residual_rates(
     score_away: int,
     red_home: int = 0,
     red_away: int = 0,
+    yellow_home: int = 0,
+    yellow_away: int = 0,
     league_id: Optional[int] = None,
     pressure_home: float = 1.0,
     pressure_away: float = 1.0,
 ) -> tuple[float, float]:
     """Tassi gol RESIDUI adattati allo stato LIVE della specifica partita, con
     TUTTI i coefficienti calibrati per-lega: tempo (CDF reale) × stato di gioco ×
-    cartellini × pressione. ``pressure_*`` è un hook (1.0) per tiri/corner live,
-    attivabile solo dopo calibrazione."""
+    cartellini (rossi+gialli) × pressione. ``pressure_*`` è un hook (1.0) per
+    tiri/corner live, attivabile solo dopo calibrazione."""
     w = residual_time_weight(minute, league_id)
     gh, ga = game_state_multipliers(int(score_home) - int(score_away), minute, league_id)
     rh, ra = red_card_multipliers(red_home, red_away, league_id)
-    lam_h = max(0.0, prematch_lambda_home) * w * gh * rh * max(0.0, pressure_home)
-    lam_a = max(0.0, prematch_lambda_away) * w * ga * ra * max(0.0, pressure_away)
+    yh, ya = yellow_card_multipliers(yellow_home, yellow_away, league_id)
+    lam_h = max(0.0, prematch_lambda_home) * w * gh * rh * yh * max(0.0, pressure_home)
+    lam_a = max(0.0, prematch_lambda_away) * w * ga * ra * ya * max(0.0, pressure_away)
     return max(0.001, lam_h), max(0.001, lam_a)
 
 
