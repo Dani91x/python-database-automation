@@ -14,8 +14,12 @@ import {
     type Signal, type SignalDirection, type LiveNowState,
 } from '@/lib/live';
 
-// soglia oltre cui i segnali sono considerati "non aggiornati" (motore fermo?).
-const STALE_MS = 45_000;
+// Il motore ricalcola i segnali ogni ~5s (score poll) e scrive su live_signals SOLO
+// se cambiano (write-on-change): il timestamp del segnale è "ultima modifica", non
+// "ultimo calcolo" → NON è un indice di freschezza. La freschezza vera è l'HEARTBEAT
+// di live_now (riscritto ogni ~5s mentre lo stream è vivo). Se il battito manca da
+// oltre questa soglia, il motore è fermo → NON mostriamo segnali (niente roba vecchia).
+const HEARTBEAT_STALE_MS = 30_000;
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const fmtOdds = (v: number | null) => (v != null && Number.isFinite(v) ? v.toFixed(2) : '—');
@@ -89,6 +93,13 @@ export function LiveSignalPanel({ eventId, state }: { eventId: string; state?: L
     const [signals, setSignals] = useState<Signal[] | null>(null);
     const [updatedMs, setUpdatedMs] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
+    // tick periodico per ri-valutare l'heartbeat anche se non arrivano update
+    // (se lo stream muore, smettono i Realtime → serve un timer per accorgersene).
+    const [nowTick, setNowTick] = useState<number>(() => Date.now());
+    useEffect(() => {
+        const id = setInterval(() => setNowTick(Date.now()), 10_000);
+        return () => clearInterval(id);
+    }, []);
 
     useEffect(() => {
         let alive = true;
@@ -121,13 +132,17 @@ export function LiveSignalPanel({ eventId, state }: { eventId: string; state?: L
     // stato per-mercato da live_now: per nascondere i segnali dei mercati CHIUSI.
     const statusByMarket = new Map<string, string>();
     for (const m of state?.markets ?? []) statusByMarket.set(m.market_id, (m.status ?? '').toUpperCase());
-    const isStale = updatedMs != null && Date.now() - updatedMs > STALE_MS;
 
-    // Segnali AZIONABILI: niente mercati CHIUSI, niente HOLD (nessuna azione).
-    const actionable = (signals ?? []).filter(s =>
+    // FRESCHEZZA = heartbeat di live_now (riscritto ogni ~5s mentre lo stream vive).
+    // Se il battito manca da troppo, il motore è fermo → NON mostriamo segnali vecchi.
+    const heartbeat = state?.updated_ms ?? null;
+    const streamFresh = heartbeat == null || (nowTick - heartbeat) < HEARTBEAT_STALE_MS;
+
+    // Segnali AZIONABILI: solo se lo stream è fresco; niente mercati CHIUSI, niente HOLD.
+    const actionable = !streamFresh ? [] : (signals ?? []).filter(s =>
         statusByMarket.get(s.market_id) !== 'CLOSED' && s.direction !== 'HOLD',
     );
-    const hiddenCount = (signals ?? []).length - actionable.length;
+    const hiddenCount = streamFresh ? (signals ?? []).length - actionable.length : 0;
 
     // Raggruppa per mercato; righe ordinate per edge desc, mercati per edge max desc.
     const edgeOf = (s: Signal) => s.edge ?? -Infinity;
@@ -149,10 +164,13 @@ export function LiveSignalPanel({ eventId, state }: { eventId: string; state?: L
                 <span className="flex items-center gap-2 font-heading font-bold text-sm">
                     <Cpu className="w-4 h-4 text-primary" /> Segnali Motore Live
                 </span>
-                {updatedMs && (
-                    <span className={`inline-flex items-center gap-1 text-[10px] tabular-nums ${isStale ? 'text-amber-400' : 'text-muted-foreground'}`}>
-                        {isStale && <AlertTriangle className="w-3 h-3" />}
-                        {isStale ? 'non aggiornato · ' : ''}{new Date(updatedMs).toLocaleTimeString('it')}
+                {!streamFresh ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] tabular-nums text-amber-400">
+                        <AlertTriangle className="w-3 h-3" /> motore fermo
+                    </span>
+                ) : updatedMs && (
+                    <span className="text-[10px] tabular-nums text-muted-foreground">
+                        {new Date(updatedMs).toLocaleTimeString('it')}
                     </span>
                 )}
             </div>
@@ -160,6 +178,11 @@ export function LiveSignalPanel({ eventId, state }: { eventId: string; state?: L
             {loading && signals == null ? (
                 <div className="p-3 space-y-2">
                     {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full bg-white/5" />)}
+                </div>
+            ) : !streamFresh ? (
+                <div className="p-6 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
+                    <AlertTriangle className="w-6 h-6 text-amber-400/70" />
+                    Motore live fermo: nessun segnale fresco da mostrare.
                 </div>
             ) : markets.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
