@@ -145,7 +145,7 @@ export default function SeguiLive() {
                                     <LiveMarketBoard state={liveNow?.state ?? null} updatedAt={liveNow?.updated_at ?? null} />
                                 </div>
                                 <div className="lg:col-span-1">
-                                    <LiveSignalPanel eventId={selected.event_id} />
+                                    <LiveSignalPanel eventId={selected.event_id} state={liveNow?.state ?? null} />
                                 </div>
                             </div>
                         )}

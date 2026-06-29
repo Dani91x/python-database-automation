@@ -8,11 +8,14 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Cpu, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Cpu, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import {
     fetchLiveSignals, subscribeLiveSignals,
-    type Signal, type SignalDirection,
+    type Signal, type SignalDirection, type LiveNowState,
 } from '@/lib/live';
+
+// soglia oltre cui i segnali sono considerati "non aggiornati" (motore fermo?).
+const STALE_MS = 45_000;
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const fmtOdds = (v: number | null) => (v != null && Number.isFinite(v) ? v.toFixed(2) : '—');
@@ -82,7 +85,7 @@ function SignalRow({ s }: { s: Signal }) {
     );
 }
 
-export function LiveSignalPanel({ eventId }: { eventId: string }) {
+export function LiveSignalPanel({ eventId, state }: { eventId: string; state?: LiveNowState | null }) {
     const [signals, setSignals] = useState<Signal[] | null>(null);
     const [updatedMs, setUpdatedMs] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
@@ -115,16 +118,30 @@ export function LiveSignalPanel({ eventId }: { eventId: string }) {
         return () => { alive = false; unsub(); };
     }, [eventId]);
 
-    // Raggruppa i segnali per mercato (una card per mercato).
+    // stato per-mercato da live_now: per nascondere i segnali dei mercati CHIUSI.
+    const statusByMarket = new Map<string, string>();
+    for (const m of state?.markets ?? []) statusByMarket.set(m.market_id, (m.status ?? '').toUpperCase());
+    const isStale = updatedMs != null && Date.now() - updatedMs > STALE_MS;
+
+    // Segnali AZIONABILI: niente mercati CHIUSI, niente HOLD (nessuna azione).
+    const actionable = (signals ?? []).filter(s =>
+        statusByMarket.get(s.market_id) !== 'CLOSED' && s.direction !== 'HOLD',
+    );
+    const hiddenCount = (signals ?? []).length - actionable.length;
+
+    // Raggruppa per mercato; righe ordinate per edge desc, mercati per edge max desc.
+    const edgeOf = (s: Signal) => s.edge ?? -Infinity;
     const byMarket = new Map<string, { name: string; type: string | null; rows: Signal[] }>();
-    for (const s of signals ?? []) {
+    for (const s of actionable) {
         const key = s.market_id;
         if (!byMarket.has(key)) {
             byMarket.set(key, { name: s.market_name || s.market_type || s.market_id, type: s.market_type, rows: [] });
         }
         byMarket.get(key)!.rows.push(s);
     }
-    const markets = Array.from(byMarket.entries());
+    for (const m of byMarket.values()) m.rows.sort((a, b) => edgeOf(b) - edgeOf(a));
+    const markets = Array.from(byMarket.entries())
+        .sort((a, b) => Math.max(...b[1].rows.map(edgeOf)) - Math.max(...a[1].rows.map(edgeOf)));
 
     return (
         <Card className="glass-card border-white/10 overflow-hidden">
@@ -133,8 +150,9 @@ export function LiveSignalPanel({ eventId }: { eventId: string }) {
                     <Cpu className="w-4 h-4 text-primary" /> Segnali Motore Live
                 </span>
                 {updatedMs && (
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                        {new Date(updatedMs).toLocaleTimeString('it')}
+                    <span className={`inline-flex items-center gap-1 text-[10px] tabular-nums ${isStale ? 'text-amber-400' : 'text-muted-foreground'}`}>
+                        {isStale && <AlertTriangle className="w-3 h-3" />}
+                        {isStale ? 'non aggiornato · ' : ''}{new Date(updatedMs).toLocaleTimeString('it')}
                     </span>
                 )}
             </div>
@@ -145,7 +163,7 @@ export function LiveSignalPanel({ eventId }: { eventId: string }) {
                 </div>
             ) : markets.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
-                    Nessun segnale dal motore per questa partita al momento.
+                    Nessun segnale azionabile al momento{hiddenCount > 0 ? ` (${hiddenCount} in HOLD o su mercati chiusi)` : ''}.
                 </div>
             ) : (
                 <div className="p-3 space-y-3">
@@ -160,6 +178,11 @@ export function LiveSignalPanel({ eventId }: { eventId: string }) {
                             </div>
                         </div>
                     ))}
+                    {hiddenCount > 0 && (
+                        <div className="text-[10px] text-muted-foreground text-center pt-1">
+                            {hiddenCount} segnali nascosti (HOLD o mercati chiusi)
+                        </div>
+                    )}
                 </div>
             )}
         </Card>
