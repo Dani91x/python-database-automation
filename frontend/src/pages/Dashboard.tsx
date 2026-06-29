@@ -25,6 +25,13 @@ export default function Dashboard() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    // se siamo arrivati dalla watchlist (deep-link "Vai alle statistiche") mostriamo
+    // un ritorno diretto alla watchlist, oltre al "Torna alle partite" standard.
+    // Snapshot UNA SOLA VOLTA al mount: le navigazioni interne (selezione di un'altra
+    // partita dalla lista) NON cambiano l'URL, quindi una lettura reattiva di
+    // searchParams lascerebbe il bottone "Torna a Watchlist" anche su match aperte
+    // dalla lista. Catturare al mount evita questo falso positivo.
+    const [cameFromWatchlist] = useState(() => searchParams.get('from') === 'watchlist');
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
@@ -94,15 +101,28 @@ export default function Dashboard() {
                         </div>
 
                         {viewMode === 'detail' && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setViewMode('list')}
-                                className="hidden md:flex items-center gap-2 border-white/10 text-muted-foreground hover:text-white ml-6"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                                Torna alle partite
-                            </Button>
+                            <>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setViewMode('list')}
+                                    className="hidden md:flex items-center gap-2 border-white/10 text-muted-foreground hover:text-white ml-6"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    Torna alle partite
+                                </Button>
+                                {cameFromWatchlist && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => navigate('/watchlist')}
+                                        className="hidden md:flex items-center gap-2 border-amber-400/30 text-amber-300 hover:bg-amber-400/10"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        Torna a Watchlist
+                                    </Button>
+                                )}
+                            </>
                         )}
                     </div>
 
@@ -157,7 +177,7 @@ export default function Dashboard() {
 
                         {!loading && data && (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className="mb-6 flex md:hidden">
+                                <div className="mb-6 flex flex-wrap md:hidden items-center gap-2">
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -167,6 +187,17 @@ export default function Dashboard() {
                                         <ChevronLeft className="w-4 h-4" />
                                         Torna alla lista
                                     </Button>
+                                    {cameFromWatchlist && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => navigate('/watchlist')}
+                                            className="gap-2 text-amber-300 hover:bg-amber-400/10"
+                                        >
+                                            <ChevronLeft className="w-4 h-4" />
+                                            Torna a Watchlist
+                                        </Button>
+                                    )}
                                 </div>
 
                                 <HeroMatch

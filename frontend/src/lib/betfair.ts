@@ -55,3 +55,48 @@ export async function fetchBetfairDirectionOdds(fixtureId: string): Promise<Dire
     if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
     return data as DirectionOdds;
 }
+
+// ---------- Aggiorna quote ON-DEMAND (chiama Betfair via runner locale) ----------
+// Esito del refresh on-demand di una singola fixture (vedi Betfair/odds_refresh.py).
+export interface RefreshOddsResult {
+    ok: boolean;
+    fixture_id?: number;
+    markets?: number;       // n. mercati riscritti
+    rows?: number;          // n. righe quote riscritte
+    source?: string;        // refresh | fallback_match | fallback_unmatched | ...
+    reason?: string;        // motivo quando ok=false
+    error?: string;         // messaggio d'errore quando ok=false
+    detail?: string;
+}
+
+// URL dell'endpoint locale esposto dal runner live (Betfair/stream/odds_http.py).
+// Sovrascrivibile via VITE_ODDS_REFRESH_URL; default 127.0.0.1:8787.
+const ODDS_REFRESH_URL: string =
+    import.meta.env.VITE_ODDS_REFRESH_URL || 'http://127.0.0.1:8787/refresh-odds';
+
+// Forza l'aggiornamento delle quote Betfair della SOLA fixture indicata, chiamando
+// il runner locale che interroga le API Betfair e riscrive betfair_market_odds.
+// Solleva un Error se il runner non è raggiungibile (gestire lato chiamante).
+export async function refreshBetfairOdds(fixtureId: number): Promise<RefreshOddsResult> {
+    let resp: Response;
+    try {
+        resp = await fetch(ODDS_REFRESH_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fixture_id: Number(fixtureId) }),
+            // BATCH=20 mercati × REQ_DELAY=0.6s ≈ 12s + margine: 45s evita attese infinite
+            // se il runner è bloccato sul lock o Betfair è lento.
+            signal: AbortSignal.timeout(45_000),
+        });
+    } catch (e) {
+        if (e instanceof DOMException && e.name === 'TimeoutError') {
+            throw new Error('Aggiornamento quote scaduto (45s): runner occupato o Betfair lento. Riprova.');
+        }
+        throw new Error('Runner locale non raggiungibile: avvia lo stream live per aggiornare le quote.');
+    }
+    const data = (await resp.json().catch(() => ({}))) as RefreshOddsResult;
+    if (!resp.ok) {
+        return { ...data, ok: false, error: data?.error || data?.detail || `HTTP ${resp.status}` };
+    }
+    return data;
+}

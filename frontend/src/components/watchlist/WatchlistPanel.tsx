@@ -7,7 +7,8 @@
 // Design system: glass-card, badge a colori, emerald positivo / amber Betfair /
 // red negativo, framer-motion, sonner.
 // ============================================================================
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -17,14 +18,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-    Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Calendar, Trophy, Sparkles, Trash2,
+    Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Calendar, Trophy, Sparkles, Trash2, BarChart3,
+    Circle, Send, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
     setWatchlistDecision, deleteFromWatchlist, REJECT_REASON_LABELS,
     type WatchlistRow, type RejectReason, type SnapshotEdge, type WatchlistStatus,
 } from '@/lib/watchlist';
+import { refreshBetfairOdds, fetchBetfairDirectionOdds } from '@/lib/betfair';
 import { TradeForm } from '@/components/watchlist/TradeForm';
+import { MultiTradeForm, edgeKey } from '@/components/watchlist/MultiTradeForm';
+
+// overlay quote aggiornate on-demand: per chiave (market|selection) → ultime back/lay.
+type OddsOverlay = Record<string, { best_back: number | null; best_lay: number | null }>;
 
 interface Props {
     rows: WatchlistRow[];
@@ -55,16 +62,40 @@ const fmtKickoff = (iso: string | null) => {
 };
 
 // Riga selezione dello snapshot. `recommended` = presente nei consigli.
-function EdgeRow({ e, recommended }: { e: SnapshotEdge; recommended: boolean }) {
+// `selectable` mostra il cerchietto per spuntare la selezione → Scheda Trade.
+// `updated` = quota rinfrescata on-demand (overlay): mostra un indicatore.
+function EdgeRow({ e, recommended, selectable, selected, onToggle, updated }: {
+    e: SnapshotEdge; recommended: boolean;
+    selectable?: boolean; selected?: boolean; onToggle?: () => void; updated?: boolean;
+}) {
     const edgeColor = e.edge > 0.02 ? 'text-emerald-400' : e.edge > 0 ? 'text-amber-400' : 'text-red-400';
     return (
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] ${recommended
-            ? 'bg-amber-400/5 border-amber-400/30'
-            : 'bg-white/[0.02] border-white/10'}`}>
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] ${selected
+            ? 'bg-primary/10 border-primary/40'
+            : recommended
+                ? 'bg-amber-400/5 border-amber-400/30'
+                : 'bg-white/[0.02] border-white/10'}`}>
+            {selectable && (
+                <button
+                    type="button"
+                    onClick={onToggle}
+                    className="shrink-0"
+                    aria-pressed={selected}
+                    aria-label={selected ? `Deseleziona ${e.market} ${e.selection}` : `Seleziona ${e.market} ${e.selection}`}
+                    title={selected ? 'Deseleziona' : 'Seleziona per la giocata'}
+                >
+                    {selected
+                        ? <CheckCircle2 className="w-4 h-4 text-primary" />
+                        : <Circle className="w-4 h-4 text-muted-foreground/50 hover:text-white transition-colors" />}
+                </button>
+            )}
             {recommended && <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />}
             <div className="min-w-0 flex-1">
                 <span className="font-bold text-white">{e.market}</span>
                 <span className="text-white/60"> · {e.selection}</span>
+                {updated && (
+                    <span className="ml-1.5 text-emerald-400" title="quota aggiornata da Betfair" aria-label="quota aggiornata">●</span>
+                )}
             </div>
             <div className="text-right shrink-0 w-14">
                 <div className="font-mono text-white">{fmtPct(e.model_prob, 0)}</div>
@@ -91,10 +122,17 @@ function EdgeRow({ e, recommended }: { e: SnapshotEdge; recommended: boolean }) 
 }
 
 function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () => void }) {
+    const navigate = useNavigate();
     const [expanded, setExpanded] = useState(false);
     const [tradeOpen, setTradeOpen] = useState(false);
+    const [multiOpen, setMultiOpen] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [delOpen, setDelOpen] = useState(false);
+    // chiavi (market|selection) delle selezioni spuntate per la giocata multipla
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+    // "Aggiorna quote": overlay delle ultime back/lay (non muta lo snapshot congelato)
+    const [refreshing, setRefreshing] = useState(false);
+    const [oddsOverlay, setOddsOverlay] = useState<OddsOverlay>({});
 
     // set delle selezioni consigliate (per evidenziare le righe edges)
     const consigliKeys = useMemo(() => {
@@ -103,8 +141,76 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
         return s;
     }, [row.consigli]);
 
-    const edges = row.snapshot?.edges ?? [];
+    const edges = useMemo(() => row.snapshot?.edges ?? [], [row.snapshot?.edges]);
     const isDecided = row.status !== 'DA_VALUTARE';
+    // le scartate non sono giocabili → niente spunte. Le da-valutare/giocate sì.
+    const selectable = row.status !== 'SCARTATA';
+
+    const toggleKey = (k: string) => setSelectedKeys(prev => {
+        const n = new Set(prev);
+        if (n.has(k)) n.delete(k); else n.add(k);
+        return n;
+    });
+
+    // Applica l'overlay quote (se presente) a un edge: aggiorna back/lay e RICALCOLA
+    // l'edge = model_prob - 1/back con la quota fresca. Non muta lo snapshot congelato.
+    const applyOverlay = useCallback((e: SnapshotEdge): SnapshotEdge => {
+        const o = oddsOverlay[edgeKey(e)];
+        if (!o) return e;
+        const edge = (e.model_prob != null && o.best_back != null && o.best_back > 1)
+            ? e.model_prob - 1 / o.best_back
+            : e.edge;
+        return { ...e, best_back: o.best_back, best_lay: o.best_lay, edge };
+    }, [oddsOverlay]);
+
+    // selezioni spuntate, con quote aggiornate applicate (prefill = ultima quota).
+    const selectedEdges = useMemo(
+        () => edges.filter(e => selectedKeys.has(edgeKey(e))).map(applyOverlay),
+        [edges, selectedKeys, applyOverlay],
+    );
+
+    // Aggiorna quote Betfair on-demand di QUESTA partita (via runner locale), poi
+    // ricalcola gli edge mostrati. Funziona anche pre-match (semplice chiamata API).
+    const handleRefreshOdds = async () => {
+        setRefreshing(true);
+        try {
+            const res = await refreshBetfairOdds(row.fixture_id);
+            if (!res.ok) {
+                toast.error('Quote non aggiornate', {
+                    description: res.error ?? res.reason ?? 'nessuna quota disponibile per questa partita.',
+                });
+                return;
+            }
+            const dir = await fetchBetfairDirectionOdds(String(row.fixture_id));
+            const overlay: OddsOverlay = {};
+            for (const e of edges) {
+                const node = dir[e.market]?.[e.selection];
+                if (node) {
+                    overlay[edgeKey(e)] = {
+                        best_back: node.back?.[0]?.price ?? null,
+                        best_lay: node.lay?.[0]?.price ?? null,
+                    };
+                }
+            }
+            const overlaySize = Object.keys(overlay).length;
+            setOddsOverlay(overlay);
+            if (overlaySize > 0) {
+                toast.success('Quote aggiornate da Betfair', {
+                    description: `${res.markets ?? 0} mercati · ${overlaySize} edge ricalcolati.`,
+                });
+            } else {
+                toast.success('Quote scritte nel DB', {
+                    description: `${res.markets ?? 0} mercati aggiornati. Nessun edge da ricalcolare nello snapshot.`,
+                });
+            }
+        } catch (err: unknown) {
+            toast.error('Aggiorna quote fallito', {
+                description: err instanceof Error ? err.message : 'errore sconosciuto',
+            });
+        } finally {
+            setRefreshing(false);
+        }
+    };
 
     return (
         <motion.div
@@ -126,6 +232,34 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {fmtKickoff(row.kickoff)}</span>
                         {row.n_trades > 0 && <span className="text-primary">{row.n_trades} trade</span>}
                     </div>
+                </div>
+                {/* azioni rapide di riga: statistiche (deep-link Dashboard) + aggiorna quote */}
+                <div className="shrink-0 flex items-center gap-1.5">
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/dashboard?fixture=${row.fixture_id}&from=watchlist`)}
+                        className="h-8 border-primary/30 text-primary hover:bg-primary/10"
+                        title="Apri la scheda statistiche di questa partita"
+                        aria-label="Vai alle statistiche di questa partita"
+                    >
+                        <BarChart3 className="w-3.5 h-3.5 md:mr-1.5" />
+                        <span className="hidden md:inline">Vai alle statistiche</span>
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRefreshOdds}
+                        disabled={refreshing}
+                        className="h-8 border-amber-400/30 text-amber-300 hover:bg-amber-400/10"
+                        title="Aggiorna le quote Betfair di questa partita"
+                        aria-label="Aggiorna le quote Betfair di questa partita"
+                    >
+                        {refreshing
+                            ? <Loader2 className="w-3.5 h-3.5 md:mr-1.5 animate-spin" />
+                            : <RefreshCw className="w-3.5 h-3.5 md:mr-1.5" />}
+                        <span className="hidden md:inline">Aggiorna quote</span>
+                    </Button>
                 </div>
                 <button
                     onClick={() => setExpanded(v => !v)}
@@ -158,10 +292,19 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                             </div>
                             <div className="space-y-1.5">
                                 {edges.map((e, i) => (
-                                    <EdgeRow key={`${e.market}-${e.selection}-${i}`} e={e}
-                                        recommended={consigliKeys.has(`${e.market}|${e.selection}`)} />
+                                    <EdgeRow key={`${e.market}-${e.selection}-${i}`} e={applyOverlay(e)}
+                                        recommended={consigliKeys.has(`${e.market}|${e.selection}`)}
+                                        selectable={selectable}
+                                        selected={selectedKeys.has(edgeKey(e))}
+                                        onToggle={() => toggleKey(edgeKey(e))}
+                                        updated={Boolean(oddsOverlay[edgeKey(e)])} />
                                 ))}
                             </div>
+                            {selectable && edges.length > 0 && (
+                                <p className="text-[10px] text-muted-foreground/70 mt-1.5">
+                                    Spunta una o più selezioni per pre-compilare la Scheda Trade · 1 selezione = 1 giocata.
+                                </p>
+                            )}
                         </div>
                     ) : (
                         <p className="text-[11px] text-white/40">
@@ -191,15 +334,37 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
 
             {/* azioni */}
             <div className="px-4 py-3 border-t border-white/5 flex items-center gap-2">
-                <Button
-                    onClick={() => setTradeOpen(true)}
-                    size="sm"
-                    disabled={row.status === 'SCARTATA'}
-                    className="bg-primary text-primary-foreground font-bold hover:bg-primary/90"
-                >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    {row.status === 'GIOCATA' ? 'Aggiungi trade' : 'Giocata'}
-                </Button>
+                {selectedKeys.size > 0 ? (
+                    <>
+                        <Button
+                            onClick={() => setMultiOpen(true)}
+                            size="sm"
+                            disabled={row.status === 'SCARTATA'}
+                            className="bg-primary text-primary-foreground font-bold hover:bg-primary/90"
+                        >
+                            <Send className="w-4 h-4 mr-2" />
+                            Invia Giocate ({selectedKeys.size})
+                        </Button>
+                        <Button
+                            onClick={() => setSelectedKeys(new Set())}
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-white"
+                        >
+                            Deseleziona
+                        </Button>
+                    </>
+                ) : (
+                    <Button
+                        onClick={() => setTradeOpen(true)}
+                        size="sm"
+                        disabled={row.status === 'SCARTATA'}
+                        className="bg-primary text-primary-foreground font-bold hover:bg-primary/90"
+                    >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        {row.status === 'GIOCATA' ? 'Aggiungi trade' : 'Giocata'}
+                    </Button>
+                )}
                 <Button
                     onClick={() => setRejectOpen(true)}
                     size="sm"
@@ -230,6 +395,13 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
             </div>
 
             <TradeForm open={tradeOpen} onOpenChange={setTradeOpen} row={row} onSaved={onChanged} />
+            <MultiTradeForm
+                open={multiOpen}
+                onOpenChange={setMultiOpen}
+                row={row}
+                selections={selectedEdges}
+                onSaved={() => { setSelectedKeys(new Set()); onChanged?.(); }}
+            />
             <RejectDialog open={rejectOpen} onOpenChange={setRejectOpen} row={row} onSaved={onChanged} />
             <DeleteDialog open={delOpen} onOpenChange={setDelOpen} row={row} onSaved={onChanged} />
         </motion.div>
