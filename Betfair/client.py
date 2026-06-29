@@ -292,3 +292,38 @@ class BetfairClient:
             "priceProjection": price_projection,
         }
         return self.betting_rpc(method="SportsAPING/v1.0/listMarketBook", params=params)
+
+    # =========================
+    # ORDER PLACEMENT (MONEY-CRITICAL)
+    # =========================
+    def place_orders(
+        self,
+        market_id: str,
+        instructions: list,
+        customer_ref: Optional[str] = None,
+        customer_strategy_ref: Optional[str] = None,
+        market_version: Optional[Dict[str, Any]] = None,
+        max_retries: int = 2,
+    ) -> Any:
+        """placeOrders — piazza ordini REALI (soldi veri) su un mercato.
+
+        Riferimento: Betfair Exchange ``SportsAPING/v1.0/placeOrders``.
+        - ``instructions``: lista di PlaceInstruction (max 50 sull'Exchange .it).
+        - ``customer_ref``: stringa <=32 char (charset alfanumerico + ``:-._+*;~``).
+          Betfair la usa per DE-DUP su finestra di 60s: se betting_rpc ritenta la
+          stessa richiesta (stesso customer_ref), l'ordine NON viene piazzato due
+          volte. È la nostra garanzia di idempotenza su retry di rete.
+        - ``customer_strategy_ref``: <=15 char, persiste sull'ordine.
+
+        Ritorna il PlaceExecutionReport grezzo (status + instructionReports[]).
+        """
+        params: Dict[str, Any] = {"marketId": str(market_id), "instructions": instructions}
+        if customer_ref:
+            params["customerRef"] = customer_ref
+        if customer_strategy_ref:
+            params["customerStrategyRef"] = customer_strategy_ref
+        if market_version is not None:
+            params["marketVersion"] = market_version
+        return self.betting_rpc(
+            method="SportsAPING/v1.0/placeOrders", params=params, max_retries=max_retries
+        )

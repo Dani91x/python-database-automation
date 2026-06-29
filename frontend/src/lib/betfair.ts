@@ -100,3 +100,76 @@ export async function refreshBetfairOdds(fixtureId: number): Promise<RefreshOdds
     }
     return data;
 }
+
+// ---------- Piazzamento ordine REALE su Betfair (soldi veri, via runner locale) ----------
+export interface PlaceOrderPayload {
+    fixture_id: number;
+    market: string;                 // chiave canonica snapshot (es. 'btts')
+    selection: string;              // es. 'Yes' | 'Over' | 'H'
+    side: 'back' | 'lay';
+    price: number;                  // quota richiesta (il server arrotonda al tick)
+    size?: number | null;           // stake €; in alternativa usare liability (solo lay)
+    liability?: number | null;
+    persistence?: 'LAPSE' | 'PERSIST' | 'MARKET_ON_CLOSE';
+    fill_or_kill?: boolean;
+    min_fill_size?: number | null;
+    max_stake?: number | null;      // cap anti-errore (digitato dall'utente)
+}
+
+// Esito reale dell'ordine (vedi Betfair/order_exec.py → PlaceExecutionReport parsato).
+export interface PlaceOrderResult {
+    ok: boolean;
+    status?: string;                // SUCCESS | FAILURE | PROCESSED_WITH_ERRORS | TIMEOUT
+    error_code?: string | null;
+    instruction_status?: string | null;
+    order_status?: string | null;   // EXECUTABLE (resta sul book) | EXECUTION_COMPLETE
+    bet_id?: string | null;
+    placed_date?: string | null;
+    size_matched?: number | null;
+    average_price_matched?: number | null;
+    size_remaining?: number | null;
+    // contesto abbinato (conferma)
+    fixture_id?: number;
+    market?: string;
+    selection?: string;
+    side?: string;
+    market_id?: string;
+    market_name?: string | null;
+    runner?: string | null;
+    selection_id?: number;
+    handicap?: number;
+    price?: number;
+    size?: number;
+    persistence?: string;
+    fill_or_kill?: boolean;
+    customer_order_ref?: string;
+    error?: string;
+    detail?: string;
+}
+
+const ORDER_PLACE_URL: string =
+    import.meta.env.VITE_ORDER_PLACE_URL || 'http://127.0.0.1:8787/place-order';
+
+// Piazza UN ordine reale su Betfair tramite il runner locale e ritorna l'esito.
+// Solleva un Error se il runner non è raggiungibile (gestire lato chiamante).
+export async function placeBetfairOrder(payload: PlaceOrderPayload): Promise<PlaceOrderResult> {
+    let resp: Response;
+    try {
+        resp = await fetch(ORDER_PLACE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(30_000),
+        });
+    } catch (e) {
+        if (e instanceof DOMException && e.name === 'TimeoutError') {
+            throw new Error('Piazzamento scaduto (30s): runner occupato o Betfair lento.');
+        }
+        throw new Error('Runner locale non raggiungibile: avvia lo stream live per piazzare ordini.');
+    }
+    const data = (await resp.json().catch(() => ({}))) as PlaceOrderResult;
+    if (!resp.ok) {
+        return { ...data, ok: false, error: data?.error || data?.detail || `HTTP ${resp.status}` };
+    }
+    return data;
+}

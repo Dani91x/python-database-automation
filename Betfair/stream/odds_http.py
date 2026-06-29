@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 ODDS_HTTP_HOST = os.getenv("LIVE_ODDS_HTTP_HOST", "127.0.0.1")
 ODDS_HTTP_PORT = int(os.getenv("LIVE_ODDS_HTTP_PORT", "8787"))
+_MAX_BODY_BYTES = 65_536   # 64 KB: tetto difensivo alla lettura del corpo richiesta
 if ODDS_HTTP_HOST not in ("127.0.0.1", "::1", "localhost"):
     # binding non-loopback: il server diventa raggiungibile dalla rete → assicurarsi
     # che sia intenzionale (di norma deve restare locale).
@@ -74,7 +75,7 @@ class _Handler(BaseHTTPRequestHandler):
         if qs.get("fixture_id"):
             return qs["fixture_id"][0]
         try:
-            length = int(self.headers.get("Content-Length") or 0)
+            length = min(int(self.headers.get("Content-Length") or 0), _MAX_BODY_BYTES)
             if length > 0:
                 raw = self.rfile.read(length)
                 body = json.loads(raw or b"{}")
@@ -83,6 +84,19 @@ class _Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             return None
         return None
+
+    def _read_json_body(self) -> dict:
+        """Corpo JSON della richiesta come dict ({} se assente/illeggibile). Limita la
+        lettura a _MAX_BODY_BYTES (anti-abuso da client locale)."""
+        try:
+            length = min(int(self.headers.get("Content-Length") or 0), _MAX_BODY_BYTES)
+            if length <= 0:
+                return {}
+            raw = self.rfile.read(length)
+            body = json.loads(raw or b"{}")
+            return body if isinstance(body, dict) else {}
+        except (ValueError, json.JSONDecodeError):
+            return {}
 
     # --- preflight CORS ---
     def do_OPTIONS(self) -> None:  # noqa: N802 - nome richiesto da BaseHTTPRequestHandler
@@ -101,10 +115,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
-        if parsed.path != "/refresh-odds":
-            self._json(404, {"ok": False, "error": "endpoint non trovato"})
+        if parsed.path == "/refresh-odds":
+            self._handle_refresh(parsed)
             return
+        if parsed.path == "/place-order":
+            self._handle_place_order()
+            return
+        self._json(404, {"ok": False, "error": "endpoint non trovato"})
 
+    def _handle_refresh(self, parsed) -> None:
         raw_fid = self._read_fixture_id(parsed)
         try:
             fixture_id = int(raw_fid)  # type: ignore[arg-type]
@@ -121,9 +140,74 @@ class _Handler(BaseHTTPRequestHandler):
                              "error": "limite Betfair raggiunto (riprova tra poco)",
                              "detail": str(ex)[:140]})
             return
-        except Exception as ex:  # noqa: BLE001 - errore restituito al client, runner illeso
+        except Exception:  # noqa: BLE001 - dettaglio solo nel log, mai nel body
             logger.exception("[odds-http] refresh fixture %s fallito", fixture_id)
-            self._json(500, {"ok": False, "fixture_id": fixture_id, "error": str(ex)[:200]})
+            self._json(500, {"ok": False, "fixture_id": fixture_id, "error": "errore interno del runner (vedi log)"})
+            return
+
+        self._json(200, result)
+
+    def _handle_place_order(self) -> None:
+        """POST /place-order — piazza UN ordine reale (money-critical)."""
+        body = self._read_json_body()
+
+        def _opt_float(v):
+            if v is None or v == "":
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        try:
+            fixture_id = int(body.get("fixture_id"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            self._json(400, {"ok": False, "error": "fixture_id mancante o non valido"})
+            return
+        market = body.get("market")
+        selection = body.get("selection")
+        side = body.get("side")
+        if not market or not selection or not side:
+            self._json(400, {"ok": False, "error": "market/selection/side obbligatori"})
+            return
+        price = _opt_float(body.get("price"))
+        if price is None:
+            self._json(400, {"ok": False, "error": "price mancante o non valido"})
+            return
+        # cap OBBLIGATORIO lato server (tripwire anti-errore): vale anche per client
+        # non-browser che bypassano la UI.
+        max_stake = _opt_float(body.get("max_stake"))
+        if max_stake is None or max_stake <= 0:
+            self._json(400, {"ok": False, "error": "cap massimo stake (max_stake) obbligatorio e > 0"})
+            return
+
+        from Betfair.order_exec import place_order, OrderBusy
+        from Betfair.odds_refresh import BetfairLimitHit
+        try:
+            result = place_order(
+                fixture_id, str(market), str(selection), str(side), price,
+                size=_opt_float(body.get("size")),
+                liability=_opt_float(body.get("liability")),
+                persistence=str(body.get("persistence") or "LAPSE"),
+                fill_or_kill=bool(body.get("fill_or_kill")),
+                min_fill_size=_opt_float(body.get("min_fill_size")),
+                max_stake=max_stake,
+            )
+        except OrderBusy as ex:
+            self._json(503, {"ok": False, "error": str(ex)[:160]})
+            return
+        except BetfairLimitHit as ex:
+            self._json(429, {"ok": False, "error": "limite Betfair raggiunto (riprova tra poco)",
+                             "detail": str(ex)[:140]})
+            return
+        except ValueError as ex:
+            # errore di validazione input (stake/tick/mercato non disponibile, ...):
+            # i ValueError sono messaggi nostri, sicuri da mostrare.
+            self._json(400, {"ok": False, "error": str(ex)[:200]})
+            return
+        except Exception:  # noqa: BLE001 - dettaglio solo nel log, mai nel body
+            logger.exception("[odds-http] place-order fixture %s fallito", fixture_id)
+            self._json(500, {"ok": False, "error": "errore interno del runner (vedi log)"})
             return
 
         self._json(200, result)

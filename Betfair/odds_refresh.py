@@ -90,6 +90,18 @@ def _with_client(fn):
         return fn(_get_client())
 
 
+# Accessori PUBBLICI: condividono la stessa sessione Betfair cached con altri moduli
+# (es. order_exec), così il piazzamento ordini non apre una seconda sessione/login.
+def get_shared_client() -> Any:
+    """BetfairClient loggato e condiviso (login lazy una volta)."""
+    return _get_client()
+
+
+def reset_shared_client() -> None:
+    """Forza il re-login alla prossima chiamata (sessione scaduta)."""
+    _reset_client()
+
+
 def _catalogue_meta(client: Any, *, market_ids: Optional[List[str]] = None,
                     event_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
     """Mappa market_id → {name, runners{selection_id:(name, sort_priority)}} via
