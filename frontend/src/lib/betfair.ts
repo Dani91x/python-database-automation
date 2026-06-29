@@ -69,36 +69,37 @@ export interface RefreshOddsResult {
     detail?: string;
 }
 
-// URL dell'endpoint locale esposto dal runner live (Betfair/stream/odds_http.py).
-// Sovrascrivibile via VITE_ODDS_REFRESH_URL; default 127.0.0.1:8787.
-const ODDS_REFRESH_URL: string =
-    import.meta.env.VITE_ODDS_REFRESH_URL || 'http://127.0.0.1:8787/refresh-odds';
+// Aggiorna quote MEDIATO DAL DATABASE (come lo stream): mette una richiesta in coda
+// (request_betfair_refresh) e fa polling dell'esito (get_betfair_refresh_request).
+// Funziona da QUALUNQUE origine — anche dal sito online — perché NON chiama il PC
+// direttamente: il worker locale (aggiorna_quote_betfair.bat) processa la coda e
+// riscrive betfair_market_odds. Lo snapshot congelato non viene mai toccato.
+const REFRESH_POLL_MS = 1500;
+const REFRESH_TIMEOUT_MS = 60_000;
 
-// Forza l'aggiornamento delle quote Betfair della SOLA fixture indicata, chiamando
-// il runner locale che interroga le API Betfair e riscrive betfair_market_odds.
-// Solleva un Error se il runner non è raggiungibile (gestire lato chiamante).
 export async function refreshBetfairOdds(fixtureId: number): Promise<RefreshOddsResult> {
-    let resp: Response;
-    try {
-        resp = await fetch(ODDS_REFRESH_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fixture_id: Number(fixtureId) }),
-            // BATCH=20 mercati × REQ_DELAY=0.6s ≈ 12s + margine: 45s evita attese infinite
-            // se il runner è bloccato sul lock o Betfair è lento.
-            signal: AbortSignal.timeout(45_000),
-        });
-    } catch (e) {
-        if (e instanceof DOMException && e.name === 'TimeoutError') {
-            throw new Error('Aggiornamento quote scaduto (45s): server occupato o Betfair lento. Riprova.');
+    const { data: reqId, error } = await supabase.rpc('request_betfair_refresh', {
+        p_fixture_id: Number(fixtureId),
+    });
+    if (error) throw new Error(error.message);
+    if (reqId == null) throw new Error('Richiesta di aggiornamento non accodata.');
+
+    const deadline = Date.now() + REFRESH_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, REFRESH_POLL_MS));
+        const { data: row, error: e2 } = await supabase.rpc('get_betfair_refresh_request', { p_id: reqId });
+        if (e2) throw new Error(e2.message);
+        const req = row as { status?: string; result?: RefreshOddsResult; error?: string } | null;
+        if (!req) continue;
+        if (req.status === 'done') {
+            if (!req.result) throw new Error('Risposta aggiornamento incompleta (result mancante).');
+            return req.result as RefreshOddsResult;
         }
-        throw new Error('Server quote non attivo: avvia "aggiorna_quote_betfair.bat" e riprova.');
+        if (req.status === 'error') {
+            return { ok: false, error: req.error ?? 'errore aggiornamento quote' };
+        }
     }
-    const data = (await resp.json().catch(() => ({}))) as RefreshOddsResult;
-    if (!resp.ok) {
-        return { ...data, ok: false, error: data?.error || data?.detail || `HTTP ${resp.status}` };
-    }
-    return data;
+    throw new Error('Aggiornamento quote scaduto (60s): il server quote è attivo? Avvia "aggiorna_quote_betfair.bat".');
 }
 
 // ---------- Piazzamento ordine REALE su Betfair (soldi veri, via runner locale) ----------
@@ -147,29 +148,45 @@ export interface PlaceOrderResult {
     detail?: string;
 }
 
-const ORDER_PLACE_URL: string =
-    import.meta.env.VITE_ORDER_PLACE_URL || 'http://127.0.0.1:8787/place-order';
+// Piazza UN ordine reale MEDIATO DAL DATABASE (come lo stream): accoda l'ordine
+// (request_betfair_order, IDEMPOTENTE su client_ref) e fa polling dell'esito
+// (get_betfair_order_request). Funziona da QUALUNQUE origine — anche dal sito
+// online — perché NON chiama il PC direttamente: il worker locale
+// (aggiorna_quote_betfair.bat) processa la coda e piazza l'ordine reale.
+const ORDER_POLL_MS = 1500;
+const ORDER_TIMEOUT_MS = 90_000;
 
-// Piazza UN ordine reale su Betfair tramite il runner locale e ritorna l'esito.
-// Solleva un Error se il runner non è raggiungibile (gestire lato chiamante).
 export async function placeBetfairOrder(payload: PlaceOrderPayload): Promise<PlaceOrderResult> {
-    let resp: Response;
-    try {
-        resp = await fetch(ORDER_PLACE_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(30_000),
-        });
-    } catch (e) {
-        if (e instanceof DOMException && e.name === 'TimeoutError') {
-            throw new Error('Piazzamento scaduto (30s): server occupato o Betfair lento.');
+    // chiave di idempotenza STABILE per questa chiamata: un retry dell'enqueue con
+    // lo stesso client_ref NON crea un secondo ordine (vincolo UNIQUE lato DB).
+    const client_ref = crypto.randomUUID();
+
+    let reqId: number | null = null;
+    let lastErr = '';
+    for (let i = 0; i < 3 && reqId == null; i++) {
+        const { data, error } = await supabase.rpc('request_betfair_order', { p: { ...payload, client_ref } });
+        if (!error && data != null) { reqId = data as number; break; }
+        lastErr = error?.message ?? 'accodamento non riuscito';
+        await new Promise(r => setTimeout(r, 800));
+    }
+    if (reqId == null) throw new Error(`Ordine non accodato: ${lastErr}`);
+
+    const deadline = Date.now() + ORDER_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, ORDER_POLL_MS));
+        const { data: row, error: e2 } = await supabase.rpc('get_betfair_order_request', { p_id: reqId });
+        if (e2) throw new Error(e2.message);
+        const req = row as { status?: string; result?: PlaceOrderResult; error?: string } | null;
+        if (!req) continue;
+        if (req.status === 'done') {
+            if (!req.result) throw new Error('Esito ordine incompleto (result mancante).');
+            return req.result as PlaceOrderResult;
         }
-        throw new Error('Server ordini non attivo: avvia "aggiorna_quote_betfair.bat" e riprova.');
+        if (req.status === 'error') {
+            return { ok: false, error: req.error ?? 'ordine non piazzato' };
+        }
+        // 'pending'/'processing' → continua il polling
     }
-    const data = (await resp.json().catch(() => ({}))) as PlaceOrderResult;
-    if (!resp.ok) {
-        return { ...data, ok: false, error: data?.error || data?.detail || `HTTP ${resp.status}` };
-    }
-    return data;
+    // timeout: l'ordine POTREBBE essere stato piazzato → NON reinviare.
+    throw new Error('Esito ordine non confermato (timeout): NON reinviare. Controlla Report e Betfair. Il server ordini è attivo (aggiorna_quote_betfair.bat)?');
 }

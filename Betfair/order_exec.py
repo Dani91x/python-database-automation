@@ -18,7 +18,6 @@ nel determinare market/selezione: solo le chiavi canoniche dello snapshot.
 """
 from __future__ import annotations
 
-import datetime as dt
 import logging
 import re
 import threading
@@ -141,17 +140,26 @@ def _resolve_target(market_key: str, selection: str) -> Tuple[str, Optional[str]
     raise ValueError(f"mercato/selezione non supportati per il piazzamento: {market_key} · {selection}")
 
 
-def _market_id_for(sb: Any, fixture_id: int, bf_market_name: str, run_date: str) -> str:
-    """market_id Betfair di QUELLA fixture per quel mercato (run di oggi). Solleva
-    ValueError se assente (→ l'utente deve 'Aggiorna quote') o ambiguo (safety)."""
-    rows = sb.table("betfair_market_odds").select("market_id").eq(
-        "fixture_id", fixture_id).eq("market_name", bf_market_name).eq("run_date", run_date).execute().data or []
-    mids = sorted({r["market_id"] for r in rows if r.get("market_id")})
+def _market_id_for(sb: Any, fixture_id: int, bf_market_name: str) -> str:
+    """market_id Betfair di QUELLA fixture per quel mercato. Usa la run_date più
+    RECENTE disponibile: i market_id Betfair PERSISTONO finché il mercato è aperto,
+    quindi questo evita il fallimento a cavallo di mezzanotte / job giornaliero (un
+    ordine accodato alle 23:59 e processato alle 00:01 trova comunque il mercato).
+    L'ambiguità è valutata SOLO entro la run più recente. Solleva ValueError se
+    assente (→ 'Aggiorna quote') o ambiguo (safety)."""
+    rows = sb.table("betfair_market_odds").select("market_id, run_date").eq(
+        "fixture_id", fixture_id).eq("market_name", bf_market_name).order(
+        "run_date", desc=True).execute().data or []
+    if not rows:
+        raise ValueError(f"mercato Betfair '{bf_market_name}' non disponibile per questa partita: aggiorna le quote.")
+    latest = rows[0].get("run_date")
+    mids = sorted({r["market_id"] for r in rows
+                   if r.get("market_id") and r.get("run_date") == latest})
     if not mids:
         raise ValueError(f"mercato Betfair '{bf_market_name}' non disponibile per questa partita: aggiorna le quote.")
     if len(mids) > 1:
         # invariante money-safe: un mercato per fixture deve avere UN market_id.
-        raise ValueError(f"ambiguità market_id per '{bf_market_name}' (fixture {fixture_id}): STOP per sicurezza.")
+        raise ValueError(f"ambiguità market_id per '{bf_market_name}' (fixture {fixture_id}, run {latest}): STOP per sicurezza.")
     return mids[0]
 
 
@@ -206,6 +214,7 @@ def place_order(
     fill_or_kill: bool = False,
     min_fill_size: Optional[float] = None,
     max_stake: Optional[float] = None,
+    customer_ref: Optional[str] = None,
     sb: Any = None,
 ) -> Dict[str, Any]:
     """Piazza UN ordine reale e ritorna l'esito completo.
@@ -269,13 +278,9 @@ def place_order(
     if not _PLACE_LOCK.acquire(timeout=_PLACE_LOCK_TIMEOUT_SEC):
         raise OrderBusy("un altro piazzamento è in corso: riprova tra poco.")
     try:
-        # data calcolata DENTRO il lock: evita uno scarto a cavallo di mezzanotte se
-        # il lock è stato tenuto a lungo.
-        today = dt.date.today().isoformat()
-
         # 1) risolvi mercato/selezione SOLO dalle chiavi canoniche + market_id della fixture
         bf_market, runner_name, sort_priority = _resolve_target(market, selection)
-        market_id = _market_id_for(sb, fixture_id, bf_market, today)
+        market_id = _market_id_for(sb, fixture_id, bf_market)
         sel = _call(lambda c: _resolve_selection(c, market_id, runner_name, sort_priority))
 
         # 2) costruisci l'istruzione LIMIT
@@ -298,12 +303,19 @@ def place_order(
             "limitOrder": limit_order,
             "customerOrderRef": customer_order_ref,
         }
-        # customerRef FISSO per la chiamata → de-dup Betfair 60s su retry (no doppio piazzamento)
-        customer_ref = uuid.uuid4().hex[:32]
+        # customerRef FISSO per la chiamata → de-dup Betfair 60s su retry (no doppio
+        # piazzamento). Il chiamante (worker della coda) ne passa uno DETERMINISTICO
+        # legato alla richiesta, così anche un retry usa lo stesso ref → de-dup.
+        cust_ref = (customer_ref or uuid.uuid4().hex)[:32]
 
+        # max_retries=1: il piazzamento NON deve ritentare a lungo. Con HTTP timeout
+        # 30s, un eventuale retry di _call (re-login) riparte entro ~33s → DENTRO la
+        # finestra di de-dup 60s del customerRef. Più retry interni potrebbero invece
+        # spingere il secondo invio oltre i 60s → rischio doppio piazzamento.
         report = _call(lambda c: c.place_orders(
             market_id, [instruction],
-            customer_ref=customer_ref, customer_strategy_ref="watchlist",
+            customer_ref=cust_ref, customer_strategy_ref="watchlist",
+            max_retries=1,
         ))
     finally:
         _PLACE_LOCK.release()
