@@ -24,7 +24,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tactical_engine.dixon_coles import score_matrix
 
-from .live_engine import estimate_prematch_lambdas, implied_prob, remaining_rate
+from .live_engine import (
+    estimate_prematch_lambdas,
+    inplay_residual_rates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,23 +61,56 @@ def rho_for_league(league_id: Optional[int]) -> float:
     return float(fallback)
 
 
+# mappa la chiave-mercato del motore → cal_key reale di dynamic_cal.json
+_CAL_KEY_MAP = {
+    "home": "H", "draw": "D", "away": "A",
+    "over_1_5": "O15", "under_1_5": "U15",
+    "over_2_5": "O25", "under_2_5": "U25",
+    "over_3_5": "O35", "under_3_5": "U35",
+    "btts_yes": "BTTS", "btts_no": "BTTS_NO",
+}
+
+
+def _prob_bin(prob: float) -> str:
+    """Fascia di probabilità (decile 0..9) — STESSA convenzione del builder della
+    calibrazione (update_poisson_calibration.py)."""
+    return str(max(0, min(9, int(max(0.0, min(0.999999, prob)) * 10))))
+
+
+# La calibrazione è SPENTA di default: va validata su prob IN-PLAY prima di attivarla
+# (dynamic_cal è costruita su prob pre-match). Spenta → identità = comportamento
+# dell'originale. Si attiva solo dopo verifica che NON peggiora i segnali.
+_CALIBRATION_ENABLED = False
+
+
 def calibrate(prob: float, market_key: str, league_id: Optional[int]) -> float:
-    """Hook di calibrazione. Difensivo: se la struttura non è riconosciuta o assente,
-    ritorna la probabilità invariata (meglio non calibrare che calibrare a caso).
-    Struttura attesa (se presente): dynamic_cal[by_league|global][market_key] = fattore.
+    """Calibrazione PER-LEGA × MERCATO × FASCIA dai dati reali (dynamic_cal.json).
+
+    Struttura reale: ``dynamic_cal[by_league|global][cal_key][bin] = fattore`` dove
+    ``cal_key`` ∈ {H,D,A,O15,U15,O25,U25,O35,U35,BTTS,BTTS_NO,...} e ``bin`` è il
+    decile di probabilità. Catena lega → globale → identità. Mercati non mappati o
+    senza dato passano invariati (meglio non calibrare che calibrare a caso).
     """
-    if not isinstance(_CAL_DATA, dict):
+    if not _CALIBRATION_ENABLED or not isinstance(_CAL_DATA, dict):
+        return prob
+    cal_key = _CAL_KEY_MAP.get(market_key)
+    if cal_key is None:
         return prob
     node = None
     by_league = _CAL_DATA.get("by_league")
     if league_id is not None and isinstance(by_league, dict):
-        node = by_league.get(str(league_id))
+        lg = by_league.get(str(league_id))
+        if isinstance(lg, dict) and isinstance(lg.get(cal_key), dict):
+            node = lg[cal_key]
     if node is None:
-        node = _CAL_DATA.get("global")
-    if isinstance(node, dict):
-        factor = node.get(market_key)
-        if isinstance(factor, (int, float)) and 0 < factor < 5:
-            return max(0.0, min(1.0, prob * float(factor)))
+        glob = _CAL_DATA.get("global")
+        if isinstance(glob, dict) and isinstance(glob.get(cal_key), dict):
+            node = glob[cal_key]
+    if not isinstance(node, dict):
+        return prob
+    factor = node.get(_prob_bin(prob))
+    if isinstance(factor, (int, float)) and 0 < factor < 5:
+        return max(0.0, min(1.0, prob * float(factor)))
     return prob
 
 
@@ -119,19 +155,64 @@ def _ladder_sel(ladder: Dict[str, Any], sel_id: Any) -> Dict[str, Any]:
     return ladder.get(str(sel_id)) or ladder.get(sel_id) or {}
 
 
+def total_goals_from_ou(
+    markets: List[Dict[str, Any]], ladder_by_market: Dict[str, Any]
+) -> Optional[float]:
+    """Stima λ_TOTALE atteso invertendo il mercato Over/Under più vicino a 2.5.
+
+    Il mercato O/U PREZZA direttamente i gol totali: dalle quote back de-viggate di
+    Over/Under si ricava la prob di Over e si inverte il λ del periodo (Poisson).
+    DATA-DRIVEN: niente costante 2.6. Ritorna None se nessun O/U utilizzabile.
+    """
+    try:
+        from value_engine.devig import devig_pair
+        from value_engine.poisson_total import lam_from_prematch
+    except Exception:  # pragma: no cover
+        return None
+    best: Optional[Tuple[float, float, float]] = None  # (dist_da_2.5, line, p_over)
+    for m in markets:
+        line = _line_from_market_type(m.get("market_type"))
+        if line is None:
+            continue
+        ladder = ladder_by_market.get(m.get("market_id")) or {}
+        over_back = under_back = None
+        for s in (m.get("selections") or []):
+            side = _name_side(s.get("name"))
+            bb = _best_back(_ladder_sel(ladder, s.get("selection_id")))
+            if side == "over":
+                over_back = bb
+            elif side == "under":
+                under_back = bb
+        if over_back and under_back and over_back > 1 and under_back > 1:
+            p_over = devig_pair(over_back, under_back)
+            dist = abs(line - 2.5)
+            if best is None or dist < best[0]:
+                best = (dist, line, p_over)
+    if best is None:
+        return None
+    _, line, p_over = best
+    try:
+        return lam_from_prematch("over", int(line - 0.5), p_over)
+    except Exception:  # pragma: no cover - inversione non riuscita
+        return None
+
+
 def get_prematch_lambdas(
     event_id: str,
     fixture_id: Optional[int],
     match_odds_market: Optional[Dict[str, Any]] = None,
     ladder: Optional[Dict[str, Any]] = None,
     league_id: Optional[int] = None,
+    expected_total_goals: Optional[float] = None,
 ) -> Tuple[float, float, Optional[int]]:
     """Ritorna (λ_casa, λ_trasferta, league_id).
 
-    Identifica CASA e TRASFERTA per sort_priority del MATCH_ODDS (1=casa, 2=trasferta,
-    3=pareggio), NON per probabilità (altrimenti con favorita in trasferta i λ si
-    invertirebbero). Stima i λ dalle quote back di apertura delle due squadre.
+    Il TOTALE gol atteso è DATA-DRIVEN: ``expected_total_goals`` quando fornito
+    (dalle forze per-squadra del DB o dall'inversione del mercato O/U); la costante
+    2.6 resta solo come ultima spiaggia. Lo SPLIT casa/trasferta viene dalle quote
+    1X2 (per sort_priority: 1=casa, 2=trasferta — non per probabilità).
     """
+    total = expected_total_goals if (expected_total_goals and expected_total_goals > 0) else None
     if match_odds_market and ladder:
         sels = match_odds_market.get("selections") or []
         non_draw = [s for s in sels if not _name_is_draw(s.get("name"))]
@@ -141,9 +222,16 @@ def get_prematch_lambdas(
             bh = _best_back(_ladder_sel(ladder, home_id))
             ba = _best_back(_ladder_sel(ladder, away_id))
             if bh and ba and bh > 1 and ba > 1:
-                lam_h, lam_a = estimate_prematch_lambdas(1.0 / bh, 1.0 / ba)
+                if total is not None:
+                    lam_h, lam_a = estimate_prematch_lambdas(
+                        1.0 / bh, 1.0 / ba, expected_total_goals=total
+                    )
+                else:
+                    lam_h, lam_a = estimate_prematch_lambdas(1.0 / bh, 1.0 / ba)
                 return lam_h, lam_a, league_id
-    # default neutro (lieve vantaggio casa)
+    # nessun 1X2 utilizzabile: se ho il totale, split neutro (lieve vantaggio casa)
+    if total is not None:
+        return total * 0.54, total * 0.46, league_id
     return 1.35, 1.15, league_id
 
 
@@ -192,22 +280,31 @@ def _markets_from_residual(
 # ----------------------------------------------------------------------------
 # Kelly + confidenza
 # ----------------------------------------------------------------------------
-def _kelly_back(prob: float, odds: float, fraction: float, bankroll: float) -> float:
+def _kelly_back(prob: float, odds: float, fraction: float, bankroll: float,
+                commission: float = 0.0) -> float:
+    # Kelly per il back AL NETTO della commissione (prelevata sul profitto):
+    # vincita netta per unità b = (odds-1)*(1-commission) ; f* = prob - (1-prob)/b.
     if not odds or odds <= 1:
         return 0.0
-    b = odds - 1.0
-    f = prob - (1.0 - prob) / b   # Kelly classico per back
+    b = (odds - 1.0) * (1.0 - commission)
+    if b <= 0:
+        return 0.0
+    f = prob - (1.0 - prob) / b
     return max(0.0, f) * fraction * bankroll
 
 
-def _kelly_lay(prob: float, lay_odds: float, fraction: float, bankroll: float) -> float:
-    # Kelly per il lay: vinci lo stake con prob (1-prob), perdi stake*(odds-1) con prob.
-    # f* = p_comp/(odds-1) - prob  (simmetrico al back; a quota equa torna 0).
+def _kelly_lay(prob: float, lay_odds: float, fraction: float, bankroll: float,
+               commission: float = 0.0) -> float:
+    # Kelly per il lay AL NETTO della commissione: vinci stake*(1-commission) con
+    # prob (1-prob), perdi stake*(odds-1) con prob.
+    # f* = (1-prob)/(odds-1) - prob/(1-commission)  (a quota equa lorda torna ≤0 → 0).
     if not lay_odds or lay_odds <= 1:
         return 0.0
     b = lay_odds - 1.0
-    p_comp = 1.0 - prob
-    f = p_comp / b - prob
+    w = 1.0 - commission
+    if b <= 0 or w <= 0:
+        return 0.0
+    f = (1.0 - prob) / b - prob / w
     return max(0.0, f) * fraction * bankroll
 
 
@@ -259,11 +356,21 @@ def evaluate_event(
     bankroll: float = 100.0,
     min_edge: float = 0.03,
     kelly_fraction: float = 0.25,
+    commission: float = 0.05,
+    red_home: int = 0,
+    red_away: int = 0,
+    pressure_home: float = 1.0,
+    pressure_away: float = 1.0,
 ) -> List[MarketSignal]:
     sh = int(score_home or 0)
     sa = int(score_away or 0)
-    lam_h = remaining_rate(prematch_lambda_home, minute)
-    lam_a = remaining_rate(prematch_lambda_away, minute)
+    # tassi gol RESIDUI adattati allo stato LIVE: tempo (hazard non lineare) ×
+    # stato di gioco (chi insegue/è avanti) × cartellini rossi × pressione.
+    lam_h, lam_a = inplay_residual_rates(
+        prematch_lambda_home, prematch_lambda_away, minute, sh, sa,
+        red_home=red_home, red_away=red_away, league_id=league_id,
+        pressure_home=pressure_home, pressure_away=pressure_away,
+    )
     rho = rho_for_league(league_id)
     grid = score_matrix(max(0.01, lam_h), max(0.01, lam_a), rho)
 
@@ -291,7 +398,7 @@ def evaluate_event(
             non_draw = [s for s in sels if not _name_is_draw(s.get("name"))]
             non_draw.sort(key=lambda s: s.get("sort_priority") or 0)
             if draw_sel:
-                prob_for[int(draw_sel["selection_id"])] = (probs["draw"], "1x2_draw")
+                prob_for[int(draw_sel["selection_id"])] = (probs["draw"], "draw")
             if len(non_draw) >= 1:
                 prob_for[int(non_draw[0]["selection_id"])] = (probs["home"], "home")
             if len(non_draw) >= 2:
@@ -317,25 +424,46 @@ def evaluate_event(
             continue  # mercato non modellato → nessun segnale
 
         names = {int(s["selection_id"]): s.get("name") for s in sels}
+        # calibrazione PER-LEGA + RINORMALIZZAZIONE per mercato: le selezioni di un
+        # mercato sono mutuamente esclusive ed esaustive (1X2 / Over+Under / BTTS),
+        # quindi dopo la calibrazione le prob devono tornare a sommare 1 (coerenza).
+        _cal = {sid: calibrate(rp, mk, league_id) for sid, (rp, mk) in prob_for.items()}
+        _z = sum(_cal.values())
+        if _z > 0:
+            _cal = {sid: v / _z for sid, v in _cal.items()}
+        else:  # corner case: tutte le prob calibrate nulle → usa le grezze
+            _cal = {sid: rp for sid, (rp, _mk) in prob_for.items()}
         for sel_id, (raw_prob, mkey) in prob_for.items():
-            prob = calibrate(raw_prob, mkey, league_id)
+            prob = _cal.get(sel_id, raw_prob)
             ladder_sel = _ladder_sel(ladder, sel_id)
             back = _best_back(ladder_sel)
             lay = _best_lay(ladder_sel)
-            imp = implied_prob(back)
-            edge = (prob - imp) if imp is not None else None
             fair = (1.0 / prob) if prob > 0 else None
+            c = commission
 
+            # EV per £1 di stake, AL NETTO della commissione (prelevata sulle vincite):
+            #   BACK: vinci (back-1)*(1-c) con prob ; perdi 1 con (1-prob)
+            #   LAY : vinci 1*(1-c) con (1-prob)    ; perdi (lay-1) con prob
+            # Ogni lato è valutato sul PROPRIO prezzo (il lay NON usa più il back).
+            back_ev = (prob * (back - 1.0) * (1.0 - c) - (1.0 - prob)) if (back and back > 1) else None
+            lay_ev = ((1.0 - prob) * (1.0 - c) - prob * (lay - 1.0)) if (lay and lay > 1) else None
+
+            # scegli il lato col miglior EV; segnala solo se supera la soglia (min_edge = EV minimo).
             direction = "HOLD"
             kelly = 0.0
-            if edge is not None and edge >= min_edge and back:
-                direction = "BACK"
-                kelly = _kelly_back(prob, back, kelly_fraction, bankroll)
-            elif edge is not None and edge <= -min_edge and lay:
-                direction = "LAY"
-                kelly = _kelly_lay(prob, lay, kelly_fraction, bankroll)
+            edge = None
+            cands = [x for x in (("BACK", back_ev), ("LAY", lay_ev)) if x[1] is not None]
+            if cands:
+                best_side, best_ev = max(cands, key=lambda x: x[1])
+                edge = best_ev
+                if best_ev >= min_edge:
+                    direction = best_side
+                    if best_side == "BACK":
+                        kelly = _kelly_back(prob, back, kelly_fraction, bankroll, c)
+                    else:
+                        kelly = _kelly_lay(prob, lay, kelly_fraction, bankroll, c)
 
-            # confidenza: ampiezza edge (saturata) pesata dalla liquidità disponibile
+            # confidenza: ampiezza edge (EV) saturata, pesata dalla liquidità disponibile
             liq = float(ladder_sel.get("tv") or 0.0)
             liq_factor = min(1.0, liq / 500.0) if liq else 0.5
             conf = 0.0

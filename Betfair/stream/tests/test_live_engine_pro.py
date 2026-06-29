@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from Betfair.stream.engine.live_engine_pro import (
     MarketSignal,
+    _kelly_back,
     _kelly_lay,
     evaluate_event,
     get_prematch_lambdas,
@@ -109,6 +110,39 @@ def test_unmodeled_market_skipped():
         markets=markets, ladder_by_market=ladder,
     )
     assert sigs == []  # mercato non modellato → nessun segnale
+
+
+def test_kelly_back_commission_reduces_stake():
+    # senza commissione = formula classica prob - (1-prob)/(odds-1)
+    full = _kelly_back(0.6, 2.0, fraction=1.0, bankroll=100.0, commission=0.0)
+    assert abs(full / 100.0 - (0.6 - 0.4 / 1.0)) < 1e-9   # b=1 → 0.6-0.4=0.2 → £20
+    # la commissione riduce lo stake (mai lo aumenta)
+    net = _kelly_back(0.6, 2.0, fraction=1.0, bankroll=100.0, commission=0.05)
+    assert full > net > 0
+
+
+def test_kelly_lay_commission_reduces_stake():
+    full = _kelly_lay(0.20, 4.0, fraction=1.0, bankroll=100.0, commission=0.0)
+    net = _kelly_lay(0.20, 4.0, fraction=1.0, bankroll=100.0, commission=0.05)
+    assert full > net > 0
+
+
+def test_lay_uses_lay_price_and_commission_in_edge():
+    # Pareggio che il modello ritiene improbabile ma il mercato BANCA generoso (lay 3.0):
+    # value-LAY VERO (1/lay=0.33 > prob) → direzione LAY con edge (EV) POSITIVO, calcolato
+    # sul prezzo LAY (non sul back) e al netto della commissione.
+    markets = [_match_odds_market()]
+    ladder = {"1.1": {"11": _ladder(1.7, 1.72), "12": _ladder(4.5, 4.7), "13": _ladder(2.9, 3.0)}}
+    sigs = evaluate_event(
+        score_home=1, score_away=0, minute=60,
+        prematch_lambda_home=1.5, prematch_lambda_away=0.9, league_id=135,
+        markets=markets, ladder_by_market=ladder,
+    )
+    draw = next(s for s in sigs if s.selection_id == 13)
+    assert draw.model_prob < 0.30          # modello: pareggio improbabile (casa avanti)
+    assert draw.direction == "LAY"
+    assert draw.edge is not None and draw.edge > 0   # edge = EV positivo (non più negativo)
+    assert draw.market_lay == 3.0          # ha usato il prezzo LAY
 
 
 def test_kelly_lay_zero_at_fair_value():
