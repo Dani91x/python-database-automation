@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 import betfairlightweight
 from betfairlightweight.filters import streaming_market_data_filter, streaming_market_filter
 from flumine import Flumine, clients
+from flumine import config as flumine_config
 from flumine.worker import BackgroundWorker
 
 from Betfair.client import BetfairClient
@@ -46,7 +47,12 @@ from .config_stream import (
     HARD_MARKET_CAP,
     KELLY_FRACTION,
     LADDER_DEPTH,
+    LIVE_ORDER_MODE,
+    LIVE_ORDER_QUEUE_POLL_SEC,
+    LIVE_TRANSACTION_LIMIT,
     MIN_RESUBSCRIBE_INTERVAL_SEC,
+    ORDER_STREAM_CONFLATE_MS,
+    PAPER_SIMULATED_LATENCY_MS,
     RAW_RECORDING,
     SAFE_MARKET_THRESHOLD,
     SCORE_POLL_SEC,
@@ -57,6 +63,8 @@ from .config_stream import (
     STREAM_FIELDS,
     WATCHLIST_POLL_SEC,
 )
+from .engine.live_trading_strategy import LiveTradingStrategy
+from .live_order_worker import live_order_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
 from .scores.api_football import ApiFootballProvider
@@ -524,6 +532,102 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
 
 
 # ----------------------------------------------------------------------------
+# Costruzione client flumine per modalità ordini (OFF / PAPER / LIVE)
+# ----------------------------------------------------------------------------
+def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClient, bool]":
+    """Costruisce il client flumine in base a ``LIVE_ORDER_MODE``.
+
+    Ritorna ``(client, orders_enabled)`` dove ``orders_enabled`` indica se vanno
+    registrati ``LiveTradingStrategy`` + ``live_order_worker`` (cioè mode != OFF):
+
+      OFF   → order_stream=False, paper_trade=False. IDENTICO al comportamento storico
+              (``clients.BetfairClient(api_client, order_stream=False)``): nessun order
+              stream, nessuna esecuzione ordini → ZERO regressioni. orders_enabled=False.
+      PAPER → paper_trade=True (forza SimulatedExecution su dati live, soldi FINTI).
+              order_stream non serve (il fill è sincrono via SimulatedExecution).
+      LIVE  → order_stream=True (fill REALI async via order stream). SOLDI VERI.
+
+    NB: ``market_recording_mode`` resta False in tutte le modalità (i book parsati
+    servono a live_now/segnali); il raw nativo è registrato dal tee nel listener.
+
+    FIX 6 — controlli NATIVI flumine (sez. 11 del piano), cablati in modo COERENTE sulle 3
+    modalità:
+      * ``min_bet_validation=True`` → attiva il control nativo ``OrderValidation`` di flumine
+        (rifiuta stake/payout sotto i minimi della giurisdizione). È già il default di flumine,
+        ma lo rendiamo ESPLICITO così la garanzia è leggibile e non dipende dal default.
+      * ``transaction_limit=LIVE_TRANSACTION_LIMIT`` → soglia oraria del control nativo
+        ``MaxTransactionCount`` (registrato da flumine in ``add_client``): guardia anti-runaway
+        di place/cancel/replace, tenuta sotto la soglia Betfair (5000/h) degli addebiti.
+      In OFF questi parametri sono INERTI (nessuna strategia ordini né worker coda registrati →
+      nessun place possibile), quindi cablarli NON introduce regressioni; servono solo a tenere
+      i tre client coerenti. I ``trading_controls`` CUSTOM di esposizione per selezione/mercato e
+      di rate-limit ordini/min (sez. 11) NON sono nativi né triviali: sono RINVIATI alla Fase 6
+      ("Controlli avanzati, audit, kill-switch") e tracciati esplicitamente nel piano, non
+      improvvisati qui.
+    """
+    mode_u = (mode or "OFF").strip().upper()
+    if mode_u == "LIVE":
+        client = clients.BetfairClient(
+            api_client,
+            order_stream=True,
+            order_stream_conflate_ms=ORDER_STREAM_CONFLATE_MS or None,
+            paper_trade=False,
+            min_bet_validation=True,
+            transaction_limit=LIVE_TRANSACTION_LIMIT,
+        )
+        return client, True
+    if mode_u == "PAPER":
+        # Latenza simulata del fill PAPER: la SimulatedExecution di flumine usa
+        # flumine.config.place_latency (secondi) come ritardo prima del match. Applichiamo
+        # PAPER_SIMULATED_LATENCY_MS qui (ms→s) così l'utente controlla la velocità del paper
+        # (come fa run_backtest.py per la simulazione). Solo PAPER: in OFF/LIVE non si tocca.
+        if PAPER_SIMULATED_LATENCY_MS and PAPER_SIMULATED_LATENCY_MS > 0:
+            flumine_config.place_latency = float(PAPER_SIMULATED_LATENCY_MS) / 1000.0
+        client = clients.BetfairClient(
+            api_client,
+            order_stream=False,
+            paper_trade=True,
+            min_bet_validation=True,
+            transaction_limit=LIVE_TRANSACTION_LIMIT,
+        )
+        return client, True
+    # OFF (default) o valore sconosciuto → comportamento storico, nessun ordine.
+    # min_bet_validation/transaction_limit sono inerti in OFF (nessun place possibile): li
+    # passiamo solo per tenere i tre client coerenti.
+    client = clients.BetfairClient(
+        api_client,
+        order_stream=False,
+        min_bet_validation=True,
+        transaction_limit=LIVE_TRANSACTION_LIMIT,
+    )
+    return client, False
+
+
+def _announce_order_mode(mode: str, orders_enabled: bool) -> None:
+    """Logga in modo EVIDENTE la modalità ordini e (se attiva) la annuncia in live_alerts.
+
+    In OFF nessun side-effect oltre al log (ZERO regressioni: nessuna scrittura DB nuova).
+    """
+    mode_u = (mode or "OFF").strip().upper()
+    banner = {
+        "LIVE": "*** LIVE *** ORDINI REALI (SOLDI VERI) attivi",
+        "PAPER": "PAPER -- ordini SIMULATI (soldi finti, dati live)",
+        "OFF": "OFF -- nessun ordine (solo registrazione/segnali)",
+    }.get(mode_u, f"{mode_u} -- modalita' sconosciuta: trattata come OFF")
+    bar = "=" * 64
+    logger.info("%s", bar)
+    logger.info("[runner] MODALITA' ORDINI: %s", banner)
+    logger.info("%s", bar)
+    if not orders_enabled:
+        return  # OFF → nessuna scrittura DB aggiuntiva
+    level = "CRITICAL" if mode_u == "LIVE" else "INFO"
+    try:
+        db.insert_alert(level, "ORDER_MODE", f"Live trading: modalita' {mode_u} attiva. {banner}")
+    except Exception as e:  # noqa: BLE001 - un alert non deve mai bloccare l'avvio
+        logger.warning("[runner] insert_alert modalita' ordini KO (ignorato): %s", e)
+
+
+# ----------------------------------------------------------------------------
 # Supervisore: costruisce e (ri)avvia lo stream finché ci sono partite
 # ----------------------------------------------------------------------------
 def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True) -> List[str]:
@@ -536,6 +640,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     session.context_api_client = api_client  # type: ignore[attr-defined]
     session.only_event = only_event  # type: ignore[attr-defined]
     interrupted = False
+
+    # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
+    # I restart F3 ricostruiscono il framework ma non ri-annunciano (niente spam alert).
+    _announce_order_mode(LIVE_ORDER_MODE, LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"))
 
     try:
         while not interrupted:
@@ -581,19 +689,44 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
 
             # NB: NON usare market_recording_mode=True → sopprime process_market_book
             # (i book parsati servono a live_now + segnali). Il raw nativo è comunque
-            # registrato dal tee nel listener. order_stream=False: non piazziamo ordini.
-            client = clients.BetfairClient(api_client, order_stream=False)
+            # registrato dal tee nel listener. Il client ordini dipende da LIVE_ORDER_MODE:
+            # OFF (default) = order_stream=False, identico ad oggi → nessuna regressione.
+            client, orders_enabled = build_order_client(api_client, LIVE_ORDER_MODE)
             framework = Flumine(client=client)
             framework.add_strategy(recorder)
+            # Live trading (PAPER/LIVE): strategia specchio + worker coda ordini. In OFF
+            # NON vengono registrati → comportamento storico invariato. Ri-registrati ad
+            # ogni ricostruzione della subscription (F3 restart) come gli altri worker.
+            if orders_enabled:
+                # UNA sola istanza LiveTradingStrategy: registrata nel framework E passata al
+                # worker. Gli ordini sono creati sotto QUESTA istanza (build_order(strategy=...))
+                # così che flumine instradi process_orders → specchio ordini/posizioni. Senza
+                # questo legame l'ordine resta orfano e lo specchio DB non si popola mai.
+                # market_filter ESPLICITO (obbligatorio: BaseStrategy di flumine lo richiede
+                # posizionale → senza, TypeError e il runner NON parte in PAPER/LIVE). Stessi
+                # market_ids del recorder: la strategia è sottoscritta esattamente ai mercati
+                # degli ordini. NB: process_orders è comunque dispatchato per OGNI mercato in cui
+                # la strategia ha ordini nel blotter (baseflumine._process_current_orders itera
+                # tutte le strategie a prescindere dal filtro) → lo specchio funziona sempre.
+                live_strategy = LiveTradingStrategy(
+                    market_filter=streaming_market_filter(market_ids=market_ids),
+                    session=session, mode=LIVE_ORDER_MODE.lower())
+                framework.add_strategy(live_strategy)
+                # interval FLOAT: BackgroundWorker lo passa a time.sleep → int() troncava i poll
+                # sub-secondo (0.5→0→1). Usiamo il float direttamente (or 1.0 = guardia anti-zero).
+                framework.add_worker(BackgroundWorker(
+                    framework, function=live_order_worker, interval=LIVE_ORDER_QUEUE_POLL_SEC or 1.0,
+                    func_kwargs={"session": session, "strategy": live_strategy},
+                    name="live_order_worker"))
             framework.add_worker(BackgroundWorker(
-                framework, function=score_worker, interval=int(SCORE_POLL_SEC),
+                framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))
             framework.add_worker(BackgroundWorker(
-                framework, function=finalize_worker, interval=int(FINALIZE_POLL_SEC),
+                framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,
                 func_kwargs={"session": session}, name="finalize_worker"))
             if auto_subscribe and not only_event:
                 framework.add_worker(BackgroundWorker(
-                    framework, function=subscription_worker, interval=int(WATCHLIST_POLL_SEC),
+                    framework, function=subscription_worker, interval=WATCHLIST_POLL_SEC,
                     func_kwargs={"session": session}, context={"rest": rest}, name="subscription_worker"))
 
             logger.info("[runner] stream avviato: %d eventi, %d mercati.",

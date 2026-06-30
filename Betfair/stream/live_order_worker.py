@@ -1,0 +1,957 @@
+"""live_order_worker.py — BackgroundWorker del RUNNER live che processa la coda
+``betfair_live_order_requests`` PIAZZANDO ORDINI (paper o REALI, soldi veri in mode='live').
+
+Per chi: gira DENTRO il processo del runner (Betfair/stream/runner.py), aggiunto al
+framework flumine come ``BackgroundWorker(function=live_order_worker, ...)`` SOLO quando
+``LIVE_ORDER_MODE`` ∈ {PAPER, LIVE}. Ad ogni poll fa UN passo:
+  - claim atomico ``pending → processing`` (una sola esecuzione per riga);
+  - risolve il ``Market`` dal framework (``flumine.markets.markets[market_id]``);
+  - dispatch per azione: ``place`` / ``cancel`` / ``replace`` / ``place_submin``;
+  - usa ``live_order_build.build_order`` (validazione = ultima barriera money-critical) e le
+    API NATIVE del Market (``place_order`` / ``cancel_order`` / ``replace_order``);
+  - scrive esito + bet_id nella riga (shape stabile ``LiveOrderResult``, letta dal frontend).
+
+MONEY-CRITICAL. Garanzie anti-doppio-ordine REALI (identiche a order_worker.py):
+  * CLAIM atomico pending→processing: ogni riga è eseguita UNA sola volta (anche con più
+    worker/poll concorrenti, una sola ``update`` vince la transizione).
+  * client_ref UNIQUE sulla coda (vincolo DB in betfair_live_order_queue.sql): la stessa
+    richiesta del frontend non genera due righe → enqueue idempotente, retry di rete sicuro.
+  Queste due — claim atomico + client_ref UNIQUE — sono l'INTERA garanzia anti-doppio-ordine.
+  NON esiste alcun customerRef Betfair "deterministico": l'attributo che flumine invia a
+  Betfair è ``order.customer_order_ref = name_hash + sep + order.id`` (order.id = uuid1, NON
+  deterministico). Il nostro ``awlq<id>`` (vedi ``_cust_ref``) è un ref INTERNO di
+  correlazione richiesta↔ordine: va in ``order.notes``/``order.context`` ed è riletto da
+  ``LiveTradingStrategy.process_orders`` per legare la riga di coda allo specchio DB —
+  NON viaggia mai verso Betfair e NON fa alcun de-dup lato Exchange.
+  * NON ri-processa MAI righe ``done``/``error`` né righe ``processing`` (crash a metà →
+    la riga resta ``processing`` e va riconciliata A MANO, mai ripiazzata in automatico).
+    UNICA ECCEZIONE deliberata: le sequenze ``place_submin`` in corso vivono in
+    ``processing`` e vengono fatte avanzare di uno step ad ogni poll finché terminali
+    (lo SubminState è persistito in ``result.submin_state``, quindi l'avanzamento è
+    idempotente e ripristinabile — vedi trading/submin.py).
+
+BEST-EFFORT: qualunque errore di una riga è scritto in ``error`` e NON deve mai far cadere
+il runner. Il fill (size_matched/avg_price) arriva ASINCRONO (LIVE via order_stream, PAPER
+via SimulatedExecution) ed è riflesso nello specchio DB da ``LiveTradingStrategy.process_orders``.
+
+Testabile a unità: framework, Market, blotter e coda sono mockabili; nessuna rete, nessun login.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+_TABLE = "betfair_live_order_requests"
+
+# customerStrategyRef passato a market.place_order (<=15 char per Betfair).
+CUSTOMER_STRATEGY_REF = "live"
+
+
+# ---------------------------------------------------------------------------
+# Config (letta da config_stream se presente, altrimenti da .env). Wrappata in
+# funzioni così che il runner E i test possano sovrascriverla deterministicamente.
+# ---------------------------------------------------------------------------
+def _cfg_attr(name: str) -> Any:
+    try:
+        from . import config_stream  # import lazy: evita cicli all'avvio
+        if hasattr(config_stream, name):
+            return getattr(config_stream, name)
+    except Exception:  # noqa: BLE001 - config opzionale, fallback a env
+        pass
+    return None
+
+
+def _live_order_mode() -> str:
+    """OFF | PAPER | LIVE (UPPER) RI-LETTA LIVE ad ogni ciclo (no riavvio). Default OFF.
+
+    Money-critical: come kill-switch/cap, un DOWNGRADE di sicurezza (LIVE→PAPER/OFF) deve
+    avere effetto SUBITO. Usa ``config_stream.live_order_mode()`` che rilegge l'env ad ogni
+    chiamata; NON la costante ``config_stream.LIVE_ORDER_MODE`` (congelata all'import).
+    Fallback diretto a ``os.getenv('LIVE_ORDER_MODE','OFF')``.
+    """
+    try:
+        from . import config_stream  # import lazy: evita cicli all'avvio
+        if hasattr(config_stream, "live_order_mode"):
+            return str(config_stream.live_order_mode()).upper()
+    except Exception:  # noqa: BLE001 - config opzionale, fallback a env
+        pass
+    return os.getenv("LIVE_ORDER_MODE", "OFF").strip().upper()
+
+
+def _jurisdiction() -> str:
+    val = _cfg_attr("BETFAIR_JURISDICTION")
+    if val is None:
+        val = os.getenv("LIVE_BETFAIR_JURISDICTION", "it")
+    return str(val).lower()
+
+
+def _batch() -> int:
+    val = _cfg_attr("LIVE_ORDER_QUEUE_BATCH")
+    if val is None:
+        val = os.getenv("LIVE_ORDER_QUEUE_BATCH", "5")
+    try:
+        return max(1, int(val))
+    except (TypeError, ValueError):
+        return 5
+
+
+def _max_stake() -> float:
+    """Cap di stake per ordine RI-LETTO LIVE ad ogni chiamata (modificabile senza riavvio).
+
+    Usa ``config_stream.live_max_stake_per_order()`` che rilegge l'env (NON la costante
+    congelata all'import). Fallback diretto all'env, poi a 10.0.
+    """
+    try:
+        from . import config_stream  # import lazy: evita cicli all'avvio
+        if hasattr(config_stream, "live_max_stake_per_order"):
+            return float(config_stream.live_max_stake_per_order())
+    except Exception:  # noqa: BLE001 - config opzionale, fallback a env
+        pass
+    try:
+        return float(os.getenv("LIVE_MAX_STAKE_PER_ORDER", "10"))
+    except (TypeError, ValueError):
+        return 10.0
+
+
+def _kill_switch() -> bool:
+    """Kill-switch RI-LETTO LIVE ad ogni ciclo (freno d'emergenza, niente riavvio).
+
+    Usa ``config_stream.live_kill_switch()`` che rilegge l'env ad ogni chiamata: esportare
+    ``LIVE_KILL_SWITCH=true`` blocca ogni place al giro successivo. NON usa la costante
+    ``config_stream.LIVE_KILL_SWITCH`` (congelata all'import). Fallback diretto all'env.
+    """
+    try:
+        from . import config_stream  # import lazy: evita cicli all'avvio
+        if hasattr(config_stream, "live_kill_switch"):
+            return bool(config_stream.live_kill_switch())
+    except Exception:  # noqa: BLE001 - config opzionale, fallback a env
+        pass
+    return os.getenv("LIVE_KILL_SWITCH", "false").strip().lower() == "true"
+
+
+# ---------------------------------------------------------------------------
+# Helper generici
+# ---------------------------------------------------------------------------
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _f(v: Any) -> Optional[float]:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int(v: Any) -> Optional[int]:
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cust_ref(rid: int) -> str:
+    """Ref INTERNO di correlazione richiesta↔ordine (``awlq<id>``), NON un customerRef Betfair.
+
+    Salvato in ``order.notes``/``order.context`` da live_order_build e riletto da
+    ``LiveTradingStrategy.process_orders`` per legare la riga di coda allo specchio DB.
+    Non viaggia verso Betfair (lì va ``order.customer_order_ref`` = name_hash+sep+id) e non
+    fornisce de-dup lato Exchange: l'anti-doppio-ordine è claim atomico + client_ref UNIQUE.
+    """
+    return ("awlq" + str(rid))[:32]
+
+
+# ---------------------------------------------------------------------------
+# Risoluzione Market / ordini dal framework flumine
+# ---------------------------------------------------------------------------
+def _resolve_market(flumine: Any, market_id: Optional[str]) -> Any:
+    """Market dal framework. Solleva ValueError se non sottoscritto (no ordine alla cieca)."""
+    if not market_id:
+        raise ValueError("market_id mancante per risolvere il Market")
+    market = None
+    try:
+        market = flumine.markets.markets.get(market_id)
+    except Exception:  # noqa: BLE001 - struttura inattesa → trattata come non trovato
+        market = None
+    if market is None:
+        raise ValueError(f"market {market_id} non sottoscritto nel runner")
+    return market
+
+
+def _find_order_by_bet_id(flumine: Any, market_id: Optional[str], bet_id: str) -> Optional[Any]:
+    """Trova l'ordine per bet_id usando le lookup NATIVE del blotter flumine.
+
+    Prima nel mercato indicato (``blotter.get_order_bet_id``), poi — se ``market_id`` è
+    assente o non combacia — scandendo tutti i mercati del framework. None se non trovato.
+    """
+    if not bet_id:
+        return None
+    # 1) mercato indicato
+    try:
+        if market_id:
+            m = flumine.markets.markets.get(market_id)
+            if m is not None:
+                o = m.blotter.get_order_bet_id(bet_id)
+                if o is not None:
+                    return o
+    except Exception:  # noqa: BLE001 - best-effort, si passa allo scan
+        pass
+    # 2) scan di tutti i mercati
+    try:
+        for m in flumine.markets:
+            o = m.blotter.get_order_bet_id(bet_id)
+            if o is not None:
+                return o
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _order_cust_ref(order: Any) -> Optional[str]:
+    """Rilegge il NOSTRO ref interno deterministico (awlq<id>) annotato dall'ordine in
+    ``notes``/``context['customer_order_ref']`` da live_order_build. None se assente."""
+    for attr in ("notes", "context"):
+        try:
+            d = getattr(order, attr, None)
+            if isinstance(d, dict):
+                ref = d.get("customer_order_ref")
+                if ref:
+                    return str(ref)
+        except Exception:  # noqa: BLE001 - struttura inattesa → ignora
+            pass
+    return None
+
+
+def _find_order_by_cust_ref(
+    flumine: Any, market_id: Optional[str], cust_ref: Optional[str]
+) -> Optional[Any]:
+    """Ritrova un ordine per il NOSTRO ref interno DETERMINISTICO (awlq<id>) scandendo il
+    blotter (``notes``/``context['customer_order_ref']``).
+
+    RICONCILIAZIONE post-crash (fix MEDIUM finestra di crash): se il processo cade tra il
+    ``market.place_order`` REALE e la persistenza di order_id/bet_id, alla ripresa non
+    abbiamo né l'uno né l'altro — ma l'ordine reale è già nel blotter (ricostruito
+    dall'order stream) con il nostro ref interno. Ritrovarlo per ref evita un ordine ORFANO
+    e, soprattutto, un RI-PIAZZAMENTO (advance_submin lo riconosce e non ripiazza).
+    """
+    if not cust_ref:
+        return None
+
+    def _scan(m: Any) -> Optional[Any]:
+        try:
+            for o in m.blotter:
+                if _order_cust_ref(o) == cust_ref:
+                    return o
+        except Exception:  # noqa: BLE001 - blotter non iterabile / stato di confine
+            return None
+        return None
+
+    # 1) mercato indicato
+    try:
+        if market_id:
+            m = flumine.markets.markets.get(market_id)
+            if m is not None:
+                o = _scan(m)
+                if o is not None:
+                    return o
+    except Exception:  # noqa: BLE001 - best-effort, si passa allo scan globale
+        pass
+    # 2) scan di tutti i mercati
+    try:
+        for m in flumine.markets:
+            o = _scan(m)
+            if o is not None:
+                return o
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _find_submin_order(
+    flumine: Any,
+    market_id: Optional[str],
+    order_id: Optional[str],
+    bet_id: Optional[str],
+    cust_ref: Optional[str] = None,
+) -> Optional[Any]:
+    """Ritrova l'ordine di una sequenza submin tra un poll e l'altro.
+
+    Prima per ``bet_id`` (quando assegnato), poi per l'id flumine dell'ordine
+    (``order.id`` = chiave del blotter) persistito in ``result.submin_order_id``, infine —
+    riconciliazione post-crash — per il ref interno deterministico ``cust_ref`` (awlq<id>).
+    """
+    if bet_id:
+        o = _find_order_by_bet_id(flumine, market_id, bet_id)
+        if o is not None:
+            return o
+    if order_id and market_id:
+        try:
+            m = flumine.markets.markets.get(market_id)
+            if m is not None:
+                return m.blotter[order_id]
+        except Exception:  # noqa: BLE001 - non ancora nel blotter o id sconosciuto → prova il ref
+            pass
+    return _find_order_by_cust_ref(flumine, market_id, cust_ref)
+
+
+# ---------------------------------------------------------------------------
+# Lettura difensiva dello stato di un ordine flumine
+# ---------------------------------------------------------------------------
+def _val(order: Any, attr: str) -> Any:
+    try:
+        return getattr(order, attr)
+    except Exception:  # noqa: BLE001 - alcune property possono sollevare in stati di confine
+        return None
+
+
+def _status_name(order: Any) -> Optional[str]:
+    st = _val(order, "status")
+    if st is None:
+        return None
+    name = getattr(st, "name", None)
+    return name or str(st)
+
+
+def _order_snapshot(order: Any) -> Dict[str, Any]:
+    """Estrae i campi dell'ordine usati dallo specchio/esito (tutti opzionali, difensivi)."""
+    if order is None:
+        return {}
+    ot = _val(order, "order_type")
+    side = _val(order, "side")
+    return {
+        "bet_id": _val(order, "bet_id"),
+        "status": _status_name(order),
+        "size_matched": _f(_val(order, "size_matched")),
+        "average_price_matched": _f(_val(order, "average_price_matched")),
+        "size_remaining": _f(_val(order, "size_remaining")),
+        "size_cancelled": _f(_val(order, "size_cancelled")),
+        "size_lapsed": _f(_val(order, "size_lapsed")),
+        "size_voided": _f(_val(order, "size_voided")),
+        "market_id": _val(order, "market_id"),
+        "selection_id": _int(_val(order, "selection_id")),
+        "side": side.lower() if isinstance(side, str) else side,
+        "price": _f(getattr(ot, "price", None)) if ot is not None else None,
+        "size": _f(getattr(ot, "size", None)) if ot is not None else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Costruzione esito (shape stabile LiveOrderResult, condivisa con il frontend)
+# ---------------------------------------------------------------------------
+def _result(
+    *,
+    ok: bool,
+    action: str,
+    mode: str,
+    request_row: Dict[str, Any],
+    cust_ref: Optional[str],
+    order: Any = None,
+    price: Optional[float] = None,
+    size: Optional[float] = None,
+    side: Optional[str] = None,
+    submin_step: Optional[str] = None,
+    error: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> Dict[str, Any]:
+    snap = _order_snapshot(order)
+    return {
+        "ok": ok,
+        "action": action,
+        "mode": mode,
+        "bet_id": snap.get("bet_id"),
+        "status": snap.get("status"),
+        "size_matched": snap.get("size_matched"),
+        "average_price_matched": snap.get("average_price_matched"),
+        "size_remaining": snap.get("size_remaining"),
+        "market_id": request_row.get("market_id") or snap.get("market_id"),
+        "selection_id": (
+            _int(request_row.get("selection_id"))
+            if request_row.get("selection_id") is not None
+            else snap.get("selection_id")
+        ),
+        "side": side or snap.get("side") or request_row.get("side"),
+        "price": price if price is not None else snap.get("price"),
+        "size": size if size is not None else snap.get("size"),
+        "customer_order_ref": cust_ref,
+        "submin_step": submin_step,
+        "error": (str(error)[:300] if error is not None else None),
+        "detail": (str(detail)[:300] if detail is not None else None),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scritture sulla riga di coda
+# ---------------------------------------------------------------------------
+def _claim(sb: Any, rid: int) -> bool:
+    """CLAIM atomico: pending → processing. True se questa chiamata l'ha preso."""
+    claimed = (
+        sb.table(_TABLE)
+        .update({"status": "processing"})
+        .eq("id", rid)
+        .eq("status", "pending")
+        .execute()
+        .data
+        or []
+    )
+    return len(claimed) > 0
+
+
+def _write_done(sb: Any, rid: int, result: Dict[str, Any]) -> None:
+    sb.table(_TABLE).update(
+        {
+            "status": "done",
+            "result": result,
+            "error": result.get("error"),
+            "bet_id": result.get("bet_id"),
+            "processed_at": _now_iso(),
+        }
+    ).eq("id", rid).execute()
+
+
+def _write_error(sb: Any, rid: int, request_row: Dict[str, Any], mode: str, ex: Any) -> None:
+    result = _result(
+        ok=False,
+        action=str(request_row.get("action") or "?"),
+        mode=mode,
+        request_row=request_row,
+        cust_ref=_cust_ref(rid),
+        error=str(ex),
+    )
+    sb.table(_TABLE).update(
+        {
+            "status": "error",
+            "error": str(ex)[:300],
+            "result": result,
+            "processed_at": _now_iso(),
+        }
+    ).eq("id", rid).execute()
+
+
+def _write_processing(sb: Any, rid: int, result: Dict[str, Any]) -> None:
+    """Aggiorna il result lasciando la riga in 'processing' (sequenza submin in corso)."""
+    sb.table(_TABLE).update(
+        {"result": result, "bet_id": result.get("bet_id")}
+    ).eq("id", rid).execute()
+
+
+# ---------------------------------------------------------------------------
+# Cap di sicurezza per ordine
+# ---------------------------------------------------------------------------
+def _effective_cap(request_row: Dict[str, Any]) -> float:
+    cap = _max_stake()
+    params = request_row.get("params") or {}
+    if isinstance(params, dict) and params.get("max_stake") is not None:
+        pm = _f(params.get("max_stake"))
+        if pm is not None:
+            cap = min(cap, pm)
+    return cap
+
+
+# ---------------------------------------------------------------------------
+# Azioni place / cancel / replace
+# ---------------------------------------------------------------------------
+def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    from .live_order_build import build_order
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    built = build_order(
+        market,
+        strategy=strategy,
+        selection_id=int(request_row["selection_id"]),
+        handicap=float(request_row.get("handicap") or 0),
+        side=str(request_row["side"]),
+        order_type=str(request_row.get("order_type") or "LIMIT"),
+        price=_f(request_row.get("price")),
+        size=_f(request_row.get("size")),
+        liability=_f(request_row.get("liability")),
+        persistence=str(request_row.get("persistence") or "LAPSE"),
+        time_in_force=request_row.get("time_in_force"),
+        min_fill_size=_f(request_row.get("min_fill_size")),
+        jurisdiction=_jurisdiction(),
+        max_stake=_effective_cap(request_row),
+        customer_order_ref=cust_ref,
+    )
+    market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    result = _result(
+        ok=True,
+        action="place",
+        mode=mode,
+        request_row=request_row,
+        cust_ref=cust_ref,
+        order=built.order,
+        price=built.price,
+        size=built.size,
+        side=built.side.lower() if isinstance(built.side, str) else built.side,
+        detail=built.note,
+    )
+    _write_done(sb, rid, result)
+
+
+def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -> None:
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    bet_id = str(request_row.get("bet_id") or "")
+    if not bet_id:
+        raise ValueError("cancel richiede bet_id")
+    order = _find_order_by_bet_id(flumine, request_row.get("market_id"), bet_id)
+    if order is None:
+        raise ValueError(f"ordine bet_id {bet_id} non trovato nel blotter")
+    market = _resolve_market(flumine, _val(order, "market_id") or request_row.get("market_id"))
+    size_reduction = _f(request_row.get("size_reduction"))
+    if size_reduction is not None:
+        market.cancel_order(order, size_reduction)
+    else:
+        market.cancel_order(order)
+    result = _result(
+        ok=True, action="cancel", mode=mode, request_row=request_row,
+        cust_ref=cust_ref, order=order, detail=f"cancel size_reduction={size_reduction}",
+    )
+    _write_done(sb, rid, result)
+
+
+def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -> None:
+    from .live_order_build import round_to_tick
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    bet_id = str(request_row.get("bet_id") or "")
+    new_price_raw = _f(request_row.get("new_price"))
+    if not bet_id or new_price_raw is None:
+        raise ValueError("replace richiede bet_id + new_price")
+    order = _find_order_by_bet_id(flumine, request_row.get("market_id"), bet_id)
+    if order is None:
+        raise ValueError(f"ordine bet_id {bet_id} non trovato nel blotter")
+    market = _resolve_market(flumine, _val(order, "market_id") or request_row.get("market_id"))
+    new_price = round_to_tick(new_price_raw)
+    # CODE-MED-1: per un LAY ri-valida il cap PRIMA del replace. La liability = size*(price-1)
+    # CRESCE spostando l'ordine verso quote più alte, quindi un replace al rialzo potrebbe
+    # sfondare il cap money-critical che il place iniziale rispettava. Usa il cap EFFETTIVO
+    # della richiesta (env + params.max_stake) e solleva senza piazzare se superato.
+    snap = _order_snapshot(order)
+    side_l = snap.get("side")
+    osize = snap.get("size")
+    if isinstance(side_l, str) and side_l.lower() == "lay" and osize is not None:
+        new_liab = round(float(osize) * (new_price - 1.0), 2)
+        cap = _effective_cap(request_row)
+        if new_liab > cap + 1e-9:
+            raise ValueError(
+                f"replace LAY: liability €{new_liab:.2f} a quota {new_price} "
+                f"oltre cap €{cap:.2f}"
+            )
+    market.replace_order(order, new_price)
+    result = _result(
+        ok=True, action="replace", mode=mode, request_row=request_row,
+        cust_ref=cust_ref, order=order, price=new_price, detail=f"replace → {new_price}",
+    )
+    _write_done(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
+# place_submin — macchina a stati (place-and-trim) ripartita su più poll
+# ---------------------------------------------------------------------------
+class _RecordingFlumineOps:
+    """Avvolge FlumineSubminOps per catturare l'id flumine dell'ordine piazzato,
+    così da ritrovarlo (blotter[order_id]) nei poll successivi."""
+
+    def __init__(self, base: Any) -> None:
+        self._base = base
+        self.last_order: Any = None
+
+    def place(self, market: Any, *, side: str, price: float, size: float, customer_order_ref: str) -> Any:
+        order = self._base.place(
+            market, side=side, price=price, size=size, customer_order_ref=customer_order_ref
+        )
+        self.last_order = order
+        return order
+
+    def cancel(self, market: Any, order: Any, size_reduction: float) -> None:
+        self._base.cancel(market, order, size_reduction)
+
+    def replace(self, market: Any, order: Any, new_price: float) -> None:
+        self._base.replace(market, order, new_price)
+
+
+def _submin_state_to_dict(state: Any) -> Dict[str, Any]:
+    return {
+        "step": state.step.value,
+        "bet_id": state.bet_id,
+        "target_size": state.target_size,
+        "target_price": state.target_price,
+        "placed_size": state.placed_size,
+        "side": state.side,
+        "note": state.note,
+    }
+
+
+def _submin_state_from_dict(d: Dict[str, Any]) -> Any:
+    from .trading.submin import SubminState, SubminStep
+
+    return SubminState(
+        step=SubminStep(d["step"]),
+        bet_id=d.get("bet_id"),
+        target_size=float(d["target_size"]),
+        target_price=float(d["target_price"]),
+        placed_size=float(d["placed_size"]),
+        side=str(d["side"]),
+        note=str(d.get("note") or ""),
+    )
+
+
+def _submin_result(
+    *, request_row: Dict[str, Any], mode: str, cust_ref: str, state: Any,
+    order: Any, order_id: Optional[str], ok: bool, error: Optional[str] = None,
+) -> Dict[str, Any]:
+    res = _result(
+        ok=ok, action="place_submin", mode=mode, request_row=request_row,
+        cust_ref=cust_ref, order=order, side=state.side, price=state.target_price,
+        size=state.target_size, submin_step=state.step.value, error=error,
+        detail=state.note,
+    )
+    # bet_id dello stato submin ha priorità (l'ordine python può non averlo ancora)
+    res["bet_id"] = state.bet_id or res.get("bet_id")
+    res["submin_state"] = _submin_state_to_dict(state)
+    res["submin_order_id"] = order_id
+    return res
+
+
+def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Step iniziale (INIT→PLACED) di una sequenza submin. La riga resta 'processing'
+    finché terminale; lo SubminState è persistito in result.submin_state."""
+    from .trading.submin import FlumineSubminOps, SubminStep, advance_submin, start_submin
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    market = _resolve_market(flumine, request_row.get("market_id"))
+
+    params = request_row.get("params") or {}
+    ts = params.get("target_size") if isinstance(params, dict) else None
+    target_size = _f(ts) if ts is not None else _f(request_row.get("size"))
+    if target_size is None:
+        raise ValueError("place_submin richiede size (target sotto-minimo) o params.target_size")
+
+    juris = _jurisdiction()
+    state = start_submin(
+        side=str(request_row["side"]),
+        target_price=float(request_row["price"]),
+        target_size=target_size,
+        jurisdiction=juris,
+    )
+    # FIX (a) finestra di crash: persisti lo SubminState ATTESO (step=INIT) PRIMA del place
+    # REALE. Il ref interno deterministico (awlq<id>) viaggia nell'esito (customer_order_ref).
+    # Se il processo cade TRA il market.place_order e la persistenza dello step, alla ripresa
+    # la riga è già 'processing' con submin_state=INIT: _advance_submin_row ritrova l'ordine
+    # reale nel blotter PER REF (_find_order_by_cust_ref) e NON ripiazza mai (riconciliazione).
+    _persist_submin_step(sb, rid, request_row, mode, cust_ref, state, None, None)
+
+    ops = _RecordingFlumineOps(
+        FlumineSubminOps(
+            selection_id=int(request_row["selection_id"]),
+            handicap=float(request_row.get("handicap") or 0),
+            jurisdiction=juris,
+            strategy=strategy,
+            max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
+            customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+        )
+    )
+    new_state = advance_submin(
+        market, state, order=None, jurisdiction=juris, customer_order_ref=cust_ref, ops=ops,
+    )
+    order = ops.last_order
+    order_id = _val(order, "id")
+    _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, order_id)
+
+
+def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Avanza di UNO step una sequenza submin già in corso (riga 'processing')."""
+    from .trading.submin import FlumineSubminOps, SubminStep, advance_submin
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    prev = request_row.get("result") or {}
+    state_dict = prev.get("submin_state") if isinstance(prev, dict) else None
+    if not state_dict:
+        raise ValueError("place_submin in 'processing' senza submin_state persistito")
+    state = _submin_state_from_dict(state_dict)
+    order_id = prev.get("submin_order_id") if isinstance(prev, dict) else None
+
+    # già terminale (es. crash dopo l'avanzamento ma prima della finalizzazione)
+    if state.step in (SubminStep.DONE, SubminStep.ABORTED):
+        _persist_submin_step(sb, rid, request_row, mode, cust_ref, state, None, order_id)
+        return
+
+    juris = _jurisdiction()
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    # cust_ref incluso nella lookup: per un crash IN-PROCESS (tra place e persist, stessa
+    # esecuzione) l'ordine reale porta ancora in memoria le annotazioni notes/context con il
+    # ref interno → ritrovabile per ref, niente re-place. ATTENZIONE: dopo un RIAVVIO REALE del
+    # processo l'ordine è ricostruito dall'order stream SENZA quelle annotazioni (vedi flumine
+    # order/process.create_order_from_current), quindi il ref interno NON sopravvive: se non c'è
+    # né order_id né bet_id persistito il ritrovamento fallisce di proposito → advance_submin
+    # (allow_place=False) abortisce per riconciliazione manuale anziché ri-piazzare.
+    order = _find_submin_order(
+        flumine, request_row.get("market_id"), order_id, state.bet_id, cust_ref=cust_ref
+    )
+    ops = FlumineSubminOps(
+        selection_id=int(request_row["selection_id"]),
+        handicap=float(request_row.get("handicap") or 0),
+        jurisdiction=juris,
+        strategy=strategy,
+        max_stake=_effective_cap(request_row),         # FIX (b): cap effettivo, non None
+        customer_strategy_ref=CUSTOMER_STRATEGY_REF,    # FIX (b): strategy-ref nativo Betfair
+    )
+    # allow_place=False: questo è il percorso di SOLA-RIPRESA. Lo step1 (place) avviene
+    # UNA volta sola in _start_submin; qui non si deve MAI piazzare. Se lo stato è INIT
+    # (place persistito ma non confermato) e l'ordine non è riconciliabile con certezza,
+    # advance_submin marca ABORTED ("riconciliare manualmente") invece di ri-piazzare.
+    new_state = advance_submin(
+        market, state, order=order, jurisdiction=juris, customer_order_ref=cust_ref,
+        ops=ops, allow_place=False,
+    )
+    # mantieni l'order_id noto se l'ordine non è (ancora) ritrovabile
+    new_order_id = _val(order, "id") or order_id
+    _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, new_order_id)
+
+
+def _persist_submin_step(
+    sb: Any, rid: int, request_row: Dict[str, Any], mode: str, cust_ref: str,
+    state: Any, order: Any, order_id: Optional[str],
+) -> None:
+    from .trading.submin import SubminStep
+
+    if state.step == SubminStep.DONE:
+        result = _submin_result(
+            request_row=request_row, mode=mode, cust_ref=cust_ref, state=state,
+            order=order, order_id=order_id, ok=True,
+        )
+        _write_done(sb, rid, result)
+    elif state.step == SubminStep.ABORTED:
+        result = _submin_result(
+            request_row=request_row, mode=mode, cust_ref=cust_ref, state=state,
+            order=order, order_id=order_id, ok=False, error=state.note,
+        )
+        sb.table(_TABLE).update(
+            {
+                "status": "error",
+                "error": str(state.note)[:300],
+                "result": result,
+                "bet_id": result.get("bet_id"),
+                "processed_at": _now_iso(),
+            }
+        ).eq("id", rid).execute()
+    else:
+        result = _submin_result(
+            request_row=request_row, mode=mode, cust_ref=cust_ref, state=state,
+            order=order, order_id=order_id, ok=True,
+        )
+        _write_processing(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
+# Dispatch + ciclo
+# ---------------------------------------------------------------------------
+def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    action = str(request_row.get("action") or "")
+    if action == "place":
+        _do_place(sb, flumine, request_row, mode, strategy)
+    elif action == "cancel":
+        _do_cancel(sb, flumine, request_row, mode)
+    elif action == "replace":
+        _do_replace(sb, flumine, request_row, mode)
+    elif action == "place_submin":
+        _start_submin(sb, flumine, request_row, mode, strategy)
+    else:
+        raise ValueError(f"action sconosciuta: {action!r}")
+
+
+def _advance_inflight_submins(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> int:
+    """Fa avanzare le sequenze submin in corso (UNICA eccezione al non-riprocessare
+    'processing'). Best-effort per riga: un errore non blocca le altre né il runner."""
+    try:
+        rows = (
+            sb.table(_TABLE)
+            .select("*")
+            .eq("status", "processing")
+            .eq("action", "place_submin")
+            .eq("mode", mode_l)
+            .order("id")
+            .limit(_batch())
+            .execute()
+            .data
+            or []
+        )
+    except Exception as ex:  # noqa: BLE001 - lettura coda momentaneamente KO
+        logger.warning("[live-order] lettura submin in corso KO: %s", str(ex)[:160])
+        return 0
+
+    handled = 0
+    for r in rows:
+        # kill-switch RI-LETTO PER-RIGA: attivarlo a metà avanzamento FERMA SUBITO anche le
+        # sequenze submin in corso (i prossimi cancel/replace non partono). Le righe restano
+        # 'processing' col loro submin_state persistito → riprendono quando il freno è tolto.
+        if _kill_switch():
+            logger.warning(
+                "[live-order] kill-switch ATTIVO: avanzamento submin in corso interrotto"
+            )
+            break
+        rid = r.get("id")
+        try:
+            _advance_submin_row(sb, flumine, r, mode_l, strategy)
+        except Exception as ex:  # noqa: BLE001 - scrivi error, non cadere
+            logger.exception("[live-order] avanzamento submin %s fallito", rid)
+            try:
+                _write_error(sb, rid, r, mode_l, ex)
+            except Exception:  # noqa: BLE001
+                pass
+        handled += 1
+    return handled
+
+
+def _fail_cross_mode(sb: Any, mode_l: str) -> int:
+    """Marca 'error' le righe pending il cui ``mode`` NON è servibile da questo runner.
+
+    Il runner gira in UNA sola mode (``LIVE_ORDER_MODE`` = PAPER|LIVE) e processa solo le
+    righe di quella mode. Senza questo passo, una riga della mode opposta (es. enqueue 'live'
+    mentre gira un runner 'paper': misconfigurazione o residuo) resterebbe 'pending' all'INFINITO,
+    senza esito e senza diagnosi per il frontend.
+
+    Assunzione di deployment: un SOLO runner attivo per coda (non un runner paper E uno live
+    in parallelo sulla STESSA coda). Sotto questa assunzione marcare error è corretto e sicuro;
+    il claim atomico pending→processing garantisce comunque che la transizione avvenga UNA volta.
+    Best-effort: qualunque errore qui non blocca il ciclo né il runner.
+    """
+    try:
+        rows = (
+            sb.table(_TABLE)
+            .select("*")
+            .eq("status", "pending")
+            .neq("mode", mode_l)
+            .order("id")
+            .limit(_batch())
+            .execute()
+            .data
+            or []
+        )
+    except Exception as ex:  # noqa: BLE001 - lettura coda KO: non cadere
+        logger.warning("[live-order] lettura righe cross-mode KO: %s", str(ex)[:160])
+        return 0
+
+    handled = 0
+    for r in rows:
+        rid = r.get("id")
+        # claim atomico: se un altro l'ha già preso (o non è più pending), salta.
+        if not _claim(sb, rid):
+            continue
+        row_mode = str(r.get("mode") or "?")
+        msg = (
+            f"mode '{row_mode}' non servibile dal runner in modalità '{mode_l}' "
+            f"(LIVE_ORDER_MODE={mode_l.upper()}): richiesta rifiutata, non lasciata appesa"
+        )
+        try:
+            _write_error(sb, rid, r, mode_l, msg)
+        except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
+            logger.exception("[live-order] scrittura error cross-mode %s fallita", rid)
+        handled += 1
+    return handled
+
+
+def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = None) -> int:
+    """UN passo del worker. Ritorna quante righe ha gestito. Mai solleva (best-effort).
+
+    ``strategy`` è l'istanza LiveTradingStrategy registrata nel framework: gli ordini
+    piazzati sono creati sotto di essa (vedi build_order) così che lo specchio si popoli.
+    """
+    mode = _live_order_mode()
+    if mode not in ("PAPER", "LIVE"):
+        return 0  # OFF (o valore ignoto): worker inerte
+    # Gate a INIZIO ciclo: se già attivo, salta TUTTO il giro (anche l'avanzamento submin).
+    # È RI-LETTO anche per-ordine dentro il batch loop sotto, così un flip a metà batch
+    # blocca subito gli ordini rimanenti.
+    if _kill_switch():
+        logger.warning("[live-order] kill-switch ATTIVO: nessun ordine processato")
+        return 0
+
+    mode_l = mode.lower()
+    handled = 0
+
+    # 1) sequenze submin in corso (place_submin) → avanza di uno step
+    handled += _advance_inflight_submins(sb, flumine, mode_l, strategy)
+
+    # 2) nuove richieste pending della stessa mode → claim atomico + dispatch
+    try:
+        rows = (
+            sb.table(_TABLE)
+            .select("*")
+            .eq("status", "pending")
+            .eq("mode", mode_l)
+            .order("id")
+            .limit(_batch())
+            .execute()
+            .data
+            or []
+        )
+    except Exception as ex:  # noqa: BLE001 - lettura coda KO: non cadere
+        logger.warning("[live-order] lettura coda KO: %s", str(ex)[:160])
+        return handled
+
+    for r in rows:
+        # kill-switch RI-LETTO PER-ORDINE (non solo a inizio ciclo): flipparlo a metà
+        # batch blocca SUBITO gli ordini rimanenti, che restano 'pending' (mai claimati →
+        # mai bloccati in 'processing'). Si controlla PRIMA del claim, di proposito.
+        if _kill_switch():
+            logger.warning(
+                "[live-order] kill-switch ATTIVO a metà batch: ordini rimanenti non processati"
+            )
+            break
+        rid = r.get("id")
+        # claim: se un altro l'ha già preso (o non è più pending), salta.
+        if not _claim(sb, rid):
+            continue
+        try:
+            _dispatch(sb, flumine, r, mode_l, strategy)
+        except Exception as ex:  # noqa: BLE001 - errore della riga, worker vivo
+            logger.exception("[live-order] richiesta %s fallita", rid)
+            try:
+                _write_error(sb, rid, r, mode_l, ex)
+            except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
+                pass
+        handled += 1
+
+    # 3) righe pending della mode OPPOSTA → error (mai lasciate appese all'infinito)
+    handled += _fail_cross_mode(sb, mode_l)
+    return handled
+
+
+def live_order_worker(
+    context: dict, flumine: Any, session: Any = None, strategy: Any = None
+) -> None:
+    """BackgroundWorker flumine (firma: context, flumine, **func_kwargs).
+
+    Aggiunto al framework SOLO se LIVE_ORDER_MODE ∈ {PAPER, LIVE} (vedi runner.setup_and_run).
+    Esegue UN passo di coda per invocazione; il BackgroundWorker gestisce l'intervallo.
+    Non solleva MAI: qualunque errore è loggato/scritto, il runner resta in piedi.
+
+    ``strategy`` (da func_kwargs) è l'istanza LiveTradingStrategy registrata: gli ordini
+    sono creati sotto di essa così che flumine instradi process_orders → specchio DB.
+    """
+    if flumine is None:
+        return
+    try:
+        from db_client import get_supabase_client
+        sb = get_supabase_client()
+    except Exception as ex:  # noqa: BLE001 - DB non raggiungibile: salta il giro
+        logger.warning("[live-order] supabase non disponibile: %s", str(ex)[:160])
+        return
+    try:
+        _process_once(sb, flumine, session, strategy)
+    except Exception as ex:  # noqa: BLE001 - ultima rete di sicurezza
+        logger.warning("[live-order] ciclo KO: %s", str(ex)[:200])

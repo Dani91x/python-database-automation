@@ -292,3 +292,63 @@ def write_backtest_results(request_id: str, rows: List[Dict[str, Any]]) -> int:
         sb.table("live_backtest_results").insert(chunk).execute()
         n += len(chunk)
     return n
+
+
+# ----------------------------------------------------------------------------
+# Live trading — specchio ordini + posizioni (scritti dal runner come service_role).
+# Write-on-change da LiveTradingStrategy.process_orders. MONEY-CRITICAL: i numeri
+# delle posizioni provengono SEMPRE da flumine ``blotter.get_exposures`` (mai
+# ricalcolati a mano qui). Tabelle: betfair_live_orders, betfair_live_positions.
+# ----------------------------------------------------------------------------
+def upsert_live_order(row: Dict[str, Any]) -> None:
+    """Specchio di UN ordine → ``betfair_live_orders`` (idempotente, write-on-change).
+
+    Chiave di upsert: ``(mode, bet_id)`` quando ``bet_id`` è assegnato; finché è
+    NULL (ordine PENDING) fallback su ``(mode, client_order_ref)`` — coerente coi
+    due vincoli UNIQUE PARZIALI della migrazione (``idx_blo_mode_bet`` WHERE bet_id
+    IS NOT NULL; ``idx_blo_mode_cref`` WHERE bet_id IS NULL). ``updated_at`` forzato
+    ad ogni scrittura.
+
+    ANTI-GHOST: quando l'ordine passa da ``bet_id=NULL`` a ``bet_id`` assegnato, la
+    riga PENDING esiste SOLO nell'indice parziale per-cref (l'altro non la vede). Un
+    upsert ``on_conflict='mode,bet_id'`` non la troverebbe → inserirebbe una riga
+    DUPLICATA lasciando viva la riga NULL (ordine GHOST persistente nello specchio).
+    Per evitarlo: con ``bet_id`` E ``client_order_ref`` entrambi noti, prima
+    PROMUOVIAMO la riga NULL (UPDATE su ``mode+client_order_ref`` WHERE bet_id IS
+    NULL, valorizzando ``bet_id``), poi l'upsert idempotente ``on_conflict='mode,bet_id'``
+    aggiorna quella stessa riga senza crearne una nuova.
+    """
+    sb = get_supabase_client()
+    payload = dict(row)
+    payload["updated_at"] = _now_iso()
+    bet_id = payload.get("bet_id")
+    cref = payload.get("client_order_ref")
+    if bet_id and cref:
+        # 1) promuove l'eventuale riga PENDING (bet_id IS NULL) all'ordine assegnato.
+        sb.table("betfair_live_orders").update(payload).eq(
+            "mode", payload.get("mode")
+        ).eq("client_order_ref", cref).is_("bet_id", None).execute()
+        # 2) upsert idempotente sull'indice (mode, bet_id): aggiorna la riga promossa
+        #    (o ne inserisce una sola se nessuna riga PENDING esisteva).
+        sb.table("betfair_live_orders").upsert(payload, on_conflict="mode,bet_id").execute()
+    elif bet_id:
+        sb.table("betfair_live_orders").upsert(payload, on_conflict="mode,bet_id").execute()
+    else:
+        sb.table("betfair_live_orders").upsert(
+            payload, on_conflict="mode,client_order_ref"
+        ).execute()
+
+
+def upsert_live_position(row: Dict[str, Any]) -> None:
+    """Esposizione di UNA selezione → ``betfair_live_positions`` (idempotente).
+
+    Chiave di upsert: ``(mode, market_id, selection_id, handicap)``. I valori sono
+    quelli restituiti da ``blotter.get_exposures`` / ``selection_exposure`` (flumine),
+    mai ricalcolati a mano. ``updated_at`` forzato ad ogni scrittura.
+    """
+    sb = get_supabase_client()
+    payload = dict(row)
+    payload["updated_at"] = _now_iso()
+    sb.table("betfair_live_positions").upsert(
+        payload, on_conflict="mode,market_id,selection_id,handicap"
+    ).execute()
