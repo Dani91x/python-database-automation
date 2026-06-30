@@ -552,8 +552,9 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
       OFF   → order_stream=False, paper_trade=False. IDENTICO al comportamento storico
               (``clients.BetfairClient(api_client, order_stream=False)``): nessun order
               stream, nessuna esecuzione ordini → ZERO regressioni. orders_enabled=False.
-      PAPER → paper_trade=True (forza SimulatedExecution su dati live, soldi FINTI).
-              order_stream non serve (il fill è sincrono via SimulatedExecution).
+      PAPER → paper_trade=True (forza SimulatedExecution su dati live, soldi FINTI) +
+              order_stream=True → flumine apre un SimulatedOrderStream (NON quello reale): è lui a
+              generare i CurrentOrdersEvent che fanno scattare process_orders → specchio ordini/pos.
       LIVE  → order_stream=True (fill REALI async via order stream). SOLDI VERI.
 
     NB: ``market_recording_mode`` resta False in tutte le modalità (i book parsati
@@ -594,7 +595,12 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
             flumine_config.place_latency = float(PAPER_SIMULATED_LATENCY_MS) / 1000.0
         client = clients.BetfairClient(
             api_client,
-            order_stream=False,
+            # order_stream=True ANCHE in paper: con paper_trade=True flumine NON apre lo stream
+            # ordini REALE ma un SimulatedOrderStream (streams.add_client: l'order stream — anche
+            # simulato — si crea SOLO se order_stream=True). È lui a generare i CurrentOrdersEvent
+            # che fanno scattare LiveTradingStrategy.process_orders → lo specchio si popola.
+            order_stream=True,
+            order_stream_conflate_ms=ORDER_STREAM_CONFLATE_MS or None,
             paper_trade=True,
             min_bet_validation=True,
             transaction_limit=LIVE_TRANSACTION_LIMIT,

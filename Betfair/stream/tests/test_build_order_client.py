@@ -28,7 +28,10 @@ def _fake_api_client() -> types.SimpleNamespace:
     "mode,exp_enabled,exp_order_stream,exp_paper",
     [
         ("OFF", False, False, False),
-        ("PAPER", True, False, True),
+        # PAPER: order_stream=True È CORRETTO — con paper_trade=True flumine apre il
+        # SimulatedOrderStream (non quello reale), che genera i CurrentOrdersEvent senza
+        # cui process_orders non scatterebbe e lo specchio resterebbe vuoto. (bug fix 30/06)
+        ("PAPER", True, True, True),
         ("LIVE", True, True, False),
         # valore sconosciuto → trattato come OFF (nessun ordine)
         ("garbage", False, False, False),
