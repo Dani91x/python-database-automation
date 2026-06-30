@@ -303,40 +303,22 @@ def write_backtest_results(request_id: str, rows: List[Dict[str, Any]]) -> int:
 def upsert_live_order(row: Dict[str, Any]) -> None:
     """Specchio di UN ordine → ``betfair_live_orders`` (idempotente, write-on-change).
 
-    Chiave di upsert: ``(mode, bet_id)`` quando ``bet_id`` è assegnato; finché è
-    NULL (ordine PENDING) fallback su ``(mode, client_order_ref)`` — coerente coi
-    due vincoli UNIQUE PARZIALI della migrazione (``idx_blo_mode_bet`` WHERE bet_id
-    IS NOT NULL; ``idx_blo_mode_cref`` WHERE bet_id IS NULL). ``updated_at`` forzato
-    ad ogni scrittura.
+    Chiave UNICA per ordine: ``(mode, client_order_ref)``. ``client_order_ref`` (il nostro
+    ``awlq<request_id>``, o in fallback il customerOrderRef di flumine) è SEMPRE presente e
+    unico per ordine → una sola riga, aggiornata in place (bet_id/fill/status). Niente ghost
+    possibili (una chiave = una riga); ``bet_id`` è solo una colonna che si valorizza quando
+    l'Exchange/SimulatedExecution lo assegna. ``updated_at`` forzato ad ogni scrittura.
 
-    ANTI-GHOST: quando l'ordine passa da ``bet_id=NULL`` a ``bet_id`` assegnato, la
-    riga PENDING esiste SOLO nell'indice parziale per-cref (l'altro non la vede). Un
-    upsert ``on_conflict='mode,bet_id'`` non la troverebbe → inserirebbe una riga
-    DUPLICATA lasciando viva la riga NULL (ordine GHOST persistente nello specchio).
-    Per evitarlo: con ``bet_id`` E ``client_order_ref`` entrambi noti, prima
-    PROMUOVIAMO la riga NULL (UPDATE su ``mode+client_order_ref`` WHERE bet_id IS
-    NULL, valorizzando ``bet_id``), poi l'upsert idempotente ``on_conflict='mode,bet_id'``
-    aggiorna quella stessa riga senza crearne una nuova.
+    NB money-critical: l'``on_conflict`` DEVE puntare a un indice UNIQUE **NON parziale**
+    (``idx_blo_order_key`` su (mode, client_order_ref)). PostgREST/Postgres NON può usare un
+    indice PARZIALE come arbitro di ON CONFLICT → errore 42P10 e specchio mai scritto.
     """
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    bet_id = payload.get("bet_id")
-    cref = payload.get("client_order_ref")
-    if bet_id and cref:
-        # 1) promuove l'eventuale riga PENDING (bet_id IS NULL) all'ordine assegnato.
-        sb.table("betfair_live_orders").update(payload).eq(
-            "mode", payload.get("mode")
-        ).eq("client_order_ref", cref).is_("bet_id", None).execute()
-        # 2) upsert idempotente sull'indice (mode, bet_id): aggiorna la riga promossa
-        #    (o ne inserisce una sola se nessuna riga PENDING esisteva).
-        sb.table("betfair_live_orders").upsert(payload, on_conflict="mode,bet_id").execute()
-    elif bet_id:
-        sb.table("betfair_live_orders").upsert(payload, on_conflict="mode,bet_id").execute()
-    else:
-        sb.table("betfair_live_orders").upsert(
-            payload, on_conflict="mode,client_order_ref"
-        ).execute()
+    sb.table("betfair_live_orders").upsert(
+        payload, on_conflict="mode,client_order_ref"
+    ).execute()
 
 
 def upsert_live_position(row: Dict[str, Any]) -> None:

@@ -106,12 +106,15 @@ CREATE TABLE IF NOT EXISTS public.betfair_live_orders (
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- upsert per (mode, bet_id) quando bet_id è assegnato; fallback (mode, client_order_ref)
--- finché bet_id è NULL. Due indici UNIQUE PARZIALI coprono i due casi senza collidere.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_blo_mode_bet
-    ON public.betfair_live_orders (mode, bet_id) WHERE bet_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_blo_mode_cref
-    ON public.betfair_live_orders (mode, client_order_ref) WHERE bet_id IS NULL;
+-- Chiave UNICA per ordine: (mode, client_order_ref) — NON parziale, così l'upsert
+-- (on_conflict) può usarla come arbitro. Un indice PARZIALE NON è utilizzabile da
+-- ON CONFLICT (PostgREST/Postgres → errore 42P10) e lo specchio non verrebbe mai scritto.
+-- client_order_ref è sempre valorizzato (NOT NULL) → una sola riga per ordine, niente ghost;
+-- bet_id è solo una colonna (si valorizza quando assegnato), non una chiave di conflitto.
+DROP INDEX IF EXISTS public.idx_blo_mode_bet;    -- rimuove i vecchi indici PARZIALI (incompatibili con ON CONFLICT)
+DROP INDEX IF EXISTS public.idx_blo_mode_cref;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blo_order_key
+    ON public.betfair_live_orders (mode, client_order_ref);
 CREATE INDEX IF NOT EXISTS idx_blo_market
     ON public.betfair_live_orders (market_id);
 
