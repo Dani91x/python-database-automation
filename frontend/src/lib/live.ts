@@ -56,6 +56,7 @@ export interface LiveNowMarket {
 }
 export interface LiveNowState {
     markets: LiveNowMarket[];
+    order_mode?: string;       // OFF | PAPER | LIVE — modalità ordini del runner (per il badge del pannello Live Trading)
     updated_ms?: number;
 }
 export interface LiveNowRow {

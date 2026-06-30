@@ -7,6 +7,16 @@ from __future__ import annotations
 
 import os
 
+# Carica .env in modo ROBUSTO: alcune costanti qui sotto (es. LIVE_ORDER_MODE,
+# BETFAIR_JURISDICTION) sono lette con os.getenv AL MOMENTO DELL'IMPORT. Senza questo,
+# il valore nel .env verrebbe visto solo se un altro modulo ha già chiamato load_dotenv
+# prima — fragile. Caricandolo qui, "LIVE_ORDER_MODE=PAPER" nel .env è SEMPRE rispettato.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:  # noqa: BLE001 - dotenv opzionale; l'env reale ha comunque precedenza
+    pass
+
 # ----------------------------------------------------------------------------
 # Storage locale (source of truth del firehose grezzo, formato nativo Betfair)
 # ----------------------------------------------------------------------------

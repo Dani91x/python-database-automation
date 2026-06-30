@@ -4,7 +4,7 @@
 // card → dettaglio realtime (stessa pagina) sottoscritto a `live_now` per le
 // quote che si aggiornano in tempo reale. Stesso design system del resto dell'app.
 // ============================================================================
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Radio, AlertTriangle, History } from 'lucide-react';
@@ -15,10 +15,65 @@ import { LiveMatchCard } from '@/components/live/LiveMatchCard';
 import { LiveMarketBoard } from '@/components/live/LiveMarketBoard';
 import { LiveSignalPanel } from '@/components/live/LiveSignalPanel';
 import { LiveAlertBanner } from '@/components/live/LiveAlertBanner';
+import { LiveTradingPanel, type PanelMode } from '@/components/live/LiveTradingPanel';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow,
-    type LiveFollow, type LiveNowRow,
+    type LiveFollow, type LiveNowRow, type LiveNowMarket,
 } from '@/lib/live';
+
+// Sezione "Live Trading" del dettaglio Segui Live: selettore mercato (dai mercati di
+// live_now, STESSA fonte del tabellone) + LiveTradingPanel operativo per quel mercato.
+// La modalità (OFF/PAPER/LIVE) arriva dal runner via live_now.state.order_mode.
+function LiveTradingSection({ markets, orderMode, eventName }: {
+    markets: LiveNowMarket[]; orderMode: string; eventName: string;
+}) {
+    const defaultId = useMemo(() => {
+        const mo = markets.find(m => m.market_type === 'MATCH_ODDS' || /match odds/i.test(m.market_name ?? ''));
+        return (mo ?? markets[0])?.market_id ?? '';
+    }, [markets]);
+    const [marketId, setMarketId] = useState<string>(defaultId);
+    useEffect(() => {
+        // se i mercati cambiano e il selezionato non esiste più, ripiega sul default
+        if (marketId && !markets.some(m => m.market_id === marketId)) setMarketId(defaultId);
+        else if (!marketId && defaultId) setMarketId(defaultId);
+    }, [markets, marketId, defaultId]);
+
+    const market = markets.find(m => m.market_id === marketId) ?? null;
+    const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
+        ? (orderMode || 'off').toLowerCase() : 'off') as PanelMode;
+    // memoizzato su `market`: live_now si aggiorna ogni pochi secondi → evita una nuova
+    // reference di `selections` ad ogni tick (lavoro inutile nel pannello).
+    const selections = useMemo(
+        () => (market?.selections ?? []).map(s => ({ selection_id: s.selection_id, name: s.name })),
+        [market],
+    );
+
+    if (markets.length === 0) return null;
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Mercato da operare</span>
+                <select
+                    value={marketId}
+                    onChange={e => setMarketId(e.target.value)}
+                    className="bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary/60"
+                >
+                    {markets.map(m => (
+                        <option key={m.market_id} value={m.market_id}>{m.market_name || m.market_type || m.market_id}</option>
+                    ))}
+                </select>
+            </div>
+            {market && (
+                <LiveTradingPanel
+                    marketId={market.market_id}
+                    mode={mode}
+                    eventLabel={`${eventName} · ${market.market_name || market.market_type}`}
+                    selections={selections}
+                />
+            )}
+        </div>
+    );
+}
 
 export default function SeguiLive() {
     const [follows, setFollows] = useState<LiveFollow[]>([]);
@@ -148,6 +203,15 @@ export default function SeguiLive() {
                                     <LiveSignalPanel eventId={selected.event_id} state={liveNow?.state ?? null} />
                                 </div>
                             </div>
+                        )}
+
+                        {/* ---- LIVE TRADING (stessa fonte: live_now) ---- */}
+                        {liveNow?.state?.markets && liveNow.state.markets.length > 0 && (
+                            <LiveTradingSection
+                                markets={liveNow.state.markets}
+                                orderMode={liveNow.state.order_mode ?? 'OFF'}
+                                eventName={`${selected.home_name} vs ${selected.away_name}`}
+                            />
                         )}
                     </div>
                 ) : follows.length === 0 ? (

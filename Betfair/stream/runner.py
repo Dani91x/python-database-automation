@@ -48,6 +48,7 @@ from .config_stream import (
     KELLY_FRACTION,
     LADDER_DEPTH,
     LIVE_ORDER_MODE,
+    live_order_mode,
     LIVE_ORDER_QUEUE_POLL_SEC,
     LIVE_TRANSACTION_LIMIT,
     MIN_RESUBSCRIBE_INTERVAL_SEC,
@@ -200,7 +201,15 @@ class LiveSession:
                     "selections": sels,
                 }
             )
-        return {"markets": markets_out, "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000)}
+        return {
+            "markets": markets_out,
+            # modalità ordini attiva del runner (OFF|PAPER|LIVE): la UI la legge da
+            # live_now.state.order_mode per mostrare il badge giusto nel pannello Live Trading.
+            # live_order_mode() RI-LEGGE l'env ad ogni call (coerente col worker): se a runtime
+            # si declassa LIVE→OFF/PAPER, il badge segue subito invece di restare "LIVE" stale.
+            "order_mode": live_order_mode(),
+            "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+        }
 
     def ladder_by_market(self, event_id: str) -> Dict[str, Any]:
         """Ladder per il motore: {market_id: {sel: {back,lay,ltp,tv}}}."""
