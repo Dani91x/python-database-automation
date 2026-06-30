@@ -190,3 +190,52 @@ export async function placeBetfairOrder(payload: PlaceOrderPayload): Promise<Pla
     // timeout: l'ordine POTREBBE essere stato piazzato → NON reinviare.
     throw new Error('Esito ordine non confermato (timeout): NON reinviare. Controlla Report e Betfair. Il server ordini è attivo (aggiorna_quote_betfair.bat)?');
 }
+
+// ---------- Ordini piazzati (lettura) — pannello "Ordini piazzati" ----------
+// Una riga della coda ordini reali (betfair_order_requests) di UNA fixture, con
+// l'esito di abbinamento. Sola lettura via RPC get_betfair_orders (owner-only).
+export interface PlacedOrder {
+    id: number;
+    market: string;                 // chiave canonica (es. 'ht_1x2')
+    selection: string;              // es. 'D' | 'Under'
+    side: 'back' | 'lay';
+    price: number | null;           // quota richiesta
+    size: number | null;            // stake €
+    liability: number | null;
+    persistence: string | null;
+    fill_or_kill: boolean | null;
+    status: 'pending' | 'processing' | 'done' | 'error';
+    result: PlaceOrderResult | null;  // esito reale (bet_id, size_matched, ...)
+    error: string | null;
+    requested_at: string;
+    processed_at: string | null;
+}
+
+// Esito sintetico di un ordine per la UI (badge + dettaglio abbinamento).
+export type PlacedOrderState =
+    | 'queued'        // in coda (pending)
+    | 'sending'       // in invio (processing)
+    | 'matched'       // abbinato completamente
+    | 'partial'       // abbinato parzialmente (resto sul book)
+    | 'unmatched'     // piazzato ma 0 abbinato (resta sul book)
+    | 'error';        // rifiutato / errore
+
+// Deriva lo stato sintetico dai campi grezzi (status + esito reale).
+export function placedOrderState(o: PlacedOrder): PlacedOrderState {
+    if (o.status === 'pending') return 'queued';
+    if (o.status === 'processing') return 'sending';
+    if (o.status === 'error' || (o.result && o.result.ok === false)) return 'error';
+    // status === 'done' con esito ok: classifica per quota abbinata
+    const stake = o.size ?? o.result?.size ?? 0;
+    const matched = o.result?.size_matched ?? 0;
+    if (matched <= 0) return 'unmatched';
+    if (stake > 0 && matched + 1e-9 < stake) return 'partial';
+    return 'matched';
+}
+
+// Tutti gli ordini reali piazzati per una fixture (piu' recenti prima).
+export async function fetchBetfairOrders(fixtureId: number): Promise<PlacedOrder[]> {
+    const { data, error } = await supabase.rpc('get_betfair_orders', { p_fixture_id: Number(fixtureId) });
+    if (error) throw new Error(error.message);
+    return (Array.isArray(data) ? data : []) as PlacedOrder[];
+}

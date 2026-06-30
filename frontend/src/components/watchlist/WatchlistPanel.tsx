@@ -29,6 +29,7 @@ import {
 import { refreshBetfairOdds, fetchBetfairDirectionOdds } from '@/lib/betfair';
 import { TradeForm } from '@/components/watchlist/TradeForm';
 import { MultiTradeForm, edgeKey } from '@/components/watchlist/MultiTradeForm';
+import { PlacedOrdersPanel } from '@/components/watchlist/PlacedOrdersPanel';
 
 // overlay quote aggiornate on-demand: per chiave (market|selection) → ultime back/lay.
 type OddsOverlay = Record<string, { best_back: number | null; best_lay: number | null }>;
@@ -135,6 +136,10 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
     const [oddsOverlay, setOddsOverlay] = useState<OddsOverlay>({});
     // "Segui live": toggle del flag follow_live (iscrizione stream, nessun ordine)
     const [followBusy, setFollowBusy] = useState(false);
+    // bump per forzare il refresh immediato del pannello "Ordini piazzati" dopo una giocata
+    const [orderRefresh, setOrderRefresh] = useState(0);
+    // dopo un piazzamento: aggiorna subito il pannello ordini E ricarica la lista
+    const handleTradeSaved = useCallback(() => { setOrderRefresh(x => x + 1); onChanged?.(); }, [onChanged]);
 
     // set delle selezioni consigliate (per evidenziare le righe edges)
     const consigliKeys = useMemo(() => {
@@ -324,6 +329,14 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                 </div>
             )}
 
+            {/* Ordini piazzati (reali) di questa partita — visibile quando ci sono trade
+                o quando la card è espansa; si auto-aggiorna e si nasconde se vuoto. */}
+            {(row.n_trades > 0 || expanded) && (
+                <div className="px-4 pb-2">
+                    <PlacedOrdersPanel fixtureId={row.fixture_id} refreshTrigger={orderRefresh} />
+                </div>
+            )}
+
             {/* dettaglio snapshot */}
             {expanded && (
                 <div className="px-4 pb-4 border-t border-white/5 pt-3 space-y-3">
@@ -436,13 +449,13 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                 )}
             </div>
 
-            <TradeForm open={tradeOpen} onOpenChange={setTradeOpen} row={row} onSaved={onChanged} />
+            <TradeForm open={tradeOpen} onOpenChange={setTradeOpen} row={row} onSaved={handleTradeSaved} />
             <MultiTradeForm
                 open={multiOpen}
                 onOpenChange={setMultiOpen}
                 row={row}
                 selections={selectedEdges}
-                onSaved={() => { setSelectedKeys(new Set()); onChanged?.(); }}
+                onSaved={() => { setSelectedKeys(new Set()); handleTradeSaved(); }}
             />
             <RejectDialog open={rejectOpen} onOpenChange={setRejectOpen} row={row} onSaved={onChanged} />
             <DeleteDialog open={delOpen} onOpenChange={setDelOpen} row={row} onSaved={onChanged} />
