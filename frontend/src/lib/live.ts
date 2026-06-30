@@ -262,6 +262,69 @@ export function subscribeLiveSignals(
     return () => { supabase.removeChannel(channel); };
 }
 
+// ------------------------------------------------------------- Live Ladder
+// Ladder LIVE per-mercato (Betting Toolkit / Bet Angel / Geeks Toy), SOLA LETTURA.
+// Pubblicata dal runner (ladder_worker) sulla tabella realtime `live_ladder` in
+// modalità write-on-change, costruita dai soli dati dello stream già sottoscritto.
+// La pagina ladder sottoscrive QUESTA tabella filtrando per market_id (come live_now).
+export interface LiveLadderSelection {
+    selection_id: number;
+    name: string | null;
+    ltp: number | null;
+    tv: number | null;                 // volume tradato totale sulla selezione (EUR)
+    back: [number, number][];          // disponibile al BACK [prezzo, size] (best first)
+    lay: [number, number][];           // disponibile al LAY  [prezzo, size] (best first)
+    trd: [number, number][];           // volume tradato per-prezzo [prezzo, volume] (full)
+    wom: { back_pct: number; lay_pct: number }; // weight of money vicino al best (~3 livelli)
+}
+export interface LiveLadderState {
+    updated_ms: number | null;
+    selections: LiveLadderSelection[];
+}
+export interface LiveLadderRow {
+    event_id: string;
+    market_id: string;
+    market_type: string | null;
+    market_name: string | null;
+    status: string | null;             // OPEN | SUSPENDED | CLOSED (per banda/banner)
+    ladder: LiveLadderState | null;
+    updated_at: string | null;
+}
+
+// Snapshot iniziale della ladder di un mercato (la sottoscrizione aggiorna poi in realtime).
+export async function fetchLiveLadder(marketId: string): Promise<LiveLadderRow | null> {
+    const { data, error } = await supabase
+        .from('live_ladder')
+        .select('*')
+        .eq('market_id', marketId)
+        .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as LiveLadderRow | null) ?? null;
+}
+
+// Sottoscrizione realtime alla riga `live_ladder` di un mercato (filtro per market_id,
+// come subscribeLiveNow). Ritorna una funzione di unsubscribe da invocare a smontaggio /
+// cambio mercato.
+export function subscribeLiveLadder(
+    marketId: string,
+    cb: (row: LiveLadderRow | null) => void,
+): () => void {
+    const channel = supabase
+        .channel(`live_ladder:${marketId}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'live_ladder', filter: `market_id=eq.${marketId}` },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as LiveLadderRow | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+}
+
 // ----------------------------------------------------------- Live Alerts (#5)
 // Avvisi limiti Betfair / sistema. Banner in-app (nessuna dipendenza esterna).
 export type AlertLevel = 'INFO' | 'WARN' | 'CRITICAL';

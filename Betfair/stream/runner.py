@@ -17,6 +17,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -47,6 +48,9 @@ from .config_stream import (
     HARD_MARKET_CAP,
     KELLY_FRACTION,
     LADDER_DEPTH,
+    LADDER_MAX_LEVELS,
+    LADDER_PUBLISH_SEC,
+    LADDER_WOM_LEVELS,
     LIVE_ORDER_MODE,
     live_order_mode,
     LIVE_ORDER_QUEUE_POLL_SEC,
@@ -134,6 +138,7 @@ class LiveSession:
         self._recent_events: Dict[str, list] = {}  # event_id -> ultimi eventi (per live_now)
         self._last_score_sig: Dict[str, tuple] = {}
         self._last_signal_sig: Dict[str, Any] = {}
+        self._last_ladder_sig: Dict[str, str] = {}  # market_id -> firma (write-on-change ladder)
         self._finalize_lock = threading.Lock()
         self.restart_requested = threading.Event()
         self.last_resubscribe_ts = 0.0
@@ -396,6 +401,166 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
             db.upsert_live_signals(event_id, payload)
     except Exception as e:  # noqa: BLE001
         logger.warning("[signals] calcolo KO %s: %s", event_id, e)
+
+
+# ----------------------------------------------------------------------------
+# Worker: ladder LIVE per-mercato (pubblica live_ladder, SOLA LETTURA / display)
+# ----------------------------------------------------------------------------
+def _as_levels(raw: Any, max_levels: Optional[int]) -> List[List[float]]:
+    """Normalizza una lista [[price,size],...] a float, limitata a ``max_levels``.
+
+    ``max_levels`` None/<=0 = tutti i livelli (usato per ``trd``, sempre full).
+    Tollera dati malformati: salta i livelli non numerici senza sollevare.
+    """
+    out: List[List[float]] = []
+    if not raw:
+        return out
+    seq = raw if (max_levels is None or max_levels <= 0) else raw[:max_levels]
+    for lvl in seq:
+        try:
+            price, size = lvl[0], lvl[1]
+            if price is None or float(price) <= 0:
+                continue  # prezzo 0/negativo = dato corrotto: mai una riga "0.00" in UI
+            out.append([float(price), float(size or 0.0)])
+        except (TypeError, ValueError, IndexError):
+            continue
+    return out
+
+
+def compute_wom(
+    back: List[List[float]],
+    lay: List[List[float]],
+    levels: int = LADDER_WOM_LEVELS,
+) -> Dict[str, float]:
+    """Weight of Money: pressione rosa(back)/blu(lay) nei ~``levels`` livelli vicino al best.
+
+    Somma le size disponibili al BACK e al LAY nei primi ``levels`` livelli e ne ricava la
+    ripartizione percentuale. ``back_pct`` + ``lay_pct`` == 100.0 quando c'e' size; entrambi
+    0.0 se non c'e' alcuna size (mercato vuoto/sospeso) → niente divisione per zero. Le due
+    percentuali sono complementari (``lay_pct = 100 - back_pct``) per evitare drift di
+    arrotondamento e tenere la somma esatta.
+    """
+    n = levels if levels and levels > 0 else 1
+    back_sz = sum(s for _, s in back[:n])
+    lay_sz = sum(s for _, s in lay[:n])
+    total = back_sz + lay_sz
+    if total <= 0:
+        return {"back_pct": 0.0, "lay_pct": 0.0}
+    back_pct = round(back_sz / total * 100.0, 1)
+    return {"back_pct": back_pct, "lay_pct": round(100.0 - back_pct, 1)}
+
+
+def build_ladder_selection(
+    selection_id: Any,
+    runner: Dict[str, Any],
+    name: Optional[str],
+    max_levels: int = LADDER_MAX_LEVELS,
+) -> Dict[str, Any]:
+    """Una selezione della ladder dai dati dello stream (recorder.latest_books runner).
+
+    back/lay limitati a ``max_levels`` (profondita' sottoscritta); ``trd`` (volume tradato
+    per-prezzo) sempre FULL; WOM calcolato sui livelli vicino al best.
+    """
+    back = _as_levels(runner.get("b"), max_levels)
+    lay = _as_levels(runner.get("l"), max_levels)
+    trd = _as_levels(runner.get("trd"), None)
+    return {
+        "selection_id": int(selection_id),
+        "name": name,
+        "ltp": runner.get("ltp"),
+        "tv": runner.get("tv"),
+        "back": back,
+        "lay": lay,
+        "trd": trd,
+        "wom": compute_wom(back, lay),
+    }
+
+
+def ladder_signature(selections: List[Dict[str, Any]]) -> str:
+    """Firma stabile della ladder per il WRITE-ON-CHANGE.
+
+    Cattura ESATTAMENTE i campi che muovono il display: ltp + livelli back/lay + volume
+    tradato per-prezzo (trd) di ogni selezione. tv/wom sono DERIVATI da questi (tv segue il
+    traded, wom segue back/lay) → non serve includerli e non causano riscritture spurie.
+    SHA-1 su una rappresentazione deterministica: compatto da tenere in memoria per mercato.
+    """
+    payload = [
+        (
+            s["selection_id"],
+            s["ltp"],
+            tuple(tuple(lvl) for lvl in s["back"]),
+            tuple(tuple(lvl) for lvl in s["lay"]),
+            tuple(tuple(lvl) for lvl in s["trd"]),
+        )
+        # ordine STABILE per selection_id: dopo un restart F3 la libreria potrebbe
+        # consegnare i runner in ordine diverso → senza sort la firma cambierebbe a parità
+        # di dati (una riscrittura spuria per mercato per riconnessione).
+        for s in sorted(selections, key=lambda x: x["selection_id"])
+    ]
+    return hashlib.sha1(repr(payload).encode("utf-8")).hexdigest()  # noqa: S324 - firma, non crittografia
+
+
+def build_ladder_payload(
+    book: Dict[str, Any],
+    names: Dict[str, str],
+    max_levels: int = LADDER_MAX_LEVELS,
+) -> Dict[str, Any]:
+    """Costruisce { updated_ms, selections:[...] } da un book serializzato (latest_books)."""
+    selections = [
+        build_ladder_selection(sel_id, r, names.get(str(sel_id)), max_levels)
+        for sel_id, r in (book.get("runners") or {}).items()
+    ]
+    return {
+        "updated_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+        "selections": selections,
+    }
+
+
+def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
+    """Pubblica la ladder PIENA di ogni mercato sottoscritto su ``live_ladder``.
+
+    SOLA LETTURA dal punto di vista Betfair: usa esclusivamente i book GIA' in cache
+    (recorder.latest_books) → ZERO chiamate API aggiuntive. WRITE-ON-CHANGE per mercato
+    (firma back/lay/trd/ltp) → non stressa il DB. Best-effort: un errore su un mercato non
+    deve far cadere il runner. Registrato SEMPRE quando si streamma (a prescindere da
+    LIVE_ORDER_MODE), come score_worker/finalize_worker.
+    """
+    if session.recorder is None:
+        return
+    latest = session.recorder.latest_books()
+    for event_id, markets in list(session.markets_by_event.items()):
+        if event_id in session.finished_events:
+            continue
+        for m in markets:
+            mid = m["market_id"]
+            book = latest.get(mid)
+            if not book:
+                continue
+            try:
+                payload = build_ladder_payload(
+                    book, session.selection_names.get(mid, {}), LADDER_MAX_LEVELS
+                )
+                # lo STATUS entra nella firma: un OPEN→SUSPENDED→CLOSED deve pubblicarsi
+                # (la UI sbiadisce sospeso/chiuso) anche se i livelli non cambiano.
+                sig = (book.get("status") or "") + "|" + ladder_signature(payload["selections"])
+            except Exception as e:  # noqa: BLE001 - un mercato malformato non blocca gli altri
+                logger.debug("[ladder-worker] build KO %s: %s", mid, e)
+                continue
+            if session._last_ladder_sig.get(mid) == sig:
+                continue  # write-on-change: book invariato → nessuna scrittura
+            row = {
+                "event_id": event_id,
+                "market_id": mid,
+                "market_type": m.get("market_type"),
+                "market_name": m.get("market_name"),
+                "status": book.get("status"),
+                "ladder": payload,
+            }
+            try:
+                db.upsert_live_ladder(row)
+                session._last_ladder_sig[mid] = sig
+            except Exception as e:  # noqa: BLE001 - un errore DB non deve far cadere il runner
+                logger.warning("[ladder-worker] upsert KO %s: %s", mid, e)
 
 
 # ----------------------------------------------------------------------------
@@ -736,6 +901,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))
+            # Ladder LIVE: pubblica live_ladder per ogni mercato sottoscritto (display
+            # SOLA LETTURA). Registrato SEMPRE (come score_worker), a prescindere da
+            # LIVE_ORDER_MODE: usa solo i book in cache → nessuna API Betfair aggiuntiva.
+            # interval FLOAT (sub-secondo possibile): BackgroundWorker lo passa a time.sleep.
+            framework.add_worker(BackgroundWorker(
+                framework, function=ladder_worker, interval=LADDER_PUBLISH_SEC or 1.0,
+                func_kwargs={"session": session}, name="ladder_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,
                 func_kwargs={"session": session}, name="finalize_worker"))

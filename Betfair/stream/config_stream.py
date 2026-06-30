@@ -48,6 +48,23 @@ LADDER_DEPTH: int = int(os.getenv("LIVE_LADDER_DEPTH", "10"))
 UPLOAD_CHUNK: int = int(os.getenv("LIVE_UPLOAD_CHUNK", "500"))
 
 # ----------------------------------------------------------------------------
+# Ladder LIVE (pubblicazione per-mercato su live_ladder dal ladder_worker)
+# ----------------------------------------------------------------------------
+# Cadenza (secondi, FLOAT) del BackgroundWorker che pubblica la ladder piena su
+# live_ladder. WRITE-ON-CHANGE: anche a cadenza fitta, una ladder immutata NON viene
+# riscritta (firma back/lay/trd/ltp) → I/O DB contenuto (incidente Supabase 2026-06-13).
+# default 2.0s: equilibrio reattività/I/O. In-play un mercato liquido cambia book quasi ad
+# ogni tick → con molti eventi simultanei 1.0s satura le scritture (storia I/O Supabase).
+# Abbassa a 1.0 solo con pochi mercati; alza a 3.0+ per molte partite contemporanee.
+LADDER_PUBLISH_SEC: float = float(os.getenv("LIVE_LADDER_PUBLISH_SEC", "2.0"))
+# Livelli back/lay conservati per selezione nella ladder pubblicata. Default = LADDER_DEPTH
+# (stessa profondita' sottoscritta dallo stream): non ha senso pubblicare piu' livelli di
+# quelli ricevuti. Il volume tradato per-prezzo (trd) resta sempre FULL.
+LADDER_MAX_LEVELS: int = int(os.getenv("LIVE_LADDER_MAX_LEVELS", str(LADDER_DEPTH)))
+# Livelli vicino al best usati per il calcolo del Weight of Money (pressione rosa/blu).
+LADDER_WOM_LEVELS: int = int(os.getenv("LIVE_LADDER_WOM_LEVELS", "3"))
+
+# ----------------------------------------------------------------------------
 # Stream
 # ----------------------------------------------------------------------------
 # conflazione lato server (ms): 0 = nessuna, gli aggiornamenti arrivano grezzi.

@@ -224,6 +224,28 @@ def upsert_live_signals(
 
 
 # ----------------------------------------------------------------------------
+# live_ladder (ladder LIVE per-mercato, write-on-change dal ladder_worker)
+# ----------------------------------------------------------------------------
+def upsert_live_ladder(row: Dict[str, Any]) -> None:
+    """Ladder corrente di UN mercato → ``live_ladder`` (idempotente, write-on-change).
+
+    Chiave UNICA: ``(event_id, market_id)`` → una sola riga per mercato, aggiornata in
+    place ad ogni cambiamento del book (il ladder_worker salta la scrittura se la firma
+    back/lay/trd/ltp non e' cambiata, per non stressare il DB). ``updated_at`` forzato.
+
+    NB: l'``on_conflict`` DEVE puntare all'indice UNIQUE **NON parziale**
+    ``idx_live_ladder_event_market`` su (event_id, market_id): un indice PARZIALE non e'
+    utilizzabile come arbitro di ON CONFLICT (PostgREST/Postgres → errore 42P10).
+    """
+    sb = get_supabase_client()
+    payload = dict(row)
+    payload["updated_at"] = _now_iso()
+    sb.table("live_ladder").upsert(
+        payload, on_conflict="event_id,market_id"
+    ).execute()
+
+
+# ----------------------------------------------------------------------------
 # live_alerts (avvisi limiti Betfair)
 # ----------------------------------------------------------------------------
 def insert_alert(
