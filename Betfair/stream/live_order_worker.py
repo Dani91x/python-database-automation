@@ -557,6 +557,133 @@ def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -
 
 
 # ---------------------------------------------------------------------------
+# greenup — green-up / cash-out (hedge) da esposizioni MATCHED flumine fresche
+# ---------------------------------------------------------------------------
+def _read_matched_exposures(
+    flumine: Any, market: Any, strategy: Any, selection_id: int, handicap: float
+) -> "tuple[float, float]":
+    """(profit_if_win, profit_if_lose) MATCHED dal blotter flumine — autoritativo.
+
+    MONEY-CRITICAL: il green-up si calcola sulle esposizioni REALI al MOMENTO
+    dell'esecuzione (non su quelle pollate dal frontend, potenzialmente stantie). Prese da
+    ``blotter.get_exposures(strategy, lookup)`` (le stesse di betfair_live_positions), MAI
+    ricalcolate a mano. Difensivo: qualunque struttura inattesa → (0,0) → no-op a monte.
+    """
+    blotter = _val(market, "blotter")
+    if blotter is None or strategy is None:
+        return 0.0, 0.0
+    lookup = (_val(market, "market_id"), int(selection_id), float(handicap or 0.0))
+    try:
+        exp = blotter.get_exposures(strategy, lookup)
+    except Exception:  # noqa: BLE001 - blotter mock/edge → nessuna esposizione
+        return 0.0, 0.0
+    if not isinstance(exp, dict):
+        return 0.0, 0.0
+    w = _f(exp.get("matched_profit_if_win")) or 0.0
+    l = _f(exp.get("matched_profit_if_lose")) or 0.0
+    return w, l
+
+
+def _best_prices(
+    market: Any, selection_id: int, handicap: float
+) -> "tuple[Optional[float], Optional[float]]":
+    """(best_available_to_back, best_available_to_lay) per la selezione dal market_book flumine.
+
+    Prezzi "taker" immediatamente abbinabili: per backare si prende il best available-to-back,
+    per layare il best available-to-lay. Letti dal MarketBook GIA' in memoria (stesso stream,
+    ZERO chiamate API). Difensivo su ogni livello: None se il book non è disponibile.
+    """
+    mb = _val(market, "market_book")
+    if mb is None:
+        return None, None
+    runners = _val(mb, "runners") or []
+    for r in runners:
+        if _int(_val(r, "selection_id")) != int(selection_id):
+            continue
+        rh = _f(_val(r, "handicap")) or 0.0
+        if abs(rh - float(handicap or 0.0)) > 1e-6:
+            continue
+        ex = _val(r, "ex")
+        atb = (_val(ex, "available_to_back") or []) if ex is not None else []
+        atl = (_val(ex, "available_to_lay") or []) if ex is not None else []
+        best_back = _f(_val(atb[0], "price")) if atb else None
+        best_lay = _f(_val(atl[0], "price")) if atl else None
+        return best_back, best_lay
+    return None, None
+
+
+def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Green-up / cash-out: chiude (totale o frazione) l'esposizione MATCHED di una selezione.
+
+    Legge le esposizioni FRESCHE da flumine + il best price opposto dal book, calcola l'UNICO
+    ordine di hedge (trading/greenup.compute_greenup) e lo piazza con ``reduces_liability=True``
+    (sotto-minimo consentito, hedge self-bounded → ``max_stake=None``). Se la posizione è già
+    piatta / frazione nulla / prezzo assente → riga 'done' SENZA piazzare (no-op tracciato).
+    """
+    from .live_order_build import build_order
+    from .trading.greenup import compute_greenup
+
+    rid = request_row["id"]
+    cust_ref = _cust_ref(rid)
+    # MONEY-CRITICAL: senza la strategy registrata NON possiamo leggere le esposizioni
+    # (blotter.get_exposures(strategy, ...)) → (0,0) → "posizione piatta" FALSO con la
+    # posizione invece APERTA. Fallire forte (riga 'error') invece di un 'done' bugiardo.
+    if strategy is None:
+        raise ValueError("greenup richiede la strategy registrata (LiveTradingStrategy)")
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    selection_id = int(request_row["selection_id"])
+    handicap = float(request_row.get("handicap") or 0)
+
+    params = request_row.get("params") or {}
+    fraction = _f(params.get("fraction")) if isinstance(params, dict) else None
+    if fraction is None:
+        fraction = 1.0
+
+    w, l = _read_matched_exposures(flumine, market, strategy, selection_id, handicap)
+    best_back, best_lay = _best_prices(market, selection_id, handicap)
+    plan = compute_greenup(
+        matched_if_win=w, matched_if_lose=l,
+        best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
+    )
+
+    if not plan.actionable:
+        # niente da chiudere: esito ok con motivo, nessun ordine (mai un place a vuoto).
+        result = _result(
+            ok=True, action="greenup", mode=mode, request_row=request_row,
+            cust_ref=cust_ref, detail=plan.note,
+        )
+        _write_done(sb, rid, result)
+        return
+
+    built = build_order(
+        market,
+        strategy=strategy,
+        selection_id=selection_id,
+        handicap=handicap,
+        side=str(plan.side),
+        order_type="LIMIT",
+        price=plan.price,
+        size=plan.size,
+        liability=None,
+        persistence="LAPSE",
+        time_in_force=None,
+        min_fill_size=None,
+        jurisdiction=_jurisdiction(),
+        max_stake=None,                 # hedge self-bounded (liability < |W−L|): nessun cap
+        customer_order_ref=cust_ref,
+        reduces_liability=True,         # green-up: sotto-minimo .it consentito
+    )
+    market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    result = _result(
+        ok=True, action="greenup", mode=mode, request_row=request_row,
+        cust_ref=cust_ref, order=built.order, price=built.price, size=built.size,
+        side=plan.side,
+        detail=f"{plan.note}; atteso vince={plan.expected_if_win} perde={plan.expected_if_lose}",
+    )
+    _write_done(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
 # place_submin — macchina a stati (place-and-trim) ripartita su più poll
 # ---------------------------------------------------------------------------
 class _RecordingFlumineOps:
@@ -769,6 +896,8 @@ def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         _do_replace(sb, flumine, request_row, mode)
     elif action == "place_submin":
         _start_submin(sb, flumine, request_row, mode, strategy)
+    elif action == "greenup":
+        _do_greenup(sb, flumine, request_row, mode, strategy)
     else:
         raise ValueError(f"action sconosciuta: {action!r}")
 

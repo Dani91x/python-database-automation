@@ -18,7 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 // ---------- Tipi comando (mirror betfair_live_order_requests / INTERFACES.md §4.1) ----------
 export type LiveOrderMode = 'paper' | 'live';
-export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin';
+export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin' | 'greenup';
 export type LiveOrderSide = 'back' | 'lay';
 export type LiveOrderType = 'LIMIT' | 'LIMIT_ON_CLOSE' | 'MARKET_ON_CLOSE';
 export type LivePersistence = 'LAPSE' | 'PERSIST' | 'MARKET_ON_CLOSE';
@@ -153,6 +153,34 @@ export async function sendLiveOrderCommand(cmd: LiveOrderCommand): Promise<LiveO
     }
     // timeout: il comando POTREBBE essere stato eseguito → NON reinviare.
     throw new Error('Esito comando non confermato (timeout): NON reinviare. Controlla la lista ordini. Il runner è attivo in modalità PAPER/LIVE?');
+}
+
+// ---------- green-up / cash-out (Fase 2) ----------
+// Accoda un comando 'greenup': il worker legge le esposizioni MATCHED fresche da flumine
+// (blotter.get_exposures) + il best price opposto dal book e piazza l'UNICO ordine di hedge
+// che pareggia profit-se-vince/perde (fraction=1 → totale; 0<fraction<1 → cash-out parziale).
+// side/price/size NON sono inviati: li deriva il runner dalle esposizioni reali → niente
+// numeri stantii. MONEY-CRITICAL: idempotente (client_ref), su timeout NON reinviare.
+export async function sendGreenup(args: {
+    marketId: string;
+    selectionId: number;
+    mode: LiveOrderMode;
+    handicap?: number;
+    fraction?: number;             // (0,1] — default 1.0 (green-up totale)
+}): Promise<LiveOrderResult> {
+    const f = args.fraction;
+    // fraction<=0 NON è "totale": è una richiesta priva di senso. Rifiutala lato chiamante
+    // (altrimenti, omettendo params, il worker farebbe un green-up TOTALE inatteso).
+    if (f != null && f <= 0) throw new Error('sendGreenup: fraction deve essere > 0');
+    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    return sendLiveOrderCommand({
+        action: 'greenup',
+        mode: args.mode,
+        market_id: args.marketId,
+        selection_id: args.selectionId,
+        handicap: args.handicap ?? 0,
+        ...(params ? { params } : {}),
+    });
 }
 
 // ---------- letture per i pannelli (mirror get_live_follows) ----------

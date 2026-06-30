@@ -1,46 +1,51 @@
 // ============================================================================
 // LadderView — ladder LIVE per-mercato fedele ai software pro (Betting Toolkit,
-// Bet Angel, Geeks Toy). SOLA LETTURA (display): mostra profondità back/lay con
-// size, scala tick Betfair col PREZZO al centro e LTP evidenziato, volume tradato
-// per livello, i TUOI ordini non abbinati sui livelli, WOM e P&L-per-livello.
+// Bet Angel, Geeks Toy). OPERATIVA: profondità back/lay con size, scala tick col
+// PREZZO al centro e LTP evidenziato, volume tradato per livello, i TUOI ordini
+// non abbinati sui livelli, WOM, P&L-per-livello, PIQ e ONE-CLICK trading.
 //
-// Per OGNI selezione, 8 colonne (sinistra → destra), come da specifica:
+// Per OGNI selezione, 8 colonne (sinistra → destra):
 //   1) Tuoi LAY non abbinati        5) Tuoi BACK non abbinati
 //   2) Disponibile al BACK (blu)    6) Cash-out/P&L per livello (viola)
 //   3) PREZZO (centro) + LTP        7) Volume tradato (EUR) per prezzo
-//   4) Disponibile al LAY (rosa)    8) PIQ (posizione in coda) [step successivo]
+//   4) Disponibile al LAY (rosa)    8) PIQ (coda al tuo livello, stima)
 // (convenzione colori STANDARD Betfair/Bet Angel/Geeks Toy: BACK=blu, LAY=rosa)
 //
-// DATI: la profondità arriva ESCLUSIVAMENTE dalla tabella realtime `live_ladder`
-// (subscribeLiveLadder), pubblicata dal runner dai soli dati dello stream già
-// sottoscritto → ZERO chiamate API Betfair. Gli ordini/posizioni (overlay) vengono
-// dalle RPC di sola lettura con poll gentile (no martellamento DB).
+// DATI: la profondità arriva dalla tabella realtime `live_ladder` (subscribeLiveLadder),
+// pubblicata dal runner dai soli dati dello stream già sottoscritto → ZERO API Betfair.
+// Ordini/posizioni (overlay) dalle RPC di sola lettura con poll gentile.
 //
-// One-click: NON in questo step. I livelli sono cliccabili (evidenziazione) ma
-// nessun ordine viene piazzato; lo stake preset e il bottone Cash-out sono display.
+// ONE-CLICK (Fase A) — MEDIATO DAL DB (coda comandi), mode-aware:
+//   * OFF   → ladder in sola lettura (nessun ordine possibile).
+//   * PAPER → click = ordine SIMULATO immediato (soldi finti).
+//   * LIVE  → click = ordine REALE. Per sicurezza: di default ogni click chiede CONFERMA;
+//             attivando "1-click" (armato, banner rosso) i click partono diretti come nei
+//             tool pro. Click su disp.BACK/LAY = place; click sui tuoi ordini = cancel.
+// GREEN-UP / CASH-OUT (Fase B): bottone Cash-out (totale) + slider parziale; il runner
+//   calcola l'hedge dalle esposizioni MATCHED reali di flumine (non da numeri pollati).
 // ============================================================================
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
-import { Loader2, ArrowRight, ArrowLeft, Layers } from 'lucide-react';
+import { Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check } from 'lucide-react';
 import { roundToTick, tickUp, tickDown } from '@/lib/matching';
+import { lockedPnlAt, piqAhead } from '@/lib/ladderMath';
 import {
     fetchLiveLadder, subscribeLiveLadder,
     type LiveLadderRow, type LiveLadderSelection,
 } from '@/lib/live';
 import {
-    fetchLiveOrders, fetchLivePositions,
-    type LiveOrderRow, type LivePositionRow, type LiveOrderMode,
+    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
+    type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
 } from '@/lib/liveOrders';
 
 // modalità ordini del runner (per filtrare l'overlay "i tuoi ordini").
 type PanelMode = 'off' | LiveOrderMode;
+type TradeSide = 'back' | 'lay';
 
-// preset di stake rapidi (display: il one-click arriva nello step successivo).
+// preset di stake rapidi per il one-click.
 const STAKE_PRESETS = [2, 5, 10, 25] as const;
 
-// max righe della ladder visibili: oltre, si centra una finestra sul prezzo corrente
-// (evita ladder enormi quando il trd copre un range ampio — comunque il trd non
-// determina il range, vedi sotto).
+// max righe della ladder visibili: oltre, si centra una finestra sul prezzo corrente.
 const MAX_ROWS = 42;
 const PAD_TICKS = 1; // tick di contesto sopra/sotto il range back/lay/LTP/ordini.
 
@@ -73,19 +78,11 @@ function sumByTick(pairs: [number, number][] | undefined): Map<number, number> {
     return m;
 }
 
-// P&L "what-if" bloccato chiudendo l'intera posizione (greenup) a `price`:
-//   locked = L + (W - L)/price        con W = profit se vince, L = profit se perde.
-// Vale identico sia che si chiuda con BACK sia con LAY (formula di hedge standard).
-function lockedPnlAt(price: number, win: number, lose: number): number {
-    if (!Number.isFinite(price) || price <= 1) return lose;
-    return lose + (win - lose) / price;
-}
-
 // ----------------------------------------------------------- riga della ladder
 interface Row {
     price: number;
-    backAvail: number;   // disponibile al BACK (col 2, rosa)
-    layAvail: number;    // disponibile al LAY  (col 4, blu)
+    backAvail: number;   // disponibile al BACK (col 2, blu)
+    layAvail: number;    // disponibile al LAY  (col 4, rosa)
     trd: number;         // volume tradato a questo prezzo (col 7)
     myLay: number;       // tuoi LAY non abbinati (col 1)
     myBack: number;      // tuoi BACK non abbinati (col 5)
@@ -121,8 +118,7 @@ function buildLadder(
         else myBack.set(t, (myBack.get(t) ?? 0) + rem);
     }
 
-    // il RANGE visibile è determinato da back/lay/LTP/ordini (NON dal trd, che può
-    // coprire un intervallo amplissimo). Il trd viene sovrapposto dove cade dentro.
+    // il RANGE visibile è determinato da back/lay/LTP/ordini (NON dal trd).
     const rng: number[] = [];
     for (const p of backMap.keys()) rng.push(p);
     for (const p of layMap.keys()) rng.push(p);
@@ -138,8 +134,8 @@ function buildLadder(
         return { rows: [], maxTrd: 0, bestBack, bestLay, ltp, hasPosition: false, win: 0, lose: 0 };
     }
 
-    let lo = tickDown(Math.min(...rng), PAD_TICKS);
-    let hi = tickUp(Math.max(...rng), PAD_TICKS);
+    const lo = tickDown(Math.min(...rng), PAD_TICKS);
+    const hi = tickUp(Math.max(...rng), PAD_TICKS);
 
     // costruzione contigua dei tick lo..hi (ascendente).
     const asc: number[] = [];
@@ -212,7 +208,7 @@ function WomBar({ wom }: { wom: { back_pct: number; lay_pct: number } | null | u
 }
 
 // ----------------------------------------------------- ladder di UNA selezione
-const COL_TEMPLATE = '34px 56px 50px 56px 34px 50px 42px 26px'; // 8 colonne
+const COL_TEMPLATE = '34px 56px 50px 56px 34px 50px 42px 30px'; // 8 colonne
 
 interface SelectionLadderProps {
     sel: LiveLadderSelection;
@@ -220,31 +216,69 @@ interface SelectionLadderProps {
     position: LivePositionRow | null;
     stake: number;
     status: string | null;         // OPEN | SUSPENDED | CLOSED
+    canTrade: boolean;             // mode != off && mercato OPEN
+    busy: boolean;                 // un comando è in volo (disabilita i click)
+    onPlace: (side: TradeSide, price: number, selectionId: number, selName: string) => void;
+    onCancel: (betIds: string[], side: TradeSide, price: number, selName: string) => void;
+    onGreenup: (fraction: number, selectionId: number, selName: string) => void;
 }
 
 const SelectionLadder = memo(function SelectionLadder({
-    sel, orders, position, stake, status,
+    sel, orders, position, stake, status, canTrade, busy, onPlace, onCancel, onGreenup,
 }: SelectionLadderProps) {
     const built = useMemo(() => buildLadder(sel, orders, position), [sel, orders, position]);
-    const [armed, setArmed] = useState<number | null>(null); // prezzo evidenziato (no-op, step successivo)
+    const [armedPrice, setArmedPrice] = useState<number | null>(null); // evidenziazione livello (OFF/non-trade)
+    const [fraction, setFraction] = useState(1); // cash-out parziale (1 = totale)
+
+    const selName = sel.name ?? `#${sel.selection_id}`;
+
+    // bet_id dei TUOI ordini non abbinati per livello+lato (per il cancel one-click).
+    const myOrdersAt = useMemo(() => {
+        const m = new Map<string, string[]>();
+        for (const o of orders) {
+            if (!o.bet_id || (o.size_remaining ?? 0) <= 0 || o.price == null) continue;
+            const key = `${o.side}@${roundToTick(o.price)}`;
+            const arr = m.get(key) ?? [];
+            arr.push(o.bet_id);
+            m.set(key, arr);
+        }
+        return m;
+    }, [orders]);
 
     const onLevel = useCallback((price: number) => {
-        setArmed(prev => (prev === price ? null : price)); // toggle evidenziazione
+        setArmedPrice(prev => (prev === price ? null : price));
     }, []);
+
+    const selId = sel.selection_id;
+    const clickBack = useCallback((price: number) => {
+        if (canTrade && !busy) onPlace('back', price, selId, selName);
+        else onLevel(price);
+    }, [canTrade, busy, onPlace, onLevel, selId, selName]);
+
+    const clickLay = useCallback((price: number) => {
+        if (canTrade && !busy) onPlace('lay', price, selId, selName);
+        else onLevel(price);
+    }, [canTrade, busy, onPlace, onLevel, selId, selName]);
 
     const closed = (status ?? '').toUpperCase() === 'CLOSED';
     const suspended = (status ?? '').toUpperCase() === 'SUSPENDED';
-    const cashOut = built.hasPosition && built.ltp != null
-        ? lockedPnlAt(built.ltp, built.win, built.lose)
-        : null;
+    // Preview cash-out al prezzo di ESECUZIONE reale dell'hedge: se vinco di più sul VINCE
+    // (win>lose) il runner LAYa al best LAY; altrimenti BACKa al best BACK. Usare il best
+    // opposto (non l'LTP) allinea il numero mostrato a ciò che verrà davvero bloccato.
+    const greenPrice = built.win > built.lose ? built.bestLay : built.bestBack;
+    const cashOut = built.hasPosition && greenPrice != null
+        ? lockedPnlAt(greenPrice, built.win, built.lose)
+        : (built.hasPosition && built.ltp != null ? lockedPnlAt(built.ltp, built.win, built.lose) : null);
+    const canGreen = canTrade && built.hasPosition && !busy;
+    const pct = Math.round(fraction * 100);
 
     return (
         <div className="rounded-xl border border-white/10 bg-black/40 overflow-hidden min-w-[348px]">
-            {/* header selezione: nome, matched, stake preset, WOM, cash-out */}
+            {/* header selezione: nome, matched, WOM, cash-out + slider parziale */}
             <div className="px-2.5 py-2 border-b border-white/10 bg-white/[0.03] space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                    <span className="font-heading font-bold text-sm text-white truncate" title={sel.name ?? undefined}>
-                        {sel.name ?? `#${sel.selection_id}`}
+                    <span className="font-heading font-bold text-sm text-white truncate" title={selName}>
+                        {selName}
                     </span>
                     <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
                         Matched <span className="text-white/80 font-mono">{fmtMoney(sel.tv)}</span>
@@ -252,14 +286,32 @@ const SelectionLadder = memo(function SelectionLadder({
                 </div>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                     <WomBar wom={sel.wom} />
-                    <button
-                        type="button"
-                        disabled
-                        title="Cash-out one-click: disponibile nello step successivo"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-400/30 bg-purple-500/10 text-[10px] font-bold text-purple-200 disabled:opacity-70 cursor-not-allowed"
-                    >
-                        Cash-out {cashOut != null ? <span className="font-mono">{fmtMoney(cashOut)}</span> : ''}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        {/* slider cash-out parziale: appare solo con posizione + tradabile */}
+                        {canGreen && (
+                            <div className="flex items-center gap-1" title="Frazione di cash-out (parziale)">
+                                <input
+                                    type="range" min={10} max={100} step={5}
+                                    value={pct}
+                                    onChange={e => setFraction(Math.max(0.1, Math.min(1, Number(e.target.value) / 100)))}
+                                    className="w-16 accent-purple-400 cursor-pointer"
+                                    aria-label="frazione cash-out"
+                                />
+                                <span className="text-[9px] font-mono tabular-nums text-purple-200/80 w-7 text-right">{pct}%</span>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            disabled={!canGreen}
+                            onClick={() => onGreenup(fraction, selId, selName)}
+                            title={canGreen
+                                ? `Cash-out ${pct < 100 ? `${pct}% ` : ''}al miglior prezzo (hedge dalle esposizioni reali)`
+                                : 'Cash-out: richiede una posizione aperta e mercato operabile'}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-400/40 bg-purple-500/15 text-[10px] font-bold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Cash-out {pct < 100 ? `${pct}%` : (cashOut != null ? <span className="font-mono">{fmtMoney(cashOut)}</span> : '')}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -268,14 +320,14 @@ const SelectionLadder = memo(function SelectionLadder({
                 className="grid items-center text-[8px] uppercase tracking-wider text-muted-foreground/70 px-1 py-0.5 border-b border-white/5 bg-black/30"
                 style={{ gridTemplateColumns: COL_TEMPLATE }}
             >
-                <span className="text-center text-rose-300/70" title="I tuoi LAY non abbinati">L</span>
+                <span className="text-center text-rose-300/70" title="I tuoi LAY non abbinati (clic per annullare)">L</span>
                 <span className="text-center text-sky-300/80">Back</span>
                 <span className="text-center">Prezzo</span>
                 <span className="text-center text-rose-300/80">Lay</span>
-                <span className="text-center text-sky-300/70" title="I tuoi BACK non abbinati">B</span>
+                <span className="text-center text-sky-300/70" title="I tuoi BACK non abbinati (clic per annullare)">B</span>
                 <span className="text-center text-purple-300/70" title="P&L se chiudi a questo prezzo">P&L</span>
                 <span className="text-center" title="Volume tradato a questo prezzo">Trd</span>
-                <span className="text-center text-white/30" title="Posizione in coda — step successivo">PIQ</span>
+                <span className="text-center text-white/40" title="PIQ: coda stimata al tuo livello">PIQ</span>
             </div>
 
             {/* corpo ladder */}
@@ -289,9 +341,15 @@ const SelectionLadder = memo(function SelectionLadder({
                         const isLtp = built.ltp != null && Math.abs(r.price - built.ltp) < 1e-9;
                         const isBestBack = built.bestBack != null && Math.abs(r.price - built.bestBack) < 1e-9;
                         const isBestLay = built.bestLay != null && Math.abs(r.price - built.bestLay) < 1e-9;
-                        const isArmed = armed != null && Math.abs(r.price - armed) < 1e-9;
+                        const isArmed = armedPrice != null && Math.abs(r.price - armedPrice) < 1e-9;
                         const pnl = built.hasPosition ? lockedPnlAt(r.price, built.win, built.lose) : null;
                         const trdPct = built.maxTrd > 0 ? (r.trd / built.maxTrd) * 100 : 0;
+                        // PIQ: un BACK risiede sul lato LAY del book → coda ≈ layAvail − tuoBack; e
+                        // viceversa. Se hai BACK E LAY allo stesso tick (cross), somma le due code.
+                        const piq = piqAhead(r.myBack, r.layAvail) + piqAhead(r.myLay, r.backAvail);
+                        const layBetIds = myOrdersAt.get(`lay@${r.price}`) ?? [];
+                        const backBetIds = myOrdersAt.get(`back@${r.price}`) ?? [];
+                        const canCancel = canTrade && !busy;
                         return (
                             <div
                                 key={r.price}
@@ -300,24 +358,30 @@ const SelectionLadder = memo(function SelectionLadder({
                                 }`}
                                 style={{ gridTemplateColumns: COL_TEMPLATE }}
                             >
-                                {/* 1) tuoi LAY non abbinati */}
-                                <div className="flex items-center justify-center">
+                                {/* 1) tuoi LAY non abbinati — clic = annulla */}
+                                <button
+                                    type="button"
+                                    disabled={r.myLay <= 0 || !canCancel}
+                                    onClick={() => onCancel(layBetIds, 'lay', r.price, selName)}
+                                    title={r.myLay > 0 ? 'Annulla i tuoi LAY a questo prezzo' : undefined}
+                                    className="flex items-center justify-center disabled:cursor-default"
+                                >
                                     {r.myLay > 0 && (
-                                        <span className="px-1 rounded bg-rose-500/20 text-rose-200 font-bold tabular-nums">
+                                        <span className="px-1 rounded bg-rose-500/20 text-rose-200 font-bold tabular-nums hover:bg-rose-500/40 hover:line-through">
                                             {fmtSize(r.myLay)}
                                         </span>
                                     )}
-                                </div>
-                                {/* 2) disponibile al BACK (rosa) — cliccabile (no-op) */}
+                                </button>
+                                {/* 2) disponibile al BACK (blu) — clic = back one-click */}
                                 <button
                                     type="button"
-                                    onClick={() => onLevel(r.price)}
-                                    title="Back a questo prezzo (one-click: step successivo)"
+                                    onClick={() => clickBack(r.price)}
+                                    title={canTrade ? `BACK €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Back (sola lettura: modalità OFF)'}
                                     className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
                                         r.backAvail > 0
-                                            ? 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
-                                            : 'text-transparent hover:bg-white/5'
-                                    } ${isBestBack ? 'ring-1 ring-inset ring-sky-400/50' : ''}`}
+                                            ? 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/30'
+                                            : 'text-transparent hover:bg-sky-500/10'
+                                    } ${isBestBack ? 'ring-1 ring-inset ring-sky-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
                                 >
                                     {fmtSize(r.backAvail) || '·'}
                                 </button>
@@ -336,27 +400,33 @@ const SelectionLadder = memo(function SelectionLadder({
                                 >
                                     {fmtPrice(r.price)}
                                 </button>
-                                {/* 4) disponibile al LAY (blu) — cliccabile (no-op) */}
+                                {/* 4) disponibile al LAY (rosa) — clic = lay one-click */}
                                 <button
                                     type="button"
-                                    onClick={() => onLevel(r.price)}
-                                    title="Lay a questo prezzo (one-click: step successivo)"
+                                    onClick={() => clickLay(r.price)}
+                                    title={canTrade ? `LAY €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Lay (sola lettura: modalità OFF)'}
                                     className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
                                         r.layAvail > 0
-                                            ? 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
-                                            : 'text-transparent hover:bg-white/5'
-                                    } ${isBestLay ? 'ring-1 ring-inset ring-rose-400/50' : ''}`}
+                                            ? 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/30'
+                                            : 'text-transparent hover:bg-rose-500/10'
+                                    } ${isBestLay ? 'ring-1 ring-inset ring-rose-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
                                 >
                                     {fmtSize(r.layAvail) || '·'}
                                 </button>
-                                {/* 5) tuoi BACK non abbinati */}
-                                <div className="flex items-center justify-center">
+                                {/* 5) tuoi BACK non abbinati — clic = annulla */}
+                                <button
+                                    type="button"
+                                    disabled={r.myBack <= 0 || !canCancel}
+                                    onClick={() => onCancel(backBetIds, 'back', r.price, selName)}
+                                    title={r.myBack > 0 ? 'Annulla i tuoi BACK a questo prezzo' : undefined}
+                                    className="flex items-center justify-center disabled:cursor-default"
+                                >
                                     {r.myBack > 0 && (
-                                        <span className="px-1 rounded bg-sky-500/20 text-sky-200 font-bold tabular-nums">
+                                        <span className="px-1 rounded bg-sky-500/20 text-sky-200 font-bold tabular-nums hover:bg-sky-500/40 hover:line-through">
                                             {fmtSize(r.myBack)}
                                         </span>
                                     )}
-                                </div>
+                                </button>
                                 {/* 6) P&L per livello (viola) */}
                                 <div className={`flex items-center justify-center font-mono tabular-nums ${
                                     pnl == null ? 'text-white/15'
@@ -373,15 +443,18 @@ const SelectionLadder = memo(function SelectionLadder({
                                     )}
                                     <span className="relative font-mono tabular-nums text-amber-200/80">{fmtVol(r.trd)}</span>
                                 </div>
-                                {/* 8) PIQ (step successivo) */}
-                                <div className="flex items-center justify-center text-white/20">·</div>
+                                {/* 8) PIQ (coda stimata al tuo livello) */}
+                                <div className="flex items-center justify-center font-mono tabular-nums text-white/35"
+                                    title={piq > 0 ? 'Denaro stimato in coda davanti al tuo ordine a questo livello' : undefined}>
+                                    {piq > 0 ? fmtSize(piq) : '·'}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
             )}
 
-            {/* footer: stake selezionato (display) */}
+            {/* footer: stake selezionato */}
             <div className="px-2.5 py-1.5 border-t border-white/10 bg-black/30 flex items-center justify-between">
                 <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Stake</span>
                 <span className="text-[11px] font-mono font-bold text-amber-300">€{stake.toFixed(2)}</span>
@@ -390,16 +463,32 @@ const SelectionLadder = memo(function SelectionLadder({
     );
 });
 
+// ---------------------------------------------------- tipi azione/conferma
+type Intent =
+    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number }
+    | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide; price: number }
+    | { kind: 'greenup'; selName: string; selectionId: number; fraction: number };
+
+interface StatusMsg { tone: 'pending' | 'ok' | 'err'; text: string; }
+
+function intentLabel(it: Intent): string {
+    if (it.kind === 'place') return `${it.side === 'back' ? 'BACK' : 'LAY'} €${it.size.toFixed(2)} @ ${fmtPrice(it.price)} · ${it.selName}`;
+    if (it.kind === 'cancel') return `Annulla ${it.betIds.length} ordine/i ${it.side.toUpperCase()} @ ${fmtPrice(it.price)} · ${it.selName}`;
+    const pct = Math.round(it.fraction * 100);
+    return `Cash-out ${pct < 100 ? `${pct}% ` : ''}· ${it.selName}`;
+}
+
 // --------------------------------------------------------------- LadderView
 interface Props {
     marketId: string;
     marketName?: string | null;
     orderMode?: string;            // OFF | PAPER | LIVE (da live_now.state.order_mode)
+    handicap?: number;             // handicap di mercato (default 0)
     // selezioni note dal tabellone (live_now): per nome/ordine quando la ladder è ancora vuota.
     fallbackSelections?: { selection_id: number; name: string }[];
 }
 
-export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSelections = [] }: Props) {
+export function LadderView({ marketId, marketName, orderMode = 'off', handicap = 0, fallbackSelections = [] }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
     const [orders, setOrders] = useState<LiveOrderRow[]>([]);
@@ -411,10 +500,22 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
         const m = (orderMode || 'off').toLowerCase();
         return (m === 'paper' || m === 'live') ? m : 'off';
     }, [orderMode]);
+    const isLive = mode === 'live';
 
-    // stake preset condiviso tra tutte le ladder del mercato (display).
+    // stake preset condiviso tra tutte le ladder del mercato.
     const [stake, setStake] = useState<number>(5);
     const [customStake, setCustomStake] = useState('');
+
+    // ---- one-click trading: armamento (LIVE), in-volo, esito, conferma ----
+    const [armed, setArmed] = useState(false);   // 1-click LIVE attivo (banner rosso)
+    const [busy, setBusy] = useState(false);
+    const [statusMsg, setStatusMsg] = useState<StatusMsg | null>(null);
+    const [confirm, setConfirm] = useState<Intent | null>(null);
+    const busyRef = useRef(false);
+    const [refreshTick, setRefreshTick] = useState(0);
+
+    // se la modalità non è LIVE, l'armamento non ha senso: tienilo spento.
+    useEffect(() => { if (!isLive) setArmed(false); }, [isLive]);
 
     // ---- snapshot iniziale + sottoscrizione realtime a live_ladder ----
     useEffect(() => {
@@ -427,13 +528,12 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
         fetchLiveLadder(marketId)
             .then(r => { if (alive) setRow(r); })
             .catch((e: any) => {
-                // PGRST116 = nessuna riga (ladder non ancora pubblicata): atteso.
                 if (e?.code !== 'PGRST116') console.warn('[LadderView] fetchLiveLadder:', e);
             })
             .finally(() => { if (alive) setLoading(false); });
 
         unsubRef.current = subscribeLiveLadder(marketId, (r) => {
-            if (r) setRow(r); // payload DELETE → null: manteniamo l'ultimo stato noto.
+            if (r) setRow(r);
         });
 
         return () => {
@@ -442,45 +542,135 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
         };
     }, [marketId]);
 
-    // ---- overlay ordini/posizioni: fetch + poll gentile (no martellamento DB) ----
+    // ---- overlay ordini/posizioni: fetch + poll gentile (+ refresh dopo azioni) ----
     useEffect(() => {
         if (!marketId) return;
         let alive = true;
-        let busy = false;
+        let inFlight = false;
         const load = async () => {
-            if (busy) return;
-            busy = true;
+            if (inFlight) return;
+            inFlight = true;
             try {
                 const [o, p] = await Promise.all([fetchLiveOrders(marketId), fetchLivePositions(marketId)]);
                 if (!alive) return;
-                // mostra solo gli ordini/posizioni della modalità attiva (la RPC ritorna entrambe).
-                // In OFF non si opera → nessun overlay ordini.
                 const o2 = mode === 'off' ? [] : o.filter(r => r.mode === mode);
                 const p2 = mode === 'off' ? [] : p.filter(r => r.mode === mode);
                 setOrders(o2);
                 setPositions(p2);
             } catch (e) {
-                // overlay non critico: in caso di errore non blocchiamo la ladder.
                 if (alive) console.warn('[LadderView] orders/positions:', e);
             } finally {
-                busy = false;
+                inFlight = false;
             }
         };
         load();
         const t = setInterval(load, ORDERS_POLL_MS);
         return () => { alive = false; clearInterval(t); };
-    }, [marketId, mode]);
+    }, [marketId, mode, refreshTick]);
+
+    // ---- esecuzione comando (mediato dal DB) ----
+    const submit = useCallback(async (factory: () => Promise<LiveOrderResult>, label: string) => {
+        if (busyRef.current) return;
+        busyRef.current = true;
+        setBusy(true);
+        setStatusMsg({ tone: 'pending', text: `${label}…` });
+        try {
+            const res = await factory();
+            if (res.ok) {
+                const extra = res.detail || (res.status ? `stato ${res.status}` : '');
+                setStatusMsg({ tone: 'ok', text: `✓ ${label}${extra ? ` — ${extra}` : ''}` });
+            } else {
+                setStatusMsg({ tone: 'err', text: `✗ ${label}: ${res.error ?? 'non eseguito'}` });
+            }
+        } catch (e: any) {
+            setStatusMsg({ tone: 'err', text: `✗ ${label}: ${e?.message ?? 'errore'}` });
+        } finally {
+            busyRef.current = false;
+            setBusy(false);
+            setRefreshTick(t => t + 1); // riallinea subito ordini/posizioni
+        }
+    }, []);
+
+    const execute = useCallback((it: Intent) => {
+        const label = intentLabel(it);
+        if (it.kind === 'place') {
+            submit(() => sendLiveOrderCommand({
+                action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
+                selection_id: it.selectionId, handicap, side: it.side,
+                order_type: 'LIMIT', price: it.price, size: it.size, persistence: 'LAPSE',
+            }), label);
+        } else if (it.kind === 'cancel') {
+            const ids = it.betIds;
+            submit(async () => {
+                let last: LiveOrderResult = { ok: true, action: 'cancel', mode };
+                let done = 0;
+                for (const bet_id of ids) {
+                    last = await sendLiveOrderCommand({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
+                    if (!last.ok) break;
+                    done++;
+                }
+                // successo parziale: dillo chiaramente (quali ordini restano da verificare).
+                if (!last.ok && done > 0) {
+                    last = { ...last, error: `${done}/${ids.length} annullati — verifica gli ordini residui. ${last.error ?? ''}`.trim() };
+                }
+                return last;
+            }, label);
+        } else {
+            submit(() => sendGreenup({
+                marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode,
+                handicap, fraction: it.fraction,
+            }), label);
+        }
+    }, [submit, mode, marketId, handicap]);
+
+    // richiesta azione: in LIVE non-armato chiede conferma; altrimenti esegue subito.
+    const requestAction = useCallback((it: Intent) => {
+        if (mode === 'off') return;
+        if (busyRef.current) return;
+        if (isLive && !armed) { setConfirm(it); return; }
+        execute(it);
+    }, [mode, isLive, armed, execute]);
+
+    const onPlace = useCallback((side: TradeSide, price: number, selectionId: number, selName: string) => {
+        requestAction({ kind: 'place', selName, side, price, size: stakeRef.current, selectionId });
+    }, [requestAction]);
+
+    const onCancel = useCallback((betIds: string[], side: TradeSide, price: number, selName: string) => {
+        if (!betIds.length) return;
+        requestAction({ kind: 'cancel', selName, betIds, side, price });
+    }, [requestAction]);
+
+    const onGreenup = useCallback((fraction: number, selectionId: number, selName: string) => {
+        requestAction({ kind: 'greenup', selName, selectionId, fraction });
+    }, [requestAction]);
+
+    // toggle armamento 1-click (LIVE): conferma esplicita all'attivazione.
+    const toggleArmed = useCallback(() => {
+        setArmed(prev => {
+            if (!prev) {
+                const ok = window.confirm(
+                    '1-CLICK REALE: ogni clic su BACK/LAY o sui tuoi ordini piazzerà/annullerà un ordine ' +
+                    'con SOLDI VERI SENZA ulteriore conferma. Attivare?'
+                );
+                return ok ? true : false;
+            }
+            return false;
+        });
+    }, []);
 
     // selezioni da mostrare: quelle della ladder (full-depth) o, in attesa, le fallback.
     const selections: LiveLadderSelection[] = useMemo(() => {
         const fromLadder = row?.ladder?.selections ?? [];
         if (fromLadder.length > 0) return fromLadder;
-        // placeholder dalle selezioni note (ladder ancora vuota) → struttura visibile.
         return fallbackSelections.map(s => ({
             selection_id: s.selection_id, name: s.name, ltp: null, tv: null,
             back: [], lay: [], trd: [], wom: { back_pct: 0, lay_pct: 0 },
         }));
     }, [row, fallbackSelections]);
+
+    // ref a stake per i callback stabili (evita di rigenerarli a ogni cambio stake).
+    const stakeRef = useRef(stake);
+    stakeRef.current = stake;
 
     // indicizzazioni per selezione (ordini/posizioni).
     const ordersBySel = useMemo(() => {
@@ -494,12 +684,14 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
     }, [orders]);
     const posBySel = useMemo(() => {
         const m = new Map<number, LivePositionRow>();
-        for (const p of positions) m.set(p.selection_id, p); // una posizione per selezione/mercato
+        for (const p of positions) m.set(p.selection_id, p);
         return m;
     }, [positions]);
 
     const status = row?.status ?? null;
     const updatedMs = row?.ladder?.updated_ms ?? null;
+    const isOpen = (status ?? '').toUpperCase() === 'OPEN';
+    const canTrade = mode !== 'off' && isOpen;
 
     // troppe selezioni → selettore (una ladder per volta); altrimenti affiancate.
     const MANY = selections.length > 3;
@@ -520,12 +712,20 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
 
     return (
         <Card className="glass-card border-white/10 overflow-hidden">
-            {/* header mercato: nome + stake preset condivisi + stato */}
+            {/* header mercato: nome + modalità + stake preset + 1-click + stato */}
             <div className="px-3 py-2.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 min-w-0">
                     <Layers className="w-4 h-4 text-amber-400 shrink-0" />
                     <span className="font-heading font-bold text-sm text-white truncate">
                         {marketName || row?.market_name || row?.market_type || marketId}
+                    </span>
+                    {/* badge modalità ordini */}
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${
+                        mode === 'live' ? 'bg-red-500/20 text-red-300'
+                            : mode === 'paper' ? 'bg-emerald-500/15 text-emerald-300'
+                                : 'bg-white/10 text-muted-foreground'
+                    }`}>
+                        {mode === 'live' ? '🔴 LIVE' : mode === 'paper' ? 'PAPER' : 'OFF'}
                     </span>
                     {status && status.toUpperCase() !== 'OPEN' && (
                         <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
@@ -538,8 +738,8 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
                     )}
                 </div>
 
-                {/* stake preset rapidi 2/5/10/25 + custom (display: one-click step successivo) */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* stake preset rapidi 2/5/10/25 + custom */}
                     <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 mr-0.5">Stake</span>
                     {STAKE_PRESETS.map(v => (
                         <button
@@ -568,8 +768,69 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
                         placeholder="€"
                         className="w-14 bg-black/60 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-white focus:outline-none focus:border-amber-400/50"
                     />
+                    {/* toggle 1-click (solo LIVE): armato = niente conferma per clic */}
+                    {isLive && (
+                        <button
+                            type="button"
+                            onClick={toggleArmed}
+                            title={armed
+                                ? '1-click REALE ATTIVO: i clic partono diretti. Clic per disattivare.'
+                                : 'Attiva 1-click REALE (niente conferma per clic).'}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black border transition-colors ${
+                                armed
+                                    ? 'bg-red-500 text-white border-red-500 animate-pulse'
+                                    : 'border-red-400/40 text-red-300 hover:bg-red-500/15'
+                            }`}
+                        >
+                            <Zap className="w-3 h-3" /> 1-CLICK
+                        </button>
+                    )}
                 </div>
             </div>
+
+            {/* banner armamento LIVE */}
+            {isLive && armed && (
+                <div className="px-3 py-1 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[10px] font-bold text-red-200">
+                    <Zap className="w-3 h-3" /> 1-CLICK REALE ATTIVO — ogni clic piazza/annulla con SOLDI VERI senza conferma.
+                </div>
+            )}
+
+            {/* barra di CONFERMA (LIVE non-armato): money-critical, esplicita */}
+            {confirm && (
+                <div className="px-3 py-2 bg-red-500/15 border-b border-red-500/40 flex items-center justify-between gap-3 flex-wrap">
+                    <span className="text-[11px] font-bold text-red-100 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Confermi <span className="font-mono">{intentLabel(confirm)}</span> <span className="text-red-300">(REALE)</span>?
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => { const it = confirm; setConfirm(null); if (it) execute(it); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500 text-white text-[11px] font-bold hover:bg-red-600"
+                        >
+                            <Check className="w-3 h-3" /> Conferma
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setConfirm(null)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-white/15 text-white/80 text-[11px] font-bold hover:bg-white/10"
+                        >
+                            <X className="w-3 h-3" /> Annulla
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* esito ultimo comando */}
+            {statusMsg && (
+                <div className={`px-3 py-1 border-b text-[10px] font-medium flex items-center gap-1.5 ${
+                    statusMsg.tone === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+                        : statusMsg.tone === 'err' ? 'bg-red-500/10 border-red-500/20 text-red-200'
+                            : 'bg-white/5 border-white/10 text-muted-foreground'
+                }`}>
+                    {statusMsg.tone === 'pending' && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {statusMsg.text}
+                </div>
+            )}
 
             {/* selettore selezione quando sono troppe per affiancarle */}
             {MANY && (
@@ -607,6 +868,11 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
                                 position={posBySel.get(s.selection_id) ?? null}
                                 stake={stake}
                                 status={status}
+                                canTrade={canTrade}
+                                busy={busy}
+                                onPlace={onPlace}
+                                onCancel={onCancel}
+                                onGreenup={onGreenup}
                             />
                         ))}
                     </div>
@@ -614,7 +880,13 @@ export function LadderView({ marketId, marketName, orderMode = 'off', fallbackSe
             </div>
 
             <div className="px-3 pb-2 -mt-1 flex items-center justify-between text-[9px] text-muted-foreground/70">
-                <span>Sola lettura · il one-click arriva nello step successivo</span>
+                <span>
+                    {mode === 'off'
+                        ? 'Sola lettura (modalità OFF) · per operare avvia il runner in PAPER/LIVE'
+                        : isLive
+                            ? (armed ? '1-click REALE attivo' : 'Clic = ordine REALE con conferma')
+                            : 'Clic = ordine simulato (paper) immediato'}
+                </span>
                 {updatedMs && <span className="tabular-nums">Aggiornato: {new Date(updatedMs).toLocaleTimeString('it')}</span>}
             </div>
         </Card>

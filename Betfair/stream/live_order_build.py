@@ -213,12 +213,18 @@ def build_order(
     jurisdiction: str,
     max_stake: Optional[float],
     customer_order_ref: str,
+    reduces_liability: bool = False,
 ) -> BuiltOrder:
     """Valida e costruisce un BetfairOrder flumine pronto per `market.place_order`.
 
     Validazioni: side, tick (get_nearest_price), conversione lay liability<->size,
     min_stake_rules per giurisdizione, FILL_OR_KILL vs persistenza/min_fill_size,
     cap `max_stake`, payout massimo. Solleva `ValueError` con motivo su input invalido.
+
+    ``reduces_liability=True`` (green-up / hedge / cash-out): l'ordine CHIUDE/riduce una
+    posizione esistente → ``min_stake_rules`` consente la size SOTTO il minimo di
+    giurisdizione (€2 back / €0,50 lay su .it), soggetta solo alla guardia Betfair
+    INVALID_PROFIT_RATIO lato Exchange. Usato dall'azione ``greenup`` del worker.
 
     MONEY-CRITICAL: ``strategy`` DEVE essere l'istanza ``LiveTradingStrategy`` registrata
     nel framework via ``add_strategy``. Il Trade viene creato sotto questa istanza così che
@@ -296,9 +302,8 @@ def build_order(
     tick_price = round_to_tick(price)
 
     note_bits = []
-    # green-up/hedge (reduces_liability) non passa da questa firma in Fase 1:
-    # il sotto-minimo è gestito esplicitamente da min_stake_rules(reduces_liability=True).
-    reduces_liability = False
+    if reduces_liability:
+        note_bits.append("reduces_liability (green-up/hedge: sotto-minimo consentito)")
 
     # Derivazione size per LAY da liability
     if side_l == "lay":
