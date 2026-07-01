@@ -126,6 +126,25 @@ export function LiveTradingPanel({
         return { size: laySizeFromLiability(a, p), liability: a };
     }, [side, price, amount, sizeMode]);
 
+    // Totale P&L di mercato: per ogni possibile esito (selezione s vincente) il P&L netto
+    // è matched_if_win[s] + Σ matched_if_lose[j≠s]. worst/best = scenario peggiore/migliore
+    // sul mercato. Più esposizione e netto aggregati. (riga di sintesi del cockpit)
+    const pnlTotals = useMemo(() => {
+        if (positions.length === 0) return null;
+        const outcomes = positions.map(w =>
+            positions.reduce(
+                (acc, p) => acc + (p.selection_id === w.selection_id ? p.matched_if_win : p.matched_if_lose),
+                0,
+            ),
+        );
+        return {
+            worst: Math.min(...outcomes),
+            best: Math.max(...outcomes),
+            exposure: positions.reduce((a, p) => a + (p.selection_exposure ?? 0), 0),
+            net: positions.reduce((a, p) => a + (p.net_position ?? 0), 0),
+        };
+    }, [positions]);
+
     const reload = useCallback(async () => {
         if (!marketId || busyRef.current) return;
         busyRef.current = true;
@@ -186,6 +205,11 @@ export function LiveTradingPanel({
         } catch (e: any) {
             // include il caso timeout: messaggio "NON reinviare" già dentro
             toast.error('Errore comando', { description: e?.message ?? 'errore sconosciuto' });
+            // MONEY-CRITICAL (fix review MEDIUM): su timeout/errore l'ordine POTREBBE essere già
+            // stato piazzato (l'enqueue è idempotente ma la conferma di stato può scadere). Se
+            // eravamo in LIVE resettiamo la spunta "ordine REALE" così un eventuale re-invio
+            // richiede una NUOVA conferma esplicita → nessun secondo ordine reale con un click.
+            if (isLive) setConfirmLive(false);
         } finally {
             setSubmitting(false);
         }
@@ -473,8 +497,15 @@ export function LiveTradingPanel({
 
             {/* ---------------- posizioni / P&L ---------------- */}
             <div className="border-t border-white/5 pt-4">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">
-                    Posizioni / P&amp;L ({positions.length})
+                <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                        Posizioni / P&amp;L ({positions.length})
+                    </span>
+                    {pollMs > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/80" title={`Aggiornamento automatico ogni ${(pollMs / 1000).toFixed(0)}s`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> LIVE
+                        </span>
+                    )}
                 </div>
                 {positions.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Nessuna esposizione su questo mercato.</p>
@@ -505,6 +536,28 @@ export function LiveTradingPanel({
                                     </tr>
                                 ))}
                             </tbody>
+                            {pnlTotals && (
+                                <tfoot>
+                                    <tr className="border-t border-white/10 bg-white/[0.03]">
+                                        <td className="py-2 pr-2 text-[10px] uppercase tracking-widest text-white/70 font-bold">
+                                            Totale mercato
+                                        </td>
+                                        <td colSpan={4} className="py-2 px-2 text-right">
+                                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-2">P&amp;L mercato</span>
+                                            <span className={`font-mono font-bold ${pnlTotals.worst >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                                                {money(pnlTotals.worst)}
+                                            </span>
+                                            <span className="text-white/40 mx-1">/</span>
+                                            <span className={`font-mono font-bold ${pnlTotals.best >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                                                {money(pnlTotals.best)}
+                                            </span>
+                                            <span className="text-white/30 text-[10px] ml-1">worst / best</span>
+                                        </td>
+                                        <td className="py-2 px-2 text-right font-mono font-bold text-amber-300">{money(pnlTotals.exposure)}</td>
+                                        <td className="py-2 pl-2 text-right font-mono font-bold text-white/80">{pnlTotals.net.toFixed(2)}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
                         </table>
                     </div>
                 )}

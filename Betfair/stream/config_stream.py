@@ -6,6 +6,7 @@ coerenti col piano (cadenza ~10s, fallback a 3 fallimenti, archivio solo locale)
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 # Carica .env in modo ROBUSTO: alcune costanti qui sotto (es. LIVE_ORDER_MODE,
 # BETFAIR_JURISDICTION) sono lette con os.getenv AL MOMENTO DELL'IMPORT. Senza questo,
@@ -158,10 +159,18 @@ ORDER_STREAM_CONFLATE_MS: int = int(os.getenv("LIVE_ORDER_STREAM_CONFLATE_MS", "
 # realistico (Betfair ha sempre un ritardo). Solo PAPER; ignorato in OFF/LIVE.
 PAPER_SIMULATED_LATENCY_MS: int = int(os.getenv("LIVE_PAPER_SIMULATED_LATENCY_MS", "120"))
 
-# Tetto di stake per SINGOLO ordine (ultima barriera money-critical lato worker).
-# NB: questa costante è valutata UNA volta all'import. È il valore di DEFAULT/avvio; per il
-# valore EFFETTIVO usare ``live_max_stake_per_order()`` (rilegge l'env ad ogni chiamata).
-LIVE_MAX_STAKE_PER_ORDER: float = float(os.getenv("LIVE_MAX_STAKE_PER_ORDER", "10.0"))
+# Tetto di stake per SINGOLO ordine. SCELTA UTENTE 2026-07-01: NESSUN cap di default
+# (importi liberi, come nei tool pro). Il cap è OPT-IN: attivo solo se ``LIVE_MAX_STAKE_PER_ORDER``
+# è impostato a un numero > 0 nell'env; vuoto/0/assente = nessun limite (None). Resta SEMPRE
+# attiva, indipendentemente da questo, la guardia di PAYOUT massimo €10.000 (regola Betfair .it,
+# non un cap sullo stake) applicata in live_order_build. Un cap più stretto può comunque essere
+# passato per-ordine via ``params.max_stake``.
+# NB: costante valutata UNA volta all'import (valore d'avvio); per il valore EFFETTIVO usare
+# ``live_max_stake_per_order()`` (rilegge l'env ad ogni chiamata).
+_raw_max_stake = os.getenv("LIVE_MAX_STAKE_PER_ORDER", "").strip()
+LIVE_MAX_STAKE_PER_ORDER: "Optional[float]" = (
+    float(_raw_max_stake) if _raw_max_stake and float(_raw_max_stake) > 0 else None
+)
 # Kill-switch globale: se true il worker NON processa alcun ordine (freno d'emergenza).
 # Anch'esso valutato all'import: per il valore LIVE usare ``live_kill_switch()`` (vedi sotto).
 LIVE_KILL_SWITCH: bool = os.getenv("LIVE_KILL_SWITCH", "false").strip().lower() == "true"
@@ -197,13 +206,30 @@ def live_kill_switch() -> bool:
     return os.getenv("LIVE_KILL_SWITCH", "false").strip().lower() == "true"
 
 
-def live_max_stake_per_order() -> float:
-    """Cap di stake per singolo ordine RI-LETTO dall'env ad OGNI chiamata.
+def live_max_stake_per_order() -> Optional[float]:
+    """Cap di stake per singolo ordine RI-LETTO dall'env ad OGNI chiamata. ``None`` = NESSUN cap.
 
-    Permette di stringere/allargare il tetto money-critical a runtime (senza riavvio):
-    il worker lo rilegge ad ogni ordine. Fallback a 10.0 su valore non numerico.
+    SCELTA UTENTE 2026-07-01: default NESSUN limite (importi liberi). Il cap è OPT-IN: si
+    attiva solo esportando ``LIVE_MAX_STAKE_PER_ORDER=<n>`` con n>0 (stringe il tetto a
+    runtime, senza riavvio). Vuoto/0/non numerico → None (nessun cap). Resta comunque attiva
+    la guardia payout €10.000 in live_order_build e l'eventuale ``params.max_stake`` per-ordine.
     """
+    raw = os.getenv("LIVE_MAX_STAKE_PER_ORDER", "").strip()
+    if not raw:
+        return None
     try:
-        return float(os.getenv("LIVE_MAX_STAKE_PER_ORDER", "10.0"))
+        val = float(raw)
     except (TypeError, ValueError):
-        return 10.0
+        return None
+    return val if val > 0 else None
+
+
+# ----------------------------------------------------------------------------
+# Risk engine (Fase 3): worker che monitora prezzi/esposizioni e chiude/copre le
+# posizioni secondo regole ARMATE (offset / stop-loss / take-profit / trailing).
+# ----------------------------------------------------------------------------
+# Cadenza (secondi, FLOAT) del BackgroundWorker risk_engine_worker. Basso = reazione più
+# pronta di stop/trailing (ma resta software-side: se il processo cade, gli stop non esistono).
+RISK_ENGINE_POLL_SEC: float = float(os.getenv("LIVE_RISK_ENGINE_POLL_SEC", "1.0"))
+# righe (regole armate) lette per giro.
+RISK_ENGINE_BATCH: int = int(os.getenv("LIVE_RISK_ENGINE_BATCH", "20"))

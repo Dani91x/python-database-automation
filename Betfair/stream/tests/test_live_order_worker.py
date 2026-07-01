@@ -746,10 +746,18 @@ def test_config_helpers_reread_env(monkeypatch):
     monkeypatch.setenv("LIVE_KILL_SWITCH", "true")
     assert cs.live_kill_switch() is True
 
+    # Cap OPT-IN (scelta utente 2026-07-01: no-cap di default). Un numero > 0 = cap attivo;
+    # vuoto / 0 / non numerico / assente = None (nessun cap).
     monkeypatch.setenv("LIVE_MAX_STAKE_PER_ORDER", "7.5")
     assert cs.live_max_stake_per_order() == 7.5
     monkeypatch.setenv("LIVE_MAX_STAKE_PER_ORDER", "not-a-number")
-    assert cs.live_max_stake_per_order() == 10.0
+    assert cs.live_max_stake_per_order() is None
+    monkeypatch.setenv("LIVE_MAX_STAKE_PER_ORDER", "0")
+    assert cs.live_max_stake_per_order() is None
+    monkeypatch.setenv("LIVE_MAX_STAKE_PER_ORDER", "")
+    assert cs.live_max_stake_per_order() is None
+    monkeypatch.delenv("LIVE_MAX_STAKE_PER_ORDER", raising=False)
+    assert cs.live_max_stake_per_order() is None
 
 
 # ===========================================================================

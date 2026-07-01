@@ -18,7 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 // ---------- Tipi comando (mirror betfair_live_order_requests / INTERFACES.md §4.1) ----------
 export type LiveOrderMode = 'paper' | 'live';
-export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin' | 'greenup';
+export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin' | 'greenup' | 'dutch' | 'cashout_all';
 export type LiveOrderSide = 'back' | 'lay';
 export type LiveOrderType = 'LIMIT' | 'LIMIT_ON_CLOSE' | 'MARKET_ON_CLOSE';
 export type LivePersistence = 'LAPSE' | 'PERSIST' | 'MARKET_ON_CLOSE';
@@ -113,8 +113,8 @@ export interface LivePositionRow {
 }
 
 // ---------- enqueue + polling (mirror placeBetfairOrder) ----------
-const LIVE_ORDER_POLL_MS = 1000;
-const LIVE_ORDER_TIMEOUT_MS = 90_000;
+export const LIVE_ORDER_POLL_MS = 1000;
+export const LIVE_ORDER_TIMEOUT_MS = 90_000;
 
 // Invia UN comando live MEDIATO DAL DATABASE: accoda (request_betfair_live_order,
 // IDEMPOTENTE su client_ref UUID) e fa polling dell'esito (get_betfair_live_order).
@@ -183,6 +183,166 @@ export async function sendGreenup(args: {
     });
 }
 
+// ---------- dutching (equal/variable) — mirror sendGreenup ----------
+// Accoda un comando 'dutch': il worker calcola gli stake a PROFITTO PAREGGIATO e piazza
+// OGNI gamba. Niente side/price/size al top-level: tutto dentro params (contratto backend).
+// MONEY-CRITICAL: idempotente (client_ref in sendLiveOrderCommand), su timeout NON reinviare.
+export async function sendDutch(args: {
+    marketId: string;
+    mode: LiveOrderMode;
+    selections: { selection_id: number; price: number; weight?: number }[];
+    totalStake: number;
+    side: LiveOrderSide;
+    dutchMode: 'equal' | 'variable';
+    handicap?: number;
+    persistence?: LivePersistence;
+}): Promise<LiveOrderResult> {
+    if (!args.selections || args.selections.length < 2) {
+        throw new Error('sendDutch: servono almeno 2 selezioni');
+    }
+    if (!Number.isFinite(args.totalStake) || args.totalStake <= 0) {
+        throw new Error('sendDutch: total_stake deve essere > 0');
+    }
+    return sendLiveOrderCommand({
+        action: 'dutch',
+        mode: args.mode,
+        market_id: args.marketId,
+        handicap: args.handicap ?? 0,
+        params: {
+            selections: args.selections,
+            total_stake: args.totalStake,
+            side: args.side,
+            mode: args.dutchMode,
+            ...(args.persistence ? { persistence: args.persistence } : {}),
+        },
+    });
+}
+
+// ---------- cash-out totale di mercato — mirror sendGreenup ----------
+// Accoda 'cashout_all': il worker appiattisce OGNI selezione del mercato con esposizione
+// aperta (greenup su ciascuna). fraction=1 → totale; 0<fraction<1 → parziale.
+export async function sendCashoutAll(args: {
+    marketId: string;
+    mode: LiveOrderMode;
+    fraction?: number;             // (0,1] — default 1.0 (cash-out totale)
+}): Promise<LiveOrderResult> {
+    const f = args.fraction;
+    if (f != null && f <= 0) throw new Error('sendCashoutAll: fraction deve essere > 0');
+    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    return sendLiveOrderCommand({
+        action: 'cashout_all',
+        mode: args.mode,
+        market_id: args.marketId,
+        ...(params ? { params } : {}),
+    });
+}
+
+// ---------- risk engine (offset / stop-loss / take-profit / trailing-stop) ----------
+export type RiskRuleType = 'offset' | 'stop_loss' | 'take_profit' | 'trailing_stop';
+export type RiskRuleStatus = 'armed' | 'triggered' | 'cancelled' | 'done' | 'error';
+
+// Parametri regola (jsonb.params lato backend): solo i campi pertinenti al rule_type.
+export interface RiskRuleParams {
+    offset_ticks?: number;
+    offset_pct?: number;
+    trigger_ticks?: number;
+    trigger_pct?: number;
+    trail_ticks?: number;
+    trail_pct?: number;
+    greening?: boolean;
+    stop_amount?: number;
+    target_amount?: number;
+    persistence?: LivePersistence;
+}
+
+// Specchio di una riga regola (get_live_risk_rules → rows[]).
+export interface RiskRuleRow {
+    id: number;
+    mode: LiveOrderMode;
+    rule_type: RiskRuleType;
+    market_id: string;
+    selection_id: number;
+    handicap: number | null;
+    entry_side: LiveOrderSide;
+    entry_price: number | null;
+    entry_size: number | null;
+    params: RiskRuleParams | Record<string, unknown>;
+    trail_extreme: number | null;
+    status: RiskRuleStatus;
+    enqueued_request_id: number | null;
+    result: LiveOrderResult | Record<string, unknown> | null;
+    error: string | null;
+    created_at: string | null;
+    triggered_at: string | null;
+}
+
+// entry_price è OBBLIGATORIO per offset/stop_loss/trailing_stop (contratto backend):
+// serve un riferimento per calcolare target/trigger. take_profit può basarsi su P&L (target_amount).
+const RISK_RULE_ENTRY_PRICE_REQUIRED: ReadonlySet<RiskRuleType> = new Set<RiskRuleType>([
+    'offset', 'stop_loss', 'trailing_stop',
+]);
+
+// Arma una regola di rischio (request_live_risk_rule → bigint id). MONEY-CRITICAL:
+// client_ref UUID idempotente → un retry dell'enqueue NON crea una seconda regola.
+// Ritorna l'id della regola armata.
+export async function requestRiskRule(args: {
+    mode: LiveOrderMode;
+    ruleType: RiskRuleType;
+    marketId: string;
+    selectionId: number;
+    handicap?: number;
+    entrySide: LiveOrderSide;
+    entryPrice?: number;
+    entrySize?: number;
+    params: RiskRuleParams;
+}): Promise<number> {
+    if (RISK_RULE_ENTRY_PRICE_REQUIRED.has(args.ruleType) &&
+        !(args.entryPrice != null && Number.isFinite(args.entryPrice))) {
+        throw new Error(`requestRiskRule: entry_price obbligatorio per rule_type '${args.ruleType}'`);
+    }
+    // chiave di idempotenza STABILE (come sendLiveOrderCommand): retry senza duplicare.
+    const client_ref = crypto.randomUUID();
+    const p = {
+        client_ref,
+        mode: args.mode,
+        rule_type: args.ruleType,
+        market_id: args.marketId,
+        selection_id: args.selectionId,
+        handicap: args.handicap ?? 0,
+        entry_side: args.entrySide,
+        ...(args.entryPrice != null ? { entry_price: args.entryPrice } : {}),
+        ...(args.entrySize != null ? { entry_size: args.entrySize } : {}),
+        params: args.params,
+    };
+
+    let ruleId: number | null = null;
+    let lastErr = '';
+    for (let i = 0; i < 3 && ruleId == null; i++) {
+        const { data, error } = await supabase.rpc('request_live_risk_rule', { p });
+        if (!error && data != null) { ruleId = Number(data); break; }
+        lastErr = error?.message ?? 'accodamento regola non riuscito';
+        await new Promise(r => setTimeout(r, 800));
+    }
+    if (ruleId == null) throw new Error(`Regola non armata: ${lastErr}`);
+    return ruleId;
+}
+
+// Annulla una regola armata (cancel_live_risk_rule → row). Ritorna la riga aggiornata.
+export async function cancelRiskRule(id: number): Promise<RiskRuleRow | null> {
+    const { data, error } = await supabase.rpc('cancel_live_risk_rule', { p_id: id });
+    if (error) throw new Error(error.message);
+    return (data as RiskRuleRow | null) ?? null;
+}
+
+// Legge le regole di un mercato (get_live_risk_rules → { rows }). Sola lettura.
+export async function fetchRiskRules(marketId: string): Promise<RiskRuleRow[]> {
+    const { data, error } = await supabase.rpc('get_live_risk_rules', { p_market_id: marketId });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: RiskRuleRow[] } | RiskRuleRow[] | null;
+    if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
 // ---------- letture per i pannelli (mirror get_live_follows) ----------
 export async function fetchLiveOrders(marketId: string): Promise<LiveOrderRow[]> {
     const { data, error } = await supabase.rpc('get_live_orders', { p_market_id: marketId });
@@ -197,6 +357,73 @@ export async function fetchLivePositions(marketId: string): Promise<LivePosition
     if (error) throw new Error(error.message);
     const raw = data as { rows?: LivePositionRow[] } | LivePositionRow[] | null;
     if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
+// ---------- impostazioni globali runner + kill-switch (Fase 6 controlli) ----------
+// Riga singleton (id=1) di configurazione LIVE del runner. kill_switch globale mediato
+// dal DB: quando ON il runner NON processa alcun ordine (protezione money-critical
+// valida da QUALUNQUE origine, anche dal sito online). I cap e le velocità di poll
+// sono i limiti operativi; le velocità si applicano al RIAVVIO del runner.
+export interface LiveSettings {
+    id: number;
+    kill_switch: boolean;
+    max_exposure_per_selection: number | null;
+    max_orders_per_min: number | null;
+    order_poll_sec: number | null;
+    risk_poll_sec: number | null;
+    updated_at: string;
+}
+
+// Riga di audit (mirror get_live_audit → { rows }): traccia di ogni evento del runner
+// (ordini, errori, kill-switch, cambi impostazioni) per il pannello di controllo.
+export interface LiveAuditRow {
+    id: number;
+    ts: string;
+    mode: string | null;
+    action: string | null;
+    market_id: string | null;
+    selection_id: number | null;
+    side: string | null;
+    price: number | null;
+    size: number | null;
+    status: string | null;
+    error: string | null;
+    request_id: number | null;
+    detail: unknown;
+}
+
+// Legge le impostazioni globali (get_live_settings → riga singleton). Sola lettura.
+export async function getLiveSettings(): Promise<LiveSettings | null> {
+    const { data, error } = await supabase.rpc('get_live_settings', {});
+    if (error) throw new Error(error.message);
+    return (data as LiveSettings | null) ?? null;
+}
+
+// Attiva/disattiva il kill-switch GLOBALE (set_live_kill_switch → riga aggiornata).
+// MONEY-CRITICAL: ON = il runner smette di processare ordini. Ritorna lo stato nuovo.
+export async function setKillSwitch(on: boolean): Promise<LiveSettings | null> {
+    const { data, error } = await supabase.rpc('set_live_kill_switch', { p_on: on });
+    if (error) throw new Error(error.message);
+    return (data as LiveSettings | null) ?? null;
+}
+
+// Aggiorna un sottoinsieme delle impostazioni (set_live_settings → riga aggiornata).
+// Accetta qualunque subset dei campi editabili; i campi omessi restano invariati.
+export async function setLiveSettings(
+    patch: Partial<Pick<LiveSettings,
+        'kill_switch' | 'max_exposure_per_selection' | 'max_orders_per_min' | 'order_poll_sec' | 'risk_poll_sec'>>,
+): Promise<LiveSettings | null> {
+    const { data, error } = await supabase.rpc('set_live_settings', { p: patch });
+    if (error) throw new Error(error.message);
+    return (data as LiveSettings | null) ?? null;
+}
+
+// Legge gli ultimi eventi di audit (get_live_audit → { rows }). Sola lettura.
+export async function fetchLiveAudit(limit = 100): Promise<LiveAuditRow[]> {
+    const { data, error } = await supabase.rpc('get_live_audit', { p_limit: limit });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LiveAuditRow[] } | null;
     return raw?.rows ?? [];
 }
 

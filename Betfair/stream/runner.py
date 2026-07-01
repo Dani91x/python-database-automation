@@ -59,6 +59,7 @@ from .config_stream import (
     ORDER_STREAM_CONFLATE_MS,
     PAPER_SIMULATED_LATENCY_MS,
     RAW_RECORDING,
+    RISK_ENGINE_POLL_SEC,
     SAFE_MARKET_THRESHOLD,
     SCORE_POLL_SEC,
     SIGNAL_MIN_EDGE,
@@ -70,6 +71,7 @@ from .config_stream import (
 )
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
+from .risk_engine_worker import risk_engine_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
 from .scores.api_football import ApiFootballProvider
@@ -898,6 +900,13 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     framework, function=live_order_worker, interval=LIVE_ORDER_QUEUE_POLL_SEC or 1.0,
                     func_kwargs={"session": session, "strategy": live_strategy},
                     name="live_order_worker"))
+                # Risk engine (Fase 3): monitora le regole armate (offset/stop-loss/take-profit/
+                # trailing) e ACCODA le chiusure nella STESSA coda ordini (path audited/mirror).
+                # Usa la STESSA istanza LiveTradingStrategy per leggere le esposizioni MATCHED.
+                framework.add_worker(BackgroundWorker(
+                    framework, function=risk_engine_worker, interval=RISK_ENGINE_POLL_SEC or 1.0,
+                    func_kwargs={"session": session, "strategy": live_strategy},
+                    name="risk_engine_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))

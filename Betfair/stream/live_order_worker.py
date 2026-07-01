@@ -99,22 +99,27 @@ def _batch() -> int:
         return 5
 
 
-def _max_stake() -> float:
+def _max_stake() -> Optional[float]:
     """Cap di stake per ordine RI-LETTO LIVE ad ogni chiamata (modificabile senza riavvio).
+    ``None`` = NESSUN cap (scelta utente 2026-07-01: importi liberi; cap OPT-IN via env).
 
     Usa ``config_stream.live_max_stake_per_order()`` che rilegge l'env (NON la costante
-    congelata all'import). Fallback diretto all'env, poi a 10.0.
+    congelata all'import). Fallback diretto all'env (vuoto/0/non numerico → None).
     """
     try:
         from . import config_stream  # import lazy: evita cicli all'avvio
         if hasattr(config_stream, "live_max_stake_per_order"):
-            return float(config_stream.live_max_stake_per_order())
+            return config_stream.live_max_stake_per_order()
     except Exception:  # noqa: BLE001 - config opzionale, fallback a env
         pass
+    raw = os.getenv("LIVE_MAX_STAKE_PER_ORDER", "").strip()
+    if not raw:
+        return None
     try:
-        return float(os.getenv("LIVE_MAX_STAKE_PER_ORDER", "10"))
+        val = float(raw)
     except (TypeError, ValueError):
-        return 10.0
+        return None
+    return val if val > 0 else None
 
 
 def _kill_switch() -> bool:
@@ -131,6 +136,90 @@ def _kill_switch() -> bool:
     except Exception:  # noqa: BLE001 - config opzionale, fallback a env
         pass
     return os.getenv("LIVE_KILL_SWITCH", "false").strip().lower() == "true"
+
+
+# ---------------------------------------------------------------------------
+# Fase 6 — settings runtime (kill-switch da UI / limiti), audit, rate-limit.
+# Snapshot letto UNA volta per ciclo (thread singolo del worker) → nessun read DB
+# per-ordine. I limiti sono OPT-IN (NULL in betfair_live_settings = disattivato).
+# ---------------------------------------------------------------------------
+_SETTINGS: Dict[str, Any] = {}
+_ORDER_TS: list = []  # epoch (s) dei place recenti (finestra scorrevole per il rate-limit)
+
+
+def _now_epoch() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _refresh_settings(sb: Any) -> None:
+    """Aggiorna lo snapshot dei settings (una volta per ciclo). Best-effort: KO → invariato.
+
+    MONEY-CRITICAL (fix review HIGH): REBIND ATOMICO, mai ``clear()``+``update()``. Order worker
+    e risk worker sono due thread flumine che leggono ``_SETTINGS`` concorrentemente: un
+    clear()-poi-update() lascerebbe una finestra col dict VUOTO in cui ``_db_kill_switch()``
+    tornerebbe False → il freno d'emergenza sarebbe saltato per un intero ciclo. Costruiamo il
+    nuovo dict localmente e ri-leghiamo il nome globale (assegnazione atomica): ogni lettore
+    osserva sempre lo stato VECCHIO o quello NUOVO completo, mai uno parziale.
+    """
+    global _SETTINGS
+    try:
+        res = sb.rpc("get_live_settings", {}).execute()
+        data = getattr(res, "data", None)
+        if isinstance(data, dict):
+            _SETTINGS = dict(data)
+    except Exception:  # noqa: BLE001 - settings opzionali; il worker resta operativo
+        pass
+
+
+def _db_kill_switch() -> bool:
+    return bool(_SETTINGS.get("kill_switch"))
+
+
+def _max_exposure_per_selection() -> Optional[float]:
+    return _f(_SETTINGS.get("max_exposure_per_selection"))
+
+
+def _max_orders_per_min() -> Optional[int]:
+    return _int(_SETTINGS.get("max_orders_per_min"))
+
+
+def _rate_limited() -> bool:
+    """True se nel minuto scorso i place hanno raggiunto ``max_orders_per_min`` (se impostato)."""
+    cap = _max_orders_per_min()
+    if cap is None or cap <= 0:
+        return False
+    now = _now_epoch()
+    global _ORDER_TS
+    _ORDER_TS = [t for t in _ORDER_TS if now - t < 60.0]
+    return len(_ORDER_TS) >= cap
+
+
+def _record_order() -> None:
+    _ORDER_TS.append(_now_epoch())
+
+
+def _check_exposure_guard(market: Any, strategy: Any, selection_id: int, handicap: float, order_risk: float) -> None:
+    """Guardia OPT-IN max esposizione per selezione (Fase 6). Solleva se il rischio RISULTANTE
+    (esposizione corrente della selezione da flumine + rischio del nuovo ordine) supera il tetto
+    ``max_exposure_per_selection``. NULL/assente = nessun limite. Difensiva: se non calcolabile
+    NON blocca (nessun falso positivo su mock/edge)."""
+    cap = _max_exposure_per_selection()
+    if cap is None or cap <= 0 or strategy is None:
+        return
+    blotter = _val(market, "blotter")
+    if blotter is None:
+        return
+    try:
+        lookup = (_val(market, "market_id"), int(selection_id), float(handicap or 0.0))
+        current = abs(_f(blotter.selection_exposure(strategy, lookup)) or 0.0)
+    except Exception:  # noqa: BLE001 - esposizione non determinabile → non bloccare
+        return
+    resulting = current + max(0.0, float(order_risk))
+    if resulting > float(cap) + 1e-9:
+        raise ValueError(
+            f"max esposizione selezione: €{resulting:.2f} (corrente €{current:.2f} + ordine "
+            f"€{order_risk:.2f}) oltre il tetto €{float(cap):.2f}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +493,27 @@ def _claim(sb: Any, rid: int) -> bool:
     return len(claimed) > 0
 
 
+def _audit(sb: Any, rid: int, result: Dict[str, Any], status: str) -> None:
+    """Append-only sull'audit log (Fase 6, events log). Best-effort: non deve mai far cadere il
+    worker né bloccare la scrittura dell'esito (un errore qui è silenziato)."""
+    try:
+        sb.table("betfair_live_audit").insert({
+            "mode": result.get("mode"),
+            "action": result.get("action"),
+            "market_id": result.get("market_id"),
+            "selection_id": result.get("selection_id"),
+            "side": result.get("side"),
+            "price": result.get("price"),
+            "size": result.get("size"),
+            "status": status,
+            "error": result.get("error"),
+            "request_id": rid,
+            "detail": {"note": result.get("detail"), "bet_id": result.get("bet_id")},
+        }).execute()
+    except Exception:  # noqa: BLE001 - l'audit è best-effort, mai bloccante
+        pass
+
+
 def _write_done(sb: Any, rid: int, result: Dict[str, Any]) -> None:
     sb.table(_TABLE).update(
         {
@@ -414,6 +524,7 @@ def _write_done(sb: Any, rid: int, result: Dict[str, Any]) -> None:
             "processed_at": _now_iso(),
         }
     ).eq("id", rid).execute()
+    _audit(sb, rid, result, "done")
 
 
 def _write_error(sb: Any, rid: int, request_row: Dict[str, Any], mode: str, ex: Any) -> None:
@@ -433,6 +544,7 @@ def _write_error(sb: Any, rid: int, request_row: Dict[str, Any], mode: str, ex: 
             "processed_at": _now_iso(),
         }
     ).eq("id", rid).execute()
+    _audit(sb, rid, result, "error")
 
 
 def _write_processing(sb: Any, rid: int, result: Dict[str, Any]) -> None:
@@ -445,13 +557,15 @@ def _write_processing(sb: Any, rid: int, result: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Cap di sicurezza per ordine
 # ---------------------------------------------------------------------------
-def _effective_cap(request_row: Dict[str, Any]) -> float:
-    cap = _max_stake()
+def _effective_cap(request_row: Dict[str, Any]) -> Optional[float]:
+    """Cap EFFETTIVO per l'ordine: il più stretto tra il cap globale env (se attivo) e
+    l'eventuale ``params.max_stake`` per-ordine. ``None`` = nessun cap (default utente)."""
+    cap = _max_stake()  # None = nessun cap globale
     params = request_row.get("params") or {}
     if isinstance(params, dict) and params.get("max_stake") is not None:
         pm = _f(params.get("max_stake"))
-        if pm is not None:
-            cap = min(cap, pm)
+        if pm is not None and pm > 0:
+            cap = pm if cap is None else min(cap, pm)
     return cap
 
 
@@ -481,7 +595,14 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         max_stake=_effective_cap(request_row),
         customer_order_ref=cust_ref,
     )
+    # Fase 6: guardie custom OPT-IN (settings). rate-limit ordini/min + max esposizione/selezione.
+    if _rate_limited():
+        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
+    order_risk = built.size if built.side == "BACK" else (built.liability or 0.0)
+    _check_exposure_guard(market, strategy, int(request_row["selection_id"]),
+                          float(request_row.get("handicap") or 0), float(order_risk or 0.0))
     market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    _record_order()
     result = _result(
         ok=True,
         action="place",
@@ -543,7 +664,9 @@ def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -
     if isinstance(side_l, str) and side_l.lower() == "lay" and osize is not None:
         new_liab = round(float(osize) * (new_price - 1.0), 2)
         cap = _effective_cap(request_row)
-        if new_liab > cap + 1e-9:
+        # cap None = nessun limite (scelta utente): si salta la guardia. Se attivo, un replace
+        # LAY al rialzo che sfonderebbe il cap è rifiutato (la liability cresce con la quota).
+        if cap is not None and new_liab > cap + 1e-9:
             raise ValueError(
                 f"replace LAY: liability €{new_liab:.2f} a quota {new_price} "
                 f"oltre cap €{cap:.2f}"
@@ -680,6 +803,150 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         side=plan.side,
         detail=f"{plan.note}; atteso vince={plan.expected_if_win} perde={plan.expected_if_lose}",
     )
+    _write_done(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
+# dutch — dutching/bookmaking: UNA richiesta → N ordini (profitto/liability uguale)
+# ---------------------------------------------------------------------------
+def _leg_ref(rid: int, suffix: str) -> str:
+    """Ref interno per una GAMBA di un ordine multiplo (dutch/cashout): ``awlq<rid><suffix>``.
+
+    Unico per gamba → una riga di specchio per gamba (chiave mode+client_order_ref). NB: non è
+    parsabile come request_id intero (``_request_id_from_ref`` ritorna None), ma il legame
+    richiesta↔ordine resta tracciato dal prefisso; il request_id è solo un link soft.
+    """
+    return (_cust_ref(rid) + suffix)[:32]
+
+
+def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Dutching: ripartisce uno stake totale su N selezioni (profitto uguale) e PIAZZA ogni gamba.
+
+    La MATEMATICA è server-side (trading/dutching, autoritativa): il frontend manda solo
+    ``params={selections:[{selection_id,price}], total_stake, side:'back'|'lay',
+    mode:'equal'|'variable', persistence}``. Ogni gamba passa da ``build_order`` (stesse
+    validazioni money-critical) e da ``market.place_order`` (stesso path/specchio del place).
+    """
+    from .live_order_build import build_order
+    from .trading.dutching import dutch_back, dutch_lay, dutch_variable
+
+    rid = request_row["id"]
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    params = request_row.get("params") or {}
+    if not isinstance(params, dict):
+        raise ValueError("dutch: params mancanti")
+    sels_in = params.get("selections") or []
+    total = _f(params.get("total_stake"))
+    side = str(params.get("side") or "back").lower()
+    dmode = str(params.get("mode") or "equal").lower()
+    persistence = str(params.get("persistence") or "LAPSE")
+    if not sels_in or total is None or total <= 0:
+        raise ValueError("dutch: selections + total_stake (>0) obbligatori")
+
+    if dmode == "variable":
+        triples = [(int(s["selection_id"]), _f(s.get("price")), _f(s.get("weight")) or 1.0) for s in sels_in]
+        plan = dutch_variable([(a, b, c) for a, b, c in triples if b is not None], total)
+    else:
+        pairs = [(int(s["selection_id"]), _f(s.get("price"))) for s in sels_in]
+        pairs = [(a, b) for a, b in pairs if b is not None]
+        plan = dutch_lay(pairs, total) if side == "lay" else dutch_back(pairs, total)
+
+    if not plan.actionable:
+        _write_done(sb, rid, _result(
+            ok=True, action="dutch", mode=mode, request_row=request_row,
+            cust_ref=_cust_ref(rid), detail=plan.note,
+        ))
+        return
+
+    hcap = float(request_row.get("handicap") or 0)
+    live_legs = [leg for leg in plan.legs if leg.size > 0]
+    # Fase 6 (fix review MEDIUM): le gambe dutch APRONO esposizione → passano dalle stesse
+    # guardie del place. Rate-limit UNA volta (mai un dutching a metà per il rate) e pre-check
+    # esposizione di TUTTE le gambe PRIMA di piazzarne una sola (all-or-nothing: mai lasciare un
+    # dutching sbilanciato perché una gamba sfonda il cap di esposizione).
+    if _rate_limited():
+        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
+    for leg in live_legs:
+        leg_risk = leg.size if plan.side == "back" else round(leg.size * (leg.price - 1.0), 2)
+        _check_exposure_guard(market, strategy, leg.selection_id, hcap, float(leg_risk))
+
+    placed = []
+    for i, leg in enumerate(live_legs):
+        built = build_order(
+            market, strategy=strategy, selection_id=leg.selection_id,
+            handicap=hcap, side=plan.side,
+            order_type="LIMIT", price=leg.price, size=leg.size, liability=None,
+            persistence=persistence, time_in_force=None, min_fill_size=None,
+            jurisdiction=_jurisdiction(), max_stake=_effective_cap(request_row),
+            customer_order_ref=_leg_ref(rid, f"d{i}"),
+        )
+        market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+        _record_order()
+        placed.append({"selection_id": leg.selection_id, "side": plan.side,
+                       "price": built.price, "size": built.size,
+                       "profit_if_wins": leg.profit_if_wins})
+
+    result = _result(
+        ok=True, action="dutch", mode=mode, request_row=request_row,
+        cust_ref=_cust_ref(rid),
+        detail=f"{plan.note}; {len(placed)} gambe; book {plan.book_pct:.2f}% "
+               f"worst {plan.worst_profit:.2f} best {plan.best_profit:.2f}",
+    )
+    result["legs"] = placed
+    _write_done(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
+# cashout_all — global cash-out: flatten di TUTTE le selezioni di un mercato
+# ---------------------------------------------------------------------------
+def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Cash-out globale di un MERCATO: greenup (flatten) di ogni selezione con esposizione ≠ 0.
+
+    Riusa la matematica di greenup su ogni selezione del market_book (esposizioni FRESCHE +
+    best opposto). ``params.fraction`` ∈ (0,1] per un cash-out parziale. Money-critical: usa
+    ``reduces_liability=True`` (self-bounded), stesso path del greenup singolo.
+    """
+    from .live_order_build import build_order
+    from .trading.greenup import compute_greenup
+
+    if strategy is None:
+        raise ValueError("cashout_all richiede la strategy registrata (LiveTradingStrategy)")
+    rid = request_row["id"]
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    params = request_row.get("params") or {}
+    fraction = _f(params.get("fraction")) if isinstance(params, dict) else None
+    if fraction is None:
+        fraction = 1.0
+
+    mb = _val(market, "market_book")
+    runners = (_val(mb, "runners") or []) if mb is not None else []
+    closed = []
+    for r in runners:
+        sel = _int(_val(r, "selection_id"))
+        if sel is None:
+            continue
+        hcap = _f(_val(r, "handicap")) or 0.0
+        w, l = _read_matched_exposures(flumine, market, strategy, sel, hcap)
+        best_back, best_lay = _best_prices(market, sel, hcap)
+        plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
+                               best_back_price=best_back, best_lay_price=best_lay, fraction=fraction)
+        if not plan.actionable:
+            continue
+        built = build_order(
+            market, strategy=strategy, selection_id=sel, handicap=hcap,
+            side=str(plan.side), order_type="LIMIT", price=plan.price, size=plan.size,
+            liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
+            jurisdiction=_jurisdiction(), max_stake=None,
+            customer_order_ref=_leg_ref(rid, f"c{sel}"), reduces_liability=True,
+        )
+        market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+        closed.append({"selection_id": sel, "side": plan.side, "price": built.price, "size": built.size})
+
+    result = _result(
+        ok=True, action="cashout_all", mode=mode, request_row=request_row,
+        cust_ref=_cust_ref(rid), detail=f"cash-out mercato: {len(closed)} selezioni chiuse (frazione {fraction:.2f})",
+    )
+    result["legs"] = closed
     _write_done(sb, rid, result)
 
 
@@ -898,6 +1165,10 @@ def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         _start_submin(sb, flumine, request_row, mode, strategy)
     elif action == "greenup":
         _do_greenup(sb, flumine, request_row, mode, strategy)
+    elif action == "dutch":
+        _do_dutch(sb, flumine, request_row, mode, strategy)
+    elif action == "cashout_all":
+        _do_cashout_all(sb, flumine, request_row, mode, strategy)
     else:
         raise ValueError(f"action sconosciuta: {action!r}")
 
@@ -1002,11 +1273,12 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     mode = _live_order_mode()
     if mode not in ("PAPER", "LIVE"):
         return 0  # OFF (o valore ignoto): worker inerte
-    # Gate a INIZIO ciclo: se già attivo, salta TUTTO il giro (anche l'avanzamento submin).
-    # È RI-LETTO anche per-ordine dentro il batch loop sotto, così un flip a metà batch
-    # blocca subito gli ordini rimanenti.
-    if _kill_switch():
-        logger.warning("[live-order] kill-switch ATTIVO: nessun ordine processato")
+    # Fase 6: snapshot settings UNA volta per ciclo (kill-switch da UI + limiti custom).
+    _refresh_settings(sb)
+    # Gate a INIZIO ciclo: kill-switch da ENV *o* da DB (UI). Se attivo, salta TUTTO il giro.
+    # L'env è RI-LETTO anche per-ordine nel loop; il flag DB è lo snapshot di ciclo.
+    if _kill_switch() or _db_kill_switch():
+        logger.warning("[live-order] kill-switch ATTIVO (env o UI): nessun ordine processato")
         return 0
 
     mode_l = mode.lower()

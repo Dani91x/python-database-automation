@@ -36,14 +36,23 @@ import {
 import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
+    type LivePersistence,
 } from '@/lib/liveOrders';
 
 // modalità ordini del runner (per filtrare l'overlay "i tuoi ordini").
 type PanelMode = 'off' | LiveOrderMode;
 type TradeSide = 'back' | 'lay';
 
-// preset di stake rapidi per il one-click.
+// preset di stake rapidi per il one-click (quick-buttons; lo stake resta LIBERO via input).
 const STAKE_PRESETS = [2, 5, 10, 25] as const;
+
+// persistenza ordine (cosa fa Betfair al passaggio in-play), etichette come i tool pro:
+//   Keep(PERSIST) = resta a mercato; Lapse(LAPSE) = decade; Take SP(MARKET_ON_CLOSE) = va allo Starting Price.
+const PERSISTENCE_OPTIONS: { value: LivePersistence; label: string; title: string }[] = [
+    { value: 'PERSIST', label: 'Keep', title: 'Keep: l\'ordine RESTA a mercato al passaggio in-play (PERSIST)' },
+    { value: 'LAPSE', label: 'Lapse', title: 'Lapse: l\'ordine DECADE al passaggio in-play (LAPSE, default)' },
+    { value: 'MARKET_ON_CLOSE', label: 'Take SP', title: 'Take SP: l\'ordine va allo Starting Price (MARKET_ON_CLOSE)' },
+];
 
 // max righe della ladder visibili: oltre, si centra una finestra sul prezzo corrente.
 const MAX_ROWS = 42;
@@ -465,14 +474,17 @@ const SelectionLadder = memo(function SelectionLadder({
 
 // ---------------------------------------------------- tipi azione/conferma
 type Intent =
-    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number }
+    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence }
     | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide; price: number }
     | { kind: 'greenup'; selName: string; selectionId: number; fraction: number };
 
 interface StatusMsg { tone: 'pending' | 'ok' | 'err'; text: string; }
 
 function intentLabel(it: Intent): string {
-    if (it.kind === 'place') return `${it.side === 'back' ? 'BACK' : 'LAY'} €${it.size.toFixed(2)} @ ${fmtPrice(it.price)} · ${it.selName}`;
+    if (it.kind === 'place') {
+        const persLabel = PERSISTENCE_OPTIONS.find(o => o.value === it.persistence)?.label ?? it.persistence;
+        return `${it.side === 'back' ? 'BACK' : 'LAY'} €${it.size.toFixed(2)} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}`;
+    }
     if (it.kind === 'cancel') return `Annulla ${it.betIds.length} ordine/i ${it.side.toUpperCase()} @ ${fmtPrice(it.price)} · ${it.selName}`;
     const pct = Math.round(it.fraction * 100);
     return `Cash-out ${pct < 100 ? `${pct}% ` : ''}· ${it.selName}`;
@@ -502,9 +514,12 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     }, [orderMode]);
     const isLive = mode === 'live';
 
-    // stake preset condiviso tra tutte le ladder del mercato.
+    // stake preset condiviso tra tutte le ladder del mercato (nessun cap: importo LIBERO).
     const [stake, setStake] = useState<number>(5);
     const [customStake, setCustomStake] = useState('');
+
+    // persistenza ordine condivisa (default LAPSE, come i tool pro).
+    const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
 
     // ---- one-click trading: armamento (LIVE), in-volo, esito, conferma ----
     const [armed, setArmed] = useState(false);   // 1-click LIVE attivo (banner rosso)
@@ -597,7 +612,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
             submit(() => sendLiveOrderCommand({
                 action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
                 selection_id: it.selectionId, handicap, side: it.side,
-                order_type: 'LIMIT', price: it.price, size: it.size, persistence: 'LAPSE',
+                order_type: 'LIMIT', price: it.price, size: it.size, persistence: it.persistence,
             }), label);
         } else if (it.kind === 'cancel') {
             const ids = it.betIds;
@@ -632,7 +647,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     }, [mode, isLive, armed, execute]);
 
     const onPlace = useCallback((side: TradeSide, price: number, selectionId: number, selName: string) => {
-        requestAction({ kind: 'place', selName, side, price, size: stakeRef.current, selectionId });
+        requestAction({ kind: 'place', selName, side, price, size: stakeRef.current, selectionId, persistence: persistenceRef.current });
     }, [requestAction]);
 
     const onCancel = useCallback((betIds: string[], side: TradeSide, price: number, selName: string) => {
@@ -668,9 +683,11 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
         }));
     }, [row, fallbackSelections]);
 
-    // ref a stake per i callback stabili (evita di rigenerarli a ogni cambio stake).
+    // ref a stake/persistenza per i callback stabili (evita di rigenerarli a ogni cambio).
     const stakeRef = useRef(stake);
     stakeRef.current = stake;
+    const persistenceRef = useRef(persistence);
+    persistenceRef.current = persistence;
 
     // indicizzazioni per selezione (ordini/posizioni).
     const ordersBySel = useMemo(() => {
@@ -768,6 +785,27 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                         placeholder="€"
                         className="w-14 bg-black/60 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-white focus:outline-none focus:border-amber-400/50"
                     />
+                    {/* persistenza ordine (solo se operabile): Keep / Lapse / Take SP, default Lapse */}
+                    {mode !== 'off' && (
+                        <div className="flex items-center gap-1 ml-1" title="Cosa fa l'ordine al passaggio in-play">
+                            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70 mr-0.5">Persist</span>
+                            {PERSISTENCE_OPTIONS.map(o => (
+                                <button
+                                    key={o.value}
+                                    type="button"
+                                    onClick={() => setPersistence(o.value)}
+                                    title={o.title}
+                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold border transition-colors ${
+                                        persistence === o.value
+                                            ? 'bg-white/90 text-black border-white/90'
+                                            : 'border-white/10 text-white/70 hover:border-white/40'
+                                    }`}
+                                >
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     {/* toggle 1-click (solo LIVE): armato = niente conferma per clic */}
                     {isLive && (
                         <button
