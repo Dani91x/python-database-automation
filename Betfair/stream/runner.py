@@ -68,10 +68,13 @@ from .config_stream import (
     STREAM_CONFLATE_MS,
     STREAM_FIELDS,
     WATCHLIST_POLL_SEC,
+    XHEDGE_POLL_SEC,
 )
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from .risk_engine_worker import risk_engine_worker
+from .trading.controls import LiveExposureControl, LiveRateControl
+from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
 from .scores.api_football import ApiFootballProvider
@@ -894,6 +897,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     market_filter=streaming_market_filter(market_ids=market_ids),
                     session=session, mode=LIVE_ORDER_MODE.lower())
                 framework.add_strategy(live_strategy)
+                # Controlli NATIVI flumine (Fase 6, #11): guardia esposizione per selezione +
+                # rate-limit ordini/min, letti da betfair_live_settings (opt-in, NULL = off).
+                # Sono l'ultima barriera money-critical DENTRO flumine, oltre a quelle del worker.
+                framework.add_trading_control(LiveExposureControl)
+                framework.add_trading_control(LiveRateControl)
                 # interval FLOAT: BackgroundWorker lo passa a time.sleep → int() troncava i poll
                 # sub-secondo (0.5→0→1). Usiamo il float direttamente (or 1.0 = guardia anti-zero).
                 framework.add_worker(BackgroundWorker(
@@ -907,6 +915,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     framework, function=risk_engine_worker, interval=RISK_ENGINE_POLL_SEC or 1.0,
                     func_kwargs={"session": session, "strategy": live_strategy},
                     name="risk_engine_worker"))
+                # Hedging cross-market (#9): analisi P&L per-scoreline dell'evento → betfair_live_xhedge
+                # (sola lettura, display). Cadenza lenta. Usa la session per catalogo + book in cache.
+                framework.add_worker(BackgroundWorker(
+                    framework, function=xhedge_worker, interval=XHEDGE_POLL_SEC or 5.0,
+                    func_kwargs={"session": session, "strategy": live_strategy},
+                    name="xhedge_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))

@@ -1,36 +1,33 @@
-"""risk_engine_worker.py — BackgroundWorker del RUNNER che ARMA/monitora le regole risk
-(``betfair_live_risk_rules``) e, allo scattare, ACCODA l'ordine di chiusura/copertura nella
-coda esistente ``betfair_live_order_requests`` (STESSO path audited/mirror di ogni ordine).
+"""risk_engine_worker.py — BackgroundWorker del RUNNER: ARMA/monitora le regole risk
+(``betfair_live_risk_rules``) e, allo scattare, ACCODA le chiusure/coperture nella coda
+esistente ``betfair_live_order_requests`` (STESSO path audited/mirror di ogni ordine).
 
-Per chi: gira DENTRO il processo del runner, aggiunto al framework flumine come
-``BackgroundWorker(function=risk_engine_worker, ...)`` SOLO quando LIVE_ORDER_MODE ∈ {PAPER, LIVE}.
-Ad ogni poll:
-  - legge le regole ``armed`` della mode corrente;
-  - risolve il Market e legge LTP + best price + esposizioni MATCHED FRESCHE (da flumine);
-  - valuta con ``trading/risk_engine`` (matematica pura, già verificata):
-      * ``offset``      → piazza UNA volta l'ordine OPPOSTO resting al target profit ('place'),
-                          poi marca la regola 'done';
-      * ``stop_loss`` / ``take_profit`` / ``trailing_stop`` → se scatta, accoda un ``greenup``
-        (flatten: chiude la posizione MATCHED al best opposto, con reduces_liability) e marca
-        la regola 'triggered'. Il trailing aggiorna l'estremo favorevole (write-on-change).
+Risk engine **v2** (punti #2/#3/#4/#6):
+  * OFFSET completo — timing ``immediate`` (piazza subito il resting a target) o ``on_fill``
+    (piazza SOLO quando l'ingresso ``entry_bet_id`` si è abbinato) + variante ``greening``
+    (size che pareggia). ANTI-GAMBA-NUDA (#3): se l'ingresso lapsa/cancella senza match →
+    NESSUN offset orfano, regola chiusa.
+  * BRACKET (OCO, #2) — offset (take-profit) + stop insieme: chi scatta per primo chiude la
+    posizione e cancella l'altro (one-cancels-other).
+  * STOP a 2 parametri (#4) — trigger vs place_at: la chiusura passa ``place_at_ticks`` al
+    green-up → chiude N tick più a fondo nel book per fill garantito.
+  * Transizione PRE-MATCH→IN-PLAY (#6) — policy ``on_inplay`` ∈ {keep, cancel, rebaseline}:
+    al calcio d'inizio la regola resta / si annulla / si ri-basa sul prezzo corrente (+alert).
 
-MONEY-CRITICAL. La CHIUSURA riusa i path PROVATI (place/greenup del live_order_worker): stesse
-validazioni, stesso specchio DB, stesse garanzie. Anti-doppio-trigger:
-  * client_ref della regola UNIQUE (una richiesta = una regola);
-  * quando scatta, l'accodamento usa un client_ref DETERMINISTICO ``risk<rule_id>`` → il vincolo
-    UNIQUE della coda ordini garantisce UN SOLO ordine di chiusura anche se la regola venisse
-    rivalutata prima di risultare 'triggered'.
+MONEY-CRITICAL. Ogni ordine reale passa comunque dalla coda (validazioni + guardie + specchio).
+Anti-doppio-trigger: client_ref DETERMINISTICO per ogni azione accodata (``risk<id>``,
+``risk<id>o`` offset, ``risk<id>oc`` cancel-offset, ``risk<id>s`` stop) → il vincolo UNIQUE
+della coda garantisce UN SOLO ordine anche se la regola viene rivalutata.
 
-⚠️ SOFTWARE-SIDE: se il runner cade, stop/offset NON esistono (come in Bet Angel/Cymatic/Fairbot).
-BEST-EFFORT: qualunque errore su una regola è scritto in ``error`` e non fa cadere il runner.
+⚠️ SOFTWARE-SIDE: se il runner cade, stop/offset NON esistono (come in Bet Angel/Cymatic).
+BEST-EFFORT: un errore TRANSITORIO NON disarma una regola protettiva (resta armata, retry).
 Testabile a unità: framework/Market/blotter/coda mockabili, nessuna rete.
 """
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from . import live_order_worker as low
 from .trading import risk_engine
@@ -38,6 +35,9 @@ from .trading import risk_engine
 logger = logging.getLogger(__name__)
 
 _TABLE = "betfair_live_risk_rules"
+
+# Stati terminali flumine di un ordine (per rilevare ingresso lapsato = gamba nuda evitata).
+_TERMINAL = frozenset({"EXECUTION_COMPLETE", "EXPIRED", "LAPSED", "VIOLATION", "CANCELLED"})
 
 
 def _now_iso() -> str:
@@ -52,14 +52,15 @@ def _batch() -> int:
         return 20
 
 
+# ---------------------------------------------------------------------------
+# Lettura stato di mercato / ordini
+# ---------------------------------------------------------------------------
 def _ltp(market: Any, selection_id: int, handicap: float) -> Optional[float]:
-    """Last Traded Price della selezione dal market_book flumine (prezzo di riferimento per i
-    trigger di prezzo). None se non disponibile. Difensivo su ogni livello."""
+    """Last Traded Price della selezione dal market_book flumine (riferimento trigger prezzo)."""
     mb = low._val(market, "market_book")
     if mb is None:
         return None
-    runners = low._val(mb, "runners") or []
-    for r in runners:
+    for r in (low._val(mb, "runners") or []):
         if low._int(low._val(r, "selection_id")) != int(selection_id):
             continue
         rh = low._f(low._val(r, "handicap")) or 0.0
@@ -69,24 +70,38 @@ def _ltp(market: Any, selection_id: int, handicap: float) -> Optional[float]:
     return None
 
 
-def _read_armed_rules(sb: Any, mode_l: str) -> list:
-    try:
-        return (
-            sb.table(_TABLE)
-            .select("*")
-            .eq("status", "armed")
-            .eq("mode", mode_l)
-            .order("id")
-            .limit(_batch())
-            .execute()
-            .data
-            or []
-        )
-    except Exception as ex:  # noqa: BLE001 - lettura coda momentaneamente KO
-        logger.warning("[risk] lettura regole armate KO: %s", str(ex)[:160])
-        return []
+def _market_inplay(market: Any) -> Optional[bool]:
+    """True/False se il mercato è in-play, None se non determinabile (dal market_book flumine)."""
+    mb = low._val(market, "market_book")
+    if mb is None:
+        return None
+    v = low._val(mb, "inplay")
+    return bool(v) if v is not None else None
 
 
+def _entry_status(flumine: Any, market_id: Optional[str], entry_bet_id: Optional[str]) -> Tuple[float, Optional[str]]:
+    """(size_matched, status_name) dell'ordine d'INGRESSO osservato. (0, None) se non trovato."""
+    if not entry_bet_id:
+        return 0.0, None
+    o = low._find_order_by_bet_id(flumine, market_id, str(entry_bet_id))
+    if o is None:
+        return 0.0, None
+    matched = low._f(low._val(o, "size_matched")) or 0.0
+    st = low._val(o, "status")
+    name = getattr(st, "name", None) or (str(st) if st is not None else None)
+    return matched, name
+
+
+def _offset_order_obj(flumine: Any, market_id: Optional[str], offset_request_id: Optional[int]) -> Any:
+    """Ritrova l'ordine OFFSET piazzato (per OCO) tramite il suo ref interno awlq<req_id>."""
+    if offset_request_id is None:
+        return None
+    return low._find_order_by_cust_ref(flumine, market_id, low._cust_ref(int(offset_request_id)))
+
+
+# ---------------------------------------------------------------------------
+# Scritture regola + accodamento
+# ---------------------------------------------------------------------------
 def _update_rule(sb: Any, rule_id: int, fields: Dict[str, Any]) -> None:
     payload = dict(fields)
     payload["updated_at"] = _now_iso()
@@ -103,30 +118,88 @@ def _enqueue(sb: Any, payload: Dict[str, Any]) -> Optional[int]:
         return None
 
 
+def _alert(level: str, msg: str) -> None:
+    try:
+        from . import db
+        db.insert_alert(level, "RISK_ENGINE", msg)
+    except Exception:  # noqa: BLE001 - alert best-effort
+        pass
+
+
+def _kill_active() -> bool:
+    return low._kill_switch() or low._db_kill_switch()
+
+
+def _params(rule: Dict[str, Any]) -> Dict[str, Any]:
+    p = rule.get("params")
+    return p if isinstance(p, dict) else {}
+
+
+def _result(rule: Dict[str, Any]) -> Dict[str, Any]:
+    r = rule.get("result")
+    return dict(r) if isinstance(r, dict) else {}
+
+
 # ---------------------------------------------------------------------------
-# Gestione di UNA regola
+# Transizione pre-match → in-play (#6)
 # ---------------------------------------------------------------------------
-def _handle_offset(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
-    """Offset: piazza UNA volta l'ordine opposto resting al target profit, poi 'done'."""
-    params = rule.get("params") or {}
-    entry_side = str(rule.get("entry_side"))
-    entry_price = low._f(rule.get("entry_price"))
-    entry_size = low._f(rule.get("entry_size"))
-    if entry_price is None or entry_size is None or entry_size <= 0:
-        _update_rule(sb, rule["id"], {"status": "error", "error": "offset: entry_price/entry_size mancanti"})
-        return
-    order = risk_engine.offset_order(
-        entry_side, entry_price, entry_size,
-        offset_ticks=risk_engine._int_param(params, "offset_ticks"),
-        offset_pct=risk_engine._num(params, "offset_pct"),
-        greening=False,   # v1: offset non-green (size = entry_size), ordine resting valido
+def _apply_inplay_policy(sb: Any, rule: Dict[str, Any], market: Any, res: Dict[str, Any]) -> Optional[str]:
+    """Applica la policy ``on_inplay`` alla transizione pre→in. Ritorna:
+      'disarmed'  → regola annullata (interrompi il ciclo su questa regola);
+      'rebaselined' → entry_price ri-basato sul prezzo corrente (continua, ``rule`` aggiornato);
+      None        → nessuna azione (aggiorna solo il flag inplay memorizzato).
+    """
+    inplay = _market_inplay(market)
+    if inplay is None:
+        return None
+    prev = bool(res.get("inplay"))
+    transition = bool(inplay) and not prev
+    if not transition:
+        if bool(inplay) != prev:
+            res["inplay"] = bool(inplay)  # aggiornato dal chiamante al prossimo write
+        return None
+
+    policy = str(_params(rule).get("on_inplay") or "keep").lower()
+    res["inplay"] = True
+    if policy == "cancel":
+        res["note"] = "annullata al calcio d'inizio (on_inplay=cancel)"
+        _update_rule(sb, rule["id"], {"status": "cancelled", "result": res})
+        _alert("WARN", f"Regola risk {rule.get('id')} annullata all'inizio in-play")
+        return "disarmed"
+    if policy == "rebaseline":
+        ltp = _ltp(market, int(rule["selection_id"]), float(rule.get("handicap") or 0))
+        newp = ltp if (ltp and ltp > 1.0) else low._f(rule.get("entry_price"))
+        rule["entry_price"] = newp
+        res["note"] = f"ri-basata in-play a {newp}"
+        _update_rule(sb, rule["id"], {"entry_price": newp, "trail_extreme": None, "result": res})
+        _alert("INFO", f"Regola risk {rule.get('id')} ri-basata in-play a {newp}")
+        return "rebaselined"
+    return None  # keep
+
+
+# ---------------------------------------------------------------------------
+# OFFSET (plain) — immediate / on_fill / greening / anti-gamba-nuda
+# ---------------------------------------------------------------------------
+def _build_offset_order(rule: Dict[str, Any], size: float, w: Optional[float], l: Optional[float]) -> Any:
+    p = _params(rule)
+    return risk_engine.offset_order(
+        str(rule.get("entry_side")), low._f(rule.get("entry_price")), size,
+        offset_ticks=risk_engine._int_param(p, "offset_ticks"),
+        offset_pct=risk_engine._num(p, "offset_pct"),
+        greening=bool(p.get("greening")),
+        matched_if_win=w, matched_if_lose=l,
     )
+
+
+def _enqueue_offset(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str,
+                    size: float, w: Optional[float], l: Optional[float]) -> Tuple[Optional[int], Any]:
+    """Costruisce e ACCODA l'ordine offset (resting take-profit). Ritorna (request_id, RiskOrder)."""
+    order = _build_offset_order(rule, size, w, l)
     if not order.actionable:
-        _update_rule(sb, rule["id"], {"status": "error", "error": f"offset non calcolabile: {order.note}"})
-        return
-    client_ref = f"risk{rule['id']}"
+        return None, order
+    p = _params(rule)
     payload = {
-        "client_ref": client_ref,
+        "client_ref": f"risk{rule['id']}o",
         "action": "place",
         "mode": mode_l,
         "market_id": rule["market_id"],
@@ -135,99 +208,264 @@ def _handle_offset(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> 
         "side": order.side,
         "price": order.price,
         "size": order.size,
-        "persistence": (params.get("persistence") or "LAPSE"),
-        "params": {"risk_rule_id": rule["id"]},
+        # un take-profit resting deve sopravvivere al KO per potersi abbinare: default PERSIST.
+        "persistence": (p.get("persistence") or "PERSIST"),
+        "params": {"risk_rule_id": rule["id"], "role": "offset"},
     }
-    req_id = _enqueue(sb, payload)
-    _update_rule(sb, rule["id"], {
-        "status": "done",
-        "enqueued_client_ref": client_ref,
-        "enqueued_request_id": req_id,
-        "triggered_at": _now_iso(),
-        "result": {"note": order.note, "side": order.side, "price": order.price, "size": order.size},
-    })
+    return _enqueue(sb, payload), order
 
 
-def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
-    """stop_loss / take_profit / trailing_stop: valuta e, se scatta, accoda un greenup (flatten)."""
+def _entry_ready_or_naked(flumine: Any, rule: Dict[str, Any]) -> str:
+    """Per le regole ON-FILL (entry_bet_id): 'ready' (ingresso abbinato), 'naked' (ingresso
+    terminato senza match → niente offset), 'wait' (ancora in attesa di abbinamento)."""
+    matched, status = _entry_status(flumine, rule.get("market_id"), rule.get("entry_bet_id"))
+    if matched > 0:
+        return "ready"
+    if status in _TERMINAL:
+        return "naked"
+    return "wait"
+
+
+def _handle_offset(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
+    """Offset semplice (take-profit resting). timing immediate | on_fill; greening opzionale."""
+    p = _params(rule)
+    timing = str(p.get("timing") or ("on_fill" if rule.get("entry_bet_id") else "immediate")).lower()
     market = low._resolve_market(flumine, rule.get("market_id"))
-    sel = int(rule["selection_id"])
-    hcap = float(rule.get("handicap") or 0)
+    sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
+
+    if timing == "on_fill" or rule.get("entry_bet_id"):
+        state = _entry_ready_or_naked(flumine, rule)
+        if state == "wait":
+            return  # resta armata, attende il fill dell'ingresso
+        if state == "naked":
+            _update_rule(sb, rule["id"], {"status": "done",
+                "result": {"note": "ingresso non abbinato (lapse/cancel): nessun offset (anti-gamba-nuda)"}})
+            return
+        matched, _ = _entry_status(flumine, rule.get("market_id"), rule.get("entry_bet_id"))
+        size = matched
+    else:
+        size = low._f(rule.get("entry_size"))
+    if size is None or size <= 0:
+        _update_rule(sb, rule["id"], {"status": "error", "error": "offset: size ingresso non determinabile"})
+        return
+
+    if _kill_active():
+        return  # freno d'emergenza: non piazzare, resta armata
+    w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap) if p.get("greening") else (None, None)
+    req_id, order = _enqueue_offset(sb, flumine, rule, mode_l, size, w, l)
+    if req_id is None:
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"offset non calcolabile: {order.note}"})
+        return
+    _update_rule(sb, rule["id"], {"status": "done", "enqueued_client_ref": f"risk{rule['id']}o",
+        "enqueued_request_id": req_id, "triggered_at": _now_iso(),
+        "result": {"note": order.note, "side": order.side, "price": order.price, "size": order.size}})
+
+
+# ---------------------------------------------------------------------------
+# MONITORED — stop_loss / take_profit / trailing_stop (+ place_at + in-play)
+# ---------------------------------------------------------------------------
+def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
+    market = low._resolve_market(flumine, rule.get("market_id"))
+    sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
+    res = _result(rule)
+    if _apply_inplay_policy(sb, rule, market, res) == "disarmed":
+        return
+
     ltp = _ltp(market, sel, hcap)
     best_back, best_lay = low._best_prices(market, sel, hcap)
     w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap)
-
     decision = risk_engine.evaluate_rule(
-        rule_type=str(rule.get("rule_type")),
-        entry_side=str(rule.get("entry_side")),
-        entry_price=low._f(rule.get("entry_price")),
-        params=rule.get("params") or {},
-        current_price=ltp,
-        matched_if_win=w,
-        matched_if_lose=l,
-        best_back_price=best_back,
-        best_lay_price=best_lay,
+        rule_type=str(rule.get("rule_type")), entry_side=str(rule.get("entry_side")),
+        entry_price=low._f(rule.get("entry_price")), params=_params(rule), current_price=ltp,
+        matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
         trail_extreme=low._f(rule.get("trail_extreme")),
     )
-
     if not decision.fire:
-        # write-on-change del solo estremo del trailing (non spammare il DB).
+        patch: Dict[str, Any] = {}
         if decision.trail_extreme is not None:
             prev = low._f(rule.get("trail_extreme"))
             if prev is None or abs(prev - decision.trail_extreme) > 1e-9:
-                _update_rule(sb, rule["id"], {"trail_extreme": decision.trail_extreme})
+                patch["trail_extreme"] = decision.trail_extreme
+        if res.get("inplay") != _market_inplay(market) and _market_inplay(market) is not None:
+            res["inplay"] = bool(_market_inplay(market)); patch["result"] = res
+        if patch:
+            _update_rule(sb, rule["id"], patch)
         return
 
-    # Kill-switch (env o UI/DB): freno d'emergenza — non accodare chiusure, tieni armata.
-    if low._kill_switch() or low._db_kill_switch():
+    if _kill_active():
         logger.warning("[risk] kill-switch ATTIVO: regola %s non innescata", rule.get("id"))
         return
-
-    # Posizione già piatta → niente da chiudere: chiudi la regola come 'done' (non lasciarla armata).
     if abs(w - l) < risk_engine.FLAT_EPS:
-        _update_rule(sb, rule["id"], {
-            "status": "done", "triggered_at": _now_iso(),
-            "result": {"note": f"{decision.reason}; posizione già piatta, nessun ordine"},
-        })
+        _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+            "result": {"note": f"{decision.reason}; posizione già piatta, nessun ordine"}})
         return
+    req_id = _enqueue_flatten(sb, rule, mode_l)
+    _update_rule(sb, rule["id"], {"status": "triggered", "enqueued_client_ref": f"risk{rule['id']}s",
+        "enqueued_request_id": req_id, "triggered_at": _now_iso(),
+        "trail_extreme": decision.trail_extreme if decision.trail_extreme is not None else rule.get("trail_extreme"),
+        "result": {"note": decision.reason, "action": "greenup"}})
 
-    client_ref = f"risk{rule['id']}"
+
+def _enqueue_flatten(sb: Any, rule: Dict[str, Any], mode_l: str) -> Optional[int]:
+    """Accoda un greenup (flatten) con place_at_ticks per un fill sicuro (stop a 2 parametri)."""
+    p = _params(rule)
     payload = {
-        "client_ref": client_ref,
+        "client_ref": f"risk{rule['id']}s",
         "action": "greenup",
         "mode": mode_l,
         "market_id": rule["market_id"],
         "selection_id": rule["selection_id"],
         "handicap": rule.get("handicap") or 0,
-        "params": {"fraction": 1.0, "risk_rule_id": rule["id"]},
+        "params": {"fraction": 1.0, "risk_rule_id": rule["id"],
+                   "place_at_ticks": risk_engine._int_param(p, "place_at_ticks") or 0},
     }
-    req_id = _enqueue(sb, payload)
-    _update_rule(sb, rule["id"], {
-        "status": "triggered",
-        "enqueued_client_ref": client_ref,
-        "enqueued_request_id": req_id,
-        "triggered_at": _now_iso(),
-        "trail_extreme": decision.trail_extreme if decision.trail_extreme is not None else rule.get("trail_extreme"),
-        "result": {"note": decision.reason, "action": "greenup"},
-    })
+    return _enqueue(sb, payload)
 
 
+# ---------------------------------------------------------------------------
+# BRACKET (OCO) — offset take-profit + stop, one-cancels-other (#2)
+# ---------------------------------------------------------------------------
+def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
+    market = low._resolve_market(flumine, rule.get("market_id"))
+    sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
+    res = _result(rule)
+    if _apply_inplay_policy(sb, rule, market, res) == "disarmed":
+        return
+    state = str(res.get("state") or "init")
+
+    # FASE 1: piazza l'offset (take-profit) — subito o on-fill dell'ingresso.
+    if state == "init":
+        timing = str(_params(rule).get("timing") or ("on_fill" if rule.get("entry_bet_id") else "immediate")).lower()
+        if timing == "on_fill" or rule.get("entry_bet_id"):
+            st = _entry_ready_or_naked(flumine, rule)
+            if st == "wait":
+                return
+            if st == "naked":
+                _update_rule(sb, rule["id"], {"status": "done",
+                    "result": {**res, "note": "ingresso non abbinato: bracket annullato (anti-gamba-nuda)"}})
+                return
+            matched, _ = _entry_status(flumine, rule.get("market_id"), rule.get("entry_bet_id"))
+            size = matched
+        else:
+            size = low._f(rule.get("entry_size"))
+        if size is None or size <= 0:
+            _update_rule(sb, rule["id"], {"status": "error", "error": "bracket: size ingresso non determinabile"})
+            return
+        if _kill_active():
+            return
+        p = _params(rule)
+        w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap) if p.get("greening") else (None, None)
+        req_id, order = _enqueue_offset(sb, flumine, rule, mode_l, size, w, l)
+        if req_id is None:
+            _update_rule(sb, rule["id"], {"status": "error", "error": f"bracket offset non calcolabile: {order.note}"})
+            return
+        res.update({"state": "offset_placed", "offset_request_id": req_id,
+                    "offset": {"side": order.side, "price": order.price, "size": order.size}})
+        _update_rule(sb, rule["id"], {"enqueued_client_ref": f"risk{rule['id']}o",
+                                      "enqueued_request_id": req_id, "result": res})
+        return
+
+    # FASE 2: OCO — l'offset è piazzato; monitora take-profit vs stop.
+    if state == "offset_placed":
+        offset_req = res.get("offset_request_id")
+        off = _offset_order_obj(flumine, rule.get("market_id"), offset_req)
+        off_status = None
+        off_matched = 0.0
+        off_bet_id = None
+        if off is not None:
+            st = low._val(off, "status")
+            off_status = getattr(st, "name", None) or (str(st) if st is not None else None)
+            off_matched = low._f(low._val(off, "size_matched")) or 0.0
+            off_bet_id = low._val(off, "bet_id")
+
+        # a) TAKE-PROFIT eseguito → OCO: posizione chiusa dall'offset, stop non serve più.
+        if off_matched > 0 and off_status == "EXECUTION_COMPLETE":
+            _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+                "result": {**res, "state": "done", "note": "take-profit (offset) eseguito; stop annullato (OCO)"}})
+            return
+
+        # b) STOP: valuta la condizione avversa.
+        ltp = _ltp(market, sel, hcap)
+        best_back, best_lay = low._best_prices(market, sel, hcap)
+        w, l = low._read_matched_exposures(flumine, market, strategy, sel, hcap)
+        decision = risk_engine.evaluate_rule(
+            rule_type="stop_loss", entry_side=str(rule.get("entry_side")),
+            entry_price=low._f(rule.get("entry_price")), params=_params(rule), current_price=ltp,
+            matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
+            trail_extreme=low._f(rule.get("trail_extreme")),
+        )
+        # trailing opzionale nel bracket: se sono presenti trail_*, valuta anche quello.
+        if not decision.fire and (risk_engine._int_param(_params(rule), "trail_ticks") is not None
+                                  or risk_engine._num(_params(rule), "trail_pct") is not None):
+            dtr = risk_engine.evaluate_rule(
+                rule_type="trailing_stop", entry_side=str(rule.get("entry_side")),
+                entry_price=low._f(rule.get("entry_price")), params=_params(rule), current_price=ltp,
+                matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
+                trail_extreme=low._f(rule.get("trail_extreme")))
+            if dtr.trail_extreme is not None:
+                prev = low._f(rule.get("trail_extreme"))
+                if prev is None or abs(prev - dtr.trail_extreme) > 1e-9:
+                    _update_rule(sb, rule["id"], {"trail_extreme": dtr.trail_extreme})
+            decision = dtr if dtr.fire else decision
+
+        if not decision.fire:
+            return
+        if _kill_active():
+            return
+
+        # STOP scattato → OCO: cancella l'offset (se abbiamo il bet_id) POI chiudi la posizione.
+        if off_bet_id:
+            _enqueue(sb, {"client_ref": f"risk{rule['id']}oc", "action": "cancel",
+                          "mode": mode_l, "market_id": rule["market_id"], "bet_id": str(off_bet_id)})
+        elif off is not None:
+            # offset trovato ma bet_id non ancora assegnato: aspetta un giro per cancellarlo pulito
+            # PRIMA di chiudere (evita di lasciare un take-profit resting orfano). Resta armata.
+            return
+        if abs(w - l) < risk_engine.FLAT_EPS:
+            _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+                "result": {**res, "state": "done", "note": f"{decision.reason}; posizione piatta (offset cancellato)"}})
+            return
+        stop_req = _enqueue_flatten(sb, rule, mode_l)
+        _update_rule(sb, rule["id"], {"status": "triggered", "enqueued_client_ref": f"risk{rule['id']}s",
+            "enqueued_request_id": stop_req, "triggered_at": _now_iso(),
+            "result": {**res, "state": "stopped", "note": f"{decision.reason}; offset cancellato (OCO)"}})
+        return
+
+
+# ---------------------------------------------------------------------------
+# Dispatch + ciclo
+# ---------------------------------------------------------------------------
 def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
-    rule_type = str(rule.get("rule_type") or "")
-    if rule_type == "offset":
-        _handle_offset(sb, flumine, rule, mode_l)
-    elif rule_type in ("stop_loss", "take_profit", "trailing_stop"):
+    rt = str(rule.get("rule_type") or "")
+    if rt == "offset":
+        _handle_offset(sb, flumine, rule, mode_l, strategy)
+    elif rt == "bracket":
+        _handle_bracket(sb, flumine, rule, mode_l, strategy)
+    elif rt in ("stop_loss", "take_profit", "trailing_stop"):
         _handle_monitored(sb, flumine, rule, mode_l, strategy)
     else:
-        _update_rule(sb, rule["id"], {"status": "error", "error": f"rule_type sconosciuto: {rule_type!r}"})
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"rule_type sconosciuto: {rt!r}"})
+
+
+def _read_armed_rules(sb: Any, mode_l: str) -> list:
+    try:
+        return (
+            sb.table(_TABLE).select("*").eq("status", "armed").eq("mode", mode_l)
+            .order("id").limit(_batch()).execute().data or []
+        )
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[risk] lettura regole armate KO: %s", str(ex)[:160])
+        return []
 
 
 def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
     mode = low._live_order_mode()
     if mode not in ("PAPER", "LIVE"):
         return 0
-    # Fase 6: aggiorna lo snapshot settings (kill-switch UI condiviso con l'order worker).
-    low._refresh_settings(sb)
+    low._refresh_settings(sb)  # snapshot settings (kill-switch UI condiviso con l'order worker)
+    # #15 velocità runtime: rallenta la cadenza al target risk_poll_sec (se impostato), senza riavvio.
+    if low._throttled("risk_cycle", low._risk_poll_target()):
+        return 0
     mode_l = mode.lower()
     rules = _read_armed_rules(sb, mode_l)
     handled = 0
@@ -235,34 +473,29 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
         rid = rule.get("id")
         try:
             _process_rule(sb, flumine, rule, mode_l, strategy)
-        except Exception:  # noqa: BLE001 - errore TRANSITORIO: NON disarmare la regola
-            # MONEY-CRITICAL (fix review MEDIUM): un errore transitorio (mercato momentaneamente
-            # assente in _resolve_market, blip DB sull'update di trail_extreme) NON deve mettere
-            # la regola in 'error'. La query processa solo le 'armed', quindi marcarla 'error'
-            # la escluderebbe PER SEMPRE → uno stop-loss/trailing che protegge una posizione
-            # aperta verrebbe DISARMATO in silenzio. La lasciamo 'armed' e si ritenta al giro
-            # dopo. Le condizioni DAVVERO invalide (rule_type ignoto, offset senza entry_price)
-            # sono già marcate 'error' ESPLICITAMENTE dentro i singoli handler (permanenti).
+        except Exception:  # noqa: BLE001 - errore TRANSITORIO: NON disarmare la regola protettiva
+            # (mercato momentaneamente assente, blip DB) → resta 'armed', retry al giro dopo.
+            # Le condizioni davvero invalide sono marcate 'error' ESPLICITAMENTE negli handler.
             logger.warning("[risk] regola %s: errore transitorio, resta armata (retry)", rid)
         handled += 1
     return handled
 
 
 def risk_engine_worker(context: dict, flumine: Any, session: Any = None, strategy: Any = None) -> None:
-    """BackgroundWorker flumine (firma: context, flumine, **func_kwargs).
+    """BackgroundWorker flumine (firma: context, flumine, **func_kwargs). Non solleva MAI.
 
-    Aggiunto al framework SOLO se LIVE_ORDER_MODE ∈ {PAPER, LIVE} (vedi runner). Non solleva MAI.
-    ``strategy`` (LiveTradingStrategy) è necessaria per leggere le esposizioni MATCHED (flatten).
+    Aggiunto al framework SOLO se LIVE_ORDER_MODE ∈ {PAPER, LIVE} (vedi runner). ``strategy``
+    (LiveTradingStrategy) serve per leggere le esposizioni MATCHED (flatten/greening).
     """
     if flumine is None:
         return
     try:
         from db_client import get_supabase_client
         sb = get_supabase_client()
-    except Exception as ex:  # noqa: BLE001 - DB non raggiungibile: salta il giro
+    except Exception as ex:  # noqa: BLE001
         logger.warning("[risk] supabase non disponibile: %s", str(ex)[:160])
         return
     try:
         _process_once(sb, flumine, strategy)
-    except Exception as ex:  # noqa: BLE001 - ultima rete di sicurezza
+    except Exception as ex:  # noqa: BLE001
         logger.warning("[risk] ciclo KO: %s", str(ex)[:200])

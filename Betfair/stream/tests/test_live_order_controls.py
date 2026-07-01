@@ -92,3 +92,30 @@ def test_audit_best_effort_swallows_errors():
         def table(self, _n):
             raise RuntimeError("boom")
     wk._audit(_NoInsert(), 1, {"action": "place", "mode": "paper"}, "done")  # nessuna eccezione
+
+
+# ---------------------------------------------------------------------------
+# #15 velocità runtime (throttle self-pacing)
+# ---------------------------------------------------------------------------
+def test_throttle_disabled_when_target_none(monkeypatch):
+    wk._LAST_CYCLE.clear()
+    assert wk._throttled("x", None) is False
+    assert wk._throttled("x", 0) is False
+
+
+def test_throttle_slows_to_target(monkeypatch):
+    wk._LAST_CYCLE.clear()
+    t = [1000.0]
+    monkeypatch.setattr(wk, "_now_epoch", lambda: t[0])
+    assert wk._throttled("y", 2.0) is False    # prima: passa e imposta last
+    assert wk._throttled("y", 2.0) is True     # entro 2s: salta
+    t[0] += 2.1
+    assert wk._throttled("y", 2.0) is False     # oltre 2s: passa di nuovo
+
+
+def test_poll_targets_from_settings():
+    wk._SETTINGS.clear()
+    assert wk._order_poll_target() is None and wk._risk_poll_target() is None
+    wk._SETTINGS["order_poll_sec"] = 3.0
+    wk._SETTINGS["risk_poll_sec"] = 1.5
+    assert wk._order_poll_target() == 3.0 and wk._risk_poll_target() == 1.5

@@ -38,9 +38,28 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
+from flumine.utils import get_nearest_price, price_ticks_away
+
 # Soglia "posizione già piatta": sotto 1 cent di sbilancio non si piazza nulla (il più
 # piccolo movimento di denaro su Betfair è il centesimo → niente ordini-fantasma a €0,00).
 FLAT_EPS = 0.01
+
+
+def _place_through(side: str, best_price: float, place_at_ticks: int) -> float:
+    """Sposta il prezzo di ``place_at_ticks`` PIÙ A FONDO nel book per un fill più sicuro
+    (stop a 2 parametri, stile Bet Angel: chiudi al best ma "place at" N tick oltre).
+
+    LAY  → prezzo PIÙ ALTO (offri odds migliori ai backer → match più probabile).
+    BACK → prezzo PIÙ BASSO (offri odds migliori ai layer → match più probabile).
+    Peggiora leggermente il P&L bloccato ma garantisce l'uscita in un mercato veloce.
+    place_at_ticks<=0 → nessuno spostamento (chiude esattamente al best).
+    """
+    if not place_at_ticks or place_at_ticks <= 0:
+        return best_price
+    snapped = get_nearest_price(float(best_price))
+    n = int(place_at_ticks) if side == "lay" else -int(place_at_ticks)
+    moved = price_ticks_away(snapped, n)
+    return get_nearest_price(float(moved))
 
 
 @dataclass(frozen=True)
@@ -78,6 +97,7 @@ def compute_greenup(
     best_back_price: Optional[float],
     best_lay_price: Optional[float],
     fraction: float = 1.0,
+    place_at_ticks: int = 0,
 ) -> GreenupPlan:
     """Calcola l'UNICO ordine di green-up/cash-out per una selezione.
 
@@ -110,6 +130,7 @@ def compute_greenup(
                 None, None, None, round(w, 2), round(l, 2),
                 "prezzo LAY non disponibile per il green-up",
             )
+        p = _place_through("lay", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
         size = round(f * diff / p, 2)
         if size <= 0.0:
             return GreenupPlan(
@@ -132,6 +153,7 @@ def compute_greenup(
             None, None, None, round(w, 2), round(l, 2),
             "prezzo BACK non disponibile per il green-up",
         )
+    p = _place_through("back", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
     size = round(f * (-diff) / p, 2)
     if size <= 0.0:
         return GreenupPlan(

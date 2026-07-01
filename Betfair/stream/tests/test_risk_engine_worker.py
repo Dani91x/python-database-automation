@@ -140,6 +140,8 @@ def _flumine(market: Any) -> Any:
 def _force_paper(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rw.low, "_live_order_mode", lambda: "PAPER")
     monkeypatch.setattr(rw.low, "_kill_switch", lambda: False)
+    monkeypatch.setattr(rw.low, "_db_kill_switch", lambda: False)
+    monkeypatch.setattr(rw, "_alert", lambda *a, **k: None)  # niente tentativi DB per gli alert
 
 
 def _rule(**kw: Any) -> Dict[str, Any]:
@@ -163,7 +165,7 @@ def test_offset_enqueues_place_and_marks_done():
     assert len(sb.enqueued) == 1
     p = sb.enqueued[0]
     assert p["action"] == "place" and p["side"] == "lay" and p["price"] == 2.80 and p["size"] == 10.0
-    assert p["client_ref"] == "risk1"
+    assert p["client_ref"] == "risk1o"  # offset = suffisso 'o' (coesiste con lo stop 's' nei bracket)
     assert rule["status"] == "done" and rule["enqueued_request_id"]
 
 
@@ -225,3 +227,124 @@ def test_transient_error_keeps_rule_armed():
     rw._process_once(sb, fl, strategy=object())
     assert sb.enqueued == []
     assert rule["status"] == "armed"  # NON 'error'
+
+
+# ===========================================================================
+# Risk engine v2: on-fill / anti-gamba-nuda / bracket OCO / place_at / in-play
+# ===========================================================================
+def _orderobj(bet_id=None, matched=0.0, status="EXECUTABLE", cust_ref=None) -> Any:
+    return SimpleNamespace(
+        bet_id=bet_id, size_matched=matched, status=SimpleNamespace(name=status),
+        notes=({"customer_order_ref": cust_ref} if cust_ref else {}), context={},
+    )
+
+
+class _BlotterV2:
+    def __init__(self, w, l, orders=None):
+        self._w, self._l = w, l
+        self._orders = list(orders or [])
+
+    def get_exposures(self, _s, _lk):
+        return {"matched_profit_if_win": self._w, "matched_profit_if_lose": self._l}
+
+    def get_order_bet_id(self, bet_id):
+        for o in self._orders:
+            if getattr(o, "bet_id", None) == bet_id:
+                return o
+        return None
+
+    def __iter__(self):
+        return iter(self._orders)
+
+
+def _market_v2(sel=47973, ltp=3.0, bb=2.98, bl=3.0, w=20.0, l=-10.0, inplay=None, orders=None) -> Any:
+    mb = SimpleNamespace(runners=[_runner(sel, ltp, bb, bl)], inplay=inplay)
+    return SimpleNamespace(market_id="1.1", market_book=mb, blotter=_BlotterV2(w, l, orders))
+
+
+def test_offset_on_fill_waits_then_places_matched_size():
+    entry = _orderobj(bet_id="E1", matched=0.0, status="EXECUTABLE")
+    rule = _rule(rule_type="offset", params={"offset_ticks": 10, "timing": "on_fill"}, entry_bet_id="E1")
+    sb = _FakeSb([rule])
+    market = _market_v2(orders=[entry])
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == [] and rule["status"] == "armed"   # attende il fill dell'ingresso
+    entry.size_matched = 8.0                                  # l'ingresso si abbina
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    assert sb.enqueued[0]["action"] == "place" and sb.enqueued[0]["size"] == 8.0
+    assert rule["status"] == "done"
+
+
+def test_offset_anti_naked_leg():
+    entry = _orderobj(bet_id="E1", matched=0.0, status="LAPSED")  # ingresso lapsato, 0 match
+    rule = _rule(rule_type="offset", params={"offset_ticks": 10}, entry_bet_id="E1")
+    sb = _FakeSb([rule])
+    rw._process_once(sb, _flumine(_market_v2(orders=[entry])), strategy=object())
+    assert sb.enqueued == []                # NESSUN offset orfano
+    assert rule["status"] == "done" and "gamba-nuda" in rule["result"]["note"]
+
+
+def test_bracket_places_offset_then_stop_fires_cancels_offset():
+    rule = _rule(rule_type="bracket", params={"offset_ticks": 10, "trigger_ticks": 10})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0)
+    fl = _flumine(market)
+    # poll 1: piazza l'offset, stato offset_placed
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued[0]["client_ref"] == "risk1o"
+    assert rule["result"]["state"] == "offset_placed"
+    off_req = rule["result"]["offset_request_id"]
+    # l'offset ora "risiede" nel blotter (piazzato dalla coda), con bet_id
+    market.blotter._orders.append(_orderobj(bet_id="OFF1", status="EXECUTABLE", cust_ref="awlq" + str(off_req)))
+    # poll 2: prezzo avverso (LTP 3.55 >= trigger 3.50) → stop → cancel offset + greenup (OCO)
+    market.market_book.runners[0].last_price_traded = 3.55
+    market.market_book.runners[0].ex.available_to_lay = [SimpleNamespace(price=3.55, size=100.0)]
+    rw._process_once(sb, fl, strategy=object())
+    actions = [e["action"] for e in sb.enqueued]
+    assert "cancel" in actions and "greenup" in actions
+    assert rule["status"] == "triggered"
+
+
+def test_bracket_take_profit_fills_cancels_stop():
+    rule = _rule(rule_type="bracket", params={"offset_ticks": 10, "trigger_ticks": 10})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0)
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())          # poll 1: offset piazzato
+    off_req = rule["result"]["offset_request_id"]
+    # l'offset si ABBINA (take-profit eseguito)
+    market.blotter._orders.append(_orderobj(bet_id="OFF1", matched=10.0,
+                                            status="EXECUTION_COMPLETE", cust_ref="awlq" + str(off_req)))
+    before = len(sb.enqueued)
+    rw._process_once(sb, fl, strategy=object())          # poll 2: OCO → done, niente stop
+    assert len(sb.enqueued) == before                    # nessun ordine nuovo (stop annullato)
+    assert rule["status"] == "done" and "take-profit" in rule["result"]["note"]
+
+
+def test_stop_passes_place_at_to_greenup():
+    rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10, "place_at_ticks": 3})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.55, bb=3.5, bl=3.55)
+    rw._process_once(sb, _flumine(market), strategy=object())
+    assert sb.enqueued[0]["action"] == "greenup"
+    assert sb.enqueued[0]["params"]["place_at_ticks"] == 3
+
+
+def test_inplay_cancel_policy_disarms_rule():
+    rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10, "on_inplay": "cancel"})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0, inplay=True)   # transizione pre→in
+    rw._process_once(sb, _flumine(market), strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "cancelled"
+
+
+def test_inplay_keep_policy_continues():
+    rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10})  # default keep
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.55, bb=3.5, bl=3.55, inplay=True)  # in-play + stop condition vera
+    rw._process_once(sb, _flumine(market), strategy=object())
+    assert sb.enqueued[0]["action"] == "greenup"   # keep → continua e scatta
+    assert rule["status"] == "triggered"

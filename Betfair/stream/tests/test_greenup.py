@@ -164,3 +164,30 @@ def test_invalid_price_le_one_is_noop():
         best_back_price=3.0, best_lay_price=1.0, fraction=1.0,
     )
     assert not plan.actionable
+
+
+# ---------------------------------------------------------------------------
+# place_at_ticks — stop a 2 parametri: chiude N tick più a fondo nel book (fill sicuro)
+# ---------------------------------------------------------------------------
+def test_place_at_lay_moves_price_up_into_book():
+    base = compute_greenup(matched_if_win=20.0, matched_if_lose=-10.0,
+                           best_back_price=2.9, best_lay_price=3.0, fraction=1.0)
+    pat = compute_greenup(matched_if_win=20.0, matched_if_lose=-10.0,
+                          best_back_price=2.9, best_lay_price=3.0, fraction=1.0, place_at_ticks=2)
+    assert base.side == "lay" and pat.side == "lay"
+    assert pat.price > base.price  # LAY più in alto = offre odds migliori ai backer = match sicuro
+
+
+def test_place_at_back_moves_price_down_into_book():
+    pat = compute_greenup(matched_if_win=-10.0, matched_if_lose=20.0,
+                          best_back_price=3.0, best_lay_price=2.9, fraction=1.0, place_at_ticks=2)
+    assert pat.side == "back"
+    assert pat.price < 3.0  # BACK più in basso = offre odds migliori ai layer = match sicuro
+
+
+def test_place_at_zero_is_noop():
+    a = compute_greenup(matched_if_win=20.0, matched_if_lose=-10.0,
+                        best_back_price=2.9, best_lay_price=3.0, place_at_ticks=0)
+    b = compute_greenup(matched_if_win=20.0, matched_if_lose=-10.0,
+                        best_back_price=2.9, best_lay_price=3.0)
+    assert a.price == b.price

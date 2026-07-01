@@ -58,8 +58,9 @@ def _runner(sel, bb, bl):
 
 
 class _Market:
-    def __init__(self, market_id, runners=None, exposures=None, sel_exposure=0.0):
+    def __init__(self, market_id, runners=None, exposures=None, sel_exposure=0.0, event_id=None):
         self.market_id = market_id
+        self.event_id = event_id
         self.placed: List[Any] = []
         self.market_book = SimpleNamespace(runners=runners or [])
         self._exp = exposures or {}
@@ -183,3 +184,78 @@ def test_cashout_all_requires_strategy():
     row = {"id": 4, "market_id": "1.1", "handicap": 0, "action": "cashout_all", "params": {}}
     with pytest.raises(ValueError):
         wk._do_cashout_all(_Sb([row]), _fl(market), row, "paper", None)
+
+
+def _fl_multi(markets):
+    return SimpleNamespace(markets=_Markets({m.market_id: m for m in markets}))
+
+
+def _price_of(order):
+    return order.order_type.price
+
+
+# ---------------------------------------------------------------------------
+# #7 dutching v2 — target-profit + modalità prezzo
+# ---------------------------------------------------------------------------
+def test_dutch_target_profit_mode():
+    row = {"id": 10, "market_id": "1.1", "handicap": 0, "action": "dutch",
+           "params": {"selections": [{"selection_id": 10, "price": 4.0},
+                                     {"selection_id": 20, "price": 4.0},
+                                     {"selection_id": 30, "price": 4.0}],
+                      "mode": "target", "target_profit": 10.0, "side": "back"}}
+    sb = _Sb([row])
+    market = _Market("1.1")
+    wk._do_dutch(sb, _fl(market), row, "paper", _STRAT)
+    assert len(market.placed) == 3
+    for leg in row["result"]["legs"]:
+        assert leg["profit_if_wins"] == pytest.approx(10.0, abs=0.20)
+
+
+def test_dutch_pricing_best_uses_book():
+    # prezzo fornito 5.0 ma pricing=best → usa best_back del book (4.0)
+    runners = [_runner(10, 4.0, 4.05), _runner(20, 4.0, 4.05)]
+    market = _Market("1.1", runners=runners)
+    row = {"id": 11, "market_id": "1.1", "handicap": 0, "action": "dutch",
+           "params": {"selections": [{"selection_id": 10, "price": 5.0},
+                                     {"selection_id": 20, "price": 5.0}],
+                      "total_stake": 20.0, "side": "back", "mode": "equal", "pricing": "best"}}
+    wk._do_dutch(_Sb([row]), _fl(market), row, "paper", _STRAT)
+    assert all(_price_of(o) == 4.0 for o in market.placed)   # book, non 5.0
+
+
+def test_dutch_pricing_in_front_moves_one_tick():
+    runners = [_runner(10, 4.0, 4.05), _runner(20, 4.0, 4.05)]
+    market = _Market("1.1", runners=runners)
+    row = {"id": 12, "market_id": "1.1", "handicap": 0, "action": "dutch",
+           "params": {"selections": [{"selection_id": 10, "price": 4.0},
+                                     {"selection_id": 20, "price": 4.0}],
+                      "total_stake": 20.0, "side": "back", "mode": "equal", "pricing": "in_front"}}
+    wk._do_dutch(_Sb([row]), _fl(market), row, "paper", _STRAT)
+    assert all(_price_of(o) == 4.1 for o in market.placed)   # 1 tick sopra 4.0 (fascia 0.1)
+
+
+# ---------------------------------------------------------------------------
+# #8 cashout_event — flatten di TUTTI i mercati dell'evento
+# ---------------------------------------------------------------------------
+def test_cashout_event_flattens_all_markets():
+    exp = {10: {"matched_profit_if_win": 20.0, "matched_profit_if_lose": -10.0}}
+    m1 = _Market("1.1", runners=[_runner(10, 3.0, 3.05)], exposures=exp, event_id="EVT1")
+    m2 = _Market("1.2", runners=[_runner(10, 3.0, 3.05)], exposures=exp, event_id="EVT1")
+    m3 = _Market("1.9", runners=[_runner(10, 3.0, 3.05)], exposures=exp, event_id="OTHER")
+    row = {"id": 20, "market_id": "1.1", "handicap": 0, "action": "cashout_event", "params": {}}
+    sb = _Sb([row])
+    wk._do_cashout_event(sb, _fl_multi([m1, m2, m3]), row, "paper", _STRAT)
+    # chiude solo i mercati dell'evento EVT1 (m1, m2), NON m3 (evento diverso)
+    assert len(m1.placed) == 1 and len(m2.placed) == 1 and len(m3.placed) == 0
+    assert row["result"]["scope"] == "event" and row["result"]["markets"] == 2
+    assert len(row["result"]["legs"]) == 2
+
+
+def test_cashout_all_is_single_market_scope():
+    exp = {10: {"matched_profit_if_win": 20.0, "matched_profit_if_lose": -10.0}}
+    m1 = _Market("1.1", runners=[_runner(10, 3.0, 3.05)], exposures=exp, event_id="EVT1")
+    row = {"id": 21, "market_id": "1.1", "handicap": 0, "action": "cashout_all", "params": {}}
+    sb = _Sb([row])
+    wk._do_cashout_all(sb, _fl(m1), row, "paper", _STRAT)
+    assert row["result"]["scope"] == "market"
+    assert len(row["result"]["legs"]) == 1

@@ -183,6 +183,37 @@ def _max_orders_per_min() -> Optional[int]:
     return _int(_SETTINGS.get("max_orders_per_min"))
 
 
+# Cadenza runtime (#15): il worker si auto-pacizza al target letto da betfair_live_settings
+# (order_poll_sec / risk_poll_sec) SENZA riavvio. Solo RALLENTAMENTO: il BackgroundWorker è
+# registrato a una cadenza base; se il target è più lento, si saltano cicli fino a rispettarlo.
+# Target non impostato (NULL) → nessun throttle (cadenza = base, default invariato).
+_LAST_CYCLE: Dict[str, float] = {}
+
+
+def _throttled(name: str, target_sec: Optional[float]) -> bool:
+    """True se questo ciclo va SALTATO per rispettare il target di cadenza runtime.
+    target None/<=0 → mai throttle (comportamento di default invariato)."""
+    if not target_sec or target_sec <= 0:
+        return False
+    now = _now_epoch()
+    if now - _LAST_CYCLE.get(name, 0.0) < float(target_sec):
+        return True
+    _LAST_CYCLE[name] = now
+    return False
+
+
+def _order_poll_target() -> Optional[float]:
+    """Cadenza target del worker coda da settings (runtime). None = nessun override."""
+    v = _f(_SETTINGS.get("order_poll_sec"))
+    return v if (v and v > 0) else None
+
+
+def _risk_poll_target() -> Optional[float]:
+    """Cadenza target del risk worker da settings (runtime). None = nessun override."""
+    v = _f(_SETTINGS.get("risk_poll_sec"))
+    return v if (v and v > 0) else None
+
+
 def _rate_limited() -> bool:
     """True se nel minuto scorso i place hanno raggiunto ``max_orders_per_min`` (se impostato)."""
     cap = _max_orders_per_min()
@@ -761,12 +792,15 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
     fraction = _f(params.get("fraction")) if isinstance(params, dict) else None
     if fraction is None:
         fraction = 1.0
+    # place_at_ticks (stop a 2 parametri): chiude N tick più a fondo nel book per fill sicuro.
+    place_at = _int(params.get("place_at_ticks")) if isinstance(params, dict) else None
 
     w, l = _read_matched_exposures(flumine, market, strategy, selection_id, handicap)
     best_back, best_lay = _best_prices(market, selection_id, handicap)
     plan = compute_greenup(
         matched_if_win=w, matched_if_lose=l,
         best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
+        place_at_ticks=place_at or 0,
     )
 
     if not plan.actionable:
@@ -827,8 +861,8 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     mode:'equal'|'variable', persistence}``. Ogni gamba passa da ``build_order`` (stesse
     validazioni money-critical) e da ``market.place_order`` (stesso path/specchio del place).
     """
-    from .live_order_build import build_order
-    from .trading.dutching import dutch_back, dutch_lay, dutch_variable
+    from .live_order_build import build_order, ticks_away
+    from .trading.dutching import dutch_back, dutch_back_for_target, dutch_lay, dutch_variable
 
     rid = request_row["id"]
     market = _resolve_market(flumine, request_row.get("market_id"))
@@ -839,17 +873,52 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     total = _f(params.get("total_stake"))
     side = str(params.get("side") or "back").lower()
     dmode = str(params.get("mode") or "equal").lower()
+    pricing = str(params.get("pricing") or "as_given").lower()
+    nominated = _f(params.get("nominated_price"))
     persistence = str(params.get("persistence") or "LAPSE")
-    if not sels_in or total is None or total <= 0:
-        raise ValueError("dutch: selections + total_stake (>0) obbligatori")
+    hcap = float(request_row.get("handicap") or 0)
+    if not sels_in:
+        raise ValueError("dutch: selections obbligatorio")
+    if dmode != "target" and (total is None or total <= 0):
+        raise ValueError("dutch: total_stake (>0) obbligatorio (salvo mode=target)")
+
+    # #7 modalità PREZZO: as_given (quote passate) | best (miglior prezzo corrente dal book) |
+    # in_front (1 tick davanti al book) | nominated (prezzo unico). Deriva il prezzo per gamba.
+    def _price_for(sel_id: int, given: Optional[float]) -> Optional[float]:
+        if pricing == "nominated" and nominated:
+            return nominated
+        if pricing in ("best", "in_front"):
+            bb, bl = _best_prices(market, sel_id, hcap)
+            base = bb if side == "back" else bl
+            if base is None:
+                return given  # fallback difensivo al prezzo fornito
+            if pricing == "in_front":  # back → odds più alte, lay → più basse (davanti al book)
+                return ticks_away(base, 1 if side == "back" else -1)
+            return base
+        return given
 
     if dmode == "variable":
-        triples = [(int(s["selection_id"]), _f(s.get("price")), _f(s.get("weight")) or 1.0) for s in sels_in]
-        plan = dutch_variable([(a, b, c) for a, b, c in triples if b is not None], total)
+        triples = []
+        for s in sels_in:
+            price = _price_for(int(s["selection_id"]), _f(s.get("price")))
+            if price is not None:
+                triples.append((int(s["selection_id"]), price, _f(s.get("weight")) or 1.0))
+        plan = dutch_variable(triples, total)
     else:
-        pairs = [(int(s["selection_id"]), _f(s.get("price"))) for s in sels_in]
-        pairs = [(a, b) for a, b in pairs if b is not None]
-        plan = dutch_lay(pairs, total) if side == "lay" else dutch_back(pairs, total)
+        pairs = []
+        for s in sels_in:
+            price = _price_for(int(s["selection_id"]), _f(s.get("price")))
+            if price is not None:
+                pairs.append((int(s["selection_id"]), price))
+        if dmode == "target":
+            if side == "lay":
+                raise ValueError("dutch mode=target: supportato solo per back")
+            target = _f(params.get("target_profit"))
+            if target is None or target <= 0:
+                raise ValueError("dutch mode=target richiede params.target_profit > 0")
+            plan = dutch_back_for_target(pairs, target)
+        else:  # equal
+            plan = dutch_lay(pairs, total) if side == "lay" else dutch_back(pairs, total)
 
     if not plan.actionable:
         _write_done(sb, rid, _result(
@@ -858,7 +927,6 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         ))
         return
 
-    hcap = float(request_row.get("handicap") or 0)
     live_legs = [leg for leg in plan.legs if leg.size > 0]
     # Fase 6 (fix review MEDIUM): le gambe dutch APRONO esposizione → passano dalle stesse
     # guardie del place. Rate-limit UNA volta (mai un dutching a metà per il rate) e pre-check
@@ -897,30 +965,24 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
 
 
 # ---------------------------------------------------------------------------
-# cashout_all — global cash-out: flatten di TUTTE le selezioni di un mercato
+# cashout — flatten di TUTTE le selezioni di un MERCATO (cashout_all) o dell'INTERO
+# EVENTO / tutti i mercati (cashout_event). Distinzione netta (#8).
 # ---------------------------------------------------------------------------
-def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
-    """Cash-out globale di un MERCATO: greenup (flatten) di ogni selezione con esposizione ≠ 0.
-
-    Riusa la matematica di greenup su ogni selezione del market_book (esposizioni FRESCHE +
-    best opposto). ``params.fraction`` ∈ (0,1] per un cash-out parziale. Money-critical: usa
-    ``reduces_liability=True`` (self-bounded), stesso path del greenup singolo.
-    """
+def _flatten_market(
+    flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int
+) -> "tuple[list, int]":
+    """Flatten (green-up) di ogni selezione del mercato con esposizione ≠ 0. Ritorna
+    (gambe_chiuse, prossimo_indice). Ogni gamba ha un customer_order_ref UNIVOCO ``awlq<rid>x<idx>``
+    (idx globale progressivo → nessuna collisione nello specchio anche su più mercati). Riusa la
+    matematica di greenup (esposizioni FRESCHE + best opposto) con ``reduces_liability=True``."""
     from .live_order_build import build_order
     from .trading.greenup import compute_greenup
 
-    if strategy is None:
-        raise ValueError("cashout_all richiede la strategy registrata (LiveTradingStrategy)")
-    rid = request_row["id"]
-    market = _resolve_market(flumine, request_row.get("market_id"))
-    params = request_row.get("params") or {}
-    fraction = _f(params.get("fraction")) if isinstance(params, dict) else None
-    if fraction is None:
-        fraction = 1.0
-
     mb = _val(market, "market_book")
     runners = (_val(mb, "runners") or []) if mb is not None else []
-    closed = []
+    market_id = _val(market, "market_id")
+    closed: list = []
+    idx = idx0
     for r in runners:
         sel = _int(_val(r, "selection_id"))
         if sel is None:
@@ -937,16 +999,78 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
             side=str(plan.side), order_type="LIMIT", price=plan.price, size=plan.size,
             liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
             jurisdiction=_jurisdiction(), max_stake=None,
-            customer_order_ref=_leg_ref(rid, f"c{sel}"), reduces_liability=True,
+            customer_order_ref=_leg_ref(rid, f"x{idx}"), reduces_liability=True,
         )
         market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
-        closed.append({"selection_id": sel, "side": plan.side, "price": built.price, "size": built.size})
+        closed.append({"market_id": market_id, "selection_id": sel, "side": plan.side,
+                       "price": built.price, "size": built.size})
+        idx += 1
+    return closed, idx
 
+
+def _cashout_fraction(request_row: Dict[str, Any]) -> float:
+    params = request_row.get("params") or {}
+    f = _f(params.get("fraction")) if isinstance(params, dict) else None
+    return f if f is not None else 1.0
+
+
+def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Cash-out di UN SOLO MERCATO (cashout_all): flatten di ogni selezione del mercato indicato.
+    ``params.fraction`` ∈ (0,1] per un cash-out parziale."""
+    if strategy is None:
+        raise ValueError("cashout_all richiede la strategy registrata (LiveTradingStrategy)")
+    rid = request_row["id"]
+    market = _resolve_market(flumine, request_row.get("market_id"))
+    fraction = _cashout_fraction(request_row)
+    closed, _ = _flatten_market(flumine, market, strategy, fraction, rid, 0)
     result = _result(
         ok=True, action="cashout_all", mode=mode, request_row=request_row,
-        cust_ref=_cust_ref(rid), detail=f"cash-out mercato: {len(closed)} selezioni chiuse (frazione {fraction:.2f})",
+        cust_ref=_cust_ref(rid),
+        detail=f"cash-out MERCATO {_val(market, 'market_id')}: {len(closed)} selezioni chiuse "
+               f"(frazione {fraction:.2f})",
     )
     result["legs"] = closed
+    result["scope"] = "market"
+    _write_done(sb, rid, result)
+
+
+def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
+    """Cash-out dell'INTERO EVENTO (cashout_event): flatten di TUTTI i mercati che condividono
+    l'event_id — chiusura globale multi-mercato (benchmark Betting Toolkit). L'event_id è preso
+    da ``params.event_id`` o, in fallback, dal ``market.event_id`` del market_id passato.
+
+    OGNI mercato è chiuso PER CONTO SUO (flatten indipendente): nessun netting cross-market
+    (che richiederebbe un modello di correlazione — vedi trading/hedging per l'hedge dedicato)."""
+    if strategy is None:
+        raise ValueError("cashout_event richiede la strategy registrata (LiveTradingStrategy)")
+    rid = request_row["id"]
+    params = request_row.get("params") or {}
+    fraction = _cashout_fraction(request_row)
+    ref_market = _resolve_market(flumine, request_row.get("market_id"))
+    event_id = (params.get("event_id") if isinstance(params, dict) else None) or _val(ref_market, "event_id")
+    if not event_id:
+        raise ValueError("cashout_event: event_id non determinabile (né params.event_id né market.event_id)")
+
+    closed: list = []
+    idx = 0
+    markets_done = 0
+    for m in flumine.markets:
+        if _val(m, "event_id") != event_id:
+            continue
+        legs, idx = _flatten_market(flumine, m, strategy, fraction, rid, idx)
+        closed.extend(legs)
+        markets_done += 1
+
+    result = _result(
+        ok=True, action="cashout_event", mode=mode, request_row=request_row,
+        cust_ref=_cust_ref(rid),
+        detail=f"cash-out EVENTO {event_id}: {len(closed)} selezioni su {markets_done} mercati "
+               f"(frazione {fraction:.2f})",
+    )
+    result["legs"] = closed
+    result["scope"] = "event"
+    result["event_id"] = event_id
+    result["markets"] = markets_done
     _write_done(sb, rid, result)
 
 
@@ -1040,6 +1164,17 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
         target_size=target_size,
         jurisdiction=juris,
     )
+    # Fase 6 (fix review #10): anche il submin APRE esposizione reale → passa dalle stesse
+    # guardie del place PRIMA di piazzare (rate-limit + max esposizione/selezione). Il rischio è
+    # il target_size (BACK) o la liability target (LAY). Solleva PRIMA di persistere lo step INIT,
+    # così una richiesta oltre i limiti non lascia una riga 'processing' orfana.
+    if _rate_limited():
+        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
+    _sub_side = str(request_row["side"]).lower()
+    _sub_risk = target_size if _sub_side == "back" else round(target_size * (float(request_row["price"]) - 1.0), 2)
+    _check_exposure_guard(market, strategy, int(request_row["selection_id"]),
+                          float(request_row.get("handicap") or 0), float(_sub_risk))
+
     # FIX (a) finestra di crash: persisti lo SubminState ATTESO (step=INIT) PRIMA del place
     # REALE. Il ref interno deterministico (awlq<id>) viaggia nell'esito (customer_order_ref).
     # Se il processo cade TRA il market.place_order e la persistenza dello step, alla ripresa
@@ -1061,6 +1196,8 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
         market, state, order=None, jurisdiction=juris, customer_order_ref=cust_ref, ops=ops,
     )
     order = ops.last_order
+    if order is not None:
+        _record_order()  # conteggia il place del submin nel rate-limit ordini/min
     order_id = _val(order, "id")
     _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, order_id)
 
@@ -1169,6 +1306,8 @@ def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         _do_dutch(sb, flumine, request_row, mode, strategy)
     elif action == "cashout_all":
         _do_cashout_all(sb, flumine, request_row, mode, strategy)
+    elif action == "cashout_event":
+        _do_cashout_event(sb, flumine, request_row, mode, strategy)
     else:
         raise ValueError(f"action sconosciuta: {action!r}")
 
@@ -1273,8 +1412,11 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     mode = _live_order_mode()
     if mode not in ("PAPER", "LIVE"):
         return 0  # OFF (o valore ignoto): worker inerte
-    # Fase 6: snapshot settings UNA volta per ciclo (kill-switch da UI + limiti custom).
+    # Fase 6: snapshot settings UNA volta per ciclo (kill-switch da UI + limiti custom + velocità).
     _refresh_settings(sb)
+    # #15 velocità runtime: rallenta la cadenza al target order_poll_sec (se impostato), senza riavvio.
+    if _throttled("order_cycle", _order_poll_target()):
+        return 0
     # Gate a INIZIO ciclo: kill-switch da ENV *o* da DB (UI). Se attivo, salta TUTTO il giro.
     # L'env è RI-LETTO anche per-ordine nel loop; il flag DB è lo snapshot di ciclo.
     if _kill_switch() or _db_kill_switch():

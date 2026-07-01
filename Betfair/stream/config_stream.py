@@ -233,3 +233,10 @@ def live_max_stake_per_order() -> Optional[float]:
 RISK_ENGINE_POLL_SEC: float = float(os.getenv("LIVE_RISK_ENGINE_POLL_SEC", "1.0"))
 # righe (regole armate) lette per giro.
 RISK_ENGINE_BATCH: int = int(os.getenv("LIVE_RISK_ENGINE_BATCH", "20"))
+
+# ----------------------------------------------------------------------------
+# Hedging cross-market (#9): cadenza del worker che calcola l'analisi P&L per-scoreline
+# per evento e la scrive in betfair_live_xhedge (sola lettura, display). Lenta: l'analisi
+# non deve essere ad alta frequenza.
+# ----------------------------------------------------------------------------
+XHEDGE_POLL_SEC: float = float(os.getenv("LIVE_XHEDGE_POLL_SEC", "5.0"))
