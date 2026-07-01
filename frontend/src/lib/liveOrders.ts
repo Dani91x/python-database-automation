@@ -18,7 +18,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 // ---------- Tipi comando (mirror betfair_live_order_requests / INTERFACES.md §4.1) ----------
 export type LiveOrderMode = 'paper' | 'live';
-export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin' | 'greenup' | 'dutch' | 'cashout_all';
+export type LiveOrderAction = 'place' | 'cancel' | 'replace' | 'place_submin' | 'greenup' | 'dutch' | 'cashout_all' | 'cashout_event';
 export type LiveOrderSide = 'back' | 'lay';
 export type LiveOrderType = 'LIMIT' | 'LIMIT_ON_CLOSE' | 'MARKET_ON_CLOSE';
 export type LivePersistence = 'LAPSE' | 'PERSIST' | 'MARKET_ON_CLOSE';
@@ -183,25 +183,46 @@ export async function sendGreenup(args: {
     });
 }
 
-// ---------- dutching (equal/variable) — mirror sendGreenup ----------
+// ---------- dutching (equal/variable/target) — mirror sendGreenup ----------
 // Accoda un comando 'dutch': il worker calcola gli stake a PROFITTO PAREGGIATO e piazza
 // OGNI gamba. Niente side/price/size al top-level: tutto dentro params (contratto backend).
 // MONEY-CRITICAL: idempotente (client_ref in sendLiveOrderCommand), su timeout NON reinviare.
+//
+// dutchMode v2:
+//   'equal'/'variable' → stake totale fisso (totalStake, obbligatorio > 0).
+//   'target'           → stake derivato dal PROFITTO OBIETTIVO (targetProfit, obbligatorio > 0);
+//                        il worker risolve gli stake così che ogni gamba renda targetProfit.
+// pricing: come piazzare ogni gamba — 'as_given' (usa i price passati), 'best' (best price live),
+//   'in_front' (un tick davanti al best), 'nominated' (usa nominatedPrice). Default lato server.
+export type DutchMode = 'equal' | 'variable' | 'target';
+export type DutchPricing = 'as_given' | 'best' | 'in_front' | 'nominated';
 export async function sendDutch(args: {
     marketId: string;
     mode: LiveOrderMode;
     selections: { selection_id: number; price: number; weight?: number }[];
-    totalStake: number;
     side: LiveOrderSide;
-    dutchMode: 'equal' | 'variable';
+    dutchMode: DutchMode;
+    totalStake?: number;           // obblig. per 'equal'/'variable'
+    targetProfit?: number;         // obblig. per 'target'
+    pricing?: DutchPricing;
+    nominatedPrice?: number;       // obblig. quando pricing='nominated'
     handicap?: number;
     persistence?: LivePersistence;
 }): Promise<LiveOrderResult> {
     if (!args.selections || args.selections.length < 2) {
         throw new Error('sendDutch: servono almeno 2 selezioni');
     }
-    if (!Number.isFinite(args.totalStake) || args.totalStake <= 0) {
+    const isTarget = args.dutchMode === 'target';
+    if (isTarget) {
+        if (!Number.isFinite(args.targetProfit) || (args.targetProfit as number) <= 0) {
+            throw new Error('sendDutch: target_profit deve essere > 0 (dutchMode target)');
+        }
+    } else if (!Number.isFinite(args.totalStake) || (args.totalStake as number) <= 0) {
         throw new Error('sendDutch: total_stake deve essere > 0');
+    }
+    if (args.pricing === 'nominated' &&
+        !(Number.isFinite(args.nominatedPrice) && (args.nominatedPrice as number) > 1)) {
+        throw new Error('sendDutch: nominated_price deve essere > 1 quando pricing=nominated');
     }
     return sendLiveOrderCommand({
         action: 'dutch',
@@ -210,9 +231,13 @@ export async function sendDutch(args: {
         handicap: args.handicap ?? 0,
         params: {
             selections: args.selections,
-            total_stake: args.totalStake,
             side: args.side,
             mode: args.dutchMode,
+            ...(isTarget
+                ? { target_profit: args.targetProfit }
+                : { total_stake: args.totalStake }),
+            ...(args.pricing ? { pricing: args.pricing } : {}),
+            ...(args.pricing === 'nominated' ? { nominated_price: args.nominatedPrice } : {}),
             ...(args.persistence ? { persistence: args.persistence } : {}),
         },
     });
@@ -237,9 +262,38 @@ export async function sendCashoutAll(args: {
     });
 }
 
-// ---------- risk engine (offset / stop-loss / take-profit / trailing-stop) ----------
-export type RiskRuleType = 'offset' | 'stop_loss' | 'take_profit' | 'trailing_stop';
+// ---------- cash-out INTERO EVENTO (tutti i mercati) — mirror sendCashoutAll ----------
+// Accoda 'cashout_event': il server DERIVA l'event_id dal market_id e appiattisce OGNI
+// selezione con esposizione aperta su TUTTI i mercati dell'evento (non solo quello passato).
+// Distinto da 'cashout_all' (un solo mercato). fraction=1 → totale; 0<fraction<1 → parziale.
+export async function sendCashoutEvent(args: {
+    marketId: string;
+    mode: LiveOrderMode;
+    fraction?: number;             // (0,1] — default 1.0 (cash-out totale dell'evento)
+}): Promise<LiveOrderResult> {
+    const f = args.fraction;
+    if (f != null && f <= 0) throw new Error('sendCashoutEvent: fraction deve essere > 0');
+    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    return sendLiveOrderCommand({
+        action: 'cashout_event',
+        mode: args.mode,
+        market_id: args.marketId,
+        ...(params ? { params } : {}),
+    });
+}
+
+// ---------- risk engine (offset / stop-loss / take-profit / trailing-stop / bracket) ----------
+// 'bracket' = OCO (One-Cancels-Other): presa di profitto (offset) + stop-loss armati
+// insieme; il primo che scatta annulla l'altro. Richiede un entry_bet_id (l'ordine di
+// ingresso da sorvegliare): niente offset "nudo" senza un ingresso abbinato da coprire.
+export type RiskRuleType = 'offset' | 'stop_loss' | 'take_profit' | 'trailing_stop' | 'bracket';
 export type RiskRuleStatus = 'armed' | 'triggered' | 'cancelled' | 'done' | 'error';
+// Momento di attivazione: 'immediate' arma subito; 'on_fill' aspetta l'abbinamento
+// dell'ordine di ingresso (entry_bet_id) prima di sorvegliare (niente offset nudo).
+export type RiskTiming = 'immediate' | 'on_fill';
+// Comportamento al passaggio IN-PLAY del mercato: mantieni la regola, annullala,
+// o ricalcola il riferimento (rebaseline) sul nuovo stato del book.
+export type RiskOnInplay = 'keep' | 'cancel' | 'rebaseline';
 
 // Parametri regola (jsonb.params lato backend): solo i campi pertinenti al rule_type.
 export interface RiskRuleParams {
@@ -249,7 +303,10 @@ export interface RiskRuleParams {
     trigger_pct?: number;
     trail_ticks?: number;
     trail_pct?: number;
+    place_at_ticks?: number;       // dove piazzare l'ordine di uscita (tick dal riferimento)
     greening?: boolean;
+    timing?: RiskTiming;           // 'immediate' | 'on_fill'
+    on_inplay?: RiskOnInplay;      // 'keep' | 'cancel' | 'rebaseline'
     stop_amount?: number;
     target_amount?: number;
     persistence?: LivePersistence;
@@ -266,6 +323,7 @@ export interface RiskRuleRow {
     entry_side: LiveOrderSide;
     entry_price: number | null;
     entry_size: number | null;
+    entry_bet_id?: string | null;
     params: RiskRuleParams | Record<string, unknown>;
     trail_extreme: number | null;
     status: RiskRuleStatus;
@@ -277,7 +335,9 @@ export interface RiskRuleRow {
 }
 
 // entry_price è OBBLIGATORIO per offset/stop_loss/trailing_stop (contratto backend):
-// serve un riferimento per calcolare target/trigger. take_profit può basarsi su P&L (target_amount).
+// serve un riferimento per calcolare target/trigger. take_profit può basarsi su P&L
+// (target_amount). ECCEZIONE: con entry_bet_id o timing 'on_fill' il server deriva il
+// riferimento dall'ABBINAMENTO reale dell'ordine di ingresso → entry_price non richiesto.
 const RISK_RULE_ENTRY_PRICE_REQUIRED: ReadonlySet<RiskRuleType> = new Set<RiskRuleType>([
     'offset', 'stop_loss', 'trailing_stop',
 ]);
@@ -294,9 +354,18 @@ export async function requestRiskRule(args: {
     entrySide: LiveOrderSide;
     entryPrice?: number;
     entrySize?: number;
+    entryBetId?: string;           // ordine di ingresso da sorvegliare (on_fill/bracket)
     params: RiskRuleParams;
 }): Promise<number> {
-    if (RISK_RULE_ENTRY_PRICE_REQUIRED.has(args.ruleType) &&
+    const timing = args.params?.timing;
+    const hasEntryBet = typeof args.entryBetId === 'string' && args.entryBetId.length > 0;
+    // no offset "nudo": bracket e timing 'on_fill' devono sorvegliare un ordine di ingresso.
+    if ((args.ruleType === 'bracket' || timing === 'on_fill') && !hasEntryBet) {
+        throw new Error(`requestRiskRule: entry_bet_id obbligatorio per '${args.ruleType}'/timing on_fill (no offset nudo)`);
+    }
+    // entry_price richiesto solo se il riferimento NON è derivato dall'ordine di ingresso.
+    const derivesFromFill = hasEntryBet || timing === 'on_fill';
+    if (RISK_RULE_ENTRY_PRICE_REQUIRED.has(args.ruleType) && !derivesFromFill &&
         !(args.entryPrice != null && Number.isFinite(args.entryPrice))) {
         throw new Error(`requestRiskRule: entry_price obbligatorio per rule_type '${args.ruleType}'`);
     }
@@ -310,6 +379,7 @@ export async function requestRiskRule(args: {
         selection_id: args.selectionId,
         handicap: args.handicap ?? 0,
         entry_side: args.entrySide,
+        ...(hasEntryBet ? { entry_bet_id: args.entryBetId } : {}),
         ...(args.entryPrice != null ? { entry_price: args.entryPrice } : {}),
         ...(args.entrySize != null ? { entry_size: args.entrySize } : {}),
         params: args.params,
@@ -356,6 +426,50 @@ export async function fetchLivePositions(marketId: string): Promise<LivePosition
     const { data, error } = await supabase.rpc('get_live_positions', { p_market_id: marketId });
     if (error) throw new Error(error.message);
     const raw = data as { rows?: LivePositionRow[] } | LivePositionRow[] | null;
+    if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
+// ---------- cross-market hedge (x-hedge) per EVENTO ----------
+// Analisi P&L per-scoreline sull'INTERO evento (tutti i mercati correlati): quanto si
+// vince/perde in ogni possibile risultato dato lo stato attuale delle esposizioni, più
+// un eventuale suggerimento di copertura (una gamba che migliora il caso peggiore).
+// Sola lettura: get_live_xhedge(p_event_id) → { rows: XhedgeRow[] }.
+export interface XhedgeSuggestion {
+    actionable: boolean;
+    scoreline: [number, number] | null;
+    side: 'back' | null;
+    odds: number | null;
+    size: number | null;
+    new_worst: number;
+    new_best: number;
+    note: string;
+}
+export interface XhedgeAnalysis {
+    n_positions: number;
+    summary: {
+        worst: number;
+        best: number;
+        mean: number;
+        worst_scoreline: [number, number];
+        best_scoreline: [number, number];
+        n_scorelines: number;
+    };
+    grid: Array<[number, number, number]>;   // [home, away, pnl]
+    suggestion: XhedgeSuggestion | null;
+}
+export interface XhedgeRow {
+    event_id: string;
+    mode: LiveOrderMode;
+    analysis: XhedgeAnalysis;
+    updated_at: string;
+}
+
+// Legge l'analisi x-hedge dell'evento (get_live_xhedge → { rows }). Sola lettura.
+export async function fetchXhedge(eventId: string): Promise<XhedgeRow[]> {
+    const { data, error } = await supabase.rpc('get_live_xhedge', { p_event_id: eventId });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: XhedgeRow[] } | XhedgeRow[] | null;
     if (Array.isArray(raw)) return raw;
     return raw?.rows ?? [];
 }

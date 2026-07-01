@@ -26,9 +26,17 @@
 // ============================================================================
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
-import { Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check } from 'lucide-react';
+import {
+    Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check,
+    Settings2, ChevronUp, ChevronDown, RotateCcw,
+} from 'lucide-react';
 import { roundToTick, tickUp, tickDown } from '@/lib/matching';
 import { lockedPnlAt, piqAhead } from '@/lib/ladderMath';
+import {
+    loadProfile, saveProfile, resetProfile, defaultProfile, normalizeProfile,
+    toggleColumn, reorderColumn, visibleColumns, COLUMN_LABELS,
+    type ColumnKey, type LadderProfile,
+} from '@/lib/ladderConfig';
 import {
     fetchLiveLadder, subscribeLiveLadder,
     type LiveLadderRow, type LiveLadderSelection,
@@ -217,7 +225,59 @@ function WomBar({ wom }: { wom: { back_pct: number; lay_pct: number } | null | u
 }
 
 // ----------------------------------------------------- ladder di UNA selezione
-const COL_TEMPLATE = '34px 56px 50px 56px 34px 50px 42px 30px'; // 8 colonne
+// larghezza px per colonna (replica il layout storico a 8 colonne).
+const COL_WIDTH: Record<ColumnKey, string> = {
+    my_lay: '34px',
+    avail_back: '56px',
+    price: '50px',
+    avail_lay: '56px',
+    my_back: '34px',
+    pnl: '50px',
+    trd: '42px',
+    piq: '34px',
+    wom: '0px', // WOM resta nell'header della selezione, non è una colonna per-riga
+};
+
+// intestazioni brevi per colonna (come i ladder pro Geeks Toy / Bet Angel).
+const COL_HEADER: Record<ColumnKey, { label: string; cls: string; title?: string }> = {
+    my_lay: { label: 'L', cls: 'text-rose-300/70', title: 'I tuoi LAY non abbinati (clic per annullare)' },
+    avail_back: { label: 'Back', cls: 'text-sky-300/80' },
+    price: { label: 'Prezzo', cls: '' },
+    avail_lay: { label: 'Lay', cls: 'text-rose-300/80' },
+    my_back: { label: 'B', cls: 'text-sky-300/70', title: 'I tuoi BACK non abbinati (clic per annullare)' },
+    pnl: { label: 'P&L', cls: 'text-purple-300/70', title: 'P&L se chiudi a questo prezzo' },
+    trd: { label: 'Trd', cls: '', title: 'Volume tradato a questo prezzo' },
+    piq: { label: 'PIQ', cls: 'text-white/40', title: 'PIQ: coda STIMATA (piqAhead + volume tradato)' },
+    wom: { label: 'WOM', cls: '' },
+};
+
+// colonne effettivamente renderizzabili nella griglia per-riga (WOM è escluso: è un
+// aggregato di selezione mostrato nell'header, non un valore per-prezzo).
+export const GRID_KEYS: ReadonlySet<ColumnKey> = new Set<ColumnKey>([
+    'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq',
+]);
+
+// stima RAFFINATA della coda usando il volume tradato: la coda davanti a te non può
+// superare (coda_iniziale − volume tradato da quando il tuo ordine è entrato) né la coda
+// statica attuale (piqAhead). È una STIMA — Betfair non espone la posizione reale in coda,
+// ma il denaro passato in trade a quel prezzo è un proxy di quanto la coda è avanzata.
+export function refineQueue(
+    staticAhead: number,
+    baseline: { trd: number; ahead: number } | undefined,
+    currentTrd: number,
+): number {
+    if (!(staticAhead > 0)) return 0;
+    if (!baseline) return staticAhead; // appena entrato: nessun volume passato ancora
+    const traded = Math.max(0, (Number.isFinite(currentTrd) ? currentTrd : 0) - baseline.trd);
+    const fromVol = Math.max(0, baseline.ahead - traded);
+    return Math.min(staticAhead, fromVol);
+}
+
+// filtra/normalizza le colonne passate a una griglia: solo GRID_KEYS, 'price' garantita.
+function gridColumnsOf(columns: ColumnKey[]): ColumnKey[] {
+    const cols = columns.filter((k) => GRID_KEYS.has(k));
+    return cols.includes('price') ? cols : ['price', ...cols];
+}
 
 interface SelectionLadderProps {
     sel: LiveLadderSelection;
@@ -227,17 +287,43 @@ interface SelectionLadderProps {
     status: string | null;         // OPEN | SUSPENDED | CLOSED
     canTrade: boolean;             // mode != off && mercato OPEN
     busy: boolean;                 // un comando è in volo (disabilita i click)
+    columns: ColumnKey[];          // colonne griglia (ordine + visibilità) dal profilo
     onPlace: (side: TradeSide, price: number, selectionId: number, selName: string) => void;
     onCancel: (betIds: string[], side: TradeSide, price: number, selName: string) => void;
     onGreenup: (fraction: number, selectionId: number, selName: string) => void;
 }
 
 const SelectionLadder = memo(function SelectionLadder({
-    sel, orders, position, stake, status, canTrade, busy, onPlace, onCancel, onGreenup,
+    sel, orders, position, stake, status, canTrade, busy, columns, onPlace, onCancel, onGreenup,
 }: SelectionLadderProps) {
     const built = useMemo(() => buildLadder(sel, orders, position), [sel, orders, position]);
     const [armedPrice, setArmedPrice] = useState<number | null>(null); // evidenziazione livello (OFF/non-trade)
     const [fraction, setFraction] = useState(1); // cash-out parziale (1 = totale)
+
+    // colonne griglia effettive (ordine dal profilo, WOM escluso, 'price' garantita).
+    const gridCols = useMemo(() => gridColumnsOf(columns), [columns]);
+    const colTemplate = useMemo(() => gridCols.map((k) => COL_WIDTH[k]).join(' '), [gridCols]);
+
+    // baseline PIQ per livello+lato: {trd, ahead} catturata quando il tuo ordine ENTRA in
+    // coda a quel prezzo, per stimare l'avanzamento dal volume tradato successivo.
+    const piqBaseRef = useRef<Map<string, { trd: number; ahead: number }>>(new Map());
+    useEffect(() => {
+        const map = piqBaseRef.current;
+        const active = new Set<string>();
+        for (const r of built.rows) {
+            if (r.myBack > 0) {
+                const k = `back@${r.price}`;
+                active.add(k);
+                if (!map.has(k)) map.set(k, { trd: r.trd, ahead: piqAhead(r.myBack, r.layAvail) });
+            }
+            if (r.myLay > 0) {
+                const k = `lay@${r.price}`;
+                active.add(k);
+                if (!map.has(k)) map.set(k, { trd: r.trd, ahead: piqAhead(r.myLay, r.backAvail) });
+            }
+        }
+        for (const k of Array.from(map.keys())) if (!active.has(k)) map.delete(k);
+    }, [built]);
 
     const selName = sel.name ?? `#${sel.selection_id}`;
 
@@ -324,19 +410,17 @@ const SelectionLadder = memo(function SelectionLadder({
                 </div>
             </div>
 
-            {/* intestazione colonne */}
+            {/* intestazione colonne (ordine dal profilo) */}
             <div
                 className="grid items-center text-[8px] uppercase tracking-wider text-muted-foreground/70 px-1 py-0.5 border-b border-white/5 bg-black/30"
-                style={{ gridTemplateColumns: COL_TEMPLATE }}
+                style={{ gridTemplateColumns: colTemplate }}
             >
-                <span className="text-center text-rose-300/70" title="I tuoi LAY non abbinati (clic per annullare)">L</span>
-                <span className="text-center text-sky-300/80">Back</span>
-                <span className="text-center">Prezzo</span>
-                <span className="text-center text-rose-300/80">Lay</span>
-                <span className="text-center text-sky-300/70" title="I tuoi BACK non abbinati (clic per annullare)">B</span>
-                <span className="text-center text-purple-300/70" title="P&L se chiudi a questo prezzo">P&L</span>
-                <span className="text-center" title="Volume tradato a questo prezzo">Trd</span>
-                <span className="text-center text-white/40" title="PIQ: coda stimata al tuo livello">PIQ</span>
+                {gridCols.map((k) => {
+                    const h = COL_HEADER[k];
+                    return (
+                        <span key={k} className={`text-center ${h.cls}`} title={h.title}>{h.label}</span>
+                    );
+                })}
             </div>
 
             {/* corpo ladder */}
@@ -354,109 +438,155 @@ const SelectionLadder = memo(function SelectionLadder({
                         const pnl = built.hasPosition ? lockedPnlAt(r.price, built.win, built.lose) : null;
                         const trdPct = built.maxTrd > 0 ? (r.trd / built.maxTrd) * 100 : 0;
                         // PIQ: un BACK risiede sul lato LAY del book → coda ≈ layAvail − tuoBack; e
-                        // viceversa. Se hai BACK E LAY allo stesso tick (cross), somma le due code.
-                        const piq = piqAhead(r.myBack, r.layAvail) + piqAhead(r.myLay, r.backAvail);
+                        // viceversa. Base STATICA (snapshot) piqAhead, RAFFINATA col volume tradato
+                        // passato a quel prezzo da quando il tuo ordine è entrato in coda (refineQueue).
+                        const piqBackStatic = piqAhead(r.myBack, r.layAvail);
+                        const piqLayStatic = piqAhead(r.myLay, r.backAvail);
+                        const piqStatic = piqBackStatic + piqLayStatic;
+                        const piqEst =
+                            refineQueue(piqBackStatic, piqBaseRef.current.get(`back@${r.price}`), r.trd) +
+                            refineQueue(piqLayStatic, piqBaseRef.current.get(`lay@${r.price}`), r.trd);
                         const layBetIds = myOrdersAt.get(`lay@${r.price}`) ?? [];
                         const backBetIds = myOrdersAt.get(`back@${r.price}`) ?? [];
                         const canCancel = canTrade && !busy;
+
+                        const cell = (k: ColumnKey) => {
+                            switch (k) {
+                                case 'my_lay':
+                                    // tuoi LAY non abbinati — clic = annulla
+                                    return (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            disabled={r.myLay <= 0 || !canCancel}
+                                            onClick={() => onCancel(layBetIds, 'lay', r.price, selName)}
+                                            title={r.myLay > 0 ? 'Annulla i tuoi LAY a questo prezzo' : undefined}
+                                            className="flex items-center justify-center disabled:cursor-default"
+                                        >
+                                            {r.myLay > 0 && (
+                                                <span className="px-1 rounded bg-rose-500/20 text-rose-200 font-bold tabular-nums hover:bg-rose-500/40 hover:line-through">
+                                                    {fmtSize(r.myLay)}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                case 'avail_back':
+                                    // disponibile al BACK (blu) — clic = back one-click
+                                    return (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            onClick={() => clickBack(r.price)}
+                                            title={canTrade ? `BACK €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Back (sola lettura: modalità OFF)'}
+                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
+                                                r.backAvail > 0
+                                                    ? 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/30'
+                                                    : 'text-transparent hover:bg-sky-500/10'
+                                            } ${isBestBack ? 'ring-1 ring-inset ring-sky-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
+                                        >
+                                            {fmtSize(r.backAvail) || '·'}
+                                        </button>
+                                    );
+                                case 'price':
+                                    // PREZZO (centro) — LTP evidenziato
+                                    return (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            onClick={() => onLevel(r.price)}
+                                            className={`flex items-center justify-center font-bold font-mono tabular-nums border-x border-white/10 transition-colors ${
+                                                isLtp
+                                                    ? 'bg-amber-400/25 text-amber-100 ring-1 ring-inset ring-amber-400/70'
+                                                    : (isBestBack || isBestLay)
+                                                        ? 'bg-white/[0.06] text-white'
+                                                        : 'text-white/70 hover:bg-white/5'
+                                            }`}
+                                            title={isLtp ? 'Ultimo prezzo tradato (LTP)' : undefined}
+                                        >
+                                            {fmtPrice(r.price)}
+                                        </button>
+                                    );
+                                case 'avail_lay':
+                                    // disponibile al LAY (rosa) — clic = lay one-click
+                                    return (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            onClick={() => clickLay(r.price)}
+                                            title={canTrade ? `LAY €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Lay (sola lettura: modalità OFF)'}
+                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
+                                                r.layAvail > 0
+                                                    ? 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/30'
+                                                    : 'text-transparent hover:bg-rose-500/10'
+                                            } ${isBestLay ? 'ring-1 ring-inset ring-rose-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
+                                        >
+                                            {fmtSize(r.layAvail) || '·'}
+                                        </button>
+                                    );
+                                case 'my_back':
+                                    // tuoi BACK non abbinati — clic = annulla
+                                    return (
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            disabled={r.myBack <= 0 || !canCancel}
+                                            onClick={() => onCancel(backBetIds, 'back', r.price, selName)}
+                                            title={r.myBack > 0 ? 'Annulla i tuoi BACK a questo prezzo' : undefined}
+                                            className="flex items-center justify-center disabled:cursor-default"
+                                        >
+                                            {r.myBack > 0 && (
+                                                <span className="px-1 rounded bg-sky-500/20 text-sky-200 font-bold tabular-nums hover:bg-sky-500/40 hover:line-through">
+                                                    {fmtSize(r.myBack)}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                case 'pnl':
+                                    // P&L per livello (viola)
+                                    return (
+                                        <div key={k} className={`flex items-center justify-center font-mono tabular-nums ${
+                                            pnl == null ? 'text-white/15'
+                                                : pnl > 0 ? 'text-emerald-300/90'
+                                                    : pnl < 0 ? 'text-rose-300/90' : 'text-purple-200/70'
+                                        }`}>
+                                            {pnl == null ? '·' : (pnl < 0 ? '−' : '') + Math.abs(pnl).toFixed(2)}
+                                        </div>
+                                    );
+                                case 'trd':
+                                    // volume tradato (mini-barra + numero)
+                                    return (
+                                        <div key={k} className="relative flex items-center justify-end pr-1 overflow-hidden">
+                                            {r.trd > 0 && (
+                                                <div className="absolute inset-y-0.5 left-0 rounded-sm bg-amber-400/15"
+                                                    style={{ width: `${trdPct}%` }} />
+                                            )}
+                                            <span className="relative font-mono tabular-nums text-amber-200/80">{fmtVol(r.trd)}</span>
+                                        </div>
+                                    );
+                                case 'piq':
+                                    // PIQ (coda STIMATA al tuo livello, raffinata col volume tradato)
+                                    return (
+                                        <div key={k} className="flex items-center justify-center font-mono tabular-nums text-white/35"
+                                            title={piqStatic > 0
+                                                ? `Coda STIMATA davanti al tuo ordine · statica ~${fmtSize(piqStatic) || '0'} · con volume tradato ~${fmtSize(piqEst) || '0'}`
+                                                : undefined}>
+                                            {piqStatic > 0 ? `~${fmtSize(piqEst) || '0'}` : '·'}
+                                        </div>
+                                    );
+                                default:
+                                    return null;
+                            }
+                        };
+
                         return (
                             <div
                                 key={r.price}
                                 className={`grid items-stretch border-b border-white/[0.04] text-[10px] leading-tight ${
                                     isArmed ? 'ring-1 ring-inset ring-amber-400/60' : ''
                                 }`}
-                                style={{ gridTemplateColumns: COL_TEMPLATE }}
+                                style={{ gridTemplateColumns: colTemplate }}
                             >
-                                {/* 1) tuoi LAY non abbinati — clic = annulla */}
-                                <button
-                                    type="button"
-                                    disabled={r.myLay <= 0 || !canCancel}
-                                    onClick={() => onCancel(layBetIds, 'lay', r.price, selName)}
-                                    title={r.myLay > 0 ? 'Annulla i tuoi LAY a questo prezzo' : undefined}
-                                    className="flex items-center justify-center disabled:cursor-default"
-                                >
-                                    {r.myLay > 0 && (
-                                        <span className="px-1 rounded bg-rose-500/20 text-rose-200 font-bold tabular-nums hover:bg-rose-500/40 hover:line-through">
-                                            {fmtSize(r.myLay)}
-                                        </span>
-                                    )}
-                                </button>
-                                {/* 2) disponibile al BACK (blu) — clic = back one-click */}
-                                <button
-                                    type="button"
-                                    onClick={() => clickBack(r.price)}
-                                    title={canTrade ? `BACK €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Back (sola lettura: modalità OFF)'}
-                                    className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
-                                        r.backAvail > 0
-                                            ? 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/30'
-                                            : 'text-transparent hover:bg-sky-500/10'
-                                    } ${isBestBack ? 'ring-1 ring-inset ring-sky-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
-                                >
-                                    {fmtSize(r.backAvail) || '·'}
-                                </button>
-                                {/* 3) PREZZO (centro) — LTP evidenziato */}
-                                <button
-                                    type="button"
-                                    onClick={() => onLevel(r.price)}
-                                    className={`flex items-center justify-center font-bold font-mono tabular-nums border-x border-white/10 transition-colors ${
-                                        isLtp
-                                            ? 'bg-amber-400/25 text-amber-100 ring-1 ring-inset ring-amber-400/70'
-                                            : (isBestBack || isBestLay)
-                                                ? 'bg-white/[0.06] text-white'
-                                                : 'text-white/70 hover:bg-white/5'
-                                    }`}
-                                    title={isLtp ? 'Ultimo prezzo tradato (LTP)' : undefined}
-                                >
-                                    {fmtPrice(r.price)}
-                                </button>
-                                {/* 4) disponibile al LAY (rosa) — clic = lay one-click */}
-                                <button
-                                    type="button"
-                                    onClick={() => clickLay(r.price)}
-                                    title={canTrade ? `LAY €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Lay (sola lettura: modalità OFF)'}
-                                    className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
-                                        r.layAvail > 0
-                                            ? 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/30'
-                                            : 'text-transparent hover:bg-rose-500/10'
-                                    } ${isBestLay ? 'ring-1 ring-inset ring-rose-400/50' : ''} ${busy ? 'pointer-events-none opacity-60' : ''}`}
-                                >
-                                    {fmtSize(r.layAvail) || '·'}
-                                </button>
-                                {/* 5) tuoi BACK non abbinati — clic = annulla */}
-                                <button
-                                    type="button"
-                                    disabled={r.myBack <= 0 || !canCancel}
-                                    onClick={() => onCancel(backBetIds, 'back', r.price, selName)}
-                                    title={r.myBack > 0 ? 'Annulla i tuoi BACK a questo prezzo' : undefined}
-                                    className="flex items-center justify-center disabled:cursor-default"
-                                >
-                                    {r.myBack > 0 && (
-                                        <span className="px-1 rounded bg-sky-500/20 text-sky-200 font-bold tabular-nums hover:bg-sky-500/40 hover:line-through">
-                                            {fmtSize(r.myBack)}
-                                        </span>
-                                    )}
-                                </button>
-                                {/* 6) P&L per livello (viola) */}
-                                <div className={`flex items-center justify-center font-mono tabular-nums ${
-                                    pnl == null ? 'text-white/15'
-                                        : pnl > 0 ? 'text-emerald-300/90'
-                                            : pnl < 0 ? 'text-rose-300/90' : 'text-purple-200/70'
-                                }`}>
-                                    {pnl == null ? '·' : (pnl < 0 ? '−' : '') + Math.abs(pnl).toFixed(2)}
-                                </div>
-                                {/* 7) volume tradato (mini-barra + numero) */}
-                                <div className="relative flex items-center justify-end pr-1 overflow-hidden">
-                                    {r.trd > 0 && (
-                                        <div className="absolute inset-y-0.5 left-0 rounded-sm bg-amber-400/15"
-                                            style={{ width: `${trdPct}%` }} />
-                                    )}
-                                    <span className="relative font-mono tabular-nums text-amber-200/80">{fmtVol(r.trd)}</span>
-                                </div>
-                                {/* 8) PIQ (coda stimata al tuo livello) */}
-                                <div className="flex items-center justify-center font-mono tabular-nums text-white/35"
-                                    title={piq > 0 ? 'Denaro stimato in coda davanti al tuo ordine a questo livello' : undefined}>
-                                    {piq > 0 ? fmtSize(piq) : '·'}
-                                </div>
+                                {gridCols.map(cell)}
                             </div>
                         );
                     })}
@@ -496,17 +626,66 @@ interface Props {
     marketName?: string | null;
     orderMode?: string;            // OFF | PAPER | LIVE (da live_now.state.order_mode)
     handicap?: number;             // handicap di mercato (default 0)
+    sport?: string;                // sport-key del profilo colonne (persistito per-sport)
     // selezioni note dal tabellone (live_now): per nome/ordine quando la ladder è ancora vuota.
     fallbackSelections?: { selection_id: number; name: string }[];
 }
 
-export function LadderView({ marketId, marketName, orderMode = 'off', handicap = 0, fallbackSelections = [] }: Props) {
+// profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
+// storico a 8 colonne (con PIQ visibile); altrimenti il profilo salvato dall'utente.
+const LADDER_DEFAULT_ORDER: ColumnKey[] = [
+    'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq',
+];
+function eightColProfile(sport: string): LadderProfile {
+    return normalizeProfile(sport, {
+        sport,
+        columns: LADDER_DEFAULT_ORDER.map((key) => ({ key, visible: true })),
+    });
+}
+function initLadderProfile(sport: string): LadderProfile {
+    const loaded = loadProfile(sport);
+    const pristine = JSON.stringify(loaded) === JSON.stringify(defaultProfile(sport));
+    return pristine ? eightColProfile(sport) : loaded;
+}
+
+export function LadderView({ marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [] }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
     const [orders, setOrders] = useState<LiveOrderRow[]>([]);
     const [positions, setPositions] = useState<LivePositionRow[]>([]);
     const [activeSel, setActiveSel] = useState<number | null>(null);
     const unsubRef = useRef<(() => void) | null>(null);
+
+    // ---- profilo COLONNE configurabile (per-sport, persistito in localStorage) ----
+    const [profile, setProfile] = useState<LadderProfile>(() => initLadderProfile(sport));
+    const [showCols, setShowCols] = useState(false);
+    useEffect(() => { setProfile(initLadderProfile(sport)); }, [sport]);
+    // colonne griglia effettive (visibili, WOM escluso: resta nell'header selezione).
+    const gridColumns = useMemo(
+        () => visibleColumns(profile).filter((k) => k !== 'wom'),
+        [profile],
+    );
+    const applyProfile = useCallback((next: LadderProfile) => {
+        setProfile(next);
+        saveProfile(next); // persisti subito la scelta per lo sport
+    }, []);
+    const onToggleCol = useCallback((k: ColumnKey) => {
+        applyProfile(toggleColumn(profile, k));
+    }, [profile, applyProfile]);
+    const onMoveCol = useCallback((k: ColumnKey, dir: -1 | 1) => {
+        // muovi rispetto ai vicini VISIBILI-nel-picker (WOM escluso), traducendo l'indice
+        // nell'array completo del profilo per reorderColumn.
+        const list = profile.columns.filter((c) => c.key !== 'wom');
+        const pos = list.findIndex((c) => c.key === k);
+        const neighbor = list[pos + dir];
+        if (!neighbor) return;
+        const dest = profile.columns.findIndex((c) => c.key === neighbor.key);
+        applyProfile(reorderColumn(profile, k, dest));
+    }, [profile, applyProfile]);
+    const onResetCols = useCallback(() => {
+        resetProfile(sport);
+        setProfile(initLadderProfile(sport));
+    }, [sport]);
 
     const mode: PanelMode = useMemo(() => {
         const m = (orderMode || 'off').toLowerCase();
@@ -823,6 +1002,77 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                             <Zap className="w-3 h-3" /> 1-CLICK
                         </button>
                     )}
+                    {/* column-picker: mostra/nascondi e riordina le colonne del ladder (per-sport) */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowCols(s => !s)}
+                            title="Colonne del ladder (per-sport, salvate)"
+                            aria-label="Configura colonne del ladder"
+                            aria-expanded={showCols}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors ${
+                                showCols
+                                    ? 'bg-white/90 text-black border-white/90'
+                                    : 'border-white/10 text-white/70 hover:border-white/40'
+                            }`}
+                        >
+                            <Settings2 className="w-3 h-3" /> Colonne
+                        </button>
+                        {showCols && (
+                            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-lg border border-white/15 bg-black/95 backdrop-blur p-2 shadow-xl">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-bold">
+                                        Colonne · {sport}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={onResetCols}
+                                        title="Ripristina layout predefinito"
+                                        aria-label="Ripristina colonne predefinite"
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold text-white/60 hover:text-white hover:bg-white/10"
+                                    >
+                                        <RotateCcw className="w-3 h-3" /> Reset
+                                    </button>
+                                </div>
+                                <ul className="space-y-0.5">
+                                    {profile.columns.filter(c => c.key !== 'wom').map((c, i, arr) => (
+                                        <li key={c.key} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-white/5">
+                                            <input
+                                                type="checkbox"
+                                                checked={c.visible}
+                                                disabled={c.key === 'price'}
+                                                onChange={() => onToggleCol(c.key)}
+                                                aria-label={`Mostra colonna ${COLUMN_LABELS[c.key]}`}
+                                                className="accent-amber-400 cursor-pointer disabled:cursor-not-allowed"
+                                            />
+                                            <span className={`flex-1 text-[11px] ${c.visible ? 'text-white/85' : 'text-white/40'}`}>
+                                                {COLUMN_LABELS[c.key]}
+                                                {c.key === 'price' && <span className="ml-1 text-[8px] text-muted-foreground/70">(fissa)</span>}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => onMoveCol(c.key, -1)}
+                                                disabled={i === 0}
+                                                aria-label={`Sposta ${COLUMN_LABELS[c.key]} su`}
+                                                className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-default"
+                                            >
+                                                <ChevronUp className="w-3 h-3" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => onMoveCol(c.key, 1)}
+                                                disabled={i === arr.length - 1}
+                                                aria-label={`Sposta ${COLUMN_LABELS[c.key]} giù`}
+                                                className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-default"
+                                            >
+                                                <ChevronDown className="w-3 h-3" />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -908,6 +1158,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                                 status={status}
                                 canTrade={canTrade}
                                 busy={busy}
+                                columns={gridColumns}
                                 onPlace={onPlace}
                                 onCancel={onCancel}
                                 onGreenup={onGreenup}

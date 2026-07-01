@@ -333,12 +333,28 @@ def test_stop_passes_place_at_to_greenup():
 
 
 def test_inplay_cancel_policy_disarms_rule():
+    # fix review MEDIUM: la transizione pre→in va rilevata su un GENUINO False→True (non al primo
+    # avvistamento). Ciclo 1 pre-match = semina inplay=False; ciclo 2 in-play = transizione → cancel.
     rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10, "on_inplay": "cancel"})
     sb = _FakeSb([rule])
-    market = _market_v2(ltp=3.0, inplay=True)   # transizione pre→in
-    rw._process_once(sb, _flumine(market), strategy=object())
+    market = _market_v2(ltp=3.0, inplay=False)   # pre-match
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())
+    assert rule["status"] == "armed" and rule["result"]["inplay"] is False   # seminato, no policy
+    market.market_book.inplay = True             # calcio d'inizio → transizione vera
+    rw._process_once(sb, fl, strategy=object())
     assert sb.enqueued == []
     assert rule["status"] == "cancelled"
+
+
+def test_inplay_no_false_transition_when_armed_inplay():
+    # regola armata mentre il mercato è GIÀ in-play: il primo giro NON deve annullare (solo semina).
+    rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10, "on_inplay": "cancel"})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0, inplay=True)    # già in-play all'armamento
+    rw._process_once(sb, _flumine(market), strategy=object())
+    assert rule["status"] == "armed"             # NON cancellata (nessuna falsa transizione)
+    assert rule["result"]["inplay"] is True
 
 
 def test_inplay_keep_policy_continues():
@@ -348,3 +364,20 @@ def test_inplay_keep_policy_continues():
     rw._process_once(sb, _flumine(market), strategy=object())
     assert sb.enqueued[0]["action"] == "greenup"   # keep → continua e scatta
     assert rule["status"] == "triggered"
+
+
+def test_bracket_stop_waits_if_offset_not_yet_placed():
+    # fix review HIGH: se lo stop scatta ma l'offset non è ancora nel blotter (bet_id assente),
+    # il worker NON deve flattenare (lascerebbe un take-profit resting nudo piazzato dopo): ASPETTA.
+    rule = _rule(rule_type="bracket", params={"offset_ticks": 10, "trigger_ticks": 10})
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0)
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())          # poll1: offset accodato, state offset_placed
+    n_after_p1 = len(sb.enqueued)
+    # offset NON ancora nel blotter (la coda non l'ha piazzato). Il prezzo diventa avverso.
+    market.market_book.runners[0].last_price_traded = 3.55
+    market.market_book.runners[0].ex.available_to_lay = [SimpleNamespace(price=3.55, size=100.0)]
+    rw._process_once(sb, fl, strategy=object())          # poll2: off is None → aspetta
+    assert len(sb.enqueued) == n_after_p1                # nessun cancel, nessun greenup
+    assert rule["status"] == "armed"                     # resta in attesa (non 'triggered')

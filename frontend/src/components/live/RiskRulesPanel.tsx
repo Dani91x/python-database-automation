@@ -22,6 +22,7 @@ import {
     requestRiskRule, cancelRiskRule, fetchRiskRules, shouldResetLiveConfirm,
     type LiveOrderMode, type LiveOrderSide, type LivePersistence,
     type RiskRuleType, type RiskRuleParams, type RiskRuleRow,
+    type RiskTiming, type RiskOnInplay,
 } from '@/lib/liveOrders';
 import { nearestTick, offsetTargetPrice, stopTriggerPrice } from '@/lib/riskMath';
 
@@ -68,6 +69,7 @@ const UNITS_BY_RULE: Record<RiskRuleType, ParamUnit[]> = {
     stop_loss: ['ticks', 'pct', 'amount'],
     take_profit: ['amount', 'ticks', 'pct'],
     trailing_stop: ['ticks', 'pct'],
+    bracket: ['ticks', 'pct'],
 };
 
 const RULE_LABEL: Record<RiskRuleType, string> = {
@@ -75,6 +77,16 @@ const RULE_LABEL: Record<RiskRuleType, string> = {
     stop_loss: 'Stop-loss',
     take_profit: 'Take-profit',
     trailing_stop: 'Trailing-stop',
+    bracket: 'Bracket (Offset + Stop OCO)',
+};
+const TIMING_LABEL: Record<RiskTiming, string> = {
+    immediate: 'Immediata (arma subito)',
+    on_fill: 'Al fill (attende l\'ingresso)',
+};
+const ONINPLAY_LABEL: Record<RiskOnInplay, string> = {
+    keep: 'Mantieni',
+    cancel: 'Annulla',
+    rebaseline: 'Ricalcola (rebaseline)',
 };
 const UNIT_LABEL: Record<ParamUnit, string> = {
     ticks: 'Tick',
@@ -145,7 +157,11 @@ export function RiskRulesPanel({
     const [entrySize, setEntrySize] = useState('');
     const [unit, setUnit] = useState<ParamUnit>('ticks');
     const [paramValue, setParamValue] = useState('');       // valore tick / % / € a seconda di `unit`
-    const [greening, setGreening] = useState(true);         // solo offset
+    const [greening, setGreening] = useState(true);         // offset / bracket
+    const [timing, setTiming] = useState<RiskTiming>('immediate');
+    const [entryBetId, setEntryBetId] = useState('');       // ordine di ingresso da sorvegliare (on_fill/bracket)
+    const [placeAtTicks, setPlaceAtTicks] = useState('');   // stop_loss / bracket: tick oltre per fill sicuro
+    const [onInplay, setOnInplay] = useState<RiskOnInplay>('keep');
     const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
     const [confirmLive, setConfirmLive] = useState(false);
     const [killSwitch, setKillSwitch] = useState(false);
@@ -163,8 +179,15 @@ export function RiskRulesPanel({
     }, [ruleType, unit]);
 
     const allowedUnits = UNITS_BY_RULE[ruleType];
-    // serve un prezzo d'ingresso se il tipo lo impone O se l'unità è basata sul prezzo (tick/%).
-    const needsEntryPrice = ENTRY_PRICE_REQUIRED.has(ruleType) || unit === 'ticks' || unit === 'pct';
+    // bracket e timing 'on_fill' derivano il riferimento dall'ABBINAMENTO reale
+    // dell'ordine di ingresso (entry_bet_id) → niente gamba nuda, entry_price non richiesto.
+    const derivesFromFill = ruleType === 'bracket' || timing === 'on_fill';
+    const showGreening = ruleType === 'offset' || ruleType === 'bracket';
+    const showPlaceAt = ruleType === 'stop_loss' || ruleType === 'bracket';
+    // serve un prezzo d'ingresso se il tipo lo impone O se l'unità è basata sul prezzo (tick/%),
+    // ma MAI quando il riferimento è derivato dal fill dell'ordine di ingresso.
+    const needsEntryPrice =
+        !derivesFromFill && (ENTRY_PRICE_REQUIRED.has(ruleType) || unit === 'ticks' || unit === 'pct');
 
     // -------------------- anteprima LIVE --------------------
     const preview = useMemo<string | null>(() => {
@@ -180,9 +203,10 @@ export function RiskRulesPanel({
         if (ep == null || ep < 1.01 || ep > 1000) return null;
 
         if (unit === 'ticks') {
-            if (ruleType === 'offset' || ruleType === 'take_profit') {
+            if (ruleType === 'offset' || ruleType === 'take_profit' || ruleType === 'bracket') {
                 const t = offsetTargetPrice(entrySide, ep, v);
-                return `target offset a ${price2(t)} (${v} tick di profitto)`;
+                const suffix = ruleType === 'bracket' ? ' + stop OCO' : '';
+                return `target offset a ${price2(t)} (${v} tick di profitto)${suffix}`;
             }
             // stop_loss / trailing_stop → trigger avverso
             const t = stopTriggerPrice(entrySide, ep, v);
@@ -190,9 +214,10 @@ export function RiskRulesPanel({
             return `${kind} a ${price2(t)} (${v} tick contro)`;
         }
         // unit === 'pct'
-        if (ruleType === 'offset' || ruleType === 'take_profit') {
+        if (ruleType === 'offset' || ruleType === 'take_profit' || ruleType === 'bracket') {
             const t = pctTargetPrice('profit', entrySide, ep, v);
-            return `target offset a ${price2(t)} (${v}%)`;
+            const suffix = ruleType === 'bracket' ? ' + stop OCO' : '';
+            return `target offset a ${price2(t)} (${v}%)${suffix}`;
         }
         const t = pctTargetPrice('adverse', entrySide, ep, v);
         const kind = ruleType === 'trailing_stop' ? 'trailing (iniziale) scatta' : 'stop scatta';
@@ -229,6 +254,10 @@ export function RiskRulesPanel({
         if (ruleType === 'offset') {
             if (unit === 'ticks') params.offset_ticks = v; else params.offset_pct = v;
             params.greening = greening;
+        } else if (ruleType === 'bracket') {
+            // OCO: gamba di presa profitto (offset) + stop; il primo che scatta annulla l'altro.
+            if (unit === 'ticks') params.offset_ticks = v; else params.offset_pct = v;
+            params.greening = greening;
         } else if (ruleType === 'stop_loss') {
             if (unit === 'ticks') params.trigger_ticks = v;
             else if (unit === 'pct') params.trigger_pct = v;
@@ -240,6 +269,13 @@ export function RiskRulesPanel({
         } else { // trailing_stop
             if (unit === 'ticks') params.trail_ticks = v; else params.trail_pct = v;
         }
+        // place_at_ticks: dove piazzare l'ordine di uscita (stop_loss / bracket) per fill sicuro.
+        if (showPlaceAt) {
+            const pat = num(placeAtTicks);
+            if (pat != null) params.place_at_ticks = pat;
+        }
+        params.timing = timing;
+        params.on_inplay = onInplay;
         params.persistence = persistence;
         return params;
     };
@@ -266,6 +302,12 @@ export function RiskRulesPanel({
             toast.error('Prezzo d\'ingresso non valido (1.01–1000): obbligatorio per questa regola.');
             return;
         }
+        const betId = entryBetId.trim();
+        // no gamba nuda: bracket / timing on_fill devono sorvegliare un ordine d'ingresso.
+        if (derivesFromFill && !betId) {
+            toast.error('entry_bet_id obbligatorio per bracket / timing "al fill": attende il fill dell\'ingresso, niente gamba nuda.');
+            return;
+        }
 
         setSubmitting(true);
         try {
@@ -278,6 +320,7 @@ export function RiskRulesPanel({
                 entrySide,
                 ...(ep != null ? { entryPrice: ep } : {}),
                 ...(es != null ? { entrySize: es } : {}),
+                ...(betId ? { entryBetId: betId } : {}),
                 params: buildParams(v),
             });
             toast.success('Regola armata', {
@@ -287,8 +330,12 @@ export function RiskRulesPanel({
             if (shouldResetLiveConfirm(isLive, true)) setConfirmLive(false);
             await reload();
         } catch (e: any) {
-            // include timeout: il messaggio "NON reinviare" arriva da liveOrders.
             toast.error('Errore arming regola', { description: e?.message ?? 'errore sconosciuto' });
+            // MONEY-CRITICAL (fix review): su fallimento AMBIGUO (regola forse committata lato server
+            // ma risposta persa) resetta la conferma LIVE — requestRiskRule conia un client_ref nuovo
+            // ad ogni chiamata, quindi un re-click armerebbe una regola LIVE DUPLICATA (ordine di uscita
+            // duplicato). Richiedere una nuova spunta esplicita prima di ri-armare. (Come DutchingPanel.)
+            if (isLive) setConfirmLive(false);
         } finally {
             setSubmitting(false);
         }
@@ -322,7 +369,10 @@ export function RiskRulesPanel({
         if (p.trail_pct != null) bits.push(`trail ${p.trail_pct}%`);
         if (p.stop_amount != null) bits.push(`stop ${money(-Math.abs(p.stop_amount))}`);
         if (p.target_amount != null) bits.push(`target ${money(Math.abs(p.target_amount))}`);
+        if (p.place_at_ticks != null) bits.push(`@${p.place_at_ticks} tick`);
         if (p.greening) bits.push('greening');
+        if (p.timing === 'on_fill') bits.push('on-fill');
+        if (p.on_inplay && p.on_inplay !== 'keep') bits.push(`in-play: ${p.on_inplay}`);
         return bits.join(' · ') || '—';
     };
 
@@ -337,7 +387,7 @@ export function RiskRulesPanel({
                         <ModeBadge mode={mode} />
                     </div>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                        offset · stop-loss · take-profit · trailing — mercato{' '}
+                        offset · stop-loss · take-profit · trailing · bracket (OCO) — mercato{' '}
                         <span className="font-mono text-white/70">{marketId}</span>
                     </p>
                 </div>
@@ -404,6 +454,7 @@ export function RiskRulesPanel({
                     <div>
                         <Label className={FIELD_LABEL}>Tipo regola</Label>
                         <select className={SELECT_CLS} value={ruleType}
+                            aria-label="Tipo regola"
                             onChange={e => setRuleType(e.target.value as RiskRuleType)}>
                             {(Object.keys(RULE_LABEL) as RiskRuleType[]).map(rt => (
                                 <option key={rt} value={rt}>{RULE_LABEL[rt]}</option>
@@ -459,10 +510,58 @@ export function RiskRulesPanel({
                             <option value="MARKET_ON_CLOSE">MARKET_ON_CLOSE</option>
                         </select>
                     </div>
+                    <div>
+                        <Label className={FIELD_LABEL}>Attivazione (timing)</Label>
+                        <select className={SELECT_CLS} value={timing}
+                            aria-label="Attivazione (timing)"
+                            onChange={e => setTiming(e.target.value as RiskTiming)}>
+                            {(Object.keys(TIMING_LABEL) as RiskTiming[]).map(t => (
+                                <option key={t} value={t}>{TIMING_LABEL[t]}</option>
+                            ))}
+                        </select>
+                    </div>
+                    {showPlaceAt && (
+                        <div>
+                            <Label className={FIELD_LABEL}>Piazza a (tick oltre)</Label>
+                            <Input type="number" step="1" min="0" value={placeAtTicks}
+                                aria-label="Piazza a (tick oltre)"
+                                onChange={e => setPlaceAtTicks(e.target.value)} placeholder="es. 1"
+                                className="bg-black/60 border-white/10" />
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                                a quanti tick oltre chiude, per fill sicuro
+                            </p>
+                        </div>
+                    )}
+                    <div>
+                        <Label className={FIELD_LABEL}>Al calcio d'inizio (in-play)</Label>
+                        <select className={SELECT_CLS} value={onInplay}
+                            aria-label="Al calcio d'inizio (in-play)"
+                            onChange={e => setOnInplay(e.target.value as RiskOnInplay)}>
+                            {(Object.keys(ONINPLAY_LABEL) as RiskOnInplay[]).map(o => (
+                                <option key={o} value={o}>{ONINPLAY_LABEL[o]}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
-                {/* greening (solo offset) */}
-                {ruleType === 'offset' && (
+                {/* entry_bet_id: obbligatorio per bracket / on_fill (niente gamba nuda) */}
+                {(timing === 'on_fill' || ruleType === 'bracket') && (
+                    <div>
+                        <Label className={FIELD_LABEL}>
+                            Ordine d'ingresso (entry_bet_id){derivesFromFill ? ' *' : ''}
+                        </Label>
+                        <Input value={entryBetId} onChange={e => setEntryBetId(e.target.value)}
+                            aria-label="Ordine d'ingresso (entry_bet_id)"
+                            placeholder="es. 3.11223344 (bet id Betfair)"
+                            className="bg-black/60 border-white/10 font-mono" />
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                            attende il fill dell'ingresso, niente gamba nuda
+                        </p>
+                    </div>
+                )}
+
+                {/* greening (offset / bracket) */}
+                {showGreening && (
                     <label className="inline-flex items-center gap-2 text-xs text-white/80 cursor-pointer">
                         <input type="checkbox" checked={greening} onChange={e => setGreening(e.target.checked)}
                             className="accent-amber-400" />

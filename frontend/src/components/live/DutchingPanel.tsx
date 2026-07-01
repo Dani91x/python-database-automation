@@ -29,11 +29,19 @@ import { bookPercentage } from '@/lib/riskMath';
 import {
     sendDutch, shouldResetLiveConfirm,
     type LiveOrderMode, type LiveOrderSide, type LivePersistence,
+    type DutchMode, type DutchPricing,
 } from '@/lib/liveOrders';
 
 // 'off' = runner senza ordini: pannello in sola lettura (zero regressioni).
 export type DutchPanelMode = 'off' | LiveOrderMode;
-type DutchCalcMode = 'equal' | 'variable';
+
+// come il server piazza ogni gamba (nota anteprima + coerenza col worker).
+const PRICING_NOTE: Record<DutchPricing, string> = {
+    as_given: 'ai prezzi impostati',
+    best: 'al best price live',
+    in_front: 'un tick davanti al best',
+    nominated: 'al prezzo nominato',
+};
 
 export interface DutchSelection {
     selection_id: number;
@@ -102,8 +110,11 @@ export function DutchingPanel({
 
     // -------------------- form --------------------
     const [side, setSide] = useState<LiveOrderSide>('back');
-    const [calcMode, setCalcMode] = useState<DutchCalcMode>('equal');
+    const [calcMode, setCalcMode] = useState<DutchMode>('equal');
     const [totalStake, setTotalStake] = useState('10');
+    const [targetProfit, setTargetProfit] = useState('5');       // usato solo in calcMode='target'
+    const [pricing, setPricing] = useState<DutchPricing>('as_given');
+    const [nominatedPrice, setNominatedPrice] = useState('');    // usato solo con pricing='nominated'
     const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
     // preseleziona le prime due selezioni per un'anteprima immediata.
     const [checked, setChecked] = useState<Record<number, boolean>>(() => {
@@ -117,12 +128,16 @@ export function DutchingPanel({
     const [killSwitch, setKillSwitch] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
+    const isTargetMode = calcMode === 'target';
+    const isNominated = pricing === 'nominated';
+
     const defaultPrice = (s: DutchSelection): number | null =>
         side === 'back' ? (s.back ?? null) : (s.lay ?? null);
 
     // -------------------- anteprima (matematica pura) --------------------
     const preview = useMemo(() => {
-        const total = num(totalStake) ?? 0;
+        const enteredTotal = num(totalStake) ?? 0;
+        const target = num(targetProfit) ?? 0;
 
         // 1) risolvi quota + peso effettivi per ogni selezione spuntata e valida.
         type Raw = { s: DutchSelection; on: boolean; price: number; userWeight: number; valid: boolean };
@@ -142,6 +157,14 @@ export function DutchingPanel({
 
         const validRaws = raws.filter(r => r.valid);
         const book = bookPercentage(validRaws.map(r => r.price));
+
+        // TARGET (equal-profit): il server dimensiona le gambe dal profitto obiettivo.
+        // Stima UI del totale per il lato back: S = T·b/(1−b) con b=book/100 (fattibile solo se book<100).
+        // Per equal/variable il totale è quello inserito dall'utente.
+        const b = book / 100;
+        const total = calcMode === 'target'
+            ? (side === 'back' && b > 0 && b < 1 ? r2((target * b) / (1 - b)) : 0)
+            : enteredTotal;
 
         // 2) pesi: base 1/quota; variable moltiplica per il peso utente.
         const weighted = validRaws.map(r => ({ r, w: (1 / r.price) * r.userWeight }));
@@ -169,6 +192,7 @@ export function DutchingPanel({
 
         return {
             total,
+            target,
             book,
             bookOk,
             legs,
@@ -181,7 +205,7 @@ export function DutchingPanel({
         };
         // defaultPrice dipende da `side`: incluso nelle deps sotto.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selections, checked, priceOverride, weightOverride, side, calcMode, totalStake]);
+    }, [selections, checked, priceOverride, weightOverride, side, calcMode, totalStake, targetProfit]);
 
     // -------------------- invio --------------------
     const guardBeforeSend = (): string | null => {
@@ -189,7 +213,14 @@ export function DutchingPanel({
         if (killSwitch) return 'Kill-switch attivo: invio bloccato. Disattivalo per operare.';
         if (isLive && !confirmLive) return 'Spunta "Confermo dutching REALE" prima di inviare in LIVE.';
         if (preview.count < 2) return 'Seleziona almeno 2 selezioni con quota valida.';
-        if (preview.total <= 0) return 'Puntata totale non valida.';
+        if (isTargetMode) {
+            if (preview.target <= 0) return 'Profitto obiettivo non valido (> 0).';
+        } else if (preview.total <= 0) {
+            return 'Puntata totale non valida.';
+        }
+        if (isNominated && !((num(nominatedPrice) ?? 0) > 1)) {
+            return 'Prezzo nominato non valido (> 1).';
+        }
         return null;
     };
 
@@ -204,9 +235,13 @@ export function DutchingPanel({
                 marketId,
                 mode: mode as LiveOrderMode,
                 handicap,
-                totalStake: preview.total,
                 side,
                 dutchMode: calcMode,
+                pricing,
+                ...(isNominated ? { nominatedPrice: num(nominatedPrice) ?? undefined } : {}),
+                ...(isTargetMode
+                    ? { targetProfit: preview.target }
+                    : { totalStake: preview.total }),
                 persistence,
                 selections: preview.legs.map(l => ({
                     selection_id: l.selection_id,
@@ -295,17 +330,27 @@ export function DutchingPanel({
                     <div>
                         <Label className={FIELD_LABEL}>Modalità</Label>
                         <select className={SELECT_CLS} value={calcMode}
-                            onChange={e => setCalcMode(e.target.value as DutchCalcMode)}>
+                            onChange={e => setCalcMode(e.target.value as DutchMode)}>
                             <option value="equal">Equal (profitto pari)</option>
                             <option value="variable">Variable (peso)</option>
+                            <option value="target">Target (profitto obiettivo)</option>
                         </select>
                     </div>
-                    <div>
-                        <Label className={FIELD_LABEL}>Puntata totale (€)</Label>
-                        <Input type="number" step="0.5" min="0" value={totalStake}
-                            onChange={e => setTotalStake(e.target.value)} placeholder="es. 10"
-                            className="bg-black/60 border-white/10" />
-                    </div>
+                    {isTargetMode ? (
+                        <div>
+                            <Label className={FIELD_LABEL}>Profitto obiettivo (€)</Label>
+                            <Input type="number" step="0.5" min="0" value={targetProfit}
+                                onChange={e => setTargetProfit(e.target.value)} placeholder="es. 5"
+                                className="bg-black/60 border-white/10" />
+                        </div>
+                    ) : (
+                        <div>
+                            <Label className={FIELD_LABEL}>Puntata totale (€)</Label>
+                            <Input type="number" step="0.5" min="0" value={totalStake}
+                                onChange={e => setTotalStake(e.target.value)} placeholder="es. 10"
+                                className="bg-black/60 border-white/10" />
+                        </div>
+                    )}
                     <div>
                         <Label className={FIELD_LABEL}>Persistenza</Label>
                         <select className={SELECT_CLS} value={persistence}
@@ -315,6 +360,24 @@ export function DutchingPanel({
                             <option value="MARKET_ON_CLOSE">MARKET_ON_CLOSE</option>
                         </select>
                     </div>
+                    <div>
+                        <Label className={FIELD_LABEL}>Prezzo</Label>
+                        <select className={SELECT_CLS} value={pricing}
+                            onChange={e => setPricing(e.target.value as DutchPricing)}>
+                            <option value="as_given">Come impostato</option>
+                            <option value="best">Best price live</option>
+                            <option value="in_front">Un tick davanti</option>
+                            <option value="nominated">Nominato</option>
+                        </select>
+                    </div>
+                    {isNominated && (
+                        <div>
+                            <Label className={FIELD_LABEL}>Prezzo nominato</Label>
+                            <Input type="number" step="0.01" min="1.01" max="1000" value={nominatedPrice}
+                                onChange={e => setNominatedPrice(e.target.value)} placeholder="es. 2.50"
+                                className="bg-black/60 border-white/10 font-mono" />
+                        </div>
+                    )}
                 </div>
 
                 {/* ---------------- selezioni ---------------- */}
@@ -423,15 +486,17 @@ export function DutchingPanel({
 
                         <div className="text-right space-y-0.5">
                             <div className="text-[11px] text-muted-foreground">
-                                Puntata totale{' '}
-                                <span className="font-mono text-white">{money(preview.total)}</span>
+                                {isTargetMode ? 'Profitto obiettivo' : 'Puntata totale'}{' '}
+                                <span className="font-mono text-white">
+                                    {money(isTargetMode ? preview.target : preview.total)}
+                                </span>
                                 {' '}· stake sommati{' '}
                                 <span className="font-mono text-white/70">{money(preview.sumStake)}</span>
                             </div>
                             {sideIsBack ? (
                                 <div className="text-[13px]">
                                     <span className="text-muted-foreground">Profitto se vince </span>
-                                    {calcMode === 'equal' ? (
+                                    {(isTargetMode || calcMode === 'equal') ? (
                                         <span className={`font-mono font-bold ${preview.minProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                                             {money(preview.minProfit)}
                                         </span>
@@ -450,7 +515,11 @@ export function DutchingPanel({
                                 </div>
                             )}
                             <div className="text-[10px] text-white/40">
-                                stima UI — il server ricalcola a profitto pareggiato e arrotonda al tick
+                                stima UI — il server piazza {PRICING_NOTE[pricing]}
+                                {isNominated && (num(nominatedPrice) ?? 0) > 1
+                                    ? ` (${(num(nominatedPrice) as number).toFixed(2)})`
+                                    : ''}
+                                , ricalcola a profitto pareggiato e arrotonda al tick
                             </div>
                         </div>
                     </div>
@@ -472,7 +541,10 @@ export function DutchingPanel({
 
                     <Button
                         onClick={handleDutch}
-                        disabled={submitting || killSwitch || preview.count < 2 || preview.total <= 0 || (isLive && !confirmLive)}
+                        disabled={submitting || killSwitch || preview.count < 2
+                            || (isTargetMode ? preview.target <= 0 : preview.total <= 0)
+                            || (isNominated && !((num(nominatedPrice) ?? 0) > 1))
+                            || (isLive && !confirmLive)}
                         className={`font-black ${
                             sideIsBack
                                 ? 'bg-sky-500 hover:bg-sky-400 text-black'

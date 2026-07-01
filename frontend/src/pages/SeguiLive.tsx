@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, Radio, AlertTriangle, History, Banknote, Loader2 } from 'lucide-react';
+import { ChevronLeft, Radio, AlertTriangle, History, Banknote, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,21 +20,35 @@ import { LiveTradingPanel, type PanelMode } from '@/components/live/LiveTradingP
 import { RiskRulesPanel } from '@/components/live/RiskRulesPanel';
 import { DutchingPanel } from '@/components/live/DutchingPanel';
 import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
-import { sendCashoutAll, type LiveOrderMode } from '@/lib/liveOrders';
+import { XHedgePanel } from '@/components/live/XHedgePanel';
+import { sendCashoutAll, sendCashoutEvent, setKillSwitch, type LiveOrderMode } from '@/lib/liveOrders';
+import {
+    loadLayout, saveLayout, setActiveMarket, togglePanel, resolveHotkey,
+    type WorkspaceLayout, type PanelKey,
+} from '@/lib/workspace';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow,
     type LiveFollow, type LiveNowRow, type LiveNowMarket,
 } from '@/lib/live';
 
-// chiave localStorage per ricordare il mercato attivo per-evento (cockpit multi-mercato).
-const ACTIVE_MARKET_KEY = 'segui-live:active-market';
+// Toggle visibilità pannelli operativi (workspace). L'ordine riflette il layout del cockpit.
+const PANEL_CHIPS: { key: PanelKey; label: string }[] = [
+    { key: 'orders', label: 'Trading' },
+    { key: 'dutching', label: 'Dutching' },
+    { key: 'risk', label: 'Risk' },
+    { key: 'xhedge', label: 'X-Hedge' },
+];
 
 // Sezione "Live Trading" del dettaglio Segui Live: COCKPIT MULTI-MERCATO stile Bet Angel.
 // Una TAB per mercato dell'evento (dai mercati di live_now, STESSA fonte del tabellone);
-// il mercato attivo viene ricordato per-evento. Per il mercato attivo montiamo, affiancati:
-// LiveTradingPanel (order entry + blotter + P&L), DutchingPanel (dutching multi-selezione)
-// e RiskRulesPanel (offset / stop-loss / take-profit / trailing). In più un pulsante
-// "Cash-out TUTTO il mercato" (mode-aware: conferma esplicita in LIVE).
+// il mercato attivo viene ricordato per-evento (WORKSPACE: '@/lib/workspace' — tab attivo +
+// quali pannelli sono aperti/collassati, salvati in localStorage per-evento). Per il mercato
+// attivo montiamo, affiancati: LiveTradingPanel (order entry + blotter + P&L), DutchingPanel
+// (dutching multi-selezione) e RiskRulesPanel (offset / stop-loss / take-profit / trailing /
+// bracket). L'XHedgePanel (analisi cross-market) è montato UNA sola volta per EVENTO. Due
+// pulsanti di cash-out DISTINTI: "Cash-out MERCATO" (solo il mercato attivo → sendCashoutAll)
+// e "Cash-out EVENTO" (tutti i mercati dell'evento → sendCashoutEvent, conferma rafforzata in
+// LIVE). Scorciatoie da tastiera (attive solo in PAPER/LIVE, disattivate mentre si digita).
 // La modalità (OFF/PAPER/LIVE) arriva dal runner via live_now.state.order_mode.
 function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
     markets: LiveNowMarket[]; orderMode: string; eventName: string; eventId: string;
@@ -44,27 +58,42 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
         return (mo ?? markets[0])?.market_id ?? '';
     }, [markets]);
 
-    // stato iniziale: ripristina l'ultimo mercato scelto per questo evento, se ancora presente.
-    const [marketId, setMarketId] = useState<string>(() => {
-        try {
-            const saved = localStorage.getItem(`${ACTIVE_MARKET_KEY}:${eventId}`);
-            if (saved && markets.some(m => m.market_id === saved)) return saved;
-        } catch { /* localStorage non disponibile */ }
+    // ---- WORKSPACE: layout per-evento (tab mercato attivo + pannelli aperti/collassati) ----
+    const [layout, setLayout] = useState<WorkspaceLayout>(() => loadLayout(eventId));
+    // ricarica il layout quando cambia l'evento selezionato.
+    useEffect(() => { setLayout(loadLayout(eventId)); }, [eventId]);
+    // persisti il layout ad ogni modifica (normalizzato dentro saveLayout).
+    useEffect(() => { saveLayout(layout); }, [layout]);
+
+    const [cashingMarket, setCashingMarket] = useState(false);
+    const [cashingEvent, setCashingEvent] = useState(false);
+    // MONEY-CRITICAL (fix review MEDIUM): guardia anti-doppio-invio a livello di REF. I bottoni sono
+    // disabilitati durante l'attesa, ma il percorso SCORCIATOIA DA TASTIERA chiama gli handler
+    // direttamente bypassando il disabled: senza questo ref una seconda pressione accoderebbe un
+    // SECONDO cash-out reale (client_ref nuovo → non deduplicato) → over-hedge/posizione opposta.
+    const cashingMarketRef = useRef(false);
+    const cashingEventRef = useRef(false);
+
+    // mercato attivo: dal layout, validato contro i mercati correnti; fallback al default.
+    const marketId = useMemo(() => {
+        const a = layout.activeMarketId;
+        if (a && markets.some(m => m.market_id === a)) return a;
         return defaultId;
-    });
-    const [cashingOut, setCashingOut] = useState(false);
+    }, [layout.activeMarketId, markets, defaultId]);
 
+    // allinea il layout al mercato effettivo (se assente/non più valido) — persistito dall'effetto sopra.
     useEffect(() => {
-        // se i mercati cambiano e il selezionato non esiste più, ripiega sul default
-        if (marketId && !markets.some(m => m.market_id === marketId)) setMarketId(defaultId);
-        else if (!marketId && defaultId) setMarketId(defaultId);
-    }, [markets, marketId, defaultId]);
+        if (marketId && layout.activeMarketId !== marketId) {
+            setLayout(l => setActiveMarket(l, marketId));
+        }
+    }, [marketId, layout.activeMarketId]);
 
-    // persisti il mercato attivo per-evento (memoria della tab).
-    useEffect(() => {
-        if (!eventId || !marketId) return;
-        try { localStorage.setItem(`${ACTIVE_MARKET_KEY}:${eventId}`, marketId); } catch { /* no-op */ }
-    }, [eventId, marketId]);
+    const selectMarket = useCallback((id: string) => setLayout(l => setActiveMarket(l, id)), []);
+    const panelOpen = useCallback(
+        (key: PanelKey) => layout.panels.find(p => p.key === key)?.open ?? true,
+        [layout.panels],
+    );
+    const togglePanelKey = useCallback((key: PanelKey) => setLayout(l => togglePanel(l, key)), []);
 
     const market = markets.find(m => m.market_id === marketId) ?? null;
     const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
@@ -85,52 +114,167 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
         [market],
     );
 
-    const handleCashoutAll = useCallback(async () => {
+    // ---- Cash-out MERCATO (solo il mercato attivo) — sendCashoutAll ----
+    const handleCashoutMarket = useCallback(async () => {
         if (!market) return;
+        if (cashingMarketRef.current) return;   // già in corso (protegge anche il percorso hotkey)
         if (mode === 'off') {
             toast.error('Runner in OFF: cash-out non disponibile. Avvia in PAPER o LIVE.');
             return;
         }
         // MONEY-CRITICAL: in LIVE serve conferma esplicita (soldi veri).
         if (mode === 'live' &&
-            !window.confirm(`CASH-OUT REALE dell'intero mercato "${market.market_name || market.market_type}"?\nVerranno appiattite TUTTE le selezioni con esposizione aperta (soldi veri).`)) {
+            !window.confirm(`CASH-OUT REALE del SOLO mercato "${market.market_name || market.market_type}"?\nAppiattisce TUTTE le selezioni con esposizione aperta di QUESTO mercato (soldi veri).`)) {
             return;
         }
-        setCashingOut(true);
+        cashingMarketRef.current = true;
+        setCashingMarket(true);
         try {
             const res = await sendCashoutAll({ marketId: market.market_id, mode: mode as LiveOrderMode });
             if (res.ok) {
-                toast.success('Cash-out mercato inviato', {
+                toast.success('Cash-out MERCATO inviato', {
                     description: res.status ?? (res.bet_id ? `req ${res.bet_id}` : undefined),
                 });
             } else {
-                toast.error('Cash-out rifiutato', { description: res.error ?? res.detail ?? 'motivo non noto' });
+                toast.error('Cash-out mercato rifiutato', { description: res.error ?? res.detail ?? 'motivo non noto' });
             }
         } catch (e: any) {
-            toast.error('Errore cash-out', { description: e?.message ?? 'errore sconosciuto' });
+            toast.error('Errore cash-out mercato', { description: e?.message ?? 'errore sconosciuto' });
         } finally {
-            setCashingOut(false);
+            cashingMarketRef.current = false;
+            setCashingMarket(false);
         }
     }, [market, mode]);
 
+    // ---- Cash-out EVENTO (tutti i mercati dell'evento) — sendCashoutEvent ----
+    // Conferma RAFFORZATA in LIVE: tocca TUTTI i mercati → doppia conferma.
+    const handleCashoutEvent = useCallback(async () => {
+        if (!market) return;
+        if (cashingEventRef.current) return;   // già in corso (protegge anche il percorso hotkey)
+        if (mode === 'off') {
+            toast.error('Runner in OFF: cash-out non disponibile. Avvia in PAPER o LIVE.');
+            return;
+        }
+        if (mode === 'live') {
+            if (!window.confirm(`CASH-OUT REALE dell'INTERO EVENTO "${eventName}"?\nAppiattisce TUTTE le selezioni con esposizione aperta su TUTTI i mercati dell'evento (non solo quello attivo). SOLDI VERI.`)) {
+                return;
+            }
+            if (!window.confirm('Conferma DEFINITIVA: green-up di TUTTI i mercati dell\'evento. Procedere?')) {
+                return;
+            }
+        }
+        cashingEventRef.current = true;
+        setCashingEvent(true);
+        try {
+            const res = await sendCashoutEvent({ marketId: market.market_id, mode: mode as LiveOrderMode });
+            if (res.ok) {
+                toast.success('Cash-out EVENTO inviato', {
+                    description: res.status ?? (res.bet_id ? `req ${res.bet_id}` : undefined),
+                });
+            } else {
+                toast.error('Cash-out evento rifiutato', { description: res.error ?? res.detail ?? 'motivo non noto' });
+            }
+        } catch (e: any) {
+            toast.error('Errore cash-out evento', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            cashingEventRef.current = false;
+            setCashingEvent(false);
+        }
+    }, [market, mode, eventName]);
+
+    // ---- Kill-switch (panico) — blocca ogni invio ordini del runner ----
+    const handleKillSwitch = useCallback(async () => {
+        if (!window.confirm('KILL-SWITCH: blocca immediatamente ogni invio ordini del runner. Attivare?')) return;
+        try {
+            await setKillSwitch(true);
+            toast.warning('Kill-switch ATTIVATO', { description: 'Invio ordini bloccato.' });
+        } catch (e: any) {
+            toast.error('Errore kill-switch', { description: e?.message ?? 'errore sconosciuto' });
+        }
+    }, []);
+
+    // ---- SCORCIATOIE DA TASTIERA (solo in PAPER/LIVE; non mentre si digita) ----
+    // Mappa tasto→azione da '@/lib/workspace' (resolveHotkey). Wiriamo le azioni whole-market/
+    // evento disponibili su questa pagina: G = green-up mercato, X = cash-out evento, Esc = kill.
+    useEffect(() => {
+        if (mode !== 'paper' && mode !== 'live') return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            const t = e.target as HTMLElement | null;
+            if (t) {
+                const tag = t.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+            }
+            const action = resolveHotkey(e.key);
+            if (action === 'greenup') { e.preventDefault(); void handleCashoutMarket(); }
+            else if (action === 'cashout_event') { e.preventDefault(); void handleCashoutEvent(); }
+            else if (action === 'kill_switch') { e.preventDefault(); void handleKillSwitch(); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [mode, handleCashoutMarket, handleCashoutEvent, handleKillSwitch]);
+
     if (markets.length === 0) return null;
+    const busy = cashingMarket || cashingEvent;
     return (
         <div className="space-y-3">
-            {/* header sezione + cash-out totale mercato */}
+            {/* header sezione + due pulsanti cash-out DISTINTI (mercato vs evento) */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
                     Mercati dell'evento
                 </span>
-                <Button
-                    size="sm"
-                    onClick={handleCashoutAll}
-                    disabled={cashingOut || mode === 'off'}
-                    className="bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
-                    title="Appiattisce (green-up) ogni selezione del mercato con esposizione aperta"
-                >
-                    {cashingOut ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Banknote className="w-4 h-4 mr-2" />}
-                    Cash-out TUTTO il mercato
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                        size="sm"
+                        onClick={handleCashoutMarket}
+                        disabled={busy || mode === 'off'}
+                        className="bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
+                        title="Green-up di TUTTE le selezioni del SOLO mercato attivo"
+                    >
+                        {cashingMarket ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Banknote className="w-4 h-4 mr-2" />}
+                        Cash-out MERCATO
+                    </Button>
+                    <Button
+                        size="sm"
+                        onClick={handleCashoutEvent}
+                        disabled={busy || mode === 'off'}
+                        className="bg-rose-600 hover:bg-rose-500 text-white font-black disabled:opacity-40"
+                        title="Green-up di TUTTI i mercati dell'evento (conferma rafforzata in LIVE)"
+                    >
+                        {cashingEvent ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldAlert className="w-4 h-4 mr-2" />}
+                        Cash-out EVENTO (tutti i mercati)
+                    </Button>
+                </div>
+            </div>
+
+            {/* toggle visibilità pannelli (WORKSPACE, persistito per-evento) + legenda scorciatoie */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mr-1">Pannelli</span>
+                    {PANEL_CHIPS.map(chip => {
+                        const on = panelOpen(chip.key);
+                        return (
+                            <button
+                                key={chip.key}
+                                type="button"
+                                onClick={() => togglePanelKey(chip.key)}
+                                aria-pressed={on}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+                                    on
+                                        ? 'border-primary/40 text-white bg-primary/10'
+                                        : 'border-white/10 text-muted-foreground hover:text-white'
+                                }`}
+                            >
+                                {on ? '● ' : '○ '}{chip.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                {mode !== 'off' && (
+                    <p className="text-[10px] text-muted-foreground">
+                        Scorciatoie: <b className="text-white">G</b> cash-out mercato · <b className="text-white">X</b> cash-out evento · <b className="text-white">Esc</b> kill-switch
+                    </p>
+                )}
             </div>
 
             {/* TABS multi-mercato (stile Bet Angel) */}
@@ -141,7 +285,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
                         <button
                             key={m.market_id}
                             type="button"
-                            onClick={() => setMarketId(m.market_id)}
+                            onClick={() => selectMarket(m.market_id)}
                             className={`px-3 py-1.5 -mb-px rounded-t-lg text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
                                 active
                                     ? 'border-primary text-white bg-white/[0.06]'
@@ -154,26 +298,39 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
                 })}
             </div>
 
+            {/* ---- X-HEDGE: analisi cross-market, UNA sola volta per EVENTO (non per mercato) ---- */}
+            {panelOpen('xhedge') && (
+                <XHedgePanel eventId={eventId} mode={mode} />
+            )}
+
             {market && (
                 <div className="space-y-4">
-                    <LiveTradingPanel
-                        marketId={market.market_id}
-                        mode={mode}
-                        eventLabel={`${eventName} · ${market.market_name || market.market_type}`}
-                        selections={panelSelections}
-                    />
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-                        <DutchingPanel
+                    {panelOpen('orders') && (
+                        <LiveTradingPanel
                             marketId={market.market_id}
                             mode={mode}
-                            selections={richSelections}
+                            eventLabel={`${eventName} · ${market.market_name || market.market_type}`}
+                            selections={panelSelections}
                         />
-                        <RiskRulesPanel
-                            marketId={market.market_id}
-                            mode={mode}
-                            selections={richSelections}
-                        />
-                    </div>
+                    )}
+                    {(panelOpen('dutching') || panelOpen('risk')) && (
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+                            {panelOpen('dutching') && (
+                                <DutchingPanel
+                                    marketId={market.market_id}
+                                    mode={mode}
+                                    selections={richSelections}
+                                />
+                            )}
+                            {panelOpen('risk') && (
+                                <RiskRulesPanel
+                                    marketId={market.market_id}
+                                    mode={mode}
+                                    selections={richSelections}
+                                />
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

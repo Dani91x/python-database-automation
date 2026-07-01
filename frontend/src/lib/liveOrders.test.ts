@@ -22,7 +22,9 @@ import {
     cancelRiskRule,
     fetchRiskRules,
     sendCashoutAll,
+    sendCashoutEvent,
     sendDutch,
+    fetchXhedge,
     getLiveSettings,
     setKillSwitch,
     setLiveSettings,
@@ -32,6 +34,25 @@ import {
 // accesso tipizzato al mock rpc (definito sopra via vi.mock).
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
 beforeEach(() => rpc.mockReset());
+
+// Helper: simula il ciclo enqueue+polling di sendLiveOrderCommand.
+//   request_betfair_live_order → reqId
+//   get_betfair_live_order     → { status:'done', result:{ ok:true, ... } }
+// così i test di FORMA payload possono ispezionare la prima chiamata rpc senza rete.
+function mockEnqueueDone(reqId = 1): void {
+    rpc.mockImplementation((fn: string) => {
+        if (fn === 'request_betfair_live_order') return Promise.resolve({ data: reqId, error: null });
+        if (fn === 'get_betfair_live_order') {
+            return Promise.resolve({ data: { status: 'done', result: { ok: true, action: 'x', mode: 'live' } }, error: null });
+        }
+        return Promise.resolve({ data: null, error: null });
+    });
+}
+// payload della prima enqueue (request_betfair_live_order) = p passato all'RPC.
+function firstEnqueueP(): Record<string, unknown> {
+    const call = rpc.mock.calls.find((c) => c[0] === 'request_betfair_live_order');
+    return (call?.[1] as { p: Record<string, unknown> }).p;
+}
 
 describe('lay size <-> liability', () => {
     it('liability = size*(price-1)', () => {
@@ -145,6 +166,145 @@ describe('sendDutch / sendCashoutAll — guardie money-critical', () => {
         await expect(sendCashoutAll({ marketId: '1.1', mode: 'live', fraction: 0 }))
             .rejects.toThrow(/fraction/);
         expect(rpc).not.toHaveBeenCalled();
+    });
+});
+
+// ---------- cashout_event (intero evento) ----------
+describe('sendCashoutEvent', () => {
+    it('rifiuta fraction <= 0 PRIMA di ogni enqueue', async () => {
+        await expect(sendCashoutEvent({ marketId: '1.1', mode: 'live', fraction: 0 }))
+            .rejects.toThrow(/fraction/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('fraction totale (default) → action cashout_event senza params', async () => {
+        mockEnqueueDone();
+        const res = await sendCashoutEvent({ marketId: '1.234', mode: 'live' });
+        expect(res.ok).toBe(true);
+        const p = firstEnqueueP();
+        expect(p.action).toBe('cashout_event');
+        expect(p.market_id).toBe('1.234');
+        expect(p.params).toBeUndefined();
+    });
+    it('fraction parziale → params.fraction arrotondata', async () => {
+        mockEnqueueDone();
+        await sendCashoutEvent({ marketId: '1.1', mode: 'paper', fraction: 0.3333 });
+        expect((firstEnqueueP().params as { fraction: number }).fraction).toBe(0.333);
+    });
+});
+
+// ---------- fetchXhedge (analisi x-hedge per evento) ----------
+describe('fetchXhedge', () => {
+    it('chiama get_live_xhedge con p_event_id ed estrae rows', async () => {
+        rpc.mockResolvedValue({ data: { rows: [{ event_id: '27:9', mode: 'live', analysis: {}, updated_at: 't' }] }, error: null });
+        const rows = await fetchXhedge('27:9');
+        expect(rpc).toHaveBeenCalledWith('get_live_xhedge', { p_event_id: '27:9' });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].event_id).toBe('27:9');
+    });
+    it('accetta anche un array nudo', async () => {
+        rpc.mockResolvedValue({ data: [{ event_id: '1', mode: 'paper', analysis: {}, updated_at: 't' }], error: null });
+        expect(await fetchXhedge('1')).toHaveLength(1);
+    });
+    it('data senza rows → array vuoto', async () => {
+        rpc.mockResolvedValue({ data: null, error: null });
+        expect(await fetchXhedge('1')).toEqual([]);
+    });
+    it('error → throw', async () => {
+        rpc.mockResolvedValue({ data: null, error: { message: 'xhedge down' } });
+        await expect(fetchXhedge('1')).rejects.toThrow('xhedge down');
+    });
+});
+
+// ---------- Dutch v2: dutchMode 'target' + pricing ----------
+describe('sendDutch v2 (target + pricing)', () => {
+    it('target rifiuta target_profit <= 0 (no enqueue)', async () => {
+        await expect(sendDutch({
+            marketId: '1.1', mode: 'live', side: 'back', dutchMode: 'target',
+            selections: [{ selection_id: 1, price: 2 }, { selection_id: 2, price: 3 }],
+            targetProfit: 0,
+        })).rejects.toThrow(/target_profit/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('pricing nominated rifiuta nominated_price non valido (no enqueue)', async () => {
+        await expect(sendDutch({
+            marketId: '1.1', mode: 'live', side: 'back', dutchMode: 'equal', totalStake: 10,
+            selections: [{ selection_id: 1, price: 2 }, { selection_id: 2, price: 3 }],
+            pricing: 'nominated', nominatedPrice: 1,
+        })).rejects.toThrow(/nominated_price/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('target → params.mode=target, target_profit, niente total_stake', async () => {
+        mockEnqueueDone();
+        await sendDutch({
+            marketId: '1.5', mode: 'live', side: 'lay', dutchMode: 'target',
+            selections: [{ selection_id: 1, price: 2 }, { selection_id: 2, price: 3 }],
+            targetProfit: 20, pricing: 'best',
+        });
+        const params = firstEnqueueP().params as Record<string, unknown>;
+        expect(params.mode).toBe('target');
+        expect(params.target_profit).toBe(20);
+        expect(params.total_stake).toBeUndefined();
+        expect(params.pricing).toBe('best');
+    });
+    it('nominated → params.pricing e nominated_price presenti', async () => {
+        mockEnqueueDone();
+        await sendDutch({
+            marketId: '1.5', mode: 'live', side: 'back', dutchMode: 'equal', totalStake: 10,
+            selections: [{ selection_id: 1, price: 2 }, { selection_id: 2, price: 3 }],
+            pricing: 'nominated', nominatedPrice: 2.5,
+        });
+        const params = firstEnqueueP().params as Record<string, unknown>;
+        expect(params.pricing).toBe('nominated');
+        expect(params.nominated_price).toBe(2.5);
+        expect(params.total_stake).toBe(10);
+    });
+});
+
+// ---------- Risk v2: bracket + entry_bet_id + timing/on_inplay ----------
+describe('requestRiskRule v2 (bracket / on_fill / entry_bet_id)', () => {
+    it('bracket SENZA entry_bet_id → throw (no offset nudo)', async () => {
+        await expect(requestRiskRule({
+            mode: 'live', ruleType: 'bracket', marketId: '1.1', selectionId: 47,
+            entrySide: 'back', entryPrice: 2.0, params: { offset_ticks: 3, stop_amount: 5 },
+        })).rejects.toThrow(/entry_bet_id/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('timing on_fill SENZA entry_bet_id → throw', async () => {
+        await expect(requestRiskRule({
+            mode: 'live', ruleType: 'offset', marketId: '1.1', selectionId: 47,
+            entrySide: 'back', params: { offset_ticks: 3, timing: 'on_fill' },
+        })).rejects.toThrow(/entry_bet_id/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('on_fill con entry_bet_id NON richiede entry_price (deriva dal fill)', async () => {
+        rpc.mockResolvedValue({ data: 55, error: null });
+        const id = await requestRiskRule({
+            mode: 'live', ruleType: 'offset', marketId: '1.1', selectionId: 47,
+            entrySide: 'back', entryBetId: 'BET-9',
+            params: { offset_ticks: 3, timing: 'on_fill', place_at_ticks: 2, on_inplay: 'rebaseline' },
+        });
+        expect(id).toBe(55);
+        const p = rpc.mock.calls[0][1].p;
+        expect(p.entry_bet_id).toBe('BET-9');
+        expect(p.entry_price).toBeUndefined();
+        expect(p.params.timing).toBe('on_fill');
+        expect(p.params.place_at_ticks).toBe(2);
+        expect(p.params.on_inplay).toBe('rebaseline');
+    });
+    it('bracket con entry_bet_id arma (entry_price non obbligatorio) e passa i params v2', async () => {
+        rpc.mockResolvedValue({ data: 88, error: null });
+        const id = await requestRiskRule({
+            mode: 'live', ruleType: 'bracket', marketId: '1.1', selectionId: 47,
+            entrySide: 'lay', entryBetId: 'BET-1',
+            params: { offset_ticks: 4, stop_amount: 6, target_amount: 8, greening: true, trail_ticks: 2 },
+        });
+        expect(id).toBe(88);
+        const p = rpc.mock.calls[0][1].p;
+        expect(p.rule_type).toBe('bracket');
+        expect(p.entry_bet_id).toBe('BET-1');
+        expect(p.params.stop_amount).toBe(6);
+        expect(p.params.target_amount).toBe(8);
+        expect(p.params.trail_ticks).toBe(2);
     });
 });
 

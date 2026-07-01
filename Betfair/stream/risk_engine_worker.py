@@ -152,11 +152,20 @@ def _apply_inplay_policy(sb: Any, rule: Dict[str, Any], market: Any, res: Dict[s
     inplay = _market_inplay(market)
     if inplay is None:
         return None
+    # FIX review MEDIUM: NON trattare il PRIMO avvistamento come transizione. Se la regola è armata
+    # mentre il mercato è GIÀ in-play, ``result.inplay`` non è ancora seminato (default False) → una
+    # FALSA transizione pre→in annullerebbe/ri-baserebbe uno stop protettivo. Alla prima osservazione
+    # SEMINA lo stato reale (persistendolo) e NON applica la policy. Solo un genuino False→True scatta.
+    if "inplay" not in res:
+        res["inplay"] = bool(inplay)
+        _update_rule(sb, rule["id"], {"result": res})
+        return None
     prev = bool(res.get("inplay"))
     transition = bool(inplay) and not prev
     if not transition:
         if bool(inplay) != prev:
-            res["inplay"] = bool(inplay)  # aggiornato dal chiamante al prossimo write
+            res["inplay"] = bool(inplay)
+            _update_rule(sb, rule["id"], {"result": res})  # persisti il cambiamento (raro: KO/half-time)
         return None
 
     policy = str(_params(rule).get("on_inplay") or "keep").lower()
@@ -413,14 +422,15 @@ def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, st
         if _kill_active():
             return
 
-        # STOP scattato → OCO: cancella l'offset (se abbiamo il bet_id) POI chiudi la posizione.
-        if off_bet_id:
-            _enqueue(sb, {"client_ref": f"risk{rule['id']}oc", "action": "cancel",
-                          "mode": mode_l, "market_id": rule["market_id"], "bet_id": str(off_bet_id)})
-        elif off is not None:
-            # offset trovato ma bet_id non ancora assegnato: aspetta un giro per cancellarlo pulito
-            # PRIMA di chiudere (evita di lasciare un take-profit resting orfano). Resta armata.
+        # STOP scattato → OCO: DEVI prima cancellare l'offset, POI chiudere. FIX review HIGH:
+        # se NON hai ancora il bet_id dell'offset (non ancora piazzato dalla coda, oppure bet_id
+        # non assegnato) NON flattenare: ASPETTA un giro. Altrimenti la coda piazzerebbe DOPO
+        # l'offset come take-profit resting NUDO che il monitoraggio (solo 'armed') non cancella
+        # mai → una posizione nuova indesiderata a mercato. Solo con bet_id disponibile si procede.
+        if not off_bet_id:
             return
+        _enqueue(sb, {"client_ref": f"risk{rule['id']}oc", "action": "cancel",
+                      "mode": mode_l, "market_id": rule["market_id"], "bet_id": str(off_bet_id)})
         if abs(w - l) < risk_engine.FLAT_EPS:
             _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
                 "result": {**res, "state": "done", "note": f"{decision.reason}; posizione piatta (offset cancellato)"}})
