@@ -182,6 +182,10 @@ class _Slot:
     last_bl: Optional[float] = None
     first_seen: Optional[int] = None     # primo publish_time visto (warmup flusso)
     cooldown_until: int = 0              # niente ingressi prima di questo ts (gap/loss)
+    t_last_flat: Optional[int] = None    # ultimo piazzamento flatten (anti-churn live)
+    residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
+    # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
+    submins: list = field(default_factory=list)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
     drift_samples: Deque[Tuple[int, float]] = field(
@@ -332,6 +336,31 @@ class ScalperStrategy(BaseStrategy):
         }
         # 'bias' puro: quota SOLO le selezioni con bias (niente maker neutro)
         self.only_bias: bool = bool(c.get("only_bias", False))
+
+        # ---- PROTEZIONI LIVE (0 = off, i backtest restano identici) ----
+        # live_min_bet: minimo Betfair (2.0 su .it). Gli hedge/close sotto il
+        # minimo verrebbero RIFIUTATI dall'exchange lasciando la posizione
+        # aperta: qui si arrotonda a 2.0 (over-hedge minuscolo e limitato) o,
+        # per residui <0.8, si accetta il micro-rischio e non si piazza.
+        self.live_min_bet: float = float(c.get("live_min_bet", 0.0))
+        # granularita' delle puntate dell'exchange (.it: MULTIPLI DI 0,50 €,
+        # verificato empiricamente 02/07: size 2.03 → INVALID_BET_SIZE,
+        # 2.50/2.00 → SUCCESS). 0 = off (backtest: size esatte).
+        self.size_step: float = float(c.get("size_step", 0.0))
+        # intervallo minimo tra due piazzamenti di flatten sullo stesso slot
+        # (anti-churn sui rifiuti istantanei dell'exchange). 0 = off.
+        self.flatten_min_interval_ms: int = int(c.get("flatten_min_interval_ms", 0))
+        # USCITE A SIZE ESATTA (live .it): come i tool professionali, un'uscita
+        # non piazzabile direttamente (multipli 0,50 / minimi) viene spezzata
+        # in parte diretta + resto via PARK-TRIM-REPLACE (trading/submin.py:
+        # place >= minimo a quota imabbinabile -> cancel parziale alla size
+        # esatta -> replace alla quota target). Cosi' si esce con QUALSIASI
+        # importo e qualsiasi decimale.
+        self.exact_exits: bool = bool(c.get("exact_exits", False))
+        # tetto TRANSAZIONI/ora (anti transaction-charge): oltre il budget si
+        # bloccano i NUOVI ingressi; hedge/close/flatten passano SEMPRE.
+        self.max_txn_hour: int = int(c.get("max_txn_hour", 0))
+        self._txn_ts: Deque[float] = deque(maxlen=4096)
 
         # DRY-RUN: nessun ordine reale; ogni _place viene loggato come
         # "dry_place" (throttled) e ritorna None. Tutto il resto del cervello
@@ -488,6 +517,8 @@ class ScalperStrategy(BaseStrategy):
             # la classificazione usa i best del tick precedente (nessun look-ahead)
             self._update_flow(slot, int(now), ex)
             slot.last_bb, slot.last_bl = best_back, best_lay
+            # avanza le sequenze park-trim-replace (uscite a size esatta)
+            self._drive_submins(market, slot, int(now))
 
             # A) chiusura forzata pre-kickoff / in-play senza allow_inplay
             if near_ko:
@@ -505,10 +536,10 @@ class ScalperStrategy(BaseStrategy):
                               slot.close, slot.next_entry, *slot.flatten_orders):
                         self._cancel_if_live(market, o)
                     nw0, nl0 = self._net_position(slot)
-                    if abs(nw0 - nl0) > 0.02:
+                    if abs(nw0 - nl0) > (0.30 if slot.residual_ok else 0.02):
                         self._begin_flatten(slot)
                 if slot.status == FLATTENING:
-                    self._drive_flatten(market, slot, best_back, best_lay)
+                    self._drive_flatten(market, slot, best_back, best_lay, now)
                 continue  # nessun nuovo ingresso vicino al KO
 
             # A2) finestra "no i nuovi ingressi" pre-KO: gli ingressi ancora
@@ -540,17 +571,20 @@ class ScalperStrategy(BaseStrategy):
                 self._handle_cancelling(market, slot, now, best_back, best_lay)
                 continue
             if slot.status == FLATTENING:
-                self._drive_flatten(market, slot, best_back, best_lay)
+                self._drive_flatten(market, slot, best_back, best_lay, now)
                 continue
             # C) DONE: il ciclo e' concluso ma la POSIZIONE va sorvegliata.
             # Un ordine orfano (es. close sostituita il cui cancel e' fallito
             # per race PENDING) puo' riempirsi DOPO: se l'esposizione non e'
             # piu' piatta si riapre la chiusura garantita. Mai abbandonare.
             if slot.status == DONE:
+                if slot.submins:
+                    continue  # uscita esatta ancora in corso: niente riciclo
                 nw0, nl0 = self._net_position(slot)
-                if abs(nw0 - nl0) > 0.02:
+                tol = 0.30 if slot.residual_ok else 0.02
+                if abs(nw0 - nl0) > tol:
                     self._begin_flatten(slot)
-                    self._drive_flatten(market, slot, best_back, best_lay)
+                    self._drive_flatten(market, slot, best_back, best_lay, now)
                     continue
                 # PIPELINE: il next_entry (in coda dietro la close appena
                 # riempita) diventa la gamba del NUOVO ciclo, ereditando la
@@ -1185,7 +1219,7 @@ class ScalperStrategy(BaseStrategy):
                 if g is not None:
                     side, size, _locked = g
                     o = self._place(market, slot.entry.selection_id, side,
-                                    entry_p, size, floor_min=False)
+                                    entry_p, size, floor_min=False, slot=slot)
                     if o is not None:
                         slot.close = o
                         slot.close_scratched = True
@@ -1263,7 +1297,7 @@ class ScalperStrategy(BaseStrategy):
         side, size, _locked = g
         # floor_min=False: l'hedge deve coprire ESATTAMENTE la quota matchata.
         # Forzare MIN_STAKE su un fill parziale creerebbe una posizione direzionale.
-        order = self._place(market, entry.selection_id, side, target, size, floor_min=False)
+        order = self._place(market, entry.selection_id, side, target, size, floor_min=False, slot=slot)
         if order is None:
             self._begin_flatten(slot)
             return
@@ -1293,6 +1327,7 @@ class ScalperStrategy(BaseStrategy):
     def _drive_flatten(
         self, market: Any, slot: _Slot,
         best_back: Optional[float], best_lay: Optional[float],
+        now: Optional[int] = None,
     ) -> None:
         """Chiude la posizione finche' non e' piatta (escalation aggressivita')."""
         # le gambe di apertura non servono piu': cancellale se ancora vive
@@ -1322,11 +1357,34 @@ class ScalperStrategy(BaseStrategy):
                 self._cancel_if_live(market, o)
         if any(self._has_live(o) for o in slot.flatten_orders):
             return  # un flatten e' ancora in coda: aspetta il fill
+        # ANTI-CHURN (live): se l'exchange rifiuta istantaneamente (es. size
+        # invalida) l'ordine muore subito e questo loop ritenterebbe ad ogni
+        # book update (visto live 02/07: decine di place/secondo). Rate-limit.
+        if (
+            self.flatten_min_interval_ms > 0
+            and now is not None
+            and slot.t_last_flat is not None
+            and now - slot.t_last_flat < self.flatten_min_interval_ms
+        ):
+            return
         cross = min(slot.flat_tries, 8)  # ogni tentativo crossa 1 tick piu' a fondo
         fo = self._flatten(market, slot, best_back, best_lay, cross_ticks=cross)
         slot.flat_tries += 1
         if fo is not None:
             slot.flatten_orders.append(fo)
+            if now is not None:
+                slot.t_last_flat = int(now)
+        elif self.size_step > 0 or self.live_min_bet > 0 or self.exact_exits:
+            # green sotto il minimo piazzabile: se il residuo NON puo' perdere
+            # piu' di pochi centesimi, accettalo UNA VOLTA (flag) e chiudi il
+            # ciclo. Senza flag il monitor DONE rivedrebbe l'esposizione != 0
+            # e riaprirebbe il flatten ad ogni book update (loop, visto live).
+            if min(net_win, net_lose) >= -0.25:
+                slot.status = DONE
+                if not slot.residual_ok:
+                    slot.residual_ok = True
+                    self._emit("micro_residuo_accettato",
+                               nw=round(net_win, 3), nl=round(net_lose, 3))
         elif (
             best_back is None and best_lay is None and slot.flat_tries > 50
         ):
@@ -1367,7 +1425,7 @@ class ScalperStrategy(BaseStrategy):
         if g is None:
             return None
         side, size, _locked = g
-        return self._place(market, sid, side, price, size, floor_min=False)
+        return self._place(market, sid, side, price, size, floor_min=False, slot=slot)
 
     # --------------------------------------------------------------- utility
     def _should_stop(
@@ -1428,13 +1486,16 @@ class ScalperStrategy(BaseStrategy):
 
     def _place(
         self, market: Any, selection_id: int, side: str, price: float, size: float,
-        floor_min: bool = True,
+        floor_min: bool = True, slot: Optional[_Slot] = None,
     ) -> Optional[Any]:
         """Piazza un LimitOrder LAPSE.
 
         ``floor_min=True`` (ingressi): porta lo stake a MIN_STAKE se inferiore.
         ``floor_min=False`` (hedge/close/flatten): usa la size ESATTA (floor
         tecnico 0.01) per non creare posizioni direzionali su fill parziali.
+        Con ``exact_exits`` attivo (live .it) le uscite non piazzabili
+        direttamente vengono SPEZZATE: parte diretta (multipli di 0,50 €)
+        subito a mercato + resto esatto via park-trim-replace (submin).
         """
         size = round(float(size), 2)
         if floor_min:
@@ -1445,6 +1506,47 @@ class ScalperStrategy(BaseStrategy):
         price = float(price)
         if price <= 1.0:
             return None
+        # ---- USCITE A SIZE ESATTA (come i tool pro: qualsiasi importo) ----
+        if (
+            not floor_min
+            and self.exact_exits
+            and not self.dry_run
+            and slot is not None
+            and not self._size_direct_ok(side, size)
+        ):
+            return self._place_exact(market, selection_id, side, price, size, slot)
+        # LIVE: GRANULARITA' exchange (.it = multipli di 0,50 €): una size non
+        # multipla viene RIFIUTATA (INVALID_BET_SIZE) e la posizione resta
+        # aperta. Arrotonda al multiplo piu' vicino PRIMA di ogni altro check.
+        if self.size_step > 0:
+            size = round(round(size / self.size_step) * self.size_step, 2)
+            if size < self.size_step:
+                size = 0.0
+        # LIVE: minimo Betfair sugli hedge/close (sotto: l'exchange RIFIUTA
+        # e la posizione resterebbe aperta — peggio di un micro over-hedge)
+        if self.live_min_bet > 0 and not floor_min and size < self.live_min_bet:
+            if size >= 0.5:
+                self._emit("min_bet_adjust", selection_id=int(selection_id),
+                           side=side, size_orig=size, size=self.live_min_bet)
+                size = self.live_min_bet
+            else:
+                # residuo minuscolo: accetta il micro-rischio, non piazzare
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=size)
+                return None
+        if size < 0.01:
+            return None
+        # tetto transazioni/ora: blocca SOLO i nuovi ingressi (floor_min=True);
+        # chiusure e flatten passano sempre (la sicurezza vince sui costi)
+        if self.max_txn_hour > 0 and not self.dry_run:
+            import time as _t
+            now_s = _t.time()
+            while self._txn_ts and now_s - self._txn_ts[0] > 3600:
+                self._txn_ts.popleft()
+            if floor_min and len(self._txn_ts) >= self.max_txn_hour:
+                self._emit("txn_cap", selection_id=int(selection_id), side=side)
+                return None
+            self._txn_ts.append(now_s)
         # DRY-RUN: logga la quota che AVREBBE piazzato (throttled) e basta.
         if self.dry_run:
             key = (int(selection_id), side, price)
@@ -1473,6 +1575,130 @@ class ScalperStrategy(BaseStrategy):
         )
         market.place_order(order)
         return order
+
+    # ---------------------------------------------- uscite a size ESATTA (.it)
+    @staticmethod
+    def _side_min(side: str) -> float:
+        """Minimo di piazzamento diretto per lato su .it (BACK 2 / LAY 0,50)."""
+        return 2.0 if (side or "").upper() == "BACK" else 0.5
+
+    def _size_direct_ok(self, side: str, size: float) -> bool:
+        """True se la size e' piazzabile DIRETTAMENTE su .it (multiplo di 0,50
+        e >= minimo del lato)."""
+        if size < self._side_min(side) - _EPS:
+            return False
+        mult = size / 0.5
+        return abs(mult - round(mult)) < 1e-6
+
+    @staticmethod
+    def _track(slot: _Slot, order: Any) -> None:
+        """Aggiunge l'ordine al tracking di posizione SENZA duplicati
+        (un duplicato in flatten_orders raddoppierebbe il matched in
+        _matched_position: money-critical)."""
+        if order is None:
+            return
+        for o in slot.flatten_orders:
+            if o is order:
+                return
+        slot.flatten_orders.append(order)
+
+    def _place_exact(
+        self, market: Any, selection_id: int, side: str, price: float,
+        size: float, slot: _Slot,
+    ) -> Optional[Any]:
+        """Uscita a size ESATTA: parte diretta subito + resto via submin.
+
+        Ritorna l'ordine della parte DIRETTA (il grosso del rischio esce
+        subito); il resto (< 0,50) viene portato a riposo alla stessa quota
+        dalla macchina park-trim-replace (``_drive_submins``), tracciato in
+        ``slot.flatten_orders`` per la contabilita' di posizione.
+        """
+        from ..trading.submin import FlumineSubminOps, start_submin
+
+        smin = self._side_min(side)
+        main = round(int(size / 0.5) * 0.5, 2)          # floor al multiplo 0,50
+        if main < smin - _EPS:
+            main = 0.0
+        rest = round(size - main, 2)
+        main_order = None
+        if main >= smin - _EPS:
+            main_order = self._place(market, selection_id, side, price, main,
+                                     floor_min=False, slot=None)  # diretto
+        if rest >= 0.05:
+            try:
+                state = start_submin(side=side.lower(), target_price=price,
+                                     target_size=rest, jurisdiction="it")
+
+                class _CapturingOps(FlumineSubminOps):
+                    last_order: Any = None
+
+                    def place(self, market_, **kw):  # noqa: ANN001
+                        o = super().place(market_, **kw)
+                        _CapturingOps.last_order = o
+                        return o
+
+                ops = _CapturingOps(selection_id=int(selection_id), handicap=0.0,
+                                    jurisdiction="it", strategy=self)
+                ref = f"sc{abs(hash((selection_id, price, rest))) % 10**8:08d}"
+                slot.submins.append({"state": state, "ops": ops, "order": None,
+                                     "ref": ref, "market_id": market.market_id})
+                self._emit("submin_start", selection_id=int(selection_id),
+                           side=side, size=rest, price=price)
+            except Exception as exc:  # noqa: BLE001 - mai bloccare l'uscita principale
+                self._emit("submin_error", msg=str(exc)[:200])
+        elif rest >= 0.01:
+            self._emit("min_bet_skip", selection_id=int(selection_id),
+                       side=side, size=rest)
+        return main_order
+
+    def _drive_submins(self, market: Any, slot: _Slot, now: int) -> None:
+        """Avanza le sequenze park-trim-replace dello slot (idempotente)."""
+        if not slot.submins:
+            return
+        from ..trading.submin import SubminStep, advance_submin
+
+        for entry in list(slot.submins):
+            if entry.get("market_id") != market.market_id:
+                continue
+            order = entry.get("order")
+            if order is None:
+                order = getattr(entry["ops"], "last_order", None)
+                if order is not None:
+                    entry["order"] = order
+                    self._track(slot, order)
+            # dopo un replace flumine appende il NUOVO ordine allo stesso
+            # Trade: aggancia sempre l'ultimo e tienilo in contabilita'
+            if order is not None:
+                tr = getattr(order, "trade", None)
+                t_orders = list(getattr(tr, "orders", None) or [])
+                for o in t_orders:
+                    self._track(slot, o)
+                if t_orders:
+                    entry["order"] = t_orders[-1]
+            try:
+                new_state = advance_submin(
+                    market, entry["state"], order=entry.get("order"),
+                    jurisdiction="it", customer_order_ref=entry["ref"],
+                    ops=entry["ops"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._emit("submin_error", msg=str(exc)[:200])
+                slot.submins.remove(entry)
+                continue
+            if entry.get("order") is None:
+                o = getattr(entry["ops"], "last_order", None)
+                if o is not None:
+                    entry["order"] = o
+                    self._track(slot, o)
+            if new_state.step is not entry["state"].step:
+                self._emit("submin_step", step=str(new_state.step.value),
+                           note=new_state.note[:120])
+            entry["state"] = new_state
+            if new_state.step == SubminStep.DONE:
+                slot.submins.remove(entry)
+            elif new_state.step == SubminStep.ABORTED:
+                self._emit("submin_abort", note=new_state.note[:200])
+                slot.submins.remove(entry)
 
     @staticmethod
     def _has_live(order: Any) -> bool:
@@ -1509,6 +1735,7 @@ class ScalperStrategy(BaseStrategy):
         slot.entry_lay = None
         slot.close = None
         slot.close_scratched = False
+        slot.residual_ok = False
         slot.next_entry = None
         slot.flatten_orders = []
         slot.flat_tries = 0

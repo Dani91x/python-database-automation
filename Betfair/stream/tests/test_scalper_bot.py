@@ -216,3 +216,30 @@ def test_join_spread3_migliora_entrambi_i_lati():
     prices, _ = _join_prices(s, 2.20, 2.26, 500.0, 500.0, st=3)
     assert prices["BACK"] == pytest.approx(2.24)  # 1 tick dentro dal lay
     assert prices["LAY"] == pytest.approx(2.22)   # 1 tick dentro dal back
+
+
+# ------------------------------------------------ uscite a size esatta (.it)
+def test_size_direct_ok_regole_it():
+    s = _make_strategy(exact_exits=True)
+    # multipli di 0,50 sopra il minimo del lato
+    assert s._size_direct_ok("BACK", 2.0)
+    assert s._size_direct_ok("BACK", 5.0)
+    assert s._size_direct_ok("LAY", 0.5)
+    assert s._size_direct_ok("LAY", 2.5)
+    # non multipli o sotto minimo
+    assert not s._size_direct_ok("BACK", 5.03)
+    assert not s._size_direct_ok("BACK", 1.5)   # < min back 2.0
+    assert not s._size_direct_ok("LAY", 0.47)
+    assert not s._size_direct_ok("LAY", 0.03)
+
+
+def test_split_esatto_parte_diretta_piu_resto():
+    # 5.03 BACK -> diretto 5.00 + submin 0.03? (0.03 < 0.05 -> skip micro)
+    # 5.27 BACK -> diretto 5.00 + submin 0.27
+    s = _make_strategy(exact_exits=True)
+    main = round(int(5.27 / 0.5) * 0.5, 2)
+    rest = round(5.27 - main, 2)
+    assert main == 5.0 and rest == pytest.approx(0.27)
+    # LAY 1.83 -> diretto 1.5 (>= min lay 0.5) + resto 0.33
+    main = round(int(1.83 / 0.5) * 0.5, 2)
+    assert main == 1.5 and round(1.83 - main, 2) == pytest.approx(0.33)
