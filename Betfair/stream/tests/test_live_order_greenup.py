@@ -274,8 +274,11 @@ def test_greenup_without_strategy_errors_not_silent_done():
     assert "strategy" in (row["error"] or "").lower()
 
 
-def test_greenup_no_book_price_is_noop():
-    """Best LAY assente quando serve (W>L) → nessun ordine alla cieca, riga 'done'."""
+def test_greenup_no_book_price_with_open_exposure_is_error():
+    """Best LAY assente quando serve (W>L, esposizione APERTA) → nessun ordine alla
+    cieca E riga 'error' (fix cert PAPER 2026-07-02): un 'done ok=True' qui
+    consumerebbe uno stop scattato ("eseguita e verificata") lasciando la posizione
+    aperta a sanguinare. L'errore fa scattare il retry del follow-through del risk engine."""
     sb = _FakeSupabase([_greenup_row(1)])
     market = _FakeMarket(
         "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
@@ -285,5 +288,7 @@ def test_greenup_no_book_price_is_noop():
 
     wk._process_once(sb, fl, strategy=_STRAT)
 
-    assert market.calls == []
-    assert _by_id(sb, 1)["status"] == "done"
+    assert market.calls == []  # mai un ordine alla cieca senza prezzo
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "NON eseguibile" in (row["error"] or "")

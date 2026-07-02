@@ -520,6 +520,122 @@ def test_followthrough_pending_request_waits(_alerts):
 
 
 # ===========================================================================
+# Cert PAPER 2026-07-02 — book LIVE con livelli a DICT + no-op greenup dichiarato
+# ===========================================================================
+def _dict_book_market(market_id="1.1", sel=47999, bb=1.39, bl=1.41):
+    """Market con market_book in forma STREAM LIVE: livelli ex come dict
+    {'price':…,'size':…} (betfairlightweight), NON oggetti PriceSize."""
+    m = _FakeMarket(market_id)
+    m.market_book = SimpleNamespace(inplay=True, runners=[SimpleNamespace(
+        selection_id=sel, handicap=0.0, last_price_traded=bb,
+        ex=SimpleNamespace(
+            available_to_back=[{"price": bb, "size": 120.0}],
+            available_to_lay=[{"price": bl, "size": 80.0}],
+        ),
+    )])
+    return m
+
+
+def test_best_prices_reads_dict_shaped_levels():
+    """Fix cert: con i dict dello stream live i best DEVONO essere letti (prima: None)."""
+    m = _dict_book_market()
+    bb, bl = wk._best_prices(m, 47999, 0.0)
+    assert bb == 1.39 and bl == 1.41
+
+
+def test_best_prices_still_reads_object_levels():
+    m = _FakeMarket("1.1")
+    m.market_book = SimpleNamespace(runners=[SimpleNamespace(
+        selection_id=47999, handicap=0.0,
+        ex=SimpleNamespace(
+            available_to_back=[SimpleNamespace(price=2.5, size=10)],
+            available_to_lay=[SimpleNamespace(price=2.52, size=10)],
+        ),
+    )])
+    assert wk._best_prices(m, 47999, 0.0) == (2.5, 2.52)
+
+
+class _ExposedBlotter:
+    """Blotter con esposizione APERTA (W>L) per i path greenup/cashout."""
+
+    def get_exposures(self, strategy, lookup):
+        return {"matched_profit_if_win": 5.0, "matched_profit_if_lose": -2.0}
+
+    def selection_exposure(self, strategy, lookup):
+        return 2.0
+
+
+def test_greenup_dict_book_places_hedge():
+    """E2E worker: esposizione aperta + book a dict → hedge LAY piazzato (non più no-op)."""
+    m = _dict_book_market()
+    m.blotter = _ExposedBlotter()
+    fl = _FakeFlumine({"1.1": m})
+    sb = _FakeSupabase([_row(1, action="greenup", side=None, price=None, size=None,
+                             params={"fraction": 1.0})])
+    wk._process_once(sb, fl, strategy=_STRAT)
+    row = _by_id(sb, 1)
+    assert row["status"] == "done"
+    places = [c for c in m.calls if c[0] == "place_order"]
+    assert len(places) == 1  # hedge davvero piazzato
+    assert (row["result"] or {}).get("side") == "lay"
+
+
+def test_greenup_open_exposure_without_prices_is_error_not_done():
+    """Fix cert: esposizione APERTA + prezzi assenti → riga ERROR (mai 'done ok=True'
+    che consumerebbe lo stop lasciando la posizione aperta)."""
+    m = _FakeMarket("1.1")
+    m.market_book = SimpleNamespace(runners=[SimpleNamespace(
+        selection_id=47999, handicap=0.0,
+        ex=SimpleNamespace(available_to_back=[], available_to_lay=[]),
+    )])
+    m.blotter = _ExposedBlotter()
+    fl = _FakeFlumine({"1.1": m})
+    sb = _FakeSupabase([_row(1, action="greenup", side=None, price=None, size=None,
+                             params={"fraction": 1.0})])
+    wk._process_once(sb, fl, strategy=_STRAT)
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "NON eseguibile" in (row["error"] or "")
+    assert m.calls == []
+
+
+def test_greenup_flat_position_still_noop_done():
+    """Posizione GIÀ piatta senza prezzi → vero no-op: done, nessun ordine."""
+    class _FlatBlotter:
+        def get_exposures(self, strategy, lookup):
+            return {"matched_profit_if_win": 0.0, "matched_profit_if_lose": 0.0}
+
+    m = _FakeMarket("1.1")
+    m.market_book = SimpleNamespace(runners=[])
+    m.blotter = _FlatBlotter()
+    fl = _FakeFlumine({"1.1": m})
+    sb = _FakeSupabase([_row(1, action="greenup", side=None, price=None, size=None,
+                             params={"fraction": 1.0})])
+    wk._process_once(sb, fl, strategy=_STRAT)
+    row = _by_id(sb, 1)
+    assert row["status"] == "done"
+    assert m.calls == []
+
+
+def test_cashout_open_exposure_without_prices_reports_incomplete():
+    """Fix cert: cash-out con esposizione aperta ma book vuoto → ERROR 'INCOMPLETO',
+    mai 'done, 0 selezioni chiuse' con la posizione ancora a mercato."""
+    m = _FakeMarket("1.1")
+    m.market_book = SimpleNamespace(runners=[SimpleNamespace(
+        selection_id=47999, handicap=0.0,
+        ex=SimpleNamespace(available_to_back=[], available_to_lay=[]),
+    )])
+    m.blotter = _ExposedBlotter()
+    fl = _FakeFlumine({"1.1": m})
+    sb = _FakeSupabase([_row(1, action="cashout_all", selection_id=None, side=None,
+                             price=None, size=None, params={"fraction": 1.0})])
+    wk._process_once(sb, fl, strategy=_STRAT)
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "INCOMPLETO" in (row["error"] or "")
+
+
+# ===========================================================================
 # Risk worker — decision.error → disarmo VISIBILE
 # ===========================================================================
 def test_monitored_rule_invalid_params_disarmed_visibly(_alerts, monkeypatch):

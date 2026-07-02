@@ -772,6 +772,22 @@ def _read_matched_exposures(
     return w, l
 
 
+def _level_price(level: Any) -> Optional[float]:
+    """Prezzo di UN livello del book, tollerante alla forma.
+
+    MONEY-CRITICAL (fix cert PAPER 2026-07-02): con lo stream LIVE betfairlightweight
+    espone ``ex.available_to_back/lay`` come lista di **dict** ``{'price':…,'size':…}``,
+    NON di oggetti PriceSize (stessa tolleranza già presente in recorder._price_sizes).
+    Il solo ``getattr`` ritornava sempre None sui dati reali → ogni green-up/cash-out
+    era un no-op "prezzo non disponibile" (i test coprivano solo la forma a oggetti).
+    """
+    if level is None:
+        return None
+    if isinstance(level, dict):
+        return _f(level.get("price"))
+    return _f(_val(level, "price"))
+
+
 def _best_prices(
     market: Any, selection_id: int, handicap: float
 ) -> "tuple[Optional[float], Optional[float]]":
@@ -780,6 +796,7 @@ def _best_prices(
     Prezzi "taker" immediatamente abbinabili: per backare si prende il best available-to-back,
     per layare il best available-to-lay. Letti dal MarketBook GIA' in memoria (stesso stream,
     ZERO chiamate API). Difensivo su ogni livello: None se il book non è disponibile.
+    Livelli in forma oggetto (PriceSize) O dict (stream live): entrambe supportate.
     """
     mb = _val(market, "market_book")
     if mb is None:
@@ -794,8 +811,8 @@ def _best_prices(
         ex = _val(r, "ex")
         atb = (_val(ex, "available_to_back") or []) if ex is not None else []
         atl = (_val(ex, "available_to_lay") or []) if ex is not None else []
-        best_back = _f(_val(atb[0], "price")) if atb else None
-        best_lay = _f(_val(atl[0], "price")) if atl else None
+        best_back = _level_price(atb[0]) if atb else None
+        best_lay = _level_price(atl[0]) if atl else None
         return best_back, best_lay
     return None, None
 
@@ -838,6 +855,17 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
     )
 
     if not plan.actionable:
+        # Fix cert PAPER 2026-07-02: distinguere i DUE no-op. Posizione GIÀ piatta =
+        # vero successo. Esposizione APERTA ma piano non eseguibile (prezzo assente:
+        # mercato sospeso/book vuoto) = FALLIMENTO da dichiarare: un 'done ok=True'
+        # qui consumerebbe uno stop scattato ("eseguita e verificata") lasciando la
+        # posizione a sanguinare. L'errore fa scattare il retry del follow-through.
+        from .trading.greenup import FLAT_EPS
+        if abs(w - l) >= FLAT_EPS:
+            raise ValueError(
+                f"greenup NON eseguibile con esposizione aperta (W={w:.2f} L={l:.2f}): "
+                f"{plan.note} — ritentare (mercato sospeso/book vuoto?)"
+            )
         # niente da chiudere: esito ok con motivo, nessun ordine (mai un place a vuoto).
         result = _result(
             ok=True, action="greenup", mode=mode, request_row=request_row,
@@ -1051,7 +1079,7 @@ def _flatten_market(
     solo ciò che è rimasto aperto).
     """
     from .live_order_build import build_order
-    from .trading.greenup import compute_greenup
+    from .trading.greenup import FLAT_EPS as GREENUP_FLAT_EPS, compute_greenup
 
     mb = _val(market, "market_book")
     runners = (_val(mb, "runners") or []) if mb is not None else []
@@ -1069,6 +1097,12 @@ def _flatten_market(
         plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
                                best_back_price=best_back, best_lay_price=best_lay, fraction=fraction)
         if not plan.actionable:
+            # Fix cert PAPER 2026-07-02: esposizione APERTA ma piano non eseguibile
+            # (prezzo assente) = gamba FALLITA, mai saltata in silenzio — altrimenti il
+            # cash-out riporta "done, 0 chiuse" con le posizioni ancora a mercato.
+            if abs(w - l) >= GREENUP_FLAT_EPS:
+                failed.append({"market_id": market_id, "selection_id": sel,
+                               "error": f"non eseguibile (W={w:.2f} L={l:.2f}): {plan.note}"})
             continue
         try:
             built = build_order(
