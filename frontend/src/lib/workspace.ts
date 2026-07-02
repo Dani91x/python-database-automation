@@ -13,6 +13,7 @@ export type PanelKey =
     | 'risk'
     | 'dutching'
     | 'xhedge'
+    | 'scalper'
     | 'audit'
     | 'settings';
 
@@ -33,10 +34,11 @@ export interface WorkspaceLayout {
 
 // Pannelli di default (aperti, non collassati; audit/settings partono chiusi).
 const DEFAULT_OPEN: ReadonlySet<PanelKey> = new Set<PanelKey>([
-    'ladder', 'orders', 'positions', 'risk', 'dutching', 'xhedge',
+    'ladder', 'orders', 'positions', 'risk', 'dutching', 'xhedge', 'scalper',
 ]);
 export const DEFAULT_PANEL_ORDER: readonly PanelKey[] = [
-    'ladder', 'orders', 'positions', 'risk', 'dutching', 'xhedge', 'audit', 'settings',
+    'ladder', 'orders', 'positions', 'risk', 'dutching', 'xhedge', 'scalper',
+    'audit', 'settings',
 ] as const;
 
 const ALL_PANELS: ReadonlySet<PanelKey> = new Set<PanelKey>(DEFAULT_PANEL_ORDER);

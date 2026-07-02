@@ -21,6 +21,7 @@ import { RiskRulesPanel } from '@/components/live/RiskRulesPanel';
 import { DutchingPanel } from '@/components/live/DutchingPanel';
 import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
 import { XHedgePanel } from '@/components/live/XHedgePanel';
+import { ScalperPanel } from '@/components/live/ScalperPanel';
 import { sendCashoutAll, sendCashoutEvent, setKillSwitch, type LiveOrderMode } from '@/lib/liveOrders';
 import {
     loadLayout, saveLayout, setActiveMarket, togglePanel, resolveHotkey,
@@ -37,6 +38,7 @@ const PANEL_CHIPS: { key: PanelKey; label: string }[] = [
     { key: 'dutching', label: 'Dutching' },
     { key: 'risk', label: 'Risk' },
     { key: 'xhedge', label: 'X-Hedge' },
+    { key: 'scalper', label: 'Scalper' },
 ];
 
 // Sezione "Live Trading" del dettaglio Segui Live: COCKPIT MULTI-MERCATO stile Bet Angel.
@@ -301,6 +303,13 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
             {/* ---- X-HEDGE: analisi cross-market, UNA sola volta per EVENTO (non per mercato) ---- */}
             {panelOpen('xhedge') && (
                 <XHedgePanel eventId={eventId} mode={mode} />
+            )}
+
+            {/* ---- SCALPER BOT: pre-match, UNA sola volta per EVENTO. Attivazione,
+                 modalità (tradizionale/direzionale/entrambe), parametri validati,
+                 telemetria e stop. Esecuzione nel servizio locale scalper_service. ---- */}
+            {panelOpen('scalper') && (
+                <ScalperPanel eventId={eventId} eventName={eventName} />
             )}
 
             {market && (
