@@ -50,6 +50,10 @@ _TABLE = "betfair_live_order_requests"
 # customerStrategyRef passato a market.place_order (<=15 char per Betfair).
 CUSTOMER_STRATEGY_REF = "live"
 
+# Azioni che RIDUCONO il rischio (ritiro resting / hedge self-bounded): col kill-switch
+# attivo restano le UNICHE eseguibili — il freno blocca le aperture, mai le vie di uscita.
+_CLOSING_ACTIONS = frozenset({"cancel", "greenup", "cashout_all", "cashout_event"})
+
 
 # ---------------------------------------------------------------------------
 # Config (letta da config_stream se presente, altrimenti da .env). Wrappata in
@@ -601,6 +605,39 @@ def _effective_cap(request_row: Dict[str, Any]) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
+# Esiti flumine (fix CRITICAL-1): place/cancel/replace ritornano **False** quando un
+# trading control rifiuta l'istruzione (ControlError interno: ordine marcato VIOLATION,
+# MAI inviato a Betfair — vedi flumine/execution/transaction.py). Ignorare il valore di
+# ritorno scriverebbe 'done ok=True' su un ordine INESISTENTE: uno stop-loss "eseguito"
+# su mercato sospeso che in realtà non ha chiuso nulla. Qui ogni esito è verificato.
+# ---------------------------------------------------------------------------
+def _violation_msg(order: Any) -> str:
+    msg = _val(order, "violation_msg")
+    return str(msg) if msg else "rifiutato dai trading control flumine (violation)"
+
+
+def _place_or_raise(market: Any, order: Any, what: str) -> None:
+    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    if ok is False:
+        raise ValueError(f"{what}: place RIFIUTATO — {_violation_msg(order)}")
+
+
+def _cancel_or_raise(market: Any, order: Any, size_reduction: Optional[float], what: str) -> None:
+    if size_reduction is not None:
+        ok = market.cancel_order(order, size_reduction)
+    else:
+        ok = market.cancel_order(order)
+    if ok is False:
+        raise ValueError(f"{what}: cancel RIFIUTATO — {_violation_msg(order)}")
+
+
+def _replace_or_raise(market: Any, order: Any, new_price: float, what: str) -> None:
+    ok = market.replace_order(order, new_price)
+    if ok is False:
+        raise ValueError(f"{what}: replace RIFIUTATO — {_violation_msg(order)}")
+
+
+# ---------------------------------------------------------------------------
 # Azioni place / cancel / replace
 # ---------------------------------------------------------------------------
 def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
@@ -632,7 +669,7 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     order_risk = built.size if built.side == "BACK" else (built.liability or 0.0)
     _check_exposure_guard(market, strategy, int(request_row["selection_id"]),
                           float(request_row.get("handicap") or 0), float(order_risk or 0.0))
-    market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    _place_or_raise(market, built.order, "place")
     _record_order()
     result = _result(
         ok=True,
@@ -660,10 +697,7 @@ def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) ->
         raise ValueError(f"ordine bet_id {bet_id} non trovato nel blotter")
     market = _resolve_market(flumine, _val(order, "market_id") or request_row.get("market_id"))
     size_reduction = _f(request_row.get("size_reduction"))
-    if size_reduction is not None:
-        market.cancel_order(order, size_reduction)
-    else:
-        market.cancel_order(order)
+    _cancel_or_raise(market, order, size_reduction, "cancel")
     result = _result(
         ok=True, action="cancel", mode=mode, request_row=request_row,
         cust_ref=cust_ref, order=order, detail=f"cancel size_reduction={size_reduction}",
@@ -702,7 +736,7 @@ def _do_replace(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -
                 f"replace LAY: liability €{new_liab:.2f} a quota {new_price} "
                 f"oltre cap €{cap:.2f}"
             )
-    market.replace_order(order, new_price)
+    _replace_or_raise(market, order, new_price, "replace")
     result = _result(
         ok=True, action="replace", mode=mode, request_row=request_row,
         cust_ref=cust_ref, order=order, price=new_price, detail=f"replace → {new_price}",
@@ -830,7 +864,7 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         customer_order_ref=cust_ref,
         reduces_liability=True,         # green-up: sotto-minimo .it consentito
     )
-    market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    _place_or_raise(market, built.order, "greenup")
     result = _result(
         ok=True, action="greenup", mode=mode, request_row=request_row,
         cust_ref=cust_ref, order=built.order, price=built.price, size=built.size,
@@ -897,19 +931,28 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
             return base
         return given
 
+    # Fix HIGH (review DB): una gamba senza prezzo risolvibile NON può essere scartata in
+    # silenzio — il dutch verrebbe piazzato su N−1 selezioni e, se quella esclusa vince, si
+    # perde l'intero stake (l'opposto dell'equal-profit chiesto). O TUTTE le gambe hanno un
+    # prezzo, o la richiesta fallisce senza piazzare nulla.
+    def _price_or_raise(s: Dict[str, Any]) -> float:
+        sel_id = int(s["selection_id"])
+        price = _price_for(sel_id, _f(s.get("price")))
+        if price is None:
+            raise ValueError(
+                f"dutch: prezzo non risolvibile per la selezione {sel_id} "
+                f"(pricing={pricing}): nessuna gamba piazzata"
+            )
+        return price
+
     if dmode == "variable":
-        triples = []
-        for s in sels_in:
-            price = _price_for(int(s["selection_id"]), _f(s.get("price")))
-            if price is not None:
-                triples.append((int(s["selection_id"]), price, _f(s.get("weight")) or 1.0))
+        triples = [
+            (int(s["selection_id"]), _price_or_raise(s), _f(s.get("weight")) or 1.0)
+            for s in sels_in
+        ]
         plan = dutch_variable(triples, total)
     else:
-        pairs = []
-        for s in sels_in:
-            price = _price_for(int(s["selection_id"]), _f(s.get("price")))
-            if price is not None:
-                pairs.append((int(s["selection_id"]), price))
+        pairs = [(int(s["selection_id"]), _price_or_raise(s)) for s in sels_in]
         if dmode == "target":
             if side == "lay":
                 raise ValueError("dutch mode=target: supportato solo per back")
@@ -938,18 +981,43 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         leg_risk = leg.size if plan.side == "back" else round(leg.size * (leg.price - 1.0), 2)
         _check_exposure_guard(market, strategy, leg.selection_id, hcap, float(leg_risk))
 
-    placed = []
+    # Fix HIGH-2 (all-or-nothing sul BUILD): costruisci e valida TUTTE le gambe PRIMA di
+    # piazzarne una sola. Un errore di build (min-stake .it €2 sulla gamba i>0, cap, tick)
+    # a metà loop lascerebbe le gambe precedenti GIÀ a mercato → esposizione direzionale
+    # non voluta. Con la pre-costruzione, qualunque gamba invalida = zero ordini.
+    built_legs = []
     for i, leg in enumerate(live_legs):
-        built = build_order(
+        built_legs.append(build_order(
             market, strategy=strategy, selection_id=leg.selection_id,
             handicap=hcap, side=plan.side,
             order_type="LIMIT", price=leg.price, size=leg.size, liability=None,
             persistence=persistence, time_in_force=None, min_fill_size=None,
             jurisdiction=_jurisdiction(), max_stake=_effective_cap(request_row),
             customer_order_ref=_leg_ref(rid, f"d{i}"),
-        )
-        market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+        ))
+
+    placed = []
+    placed_orders = []
+    for i, (leg, built) in enumerate(zip(live_legs, built_legs)):
+        try:
+            _place_or_raise(market, built.order, f"dutch gamba {i + 1}/{len(built_legs)}")
+        except Exception as ex:
+            # Rifiuto a runtime (control/mercato) a metà piazzamento: le gambe precedenti
+            # sono a mercato e il dutching è SBILANCIATO. Rollback best-effort: cancel di
+            # ogni gamba già piazzata (unmatched), poi errore esplicito con l'esito.
+            cancelled = 0
+            for prev in placed_orders:
+                try:
+                    if market.cancel_order(prev) is not False:
+                        cancelled += 1
+                except Exception:  # noqa: BLE001 - rollback best-effort, mai mascherare l'errore vero
+                    logger.exception("[live-order] rollback dutch: cancel gamba fallito")
+            raise ValueError(
+                f"{ex}; dutch interrotto: {len(placed_orders)} gambe piazzate, "
+                f"{cancelled} cancellate in rollback — VERIFICARE il mercato"
+            ) from ex
         _record_order()
+        placed_orders.append(built.order)
         placed.append({"selection_id": leg.selection_id, "side": plan.side,
                        "price": built.price, "size": built.size,
                        "profit_if_wins": leg.profit_if_wins})
@@ -970,11 +1038,18 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
 # ---------------------------------------------------------------------------
 def _flatten_market(
     flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int
-) -> "tuple[list, int]":
+) -> "tuple[list, int, list]":
     """Flatten (green-up) di ogni selezione del mercato con esposizione ≠ 0. Ritorna
-    (gambe_chiuse, prossimo_indice). Ogni gamba ha un customer_order_ref UNIVOCO ``awlq<rid>x<idx>``
-    (idx globale progressivo → nessuna collisione nello specchio anche su più mercati). Riusa la
-    matematica di greenup (esposizioni FRESCHE + best opposto) con ``reduces_liability=True``."""
+    (gambe_chiuse, prossimo_indice, gambe_rifiutate). Ogni gamba ha un customer_order_ref
+    UNIVOCO ``awlq<rid>x<idx>`` (idx globale progressivo → nessuna collisione nello specchio
+    anche su più mercati). Riusa la matematica di greenup (esposizioni FRESCHE + best opposto)
+    con ``reduces_liability=True``.
+
+    Fix CRITICAL-1: l'esito di OGNI place è verificato. Un rifiuto NON interrompe il flatten
+    (in emergenza chiudere le altre selezioni vale più di fermarsi): la gamba finisce in
+    ``failed`` e il CHIAMANTE deve alzare l'errore (il greenup è idempotente: un retry chiude
+    solo ciò che è rimasto aperto).
+    """
     from .live_order_build import build_order
     from .trading.greenup import compute_greenup
 
@@ -982,6 +1057,7 @@ def _flatten_market(
     runners = (_val(mb, "runners") or []) if mb is not None else []
     market_id = _val(market, "market_id")
     closed: list = []
+    failed: list = []
     idx = idx0
     for r in runners:
         sel = _int(_val(r, "selection_id"))
@@ -994,18 +1070,24 @@ def _flatten_market(
                                best_back_price=best_back, best_lay_price=best_lay, fraction=fraction)
         if not plan.actionable:
             continue
-        built = build_order(
-            market, strategy=strategy, selection_id=sel, handicap=hcap,
-            side=str(plan.side), order_type="LIMIT", price=plan.price, size=plan.size,
-            liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
-            jurisdiction=_jurisdiction(), max_stake=None,
-            customer_order_ref=_leg_ref(rid, f"x{idx}"), reduces_liability=True,
-        )
-        market.place_order(built.order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+        try:
+            built = build_order(
+                market, strategy=strategy, selection_id=sel, handicap=hcap,
+                side=str(plan.side), order_type="LIMIT", price=plan.price, size=plan.size,
+                liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
+                jurisdiction=_jurisdiction(), max_stake=None,
+                customer_order_ref=_leg_ref(rid, f"x{idx}"), reduces_liability=True,
+            )
+            _place_or_raise(market, built.order, f"cashout sel {sel}")
+        except Exception as ex:  # noqa: BLE001 - continua a chiudere le ALTRE selezioni
+            logger.exception("[live-order] cashout: chiusura selezione %s rifiutata", sel)
+            failed.append({"market_id": market_id, "selection_id": sel, "error": str(ex)[:160]})
+            idx += 1
+            continue
         closed.append({"market_id": market_id, "selection_id": sel, "side": plan.side,
                        "price": built.price, "size": built.size})
         idx += 1
-    return closed, idx
+    return closed, idx, failed
 
 
 def _cashout_fraction(request_row: Dict[str, Any]) -> float:
@@ -1022,7 +1104,14 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     rid = request_row["id"]
     market = _resolve_market(flumine, request_row.get("market_id"))
     fraction = _cashout_fraction(request_row)
-    closed, _ = _flatten_market(flumine, market, strategy, fraction, rid, 0)
+    closed, _, failed = _flatten_market(flumine, market, strategy, fraction, rid, 0)
+    if failed:
+        # MAI un 'done ok=True' con selezioni rimaste aperte: errore ESPLICITO (il greenup è
+        # idempotente: un nuovo cash-out chiude solo ciò che è ancora sbilanciato).
+        raise ValueError(
+            f"cash-out MERCATO INCOMPLETO: {len(closed)} selezioni chiuse, {len(failed)} "
+            f"RIFIUTATE ({'; '.join(f['error'] for f in failed[:3])}) — ritentare il cash-out"
+        )
     result = _result(
         ok=True, action="cashout_all", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
@@ -1052,15 +1141,22 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
         raise ValueError("cashout_event: event_id non determinabile (né params.event_id né market.event_id)")
 
     closed: list = []
+    failed_all: list = []
     idx = 0
     markets_done = 0
     for m in flumine.markets:
         if _val(m, "event_id") != event_id:
             continue
-        legs, idx = _flatten_market(flumine, m, strategy, fraction, rid, idx)
+        legs, idx, failed = _flatten_market(flumine, m, strategy, fraction, rid, idx)
         closed.extend(legs)
+        failed_all.extend(failed)
         markets_done += 1
 
+    if failed_all:
+        raise ValueError(
+            f"cash-out EVENTO INCOMPLETO: {len(closed)} selezioni chiuse, {len(failed_all)} "
+            f"RIFIUTATE ({'; '.join(f['error'] for f in failed_all[:3])}) — ritentare il cash-out"
+        )
     result = _result(
         ok=True, action="cashout_event", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
@@ -1199,7 +1295,19 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
     if order is not None:
         _record_order()  # conteggia il place del submin nel rate-limit ordini/min
     order_id = _val(order, "id")
-    _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, order_id)
+    try:
+        _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, order_id)
+    except Exception:
+        # Fix MEDIUM-2: place riuscito ma persistenza DB fallita → la riga finirà 'error'
+        # (mai più avanzata) con l'ordine step1 ORFANO a riposo a 1000/1.01. Cancel
+        # best-effort PRIMA di propagare: niente resting non tracciati sul conto.
+        if order is not None:
+            try:
+                market.cancel_order(order)
+                logger.warning("[live-order] submin %s: persistenza KO, step1 cancellato", rid)
+            except Exception:  # noqa: BLE001 - il cancel di emergenza è best-effort
+                logger.exception("[live-order] submin %s: cancel di emergenza fallito", rid)
+        raise
 
 
 def _advance_submin_row(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
@@ -1417,17 +1525,23 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     # #15 velocità runtime: rallenta la cadenza al target order_poll_sec (se impostato), senza riavvio.
     if _throttled("order_cycle", _order_poll_target()):
         return 0
-    # Gate a INIZIO ciclo: kill-switch da ENV *o* da DB (UI). Se attivo, salta TUTTO il giro.
-    # L'env è RI-LETTO anche per-ordine nel loop; il flag DB è lo snapshot di ciclo.
-    if _kill_switch() or _db_kill_switch():
-        logger.warning("[live-order] kill-switch ATTIVO (env o UI): nessun ordine processato")
-        return 0
+    # Kill-switch (ENV *o* DB/UI): blocca le APERTURE ma NON le CHIUSURE. Col freno tirato
+    # l'utente deve comunque poter cancellare resting e cash-outare le posizioni aperte —
+    # bloccare anche le uscite sarebbe l'opposto della protezione (posizione che sanguina
+    # senza via di fuga). Le azioni di chiusura sono risk-reducing per costruzione
+    # (cancel = ritiro; greenup/cashout = hedge self-bounded reduces_liability).
+    kill_cycle = _kill_switch() or _db_kill_switch()
+    if kill_cycle:
+        logger.warning(
+            "[live-order] kill-switch ATTIVO (env o UI): processate SOLO azioni di chiusura"
+        )
 
     mode_l = mode.lower()
     handled = 0
 
-    # 1) sequenze submin in corso (place_submin) → avanza di uno step
-    handled += _advance_inflight_submins(sb, flumine, mode_l, strategy)
+    # 1) sequenze submin in corso (place_submin) → avanza di uno step (APERTURE: mai col freno)
+    if not kill_cycle:
+        handled += _advance_inflight_submins(sb, flumine, mode_l, strategy)
 
     # 2) nuove richieste pending della stessa mode → claim atomico + dispatch
     try:
@@ -1448,13 +1562,14 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
 
     for r in rows:
         # kill-switch RI-LETTO PER-ORDINE (non solo a inizio ciclo): flipparlo a metà
-        # batch blocca SUBITO gli ordini rimanenti, che restano 'pending' (mai claimati →
-        # mai bloccati in 'processing'). Si controlla PRIMA del claim, di proposito.
-        if _kill_switch():
+        # batch blocca SUBITO le aperture rimanenti, che restano 'pending' (mai claimate →
+        # mai bloccate in 'processing'). Si controlla PRIMA del claim, di proposito.
+        # Le azioni di CHIUSURA passano sempre (vedi nota sul kill-switch a inizio funzione).
+        if (kill_cycle or _kill_switch()) and str(r.get("action") or "") not in _CLOSING_ACTIONS:
             logger.warning(
-                "[live-order] kill-switch ATTIVO a metà batch: ordini rimanenti non processati"
+                "[live-order] kill-switch ATTIVO: apertura %s lasciata pending", r.get("id")
             )
-            break
+            continue
         rid = r.get("id")
         # claim: se un altro l'ha già preso (o non è più pending), salta.
         if not _claim(sb, rid):

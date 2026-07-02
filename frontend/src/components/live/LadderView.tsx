@@ -68,6 +68,10 @@ const PAD_TICKS = 1; // tick di contesto sopra/sotto il range back/lay/LTP/ordin
 
 const ORDERS_POLL_MS = 5000; // poll gentile ordini/posizioni (no martellamento DB).
 
+// Scadenza della barra di conferma LIVE (fix M1): oltre questa finestra il prezzo
+// dell'intent è considerato stantio e serve un nuovo clic.
+const CONFIRM_TTL_MS = 6000;
+
 // ------------------------------------------------------------------ formatters
 const fmtPrice = (p: number) => (p >= 100 ? p.toFixed(0) : p.toFixed(2));
 const fmtSize = (v: number) => {
@@ -696,6 +700,13 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     // stake preset condiviso tra tutte le ladder del mercato (nessun cap: importo LIBERO).
     const [stake, setStake] = useState<number>(5);
     const [customStake, setCustomStake] = useState('');
+    // MONEY-CRITICAL (fix M4): input custom NON parsabile/≤0 → la casella mostra un valore ma
+    // `stake` resta quello PRECEDENTE. Senza blocco, il clic one-click invierebbe uno stake
+    // diverso da quello visualizzato. Finché l'input è invalido i place sono bloccati.
+    const stakeInvalid = customStake !== ''
+        && !(Number.isFinite(Number(customStake)) && Number(customStake) > 0);
+    const stakeInvalidRef = useRef(stakeInvalid);
+    stakeInvalidRef.current = stakeInvalid;
 
     // persistenza ordine condivisa (default LAPSE, come i tool pro).
     const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
@@ -710,6 +721,18 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
 
     // se la modalità non è LIVE, l'armamento non ha senso: tienilo spento.
     useEffect(() => { if (!isLive) setArmed(false); }, [isLive]);
+
+    // MONEY-CRITICAL (fix M1): la barra di conferma LIVE SCADE. Un intent "BACK €25 @ 2.40"
+    // lasciato lì può essere confermato minuti dopo con il mercato mosso: prezzo stantio che
+    // si abbina o resta sul book come posizione inattesa. Dopo la scadenza serve un nuovo clic.
+    useEffect(() => {
+        if (!confirm) return;
+        const t = setTimeout(() => {
+            setConfirm(null);
+            setStatusMsg({ tone: 'err', text: '✗ Conferma scaduta (mercato mosso): riclicca il prezzo per ripetere.' });
+        }, CONFIRM_TTL_MS);
+        return () => clearTimeout(t);
+    }, [confirm]);
 
     // ---- snapshot iniziale + sottoscrizione realtime a live_ladder ----
     useEffect(() => {
@@ -821,6 +844,11 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     const requestAction = useCallback((it: Intent) => {
         if (mode === 'off') return;
         if (busyRef.current) return;
+        // fix M4: con stake custom invalido, lo stake effettivo ≠ quello mostrato → blocca i place.
+        if (it.kind === 'place' && stakeInvalidRef.current) {
+            setStatusMsg({ tone: 'err', text: '✗ Stake non valido: correggi l\'importo prima di piazzare.' });
+            return;
+        }
         if (isLive && !armed) { setConfirm(it); return; }
         execute(it);
     }, [mode, isLive, armed, execute]);
@@ -962,7 +990,12 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                             if (Number.isFinite(n) && n > 0) setStake(n);
                         }}
                         placeholder="€"
-                        className="w-14 bg-black/60 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-white focus:outline-none focus:border-amber-400/50"
+                        title={stakeInvalid ? 'Stake non valido: i clic di piazzamento sono bloccati' : 'Stake custom (€)'}
+                        className={`w-14 bg-black/60 border rounded-md px-1.5 py-0.5 text-[11px] text-white focus:outline-none ${
+                            stakeInvalid
+                                ? 'border-red-500 focus:border-red-400'
+                                : 'border-white/10 focus:border-amber-400/50'
+                        }`}
                     />
                     {/* persistenza ordine (solo se operabile): Keep / Lapse / Take SP, default Lapse */}
                     {mode !== 'off' && (

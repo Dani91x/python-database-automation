@@ -131,11 +131,25 @@ class LiveTradingStrategy(BaseStrategy):
     """Strategia advisory: specchia ordini e posizioni nel DB, NON fa auto-trading."""
 
     def __init__(self, *args: Any, session: Any = None, mode: str = "paper", **kwargs: Any) -> None:
+        # MONEY-CRITICAL (fix CRITICAL-2): BaseStrategy ha default NASCOSTI pensati per bot
+        # automatici — max_order_exposure=10 (€10/ordine!), max_selection_exposure=100,
+        # max_live_trade_count=1 (UN solo ordine vivo per selezione: ogni richiesta di coda
+        # crea un nuovo Trade). Il control nativo StrategyExposure (registrato di default dal
+        # framework) li applica a OGNI place: senza questi override qualunque ordine sopra
+        # €10 verrebbe RIFIUTATO. Qui gli ordini sono decisioni ESPLICITE dell'utente
+        # (scelta 2026-07-01: importi liberi): i tetti veri sono opt-in via
+        # betfair_live_settings (LiveExposureControl) + cap per-ordine del worker.
+        kwargs.setdefault("max_order_exposure", None)      # None = check disattivato
+        kwargs.setdefault("max_selection_exposure", None)  # None = check disattivato
+        kwargs.setdefault("max_trade_count", 10**9)        # int: nessun None ammesso da flumine
+        kwargs.setdefault("max_live_trade_count", 10**9)   # int: nessun None ammesso da flumine
         super().__init__(*args, **kwargs)
         self.session = session
         self.mode = (mode or "paper").lower()
         # cache write-on-change: order.id → firma dei campi mutabili già scritti.
         self._last_order_sig: Dict[str, Tuple] = {}
+        # HIGH-4: cache bet_id → client_order_ref dello specchio (riconciliazione post-riavvio).
+        self._ref_by_bet: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # NO auto-trading: nessun ordine viene mai generato dai dati di mercato.
@@ -182,6 +196,14 @@ class LiveTradingStrategy(BaseStrategy):
             row = self._order_row(order, event_id=event_id, market_id=market_id)
             if row is None:
                 continue
+            # HIGH-4 (riconciliazione post-RIAVVIO): dopo un restart flumine ricostruisce gli
+            # ordini correnti dall'order stream SENZA notes/context → il ref ricade sul
+            # customer_order_ref flumine (hash-uuid) ≠ ``awlq<rid>`` originale. L'upsert su
+            # (mode, client_order_ref) creerebbe una SECONDA riga per lo STESSO bet: la
+            # vecchia resta congelata ai fill pre-crash e chi somma lo specchio (xhedge)
+            # conterebbe l'esposizione DUE volte. Se il ref non è nostro ma il bet_id è già
+            # nello specchio, si riusa il client_order_ref esistente (stessa riga aggiornata).
+            row = self._reconcile_ref_by_bet(dbm, row)
             dbm.upsert_live_order(row)
             if oid is not None:
                 # Cleanup cache: un ordine in stato terminale non muterà più → rimuovi
@@ -202,6 +224,27 @@ class LiveTradingStrategy(BaseStrategy):
             pos = self._position_row(market, event_id, mkt, sel, hcap)
             if pos is not None:
                 dbm.upsert_live_position(pos)
+
+    def _reconcile_ref_by_bet(self, dbm: Any, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Se il ref della riga NON è il nostro ``awlq…`` ma il bet_id esiste già nello
+        specchio, riusa il client_order_ref esistente (aggiorna la riga originale invece di
+        crearne una seconda). Best-effort: qualunque errore → riga invariata."""
+        ref = row.get("client_order_ref")
+        bet_id = row.get("bet_id")
+        if not bet_id or (isinstance(ref, str) and ref.startswith("awlq")):
+            return row
+        cached = self._ref_by_bet.get(str(bet_id))
+        if cached is None:
+            try:
+                cached = dbm.find_live_order_ref(self.mode, str(bet_id)) or ""
+            except Exception:  # noqa: BLE001 - lookup best-effort: mai bloccare lo specchio
+                return row
+            self._ref_by_bet[str(bet_id)] = cached
+        if cached:
+            row = dict(row)
+            row["client_order_ref"] = cached
+            row["request_id"] = _request_id_from_ref(cached)
+        return row
 
     def _order_signature(self, order: Any) -> Tuple:
         """Campi mutabili che, cambiando, richiedono un nuovo specchio."""

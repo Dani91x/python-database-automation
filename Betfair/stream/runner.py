@@ -730,20 +730,22 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
     NB: ``market_recording_mode`` resta False in tutte le modalità (i book parsati
     servono a live_now/segnali); il raw nativo è registrato dal tee nel listener.
 
-    FIX 6 — controlli NATIVI flumine (sez. 11 del piano), cablati in modo COERENTE sulle 3
-    modalità:
-      * ``min_bet_validation=True`` → attiva il control nativo ``OrderValidation`` di flumine
-        (rifiuta stake/payout sotto i minimi della giurisdizione). È già il default di flumine,
-        ma lo rendiamo ESPLICITO così la garanzia è leggibile e non dipende dal default.
+    Controlli NATIVI flumine, cablati in modo COERENTE sulle 3 modalità:
+      * ``min_bet_validation=False`` (fix CRITICAL-3) → il control nativo ``OrderValidation``
+        NON conosce l'eccezione Betfair "bet che RIDUCE la liability" (green-up / hedge /
+        cash-out sotto-minimo, che l'Exchange ACCETTA): con True rifiuterebbe client-side
+        ogni chiusura di posizione piccola (per conto EUR: size < €1 e payout < €20) →
+        cash-out falliti, e lo step1 del place-and-trim (LAY €0,50@1.01) mai piazzabile.
+        La validazione dei minimi resta STRETTA, giurisdizione-aware (.it: back €2 /
+        lay €0,50) e consapevole di ``reduces_liability`` in
+        ``live_order_build.min_stake_rules`` — che copre OGNI ordine del worker.
       * ``transaction_limit=LIVE_TRANSACTION_LIMIT`` → soglia oraria del control nativo
         ``MaxTransactionCount`` (registrato da flumine in ``add_client``): guardia anti-runaway
         di place/cancel/replace, tenuta sotto la soglia Betfair (5000/h) degli addebiti.
       In OFF questi parametri sono INERTI (nessuna strategia ordini né worker coda registrati →
-      nessun place possibile), quindi cablarli NON introduce regressioni; servono solo a tenere
-      i tre client coerenti. I ``trading_controls`` CUSTOM di esposizione per selezione/mercato e
-      di rate-limit ordini/min (sez. 11) NON sono nativi né triviali: sono RINVIATI alla Fase 6
-      ("Controlli avanzati, audit, kill-switch") e tracciati esplicitamente nel piano, non
-      improvvisati qui.
+      nessun place possibile); servono solo a tenere i tre client coerenti. I trading_controls
+      CUSTOM (``LiveExposureControl``/``LiveRateControl``) sono registrati sul framework in
+      ``setup_and_run`` quando orders_enabled=True.
     """
     mode_u = (mode or "OFF").strip().upper()
     if mode_u == "LIVE":
@@ -752,7 +754,10 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
             order_stream=True,
             order_stream_conflate_ms=ORDER_STREAM_CONFLATE_MS or None,
             paper_trade=False,
-            min_bet_validation=True,
+            # False: l'OrderValidation nativo non conosce l'eccezione reduces_liability
+            # (green-up sotto-minimo, ammesso da Betfair) → i minimi li valida
+            # live_order_build.min_stake_rules (fix CRITICAL-3, vedi docstring).
+            min_bet_validation=False,
             transaction_limit=LIVE_TRANSACTION_LIMIT,
         )
         return client, True
@@ -772,7 +777,8 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
             order_stream=True,
             order_stream_conflate_ms=ORDER_STREAM_CONFLATE_MS or None,
             paper_trade=True,
-            min_bet_validation=True,
+            # False come in LIVE (fix CRITICAL-3): PAPER deve replicare il path reale.
+            min_bet_validation=False,
             transaction_limit=LIVE_TRANSACTION_LIMIT,
         )
         return client, True
@@ -782,7 +788,7 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
     client = clients.BetfairClient(
         api_client,
         order_stream=False,
-        min_bet_validation=True,
+        min_bet_validation=False,
         transaction_limit=LIVE_TRANSACTION_LIMIT,
     )
     return client, False

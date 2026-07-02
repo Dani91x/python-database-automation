@@ -113,6 +113,13 @@ def compute_greenup(
     f = _clamp_fraction(fraction)
     w = float(matched_if_win)
     l = float(matched_if_lose)
+    # Esposizioni non finite (NaN/inf): con NaN ogni confronto è False → si cadrebbe nel ramo
+    # BACK con size=NaN, violando il contratto "side/price/size valorizzati solo se operabile".
+    if not (math.isfinite(w) and math.isfinite(l)):
+        return GreenupPlan(
+            side=None, price=None, size=None, expected_if_win=0.0, expected_if_lose=0.0,
+            note=f"esposizioni non finite (W={matched_if_win!r}, L={matched_if_lose!r}): nessun ordine",
+        )
     diff = w - l
 
     if f <= 0.0 or abs(diff) < FLAT_EPS:

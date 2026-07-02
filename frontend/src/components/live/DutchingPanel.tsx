@@ -210,7 +210,7 @@ export function DutchingPanel({
     // -------------------- invio --------------------
     const guardBeforeSend = (): string | null => {
         if (readOnly) return 'Modalità OFF: il runner non accetta ordini.';
-        if (killSwitch) return 'Kill-switch attivo: invio bloccato. Disattivalo per operare.';
+        if (killSwitch) return 'Blocco pannello attivo: invio bloccato. Disattivalo per operare.';
         if (isLive && !confirmLive) return 'Spunta "Confermo dutching REALE" prima di inviare in LIVE.';
         if (preview.count < 2) return 'Seleziona almeno 2 selezioni con quota valida.';
         if (isTargetMode) {
@@ -303,10 +303,10 @@ export function DutchingPanel({
                             ? 'bg-red-600 text-white border-transparent'
                             : 'bg-white/5 text-white/70 border-white/10 hover:border-red-500/40'
                     }`}
-                    title="Kill-switch: blocca ogni invio ordini"
+                    title="Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"
                 >
                     <ShieldAlert className="w-3.5 h-3.5" />
-                    Kill-switch {killSwitch ? 'ON' : 'OFF'}
+                    Blocco pannello {killSwitch ? 'ON' : 'OFF'}
                 </button>
             </div>
 

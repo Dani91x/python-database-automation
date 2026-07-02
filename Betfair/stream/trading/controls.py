@@ -233,6 +233,14 @@ class LiveRateControl(BaseControl):
         if package_type != OrderPackageType.PLACE:
             return
 
+        # Ordini di CHIUSURA (green-up/hedge/cash-out, marcati reduces_liability da
+        # live_order_build): MAI rate-limitati. Il rate-limit protegge dal runaway di
+        # APERTURE; bloccare un'uscita d'emergenza in una raffica sarebbe l'opposto
+        # della protezione (stop-flatten rifiutato = posizione che sanguina).
+        ctx = _val(order, "context")
+        if isinstance(ctx, dict) and ctx.get("reduces_liability"):
+            return
+
         cap = _max_orders_per_min()
         if cap is None or cap <= 0:
             return  # limite disattivato

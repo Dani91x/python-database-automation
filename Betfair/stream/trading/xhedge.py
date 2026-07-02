@@ -305,6 +305,14 @@ def build_positions(
     return out
 
 
+def _matched_size(order: Dict[str, Any]) -> float:
+    """size_matched difensiva di una riga ordine (0.0 se assente/non numerica)."""
+    try:
+        return float(order.get("size_matched") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def compute_xhedge(
     orders: Sequence[Dict[str, Any]],
     market_meta: Dict[str, Dict[str, Any]],
@@ -317,6 +325,12 @@ def compute_xhedge(
     scoreline, la sintesi e (se ci sono quote Correct Score) il suggerimento di copertura.
     Ritorna un dict serializzabile per DB/UI. Nessun I/O."""
     positions = build_positions(orders, market_meta)
+    # MONEY-CRITICAL: gli ordini matched NON mappabili (es. "Any Other" del Correct Score,
+    # mercati fuori modello) sono esposizione REALE assente dalla matrice. Contarli ed
+    # esporli permette alla UI di dichiarare la matrice INCOMPLETA invece di spacciarla
+    # per esatta (senza contatore ogni cella sarebbe silenziosamente sbagliata).
+    n_matched_input = sum(1 for o in orders if _matched_size(o) > 0)
+    ignored_orders = max(0, n_matched_input - len(positions))
     grid = pnl_by_scoreline(positions, max_goals=max_goals)
     summary = exposure_summary(grid)
     suggestion = None
@@ -329,6 +343,9 @@ def compute_xhedge(
         }
     return {
         "n_positions": len(positions),
+        # > 0 ⟹ la matrice è INCOMPLETA: esposizione matched reale non modellata (la UI
+        # DEVE mostrare un avviso, mai presentare la griglia come esatta).
+        "ignored_orders": ignored_orders,
         "summary": {
             "worst": summary.worst, "best": summary.best, "mean": summary.mean,
             "worst_scoreline": list(summary.worst_scoreline),

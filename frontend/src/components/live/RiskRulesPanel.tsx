@@ -283,7 +283,7 @@ export function RiskRulesPanel({
     // -------------------- arming --------------------
     const guardBeforeSend = (): string | null => {
         if (readOnly) return 'Modalità OFF: il risk engine è spento, nessuna regola armabile.';
-        if (killSwitch) return 'Kill-switch attivo: arming bloccato. Disattivalo per operare.';
+        if (killSwitch) return 'Blocco pannello attivo: arming bloccato. Disattivalo per operare.';
         if (isLive && !confirmLive) return 'Spunta "Confermo regola REALE" prima di armare in LIVE.';
         return null;
     };
@@ -400,10 +400,10 @@ export function RiskRulesPanel({
                                 ? 'bg-red-600 text-white border-transparent'
                                 : 'bg-white/5 text-white/70 border-white/10 hover:border-red-500/40'
                         }`}
-                        title="Kill-switch: blocca l'arming di nuove regole"
+                        title="Blocca SOLO l'arming da questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"
                     >
                         <ShieldAlert className="w-3.5 h-3.5" />
-                        Kill-switch {killSwitch ? 'ON' : 'OFF'}
+                        Blocco pannello {killSwitch ? 'ON' : 'OFF'}
                     </button>
                     <Button variant="ghost" size="sm" onClick={reload} disabled={loading}
                         className="text-muted-foreground hover:text-white">

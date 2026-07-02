@@ -214,7 +214,18 @@ def dutch_variable(
     legs_prices: List[Tuple[int, float, float]] = []
     for sel_id, p, w in cleaned:
         s = round((total_stake + k * w) / p, 2)
-        s = max(s, 0.0)
+        # Stake NEGATIVO su una gamba = pesi IRREALIZZABILI con questo book (succede con
+        # book > 100% e peso forte su una quota alta): clamparlo a 0 romperebbe Σs = T
+        # (si spenderebbe PIÙ del total_stake richiesto) e la proporzionalità dei profitti
+        # ai pesi. Rifiuto onesto: piano NON azionabile con motivo, nessun ordine.
+        if s < 0.0:
+            book = round(inv_sum * 100.0, 2)
+            return DutchPlan(
+                legs=(), side="back", total_stake=0.0, book_pct=book,
+                worst_profit=0.0, best_profit=0.0,
+                note=(f"pesi irrealizzabili con book {book:.2f}%: stake negativo sulla "
+                      f"selezione {sel_id} — ridurre i pesi o usare profitto uguale"),
+            )
         legs_prices.append((sel_id, p, s))
     total = round(sum(s for _, _, s in legs_prices), 2)
 

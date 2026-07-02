@@ -289,6 +289,16 @@ def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, 
         matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
         trail_extreme=low._f(rule.get("trail_extreme")),
     )
+    # Parametri INVALIDI (errore PERMANENTE dei dati della regola, non del mercato): la regola
+    # non potrà MAI scattare così com'è. Disarmo VISIBILE (status 'error' + alert CRITICAL),
+    # mai il retry silenzioso "transitorio": l'utente si crederebbe protetto da uno stop MORTO.
+    if decision.error:
+        _update_rule(sb, rule["id"], {"status": "error",
+                                      "error": f"parametri non validi: {decision.error}"})
+        _alert("CRITICAL",
+               f"Regola risk {rule.get('id')} ({rule.get('rule_type')}) DISATTIVATA: parametri "
+               f"non validi ({decision.error}). LA PROTEZIONE NON È ATTIVA: ri-armare la regola.")
+        return
     if not decision.fire:
         patch: Dict[str, Any] = {}
         if decision.trail_extreme is not None:
@@ -315,11 +325,18 @@ def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, 
         "result": {"note": decision.reason, "action": "greenup"}})
 
 
-def _enqueue_flatten(sb: Any, rule: Dict[str, Any], mode_l: str) -> Optional[int]:
-    """Accoda un greenup (flatten) con place_at_ticks per un fill sicuro (stop a 2 parametri)."""
+def _enqueue_flatten(
+    sb: Any, rule: Dict[str, Any], mode_l: str, client_ref: Optional[str] = None
+) -> Optional[int]:
+    """Accoda un greenup (flatten) con place_at_ticks per un fill sicuro (stop a 2 parametri).
+
+    ``client_ref`` esplicito = ritentativo del follow-through (fix HIGH-3): il ref di default
+    ``risk<id>s`` è già bruciato dalla richiesta fallita (UNIQUE + RPC idempotente
+    ritornerebbero la VECCHIA riga in error) → ogni retry usa un ref nuovo ``risk<id>s<n>``.
+    """
     p = _params(rule)
     payload = {
-        "client_ref": f"risk{rule['id']}s",
+        "client_ref": client_ref or f"risk{rule['id']}s",
         "action": "greenup",
         "mode": mode_l,
         "market_id": rule["market_id"],
@@ -329,6 +346,117 @@ def _enqueue_flatten(sb: Any, rule: Dict[str, Any], mode_l: str) -> Optional[int
                    "place_at_ticks": risk_engine._int_param(p, "place_at_ticks") or 0},
     }
     return _enqueue(sb, payload)
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-THROUGH delle regole scattate (fix HIGH-3): 'triggered' NON è una garanzia.
+# La chiusura accodata può finire in 'error' (mercato sospeso al momento del place, blip)
+# o l'hedge LIMIT può restare unmatched se il prezzo scappa. Senza verifica, la protezione
+# andrebbe persa IN SILENZIO: qui si controlla l'esito, si ritenta (greenup idempotente:
+# ricalcola dalle esposizioni fresche → se già piatta è un no-op) e si escala con alert.
+# ---------------------------------------------------------------------------
+_MAX_CLOSE_RETRIES = 2       # ritentativi del flatten dopo una richiesta in 'error'
+_FILL_ALERT_AFTER_SEC = 10.0  # hedge resting non abbinato dopo N secondi → alert CRITICAL
+
+
+def _age_seconds(iso_ts: Any) -> Optional[float]:
+    """Secondi trascorsi da un timestamp ISO (None se non parsabile)."""
+    if not iso_ts:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(iso_ts).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def _follow_through(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
+    """Verifica l'esito della chiusura accodata da una regola 'triggered' e agisce."""
+    req_id = rule.get("enqueued_request_id")
+    if not req_id:
+        return
+    rows = (
+        sb.table("betfair_live_order_requests").select("id,status,error")
+        .eq("id", int(req_id)).limit(1).execute().data or []
+    )
+    if not rows:
+        return
+    req_status = str(rows[0].get("status") or "")
+    res = _result(rule)
+
+    if req_status in ("pending", "processing"):
+        return  # ancora in coda: attendi il prossimo giro
+
+    if req_status == "done":
+        # Richiesta eseguita: verifica il FILL dell'hedge (LIMIT LAPSE al best ± place_at può
+        # restare unmatched in un mercato veloce). Ordine ritrovato per ref awlq<req_id>.
+        order = low._find_order_by_cust_ref(
+            flumine, rule.get("market_id"), low._cust_ref(int(req_id))
+        )
+        remaining = low._f(low._val(order, "size_remaining")) if order is not None else None
+        if order is None or remaining is None or remaining <= 0:
+            # nessun ordine (greenup no-op: posizione già piatta) o interamente abbinato.
+            _update_rule(sb, rule["id"], {"status": "done",
+                "result": {**res, "note": f"{res.get('note') or 'chiusura'}; eseguita e verificata"}})
+            return
+        if res.get("fill_alerted"):
+            return  # già escalato: non spammare
+        age = _age_seconds(rule.get("triggered_at"))
+        if age is not None and age >= _FILL_ALERT_AFTER_SEC:
+            _alert("CRITICAL",
+                   f"STOP regola {rule.get('id')}: hedge NON (interamente) abbinato dopo "
+                   f"{age:.0f}s (resta €{remaining:.2f} unmatched). VERIFICARE e chiudere a mano "
+                   f"se necessario (mercato {rule.get('market_id')}).")
+            _update_rule(sb, rule["id"], {"result": {**res, "fill_alerted": True}})
+        return
+
+    if req_status == "error":
+        if _kill_active():
+            return  # freno tirato: non accodare (si riprende quando viene tolto)
+        retries = int(res.get("close_retries") or 0)
+        if retries >= _MAX_CLOSE_RETRIES:
+            _update_rule(sb, rule["id"], {"status": "error",
+                "error": f"chiusura FALLITA dopo {retries + 1} tentativi "
+                         f"(ultimo: {str(rows[0].get('error'))[:120]})"})
+            _alert("CRITICAL",
+                   f"STOP regola {rule.get('id')}: chiusura FALLITA dopo {retries + 1} tentativi. "
+                   f"POSIZIONE ANCORA APERTA su {rule.get('market_id')}: chiudere A MANO.")
+            return
+        new_ref = f"risk{rule['id']}s{retries + 2}"
+        new_req = _enqueue_flatten(sb, rule, mode_l, client_ref=new_ref)
+        if new_req is None:
+            return  # enqueue KO (transitorio): riprova al giro dopo senza consumare tentativi
+        _update_rule(sb, rule["id"], {
+            "enqueued_client_ref": new_ref, "enqueued_request_id": new_req,
+            "result": {**res, "close_retries": retries + 1}})
+        _alert("WARN",
+               f"STOP regola {rule.get('id')}: chiusura fallita "
+               f"({str(rows[0].get('error'))[:120]}), ritento "
+               f"({retries + 1}/{_MAX_CLOSE_RETRIES}).")
+        return
+
+
+def _check_triggered_rules(sb: Any, flumine: Any, mode_l: str) -> int:
+    """Follow-through di tutte le regole 'triggered' (best-effort per riga)."""
+    try:
+        rules = (
+            sb.table(_TABLE).select("*").eq("status", "triggered").eq("mode", mode_l)
+            .order("id").limit(_batch()).execute().data or []
+        )
+    except Exception as ex:  # noqa: BLE001 - lettura KO: salta il giro
+        logger.warning("[risk] lettura regole triggered KO: %s", str(ex)[:160])
+        return 0
+    handled = 0
+    for rule in rules:
+        try:
+            _follow_through(sb, flumine, rule, mode_l)
+        except Exception:  # noqa: BLE001 - errore transitorio: retry al giro dopo
+            logger.warning("[risk] follow-through regola %s: errore transitorio (retry)",
+                           rule.get("id"))
+        handled += 1
+    return handled
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +531,14 @@ def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, st
             matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
             trail_extreme=low._f(rule.get("trail_extreme")),
         )
+        # Parametri invalidi = errore PERMANENTE → disarmo VISIBILE (mai retry silenzioso).
+        if decision.error:
+            _update_rule(sb, rule["id"], {"status": "error",
+                                          "error": f"parametri non validi: {decision.error}"})
+            _alert("CRITICAL",
+                   f"Regola risk {rule.get('id')} (bracket) DISATTIVATA: parametri non validi "
+                   f"({decision.error}). LA PROTEZIONE NON È ATTIVA: ri-armare la regola.")
+            return
         # trailing opzionale nel bracket: se sono presenti trail_*, valuta anche quello.
         if not decision.fire and (risk_engine._int_param(_params(rule), "trail_ticks") is not None
                                   or risk_engine._num(_params(rule), "trail_pct") is not None):
@@ -411,6 +547,13 @@ def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, st
                 entry_price=low._f(rule.get("entry_price")), params=_params(rule), current_price=ltp,
                 matched_if_win=w, matched_if_lose=l, best_back_price=best_back, best_lay_price=best_lay,
                 trail_extreme=low._f(rule.get("trail_extreme")))
+            if dtr.error:
+                _update_rule(sb, rule["id"], {"status": "error",
+                                              "error": f"parametri non validi: {dtr.error}"})
+                _alert("CRITICAL",
+                       f"Regola risk {rule.get('id')} (bracket/trailing) DISATTIVATA: parametri "
+                       f"non validi ({dtr.error}). LA PROTEZIONE NON È ATTIVA.")
+                return
             if dtr.trail_extreme is not None:
                 prev = low._f(rule.get("trail_extreme"))
                 if prev is None or abs(prev - dtr.trail_extreme) > 1e-9:
@@ -485,9 +628,13 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
             _process_rule(sb, flumine, rule, mode_l, strategy)
         except Exception:  # noqa: BLE001 - errore TRANSITORIO: NON disarmare la regola protettiva
             # (mercato momentaneamente assente, blip DB) → resta 'armed', retry al giro dopo.
-            # Le condizioni davvero invalide sono marcate 'error' ESPLICITAMENTE negli handler.
+            # Le condizioni davvero invalide sono marcate 'error' ESPLICITAMENTE negli handler
+            # (evaluate_rule le classifica in RuleDecision.error: MAI un ValueError da params).
             logger.warning("[risk] regola %s: errore transitorio, resta armata (retry)", rid)
         handled += 1
+    # Fix HIGH-3: 'triggered' non è terminale di fiducia — verifica esito/fill delle chiusure
+    # accodate, ritenta le fallite (bounded) ed escala con alert quelle irrecuperabili.
+    handled += _check_triggered_rules(sb, flumine, mode_l)
     return handled
 
 

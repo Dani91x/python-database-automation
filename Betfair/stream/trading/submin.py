@@ -171,14 +171,20 @@ class FlumineSubminOps:
             max_stake=self.max_stake,     # cap effettivo: NON bypassare la guardia
             customer_order_ref=customer_order_ref,
         )
+        # Fix CRITICAL-1: place/cancel/replace flumine ritornano **False** se un trading
+        # control rifiuta (ordine VIOLATION, MAI inviato a Betfair). Ignorarlo lascerebbe la
+        # sequenza submin ad attendere un ordine INESISTENTE ('processing' per sempre).
         if self.customer_strategy_ref is not None:
-            market.place_order(built.order, customer_strategy_ref=self.customer_strategy_ref)
+            ok = market.place_order(built.order, customer_strategy_ref=self.customer_strategy_ref)
         else:
-            market.place_order(built.order)
+            ok = market.place_order(built.order)
+        if ok is False:
+            raise ValueError(f"submin place RIFIUTATO — {_violation_reason(built.order)}")
         return built.order
 
     def cancel(self, market: Any, order: Any, size_reduction: float) -> None:
-        market.cancel_order(order, size_reduction)
+        if market.cancel_order(order, size_reduction) is False:
+            raise ValueError(f"submin cancel RIFIUTATO — {_violation_reason(order)}")
 
     def replace(self, market: Any, order: Any, new_price: float) -> None:
         # CODE-MED-1: per un LAY ri-valida il cap PRIMA del replace. Lo step3 REPRICED sposta
@@ -186,7 +192,17 @@ class FlumineSubminOps:
         # (= size*(price-1)) CRESCE col prezzo, quindi un reprice al rialzo potrebbe sfondare
         # il cap money-critical che il place del minimo rispettava. Solleva senza piazzare.
         _guard_replace_cap_lay(order, new_price, self.max_stake)
-        market.replace_order(order, new_price)
+        if market.replace_order(order, new_price) is False:
+            raise ValueError(f"submin replace RIFIUTATO — {_violation_reason(order)}")
+
+
+def _violation_reason(order: Any) -> str:
+    """Motivo del rifiuto dal trading control (violation_msg), con fallback leggibile."""
+    try:
+        msg = getattr(order, "violation_msg", None)
+    except Exception:  # noqa: BLE001 - property di confine
+        msg = None
+    return str(msg) if msg else "rifiutato dai trading control flumine (violation)"
 
 
 # ---------------------------------------------------------------------------

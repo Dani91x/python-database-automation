@@ -442,11 +442,17 @@ def favorable_reached(entry_side: str, target_price: float, current_price: float
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class RuleDecision:
-    """Esito della valutazione di una regola monitorata (stop_loss/take_profit/trailing_stop)."""
+    """Esito della valutazione di una regola monitorata (stop_loss/take_profit/trailing_stop).
+
+    ``error`` valorizzato = parametri della regola INVALIDI (errore PERMANENTE, non di mercato):
+    la regola non potrà MAI scattare così com'è. Il worker DEVE disarmarla in modo VISIBILE
+    (status 'error' + alert), mai ritentare in silenzio come fosse un errore transitorio.
+    """
 
     fire: bool
     reason: str
     trail_extreme: Optional[float] = None   # nuovo estremo da persistere (solo trailing)
+    error: Optional[str] = None             # parametri invalidi → disarmo VISIBILE, no retry
 
 
 def _num(params: dict, key: str) -> Optional[float]:
@@ -463,6 +469,21 @@ def _num(params: dict, key: str) -> Optional[float]:
 def _int_param(params: dict, key: str) -> Optional[int]:
     f = _num(params, key)
     return int(f) if f is not None else None
+
+
+def _invalid_amount(params: dict, key: str) -> Optional[str]:
+    """Motivo di invalidità di una soglia P&L PRESENTE nei params (None = ok/assente).
+
+    ``pnl_threshold_fires`` ignora in silenzio importi <= 0: qui un valore presente ma
+    non positivo (es. −5 digitato come "perdita 5") è dichiarato ERRORE, così il worker
+    disarma la regola in modo visibile invece di lasciare l'utente senza protezione.
+    """
+    if not isinstance(params, dict) or params.get(key) is None:
+        return None
+    v = _num(params, key)
+    if v is None or v <= 0:
+        return f"{key} deve essere un numero > 0 (ricevuto {params.get(key)!r})"
+    return None
 
 
 def evaluate_rule(
@@ -484,9 +505,20 @@ def evaluate_rule(
     (tick/%) e/o per P&L mark-to-market (stop_amount/target_amount). Il trailing aggiorna e
     ritorna l'estremo favorevole da persistere. (L'``offset`` NON passa di qui: è un ordine
     resting piazzato una volta sola dal worker.)
+
+    CONTRATTO MONEY-CRITICAL: NON solleva MAI per parametri malformati (tick e pct insieme,
+    ticks <= 0/frazionari, soglie P&L non positive). Un errore del genere è PERMANENTE (viene
+    dai dati della regola, non dal mercato): sollevarlo farebbe scattare il retry "transitorio"
+    del worker all'infinito con lo stop armato ma MORTO. Si ritorna invece una RuleDecision
+    con ``error`` valorizzato, che il worker traduce in disarmo VISIBILE (status 'error' + alert).
     """
     params = params or {}
     rt = (rule_type or "").lower()
+    # Soglie P&L presenti ma invalide → errore PERMANENTE dichiarato (mai ignorato in silenzio).
+    for amount_key in ("stop_amount", "target_amount"):
+        bad = _invalid_amount(params, amount_key)
+        if bad is not None:
+            return RuleDecision(False, f"parametri non validi: {bad}", trail_extreme, bad)
     mtm = mark_to_market(matched_if_win, matched_if_lose, best_back_price, best_lay_price)
 
     # --- trailing: aggiorna sempre l'estremo, poi valuta lo stop mobile ---------------
@@ -498,9 +530,12 @@ def evaluate_rule(
         trail_pct = _num(params, "trail_pct")
         if new_ext is not None and (trail_ticks is not None or trail_pct is not None) \
            and current_price is not None:
-            stop_px = trailing_stop_price(
-                entry_side, new_ext, trail_ticks=trail_ticks, trail_pct=trail_pct
-            )
+            try:
+                stop_px = trailing_stop_price(
+                    entry_side, new_ext, trail_ticks=trail_ticks, trail_pct=trail_pct
+                )
+            except ValueError as ex:  # parametri invalidi: errore PERMANENTE, mai retry silenzioso
+                return RuleDecision(False, f"parametri non validi: {ex}", new_ext, str(ex))
             if trailing_should_fire(entry_side, stop_px, current_price):
                 return RuleDecision(True, f"trailing stop @ {stop_px} (estremo {new_ext})", new_ext)
         # anche il trailing rispetta un eventuale stop su P&L
@@ -515,7 +550,10 @@ def evaluate_rule(
         trg_pct = _num(params, "trigger_pct")
         if entry_price is not None and (trg_ticks is not None or trg_pct is not None) \
            and current_price is not None:
-            trg_px = stop_trigger_price(entry_side, entry_price, trigger_ticks=trg_ticks, trigger_pct=trg_pct)
+            try:
+                trg_px = stop_trigger_price(entry_side, entry_price, trigger_ticks=trg_ticks, trigger_pct=trg_pct)
+            except ValueError as ex:  # parametri invalidi: errore PERMANENTE, mai retry silenzioso
+                return RuleDecision(False, f"parametri non validi: {ex}", None, str(ex))
             if stop_should_fire(entry_side, trg_px, current_price):
                 return RuleDecision(True, f"stop-loss prezzo @ {trg_px}")
         if pnl_threshold_fires(mtm, stop_amount=_num(params, "stop_amount")) == "stop":
@@ -528,7 +566,10 @@ def evaluate_rule(
         off_pct = _num(params, "offset_pct")
         if entry_price is not None and (off_ticks is not None or off_pct is not None) \
            and current_price is not None:
-            tgt_px = offset_target_price(entry_side, entry_price, offset_ticks=off_ticks, offset_pct=off_pct)
+            try:
+                tgt_px = offset_target_price(entry_side, entry_price, offset_ticks=off_ticks, offset_pct=off_pct)
+            except ValueError as ex:  # parametri invalidi: errore PERMANENTE, mai retry silenzioso
+                return RuleDecision(False, f"parametri non validi: {ex}", None, str(ex))
             if favorable_reached(entry_side, tgt_px, current_price):
                 return RuleDecision(True, f"take-profit prezzo @ {tgt_px}")
         if pnl_threshold_fires(mtm, target_amount=_num(params, "target_amount")) == "target":

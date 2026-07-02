@@ -206,6 +206,17 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
                 </div>
             )}
 
+            {/* MONEY-CRITICAL: ordini matched NON modellabili (es. "Any Other" del Correct
+                Score) = esposizione reale ASSENTE dalla griglia. Senza questo avviso ogni
+                cella sarebbe presentata come esatta pur essendo sbagliata di quell'importo. */}
+            {(analysis?.ignored_orders ?? 0) > 0 && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200 font-bold">
+                    ⚠ Matrice INCOMPLETA: {analysis?.ignored_orders} ordine/i matched non
+                    modellabili (es. "Any Other" del Correct Score) sono ESCLUSI dai P&amp;L mostrati.
+                    Non usare il suggerimento di copertura senza verificare quelle posizioni.
+                </div>
+            )}
+
             {!analysis && loaded && !err && (
                 <p className="text-xs text-muted-foreground">Nessuna analisi x-hedge disponibile per questo evento.</p>
             )}

@@ -174,7 +174,7 @@ export function LiveTradingPanel({
     // -------------------- invio comando --------------------
     const guardBeforeSend = (): string | null => {
         if (readOnly) return 'Modalità OFF: il runner non accetta ordini (LIVE_ORDER_MODE=OFF).';
-        if (killSwitch) return 'Kill-switch attivo: invio bloccato. Disattivalo per operare.';
+        if (killSwitch) return 'Blocco pannello attivo: invio bloccato. Disattivalo per operare.';
         if (isLive && !confirmLive) return 'Spunta "Confermo ordine REALE" prima di inviare in LIVE.';
         return null;
     };
@@ -279,7 +279,10 @@ export function LiveTradingPanel({
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {/* kill-switch locale (blocca ogni invio) */}
+                    {/* Blocco LOCALE del pannello (fix M2): ferma SOLO gli invii di questo form.
+                        NON è il Kill-switch GLOBALE del runner (quello vive in LiveControlsPanel):
+                        il vecchio nome identico dava un falso senso di sicurezza — ladder e
+                        runner restavano pienamente operativi. */}
                     <button
                         type="button"
                         onClick={() => setKillSwitch(k => !k)}
@@ -288,10 +291,10 @@ export function LiveTradingPanel({
                                 ? 'bg-red-600 text-white border-transparent'
                                 : 'bg-white/5 text-white/70 border-white/10 hover:border-red-500/40'
                         }`}
-                        title="Kill-switch: blocca ogni invio ordini"
+                        title="Blocca SOLO gli invii di questo pannello (il Kill-switch GLOBALE del runner è nei Controlli)"
                     >
                         <ShieldAlert className="w-3.5 h-3.5" />
-                        Kill-switch {killSwitch ? 'ON' : 'OFF'}
+                        Blocco pannello {killSwitch ? 'ON' : 'OFF'}
                     </button>
                     <Button variant="ghost" size="sm" onClick={reload} disabled={loadingLists}
                         className="text-muted-foreground hover:text-white">

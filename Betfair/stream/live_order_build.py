@@ -365,6 +365,11 @@ def build_order(
     order = _create_order(
         strategy, market_id, selection_id, handicap, side_bf, limit, customer_order_ref
     )
+    if reduces_liability:
+        # Marca l'ordine come CHIUSURA (green-up/hedge/cash-out): i control che limitano il
+        # FLUSSO (LiveRateControl) devono lasciarlo SEMPRE passare — bloccare un'uscita
+        # d'emergenza per rate-limit sarebbe l'opposto della protezione.
+        order.context["reduces_liability"] = True
 
     note = "; ".join(note_bits) if note_bits else "ok"
     return BuiltOrder(

@@ -15,7 +15,26 @@ from db_client import get_supabase_client
 
 from .config_stream import UPLOAD_CHUNK
 
+try:  # postgrest e' una dip di supabase-py; l'import puo' variare tra versioni
+    from postgrest.exceptions import APIError
+except Exception:  # noqa: BLE001 - fallback: cattura generica in _is_statement_timeout
+    APIError = Exception  # type: ignore[assignment,misc]
+
 logger = logging.getLogger(__name__)
+
+
+def _is_statement_timeout(exc: Exception) -> bool:
+    """True se l'errore Postgres e' uno statement_timeout (SQLSTATE 57014).
+
+    Su INSERT/DELETE di molte righe (o con JSONB grandi / tabella con bloat) Postgres
+    puo' abortire la singola statement al superamento di ``statement_timeout``. Lo
+    riconosciamo per riprovare con batch piu' piccoli invece di fallire l'upload.
+    """
+    code = getattr(exc, "code", None)
+    if code == "57014":
+        return True
+    msg = str(exc).lower()
+    return "57014" in msg or "statement timeout" in msg
 
 
 def _now_iso() -> str:
@@ -174,26 +193,79 @@ def update_live_now(
 # ----------------------------------------------------------------------------
 # snapshot + timeline (post-match, delete+insert per idempotenza)
 # ----------------------------------------------------------------------------
-def upload_snapshots(event_id: str, rows: List[Dict[str, Any]]) -> int:
+def delete_event_rows(
+    table: str,
+    event_id: str,
+    select_page: int = 2000,
+    delete_chunk: int = 500,
+) -> int:
+    """DELETE a blocchi per chiave primaria di tutte le righe di un evento.
+
+    La delete monolitica ``delete().eq("event_id", ...)`` cancella tutte le righe in
+    UN solo statement: su eventi grandi (decine/centinaia di migliaia di snapshot, o
+    con bloat da re-curazioni ripetute) supera lo ``statement_timeout`` di Postgres
+    (errore 57014) e fallisce. Qui invece selezioniamo gli ``id`` a pagine (via
+    l'indice su ``event_id``) e li cancelliamo per PK a piccoli blocchi: ogni
+    operazione tocca poche righe → sempre sotto il timeout, a prescindere dalla
+    dimensione dell'evento. Ritorna il numero di righe cancellate.
+
+    NB: ``delete_chunk`` tiene corta l'URL PostgREST ``id=in.(...)`` (500 bigint ~6KB,
+    sotto i limiti tipici dei proxy); ``select_page`` limita i round-trip di lettura.
+    """
     sb = get_supabase_client()
-    sb.table("live_market_snapshots").delete().eq("event_id", event_id).execute()
-    n = 0
-    for i in range(0, len(rows), UPLOAD_CHUNK):
-        chunk = rows[i : i + UPLOAD_CHUNK]
-        sb.table("live_market_snapshots").insert(chunk).execute()
-        n += len(chunk)
-    return n
+    total = 0
+    while True:
+        res = sb.table(table).select("id").eq("event_id", event_id).limit(select_page).execute()
+        ids = [r["id"] for r in (res.data or [])]
+        if not ids:
+            break
+        for i in range(0, len(ids), delete_chunk):
+            sb.table(table).delete().in_("id", ids[i : i + delete_chunk]).execute()
+        total += len(ids)
+        if len(ids) < select_page:
+            break  # ultima pagina già cancellata → evita una select finale a vuoto
+    return total
+
+
+def insert_rows_resilient(table: str, rows: List[Dict[str, Any]], start_chunk: int = UPLOAD_CHUNK) -> int:
+    """INSERT a blocchi con auto-riduzione della dimensione sullo statement_timeout.
+
+    Parte da ``start_chunk`` righe per insert; se Postgres aborta la statement per
+    timeout (57014) — tipico su eventi con snapshot pesanti (ladder ``trd`` full-depth)
+    o su tabella con bloat — DIMEZZA la dimensione del blocco e riprova, mantenendo poi
+    quella piu' piccola per il resto delle righe. Cosi' gli eventi normali restano veloci
+    (500/blocco al primo colpo) e quelli grandi convergono a un batch che passa, invece
+    di far fallire l'intero upload. Ritorna il numero di righe inserite.
+    """
+    sb = get_supabase_client()
+    size = max(1, start_chunk)
+    i = 0
+    while i < len(rows):
+        chunk = rows[i : i + size]
+        try:
+            sb.table(table).insert(chunk).execute()
+            i += len(chunk)
+        except APIError as e:  # type: ignore[misc]
+            if _is_statement_timeout(e) and size > 1:
+                new_size = max(1, size // 2)
+                logger.warning(
+                    "[db] insert %s: statement_timeout su blocco da %d → riprovo con %d",
+                    table, size, new_size,
+                )
+                size = new_size
+                continue  # riprova la STESSA posizione con blocco piu' piccolo
+            raise
+    return len(rows)
+
+
+def upload_snapshots(event_id: str, rows: List[Dict[str, Any]]) -> int:
+    delete_event_rows("live_market_snapshots", event_id)
+    return insert_rows_resilient("live_market_snapshots", rows)
 
 
 def upload_timeline(event_id: str, rows: List[Dict[str, Any]]) -> int:
-    sb = get_supabase_client()
-    sb.table("live_score_timeline").delete().eq("event_id", event_id).execute()
-    n = 0
-    for i in range(0, len(rows), UPLOAD_CHUNK):
-        chunk = rows[i : i + UPLOAD_CHUNK]
-        sb.table("live_score_timeline").insert(chunk).execute()
-        n += len(chunk)
-    return n
+    delete_event_rows("live_score_timeline", event_id)
+    return insert_rows_resilient("live_score_timeline", rows)
 
 
 # ----------------------------------------------------------------------------
@@ -341,6 +413,34 @@ def upsert_live_order(row: Dict[str, Any]) -> None:
     sb.table("betfair_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
     ).execute()
+
+
+def find_live_order_ref(mode: str, bet_id: str) -> Optional[str]:
+    """client_order_ref già presente nello specchio per (mode, bet_id), None se assente.
+
+    Usato dalla riconciliazione post-riavvio di ``LiveTradingStrategy``: un ordine
+    ricostruito dall'order stream perde il ref interno ``awlq<rid>``; se il suo bet_id è
+    già specchiato, si deve AGGIORNARE quella riga, non crearne una seconda (chi somma lo
+    specchio — xhedge — conterebbe l'esposizione due volte). Predilige il ref ``awlq…``.
+    """
+    sb = get_supabase_client()
+    rows = (
+        sb.table("betfair_live_orders")
+        .select("client_order_ref")
+        .eq("mode", mode)
+        .eq("bet_id", bet_id)
+        .limit(5)
+        .execute()
+        .data
+        or []
+    )
+    refs = [r.get("client_order_ref") for r in rows if r.get("client_order_ref")]
+    if not refs:
+        return None
+    for ref in refs:
+        if str(ref).startswith("awlq"):
+            return str(ref)
+    return str(refs[0])
 
 
 def upsert_live_position(row: Dict[str, Any]) -> None:

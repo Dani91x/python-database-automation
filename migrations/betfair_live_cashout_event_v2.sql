@@ -91,6 +91,33 @@ BEGIN
            OR jsonb_array_length(p->'params'->'selections') < 1 THEN
             RAISE EXCEPTION 'dutch: params.selections (array non vuoto) obbligatorio';
         END IF;
+        -- Validazione PER GAMBA (fix review DB HIGH): una gamba senza selection_id o con
+        -- prezzo invalido non deve MAI arrivare al worker — un dutch su N-1 selezioni
+        -- perde l'intero stake se vince quella scartata. (Il worker rifiuta comunque le
+        -- gambe senza prezzo risolvibile: questa è la barriera server-side.)
+        DECLARE
+            v_leg jsonb;
+            v_leg_price numeric;
+        BEGIN
+            FOR v_leg IN SELECT jsonb_array_elements(p->'params'->'selections')
+            LOOP
+                IF nullif(v_leg->>'selection_id','') IS NULL THEN
+                    RAISE EXCEPTION 'dutch: ogni gamba richiede selection_id';
+                END IF;
+                IF (v_leg->>'price') IS NOT NULL THEN
+                    v_leg_price := (v_leg->>'price')::numeric;
+                    IF v_leg_price NOT BETWEEN 1.01 AND 1000 THEN
+                        RAISE EXCEPTION 'dutch: prezzo gamba % fuori range [1.01, 1000]',
+                                        v_leg->>'selection_id';
+                    END IF;
+                ELSIF coalesce(nullif(p->'params'->>'pricing',''), 'as_given')
+                      NOT IN ('best','in_front','nominated') THEN
+                    -- pricing as_given SENZA prezzo: il worker non potrà risolverlo.
+                    RAISE EXCEPTION 'dutch: gamba % senza price (pricing=as_given)',
+                                    v_leg->>'selection_id';
+                END IF;
+            END LOOP;
+        END;
         -- total_stake richiesto SALVO mode=target (che usa target_profit).
         IF v_dmode = 'target' THEN
             IF (p->'params'->>'target_profit') IS NULL

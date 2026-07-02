@@ -447,6 +447,10 @@ export interface XhedgeSuggestion {
 }
 export interface XhedgeAnalysis {
     n_positions: number;
+    /** Ordini matched NON modellabili (es. "Any Other" del Correct Score) esclusi dalla
+     *  griglia: > 0 ⟹ la matrice è INCOMPLETA e la UI DEVE avvisare (esposizione reale
+     *  assente dai P&L mostrati). Campo assente nelle analisi pre-fix → trattare come 0. */
+    ignored_orders?: number;
     summary: {
         worst: number;
         best: number;

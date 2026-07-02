@@ -2,7 +2,11 @@
 
 Verifica che il client flumine sia costruito in modo COERENTE sulle 3 modalità
 (OFF / PAPER / LIVE) con i controlli nativi cablati:
-  * ``min_bet_validation=True`` (control nativo OrderValidation) su TUTTE le modalità;
+  * ``min_bet_validation=False`` su TUTTE le modalità (fix CRITICAL-3): l'OrderValidation
+    nativo NON conosce l'eccezione Betfair "bet che riduce la liability" e rifiuterebbe
+    client-side ogni green-up/cash-out sotto-minimo (che l'Exchange invece ACCETTA) e lo
+    step1 del place-and-trim. I minimi di giurisdizione restano validati STRETTI da
+    ``live_order_build.min_stake_rules`` (consapevole di ``reduces_liability``);
   * ``transaction_limit=LIVE_TRANSACTION_LIMIT`` (control nativo MaxTransactionCount) idem;
   * ``order_stream`` / ``paper_trade`` / ``orders_enabled`` coerenti con la modalità.
 
@@ -48,8 +52,10 @@ def test_build_order_client_modes(mode, exp_enabled, exp_order_stream, exp_paper
     assert client.order_stream is exp_order_stream
     assert client.paper_trade is exp_paper
 
-    # FIX 6: controlli nativi cablati IDENTICI su tutte le modalità
-    assert client.min_bet_validation is True
+    # Fix CRITICAL-3: OrderValidation nativo DISATTIVATO su tutte le modalità (rifiuterebbe
+    # i green-up sotto-minimo reduces_liability che Betfair accetta); i minimi li valida
+    # live_order_build.min_stake_rules. Il transaction_limit nativo resta attivo.
+    assert client.min_bet_validation is False
     assert client.transaction_limit == runner.LIVE_TRANSACTION_LIMIT
 
 
