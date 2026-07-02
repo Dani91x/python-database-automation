@@ -22,24 +22,47 @@ import { DutchingPanel } from '@/components/live/DutchingPanel';
 import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
 import { XHedgePanel } from '@/components/live/XHedgePanel';
 import { ScalperPanel } from '@/components/live/ScalperPanel';
+import { LadderView } from '@/components/live/LadderView';
+import { TerminalPositionsRail } from '@/components/live/TerminalPositionsRail';
 import { sendCashoutAll, sendCashoutEvent, setKillSwitch, type LiveOrderMode } from '@/lib/liveOrders';
 import {
-    loadLayout, saveLayout, setActiveMarket, togglePanel, resolveHotkey,
-    type WorkspaceLayout, type PanelKey,
+    loadLayout, saveLayout, setActiveMarket, resolveHotkey,
+    type WorkspaceLayout,
 } from '@/lib/workspace';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow,
     type LiveFollow, type LiveNowRow, type LiveNowMarket,
 } from '@/lib/live';
 
-// Toggle visibilità pannelli operativi (workspace). L'ordine riflette il layout del cockpit.
-const PANEL_CHIPS: { key: PanelKey; label: string }[] = [
-    { key: 'orders', label: 'Trading' },
+// Strumenti della colonna DESTRA del terminal (UN tab attivo alla volta, stile Bet Angel:
+// One-click | Dutching | Bookmaking | ... come tab, mai tutti i pannelli impilati).
+type ToolKey = 'trading' | 'dutching' | 'risk' | 'xhedge' | 'scalper';
+const TOOL_TABS: { key: ToolKey; label: string }[] = [
+    { key: 'trading', label: 'Trading' },
     { key: 'dutching', label: 'Dutching' },
     { key: 'risk', label: 'Risk' },
     { key: 'xhedge', label: 'X-Hedge' },
     { key: 'scalper', label: 'Scalper' },
 ];
+const toolStorageKey = (eventId: string) => `live.terminal.tool.${eventId}`;
+function loadTool(eventId: string): ToolKey {
+    try {
+        const v = localStorage.getItem(toolStorageKey(eventId));
+        if (v && TOOL_TABS.some(t => t.key === v)) return v as ToolKey;
+    } catch { /* storage non disponibile: default */ }
+    return 'trading';
+}
+
+// Badge modalità del terminal (fonte: live_now.state.order_mode, fail-safe → OFF).
+function TerminalModeBadge({ mode }: { mode: PanelMode }) {
+    if (mode === 'live') {
+        return <span className="px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-black animate-pulse">🔴 LIVE — SOLDI VERI</span>;
+    }
+    if (mode === 'paper') {
+        return <span className="px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 text-[10px] font-black">PAPER</span>;
+    }
+    return <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/60 text-[10px] font-black">OFF</span>;
+}
 
 // Sezione "Live Trading" del dettaglio Segui Live: COCKPIT MULTI-MERCATO stile Bet Angel.
 // Una TAB per mercato dell'evento (dai mercati di live_now, STESSA fonte del tabellone);
@@ -52,8 +75,9 @@ const PANEL_CHIPS: { key: PanelKey; label: string }[] = [
 // e "Cash-out EVENTO" (tutti i mercati dell'evento → sendCashoutEvent, conferma rafforzata in
 // LIVE). Scorciatoie da tastiera (attive solo in PAPER/LIVE, disattivate mentre si digita).
 // La modalità (OFF/PAPER/LIVE) arriva dal runner via live_now.state.order_mode.
-function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
+function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt }: {
     markets: LiveNowMarket[]; orderMode: string; eventName: string; eventId: string;
+    updatedAt: string | null;
 }) {
     const defaultId = useMemo(() => {
         const mo = markets.find(m => m.market_type === 'MATCH_ODDS' || /match odds/i.test(m.market_name ?? ''));
@@ -91,15 +115,42 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
     }, [marketId, layout.activeMarketId]);
 
     const selectMarket = useCallback((id: string) => setLayout(l => setActiveMarket(l, id)), []);
-    const panelOpen = useCallback(
-        (key: PanelKey) => layout.panels.find(p => p.key === key)?.open ?? true,
-        [layout.panels],
-    );
-    const togglePanelKey = useCallback((key: PanelKey) => setLayout(l => togglePanel(l, key)), []);
+
+    // strumento attivo nella colonna destra (UN tab alla volta), persistito per-evento.
+    const [tool, setTool] = useState<ToolKey>(() => loadTool(eventId));
+    useEffect(() => { setTool(loadTool(eventId)); }, [eventId]);
+    const selectTool = useCallback((k: ToolKey) => {
+        setTool(k);
+        try { localStorage.setItem(toolStorageKey(eventId), k); } catch { /* best-effort */ }
+    }, [eventId]);
+
+    // "aggiornato Xs fa" che TICCHETTA (fix M3): l'età dei dati è visibile e diventa
+    // rossa oltre la soglia — mai un badge verde su dati congelati.
+    const [nowTick, setNowTick] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowTick(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    const ageSec = updatedAt ? Math.max(0, Math.round((nowTick - new Date(updatedAt).getTime()) / 1000)) : null;
+    const staleData = ageSec != null && ageSec > 15;
 
     const market = markets.find(m => m.market_id === marketId) ?? null;
     const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
         ? (orderMode || 'off').toLowerCase() : 'off') as PanelMode;
+
+    // book % back/lay del mercato attivo (over-round, come la barra mercato dei tool pro).
+    const bookPct = useMemo(() => {
+        const sels = market?.selections ?? [];
+        let backSum = 0; let laySum = 0; let nB = 0; let nL = 0;
+        for (const s of sels) {
+            if (s.back && s.back > 1) { backSum += 1 / s.back; nB++; }
+            if (s.lay && s.lay > 1) { laySum += 1 / s.lay; nL++; }
+        }
+        return {
+            back: nB === sels.length && nB > 0 ? backSum * 100 : null,
+            lay: nL === sels.length && nL > 0 ? laySum * 100 : null,
+        };
+    }, [market]);
 
     // memoizzati su `market`: live_now si aggiorna ogni pochi secondi → evita una nuova
     // reference di `selections` ad ogni tick (lavoro inutile nei pannelli).
@@ -219,68 +270,69 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
     if (markets.length === 0) return null;
     const busy = cashingMarket || cashingEvent;
     return (
-        <div className="space-y-3">
-            {/* header sezione + due pulsanti cash-out DISTINTI (mercato vs evento) */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
-                    Mercati dell'evento
+        <div className="space-y-2">
+            {/* ================= TOP BAR STICKY del terminal =================
+                Canone dei tool pro (Bet Angel/Fairbot): badge modalità, book% back/lay,
+                freschezza dati, azioni d'emergenza SEMPRE visibili (cash-out + kill). */}
+            <div className="sticky top-16 z-40 rounded-xl border border-white/10 bg-black/80 backdrop-blur-xl px-3 py-2 flex items-center gap-3 flex-wrap">
+                <TerminalModeBadge mode={mode} />
+                {bookPct.back != null && bookPct.lay != null && (
+                    <span className="text-[10px] font-mono tabular-nums text-white/70" title="Over-round: book back / book lay del mercato attivo">
+                        <span className="text-sky-300">{bookPct.back.toFixed(1)}%</span>
+                        {' / '}
+                        <span className="text-rose-300">{bookPct.lay.toFixed(1)}%</span>
+                    </span>
+                )}
+                <span
+                    className={`text-[10px] font-mono tabular-nums ${staleData ? 'text-rose-300 font-black' : 'text-muted-foreground'}`}
+                    title="Età dell'ultimo aggiornamento di live_now (quote e stato)"
+                >
+                    {ageSec == null ? 'dati: n/d' : staleData ? `⚠ DATI VECCHI ${ageSec}s` : `agg. ${ageSec}s fa`}
                 </span>
+                <span className="flex-1" />
                 <div className="flex items-center gap-2 flex-wrap">
                     <Button
                         size="sm"
                         onClick={handleCashoutMarket}
                         disabled={busy || mode === 'off'}
-                        className="bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
-                        title="Green-up di TUTTE le selezioni del SOLO mercato attivo"
+                        className="h-7 bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
+                        title="Green-up di TUTTE le selezioni del SOLO mercato attivo (hotkey G)"
                     >
-                        {cashingMarket ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Banknote className="w-4 h-4 mr-2" />}
+                        {cashingMarket ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Banknote className="w-3.5 h-3.5 mr-1.5" />}
                         Cash-out MERCATO
                     </Button>
                     <Button
                         size="sm"
                         onClick={handleCashoutEvent}
                         disabled={busy || mode === 'off'}
-                        className="bg-rose-600 hover:bg-rose-500 text-white font-black disabled:opacity-40"
-                        title="Green-up di TUTTI i mercati dell'evento (conferma rafforzata in LIVE)"
+                        className="h-7 bg-rose-600 hover:bg-rose-500 text-white font-black disabled:opacity-40"
+                        title="Green-up di TUTTI i mercati dell'evento — conferma rafforzata in LIVE (hotkey X)"
                     >
-                        {cashingEvent ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldAlert className="w-4 h-4 mr-2" />}
-                        Cash-out EVENTO (tutti i mercati)
+                        {cashingEvent ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />}
+                        Cash-out EVENTO
                     </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleKillSwitch}
+                        className="h-7 border-red-500/50 text-red-300 hover:bg-red-500/15 font-black"
+                        title="KILL-SWITCH GLOBALE del runner: blocca le APERTURE (le chiusure restano possibili) — hotkey Esc"
+                    >
+                        KILL
+                    </Button>
+                    {mode !== 'off' && (
+                        <span
+                            className="w-5 h-5 inline-flex items-center justify-center rounded-full border border-white/15 text-[10px] text-muted-foreground cursor-help select-none"
+                            title={'Scorciatoie tastiera:\nG = cash-out mercato attivo\nX = cash-out intero evento\nEsc = kill-switch globale\n(attive solo in PAPER/LIVE, non mentre digiti)'}
+                        >
+                            ?
+                        </span>
+                    )}
                 </div>
-            </div>
-
-            {/* toggle visibilità pannelli (WORKSPACE, persistito per-evento) + legenda scorciatoie */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mr-1">Pannelli</span>
-                    {PANEL_CHIPS.map(chip => {
-                        const on = panelOpen(chip.key);
-                        return (
-                            <button
-                                key={chip.key}
-                                type="button"
-                                onClick={() => togglePanelKey(chip.key)}
-                                aria-pressed={on}
-                                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-                                    on
-                                        ? 'border-primary/40 text-white bg-primary/10'
-                                        : 'border-white/10 text-muted-foreground hover:text-white'
-                                }`}
-                            >
-                                {on ? '● ' : '○ '}{chip.label}
-                            </button>
-                        );
-                    })}
-                </div>
-                {mode !== 'off' && (
-                    <p className="text-[10px] text-muted-foreground">
-                        Scorciatoie: <b className="text-white">G</b> cash-out mercato · <b className="text-white">X</b> cash-out evento · <b className="text-white">Esc</b> kill-switch
-                    </p>
-                )}
             </div>
 
             {/* TABS multi-mercato (stile Bet Angel) */}
-            <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5">
+            <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5 overflow-x-auto">
                 {markets.map(m => {
                     const active = m.market_id === marketId;
                     return (
@@ -300,51 +352,99 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId }: {
                 })}
             </div>
 
-            {/* ---- X-HEDGE: analisi cross-market, UNA sola volta per EVENTO (non per mercato) ---- */}
-            {panelOpen('xhedge') && (
-                <XHedgePanel eventId={eventId} mode={mode} />
-            )}
-
-            {/* ---- SCALPER BOT: pre-match, UNA sola volta per EVENTO. Attivazione,
-                 modalità (tradizionale/direzionale/entrambe), parametri validati,
-                 telemetria e stop. Esecuzione nel servizio locale scalper_service. ---- */}
-            {panelOpen('scalper') && (
-                <ScalperPanel eventId={eventId} eventName={eventName} />
-            )}
-
+            {/* ================= GRIGLIA 3 ZONE del terminal =================
+                sinistra: posizioni/P&L + order book · centro: LADDER (strumento primario,
+                dominante) · destra: strumenti a TAB (uno alla volta).
+                MONEY-CRITICAL (fix H1): key={market_id} su ladder e pannelli → remount pulito
+                al cambio tab mercato (nessuno stato form/conferma riusato tra mercati con
+                selection id che si ripetono). */}
             {market && (
-                <div className="space-y-4">
-                    {panelOpen('orders') && (
-                        <LiveTradingPanel
+                <div className="grid grid-cols-1 xl:grid-cols-[290px_minmax(0,1fr)_400px] gap-3 items-start">
+                    {/* -------- SINISTRA: posizioni + ordini -------- */}
+                    <div className="order-2 xl:order-1">
+                        <TerminalPositionsRail
+                            key={market.market_id}
                             marketId={market.market_id}
                             mode={mode}
-                            eventLabel={`${eventName} · ${market.market_name || market.market_type}`}
                             selections={panelSelections}
                         />
-                    )}
-                    {(panelOpen('dutching') || panelOpen('risk')) && (
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-                            {panelOpen('dutching') && (
-                                <DutchingPanel
-                                    marketId={market.market_id}
-                                    mode={mode}
-                                    selections={richSelections}
-                                />
-                            )}
-                            {panelOpen('risk') && (
-                                <RiskRulesPanel
-                                    marketId={market.market_id}
-                                    mode={mode}
-                                    selections={richSelections}
-                                />
-                            )}
+                    </div>
+
+                    {/* -------- CENTRO: LADDER dominante -------- */}
+                    <div className="order-1 xl:order-2 min-w-0">
+                        <LadderView
+                            key={market.market_id}
+                            marketId={market.market_id}
+                            marketName={market.market_name || market.market_type}
+                            orderMode={mode}
+                            fallbackSelections={panelSelections}
+                        />
+                    </div>
+
+                    {/* -------- DESTRA: strumenti a TAB (uno alla volta) -------- */}
+                    <div className="order-3 space-y-2 min-w-0">
+                        <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5">
+                            {TOOL_TABS.map(t => (
+                                <button
+                                    key={t.key}
+                                    type="button"
+                                    onClick={() => selectTool(t.key)}
+                                    aria-pressed={tool === t.key}
+                                    className={`px-2.5 py-1 -mb-px rounded-t-lg text-[11px] font-bold border-b-2 transition-colors ${
+                                        tool === t.key
+                                            ? 'border-amber-400 text-white bg-white/[0.06]'
+                                            : 'border-transparent text-muted-foreground hover:text-white hover:bg-white/[0.03]'
+                                    }`}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
                         </div>
-                    )}
+                        {tool === 'trading' && (
+                            <LiveTradingPanel
+                                key={market.market_id}
+                                marketId={market.market_id}
+                                mode={mode}
+                                eventLabel={`${eventName} · ${market.market_name || market.market_type}`}
+                                selections={panelSelections}
+                            />
+                        )}
+                        {tool === 'dutching' && (
+                            <DutchingPanel
+                                key={market.market_id}
+                                marketId={market.market_id}
+                                mode={mode}
+                                selections={richSelections}
+                            />
+                        )}
+                        {tool === 'risk' && (
+                            <RiskRulesPanel
+                                key={market.market_id}
+                                marketId={market.market_id}
+                                mode={mode}
+                                selections={richSelections}
+                            />
+                        )}
+                        {tool === 'xhedge' && (
+                            <XHedgePanel eventId={eventId} mode={mode} />
+                        )}
+                        {tool === 'scalper' && (
+                            <ScalperPanel eventId={eventId} eventName={eventName} />
+                        )}
+                    </div>
                 </div>
             )}
 
-            {/* ---- CONTROLLI GLOBALI del runner (kill-switch, limiti, audit) — uno solo per il cockpit ---- */}
-            <LiveControlsPanel />
+            {/* ---- CONTROLLI GLOBALI del runner (kill-switch, limiti, audit) — collassabili ---- */}
+            <details className="group rounded-xl border border-white/10 bg-black/30">
+                <summary className="cursor-pointer select-none px-3 py-2 text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-white list-none flex items-center gap-1.5">
+                    <span className="transition-transform group-open:rotate-90">▸</span>
+                    Controlli runner · limiti · audit
+                </summary>
+                <div className="p-2 pt-0">
+                    <LiveControlsPanel />
+                </div>
+            </details>
         </div>
     );
 }
@@ -429,7 +529,9 @@ export default function SeguiLive() {
                 </div>
             </nav>
 
-            <main className="container mx-auto px-4 lg:px-6 py-8 max-w-6xl relative z-10">
+            {/* nel dettaglio il terminal ha 3 colonne (ladder centrale + rail): serve
+                larghezza piena; la lista resta compatta a 6xl. */}
+            <main className={`container mx-auto px-4 lg:px-6 py-8 relative z-10 ${selected ? 'max-w-[1800px]' : 'max-w-6xl'}`}>
                 {/* Avvisi limiti Betfair / sistema (Realtime), in cima alla pagina */}
                 <LiveAlertBanner />
 
@@ -461,7 +563,8 @@ export default function SeguiLive() {
                         {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full bg-white/5" />)}
                     </div>
                 ) : selected ? (
-                    /* ---- DETTAGLIO realtime ---- */
+                    /* ---- DETTAGLIO realtime: TERMINAL prima (strumento primario),
+                           tabellone completo + segnali sotto come overview ---- */
                     <div className="space-y-4">
                         <LiveMatchCard follow={selected} selected onClick={() => { /* già aperto */ }} />
                         {detailLoading && !liveNow ? (
@@ -469,28 +572,32 @@ export default function SeguiLive() {
                                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 w-full bg-white/5" />)}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-                                <div className="lg:col-span-2">
-                                    <LiveMarketBoard
-                                        state={liveNow?.state ?? null}
-                                        updatedAt={liveNow?.updated_at ?? null}
-                                        orderMode={liveNow?.state?.order_mode ?? 'off'}
+                            <>
+                                {/* ---- TRADING TERMINAL (stessa fonte: live_now) ---- */}
+                                {liveNow?.state?.markets && liveNow.state.markets.length > 0 && (
+                                    <LiveTradingSection
+                                        markets={liveNow.state.markets}
+                                        orderMode={liveNow.state.order_mode ?? 'OFF'}
+                                        eventName={`${selected.home_name} vs ${selected.away_name}`}
+                                        eventId={selected.event_id}
+                                        updatedAt={liveNow.updated_at ?? null}
                                     />
-                                </div>
-                                <div className="lg:col-span-1">
-                                    <LiveSignalPanel eventId={selected.event_id} state={liveNow?.state ?? null} />
-                                </div>
-                            </div>
-                        )}
+                                )}
 
-                        {/* ---- LIVE TRADING (stessa fonte: live_now) ---- */}
-                        {liveNow?.state?.markets && liveNow.state.markets.length > 0 && (
-                            <LiveTradingSection
-                                markets={liveNow.state.markets}
-                                orderMode={liveNow.state.order_mode ?? 'OFF'}
-                                eventName={`${selected.home_name} vs ${selected.away_name}`}
-                                eventId={selected.event_id}
-                            />
+                                {/* ---- overview: tabellone tutti i mercati + segnali ---- */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                                    <div className="lg:col-span-2">
+                                        <LiveMarketBoard
+                                            state={liveNow?.state ?? null}
+                                            updatedAt={liveNow?.updated_at ?? null}
+                                            orderMode={liveNow?.state?.order_mode ?? 'off'}
+                                        />
+                                    </div>
+                                    <div className="lg:col-span-1">
+                                        <LiveSignalPanel eventId={selected.event_id} state={liveNow?.state ?? null} />
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
                 ) : follows.length === 0 ? (
