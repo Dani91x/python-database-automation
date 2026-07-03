@@ -240,11 +240,13 @@ def insert_rows_resilient(table: str, rows: List[Dict[str, Any]], start_chunk: i
     sb = get_supabase_client()
     size = max(1, start_chunk)
     i = 0
+    net_retry = 0
     while i < len(rows):
         chunk = rows[i : i + size]
         try:
             sb.table(table).insert(chunk).execute()
             i += len(chunk)
+            net_retry = 0
         except APIError as e:  # type: ignore[misc]
             if _is_statement_timeout(e) and size > 1:
                 new_size = max(1, size // 2)
@@ -255,6 +257,22 @@ def insert_rows_resilient(table: str, rows: List[Dict[str, Any]], start_chunk: i
                 size = new_size
                 continue  # riprova la STESSA posizione con blocco piu' piccolo
             raise
+        except Exception as e:  # noqa: BLE001 - reset/timeout di RETE (httpx)
+            # Upload lunghi (centinaia di blocchi) muoiono per un singolo reset
+            # TCP (WinError 10054, visto 03/07 sull'evento da 437MB): l'insert
+            # e' append-only per-evento dopo la delete iniziale → riprovare lo
+            # STESSO blocco e' sicuro. Backoff esponenziale, max 5 tentativi.
+            net_retry += 1
+            if net_retry > 5:
+                raise
+            import time as _t
+            wait = min(30.0, 2.0 * net_retry)
+            logger.warning(
+                "[db] insert %s: errore di rete (%s) — retry %d/5 tra %.0fs",
+                table, str(e)[:80], net_retry, wait,
+            )
+            _t.sleep(wait)
+            continue
     return len(rows)
 
 
