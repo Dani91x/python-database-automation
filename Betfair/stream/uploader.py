@@ -142,13 +142,56 @@ def upload_event(event_id: str, raw_file: Optional[str] = None) -> Dict[str, Any
     return summary
 
 
+def sweep_pending(min_idle_min: float = 30.0) -> List[Dict[str, Any]]:
+    """RECUPERO: carica nel Replay le partite finite rimaste indietro.
+
+    Il 02/07 due partite registrate NON sono arrivate nella sezione Replay:
+    lo stream del runner era andato in ERROR (WinError 10035) e il finalize
+    non e' mai scattato. Questo sweep e' la rete di sicurezza: qualunque
+    live_follow non-UPLOADED con file grezzo locale FERMO da almeno
+    ``min_idle_min`` minuti (= partita finita) viene curato e caricato.
+    Idempotente (upload_event fa delete+insert per evento). Chiamato
+    all'avvio del runner; a mano: ``python -m Betfair.stream.uploader --sweep``.
+    """
+    from datetime import datetime, timezone
+
+    from db_client import get_supabase_client
+
+    out: List[Dict[str, Any]] = []
+    rows = (
+        get_supabase_client().table("live_follow")
+        .select("event_id,status").neq("status", "UPLOADED")
+        .execute().data or []
+    )
+    now_ts = datetime.now(timezone.utc).timestamp()
+    for r in rows:
+        ev = str(r["event_id"])
+        raw = market_file(ev)
+        if not os.path.exists(raw):
+            continue
+        idle_min = (now_ts - os.path.getmtime(raw)) / 60.0
+        if idle_min < min_idle_min:
+            continue  # partita (forse) ancora in corso: non toccare
+        try:
+            summary = upload_event(ev)
+            summary["recovered_from"] = r.get("status")
+            out.append(summary)
+            logger.info("[uploader] SWEEP: recuperato %s (era %s)", ev, r.get("status"))
+        except Exception as e:  # noqa: BLE001 - un evento rotto non blocca gli altri
+            logger.exception("[uploader] SWEEP: %s KO: %s", ev, e)
+    return out
+
+
 def _main() -> None:
     import sys
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if len(sys.argv) < 2:
-        print("uso: python -m Betfair.stream.uploader <event_id>")
+        print("uso: python -m Betfair.stream.uploader <event_id> | --sweep")
         raise SystemExit(2)
+    if sys.argv[1] == "--sweep":
+        print(json.dumps(sweep_pending(), indent=2))
+        return
     print(json.dumps(upload_event(sys.argv[1]), indent=2))
 
 

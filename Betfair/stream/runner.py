@@ -823,6 +823,12 @@ def _announce_order_mode(mode: str, orders_enabled: bool) -> None:
 # ----------------------------------------------------------------------------
 def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True) -> List[str]:
     os.makedirs(DATA_DIR, exist_ok=True)
+    # SWEEP di recupero Replay (best-effort, in background): carica le partite
+    # finite rimaste non-UPLOADED (es. stream in ERROR a fine match, 02/07).
+    threading.Thread(
+        target=lambda: uploader.sweep_pending(), daemon=True,
+        name="uploader-sweep",
+    ).start()
     rest = BetfairClient()
     rest.login_cert()
     api_client: betfairlightweight.APIClient = build_client(login=True)

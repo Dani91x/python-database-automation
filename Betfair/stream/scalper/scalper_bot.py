@@ -186,6 +186,7 @@ class _Slot:
     residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
     # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
     submins: list = field(default_factory=list)
+    t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
     drift_samples: Deque[Tuple[int, float]] = field(
@@ -1524,11 +1525,14 @@ class ScalperStrategy(BaseStrategy):
                 size = 0.0
         # LIVE: minimo Betfair sugli hedge/close (sotto: l'exchange RIFIUTA
         # e la posizione resterebbe aperta — peggio di un micro over-hedge)
-        if self.live_min_bet > 0 and not floor_min and size < self.live_min_bet:
-            if size >= 0.5:
+        _side_floor = self._side_min(side) if self.live_min_bet > 0 else 0.0
+        if self.live_min_bet > 0 and not floor_min and size < _side_floor:
+            if size >= 0.25:
+                import math as _m
+                bumped = max(_side_floor, round(_m.ceil(size / 0.5) * 0.5, 2))
                 self._emit("min_bet_adjust", selection_id=int(selection_id),
-                           side=side, size_orig=size, size=self.live_min_bet)
-                size = self.live_min_bet
+                           side=side, size_orig=size, size=bumped)
+                size = bumped
             else:
                 # residuo minuscolo: accetta il micro-rischio, non piazzare
                 self._emit("min_bet_skip", selection_id=int(selection_id),
@@ -1602,21 +1606,40 @@ class ScalperStrategy(BaseStrategy):
                 return
         slot.flatten_orders.append(order)
 
+    # anti-cascata (lezione live 02/07: un flatten in trend genero' 2355
+    # sequenze): UNA sequenza per slot, creazione al piu' ogni 3 s.
+    _SUBMIN_MIN_INTERVAL_MS = 3000
+
+    def _cancel_submins(self, market: Any, slot: _Slot) -> None:
+        """Cancella le sequenze exact dello slot (ordini gia' tracciati)."""
+        for entry in list(slot.submins):
+            o = entry.get("order") or getattr(entry.get("ops"), "last_order", None)
+            if o is not None:
+                self._track(slot, o)
+                self._cancel_if_live(market, o)
+            slot.submins.remove(entry)
+
     def _place_exact(
         self, market: Any, selection_id: int, side: str, price: float,
         size: float, slot: _Slot,
     ) -> Optional[Any]:
-        """Uscita a size ESATTA: parte diretta subito + resto via submin.
+        """Uscita a QUALSIASI size (tool-pro): parte diretta + resto via submin.
 
-        Ritorna l'ordine della parte DIRETTA (il grosso del rischio esce
-        subito); il resto (< 0,50) viene portato a riposo alla stessa quota
-        dalla macchina park-trim-replace (``_drive_submins``), tracciato in
-        ``slot.flatten_orders`` per la contabilita' di posizione.
+        Regole anti-cascata:
+          * in FLATTENING (inseguimento del book) il submin parte SOLO se e'
+            l'unico modo (nessuna parte diretta) e col rate-limit passato:
+            durante la caccia conta la velocita', il residuo esatto si sistema
+            quando il book si ferma;
+          * UNA sola sequenza attiva per slot (cancel della precedente);
+          * creazione rate-limited (3 s) per slot.
+        Park LEGALI e universali: size 2,00 su entrambi i lati (BACK @1000,
+        LAY @1.01 → payout 2.02, liability 0.02, guardia-abort di submin).
         """
-        from ..trading.submin import FlumineSubminOps, start_submin
+        from ..live_order_build import round_to_tick
+        from ..trading.submin import FlumineSubminOps, SubminState, SubminStep
 
         smin = self._side_min(side)
-        main = round(int(size / 0.5) * 0.5, 2)          # floor al multiplo 0,50
+        main = round(int(size / 0.5 + 1e-9) * 0.5, 2)   # floor al multiplo 0,50
         if main < smin - _EPS:
             main = 0.0
         rest = round(size - main, 2)
@@ -1624,31 +1647,49 @@ class ScalperStrategy(BaseStrategy):
         if main >= smin - _EPS:
             main_order = self._place(market, selection_id, side, price, main,
                                      floor_min=False, slot=None)  # diretto
-        if rest >= 0.05:
-            try:
-                state = start_submin(side=side.lower(), target_price=price,
-                                     target_size=rest, jurisdiction="it")
+        if rest < 0.05:
+            if rest >= 0.01:
+                self._emit("min_bet_skip", selection_id=int(selection_id),
+                           side=side, size=rest)
+            return main_order
 
-                class _CapturingOps(FlumineSubminOps):
-                    last_order: Any = None
-
-                    def place(self, market_, **kw):  # noqa: ANN001
-                        o = super().place(market_, **kw)
-                        _CapturingOps.last_order = o
-                        return o
-
-                ops = _CapturingOps(selection_id=int(selection_id), handicap=0.0,
-                                    jurisdiction="it", strategy=self)
-                ref = f"sc{abs(hash((selection_id, price, rest))) % 10**8:08d}"
-                slot.submins.append({"state": state, "ops": ops, "order": None,
-                                     "ref": ref, "market_id": market.market_id})
-                self._emit("submin_start", selection_id=int(selection_id),
-                           side=side, size=rest, price=price)
-            except Exception as exc:  # noqa: BLE001 - mai bloccare l'uscita principale
-                self._emit("submin_error", msg=str(exc)[:200])
-        elif rest >= 0.01:
+        import time as _t
+        now_ms = int(_t.time() * 1000)
+        rate_ok = now_ms - (slot.t_last_submin or 0) >= self._SUBMIN_MIN_INTERVAL_MS
+        if (slot.status == FLATTENING and main_order is not None) or not rate_ok:
             self._emit("min_bet_skip", selection_id=int(selection_id),
                        side=side, size=rest)
+            return main_order
+        if slot.submins:
+            self._cancel_submins(market, slot)
+        try:
+            state = SubminState(
+                step=SubminStep.INIT, bet_id=None,
+                target_size=round(rest, 2),
+                target_price=round_to_tick(price),
+                placed_size=2.0,          # park legale/universale (.it)
+                side=side.lower(),
+                note="exact exit",
+            )
+
+            class _CapturingOps(FlumineSubminOps):
+                last_order: Any = None
+
+                def place(self, market_, **kw):  # noqa: ANN001
+                    o = super().place(market_, **kw)
+                    _CapturingOps.last_order = o
+                    return o
+
+            ops = _CapturingOps(selection_id=int(selection_id), handicap=0.0,
+                                jurisdiction="it", strategy=self)
+            ref = f"sc{abs(hash((selection_id, price, rest, now_ms))) % 10**8:08d}"
+            slot.submins.append({"state": state, "ops": ops, "order": None,
+                                 "ref": ref, "market_id": market.market_id})
+            slot.t_last_submin = now_ms
+            self._emit("submin_start", selection_id=int(selection_id),
+                       side=side, size=rest, price=price)
+        except Exception as exc:  # noqa: BLE001 - mai bloccare l'uscita principale
+            self._emit("submin_error", msg=str(exc)[:200])
         return main_order
 
     def _drive_submins(self, market: Any, slot: _Slot, now: int) -> None:

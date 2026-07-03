@@ -252,7 +252,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             max_trade_count=int(1e6),
             max_live_trade_count=int(1e6),
         )
-        framework = Flumine(client=clients.BetfairClient(trading))
+        # min_bet_validation=False COME IL RUNNER LIVE (fix CRITICAL-3 del
+        # live-trading): l'OrderValidation di flumine (size>=1 o payout>=20)
+        # non conosce le eccezioni Betfair (green-up sotto-minimo, park-trim)
+        # e ci ha rifiutato 528 park LAY il 02/07. I minimi veri li garantisce
+        # la strategia (side-aware + park legali).
+        framework = Flumine(client=clients.BetfairClient(
+            trading, min_bet_validation=False, order_stream=True,
+        ))
         framework.add_strategy(strategy)
         db.set_control(ev, status="running", stats=strategy.stats)
 
