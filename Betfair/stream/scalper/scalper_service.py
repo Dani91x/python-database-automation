@@ -21,6 +21,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 KILL_FILE = "STOP_SCALPER"
 POLL_S = 3.0
 ORPHAN_HEARTBEAT_S = 60.0
+# scan automatico delle partite ADATTE (habitat_scan): ogni 30 min il
+# supervisore scrive la classifica in scalper_activity (event_id='habitat');
+# la dashboard la mostra nella card "Partite adatte oggi".
+HABITAT_SCAN_INTERVAL_S = 1800.0
 
 
 def _now_iso() -> str:
@@ -82,6 +87,32 @@ def main() -> None:
     children: Dict[str, subprocess.Popen] = {}
     logger.info("[scalper-svc] supervisore avviato (un processo per partita). "
                 "Kill-switch: file %s", KILL_FILE)
+
+    # ---- habitat scan periodico (thread, best-effort) ----
+    def _habitat_loop() -> None:
+        import json as _json
+        trading = None
+        while True:
+            try:
+                if trading is None:
+                    from ..auth import build_client
+                    trading = build_client(login=True)
+                from .habitat_scan import scan
+                rows = scan(hours=8.0, top=15)
+                db.sb.table("scalper_activity").insert({
+                    "event_id": "habitat", "kind": "habitat_scan",
+                    "payload": _json.loads(_json.dumps(
+                        {"rows": rows, "n": len(rows)}, default=str)),
+                }).execute()
+                logger.info("[scalper-svc] habitat scan: %d partite valutate",
+                            len(rows))
+            except Exception:  # noqa: BLE001 - lo scan non ferma il servizio
+                logger.exception("[scalper-svc] habitat scan KO")
+                trading = None  # ricostruisce il login al giro dopo
+            time.sleep(HABITAT_SCAN_INTERVAL_S)
+
+    threading.Thread(target=_habitat_loop, daemon=True,
+                     name="habitat-scan").start()
 
     while True:
         if os.path.isfile(KILL_FILE):

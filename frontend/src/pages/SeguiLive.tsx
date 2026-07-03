@@ -22,6 +22,7 @@ import { DutchingPanel } from '@/components/live/DutchingPanel';
 import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
 import { XHedgePanel } from '@/components/live/XHedgePanel';
 import { ScalperPanel } from '@/components/live/ScalperPanel';
+import { HabitatCard } from '@/components/live/HabitatCard';
 import { LadderView } from '@/components/live/LadderView';
 import { TerminalPositionsRail } from '@/components/live/TerminalPositionsRail';
 import { sendCashoutAll, sendCashoutEvent, setKillSwitch, type LiveOrderMode } from '@/lib/liveOrders';
@@ -601,16 +602,23 @@ export default function SeguiLive() {
                         )}
                     </div>
                 ) : follows.length === 0 ? (
-                    <Card className="glass-card border-white/10 p-10 text-center">
-                        <Radio className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                        <p className="text-sm text-muted-foreground">Nessuna partita in streaming.</p>
-                    </Card>
+                    <div className="space-y-3">
+                        <HabitatCard />
+                        <Card className="glass-card border-white/10 p-10 text-center">
+                            <Radio className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+                            <p className="text-sm text-muted-foreground">Nessuna partita in streaming.</p>
+                        </Card>
+                    </div>
                 ) : (
                     /* ---- LISTA ---- */
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                        {follows.map(f => (
-                            <LiveMatchCard key={f.event_id} follow={f} onClick={() => setSelected(f)} />
-                        ))}
+                    <div className="space-y-3">
+                        {/* Habitat scan: dove accendere lo SCALPER oggi (dal servizio) */}
+                        <HabitatCard />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            {follows.map(f => (
+                                <LiveMatchCard key={f.event_id} follow={f} onClick={() => setSelected(f)} />
+                            ))}
+                        </div>
                     </div>
                 )}
             </main>
