@@ -63,6 +63,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // ---- form di attivazione (default VALIDATI) ----
     const [mode, setMode] = useState<ScalperMode>('maker');
     const [dryRun, setDryRun] = useState(true);
+    const [htMode, setHtMode] = useState(false);
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -97,7 +98,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         busyRef.current = true;
         setBusy(true);
         try {
-            await activateScalper(eventId, mode, dryRun, stake, params);
+            await activateScalper(eventId, mode, dryRun, stake,
+                { ...params, ht_mode: htMode } as Partial<ScalperParams> & { ht_mode: boolean });
             toast.success(`Scalper ${dryRun ? 'ARMATO (nessun ordine)' : 'ATTIVATO'} — ${eventName}`);
             setShowForm(false);
             void refresh();
@@ -107,7 +109,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             busyRef.current = false;
             setBusy(false);
         }
-    }, [eventId, eventName, mode, dryRun, stake, params, refresh]);
+    }, [eventId, eventName, mode, dryRun, stake, params, htMode, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -206,6 +208,13 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             <Checkbox checked={dryRun} onCheckedChange={v => setDryRun(v === true)} />
                             <span className={dryRun ? 'text-amber-300 font-semibold' : 'text-white/60'}>
                                 Solo ARMATO (nessun ordine reale)
+                            </span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox checked={htMode} onCheckedChange={v => setHtMode(v === true)} />
+                            <span className={htMode ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
+                                Modalità INTERVALLO (HT): riparte da solo nella pausa (48'-59', zero rischio gol).
+                                Solo partite GO — mai elite.
                             </span>
                         </label>
                         {!dryRun && (

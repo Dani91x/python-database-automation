@@ -256,6 +256,15 @@ class ScalperStrategy(BaseStrategy):
         # latenza 5.5s fa slittare gli stop: N slot che perdono INSIEME
         # sfondano il loss cap — visto -8.41 con cap 1.5 su elite HT)
         self.max_inplay_slots: int = int(c.get("max_inplay_slots", 2))
+        # CIRCUIT BREAKER per-ciclo in-play: un singolo flatten peggiore di
+        # -X EUR = slippage di latenza che mangia (elite HT) -> stop evento.
+        self.cycle_loss_breaker: float = float(c.get("cycle_loss_breaker", 0.50))
+        # Controllo ESTERNO dell'intervallo (dal feed punteggi via sessione):
+        # None = solo finestra a orologio; True/False = intervallo in corso
+        # si'/no (clock resta come sanita'). inplay_close_now: chiusura
+        # IMMEDIATA dei cicli in-play richiesta dalla sessione (2T ripreso).
+        self.ht_active: Optional[bool] = None
+        self.inplay_close_now: bool = False
         # chiusura forzata N secondi prima del kickoff (0 = disattivata).
         # Evita di restare con posizioni NUDE al passaggio in-play.
         self.flatten_before_s: float = float(c.get("flatten_before_s", 180.0))
@@ -537,6 +546,16 @@ class ScalperStrategy(BaseStrategy):
             return
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
+        if self.inplay_close_now and inplay:
+            for (mid_, sid_), s_ in list(self._slots.items()):
+                if mid_ != market.market_id:
+                    continue
+                if s_.inplay_cycle and s_.status not in (IDLE, DONE):
+                    self._cancel_if_live(market, s_.entry)
+                    self._cancel_if_live(market, s_.entry_back)
+                    self._cancel_if_live(market, s_.entry_lay)
+                    self._cancel_if_live(market, s_.close)
+                    self._begin_flatten(s_)
         # FORCE-FLAT: vicino al kickoff (flatten_before_s) o gia' in-play con
         # allow_inplay=False -> chiudi tutto e vieta nuovi ingressi. Il tempo
         # al KO deriva dal publish_time del book vs il market_time del
@@ -708,7 +727,15 @@ class ScalperStrategy(BaseStrategy):
                 if inplay and self.inplay_to_s > 0:
                     ko = self._ko_epoch_ms(market_book)
                     el = (now - ko) / 1000.0 if ko else None
-                    if el is None or not (self.inplay_from_s <= el <= self.inplay_to_s):
+                    if self.ht_active is not None:
+                        # rilevatore reale (feed punteggi) + clock di sanita'
+                        if not self.ht_active:
+                            continue
+                        if el is None or not (
+                            self.inplay_from_s - 300 <= el <= self.inplay_to_s + 600
+                        ):
+                            continue
+                    elif el is None or not (self.inplay_from_s <= el <= self.inplay_to_s):
                         continue
                 slot.inplay_cycle = inplay
                 if inplay and self.max_inplay_slots > 0:

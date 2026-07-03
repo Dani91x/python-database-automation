@@ -281,6 +281,52 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # non conosce le eccezioni Betfair (green-up sotto-minimo, park-trim)
         # e ci ha rifiutato 528 park LAY il 02/07. I minimi veri li garantisce
         # la strategia (side-aware + park legali).
+        # ---- WATCHER INTERVALLO (solo ht_mode): rilevatore REALE da live_now.
+        # Firma misurata sui dati storici (35768365): il minuto si CONGELA a
+        # 45-46 per ~15-18 min. Regole: minute>=45 fermo da >=150s -> HT
+        # INIZIATO (ht_active=True); minute che riavanza (>=46 con nuovo
+        # update) -> HT FINITO: stop ingressi + chiusura immediata dei cicli.
+        # Il clock 48'-59' resta come sanita' dentro la strategia.
+        stop_flag = threading.Event()
+
+        def _ht_watcher(strategy_ref, ko_epoch: Optional[float]) -> None:
+            last_min = None
+            last_change = time.time()
+            started = False
+            while not stop_flag.is_set():
+                time.sleep(20)
+                if ko_epoch is None or time.time() < ko_epoch + 44 * 60:
+                    continue
+                if time.time() > ko_epoch + 70 * 60:
+                    if started and strategy_ref.ht_active:
+                        strategy_ref.ht_active = False
+                        strategy_ref.inplay_close_now = True
+                        db.log(ev, "ht_end", {"perche": "clock-sanita' 70'"})
+                    return
+                try:
+                    r = db.sb.table("live_now").select("minute,inplay")                         .eq("event_id", ev).execute()
+                    row = (r.data or [None])[0] or {}
+                    m = row.get("minute")
+                except Exception:  # noqa: BLE001
+                    continue
+                now_t = time.time()
+                if m is not None and m != last_min:
+                    if started and last_min is not None and m >= 46:
+                        # il minuto RIAVANZA: secondo tempo ripreso
+                        strategy_ref.ht_active = False
+                        strategy_ref.inplay_close_now = True
+                        db.log(ev, "ht_end", {"minute": m})
+                        return
+                    last_min = m
+                    last_change = now_t
+                elif (
+                    not started and m is not None and m >= 45
+                    and now_t - last_change >= 150
+                ):
+                    started = True
+                    strategy_ref.ht_active = True
+                    db.log(ev, "ht_start", {"minute": m})
+
         framework = Flumine(client=clients.BetfairClient(
             trading, min_bet_validation=False, order_stream=True,
         ))
@@ -299,6 +345,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     str(ko_iso).replace("Z", "+00:00")).timestamp()
             except ValueError:
                 ko_ts = None
+        if ht_mode:
+            strategy.ht_active = False  # chiuso finche' il rilevatore non apre
+            threading.Thread(
+                target=_ht_watcher, args=(strategy, ko_ts),
+                daemon=True, name="ht-watcher",
+            ).start()
 
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
@@ -315,6 +367,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             if ko_ts is not None and time.time() > ko_ts + _life_s:
                 db.log(ev, "info", {"msg": "kickoff passato: fine sessione"})
                 break
+        stop_flag.set()
         try:
             framework._running = False  # noqa: SLF001 - stop documentato flumine
         except Exception:  # noqa: BLE001
