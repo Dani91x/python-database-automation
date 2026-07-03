@@ -186,6 +186,8 @@ class _Slot:
     residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
     # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
     submins: list = field(default_factory=list)
+    # prints DENTRO lo spread (ts, EUR): il CIBO diretto dei maker
+    flow_inside: Deque[Tuple[int, float]] = field(default_factory=lambda: deque(maxlen=512))
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
@@ -285,6 +287,24 @@ class ScalperStrategy(BaseStrategy):
         # una gamba nuda in un mercato morto) ----
         # min_flow: EUR minimi stampati PER LATO nella finestra flow_window_ms.
         self.min_flow: float = float(c.get("min_flow", 10.0))
+        # EQUILIBRIO del flusso: min(fb,fl)/max(fb,fl) minimo per quotare
+        # two-sided. E' il discriminante fra i mercati che PAGANO il maker
+        # (flusso alternato sui due lati, es. Ivory-Norway) e quelli che lo
+        # spennano (flusso a senso unico a prezzo fermo, es. elite WC:
+        # lay-aggressione 10-40x il lato back → solo fill avversi). 0 = off.
+        self.flow_balance_min: float = float(c.get("flow_balance_min", 0.0))
+        # OSCILLAZIONE richiesta (il CIBO del maker): nella finestra lunga il
+        # mid deve aver fatto almeno un movimento SU e uno GIU' (>=1 tick).
+        # Un book congelato o a senso unico (elite pre-match) non nutre i
+        # roundtrip: si sanguina a micro-stop. False = off.
+        self.require_oscillation: bool = bool(c.get("require_oscillation", False))
+        # PRINTS DENTRO LO SPREAD minimi (EUR nella finestra lunga): metrica
+        # DIRETTA del cibo dei maker. Ivory-Norway (habitat, +0.67): ~1700
+        # EUR/min di prints interni; elite congelata (POR-CRO): ~0. 0 = off.
+        self.min_inside_flow: float = float(c.get("min_inside_flow", 0.0))
+        # finestra dell'EQUILIBRIO (piu' lunga del gate di flusso: il regime
+        # e' una proprieta' lenta, 90s e' rumore)
+        self.flow_balance_window_ms: int = int(c.get("flow_balance_window_ms", 300_000))
         self.flow_window_ms: int = int(c.get("flow_window_ms", 90000))
         # warmup: non quotare finche' non abbiamo osservato il runner abbastanza
         self.warmup_ms: int = int(c.get("warmup_ms", self.flow_window_ms))
@@ -378,8 +398,27 @@ class ScalperStrategy(BaseStrategy):
         self.stats: Dict[str, float] = {
             "orders_placed": 0, "dry_quotes": 0, "cycles": 0,
             "scalps": 0, "roundtrips": 0, "scratches": 0, "stops": 0,
-            "flattens": 0, "pnl_locked": 0.0,
+            "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
+            "trend_entries": 0, "target_hit": 0,
         }
+
+        # ---- TREND SURF (il fix dei "segni negativi" sui mercati in deriva) ----
+        # Quando la deriva lunga E il flusso CONCORDANO (mercato in tendenza),
+        # il join simmetrico e' vietato li' e si quota UNA SOLA gamba COL
+        # flusso: quote in discesa -> BACK al touch (close 1 tick sotto, dove
+        # il mercato sta andando); quote in salita -> LAY (close 1 tick sopra).
+        # Stop stretto se la tendenza gira. 0/False = off.
+        self.trend_mode: bool = bool(c.get("trend_mode", False))
+        self.trend_min_ticks: float = float(c.get("trend_min_ticks", 3.0))
+        self.trend_flow_ratio: float = float(c.get("trend_flow_ratio", 1.5))
+
+        # ---- TARGET E TETTO DI PERDITA PER EVENTO (0 = off) ----
+        # profit target con CRICCHETTO: raggiunto il target si continua, ma
+        # se dal picco si restituisce piu' di `giveback` si smette di aprire
+        # (i profitti della partita sono protetti). Loss cap = stop duro.
+        self.event_profit_target: float = float(c.get("event_profit_target", 0.0))
+        self.event_target_giveback: float = float(c.get("event_target_giveback", 0.30))
+        self.event_loss_cap: float = float(c.get("event_loss_cap", 0.0))
 
         # ---- STOP ADATTIVO SUL TEMPO AL KICKOFF (0 = off) ----
         # lontano dal KO il rischio settlement e' solo teorico: stop largo
@@ -701,6 +740,34 @@ class ScalperStrategy(BaseStrategy):
             fb, fl = self._flow_sums(slot, now)
             if self.min_flow > 0 and (fb < self.min_flow or fl < self.min_flow):
                 return
+            if self.min_inside_flow > 0:
+                hz = now - self.flow_balance_window_ms
+                fi_sum = sum(v for ts, v in slot.flow_inside if ts >= hz)
+                if fi_sum < self.min_inside_flow:
+                    return  # niente incroci nello spread: qui i maker non mangiano
+            if self.require_oscillation:
+                hz = now - self.flow_balance_window_ms
+                samples = [v for ts, v in slot.drift_samples if ts >= hz]
+                up = down = False
+                for a, b in zip(samples, samples[1:]):
+                    t = ticks_between(min(a, b), max(a, b))
+                    if t is not None and t >= 0.9:
+                        if b > a:
+                            up = True
+                        else:
+                            down = True
+                if not (up and down):
+                    return  # niente inversioni: il maker qui non mangia
+            if self.flow_balance_min > 0:
+                hz = now - self.flow_balance_window_ms
+                bfb = bfl = 0.0
+                for ts, b_, l_ in slot.flow:
+                    if ts >= hz:
+                        bfb += b_
+                        bfl += l_
+                hi = max(bfb, bfl)
+                if hi <= 0 or min(bfb, bfl) / hi < self.flow_balance_min:
+                    return  # flusso a senso unico: il maker non offre la sponda
             # squilibrio estremo = pressione a senso unico: non fare il maker
             wom = wom_imbalance(size_back, size_lay)
             if abs(wom) > self.wom_block:
@@ -711,8 +778,45 @@ class ScalperStrategy(BaseStrategy):
                 dr = self._long_drift(slot, now, mp)
                 if dr is not None and dr >= self.max_drift_ticks:
                     return
+            # ---- GATE DI EVENTO: loss cap duro + cricchetto post-target ----
+            locked = float(self.stats.get("pnl_locked", 0.0))
+            if locked > float(self.stats.get("pnl_peak", 0.0)):
+                self.stats["pnl_peak"] = locked
+            if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
+                # tetto di perdita partita: FORCE-FLAT totale (non solo stop
+                # ingressi: i cicli in volo continuerebbero a perdere — visto
+                # -2.10 con cap -1.00 in backtest)
+                if not self.force_flat:
+                    self.force_flat = True
+                    self._emit("loss_cap", locked=round(locked, 2))
+                return
+            if (
+                self.event_profit_target > 0
+                and self.stats.get("pnl_peak", 0.0) >= self.event_profit_target
+            ):
+                if not self.stats.get("target_hit"):
+                    self.stats["target_hit"] = 1
+                    self._emit("target_raggiunto", locked=round(locked, 2))
+                if locked <= self.stats["pnl_peak"] - self.event_target_giveback:
+                    return  # cricchetto: profitti della partita protetti
+
             # BIAS: quota SOLO dal lato del segnale, in coda al touch (maker)
             side_bias = self.bias.get(int(runner.selection_id))
+            # TREND SURF: se deriva e flusso CONCORDANO, bias automatico col
+            # flusso (quote in discesa = aggressione dei backer -> BACK;
+            # in salita -> LAY). Vince sul join simmetrico per questo slot.
+            if side_bias is None and self.trend_mode and mp is not None:
+                dr = self._long_drift_signed(slot, now, mp)
+                if dr is not None and abs(dr) >= self.trend_min_ticks:
+                    if dr < 0 and fb >= self.trend_flow_ratio * max(fl, 1e-9):
+                        side_bias = "BACK"
+                    elif dr > 0 and fl >= self.trend_flow_ratio * max(fb, 1e-9):
+                        side_bias = "LAY"
+                    if side_bias is not None:
+                        self.stats["trend_entries"] += 1
+                        self._emit("trend_surf", selection_id=int(runner.selection_id),
+                                   side=side_bias, drift=round(dr, 1),
+                                   fb=round(fb, 0), fl=round(fl, 0))
             if side_bias is not None:
                 if st > self.join_max_spread:
                     return
@@ -997,7 +1101,7 @@ class ScalperStrategy(BaseStrategy):
                     slot.prev_trd[float(p)] = float(s)
             return
         bb, bl = slot.last_bb, slot.last_bl
-        fb = fl = 0.0
+        fb = fl = fi = 0.0
         for t in trd:
             p, s = t.get("price"), t.get("size")
             if p is None or s is None:
@@ -1014,8 +1118,11 @@ class ScalperStrategy(BaseStrategy):
             else:
                 fb += d / 2.0
                 fl += d / 2.0
+                fi += d
         if fb > 0 or fl > 0:
             slot.flow.append((now, fb, fl))
+        if fi > 0:
+            slot.flow_inside.append((now, fi))
 
     def _flow_sums(self, slot: _Slot, now: int) -> Tuple[float, float]:
         """(flusso lato back, flusso lato lay) in EUR nella finestra."""
@@ -1028,10 +1135,16 @@ class ScalperStrategy(BaseStrategy):
         return fb, fl
 
     def _long_drift(self, slot: _Slot, now: int, mp: float) -> Optional[float]:
-        """Deriva (tick, assoluta) del micro-price nella finestra LUNGA.
+        """Deriva (tick, assoluta) del micro-price nella finestra LUNGA."""
+        d = self._long_drift_signed(slot, now, mp)
+        return None if d is None else abs(d)
 
-        Usa i campioni radi (1 ogni ~30s): il riferimento e' il primo campione
-        dentro ``drift_window_ms``. None se la storia non copre la finestra.
+    def _long_drift_signed(self, slot: _Slot, now: int, mp: float) -> Optional[float]:
+        """Deriva FIRMATA (tick) del micro-price nella finestra lunga.
+
+        >0 = quote in SALITA, <0 = quote in DISCESA. E' il sensore di REGIME:
+        deriva persistente = mercato in TENDENZA → il maker simmetrico rema
+        contro (visto sui Mondiali: solo scratch/stop); li' si SURFA il flusso.
         """
         horizon = now - self.drift_window_ms
         ref = None
@@ -1042,7 +1155,9 @@ class ScalperStrategy(BaseStrategy):
         if ref is None:
             return None
         t = ticks_between(min(ref, mp), max(ref, mp))
-        return float(t) if t is not None else None
+        if t is None:
+            return None
+        return float(t) if mp >= ref else -float(t)
 
     def _recent_move(self, slot: _Slot, now: int, mp: float) -> Optional[int]:
         """Movimento (in tick) del micro-price nella finestra. None se assente."""

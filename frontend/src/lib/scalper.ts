@@ -66,6 +66,8 @@ export interface ScalperParams {
     price_max: number;
     entry_stop_before_s: number;
     flatten_before_s: number;
+    event_profit_target: number;
+    event_loss_cap: number;
 }
 
 export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
@@ -77,6 +79,8 @@ export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
     price_max: 4.6,
     entry_stop_before_s: 420,
     flatten_before_s: 180,
+    event_profit_target: 1,
+    event_loss_cap: 1.5,
 };
 
 export const SCALPER_PARAM_FIELDS: {
@@ -91,6 +95,8 @@ export const SCALPER_PARAM_FIELDS: {
     { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.5, max: 20, hint: 'sopra: tick troppo larghi' },
     { key: 'entry_stop_before_s', label: 'Stop ingressi (s pre-KO)', step: 30, min: 60, max: 1800, hint: 'niente nuovi cicli sotto questa soglia' },
     { key: 'flatten_before_s', label: 'Chiusura forzata (s pre-KO)', step: 30, min: 30, max: 900, hint: 'tutto flat prima del fischio' },
+    { key: 'event_profit_target', label: 'Target profitto €', step: 0.5, min: 0, max: 50, hint: 'col cricchetto: raggiunto, i profitti sono protetti (0=off)' },
+    { key: 'event_loss_cap', label: 'Tetto perdita €', step: 0.5, min: 0, max: 20, hint: 'al tocco: chiude tutto (force-flat). 0=off' },
 ];
 
 export async function activateScalper(

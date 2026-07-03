@@ -46,6 +46,11 @@ VALIDATED_PARAMS: Dict[str, Any] = {
     # uscite a SIZE ESATTA (come i tool pro): parte diretta + resto via
     # park-trim-replace (trading/submin.py) → si esce con qualsiasi importo
     "exact_exits": True,
+    # PROTEZIONI DI REDDITO PER EVENTO (certificate 03/07): target col
+    # cricchetto (raggiunto 1€ si continua ma i profitti sono protetti) e
+    # tetto di perdita che scatena il force-flat totale.
+    "event_profit_target": 1.0, "event_target_giveback": 0.30,
+    "event_loss_cap": 1.5,
 }
 UI_PARAM_WHITELIST = {
     "scalp_ticks", "stop_ticks", "min_size", "min_flow", "price_min",
@@ -53,6 +58,9 @@ UI_PARAM_WHITELIST = {
     "capture_min_ticks", "capture_max_ticks", "max_signal_ticks",
     "cooldown_ms", "flatten_before_s", "entry_stop_before_s", "wom_block",
     "entry_ttl_ms", "lock_ttl_ms", "max_cycles", "max_txn_hour",
+    "event_profit_target", "event_target_giveback", "event_loss_cap",
+    "flow_balance_min", "flow_balance_window_ms", "min_inside_flow",
+    "require_oscillation", "trend_mode", "max_drift_ticks",
 }
 SESSION_MARKET_TYPES = [
     "MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
