@@ -1,0 +1,5 @@
+# Dipendenze LEGGERE per i job plan/rechain di retrain_models.yml (niente
+# training stack). File separato = chiave stabile per la cache pip di
+# actions/setup-python su quei job.
+supabase==2.28.0
+python-dotenv

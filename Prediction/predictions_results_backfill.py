@@ -243,6 +243,116 @@ def update_prediction_row(sb, fixture_id: int, payload: Dict[str, Any]) -> None:
 
 
 # =========================
+# DB update BULK via RPC (stesso comportamento, meno round-trip)
+# =========================
+
+# RPC definita in migrations/predictions_results_bulk_update_rpc.sql:
+# UPDATE ... FROM jsonb_to_recordset -> aggiorna SOLO righe esistenti (mai
+# insert, come update_prediction_row), stesse colonne/valori/WHERE fixture_id.
+RPC_BULK_UPDATE = "bulk_update_prediction_results"
+RPC_BULK_CHUNK = 500  # payload per chiamata RPC
+
+
+class _RpcMissingError(RuntimeError):
+    """La RPC non esiste (ancora) sul DB: migration non applicata."""
+
+
+def _is_rpc_missing_error(err: Any) -> bool:
+    """
+    Riconosce l'errore 'function not found':
+    - PGRST202: PostgREST non trova la funzione nello schema cache
+    - 42883:    undefined_function lato Postgres
+    """
+    code = str(getattr(err, "code", "") or "").upper()
+    if code in {"PGRST202", "42883"}:
+        return True
+    msg = str(err).lower()
+    return (
+        "pgrst202" in msg
+        or "could not find the function" in msg
+        or ("function" in msg and "does not exist" in msg)
+    )
+
+
+def update_rows_one_by_one(sb, updates: List[Dict[str, Any]]) -> int:
+    """
+    Percorso storico: 1 UPDATE HTTP per fixture (update_prediction_row).
+    Ritorna il numero di failed. Log identici a prima.
+    """
+    failed = 0
+    for u in updates:
+        fx_id = int(u["fixture_id"])
+        try:
+            update_prediction_row(sb, fx_id, u)
+        except Exception as e:
+            failed += 1
+            logger.error("❌ Update fallito fixture_id=%s: %s", fx_id, e)
+    return failed
+
+
+def bulk_update_predictions(sb, updates: List[Dict[str, Any]]) -> int:
+    """
+    Percorso bulk: 1 chiamata RPC ogni RPC_BULK_CHUNK payload invece di 1
+    UPDATE HTTP per fixture. Stessi valori scritti, stesso vincolo SAFE
+    (update-only, mai insert). Ritorna il numero di failed.
+
+    - RPC assente sul PRIMO chunk -> solleva _RpcMissingError: il chiamante fa
+      fallback integrale al loop riga-per-riga (il file funziona identico anche
+      prima che la migration venga applicata).
+    - Chunk fallito per ALTRI motivi -> ritentato riga-per-riga, cosi' la
+      granularita' di errore e i conteggi restano quelli di oggi.
+    """
+    failed = 0
+    for i in range(0, len(updates), RPC_BULK_CHUNK):
+        chunk = updates[i:i + RPC_BULK_CHUNK]
+        chunk_no = i // RPC_BULK_CHUNK + 1
+
+        # Dedup difensivo per fixture_id (vince l'ULTIMO payload, come nel loop
+        # sequenziale dove l'ultimo UPDATE sovrascrive). Con fixture_id univoco
+        # nel fetch e' un no-op.
+        body = list({int(u["fixture_id"]): u for u in chunk}.values())
+
+        try:
+            resp = sb.rpc(RPC_BULK_UPDATE, {"p_rows": body}).execute()
+            err = getattr(resp, "error", None)
+            if err:
+                raise RuntimeError(str(err))
+        except Exception as e:
+            if _is_rpc_missing_error(e):
+                if i == 0:
+                    raise _RpcMissingError(str(e)) from e
+                # Non dovrebbe accadere a meta' run (il primo chunk e' passato):
+                # comunque, resto degli update riga-per-riga.
+                logger.warning(
+                    "⚠️ RPC %s non piu' disponibile a meta' run: fallback riga-per-riga sul resto.",
+                    RPC_BULK_UPDATE,
+                )
+                return failed + update_rows_one_by_one(sb, updates[i:])
+            logger.warning(
+                "⚠️ RPC bulk fallita sul chunk %s (%s payload): %s — ritento riga-per-riga il chunk.",
+                chunk_no, len(chunk), e,
+            )
+            failed += update_rows_one_by_one(sb, chunk)
+            continue
+
+        n_rows = resp.data if isinstance(resp.data, int) else None
+        logger.info(
+            "📦 RPC bulk chunk %s: %s payload → %s righe aggiornate.",
+            chunk_no, len(body), n_rows if n_rows is not None else "?",
+        )
+        if n_rows is not None and n_rows < len(body):
+            # update-only: payload senza riga esistente non scrivono nulla.
+            # (Il vecchio loop in questo caso non falliva e non se ne accorgeva:
+            # qui almeno lo segnaliamo, senza cambiare i conteggi finali.)
+            logger.warning(
+                "⚠️ RPC bulk chunk %s: %s payload ma %s righe aggiornate "
+                "(fixture_id assenti da fixture_predictions?).",
+                chunk_no, len(body), n_rows,
+            )
+    return failed
+
+
+# =========================
 # Runner
 # =========================
 
@@ -285,14 +395,18 @@ def run(target_date: str, force: bool, limit: int) -> None:
         logger.info("✅ Nessun match valutabile (probabile: non FINISHED o goals null).")
         return
 
-    failed = 0
-    for u in updates:
-        fx_id = int(u["fixture_id"])
-        try:
-            update_prediction_row(sb, fx_id, u)
-        except Exception as e:
-            failed += 1
-            logger.error("❌ Update fallito fixture_id=%s: %s", fx_id, e)
+    # Percorso bulk (1 RPC per chunk) con fallback automatico al loop
+    # riga-per-riga se la RPC non e' ancora stata applicata sul DB.
+    try:
+        failed = bulk_update_predictions(sb, updates)
+    except _RpcMissingError:
+        logger.warning(
+            "⚠️ RPC %s non trovata sul DB (migration "
+            "migrations/predictions_results_bulk_update_rpc.sql non applicata?): "
+            "fallback al loop riga-per-riga.",
+            RPC_BULK_UPDATE,
+        )
+        failed = update_rows_one_by_one(sb, updates)
 
     logger.info(
         "🏁 COMPLETATO → updated=%s failed=%s missing_match=%s (date=%s)",

@@ -56,8 +56,8 @@ on:
   workflow_dispatch:
     inputs:
       total_shards:
-        description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. 5 = 5 leghe in parallelo (richiesto). Monitora il grafico Disk I/O; scendi a 3 se sale troppo."
-        default: "5"
+        description: "Job paralleli (shard) = runner separati, 1 lega ciascuno. Default 3 (regime incrementale: meno runner accesi = meno minuti fatturati a parita' di leghe allenate; l'auto-chain smaltisce comunque la coda). Alza a 5 per campagne di massa."
+        default: "3"
         required: true
       use_planner:
         description: "Il planner sceglie le leghe (mancanti + stale<cutoff) in 2 query bulk."
@@ -109,11 +109,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: requirements-planner.txt
 
       - name: Install planner deps (leggere, niente training stack)
         run: |
           python -m pip install --upgrade pip
-          pip install supabase==2.28.0 python-dotenv
+          pip install -r requirements-planner.txt
 
       - name: Planner gate (allena solo se c'e' >=1 giornata di partite nuove)
         id: gate
@@ -158,7 +160,7 @@ jobs:
         id: gen
         if: steps.gate.outputs.has_work == 'true'
         env:
-          TOTAL_SHARDS: ${{ inputs.total_shards || '5' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
         run: |
           SHARDS=$(python3 -c "import json, sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$TOTAL_SHARDS")
           echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
@@ -196,6 +198,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-train.txt
+
+      # ─── Cache Optuna persistente tra run ──────────────────────────────────
+      # Il codice di training ha GIA' una cache iperparametri per-lega
+      # (models_cache/league_*/optuna_params_*.json) con guardie di qualita':
+      # ri-tuning forzato se cambia il tier o se il dataset varia oltre il 20%
+      # (seriea_model_export.py:307-326). Sul runner effimero pero' la cartella
+      # sparisce a fine job => ogni run ri-tunava da zero (15-30 trial x ~18
+      # target x lega = il grosso dei minuti fatturati). Qui la ripristiniamo:
+      # - restore-keys a prefisso: ogni shard riparte dall'ultima cache salvata
+      #   (di qualunque shard: i file sono per-lega, un miss = solo un ri-tune).
+      # - key unica per run+shard: si salva sempre una cache aggiornata che
+      #   ACCUMULA i JSON ripristinati + quelli nuovi (unione crescente).
+      # NB: cambia solo DOVE vengono letti i best_params (cache invece di
+      # ri-tuning); la logica di validita' resta quella del codice.
+      - name: Restore cache Optuna (iperparametri per-lega)
+        uses: actions/cache@v4
+        with:
+          path: Ai Engine/models_cache/**/optuna_params_*.json
+          key: optuna-params-${{ github.run_id }}-shard-${{ matrix.shard }}
+          restore-keys: |
+            optuna-params-
 
       - name: Pre-flight DB probe (non stressare un DB gia' lento)
         id: probe
@@ -244,7 +267,7 @@ jobs:
           # Inputs via env (mai interpolati nello script: anti shell-injection).
           # I fallback servono per i run da cron (inputs vuoti negli eventi schedule).
           SHARD_INDEX: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ inputs.total_shards || '5' }}
+          TOTAL_SHARDS: ${{ inputs.total_shards || '3' }}
           USE_PLANNER: ${{ inputs.use_planner || 'true' }}
           LEAGUES_INPUT: ${{ inputs.leagues || '' }}
           TIME_BUDGET_MIN: ${{ inputs.time_budget_min || '240' }}
@@ -301,11 +324,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: requirements-planner.txt
 
       - name: Install planner deps (leggere, niente training stack)
         run: |
           python -m pip install --upgrade pip
-          pip install supabase==2.28.0 python-dotenv
+          pip install -r requirements-planner.txt
 
       - name: Rilancia se restano leghe del giorno (auto-chain)
         env:

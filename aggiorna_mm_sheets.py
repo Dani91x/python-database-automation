@@ -312,7 +312,9 @@ def build_sheet(sh, sheet_name, strategy, history):
         ws = sh.add_worksheet(title=sheet_name, rows=3000, cols=COLS)
         params = DEFAULTS[strategy].copy()
 
-    time_module.sleep(1)
+    # 0.5s (era 1s): le chiamate Sheets successive passano tutte da _sheets_retry
+    # (backoff esponenziale 5-80s su qualsiasi errore, inclusi i 429).
+    time_module.sleep(0.5)
 
     all_data = []
     fmt_reqs = []
@@ -470,7 +472,8 @@ def build_sheet(sh, sheet_name, strategy, history):
     # Ridimensiona il foglio se necessario
     if ws.row_count < end_row + 10:
         _sheets_retry(ws.resize, rows=max_rows, cols=COLS)
-        time_module.sleep(1)
+        # 0.5s (era 1s): le chiamate successive sono protette da _sheets_retry.
+        time_module.sleep(0.5)
     
     if all_data:
         # CRUCIAL FIX: Translate all strings starting with "=" to formulaValue natively, skipping USER_ENTERED bugs
@@ -507,7 +510,8 @@ def build_sheet(sh, sheet_name, strategy, history):
     if fmt_reqs:
         for i in range(0, len(fmt_reqs), 100):
             _sheets_retry(sh.batch_update, {"requests": fmt_reqs[i:i + 100]})
-            time_module.sleep(1)
+            # 0.5s (era 1s): ogni batch_update e' gia' dentro _sheets_retry (backoff 5-80s).
+            time_module.sleep(0.5)
 
     logger.info(f"Foglio '{sheet_name}' completato (FORMULE LIVE TRADOTTE).")
 
@@ -528,7 +532,9 @@ def main():
     ]:
         try:
             build_sheet(sh, sheet_name, strategy, history)
-            time_module.sleep(3)
+            # 1s (era 3s) tra un foglio e l'altro: tutte le chiamate Sheets dentro
+            # build_sheet passano da _sheets_retry (backoff 5-80s anche sui 429).
+            time_module.sleep(1)
         except Exception as e:
             logger.error(f"Errore nel foglio '{sheet_name}': {e}", exc_info=True)
 

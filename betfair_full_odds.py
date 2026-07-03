@@ -30,11 +30,19 @@ from datetime import datetime, timezone
 sys.stdout.reconfigure(encoding="utf-8")
 
 # --- RISPETTO LIMITI BETFAIR (tassativo: niente ban) ---
-# listMarketBook: peso max 200/chiamata, EX_BEST_OFFERS = 5/mercato -> batch 20 = peso 100 (margine 2x).
+# listMarketBook: peso max 200/chiamata, EX_BEST_OFFERS = 5/mercato -> batch 39 = peso 39*5 = 195 (< 200).
 # Delay 0.6s tra OGNI chiamata (best-practice anti-throttling). Stop immediato sui limiti.
-BATCH = 20            # mercati per listMarketBook (peso 100 < 200)
+BATCH = 39            # mercati per listMarketBook (peso 39*5 = 195 < 200)
 REQ_DELAY = 0.6       # secondi tra chiamate
-EVENT_DELAY = 0.4     # secondi extra tra eventi
+# EVENT_DELAY ridotto 0.4 -> 0.2: col catalogo a chunk (CAT_CHUNK eventi/chiamata) e i book
+# a batch 39 le richieste per evento calano di ~2-3x, quindi il ritmo complessivo resta
+# uguale o piu' lento di prima. REQ_DELAY 0.6 tra le chiamate resta INVARIATO.
+EVENT_DELAY = 0.2     # secondi extra tra eventi
+# listMarketCatalogue: tetto 1000 risultati/chiamata; con ~30-60 mercati/evento,
+# 12 eventi = max ~720 risultati (largo sotto il tetto). Se una risposta tocca il
+# tetto (possibile troncamento) -> fallback per-evento, identico al comportamento storico.
+# Peso projection: RUNNER_DESCRIPTION ed EVENT pesano 0 -> nessun problema di peso.
+CAT_CHUNK = 12        # eventi per chiamata listMarketCatalogue
 LIMIT_MARKERS = ("TOO_MANY_REQUESTS", "TOO_MUCH_DATA")
 
 
@@ -48,6 +56,23 @@ def _is_limit(ex) -> bool:
 
 def best_levels(arr, n=3):
     return [{"price": x.get("price"), "size": x.get("size")} for x in (arr or [])[:n]]
+
+
+def _list_catalogue(c, event_ids):
+    """listMarketCatalogue per una lista di eventIds (stessi parametri della vecchia
+    chiamata per-evento: nessun filtro marketTypeCodes, maxResults 1000). La projection
+    EVENT (peso 0) serve SOLO al mapping evento->mercati; i dati per mercato
+    (marketId, marketName, runners) sono identici a prima. Stop sui limiti + REQ_DELAY."""
+    try:
+        cats = c.betting_rpc("SportsAPING/v1.0/listMarketCatalogue",
+                             {"filter": {"eventIds": event_ids}, "maxResults": 1000,
+                              "marketProjection": ["RUNNER_DESCRIPTION", "EVENT"]}) or []
+    except Exception as ex:
+        if _is_limit(ex):
+            raise BetfairLimitHit(str(ex))
+        raise
+    time.sleep(REQ_DELAY)
+    return cats
 
 
 def main():
@@ -108,78 +133,91 @@ def main():
 
     written = 0
     written_fids = set()
-    for m in matched:
-        ev = m["event"]
-        fixture = m["fixture"]
-        eid = ev["id"]
-        fid = fixture["fixture_id"]
-        name = ev["name"]
+    # Catalogo a CHUNK di eventi: 1 chiamata listMarketCatalogue ogni CAT_CHUNK eventi
+    # (prima: 1 per evento). La selezione dei mercati e' IDENTICA (stessi parametri);
+    # cambia solo il raggruppamento. L'elaborazione/scrittura resta per-evento come prima.
+    for ci in range(0, len(matched), CAT_CHUNK):
+        chunk_matches = matched[ci:ci + CAT_CHUNK]
+        chunk_eids = [m["event"]["id"] for m in chunk_matches]
 
-        # difensivo: mai riscrivere due volte la stessa fixture nella stessa run
-        if fid in written_fids:
-            print(f"  [WARN] fixture {fid} gia' scritto in questa run: salto (anti-sovrascrittura).")
-            continue
+        cats_chunk = _list_catalogue(c, chunk_eids)
+        cats_by_event = {}
+        if len(cats_chunk) >= 1000:
+            # Tetto maxResults toccato: la risposta puo' essere troncata.
+            # Fallback per-evento (comportamento storico): nessun mercato perso.
+            print(f"  [WARN] catalogo chunk {ci // CAT_CHUNK + 1}: tetto 1000 risultati -> fallback per-evento")
+            for eid_fb in chunk_eids:
+                cats_by_event[eid_fb] = _list_catalogue(c, [eid_fb])
+        else:
+            for mk in cats_chunk:
+                eid_mk = (mk.get("event") or {}).get("id")
+                if eid_mk:
+                    cats_by_event.setdefault(eid_mk, []).append(mk)
 
-        try:
-            cats = c.betting_rpc("SportsAPING/v1.0/listMarketCatalogue",
-                                 {"filter": {"eventIds": [eid]}, "maxResults": 1000,
-                                  "marketProjection": ["RUNNER_DESCRIPTION"]}) or []
-        except Exception as ex:
-            if _is_limit(ex):
-                raise BetfairLimitHit(str(ex))
-            raise
-        time.sleep(REQ_DELAY)
+        for m in chunk_matches:
+            ev = m["event"]
+            fixture = m["fixture"]
+            eid = ev["id"]
+            fid = fixture["fixture_id"]
+            name = ev["name"]
 
-        meta = {}
-        mids = []
-        for mk in cats:
-            mid = mk["marketId"]
-            mids.append(mid)
-            meta[mid] = {"name": mk["marketName"],
-                         "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
-                                     for r in mk.get("runners", [])}}
-
-        books = []
-        for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 100 < 200
-            try:
-                books += c.list_market_book(mids[i:i + BATCH]) or []
-            except Exception as ex:
-                if _is_limit(ex):
-                    raise BetfairLimitHit(str(ex))
-                raise
-            time.sleep(REQ_DELAY)
-
-        rows = []
-        for b in books:
-            mm = meta.get(b["marketId"])
-            if not mm:
+            # difensivo: mai riscrivere due volte la stessa fixture nella stessa run
+            if fid in written_fids:
+                print(f"  [WARN] fixture {fid} gia' scritto in questa run: salto (anti-sovrascrittura).")
                 continue
-            for r in b.get("runners", []):
-                rn, sp = mm["runners"].get(r["selectionId"], ("?", None))
-                ex = r.get("ex", {})
-                rows.append({
-                    "fixture_id": fid, "market_name": mm["name"], "selection": rn,
-                    "sort_priority": sp, "market_id": b["marketId"], "run_date": today,
-                    "back": best_levels(ex.get("availableToBack")),
-                    "lay": best_levels(ex.get("availableToLay")),
-                })
-        if not rows:
-            print(f"  [skip] '{name}' (fid {fid}): nessuna quota")
-            continue
 
-        # Idempotenza: sostituisci SOLO le righe di QUESTO fixture per OGGI.
-        sb.table("betfair_market_odds").delete().eq("fixture_id", fid).eq("run_date", today).execute()
-        for i in range(0, len(rows), 500):
-            sb.table("betfair_market_odds").insert(rows[i:i + 500]).execute()
-        written_fids.add(fid)
-        written += 1
+            cats = cats_by_event.get(eid, [])
 
-        tag = "strong" if m["strong"] else f"weak/{m['score']}"
-        dtm = f"Δt={m['dt_min']}m" if m["dt_min"] is not None else "Δt=?"
-        print(f"  [ok] {name} -> fid {fid} [{tag},{dtm}]: {len(rows)} righe "
-              f"({len(set(x['market_name'] for x in rows))} mercati) | DB: "
-              f"{fixture.get('home_team_name')} v {fixture.get('away_team_name')}")
-        time.sleep(EVENT_DELAY)
+            meta = {}
+            mids = []
+            for mk in cats:
+                mid = mk["marketId"]
+                mids.append(mid)
+                meta[mid] = {"name": mk["marketName"],
+                             "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
+                                         for r in mk.get("runners", [])}}
+
+            books = []
+            for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 195 < 200
+                try:
+                    books += c.list_market_book(mids[i:i + BATCH]) or []
+                except Exception as ex:
+                    if _is_limit(ex):
+                        raise BetfairLimitHit(str(ex))
+                    raise
+                time.sleep(REQ_DELAY)
+
+            rows = []
+            for b in books:
+                mm = meta.get(b["marketId"])
+                if not mm:
+                    continue
+                for r in b.get("runners", []):
+                    rn, sp = mm["runners"].get(r["selectionId"], ("?", None))
+                    ex = r.get("ex", {})
+                    rows.append({
+                        "fixture_id": fid, "market_name": mm["name"], "selection": rn,
+                        "sort_priority": sp, "market_id": b["marketId"], "run_date": today,
+                        "back": best_levels(ex.get("availableToBack")),
+                        "lay": best_levels(ex.get("availableToLay")),
+                    })
+            if not rows:
+                print(f"  [skip] '{name}' (fid {fid}): nessuna quota")
+                continue
+
+            # Idempotenza: sostituisci SOLO le righe di QUESTO fixture per OGGI.
+            sb.table("betfair_market_odds").delete().eq("fixture_id", fid).eq("run_date", today).execute()
+            for i in range(0, len(rows), 500):
+                sb.table("betfair_market_odds").insert(rows[i:i + 500]).execute()
+            written_fids.add(fid)
+            written += 1
+
+            tag = "strong" if m["strong"] else f"weak/{m['score']}"
+            dtm = f"Δt={m['dt_min']}m" if m["dt_min"] is not None else "Δt=?"
+            print(f"  [ok] {name} -> fid {fid} [{tag},{dtm}]: {len(rows)} righe "
+                  f"({len(set(x['market_name'] for x in rows))} mercati) | DB: "
+                  f"{fixture.get('home_team_name')} v {fixture.get('away_team_name')}")
+            time.sleep(EVENT_DELAY)
 
     print(f"\nFatto. Eventi oggi: {len(events)} | match: {len(matched)} | fixture scritte: {written}")
     if unmatched:

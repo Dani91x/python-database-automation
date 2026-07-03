@@ -3312,7 +3312,9 @@ class SlotManager:
             # === FASE 2: Scrivi TUTTI i dati in UNA chiamata ===
             end_row = len(all_data)
             _sheets_retry(ws.update, f"A1:K{end_row}", all_data)
-            time_module.sleep(2)
+            # 1s (era 2s): la chiamata successiva (batch_update formattazione) e'
+            # protetta da _sheets_retry con backoff esponenziale 5-80s sui 429.
+            time_module.sleep(1)
 
             # === FASE 3: Prepara TUTTA la formattazione batch ===
             pc = {"red": 0.1, "green": 0.6, "blue": 0.1} if prf >= 0 else {"red": 0.7, "green": 0.1, "blue": 0.1}

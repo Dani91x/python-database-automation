@@ -27,13 +27,15 @@ import sys
 import gzip
 import pickle
 import tempfile
+import threading
 import time
 import warnings
 import json
 import uuid
 import logging
+from collections import OrderedDict
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -410,6 +412,137 @@ def _post_cf(lt: dict, gt: dict, cls: str, bin_str: str) -> float:
         return 1.0
 
 
+# ── CACHE IN-PROCESS PER-LEGA (solo dati "a monte" del filtro temporale) ─────
+# Elimina il lavoro ripetuto quando predict_fixture viene chiamato N volte per
+# fixture della STESSA lega (es. serving_batch con 10 partite di Serie A):
+# stagioni, storico matches (3 stagioni + profondo), eventi/statistiche/standings
+# storici, lista modelli dal registry e payload modelli deserializzati sono
+# PURE FUNZIONI della lega (o di lega+stagioni), NON della fixture.
+#
+# REGOLA INVIOLABILE (anti-leakage): qui si cacciano SOLO dati grezzi A MONTE
+# del cutoff temporale per-fixture. Il filtro anti-leakage (merge_asof backward
+# con allow_exact_matches=False, H2H "< match_date", ELO pre-match) resta in
+# feature_pipeline e viene ri-applicato PER OGNI fixture a valle della cache.
+# NULLA di ciò che dipende da fixture_id o dalla data della fixture è cachato
+# (le odds della fixture, ad esempio, NON passano da questa cache).
+#
+# Stima memoria per lega (ordine di grandezza, lega europea tipica):
+#   - history_df 3 stagioni (~1.1k righe × 10 col)      ≈ 1 MB
+#   - deep_match_df tutte le stagioni (~3-8k righe)     ≈ 2-5 MB
+#   - match_events storici (~10-30k dict)               ≈ 5-15 MB
+#   - match_team_stats storici (~30-50k dict)           ≈ 10-25 MB
+#   - standings (~x00 righe)                            ≈ <1 MB
+#   - payload modelli (~21-26 .pkl.gz deserializzati)   ≈ 10-50 MB
+#   Totale ≈ 30-100 MB per lega → default 6 leghe ≈ 200-600 MB (bounded LRU).
+_LEAGUE_CACHE_MAXSIZE = int(os.environ.get("PREDICT_LEAGUE_CACHE_MAXSIZE", "6"))
+# TTL dati storici per-lega: entro un run batch i dati storici sono stabili;
+# il TTL evita che un processo long-running serva storico stantio per sempre.
+_LEAGUE_DATA_TTL_S = float(os.environ.get("PREDICT_LEAGUE_DATA_TTL_S", "3600"))
+# TTL lista modelli dal registry: corto (10 min) così un retrain viene comunque
+# rilevato in fretta (il check trained_at vs sidecar .tat resta INVARIATO e
+# scatta appena il registry viene riletto).
+_REGISTRY_TTL_S = float(os.environ.get("PREDICT_REGISTRY_TTL_S", "600"))
+# Payload modelli deserializzati: chiave (path, mtime_ns, size) → se il file su
+# disco viene riscaricato (retrain/TTL/corrotto) la chiave cambia e l'unpickle
+# in-memory si invalida da solo, rispettando la stessa logica di refresh di oggi.
+_MODEL_PAYLOAD_CACHE_MAXSIZE = int(os.environ.get("PREDICT_MODEL_PAYLOAD_CACHE_MAXSIZE", "200"))
+
+_LEAGUE_DATA_CACHE: "OrderedDict[Tuple[int, int], Dict[str, Any]]" = OrderedDict()
+_MODEL_REGISTRY_CACHE: Dict[int, tuple] = {}
+_MODEL_PAYLOAD_CACHE: "OrderedDict[Tuple[str, int, int], Dict]" = OrderedDict()
+_CACHE_LOCK = threading.Lock()
+
+
+def _get_league_data(league_id: int, last_n: int) -> Dict[str, Any]:
+    """Dati storici per-lega (LRU + TTL). I DataFrame cachati vengono restituiti
+    così come sono: il chiamante deve farne .copy() prima di usarli (alcune
+    funzioni a valle potrebbero mutarli; oggi ogni fixture riceve df freschi)."""
+    key = (int(league_id), int(last_n))
+    now = time.time()
+    with _CACHE_LOCK:
+        entry = _LEAGUE_DATA_CACHE.get(key)
+        if entry is not None:
+            if (now - entry["ts"]) < _LEAGUE_DATA_TTL_S:
+                _LEAGUE_DATA_CACHE.move_to_end(key)
+                return entry
+            del _LEAGUE_DATA_CACHE[key]
+
+    # Fetch identici (stesse funzioni, stessi parametri) a quelli che prima
+    # avvenivano dentro predict_fixture per OGNI fixture.
+    seasons = fetch_seasons_for_league(league_id)
+    league_seasons = [(league_id, s) for s in seasons[-last_n:]]
+    history_df = pd.DataFrame(fetch_matches_for_league_seasons(league_seasons))
+    deep_league_seasons = [(league_id, s) for s in seasons]
+    if len(deep_league_seasons) > len(league_seasons):
+        deep_match_df = pd.DataFrame(fetch_matches_for_league_seasons(deep_league_seasons))
+        deep_is_history = False
+    else:
+        deep_match_df = history_df
+        deep_is_history = True
+
+    entry = {
+        "ts": now,
+        "seasons": seasons,
+        "league_seasons": league_seasons,
+        "history_df": history_df,
+        "deep_match_df": deep_match_df,
+        "deep_is_history": deep_is_history,
+        # Riempita (una volta per lega) da build_feature_dataframe_for_fixtures:
+        # righe grezze match_events/match_team_stats/standings dello STORICO.
+        "history_fetch_cache": {},
+    }
+    with _CACHE_LOCK:
+        _LEAGUE_DATA_CACHE[key] = entry
+        _LEAGUE_DATA_CACHE.move_to_end(key)
+        while len(_LEAGUE_DATA_CACHE) > _LEAGUE_CACHE_MAXSIZE:
+            _LEAGUE_DATA_CACHE.popitem(last=False)
+    return entry
+
+
+def _get_model_registry(league_id: int) -> List[Dict[str, Any]]:
+    """Lista modelli dal registry per lega, cache TTL corto. Il confronto
+    trained_at (sidecar .tat) e il TTL 24h del file su disco restano invariati."""
+    now = time.time()
+    with _CACHE_LOCK:
+        cached = _MODEL_REGISTRY_CACHE.get(int(league_id))
+        if cached is not None and (now - cached[0]) < _REGISTRY_TTL_S:
+            return cached[1]
+    sb = get_supabase_client()
+    reg = (
+        sb.table("ai_model_registry")
+        .select("target,model_name,storage_bucket,storage_path,features_version,targets_version,trained_at")
+        .eq("league_id", league_id)
+        .execute()
+    )
+    models = getattr(reg, "data", None) or []
+    with _CACHE_LOCK:
+        _MODEL_REGISTRY_CACHE[int(league_id)] = (now, models)
+    return models
+
+
+def _load_model_cached(path: str) -> Dict:
+    """Unpickle del modello 1 volta per (path, mtime, size): se il file su disco
+    cambia (re-download per retrain/TTL/corruzione) la chiave cambia e si
+    rifà l'unpickle. LRU bounded. I payload sono usati in sola lettura a valle."""
+    st = os.stat(path)
+    key = (path, st.st_mtime_ns, st.st_size)
+    with _CACHE_LOCK:
+        payload = _MODEL_PAYLOAD_CACHE.get(key)
+        if payload is not None:
+            _MODEL_PAYLOAD_CACHE.move_to_end(key)
+            return payload
+    payload = _load_model(path)  # può sollevare: il chiamante gestisce come oggi
+    with _CACHE_LOCK:
+        # Sfratta eventuali versioni vecchie dello stesso file (mtime diverso)
+        for old_key in [k for k in _MODEL_PAYLOAD_CACHE if k[0] == path and k != key]:
+            del _MODEL_PAYLOAD_CACHE[old_key]
+        _MODEL_PAYLOAD_CACHE[key] = payload
+        _MODEL_PAYLOAD_CACHE.move_to_end(key)
+        while len(_MODEL_PAYLOAD_CACHE) > _MODEL_PAYLOAD_CACHE_MAXSIZE:
+            _MODEL_PAYLOAD_CACHE.popitem(last=False)
+    return payload
+
+
 def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None) -> Dict[str, Any]:
     """
     Full prediction pipeline for a single fixture.
@@ -431,11 +564,14 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         fx_df = fx_df.drop_duplicates(subset=["fixture_id"]).head(1)
     league_id = int(fx_df.iloc[0]["league_id"])
 
-    seasons = fetch_seasons_for_league(league_id)
     last_n = int(os.environ.get("PREDICT_LAST_N_SEASONS", "3"))
-    league_seasons = [(league_id, s) for s in seasons[-last_n:]]
-    history_rows = fetch_matches_for_league_seasons(league_seasons)
-    history_df = pd.DataFrame(history_rows)
+    # Dati per-lega dalla cache in-process (fetch identici a prima, fatti 1 volta
+    # per lega invece che per fixture). Si consegnano COPIE dei DataFrame: oggi
+    # ogni fixture riceve df freschi, quindi eventuali mutazioni a valle non
+    # devono propagarsi tra fixture (parità di comportamento bit-identica).
+    _league_data = _get_league_data(league_id, last_n)
+    league_seasons = list(_league_data["league_seasons"])
+    history_df = _league_data["history_df"].copy()
 
     # STORICO PROFONDO (tutte le stagioni, SOLO la tabella `matches` = leggera)
     # per ELO/H2H: il training calcola l'ELO su tutto lo storico, quindi anche la
@@ -443,11 +579,10 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
     # ELO su scala diversa (skew train/predict). Eventi/statistiche pesanti
     # restano alla finestra corta `league_seasons` (le feature rolling dipendono
     # solo dalle ultime N partite, identiche a qualunque profondita').
-    deep_league_seasons = [(league_id, s) for s in seasons]
-    if len(deep_league_seasons) > len(league_seasons):
-        deep_match_df = pd.DataFrame(fetch_matches_for_league_seasons(deep_league_seasons))
+    if _league_data["deep_is_history"]:
+        deep_match_df = history_df  # stessa identità oggetto di prima (deep == history)
     else:
-        deep_match_df = history_df
+        deep_match_df = _league_data["deep_match_df"].copy()
 
     # include_player_stats=False per PARITA' col training (training_dataset.py usa
     # False): i giocatori sono esclusi su entrambi i lati => stesso set di feature
@@ -458,19 +593,17 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
         include_events=True, include_team_stats=True,
         include_player_stats=False, pre_match=True,
         match_history_df=deep_match_df,
+        # Cache per-lega delle righe STORICHE (match_events/match_team_stats/
+        # standings): riempita alla prima fixture della lega, riusata dalle
+        # successive. Le odds della fixture NON passano da qui (per-fixture).
+        history_fetch_cache=_league_data["history_fetch_cache"],
     )
     if features_df.empty:
         raise RuntimeError("No features produced for fixture")
 
-    # Load models from registry
+    # Load models from registry (cache in-process con TTL corto)
     sb = get_supabase_client()
-    reg = (
-        sb.table("ai_model_registry")
-        .select("target,model_name,storage_bucket,storage_path,features_version,targets_version,trained_at")
-        .eq("league_id", league_id)
-        .execute()
-    )
-    models = getattr(reg, "data", None) or []
+    models = _get_model_registry(league_id)
     if not models:
         raise RuntimeError("No models found in ai_model_registry for league")
 
@@ -539,7 +672,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                     continue
                 logger.warning(f"Using stale cached model for {target}")
         try:
-            payload = _load_model(local_path)
+            payload = _load_model_cached(local_path)
         except Exception as e:
             # Modello in cache corrotto/troncato (es. download precedente interrotto):
             # cancella e ri-scarica UNA volta, poi riprova. Se anche il fresh fallisce,
@@ -551,7 +684,7 @@ def predict_fixture(fixture_id: int, store: bool = False, live_odds: dict = None
                 pass
             try:
                 _download_model(m_bucket, path, local_path)
-                payload = _load_model(local_path)
+                payload = _load_model_cached(local_path)
             except Exception as e2:
                 logger.warning(f"Re-download/load still failing for {target}: {e2}; skipping this target.")
                 corrupt_targets.add(target)

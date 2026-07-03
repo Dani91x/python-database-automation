@@ -192,7 +192,7 @@ class BetfairReportManager:
 
         # 4. Aggiorna foglio Prediction (Tutte)
         self._sync_all_predictions(db_fixtures)
-        time.sleep(3)  # Pausa anti-rate-limit tra fasi Google Sheets
+        time.sleep(1)  # Pausa anti-rate-limit tra fasi Google Sheets (le fasi usano _sheets_retry con backoff 5-80s)
         
         # 5. Aggiorna foglio Match Eventi (Debug/Internal)
         if event_list:
@@ -207,7 +207,7 @@ class BetfairReportManager:
         # 7. Aggiorna foglio Segnali (La Magia + Edge Scanner)
         if event_list:
             self._update_signals_sheet(event_list, db_fixtures)
-        time.sleep(3)  # Pausa anti-rate-limit
+        time.sleep(1)  # Pausa anti-rate-limit (chiamate Sheets protette da _sheets_retry con backoff)
 
         # 8. Salva operazioni di oggi nello storico multi-giorno
         logger.info("Fase 8: Salvataggio storico giornaliero...")
@@ -216,12 +216,12 @@ class BetfairReportManager:
         # 9. Aggiorna Dashboard Money Management
         logger.info("Fase 9: Aggiornamento Dashboard MM...")
         self.slot_manager.update_dashboard_sheet()
-        time.sleep(3)  # Pausa anti-rate-limit
+        time.sleep(1)  # Pausa anti-rate-limit (chiamate Sheets protette da _sheets_retry con backoff)
 
         # 10. Aggiorna Report Ven-Dom (multi-giorno)
         logger.info("Fase 10: Aggiornamento Report Ven-Dom...")
         self.slot_manager.update_report_sheet()
-        time.sleep(3)  # Pausa anti-rate-limit
+        time.sleep(1)  # Pausa anti-rate-limit (chiamate Sheets protette da _sheets_retry con backoff)
 
         # 11. Aggiorna foglio Analytics (performance storica Poisson + ML)
         logger.info("Fase 11: Aggiornamento foglio Analytics...")
@@ -358,14 +358,21 @@ class BetfairReportManager:
         try:
             ws = self.sh.worksheet("Prediction")
             _sheets_retry(ws.clear)
-            _sheets_retry(ws.append_row, headers, value_input_option="RAW")
+            # Header + righe in UN'UNICA values.update (era: append_row header + append_rows
+            # dati = 2 chiamate). Stesse celle/valori/ordine: header in riga 1, dati da riga 2,
+            # sempre RAW; l'escape delle stringhe "=" resta identico (solo sulle righe dati).
+            rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
+            all_values = [headers] + rows
+            # values.update (a differenza di append_rows) NON espande la griglia:
+            # ridimensiona prima, solo se serve (nessun cambiamento visivo).
+            if ws.row_count < len(all_values) or ws.col_count < len(headers):
+                _sheets_retry(ws.resize,
+                              rows=max(ws.row_count, len(all_values) + 50),
+                              cols=max(ws.col_count, len(headers)))
+            _sheets_retry(ws.update, all_values, value_input_option="RAW")
             # Formattazione: Grassetto intestazione + Allineamento centrato
             _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
             _sheets_retry(ws.format, "A:Z", {"horizontalAlignment": "CENTER"})
-            
-            if rows:
-                rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
-                _sheets_retry(ws.append_rows, rows, value_input_option="RAW")
             logger.info(f"Aggiornato foglio 'Prediction' con {len(rows)} analisi.")
         except Exception as err:
             logger.error(f"Errore aggiornamento foglio Prediction: {err}")
@@ -839,7 +846,8 @@ class BetfairReportManager:
             if rows:
                 _sheets_retry(ws.append_rows, rows, value_input_option="USER_ENTERED")
             
-            time.sleep(2)
+            # 1s (era 2s): _format_signals_sheet usa batch_update via _sheets_retry (backoff 5-80s).
+            time.sleep(1)
             self._format_signals_sheet(ws, NUM_COLS)
             
             logger.info(f"Aggiornato foglio 'Segnali': {match_count}/{len(bf_events)} match — Layout Poisson+ML con {NUM_COLS} colonne.")
@@ -1686,15 +1694,20 @@ class BetfairReportManager:
                 rows.append([e["id"], e["name"], dt_ita, e["country"] or "", link])
 
             _sheets_retry(ws.clear)
-            _sheets_retry(ws.append_row, header, value_input_option="RAW")
+            # Header + righe in UN'UNICA values.update (era: append_row + append_rows).
+            # Stesse celle/valori/ordine, sempre RAW. Forza le stringhe che iniziano
+            # con = ad essere trattate come testo (identico a prima, solo righe dati).
+            rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
+            all_values = [header] + rows
+            # values.update non espande la griglia: ridimensiona prima, solo se serve.
+            if ws.row_count < len(all_values) or ws.col_count < len(header):
+                _sheets_retry(ws.resize,
+                              rows=max(ws.row_count, len(all_values) + 50),
+                              cols=max(ws.col_count, len(header)))
+            _sheets_retry(ws.update, all_values, value_input_option="RAW")
             # Formattazione: Grassetto intestazione + Allineamento centrato
             _sheets_retry(ws.format, "1:1", {"textFormat": {"bold": True}})
             _sheets_retry(ws.format, "A:E", {"horizontalAlignment": "CENTER"})
-            
-            if rows:
-                # Forza le stringhe che iniziano con = ad essere trattate come testo
-                rows = [[(f"'{val}" if isinstance(val, str) and val.startswith("=") else val) for val in row] for row in rows]
-                _sheets_retry(ws.append_rows, rows, value_input_option="RAW")
             logger.info(f"Aggiornato foglio '{config.WORKSHEET_NAME}' con {len(rows)} righe.")
         except Exception as err:
             logger.error(f"Errore aggiornamento foglio Betfair: {err}")

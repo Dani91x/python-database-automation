@@ -63,6 +63,13 @@ def run_for_date(target_date: Optional[str] = None, max_fixtures: int = 0) -> di
         fixtures = [r for r in (rows or []) if r.get("fixture_id")]
         if max_fixtures:
             fixtures = fixtures[:max_fixtures]
+        # Raggruppa per lega (sort stabile) per massimizzare gli hit della cache
+        # in-process per-lega di predict_fixture: le fixture della stessa lega
+        # riusano storico/feature-fetch/modelli senza rifare i download.
+        # NB: DOPO lo slice --max, così l'insieme processato resta identico;
+        # cambia solo l'ORDINE (il loop non ha logica dipendente dall'ordine:
+        # solo contatori, nessun early-stop).
+        fixtures.sort(key=lambda r: (r.get("league_id") is None, r.get("league_id") or 0))
 
         log.info("[ml_engine] partite del %s da predire: %d", day.isoformat(), len(fixtures))
         summary = {"fixtures": len(fixtures), "stored": 0, "skipped": 0, "errors": 0}

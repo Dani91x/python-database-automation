@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from api_client import APIFootballClient  # noqa: E402
 from db_client import get_supabase_client  # noqa: E402
+from logger import flush_api_log  # noqa: E402
 
 # Logging (coerente con la codebase: fallback logging)
 logger = logging.getLogger(__name__)
@@ -476,16 +477,21 @@ def extract_odds_for_fixture(odds_json: Dict[str, Any], fixture_id: int) -> Opti
     return None
 
 
+def _build_odds_row(raw_json_odds: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Costruisce la riga di UPDATE per le odds (stessi campi/valori di sempre)."""
+    return {
+        "raw_json_odds": raw_json_odds,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def upsert_odds_row(fixture_id: int, raw_json_odds: Optional[Dict[str, Any]]) -> None:
     """
     Salva le odds grezze in fixture_predictions.raw_json_odds.
     Non tocca gli altri campi.
     """
     sb = get_supabase_client()
-    row = {
-        "raw_json_odds": raw_json_odds,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    row = _build_odds_row(raw_json_odds)
     resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
     updated = getattr(resp, "data", None)
     if not updated:
@@ -509,12 +515,12 @@ def _poisson_cal():
     return _POISSON_CAL or None
 
 
-def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]], ht_predictions: Optional[Dict[str, Any]]) -> None:
+def _build_analysis_row(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]], ht_predictions: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Salva sia l'analisi completa che quella specifica per l'HT.
+    Costruisce la riga di UPDATE per analisi + HT (calibrazione inclusa).
+    Estratta da upsert_analysis_data: stessi campi, stessi valori, stessi
+    timestamp calcolati al momento della chiamata.
     """
-    sb = get_supabase_client()
-
     # Calibrazione Poisson CENTRALIZZATA: arricchisce db_json_analisi con markets_calibrated
     # (coerente con l'ML gia' calibrato nel DB) cosi' ogni partita nasce gia' calibrata.
     # ADDITIVO e NON-FATALE: il grezzo `markets` resta INTATTO (serve al calibratore settimanale).
@@ -531,11 +537,19 @@ def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, An
             except Exception as e:
                 logger.warning("calibrazione markets fallita fixture_id=%s: %s", fixture_id, e)
 
-    row = {
+    return {
         "db_json_analisi": db_json_analisi,
         "ht_predictions": ht_predictions,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def upsert_analysis_data(fixture_id: int, db_json_analisi: Optional[Dict[str, Any]], ht_predictions: Optional[Dict[str, Any]]) -> None:
+    """
+    Salva sia l'analisi completa che quella specifica per l'HT.
+    """
+    sb = get_supabase_client()
+    row = _build_analysis_row(fixture_id, db_json_analisi, ht_predictions)
     resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
     updated = getattr(resp, "data", None)
     if not updated:
@@ -572,6 +586,50 @@ def prediction_already_done(fixture_id: int) -> bool:
         # Se il check fallisce, NON blocchiamo: meglio chiamare l'API che perdere dati
         logger.warning("⚠️ Errore check prediction_already_done fixture_id=%s: %s", fixture_id, e)
         return False
+
+
+def prefetch_predictions_done(fixture_ids: List[int]) -> Set[int]:
+    """
+    Versione BATCH di prediction_already_done: una query (a chunk da 200 id,
+    per non superare i limiti di lunghezza URL di PostgREST) invece di una
+    SELECT per fixture. Stessa identica condizione della funzione originale,
+    applicata in Python sulle stesse colonne: riga esistente per fixture_id
+    con status='ok' E ht_predictions non nullo.
+
+    Fail-open come l'originale: se un chunk fallisce, le sue fixture NON
+    entrano nel set (=> verranno riprocessate, meglio chiamare l'API che
+    perdere dati).
+    """
+    done: Set[int] = set()
+    if not fixture_ids:
+        return done
+
+    sb = get_supabase_client()
+    chunk_size = 200
+    for i in range(0, len(fixture_ids), chunk_size):
+        chunk = fixture_ids[i : i + chunk_size]
+        try:
+            resp = (
+                sb.table("fixture_predictions")
+                .select("fixture_id,status,ht_predictions")
+                .in_("fixture_id", chunk)
+                .execute()
+            )
+            for row in getattr(resp, "data", None) or []:
+                # Stessa logica di prediction_already_done, riga per riga.
+                if row.get("status") != "ok":
+                    continue
+                if row.get("ht_predictions") is None:
+                    continue
+                fid = row.get("fixture_id")
+                if fid is not None:
+                    done.add(int(fid))
+        except Exception as e:
+            logger.warning(
+                "⚠️ Errore prefetch prediction_already_done (chunk %s..%s): %s",
+                chunk[0], chunk[-1], e
+            )
+    return done
 
 
 # ==============================
@@ -1412,6 +1470,165 @@ def upsert_prediction_row(row: Dict[str, Any]) -> None:
 
 
 # ==============================
+# Deferred writer (batch upsert predizioni)
+# ==============================
+
+# Chiavi di contesto presenti in ogni riga di fixture_predictions (da extract_fixture_context).
+_CTX_KEYS: Tuple[str, ...] = (
+    "fixture_id", "league_id", "league_name", "season_year", "fixture_date",
+    "home_team_id", "home_team_name", "away_team_id", "away_team_name",
+)
+
+# Campi "promoted" azzerati nei rami no_coverage/empty/error (identici al loop).
+_PROMOTED_NULL_KEYS: Tuple[str, ...] = (
+    "winner_team_id", "winner_name", "winner_comment", "win_or_draw", "advice",
+    "percent_home", "percent_draw", "percent_away",
+    "under_over_line", "goals_home_line", "goals_away_line",
+)
+
+
+def _error_row_from_ok_row(row: Dict[str, Any], exc: Exception) -> Dict[str, Any]:
+    """
+    Replica ESATTA della riga costruita dal ramo `except` del loop principale
+    quando la scrittura di una riga status='ok' fallisce: stessa fixture,
+    status='error', promoted azzerati, stesso raw_json e stesso updated_at.
+    """
+    err_row: Dict[str, Any] = {k: row.get(k) for k in _CTX_KEYS}
+    err_row["status"] = "error"
+    err_row["error_message"] = str(exc)[:500]
+    err_row["raw_json"] = row.get("raw_json")
+    err_row["flat_summary"] = None
+    for k in _PROMOTED_NULL_KEYS:
+        err_row[k] = None
+    err_row["updated_at"] = row.get("updated_at")
+    return err_row
+
+
+def _group_rows_by_keys(rows: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """
+    PostgREST richiede chiavi uniformi in un insert/upsert bulk: raggruppa le
+    righe per insieme di chiavi preservando l'ordine di accodamento.
+    (In pratica tutte le righe del loop hanno lo stesso insieme di chiavi,
+    quindi il risultato e' quasi sempre un unico gruppo.)
+    """
+    groups: Dict[frozenset, List[Dict[str, Any]]] = {}
+    order: List[frozenset] = []
+    for row in rows:
+        key = frozenset(row.keys())
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+    return [groups[k] for k in order]
+
+
+class _DeferredWriter:
+    """
+    Accumula le scritture del loop principale e le esegue a blocchi per
+    ridurre i round-trip verso Supabase, A PARITA' di valori scritti:
+
+    - le righe di fixture_predictions (upsert on_conflict=fixture_id) vengono
+      scritte in UN upsert batch per blocco (fallback riga-per-riga se il
+      batch fallisce, replicando la semantica per-fixture odierna);
+    - odds e analisi restano UPDATE riga-per-riga (colonne diverse, un UPDATE
+      batch non e' esprimibile in PostgREST senza cambiarne la semantica),
+      ma vengono eseguiti DOPO l'upsert batch del blocco cosi' l'ordine
+      relativo per la stessa fixture (prediction -> odds -> analysis) resta
+      identico a oggi. I payload sono costruiti al momento dell'accodamento,
+      quindi i VALORI (timestamp inclusi) sono identici al percorso storico.
+
+    Nota: se la stessa fixture viene ri-accodata prima del flush (caso
+    duplicati / ramo ok->error), si flusha prima, preservando l'ordine di
+    scrittura odierno.
+    """
+
+    def __init__(self, chunk_size: int = 100) -> None:
+        self.chunk_size = chunk_size
+        self._pred_rows: List[Dict[str, Any]] = []
+        self._post_ops: List[Tuple[str, int, Dict[str, Any]]] = []  # (kind, fixture_id, row)
+        self._pending_fixture_ids: Set[int] = set()
+
+    def queue_prediction(self, row: Dict[str, Any]) -> None:
+        fid = row.get("fixture_id")
+        if fid is not None and int(fid) in self._pending_fixture_ids:
+            # Stessa fixture gia' in coda: flush per mantenere l'ordine di
+            # scrittura odierno (la seconda scrittura sovrascrive la prima).
+            self.flush()
+        self._pred_rows.append(row)
+        if fid is not None:
+            self._pending_fixture_ids.add(int(fid))
+
+    def queue_odds(self, fixture_id: int, row: Dict[str, Any]) -> None:
+        self._post_ops.append(("odds", fixture_id, row))
+
+    def queue_analysis(self, fixture_id: int, row: Dict[str, Any]) -> None:
+        self._post_ops.append(("analysis", fixture_id, row))
+
+    def maybe_flush(self) -> None:
+        if len(self._pred_rows) >= self.chunk_size:
+            self.flush()
+
+    def flush(self) -> None:
+        pred_rows = self._pred_rows
+        post_ops = self._post_ops
+        self._pred_rows = []
+        self._post_ops = []
+        self._pending_fixture_ids = set()
+
+        if not pred_rows and not post_ops:
+            return
+
+        sb = get_supabase_client()
+
+        # 1) Predizioni: upsert batch; se il batch fallisce, fallback
+        #    riga-per-riga replicando la semantica per-fixture di oggi.
+        for group in _group_rows_by_keys(pred_rows):
+            try:
+                sb.table("fixture_predictions").upsert(group, on_conflict="fixture_id").execute()
+            except Exception as batch_err:
+                logger.warning(
+                    "⚠️ Upsert batch fixture_predictions fallito (%s righe): %s — fallback riga-per-riga.",
+                    len(group), batch_err,
+                )
+                for row in group:
+                    try:
+                        sb.table("fixture_predictions").upsert(row, on_conflict="fixture_id").execute()
+                    except Exception as e:
+                        if row.get("status") == "ok":
+                            # Oggi un errore di scrittura nel ramo ok viene
+                            # catturato dall'except del loop, che riscrive la
+                            # fixture con status='error': replichiamo.
+                            # (I contatori ok/err del riepilogo, solo di log,
+                            # restano quelli conteggiati all'accodamento.)
+                            logger.exception("❌ error fixture_id=%s: %s", row.get("fixture_id"), e)
+                            sb.table("fixture_predictions").upsert(
+                                _error_row_from_ok_row(row, e), on_conflict="fixture_id"
+                            ).execute()
+                        else:
+                            # Oggi un errore di scrittura nei rami
+                            # no_coverage/empty/error propaga e ferma la run.
+                            raise
+
+        # 2) Odds e analisi: UPDATE riga-per-riga nell'ordine di accodamento
+        #    (per ogni fixture: dopo la sua riga di prediction, come oggi).
+        for kind, fixture_id, row in post_ops:
+            if kind == "odds":
+                # Come upsert_odds_row: eventuali eccezioni propagano (come oggi).
+                resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+                if not getattr(resp, "data", None):
+                    logger.warning("⚠️ Nessuna riga fixture_predictions trovata per fixture_id=%s (odds non salvate)", fixture_id)
+            else:
+                # Come il blocco try/except del loop attorno a upsert_analysis_data:
+                # un errore di scrittura dell'analisi NON blocca le altre fixture.
+                try:
+                    resp = sb.table("fixture_predictions").update(row).eq("fixture_id", fixture_id).execute()
+                    if not getattr(resp, "data", None):
+                        logger.warning("Nessuna riga fixture_predictions trovata per fixture_id=%s (dati non salvati)", fixture_id)
+                except Exception as e:
+                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+
+
+# ==============================
 # Runner
 # ==============================
 
@@ -1440,210 +1657,239 @@ def run_for_date(target_date: str) -> None:
     skipped_count = 0
     skipped_existing_count = 0
 
-    for fx in fixtures:
-        ctx = extract_fixture_context(fx)
-        if ctx is None:
-            skipped_count += 1
-            logger.warning("⚠️ Fixture con dati incompleti (no fixture_id/league_id/season), skip.")
-            continue
+    # ✅ PREFETCH BATCH: una query (a chunk) al posto di ~1 SELECT per fixture.
+    # Stessa condizione di prediction_already_done (status='ok' E ht_predictions
+    # non nullo). Il set viene aggiornato dopo ogni scrittura "ok" del loop per
+    # replicare il comportamento del check per-fixture anche su eventuali
+    # fixture duplicate nella stessa run.
+    all_fixture_ids: List[int] = []
+    for _fx in fixtures:
+        _fid = (_fx.get("fixture") or {}).get("id")
+        if _fid is not None:
+            all_fixture_ids.append(int(_fid))
+    done_fixture_ids = prefetch_predictions_done(all_fixture_ids)
 
-        fixture_id = ctx["fixture_id"]
-        league_id = ctx["league_id"]
-        season_year = ctx["season_year"]
+    # Writer differito: batcha gli upsert di fixture_predictions a blocchi,
+    # mantenendo per ogni fixture l'ordine prediction -> odds -> analysis.
+    writer = _DeferredWriter(chunk_size=100)
 
-        # ✅ SKIP se già fatto (status='ok')
-        if prediction_already_done(fixture_id):
-            skipped_existing_count += 1
-            logger.info("⏭️ skip fixture_id=%s (prediction già presente: status=ok)", fixture_id)
-            continue
+    try:
+        for fx in fixtures:
+            # Flush a blocchi: sicuro qui perche' tra un'iterazione e l'altra
+            # non ci sono scritture "a meta'" per una singola fixture.
+            writer.maybe_flush()
 
-        now_iso = datetime.now(timezone.utc).isoformat()
+            ctx = extract_fixture_context(fx)
+            if ctx is None:
+                skipped_count += 1
+                logger.warning("⚠️ Fixture con dati incompleti (no fixture_id/league_id/season), skip.")
+                continue
 
-        # Coverage check
-        has_predictions = predictions_coverage_true(league_id, season_year, coverage_cache)
+            fixture_id = ctx["fixture_id"]
+            league_id = ctx["league_id"]
+            season_year = ctx["season_year"]
 
-        if not has_predictions:
-            row = {
-                **ctx,
-                "status": "no_coverage",
-                "error_message": None,
+            # ✅ SKIP se già fatto (status='ok') — check sul set prefetchato
+            if fixture_id in done_fixture_ids:
+                skipped_existing_count += 1
+                logger.info("⏭️ skip fixture_id=%s (prediction già presente: status=ok)", fixture_id)
+                continue
 
-                "raw_json": None,
-                "flat_summary": None,
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-                "winner_team_id": None,
-                "winner_name": None,
-                "winner_comment": None,
-                "win_or_draw": None,
-                "advice": None,
-                "percent_home": None,
-                "percent_draw": None,
-                "percent_away": None,
-                "under_over_line": None,
-                "goals_home_line": None,
-                "goals_away_line": None,
+            # Coverage check
+            has_predictions = predictions_coverage_true(league_id, season_year, coverage_cache)
 
-                "updated_at": now_iso,
-            }
-            upsert_prediction_row(row)
-            no_cov_count += 1
-            logger.info("⏭️ no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-            # dopo prediction, inserisco odds per questo fixture
-            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                upsert_odds_row(fixture_id, odds_item)
-                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-            else:
-                upsert_odds_row(fixture_id, None)
-                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+            if not has_predictions:
+                row = {
+                    **ctx,
+                    "status": "no_coverage",
+                    "error_message": None,
 
-            # db_json_analisi (sempre)
+                    "raw_json": None,
+                    "flat_summary": None,
+
+                    "winner_team_id": None,
+                    "winner_name": None,
+                    "winner_comment": None,
+                    "win_or_draw": None,
+                    "advice": None,
+                    "percent_home": None,
+                    "percent_draw": None,
+                    "percent_away": None,
+                    "under_over_line": None,
+                    "goals_home_line": None,
+                    "goals_away_line": None,
+
+                    "updated_at": now_iso,
+                }
+                writer.queue_prediction(row)
+                no_cov_count += 1
+                logger.info("⏭️ no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                # dopo prediction, inserisco odds per questo fixture
+                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
+                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                else:
+                    writer.queue_odds(fixture_id, _build_odds_row(None))
+                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+                # db_json_analisi (sempre)
+                try:
+                    res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                    if res:
+                        analysis_json, ht_pred = res
+                        writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
+                except Exception as e:
+                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                continue
+
+            # Call predictions
+            logger.info("🔮 /predictions fixture_id=%s", fixture_id)
+            data = api.call("/predictions", params={"fixture": str(fixture_id)})
+
+            resp_list = (data or {}).get("response") or []
+
+            if not data or len(resp_list) == 0:
+                row = {
+                    **ctx,
+                    "status": "empty",
+                    "error_message": None,
+
+                    "raw_json": data if data else None,
+                    "flat_summary": None,
+
+                    "winner_team_id": None,
+                    "winner_name": None,
+                    "winner_comment": None,
+                    "win_or_draw": None,
+                    "advice": None,
+                    "percent_home": None,
+                    "percent_draw": None,
+                    "percent_away": None,
+                    "under_over_line": None,
+                    "goals_home_line": None,
+                    "goals_away_line": None,
+
+                    "updated_at": now_iso,
+                }
+                writer.queue_prediction(row)
+                empty_count += 1
+                logger.warning("⚠️ empty fixture_id=%s", fixture_id)
+                # dopo prediction, inserisco odds per questo fixture
+                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
+                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                else:
+                    writer.queue_odds(fixture_id, _build_odds_row(None))
+                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+                # db_json_analisi (sempre)
+                try:
+                    res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                    if res:
+                        analysis_json, ht_pred = res
+                        writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
+                except Exception as e:
+                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                continue
+
             try:
-                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                if res:
-                    analysis_json, ht_pred = res
-                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
+                pred_obj = resp_list[0]
+                promoted, summary = build_promoted_and_summary(pred_obj)
+
+                row = {
+                    **ctx,
+                    "status": "ok",
+                    "error_message": None,
+
+                    "raw_json": data,
+                    "flat_summary": summary,
+
+                    **promoted,
+
+                    "updated_at": now_iso,
+                }
+                writer.queue_prediction(row)
+                ok_count += 1
+                logger.info("✅ ok fixture_id=%s", fixture_id)
+
+                # dopo prediction, inserisco odds per questo fixture
+                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
+                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                else:
+                    writer.queue_odds(fixture_id, _build_odds_row(None))
+                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+
+                # db_json_analisi (sempre)
+                try:
+                    res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                    if res:
+                        analysis_json, ht_pred = res
+                        writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
+                        # Da questo momento la fixture soddisfa la condizione di
+                        # prediction_already_done (status='ok' + ht_predictions):
+                        # aggiorna il set per eventuali ri-controlli nella stessa run.
+                        done_fixture_ids.add(fixture_id)
+                except Exception as e:
+                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+
             except Exception as e:
-                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
-            continue
+                row = {
+                    **ctx,
+                    "status": "error",
+                    "error_message": str(e)[:500],
 
-        # Call predictions
-        logger.info("🔮 /predictions fixture_id=%s", fixture_id)
-        data = api.call("/predictions", params={"fixture": str(fixture_id)})
+                    "raw_json": data if data else None,
+                    "flat_summary": None,
 
-        resp_list = (data or {}).get("response") or []
+                    "winner_team_id": None,
+                    "winner_name": None,
+                    "winner_comment": None,
+                    "win_or_draw": None,
+                    "advice": None,
+                    "percent_home": None,
+                    "percent_draw": None,
+                    "percent_away": None,
+                    "under_over_line": None,
+                    "goals_home_line": None,
+                    "goals_away_line": None,
 
-        if not data or len(resp_list) == 0:
-            row = {
-                **ctx,
-                "status": "empty",
-                "error_message": None,
+                    "updated_at": now_iso,
+                }
+                writer.queue_prediction(row)
+                err_count += 1
+                logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
 
-                "raw_json": data if data else None,
-                "flat_summary": None,
+                # dopo prediction (errore), inserisco odds per questo fixture
+                if odds_coverage_true(league_id, season_year, odds_coverage_cache):
+                    odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
+                    odds_item = extract_odds_for_fixture(odds_json, fixture_id)
+                    writer.queue_odds(fixture_id, _build_odds_row(odds_item))
+                    logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
+                else:
+                    writer.queue_odds(fixture_id, _build_odds_row(None))
+                    logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
 
-                "winner_team_id": None,
-                "winner_name": None,
-                "winner_comment": None,
-                "win_or_draw": None,
-                "advice": None,
-                "percent_home": None,
-                "percent_draw": None,
-                "percent_away": None,
-                "under_over_line": None,
-                "goals_home_line": None,
-                "goals_away_line": None,
-
-                "updated_at": now_iso,
-            }
-            upsert_prediction_row(row)
-            empty_count += 1
-            logger.warning("⚠️ empty fixture_id=%s", fixture_id)
-            # dopo prediction, inserisco odds per questo fixture
-            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                upsert_odds_row(fixture_id, odds_item)
-                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-            else:
-                upsert_odds_row(fixture_id, None)
-                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-
-            # db_json_analisi (sempre)
-            try:
-                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                if res:
-                    analysis_json, ht_pred = res
-                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
-            except Exception as e:
-                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
-            continue
-
-        try:
-            pred_obj = resp_list[0]
-            promoted, summary = build_promoted_and_summary(pred_obj)
-
-            row = {
-                **ctx,
-                "status": "ok",
-                "error_message": None,
-
-                "raw_json": data,
-                "flat_summary": summary,
-
-                **promoted,
-
-                "updated_at": now_iso,
-            }
-            upsert_prediction_row(row)
-            ok_count += 1
-            logger.info("✅ ok fixture_id=%s", fixture_id)
-
-            # dopo prediction, inserisco odds per questo fixture
-            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                upsert_odds_row(fixture_id, odds_item)
-                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-            else:
-                upsert_odds_row(fixture_id, None)
-                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-
-            # db_json_analisi (sempre)
-            try:
-                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                if res:
-                    analysis_json, ht_pred = res
-                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
-            except Exception as e:
-                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
-
-        except Exception as e:
-            row = {
-                **ctx,
-                "status": "error",
-                "error_message": str(e)[:500],
-
-                "raw_json": data if data else None,
-                "flat_summary": None,
-
-                "winner_team_id": None,
-                "winner_name": None,
-                "winner_comment": None,
-                "win_or_draw": None,
-                "advice": None,
-                "percent_home": None,
-                "percent_draw": None,
-                "percent_away": None,
-                "under_over_line": None,
-                "goals_home_line": None,
-                "goals_away_line": None,
-
-                "updated_at": now_iso,
-            }
-            upsert_prediction_row(row)
-            err_count += 1
-            logger.exception("❌ error fixture_id=%s: %s", fixture_id, e)
-
-            # dopo prediction (errore), inserisco odds per questo fixture
-            if odds_coverage_true(league_id, season_year, odds_coverage_cache):
-                odds_json = fetch_odds_for_league_season(api, league_id, season_year, odds_cache)
-                odds_item = extract_odds_for_fixture(odds_json, fixture_id)
-                upsert_odds_row(fixture_id, odds_item)
-                logger.info("💾 odds salvate per fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-            else:
-                upsert_odds_row(fixture_id, None)
-                logger.info("⏭️ odds no_coverage fixture_id=%s (league_id=%s season=%s)", fixture_id, league_id, season_year)
-
-            # db_json_analisi (sempre)
-            try:
-                res = compute_db_json_analisi(ctx, match_cache, xg_cache)
-                if res:
-                    analysis_json, ht_pred = res
-                    upsert_analysis_data(fixture_id, analysis_json, ht_pred)
-            except Exception as e:
-                logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+                # db_json_analisi (sempre)
+                try:
+                    res = compute_db_json_analisi(ctx, match_cache, xg_cache)
+                    if res:
+                        analysis_json, ht_pred = res
+                        writer.queue_analysis(fixture_id, _build_analysis_row(fixture_id, analysis_json, ht_pred))
+                except Exception as e:
+                    logger.warning("db_json_analisi failed fixture_id=%s: %s", fixture_id, e)
+    finally:
+        # Flush finale garantito: anche se la run si interrompe, quanto gia'
+        # accodato viene scritto (oggi a quel punto sarebbe gia' su DB).
+        writer.flush()
 
     logger.info(
         "🏁 RIEPILOGO %s → ok=%s empty=%s no_coverage=%s error=%s skipped=%s skipped_existing=%s",
@@ -1679,6 +1925,10 @@ def run_for_date(target_date: str) -> None:
         logger.info("🧠 tactical_engine %s → %s", target_date, _te_res)
     except Exception as e:  # noqa: BLE001
         logger.warning("tactical_engine non eseguito per %s: %s", target_date, e)
+
+    # Flush esplicito del buffer di log API (oltre alla garanzia atexit):
+    # non solleva mai eccezioni verso il chiamante.
+    flush_api_log()
 
 
 def main() -> None:

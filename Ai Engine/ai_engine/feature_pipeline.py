@@ -517,9 +517,45 @@ def build_feature_dataframe_for_fixtures(
     include_team_window_stats: bool = True,
     pre_match: bool = False,
     match_history_df: pd.DataFrame | None = None,
+    history_fetch_cache: Dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     if fixtures_df.empty:
         return pd.DataFrame()
+
+    # history_fetch_cache (opzionale, fornito dal serving): memoizza le righe
+    # GREZZE dei fetch che dipendono SOLO dallo storico della lega
+    # (match_events/match_team_stats/match_player_stats su history_fixture_ids
+    # + standings su league_seasons_tuples), identiche per ogni fixture della
+    # stessa lega. Il chiamante DEVE passare lo stesso dict solo insieme alla
+    # stessa history_df/league_seasons (in predict_fixture vivono nella stessa
+    # entry di cache per-lega). Le odds della fixture NON sono mai cachate qui
+    # (dipendono dalla fixture). Il filtro anti-leakage per-fixture (merge_asof
+    # backward, H2H "< match_date", ELO pre-match) resta a valle e viene
+    # ri-applicato per ogni fixture: qui si riusano solo dati a monte del cutoff.
+    def _cached_fetch(cache_key: str, fetch_fn):
+        if history_fetch_cache is not None and cache_key in history_fetch_cache:
+            return history_fetch_cache[cache_key]
+        rows = fetch_fn()
+        if history_fetch_cache is not None:
+            history_fetch_cache[cache_key] = rows
+        return rows
+
+    # Come _cached_fetch, ma per i DataFrame CALCOLATI dallo storico di lega
+    # (aggregazioni pesanti: build_team_window_stats ~70% del tempo warm,
+    # _build_historical_team_features ~25%). Sono pure funzioni degli input di
+    # lega gia' cachati (history_df + righe grezze storiche + costanti), quindi
+    # il risultato e' identico per ogni fixture della stessa lega. Si restituisce
+    # SEMPRE una .copy() (anche al primo calcolo) cosi' eventuali mutazioni a
+    # valle (merge/rename) non possono propagarsi tra fixture: ogni chiamata
+    # riceve un oggetto equivalente a quello che oggi ricalcolerebbe da zero.
+    def _cached_df(cache_key: str, compute_fn):
+        if history_fetch_cache is not None and cache_key in history_fetch_cache:
+            return history_fetch_cache[cache_key].copy()
+        df = compute_fn()
+        if history_fetch_cache is not None:
+            history_fetch_cache[cache_key] = df
+            return df.copy()
+        return df
 
     fixture_ids = fixtures_df["fixture_id"].dropna().astype(int).tolist()
 
@@ -554,24 +590,33 @@ def build_feature_dataframe_for_fixtures(
         # use historical aggregates
         history_fixture_ids = history_df["fixture_id"].dropna().astype(int).tolist()
         if include_events:
-            events_rows = fetch_related_by_fixture_ids(
+            events_rows = _cached_fetch(
                 "match_events",
-                history_fixture_ids,
-                "fixture_id,team_id,event_type,detail,minute",
+                lambda: fetch_related_by_fixture_ids(
+                    "match_events",
+                    history_fixture_ids,
+                    "fixture_id,team_id,event_type,detail,minute",
+                ),
             )
         if include_team_stats:
-            team_stats_rows = fetch_related_by_fixture_ids(
+            team_stats_rows = _cached_fetch(
                 "match_team_stats",
-                history_fixture_ids,
-                "fixture_id,team_id,stat_type,value_numeric",
+                lambda: fetch_related_by_fixture_ids(
+                    "match_team_stats",
+                    history_fixture_ids,
+                    "fixture_id,team_id,stat_type,value_numeric",
+                ),
             )
         if include_player_stats:
-            player_stats_rows = fetch_related_by_fixture_ids(
+            player_stats_rows = _cached_fetch(
                 "match_player_stats",
-                history_fixture_ids,
-                "fixture_id,team_id,minutes,rating,shots_total,shots_on,goals_total,assists_total,"
-                "passes_total,passes_key,passes_accurate,tackles_total,interceptions,duels_total,duels_won,"
-                "dribbles_attempts,dribbles_success,fouls_drawn,fouls_committed,yellow_cards,red_cards,offsides",
+                lambda: fetch_related_by_fixture_ids(
+                    "match_player_stats",
+                    history_fixture_ids,
+                    "fixture_id,team_id,minutes,rating,shots_total,shots_on,goals_total,assists_total,"
+                    "passes_total,passes_key,passes_accurate,tackles_total,interceptions,duels_total,duels_won,"
+                    "dribbles_attempts,dribbles_success,fouls_drawn,fouls_committed,yellow_cards,red_cards,offsides",
+                ),
             )
         # odds for fixture (pre-match)
         if include_odds:
@@ -609,9 +654,15 @@ def build_feature_dataframe_for_fixtures(
                 "passes_total,passes_key,passes_accurate,tackles_total,interceptions,duels_total,duels_won,"
                 "dribbles_attempts,dribbles_success,fouls_drawn,fouls_committed,yellow_cards,red_cards,offsides",
             )
-    standings_rows = fetch_standings_by_league_seasons(league_seasons_tuples)
+    standings_rows = _cached_fetch(
+        "standings",
+        lambda: fetch_standings_by_league_seasons(league_seasons_tuples),
+    )
 
-    events_df = _events_features(events_rows) if include_events else pd.DataFrame()
+    events_df = (
+        _cached_df("computed:events_df", lambda: _events_features(events_rows))
+        if include_events else pd.DataFrame()
+    )
     odds_df = _odds_features(odds_rows) if include_odds else pd.DataFrame()
     if include_odds and pre_match and "raw_json_odds" in fixtures_df.columns:
         raw_odds_df = _odds_features_from_raw_json(fixtures_df)
@@ -625,18 +676,35 @@ def build_feature_dataframe_for_fixtures(
                     merged[base_col] = merged[base_col].combine_first(merged[col])
                 merged.drop(columns=[col], inplace=True)
             odds_df = merged
-    team_stats_df = _team_stats_features(team_stats_rows) if include_team_stats else pd.DataFrame()
-    player_stats_df = _player_stats_features(player_stats_rows) if include_player_stats else pd.DataFrame()
+    team_stats_df = (
+        _cached_df("computed:team_stats_df", lambda: _team_stats_features(team_stats_rows))
+        if include_team_stats else pd.DataFrame()
+    )
+    player_stats_df = (
+        _cached_df("computed:player_stats_df", lambda: _player_stats_features(player_stats_rows))
+        if include_player_stats else pd.DataFrame()
+    )
 
     hist_team_df = pd.DataFrame()
     if pre_match:
-        hist_team_df = _build_historical_team_features(
-            history_df, events_rows, team_stats_rows, player_stats_rows
+        # Dipende dalle righe grezze selezionate dai flag include_*: la chiave
+        # li incorpora, cosi' chiamate con flag diversi non condividono la cache.
+        hist_team_df = _cached_df(
+            f"computed:hist_team_df:{include_events}:{include_team_stats}:{include_player_stats}",
+            lambda: _build_historical_team_features(
+                history_df, events_rows, team_stats_rows, player_stats_rows
+            ),
         )
     team_window_stats_df = pd.DataFrame()
     if pre_match and include_team_window_stats and not history_df.empty:
-        team_window_stats_df = build_team_window_stats(history_df, FORM_WINDOWS)
-    standings_df = _standings_features(standings_rows)
+        # FORM_WINDOWS e' una costante di modulo: history_df e' l'unico input.
+        team_window_stats_df = _cached_df(
+            "computed:team_window_stats_df",
+            lambda: build_team_window_stats(history_df, FORM_WINDOWS),
+        )
+    standings_df = _cached_df(
+        "computed:standings_df", lambda: _standings_features(standings_rows)
+    )
 
     # Base merge
     base = fixtures_df.copy()

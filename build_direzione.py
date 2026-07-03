@@ -28,19 +28,29 @@ def bucket_series(p: pd.Series) -> pd.Series:
     return pd.cut(p, BINS, labels=LBL, include_lowest=True, right=False).astype("object")
 
 
+PAGE = 5000  # page size RICHIESTA per la paginazione (il server puo' capparla, es. a 1000)
+
+
 def load() -> pd.DataFrame:
     from db_client import get_supabase_client
     sb = get_supabase_client()
+    # SOLO le colonne usate dal calcolo: league_id/market/selection (groupby),
+    # hit (esito), poisson_prob/ml_prob/tacticai_prob (ENGINES). fixture_id
+    # serve solo come ORDER BY server-side per paginazione stabile, non si scarica.
     cols = "league_id,market,selection,hit,poisson_prob,ml_prob,tacticai_prob"
     rows, start = [], 0
     while True:
         d = (sb.table("bet_features").select(cols)
              .eq("settled", True).in_("market", CAL_MARKETS)
-             .order("fixture_id").range(start, start + 999).execute().data)
+             .order("fixture_id").range(start, start + PAGE - 1).execute().data)
         rows.extend(d)
-        if len(d) < 1000:
+        # Termina SOLO a pagina vuota: il server puo' restituire meno di PAGE
+        # righe anche a meta' storico (cap PostgREST max-rows), quindi
+        # len(d) < PAGE NON implica fine dati. Si avanza di quanto RICEVUTO:
+        # nessuna riga saltata o duplicata, stesso set di righe di prima.
+        if not d:
             break
-        start += 1000
+        start += len(d)
     df = pd.DataFrame(rows)
     # scarta righe senza esito (hit NULL): astype(bool) su NaN darebbe True -> falserebbe l'hit_rate
     df = df[df["hit"].notna()].copy()
