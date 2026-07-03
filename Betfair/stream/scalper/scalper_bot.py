@@ -191,6 +191,7 @@ class _Slot:
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
     submin_count: int = 0                # sequenze create nel ciclo corrente (tetto)
     swing: bool = False                  # ciclo originato dal trend (target/stop swing)
+    inplay_cycle: bool = False           # ciclo aperto in-play (per circuit breaker)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
     drift_samples: Deque[Tuple[int, float]] = field(
@@ -709,6 +710,7 @@ class ScalperStrategy(BaseStrategy):
                     el = (now - ko) / 1000.0 if ko else None
                     if el is None or not (self.inplay_from_s <= el <= self.inplay_to_s):
                         continue
+                slot.inplay_cycle = inplay
                 if inplay and self.max_inplay_slots > 0:
                     busy = sum(
                         1 for s in self._slots.values()
@@ -1508,6 +1510,16 @@ class ScalperStrategy(BaseStrategy):
             self.stats["flattens"] += 1
             self.stats["pnl_locked"] += net_lose
             self._emit("flatten_done", locked=round(net_lose, 4))
+            if (
+                self.cycle_loss_breaker > 0
+                and net_lose <= -self.cycle_loss_breaker
+                and slot.inplay_cycle
+                and not self.force_flat
+            ):
+                # slippage di latenza in-play: un solo ciclo cosi' negativo
+                # significa che il book e' invalicabile -> stop TOTALE evento
+                self.force_flat = True
+                self._emit("circuit_breaker", locked=round(net_lose, 2))
             return
         # un flatten vivo ma STANTIO (il book si e' allontanato: non fillera')
         # va cancellato e ripiazzato piu' aggressivo al giro dopo

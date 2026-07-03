@@ -59,6 +59,7 @@ UI_PARAM_WHITELIST = {
     "cooldown_ms", "flatten_before_s", "entry_stop_before_s", "wom_block",
     "entry_ttl_ms", "lock_ttl_ms", "max_cycles", "max_txn_hour",
     "event_profit_target", "event_target_giveback", "event_loss_cap",
+    "ht_mode",
     "flow_balance_min", "flow_balance_window_ms", "min_inside_flow",
     "require_oscillation", "trend_mode", "max_drift_ticks",
 }
@@ -243,7 +244,22 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         params["dry_run"] = bool(control.get("dry_run", True))
         params["bias"] = {str(k): v for k, v in bias.items()}
         params["only_bias"] = mode == "bias"
-        params["allow_inplay"] = False
+        # MODALITA' INTERVALLO (ht_mode, whitelistata): dopo il pre-match il
+        # bot tradera' ANCHE l'intervallo (48'-59', zero rischio gol) con le
+        # blindature certificate 03/07: finestra ingressi, max 3 cicli
+        # concorrenti, circuit-breaker per-ciclo 0.50, cap evento 1.0.
+        # Regola operativa: SOLO su partite habitat/GO (le elite non si
+        # armano affatto: il loro intervallo e' invalicabile, -8 misurato).
+        ht_mode = bool((control.get("params") or {}).get("ht_mode"))
+        if ht_mode:
+            params["allow_inplay"] = True
+            params.setdefault("inplay_from_s", 2880.0)
+            params.setdefault("inplay_to_s", 3540.0)
+            params.setdefault("max_inplay_slots", 3)
+            params.setdefault("cycle_loss_breaker", 0.50)
+            params.setdefault("event_loss_cap", 1.0)
+        else:
+            params["allow_inplay"] = False
 
         price_max = float(params.get("price_max", 4.6))
         cap = params["stake"] * (price_max - 1.0) * 2.0
@@ -295,7 +311,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 db.log(ev, "info", {"msg": "stop richiesto: force-flat"})
                 time.sleep(12)   # tempo per chiudere flat da maker/cross
                 break
-            if ko_ts is not None and time.time() > ko_ts + 600:
+            _life_s = 4200 if ht_mode else 600   # HT: vivo fino a ~KO+70'
+            if ko_ts is not None and time.time() > ko_ts + _life_s:
                 db.log(ev, "info", {"msg": "kickoff passato: fine sessione"})
                 break
         try:
