@@ -189,6 +189,8 @@ class _Slot:
     # prints DENTRO lo spread (ts, EUR): il CIBO diretto dei maker
     flow_inside: Deque[Tuple[int, float]] = field(default_factory=lambda: deque(maxlen=512))
     t_last_submin: int = 0               # rate-limit creazione submin (anti-cascata)
+    submin_count: int = 0                # sequenze create nel ciclo corrente (tetto)
+    swing: bool = False                  # ciclo originato dal trend (target/stop swing)
     # campioni RADI del micro-price (1 ogni ~30s) per la deriva di lungo
     # periodo: history (maxlen 64) copre solo secondi sui mercati veloci
     drift_samples: Deque[Tuple[int, float]] = field(
@@ -244,6 +246,15 @@ class ScalperStrategy(BaseStrategy):
         self.lock_ttl_ms: int = int(c.get("lock_ttl_ms", 3_600_000))
         self.max_cycles: int = int(c.get("max_cycles", 500))
         self.allow_inplay: bool = bool(c.get("allow_inplay", False))
+        # FINESTRA IN-PLAY (solo backtest/HT-trading): con allow_inplay=True,
+        # ingressi consentiti SOLO tra from/to secondi dopo il KO (es.
+        # intervallo: 2900-3600 = ~48'-60', zero rischio gol). 0/0 = sempre.
+        self.inplay_from_s: float = float(c.get("inplay_from_s", 0.0))
+        self.inplay_to_s: float = float(c.get("inplay_to_s", 0.0))
+        # tetto di CONCORRENZA in-play: max cicli aperti simultanei (la
+        # latenza 5.5s fa slittare gli stop: N slot che perdono INSIEME
+        # sfondano il loss cap — visto -8.41 con cap 1.5 su elite HT)
+        self.max_inplay_slots: int = int(c.get("max_inplay_slots", 2))
         # chiusura forzata N secondi prima del kickoff (0 = disattivata).
         # Evita di restare con posizioni NUDE al passaggio in-play.
         self.flatten_before_s: float = float(c.get("flatten_before_s", 180.0))
@@ -311,6 +322,12 @@ class ScalperStrategy(BaseStrategy):
 
         # ---- modalita' JOIN (spread stretto) ----
         self.join_max_spread: int = int(c.get("join_max_spread", 2))
+        # PRE-POSIZIONAMENTO (quote-behind, "layering" genuino): quota le due
+        # gambe N tick DIETRO il touch. Al flip del prezzo la nostra quota E'
+        # il nuovo touch con MASSIMA anzianita' di coda (la coda nuova riparte
+        # da zero e noi c'eravamo gia'); la cattura vale spread+2N tick.
+        # Fill piu' rari ma in prima fila e a prezzo migliore. 0 = off (touch).
+        self.join_offset_ticks: int = max(0, int(c.get("join_offset_ticks", 0)))
         # se spread>=2, migliora di 1 tick il lato con la coda peggiore (priorita')
         self.improve_inside: bool = bool(c.get("improve_inside", True))
         # requota se il book si sposta di N tick dalle nostre quote inevase
@@ -411,6 +428,13 @@ class ScalperStrategy(BaseStrategy):
         self.trend_mode: bool = bool(c.get("trend_mode", False))
         self.trend_min_ticks: float = float(c.get("trend_min_ticks", 3.0))
         self.trend_flow_ratio: float = float(c.get("trend_flow_ratio", 1.5))
+        # SWING (costruzione surebet): gli ingressi originati dal trend usano
+        # target/stop DEDICATI piu' larghi: al target la copertura blocca
+        # profitto su ogni esito (= surebet della selezione). swing_only=True
+        # spegne il maker simmetrico (si opera SOLO col segnale di trend).
+        self.swing_target_ticks: int = int(c.get("swing_target_ticks", 0))
+        self.swing_stop_ticks: int = int(c.get("swing_stop_ticks", 0))
+        self.swing_only: bool = bool(c.get("swing_only", False))
 
         # ---- TARGET E TETTO DI PERDITA PER EVENTO (0 = off) ----
         # profit target con CRICCHETTO: raggiunto il target si continua, ma
@@ -680,6 +704,18 @@ class ScalperStrategy(BaseStrategy):
             if slot.status == IDLE:
                 if inplay and not self.allow_inplay:
                     continue
+                if inplay and self.inplay_to_s > 0:
+                    ko = self._ko_epoch_ms(market_book)
+                    el = (now - ko) / 1000.0 if ko else None
+                    if el is None or not (self.inplay_from_s <= el <= self.inplay_to_s):
+                        continue
+                if inplay and self.max_inplay_slots > 0:
+                    busy = sum(
+                        1 for s in self._slots.values()
+                        if s.status not in (IDLE, DONE)
+                    )
+                    if busy >= self.max_inplay_slots:
+                        continue
                 if not inplay and self.entry_stop_before_s > 0:
                     ko = self._ko_epoch_ms(market_book)
                     if ko is not None and (ko - now) / 1000.0 <= self.entry_stop_before_s:
@@ -813,10 +849,15 @@ class ScalperStrategy(BaseStrategy):
                     elif dr > 0 and fl >= self.trend_flow_ratio * max(fb, 1e-9):
                         side_bias = "LAY"
                     if side_bias is not None:
+                        slot.swing = True
                         self.stats["trend_entries"] += 1
                         self._emit("trend_surf", selection_id=int(runner.selection_id),
                                    side=side_bias, drift=round(dr, 1),
                                    fb=round(fb, 0), fl=round(fl, 0))
+            if side_bias is None:
+                slot.swing = False
+                if self.swing_only:
+                    return  # solo swing: senza segnale di trend non si quota
             if side_bias is not None:
                 if st > self.join_max_spread:
                     return
@@ -923,10 +964,16 @@ class ScalperStrategy(BaseStrategy):
         bb = get_nearest_price(best_back)
         bl = get_nearest_price(best_lay)
         back_price, lay_price = bl, bb  # join puro: cattura = st tick
-        if self.improve_inside and st >= 3:
+        if self.join_offset_ticks > 0:
+            # pre-posizionamento DIETRO il touch: prima fila alle code nuove
+            back_price = price_ticks_away(bl, +self.join_offset_ticks)
+            lay_price = price_ticks_away(bb, -self.join_offset_ticks)
+            if lay_price is None or lay_price <= 1.0 or back_price is None:
+                return
+        elif self.improve_inside and st >= 3:
             back_price = price_ticks_away(bl, -1)
             lay_price = price_ticks_away(bb, +1)
-        elif self.improve_inside and st == 2:
+        elif self.join_offset_ticks == 0 and self.improve_inside and st == 2:
             # 1 solo tick di room dentro: migliora il lato con coda peggiore.
             # La nostra LAY fa la coda su atb (size_back); il nostro BACK su
             # atl (size_lay).
@@ -1289,7 +1336,9 @@ class ScalperStrategy(BaseStrategy):
             # Con stop_ticks_far attivo lo stop si ADATTA al tempo al KO:
             # largo quando il KO e' lontano (pazienza da maker), stretto sotto.
             eff_stop = self.stop_ticks
-            if self.stop_ticks_far > self.stop_ticks:
+            if slot.swing and self.swing_stop_ticks > 0:
+                eff_stop = self.swing_stop_ticks
+            elif self.stop_ticks_far > self.stop_ticks:
                 ko = self._ko_epoch_ms(market_book)
                 if ko is not None:
                     left = max(0.0, (ko - now) / 1000.0)
@@ -1394,12 +1443,15 @@ class ScalperStrategy(BaseStrategy):
         # prezzo target della chiusura (+scalp_ticks a nostro favore).
         # IMPORTANTE: price_ticks_away esige un prezzo ESATTAMENTE sulla ladder,
         # ma OB/OL (average_price_matched) sono float grezzi -> snap obbligatorio.
+        t_ticks = self.scalp_ticks
+        if slot.swing and self.swing_target_ticks > 0:
+            t_ticks = self.swing_target_ticks
         if slot.entry_side == "BACK":
             base_p = get_nearest_price(ob) if (ob and ob > 1.0) else None
-            target = price_ticks_away(base_p, -self.scalp_ticks) if base_p else None
+            target = price_ticks_away(base_p, -t_ticks) if base_p else None
         else:
             base_p = get_nearest_price(ol) if (ol and ol > 1.0) else None
-            target = price_ticks_away(base_p, +self.scalp_ticks) if base_p else None
+            target = price_ticks_away(base_p, +t_ticks) if base_p else None
         g = compute_green(net_win, net_lose, target) if target else None
         if g is None:
             # impossibile bloccare un profitto a target: NON lasciare la posizione
@@ -1463,6 +1515,12 @@ class ScalperStrategy(BaseStrategy):
             if not self._has_live(o):
                 continue
             p = float(getattr(getattr(o, "order_type", None), "price", 0.0) or 0.0)
+            # i PARK delle sequenze exact (BACK@1000 / LAY@1.01) sono
+            # imabbinabili PER DESIGN: non sono flatten stantii, NON vanno
+            # cancellati qui (il 03/07 questo li uccideva ogni 1.5s e la
+            # sequenza park-trim-replace non completava mai → churn di txn)
+            if p >= 999.0 or p <= 1.011:
+                continue
             side = (getattr(o, "side", "") or "").upper()
             stale = (
                 side == "LAY" and best_back is not None and p < best_back - _EPS
@@ -1723,7 +1781,9 @@ class ScalperStrategy(BaseStrategy):
 
     # anti-cascata (lezione live 02/07: un flatten in trend genero' 2355
     # sequenze): UNA sequenza per slot, creazione al piu' ogni 3 s.
-    _SUBMIN_MIN_INTERVAL_MS = 3000
+    _SUBMIN_MIN_INTERVAL_MS = 30_000   # briglia dura (03/07 sera: il flatten
+    # ricreava la sequenza ogni 5s pur con l'ordine gia' a riposo al target)
+    _SUBMIN_MAX_PER_CYCLE = 5
 
     def _cancel_submins(self, market: Any, slot: _Slot) -> None:
         """Cancella le sequenze exact dello slot (ordini gia' tracciati)."""
@@ -1771,11 +1831,26 @@ class ScalperStrategy(BaseStrategy):
         import time as _t
         now_ms = int(_t.time() * 1000)
         rate_ok = now_ms - (slot.t_last_submin or 0) >= self._SUBMIN_MIN_INTERVAL_MS
+        # tetto per ciclo: oltre, il residuo (comunque <=0.25 di rischio) si
+        # accetta come micro e si smette di creare sequenze
+        if getattr(slot, "submin_count", 0) >= self._SUBMIN_MAX_PER_CYCLE:
+            self._emit("min_bet_skip", selection_id=int(selection_id),
+                       side=side, size=rest)
+            return main_order
         if (slot.status == FLATTENING and main_order is not None) or not rate_ok:
             self._emit("min_bet_skip", selection_id=int(selection_id),
                        side=side, size=rest)
             return main_order
         if slot.submins:
+            for entry in slot.submins:
+                st_old = entry.get("state")
+                if (
+                    st_old is not None
+                    and st_old.side == side.lower()
+                    and abs(st_old.target_size - rest) < 0.05
+                    and abs(st_old.target_price - price) < 0.021
+                ):
+                    return main_order  # sequenza equivalente gia' in corso
             self._cancel_submins(market, slot)
         try:
             state = SubminState(
@@ -1801,6 +1876,7 @@ class ScalperStrategy(BaseStrategy):
             slot.submins.append({"state": state, "ops": ops, "order": None,
                                  "ref": ref, "market_id": market.market_id})
             slot.t_last_submin = now_ms
+            slot.submin_count = getattr(slot, "submin_count", 0) + 1
             self._emit("submin_start", selection_id=int(selection_id),
                        side=side, size=rest, price=price)
         except Exception as exc:  # noqa: BLE001 - mai bloccare l'uscita principale
@@ -1892,6 +1968,7 @@ class ScalperStrategy(BaseStrategy):
         slot.close = None
         slot.close_scratched = False
         slot.residual_ok = False
+        slot.submin_count = 0
         slot.next_entry = None
         slot.flatten_orders = []
         slot.flat_tries = 0
