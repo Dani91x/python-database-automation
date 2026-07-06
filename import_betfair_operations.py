@@ -133,30 +133,20 @@ def build_context(fp: dict, direction, result_ft):
     return {"predictions": predictions, "directions": direction, "result": result, "hits": hits}
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--date", default="", help="giorno operativo YYYY-MM-DD (default: ieri)")
-    ap.add_argument("--dry-run", action="store_true", help="non scrive: stampa le righe")
-    args = ap.parse_args()
-
-    day = (dt.date.fromisoformat(args.date) if args.date
-           else dt.date.today() - dt.timedelta(days=1))
+def import_day(sb, c, day, dry_run):
+    """Importa le operazioni Betfair regolate di UN giorno operativo.
+    Ritorna (written, skipped, rows_preview). Un giorno vuoto non e' un errore."""
     nxt = day + dt.timedelta(days=1)
     FROM = day.strftime("%Y-%m-%dT00:00:00Z")
     TO = nxt.strftime("%Y-%m-%dT00:00:00Z")
-    print(f"Import operazioni Betfair — giorno {day} (settled {FROM} -> {TO})"
-          f"{'  [DRY-RUN]' if args.dry_run else ''}\n")
-
-    sb = get_supabase_client()
-    c = BetfairClient()
-    c.login_cert()
+    print(f"\n=== Giorno {day} (settled {FROM} -> {TO}) ===")
 
     bets = _fetch_cleared(c, "BET", FROM, TO)
     markets = _fetch_cleared(c, "MARKET", FROM, TO)
-    print(f"Cleared orders: {len(bets)} giocate (BET) | {len(markets)} mercati (MARKET)")
+    print(f"  Cleared orders: {len(bets)} giocate (BET) | {len(markets)} mercati (MARKET)")
     if not bets:
-        print("Nessuna operazione regolata in questa data. Fine.")
-        return
+        print("  Nessuna operazione regolata in questa data.")
+        return 0, [], []
 
     comm_by_market = {m["marketId"]: (m.get("commission") or 0.0) for m in markets}
     outcome_by_market = {m["marketId"]: m.get("betOutcome") for m in markets}
@@ -174,13 +164,18 @@ def main():
             }
     events = list(ev_by_id.values())
 
-    # fixture del giorno + riconciliazione 1:1
+    # fixture: finestra ALLARGATA a +-1 giorno. I match a cavallo della mezzanotte
+    # (kickoff sera, settle dopo le 00:00) hanno fixture_date sul giorno del match
+    # ma cadono nella finestra "settled" del giorno dopo: senza allargare non si
+    # riconciliano. Il gate temporale di resolve_matches (openDate vs fixture_date)
+    # garantisce comunque l'abbinamento corretto, non forza match a orari diversi.
+    prev = day - dt.timedelta(days=1)
     fx = sb.table("fixture_predictions").select(FP_COLS) \
-        .gte("fixture_date", day.isoformat() + "T00:00:00") \
-        .lt("fixture_date", nxt.isoformat() + "T00:00:00").execute().data
+        .gte("fixture_date", prev.isoformat() + "T00:00:00") \
+        .lt("fixture_date", (nxt + dt.timedelta(days=1)).isoformat() + "T00:00:00").execute().data
     matched, unmatched = resolve_matches(events, fx, load_name_map())
     fp_by_eid = {m["event"]["id"]: m["fixture"] for m in matched}
-    print(f"Fixture giorno: {len(fx)} | eventi Betfair: {len(events)} | "
+    print(f"  Fixture giorno: {len(fx)} | eventi Betfair: {len(events)} | "
           f"riconciliati: {len(matched)} | non riconciliati: {len(unmatched)}")
 
     # giocate per mercato
@@ -233,6 +228,9 @@ def main():
 
             placed_min = min((r.get("placedDate") or "" for r in matched_rows), default="")
             start = it0.get("marketStartTime")
+            # trade_date = GIORNO DEL MATCH (marketStartTime), non del regolamento: i
+            # match notturni (settle dopo le 00:00) cadono cosi' nel giorno giusto.
+            trade_date = (start or "")[:10] or day.isoformat()
             # Tempo operativo: NON calcolato dall'import — lo inserisce l'utente a mano
             # dalla dashboard (poi la €/h si ricalcola). Il re-import lo preserva.
             timing = "live" if (start and placed_min and placed_min >= start) else "prematch"
@@ -265,12 +263,12 @@ def main():
                 "gross_pnl": round(gross, 2),
                 "net_pnl": net,
                 "timing": timing,
-                "trade_date": day.isoformat(),
+                "trade_date": trade_date,
                 "context": build_context(fp, get_dir(fp["fixture_id"]), result_ft),
                 "tags": ["import"],
             }
 
-            if args.dry_run:
+            if dry_run:
                 rows_preview.append(payload)
             else:
                 sb.rpc("upsert_imported_trade", {"p": payload}).execute()
@@ -280,19 +278,56 @@ def main():
                             market_id, f"errore: {str(ex)[:100]}"))
             continue
 
-    print(f"\n{'Righe pronte (dry-run)' if args.dry_run else 'Righe scritte'}: {written} | "
-          f"saltate: {len(skipped)}")
+    print(f"  {'Pronte (dry-run)' if dry_run else 'Scritte'}: {written} | saltate: {len(skipped)}")
     for ev, mid, why in skipped:
-        print(f"  [skip] {ev} · {mid}: {why}")
+        print(f"    [skip] {ev} · {mid}: {why}")
+    return written, skipped, rows_preview
 
-    if args.dry_run and rows_preview:
-        print("\n" + "=" * 90 + "\nESEMPIO — prima riga completa che verrebbe scritta:")
-        print(json.dumps(rows_preview[0], indent=2, ensure_ascii=False))
-        print("\n" + "=" * 90 + "\nTABELLA (campi base — T.Op/€/h li inserisci a mano):")
-        hdr = ("Data | Evento | Lega | Naz | Stag | Home-Away | Ris | Strat | Q.ing | "
-               "Stake | Cop | Net")
-        print(hdr)
-        for p in rows_preview:
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", default="", help="giorno operativo YYYY-MM-DD (default: ieri)")
+    ap.add_argument("--days", type=int, default=0,
+                    help="UNA TANTUM: importa gli ultimi N giorni (fino a ieri incluso). "
+                         "Es. --days 15 per il backfill iniziale.")
+    ap.add_argument("--dry-run", action="store_true", help="non scrive: stampa le righe")
+    args = ap.parse_args()
+
+    today = dt.date.today()
+    if args.days and args.days > 0:
+        # ultimi N giorni: da (oggi - N) fino a IERI incluso (oggi non e' regolato)
+        days = [today - dt.timedelta(days=k) for k in range(args.days, 0, -1)]
+    elif args.date:
+        days = [dt.date.fromisoformat(args.date)]
+    else:
+        days = [today - dt.timedelta(days=1)]
+
+    print(f"Import operazioni Betfair — {len(days)} giorno/i "
+          f"({days[0]} -> {days[-1]}){'  [DRY-RUN]' if args.dry_run else ''}")
+
+    sb = get_supabase_client()
+    c = BetfairClient()
+    c.login_cert()
+
+    tot_written, tot_skipped, all_preview = 0, 0, []
+    for day in days:
+        try:
+            w, sk, pv = import_day(sb, c, day, args.dry_run)
+        except Exception as ex:  # noqa: BLE001 — un giorno non deve bloccare gli altri
+            print(f"  [ERRORE giorno {day}]: {str(ex)[:160]} -> continuo.")
+            continue
+        tot_written += w
+        tot_skipped += len(sk)
+        all_preview.extend(pv)
+
+    print(f"\n{'=' * 70}\nTOTALE: {tot_written} righe "
+          f"{'pronte (dry-run)' if args.dry_run else 'scritte'} | "
+          f"{tot_skipped} saltate | {len(days)} giorni")
+
+    if args.dry_run and all_preview:
+        print("\nTABELLA (campi base — T.Op/€/h li inserisci a mano):")
+        print("Data | Evento | Lega | Naz | Stag | Home-Away | Ris | Strat | Q.ing | Stake | Cop | Net")
+        for p in all_preview:
             print(f"  {p['trade_date']} | {p['betfair_event_id']} | {p['league_name']} | "
                   f"{p.get('country') or '—'} | {p.get('season_year') or '—'} | "
                   f"{p['home_team']}-{p['away_team']} | {p.get('result_ft') or '—'} | "
