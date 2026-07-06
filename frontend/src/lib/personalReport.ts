@@ -95,6 +95,46 @@ export interface PersonalTrade {
     commission_amount: number | null;  // commissione REALE in € (se pnl_source='actual')
     betfair_market_id: string | null;  // riconciliazione import Betfair
     betfair_bet_id: string | null;
+    // import Betfair (personal_tracking_import.sql)
+    betfair_event_id: string | null;   // "ID Evento"
+    country: string | null;            // "Nazione"
+    season_year: number | null;        // "Stagione"
+    coverage: number | null;           // "Copertura" (stake lato opposto/hedge)
+    context: TradeContext | null;      // pronostici + direzioni motori + risultato (congelati)
+}
+
+// ---------- Context congelato all'import (pronostici API-Football + direzioni motori) ----------
+export interface EngineDirectionMarket {
+    market: string;                 // '1x2' | 'btts' | 'over_2_5' | ...
+    direction: string | null;       // selezione indicata (es. 'H', 'Over', 'Yes')
+    concordi: string[];             // motori concordi (es. ['ml','api'])
+    motori_totali: number | null;
+    affidabilita: number | null;
+    engines: Record<string, any>;   // {ml:{...}, api:{...}, poisson:..., tacticai:...}
+}
+export interface TradePredictions {
+    advice: string | null;              // "pronostico" API-Football
+    under_over_line: string | null;
+    goals_home_line: string | null;     // possibili gol casa
+    goals_away_line: string | null;     // possibili gol ospite
+    percent_home: number | null;
+    percent_draw: number | null;
+    percent_away: number | null;
+    winner_name: string | null;
+}
+export interface TradeResult {
+    home_goals: number | null;
+    away_goals: number | null;
+    total_goals: number | null;
+    outcome: string | null;             // 'H' | 'D' | 'A'
+    status: string | null;              // 'FT' | ...
+    ft: string | null;                  // "1-2"
+}
+export interface TradeContext {
+    predictions?: TradePredictions;
+    directions?: { markets?: EngineDirectionMarket[] } | null;
+    result?: TradeResult;
+    hits?: Record<string, boolean>;     // pronostico azzeccato o no (per mercato)
 }
 
 // ---------- Payload di scrittura ----------
@@ -303,6 +343,17 @@ export async function settlePersonalTrade(s: SettlePayload): Promise<PersonalTra
         p_result_ft: s.resultFt ?? null,
         p_exit_odds: s.exitOdds ?? null,
         p_time_min: s.timeMin ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return data as PersonalTrade;
+}
+
+// Imposta il "Tempo Operativo (Min.)" a mano dalla dashboard e ricalcola la resa
+// oraria lato DB (set_trade_time_operative). null = azzera il tempo.
+export async function setTradeTimeOperative(id: number, minutes: number | null): Promise<PersonalTrade> {
+    const { data, error } = await supabase.rpc('set_trade_time_operative', {
+        p_id: Number(id),
+        p_minutes: minutes,
     });
     if (error) throw new Error(error.message);
     return data as PersonalTrade;

@@ -27,6 +27,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
     getPersonalReport, getPersonalTrades, settlePersonalTrade, resetPersonalReport,
+    setTradeTimeOperative,
     type ReportData, type PersonalTrade, type ReportFilters, type Metrics,
     type TradeStatus,
 } from '@/lib/personalReport';
@@ -180,65 +181,179 @@ function SettleDialog({ open, onOpenChange, trade, onSaved }: {
     );
 }
 
+const N_COLS = 17; // colonne tabella (per il colSpan del drill-down)
+const fmtDay = (s: string | null) => {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
+    catch { return s.slice(0, 10); }
+};
+
+// ---- cella Tempo Operativo editabile (salva su DB + ricalcola resa oraria) ----
+function TimeOperativeCell({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }) {
+    const [val, setVal] = useState(t.time_operative_min == null ? '' : String(t.time_operative_min));
+    const [saving, setSaving] = useState(false);
+    useEffect(() => { setVal(t.time_operative_min == null ? '' : String(t.time_operative_min)); }, [t.time_operative_min]);
+
+    const commit = async () => {
+        const trimmed = val.trim();
+        const next = trimmed === '' ? null : Number(trimmed);
+        if (next != null && !Number.isFinite(next)) return;
+        if ((t.time_operative_min ?? null) === (next ?? null)) return;
+        setSaving(true);
+        try {
+            await setTradeTimeOperative(t.id, next);
+            toast.success('Tempo operativo aggiornato');
+            onChanged?.();
+        } catch (e: any) {
+            toast.error('Errore salvataggio tempo', { description: e?.message ?? 'errore' });
+        } finally { setSaving(false); }
+    };
+    return (
+        <input
+            type="number" min="0" step="1" value={val} disabled={saving}
+            onClick={e => e.stopPropagation()}
+            onChange={e => setVal(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            placeholder="—"
+            className="w-16 bg-black/60 border border-white/10 rounded px-1.5 py-1 text-right text-xs
+                       text-white tabular-nums focus:outline-none focus:border-primary/60"
+        />
+    );
+}
+
+// ---- tabella direzioni motori (drill-down) ----
+function DirectionsTable({ ctx }: { ctx: PersonalTrade['context'] }) {
+    const markets = ctx?.directions?.markets ?? [];
+    if (!markets.length) return <p className="text-[11px] text-muted-foreground">Nessuna direzione motori.</p>;
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+                <thead>
+                    <tr className="text-[9px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
+                        <th className="text-left px-2 py-1">Mercato</th>
+                        <th className="text-center px-2 py-1">Direzione</th>
+                        <th className="text-left px-2 py-1">Motori concordi</th>
+                        <th className="text-center px-2 py-1">N</th>
+                        <th className="text-center px-2 py-1">Hit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {markets.map((m, i) => {
+                        const hit = ctx?.hits?.[m.market];
+                        return (
+                            <tr key={i} className="border-b border-white/5">
+                                <td className="px-2 py-1 text-white/80">{m.market}</td>
+                                <td className="px-2 py-1 text-center font-bold text-primary">{m.direction ?? '—'}</td>
+                                <td className="px-2 py-1 text-muted-foreground">{(m.concordi ?? []).join(', ') || '—'}</td>
+                                <td className="px-2 py-1 text-center text-muted-foreground">{m.motori_totali ?? '—'}</td>
+                                <td className="px-2 py-1 text-center">
+                                    {hit == null ? <span className="text-muted-foreground">—</span>
+                                        : hit ? <span className="text-emerald-400 font-bold">✓</span>
+                                        : <span className="text-red-400 font-bold">✗</span>}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 // ---- riga trade + drill-down ----
 function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }) {
     const [open, setOpen] = useState(false);
     const [settleOpen, setSettleOpen] = useState(false);
-    const statusBadge: Record<TradeStatus, string> = {
-        OPEN: 'text-amber-300', WON: 'text-emerald-400', LOST: 'text-red-400',
-        VOID: 'text-muted-foreground', PARTIAL: 'text-sky-300',
-    };
+    const pr = t.context?.predictions;
+    const res = t.context?.result;
+    const td = 'px-2.5 py-2.5 whitespace-nowrap';
     return (
         <Fragment>
             <tr className={`border-b border-white/5 cursor-pointer hover:bg-white/[0.04] ${open ? 'bg-white/[0.04]' : ''}`}
                 onClick={() => setOpen(v => !v)}>
-                <td className="px-3 py-2.5">
+                <td className={td}>
                     <span className="inline-flex items-center gap-1.5">
                         {open ? <ChevronDown className="w-3 h-3 text-primary" /> : <ChevronUp className="w-3 h-3 opacity-30 rotate-180" />}
-                        <span className="text-white">{t.home_team} v {t.away_team}</span>
+                        <span className="text-white tabular-nums">{fmtDay(t.trade_date)}</span>
                     </span>
                 </td>
-                <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell">{t.strategia}</td>
-                <td className="px-3 py-2.5 text-center">
-                    <span className={`uppercase text-[10px] font-bold ${t.side === 'lay' ? 'text-rose-300' : 'text-sky-300'}`}>{t.side}</span>
+                <td className={`${td} text-muted-foreground tabular-nums text-[11px]`}>{t.betfair_event_id ?? '—'}</td>
+                <td className={`${td} text-white/80`}>{t.league_name ?? '—'}</td>
+                <td className={`${td} text-muted-foreground tabular-nums text-[11px]`}>{t.league_id ?? '—'}</td>
+                <td className={`${td} text-muted-foreground`}>{t.country ?? '—'}</td>
+                <td className={`${td} text-muted-foreground tabular-nums`}>{t.season_year ?? '—'}</td>
+                <td className={`${td} text-white`}>{t.home_team ?? '—'}</td>
+                <td className={`${td} text-white`}>{t.away_team ?? '—'}</td>
+                <td className={`${td} text-center tabular-nums text-white/90`}>{t.result_ft ?? '—'}</td>
+                <td className={`${td} text-muted-foreground`}>{t.strategia}</td>
+                <td className={`${td} text-right tabular-nums text-white/80`}>{num(t.entry_odds)}</td>
+                <td className={`${td} text-right tabular-nums text-muted-foreground`}>{eur(t.stake)}</td>
+                <td className={`${td} text-right tabular-nums text-muted-foreground`}>{t.coverage != null ? eur(t.coverage) : '—'}</td>
+                <td className={`${td} text-right tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</td>
+                <td className={`${td} text-right`} onClick={e => e.stopPropagation()}>
+                    <TimeOperativeCell t={t} onChanged={onChanged} />
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-white/80">{num(t.entry_odds)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{eur(t.stake)}</td>
-                <td className={`px-3 py-2.5 text-center font-bold text-[11px] uppercase ${statusBadge[t.status]}`}>{t.status}</td>
-                <td className="px-3 py-2.5 text-right">
-                    {(t.status === 'OPEN' || t.status === 'PARTIAL') ? (
-                        <Button size="sm" variant="ghost"
-                            onClick={(e) => { e.stopPropagation(); setSettleOpen(true); }}
+                <td className={`${td} text-right tabular-nums ${signColor(t.hourly_yield)}`}>{t.hourly_yield != null ? eur(t.hourly_yield) : '—'}</td>
+                <td className={`${td} text-center`}>
+                    {(t.status === 'OPEN' || t.status === 'PARTIAL')
+                        ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setSettleOpen(true); }}
                             className="h-7 px-2 text-[11px] text-primary hover:bg-primary/10 font-bold">
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Chiudi
-                        </Button>
-                    ) : (
-                        <span className={`tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</span>
-                    )}
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Chiudi</Button>
+                        : <span className="text-[10px] uppercase font-bold text-muted-foreground">{t.status}</span>}
                 </td>
             </tr>
             {open && (
                 <tr className="bg-black/40">
-                    <td colSpan={7} className="px-4 py-3">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
-                            <div><span className="text-muted-foreground">Mercato/Sel.</span><div className="text-white">{t.market ?? '—'} · {t.selection ?? '—'}</div></div>
+                    <td colSpan={N_COLS} className="px-4 py-3">
+                        {/* Dettaglio operazione (tutti gli altri campi) */}
+                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 font-bold">Dettaglio operazione</div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-[11px]">
+                            <div><span className="text-muted-foreground">Lato</span><div className={t.side === 'lay' ? 'text-rose-300 uppercase font-bold' : 'text-sky-300 uppercase font-bold'}>{t.side}</div></div>
+                            <div><span className="text-muted-foreground">Mercato · Sel.</span><div className="text-white">{t.market ?? '—'} · {t.selection ?? '—'}</div></div>
+                            <div><span className="text-muted-foreground">Linea</span><div className="text-white">{t.line ?? '—'}</div></div>
                             <div><span className="text-muted-foreground">Timing</span><div className="text-white">{t.timing}{t.entry_minute != null ? ` · ${t.entry_minute}'` : ''}</div></div>
+                            <div><span className="text-muted-foreground">Stato</span><div className="text-white">{t.status}</div></div>
                             <div><span className="text-muted-foreground">ROI</span><div className={signColor(t.roi)}>{pct(t.roi)}</div></div>
-                            <div><span className="text-muted-foreground">Resa oraria</span><div className={signColor(t.hourly_yield)}>{eur(t.hourly_yield)}</div></div>
-                            <div><span className="text-muted-foreground">Edge entry</span><div className="text-white">{t.edge_at_entry != null ? pct(t.edge_at_entry) : '—'}</div></div>
-                            <div><span className="text-muted-foreground">Affidabilità</span><div className="text-white">{t.affidabilita != null ? pct(t.affidabilita) : '—'}</div></div>
-                            <div><span className="text-muted-foreground">Concordi</span><div className="text-white">{t.concordi != null ? `${t.concordi}/${t.motori_totali ?? '?'}` : '—'}</div></div>
-                            <div>
-                                <span className="text-muted-foreground">Consiglio</span>
-                                <div className={t.followed_advice == null ? 'text-muted-foreground' : t.followed_advice ? 'text-emerald-400' : 'text-amber-300'}>
-                                    {t.followed_advice == null ? '—' : t.followed_advice ? 'seguito' : 'fuori-consiglio'}
-                                </div>
-                            </div>
-                            {t.result_ft && <div><span className="text-muted-foreground">Risultato</span><div className="text-white">{t.result_ft}</div></div>}
-                            {t.comment && <div className="col-span-2 md:col-span-4"><span className="text-muted-foreground">Nota</span><div className="text-white/80">{t.comment}</div></div>}
+                            <div><span className="text-muted-foreground">P&L lordo</span><div className={signColor(t.gross_pnl)}>{eur(t.gross_pnl)}</div></div>
+                            <div><span className="text-muted-foreground">Commissione</span><div className="text-white">{t.commission_amount != null ? eur(t.commission_amount) : '—'}</div></div>
+                            <div><span className="text-muted-foreground">Responsabilità</span><div className="text-white">{t.liability != null ? eur(t.liability) : '—'}</div></div>
+                            <div><span className="text-muted-foreground">Provenienza</span><div className="text-white">{t.entry_source} · {t.pnl_source}</div></div>
+                            <div><span className="text-muted-foreground">Betfair market</span><div className="text-white/70 font-mono text-[10px]">{t.betfair_market_id ?? '—'}</div></div>
+                            <div><span className="text-muted-foreground">Kickoff</span><div className="text-white">{t.kickoff ? new Date(t.kickoff).toLocaleString('it-IT') : '—'}</div></div>
+                            {t.comment && <div className="col-span-2 md:col-span-4 lg:col-span-6"><span className="text-muted-foreground">Nota</span><div className="text-white/80">{t.comment}</div></div>}
                         </div>
 
-                        {/* legs */}
+                        {/* Pronostici API-Football + Direzioni motori */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                                <div className="text-[10px] uppercase tracking-widest text-primary mb-2 font-bold">Pronostici (API-Football)</div>
+                                {pr ? (
+                                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                        <div className="col-span-2"><span className="text-muted-foreground">Pronostico</span><div className="text-white">{pr.advice ?? '—'}</div></div>
+                                        <div><span className="text-muted-foreground">Gol attesi casa</span><div className="text-white">{pr.goals_home_line ?? '—'}</div></div>
+                                        <div><span className="text-muted-foreground">Gol attesi ospite</span><div className="text-white">{pr.goals_away_line ?? '—'}</div></div>
+                                        <div><span className="text-muted-foreground">Under/Over</span><div className="text-white">{pr.under_over_line ?? '—'}</div></div>
+                                        <div><span className="text-muted-foreground">Favorito</span><div className="text-white">{pr.winner_name ?? '—'}</div></div>
+                                        <div className="col-span-2"><span className="text-muted-foreground">% 1X2 (H/D/A)</span>
+                                            <div className="text-white tabular-nums">{num(pr.percent_home, 0)}% · {num(pr.percent_draw, 0)}% · {num(pr.percent_away, 0)}%</div></div>
+                                    </div>
+                                ) : <p className="text-[11px] text-muted-foreground">Nessun pronostico congelato.</p>}
+                                {res && (
+                                    <div className="mt-2 pt-2 border-t border-white/5 text-[11px]">
+                                        <span className="text-muted-foreground">Risultato reale</span>{' '}
+                                        <span className="text-white font-bold">{res.ft ?? '—'}</span>
+                                        {res.status ? <span className="text-muted-foreground"> ({res.status})</span> : null}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                                <div className="text-[10px] uppercase tracking-widest text-primary mb-2 font-bold">Direzioni motori</div>
+                                <DirectionsTable ctx={t.context} />
+                            </div>
+                        </div>
+
+                        {/* legs (coperture) se presenti */}
                         {t.legs && t.legs.length > 0 && (
                             <div className="mt-3">
                                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 font-bold">Coperture / Hedge</div>
@@ -684,16 +799,26 @@ export default function ReportPersonale() {
                                 <div className="p-6 text-center text-muted-foreground text-sm">Nessun trade per questi filtri.</div>
                             ) : (
                                 <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
+                                    <table className="w-full text-sm min-w-[1400px]">
                                         <thead>
-                                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5">
-                                                <th className="text-left px-3 py-2 font-medium">Partita</th>
-                                                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Strategia</th>
-                                                <th className="text-center px-3 py-2 font-medium">Lato</th>
-                                                <th className="text-right px-3 py-2 font-medium">Quota</th>
-                                                <th className="text-right px-3 py-2 font-medium">Stake</th>
-                                                <th className="text-center px-3 py-2 font-medium">Stato</th>
-                                                <th className="text-right px-3 py-2 font-medium">P&L netto</th>
+                                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5 whitespace-nowrap">
+                                                <th className="text-left px-2.5 py-2 font-medium">Data</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">ID Evento</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">League</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">ID League</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">Nazione</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">Stagione</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">Home</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">Away</th>
+                                                <th className="text-center px-2.5 py-2 font-medium">Risultato</th>
+                                                <th className="text-left px-2.5 py-2 font-medium">Strategia</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">Quota Ingr.</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">Stake</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">Copertura</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">Gain Netto</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">T. Op. (min)</th>
+                                                <th className="text-right px-2.5 py-2 font-medium">€/h</th>
+                                                <th className="text-center px-2.5 py-2 font-medium">Stato</th>
                                             </tr>
                                         </thead>
                                         <tbody>
