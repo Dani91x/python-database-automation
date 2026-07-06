@@ -348,6 +348,30 @@ export async function settlePersonalTrade(s: SettlePayload): Promise<PersonalTra
     return data as PersonalTrade;
 }
 
+// ---------- Movimenti di cassa (depositi/prelievi Betfair) — FUORI equity curve ----------
+export interface CashMovement {
+    id: number;
+    transaction_id: string;
+    ts: string;
+    move_date: string;
+    type: 'DEPOSIT' | 'WITHDRAWAL';
+    amount: number;                 // firmato: deposito +, prelievo −
+    balance: number | null;
+    description: string | null;
+}
+export interface CashSummary {
+    movements: CashMovement[];
+    deposits: number;               // Σ depositi (≥0)
+    withdrawals: number;            // Σ prelievi (≤0)
+    net_cash: number;               // depositi + prelievi
+    n: number;
+}
+export async function getCashMovements(from?: string | null, to?: string | null): Promise<CashSummary> {
+    const { data, error } = await supabase.rpc('get_cash_movements', { p_from: from ?? null, p_to: to ?? null });
+    if (error) throw new Error(error.message);
+    return data as CashSummary;
+}
+
 // Imposta il "Tempo Operativo (Min.)" a mano dalla dashboard e ricalcola la resa
 // oraria lato DB (set_trade_time_operative). null = azzera il tempo.
 export async function setTradeTimeOperative(id: number, minutes: number | null): Promise<PersonalTrade> {

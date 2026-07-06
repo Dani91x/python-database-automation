@@ -42,6 +42,8 @@ class BetfairClient:
 
     # Betting API JSON-RPC endpoint (Global Exchange)
     BETTING_RPC_URL = "https://api.betfair.com/exchange/betting/json-rpc/v1"
+    # Account API JSON-RPC endpoint (saldo, estratto conto, depositi/prelievi)
+    ACCOUNT_RPC_URL = "https://api.betfair.com/exchange/account/json-rpc/v1"
 
     def __init__(
         self,
@@ -186,6 +188,26 @@ class BetfairClient:
         Chiamata JSON-RPC alla Betting API.
         method es: "SportsAPING/v1.0/listEventTypes"
         """
+        return self._rpc(self.BETTING_RPC_URL, method, params, request_id, max_retries)
+
+    def account_rpc(
+        self,
+        method: str,
+        params: Dict[str, Any],
+        request_id: int = 1,
+        max_retries: int = 3,
+    ) -> Any:
+        """Chiamata JSON-RPC alla Account API (es. AccountAPING/v1.0/getAccountStatement)."""
+        return self._rpc(self.ACCOUNT_RPC_URL, method, params, request_id, max_retries)
+
+    def _rpc(
+        self,
+        url: str,
+        method: str,
+        params: Dict[str, Any],
+        request_id: int = 1,
+        max_retries: int = 3,
+    ) -> Any:
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -197,7 +219,7 @@ class BetfairClient:
         for attempt in range(1, max_retries + 1):
             try:
                 resp = self._http.post(
-                    self.BETTING_RPC_URL,
+                    url,
                     headers=self._betting_headers(),
                     data=json.dumps(payload),
                     timeout=self.timeout,

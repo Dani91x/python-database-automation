@@ -26,7 +26,7 @@ MONEY-CRITICAL: il P&L netto usa il profit + la commissione REALI di Betfair; i
 campi descrittivi (quota d'ingresso, copertura) sono ricostruiti dal dettaglio BET.
 """
 from __future__ import annotations
-import sys, time, json, argparse, datetime as dt
+import sys, time, json, re, argparse, datetime as dt
 from collections import defaultdict
 
 sys.path.insert(0, r"C:\Users\Admin\Desktop\PYTHON DATABASE\python-database-automation")
@@ -103,8 +103,31 @@ def _mins_between(a_iso: str, b_iso: str):
         return None
 
 
+def _dir_hit(market: str, direction, rh, ra):
+    """La direzione del motore era azzeccata sul risultato REALE?
+    True/False se calcolabile dal risultato finale, None se serve il parziale (HT)."""
+    if rh is None or ra is None or not direction:
+        return None
+    tot = rh + ra
+    if market == "1x2":
+        out = "H" if rh > ra else ("A" if ra > rh else "D")
+        return direction == out
+    if market == "btts":
+        return direction == ("Yes" if (rh > 0 and ra > 0) else "No")
+    if market.startswith("over_"):
+        m = re.search(r"(\d)_(\d)", market)
+        if not m:
+            return None
+        line = float(f"{m.group(1)}.{m.group(2)}")
+        return direction == ("Over" if tot > line else "Under")
+    # ht_1x2 / first_half_*: serve il risultato PRIMO TEMPO, non disponibile -> None
+    return None
+
+
 def build_context(fp: dict, direction, result_ft):
-    """Snapshot congelato: pronostici API-Football + direzioni motori + risultato + hit."""
+    """Snapshot congelato: pronostici API-Football + direzioni motori + risultato + hit.
+    Gli hit sono calcolati PER OGNI mercato-motore sul risultato reale (quando derivabile
+    dal finale). I mercati di primo tempo restano None (serve il parziale)."""
     rh, ra = fp.get("result_home_goals"), fp.get("result_away_goals")
     tot = fp.get("result_total_goals")
     predictions = {
@@ -122,15 +145,64 @@ def build_context(fp: dict, direction, result_ft):
         "outcome": fp.get("result_outcome"), "status": fp.get("result_status_short"),
         "ft": result_ft,
     }
-    # hit dei pronostici principali (calcolati sul risultato reale, se disponibile)
+    # hit per OGNI mercato presente nelle direzioni motori
     hits = {}
-    if rh is not None and ra is not None:
-        outcome = "H" if rh > ra else ("A" if ra > rh else "D")
-        if fp.get("percent_home") is not None:
-            fav = max([("H", fp.get("percent_home") or 0), ("D", fp.get("percent_draw") or 0),
-                       ("A", fp.get("percent_away") or 0)], key=lambda x: x[1])[0]
-            hits["1x2"] = (fav == outcome)
+    for mk in ((direction or {}).get("markets") or []):
+        h = _dir_hit(mk.get("market"), mk.get("direction"), rh, ra)
+        if h is not None:
+            hits[mk.get("market")] = h
     return {"predictions": predictions, "directions": direction, "result": result, "hits": hits}
+
+
+def import_cash_movements(sb, c, from_date, to_date, dry_run):
+    """Importa depositi/prelievi dal conto Betfair (Account API getAccountStatement)
+    nel periodo. Movimenti di CASSA: NON entrano nell'equity curve. Idempotente su
+    transaction_id. Ritorna (n_movimenti, depositi, prelievi)."""
+    frm = from_date.strftime("%Y-%m-%dT00:00:00Z")
+    to = (to_date + dt.timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+    try:
+        res = c.account_rpc("AccountAPING/v1.0/getAccountStatement", {
+            "itemDateRange": {"from": frm, "to": to},
+            "includeItem": "DEPOSITS_WITHDRAWALS",
+        }) or {}
+    except Exception as ex:  # noqa: BLE001 — la cassa non deve bloccare l'import trade
+        print(f"[cassa] getAccountStatement fallito: {str(ex)[:120]}")
+        return 0, 0.0, 0.0
+
+    items = res.get("accountStatement") or []
+    n, dep, wdr = 0, 0.0, 0.0
+    for it in items:
+        leg = it.get("legacyData") or {}
+        mkt = (leg.get("marketName") or "").upper()
+        mtype = "DEPOSIT" if mkt == "DEPOSIT" else "WITHDRAWAL" if mkt == "WITHDRAWAL" else None
+        if not mtype:
+            continue
+        amount = it.get("amount")
+        txid = str(leg.get("transactionId") or it.get("refId") or "")
+        if not txid or amount is None:
+            continue
+        payload = {
+            "transaction_id": txid,
+            "ts": it.get("itemDate"),
+            "type": mtype,
+            "amount": amount,
+            "balance": it.get("balance"),
+            "description": leg.get("fullMarketName"),
+        }
+        if not dry_run:
+            try:
+                sb.rpc("upsert_cash_movement", {"p": payload}).execute()
+            except Exception as ex:  # noqa: BLE001
+                print(f"[cassa] upsert fallito ({txid}): {str(ex)[:100]}")
+                continue
+        n += 1
+        if mtype == "DEPOSIT":
+            dep += amount
+        else:
+            wdr += amount
+    print(f"[cassa] movimenti: {n} | depositi {dep:+.2f} | prelievi {wdr:+.2f}"
+          f"{'  [DRY-RUN]' if dry_run else ''}")
+    return n, dep, wdr
 
 
 def import_day(sb, c, day, dry_run):
@@ -216,15 +288,20 @@ def import_day(sb, c, day, dry_run):
 
             entry_stake = sum(r.get("sizeSettled") or 0 for r in entry_rows)
             entry_odds = _wavg([(r.get("priceMatched"), r.get("sizeSettled") or 0) for r in entry_rows])
+            # LAY: responsabilita' esatta = Σ size*(price-1) (quanto si rischia/perde).
+            # BACK: nessuna liability (si rischia lo stake). E' cio' che va nella colonna
+            # "Stake Utilizzato" per il lato lay (richiesta utente).
+            liability = (sum((r.get("sizeSettled") or 0) * ((r.get("priceMatched") or 1) - 1)
+                             for r in entry_rows) if entry_side == "lay" else None)
             coverage = sum(r.get("sizeSettled") or 0 for r in cov_rows) or None
 
             gross = sum(r.get("profit") or 0 for r in matched_rows)
             commission = comm_by_market.get(market_id, 0.0)
             net = round(gross - commission, 2)
 
-            outcome = outcome_by_market.get(market_id)
-            status = outcome if outcome in ("WON", "LOST", "VOID") else (
-                "WON" if net > 0 else "LOST" if net < 0 else "VOID")
+            # STATO dall'esito REALE dell'operazione (segno del netto): il betOutcome
+            # di mercato Betfair non e' affidabile (risultava sempre WON).
+            status = "WON" if net > 0 else "LOST" if net < 0 else "VOID"
 
             placed_min = min((r.get("placedDate") or "" for r in matched_rows), default="")
             start = it0.get("marketStartTime")
@@ -237,7 +314,12 @@ def import_day(sb, c, day, dry_run):
 
             rh, ra = fp.get("result_home_goals"), fp.get("result_away_goals")
             result_ft = f"{rh}-{ra}" if rh is not None and ra is not None else None
-            strategia = (entry_rows[0].get("customerStrategyRef") or "Import Betfair").strip()
+            # Strategia = "{Back/Lay} {selezione}" (es. "Lay Under 3,5 goal"), colorata
+            # lato-Betfair nel frontend. Il customerStrategyRef originale va in nota.
+            sel = it0.get("runnerDesc") or it0.get("marketType") or "?"
+            strategia = f"{'Back' if entry_side == 'back' else 'Lay'} {sel}"
+            ref = (entry_rows[0].get("customerStrategyRef") or "").strip()
+            comment = f"ref: {ref}" if ref else None
 
             payload = {
                 "fixture_id": fp["fixture_id"],
@@ -258,12 +340,14 @@ def import_day(sb, c, day, dry_run):
                 "line": _line_from_market_type(it0.get("marketType")),
                 "entry_odds": round(entry_odds, 3) if entry_odds else None,
                 "stake": round(entry_stake, 2),
+                "liability": round(liability, 2) if liability is not None else None,
                 "coverage": round(coverage, 2) if coverage else None,
                 "commission_amount": round(commission, 2),
                 "gross_pnl": round(gross, 2),
                 "net_pnl": net,
                 "timing": timing,
                 "trade_date": trade_date,
+                "comment": comment,
                 "context": build_context(fp, get_dir(fp["fixture_id"]), result_ft),
                 "tags": ["import"],
             }
@@ -309,6 +393,9 @@ def main():
     c = BetfairClient()
     c.login_cert()
 
+    # Movimenti di cassa (depositi/prelievi) sul periodo — fuori dall'equity curve.
+    import_cash_movements(sb, c, days[0], days[-1], args.dry_run)
+
     tot_written, tot_skipped, all_preview = 0, 0, []
     for day in days:
         try:
@@ -325,13 +412,15 @@ def main():
           f"{tot_skipped} saltate | {len(days)} giorni")
 
     if args.dry_run and all_preview:
-        print("\nTABELLA (campi base — T.Op/€/h li inserisci a mano):")
+        print("\nTABELLA (campi base — T.Op/€/h li inserisci a mano; Stake=responsabilità sul lay):")
         print("Data | Evento | Lega | Naz | Stag | Home-Away | Ris | Strat | Q.ing | Stake | Cop | Net")
         for p in all_preview:
+            stake_disp = (p.get("liability") if p.get("side") == "lay" and p.get("liability") is not None
+                          else p.get("stake"))
             print(f"  {p['trade_date']} | {p['betfair_event_id']} | {p['league_name']} | "
                   f"{p.get('country') or '—'} | {p.get('season_year') or '—'} | "
                   f"{p['home_team']}-{p['away_team']} | {p.get('result_ft') or '—'} | "
-                  f"{p['strategia']} | {p.get('entry_odds')} | {p['stake']} | "
+                  f"{p['strategia']} | {p.get('entry_odds')} | {stake_disp} | "
                   f"{p.get('coverage') or '—'} | {p['net_pnl']}")
 
 

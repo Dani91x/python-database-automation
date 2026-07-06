@@ -27,9 +27,9 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
     getPersonalReport, getPersonalTrades, settlePersonalTrade, resetPersonalReport,
-    setTradeTimeOperative,
+    setTradeTimeOperative, getCashMovements,
     type ReportData, type PersonalTrade, type ReportFilters, type Metrics,
-    type TradeStatus,
+    type TradeStatus, type CashSummary,
 } from '@/lib/personalReport';
 import { ManualTradeForm } from '@/components/report/ManualTradeForm';
 import { DateRangeFilter } from '@/components/report/DateRangeFilter';
@@ -287,9 +287,12 @@ function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }
                 <td className={`${td} text-white`} title={t.home_team ?? ''}>{t.home_team ?? '—'}</td>
                 <td className={`${td} text-white`} title={t.away_team ?? ''}>{t.away_team ?? '—'}</td>
                 <td className={`${td} text-center tabular-nums text-white/90`}>{t.result_ft ?? '—'}</td>
-                <td className={`${td} text-muted-foreground`} title={t.strategia}>{t.strategia}</td>
+                <td className={`${td} font-semibold ${t.side === 'lay' ? 'text-rose-300' : 'text-sky-300'}`} title={t.strategia}>{t.strategia}</td>
                 <td className={`${td} text-right tabular-nums text-white/80`}>{num(t.entry_odds)}</td>
-                <td className={`${td} text-right tabular-nums text-muted-foreground`}>{eur(t.stake)}</td>
+                <td className={`${td} text-right tabular-nums text-muted-foreground`}
+                    title={t.side === 'lay' ? `Responsabilità (lay). Stake backer: ${eur(t.stake)}` : 'Stake back'}>
+                    {t.side === 'lay' ? eur(t.liability ?? t.stake) : eur(t.stake)}
+                </td>
                 <td className={`${td} text-right tabular-nums text-muted-foreground`}>{t.coverage != null ? eur(t.coverage) : '—'}</td>
                 <td className={`${td} text-right tabular-nums font-bold ${signColor(t.net_pnl)}`}>{eur(t.net_pnl)}</td>
                 <td className={`${td} text-right`} onClick={e => e.stopPropagation()}>
@@ -531,6 +534,7 @@ export default function ReportPersonale() {
     const [filters, setFilters] = useState<ReportFilters>({});
     const [purgeOpen, setPurgeOpen] = useState(false);
     const [manualOpen, setManualOpen] = useState(false);
+    const [cash, setCash] = useState<CashSummary | null>(null);
     const set = (patch: Partial<ReportFilters>) => setFilters(prev => ({ ...prev, ...patch }));
     const reset = () => setFilters({});
 
@@ -542,12 +546,14 @@ export default function ReportPersonale() {
             // se il filtro e' "Aperti", non lo passo al report (altrimenti la RPC
             // solleva "p_status invalido"); resta applicato alla tabella trade.
             const reportFilters = f.status === 'OPEN' ? { ...f, status: null } : f;
-            const [r, t] = await Promise.all([
+            const [r, t, cs] = await Promise.all([
                 getPersonalReport(reportFilters),
                 getPersonalTrades({ ...f, limit: 200 }),
+                getCashMovements(f.from ?? null, f.to ?? null).catch(() => null),
             ]);
             setReport(r);
             setTrades(t);
+            setCash(cs);
         } catch (e: any) {
             setError(e?.message ?? 'errore sconosciuto');
         } finally {
@@ -657,6 +663,44 @@ export default function ReportPersonale() {
                 {error && (
                     <Card className="glass-card border-red-500/30 p-4 flex items-center gap-2 text-red-400 text-sm">
                         <AlertTriangle className="w-4 h-4" /> {error}
+                    </Card>
+                )}
+
+                {/* Cassa (depositi/prelievi Betfair) — NON incluso nell'equity curve */}
+                {cash && cash.n > 0 && (
+                    <Card className="glass-card border-white/10 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Wallet className="w-4 h-4 text-primary" />
+                            <span className="font-heading font-bold text-sm uppercase tracking-wide">Cassa (depositi / prelievi)</span>
+                            <span className="text-[10px] text-muted-foreground ml-2">non incluso nell'equity curve</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 px-3 py-2">
+                                <div className="text-[10px] uppercase text-emerald-300">Depositi</div>
+                                <div className="text-lg font-black font-display tabular-nums text-emerald-400">{eur(cash.deposits)}</div>
+                            </div>
+                            <div className="rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2">
+                                <div className="text-[10px] uppercase text-red-300">Prelievi</div>
+                                <div className="text-lg font-black font-display tabular-nums text-red-400">{eur(cash.withdrawals)}</div>
+                            </div>
+                            <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                                <div className="text-[10px] uppercase text-muted-foreground">Netto cassa</div>
+                                <div className={`text-lg font-black font-display tabular-nums ${signColor(cash.net_cash)}`}>{eur(cash.net_cash)}</div>
+                            </div>
+                        </div>
+                        {cash.movements.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {cash.movements.slice(0, 12).map(mv => (
+                                    <span key={mv.id} title={mv.description ?? ''}
+                                        className={`text-[11px] px-2 py-1 rounded-md border tabular-nums ${
+                                            mv.type === 'WITHDRAWAL'
+                                                ? 'border-red-400/20 text-red-300 bg-red-400/5'
+                                                : 'border-emerald-400/20 text-emerald-300 bg-emerald-400/5'}`}>
+                                        {fmtDay(mv.move_date)} · {mv.type === 'WITHDRAWAL' ? 'Prelievo' : 'Deposito'} {eur(mv.amount)}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </Card>
                 )}
 
