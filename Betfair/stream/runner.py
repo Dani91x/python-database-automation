@@ -825,10 +825,21 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     os.makedirs(DATA_DIR, exist_ok=True)
     # SWEEP di recupero Replay (best-effort, in background): carica le partite
     # finite rimaste non-UPLOADED (es. stream in ERROR a fine match, 02/07).
-    threading.Thread(
-        target=lambda: uploader.sweep_pending(), daemon=True,
-        name="uploader-sweep",
-    ).start()
+    # PERIODICO (non piu' one-shot all'avvio): se una registrazione va in ERROR
+    # e il finalize non scatta, la partita finita viene comunque caricata nel
+    # Replay entro ~15 min, senza bisogno di riavviare il runner.
+    def _periodic_sweep() -> None:
+        while True:
+            try:
+                # idle 10 min: una partita VIVA scrive il raw di continuo
+                # (idle ~0) → mai toccata; solo le finite/interrotte (file
+                # fermo da >=10 min) vengono curate e caricate nel Replay.
+                uploader.sweep_pending(min_idle_min=10.0)
+            except Exception:  # noqa: BLE001 - lo sweep non deve fermare il runner
+                logger.exception("[uploader] sweep periodico KO")
+            time.sleep(300)  # 5 min
+    threading.Thread(target=_periodic_sweep, daemon=True,
+                     name="uploader-sweep").start()
     rest = BetfairClient()
     rest.login_cert()
     api_client: betfairlightweight.APIClient = build_client(login=True)

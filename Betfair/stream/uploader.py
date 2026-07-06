@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import db
@@ -21,6 +22,22 @@ from .config_stream import DATA_DIR, UPLOAD_CADENCE_SEC
 from .curator import curate_event
 
 logger = logging.getLogger(__name__)
+
+# Lock PER-EVENTO: serializza upload_event sullo stesso event_id nello stesso
+# processo. Chiude la race finalize_worker <-> sweep periodico (entrambi fanno
+# delete+insert su live_market_snapshots: concorrenti = righe duplicate/parziali
+# nel Replay). NB: e' intra-processo — con UN SOLO runner (stato voluto) basta.
+_UPLOAD_LOCKS_GUARD = threading.Lock()
+_UPLOAD_LOCKS: Dict[str, threading.Lock] = {}
+
+
+def _event_lock(event_id: str) -> threading.Lock:
+    with _UPLOAD_LOCKS_GUARD:
+        lk = _UPLOAD_LOCKS.get(event_id)
+        if lk is None:
+            lk = threading.Lock()
+            _UPLOAD_LOCKS[event_id] = lk
+        return lk
 
 
 def market_file(event_id: str) -> str:
@@ -100,7 +117,17 @@ def _read_scores(event_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, An
 
 
 def upload_event(event_id: str, raw_file: Optional[str] = None) -> Dict[str, Any]:
-    """Cura e carica una partita. Idempotente. Ritorna un riepilogo."""
+    """Cura e carica una partita. Idempotente e SERIALIZZATA per evento.
+
+    Il lock per-evento impedisce a finalize_worker e allo sweep periodico di
+    curare/caricare lo stesso event_id in parallelo (delete+insert concorrenti
+    corromperebbero gli snapshot nel Replay). Vedi _event_lock.
+    """
+    with _event_lock(str(event_id)):
+        return _upload_event_impl(event_id, raw_file)
+
+
+def _upload_event_impl(event_id: str, raw_file: Optional[str] = None) -> Dict[str, Any]:
     raw = raw_file or market_file(event_id)
     if not os.path.exists(raw):
         raise FileNotFoundError(f"File grezzo mancante per {event_id}: {raw}")
