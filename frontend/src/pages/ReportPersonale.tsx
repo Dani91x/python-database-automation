@@ -32,6 +32,7 @@ import {
     type TradeStatus,
 } from '@/lib/personalReport';
 import { ManualTradeForm } from '@/components/report/ManualTradeForm';
+import { DateRangeFilter } from '@/components/report/DateRangeFilter';
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
@@ -216,7 +217,7 @@ function TimeOperativeCell({ t, onChanged }: { t: PersonalTrade; onChanged?: () 
             onBlur={commit}
             onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             placeholder="—"
-            className="w-16 bg-black/60 border border-white/10 rounded px-1.5 py-1 text-right text-xs
+            className="w-full min-w-0 bg-black/60 border border-white/10 rounded px-1 py-1 text-right text-[11px]
                        text-white tabular-nums focus:outline-none focus:border-primary/60"
         />
     );
@@ -267,7 +268,7 @@ function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }
     const [settleOpen, setSettleOpen] = useState(false);
     const pr = t.context?.predictions;
     const res = t.context?.result;
-    const td = 'px-2.5 py-2.5 whitespace-nowrap';
+    const td = 'px-1.5 py-2 truncate';
     return (
         <Fragment>
             <tr className={`border-b border-white/5 cursor-pointer hover:bg-white/[0.04] ${open ? 'bg-white/[0.04]' : ''}`}
@@ -278,15 +279,15 @@ function TradeRow({ t, onChanged }: { t: PersonalTrade; onChanged?: () => void }
                         <span className="text-white tabular-nums">{fmtDay(t.trade_date)}</span>
                     </span>
                 </td>
-                <td className={`${td} text-muted-foreground tabular-nums text-[11px]`}>{t.betfair_event_id ?? '—'}</td>
-                <td className={`${td} text-white/80`}>{t.league_name ?? '—'}</td>
-                <td className={`${td} text-muted-foreground tabular-nums text-[11px]`}>{t.league_id ?? '—'}</td>
-                <td className={`${td} text-muted-foreground`}>{t.country ?? '—'}</td>
+                <td className={`${td} text-muted-foreground tabular-nums`} title={t.betfair_event_id ?? ''}>{t.betfair_event_id ?? '—'}</td>
+                <td className={`${td} text-white/80`} title={t.league_name ?? ''}>{t.league_name ?? '—'}</td>
+                <td className={`${td} text-muted-foreground tabular-nums`}>{t.league_id ?? '—'}</td>
+                <td className={`${td} text-muted-foreground`} title={t.country ?? ''}>{t.country ?? '—'}</td>
                 <td className={`${td} text-muted-foreground tabular-nums`}>{t.season_year ?? '—'}</td>
-                <td className={`${td} text-white`}>{t.home_team ?? '—'}</td>
-                <td className={`${td} text-white`}>{t.away_team ?? '—'}</td>
+                <td className={`${td} text-white`} title={t.home_team ?? ''}>{t.home_team ?? '—'}</td>
+                <td className={`${td} text-white`} title={t.away_team ?? ''}>{t.away_team ?? '—'}</td>
                 <td className={`${td} text-center tabular-nums text-white/90`}>{t.result_ft ?? '—'}</td>
-                <td className={`${td} text-muted-foreground`}>{t.strategia}</td>
+                <td className={`${td} text-muted-foreground`} title={t.strategia}>{t.strategia}</td>
                 <td className={`${td} text-right tabular-nums text-white/80`}>{num(t.entry_odds)}</td>
                 <td className={`${td} text-right tabular-nums text-muted-foreground`}>{eur(t.stake)}</td>
                 <td className={`${td} text-right tabular-nums text-muted-foreground`}>{t.coverage != null ? eur(t.coverage) : '—'}</td>
@@ -626,15 +627,10 @@ export default function ReportPersonale() {
                         </Button>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                            <label className={LABEL_CLS}>Dal</label>
-                            <input type="date" className={SELECT_CLS} value={filters.from ?? ''}
-                                onChange={e => set({ from: e.target.value || null })} />
-                        </div>
-                        <div>
-                            <label className={LABEL_CLS}>Al</label>
-                            <input type="date" className={SELECT_CLS} value={filters.to ?? ''}
-                                onChange={e => set({ to: e.target.value || null })} />
+                        <div className="col-span-2">
+                            <label className={LABEL_CLS}>Periodo</label>
+                            <DateRangeFilter from={filters.from ?? null} to={filters.to ?? null}
+                                onChange={(f, t) => set({ from: f, to: t })} />
                         </div>
                         <div>
                             <label className={LABEL_CLS}>Strategia</label>
@@ -798,27 +794,46 @@ export default function ReportPersonale() {
                             {trades.length === 0 ? (
                                 <div className="p-6 text-center text-muted-foreground text-sm">Nessun trade per questi filtri.</div>
                             ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm min-w-[1400px]">
+                                <div className="w-full">
+                                    <table className="w-full table-fixed text-[11px]">
+                                        <colgroup>
+                                            <col style={{ width: '5%' }} />{/* Data */}
+                                            <col style={{ width: '5.5%' }} />{/* ID Evento */}
+                                            <col style={{ width: '10%' }} />{/* League */}
+                                            <col style={{ width: '4.5%' }} />{/* ID League */}
+                                            <col style={{ width: '5.5%' }} />{/* Nazione */}
+                                            <col style={{ width: '4%' }} />{/* Stagione */}
+                                            <col style={{ width: '9%' }} />{/* Home */}
+                                            <col style={{ width: '9%' }} />{/* Away */}
+                                            <col style={{ width: '4.5%' }} />{/* Risultato */}
+                                            <col style={{ width: '8%' }} />{/* Strategia */}
+                                            <col style={{ width: '4.5%' }} />{/* Quota */}
+                                            <col style={{ width: '5%' }} />{/* Stake */}
+                                            <col style={{ width: '5.5%' }} />{/* Copertura */}
+                                            <col style={{ width: '6%' }} />{/* Gain Netto */}
+                                            <col style={{ width: '5%' }} />{/* T.Op */}
+                                            <col style={{ width: '5%' }} />{/* €/h */}
+                                            <col style={{ width: '4.5%' }} />{/* Stato */}
+                                        </colgroup>
                                         <thead>
-                                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground border-b border-white/5 whitespace-nowrap">
-                                                <th className="text-left px-2.5 py-2 font-medium">Data</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">ID Evento</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">League</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">ID League</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">Nazione</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">Stagione</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">Home</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">Away</th>
-                                                <th className="text-center px-2.5 py-2 font-medium">Risultato</th>
-                                                <th className="text-left px-2.5 py-2 font-medium">Strategia</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">Quota Ingr.</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">Stake</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">Copertura</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">Gain Netto</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">T. Op. (min)</th>
-                                                <th className="text-right px-2.5 py-2 font-medium">€/h</th>
-                                                <th className="text-center px-2.5 py-2 font-medium">Stato</th>
+                                            <tr className="text-[9px] uppercase tracking-wide text-muted-foreground border-b border-white/5">
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">Data</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate" title="ID Evento">ID Ev.</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">League</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate" title="ID League">ID Lg.</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">Nazione</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate" title="Stagione">Stag.</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">Home</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">Away</th>
+                                                <th className="text-center px-1.5 py-2 font-medium truncate" title="Risultato">Ris.</th>
+                                                <th className="text-left px-1.5 py-2 font-medium truncate">Strategia</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate" title="Quota Ingresso">Quota</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate">Stake</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate" title="Copertura">Copert.</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate" title="Gain Netto">Netto</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate" title="Tempo Operativo (min)">T.Op</th>
+                                                <th className="text-right px-1.5 py-2 font-medium truncate" title="Redditività Oraria">€/h</th>
+                                                <th className="text-center px-1.5 py-2 font-medium truncate">Stato</th>
                                             </tr>
                                         </thead>
                                         <tbody>
