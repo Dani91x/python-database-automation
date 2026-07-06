@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -106,24 +107,42 @@ def fetch_data() -> Tuple[List[dict], Dict[int, Tuple[int, int]]]:
 
     rows: List[dict] = []
     page_size = 1000
-    offset = 0
+    last_fid = 0  # cursore keyset (fixture_id crescente)
 
     print("Fetching fixture_predictions con db_json_analisi...")
+    # Paginazione KEYSET (non offset): filtra fixture_id > ultimo visto e ordina.
+    # Costo O(page_size) per pagina grazie all'indice su fixture_id -> niente
+    # rallentamento crescente sui deep offset che causava lo statement timeout (57014)
+    # su ~18-19k righe con colonne JSON pesanti (db_json_analisi/raw_json_odds).
     while True:
-        resp = (
-            sb.table("fixture_predictions")
-            .select("fixture_id,result_home_goals,result_away_goals,db_json_analisi,league_id,raw_json_odds")
-            .in_("result_status_short", ["FT", "AET", "PEN"])
-            .not_.is_("db_json_analisi", "null")
-            .range(offset, offset + page_size - 1)
-            .execute()
-        )
-        batch = resp.data or []
+        batch = None
+        for attempt in range(1, 4):  # retry difensivo su timeout/lock transitorio
+            try:
+                resp = (
+                    sb.table("fixture_predictions")
+                    .select("fixture_id,result_home_goals,result_away_goals,db_json_analisi,league_id,raw_json_odds")
+                    .in_("result_status_short", ["FT", "AET", "PEN"])
+                    .not_.is_("db_json_analisi", "null")
+                    .gt("fixture_id", last_fid)
+                    .order("fixture_id")
+                    .limit(page_size)
+                    .execute()
+                )
+                batch = resp.data or []
+                break
+            except Exception as ex:  # noqa: BLE001
+                if "57014" in str(ex) and attempt < 3:
+                    print(f"\n  [retry {attempt}/3] timeout DB su fixture_id>{last_fid}, ritento...")
+                    time.sleep(2 * attempt)
+                    continue
+                raise
+        if not batch:
+            break
         rows.extend(batch)
+        last_fid = batch[-1]["fixture_id"]
         print(f"  {len(rows)} righe...", end="\r")
         if len(batch) < page_size:
             break
-        offset += page_size
     print(f"\n  Totale: {len(rows)}")
 
     # HT data
