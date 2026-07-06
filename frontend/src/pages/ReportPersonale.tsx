@@ -617,8 +617,10 @@ export default function ReportPersonale() {
                     </div>
                 </div>
 
-                {/* filtri */}
-                <Card className="glass-card border-white/10 p-4">
+                {/* filtri — relative z-40 + overflow-visible: il popover calendario NON
+                    deve essere tagliato dall'overflow-hidden di glass-card ne' finire
+                    sotto le card successive (backdrop-filter crea uno stacking context). */}
+                <Card className="glass-card border-white/10 p-4 relative z-40 !overflow-visible">
                     <div className="flex items-center gap-2 mb-4">
                         <Filter className="w-4 h-4 text-primary" />
                         <span className="font-heading font-bold text-sm uppercase tracking-wide">Filtri</span>
