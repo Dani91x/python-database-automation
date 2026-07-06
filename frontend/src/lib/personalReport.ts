@@ -16,6 +16,11 @@ export type TradeSide = 'back' | 'lay';
 export type TradeTiming = 'prematch' | 'live';
 export type TradeStatus = 'OPEN' | 'WON' | 'LOST' | 'VOID' | 'PARTIAL';
 export type LegType = 'hedge' | 'cashout' | 'coverage' | 'adjust';
+// Origine del P&L: 'model' = derivato dal modello (recompute); 'actual' = reale
+// (memorizzato così com'è, manuale o import Betfair). Vedi personal_tracking_manual_entry.sql.
+export type PnlSource = 'model' | 'actual';
+// Provenienza della riga: app (watchlist), manuale (form Report), import (.bat Betfair).
+export type EntrySource = 'app' | 'manual' | 'import';
 
 // ---------- Leg (copertura/hedge/cashout aggiuntivo, §1.3) ----------
 export interface TradeLeg {
@@ -84,6 +89,12 @@ export interface PersonalTrade {
     created_at: string;
     updated_at: string;
     legs?: TradeLeg[];              // popolato nel drill-down (get_personal_trades)
+    // provenienza + P&L reale (manual entry / import Betfair)
+    pnl_source: PnlSource;          // 'model' | 'actual'
+    entry_source: EntrySource;      // 'app' | 'manual' | 'import'
+    commission_amount: number | null;  // commissione REALE in € (se pnl_source='actual')
+    betfair_market_id: string | null;  // riconciliazione import Betfair
+    betfair_bet_id: string | null;
 }
 
 // ---------- Payload di scrittura ----------
@@ -110,11 +121,21 @@ export interface AddTradePayload {
     entry_minute?: number | null;
     entry_score?: string | null;
     exchange?: string;
-    commission?: number;
+    commission?: number;            // ALIQUOTA commissione (modello), es. 0.05
     time_operative_min?: number | null;
     comment?: string | null;
     tags?: string[] | null;
     trade_date?: string | null;
+    // ---- operazioni passate / P&L reale (personal_tracking_manual_entry.sql) ----
+    status?: TradeStatus;           // per operazioni già chiuse (passate): WON/LOST/VOID/PARTIAL
+    result_ft?: string | null;
+    pnl_source?: PnlSource;         // default 'model'; 'actual' → usa net_pnl reale
+    entry_source?: EntrySource;     // default 'app'; da UI manuale → 'manual'
+    net_pnl?: number | null;        // P&L NETTO reale (obbligatorio se pnl_source='actual')
+    gross_pnl?: number | null;      // P&L lordo reale (default net + commissione)
+    commission_amount?: number | null;  // commissione REALE in €
+    betfair_market_id?: string | null;
+    betfair_bet_id?: string | null;
 }
 
 // Input di add_trade_leg (§2.5).

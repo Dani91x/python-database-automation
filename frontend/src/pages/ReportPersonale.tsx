@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import {
     ChevronLeft, Wallet, Bookmark, AlertTriangle, Filter, RotateCcw,
-    ChevronDown, ChevronUp, TrendingUp, TrendingDown, Loader2, CheckCircle2, Trash2,
+    ChevronDown, ChevronUp, TrendingUp, TrendingDown, Loader2, CheckCircle2, Trash2, Plus,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ import {
     type ReportData, type PersonalTrade, type ReportFilters, type Metrics,
     type TradeStatus,
 } from '@/lib/personalReport';
+import { ManualTradeForm } from '@/components/report/ManualTradeForm';
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
@@ -413,6 +414,7 @@ export default function ReportPersonale() {
 
     const [filters, setFilters] = useState<ReportFilters>({});
     const [purgeOpen, setPurgeOpen] = useState(false);
+    const [manualOpen, setManualOpen] = useState(false);
     const set = (patch: Partial<ReportFilters>) => setFilters(prev => ({ ...prev, ...patch }));
     const reset = () => setFilters({});
 
@@ -487,10 +489,16 @@ export default function ReportPersonale() {
                             La tua operatività reale (pre-match + live). Metriche calcolate lato DB.
                         </p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setPurgeOpen(true)}
-                        className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10">
-                        <Trash2 className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Svuota Report</span>
-                    </Button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <Button size="sm" onClick={() => setManualOpen(true)}
+                            className="bg-primary text-primary-foreground font-bold hover:bg-primary/90">
+                            <Plus className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Inserisci operazione</span>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setPurgeOpen(true)}
+                            className="border-destructive/40 text-destructive hover:bg-destructive/10">
+                            <Trash2 className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Svuota Report</span>
+                        </Button>
+                    </div>
                 </div>
 
                 {/* filtri */}
@@ -698,6 +706,8 @@ export default function ReportPersonale() {
                     </>
                 )}
             </main>
+
+            <ManualTradeForm open={manualOpen} onOpenChange={setManualOpen} onSaved={() => load(filters)} />
 
             <PurgeDialog open={purgeOpen} onOpenChange={setPurgeOpen} onPurged={() => load(filters)} />
 
