@@ -23,7 +23,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import betfairlightweight
@@ -668,6 +668,32 @@ def _safe_set_status(event_id: str, status: str, error_detail: Optional[str] = N
 # ----------------------------------------------------------------------------
 # Costruzione catalogo + budget limiti (F5)
 # ----------------------------------------------------------------------------
+# Un follow senza mercati nel catalogo Betfair è ambiguo: può essere una partita
+# FINITA (mercati rimossi/CLOSED) oppure un evento FUTURO i cui mercati non sono
+# ancora pubblicati. Se è iniziato da più di questa soglia è certamente concluso
+# (una partita di calcio dura ~2h) → va ritirato, non lasciato PENDING.
+_FOLLOW_STALE_AFTER = timedelta(hours=float(os.getenv("LIVE_FOLLOW_STALE_HOURS", "3")))
+
+
+def _is_finished_stale(follow: Dict[str, Any]) -> bool:
+    """True se l'evento è iniziato da oltre ``_FOLLOW_STALE_AFTER`` (quindi finito).
+
+    Serve a distinguere, quando il catalogo non ha mercati, una partita conclusa
+    (da ritirare: caricare nel Replay + chiudere) da un evento futuro con mercati
+    non ancora pubblicati (da lasciare PENDING, si catalogherà al prossimo giro).
+    """
+    open_date = follow.get("open_date")
+    if not open_date:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(open_date).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - dt > _FOLLOW_STALE_AFTER
+
+
 def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dict[str, Any]]) -> None:
     """Scarica il catalogo dei nuovi eventi, applica il budget mercati (F5)."""
     for f in follows:
@@ -676,7 +702,20 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
             continue
         markets = fetch_event_markets(rest, event_id)
         if not markets:
-            logger.warning("[runner] nessun mercato per %s", event_id)
+            if _is_finished_stale(f):
+                # Partita finita/rimossa dal catalogo. NON lasciarla PENDING:
+                # altrimenti subscription_worker la riconta come "nuova" ad ogni
+                # poll e riavvia lo stream all'infinito (loop F3, bug 07/07).
+                # _finalize_event la CARICA nel Replay (se ci sono dati grezzi),
+                # porta lo status a terminale e la mette in finished_events così
+                # non viene più ritentata. → "le vecchie caricate, le nuove seguite".
+                logger.info("[runner] follow stantio %s: nessun mercato + iniziato da "
+                            ">%s → ritiro e carico nel Replay.", event_id, _FOLLOW_STALE_AFTER)
+                _finalize_event(event_id, session)
+            else:
+                # Evento futuro: mercati non ancora pubblicati. Lascia PENDING,
+                # verrà catalogato al prossimo giro quando i mercati escono.
+                logger.warning("[runner] nessun mercato per %s (non ancora pubblicati?)", event_id)
             continue
         prospective = len(session.market_to_event) + len(markets)
         verdict = limits.check_market_budget(prospective, SAFE_MARKET_THRESHOLD, HARD_MARKET_CAP)
