@@ -381,3 +381,199 @@ def test_bracket_stop_waits_if_offset_not_yet_placed():
     rw._process_once(sb, fl, strategy=object())          # poll2: off is None → aspetta
     assert len(sb.enqueued) == n_after_p1                # nessun cancel, nessun greenup
     assert rule["status"] == "armed"                     # resta in attesa (non 'triggered')
+
+
+# ---------------------------------------------------------------------------
+# STOP-ENTRY (C23) — worker
+# ---------------------------------------------------------------------------
+def test_stop_entry_waits_below_trigger():
+    rule = _rule(rule_type="stop_entry", entry_price=None,
+                 params={"trigger_price": 3.5, "trigger_direction": "at_or_above"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.4, 3.35, 3.4, 0.0, 0.0))
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "armed"  # resta in attesa della soglia
+
+
+def test_stop_entry_fires_places_at_best():
+    rule = _rule(rule_type="stop_entry", entry_price=None,
+                 params={"trigger_price": 3.5, "trigger_direction": "at_or_above"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.55, 3.5, 3.55, 0.0, 0.0))
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    p = sb.enqueued[0]
+    assert p["action"] == "place" and p["side"] == "back"
+    assert p["price"] == 3.5 and p["size"] == 10.0   # best BACK del proprio lato
+    assert p["client_ref"] == "risk1e"
+    assert rule["status"] == "done"                  # nessun follow-through per gli ingressi
+
+
+def test_stop_entry_invalid_direction_is_visible_error():
+    rule = _rule(rule_type="stop_entry", entry_price=None,
+                 params={"trigger_price": 3.5, "trigger_direction": "sopra"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.55, 3.5, 3.55, 0.0, 0.0))
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "error"  # disarmo VISIBILE, mai retry silenzioso
+
+
+def test_stop_entry_kill_switch_blocks_entry():
+    rule = _rule(rule_type="stop_entry", entry_price=None,
+                 params={"trigger_price": 3.5, "trigger_direction": "at_or_above"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.55, 3.5, 3.55, 0.0, 0.0))
+    import pytest as _pt
+    with _pt.MonkeyPatch.context() as mp:
+        mp.setattr(rw, "_kill_active", lambda: True)
+        rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []          # il freno blocca le APERTURE
+    assert rule["status"] == "armed"  # resta armata (potrà entrare a freno tolto)
+
+
+# ---------------------------------------------------------------------------
+# CHASE (C25) — worker (macchina a stati cancel→place)
+# ---------------------------------------------------------------------------
+def _live_order(bet_id: str, price: float, rem: float, status_name: str = "EXECUTABLE",
+                cancelled: float = 0.0):
+    return SimpleNamespace(
+        bet_id=bet_id,
+        status=SimpleNamespace(name=status_name),
+        size_remaining=rem,
+        size_cancelled=cancelled,
+        order_type=SimpleNamespace(price=price),
+    )
+
+
+def test_chase_tracking_enqueues_cancel_when_best_moves(monkeypatch):
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    order = _live_order("B1", 3.0, 10.0)  # resting a 3.0, best back ora 3.1
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    assert sb.enqueued[0]["action"] == "cancel" and sb.enqueued[0]["bet_id"] == "B1"
+    assert rule["status"] == "armed"
+    assert rule["result"]["phase"] == "cancelling"
+    assert rule["result"]["pending_size"] == 10.0
+
+
+def test_chase_no_requote_when_already_at_best(monkeypatch):
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.0, 3.0, 3.05, 0.0, 0.0))
+    order = _live_order("B1", 3.0, 10.0)  # gia' al best
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "armed"
+
+
+def test_chase_cancelling_places_remaining_after_terminal(monkeypatch):
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0},
+                 result={"phase": "cancelling", "pending_size": 10.0,
+                         "current_bet_id": "B1", "chase_count": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    order = _live_order("B1", 3.0, 0.0, status_name="CANCELLED", cancelled=6.0)
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    p = sb.enqueued[0]
+    assert p["action"] == "place" and p["price"] == 3.1
+    assert p["size"] == 6.0  # SOLO il non-abbinato (size_cancelled), mai il totale
+    assert rule["result"]["phase"] == "placing"
+
+
+def test_chase_matched_during_requote_is_done(monkeypatch):
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0},
+                 result={"phase": "cancelling", "pending_size": 10.0,
+                         "current_bet_id": "B1", "chase_count": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    order = _live_order("B1", 3.0, 0.0, status_name="EXECUTION_COMPLETE")
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "done"  # abbinato durante il re-quote: mai ripiazzare
+
+
+def test_chase_cap_stops_requoting(monkeypatch):
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0, "max_chases": 2},
+                 result={"phase": "tracking", "chase_count": 2, "current_bet_id": "B1"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    order = _live_order("B1", 3.0, 10.0)
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "done"  # cap raggiunto: l'ordine resta dov'e'
+
+
+def test_chase_cancelling_lapsed_uses_size_lapsed_not_stale_pending(monkeypatch):
+    """Fix review CRITICAL: terminale LAPSED (persistence LAPSE + in-play durante il
+    cancel) -> si ripiazza size_LAPSED, MAI il pending_size stantio pre-cancel (che
+    non sconta un fill avvenuto nella race -> esposizione doppiata)."""
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0},
+                 result={"phase": "cancelling", "pending_size": 10.0,
+                         "current_bet_id": "B1", "chase_count": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    # 4 abbinati nella race, 6 lapsati: da ripiazzare SOLO 6
+    order = SimpleNamespace(
+        bet_id="B1", status=SimpleNamespace(name="LAPSED"),
+        size_remaining=0.0, size_cancelled=0.0, size_lapsed=6.0, size_voided=0.0,
+        order_type=SimpleNamespace(price=3.0),
+    )
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    assert sb.enqueued[0]["size"] == 6.0  # size_lapsed, non 10.0
+
+
+def test_chase_cancelling_zero_to_place_is_done(monkeypatch):
+    """Tutto abbinato durante il cancel (campi terminali a 0) -> done, MAI fallback
+    al pending_size (0.0 legittimo != dato mancante)."""
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0},
+                 result={"phase": "cancelling", "pending_size": 10.0,
+                         "current_bet_id": "B1", "chase_count": 0})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    order = SimpleNamespace(
+        bet_id="B1", status=SimpleNamespace(name="CANCELLED"),
+        size_remaining=0.0, size_cancelled=0.0, size_lapsed=0.0, size_voided=0.0,
+        order_type=SimpleNamespace(price=3.0),
+    )
+    monkeypatch.setattr(rw.low, "_find_order_by_bet_id", lambda *a: order)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "done"
+
+
+def test_chase_placing_completes_back_to_tracking(monkeypatch):
+    """Fase placing: il ripiazzo diventa un ordine vivo -> torna 'tracking' col nuovo
+    bet_id e chase_count incrementato."""
+    rule = _rule(rule_type="chase", entry_price=None, entry_bet_id="B1",
+                 params={"offset_ticks": 0},
+                 result={"phase": "placing", "place_request_id": 777,
+                         "chase_count": 0, "current_bet_id": "B1"})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market("1.1", 47973, 3.1, 3.1, 3.15, 0.0, 0.0))
+    new_order = SimpleNamespace(bet_id="B2", status=SimpleNamespace(name="EXECUTABLE"),
+                                size_remaining=6.0, order_type=SimpleNamespace(price=3.1))
+    monkeypatch.setattr(rw, "_offset_order_obj", lambda *a: new_order)
+    rw._process_once(sb, fl, strategy=object())
+    assert rule["status"] == "armed"
+    assert rule["result"]["phase"] == "tracking"
+    assert rule["result"]["current_bet_id"] == "B2"
+    assert rule["result"]["chase_count"] == 1

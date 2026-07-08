@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -671,6 +672,11 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
                           float(request_row.get("handicap") or 0), float(order_risk or 0.0))
     _place_or_raise(market, built.order, "place")
     _record_order()
+    # C22 (roadmap): Fill-or-Kill SOFTWARE con timer — params.fok_ttl_sec > 0 registra
+    # l'ordine nel registro TTL: se dopo N secondi non è (tutto) abbinato, il worker lo
+    # CANCELLA al giro successivo. Caveat software-side (come stop/offset): se il runner
+    # cade il TTL non esiste più — l'ordine resta a mercato con la sua persistence.
+    _register_fok_ttl(request_row, market, built.order)
     result = _result(
         ok=True,
         action="place",
@@ -684,6 +690,101 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         detail=built.note,
     )
     _write_done(sb, rid, result)
+
+
+# ---------------------------------------------------------------------------
+# C22 — Fill-or-Kill SOFTWARE con timer (registro TTL in-memory del worker)
+# ---------------------------------------------------------------------------
+# Voci: dict {deadline, market_id, cust_ref, bet_id, alerted}. Fix review CRITICAL:
+# NIENTE riferimenti diretti a market/order — un restart dello stream (evento di
+# ROUTINE: nuova partita agganciata) ricostruisce il framework e renderebbe i vecchi
+# oggetti morti (cancel su ThreadPool chiuso = retry infinito silenzioso). L'ordine
+# viene RI-RISOLTO a ogni sweep sul framework CORRENTE via cust_ref/bet_id; se dopo
+# la scadenza non è più risolvibile → alert CRITICAL una volta e voce rimossa
+# (verifica manuale: mai fingere una protezione che non possiamo più esercitare).
+_FOK_TTLS: List[Dict[str, Any]] = []
+_FOK_MAX_TTL_SEC = 3600.0  # guardia: TTL oltre 1h non ha senso per un FoK
+
+
+def _register_fok_ttl(request_row: Dict[str, Any], market: Any, order: Any) -> None:  # noqa: ARG001
+    params = request_row.get("params") or {}
+    raw = params.get("fok_ttl_sec") if isinstance(params, dict) else None
+    ttl = _f(raw)
+    # 0 (o assente) = FoK disattivato — convenzione "0 = off" del resto del codebase.
+    if ttl is None or ttl == 0:
+        return
+    if not (0 < ttl <= _FOK_MAX_TTL_SEC):
+        # TTL malformato = errore di richiesta, MAI ignorato in silenzio: qui siamo DOPO
+        # il place (fallire forte lascerebbe l'ordine senza esito) → clamp dichiarato.
+        logger.warning("[worker] fok_ttl_sec %r fuori range: clampato a [1, %s]s",
+                       ttl, int(_FOK_MAX_TTL_SEC))
+        ttl = min(max(float(ttl), 1.0), _FOK_MAX_TTL_SEC)
+    _FOK_TTLS.append({
+        "deadline": time.monotonic() + float(ttl),
+        "market_id": str(request_row.get("market_id") or ""),
+        "cust_ref": _cust_ref(request_row["id"]),
+        "bet_id": getattr(order, "bet_id", None),
+        "alerted": False,
+    })
+
+
+def _fok_alert(entry: Dict[str, Any], why: str) -> None:
+    """Escalation UNA volta per voce: l'utente credeva l'ordine protetto dal timer."""
+    if entry.get("alerted"):
+        return
+    entry["alerted"] = True
+    msg = (f"FoK timer: impossibile cancellare l'ordine {entry.get('bet_id') or entry.get('cust_ref')} "
+           f"({why}) — VERIFICA MANUALMENTE su Betfair, il timer non è più attivo.")
+    logger.error("[worker] %s", msg)
+    try:
+        from . import db
+        db.insert_alert("CRITICAL", "FOK_TTL", msg)
+    except Exception:  # noqa: BLE001 - l'alert è best-effort
+        pass
+
+
+def _sweep_fok_ttls(flumine: Any) -> None:
+    """Cancella gli ordini FoK scaduti e NON (completamente) abbinati. Chiamata a ogni
+    giro del worker (~1s): la precisione del timer è la cadenza del poll, come nei tool
+    pro. L'ordine è ri-risolto sul framework CORRENTE (sopravvive ai restart)."""
+    if not _FOK_TTLS:
+        return
+    now = time.monotonic()
+    keep: List[Dict[str, Any]] = []
+    for entry in _FOK_TTLS:
+        order = None
+        if entry.get("bet_id"):
+            order = _find_order_by_bet_id(flumine, entry["market_id"], str(entry["bet_id"]))
+        if order is None and entry.get("cust_ref"):
+            order = _find_order_by_cust_ref(flumine, entry["market_id"], entry["cust_ref"])
+        if order is None:
+            if now < entry["deadline"]:
+                keep.append(entry)  # non ancora nel blotter (appena piazzato): riprova
+                continue
+            # scaduto E non più risolvibile (restart senza recovery/blotter ripulito):
+            # non possiamo più cancellarlo noi → escalation, mai retry muto all'infinito.
+            _fok_alert(entry, "ordine non risolvibile nel blotter corrente")
+            continue
+        if getattr(order, "bet_id", None) and not entry.get("bet_id"):
+            entry["bet_id"] = getattr(order, "bet_id")
+        status = getattr(getattr(order, "status", None), "name", None) or str(getattr(order, "status", ""))
+        rem = _f(getattr(order, "size_remaining", None)) or 0.0
+        if status in ("EXECUTION_COMPLETE", "EXPIRED", "LAPSED", "VIOLATION", "CANCELLED") or rem <= 0:
+            continue  # abbinato/terminale: TTL consumato
+        if now < entry["deadline"]:
+            keep.append(entry)
+            continue
+        try:
+            market = _resolve_market(flumine, entry["market_id"])
+            market.cancel_order(order)
+            logger.info("[worker] FoK timer scaduto: cancel bet=%s (rem=%.2f)",
+                        getattr(order, "bet_id", None), rem)
+            keep.append(entry)  # resta finché l'ordine non è TERMINALE (retry-safe)
+        except Exception as e:  # noqa: BLE001 - ritenta al giro dopo, MAI muto
+            logger.warning("[worker] FoK cancel KO bet=%s: %s (ritento)",
+                           getattr(order, "bet_id", None), e)
+            keep.append(entry)
+    _FOK_TTLS[:] = keep
 
 
 def _do_cancel(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str) -> None:
@@ -1571,6 +1672,9 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     # #15 velocità runtime: rallenta la cadenza al target order_poll_sec (se impostato), senza riavvio.
     if _throttled("order_cycle", _order_poll_target()):
         return 0
+    # C22: Fill-or-Kill software — cancella gli ordini col timer scaduto non abbinati.
+    # PRIMA del gate kill-switch: il cancel è un'azione di CHIUSURA (sempre permessa).
+    _sweep_fok_ttls(flumine)
     # Kill-switch (ENV *o* DB/UI): blocca le APERTURE ma NON le CHIUSURE. Col freno tirato
     # l'utente deve comunque poter cancellare resting e cash-outare le posizioni aperte —
     # bloccare anche le uscite sarebbe l'opposto della protezione (posizione che sanguina

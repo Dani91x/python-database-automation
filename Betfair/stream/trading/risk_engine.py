@@ -577,3 +577,71 @@ def evaluate_rule(
         return RuleDecision(False, "take-profit: nessuno scatto")
 
     return RuleDecision(False, f"rule_type non monitorato: {rule_type!r}")
+
+
+# ---------------------------------------------------------------------------
+# STOP-ENTRY (roadmap C23) — ordine condizionale che ENTRA al tocco della soglia
+# ---------------------------------------------------------------------------
+# Semantica Bet Angel: armi "entra BACK/LAY quando il prezzo tocca X" con direzione
+# esplicita (at_or_above = breakout verso l'alto; at_or_below = verso il basso).
+# Logica PURA: il worker legge l'LTP corrente e chiama questa funzione a ogni giro.
+VALID_STOP_ENTRY_DIRECTIONS = ("at_or_above", "at_or_below")
+
+
+def stop_entry_fires(direction: str, trigger_price: float, current_price: Optional[float]) -> bool:
+    """True se il prezzo corrente ha toccato la soglia nella direzione richiesta.
+
+    current_price assente/non finito -> False (mai entrare al buio).
+    direction non valida -> ValueError (parametro PERMANENTE: il chiamante la
+    classifica come errore di regola, non come blip di mercato).
+    """
+    d = (direction or "").lower()
+    if d not in VALID_STOP_ENTRY_DIRECTIONS:
+        raise ValueError(f"trigger_direction non valida: {direction!r}")
+    if current_price is None or not math.isfinite(current_price):
+        return False
+    if not (math.isfinite(trigger_price) and MIN_PRICE <= trigger_price <= MAX_PRICE):
+        raise ValueError(f"trigger_price fuori scala Betfair: {trigger_price!r}")
+    if d == "at_or_above":
+        return current_price >= trigger_price - _EPS
+    return current_price <= trigger_price + _EPS
+
+
+# ---------------------------------------------------------------------------
+# CHASE / tick-offset sul re-quote (roadmap C25) — insegui il best
+# ---------------------------------------------------------------------------
+def chase_target_price(
+    side: str,
+    best_back_price: Optional[float],
+    best_lay_price: Optional[float],
+    offset_ticks: int = 0,
+) -> Optional[float]:
+    """Prezzo a cui l'ordine inseguitore DEVE stare adesso, dato il best corrente.
+
+    BACK: aggancia il best available-to-back spostato di ``offset_ticks`` PIU' IN ALTO
+    (offset 0 = join del best; offset>0 = resta N tick dietro, meno aggressivo).
+    LAY: speculare, best available-to-lay spostato PIU' IN BASSO.
+    Best assente/fuori scala -> None (non re-quotare al buio).
+    offset negativo -> ValueError (parametro permanente).
+    """
+    if offset_ticks < 0 or int(offset_ticks) != offset_ticks:
+        raise ValueError(f"offset_ticks non valido: {offset_ticks!r}")
+    s = (side or "").lower()
+    if s not in ("back", "lay"):
+        raise ValueError(f"side non valido: {side!r}")
+    base = best_back_price if s == "back" else best_lay_price
+    if base is None or not math.isfinite(base) or not (MIN_PRICE <= base <= MAX_PRICE):
+        return None
+    snapped = get_nearest_price(float(base))
+    n = int(offset_ticks) if s == "back" else -int(offset_ticks)
+    moved = price_ticks_away(snapped, n) if n != 0 else snapped
+    return float(get_nearest_price(float(moved)))
+
+
+def chase_should_requote(order_price: Optional[float], target_price: Optional[float]) -> bool:
+    """True se l'ordine va spostato: target calcolabile e DIVERSO dal prezzo attuale."""
+    if target_price is None or order_price is None:
+        return False
+    if not (math.isfinite(order_price) and math.isfinite(target_price)):
+        return False
+    return abs(order_price - target_price) > _EPS

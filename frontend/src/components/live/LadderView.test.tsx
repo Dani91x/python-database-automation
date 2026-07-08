@@ -16,12 +16,13 @@ vi.mock('@/lib/liveOrders', () => ({
     fetchLivePositions: vi.fn(),
     sendLiveOrderCommand: vi.fn(),
     sendGreenup: vi.fn(),
+    requestRiskRule: vi.fn(),
 }));
 
 import { LadderView } from './LadderView';
 import { fetchLiveLadder } from '@/lib/live';
 import {
-    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
+    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup, requestRiskRule,
     type LiveOrderRow, type LivePositionRow,
 } from '@/lib/liveOrders';
 
@@ -30,6 +31,7 @@ const mOrders = vi.mocked(fetchLiveOrders);
 const mPositions = vi.mocked(fetchLivePositions);
 const mSend = vi.mocked(sendLiveOrderCommand);
 const mGreen = vi.mocked(sendGreenup);
+const mArm = vi.mocked(requestRiskRule);
 
 const LADDER_ROW = {
     event_id: 'evt1',
@@ -81,8 +83,9 @@ beforeEach(() => {
     mLadder.mockResolvedValue(LADDER_ROW);
     mOrders.mockResolvedValue([]);
     mPositions.mockResolvedValue([]);
-    mSend.mockResolvedValue({ ok: true, action: 'place', mode: 'paper' });
+    mSend.mockResolvedValue({ ok: true, action: 'place', mode: 'paper', bet_id: 'B9' });
     mGreen.mockResolvedValue({ ok: true, action: 'greenup', mode: 'paper' });
+    mArm.mockResolvedValue(1);
 });
 
 describe('LadderView', () => {
@@ -223,5 +226,101 @@ describe('LadderView', () => {
         await screen.findByText('Casa');
         expect(await screen.findByText('Net')).toBeInTheDocument();
         expect(screen.getByText('Exp')).toBeInTheDocument();
+    });
+
+
+    // ================= SEZIONE C: strumenti armati al piazzamento =================
+
+    it('C20: con Offset armato il place arma la regola offset on_fill sul bet piazzato', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: 'Offset' }));
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(mArm.mock.calls[0][0]).toEqual(expect.objectContaining({
+            ruleType: 'offset', entryBetId: 'B9', entrySide: 'back', entrySize: 5,
+            params: expect.objectContaining({ offset_ticks: 3, greening: true, timing: 'on_fill' }),
+        }));
+    });
+
+    it('C26: Offset + Stop (non trailing) = UNA regola bracket OCO', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: 'Offset' }));
+        await user.click(screen.getByRole('button', { name: 'Stop' }));
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(mArm.mock.calls[0][0]).toEqual(expect.objectContaining({
+            ruleType: 'bracket',
+            params: expect.objectContaining({ offset_ticks: 3, trigger_ticks: 5, timing: 'on_fill' }),
+        }));
+    });
+
+    it('C20: ordine OK ma bet_id assente → avviso esplicito, nessuna regola armata', async () => {
+        mSend.mockResolvedValue({ ok: true, action: 'place', mode: 'paper' }); // niente bet_id
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: 'Offset' }));
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mArm).not.toHaveBeenCalled();
+        expect(await screen.findByText(/protezioni NON armate/)).toBeInTheDocument();
+    });
+
+    it('C22: con FoK armato il place porta params.fok_ttl_sec', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: /FoK/ }));
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            params: { fok_ttl_sec: 5 },
+        }));
+    });
+
+    it('C24: con Scala 3×1t un click piazza 3 ordini a tick crescenti (back)', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: 'Scala' }));
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(3));
+        const prices = mSend.mock.calls.map(c => (c[0] as { price?: number }).price);
+        expect(prices).toEqual([2.9, 2.92, 2.94]);
+        expect(mArm).not.toHaveBeenCalled(); // la scala non combina le protezioni
+    });
+
+    it('C23: con Entry armato il click ARMA uno stop_entry (nessun place)', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: /Entry/ }));
+        // click su un livello SOPRA l'LTP (3.0) → direzione at_or_above
+        await user.click(screen.getByTitle(/LAY €5\.00 @ 3\.05/));
+        await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
+        expect(mArm.mock.calls[0][0]).toEqual(expect.objectContaining({
+            ruleType: 'stop_entry', entrySide: 'lay', entrySize: 5,
+            params: expect.objectContaining({ trigger_price: 3.05, trigger_direction: 'at_or_above' }),
+        }));
+        expect(mSend).not.toHaveBeenCalled();
+    });
+
+    it('C27: il tasto 1 esegue la macro sulla selezione puntata', async () => {
+        localStorage.setItem('servants:v1', JSON.stringify([{
+            slot: 1, name: 'join', steps: [{ kind: 'place', side: 'back', price: 'best', stake: 'current' }],
+        }]));
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await user.keyboard('1');
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'place', side: 'back', price: 2.9, size: 5, // best back del book mock
+        }));
     });
 });

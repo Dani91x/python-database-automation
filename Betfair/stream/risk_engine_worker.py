@@ -586,6 +586,210 @@ def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, st
 
 
 # ---------------------------------------------------------------------------
+# STOP-ENTRY (roadmap C23) — ordine condizionale: ENTRA al tocco della soglia
+# ---------------------------------------------------------------------------
+def _handle_stop_entry(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
+    """Entra (place) SOLO quando l'LTP tocca ``params.trigger_price`` nella direzione
+    ``params.trigger_direction`` (at_or_above|at_or_below). Un INGRESSO mancato non è
+    una posizione che sanguina: niente follow-through di flatten — l'esito dell'ordine
+    è visibile nello specchio; la regola chiude qui ('done')."""
+    market = low._resolve_market(flumine, rule.get("market_id"))
+    sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
+    res = _result(rule)
+    if _apply_inplay_policy(sb, rule, market, res) == "disarmed":
+        return
+    p = _params(rule)
+    trigger = low._f(p.get("trigger_price"))
+    direction = str(p.get("trigger_direction") or "")
+    size = low._f(rule.get("entry_size"))
+    side = str(rule.get("entry_side") or "").lower()
+    if size is None or size <= 0 or side not in ("back", "lay"):
+        _update_rule(sb, rule["id"], {"status": "error",
+                                      "error": "stop_entry: entry_size/entry_side non validi"})
+        _alert("CRITICAL", f"Stop-entry {rule.get('id')} DISATTIVATO: entry_size/side non validi.")
+        return
+    ltp = _ltp(market, sel, hcap)
+    try:
+        fired = risk_engine.stop_entry_fires(
+            direction, trigger if trigger is not None else float("nan"), ltp)
+    except ValueError as ex:  # parametri PERMANENTEMENTE invalidi: disarmo VISIBILE
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"parametri non validi: {ex}"})
+        _alert("CRITICAL", f"Stop-entry {rule.get('id')} DISATTIVATO: {ex}.")
+        return
+    if not fired:
+        return  # resta armata
+    if _kill_active():
+        return  # freno d'emergenza: non entrare, resta armata
+    best_back, best_lay = low._best_prices(market, sel, hcap)
+    place_at = str(p.get("place_at") or "best").lower()
+    price = trigger if place_at == "trigger" else (best_back if side == "back" else best_lay)
+    if price is None:
+        return  # book momentaneamente vuoto: transitorio, riprova al giro dopo
+    req_id = _enqueue(sb, {
+        "client_ref": f"risk{rule['id']}e", "action": "place", "mode": mode_l,
+        "market_id": rule["market_id"], "selection_id": rule["selection_id"],
+        "handicap": rule.get("handicap") or 0, "side": side,
+        "price": price, "size": size,
+        "persistence": (p.get("persistence") or "LAPSE"),
+        "params": {"risk_rule_id": rule["id"], "role": "stop_entry"},
+    })
+    _update_rule(sb, rule["id"], {"status": "done", "enqueued_client_ref": f"risk{rule['id']}e",
+        "enqueued_request_id": req_id, "triggered_at": _now_iso(),
+        "result": {"note": f"stop-entry scattato: LTP {ltp} {direction} {trigger}",
+                   "side": side, "price": price, "size": size}})
+
+
+# ---------------------------------------------------------------------------
+# CHASE / tick-offset sul re-quote (roadmap C25) — insegui il best
+# ---------------------------------------------------------------------------
+# Macchina a stati CANCEL→PLACE (mai un replaceOrders singolo, stessa filosofia del
+# drag-move): non esistono MAI due ordini vivi contemporaneamente, e si ripiazza SOLO
+# la size rimasta non abbinata. Stato persistito in result jsonb:
+#   phase: 'tracking' | 'cancelling' | 'placing' · chase_count · place_request_id ·
+#   pending_size (size da ripiazzare, catturata alla decisione di re-quote).
+_CHASE_DEFAULT_MAX = 20
+
+
+def _chase_done(sb: Any, rule: Dict[str, Any], res: Dict[str, Any], note: str) -> None:
+    _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+                                  "result": {**res, "note": note}})
+
+
+def _handle_chase(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
+    market = low._resolve_market(flumine, rule.get("market_id"))
+    sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
+    res = _result(rule)
+    # Fix review MEDIUM: la policy in-play può disarmare SOLO in fase 'tracking' — mai a
+    # metà di un ciclo cancel→place (disarmo in 'placing' orfanerebbe l'ordine ripiazzato,
+    # che nessuna regola tornerebbe a tracciare).
+    if str(res.get("phase") or "tracking") == "tracking" \
+       and _apply_inplay_policy(sb, rule, market, res) == "disarmed":
+        return
+    p = _params(rule)
+    side = str(rule.get("entry_side") or "").lower()
+    try:
+        offset_ticks = int(p.get("offset_ticks") or 0)
+        if offset_ticks < 0:
+            raise ValueError(f"offset_ticks non valido: {offset_ticks!r}")
+    except (TypeError, ValueError) as ex:
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"parametri non validi: {ex}"})
+        _alert("CRITICAL", f"Chase {rule.get('id')} DISATTIVATO: {ex}.")
+        return
+    max_chases = int(low._f(p.get("max_chases")) or _CHASE_DEFAULT_MAX)
+    phase = str(res.get("phase") or "tracking")
+    count = int(res.get("chase_count") or 0)
+
+    # ---- fase PLACING: attende che il ripiazzo diventi un ordine vivo -----------------
+    if phase == "placing":
+        rid = res.get("place_request_id")
+        order = _offset_order_obj(flumine, rule.get("market_id"), rid)
+        if order is None:
+            # richiesta ancora in coda o fallita: se la coda l'ha marcata 'error' → disarmo
+            try:
+                row = (sb.table(low._TABLE).select("status,error").eq("id", int(rid))
+                       .limit(1).execute().data or [None])[0]
+            except Exception:  # noqa: BLE001 - lettura best-effort: riprova al giro dopo
+                row = None
+            if row and row.get("status") == "error":
+                _update_rule(sb, rule["id"], {"status": "error",
+                    "error": f"chase: ripiazzo rifiutato ({str(row.get('error'))[:120]}) — nessun ordine a mercato"})
+                _alert("CRITICAL", f"Chase {rule.get('id')}: ripiazzo RIFIUTATO, l'ordine NON è più a mercato.")
+                return
+            # Fix review MEDIUM: ripiazzo che non si materializza (coda ferma/worker giù):
+            # dopo la soglia escala UNA volta con alert — l'ordine è FUORI mercato e
+            # l'utente deve saperlo (stesso pattern del follow-through degli stop).
+            age = _age_seconds(res.get("placing_since"))
+            if age is not None and age > _FILL_ALERT_AFTER_SEC * 3 and not res.get("placing_alerted"):
+                res["placing_alerted"] = True
+                _update_rule(sb, rule["id"], {"result": res})
+                _alert("CRITICAL",
+                       f"Chase {rule.get('id')}: ripiazzo in coda da {age:.0f}s senza esito — "
+                       "l'ordine NON è a mercato (runner/coda fermi?). Verifica.")
+            return
+        new_bet = getattr(order, "bet_id", None)
+        res.update({"phase": "tracking", "chase_count": count + 1,
+                    "current_bet_id": str(new_bet) if new_bet else None,
+                    "place_request_id": None, "pending_size": None})
+        _update_rule(sb, rule["id"], {"result": res})
+        return
+
+    # ---- risolvi l'ordine CORRENTE da inseguire ---------------------------------------
+    bet_id = str(res.get("current_bet_id") or rule.get("entry_bet_id") or "")
+    if not bet_id:
+        _update_rule(sb, rule["id"], {"status": "error", "error": "chase: entry_bet_id obbligatorio"})
+        return
+    order = low._find_order_by_bet_id(flumine, rule.get("market_id"), bet_id)
+    if order is None:
+        _chase_done(sb, rule, res, "ordine non più nel blotter: chase concluso")
+        return
+    st = getattr(getattr(order, "status", None), "name", None) or str(getattr(order, "status", ""))
+    rem = low._f(getattr(order, "size_remaining", None)) or 0.0
+
+    # ---- fase CANCELLING: aspetta il terminale, poi ripiazza SOLO il non-abbinato -----
+    if phase == "cancelling":
+        if st == "EXECUTION_COMPLETE":
+            _chase_done(sb, rule, res, "abbinato durante il re-quote: chase concluso")
+            return
+        if st in _TERMINAL:
+            # Fix review CRITICAL: il terminale può essere CANCELLED ma anche LAPSED/
+            # VOIDED/EXPIRED (es. persistence LAPSE + passaggio in-play durante il cancel):
+            # flumine espone campi SEPARATI (size_cancelled/lapsed/voided, mutuamente
+            # esclusivi). Si sommano i campi PRESENTI; il fallback a pending_size (snapshot
+            # pre-cancel, che NON sconta un fill avvenuto nella race) è SOLO per oggetti
+            # privi di tutti i campi. MAI `or` su uno 0.0 legittimo (nulla da ripiazzare
+            # ≠ dato mancante: ripiazzerebbe size già abbinata → esposizione doppiata).
+            parts = [low._f(getattr(order, f, None))
+                     for f in ("size_cancelled", "size_lapsed", "size_voided")]
+            known = [v for v in parts if v is not None]
+            to_place = float(sum(known)) if known else (low._f(res.get("pending_size")) or 0.0)
+            if to_place <= 0:
+                _chase_done(sb, rule, res, "nulla da ripiazzare dopo il cancel: chase concluso")
+                return
+            best_back, best_lay = low._best_prices(market, sel, hcap)
+            target = risk_engine.chase_target_price(side, best_back, best_lay, offset_ticks)
+            if target is None:
+                return  # book vuoto: transitorio, ripiazza al giro dopo (ordine GIÀ cancellato)
+            if _kill_active():
+                return
+            req_id = _enqueue(sb, {
+                "client_ref": f"risk{rule['id']}cp{count}", "action": "place", "mode": mode_l,
+                "market_id": rule["market_id"], "selection_id": rule["selection_id"],
+                "handicap": rule.get("handicap") or 0, "side": side,
+                "price": target, "size": round(float(to_place), 2),
+                "persistence": (p.get("persistence") or "LAPSE"),
+                "params": {"risk_rule_id": rule["id"], "role": "chase"},
+            })
+            res.update({"phase": "placing", "place_request_id": req_id,
+                        "placing_since": _now_iso(), "placing_alerted": False})
+            _update_rule(sb, rule["id"], {"result": res})
+        return  # cancel ancora in volo: aspetta
+
+    # ---- fase TRACKING: decide se re-quotare -------------------------------------------
+    if st in _TERMINAL or rem <= 0:
+        _chase_done(sb, rule, res, f"ordine terminale ({st or 'abbinato'}): chase concluso")
+        return
+    best_back, best_lay = low._best_prices(market, sel, hcap)
+    try:
+        target = risk_engine.chase_target_price(side, best_back, best_lay, offset_ticks)
+    except ValueError as ex:
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"parametri non validi: {ex}"})
+        _alert("CRITICAL", f"Chase {rule.get('id')} DISATTIVATO: {ex}.")
+        return
+    cur_price = low._f(getattr(getattr(order, "order_type", None), "price", None))
+    if not risk_engine.chase_should_requote(cur_price, target):
+        return
+    if count >= max_chases:
+        _chase_done(sb, rule, res, f"cap re-quote raggiunto ({max_chases}): l'ordine resta @ {cur_price}")
+        return
+    if _kill_active():
+        return
+    _enqueue(sb, {"client_ref": f"risk{rule['id']}cc{count}", "action": "cancel",
+                  "mode": mode_l, "market_id": rule["market_id"], "bet_id": bet_id})
+    res.update({"phase": "cancelling", "pending_size": rem, "current_bet_id": bet_id})
+    _update_rule(sb, rule["id"], {"result": res})
+
+
+# ---------------------------------------------------------------------------
 # Dispatch + ciclo
 # ---------------------------------------------------------------------------
 def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
@@ -596,6 +800,10 @@ def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, stra
         _handle_bracket(sb, flumine, rule, mode_l, strategy)
     elif rt in ("stop_loss", "take_profit", "trailing_stop"):
         _handle_monitored(sb, flumine, rule, mode_l, strategy)
+    elif rt == "stop_entry":
+        _handle_stop_entry(sb, flumine, rule, mode_l)
+    elif rt == "chase":
+        _handle_chase(sb, flumine, rule, mode_l)
     else:
         _update_rule(sb, rule["id"], {"status": "error", "error": f"rule_type sconosciuto: {rt!r}"})
 

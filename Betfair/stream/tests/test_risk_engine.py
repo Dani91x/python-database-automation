@@ -288,3 +288,69 @@ def test_evaluate_trailing_updates_extreme_and_fires():
         best_back_price=stop, best_lay_price=stop, trail_extreme=2.80,
     )
     assert dec2.fire is True
+
+
+# ---------------------------------------------------------------------------
+# STOP-ENTRY (C23) — matematica pura
+# ---------------------------------------------------------------------------
+def test_stop_entry_fires_directions():
+    from Betfair.stream.trading.risk_engine import stop_entry_fires
+    assert stop_entry_fires("at_or_above", 3.0, 3.0)
+    assert stop_entry_fires("at_or_above", 3.0, 3.05)
+    assert not stop_entry_fires("at_or_above", 3.0, 2.98)
+    assert stop_entry_fires("at_or_below", 3.0, 3.0)
+    assert stop_entry_fires("at_or_below", 3.0, 2.9)
+    assert not stop_entry_fires("at_or_below", 3.0, 3.05)
+
+
+def test_stop_entry_no_ltp_never_fires():
+    from Betfair.stream.trading.risk_engine import stop_entry_fires
+    assert not stop_entry_fires("at_or_above", 3.0, None)
+    assert not stop_entry_fires("at_or_above", 3.0, float("nan"))
+
+
+def test_stop_entry_invalid_params_raise():
+    import pytest as _pt
+    from Betfair.stream.trading.risk_engine import stop_entry_fires
+    with _pt.raises(ValueError):
+        stop_entry_fires("sopra", 3.0, 3.0)          # direzione sconosciuta
+    with _pt.raises(ValueError):
+        stop_entry_fires("at_or_above", 0.5, 3.0)    # soglia fuori scala
+    with _pt.raises(ValueError):
+        stop_entry_fires("at_or_above", float("nan"), 3.0)
+
+
+# ---------------------------------------------------------------------------
+# CHASE (C25) — matematica pura
+# ---------------------------------------------------------------------------
+def test_chase_target_price_back_and_lay():
+    from Betfair.stream.trading.risk_engine import chase_target_price
+    # offset 0 = join del best
+    assert chase_target_price("back", 3.0, 3.05, 0) == 3.0
+    assert chase_target_price("lay", 3.0, 3.05, 0) == 3.05
+    # offset 2: back 2 tick PIU' IN ALTO, lay 2 tick PIU' IN BASSO (meno aggressivi)
+    assert chase_target_price("back", 3.0, 3.05, 2) == 3.1
+    assert chase_target_price("lay", 3.0, 3.05, 2) == 2.98
+
+
+def test_chase_target_price_missing_best_is_none():
+    from Betfair.stream.trading.risk_engine import chase_target_price
+    assert chase_target_price("back", None, 3.05, 0) is None
+    assert chase_target_price("lay", 3.0, None, 0) is None
+
+
+def test_chase_invalid_params_raise():
+    import pytest as _pt
+    from Betfair.stream.trading.risk_engine import chase_target_price
+    with _pt.raises(ValueError):
+        chase_target_price("back", 3.0, 3.05, -1)
+    with _pt.raises(ValueError):
+        chase_target_price("banana", 3.0, 3.05, 0)
+
+
+def test_chase_should_requote():
+    from Betfair.stream.trading.risk_engine import chase_should_requote
+    assert chase_should_requote(3.0, 3.05)
+    assert not chase_should_requote(3.0, 3.0)
+    assert not chase_should_requote(None, 3.0)
+    assert not chase_should_requote(3.0, None)

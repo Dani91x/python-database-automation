@@ -29,7 +29,7 @@ import { Card } from '@/components/ui/card';
 import {
     Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check,
     Settings2, ChevronUp, ChevronDown, RotateCcw, Crosshair, LineChart, Ruler,
-    Keyboard, ExternalLink,
+    Keyboard, ExternalLink, Timer, Target, Wand2, Repeat, Trash2,
 } from 'lucide-react';
 import { roundToTick, tickUp, tickDown } from '@/lib/matching';
 import {
@@ -51,10 +51,15 @@ import {
     type LiveLadderRow, type LiveLadderSelection,
 } from '@/lib/live';
 import {
-    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
+    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup, requestRiskRule,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
-    type LivePersistence, type LiveOrderCommand,
+    type LivePersistence, type LiveOrderCommand, type RiskRuleType, type RiskRuleParams,
+    type LiveOrderSide,
 } from '@/lib/liveOrders';
+import {
+    loadServants, saveServants, upsertServant, removeServant, resolveStepPrice, servantLabel,
+    MAX_SERVANTS, type Servant, type ServantStep,
+} from '@/lib/servants';
 
 // ---------------------------------------------------------------------------
 // Dependency injection: sorgente DATI (ladder) e API ORDINI iniettabili. I DEFAULT
@@ -75,6 +80,20 @@ export interface LadderGreenupArgs {
     // che al best opposto — l'ordine può restare sul book come take-profit resting.
     targetPrice?: number;
 }
+// argomenti per armare una regola del risk engine (mirror di requestRiskRule).
+export interface LadderArmRuleArgs {
+    mode: LiveOrderMode;
+    ruleType: RiskRuleType;
+    marketId: string;
+    selectionId: number;
+    handicap?: number;
+    entrySide: LiveOrderSide;
+    entryPrice?: number;
+    entrySize?: number;
+    entryBetId?: string;
+    params: RiskRuleParams;
+}
+
 export interface LadderOrderApi {
     send: (cmd: LiveOrderCommand) => Promise<LiveOrderResult>;
     // mode è passato per le sorgenti che filtrano lato RPC (tennis); i default calcio lo ignorano.
@@ -82,6 +101,13 @@ export interface LadderOrderApi {
     fetchPositions: (marketId: string, mode: LiveOrderMode) => Promise<LivePositionRow[]>;
     // opzionale: se assente, il pulsante Cash-out (green-up) non viene mostrato.
     greenup?: (args: LadderGreenupArgs) => Promise<LiveOrderResult>;
+    // opzionale (roadmap C): arma una regola del RISK ENGINE (offset/stop/bracket/chase/
+    // stop_entry). Assente = risk engine non disponibile per questo sport → gli strumenti
+    // armati restano nascosti (mai promettere protezioni inesistenti).
+    armRule?: (args: LadderArmRuleArgs) => Promise<number>;
+    // opzionale (C22): true se il worker di questo sport onora params.fok_ttl_sec.
+    // Assente/false = toggle FoK nascosto (un TTL ignorato in silenzio = protezione bugiarda).
+    supportsFok?: boolean;
 }
 
 const DEFAULT_LADDER_SOURCE: LadderSource = {
@@ -93,6 +119,8 @@ const DEFAULT_ORDER_API: LadderOrderApi = {
     fetchOrders: fetchLiveOrders,
     fetchPositions: fetchLivePositions,
     greenup: sendGreenup,
+    armRule: requestRiskRule,  // risk engine calcio (offset/stop/bracket/stop_entry/chase)
+    supportsFok: true,         // il worker calcio onora params.fok_ttl_sec (C22)
 };
 
 // modalità ordini del runner (per filtrare l'overlay "i tuoi ordini").
@@ -1015,8 +1043,38 @@ const SelectionLadder = memo(function SelectionLadder({
 });
 
 // ---------------------------------------------------- tipi azione/conferma
+// strumenti ARMATI AL CLICK (roadmap C20/21/22/24/25/26): quando attivi, ogni place
+// dal ladder parte già accompagnato da protezioni/varianti. Regole via risk engine
+// (armRule); FoK via params.fok_ttl_sec sul place stesso.
+interface ArmedTools {
+    offsetOn: boolean; offsetTicks: number; offsetGreening: boolean;      // C20
+    stopOn: boolean; stopTicks: number; stopTrailing: boolean;            // C21 (+C26 con offset)
+    fokOn: boolean; fokSec: number;                                       // C22
+    scaleOn: boolean; scaleN: number; scaleStepTicks: number;             // C24
+    chaseOn: boolean; chaseTicks: number;                                 // C25
+    entryOn: boolean;                                                     // C23 (click = arma stop-entry)
+}
+const DEFAULT_TOOLS: ArmedTools = {
+    offsetOn: false, offsetTicks: 3, offsetGreening: true,
+    stopOn: false, stopTicks: 5, stopTrailing: false,
+    fokOn: false, fokSec: 5,
+    scaleOn: false, scaleN: 3, scaleStepTicks: 1,
+    chaseOn: false, chaseTicks: 0,
+    entryOn: false,
+};
+
+// cosa armare DOPO un place riuscito (derivato da ArmedTools al momento del click).
+interface ArmAfter {
+    offset?: { ticks: number; greening: boolean };
+    stop?: { ticks: number; trailing: boolean };
+    chase?: { ticks: number };
+}
+
 type Intent =
-    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence; asLiability: boolean }
+    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence; asLiability: boolean; fokSec?: number; armAfter?: ArmAfter }
+    | { kind: 'scale'; selName: string; side: TradeSide; prices: number[]; size: number; selectionId: number; persistence: LivePersistence; asLiability: boolean; fokSec?: number }
+    | { kind: 'arm_entry'; selName: string; selectionId: number; side: TradeSide; trigger: number; direction: 'at_or_above' | 'at_or_below'; size: number }
+    | { kind: 'servant'; selName: string; selectionId: number; servant: Servant }
     | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide | 'both'; price: number }
     | { kind: 'cancel_side'; selName: string; selectionId: number; side: TradeSide; betIds: string[] }
     | { kind: 'move'; selName: string; betIds: string[]; side: TradeSide; toPrice: number; size: number; selectionId: number; persistence: LivePersistence }
@@ -1025,12 +1083,30 @@ type Intent =
 
 interface StatusMsg { tone: 'pending' | 'ok' | 'err'; text: string; }
 
+function armAfterLabel(a: ArmAfter | undefined, fokSec: number | undefined): string {
+    const parts: string[] = [];
+    if (a?.offset) parts.push(`offset ${a.offset.ticks}t${a.offset.greening ? ' green' : ''}`);
+    if (a?.stop) parts.push(`${a.stop.trailing ? 'trailing' : 'stop'} ${a.stop.ticks}t`);
+    if (a?.chase) parts.push(`chase ${a.chase.ticks}t`);
+    if (fokSec) parts.push(`FoK ${fokSec}s`);
+    return parts.length ? ` +[${parts.join(' · ')}]` : '';
+}
+
 function intentLabel(it: Intent): string {
     if (it.kind === 'place') {
         const persLabel = PERSISTENCE_OPTIONS.find(o => o.value === it.persistence)?.label ?? it.persistence;
         const amount = it.asLiability ? `resp. €${it.size.toFixed(2)}` : `€${it.size.toFixed(2)}`;
-        return `${it.side === 'back' ? 'BACK' : 'LAY'} ${amount} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}`;
+        return `${it.side === 'back' ? 'BACK' : 'LAY'} ${amount} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}${armAfterLabel(it.armAfter, it.fokSec)}`;
     }
+    if (it.kind === 'scale') {
+        const amount = it.asLiability ? `resp. €${it.size.toFixed(2)}` : `€${it.size.toFixed(2)}`;
+        return `SCALA ${it.prices.length}× ${it.side.toUpperCase()} ${amount} @ ${it.prices.map(fmtPrice).join('/')} · ${it.selName}${armAfterLabel(undefined, it.fokSec)}`;
+    }
+    if (it.kind === 'arm_entry') {
+        const dir = it.direction === 'at_or_above' ? '≥' : '≤';
+        return `STOP-ENTRY ${it.side.toUpperCase()} €${it.size.toFixed(2)} quando LTP ${dir} ${fmtPrice(it.trigger)} · ${it.selName}`;
+    }
+    if (it.kind === 'servant') return `MACRO ${servantLabel(it.servant)} · ${it.selName}`;
     if (it.kind === 'cancel') {
         const sideTxt = it.side === 'both' ? '' : `${it.side.toUpperCase()} `;
         return `Annulla ${it.betIds.length} ordine/i ${sideTxt}@ ${fmtPrice(it.price)} · ${it.selName}`;
@@ -1040,6 +1116,146 @@ function intentLabel(it: Intent): string {
     if (it.kind === 'greenup_at') return `Chiudi @ ${fmtPrice(it.price)} (greening al livello) · ${it.selName}`;
     const pct = Math.round(it.fraction * 100);
     return `Cash-out ${pct < 100 ? `${pct}% ` : ''}· ${it.selName}`;
+}
+
+// ------------------------------------------------------ C27: pannello Servants
+// Editor MINIMALE: lista macro salvate (1-9) + builder a vocabolario fisso. La macro
+// viene eseguita coi tasti 1-9 sulla selezione puntata, passando da TUTTE le guardie
+// normali (conferma LIVE, kill-switch, stake corrente).
+function ServantsPanel({ servants, onChange, greenupSupported }: {
+    servants: Servant[];
+    onChange: (next: Servant[]) => void;
+    // se false, lo step green-up NON è offerto (mai promettere azioni inesistenti:
+    // una macro [place, greenup] su uno sport senza greenup lascerebbe la gamba nuda).
+    greenupSupported: boolean;
+}) {
+    const usedSlots = new Set(servants.map(s => s.slot));
+    const freeSlots = Array.from({ length: MAX_SERVANTS }, (_, i) => i + 1).filter(n => !usedSlots.has(n));
+    const [slot, setSlot] = useState<number>(freeSlots[0] ?? 1);
+    const [name, setName] = useState('');
+    const [steps, setSteps] = useState<ServantStep[]>([]);
+    // form dello step in costruzione
+    const [kind, setKind] = useState<'place' | 'greenup' | 'cancel_side'>('place');
+    const [side, setSide] = useState<'back' | 'lay'>('back');
+    const [cancelSide, setCancelSide] = useState<'back' | 'lay' | 'both'>('both');
+    const [priceMode, setPriceMode] = useState<'best' | 'ltp' | 'ticks'>('best');
+    const [ticks, setTicks] = useState(1);
+    const [stakeMode, setStakeMode] = useState<'current' | 'fixed'>('current');
+    const [stakeVal, setStakeVal] = useState(5);
+
+    const addStep = () => {
+        if (steps.length >= 6) return;
+        if (kind === 'greenup') {
+            if (!greenupSupported) return; // difesa in profondità oltre al gating dell'option
+            setSteps(s => [...s, { kind: 'greenup' }]);
+            return;
+        }
+        if (kind === 'cancel_side') { setSteps(s => [...s, { kind: 'cancel_side', side: cancelSide }]); return; }
+        setSteps(s => [...s, {
+            kind: 'place', side,
+            price: priceMode === 'ticks' ? { ticksFromBest: ticks } : priceMode,
+            stake: stakeMode === 'current' ? 'current' : Math.max(0.5, stakeVal),
+        }]);
+    };
+    const save = () => {
+        if (!steps.length) return;
+        onChange(upsertServant(servants, { slot, name: name.trim() || `Macro ${slot}`, steps }));
+        setSteps([]);
+        setName('');
+    };
+
+    const inputCls = 'bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white text-[10px]';
+    return (
+        <div className="px-3 py-2 border-b border-white/10 bg-black/30 space-y-1.5 text-[10px]">
+            {servants.length === 0 && (
+                <div className="text-muted-foreground">Nessuna macro: costruiscine una qui sotto, poi richiamala col suo numero sulla selezione puntata.</div>
+            )}
+            {servants.map(sv => (
+                <div key={sv.slot} className="flex items-center gap-2">
+                    <span className="font-mono text-white/80 flex-1 truncate" title={servantLabel(sv)}>{servantLabel(sv)}</span>
+                    <button
+                        type="button"
+                        onClick={() => onChange(removeServant(servants, sv.slot))}
+                        title={`Elimina la macro ${sv.slot}`}
+                        className="p-0.5 rounded text-white/40 hover:text-red-300 hover:bg-white/10"
+                    >
+                        <Trash2 className="w-3 h-3" />
+                    </button>
+                </div>
+            ))}
+            {/* builder */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/5">
+                <span className="text-white/50">Slot</span>
+                <select value={slot} onChange={e => setSlot(Number(e.target.value))} className={inputCls} aria-label="slot macro">
+                    {Array.from({ length: MAX_SERVANTS }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={n}>{n}{usedSlots.has(n) ? ' (sovrascrive)' : ''}</option>
+                    ))}
+                </select>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="nome" className={`${inputCls} w-24`} aria-label="nome macro" />
+                <select value={kind} onChange={e => setKind(e.target.value as typeof kind)} className={inputCls} aria-label="tipo step">
+                    <option value="place">place</option>
+                    {greenupSupported && <option value="greenup">green-up</option>}
+                    <option value="cancel_side">annulla lato</option>
+                </select>
+                {kind === 'place' && (
+                    <>
+                        <select value={side} onChange={e => setSide(e.target.value as 'back' | 'lay')} className={inputCls} aria-label="lato">
+                            <option value="back">BACK</option>
+                            <option value="lay">LAY</option>
+                        </select>
+                        <select value={priceMode} onChange={e => setPriceMode(e.target.value as typeof priceMode)} className={inputCls} aria-label="prezzo">
+                            <option value="best">al best</option>
+                            <option value="ltp">all'LTP</option>
+                            <option value="ticks">± tick dal best</option>
+                        </select>
+                        {priceMode === 'ticks' && (
+                            <input type="number" min={-20} max={20} value={ticks}
+                                onChange={e => setTicks(Math.max(-20, Math.min(20, Math.round(Number(e.target.value) || 0))))}
+                                className={`${inputCls} w-10`} aria-label="tick dal best" />
+                        )}
+                        <select value={stakeMode} onChange={e => setStakeMode(e.target.value as typeof stakeMode)} className={inputCls} aria-label="stake">
+                            <option value="current">stake corrente</option>
+                            <option value="fixed">stake fisso €</option>
+                        </select>
+                        {stakeMode === 'fixed' && (
+                            <input type="number" min={0.5} step={0.5} value={stakeVal}
+                                onChange={e => setStakeVal(Number(e.target.value) || 0.5)}
+                                className={`${inputCls} w-12`} aria-label="stake fisso" />
+                        )}
+                    </>
+                )}
+                {kind === 'cancel_side' && (
+                    <select value={cancelSide} onChange={e => setCancelSide(e.target.value as typeof cancelSide)} className={inputCls} aria-label="lato da annullare">
+                        <option value="both">tutti</option>
+                        <option value="back">BACK</option>
+                        <option value="lay">LAY</option>
+                    </select>
+                )}
+                <button type="button" onClick={addStep} disabled={steps.length >= 6}
+                    className="px-1.5 py-0.5 rounded-md border border-white/10 text-white/70 hover:border-white/40 font-bold disabled:opacity-40">
+                    + step
+                </button>
+            </div>
+            {steps.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-white/50">Sequenza:</span>
+                    {steps.map((st, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/75 font-mono">
+                            {st.kind === 'greenup' ? 'green-up'
+                                : st.kind === 'cancel_side' ? `annulla ${st.side}`
+                                    : `${st.side.toUpperCase()}@${st.price === 'best' ? 'best' : st.price === 'ltp' ? 'LTP' : `${st.price.ticksFromBest}t`}`}
+                            <button type="button" onClick={() => setSteps(s => s.filter((_, j) => j !== i))}
+                                className="ml-1 text-white/40 hover:text-red-300" aria-label={`rimuovi step ${i + 1}`}>×</button>
+                        </span>
+                    ))}
+                    <button type="button" onClick={save}
+                        className="px-2 py-0.5 rounded-md bg-amber-400 text-black font-bold hover:bg-amber-300">
+                        Salva macro {slot}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
 }
 
 // --------------------------------------------------------------- LadderView
@@ -1167,6 +1383,38 @@ export function LadderView({
     // B17: buffer campioni LTP per selezione (mutati in place, azzerati al cambio mercato).
     const samplesRef = useRef<Map<number, PriceSample[]>>(new Map());
 
+    // C20-C26: strumenti ARMATI al piazzamento (toolbar). Ref per i callback stabili.
+    const [tools, setTools] = useState<ArmedTools>(DEFAULT_TOOLS);
+    const toolsRef = useRef(tools);
+    toolsRef.current = tools;
+
+    // C27: servants (macro 1-9), persistiti in localStorage.
+    const [servants, setServants] = useState<Servant[]>(() => loadServants());
+    const servantsRef = useRef(servants);
+    servantsRef.current = servants;
+    const [showServants, setShowServants] = useState(false);
+    const applyServants = useCallback((next: Servant[]) => {
+        setServants(next);
+        saveServants(next);
+    }, []);
+
+    // book corrente per selezione (best back/lay + LTP): usato da stop-entry (direzione)
+    // e dai servants (risoluzione prezzi al momento dell'esecuzione, mai numeri stantii).
+    const bookBySelRef = useRef<Map<number, { bestBack: number | null; bestLay: number | null; ltp: number | null }>>(new Map());
+    useEffect(() => {
+        const m = new Map<number, { bestBack: number | null; bestLay: number | null; ltp: number | null }>();
+        for (const s of row?.ladder?.selections ?? []) {
+            m.set(s.selection_id, {
+                bestBack: s.back?.[0]?.[0] ?? null,
+                bestLay: s.lay?.[0]?.[0] ?? null,
+                ltp: s.ltp ?? null,
+            });
+        }
+        bookBySelRef.current = m;
+    }, [row]);
+    const ordersRef = useRef<LiveOrderRow[]>([]);
+    ordersRef.current = orders;
+
     // ---- one-click trading: armamento (LIVE), in-volo, esito, conferma ----
     const [armed, setArmed] = useState(false);   // 1-click LIVE attivo (banner rosso)
     const [busy, setBusy] = useState(false);
@@ -1285,6 +1533,68 @@ export function LadderView({
         }
     }, []);
 
+    // C20/21/25/26: arma le regole del risk engine DOPO un place riuscito (entry_bet_id +
+    // timing on_fill = anti-gamba-nuda: la protezione parte solo quando l'ingresso si abbina).
+    const armAfterPlace = useCallback(async (
+        res: LiveOrderResult, it: Extract<Intent, { kind: 'place' }>,
+    ): Promise<LiveOrderResult> => {
+        const arm = orderApi.armRule;
+        const a = it.armAfter;
+        if (!res.ok || !a || !arm) return res;
+        if (!res.bet_id) {
+            // MAI in silenzio né con tono verde (fix review HIGH): posizione NUDA = errore
+            // visibile, anche se il place in sé è riuscito.
+            return {
+                ...res, ok: false,
+                error: `ORDINE PIAZZATO (${res.status ?? 'ok'}) ma bet_id assente: protezioni NON armate — posizione NUDA, arma stop/offset dal pannello Risk`,
+            };
+        }
+        const base = {
+            mode: mode as LiveOrderMode, marketId, selectionId: it.selectionId, handicap,
+            entrySide: it.side as LiveOrderSide, entryBetId: String(res.bet_id),
+            entrySize: it.size, entryPrice: it.price,
+        };
+        const armed: string[] = [];
+        try {
+            if (a.offset && a.stop && !a.stop.trailing) {
+                // C26: bracket OCO (take-profit + stop insieme, chi scatta cancella l'altro)
+                await arm({ ...base, ruleType: 'bracket', params: {
+                    offset_ticks: a.offset.ticks, greening: a.offset.greening,
+                    trigger_ticks: a.stop.ticks, timing: 'on_fill',
+                } });
+                armed.push(`bracket ${a.offset.ticks}/${a.stop.ticks}t`);
+            } else {
+                if (a.offset) {
+                    await arm({ ...base, ruleType: 'offset', params: {
+                        offset_ticks: a.offset.ticks, greening: a.offset.greening, timing: 'on_fill',
+                    } });
+                    armed.push(`offset ${a.offset.ticks}t${a.offset.greening ? ' green' : ''}`);
+                }
+                if (a.stop) {
+                    await arm({ ...base,
+                        ruleType: a.stop.trailing ? 'trailing_stop' : 'stop_loss',
+                        params: a.stop.trailing
+                            ? { trail_ticks: a.stop.ticks, timing: 'on_fill' }
+                            : { trigger_ticks: a.stop.ticks, timing: 'on_fill' },
+                    });
+                    armed.push(`${a.stop.trailing ? 'trailing' : 'stop'} ${a.stop.ticks}t`);
+                }
+            }
+            if (a.chase) {
+                await arm({ ...base, ruleType: 'chase', params: { offset_ticks: a.chase.ticks } });
+                armed.push(`chase ${a.chase.ticks}t`);
+            }
+        } catch (e) {
+            // fix review HIGH: mai tono verde su una protezione fallita — l'ordine è a
+            // mercato NUDO e l'utente deve accorgersene subito (banner rosso).
+            return {
+                ...res, ok: false,
+                error: `ORDINE PIAZZATO (bet ${res.bet_id}) ma protezione NON armata (${(e as Error)?.message ?? 'errore'}) — posizione NUDA, armala dal pannello Risk`,
+            };
+        }
+        return { ...res, detail: `${res.detail ? `${res.detail} · ` : ''}armati: ${armed.join(', ')}` };
+    }, [orderApi, mode, marketId, handicap]);
+
     const execute = useCallback((it: Intent) => {
         const label = intentLabel(it);
         if (it.kind === 'place') {
@@ -1293,12 +1603,107 @@ export function LadderView({
             const sizing = it.asLiability && it.side === 'lay'
                 ? { liability: it.size }
                 : { size: it.size };
-            submit(() => orderApi.send({
-                action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
-                selection_id: it.selectionId, handicap, side: it.side,
-                order_type: 'LIMIT', price: it.price, persistence: it.persistence,
-                ...sizing,
-            }), label);
+            // C22: FoK software — il worker cancella dopo N secondi se non abbinato.
+            const fokParams = it.fokSec ? { params: { fok_ttl_sec: it.fokSec } } : {};
+            submit(async () => {
+                const res = await orderApi.send({
+                    action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
+                    selection_id: it.selectionId, handicap, side: it.side,
+                    order_type: 'LIMIT', price: it.price, persistence: it.persistence,
+                    ...sizing, ...fokParams,
+                });
+                return armAfterPlace(res, it);
+            }, label);
+        } else if (it.kind === 'scale') {
+            // C24: N ordini scaglionati. Al primo rifiuto si INTERROMPE con esito parziale
+            // esplicito (mai continuare a piazzare dopo un errore).
+            const fokParams = it.fokSec ? { params: { fok_ttl_sec: it.fokSec } } : {};
+            const sizing = it.asLiability && it.side === 'lay'
+                ? { liability: it.size }
+                : { size: it.size };
+            submit(async () => {
+                let last: LiveOrderResult = { ok: true, action: 'place', mode };
+                let done = 0;
+                for (const price of it.prices) {
+                    last = await orderApi.send({
+                        action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
+                        selection_id: it.selectionId, handicap, side: it.side,
+                        order_type: 'LIMIT', price, persistence: it.persistence,
+                        ...sizing, ...fokParams,
+                    });
+                    if (!last.ok) break;
+                    done++;
+                }
+                if (!last.ok) {
+                    return { ...last, error: `scala interrotta: ${done}/${it.prices.length} piazzati. ${last.error ?? ''}`.trim() };
+                }
+                return { ...last, detail: `${done}/${it.prices.length} ordini piazzati` };
+            }, label);
+        } else if (it.kind === 'arm_entry') {
+            // C23: arma lo stop-entry (nessun ordine ORA: entra al tocco della soglia).
+            const arm = orderApi.armRule;
+            if (!arm) return;
+            submit(async () => {
+                await arm({
+                    mode: mode as LiveOrderMode, ruleType: 'stop_entry', marketId,
+                    selectionId: it.selectionId, handicap,
+                    entrySide: it.side as LiveOrderSide, entrySize: it.size,
+                    params: { trigger_price: it.trigger, trigger_direction: it.direction, place_at: 'best' },
+                });
+                return { ok: true, action: 'stop_entry', mode, detail: 'armato — entra al tocco della soglia (pannello Risk per disarmare)' };
+            }, label);
+        } else if (it.kind === 'servant') {
+            // C27: macro = sequenza di step dal vocabolario fisso, ESEGUITA in ordine;
+            // al primo errore si interrompe con esito parziale esplicito. I prezzi degli
+            // step 'place' sono risolti sul book FRESCO al momento dell'esecuzione.
+            submit(async () => {
+                const steps = it.servant.steps;
+                let last: LiveOrderResult = { ok: true, action: 'servant', mode };
+                let n = 0;
+                for (const step of steps) {
+                    if (step.kind === 'place') {
+                        const book = bookBySelRef.current.get(it.selectionId)
+                            ?? { bestBack: null, bestLay: null, ltp: null };
+                        const price = resolveStepPrice(step, book,
+                            (pp, k) => (k >= 0 ? tickUp(pp, k) : tickDown(pp, -k)));
+                        if (price == null) {
+                            last = { ok: false, action: 'place', mode, error: `step ${n + 1}: prezzo non risolvibile (book vuoto)` };
+                            break;
+                        }
+                        const size = step.stake === 'current' ? stakeRef.current : step.stake;
+                        last = await orderApi.send({
+                            action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
+                            selection_id: it.selectionId, handicap, side: step.side,
+                            order_type: 'LIMIT', price, size, persistence: persistenceRef.current,
+                        });
+                    } else if (step.kind === 'greenup') {
+                        if (!orderApi.greenup) {
+                            last = { ok: false, action: 'greenup', mode, error: `step ${n + 1}: green-up non supportato` };
+                            break;
+                        }
+                        last = await orderApi.greenup({
+                            marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode, handicap, fraction: 1,
+                        });
+                    } else {
+                        const ids = ordersRef.current
+                            .filter(o => o.selection_id === it.selectionId && o.bet_id
+                                && (o.size_remaining ?? 0) > 0
+                                && (step.side === 'both' || o.side === step.side))
+                            .map(o => o.bet_id as string);
+                        last = { ok: true, action: 'cancel', mode, detail: ids.length ? undefined : 'nessun ordine da annullare' };
+                        for (const bet_id of ids) {
+                            last = await orderApi.send({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
+                            if (!last.ok) break;
+                        }
+                    }
+                    if (!last.ok) {
+                        last = { ...last, error: `macro interrotta allo step ${n + 1}/${steps.length}: ${last.error ?? ''}`.trim() };
+                        break;
+                    }
+                    n++;
+                }
+                return last;
+            }, label);
         } else if (it.kind === 'cancel' || it.kind === 'cancel_side') {
             const ids = it.betIds;
             submit(async () => {
@@ -1353,14 +1758,15 @@ export function LadderView({
                 handicap, ...args,
             }), label);
         }
-    }, [submit, mode, marketId, handicap, orderApi]);
+    }, [submit, mode, marketId, handicap, orderApi, armAfterPlace]);
 
     // richiesta azione: in LIVE non-armato chiede conferma; altrimenti esegue subito.
     const requestAction = useCallback((it: Intent) => {
         if (mode === 'off') return;
         if (busyRef.current) return;
-        // fix M4: con stake custom invalido, lo stake effettivo ≠ quello mostrato → blocca i place.
-        if (it.kind === 'place' && stakeInvalidRef.current) {
+        // fix M4: con stake custom invalido, lo stake effettivo ≠ quello mostrato → blocca
+        // ogni azione che usa lo stake (place/scala/stop-entry).
+        if ((it.kind === 'place' || it.kind === 'scale' || it.kind === 'arm_entry') && stakeInvalidRef.current) {
             setStatusMsg({ tone: 'err', text: '✗ Stake non valido: correggi l\'importo prima di piazzare.' });
             return;
         }
@@ -1369,12 +1775,60 @@ export function LadderView({
     }, [mode, isLive, armed, execute]);
 
     const onPlace = useCallback((side: TradeSide, price: number, selectionId: number, selName: string) => {
+        const t = toolsRef.current;
+        // C23: modalità stop-entry — il click ARMA un ingresso condizionale, non piazza.
+        if (t.entryOn && orderApi.armRule) {
+            const ltp = bookBySelRef.current.get(selectionId)?.ltp ?? null;
+            if (ltp == null) {
+                // fix review: senza LTP la direzione sarebbe dedotta AL BUIO — mai un
+                // default silenzioso su un ordine condizionale.
+                setStatusMsg({ tone: 'err', text: '✗ Stop-entry: LTP non disponibile — impossibile derivare la direzione della soglia. Riprova quando il mercato ha tradato.' });
+                return;
+            }
+            const direction: 'at_or_above' | 'at_or_below' =
+                price < ltp ? 'at_or_below' : 'at_or_above';
+            requestAction({
+                kind: 'arm_entry', selName, selectionId, side,
+                trigger: price, direction, size: stakeRef.current,
+            });
+            return;
+        }
+        const fokSec = t.fokOn && orderApi.supportsFok ? t.fokSec : undefined;
+        const armAfter: ArmAfter | undefined =
+            orderApi.armRule && (t.offsetOn || t.stopOn || t.chaseOn)
+                ? {
+                    ...(t.offsetOn ? { offset: { ticks: t.offsetTicks, greening: t.offsetGreening } } : {}),
+                    ...(t.stopOn ? { stop: { ticks: t.stopTicks, trailing: t.stopTrailing } } : {}),
+                    ...(t.chaseOn ? { chase: { ticks: t.chaseTicks } } : {}),
+                }
+                : undefined;
+        // C24: scala — N ordini scaglionati ALLONTANANDOSI dallo spread (back: quote più
+        // alte; lay: più basse), stesso stake per livello. Per prevedibilità la scala NON
+        // combina le protezioni per-ordine (armale singolarmente o usa il place normale).
+        if (t.scaleOn && t.scaleN > 1) {
+            const prices: number[] = [price];
+            let p = price;
+            for (let i = 1; i < t.scaleN; i++) {
+                const nx = side === 'back' ? tickUp(p, t.scaleStepTicks) : tickDown(p, t.scaleStepTicks);
+                if (Math.abs(nx - p) < 1e-9) break; // bordo scala raggiunto
+                p = nx;
+                prices.push(p);
+            }
+            requestAction({
+                kind: 'scale', selName, side, prices, size: stakeRef.current, selectionId,
+                persistence: persistenceRef.current,
+                asLiability: stakeModeRef.current === 'liability' && side === 'lay',
+                fokSec,
+            });
+            return;
+        }
         requestAction({
             kind: 'place', selName, side, price, size: stakeRef.current, selectionId,
             persistence: persistenceRef.current,
             asLiability: stakeModeRef.current === 'liability' && side === 'lay',
+            fokSec, armAfter,
         });
-    }, [requestAction]);
+    }, [requestAction, orderApi]);
 
     const onCancel = useCallback((betIds: string[], side: TradeSide, price: number, selName: string) => {
         if (!betIds.length) return;
@@ -1471,6 +1925,25 @@ export function LadderView({
             const t = e.target as HTMLElement | null;
             if (t && t.closest('input, textarea, select, [contenteditable="true"]')) return;
             if (confirmOpenRef.current) return;
+            // C27: tasti 1-9 = servant sullo slot corrispondente, sulla selezione puntata.
+            if (/^[1-9]$/.test(e.key)) {
+                const h = hoverRef.current;
+                if (!h || !canTradeRef.current || busyRef.current) return;
+                const sv = servantsRef.current.find(s => s.slot === Number(e.key));
+                if (!sv) return;
+                e.preventDefault();
+                // fix review HIGH: lo stake 'corrente' è CONGELATO ORA in un importo fisso
+                // (come i place): la barra di conferma LIVE mostra l'importo ESATTO che
+                // verrà usato, anche se lo stake cambia mentre la conferma è aperta.
+                const frozen: Servant = {
+                    ...sv,
+                    steps: sv.steps.map(st => st.kind === 'place' && st.stake === 'current'
+                        ? { ...st, stake: stakeRef.current }
+                        : st),
+                };
+                requestAction({ kind: 'servant', selName: h.selName, selectionId: h.selectionId, servant: frozen });
+                return;
+            }
             const action = resolveHotkey(e.key);
             if (!action) return;
             const h = hoverRef.current;
@@ -1797,6 +2270,184 @@ export function LadderView({
                     </div>
                 </div>
             </div>
+
+            {/* ============ TOOLBAR ARMATA (roadmap C): il click piazza GIÀ protetto ============ */}
+            {mode !== 'off' && (
+                <div className="px-3 py-1.5 border-b border-white/10 bg-black/40 flex items-center gap-2 flex-wrap text-[10px]">
+                    {orderApi.armRule && (
+                        <>
+                            {/* C23 stop-entry: il click ARMA un ingresso condizionale */}
+                            <button
+                                type="button"
+                                aria-pressed={tools.entryOn}
+                                onClick={() => setTools(t => ({ ...t, entryOn: !t.entryOn }))}
+                                title="STOP-ENTRY (C23): quando attivo, il click sul ladder ARMA un ingresso condizionale al prezzo cliccato (entra quando l'LTP lo tocca) invece di piazzare subito"
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    tools.entryOn ? 'bg-amber-400 text-black border-amber-400' : 'border-white/10 text-white/60 hover:border-amber-400/50'
+                                }`}
+                            >
+                                <Target className="w-3 h-3" /> Entry
+                            </button>
+                            {/* C20 offset with greening */}
+                            <span className="inline-flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    aria-pressed={tools.offsetOn}
+                                    disabled={tools.entryOn}
+                                    onClick={() => setTools(t => ({ ...t, offsetOn: !t.offsetOn }))}
+                                    title="OFFSET (C20): ogni ordine piazzato parte col take-profit a N tick già armato (al fill, anti-gamba-nuda). Con Stop attivo = BRACKET OCO (C26)."
+                                    className={`px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        tools.offsetOn ? 'bg-emerald-400 text-black border-emerald-400' : 'border-white/10 text-white/60 hover:border-emerald-400/50'
+                                    }`}
+                                >
+                                    Offset
+                                </button>
+                                <input
+                                    type="number" min={1} max={50} value={tools.offsetTicks}
+                                    onChange={e => setTools(t => ({ ...t, offsetTicks: Math.max(1, Math.min(50, Math.round(Number(e.target.value) || 1))) }))}
+                                    className="w-9 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                                    aria-label="tick offset"
+                                />
+                                <label className="inline-flex items-center gap-0.5 cursor-pointer" title="greening: il take-profit pareggia gli esiti (size di hedge, non speculare)">
+                                    <input
+                                        type="checkbox" checked={tools.offsetGreening}
+                                        onChange={e => setTools(t => ({ ...t, offsetGreening: e.target.checked }))}
+                                        className="accent-emerald-400"
+                                    />
+                                    <span className="text-white/50">green</span>
+                                </label>
+                            </span>
+                            {/* C21 stop per-ordine (+trailing) */}
+                            <span className="inline-flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    aria-pressed={tools.stopOn}
+                                    disabled={tools.entryOn}
+                                    onClick={() => setTools(t => ({ ...t, stopOn: !t.stopOn }))}
+                                    title="STOP (C21): ogni ordine piazzato parte con lo stop-loss a N tick già armato (al fill). Con Offset attivo (e trailing spento) = BRACKET OCO (C26)."
+                                    className={`px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        tools.stopOn ? 'bg-red-400 text-black border-red-400' : 'border-white/10 text-white/60 hover:border-red-400/50'
+                                    }`}
+                                >
+                                    Stop
+                                </button>
+                                <input
+                                    type="number" min={1} max={50} value={tools.stopTicks}
+                                    onChange={e => setTools(t => ({ ...t, stopTicks: Math.max(1, Math.min(50, Math.round(Number(e.target.value) || 1))) }))}
+                                    className="w-9 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                                    aria-label="tick stop"
+                                />
+                                <label className="inline-flex items-center gap-0.5 cursor-pointer" title="trailing: lo stop insegue il prezzo favorevole (esclude il bracket OCO)">
+                                    <input
+                                        type="checkbox" checked={tools.stopTrailing}
+                                        onChange={e => setTools(t => ({ ...t, stopTrailing: e.target.checked }))}
+                                        className="accent-red-400"
+                                    />
+                                    <span className="text-white/50">trail</span>
+                                </label>
+                            </span>
+                            {/* C25 chase */}
+                            <span className="inline-flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    aria-pressed={tools.chaseOn}
+                                    disabled={tools.entryOn}
+                                    onClick={() => setTools(t => ({ ...t, chaseOn: !t.chaseOn }))}
+                                    title="CHASE (C25): se l'ordine resta non abbinato e il best si muove, viene re-quotato (cancel→place) restando a N tick dal best"
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        tools.chaseOn ? 'bg-sky-400 text-black border-sky-400' : 'border-white/10 text-white/60 hover:border-sky-400/50'
+                                    }`}
+                                >
+                                    <Repeat className="w-3 h-3" /> Chase
+                                </button>
+                                <input
+                                    type="number" min={0} max={20} value={tools.chaseTicks}
+                                    onChange={e => setTools(t => ({ ...t, chaseTicks: Math.max(0, Math.min(20, Math.round(Number(e.target.value) || 0))) }))}
+                                    className="w-9 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                                    aria-label="tick chase"
+                                />
+                            </span>
+                        </>
+                    )}
+                    {/* C22 FoK con timer (solo se il worker lo onora) */}
+                    {orderApi.supportsFok && (
+                        <span className="inline-flex items-center gap-1">
+                            <button
+                                type="button"
+                                aria-pressed={tools.fokOn}
+                                disabled={tools.entryOn}
+                                onClick={() => setTools(t => ({ ...t, fokOn: !t.fokOn }))}
+                                title="FoK TIMER (C22): l'ordine viene CANCELLATO dal runner dopo N secondi se non è abbinato (software-side: richiede il runner attivo)"
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    tools.fokOn ? 'bg-purple-400 text-black border-purple-400' : 'border-white/10 text-white/60 hover:border-purple-400/50'
+                                }`}
+                            >
+                                <Timer className="w-3 h-3" /> FoK
+                            </button>
+                            <input
+                                type="number" min={1} max={600} value={tools.fokSec}
+                                onChange={e => setTools(t => ({ ...t, fokSec: Math.max(1, Math.min(600, Math.round(Number(e.target.value) || 1))) }))}
+                                className="w-10 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                                aria-label="secondi FoK"
+                            />
+                            <span className="text-white/40">s</span>
+                        </span>
+                    )}
+                    {/* C24 scala */}
+                    <span className="inline-flex items-center gap-1">
+                        <button
+                            type="button"
+                            aria-pressed={tools.scaleOn}
+                            disabled={tools.entryOn}
+                            onClick={() => setTools(t => ({ ...t, scaleOn: !t.scaleOn }))}
+                            title="SCALA (C24): un click piazza N ordini scaglionati (stesso stake) a passi di M tick allontanandosi dallo spread. Non combina Offset/Stop per-ordine."
+                            className={`px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                tools.scaleOn ? 'bg-white/90 text-black border-white/90' : 'border-white/10 text-white/60 hover:border-white/40'
+                            }`}
+                        >
+                            Scala
+                        </button>
+                        <input
+                            type="number" min={2} max={10} value={tools.scaleN}
+                            onChange={e => setTools(t => ({ ...t, scaleN: Math.max(2, Math.min(10, Math.round(Number(e.target.value) || 2))) }))}
+                            className="w-9 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                            aria-label="numero ordini scala"
+                        />
+                        <span className="text-white/40">×</span>
+                        <input
+                            type="number" min={1} max={10} value={tools.scaleStepTicks}
+                            onChange={e => setTools(t => ({ ...t, scaleStepTicks: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }))}
+                            className="w-9 bg-black/60 border border-white/10 rounded px-1 py-0.5 text-white"
+                            aria-label="passo tick scala"
+                        />
+                        <span className="text-white/40">t</span>
+                    </span>
+                    {/* C27 servants */}
+                    <button
+                        type="button"
+                        aria-pressed={showServants}
+                        onClick={() => setShowServants(s => !s)}
+                        title="SERVANTS (C27): macro registrabili richiamate coi tasti 1-9 sulla selezione puntata"
+                        className={`ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                            showServants ? 'bg-white/90 text-black border-white/90' : 'border-white/10 text-white/60 hover:border-white/40'
+                        }`}
+                    >
+                        <Wand2 className="w-3 h-3" /> Servants{servants.length ? ` (${servants.length})` : ''}
+                    </button>
+                </div>
+            )}
+
+            {/* C23: promemoria modalità stop-entry attiva */}
+            {mode !== 'off' && tools.entryOn && orderApi.armRule && (
+                <div className="px-3 py-1 bg-amber-400/15 border-b border-amber-400/30 text-[10px] font-bold text-amber-200 flex items-center gap-1.5">
+                    <Target className="w-3 h-3" /> STOP-ENTRY ARMATO: il click ARMA un ingresso condizionale al livello cliccato (non piazza subito). Gli altri strumenti (Offset/Stop/Chase/FoK/Scala) sono IGNORATI finché Entry è attivo.
+                </div>
+            )}
+
+            {/* C27: pannello servants (lista + editor minimale) */}
+            {mode !== 'off' && showServants && (
+                <ServantsPanel servants={servants} onChange={applyServants} greenupSupported={!!orderApi.greenup} />
+            )}
 
             {/* banner armamento LIVE */}
             {isLive && armed && (

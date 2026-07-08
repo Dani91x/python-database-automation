@@ -300,7 +300,12 @@ export async function sendCashoutEvent(args: {
 // 'bracket' = OCO (One-Cancels-Other): presa di profitto (offset) + stop-loss armati
 // insieme; il primo che scatta annulla l'altro. Richiede un entry_bet_id (l'ordine di
 // ingresso da sorvegliare): niente offset "nudo" senza un ingresso abbinato da coprire.
-export type RiskRuleType = 'offset' | 'stop_loss' | 'take_profit' | 'trailing_stop' | 'bracket';
+export type RiskRuleType =
+    | 'offset' | 'stop_loss' | 'take_profit' | 'trailing_stop' | 'bracket'
+    // C23: ordine condizionale — ENTRA quando l'LTP tocca la soglia nella direzione armata
+    | 'stop_entry'
+    // C25: tick-offset sul re-quote — insegue il best re-quotando l'unmatched (cancel→place)
+    | 'chase';
 export type RiskRuleStatus = 'armed' | 'triggered' | 'cancelled' | 'done' | 'error';
 // Momento di attivazione: 'immediate' arma subito; 'on_fill' aspetta l'abbinamento
 // dell'ordine di ingresso (entry_bet_id) prima di sorvegliare (niente offset nudo).
@@ -324,6 +329,13 @@ export interface RiskRuleParams {
     stop_amount?: number;
     target_amount?: number;
     persistence?: LivePersistence;
+    // C23 stop_entry: soglia + direzione del tocco; place_at 'best' (default) o 'trigger'
+    trigger_price?: number;
+    trigger_direction?: 'at_or_above' | 'at_or_below';
+    place_at?: 'best' | 'trigger';
+    // C25 chase: distanza in tick dal best del proprio lato (0 = join) + cap re-quote
+    // (max_chases NON ancora esposto in UI: il worker usa il default 20)
+    max_chases?: number;
 }
 
 // Specchio di una riga regola (get_live_risk_rules → rows[]).
@@ -368,14 +380,27 @@ export async function requestRiskRule(args: {
     entrySide: LiveOrderSide;
     entryPrice?: number;
     entrySize?: number;
-    entryBetId?: string;           // ordine di ingresso da sorvegliare (on_fill/bracket)
+    entryBetId?: string;           // ordine di ingresso da sorvegliare (on_fill/bracket/chase)
     params: RiskRuleParams;
 }): Promise<number> {
     const timing = args.params?.timing;
     const hasEntryBet = typeof args.entryBetId === 'string' && args.entryBetId.length > 0;
-    // no offset "nudo": bracket e timing 'on_fill' devono sorvegliare un ordine di ingresso.
-    if ((args.ruleType === 'bracket' || timing === 'on_fill') && !hasEntryBet) {
+    // no offset "nudo": bracket/chase e timing 'on_fill' devono sorvegliare un ordine reale.
+    if ((args.ruleType === 'bracket' || args.ruleType === 'chase' || timing === 'on_fill') && !hasEntryBet) {
         throw new Error(`requestRiskRule: entry_bet_id obbligatorio per '${args.ruleType}'/timing on_fill (no offset nudo)`);
+    }
+    // C23 stop_entry: soglia+direzione+stake obbligatori (validati anche dalla RPC v3).
+    if (args.ruleType === 'stop_entry') {
+        const tp = args.params?.trigger_price;
+        if (!(Number.isFinite(tp) && (tp as number) >= 1.01 && (tp as number) <= 1000)) {
+            throw new Error('requestRiskRule: stop_entry richiede params.trigger_price in [1.01, 1000]');
+        }
+        if (args.params?.trigger_direction !== 'at_or_above' && args.params?.trigger_direction !== 'at_or_below') {
+            throw new Error('requestRiskRule: stop_entry richiede params.trigger_direction (at_or_above|at_or_below)');
+        }
+        if (!(Number.isFinite(args.entrySize) && (args.entrySize as number) > 0)) {
+            throw new Error('requestRiskRule: stop_entry richiede entrySize > 0');
+        }
     }
     // entry_price richiesto solo se il riferimento NON è derivato dall'ordine di ingresso.
     const derivesFromFill = hasEntryBet || timing === 'on_fill';
