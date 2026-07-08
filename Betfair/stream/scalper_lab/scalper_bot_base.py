@@ -214,7 +214,7 @@ class ScalperStrategy(BaseStrategy):
 
     Gate (selezione automatica dei mercati/momenti adatti)
         max_spread_ticks: int = 2     spread massimo per quotare
-        min_size: float = 300.0       liquidita' minima sui best back/lay (validato)
+        min_size: float = 50.0        liquidita' minima sui best back/lay
         min_total_matched: float = 0  total_matched minimo del runner
         price_min: float = 1.20       quota minima operabile
         price_max: float = 8.0        quota massima operabile
@@ -274,10 +274,7 @@ class ScalperStrategy(BaseStrategy):
         self.entry_stop_before_s: float = float(c.get("entry_stop_before_s", 420.0))
 
         self.max_spread_ticks: int = int(c.get("max_spread_ticks", 2))
-        # 300 = gate di liquidita' VALIDATO (backtest 12 match 07/07/2026):
-        # min_size 150 -> -0.90 EUR, 300 -> +0.77 EUR (salta i mercati marginali
-        # poco liquidi che perdono, tiene i liquidi). Piu' selettivo = piu' sicuro.
-        self.min_size: float = float(c.get("min_size", 300.0))
+        self.min_size: float = float(c.get("min_size", 150.0))
         self.min_total_matched: float = float(c.get("min_total_matched", 0.0))
         # niente quote basse (<1.5): tick minuscoli, code enormi, cicli
         # lentissimi che finiscono trascinati nel gap del kickoff
@@ -345,6 +342,25 @@ class ScalperStrategy(BaseStrategy):
         self.improve_inside: bool = bool(c.get("improve_inside", True))
         # requota se il book si sposta di N tick dalle nostre quote inevase
         self.reprice_ticks: int = max(1, int(c.get("reprice_ticks", 2)))
+
+        # ---- TICK DINAMICI PER BANDA DI QUOTA (richiesta utente) ----
+        # Un "tick" vale diversamente sulla ladder Betfair (0.01 a 1.5, 0.10 a
+        # 6.0): soglie fisse si comportano in modo opposto a quote diverse.
+        # tick_bands = lista ordinata di bande; per il prezzo corrente si applica
+        # la prima banda con price <= max_odds. Chiavi override (assenti = base):
+        #   max_odds, max_spread_ticks, min_size, scalp_ticks, stop_ticks,
+        #   capture_min_ticks, capture_max_ticks, join_max_spread
+        # Vuoto/None = OFF -> comportamento identico all'originale.
+        self._band_base: Dict[str, Any] = {
+            "max_spread_ticks": self.max_spread_ticks,
+            "min_size": self.min_size,
+            "scalp_ticks": self.scalp_ticks,
+            "stop_ticks": self.stop_ticks,
+            "capture_min_ticks": self.capture_min_ticks,
+            "capture_max_ticks": self.capture_max_ticks,
+            "join_max_spread": self.join_max_spread,
+        }
+        self.tick_bands: list = list(c.get("tick_bands") or [])
         # scratch: se il mercato va contro dopo il fill, esci A PARI appena puoi
         self.scratch_enable: bool = bool(c.get("scratch", True))
         # pausa ingressi dopo gap/perdita (ms)
@@ -771,6 +787,31 @@ class ScalperStrategy(BaseStrategy):
             self._settled_by_id[oid] = (order, mtype)
 
     # ----------------------------------------------------------------- logica
+    def _apply_bands(self, price: Optional[float]) -> None:
+        """Adatta le soglie tick/size alla banda di quota corrente.
+
+        Un tick vale diversamente sulla ladder Betfair: soglie fisse sono
+        troppo severe a quote basse e troppo larghe a quote alte. Se
+        ``tick_bands`` e' vuoto NON fa nulla (comportamento originale).
+        """
+        if not self.tick_bands or price is None:
+            return
+        band = None
+        for b in self.tick_bands:
+            if price <= float(b.get("max_odds", 1e9)):
+                band = b
+                break
+        if band is None:
+            band = self.tick_bands[-1]
+        base = self._band_base
+        self.max_spread_ticks = int(band.get("max_spread_ticks", base["max_spread_ticks"]))
+        self.min_size = float(band.get("min_size", base["min_size"]))
+        self.scalp_ticks = max(1, int(band.get("scalp_ticks", base["scalp_ticks"])))
+        self.stop_ticks = max(1, int(band.get("stop_ticks", base["stop_ticks"])))
+        self.capture_min_ticks = max(2, int(band.get("capture_min_ticks", base["capture_min_ticks"])))
+        self.capture_max_ticks = int(band.get("capture_max_ticks", base["capture_max_ticks"]))
+        self.join_max_spread = int(band.get("join_max_spread", base["join_max_spread"]))
+
     def _try_enter(
         self, market: Any, market_book: Any, runner: Any, slot: _Slot,
         now: int, best_back: Optional[float], best_lay: Optional[float],
@@ -779,6 +820,8 @@ class ScalperStrategy(BaseStrategy):
         # ---- GATE: condizioni di mercato adatte ----
         if best_back is None or best_lay is None or mp is None:
             return
+        # tick dinamici: adatta le soglie alla banda di quota corrente
+        self._apply_bands(best_back)
         if not (self.price_min <= best_back <= self.price_max):
             return
         if (size_back or 0.0) < self.min_size or (size_lay or 0.0) < self.min_size:
