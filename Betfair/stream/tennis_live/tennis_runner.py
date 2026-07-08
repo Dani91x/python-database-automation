@@ -44,6 +44,8 @@ from flumine.worker import BackgroundWorker
 
 from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
+from ..runner_lifecycle import any_follow_alive, uptime_exceeded
+from ..single_instance import acquire_single_instance_lock
 from ..tennis_scalper.tennis_flb_bot import TennisFLBStrategy
 from ..tennis_scalper.tennis_pro_bot import TennisProStrategy
 from ..tennis_scalper.tennis_scalper_bot import TennisScalperStrategy
@@ -360,6 +362,9 @@ class TennisLiveSession:
         # chiusura FLAT (il bot resta attivo per appiattire la posizione prima di 'stopped').
         self.stopping_deadline: Dict[tuple, float] = {}
         self.restart_requested = threading.Event()
+        # auto-spegnimento (fix 2026-07-08: runner mai più attivi per giorni)
+        self.shutdown_requested = threading.Event()
+        self.started_monotonic = time.monotonic()
 
     def reset_streams(self) -> None:
         self.capture.clear()
@@ -779,6 +784,69 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         _stop_framework(flumine)
 
 
+# ---------------------------------------------------------------------------
+# AUTO-SPEGNIMENTO (fix incidente 2026-07-08: runner attivi per giorni)
+# ---------------------------------------------------------------------------
+_TENNIS_MAX_HOURS = float(os.getenv("TENNIS_RUNNER_MAX_HOURS", "18"))
+_TENNIS_IDLE_EXIT_MIN = float(os.getenv("TENNIS_RUNNER_IDLE_EXIT_MIN", "45"))
+_TENNIS_LOCK_PORT = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
+_TENNIS_STALE_HOURS = 5.0  # un match tennis può durare ben oltre le 3h del calcio
+_INSTANCE_LOCK = None      # socket del lock di singola istanza (referenza viva)
+
+
+def _tennis_lifecycle_blockers(flumine: Any, session: TennisLiveSession) -> Optional[str]:
+    """Motivo per cui NON è sicuro spegnersi (None = via libera). Il denaro viene PRIMA
+    del comfort: bot ospitati ancora attivi, disarm in corso (chiusura flat da
+    completare) o ordini VIVI nel blotter = si resta accesi. In dubbio: accesi."""
+    if session.stopping_deadline:
+        return "disarm in corso (chiusura flat da completare)"
+    for (ev, bot_key), strat in session.hosted.items():
+        if not getattr(strat, "_tennis_disabled", False):
+            return f"bot attivo: {bot_key}@{ev}"
+    try:
+        for market in flumine.markets:
+            blotter = getattr(market, "blotter", None)
+            live = list(getattr(blotter, "live_orders", None) or []) if blotter is not None else []
+            if live:
+                return f"{len(live)} ordini vivi sul mercato {getattr(market, 'market_id', '?')}"
+    except Exception:  # noqa: BLE001
+        return "blotter non leggibile (prudenza: resto acceso)"
+    return None
+
+
+def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
+    """Spegne il runner tennis quando non serve più (vita massima o inattività).
+
+    GUARDIE MONEY-CRITICAL su ENTRAMBI i trigger (fix review CRITICAL): MAI spegnere
+    con un bot attivo, un disarm in corso o ordini vivi nel blotter. In dubbio
+    (DB/blotter illeggibili) resta acceso.
+    """
+    if session.shutdown_requested.is_set():
+        return
+    reason: Optional[str] = None
+    if uptime_exceeded(session.started_monotonic, time.monotonic(), _TENNIS_MAX_HOURS):
+        reason = f"vita massima {_TENNIS_MAX_HOURS:.0f}h raggiunta"
+    elif _TENNIS_IDLE_EXIT_MIN > 0:
+        try:
+            follows = tennis_db.list_pending_tennis_follows()
+        except Exception as e:  # noqa: BLE001 - DB illeggibile: non spegnere al buio
+            logger.debug("[tennis-lifecycle] follows KO (resto acceso): %s", e)
+            return
+        if not any_follow_alive(follows, imminent_min=_TENNIS_IDLE_EXIT_MIN,
+                                stale_hours=_TENNIS_STALE_HOURS):
+            reason = (f"nessun match in corso o in partenza entro "
+                      f"{_TENNIS_IDLE_EXIT_MIN:.0f} min")
+    if reason is None:
+        return
+    blocker = _tennis_lifecycle_blockers(flumine, session)
+    if blocker is not None:
+        logger.warning("[tennis-lifecycle] spegnimento RINVIATO (%s): %s.", reason, blocker)
+        return
+    logger.warning("[tennis-lifecycle] AUTO-SPEGNIMENTO runner tennis: %s.", reason)
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+
+
 def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     try:
         follows = tennis_db.list_pending_tennis_follows()
@@ -912,6 +980,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 framework.add_worker(BackgroundWorker(
                     framework, function=follow_worker, interval=FOLLOW_POLL_SEC or 20.0,
                     func_kwargs={"session": session}, name="tennis_follow"))
+            # auto-spegnimento (fix 2026-07-08): vita massima + inattività, MAI con
+            # bot attivi o disarm in corso.
+            framework.add_worker(BackgroundWorker(
+                framework, function=lifecycle_worker, interval=60.0,
+                func_kwargs={"session": session}, name="tennis_lifecycle"))
 
             for event_id in session.market_meta:
                 tennis_db.set_tennis_follow_status(event_id, "STREAMING")
@@ -929,6 +1002,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 else:
                     time.sleep(5.0)
                     continue
+            if session.shutdown_requested.is_set():
+                logger.info("[tennis-runner] auto-spegnimento: esco.")
+                break
             if session.restart_requested.is_set() and not interrupted:
                 logger.info("[tennis-runner] ricostruzione stream…")
                 continue
@@ -944,6 +1020,9 @@ def _main() -> None:
     ap.add_argument("--event", default=None, help="streamma solo questo event_id")
     ap.add_argument("--no-auto-follow", action="store_true", help="niente ri-aggancio dinamico")
     args = ap.parse_args()
+    # SINGOLA ISTANZA (fix 2026-07-08): la seconda istanza esce subito.
+    global _INSTANCE_LOCK  # noqa: PLW0603 - referenza viva per tutta la vita del processo
+    _INSTANCE_LOCK = acquire_single_instance_lock(_TENNIS_LOCK_PORT, "tennis-runner")
     done = setup_and_run(only_event=args.event, auto_follow=not args.no_auto_follow)
     logger.info("[tennis-runner] terminato. Eventi: %s", done)
 

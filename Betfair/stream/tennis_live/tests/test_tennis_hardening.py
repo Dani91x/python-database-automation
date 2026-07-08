@@ -355,3 +355,67 @@ def test_greenup_fails_loudly():
     with pytest.raises(ValueError):
         tow._dispatch(flumine=None, session=None,
                       cmd={"action": "greenup", "mode": "paper"}, cust_ref="awtq1")
+
+
+# ---------------------------------------------------------------------------
+# AUTO-SPEGNIMENTO tennis (fix 2026-07-08): mai con bot attivi o disarm in corso
+# ---------------------------------------------------------------------------
+def test_tennis_lifecycle_shuts_down_when_idle(monkeypatch):
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_pending_tennis_follows", lambda: [])
+    session = tennis_runner.TennisLiveSession(trading=object())
+    fl = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.lifecycle_worker({}, fl, session)
+
+    assert session.shutdown_requested.is_set()
+    assert fl._running is False
+
+
+def test_tennis_lifecycle_never_stops_with_active_bot(monkeypatch):
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_pending_tennis_follows", lambda: [])
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.hosted = {("ev1", "tennis_scalper"): _FakeStrategy()}  # bot ATTIVO
+    fl = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.lifecycle_worker({}, fl, session)
+
+    assert not session.shutdown_requested.is_set()  # il denaro prima del comfort
+    assert fl._running is True
+
+
+def test_tennis_lifecycle_never_stops_during_disarm(monkeypatch):
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_pending_tennis_follows", lambda: [])
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.stopping_deadline[("ev1", "tennis_scalper")] = 1e18  # disarm in corso
+    fl = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.lifecycle_worker({}, fl, session)
+
+    assert not session.shutdown_requested.is_set()
+
+
+def test_tennis_lifecycle_max_hours_never_stops_with_active_bot(monkeypatch):
+    """Fix review CRITICAL: nemmeno la VITA MASSIMA spegne il runner con un bot attivo."""
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_pending_tennis_follows", lambda: [])
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.hosted = {("ev1", "tennis_scalper"): _FakeStrategy()}  # bot ATTIVO
+    session.started_monotonic -= (tennis_runner._TENNIS_MAX_HOURS * 3600.0 + 60.0)
+    fl = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.lifecycle_worker({}, fl, session)
+
+    assert not session.shutdown_requested.is_set()  # il denaro prima del comfort
+    assert fl._running is True
+
+
+def test_tennis_lifecycle_deferred_with_live_orders(monkeypatch):
+    """Ordini vivi nel blotter -> niente spegnimento anche senza bot ospitati."""
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_pending_tennis_follows", lambda: [])
+    session = tennis_runner.TennisLiveSession(trading=object())
+    blotter = types.SimpleNamespace(live_orders=[object()])
+    market = types.SimpleNamespace(market_id="1.9", blotter=blotter)
+    fl = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[market])
+
+    tennis_runner.lifecycle_worker({}, fl, session)
+
+    assert not session.shutdown_requested.is_set()

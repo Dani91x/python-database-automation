@@ -77,6 +77,8 @@ from .trading.controls import LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
+from .runner_lifecycle import any_follow_alive, uptime_exceeded
+from .single_instance import acquire_single_instance_lock
 from .scores.api_football import ApiFootballProvider
 from .scores.betfair_inplay import BetfairInPlayProvider
 from .scores.poller import ScorePoller
@@ -127,6 +129,9 @@ class LiveSession:
         self.recorder: Optional[MarketRecorderStrategy] = None
         self.context_api_client: Optional[Any] = None         # APIClient (set dal runner)
         self.only_event: Optional[str] = None
+        # auto-spegnimento (fix 2026-07-08: runner mai più attivi per giorni)
+        self.shutdown_requested = threading.Event()
+        self.started_monotonic = time.monotonic()
         self.pollers: Dict[str, ScorePoller] = {}             # event_id -> poller
         self.markets_by_event: Dict[str, List[Dict[str, Any]]] = {}
         self.fixture_by_event: Dict[str, Any] = {}            # event_id -> fixture_id (per λ DB)
@@ -658,6 +663,86 @@ def _stop_framework(flumine: Flumine) -> None:
         logger.warning("[runner] stop framework KO: %s", e)
 
 
+# ----------------------------------------------------------------------------
+# AUTO-SPEGNIMENTO (fix incidente 2026-07-08: runner attivi per giorni)
+# ----------------------------------------------------------------------------
+# (a) vita massima assoluta; (b) uscita per inattività quando NESSUN follow attivo è
+# in corso o imminente. 0 = disattiva la singola condizione. Il lock di singola
+# istanza (porta localhost) impedisce i runner duplicati.
+_RUNNER_MAX_HOURS = float(os.getenv("LIVE_RUNNER_MAX_HOURS", "18"))
+_RUNNER_IDLE_EXIT_MIN = float(os.getenv("LIVE_RUNNER_IDLE_EXIT_MIN", "45"))
+_RUNNER_LOCK_PORT = int(os.getenv("LIVE_RUNNER_LOCK_PORT", "47311"))
+_INSTANCE_LOCK = None  # socket del lock di singola istanza (referenza viva, vedi _main)
+
+
+def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
+    """Motivo per cui NON è sicuro spegnersi (None = via libera). Il denaro viene PRIMA
+    del comfort: ordini VIVI nel blotter o regole risk armate/innescate (stop, offset,
+    chase, stop-entry) = il runner resta acceso — spegnerlo lascerebbe protezioni morte
+    e ordini non gestiti. In dubbio (blotter/DB illeggibili) si resta ACCESI."""
+    try:
+        for market in flumine.markets:
+            blotter = getattr(market, "blotter", None)
+            live = list(getattr(blotter, "live_orders", None) or []) if blotter is not None else []
+            if live:
+                return f"{len(live)} ordini vivi sul mercato {getattr(market, 'market_id', '?')}"
+    except Exception:  # noqa: BLE001
+        return "blotter non leggibile (prudenza: resto acceso)"
+    if LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"):
+        try:
+            from db_client import get_supabase_client
+            rows = (get_supabase_client().table("betfair_live_risk_rules").select("id")
+                    .in_("status", ["armed", "triggered"])
+                    .eq("mode", LIVE_ORDER_MODE.strip().lower())
+                    .limit(1).execute().data or [])
+            if rows:
+                return "regole di rischio armate/innescate (stop/offset/chase/stop-entry)"
+        except Exception:  # noqa: BLE001
+            return "regole di rischio non verificabili (prudenza: resto acceso)"
+    return None
+
+
+def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
+    """Spegne il runner quando non serve più (mai più 'martellare Betfair' per giorni).
+
+    Vita massima superata OPPURE nessuna partita in corso/imminente tra i follow
+    attivi → shutdown pulito: il flusso normale finalizza e carica i Replay nel
+    ``finally`` di setup_and_run. GUARDIE MONEY-CRITICAL su ENTRAMBI i trigger
+    (fix review CRITICAL): mai spegnere con ordini vivi o regole di rischio armate.
+    In caso di dubbio (DB/blotter illeggibili, open_date ambigua) resta ACCESO.
+    """
+    if session.shutdown_requested.is_set():
+        return
+    reason: Optional[str] = None
+    if uptime_exceeded(session.started_monotonic, time.monotonic(), _RUNNER_MAX_HOURS):
+        reason = f"vita massima {_RUNNER_MAX_HOURS:.0f}h raggiunta"
+    elif _RUNNER_IDLE_EXIT_MIN > 0:
+        try:
+            follows = db.list_pending_follows()
+        except Exception as e:  # noqa: BLE001 - DB illeggibile: non spegnere al buio
+            logger.debug("[lifecycle] list_pending_follows KO (resto acceso): %s", e)
+            return
+        if session.only_event:  # modalità test single-event: solo il backstop (a)
+            return
+        stale_h = _FOLLOW_STALE_AFTER.total_seconds() / 3600.0
+        if not any_follow_alive(follows, imminent_min=_RUNNER_IDLE_EXIT_MIN, stale_hours=stale_h):
+            reason = (f"nessuna partita in corso o in partenza entro "
+                      f"{_RUNNER_IDLE_EXIT_MIN:.0f} min ({len(follows)} follow in attesa)")
+    if reason is None:
+        return
+    blocker = _lifecycle_blockers(flumine)
+    if blocker is not None:
+        logger.warning("[lifecycle] spegnimento RINVIATO (%s): %s.", reason, blocker)
+        return
+    logger.warning("[lifecycle] AUTO-SPEGNIMENTO runner: %s.", reason)
+    try:
+        db.insert_alert("INFO", "RUNNER_AUTO_STOP", f"Runner spento da solo: {reason}.")
+    except Exception:  # noqa: BLE001 - l'alert è best-effort
+        pass
+    session.shutdown_requested.set()
+    _stop_framework(flumine)
+
+
 def _safe_set_status(event_id: str, status: str, error_detail: Optional[str] = None) -> None:
     try:
         db.set_follow_status(event_id, status, error_detail)
@@ -996,6 +1081,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,
                 func_kwargs={"session": session}, name="finalize_worker"))
+            # auto-spegnimento (fix 2026-07-08): controlla ogni minuto vita massima
+            # e inattività — mai più runner accesi per giorni a martellare Betfair.
+            framework.add_worker(BackgroundWorker(
+                framework, function=lifecycle_worker, interval=60.0,
+                func_kwargs={"session": session}, name="lifecycle_worker"))
             if auto_subscribe and not only_event:
                 framework.add_worker(BackgroundWorker(
                     framework, function=subscription_worker, interval=WATCHLIST_POLL_SEC,
@@ -1018,6 +1108,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     time.sleep(delay)
                     continue  # ricostruisce e ritenta (multi-match)
 
+            if session.shutdown_requested.is_set():
+                logger.info("[runner] auto-spegnimento: finalizzo e esco.")
+                break
             if session.restart_requested.is_set() and not interrupted:
                 logger.info("[runner] ricostruisco la subscription con le nuove partite...")
                 continue
@@ -1040,6 +1133,10 @@ def _main() -> None:
     ap.add_argument("--event", default=None, help="streamma solo questo event_id (test)")
     ap.add_argument("--no-auto-subscribe", action="store_true", help="disabilita la ri-subscription dinamica")
     args = ap.parse_args()
+    # SINGOLA ISTANZA (fix 2026-07-08: due runner attivi insieme): il lock vive quanto
+    # il processo (il socket va tenuto referenziato); la seconda istanza esce subito.
+    global _INSTANCE_LOCK  # noqa: PLW0603 - referenza viva per tutta la vita del processo
+    _INSTANCE_LOCK = acquire_single_instance_lock(_RUNNER_LOCK_PORT, "runner")
     # NB: l'endpoint HTTP quote/ordini (8787) NON è ospitato qui: vive solo in
     # start_order_server.py (aggiorna_quote_betfair.bat). Così questo runner e il
     # server quote/ordini possono girare INSIEME senza contendersi la porta.
