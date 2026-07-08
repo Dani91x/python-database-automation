@@ -845,6 +845,17 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         fraction = 1.0
     # place_at_ticks (stop a 2 parametri): chiude N tick più a fondo nel book per fill sicuro.
     place_at = _int(params.get("place_at_ticks")) if isinstance(params, dict) else None
+    # target_price ("greening column"): chiudi A QUEL prezzo assoluto invece che al best
+    # opposto — l'ordine può restare sul book come take-profit resting. Un target malformato
+    # è un ERRORE di richiesta: mai ripiegare in silenzio sul best (l'utente ha cliccato UN
+    # livello preciso; chiudere altrove sarebbe un ordine inatteso).
+    target_price = _f(params.get("target_price")) if isinstance(params, dict) else None
+    if isinstance(params, dict) and params.get("target_price") is not None:
+        if target_price is None or not (1.0 < target_price <= 1000.0):
+            raise ValueError(
+                f"greenup: params.target_price non valido ({params.get('target_price')!r}): "
+                "atteso un prezzo in (1.0, 1000]"
+            )
 
     w, l = _read_matched_exposures(flumine, market, strategy, selection_id, handicap)
     best_back, best_lay = _best_prices(market, selection_id, handicap)
@@ -852,6 +863,7 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         matched_if_win=w, matched_if_lose=l,
         best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
         place_at_ticks=place_at or 0,
+        target_price=target_price,
     )
 
     if not plan.actionable:

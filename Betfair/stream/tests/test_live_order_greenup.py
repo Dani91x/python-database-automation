@@ -292,3 +292,90 @@ def test_greenup_no_book_price_with_open_exposure_is_error():
     row = _by_id(sb, 1)
     assert row["status"] == "error"
     assert "NON eseguibile" in (row["error"] or "")
+
+
+# ===========================================================================
+# target_price ("greening column") — percorso WORKER end-to-end (review fix)
+# ===========================================================================
+def test_greenup_target_price_places_at_that_level_ignoring_best():
+    """params.target_price=2.5 (W>L) -> LAY esattamente a 2.5, NON al best (3.0)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"target_price": 2.5})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    fl = _FakeFlumine({"1.1": market})
+
+    wk._process_once(sb, fl, strategy=_STRAT)
+
+    placed = market.calls[0][1]
+    assert placed.side == "LAY"
+    assert placed.order_type.price == 2.5           # il livello richiesto, MAI il best
+    assert placed.order_type.size == pytest.approx(15.0 / 2.5, abs=1e-9)
+    row = _by_id(sb, 1)
+    assert row["status"] == "done"
+    assert row["result"]["ok"] is True
+
+
+def test_greenup_target_price_string_jsonb_is_parsed():
+    """jsonb numerico-come-stringa: target_price="2.5" -> parse a float, piazza a 2.5."""
+    sb = _FakeSupabase([_greenup_row(1, params={"target_price": "2.5"})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    fl = _FakeFlumine({"1.1": market})
+
+    wk._process_once(sb, fl, strategy=_STRAT)
+
+    assert market.calls[0][1].order_type.price == 2.5
+
+
+def test_greenup_target_price_ignores_place_at_ticks():
+    """target_price + place_at_ticks insieme -> vince il target (place_at ignorato)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"target_price": 2.5, "place_at_ticks": 3})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    fl = _FakeFlumine({"1.1": market})
+
+    wk._process_once(sb, fl, strategy=_STRAT)
+
+    assert market.calls[0][1].order_type.price == 2.5  # non 2.5+3tick, non best+3tick
+
+
+def test_greenup_target_price_works_without_best_prices():
+    """Book vuoto + target -> si piazza comunque AL target (take-profit resting)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"target_price": 2.0})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[], atl=[],  # nessun best disponibile
+    )
+    fl = _FakeFlumine({"1.1": market})
+
+    wk._process_once(sb, fl, strategy=_STRAT)
+
+    placed = market.calls[0][1]
+    assert placed.side == "LAY"
+    assert placed.order_type.price == 2.0
+    assert _by_id(sb, 1)["status"] == "done"
+
+
+@pytest.mark.parametrize("bad", ["abc", "", 0, 1.0, -3, 1001, "NaN"])
+def test_greenup_target_price_malformed_is_error_never_best(bad):
+    """MONEY-CRITICAL: target malformato -> riga 'error', NESSUN ordine (mai ripiegare
+    in silenzio sul best: sarebbe un ordine a un prezzo diverso dal livello cliccato)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"target_price": bad})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    fl = _FakeFlumine({"1.1": market})
+
+    wk._process_once(sb, fl, strategy=_STRAT)
+
+    assert market.calls == []  # nessun place, mai
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "target_price" in (row["error"] or "")

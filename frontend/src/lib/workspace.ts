@@ -176,6 +176,12 @@ export type HotkeyAction =
     | 'cashout_event'      // cash-out dell'intero evento
     | 'move_up'            // sposta il focus/prezzo di 1 tick su
     | 'move_down'          // sposta il focus/prezzo di 1 tick giù
+    | 'stake_up'           // aumenta lo stake di uno step
+    | 'stake_down'         // diminuisce lo stake di uno step
+    | 'cycle_preset'       // passa al prossimo preset di stake
+    | 'center_ladder'      // ricentra il ladder sul prezzo corrente (LTP)
+    | 'prev_market'        // tab mercato precedente
+    | 'next_market'        // tab mercato successivo
     | 'kill_switch';       // attiva il kill-switch globale (panico)
 
 // Mappa DEFAULT tasto→azione. Chiavi = valori di KeyboardEvent.key normalizzati lowercase
@@ -189,6 +195,12 @@ export const DEFAULT_KEYBINDINGS: Readonly<Record<string, HotkeyAction>> = {
     x: 'cashout_event',
     ArrowUp: 'move_up',
     ArrowDown: 'move_down',
+    '+': 'stake_up',
+    '-': 'stake_down',
+    s: 'cycle_preset',
+    ' ': 'center_ladder',
+    PageUp: 'prev_market',
+    PageDown: 'next_market',
     Escape: 'kill_switch',
 };
 
@@ -201,6 +213,12 @@ export const HOTKEY_LABELS: Record<HotkeyAction, string> = {
     cashout_event: 'Cash-out evento',
     move_up: 'Su 1 tick',
     move_down: 'Giù 1 tick',
+    stake_up: 'Stake +',
+    stake_down: 'Stake −',
+    cycle_preset: 'Prossimo preset',
+    center_ladder: 'Ricentra ladder',
+    prev_market: 'Mercato precedente',
+    next_market: 'Mercato successivo',
     kill_switch: 'Kill-switch',
 };
 

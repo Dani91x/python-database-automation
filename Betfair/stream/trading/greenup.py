@@ -98,6 +98,7 @@ def compute_greenup(
     best_lay_price: Optional[float],
     fraction: float = 1.0,
     place_at_ticks: int = 0,
+    target_price: Optional[float] = None,
 ) -> GreenupPlan:
     """Calcola l'UNICO ordine di green-up/cash-out per una selezione.
 
@@ -106,11 +107,30 @@ def compute_greenup(
       best_back_price: miglior prezzo disponibile al BACK (per l'hedge BACK quando L > W).
       best_lay_price:  miglior prezzo disponibile al LAY  (per l'hedge LAY  quando W > L).
       fraction: quota di chiusura ∈ (0,1] (1 = totale; 0.5 = metà). Clampata in [0,1].
+      target_price: prezzo ASSOLUTO di chiusura ("greening column" dei tool pro: click sul
+        P&L di un livello = chiudi A QUEL prezzo). Se dato, l'hedge è prezzato al tick più
+        vicino a target_price invece che al best opposto: l'ordine può RESTARE sul book
+        (take-profit resting). Esclude place_at_ticks. L'invariante di pareggio vale a
+        qualunque prezzo: per f=1, W' = L' = L + (W−L)/p per OGNI p > 1.
 
     Ritorna un ``GreenupPlan``: se ``actionable`` è False non c'è nulla da piazzare
     (posizione piatta, frazione nulla, prezzo lato richiesto assente o size→0).
     """
     f = _clamp_fraction(fraction)
+    # target_price esplicito: dev'essere un prezzo Betfair sensato, altrimenti è un
+    # errore di richiesta (mai ripiegare in silenzio sul best: l'utente ha cliccato
+    # UN livello preciso — chiudere a un prezzo diverso sarebbe un ordine inatteso).
+    if target_price is not None:
+        tp = float(target_price)
+        if not math.isfinite(tp) or tp <= 1.0 or tp > 1000.0:
+            return GreenupPlan(
+                side=None, price=None, size=None,
+                expected_if_win=round(float(matched_if_win), 2)
+                if math.isfinite(float(matched_if_win)) else 0.0,
+                expected_if_lose=round(float(matched_if_lose), 2)
+                if math.isfinite(float(matched_if_lose)) else 0.0,
+                note=f"target_price non valido ({target_price!r}): nessun ordine",
+            )
     w = float(matched_if_win)
     l = float(matched_if_lose)
     # Esposizioni non finite (NaN/inf): con NaN ogni confronto è False → si cadrebbe nel ramo
@@ -131,13 +151,17 @@ def compute_greenup(
 
     if diff > 0.0:
         # Profitto sbilanciato sul VINCE → LAYa per spostare denaro sul PERDE.
-        p = best_lay_price
-        if p is None or not math.isfinite(p) or p <= 1.0:
-            return GreenupPlan(
-                None, None, None, round(w, 2), round(l, 2),
-                "prezzo LAY non disponibile per il green-up",
-            )
-        p = _place_through("lay", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
+        if target_price is not None:
+            # greening column: chiudi AL livello cliccato (tick più vicino), può restare sul book.
+            p = float(get_nearest_price(float(target_price)))
+        else:
+            p = best_lay_price
+            if p is None or not math.isfinite(p) or p <= 1.0:
+                return GreenupPlan(
+                    None, None, None, round(w, 2), round(l, 2),
+                    "prezzo LAY non disponibile per il green-up",
+                )
+            p = _place_through("lay", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
         size = round(f * diff / p, 2)
         if size <= 0.0:
             return GreenupPlan(
@@ -154,13 +178,17 @@ def compute_greenup(
         )
 
     # diff < 0 → profitto sbilanciato sul PERDE → BACKa per spostare denaro sul VINCE.
-    p = best_back_price
-    if p is None or not math.isfinite(p) or p <= 1.0:
-        return GreenupPlan(
-            None, None, None, round(w, 2), round(l, 2),
-            "prezzo BACK non disponibile per il green-up",
-        )
-    p = _place_through("back", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
+    if target_price is not None:
+        # greening column: chiudi AL livello cliccato (tick più vicino), può restare sul book.
+        p = float(get_nearest_price(float(target_price)))
+    else:
+        p = best_back_price
+        if p is None or not math.isfinite(p) or p <= 1.0:
+            return GreenupPlan(
+                None, None, None, round(w, 2), round(l, 2),
+                "prezzo BACK non disponibile per il green-up",
+            )
+        p = _place_through("back", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
     size = round(f * (-diff) / p, 2)
     if size <= 0.0:
         return GreenupPlan(

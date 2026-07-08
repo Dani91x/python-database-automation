@@ -263,10 +263,18 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
             if (action === 'greenup') { e.preventDefault(); void handleCashoutMarket(); }
             else if (action === 'cashout_event') { e.preventDefault(); void handleCashoutEvent(); }
             else if (action === 'kill_switch') { e.preventDefault(); void handleKillSwitch(); }
+            else if (action === 'prev_market' || action === 'next_market') {
+                // B16: PageUp/PageDown = cambio tab mercato (come i tool pro)
+                if (markets.length < 2) return;
+                e.preventDefault();
+                const idx = Math.max(0, markets.findIndex(m => m.market_id === marketId));
+                const step = action === 'next_market' ? 1 : markets.length - 1;
+                selectMarket(markets[(idx + step) % markets.length].market_id);
+            }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [mode, handleCashoutMarket, handleCashoutEvent, handleKillSwitch]);
+    }, [mode, handleCashoutMarket, handleCashoutEvent, handleKillSwitch, markets, marketId, selectMarket]);
 
     if (markets.length === 0) return null;
     const busy = cashingMarket || cashingEvent;
@@ -332,7 +340,7 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                 </div>
             </div>
 
-            {/* TABS multi-mercato (stile Bet Angel) */}
+            {/* TABS multi-mercato (stile Bet Angel) + link al workspace Multi-ladder */}
             <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5 overflow-x-auto">
                 {markets.map(m => {
                     const active = m.market_id === marketId;
@@ -351,6 +359,13 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                         </button>
                     );
                 })}
+                <a
+                    href="/multi-ladder"
+                    title="Workspace Multi-ladder: N ladder affiancati anche di eventi/sport diversi"
+                    className="ml-auto px-3 py-1.5 -mb-px rounded-t-lg text-xs font-bold border-b-2 border-transparent text-amber-300/80 hover:text-amber-200 hover:bg-white/[0.03] whitespace-nowrap"
+                >
+                    ⧉ Multi-ladder
+                </a>
             </div>
 
             {/* ================= GRIGLIA 3 ZONE del terminal =================
@@ -379,6 +394,14 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                             marketName={market.market_name || market.market_type}
                             orderMode={mode}
                             fallbackSelections={panelSelections}
+                            popout={{ sport: 'calcio', eventId, eventName }}
+                            multiSlot={{
+                                sport: 'calcio',
+                                eventId,
+                                marketId: market.market_id,
+                                marketName: market.market_name || market.market_type,
+                                eventName,
+                            }}
                         />
                     </div>
 

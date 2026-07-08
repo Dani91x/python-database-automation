@@ -14,6 +14,8 @@ import Analytics from "@/pages/Analytics";
 import Watchlist from "@/pages/Watchlist";
 import ReportPersonale from "@/pages/ReportPersonale";
 import SeguiLive from "@/pages/SeguiLive";
+import MultiLadder from "@/pages/MultiLadder";
+import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
@@ -95,6 +97,22 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <SeguiLive />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/multi-ladder"
+                                element={
+                                    <ProtectedRoute>
+                                        <MultiLadder />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/ladder-popout"
+                                element={
+                                    <ProtectedRoute>
+                                        <LadderPopout />
                                     </ProtectedRoute>
                                 }
                             />

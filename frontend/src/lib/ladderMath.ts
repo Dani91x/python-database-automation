@@ -24,3 +24,53 @@ export function piqAhead(mySize: number, restingAvail: number): number {
     const ahead = (Number.isFinite(restingAvail) ? restingAvail : 0) - mySize;
     return ahead > 0 ? ahead : 0;
 }
+
+// Finestra di al più `maxRows` elementi da una lista ASCENDENTE di prezzi, centrata sul
+// prezzo più vicino a `center`. Ai bordi la finestra viene CLAMPATA (mai meno di maxRows
+// righe quando la lista ne ha abbastanza): è il comportamento dei ladder pro, dove il
+// centro "scivola" quando si naviga vicino a 1.01 o al massimo del range.
+export function windowAround(asc: number[], center: number, maxRows: number): number[] {
+    if (!Array.isArray(asc) || asc.length === 0) return [];
+    if (!(maxRows > 0)) return [];
+    if (asc.length <= maxRows) return asc.slice();
+    const c = Number.isFinite(center) ? center : asc[Math.floor(asc.length / 2)];
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < asc.length; i++) {
+        const d = Math.abs(asc[i] - c);
+        if (d < bestD) { bestD = d; bestI = i; }
+    }
+    let start = bestI - Math.floor(maxRows / 2);
+    start = Math.max(0, Math.min(start, asc.length - maxRows));
+    return asc.slice(start, start + maxRows);
+}
+
+// Direzione del flash di una cella quando il valore cambia tra due update del book:
+// 'up' (verde, denaro in aumento), 'down' (rosso, in calo), null (invariato/appena nato).
+// Sotto EPS di 0.5€ il rumore di arrotondamento non produce flash.
+const FLASH_EPS = 0.5;
+export function flashDir(prev: number | undefined, curr: number): 'up' | 'down' | null {
+    if (prev == null || !Number.isFinite(prev) || !Number.isFinite(curr)) return null;
+    const d = curr - prev;
+    if (d > FLASH_EPS) return 'up';
+    if (d < -FLASH_EPS) return 'down';
+    return null;
+}
+
+// Step dello stake da hotkey (+/−): passo 0,50€, MAI sotto il minimo (0,50€),
+// arrotondato ai 2 decimali (denaro).
+export const STAKE_STEP = 0.5;
+export const STAKE_MIN = 0.5;
+export function stepStake(current: number, dir: 1 | -1, step = STAKE_STEP, min = STAKE_MIN): number {
+    const cur = Number.isFinite(current) && current > 0 ? current : min;
+    const next = cur + dir * step;
+    return Math.round(Math.max(min, next) * 100) / 100;
+}
+
+// Prossimo preset di stake (ciclico). Se lo stake corrente non è un preset,
+// riparte dal primo. Lista vuota → stake invariato.
+export function nextPreset(presets: readonly number[], current: number): number {
+    if (!presets.length) return current;
+    const i = presets.findIndex(p => Math.abs(p - current) < 1e-9);
+    return presets[(i + 1) % presets.length];
+}

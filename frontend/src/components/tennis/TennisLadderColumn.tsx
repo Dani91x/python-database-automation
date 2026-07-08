@@ -18,6 +18,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Layers, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
+// SOLO la validazione pura condivisa (nessun accesso a tabelle calcio: la regola d'oro
+// tennis≠calcio riguarda i DATI; buildGreenupParams è matematica di validazione).
+import { buildGreenupParams } from '@/lib/liveOrders';
 import {
     fetchTennisLadder,
     subscribeTennisLadder,
@@ -53,17 +56,9 @@ const TENNIS_ORDER_API: LadderOrderApi = {
     fetchOrders: (marketId, mode) => fetchTennisOrders(marketId, mode),
     fetchPositions: (marketId, mode) => fetchTennisPositions(marketId, mode),
     greenup: async ({ marketId, selectionId, mode, handicap, fraction, targetPrice }) => {
-        // fraction<=0 è priva di senso: rifiutala (altrimenti il runner farebbe un
-        // green-up TOTALE inatteso). 0<f<1 → cash-out parziale via params.
-        if (fraction != null && fraction <= 0) throw new Error('greenup: fraction deve essere > 0');
-        // target_price malformato = errore del chiamante, MAI inviato (il runner
-        // chiuderebbe al best: prezzo diverso dal livello cliccato).
-        if (targetPrice != null && !(Number.isFinite(targetPrice) && targetPrice > 1 && targetPrice <= 1000)) {
-            throw new Error('greenup: targetPrice deve essere un prezzo in (1, 1000]');
-        }
-        const params: Record<string, number> = {};
-        if (fraction != null && fraction > 0 && fraction < 1) params.fraction = Math.round(fraction * 1000) / 1000;
-        if (targetPrice != null) params.target_price = targetPrice;
+        // validazione CONDIVISA col calcio (liveOrders.buildGreenupParams): una sola fonte
+        // di verità per fraction/target_price, mai due copie che possono disallinearsi.
+        const params = buildGreenupParams(fraction, targetPrice);
         return sendTennisOrderCommand({
             action: 'greenup',
             mode,
@@ -136,6 +131,11 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                     enableDragMove
                     ladderSource={TENNIS_LADDER_SOURCE}
                     orderApi={TENNIS_ORDER_API}
+                    popout={{ sport: 'tennis', eventId, eventName: `${p1} — ${p2}`, p1, p2 }}
+                    multiSlot={{
+                        sport: 'tennis', eventId, marketId, marketName,
+                        eventName: `${p1} — ${p2}`, p1, p2,
+                    }}
                 />
             </div>
 

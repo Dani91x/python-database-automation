@@ -28,10 +28,19 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent
 import { Card } from '@/components/ui/card';
 import {
     Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check,
-    Settings2, ChevronUp, ChevronDown, RotateCcw,
+    Settings2, ChevronUp, ChevronDown, RotateCcw, Crosshair, LineChart, Ruler,
+    Keyboard, ExternalLink,
 } from 'lucide-react';
 import { roundToTick, tickUp, tickDown } from '@/lib/matching';
-import { lockedPnlAt, piqAhead } from '@/lib/ladderMath';
+import {
+    lockedPnlAt, piqAhead, windowAround, flashDir, stepStake, nextPreset,
+} from '@/lib/ladderMath';
+import { tickWindow } from '@/lib/priceAxis';
+import { pushSample, type PriceSample } from '@/lib/ladderChart';
+import { resolveHotkey } from '@/lib/workspace';
+import { addSlot, loadSlots, saveSlots, type LadderSlot } from '@/lib/multiLadder';
+import { MiniPriceChart } from './MiniPriceChart';
+import { PriceAxisBar } from './PriceAxisBar';
 import {
     loadProfile, saveProfile, resetProfile, defaultProfile, normalizeProfile,
     toggleColumn, reorderColumn, visibleColumns, COLUMN_LABELS,
@@ -62,6 +71,9 @@ export interface LadderGreenupArgs {
     mode: LiveOrderMode;
     handicap?: number;
     fraction?: number;
+    // "greening column" (Bet Angel): chiudi la posizione A QUESTO prezzo assoluto invece
+    // che al best opposto — l'ordine può restare sul book come take-profit resting.
+    targetPrice?: number;
 }
 export interface LadderOrderApi {
     send: (cmd: LiveOrderCommand) => Promise<LiveOrderResult>;
@@ -159,6 +171,7 @@ function buildLadder(
     sel: LiveLadderSelection,
     orders: LiveOrderRow[],
     position: LivePositionRow | null,
+    centerOverride: number | null = null,
 ): BuiltLadder {
     const backMap = sumByTick(sel.back);
     const layMap = sumByTick(sel.lay);
@@ -187,33 +200,43 @@ function buildLadder(
     const bestBack = sel.back?.[0]?.[0] != null ? roundToTick(sel.back[0][0]) : null;
     const bestLay = sel.lay?.[0]?.[0] != null ? roundToTick(sel.lay[0][0]) : null;
 
-    if (rng.length === 0) {
-        return { rows: [], maxTrd: 0, bestBack, bestLay, ltp, hasPosition: false, win: 0, lose: 0 };
-    }
+    const win0 = position?.matched_if_win ?? 0;
+    const lose0 = position?.matched_if_lose ?? 0;
 
-    const lo = tickDown(Math.min(...rng), PAD_TICKS);
-    const hi = tickUp(Math.max(...rng), PAD_TICKS);
+    let ticks: number[];
+    if (centerOverride != null && Number.isFinite(centerOverride)) {
+        // NAVIGAZIONE MANUALE (auto-center OFF / price bar / frecce): la finestra è
+        // costruita dalla SCALA TICK PURA attorno al centro scelto — navigabile su tutto
+        // il range 1.01–1000 anche dove il book non ha (ancora) denaro, come i tool pro.
+        // tickWindow clampa ai bordi SENZA restringersi (fix review: vicino a 1000 il
+        // vecchio loop tickUp troncava la finestra).
+        ticks = tickWindow(centerOverride, MAX_ROWS);
+    } else {
+        if (rng.length === 0) {
+            return {
+                rows: [], maxTrd: 0, bestBack, bestLay, ltp,
+                hasPosition: win0 !== 0 || lose0 !== 0, win: win0, lose: lose0,
+            };
+        }
+        const lo = tickDown(Math.min(...rng), PAD_TICKS);
+        const hi = tickUp(Math.max(...rng), PAD_TICKS);
 
-    // costruzione contigua dei tick lo..hi (ascendente).
-    const asc: number[] = [];
-    let p = lo;
-    let guard = 0;
-    while (p <= hi + 1e-9 && guard < 400) {
-        asc.push(p);
-        const nx = tickUp(p, 1);
-        if (nx <= p) break;
-        p = nx;
-        guard++;
-    }
+        // costruzione contigua dei tick lo..hi (ascendente).
+        const asc: number[] = [];
+        let p = lo;
+        let guard = 0;
+        while (p <= hi + 1e-9 && guard < 400) {
+            asc.push(p);
+            const nx = tickUp(p, 1);
+            if (nx <= p) break;
+            p = nx;
+            guard++;
+        }
 
-    // se troppe righe, centra una finestra MAX_ROWS sul prezzo corrente.
-    let ticks = asc;
-    if (asc.length > MAX_ROWS) {
+        // se troppe righe, finestra MAX_ROWS centrata sul prezzo corrente (clampata ai
+        // bordi: mai meno di MAX_ROWS righe quando la scala ne ha abbastanza).
         const center = ltp ?? bestBack ?? bestLay ?? asc[Math.floor(asc.length / 2)];
-        const half = Math.floor(MAX_ROWS / 2);
-        const wlo = tickDown(center, half);
-        const whi = tickUp(center, half);
-        ticks = asc.filter(t => t >= wlo - 1e-9 && t <= whi + 1e-9);
+        ticks = windowAround(asc, center, MAX_ROWS);
     }
 
     let maxTrd = 0;
@@ -231,11 +254,9 @@ function buildLadder(
     });
     rows.reverse(); // prezzo alto in cima (default Geeks Toy).
 
-    const win = position?.matched_if_win ?? 0;
-    const lose = position?.matched_if_lose ?? 0;
-    const hasPosition = win !== 0 || lose !== 0;
+    const hasPosition = win0 !== 0 || lose0 !== 0;
 
-    return { rows, maxTrd, bestBack, bestLay, ltp, hasPosition, win, lose };
+    return { rows, maxTrd, bestBack, bestLay, ltp, hasPosition, win: win0, lose: lose0 };
 }
 
 // ------------------------------------------------------------------- WOM bar
@@ -328,30 +349,176 @@ interface DragPayload {
     size: number;
 }
 
+// informazioni della riga sotto il cursore (per le hotkey B/L/C/frecce del terminal).
+export interface HoverInfo {
+    selectionId: number;
+    selName: string;
+    price: number;
+    backIds: string[];
+    layIds: string[];
+}
+
 interface SelectionLadderProps {
     sel: LiveLadderSelection;
     orders: LiveOrderRow[];        // ordini della selezione (già filtrati per selection+mode)
     position: LivePositionRow | null;
     stake: number;
+    stakeMode: 'stake' | 'liability'; // interpreta lo stake dei LAY come puntata o responsabilità
     status: string | null;         // OPEN | SUSPENDED | CLOSED
     canTrade: boolean;             // mode != off && mercato OPEN
     busy: boolean;                 // un comando è in volo (disabilita i click)
     columns: ColumnKey[];          // colonne griglia (ordine + visibilità) dal profilo
     greenupSupported: boolean;     // se false, il Cash-out non è mostrato (orderApi.greenup assente)
     enableDragMove: boolean;       // se true, i tuoi ordini si trascinano tra livelli (cancel→replace)
+    recenterSeq: number;           // segnale globale "ricentra sul prezzo corrente" (hotkey Spazio)
+    nudge: { seq: number; selId: number; dir: 1 | -1 } | null; // frecce: sposta la vista di 1 tick
+    samples: PriceSample[] | undefined; // serie LTP per il mini-chart (buffer del parent, mutato in place)
     onPlace: (side: TradeSide, price: number, selectionId: number, selName: string) => void;
     onCancel: (betIds: string[], side: TradeSide, price: number, selName: string) => void;
     onGreenup: (fraction: number, selectionId: number, selName: string) => void;
+    onGreenupAt: (price: number, selectionId: number, selName: string) => void; // greening column
+    onCancelSide: (side: TradeSide, betIds: string[], selectionId: number, selName: string) => void;
     onMoveOrder: (betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string) => void;
+    onHoverRow: (info: HoverInfo | null) => void;
+    // MONEY-CRITICAL: il contenuto è scivolato sotto il cursore FERMO (auto-scroll/shift
+    // della finestra) → il parent invalida l'hover di questa selezione (hotkey sospese
+    // fino al prossimo movimento reale del mouse: mai ordini a un prezzo "vecchio").
+    onWindowShift: (selectionId: number) => void;
 }
 
+// mappa flash vuota, referenza stabile (nessun re-render quando non c'è nulla da lampeggiare).
+const EMPTY_FLASHES: ReadonlyMap<string, 'up' | 'down'> = new Map();
+
 const SelectionLadder = memo(function SelectionLadder({
-    sel, orders, position, stake, status, canTrade, busy, columns, greenupSupported, enableDragMove,
-    onPlace, onCancel, onGreenup, onMoveOrder,
+    sel, orders, position, stake, stakeMode, status, canTrade, busy, columns, greenupSupported, enableDragMove,
+    recenterSeq, nudge, samples,
+    onPlace, onCancel, onGreenup, onGreenupAt, onCancelSide, onMoveOrder, onHoverRow, onWindowShift,
 }: SelectionLadderProps) {
-    const built = useMemo(() => buildLadder(sel, orders, position), [sel, orders, position]);
+    // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come Bet Angel)
+    // o centro MANUALE (click su prezzo/price bar/frecce). localSeq forza lo scroll one-shot.
+    const [autoCenter, setAutoCenter] = useState(true);
+    const [manualCenter, setManualCenter] = useState<number | null>(null);
+    const [localSeq, setLocalSeq] = useState(0);
+    const [showChart, setShowChart] = useState(false);
+    const [showAxis, setShowAxis] = useState(false);
+
+    const built = useMemo(
+        () => buildLadder(sel, orders, position, autoCenter ? null : manualCenter),
+        [sel, orders, position, autoCenter, manualCenter],
+    );
+    const builtRef = useRef(built);
+    builtRef.current = built;
     const [armedPrice, setArmedPrice] = useState<number | null>(null); // evidenziazione livello (OFF/non-trade)
     const [fraction, setFraction] = useState(1); // cash-out parziale (1 = totale)
+
+    // ---- flash direzionale (B12): confronto disponibilità back/lay per livello tra due
+    // update del book; il LTP lampeggia col colore della direzione dell'ultimo trade.
+    const [flashes, setFlashes] = useState<ReadonlyMap<string, 'up' | 'down'>>(EMPTY_FLASHES);
+    const [ltpPulse, setLtpPulse] = useState<'up' | 'down' | null>(null);
+    const prevAvailRef = useRef<Map<number, { back: number; lay: number }>>(new Map());
+    const prevLtpRef = useRef<number | null>(null);
+    useEffect(() => {
+        const prev = prevAvailRef.current;
+        const next = new Map<number, { back: number; lay: number }>();
+        const fl = new Map<string, 'up' | 'down'>();
+        for (const r of built.rows) {
+            next.set(r.price, { back: r.backAvail, lay: r.layAvail });
+            const p = prev.get(r.price);
+            const db = flashDir(p?.back, r.backAvail);
+            const dl = flashDir(p?.lay, r.layAvail);
+            if (db) fl.set(`b@${r.price}`, db);
+            if (dl) fl.set(`l@${r.price}`, dl);
+        }
+        prevAvailRef.current = next;
+        let pulse: 'up' | 'down' | null = null;
+        if (built.ltp != null && prevLtpRef.current != null && built.ltp !== prevLtpRef.current) {
+            pulse = built.ltp > prevLtpRef.current ? 'up' : 'down';
+        }
+        if (built.ltp != null) prevLtpRef.current = built.ltp;
+        if (fl.size === 0 && pulse == null) return;
+        if (fl.size) setFlashes(fl);
+        if (pulse) setLtpPulse(pulse);
+        const t = setTimeout(() => { setFlashes(EMPTY_FLASHES); setLtpPulse(null); }, 260);
+        return () => clearTimeout(t);
+    }, [built]);
+
+    // ---- scroll del corpo ladder: con auto-center segue il prezzo a ogni update; con
+    // centro manuale scrolla SOLO sui segnali espliciti (click prezzo / Spazio / frecce).
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const centerRowRef = useRef<HTMLDivElement | null>(null);
+    const lastSeqRef = useRef(-1);
+    useEffect(() => {
+        const seq = recenterSeq * 100_000 + localSeq; // combinazione monotona dei due segnali
+        const seqChanged = seq !== lastSeqRef.current;
+        lastSeqRef.current = seq;
+        if (!autoCenter && !seqChanged) return;
+        const el = scrollRef.current;
+        const rowEl = centerRowRef.current;
+        if (!el || !rowEl) return;
+        const target = Math.max(0, rowEl.offsetTop - el.clientHeight / 2 + rowEl.clientHeight / 2);
+        if (Math.abs(el.scrollTop - target) > 2) {
+            el.scrollTop = target;
+            // MONEY-CRITICAL (fix review HIGH): lo scroll programmatico sposta il contenuto
+            // sotto un cursore fermo senza generare mouseenter → l'hover memorizzato
+            // punterebbe a un prezzo NON più sotto il mouse. Invalidalo.
+            onWindowShift(sel.selection_id);
+        }
+    }, [built, autoCenter, recenterSeq, localSeq, onWindowShift, sel.selection_id]);
+
+    // MONEY-CRITICAL (fix review HIGH): anche uno SHIFT della finestra di righe a parità
+    // di scrollTop (book che si muove con auto-center) cambia cosa sta sotto il cursore.
+    // Firma = primo/ultimo prezzo + numero righe: se cambia, hover di questa selezione via.
+    const winSigRef = useRef<string | null>(null);
+    useEffect(() => {
+        const rows = built.rows;
+        const sig = rows.length ? `${rows[0].price}|${rows[rows.length - 1].price}|${rows.length}` : '';
+        if (winSigRef.current != null && winSigRef.current !== sig) onWindowShift(sel.selection_id);
+        winSigRef.current = sig;
+    }, [built, onWindowShift, sel.selection_id]);
+
+    // segnale globale "ricentra" (Spazio): torna sul prezzo corrente.
+    useEffect(() => {
+        if (recenterSeq > 0) setManualCenter(null);
+    }, [recenterSeq]);
+
+    // frecce ↑/↓ (hotkey): sposta la vista di 1 tick (passa in navigazione manuale).
+    const lastNudgeRef = useRef(0);
+    useEffect(() => {
+        if (!nudge || nudge.selId !== sel.selection_id || nudge.seq === lastNudgeRef.current) return;
+        lastNudgeRef.current = nudge.seq;
+        setAutoCenter(false);
+        setManualCenter(prev => {
+            const b = builtRef.current;
+            const base = prev ?? b.ltp ?? b.bestBack ?? b.bestLay;
+            if (base == null) return prev;
+            return nudge.dir > 0 ? tickUp(base, 1) : tickDown(base, 1);
+        });
+        setLocalSeq(s => s + 1);
+    }, [nudge, sel.selection_id]);
+
+    // click sulla colonna PREZZO (B11): ricentra la vista sul prezzo corrente.
+    const recenterHere = useCallback(() => {
+        setManualCenter(null);
+        setLocalSeq(s => s + 1);
+    }, []);
+
+    // navigazione dalla price bar (B18): centro manuale sul prezzo scelto.
+    const navigateTo = useCallback((price: number) => {
+        setAutoCenter(false);
+        setManualCenter(price);
+        setLocalSeq(s => s + 1);
+    }, []);
+
+    // bet_id NON abbinati per lato (B14: cancel di un intero lato con un click).
+    const sideBets = useMemo(() => {
+        const lay: string[] = [];
+        const back: string[] = [];
+        for (const o of orders) {
+            if (!o.bet_id || (o.size_remaining ?? 0) <= 0) continue;
+            (o.side === 'lay' ? lay : back).push(o.bet_id);
+        }
+        return { lay, back };
+    }, [orders]);
 
     // colonne griglia effettive (ordine dal profilo, WOM escluso, 'price' garantita).
     const gridCols = useMemo(() => gridColumnsOf(columns), [columns]);
@@ -439,6 +606,10 @@ const SelectionLadder = memo(function SelectionLadder({
 
     const closed = (status ?? '').toUpperCase() === 'CLOSED';
     const suspended = (status ?? '').toUpperCase() === 'SUSPENDED';
+    // riga su cui la vista è (o va) centrata: LTP in auto-center, altrimenti il centro manuale.
+    const centerTargetPrice = (!autoCenter && manualCenter != null)
+        ? roundToTick(manualCenter)
+        : (built.ltp ?? built.bestBack ?? built.bestLay);
     // Preview cash-out al prezzo di ESECUZIONE reale dell'hedge: se vinco di più sul VINCE
     // (win>lose) il runner LAYa al best LAY; altrimenti BACKa al best BACK. Usare il best
     // opposto (non l'LTP) allinea il numero mostrato a ciò che verrà davvero bloccato.
@@ -464,6 +635,46 @@ const SelectionLadder = memo(function SelectionLadder({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                     <WomBar wom={sel.wom} />
                     <div className="flex items-center gap-1.5">
+                        {/* toggle vista: auto-center LTP (B11), price bar navigabile (B18), mini-chart (B17) */}
+                        <button
+                            type="button"
+                            aria-pressed={autoCenter}
+                            onClick={() => setAutoCenter(a => {
+                                const nx = !a;
+                                if (nx) { setManualCenter(null); setLocalSeq(s => s + 1); }
+                                return nx;
+                            })}
+                            title={autoCenter
+                                ? 'Auto-center ATTIVO: la vista segue il LTP a ogni update. Clic per navigare liberamente.'
+                                : 'Auto-center SPENTO: vista libera (frecce/price bar/scroll). Clic per riagganciare il LTP.'}
+                            className={`p-1 rounded-md border transition-colors ${
+                                autoCenter ? 'bg-amber-400/20 border-amber-400/50 text-amber-200' : 'border-white/10 text-white/50 hover:text-white'
+                            }`}
+                        >
+                            <Crosshair className="w-3 h-3" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={showAxis}
+                            onClick={() => setShowAxis(s => !s)}
+                            title="Price bar navigabile 1.01–1000 (heat = concentrazione del denaro); trascina per scorrere il ladder"
+                            className={`p-1 rounded-md border transition-colors ${
+                                showAxis ? 'bg-white/90 border-white/90 text-black' : 'border-white/10 text-white/50 hover:text-white'
+                            }`}
+                        >
+                            <Ruler className="w-3 h-3" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={showChart}
+                            onClick={() => setShowChart(s => !s)}
+                            title="Mini-chart candele del prezzo (LTP) della selezione"
+                            className={`p-1 rounded-md border transition-colors ${
+                                showChart ? 'bg-white/90 border-white/90 text-black' : 'border-white/10 text-white/50 hover:text-white'
+                            }`}
+                        >
+                            <LineChart className="w-3 h-3" />
+                        </button>
                         {/* slider cash-out parziale: appare solo con posizione + tradabile */}
                         {canGreen && (
                             <div className="flex items-center gap-1" title="Frazione di cash-out (parziale)">
@@ -501,19 +712,55 @@ const SelectionLadder = memo(function SelectionLadder({
             >
                 {gridCols.map((k) => {
                     const h = COL_HEADER[k];
+                    // B14: click sull'intestazione dei TUOI ordini = annulla TUTTO quel lato
+                    // con un click (stile BetTrader "K"). Visibile solo quando ci sono ordini.
+                    if (k === 'my_lay' || k === 'my_back') {
+                        const side: TradeSide = k === 'my_lay' ? 'lay' : 'back';
+                        const ids = side === 'lay' ? sideBets.lay : sideBets.back;
+                        if (ids.length > 0 && canTrade) {
+                            return (
+                                <button
+                                    key={k}
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => onCancelSide(side, ids, selId, selName)}
+                                    title={`Annulla TUTTI i ${ids.length} ordini ${side.toUpperCase()} di ${selName} (un click)`}
+                                    className={`text-center font-black rounded-sm ${h.cls} ${
+                                        side === 'lay' ? 'bg-rose-500/20 hover:bg-rose-500/40' : 'bg-sky-500/20 hover:bg-sky-500/40'
+                                    } ${busy ? 'opacity-50' : ''}`}
+                                >
+                                    {h.label}✕{ids.length}
+                                </button>
+                            );
+                        }
+                    }
                     return (
                         <span key={k} className={`text-center ${h.cls}`} title={h.title}>{h.label}</span>
                     );
                 })}
             </div>
 
-            {/* corpo ladder */}
+            {/* corpo ladder (+ price bar navigabile a sinistra, mini-chart a destra) */}
             {built.rows.length === 0 ? (
                 <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
                     Profondità non ancora disponibile.
                 </div>
             ) : (
-                <div className={`max-h-[420px] overflow-y-auto scrollbar-thin ${closed || suspended ? 'opacity-60' : ''}`}>
+                <div className="flex items-stretch">
+                    {showAxis && (
+                        <PriceAxisBar
+                            back={sel.back}
+                            lay={sel.lay}
+                            trd={sel.trd}
+                            center={centerTargetPrice}
+                            onNavigate={navigateTo}
+                        />
+                    )}
+                <div
+                    ref={scrollRef}
+                    onMouseLeave={() => onHoverRow(null)}
+                    className={`flex-1 min-w-0 max-h-[420px] overflow-y-auto scrollbar-thin ${closed || suspended ? 'opacity-60' : ''}`}
+                >
                     {built.rows.map(r => {
                         const isLtp = built.ltp != null && Math.abs(r.price - built.ltp) < 1e-9;
                         const isBestBack = built.bestBack != null && Math.abs(r.price - built.bestBack) < 1e-9;
@@ -563,15 +810,18 @@ const SelectionLadder = memo(function SelectionLadder({
                                         </button>
                                     );
                                 }
-                                case 'avail_back':
-                                    // disponibile al BACK (blu) — clic = back one-click
+                                case 'avail_back': {
+                                    // disponibile al BACK (blu) — clic = back one-click; flash
+                                    // direzionale (B12) quando il denaro al livello cambia.
+                                    const fb = flashes.get(`b@${r.price}`);
                                     return (
                                         <button
                                             key={k}
                                             type="button"
                                             onClick={() => clickBack(r.price)}
                                             title={canTrade ? `BACK €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Back (sola lettura: modalità OFF)'}
-                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
+                                            style={fb ? { backgroundColor: fb === 'up' ? 'rgba(52,211,153,0.30)' : 'rgba(244,63,94,0.30)' } : undefined}
+                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors duration-200 ${
                                                 r.backAvail > 0
                                                     ? 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/30'
                                                     : 'text-transparent hover:bg-sky-500/10'
@@ -580,34 +830,46 @@ const SelectionLadder = memo(function SelectionLadder({
                                             {fmtSize(r.backAvail) || '·'}
                                         </button>
                                     );
+                                }
                                 case 'price':
-                                    // PREZZO (centro) — LTP evidenziato
+                                    // PREZZO (centro) — LTP evidenziato; clic = RICENTRA la vista
+                                    // sul prezzo corrente (B11); pulse direzionale al trade (B12).
                                     return (
                                         <button
                                             key={k}
                                             type="button"
-                                            onClick={() => onLevel(r.price)}
-                                            className={`flex items-center justify-center font-bold font-mono tabular-nums border-x border-white/10 transition-colors ${
+                                            onClick={recenterHere}
+                                            style={isLtp && ltpPulse
+                                                ? { backgroundColor: ltpPulse === 'up' ? 'rgba(52,211,153,0.40)' : 'rgba(244,63,94,0.40)' }
+                                                : undefined}
+                                            className={`flex items-center justify-center font-bold font-mono tabular-nums border-x border-white/10 transition-colors duration-200 ${
                                                 isLtp
-                                                    ? 'bg-amber-400/25 text-amber-100 ring-1 ring-inset ring-amber-400/70'
+                                                    ? `bg-amber-400/25 text-amber-100 ring-1 ring-inset ring-amber-400/70 ${ltpPulse ? 'animate-pulse' : ''}`
                                                     : (isBestBack || isBestLay)
                                                         ? 'bg-white/[0.06] text-white'
                                                         : 'text-white/70 hover:bg-white/5'
                                             }`}
-                                            title={isLtp ? 'Ultimo prezzo tradato (LTP)' : undefined}
+                                            title={isLtp
+                                                ? 'Ultimo prezzo tradato (LTP) · clic = ricentra'
+                                                : 'Clic = ricentra il ladder sul prezzo corrente'}
                                         >
                                             {fmtPrice(r.price)}
                                         </button>
                                     );
-                                case 'avail_lay':
-                                    // disponibile al LAY (rosa) — clic = lay one-click
+                                case 'avail_lay': {
+                                    // disponibile al LAY (rosa) — clic = lay one-click; flash B12.
+                                    const flsh = flashes.get(`l@${r.price}`);
+                                    const layTitle = stakeMode === 'liability'
+                                        ? `LAY resp. €${stake.toFixed(2)} @ ${fmtPrice(r.price)}`
+                                        : `LAY €${stake.toFixed(2)} @ ${fmtPrice(r.price)}`;
                                     return (
                                         <button
                                             key={k}
                                             type="button"
                                             onClick={() => clickLay(r.price)}
-                                            title={canTrade ? `LAY €${stake.toFixed(2)} @ ${fmtPrice(r.price)}` : 'Lay (sola lettura: modalità OFF)'}
-                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors ${
+                                            title={canTrade ? layTitle : 'Lay (sola lettura: modalità OFF)'}
+                                            style={flsh ? { backgroundColor: flsh === 'up' ? 'rgba(52,211,153,0.30)' : 'rgba(244,63,94,0.30)' } : undefined}
+                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors duration-200 ${
                                                 r.layAvail > 0
                                                     ? 'bg-rose-500/15 text-rose-200 hover:bg-rose-500/30'
                                                     : 'text-transparent hover:bg-rose-500/10'
@@ -616,6 +878,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                             {fmtSize(r.layAvail) || '·'}
                                         </button>
                                     );
+                                }
                                 case 'my_back': {
                                     // tuoi BACK non abbinati — clic = annulla; drag = sposta (cancel→replace)
                                     const draggableBack = canDrag && r.myBack > 0 && backBetIds.length > 0;
@@ -643,17 +906,34 @@ const SelectionLadder = memo(function SelectionLadder({
                                         </button>
                                     );
                                 }
-                                case 'pnl':
-                                    // P&L per livello (viola)
+                                case 'pnl': {
+                                    // P&L per livello (viola). B13 "greening column" (Bet Angel):
+                                    // CLIC sul valore = chiudi la posizione A QUEL prezzo (l'ordine
+                                    // di hedge può restare sul book come take-profit resting).
+                                    const pnlCls = pnl == null ? 'text-white/15'
+                                        : pnl > 0 ? 'text-emerald-300/90'
+                                            : pnl < 0 ? 'text-rose-300/90' : 'text-purple-200/70';
+                                    const pnlTxt = pnl == null ? '·' : (pnl < 0 ? '−' : '') + Math.abs(pnl).toFixed(2);
+                                    const canGreenHere = pnl != null && canTrade && !busy && greenupSupported && built.hasPosition;
+                                    if (!canGreenHere) {
+                                        return (
+                                            <div key={k} className={`flex items-center justify-center font-mono tabular-nums ${pnlCls}`}>
+                                                {pnlTxt}
+                                            </div>
+                                        );
+                                    }
                                     return (
-                                        <div key={k} className={`flex items-center justify-center font-mono tabular-nums ${
-                                            pnl == null ? 'text-white/15'
-                                                : pnl > 0 ? 'text-emerald-300/90'
-                                                    : pnl < 0 ? 'text-rose-300/90' : 'text-purple-200/70'
-                                        }`}>
-                                            {pnl == null ? '·' : (pnl < 0 ? '−' : '') + Math.abs(pnl).toFixed(2)}
-                                        </div>
+                                        <button
+                                            key={k}
+                                            type="button"
+                                            onClick={() => onGreenupAt(r.price, selId, selName)}
+                                            title={`Chiudi QUI: blocca ${fmtMoney(pnl)} chiudendo a ${fmtPrice(r.price)} (l'ordine può restare sul book)`}
+                                            className={`flex items-center justify-center font-mono tabular-nums transition-colors hover:bg-purple-500/25 hover:ring-1 hover:ring-inset hover:ring-purple-400/60 ${pnlCls}`}
+                                        >
+                                            {pnlTxt}
+                                        </button>
                                     );
+                                }
                                 case 'trd':
                                     // volume tradato (mini-barra + numero)
                                     return (
@@ -681,9 +961,15 @@ const SelectionLadder = memo(function SelectionLadder({
                         };
 
                         const isDropTarget = dragOverPrice != null && Math.abs(r.price - dragOverPrice) < 1e-9;
+                        const isCenterTarget = centerTargetPrice != null && Math.abs(r.price - centerTargetPrice) < 1e-9;
                         return (
                             <div
                                 key={r.price}
+                                ref={isCenterTarget ? centerRowRef : undefined}
+                                onMouseEnter={() => onHoverRow({
+                                    selectionId: selId, selName, price: r.price,
+                                    backIds: backBetIds, layIds: layBetIds,
+                                })}
                                 onDragOver={enableDragMove ? (e) => overRow(e, r.price) : undefined}
                                 onDrop={enableDragMove ? (e) => dropRow(e, r.price) : undefined}
                                 className={`grid items-stretch border-b border-white/[0.04] text-[10px] leading-tight ${
@@ -696,12 +982,33 @@ const SelectionLadder = memo(function SelectionLadder({
                         );
                     })}
                 </div>
+                    {showChart && <MiniPriceChart samples={samples} height={420} />}
+                </div>
             )}
 
-            {/* footer: stake selezionato */}
-            <div className="px-2.5 py-1.5 border-t border-white/10 bg-black/30 flex items-center justify-between">
-                <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Stake</span>
-                <span className="text-[11px] font-mono font-bold text-amber-300">€{stake.toFixed(2)}</span>
+            {/* footer: stake selezionato + net-stake box (B15: posizione netta ed esposizione) */}
+            <div className="px-2.5 py-1.5 border-t border-white/10 bg-black/30 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70">
+                        {stakeMode === 'liability' ? 'Resp.' : 'Stake'}
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-amber-300">€{stake.toFixed(2)}</span>
+                </div>
+                {position && (
+                    <div
+                        className="flex items-center gap-2 text-[9px] uppercase tracking-wider text-muted-foreground/70"
+                        title="Net = stake netto della selezione (positivo: posizione da BACK; negativo: da LAY) · Exp = esposizione (peggior perdita) della selezione"
+                    >
+                        <span>Net{' '}
+                            <span className={`normal-case font-mono font-bold ${
+                                position.net_position > 0 ? 'text-sky-300' : position.net_position < 0 ? 'text-rose-300' : 'text-white/70'
+                            }`}>{fmtMoney(position.net_position)}</span>
+                        </span>
+                        <span>Exp{' '}
+                            <span className="normal-case font-mono font-bold text-white/80">{fmtMoney(position.selection_exposure)}</span>
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -709,20 +1016,28 @@ const SelectionLadder = memo(function SelectionLadder({
 
 // ---------------------------------------------------- tipi azione/conferma
 type Intent =
-    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence }
-    | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide; price: number }
+    | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence; asLiability: boolean }
+    | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide | 'both'; price: number }
+    | { kind: 'cancel_side'; selName: string; selectionId: number; side: TradeSide; betIds: string[] }
     | { kind: 'move'; selName: string; betIds: string[]; side: TradeSide; toPrice: number; size: number; selectionId: number; persistence: LivePersistence }
-    | { kind: 'greenup'; selName: string; selectionId: number; fraction: number };
+    | { kind: 'greenup'; selName: string; selectionId: number; fraction: number }
+    | { kind: 'greenup_at'; selName: string; selectionId: number; price: number };
 
 interface StatusMsg { tone: 'pending' | 'ok' | 'err'; text: string; }
 
 function intentLabel(it: Intent): string {
     if (it.kind === 'place') {
         const persLabel = PERSISTENCE_OPTIONS.find(o => o.value === it.persistence)?.label ?? it.persistence;
-        return `${it.side === 'back' ? 'BACK' : 'LAY'} €${it.size.toFixed(2)} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}`;
+        const amount = it.asLiability ? `resp. €${it.size.toFixed(2)}` : `€${it.size.toFixed(2)}`;
+        return `${it.side === 'back' ? 'BACK' : 'LAY'} ${amount} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}`;
     }
-    if (it.kind === 'cancel') return `Annulla ${it.betIds.length} ordine/i ${it.side.toUpperCase()} @ ${fmtPrice(it.price)} · ${it.selName}`;
+    if (it.kind === 'cancel') {
+        const sideTxt = it.side === 'both' ? '' : `${it.side.toUpperCase()} `;
+        return `Annulla ${it.betIds.length} ordine/i ${sideTxt}@ ${fmtPrice(it.price)} · ${it.selName}`;
+    }
+    if (it.kind === 'cancel_side') return `Annulla TUTTI i ${it.betIds.length} ordini ${it.side.toUpperCase()} · ${it.selName}`;
     if (it.kind === 'move') return `Sposta ${it.side.toUpperCase()} €${it.size.toFixed(2)} → ${fmtPrice(it.toPrice)} (cancel→replace) · ${it.selName}`;
+    if (it.kind === 'greenup_at') return `Chiudi @ ${fmtPrice(it.price)} (greening al livello) · ${it.selName}`;
     const pct = Math.round(it.fraction * 100);
     return `Cash-out ${pct < 100 ? `${pct}% ` : ''}· ${it.selName}`;
 }
@@ -739,7 +1054,14 @@ interface Props {
     // ---- dependency injection (default = funzioni calcio → football INVARIATO) ----
     ladderSource?: LadderSource;   // sorgente ladder (fetch/subscribe); default live_ladder calcio
     orderApi?: LadderOrderApi;     // API ordini (send/fetchOrders/fetchPositions/greenup); default calcio
-    enableDragMove?: boolean;      // drag-to-move dei tuoi ordini (cancel→replace); default false (calcio invariato)
+    enableDragMove?: boolean;      // drag-to-move dei tuoi ordini (cancel→replace); default true (parità tool pro)
+    // "stacca in finestra": se presente, mostra il bottone che apre questo mercato in una
+    // finestra popout dedicata (multi-monitor). sport seleziona le sorgenti dati del popout;
+    // eventName/p1/p2 arricchiscono l'header del popout (tennis: nomi giocatori).
+    popout?: { sport: string; eventId?: string; eventName?: string; p1?: string; p2?: string };
+    // "aggiungi al multi-ladder": slot precostruito dall'host (che conosce i nomi evento);
+    // se presente, mostra il bottone che salva questo mercato nel workspace /multi-ladder.
+    multiSlot?: Omit<LadderSlot, 'id'>;
 }
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
@@ -761,7 +1083,8 @@ function initLadderProfile(sport: string): LadderProfile {
 
 export function LadderView({
     marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [],
-    ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = false,
+    ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = true,
+    popout, multiSlot,
 }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
@@ -821,6 +1144,29 @@ export function LadderView({
     // persistenza ordine condivisa (default LAPSE, come i tool pro).
     const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
 
+    // B15: interpreta lo stake dei LAY come PUNTATA (stake, default) o come RESPONSABILITÀ
+    // (liability: il runner deriva size = liability/(price−1)). I BACK non cambiano.
+    const [stakeMode, setStakeMode] = useState<'stake' | 'liability'>('stake');
+    const stakeModeRef = useRef(stakeMode);
+    stakeModeRef.current = stakeMode;
+
+    // B11/B16: segnale globale di ricentraggio (Spazio/click) e nudge frecce per-selezione.
+    const [recenterSeq, setRecenterSeq] = useState(0);
+    const [nudge, setNudge] = useState<{ seq: number; selId: number; dir: 1 | -1 } | null>(null);
+
+    // B16: riga sotto il cursore (ref: nessun re-render sul movimento del mouse).
+    const hoverRef = useRef<HoverInfo | null>(null);
+    const onHoverRow = useCallback((h: HoverInfo | null) => { hoverRef.current = h; }, []);
+    // fix review HIGH: la selezione segnala che il contenuto è scivolato sotto il cursore
+    // fermo → se l'hover apparteneva a lei, va invalidato (hotkey sospese fino al prossimo
+    // movimento reale del mouse).
+    const onWindowShift = useCallback((selectionId: number) => {
+        if (hoverRef.current?.selectionId === selectionId) hoverRef.current = null;
+    }, []);
+
+    // B17: buffer campioni LTP per selezione (mutati in place, azzerati al cambio mercato).
+    const samplesRef = useRef<Map<number, PriceSample[]>>(new Map());
+
     // ---- one-click trading: armamento (LIVE), in-volo, esito, conferma ----
     const [armed, setArmed] = useState(false);   // 1-click LIVE attivo (banner rosso)
     const [busy, setBusy] = useState(false);
@@ -849,6 +1195,7 @@ export function LadderView({
         if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         setRow(null);
         setLoading(true);
+        samplesRef.current = new Map(); // nuova storia prezzi per il nuovo mercato
         if (!marketId) { setLoading(false); return; }
 
         let alive = true;
@@ -862,12 +1209,26 @@ export function LadderView({
         unsubRef.current = ladderSource.subscribe(marketId, (r) => {
             if (r) setRow(r);
         });
+        // NB: il campionamento LTP per il mini-chart avviene nell'effetto su `row` qui sotto.
 
         return () => {
             alive = false;
             if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         };
     }, [marketId, ladderSource]);
+
+    // ---- campionamento LTP per il mini-chart (B17): un campione per update del ladder ----
+    useEffect(() => {
+        const sels = row?.ladder?.selections ?? [];
+        if (!sels.length) return;
+        const ts = row?.ladder?.updated_ms ?? Date.now();
+        for (const s of sels) {
+            if (s.ltp == null || !Number.isFinite(s.ltp)) continue;
+            let buf = samplesRef.current.get(s.selection_id);
+            if (!buf) { buf = []; samplesRef.current.set(s.selection_id, buf); }
+            pushSample(buf, ts, s.ltp);
+        }
+    }, [row]);
 
     // ---- overlay ordini/posizioni: fetch + poll gentile (+ refresh dopo azioni) ----
     useEffect(() => {
@@ -927,12 +1288,18 @@ export function LadderView({
     const execute = useCallback((it: Intent) => {
         const label = intentLabel(it);
         if (it.kind === 'place') {
+            // B15: in modalità liability i LAY inviano la RESPONSABILITÀ; il runner deriva
+            // size = liability/(price−1) e valida. I BACK inviano sempre size (=liability).
+            const sizing = it.asLiability && it.side === 'lay'
+                ? { liability: it.size }
+                : { size: it.size };
             submit(() => orderApi.send({
                 action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
                 selection_id: it.selectionId, handicap, side: it.side,
-                order_type: 'LIMIT', price: it.price, size: it.size, persistence: it.persistence,
+                order_type: 'LIMIT', price: it.price, persistence: it.persistence,
+                ...sizing,
             }), label);
-        } else if (it.kind === 'cancel') {
+        } else if (it.kind === 'cancel' || it.kind === 'cancel_side') {
             const ids = it.betIds;
             submit(async () => {
                 let last: LiveOrderResult = { ok: true, action: 'cancel', mode };
@@ -974,11 +1341,16 @@ export function LadderView({
                     order_type: 'LIMIT', price: it.toPrice, size: it.size, persistence: it.persistence,
                 });
             }, label);
-        } else if (orderApi.greenup) {
+        } else if ((it.kind === 'greenup' || it.kind === 'greenup_at') && orderApi.greenup) {
             const greenup = orderApi.greenup;
+            // greenup_at = "greening column" (B13): chiusura TOTALE al prezzo del livello
+            // cliccato (il runner valida target_price e piazza l'hedge a QUEL tick).
+            const args = it.kind === 'greenup'
+                ? { fraction: it.fraction }
+                : { fraction: 1, targetPrice: it.price };
             submit(() => greenup({
                 marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode,
-                handicap, fraction: it.fraction,
+                handicap, ...args,
             }), label);
         }
     }, [submit, mode, marketId, handicap, orderApi]);
@@ -997,7 +1369,11 @@ export function LadderView({
     }, [mode, isLive, armed, execute]);
 
     const onPlace = useCallback((side: TradeSide, price: number, selectionId: number, selName: string) => {
-        requestAction({ kind: 'place', selName, side, price, size: stakeRef.current, selectionId, persistence: persistenceRef.current });
+        requestAction({
+            kind: 'place', selName, side, price, size: stakeRef.current, selectionId,
+            persistence: persistenceRef.current,
+            asLiability: stakeModeRef.current === 'liability' && side === 'lay',
+        });
     }, [requestAction]);
 
     const onCancel = useCallback((betIds: string[], side: TradeSide, price: number, selName: string) => {
@@ -1007,6 +1383,17 @@ export function LadderView({
 
     const onGreenup = useCallback((fraction: number, selectionId: number, selName: string) => {
         requestAction({ kind: 'greenup', selName, selectionId, fraction });
+    }, [requestAction]);
+
+    // B13: greening column — chiudi la posizione della selezione A QUEL prezzo.
+    const onGreenupAt = useCallback((price: number, selectionId: number, selName: string) => {
+        requestAction({ kind: 'greenup_at', selName, selectionId, price });
+    }, [requestAction]);
+
+    // B14: annulla TUTTI gli ordini di un lato della selezione con un click.
+    const onCancelSide = useCallback((side: TradeSide, betIds: string[], selectionId: number, selName: string) => {
+        if (!betIds.length) return;
+        requestAction({ kind: 'cancel_side', selName, selectionId, side, betIds });
     }, [requestAction]);
 
     // drag-to-move: sposta i tuoi ordini di origine (betIds) al prezzo target via
@@ -1067,6 +1454,83 @@ export function LadderView({
     const updatedMs = row?.ladder?.updated_ms ?? null;
     const isOpen = (status ?? '').toUpperCase() === 'OPEN';
     const canTrade = mode !== 'off' && isOpen;
+    const canTradeRef = useRef(canTrade);
+    canTradeRef.current = canTrade;
+    const confirmOpenRef = useRef(false);
+    confirmOpenRef.current = confirm != null;
+
+    // ---- B16: hotkey complete del ladder (B/L/C, frecce, +/−, S, Spazio) ----
+    // Attive solo in PAPER/LIVE, MAI mentre si digita in un campo o con la barra di
+    // conferma LIVE aperta. B/L/C/frecce/stake agiscono sul ladder SOTTO IL CURSORE
+    // (hoverRef): con più ladder montati (multi-ladder) risponde solo quello puntato.
+    // G/X/Escape/PageUp/PageDown restano all'host (cash-out, kill-switch, cambio mercato).
+    useEffect(() => {
+        if (mode === 'off') return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target as HTMLElement | null;
+            if (t && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (confirmOpenRef.current) return;
+            const action = resolveHotkey(e.key);
+            if (!action) return;
+            const h = hoverRef.current;
+            switch (action) {
+                case 'back_preset':
+                case 'lay_preset': {
+                    if (!h || !canTradeRef.current || busyRef.current) return;
+                    e.preventDefault();
+                    onPlace(action === 'back_preset' ? 'back' : 'lay', h.price, h.selectionId, h.selName);
+                    return;
+                }
+                case 'cancel_under_cursor': {
+                    if (!h || !canTradeRef.current || busyRef.current) return;
+                    const ids = [...h.backIds, ...h.layIds];
+                    if (!ids.length) return;
+                    e.preventDefault();
+                    const side = h.backIds.length && h.layIds.length
+                        ? 'both' as const
+                        : (h.backIds.length ? 'back' as const : 'lay' as const);
+                    requestAction({ kind: 'cancel', selName: h.selName, betIds: ids, side, price: h.price });
+                    return;
+                }
+                case 'stake_up':
+                case 'stake_down': {
+                    if (!h) return; // solo sul ladder puntato (multi-ladder safe)
+                    e.preventDefault();
+                    setStake(s => stepStake(s, action === 'stake_up' ? 1 : -1));
+                    setCustomStake('');
+                    return;
+                }
+                case 'cycle_preset': {
+                    if (!h) return;
+                    e.preventDefault();
+                    setStake(s => nextPreset(STAKE_PRESETS, s));
+                    setCustomStake('');
+                    return;
+                }
+                case 'center_ladder': {
+                    // fix review: gated sull'hover come le altre — in multi-ladder risponde
+                    // SOLO il ladder puntato, non tutti quelli montati.
+                    if (!h) return;
+                    e.preventDefault();
+                    setRecenterSeq(s => s + 1);
+                    return;
+                }
+                case 'move_up':
+                case 'move_down': {
+                    if (!h) return;
+                    e.preventDefault();
+                    const dir = action === 'move_up' ? 1 : -1;
+                    setNudge(n => ({ seq: (n?.seq ?? 0) + 1, selId: h.selectionId, dir: dir as 1 | -1 }));
+                    return;
+                }
+                default:
+                    return;
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [mode, onPlace, requestAction]);
 
     // troppe selezioni → selettore (una ladder per volta); altrimenti affiancate.
     const MANY = selections.length > 3;
@@ -1168,6 +1632,80 @@ export function LadderView({
                                 </button>
                             ))}
                         </div>
+                    )}
+                    {/* B15: toggle Stake/Liability — nei LAY lo stake diventa RESPONSABILITÀ
+                        (il runner deriva size = liability/(price−1)); i BACK non cambiano. */}
+                    {mode !== 'off' && (
+                        <div className="flex items-center gap-1 ml-1"
+                            title="LAY: interpreta l'importo come puntata (Stake) o come responsabilità (Liab). I BACK non cambiano.">
+                            {(['stake', 'liability'] as const).map(m => (
+                                <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => setStakeMode(m)}
+                                    aria-pressed={stakeMode === m}
+                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold border transition-colors ${
+                                        stakeMode === m
+                                            ? 'bg-rose-300 text-black border-rose-300'
+                                            : 'border-white/10 text-white/70 hover:border-rose-300/50'
+                                    }`}
+                                >
+                                    {m === 'stake' ? 'Stake' : 'Liab'}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {/* B16: legenda hotkey (tooltip) */}
+                    {mode !== 'off' && (
+                        <span
+                            className="p-1 rounded-md border border-white/10 text-white/40 cursor-help"
+                            title={'Hotkey (sul ladder puntato dal mouse):\nB = BACK al livello · L = LAY al livello · C = annulla ordini al livello\n↑/↓ = vista su/giù di 1 tick · Spazio = ricentra sul prezzo\n+/− = stake ±0,50€ · S = prossimo preset\nG = cash-out mercato · X = cash-out evento · Esc = kill-switch (dal terminal)'}
+                        >
+                            <Keyboard className="w-3 h-3" />
+                        </span>
+                    )}
+                    {/* B19: aggiungi questo mercato al workspace /multi-ladder */}
+                    {multiSlot && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const cur = loadSlots();
+                                const next = addSlot(cur, multiSlot);
+                                if (next === cur) {
+                                    setStatusMsg({ tone: 'err', text: '✗ Già nel Multi-ladder (o workspace pieno).' });
+                                    return;
+                                }
+                                saveSlots(next);
+                                setStatusMsg({ tone: 'ok', text: `✓ Aggiunto al Multi-ladder (${next.length} ladder) — apri /multi-ladder.` });
+                            }}
+                            title="Aggiungi questo mercato al workspace Multi-ladder (N ladder affiancati, anche di eventi diversi)"
+                            className="p-1 rounded-md border border-white/10 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+                        >
+                            <Layers className="w-3 h-3" />
+                        </button>
+                    )}
+                    {/* B19: stacca questo mercato in una finestra popout dedicata (multi-monitor) */}
+                    {popout && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const q = new URLSearchParams({
+                                    sport: popout.sport,
+                                    market: marketId,
+                                    ...(popout.eventId ? { event: popout.eventId } : {}),
+                                    ...(marketName ? { name: marketName } : {}),
+                                    ...(popout.eventName ? { eventName: popout.eventName } : {}),
+                                    ...(popout.p1 ? { p1: popout.p1 } : {}),
+                                    ...(popout.p2 ? { p2: popout.p2 } : {}),
+                                });
+                                window.open(`/ladder-popout?${q.toString()}`, `ladder_${marketId}`,
+                                    'popup=yes,width=560,height=860,resizable=yes,scrollbars=yes');
+                            }}
+                            title="Stacca questo ladder in una finestra dedicata (multi-monitor)"
+                            className="p-1 rounded-md border border-white/10 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+                        >
+                            <ExternalLink className="w-3 h-3" />
+                        </button>
                     )}
                     {/* toggle 1-click (solo LIVE): armato = niente conferma per clic */}
                     {isLive && (
@@ -1339,16 +1877,24 @@ export function LadderView({
                                 orders={ordersBySel.get(s.selection_id) ?? EMPTY_ORDERS}
                                 position={posBySel.get(s.selection_id) ?? null}
                                 stake={stake}
+                                stakeMode={stakeMode}
                                 status={status}
                                 canTrade={canTrade}
                                 busy={busy}
                                 columns={gridColumns}
                                 greenupSupported={!!orderApi.greenup}
                                 enableDragMove={enableDragMove}
+                                recenterSeq={recenterSeq}
+                                nudge={nudge}
+                                samples={samplesRef.current.get(s.selection_id)}
                                 onPlace={onPlace}
                                 onCancel={onCancel}
                                 onGreenup={onGreenup}
+                                onGreenupAt={onGreenupAt}
+                                onCancelSide={onCancelSide}
                                 onMoveOrder={onMoveOrder}
+                                onHoverRow={onHoverRow}
+                                onWindowShift={onWindowShift}
                             />
                         ))}
                     </div>

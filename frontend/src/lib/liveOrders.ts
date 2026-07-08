@@ -161,25 +161,39 @@ export async function sendLiveOrderCommand(cmd: LiveOrderCommand): Promise<LiveO
 // che pareggia profit-se-vince/perde (fraction=1 → totale; 0<fraction<1 → cash-out parziale).
 // side/price/size NON sono inviati: li deriva il runner dalle esposizioni reali → niente
 // numeri stantii. MONEY-CRITICAL: idempotente (client_ref), su timeout NON reinviare.
+// Valida e costruisce i params di un comando 'greenup' (CONDIVISA calcio/tennis: una sola
+// fonte di verità per le regole, mai due copie che possono disallinearsi).
+//   fraction<=0 NON è "totale": è una richiesta priva di senso → rifiutata (altrimenti,
+//   omettendo params, il worker farebbe un green-up TOTALE inatteso).
+//   target_price malformato = errore del chiamante, MAI inviato (il worker chiuderebbe
+//   al best: prezzo diverso da quello cliccato → ordine inatteso).
+export function buildGreenupParams(fraction?: number, targetPrice?: number): Record<string, number> {
+    if (fraction != null && fraction <= 0) throw new Error('greenup: fraction deve essere > 0');
+    if (targetPrice != null && !(Number.isFinite(targetPrice) && targetPrice > 1 && targetPrice <= 1000)) {
+        throw new Error('greenup: targetPrice deve essere un prezzo in (1, 1000]');
+    }
+    const params: Record<string, number> = {};
+    if (fraction != null && fraction > 0 && fraction < 1) params.fraction = Math.round(fraction * 1000) / 1000;
+    if (targetPrice != null) params.target_price = targetPrice;
+    return params;
+}
+
 export async function sendGreenup(args: {
     marketId: string;
     selectionId: number;
     mode: LiveOrderMode;
     handicap?: number;
     fraction?: number;             // (0,1] — default 1.0 (green-up totale)
+    targetPrice?: number;          // "greening column": chiudi A QUEL prezzo (resting), non al best
 }): Promise<LiveOrderResult> {
-    const f = args.fraction;
-    // fraction<=0 NON è "totale": è una richiesta priva di senso. Rifiutala lato chiamante
-    // (altrimenti, omettendo params, il worker farebbe un green-up TOTALE inatteso).
-    if (f != null && f <= 0) throw new Error('sendGreenup: fraction deve essere > 0');
-    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    const params = buildGreenupParams(args.fraction, args.targetPrice);
     return sendLiveOrderCommand({
         action: 'greenup',
         mode: args.mode,
         market_id: args.marketId,
         selection_id: args.selectionId,
         handicap: args.handicap ?? 0,
-        ...(params ? { params } : {}),
+        ...(Object.keys(params).length ? { params } : {}),
     });
 }
 

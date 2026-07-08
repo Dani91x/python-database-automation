@@ -191,3 +191,109 @@ def test_place_at_zero_is_noop():
     b = compute_greenup(matched_if_win=20.0, matched_if_lose=-10.0,
                         best_back_price=2.9, best_lay_price=3.0)
     assert a.price == b.price
+
+
+# ---------------------------------------------------------------------------
+# target_price ("greening column": chiudi A QUEL prezzo, non al best opposto)
+# ---------------------------------------------------------------------------
+def test_target_price_lay_closes_at_that_level():
+    """W>L: LAY al TARGET (non al best): l'ordine puo' restare sul book (take-profit)."""
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=1.0, target_price=2.5,
+    )
+    assert plan.actionable
+    assert plan.side == "lay"
+    assert plan.price == 2.5              # il livello cliccato, non il best (3.0)
+    assert plan.size == pytest.approx(15.0 / 2.5, abs=1e-9)
+    assert _residual(plan) <= 0.01        # pareggio valido a QUALUNQUE prezzo
+
+
+def test_target_price_back_closes_at_that_level():
+    """L>W: BACK al TARGET (non al best)."""
+    plan = compute_greenup(
+        matched_if_win=-8.0, matched_if_lose=6.0,
+        best_back_price=4.0, best_lay_price=4.1,
+        fraction=1.0, target_price=5.0,
+    )
+    assert plan.actionable
+    assert plan.side == "back"
+    assert plan.price == 5.0
+    assert plan.size == pytest.approx(14.0 / 5.0, abs=1e-9)
+    assert _residual(plan) <= 0.01
+
+
+def test_target_price_snaps_to_nearest_tick():
+    """Un target off-tick viene agganciato al tick Betfair piu' vicino."""
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=1.0, target_price=2.513,   # banda 0.02 -> 2.52
+    )
+    assert plan.actionable
+    assert plan.price == pytest.approx(2.52, abs=1e-9)
+
+
+def test_target_price_works_without_best_prices():
+    """Col target il best opposto non serve (book vuoto/sospeso): si piazza comunque."""
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=None, best_lay_price=None,
+        fraction=1.0, target_price=2.0,
+    )
+    assert plan.actionable
+    assert plan.side == "lay"
+    assert plan.price == 2.0
+
+
+def test_target_price_partial_fraction():
+    """fraction + target: chiude la sola quota richiesta dello sbilancio al livello dato."""
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=0.5, target_price=2.5,
+    )
+    assert plan.actionable
+    assert plan.size == pytest.approx(0.5 * 15.0 / 2.5, abs=1e-9)
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.0, -3.0, 1001.0, float("nan"), float("inf")])
+def test_target_price_invalid_is_noop(bad):
+    """Target non valido -> NESSUN ordine (mai ripiegare in silenzio sul best)."""
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=1.0, target_price=bad,
+    )
+    assert not plan.actionable
+    assert "target_price non valido" in plan.note
+
+
+def test_target_price_flat_position_still_noop():
+    """Posizione piatta + target -> nessun ordine (il target non forza un place)."""
+    plan = compute_greenup(
+        matched_if_win=3.0, matched_if_lose=3.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=1.0, target_price=2.5,
+    )
+    assert not plan.actionable
+
+
+@pytest.mark.parametrize("edge", [1.01, 1000.0])
+def test_target_price_valid_at_domain_edges(edge):
+    """I bordi VALIDI della scala Betfair (1.01 e 1000) sono accettati e usati com'e'.
+
+    NB sul residuo: la size e' arrotondata al CENTESIMO (unita' minima Betfair), quindi il
+    pareggio ha un errore massimo di 0.005*(p-1) sull'esito vince — trascurabile a quote
+    normali, fino a ~5 EUR a quota 1000 su questo sbilancio. E' il vincolo dei centesimi
+    (identico nei tool pro), non un difetto della matematica: il bound va rispettato.
+    """
+    plan = compute_greenup(
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.9, best_lay_price=3.0,
+        fraction=1.0, target_price=edge,
+    )
+    assert plan.actionable
+    assert plan.price == pytest.approx(edge, abs=1e-9)
+    assert _residual(plan) <= 0.005 * (edge - 1.0) + 0.01

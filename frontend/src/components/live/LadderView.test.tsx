@@ -21,14 +21,15 @@ vi.mock('@/lib/liveOrders', () => ({
 import { LadderView } from './LadderView';
 import { fetchLiveLadder } from '@/lib/live';
 import {
-    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand,
-    type LiveOrderRow,
+    fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
+    type LiveOrderRow, type LivePositionRow,
 } from '@/lib/liveOrders';
 
 const mLadder = vi.mocked(fetchLiveLadder);
 const mOrders = vi.mocked(fetchLiveOrders);
 const mPositions = vi.mocked(fetchLivePositions);
 const mSend = vi.mocked(sendLiveOrderCommand);
+const mGreen = vi.mocked(sendGreenup);
 
 const LADDER_ROW = {
     event_id: 'evt1',
@@ -64,6 +65,16 @@ function backOrderAt3(): LiveOrderRow {
     };
 }
 
+// posizione aperta della selezione 1 (vinco di più se VINCE): P&L per livello attivo.
+function openPositionSel1(): LivePositionRow {
+    return {
+        id: 1, mode: 'paper', event_id: 'evt1', market_id: '1.234', selection_id: 1, handicap: 0,
+        matched_if_win: 10, matched_if_lose: -5, worst_if_win: 10, worst_if_lose: -5,
+        selection_exposure: 5, unmatched_back_exposure: 0, unmatched_lay_exposure: 0,
+        net_position: 5, updated_at: null,
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -71,6 +82,7 @@ beforeEach(() => {
     mOrders.mockResolvedValue([]);
     mPositions.mockResolvedValue([]);
     mSend.mockResolvedValue({ ok: true, action: 'place', mode: 'paper' });
+    mGreen.mockResolvedValue({ ok: true, action: 'greenup', mode: 'paper' });
 });
 
 describe('LadderView', () => {
@@ -123,5 +135,93 @@ describe('LadderView', () => {
             action: 'place', mode: 'paper', market_id: '1.234',
             selection_id: 1, side: 'back', price: 2.9,
         }));
+        // in modalità Stake il place invia size (non liability)
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({ size: 5 }));
+        expect(mSend.mock.calls[0][0]).not.toHaveProperty('liability');
+    });
+
+    it('B11: il clic sulla colonna prezzo RICENTRA e non invia alcun ordine', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/Ultimo prezzo tradato \(LTP\) · clic = ricentra/));
+        expect(mSend).not.toHaveBeenCalled();
+        expect(mGreen).not.toHaveBeenCalled();
+    });
+
+    it('B13: clic sul P&L di un livello = green-up A QUEL prezzo (greening column)', async () => {
+        mPositions.mockResolvedValue([openPositionSel1()]);
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        // il P&L del livello 2.90 diventa cliccabile con posizione aperta
+        const cell = await screen.findByTitle(/chiudendo a 2\.90/);
+        await user.click(cell);
+        await waitFor(() => expect(mGreen).toHaveBeenCalledTimes(1));
+        expect(mGreen.mock.calls[0][0]).toEqual(expect.objectContaining({
+            marketId: '1.234', selectionId: 1, mode: 'paper',
+            fraction: 1, targetPrice: 2.9,
+        }));
+    });
+
+    it('B14: clic sull\'intestazione dei tuoi ordini annulla TUTTO il lato', async () => {
+        mOrders.mockResolvedValue([backOrderAt3()]);
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        const btn = await screen.findByTitle(/Annulla TUTTI i 1 ordini BACK/);
+        await user.click(btn);
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'cancel', mode: 'paper', market_id: '1.234', bet_id: 'b1',
+        }));
+    });
+
+    it('B15: in modalità Liab il LAY invia liability al posto di size', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByRole('button', { name: 'Liab' }));
+        await user.click(screen.getByTitle(/LAY resp\. €5\.00 @ 3\.00/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'place', side: 'lay', price: 3.0, liability: 5,
+        }));
+        expect(mSend.mock.calls[0][0]).not.toHaveProperty('size');
+        // i BACK non cambiano: sempre size
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(2));
+        expect(mSend.mock.calls[1][0]).toEqual(expect.objectContaining({ side: 'back', size: 5 }));
+    });
+
+    it('B16: hotkey B piazza un BACK alla riga sotto il cursore', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        // punta la riga 2.90 col mouse, poi premi B
+        await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        await user.keyboard('b');
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'place', side: 'back', price: 2.9, size: 5,
+        }));
+    });
+
+    it('B16: le hotkey NON scattano mentre si digita in un input', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        // digita 'b' dentro il campo stake custom: nessun ordine deve partire
+        await user.type(screen.getByPlaceholderText('€'), 'b');
+        expect(mSend).not.toHaveBeenCalled();
+    });
+
+    it('B15: il footer mostra il net-stake box con posizione aperta', async () => {
+        mPositions.mockResolvedValue([openPositionSel1()]);
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        expect(await screen.findByText('Net')).toBeInTheDocument();
+        expect(screen.getByText('Exp')).toBeInTheDocument();
     });
 });

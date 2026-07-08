@@ -122,6 +122,15 @@ describe('resolveHotkey', () => {
         expect(resolveHotkey('ArrowUp')).toBe('move_up');
         expect(resolveHotkey('ArrowDown')).toBe('move_down');
     });
+    it('mappa le hotkey complete del ladder (B16)', () => {
+        expect(resolveHotkey('+')).toBe('stake_up');
+        expect(resolveHotkey('-')).toBe('stake_down');
+        expect(resolveHotkey('s')).toBe('cycle_preset');
+        expect(resolveHotkey(' ')).toBe('center_ladder');
+        expect(resolveHotkey('PageUp')).toBe('prev_market');
+        expect(resolveHotkey('PageDown')).toBe('next_market');
+        expect(resolveHotkey('S')).toBe('cycle_preset'); // normalizzazione lowercase
+    });
     it('normalizza maiuscole a minuscole per i tasti singoli', () => {
         expect(resolveHotkey('B')).toBe('back_preset');
         expect(resolveHotkey('G')).toBe('greenup');
