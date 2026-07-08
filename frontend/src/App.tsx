@@ -6,7 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import LandingPage from "@/pages/LandingPage";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import SelectSport from "@/pages/SelectSport";
 import Dashboard from "@/pages/Dashboard";
+import TennisDashboard from "@/pages/TennisDashboard";
+import TennisTerminal from "@/pages/TennisTerminal";
 import Analytics from "@/pages/Analytics";
 import Watchlist from "@/pages/Watchlist";
 import ReportPersonale from "@/pages/ReportPersonale";
@@ -32,10 +35,34 @@ function App() {
                             <Route path="/check-email" element={<CheckEmail />} />
                             <Route path="/reset-password" element={<ResetPassword />} />
                             <Route
+                                path="/select-sport"
+                                element={
+                                    <ProtectedRoute>
+                                        <SelectSport />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
                                 path="/dashboard"
                                 element={
                                     <ProtectedRoute>
                                         <Dashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/tennis"
+                                element={
+                                    <ProtectedRoute>
+                                        <TennisDashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/tennis/terminal"
+                                element={
+                                    <ProtectedRoute>
+                                        <TennisTerminal />
                                     </ProtectedRoute>
                                 }
                             />

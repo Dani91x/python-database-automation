@@ -18,7 +18,7 @@ export default function LandingPage() {
 
     useEffect(() => {
         if (!loading && user && isOwnerEmail(user.email)) {
-            navigate('/dashboard', { replace: true });
+            navigate('/select-sport', { replace: true });
         }
     }, [user, loading, navigate]);
 

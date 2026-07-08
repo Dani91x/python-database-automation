@@ -111,7 +111,7 @@ export const AuthSection = forwardRef<HTMLDivElement, AuthSectionProps>(
                 if (error) throw error;
 
                 toast.success("Login effettuato");
-                navigate('/dashboard');
+                navigate('/select-sport');
 
             } catch (error: any) {
                 toast.error("Errore Login", { description: "Credenziali non valide o errore di connessione." });

@@ -24,7 +24,7 @@
 // GREEN-UP / CASH-OUT (Fase B): bottone Cash-out (totale) + slider parziale; il runner
 //   calcola l'hedge dalle esposizioni MATCHED reali di flumine (non da numeri pollati).
 // ============================================================================
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Card } from '@/components/ui/card';
 import {
     Loader2, ArrowRight, ArrowLeft, Layers, Zap, ShieldCheck, X, Check,
@@ -44,8 +44,44 @@ import {
 import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
-    type LivePersistence,
+    type LivePersistence, type LiveOrderCommand,
 } from '@/lib/liveOrders';
+
+// ---------------------------------------------------------------------------
+// Dependency injection: sorgente DATI (ladder) e API ORDINI iniettabili. I DEFAULT
+// sono ESATTAMENTE le funzioni del calcio → il comportamento football è INVARIATO
+// (byte-identico) quando i prop non sono passati. Il tennis inietta le sue funzioni
+// dedicate (tabelle `tennis_*`), senza MAI toccare i dati del calcio.
+export interface LadderSource {
+    fetch: (marketId: string) => Promise<LiveLadderRow | null>;
+    subscribe: (marketId: string, cb: (row: LiveLadderRow | null) => void) => () => void;
+}
+export interface LadderGreenupArgs {
+    marketId: string;
+    selectionId: number;
+    mode: LiveOrderMode;
+    handicap?: number;
+    fraction?: number;
+}
+export interface LadderOrderApi {
+    send: (cmd: LiveOrderCommand) => Promise<LiveOrderResult>;
+    // mode è passato per le sorgenti che filtrano lato RPC (tennis); i default calcio lo ignorano.
+    fetchOrders: (marketId: string, mode: LiveOrderMode) => Promise<LiveOrderRow[]>;
+    fetchPositions: (marketId: string, mode: LiveOrderMode) => Promise<LivePositionRow[]>;
+    // opzionale: se assente, il pulsante Cash-out (green-up) non viene mostrato.
+    greenup?: (args: LadderGreenupArgs) => Promise<LiveOrderResult>;
+}
+
+const DEFAULT_LADDER_SOURCE: LadderSource = {
+    fetch: fetchLiveLadder,
+    subscribe: subscribeLiveLadder,
+};
+const DEFAULT_ORDER_API: LadderOrderApi = {
+    send: sendLiveOrderCommand,
+    fetchOrders: fetchLiveOrders,
+    fetchPositions: fetchLivePositions,
+    greenup: sendGreenup,
+};
 
 // modalità ordini del runner (per filtrare l'overlay "i tuoi ordini").
 type PanelMode = 'off' | LiveOrderMode;
@@ -283,6 +319,15 @@ function gridColumnsOf(columns: ColumnKey[]): ColumnKey[] {
     return cols.includes('price') ? cols : ['price', ...cols];
 }
 
+// payload di un drag-to-move in corso (una selezione): quali bet_id/lato/prezzo/size
+// stiamo trascinando da un livello all'altro (cancel-then-replace al rilascio).
+interface DragPayload {
+    side: TradeSide;
+    fromPrice: number;
+    betIds: string[];
+    size: number;
+}
+
 interface SelectionLadderProps {
     sel: LiveLadderSelection;
     orders: LiveOrderRow[];        // ordini della selezione (già filtrati per selection+mode)
@@ -292,13 +337,17 @@ interface SelectionLadderProps {
     canTrade: boolean;             // mode != off && mercato OPEN
     busy: boolean;                 // un comando è in volo (disabilita i click)
     columns: ColumnKey[];          // colonne griglia (ordine + visibilità) dal profilo
+    greenupSupported: boolean;     // se false, il Cash-out non è mostrato (orderApi.greenup assente)
+    enableDragMove: boolean;       // se true, i tuoi ordini si trascinano tra livelli (cancel→replace)
     onPlace: (side: TradeSide, price: number, selectionId: number, selName: string) => void;
     onCancel: (betIds: string[], side: TradeSide, price: number, selName: string) => void;
     onGreenup: (fraction: number, selectionId: number, selName: string) => void;
+    onMoveOrder: (betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string) => void;
 }
 
 const SelectionLadder = memo(function SelectionLadder({
-    sel, orders, position, stake, status, canTrade, busy, columns, onPlace, onCancel, onGreenup,
+    sel, orders, position, stake, status, canTrade, busy, columns, greenupSupported, enableDragMove,
+    onPlace, onCancel, onGreenup, onMoveOrder,
 }: SelectionLadderProps) {
     const built = useMemo(() => buildLadder(sel, orders, position), [sel, orders, position]);
     const [armedPrice, setArmedPrice] = useState<number | null>(null); // evidenziazione livello (OFF/non-trade)
@@ -359,6 +408,35 @@ const SelectionLadder = memo(function SelectionLadder({
         else onLevel(price);
     }, [canTrade, busy, onPlace, onLevel, selId, selName]);
 
+    // ---- drag-to-move (gated da enableDragMove): trascina un TUO ordine da un livello
+    // all'altro → cancel-then-replace (mai un singolo replaceOrders, per il delay in-play).
+    const dragRef = useRef<DragPayload | null>(null);
+    const [dragOverPrice, setDragOverPrice] = useState<number | null>(null);
+    const canDrag = enableDragMove && canTrade && !busy;
+    const startDrag = useCallback((e: DragEvent, payload: DragPayload) => {
+        if (!canDrag || !payload.betIds.length || !(payload.size > 0)) { e.preventDefault(); return; }
+        dragRef.current = payload;
+        e.dataTransfer.effectAllowed = 'move';
+        // alcuni browser richiedono dei dati per avviare il drag.
+        try { e.dataTransfer.setData('text/plain', `${payload.side}@${payload.fromPrice}`); } catch { /* noop */ }
+    }, [canDrag]);
+    const overRow = useCallback((e: DragEvent, price: number) => {
+        if (!dragRef.current) return;
+        e.preventDefault(); // consenti il drop
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverPrice !== price) setDragOverPrice(price);
+    }, [dragOverPrice]);
+    const dropRow = useCallback((e: DragEvent, toPrice: number) => {
+        const p = dragRef.current;
+        dragRef.current = null;
+        setDragOverPrice(null);
+        if (!p) return;
+        e.preventDefault();
+        if (Math.abs(toPrice - p.fromPrice) < 1e-9) return; // stesso livello: no-op
+        onMoveOrder(p.betIds, p.side, toPrice, p.size, selId, selName);
+    }, [onMoveOrder, selId, selName]);
+    const endDrag = useCallback(() => { dragRef.current = null; setDragOverPrice(null); }, []);
+
     const closed = (status ?? '').toUpperCase() === 'CLOSED';
     const suspended = (status ?? '').toUpperCase() === 'SUSPENDED';
     // Preview cash-out al prezzo di ESECUZIONE reale dell'hedge: se vinco di più sul VINCE
@@ -368,7 +446,7 @@ const SelectionLadder = memo(function SelectionLadder({
     const cashOut = built.hasPosition && greenPrice != null
         ? lockedPnlAt(greenPrice, built.win, built.lose)
         : (built.hasPosition && built.ltp != null ? lockedPnlAt(built.ltp, built.win, built.lose) : null);
-    const canGreen = canTrade && built.hasPosition && !busy;
+    const canGreen = canTrade && built.hasPosition && !busy && greenupSupported;
     const pct = Math.round(fraction * 100);
 
     return (
@@ -399,17 +477,19 @@ const SelectionLadder = memo(function SelectionLadder({
                                 <span className="text-[9px] font-mono tabular-nums text-purple-200/80 w-7 text-right">{pct}%</span>
                             </div>
                         )}
-                        <button
-                            type="button"
-                            disabled={!canGreen}
-                            onClick={() => onGreenup(fraction, selId, selName)}
-                            title={canGreen
-                                ? `Cash-out ${pct < 100 ? `${pct}% ` : ''}al miglior prezzo (hedge dalle esposizioni reali)`
-                                : 'Cash-out: richiede una posizione aperta e mercato operabile'}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-400/40 bg-purple-500/15 text-[10px] font-bold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Cash-out {pct < 100 ? `${pct}%` : (cashOut != null ? <span className="font-mono">{fmtMoney(cashOut)}</span> : '')}
-                        </button>
+                        {greenupSupported && (
+                            <button
+                                type="button"
+                                disabled={!canGreen}
+                                onClick={() => onGreenup(fraction, selId, selName)}
+                                title={canGreen
+                                    ? `Cash-out ${pct < 100 ? `${pct}% ` : ''}al miglior prezzo (hedge dalle esposizioni reali)`
+                                    : 'Cash-out: richiede una posizione aperta e mercato operabile'}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-400/40 bg-purple-500/15 text-[10px] font-bold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Cash-out {pct < 100 ? `${pct}%` : (cashOut != null ? <span className="font-mono">{fmtMoney(cashOut)}</span> : '')}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -456,16 +536,24 @@ const SelectionLadder = memo(function SelectionLadder({
 
                         const cell = (k: ColumnKey) => {
                             switch (k) {
-                                case 'my_lay':
-                                    // tuoi LAY non abbinati — clic = annulla
+                                case 'my_lay': {
+                                    // tuoi LAY non abbinati — clic = annulla; drag = sposta (cancel→replace)
+                                    const draggableLay = canDrag && r.myLay > 0 && layBetIds.length > 0;
                                     return (
                                         <button
                                             key={k}
                                             type="button"
                                             disabled={r.myLay <= 0 || !canCancel}
+                                            draggable={draggableLay}
+                                            onDragStart={draggableLay
+                                                ? (e) => startDrag(e, { side: 'lay', fromPrice: r.price, betIds: layBetIds, size: r.myLay })
+                                                : undefined}
+                                            onDragEnd={draggableLay ? endDrag : undefined}
                                             onClick={() => onCancel(layBetIds, 'lay', r.price, selName)}
-                                            title={r.myLay > 0 ? 'Annulla i tuoi LAY a questo prezzo' : undefined}
-                                            className="flex items-center justify-center disabled:cursor-default"
+                                            title={r.myLay > 0
+                                                ? (draggableLay ? 'Trascina per SPOSTARE (cancel→replace) · clic per annullare i tuoi LAY' : 'Annulla i tuoi LAY a questo prezzo')
+                                                : undefined}
+                                            className={`flex items-center justify-center disabled:cursor-default ${draggableLay ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                         >
                                             {r.myLay > 0 && (
                                                 <span className="px-1 rounded bg-rose-500/20 text-rose-200 font-bold tabular-nums hover:bg-rose-500/40 hover:line-through">
@@ -474,6 +562,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                             )}
                                         </button>
                                     );
+                                }
                                 case 'avail_back':
                                     // disponibile al BACK (blu) — clic = back one-click
                                     return (
@@ -527,16 +616,24 @@ const SelectionLadder = memo(function SelectionLadder({
                                             {fmtSize(r.layAvail) || '·'}
                                         </button>
                                     );
-                                case 'my_back':
-                                    // tuoi BACK non abbinati — clic = annulla
+                                case 'my_back': {
+                                    // tuoi BACK non abbinati — clic = annulla; drag = sposta (cancel→replace)
+                                    const draggableBack = canDrag && r.myBack > 0 && backBetIds.length > 0;
                                     return (
                                         <button
                                             key={k}
                                             type="button"
                                             disabled={r.myBack <= 0 || !canCancel}
+                                            draggable={draggableBack}
+                                            onDragStart={draggableBack
+                                                ? (e) => startDrag(e, { side: 'back', fromPrice: r.price, betIds: backBetIds, size: r.myBack })
+                                                : undefined}
+                                            onDragEnd={draggableBack ? endDrag : undefined}
                                             onClick={() => onCancel(backBetIds, 'back', r.price, selName)}
-                                            title={r.myBack > 0 ? 'Annulla i tuoi BACK a questo prezzo' : undefined}
-                                            className="flex items-center justify-center disabled:cursor-default"
+                                            title={r.myBack > 0
+                                                ? (draggableBack ? 'Trascina per SPOSTARE (cancel→replace) · clic per annullare i tuoi BACK' : 'Annulla i tuoi BACK a questo prezzo')
+                                                : undefined}
+                                            className={`flex items-center justify-center disabled:cursor-default ${draggableBack ? 'cursor-grab active:cursor-grabbing' : ''}`}
                                         >
                                             {r.myBack > 0 && (
                                                 <span className="px-1 rounded bg-sky-500/20 text-sky-200 font-bold tabular-nums hover:bg-sky-500/40 hover:line-through">
@@ -545,6 +642,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                             )}
                                         </button>
                                     );
+                                }
                                 case 'pnl':
                                     // P&L per livello (viola)
                                     return (
@@ -582,12 +680,15 @@ const SelectionLadder = memo(function SelectionLadder({
                             }
                         };
 
+                        const isDropTarget = dragOverPrice != null && Math.abs(r.price - dragOverPrice) < 1e-9;
                         return (
                             <div
                                 key={r.price}
+                                onDragOver={enableDragMove ? (e) => overRow(e, r.price) : undefined}
+                                onDrop={enableDragMove ? (e) => dropRow(e, r.price) : undefined}
                                 className={`grid items-stretch border-b border-white/[0.04] text-[10px] leading-tight ${
                                     isArmed ? 'ring-1 ring-inset ring-amber-400/60' : ''
-                                }`}
+                                } ${isDropTarget ? 'ring-1 ring-inset ring-emerald-400/70 bg-emerald-400/5' : ''}`}
                                 style={{ gridTemplateColumns: colTemplate }}
                             >
                                 {gridCols.map(cell)}
@@ -610,6 +711,7 @@ const SelectionLadder = memo(function SelectionLadder({
 type Intent =
     | { kind: 'place'; selName: string; side: TradeSide; price: number; size: number; selectionId: number; persistence: LivePersistence }
     | { kind: 'cancel'; selName: string; betIds: string[]; side: TradeSide; price: number }
+    | { kind: 'move'; selName: string; betIds: string[]; side: TradeSide; toPrice: number; size: number; selectionId: number; persistence: LivePersistence }
     | { kind: 'greenup'; selName: string; selectionId: number; fraction: number };
 
 interface StatusMsg { tone: 'pending' | 'ok' | 'err'; text: string; }
@@ -620,6 +722,7 @@ function intentLabel(it: Intent): string {
         return `${it.side === 'back' ? 'BACK' : 'LAY'} €${it.size.toFixed(2)} @ ${fmtPrice(it.price)} · ${persLabel} · ${it.selName}`;
     }
     if (it.kind === 'cancel') return `Annulla ${it.betIds.length} ordine/i ${it.side.toUpperCase()} @ ${fmtPrice(it.price)} · ${it.selName}`;
+    if (it.kind === 'move') return `Sposta ${it.side.toUpperCase()} €${it.size.toFixed(2)} → ${fmtPrice(it.toPrice)} (cancel→replace) · ${it.selName}`;
     const pct = Math.round(it.fraction * 100);
     return `Cash-out ${pct < 100 ? `${pct}% ` : ''}· ${it.selName}`;
 }
@@ -633,6 +736,10 @@ interface Props {
     sport?: string;                // sport-key del profilo colonne (persistito per-sport)
     // selezioni note dal tabellone (live_now): per nome/ordine quando la ladder è ancora vuota.
     fallbackSelections?: { selection_id: number; name: string }[];
+    // ---- dependency injection (default = funzioni calcio → football INVARIATO) ----
+    ladderSource?: LadderSource;   // sorgente ladder (fetch/subscribe); default live_ladder calcio
+    orderApi?: LadderOrderApi;     // API ordini (send/fetchOrders/fetchPositions/greenup); default calcio
+    enableDragMove?: boolean;      // drag-to-move dei tuoi ordini (cancel→replace); default false (calcio invariato)
 }
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
@@ -652,7 +759,10 @@ function initLadderProfile(sport: string): LadderProfile {
     return pristine ? eightColProfile(sport) : loaded;
 }
 
-export function LadderView({ marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [] }: Props) {
+export function LadderView({
+    marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [],
+    ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = false,
+}: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
     const [orders, setOrders] = useState<LiveOrderRow[]>([]);
@@ -742,14 +852,14 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
         if (!marketId) { setLoading(false); return; }
 
         let alive = true;
-        fetchLiveLadder(marketId)
+        ladderSource.fetch(marketId)
             .then(r => { if (alive) setRow(r); })
             .catch((e: any) => {
-                if (e?.code !== 'PGRST116') console.warn('[LadderView] fetchLiveLadder:', e);
+                if (e?.code !== 'PGRST116') console.warn('[LadderView] fetchLadder:', e);
             })
             .finally(() => { if (alive) setLoading(false); });
 
-        unsubRef.current = subscribeLiveLadder(marketId, (r) => {
+        unsubRef.current = ladderSource.subscribe(marketId, (r) => {
             if (r) setRow(r);
         });
 
@@ -757,7 +867,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
             alive = false;
             if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         };
-    }, [marketId]);
+    }, [marketId, ladderSource]);
 
     // ---- overlay ordini/posizioni: fetch + poll gentile (+ refresh dopo azioni) ----
     useEffect(() => {
@@ -768,7 +878,13 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
             if (inFlight) return;
             inFlight = true;
             try {
-                const [o, p] = await Promise.all([fetchLiveOrders(marketId), fetchLivePositions(marketId)]);
+                // il mode è passato alle sorgenti che filtrano lato RPC (tennis); i default
+                // calcio lo IGNORANO → comportamento football invariato. In OFF si scarta comunque.
+                const m = mode as LiveOrderMode;
+                const [o, p] = await Promise.all([
+                    orderApi.fetchOrders(marketId, m),
+                    orderApi.fetchPositions(marketId, m),
+                ]);
                 if (!alive) return;
                 const o2 = mode === 'off' ? [] : o.filter(r => r.mode === mode);
                 const p2 = mode === 'off' ? [] : p.filter(r => r.mode === mode);
@@ -783,7 +899,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
         load();
         const t = setInterval(load, ORDERS_POLL_MS);
         return () => { alive = false; clearInterval(t); };
-    }, [marketId, mode, refreshTick]);
+    }, [marketId, mode, refreshTick, orderApi]);
 
     // ---- esecuzione comando (mediato dal DB) ----
     const submit = useCallback(async (factory: () => Promise<LiveOrderResult>, label: string) => {
@@ -811,7 +927,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     const execute = useCallback((it: Intent) => {
         const label = intentLabel(it);
         if (it.kind === 'place') {
-            submit(() => sendLiveOrderCommand({
+            submit(() => orderApi.send({
                 action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
                 selection_id: it.selectionId, handicap, side: it.side,
                 order_type: 'LIMIT', price: it.price, size: it.size, persistence: it.persistence,
@@ -822,7 +938,7 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                 let last: LiveOrderResult = { ok: true, action: 'cancel', mode };
                 let done = 0;
                 for (const bet_id of ids) {
-                    last = await sendLiveOrderCommand({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
+                    last = await orderApi.send({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
                     if (!last.ok) break;
                     done++;
                 }
@@ -832,13 +948,40 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                 }
                 return last;
             }, label);
-        } else {
-            submit(() => sendGreenup({
+        } else if (it.kind === 'move') {
+            // MOVE = cancel-then-replace: MAI un singolo replaceOrders (in-play bet delay del
+            // tennis). Prima si annullano gli ordini di origine, poi si PIAZZA al prezzo target.
+            // Se un cancel fallisce si INTERROMPE e NON si ripiazza (niente ordine duplicato).
+            const ids = it.betIds;
+            submit(async () => {
+                let last: LiveOrderResult = { ok: true, action: 'cancel', mode };
+                let done = 0;
+                for (const bet_id of ids) {
+                    last = await orderApi.send({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
+                    if (!last.ok) break;
+                    done++;
+                }
+                if (done < ids.length) {
+                    return {
+                        ...last, ok: false,
+                        error: `Spostamento interrotto: ${done}/${ids.length} annullati; ordine NON ripiazzato (nessun duplicato). ${last.error ?? ''}`.trim(),
+                    };
+                }
+                // 2) piazza il nuovo ordine al prezzo target con la size spostata.
+                return orderApi.send({
+                    action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
+                    selection_id: it.selectionId, handicap, side: it.side,
+                    order_type: 'LIMIT', price: it.toPrice, size: it.size, persistence: it.persistence,
+                });
+            }, label);
+        } else if (orderApi.greenup) {
+            const greenup = orderApi.greenup;
+            submit(() => greenup({
                 marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode,
                 handicap, fraction: it.fraction,
             }), label);
         }
-    }, [submit, mode, marketId, handicap]);
+    }, [submit, mode, marketId, handicap, orderApi]);
 
     // richiesta azione: in LIVE non-armato chiede conferma; altrimenti esegue subito.
     const requestAction = useCallback((it: Intent) => {
@@ -865,6 +1008,14 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
     const onGreenup = useCallback((fraction: number, selectionId: number, selName: string) => {
         requestAction({ kind: 'greenup', selName, selectionId, fraction });
     }, [requestAction]);
+
+    // drag-to-move: sposta i tuoi ordini di origine (betIds) al prezzo target via
+    // cancel-then-replace. In LIVE non-armato passa dalla barra di CONFERMA come i place.
+    const onMoveOrder = useCallback((betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string) => {
+        if (!enableDragMove) return;
+        if (!betIds.length || !(size > 0)) return;
+        requestAction({ kind: 'move', selName, betIds, side, toPrice, size, selectionId, persistence: persistenceRef.current });
+    }, [requestAction, enableDragMove]);
 
     // toggle armamento 1-click (LIVE): conferma esplicita all'attivazione.
     const toggleArmed = useCallback(() => {
@@ -1192,9 +1343,12 @@ export function LadderView({ marketId, marketName, orderMode = 'off', handicap =
                                 canTrade={canTrade}
                                 busy={busy}
                                 columns={gridColumns}
+                                greenupSupported={!!orderApi.greenup}
+                                enableDragMove={enableDragMove}
                                 onPlace={onPlace}
                                 onCancel={onCancel}
                                 onGreenup={onGreenup}
+                                onMoveOrder={onMoveOrder}
                             />
                         ))}
                     </div>
