@@ -357,27 +357,67 @@ def _event_id_of(session: Any, market_id: str) -> Optional[str]:
     return None
 
 
+def _jurisdiction() -> str:
+    """Giurisdizione per le regole di stake minimo (.it default, come il conto)."""
+    return (os.getenv("TENNIS_LIVE_JURISDICTION") or "it").strip().lower()
+
+
+def _max_stake_per_order() -> Optional[float]:
+    """Cap opzionale per-ordine (mirror di LIVE_MAX_STAKE_PER_ORDER del calcio)."""
+    raw = (os.getenv("TENNIS_LIVE_MAX_STAKE_PER_ORDER") or "").strip()
+    if not raw:
+        return None
+    try:
+        v = float(raw)
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
+_VALID_PLACE_SIDES = ("BACK", "LAY")
+_VALID_PLACE_PERSISTENCE = ("LAPSE", "PERSIST", "MARKET_ON_CLOSE")
+
+
 def _do_place(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) -> Dict[str, Any]:
     from flumine.order.ordertype import LimitOrder
     from flumine.order.trade import Trade
+
+    # validazione money-critical CONDIVISA col calcio (fix review HIGH): min_stake_rules è
+    # logica PURA di live_order_build (nessun accesso a dati calcio) — ultima barriera
+    # esplicita prima di un ordine REALE, invece di delegare al rifiuto grezzo di Betfair.
+    from ..live_order_build import min_stake_rules
 
     market = _resolve_market(flumine, cmd["market_id"])
     strategy = _capture_strategy(session, cmd["market_id"])
     if strategy is None:
         raise ValueError("nessuna strategy sottoscritta al mercato per agganciare l'ordine")
-    price = _round_tick(cmd["price"])
-    size = cmd["size"]
     side = str(cmd["side"]).upper()
+    if side not in _VALID_PLACE_SIDES:
+        raise ValueError(f"side non valido: {cmd.get('side')!r} (atteso back|lay)")
+    persistence = str(cmd.get("persistence") or "LAPSE").upper()
+    if persistence not in _VALID_PLACE_PERSISTENCE:
+        raise ValueError(f"persistence non valida: {cmd.get('persistence')!r}")
+    price = _round_tick(cmd["price"])
+    if not (1.01 - 1e-9 <= float(price) <= 1000 + 1e-9):
+        raise ValueError(f"price fuori range Betfair [1.01, 1000]: {price}")
+    size = cmd["size"]
     if size is None and cmd.get("liability") is not None and side == "LAY" and price > 1.0:
         size = round(float(cmd["liability"]) / (price - 1.0), 2)
     if size is None:
         raise ValueError("size non derivabile")
+    verdict = min_stake_rules(_jurisdiction(), side.lower(), float(price), float(size))
+    if not verdict.valid or verdict.legalized_size is None:
+        raise ValueError(f"stake non valido: {verdict.reason}")
+    size = verdict.legalized_size
+    cap = _max_stake_per_order()
+    if cap is not None and size > cap + 1e-9:
+        raise ValueError(f"size {size:.2f} oltre il cap TENNIS_LIVE_MAX_STAKE_PER_ORDER={cap:.2f}")
     trade = Trade(market_id=market.market_id, selection_id=int(cmd["selection_id"]),
                   handicap=float(cmd.get("handicap") or 0.0), strategy=strategy)
     order = trade.create_order(
         side=side,
         order_type=LimitOrder(price=price, size=round(float(size), 2),
-                              persistence_type=str(cmd.get("persistence") or "LAPSE")),
+                              persistence_type=persistence),
     )
     ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
     if ok is False:

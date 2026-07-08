@@ -21,7 +21,12 @@ python-Levenshtein  # backend veloce per thefuzz
 # ── Stream live Betfair (Betfair/stream/*) ───────────────────────────────────
 # flumine porta dietro betfairlightweight (streaming + in_play_service).
 # Eseguito SOLO in locale durante le partite (vedi Betfair/PIANO_STREAM_LIVE.md).
-flumine             # framework streaming/recording (sopra betfairlightweight)
+# ⚠️ PIN NON NEGOZIABILE: tennis_runner._stop_framework usa interni PRIVATI di flumine
+# (_running / handler_queue / TerminationEvent), VERIFICATI su 2.13.11 — è l'unico
+# meccanismo con cui arm/disarm bot e downgrade di modalità hanno effetto. Un upgrade
+# silenzioso può rompere il restart path mentre un bot continua a tradare (money-critical).
+flumine==2.13.11            # framework streaming/recording (sopra betfairlightweight)
+betfairlightweight==2.23.2  # pin esplicito (portato da flumine, versione verificata)
 
 # ── Opzionale / heavy (meta-learner neurale) ─────────────────────────────────
 # L'ensemble degrada con grazia a LogisticRegression se assenti (try/except import).

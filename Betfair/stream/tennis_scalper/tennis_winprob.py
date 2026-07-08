@@ -12,8 +12,12 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+# ⚠️ cache BOUNDED (fix review): le chiavi includono float (ha/hb) che nel runner
+# always-on cambiano quasi a ogni poll → maxsize=None crescerebbe SENZA LIMITE per
+# giorni (OOM di un servizio money-critical). 4096 stati coprono ampiamente un match.
 
-@lru_cache(maxsize=None)
+
+@lru_cache(maxsize=4096)
 def p_set(ga: int, gb: int, a_serves: bool, ha: float, hb: float,
           p_tb: float = 0.5) -> float:
     """P(A vince il SET) da games ga-gb, con 'a_serves' = tocca ad A servire.
@@ -43,7 +47,7 @@ def p_set(ga: int, gb: int, a_serves: bool, ha: float, hb: float,
         return hb * win_if_bhold + (1 - hb) * win_if_abreak
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=4096)
 def p_match(sa: int, sb: int, ga: int, gb: int, a_serves: bool,
             ha: float, hb: float, best_of: int = 3) -> float:
     """P(A vince il MATCH) dallo stato completo. best_of=3 (ATP/WTA std) o 5."""

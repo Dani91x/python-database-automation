@@ -356,11 +356,15 @@ class TennisLiveSession:
         self.tracked_orders: Dict[str, Any] = {}
         # firma write-on-change dello specchio ordini (manuali + bot): ref -> firma
         self.order_sig_cache: Dict[str, Any] = {}
+        # disarm in corso: (event_id, bot_key) -> scadenza monotonic della finestra di
+        # chiusura FLAT (il bot resta attivo per appiattire la posizione prima di 'stopped').
+        self.stopping_deadline: Dict[tuple, float] = {}
         self.restart_requested = threading.Event()
 
     def reset_streams(self) -> None:
         self.capture.clear()
         self.hosted.clear()
+        self.stopping_deadline.clear()
 
     def points_deque(self, event_id: str) -> Deque[Dict[str, Any]]:
         dq = self.recent_points.get(event_id)
@@ -500,6 +504,63 @@ def _desired_controls(event_id: str) -> Dict[str, Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Disarm con chiusura FLAT (contratto tennis_bots.sql: 'stopping' → flat → 'stopped')
+# ---------------------------------------------------------------------------
+# Finestra concessa al bot per appiattire la posizione dopo il disarm. Scaduta la
+# finestra senza flat, lo stato diventa 'error' (MAI uno 'stopped' bugiardo).
+_STOPPING_GRACE_S = 45.0
+
+# Stati flumine di un ordine ancora VIVO sul book (tutto il resto è terminale).
+_LIVE_ORDER_STATUSES = frozenset({"PENDING", "CANCELLING", "UPDATING", "REPLACING", "EXECUTABLE"})
+
+
+def _stopping_controls(event_id: str) -> Dict[str, Dict[str, Any]]:
+    rows = tennis_db.list_tennis_bot_controls(event_id, statuses=["stopping"])
+    return {r["bot_key"]: r for r in rows if r.get("bot_key") in _BOT_REGISTRY}
+
+
+def _strategy_is_flat(flumine: Any, strat: Any) -> bool:
+    """True se la strategy non ha né ordini VIVI sul book né esposizione MATCHED
+    sbilanciata, su nessun mercato del framework. Fonte: SOLO il blotter flumine
+    (autoritativo) — mai numeri ricalcolati a mano. In caso di dubbio (blotter non
+    leggibile) ritorna False: mai dichiarare flat una posizione non verificata."""
+    try:
+        for market in flumine.markets:
+            blotter = getattr(market, "blotter", None)
+            if blotter is None:
+                continue
+            try:
+                orders = blotter.strategy_orders(strat) or []
+            except Exception:  # noqa: BLE001 - blotter illeggibile → NON è flat verificato
+                return False
+            lookups = set()
+            for o in orders:
+                st = getattr(o, "status", None)
+                st_name = getattr(st, "name", None) or (str(st) if st is not None else "")
+                if st_name in _LIVE_ORDER_STATUSES:
+                    return False  # un ordine ancora sul book: non flat
+                sel = getattr(o, "selection_id", None)
+                if sel is None:
+                    continue
+                hcap = getattr(o, "handicap", 0.0) or 0.0
+                lookups.add((getattr(market, "market_id", None), int(sel), float(hcap)))
+            for lookup in lookups:
+                try:
+                    exp = blotter.get_exposures(strat, lookup)
+                except Exception:  # noqa: BLE001
+                    return False
+                if not isinstance(exp, dict):
+                    return False
+                w = float(exp.get("matched_profit_if_win") or 0.0)
+                l = float(exp.get("matched_profit_if_lose") or 0.0)
+                if abs(w - l) >= 0.01:
+                    return False  # posizione matched aperta (sbilancio ≥ 1 cent)
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Worker: ladder LIVE (write-on-change) → tennis_live_ladder
 # ---------------------------------------------------------------------------
 def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
@@ -621,19 +682,85 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
 # ---------------------------------------------------------------------------
 def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     need_restart = False
+    now_mono = time.monotonic()
     for event_id in list(session.market_meta.keys()):
         desired = _desired_controls(event_id)
+        stopping = _stopping_controls(event_id)
         # nuovi bot richiesti non ancora ospitati → restart per agganciarli allo stream
         for bot_key in desired:
             if (event_id, bot_key) not in session.hosted:
                 need_restart = True
-        # bot ospitati non più desiderati (disarm/stop): DISABILITA SUBITO l'istanza (non
-        # deve piazzare finché lo stream non è ricostruito) poi restart per rimuoverla.
+        # DISARM (contratto tennis_bots.sql: 'stopping' → chiusura FLAT → 'stopped').
+        # Fix review CRITICAL: prima di questo fix lo stato 'stopping' era ignorato e il
+        # bot veniva congelato all'istante con la posizione APERTA (mentre la UI diceva
+        # "chiusura flat"). Ora:
+        #   * bot con force_flat (scalper): resta ATTIVO con force_flat=True → cancella i
+        #     resting e appiattisce da solo; quando il blotter lo conferma flat (o scade
+        #     la finestra) si disabilita e lo stato diventa 'stopped'/'error' VERITIERO.
+        #   * bot senza chiusura autonoma: disabilitato subito, ma lo stato finale dice
+        #     la VERITÀ ('stopped' solo se flat; altrimenti 'error' con avviso).
         for (ev, bot_key) in list(session.hosted.keys()):
-            if ev == event_id and bot_key not in desired:
-                _disable_strategy(session.hosted[(ev, bot_key)])
-                tennis_db.set_tennis_bot_status(event_id, bot_key, "stopped", stopped=True)
+            if ev != event_id or bot_key in desired:
+                continue
+            strat = session.hosted[(ev, bot_key)]
+            key = (ev, bot_key)
+            if bot_key in stopping and not getattr(strat, "_tennis_disabled", False):
+                deadline = session.stopping_deadline.get(key)
+                if deadline is None:
+                    if hasattr(strat, "force_flat"):
+                        # il bot sa appiattirsi da solo: chiediglielo e lascialo lavorare.
+                        strat.force_flat = True
+                        session.stopping_deadline[key] = now_mono + _STOPPING_GRACE_S
+                        try:
+                            tennis_db.write_tennis_bot_activity(
+                                ev, bot_key, "disarm_flat",
+                                {"note": f"force_flat attivato; finestra {int(_STOPPING_GRACE_S)}s"},
+                            )
+                        except Exception:  # noqa: BLE001 - attività best-effort
+                            pass
+                        continue
+                    # bot senza chiusura autonoma: non può appiattirsi → disabilita subito
+                    # e scrivi uno stato finale VERITIERO qui sotto (deadline "già scaduta").
+                    session.stopping_deadline[key] = now_mono
+                    deadline = now_mono
+                flat = _strategy_is_flat(flumine, strat)
+                if not flat and now_mono < deadline:
+                    continue  # chiusura in corso: lascia lavorare il bot fino alla finestra
+                _disable_strategy(strat)
+                session.stopping_deadline.pop(key, None)
+                if flat:
+                    tennis_db.set_tennis_bot_status(ev, bot_key, "stopped", stopped=True)
+                else:
+                    tennis_db.set_tennis_bot_status(
+                        ev, bot_key, "error", stopped=True,
+                        error=(f"disarm: posizione NON flat dopo {int(_STOPPING_GRACE_S)}s — "
+                               "chiudi manualmente su Betfair/ladder e verifica l'esposizione"),
+                    )
                 need_restart = True
+                continue
+            # non in 'stopping' (riga rimossa/stato cambiato fuori contratto): comportamento
+            # conservativo — disabilita e scrivi lo stato in base al flat REALE.
+            if not getattr(strat, "_tennis_disabled", False):
+                flat = _strategy_is_flat(flumine, strat)
+                _disable_strategy(strat)
+                session.stopping_deadline.pop(key, None)
+                if flat:
+                    tennis_db.set_tennis_bot_status(event_id, bot_key, "stopped", stopped=True)
+                else:
+                    tennis_db.set_tennis_bot_status(
+                        event_id, bot_key, "error", stopped=True,
+                        error="bot rimosso con posizione NON flat — verifica manuale su Betfair",
+                    )
+                need_restart = True
+        # righe 'stopping' di bot NON più ospitati (es. restart avvenuto durante il disarm):
+        # nessuno può più chiuderle → stato finale onesto, mai 'stopping' per sempre.
+        for bot_key in stopping:
+            if (event_id, bot_key) not in session.hosted:
+                tennis_db.set_tennis_bot_status(
+                    event_id, bot_key, "stopped", stopped=True,
+                    error=("disarm durante un riavvio dello stream: chiusura flat NON "
+                           "verificata — controlla le posizioni su Betfair"),
+                )
         # heartbeat + stat SOLO dei bot ancora desiderati e non disabilitati: un bot appena
         # disarmato resta in session.hosted fino al restart, ma il suo status DB dev'essere
         # 'stopped' (fix #2) — NON va sovrascritto con 'running' dall'heartbeat.

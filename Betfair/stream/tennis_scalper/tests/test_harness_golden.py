@@ -181,3 +181,55 @@ def test_scalp_roundtrip_verde_catturato(tmp_path):
     pnl, st = _run(p, _SCALP)
     assert pnl > 0.02, f"green round-trip deve dare P&L>0 (bug #1/#2), dato {pnl}"
     assert st.get("greens", 0) >= 1
+
+
+# ---------------------------------------------------------------------------
+# METRICA LOCKED (fix review): il "VERDETTO PRIMARIO" di validate.py e' locked,
+# non settled_pnl — la matematica del min-sul-vincitore va protetta a unita'
+# (una regressione qui produrrebbe un falso "no edge" su TUTTA la ricerca).
+# ---------------------------------------------------------------------------
+class _FakeOrder:
+    def __init__(self, sel: int, side: str, size_matched: float, avg_price: float) -> None:
+        self.selection_id = sel
+        self.side = side
+        self.size_matched = size_matched
+        self.average_price_matched = avg_price
+
+
+class _FakeRunner:
+    def __init__(self, sel: int) -> None:
+        self.selection_id = sel
+
+
+class _FakeBook:
+    def __init__(self, sels: list) -> None:
+        self.runners = [_FakeRunner(s) for s in sels]
+
+
+def test_locked_greenup_round_trip_is_positive_on_both_outcomes():
+    """BACK 10@2.2 poi LAY 11@2.0 (round-trip verde): locked = min esiti > 0.
+    Vince A: +10*1.2 - 11*1.0 = +1.0 ; vince B: -10 + 11 = +1.0 -> locked=+1.0."""
+    orders = [_FakeOrder(111, "BACK", 10.0, 2.2), _FakeOrder(111, "LAY", 11.0, 2.0)]
+    locked = TennisLabStrategy._locked_from_orders(orders, _FakeBook([111, 222]))
+    assert locked == pytest.approx(1.0, abs=1e-9)
+
+
+def test_locked_naked_back_leg_is_minus_stake():
+    """Gamba BACK nuda 10@2.2: worst case (selezione perde) = -10 (mai il best case)."""
+    orders = [_FakeOrder(111, "BACK", 10.0, 2.2)]
+    locked = TennisLabStrategy._locked_from_orders(orders, _FakeBook([111, 222]))
+    assert locked == pytest.approx(-10.0, abs=1e-9)
+
+
+def test_locked_naked_lay_leg_is_minus_liability():
+    """Gamba LAY nuda 10@3.0: worst case (selezione vince) = -liability = -20."""
+    orders = [_FakeOrder(111, "LAY", 10.0, 3.0)]
+    locked = TennisLabStrategy._locked_from_orders(orders, _FakeBook([111, 222]))
+    assert locked == pytest.approx(-20.0, abs=1e-9)
+
+
+def test_locked_ignores_unmatched_and_empty():
+    """Ordini senza matched non contano; nessun ordine matched -> 0."""
+    orders = [_FakeOrder(111, "BACK", 0.0, 2.2), _FakeOrder(111, "LAY", 5.0, 0.0)]
+    assert TennisLabStrategy._locked_from_orders(orders, _FakeBook([111, 222])) == 0.0
+    assert TennisLabStrategy._locked_from_orders([], _FakeBook([111, 222])) == 0.0

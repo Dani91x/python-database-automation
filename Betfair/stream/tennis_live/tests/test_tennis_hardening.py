@@ -130,10 +130,12 @@ class _FakeStrategy:
 
 
 def test_disarm_disables_bot_and_stops_framework(monkeypatch):
+    """Riga di controllo SPARITA (né armata né 'stopping'): il bot va disabilitato subito
+    e — con blotter FLAT verificato — lo stato scritto è 'stopped' (mai bugiardo)."""
     statuses = []
     monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_status",
                         lambda *a, **k: statuses.append((a, k)))
-    # nessun bot desiderato ⇒ il bot ospitato va disarmato
+    # nessun bot desiderato (né in 'stopping') ⇒ il bot ospitato va disarmato
     monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
                         lambda *a, **k: [])
 
@@ -142,7 +144,8 @@ def test_disarm_disables_bot_and_stops_framework(monkeypatch):
     session.market_meta = {"ev1": {"market_id": "1.1"}}
     session.hosted = {("ev1", "tennis_scalper"): strat}
 
-    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue())
+    # markets=[] ⇒ nessun ordine/esposizione ⇒ _strategy_is_flat=True ⇒ 'stopped' veritiero
+    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
     tennis_runner.bot_control_worker({}, fake_flumine, session)
 
     # bot DISABILITATO subito (non può più piazzare nella finestra pre-restart)
@@ -159,6 +162,132 @@ def test_disarm_disables_bot_and_stops_framework(monkeypatch):
     written = [a[2] for (a, k) in statuses]
     assert "stopped" in written
     assert "running" not in written
+
+
+# ---------------------------------------------------------------------------
+# DISARM col contratto 'stopping' (fix review CRITICAL): chiusura FLAT reale
+# ---------------------------------------------------------------------------
+class _FakeFlatBot(_FakeStrategy):
+    """Bot con supporto force_flat (come lo scalper)."""
+
+    def __init__(self):
+        super().__init__()
+        self.force_flat = False
+
+
+def _controls_with_stopping(bot_key="tennis_scalper"):
+    def _list(event_id, statuses=None, **k):  # noqa: ARG001
+        if statuses and "stopping" in statuses:
+            return [{"bot_key": bot_key, "status": "stopping"}]
+        return []  # nessun bot armato
+    return _list
+
+
+def test_disarm_stopping_sets_force_flat_and_keeps_bot_alive(monkeypatch):
+    """Fase 1 del disarm: status 'stopping' ⇒ force_flat=True, bot NON disabilitato,
+    NESSUN restart e NESSUNO 'stopped' finché la posizione non è flat."""
+    statuses = []
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_status",
+                        lambda *a, **k: statuses.append((a, k)))
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        _controls_with_stopping())
+    monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
+
+    strat = _FakeFlatBot()
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.market_meta = {"ev1": {"market_id": "1.1"}}
+    session.hosted = {("ev1", "tennis_scalper"): strat}
+    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.bot_control_worker({}, fake_flumine, session)
+
+    assert strat.force_flat is True                       # chiusura richiesta al bot
+    assert not getattr(strat, "_tennis_disabled", False)  # bot ANCORA attivo (deve chiudere)
+    assert not session.restart_requested.is_set()         # stream vivo per farlo lavorare
+    assert ("ev1", "tennis_scalper") in session.stopping_deadline
+    written = [a[2] for (a, k) in statuses]
+    assert "stopped" not in written and "error" not in written
+
+
+def test_disarm_stopping_marks_stopped_when_flat(monkeypatch):
+    """Fase 2: quando il blotter conferma FLAT, il bot viene disabilitato e lo stato
+    passa a 'stopped' (veritiero) con restart per rimuoverlo dallo stream."""
+    statuses = []
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_status",
+                        lambda *a, **k: statuses.append((a, k)))
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        _controls_with_stopping())
+    monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: True)
+
+    strat = _FakeFlatBot()
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.market_meta = {"ev1": {"market_id": "1.1"}}
+    session.hosted = {("ev1", "tennis_scalper"): strat}
+    # force_flat già chiesto in un giro precedente, finestra ancora aperta
+    strat.force_flat = True
+    session.stopping_deadline[("ev1", "tennis_scalper")] = 1e18
+    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.bot_control_worker({}, fake_flumine, session)
+
+    assert strat._tennis_disabled is True
+    assert session.restart_requested.is_set()
+    written = [a[2] for (a, k) in statuses]
+    assert written == ["stopped"]
+    assert ("ev1", "tennis_scalper") not in session.stopping_deadline
+
+
+def test_disarm_stopping_timeout_not_flat_is_error(monkeypatch):
+    """Fase 2 (finestra scaduta, NON flat): stato 'error' con avviso di verifica manuale —
+    MAI uno 'stopped' bugiardo con la posizione aperta."""
+    statuses = []
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_status",
+                        lambda *a, **k: statuses.append((a, k)))
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        _controls_with_stopping())
+    monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
+
+    strat = _FakeFlatBot()
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.market_meta = {"ev1": {"market_id": "1.1"}}
+    session.hosted = {("ev1", "tennis_scalper"): strat}
+    strat.force_flat = True
+    session.stopping_deadline[("ev1", "tennis_scalper")] = 0.0  # finestra già scaduta
+    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.bot_control_worker({}, fake_flumine, session)
+
+    assert strat._tennis_disabled is True
+    assert session.restart_requested.is_set()
+    assert len(statuses) == 1
+    (a, k) = statuses[0]
+    assert a[2] == "error"
+    assert "NON flat" in (k.get("error") or "")
+
+
+def test_disarm_stopping_bot_without_force_flat_is_honest(monkeypatch):
+    """Bot SENZA chiusura autonoma (pro/flb/swing): disabilitato subito, stato finale
+    in base al flat REALE ('error' se la posizione resta aperta)."""
+    statuses = []
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_status",
+                        lambda *a, **k: statuses.append((a, k)))
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        _controls_with_stopping(bot_key="tennis_pro"))
+    monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
+
+    strat = _FakeStrategy()  # nessun attributo force_flat
+    session = tennis_runner.TennisLiveSession(trading=object())
+    session.market_meta = {"ev1": {"market_id": "1.1"}}
+    session.hosted = {("ev1", "tennis_pro"): strat}
+    fake_flumine = types.SimpleNamespace(_running=True, handler_queue=queue.Queue(), markets=[])
+
+    tennis_runner.bot_control_worker({}, fake_flumine, session)
+
+    assert strat._tennis_disabled is True
+    (a, k) = statuses[0]
+    assert a[2] == "error"  # non flat ⇒ mai 'stopped' bugiardo
 
 
 def test_stop_framework_enqueues_terminator():

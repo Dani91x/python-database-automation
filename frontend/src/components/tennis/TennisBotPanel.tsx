@@ -419,7 +419,12 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
                     const rest = prev.filter((c) => c.bot_key !== botKey);
                     return [...rest, ctrl];
                 });
-                toast.success(`${desc?.name ?? botKey} disarmato — chiusura flat`);
+                // MAI promettere un flat non ancora avvenuto: il runner appiattisce durante
+                // lo stato 'stopping' e scrive 'stopped' SOLO a flat verificato dal blotter
+                // (altrimenti 'error' con avviso di verifica manuale).
+                toast.success(`${desc?.name ?? botKey}: disarmo richiesto — chiusura flat in corso`, {
+                    description: 'Stato "stopped" quando la posizione è verificata flat; se resta aperta comparirà un errore.',
+                });
                 void refresh();
             } catch (e) {
                 toast.error(`Disarmo fallito: ${e instanceof Error ? e.message : String(e)}`);

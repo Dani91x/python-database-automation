@@ -2028,8 +2028,11 @@ class TennisScalperStrategy(BaseStrategy):
             if rem > _EPS:
                 try:
                     market.cancel_order(order)
-                except Exception:  # noqa: BLE001 - cancel idempotente
-                    pass
+                except Exception as e:  # noqa: BLE001 - cancel idempotente (ritentato
+                    # a ogni tick), ma MAI muto: una causa persistente (auth scaduta,
+                    # rete, restrizione account) deve lasciare traccia nei log.
+                    logger.debug("[scalper] cancel_order KO bet=%s: %s",
+                                 getattr(order, "bet_id", None), e)
 
     @staticmethod
     def _reset(slot: _Slot) -> None:

@@ -72,3 +72,69 @@ def test_defaults_persistence_and_handicap():
 def test_missing_action_raises():
     with pytest.raises(ValueError):
         parse_order_payload({"id": 9, "market_id": "1.1"})
+
+
+# ---------------------------------------------------------------------------
+# Validazione money-critical di _do_place (fix review HIGH): min stake .it,
+# whitelist side/persistence, range prezzo, cap opzionale — ULTIMA barriera
+# esplicita prima di un ordine reale (mai delegare al rifiuto grezzo di Betfair).
+# ---------------------------------------------------------------------------
+from types import SimpleNamespace
+
+import Betfair.stream.tennis_live.tennis_live_order_worker as tow
+
+
+def _fake_env(monkeypatch, market_id="1.1"):
+    market = SimpleNamespace(market_id=market_id)
+    flumine = SimpleNamespace(markets=SimpleNamespace(markets={market_id: market}))
+    session = SimpleNamespace(
+        market_meta={"ev1": {"market_id": market_id}},
+        capture={"ev1": object()},   # basta non-None: le validazioni scattano prima del Trade
+        tracked_orders={},
+    )
+    monkeypatch.delenv("TENNIS_LIVE_JURISDICTION", raising=False)
+    monkeypatch.delenv("TENNIS_LIVE_MAX_STAKE_PER_ORDER", raising=False)
+    return flumine, session
+
+
+def _place_cmd(**kw):
+    base = {"action": "place", "mode": "paper", "market_id": "1.1",
+            "selection_id": 5, "side": "back", "price": 2.0, "size": 5.0,
+            "persistence": "LAPSE", "handicap": 0.0, "liability": None}
+    base.update(kw)
+    return base
+
+
+def test_place_rejects_submin_back_it(monkeypatch):
+    flumine, session = _fake_env(monkeypatch)
+    with pytest.raises(ValueError, match="minimo"):
+        tow._do_place(flumine, session, _place_cmd(size=1.0), "awtq1")   # < €2.00 .it
+
+
+def test_place_rejects_submin_lay_it(monkeypatch):
+    flumine, session = _fake_env(monkeypatch)
+    with pytest.raises(ValueError, match="minimo"):
+        tow._do_place(flumine, session, _place_cmd(side="lay", size=0.2), "awtq1")  # < €0.50
+
+
+def test_place_rejects_invalid_side_and_persistence(monkeypatch):
+    flumine, session = _fake_env(monkeypatch)
+    with pytest.raises(ValueError, match="side"):
+        tow._do_place(flumine, session, _place_cmd(side="banana"), "awtq1")
+    with pytest.raises(ValueError, match="persistence"):
+        tow._do_place(flumine, session, _place_cmd(persistence="FOREVER"), "awtq1")
+
+
+def test_place_rejects_over_cap(monkeypatch):
+    flumine, session = _fake_env(monkeypatch)
+    monkeypatch.setenv("TENNIS_LIVE_MAX_STAKE_PER_ORDER", "10")
+    with pytest.raises(ValueError, match="cap"):
+        tow._do_place(flumine, session, _place_cmd(size=25.0), "awtq1")
+
+
+def test_place_derives_lay_size_from_liability_then_validates(monkeypatch):
+    """liability 0.4 @2.0 -> size 0.4 < minimo LAY .it 0.50 -> rifiutato PRIMA del place."""
+    flumine, session = _fake_env(monkeypatch)
+    with pytest.raises(ValueError, match="minimo"):
+        tow._do_place(flumine, session,
+                      _place_cmd(side="lay", size=None, liability=0.4), "awtq1")
