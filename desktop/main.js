@@ -119,6 +119,9 @@ function spawnRunner(label, args) {
         LIVE_ORDER_QUEUE_POLL_SEC: '0.15',
         LIVE_LADDER_PUBLISH_SEC: '0.3',
         TENNIS_LADDER_PUBLISH_SEC: '0.3',
+        // desktop: i runner NON escono quando non ci sono eventi seguiti — restano
+        // in attesa (canale locale + board vivi) finché non clicchi "Segui live".
+        LIVE_RUNNER_KEEP_ALIVE: '1',
     };
     const child = spawn(PYTHON, args, {
         cwd: repoRoot,
@@ -150,6 +153,16 @@ function startRunners() {
     // da solo se un'altra istanza è attiva.
     spawnRunner('runner-calcio', ['-m', 'Betfair.stream.watchdog']);
     spawnRunner('runner-tennis', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.tennis_live.tennis_runner']);
+    // SERVIZI BOT: senza di loro i bot non si armano e le "Partite del Giorno"
+    // tennis restano vuote (tennis_bot_service popola tennis_markets). NON
+    // avviare anche i .bat a mano: l'app avvia già tutto.
+    spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service']);
+    spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service']);
+    // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
+    // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
+    const runTennisOdds = () => spawnRunner('tennis-odds', ['betfair_tennis_odds.py']);
+    runTennisOdds();
+    setInterval(runTennisOdds, 30 * 60 * 1000);
 }
 
 // tree-kill via taskkill /T /F: termina il watchdog E i runner figli — mai orfani.

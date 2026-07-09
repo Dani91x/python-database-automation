@@ -1057,12 +1057,24 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 follows = [f for f in follows if f["event_id"] == only_event]
             follows = [f for f in follows if f["event_id"] not in session.finished_events]
             if not follows:
+                # DESKTOP (keep-alive): senza eventi il runner NON esce — resta in
+                # attesa (canale locale + board vivi) e ricontrolla ogni 15s: il
+                # click "Segui live" nell'app crea il follow e si parte subito.
+                # Senza il flag (uso storico da terminale/cron): esce come sempre.
+                if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                    logger.info("[runner] nessun evento da streammare: attendo (keep-alive desktop).")
+                    time.sleep(15)
+                    continue
                 logger.warning("[runner] nessun evento da streammare.")
                 break
 
             _catalog_events(rest, session, follows)
             market_ids = session.all_market_ids()
             if not market_ids:
+                if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                    logger.info("[runner] nessun mercato sottoscrivibile: attendo (keep-alive desktop).")
+                    time.sleep(15)
+                    continue
                 logger.warning("[runner] nessun mercato sottoscrivibile (budget?).")
                 break
 

@@ -27,7 +27,8 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # --- RISPETTO LIMITI BETFAIR (tassativo: niente ban) ---
-BATCH = 39            # mercati per listMarketBook (peso 39*5 = 195 < 200)
+BATCH = 8             # mercati per listMarketBook: EX_BEST_OFFERS(5)+EX_TRADED(17)
+                      # = 22 punti/mercato -> 8*22 = 176 < 200 (limite Betfair)
 REQ_DELAY = 0.6       # secondi tra chiamate
 EVENT_DELAY = 0.2     # secondi extra tra eventi
 CAT_CHUNK = 10        # eventi per chiamata listMarketCatalogue
@@ -241,7 +242,7 @@ def run_once(c: Any, sb: Any, today: str, name_filter: str = "") -> int:
                         books += c.list_market_book(
                             mids[i:i + BATCH],
                             price_projection={
-                                "priceData": ["EX_BEST_OFFERS", "EX_TRADED_VOLUME"],
+                                "priceData": ["EX_BEST_OFFERS", "EX_TRADED"],
                                 "virtualise": True,
                             },
                         ) or []

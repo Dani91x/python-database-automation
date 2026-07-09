@@ -939,6 +939,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             if only_event:
                 follows = [f for f in follows if f["event_id"] == only_event]
             if not follows:
+                if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                    logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
+                    time.sleep(15)
+                    continue
                 logger.warning("[tennis-runner] nessun evento tennis da streammare.")
                 break
 
@@ -947,6 +951,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             for f in follows:
                 _catalog_follow(session, f)
             if not session.market_meta:
+                if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                    logger.info("[tennis-runner] nessun mercato: attendo (keep-alive desktop).")
+                    time.sleep(15)
+                    continue
                 logger.warning("[tennis-runner] nessun mercato sottoscrivibile.")
                 break
 
