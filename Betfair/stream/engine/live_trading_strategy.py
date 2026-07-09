@@ -179,6 +179,56 @@ class LiveTradingStrategy(BaseStrategy):
             logger.warning("[live-strategy] specchio ordini KO: %s", str(ex)[:200])
 
     # ------------------------------------------------------------------
+    # E34/D33 — P&L REALIZZATO alla chiusura del mercato (solo PAPER qui).
+    # ------------------------------------------------------------------
+    def process_closed_market(self, market: Any, market_book: Any) -> None:
+        """Hook flumine alla CHIUSURA del mercato.
+
+        PAPER → persiste il P&L realizzato del mercato in ``betfair_live_settled``
+        come somma di ``order.simulated.profit`` (la metrica autoritativa della
+        SimulatedExecution flumine, mai ricalcolata a mano).
+        LIVE  → NO-OP: il realizzato arriva dai CLEARED ORDERS Betfair
+        (daily_stop_worker), mai dal simulato.
+        Best-effort: un errore è loggato ma non fa mai cadere il runner.
+        """
+        if self.mode != "paper":
+            return
+        try:
+            self._settle_paper_market(market)
+        except Exception as ex:  # noqa: BLE001 - il settled non deve mai propagare
+            logger.warning("[live-strategy] settled paper KO: %s", str(ex)[:200])
+
+    def _settle_paper_market(self, market: Any) -> None:
+        blotter = _val(market, "blotter")
+        if blotter is None:
+            return
+        try:
+            orders = list(blotter.strategy_orders(self))
+        except Exception:  # noqa: BLE001 - blotter mock/edge: nessun settled
+            return
+        total = 0.0
+        count = 0
+        for order in orders:
+            profit = _f(_val(_val(order, "simulated"), "profit"))
+            if profit is None:
+                continue
+            total += profit
+            count += 1
+        if count == 0:
+            return  # nessun nostro ordine sul mercato → nessuna riga
+        _db().upsert_live_settled(
+            {
+                "mode": self.mode,
+                "event_id": _val(market, "event_id"),
+                "market_id": _val(market, "market_id"),
+                "market_name": _val(_val(market, "market_catalogue"), "market_name"),
+                "profit": round(total, 2),
+                "orders": count,
+                "source": "simulated",
+            }
+        )
+
+    # ------------------------------------------------------------------
     # Implementazione
     # ------------------------------------------------------------------
     def _mirror_orders(self, market: Any, orders: list) -> None:

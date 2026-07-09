@@ -324,3 +324,56 @@ describe('LadderView', () => {
         }));
     });
 });
+
+// ===========================================================================
+// E36 — chip Kelly (position sizing assistito): mai auto, un click = stake
+// ===========================================================================
+describe('LadderView — chip Kelly (E36)', () => {
+    function signalsRow(over: Record<string, unknown> = {}) {
+        return {
+            event_id: 'evt1',
+            signals: {
+                signals: [{
+                    market_id: '1.234', market_type: 'MATCH_ODDS',
+                    selection_id: 1, selection_name: 'Casa',
+                    model_prob: 0.55, market_back: 2.9, market_lay: 3.0,
+                    fair_back: 1.82, fair_lay: 1.84, edge: 0.06,
+                    direction: 'BACK', confidence: 0.8, kelly_stake: 2.44,
+                    ...over,
+                }],
+                updated_ms: null,
+            },
+            model_meta: null,
+            updated_at: new Date().toISOString(),
+        };
+    }
+
+    it('mostra il chip col suggerimento e UN click imposta lo stake (nessun ordine)', async () => {
+        render(<LadderView marketId="1.234" orderMode="paper" signals={signalsRow() as never} />);
+        const chip = await screen.findByText('K€2.44');
+        await userEvent.click(chip);
+        // nessun ordine inviato dal click sul chip
+        expect(mSend).not.toHaveBeenCalled();
+        // lo stake custom mostra il valore accettato
+        expect(screen.getByDisplayValue('2.44')).toBeInTheDocument();
+    });
+
+    it('segnale stantio → nessun chip (mai suggerire su dati vecchi)', async () => {
+        const stale = { ...signalsRow(), updated_at: new Date(Date.now() - 10 * 60_000).toISOString() };
+        render(<LadderView marketId="1.234" orderMode="paper" signals={stale as never} />);
+        await screen.findByText('Casa');
+        expect(screen.queryByText('K€2.44')).not.toBeInTheDocument();
+    });
+
+    it('direction HOLD → nessun chip', async () => {
+        render(<LadderView marketId="1.234" orderMode="paper" signals={signalsRow({ direction: 'HOLD' }) as never} />);
+        await screen.findByText('Casa');
+        expect(screen.queryByText(/K€/)).not.toBeInTheDocument();
+    });
+
+    it('senza prop signals → nessun chip (tennis/capability gating)', async () => {
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        expect(screen.queryByText(/K€/)).not.toBeInTheDocument();
+    });
+});

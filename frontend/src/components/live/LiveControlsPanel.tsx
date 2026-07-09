@@ -18,7 +18,8 @@ import { Loader2, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Scroll
 import { toast } from 'sonner';
 import {
     getLiveSettings, setKillSwitch, setLiveSettings, fetchLiveAudit,
-    type LiveSettings, type LiveAuditRow,
+    fetchLiveRiskState, subscribeLiveRiskState,
+    type LiveSettings, type LiveAuditRow, type LiveRiskState,
 } from '@/lib/liveOrders';
 
 interface Props {
@@ -68,8 +69,21 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
     const [maxOrdersPerMin, setMaxOrdersPerMin] = useState('');
     const [orderPollSec, setOrderPollSec] = useState('');
     const [riskPollSec, setRiskPollSec] = useState('');
+    // E34/E35: stop giornaliero di conto + limiti aggregati evento/campionato.
+    const [dailyLossLimit, setDailyLossLimit] = useState('');
+    const [maxExpEvent, setMaxExpEvent] = useState('');
+    const [maxExpLeague, setMaxExpLeague] = useState('');
     // true finché l'utente non ha toccato il form: allora i poll non sovrascrivono le sue modifiche.
     const dirtyRef = useRef(false);
+
+    // E34: stato rischio giornaliero pubblicato dal runner (realtime).
+    const [riskState, setRiskState] = useState<LiveRiskState | null>(null);
+    useEffect(() => {
+        let alive = true;
+        fetchLiveRiskState().then(r => { if (alive) setRiskState(r); }).catch(() => {});
+        const unsub = subscribeLiveRiskState(r => { if (r) setRiskState(r); });
+        return () => { alive = false; unsub(); };
+    }, []);
 
     // riempi il form dalle impostazioni correnti (solo se l'utente non sta editando).
     const syncForm = useCallback((s: LiveSettings) => {
@@ -78,6 +92,9 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
         setMaxOrdersPerMin(toField(s.max_orders_per_min));
         setOrderPollSec(toField(s.order_poll_sec));
         setRiskPollSec(toField(s.risk_poll_sec));
+        setDailyLossLimit(toField(s.daily_loss_limit));
+        setMaxExpEvent(toField(s.max_exposure_per_event));
+        setMaxExpLeague(toField(s.max_exposure_per_league));
     }, []);
 
     const reload = useCallback(async () => {
@@ -134,6 +151,18 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
 
     // -------------------- salvataggio impostazioni --------------------
     const handleSave = useCallback(async () => {
+        // E34/E35: i limiti, se presenti, devono essere > 0 (il DB li rifiuterebbe comunque).
+        for (const [label, raw] of [
+            ['Stop giornaliero', dailyLossLimit],
+            ['Max esposizione / evento', maxExpEvent],
+            ['Max esposizione / campionato', maxExpLeague],
+        ] as const) {
+            const v = num(raw);
+            if (raw.trim() !== '' && (v == null || v <= 0)) {
+                toast.error(`${label}: valore non valido`, { description: 'Inserisci un importo > 0, oppure lascia vuoto per disattivare.' });
+                return;
+            }
+        }
         setSaving(true);
         try {
             const patch = {
@@ -141,6 +170,9 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
                 max_orders_per_min: num(maxOrdersPerMin),
                 order_poll_sec: num(orderPollSec),
                 risk_poll_sec: num(riskPollSec),
+                daily_loss_limit: num(dailyLossLimit),
+                max_exposure_per_event: num(maxExpEvent),
+                max_exposure_per_league: num(maxExpLeague),
             };
             const s = await setLiveSettings(patch);
             dirtyRef.current = false;      // dopo il salvataggio i poll possono riallineare il form
@@ -154,7 +186,8 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
         } finally {
             setSaving(false);
         }
-    }, [maxExposure, maxOrdersPerMin, orderPollSec, riskPollSec, reload, syncForm]);
+    }, [maxExposure, maxOrdersPerMin, orderPollSec, riskPollSec,
+        dailyLossLimit, maxExpEvent, maxExpLeague, reload, syncForm]);
 
     // segna il form come "sporco" al primo edit → i poll non sovrascrivono più i campi.
     const onEdit = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,6 +262,41 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
                 </span>
             </button>
 
+            {/* ---------------- E34: stato stop giornaliero (dal runner, realtime) ---------------- */}
+            {riskState?.day && (
+                <div className={`rounded-xl border px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap ${
+                    riskState.stop_fired
+                        ? 'border-red-400/60 bg-red-950/40'
+                        : 'border-white/10 bg-white/[0.03]'
+                }`}>
+                    <div className="text-[11px]">
+                        <span className="uppercase tracking-wider text-muted-foreground font-bold mr-2">
+                            P&amp;L giornata ({riskState.day})
+                        </span>
+                        <span className={`font-mono font-bold ${
+                            (riskState.total ?? 0) < 0 ? 'text-red-300' : 'text-emerald-300'
+                        }`}>
+                            {money(riskState.total)}
+                        </span>
+                        <span className="text-muted-foreground ml-2">
+                            settled {money(riskState.realized)} · MTM {money(riskState.open_mtm)}
+                            {riskState.detail?.degraded ? ' · ⚠ stima worst-case' : ''}
+                        </span>
+                    </div>
+                    {riskState.stop_fired ? (
+                        <span className="text-[11px] font-black text-red-200 bg-red-600/60 border border-red-400/60 rounded-lg px-2 py-1">
+                            🛑 STOP GIORNALIERO SCATTATO — solo chiusure
+                        </span>
+                    ) : riskState.limit_value != null ? (
+                        <span className="text-[10px] text-muted-foreground">
+                            stop a −{money(riskState.limit_value)}
+                        </span>
+                    ) : (
+                        <span className="text-[10px] text-muted-foreground">stop giornaliero spento</span>
+                    )}
+                </div>
+            )}
+
             {/* ---------------- impostazioni operative ---------------- */}
             <div className="border-t border-white/5 pt-4 space-y-3">
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
@@ -257,6 +325,27 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
                         <Label className={FIELD_LABEL}>Poll rischio (s)</Label>
                         <Input type="number" step="0.5" min="0" value={riskPollSec}
                             onChange={onEdit(setRiskPollSec)} placeholder="default"
+                            className="bg-black/60 border-white/10" />
+                    </div>
+                    <div>
+                        <Label className={FIELD_LABEL}>Stop giornaliero (€ perdita max)</Label>
+                        <Input type="number" step="1" min="0" value={dailyLossLimit}
+                            onChange={onEdit(setDailyLossLimit)} placeholder="spento"
+                            title="E34: raggiunta questa perdita di GIORNATA (settled + MTM) il runner attiva da solo il kill-switch (solo chiusure)."
+                            className="bg-black/60 border-white/10" />
+                    </div>
+                    <div>
+                        <Label className={FIELD_LABEL}>Max esposizione / evento (€)</Label>
+                        <Input type="number" step="1" min="0" value={maxExpEvent}
+                            onChange={onEdit(setMaxExpEvent)} placeholder="nessun limite"
+                            title="E35: esposizione worst-case aggregata sui mercati di UN evento; oltre, i nuovi PLACE sono rifiutati (le chiusure passano sempre)."
+                            className="bg-black/60 border-white/10" />
+                    </div>
+                    <div>
+                        <Label className={FIELD_LABEL}>Max esposizione / campionato (€)</Label>
+                        <Input type="number" step="1" min="0" value={maxExpLeague}
+                            onChange={onEdit(setMaxExpLeague)} placeholder="nessun limite"
+                            title="E35: come per evento, ma sommata su tutti gli eventi dello stesso campionato (mappa live_follow)."
                             className="bg-black/60 border-white/10" />
                     </div>
                 </div>

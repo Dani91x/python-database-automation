@@ -550,6 +550,195 @@ def _audit(sb: Any, rid: int, result: Dict[str, Any], status: str) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# E37 — trade journal AUTOMATICO (contesto al momento dell'esecuzione)
+# ---------------------------------------------------------------------------
+_JOURNAL_WARNED_DAY: Dict[str, str] = {}  # anti-spam: un alert WARN al giorno
+
+
+def _ltp_of(market: Any, selection_id: Optional[int], handicap: float) -> Optional[float]:
+    """Last Traded Price della selezione dal market_book flumine (best-effort)."""
+    if selection_id is None:
+        return None
+    mb = _val(market, "market_book")
+    if mb is None:
+        return None
+    for r in _val(mb, "runners") or []:
+        if _int(_val(r, "selection_id")) != int(selection_id):
+            continue
+        rh = _f(_val(r, "handicap")) or 0.0
+        if abs(rh - float(handicap or 0.0)) > 1e-6:
+            continue
+        return _f(_val(r, "last_price_traded"))
+    return None
+
+
+def _level_pair(level: Any) -> Optional[list]:
+    price = _level_price(level)
+    if price is None:
+        return None
+    size = _f(level.get("size")) if isinstance(level, dict) else _f(_val(level, "size"))
+    return [price, size]
+
+
+def _book_snapshot(market: Any, selection_id: Optional[int], handicap: float) -> Optional[Dict[str, Any]]:
+    """Top-3 livelli back/lay della selezione al momento del click (best-effort)."""
+    if selection_id is None:
+        return None
+    mb = _val(market, "market_book")
+    if mb is None:
+        return None
+    for r in _val(mb, "runners") or []:
+        if _int(_val(r, "selection_id")) != int(selection_id):
+            continue
+        rh = _f(_val(r, "handicap")) or 0.0
+        if abs(rh - float(handicap or 0.0)) > 1e-6:
+            continue
+        ex = _val(r, "ex")
+        if ex is None:
+            return None
+        back = [p for p in (_level_pair(x) for x in (_val(ex, "available_to_back") or [])[:3]) if p]
+        lay = [p for p in (_level_pair(x) for x in (_val(ex, "available_to_lay") or [])[:3]) if p]
+        return {"back": back, "lay": lay}
+    return None
+
+
+def _signal_for(sb: Any, event_id: Any, market_id: Any, selection_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    """Segnale del motore attivo per (market, selection) da live_signals (best-effort)."""
+    if not event_id:
+        return None
+    res = (
+        sb.table("live_signals")
+        .select("signals")
+        .eq("event_id", event_id)
+        .limit(1)
+        .execute()
+    )
+    rows = getattr(res, "data", None) or []
+    if not rows:
+        return None
+    payload = rows[0].get("signals") or {}
+    # shape reale (engine/live_engine_pro.signals_to_json): {"signals": [MarketSignal...]}
+    sig_list = payload.get("signals") if isinstance(payload, dict) else None
+    if not isinstance(sig_list, list):
+        return None
+    for m in sig_list:
+        if not isinstance(m, dict) or m.get("market_id") != market_id:
+            continue
+        if selection_id is None or _int(m.get("selection_id")) == _int(selection_id):
+            return m
+    return None
+
+
+def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: str) -> None:
+    """Riga di trade journal per una richiesta ESEGUITA (E37).
+
+    Contesto catturato ADESSO (minuto/score da live_now, book/LTP dal market_book in
+    memoria, segnale attivo da live_signals). BEST-EFFORT DICHIARATO: il journal non
+    deve MAI bloccare né far fallire un ordine — un errore produce un log WARN e (una
+    volta al giorno) un alert WARN, mai un'eccezione verso il chiamante.
+    """
+    try:
+        rid = request_row.get("id")
+        market_id = request_row.get("market_id")
+        selection_id = _int(request_row.get("selection_id"))
+        handicap = _f(request_row.get("handicap")) or 0.0
+        params = request_row.get("params") or {}
+        origin = "risk_rule" if isinstance(params, dict) and params.get("risk_rule_id") else "manual"
+
+        market = None
+        try:
+            market = flumine.markets.markets.get(market_id) if market_id else None
+        except Exception:  # noqa: BLE001
+            market = None
+        event_id = _val(market, "event_id") if market is not None else None
+
+        # esito scritto dalla dispatch (bet_id) — una select puntuale, best-effort
+        bet_id = None
+        try:
+            res = sb.table(_TABLE).select("bet_id").eq("id", rid).limit(1).execute()
+            rows = getattr(res, "data", None) or []
+            if rows:
+                bet_id = rows[0].get("bet_id")
+        except Exception:  # noqa: BLE001
+            pass
+
+        minute = score_home = score_away = inplay = None
+        if event_id:
+            try:
+                res = (
+                    sb.table("live_now")
+                    .select("minute,score_home,score_away,inplay")
+                    .eq("event_id", event_id)
+                    .limit(1)
+                    .execute()
+                )
+                rows = getattr(res, "data", None) or []
+                if rows:
+                    minute = rows[0].get("minute")
+                    score_home = rows[0].get("score_home")
+                    score_away = rows[0].get("score_away")
+                    inplay = rows[0].get("inplay")
+            except Exception:  # noqa: BLE001
+                pass
+
+        signal = None
+        try:
+            signal = _signal_for(sb, event_id, market_id, selection_id)
+        except Exception:  # noqa: BLE001
+            signal = None
+
+        best_back = best_lay = None
+        book = None
+        ltp = None
+        if market is not None and selection_id is not None:
+            best_back, best_lay = _best_prices(market, selection_id, handicap)
+            book = _book_snapshot(market, selection_id, handicap)
+            ltp = _ltp_of(market, selection_id, handicap)
+
+        from . import db as dbm
+
+        dbm.insert_live_journal(
+            {
+                "mode": mode_l,
+                "request_id": rid,
+                "action": str(request_row.get("action") or ""),
+                "origin": origin,
+                "event_id": event_id,
+                "market_id": market_id,
+                "selection_id": selection_id,
+                "side": request_row.get("side"),
+                "price": _f(request_row.get("price")),
+                "size": _f(request_row.get("size")),
+                "persistence": request_row.get("persistence"),
+                "bet_id": bet_id,
+                "minute": minute,
+                "score_home": score_home,
+                "score_away": score_away,
+                "inplay": inplay,
+                "ltp": ltp,
+                "best_back": best_back,
+                "best_lay": best_lay,
+                "book": book,
+                "signals": signal,
+                "params": params if isinstance(params, dict) and params else None,
+            }
+        )
+    except Exception as ex:  # noqa: BLE001 - journal best-effort: MAI bloccare l'ordine
+        logger.warning("[live-order] journal KO: %s", str(ex)[:200])
+        day = datetime.now(timezone.utc).date().isoformat()
+        if _JOURNAL_WARNED_DAY.get("ko") != day:
+            _JOURNAL_WARNED_DAY["ko"] = day
+            try:
+                from . import db as dbm
+
+                dbm.insert_alert(
+                    "WARN", "JOURNAL", f"trade journal KO (ordini NON impattati): {str(ex)[:200]}"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _write_done(sb: Any, rid: int, result: Dict[str, Any]) -> None:
     sb.table(_TABLE).update(
         {
@@ -1732,6 +1921,11 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
                 _write_error(sb, rid, r, mode_l, ex)
             except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
                 pass
+        else:
+            # E37 — trade journal AUTOMATICO: contesto al momento dell'esecuzione
+            # (minuto/score, book, segnali attivi). SOLO dopo un dispatch riuscito;
+            # MAI bloccante per l'ordine (best-effort dentro _journal_done).
+            _journal_done(sb, flumine, r, mode_l)
         handled += 1
 
     # 3) righe pending della mode OPPOSTA → error (mai lasciate appese all'infinito)

@@ -474,3 +474,44 @@ def upsert_live_position(row: Dict[str, Any]) -> None:
     sb.table("betfair_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
     ).execute()
+
+
+# ----------------------------------------------------------------------------
+# E34/E37 — P&L settled per mercato, stato rischio giornaliero, trade journal
+# ----------------------------------------------------------------------------
+def upsert_live_settled(row: Dict[str, Any]) -> None:
+    """P&L REALIZZATO di UN mercato → ``betfair_live_settled`` (idempotente).
+
+    Chiave di upsert: ``(mode, market_id)``. ``profit`` è la somma dei profit
+    flumine (PAPER: ``order.simulated.profit``; LIVE: cleared orders Betfair),
+    MAI ricalcolato a mano. ``updated_at`` forzato ad ogni scrittura.
+    """
+    sb = get_supabase_client()
+    payload = dict(row)
+    payload["updated_at"] = _now_iso()
+    sb.table("betfair_live_settled").upsert(
+        payload, on_conflict="mode,market_id"
+    ).execute()
+
+
+def upsert_live_risk_state(row: Dict[str, Any]) -> None:
+    """Stato rischio giornaliero (singleton id=1) → ``betfair_live_risk_state``.
+
+    Pubblicato dal daily_stop_worker (write-on-change): P&L di giornata,
+    soglia attiva e flag stop_fired. La UI lo legge in realtime (top bar).
+    """
+    sb = get_supabase_client()
+    payload = dict(row)
+    payload["id"] = 1
+    payload["updated_at"] = _now_iso()
+    sb.table("betfair_live_risk_state").upsert(payload, on_conflict="id").execute()
+
+
+def insert_live_journal(row: Dict[str, Any]) -> None:
+    """Una riga di trade journal (E37) → ``betfair_live_journal`` (append-only).
+
+    Best-effort BY DESIGN nel chiamante: il journal non deve MAI bloccare o
+    far fallire un ordine — gli errori vanno gestiti a monte (alert WARN).
+    """
+    sb = get_supabase_client()
+    sb.table("betfair_live_journal").insert(dict(row)).execute()

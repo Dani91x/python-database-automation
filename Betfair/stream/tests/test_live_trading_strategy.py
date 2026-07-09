@@ -34,12 +34,16 @@ class _FakeDB:
     def __init__(self) -> None:
         self.orders: List[Dict[str, Any]] = []
         self.positions: List[Dict[str, Any]] = []
+        self.settled: List[Dict[str, Any]] = []
 
     def upsert_live_order(self, row: Dict[str, Any]) -> None:
         self.orders.append(dict(row))
 
     def upsert_live_position(self, row: Dict[str, Any]) -> None:
         self.positions.append(dict(row))
+
+    def upsert_live_settled(self, row: Dict[str, Any]) -> None:
+        self.settled.append(dict(row))
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +86,9 @@ class _FakeBlotter:
         self, strategy: Any, selection_id: int, handicap: float = 0, matched_only: Any = None
     ) -> list:
         return list(self._sel_orders)
+
+    def strategy_orders(self, strategy: Any) -> list:
+        return list(getattr(self, "_strategy_orders", []))
 
 
 def _fake_market(market_id: str = "1.1", event_id: str = "31.999", blotter: Any = None) -> Any:
@@ -391,3 +398,64 @@ def test_cache_shrinks_when_live_order_becomes_terminal(fake_db):
     assert len(fake_db.orders) == 2                 # la transizione è stata scritta
     assert "OID-1" not in s._last_order_sig         # cache ripulita
     assert s._last_order_sig == {}
+
+
+# ===========================================================================
+# E34/D33 — settled PAPER alla chiusura del mercato (process_closed_market)
+# ===========================================================================
+def _sim_order(profit: float) -> Any:
+    return SimpleNamespace(simulated=SimpleNamespace(profit=profit))
+
+
+def test_closed_market_paper_writes_settled(fake_db):
+    s = _make_strategy(mode="paper")
+    blotter = _FakeBlotter()
+    blotter._strategy_orders = [_sim_order(-12.5), _sim_order(4.0)]
+    market = _fake_market(market_id="1.77", event_id="31.5", blotter=blotter)
+    s.process_closed_market(market, SimpleNamespace())
+    assert len(fake_db.settled) == 1
+    row = fake_db.settled[0]
+    assert row["mode"] == "paper"
+    assert row["market_id"] == "1.77"
+    assert row["event_id"] == "31.5"
+    assert row["profit"] == pytest.approx(-8.5)
+    assert row["orders"] == 2
+    assert row["source"] == "simulated"
+
+
+def test_closed_market_live_mode_is_noop(fake_db):
+    # LIVE: il realizzato arriva dai cleared orders Betfair, MAI dal simulato.
+    s = _make_strategy(mode="live")
+    blotter = _FakeBlotter()
+    blotter._strategy_orders = [_sim_order(99.0)]
+    s.process_closed_market(_fake_market(blotter=blotter), SimpleNamespace())
+    assert fake_db.settled == []
+
+
+def test_closed_market_no_orders_no_row(fake_db):
+    s = _make_strategy(mode="paper")
+    s.process_closed_market(_fake_market(blotter=_FakeBlotter()), SimpleNamespace())
+    assert fake_db.settled == []
+
+
+def test_closed_market_zero_profit_still_written(fake_db):
+    # profitto 0 con ordini presenti → riga scritta (0 è un risultato, non "niente")
+    s = _make_strategy(mode="paper")
+    blotter = _FakeBlotter()
+    blotter._strategy_orders = [_sim_order(0.0)]
+    s.process_closed_market(_fake_market(blotter=blotter), SimpleNamespace())
+    assert len(fake_db.settled) == 1
+    assert fake_db.settled[0]["profit"] == pytest.approx(0.0)
+
+
+def test_closed_market_settled_errors_never_propagate(fake_db, monkeypatch):
+    s = _make_strategy(mode="paper")
+    blotter = _FakeBlotter()
+    blotter._strategy_orders = [_sim_order(1.0)]
+
+    def _boom(row):
+        raise RuntimeError("db KO")
+
+    monkeypatch.setattr(fake_db, "upsert_live_settled", _boom)
+    # non deve sollevare (best-effort: il runner resta in piedi)
+    s.process_closed_market(_fake_market(blotter=blotter), SimpleNamespace())

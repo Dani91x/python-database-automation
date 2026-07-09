@@ -529,6 +529,12 @@ export interface LiveSettings {
     max_orders_per_min: number | null;
     order_poll_sec: number | null;
     risk_poll_sec: number | null;
+    /** E34: perdita massima di GIORNATA (EUR, >0). Raggiunta → kill-switch automatico. NULL = off. */
+    daily_loss_limit: number | null;
+    /** E35: esposizione worst-case massima aggregata per EVENTO. NULL = off. */
+    max_exposure_per_event: number | null;
+    /** E35: esposizione worst-case massima aggregata per CAMPIONATO. NULL = off. */
+    max_exposure_per_league: number | null;
     updated_at: string;
 }
 
@@ -569,7 +575,8 @@ export async function setKillSwitch(on: boolean): Promise<LiveSettings | null> {
 // Accetta qualunque subset dei campi editabili; i campi omessi restano invariati.
 export async function setLiveSettings(
     patch: Partial<Pick<LiveSettings,
-        'kill_switch' | 'max_exposure_per_selection' | 'max_orders_per_min' | 'order_poll_sec' | 'risk_poll_sec'>>,
+        'kill_switch' | 'max_exposure_per_selection' | 'max_orders_per_min' | 'order_poll_sec' | 'risk_poll_sec'
+        | 'daily_loss_limit' | 'max_exposure_per_event' | 'max_exposure_per_league'>>,
 ): Promise<LiveSettings | null> {
     const { data, error } = await supabase.rpc('set_live_settings', { p: patch });
     if (error) throw new Error(error.message);
@@ -613,3 +620,157 @@ export const LIVE_ORDER_STATUS_LABEL: Record<string, string> = {
     EXPIRED: 'Scaduto',
     VIOLATION: 'Rifiutato',
 };
+
+// ============================================================================
+// E34/D33 — P&L SETTLED per mercato + stato rischio giornaliero (stop di conto)
+// ============================================================================
+// betfair_live_settled: P&L REALIZZATO per (mode, market_id), scritto dal runner
+// alla chiusura/settlement (PAPER: flumine simulated.profit; LIVE: cleared orders
+// Betfair). Fonte autoritativa della dashboard P&L e dello stop giornaliero.
+export interface LiveSettledRow {
+    id: number;
+    mode: LiveOrderMode;
+    event_id: string | null;
+    market_id: string;
+    market_name: string | null;
+    profit: number;
+    orders: number;
+    source: 'simulated' | 'cleared';
+    settled_at: string;
+    updated_at: string;
+}
+
+// Legge le righe settled in un intervallo (get_live_settled → { rows }). Sola lettura.
+export async function fetchLiveSettled(fromIso?: string, toIso?: string): Promise<LiveSettledRow[]> {
+    const { data, error } = await supabase.rpc('get_live_settled', {
+        p_from: fromIso ?? null,
+        p_to: toIso ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LiveSettledRow[] } | null;
+    return raw?.rows ?? [];
+}
+
+// betfair_live_risk_state (singleton id=1): P&L di giornata + stato dello stop
+// giornaliero pubblicato dal daily_stop_worker (realtime → top bar).
+export interface LiveRiskState {
+    id: number;
+    mode: string | null;
+    day: string | null;
+    realized: number | null;
+    open_mtm: number | null;
+    total: number | null;
+    limit_value: number | null;
+    stop_fired: boolean;
+    detail: { reason?: string; degraded?: boolean; kill_switch?: boolean } | null;
+    updated_at: string;
+}
+
+export async function fetchLiveRiskState(): Promise<LiveRiskState | null> {
+    const { data, error } = await supabase
+        .from('betfair_live_risk_state')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as LiveRiskState | null) ?? null;
+}
+
+// Sottoscrizione realtime alla riga singleton dello stato rischio (top bar).
+export function subscribeLiveRiskState(cb: (row: LiveRiskState | null) => void): () => void {
+    const channel = supabase
+        .channel('betfair_live_risk_state:1')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'betfair_live_risk_state', filter: 'id=eq.1' },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as LiveRiskState | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+}
+
+// ---------- posizioni aggregate (dashboard P&L D33 + esposizione evento E35) ----------
+export async function fetchLivePositionsAll(): Promise<LivePositionRow[]> {
+    const { data, error } = await supabase.rpc('get_live_positions_all', {});
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LivePositionRow[] } | null;
+    return raw?.rows ?? [];
+}
+
+export async function fetchLivePositionsEvent(eventId: string): Promise<LivePositionRow[]> {
+    const { data, error } = await supabase.rpc('get_live_positions_event', { p_event_id: eventId });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LivePositionRow[] } | null;
+    return raw?.rows ?? [];
+}
+
+// ============================================================================
+// E37 — TRADE JOURNAL automatico (review post-sessione)
+// ============================================================================
+export interface LiveJournalRow {
+    id: number;
+    ts: string;
+    mode: LiveOrderMode;
+    request_id: number | null;
+    action: string;
+    origin: 'manual' | 'risk_rule';
+    event_id: string | null;
+    market_id: string | null;
+    market_name: string | null;
+    selection_id: number | null;
+    side: LiveOrderSide | null;
+    price: number | null;
+    size: number | null;
+    persistence: string | null;
+    bet_id: string | null;
+    minute: number | null;
+    score_home: number | null;
+    score_away: number | null;
+    inplay: boolean | null;
+    ltp: number | null;
+    best_back: number | null;
+    best_lay: number | null;
+    book: { back: [number, number][]; lay: [number, number][] } | null;
+    signals: Record<string, unknown> | null;
+    params: Record<string, unknown> | null;
+    tag: string | null;
+    note: string | null;
+}
+
+// Legge le ultime righe journal (get_live_journal → { rows }). Sola lettura.
+export async function fetchLiveJournal(args?: {
+    limit?: number;
+    marketId?: string;
+    fromIso?: string;
+    toIso?: string;
+}): Promise<LiveJournalRow[]> {
+    const { data, error } = await supabase.rpc('get_live_journal', {
+        p_limit: args?.limit ?? 200,
+        p_market_id: args?.marketId ?? null,
+        p_from: args?.fromIso ?? null,
+        p_to: args?.toIso ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LiveJournalRow[] } | null;
+    return raw?.rows ?? [];
+}
+
+// Assegna tag/nota a una riga journal (review). Passare undefined = campo invariato.
+export async function setLiveJournalNote(
+    id: number,
+    tag?: string | null,
+    note?: string | null,
+): Promise<LiveJournalRow | null> {
+    const { data, error } = await supabase.rpc('set_live_journal_note', {
+        p_id: id,
+        p_tag: tag ?? null,
+        p_note: note ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return (data as LiveJournalRow | null) ?? null;
+}

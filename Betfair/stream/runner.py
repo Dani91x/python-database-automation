@@ -58,6 +58,7 @@ from .config_stream import (
     MIN_RESUBSCRIBE_INTERVAL_SEC,
     ORDER_STREAM_CONFLATE_MS,
     PAPER_SIMULATED_LATENCY_MS,
+    DAILY_STOP_POLL_SEC,
     RAW_RECORDING,
     RISK_ENGINE_POLL_SEC,
     SAFE_MARKET_THRESHOLD,
@@ -70,10 +71,11 @@ from .config_stream import (
     WATCHLIST_POLL_SEC,
     XHEDGE_POLL_SEC,
 )
+from .daily_stop_worker import daily_stop_worker
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from .risk_engine_worker import risk_engine_worker
-from .trading.controls import LiveExposureControl, LiveRateControl
+from .trading.controls import LiveEventExposureControl, LiveExposureControl, LiveRateControl
 from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
@@ -1049,6 +1051,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 # Sono l'ultima barriera money-critical DENTRO flumine, oltre a quelle del worker.
                 framework.add_trading_control(LiveExposureControl)
                 framework.add_trading_control(LiveRateControl)
+                # E35: esposizione aggregata per EVENTO/CAMPIONATO (worst-case flumine
+                # market_exposure sommato sui mercati; chiusure mai bloccate).
+                framework.add_trading_control(LiveEventExposureControl)
                 # interval FLOAT: BackgroundWorker lo passa a time.sleep → int() troncava i poll
                 # sub-secondo (0.5→0→1). Usiamo il float direttamente (or 1.0 = guardia anti-zero).
                 framework.add_worker(BackgroundWorker(
@@ -1068,6 +1073,14 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     framework, function=xhedge_worker, interval=XHEDGE_POLL_SEC or 5.0,
                     func_kwargs={"session": session, "strategy": live_strategy},
                     name="xhedge_worker"))
+                # E34 — stop giornaliero di conto: P&L di giornata (settled + MTM
+                # blotter) vs daily_loss_limit → kill-switch AUTOMATICO + alert
+                # CRITICAL. Pubblica betfair_live_risk_state (top bar). Stessa
+                # istanza strategy per leggere le esposizioni dal blotter.
+                framework.add_worker(BackgroundWorker(
+                    framework, function=daily_stop_worker, interval=DAILY_STOP_POLL_SEC or 5.0,
+                    func_kwargs={"session": session, "strategy": live_strategy},
+                    name="daily_stop_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))

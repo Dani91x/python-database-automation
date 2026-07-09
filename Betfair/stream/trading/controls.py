@@ -257,3 +257,166 @@ class LiveRateControl(BaseControl):
             return  # _on_error solleva; return è difensivo se venisse sovrascritto
         # check passato => questo place conta per la finestra.
         self._order_ts.append(now)
+
+
+# ---------------------------------------------------------------------------
+# E35 — LiveEventExposureControl: max esposizione per EVENTO e per CAMPIONATO
+# ---------------------------------------------------------------------------
+def _max_exposure_per_event() -> Optional[float]:
+    return _f(get_live_settings().get("max_exposure_per_event"))
+
+
+def _max_exposure_per_league() -> Optional[float]:
+    return _f(get_live_settings().get("max_exposure_per_league"))
+
+
+# Mappa event_id -> league_name da live_follow (cache TTL: gli ordini arrivano a
+# raffica, il campionato di un evento non cambia). Fail-open: DB KO => ultimo
+# snapshot valido ({} se mai letto => limite campionato di fatto non applicabile).
+_LEAGUE_TTL: float = 60.0
+_LEAGUE_CACHE: Dict[str, Any] = {"data": {}, "ts": 0.0}
+
+
+def _league_map(force: bool = False) -> Dict[str, str]:
+    now = _now_epoch()
+    if not force and (now - float(_LEAGUE_CACHE.get("ts", 0.0))) < _LEAGUE_TTL:
+        return _LEAGUE_CACHE["data"]
+    try:
+        from db_client import get_supabase_client  # import lazy
+
+        sb = get_supabase_client()
+        # limit difensivo (fix review MEDIUM): la mappa serve solo per gli eventi
+        # attivi/recenti — mai una scansione illimitata dal thread ordini.
+        res = (
+            sb.table("live_follow")
+            .select("event_id,league_name")
+            .order("updated_at", desc=True)
+            .limit(500)
+            .execute()
+        )
+        rows = getattr(res, "data", None) or []
+        data = {
+            str(r.get("event_id")): str(r.get("league_name"))
+            for r in rows
+            if r.get("event_id") and r.get("league_name")
+        }
+        _LEAGUE_CACHE["data"] = data
+    except Exception:  # noqa: BLE001 - fail-open: mantieni l'ultimo snapshot
+        logger.debug("[live-control] lettura league map KO, uso l'ultimo snapshot", exc_info=True)
+    finally:
+        _LEAGUE_CACHE["ts"] = now
+    return _LEAGUE_CACHE["data"]
+
+
+def _market_loss(blotter: Any, strategy: Any, market_book: Any, new_order: Any = None) -> Optional[float]:
+    """Perdita worst-case (>=0) della strategia su UN mercato, da flumine.
+
+    Usa ``blotter.market_exposure`` (la matematica NATIVA flumine del worst-case di
+    mercato attraverso gli esiti, con supporto ``new_order``): MAI ricalcolata a mano.
+    None = non calcolabile (il chiamante decide fail-open/skip).
+    """
+    try:
+        exp = blotter.market_exposure(strategy, market_book, new_order=new_order)
+    except Exception:  # noqa: BLE001 - blotter/book in stato di confine
+        return None
+    v = _f(exp)
+    if v is None:
+        return None
+    return max(0.0, -v)  # esposizione = perdita potenziale (market_exposure<0)
+
+
+class LiveEventExposureControl(BaseControl):
+    """Rifiuta un PLACE se l'esposizione worst-case RISULTANTE aggregata per EVENTO
+    (somma dei worst-case di mercato di flumine su tutti i mercati dell'evento) o per
+    CAMPIONATO (somma degli eventi del campionato, mappa live_follow) supererebbe
+    ``max_exposure_per_event`` / ``max_exposure_per_league`` (NULL/assente = off).
+
+    Gli ordini di CHIUSURA (``reduces_liability`` da live_order_build: green-up, hedge,
+    cash-out) NON sono mai bloccati: un cap aggregato che rifiuta un'uscita sarebbe
+    l'opposto della protezione. Difensivo/fail-open: senza strategy/mercato/book o con
+    esposizione del mercato TARGET non calcolabile NON blocca; i mercati SECONDARI non
+    calcolabili sono esclusi dalla somma (stima per difetto, mai un falso blocco).
+    Con i dati disponibili il confronto è STRETTO.
+    """
+
+    NAME = "LIVE_EVENT_EXPOSURE"
+
+    def _validate(self, order: Any, package_type: OrderPackageType) -> None:
+        if package_type != OrderPackageType.PLACE:
+            return
+
+        ctx = _val(order, "context")
+        if isinstance(ctx, dict) and ctx.get("reduces_liability"):
+            return  # chiusure sempre permesse
+
+        cap_event = _max_exposure_per_event()
+        cap_league = _max_exposure_per_league()
+        if (cap_event is None or cap_event <= 0) and (cap_league is None or cap_league <= 0):
+            return  # entrambi i limiti disattivati
+
+        trade = _val(order, "trade")
+        strategy = _val(trade, "strategy") if trade is not None else None
+        if strategy is None:
+            return  # fail-open
+
+        try:
+            markets = dict(self.flumine.markets.markets)
+        except Exception:  # noqa: BLE001 - struttura framework inattesa
+            return
+        target_market_id = _val(order, "market_id")
+        target_market = markets.get(target_market_id)
+        if target_market is None:
+            return  # fail-open
+        target_event = _val(target_market, "event_id")
+        if target_event is None:
+            return  # senza event_id non esiste aggregato evento
+
+        # perdita worst-case per evento (il mercato TARGET include il NUOVO ordine).
+        # fix review MEDIUM: se il cap CAMPIONATO è spento serve SOLO l'evento target →
+        # niente market_exposure sui mercati di altri eventi (path sincrono del place).
+        league_active = cap_league is not None and cap_league > 0
+        losses_by_event: Dict[str, float] = {}
+        for m_id, m in markets.items():
+            if _val(m, "closed"):
+                continue
+            ev = _val(m, "event_id")
+            if not league_active and ev != target_event and m_id != target_market_id:
+                continue
+            blotter = _val(m, "blotter")
+            mb = _val(m, "market_book")
+            if ev is None or blotter is None or mb is None:
+                if m_id == target_market_id:
+                    return  # target non valutabile => fail-open
+                continue
+            is_target = m_id == target_market_id
+            loss = _market_loss(blotter, strategy, mb, new_order=order if is_target else None)
+            if loss is None:
+                if is_target:
+                    return  # target non valutabile => fail-open
+                continue  # secondario non calcolabile: escluso (stima per difetto)
+            losses_by_event[ev] = losses_by_event.get(ev, 0.0) + loss
+
+        event_total = losses_by_event.get(target_event, 0.0)
+        if cap_event is not None and cap_event > 0 and event_total > float(cap_event) + 1e-9:
+            self._on_error(
+                order,
+                "max esposizione EVENTO %s: risultante €%.2f oltre il tetto €%.2f"
+                % (target_event, event_total, float(cap_event)),
+            )
+            return
+
+        if cap_league is None or cap_league <= 0:
+            return
+        leagues = _league_map()
+        league = leagues.get(str(target_event))
+        if not league:
+            return  # campionato ignoto => limite non applicabile (fail-open)
+        league_total = sum(
+            loss for ev, loss in losses_by_event.items() if leagues.get(str(ev)) == league
+        )
+        if league_total > float(cap_league) + 1e-9:
+            self._on_error(
+                order,
+                "max esposizione CAMPIONATO '%s': risultante €%.2f oltre il tetto €%.2f"
+                % (league, league_total, float(cap_league)),
+            )

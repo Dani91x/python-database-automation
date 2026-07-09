@@ -14,15 +14,23 @@ vi.mock('@/lib/liveOrders', () => ({
     setKillSwitch: vi.fn(),
     setLiveSettings: vi.fn(),
     fetchLiveAudit: vi.fn(),
+    // E34: stato rischio giornaliero (top strip del pannello)
+    fetchLiveRiskState: vi.fn(() => Promise.resolve(null)),
+    subscribeLiveRiskState: vi.fn(() => () => {}),
 }));
 
+import { toast } from 'sonner';
 import { LiveControlsPanel } from './LiveControlsPanel';
-import { getLiveSettings, setKillSwitch, setLiveSettings, fetchLiveAudit } from '@/lib/liveOrders';
+import {
+    getLiveSettings, setKillSwitch, setLiveSettings, fetchLiveAudit, fetchLiveRiskState,
+    type LiveRiskState,
+} from '@/lib/liveOrders';
 
 const mGet = vi.mocked(getLiveSettings);
 const mKill = vi.mocked(setKillSwitch);
 const mSet = vi.mocked(setLiveSettings);
 const mAudit = vi.mocked(fetchLiveAudit);
+const mRisk = vi.mocked(fetchLiveRiskState);
 
 const settings = (over: Partial<LiveSettings> = {}): LiveSettings => ({
     id: 1,
@@ -31,6 +39,9 @@ const settings = (over: Partial<LiveSettings> = {}): LiveSettings => ({
     max_orders_per_min: null,
     order_poll_sec: null,
     risk_poll_sec: null,
+    daily_loss_limit: null,
+    max_exposure_per_event: null,
+    max_exposure_per_league: null,
     updated_at: '2026-07-01T10:00:00Z',
     ...over,
 });
@@ -90,5 +101,81 @@ describe('LiveControlsPanel', () => {
         expect(screen.getByText('cancel')).toBeInTheDocument();
         expect(screen.getByText(/1\.234 · 47/)).toBeInTheDocument();
         expect(screen.getByText(/Registro eventi \(2\)/)).toBeInTheDocument();
+    });
+});
+
+// ===========================================================================
+// E34/E35 — validazione limiti (barriera client-side) + strip stato rischio
+// ===========================================================================
+describe('LiveControlsPanel — limiti E34/E35', () => {
+    const riskState = (over: Partial<LiveRiskState> = {}): LiveRiskState => ({
+        id: 1, mode: 'paper', day: '2026-07-09', realized: -12.5, open_mtm: -3.0,
+        total: -15.5, limit_value: 50, stop_fired: false,
+        detail: { reason: 'within_limit', degraded: false, kill_switch: false },
+        updated_at: '2026-07-09T10:00:00Z',
+        ...over,
+    });
+
+    it('stop giornaliero ≤ 0 → toast error e NESSUN salvataggio', async () => {
+        const user = userEvent.setup();
+        render(<LiveControlsPanel pollMs={0} />);
+        await screen.findByText(/runner operativo/);
+        const input = screen.getByTitle(/E34/);
+        await user.clear(input);
+        await user.type(input, '-5');
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+        expect(mSet).not.toHaveBeenCalled();
+    });
+
+    it('limite evento 0 → rifiutato; campo vuoto (disattivazione) → salvato con null', async () => {
+        const user = userEvent.setup();
+        render(<LiveControlsPanel pollMs={0} />);
+        await screen.findByText(/runner operativo/);
+        const evInput = screen.getByTitle(/E35: esposizione worst-case aggregata sui mercati di UN evento/);
+        await user.clear(evInput);
+        await user.type(evInput, '0');
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+        expect(mSet).not.toHaveBeenCalled();
+        // campo svuotato = limite spento → il salvataggio passa con null
+        await user.clear(evInput);
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        await waitFor(() => expect(mSet).toHaveBeenCalled());
+        expect(mSet.mock.calls[0][0]).toMatchObject({ max_exposure_per_event: null });
+    });
+
+    it('limiti validi → salvati nel patch', async () => {
+        const user = userEvent.setup();
+        render(<LiveControlsPanel pollMs={0} />);
+        await screen.findByText(/runner operativo/);
+        await user.type(screen.getByTitle(/E34/), '50');
+        await user.type(screen.getByTitle(/UN evento/), '100');
+        await user.type(screen.getByTitle(/stesso campionato/), '200');
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        await waitFor(() => expect(mSet).toHaveBeenCalled());
+        expect(mSet.mock.calls[0][0]).toMatchObject({
+            daily_loss_limit: 50, max_exposure_per_event: 100, max_exposure_per_league: 200,
+        });
+    });
+
+    it('strip rischio: stato entro soglia (nessun badge SCATTATO)', async () => {
+        mRisk.mockResolvedValue(riskState());
+        render(<LiveControlsPanel pollMs={0} />);
+        expect(await screen.findByText(/P&L giornata \(2026-07-09\)/)).toBeInTheDocument();
+        expect(screen.queryByText(/STOP GIORNALIERO SCATTATO/)).not.toBeInTheDocument();
+        expect(screen.getByText(/stop a −/)).toBeInTheDocument();
+    });
+
+    it('strip rischio: stop SCATTATO → badge rosso esplicito', async () => {
+        mRisk.mockResolvedValue(riskState({ total: -60, stop_fired: true }));
+        render(<LiveControlsPanel pollMs={0} />);
+        expect(await screen.findByText(/STOP GIORNALIERO SCATTATO/)).toBeInTheDocument();
+    });
+
+    it('strip rischio: limite spento dichiarato', async () => {
+        mRisk.mockResolvedValue(riskState({ limit_value: null }));
+        render(<LiveControlsPanel pollMs={0} />);
+        expect(await screen.findByText(/stop giornaliero spento/)).toBeInTheDocument();
     });
 });

@@ -240,3 +240,10 @@ RISK_ENGINE_BATCH: int = int(os.getenv("LIVE_RISK_ENGINE_BATCH", "20"))
 # non deve essere ad alta frequenza.
 # ----------------------------------------------------------------------------
 XHEDGE_POLL_SEC: float = float(os.getenv("LIVE_XHEDGE_POLL_SEC", "5.0"))
+
+# ----------------------------------------------------------------------------
+# E34 — stop giornaliero di conto: cadenza del daily_stop_worker (P&L di giornata
+# da settled + MTM blotter; kill-switch automatico oltre daily_loss_limit).
+# La soglia vive in betfair_live_settings.daily_loss_limit (runtime, NULL = off).
+# ----------------------------------------------------------------------------
+DAILY_STOP_POLL_SEC: float = float(os.getenv("LIVE_DAILY_STOP_POLL_SEC", "5.0"))

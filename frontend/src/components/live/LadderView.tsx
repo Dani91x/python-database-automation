@@ -48,8 +48,9 @@ import {
 } from '@/lib/ladderConfig';
 import {
     fetchLiveLadder, subscribeLiveLadder,
-    type LiveLadderRow, type LiveLadderSelection,
+    type LiveLadderRow, type LiveLadderSelection, type LiveSignalsRow,
 } from '@/lib/live';
+import { kellySuggestions, type KellySuggestion } from '@/lib/kellySuggest';
 import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup, requestRiskRule,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
@@ -412,6 +413,9 @@ interface SelectionLadderProps {
     // della finestra) → il parent invalida l'hover di questa selezione (hotkey sospese
     // fino al prossimo movimento reale del mouse: mai ordini a un prezzo "vecchio").
     onWindowShift: (selectionId: number) => void;
+    // E36: suggerimento Kelly del motore per QUESTA selezione (null = niente chip).
+    kelly: KellySuggestion | null;
+    onAcceptKelly: (stake: number) => void;
 }
 
 // mappa flash vuota, referenza stabile (nessun re-render quando non c'è nulla da lampeggiare).
@@ -421,6 +425,7 @@ const SelectionLadder = memo(function SelectionLadder({
     sel, orders, position, stake, stakeMode, status, canTrade, busy, columns, greenupSupported, enableDragMove,
     recenterSeq, nudge, samples,
     onPlace, onCancel, onGreenup, onGreenupAt, onCancelSide, onMoveOrder, onHoverRow, onWindowShift,
+    kelly, onAcceptKelly,
 }: SelectionLadderProps) {
     // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come Bet Angel)
     // o centro MANUALE (click su prezzo/price bar/frecce). localSeq forza lo scroll one-shot.
@@ -656,9 +661,31 @@ const SelectionLadder = memo(function SelectionLadder({
                     <span className="font-heading font-bold text-sm text-white truncate" title={selName}>
                         {selName}
                     </span>
-                    <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                        Matched <span className="text-white/80 font-mono">{fmtMoney(sel.tv)}</span>
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        {/* E36: chip Kelly del motore — UN click imposta lo stake (MAI auto).
+                            Visibile solo con segnale FRESCO e direzione operativa. */}
+                        {kelly != null && (
+                            <button
+                                type="button"
+                                onClick={() => onAcceptKelly(kelly.stake)}
+                                title={`Suggerimento motore (Kelly frazionato): ${kelly.side === 'back' ? 'BACK' : 'LAY'} €${kelly.stake.toFixed(2)}`
+                                    + ` · prob ${(kelly.prob * 100).toFixed(0)}%`
+                                    + (kelly.fair != null ? ` · fair ${kelly.fair.toFixed(2)}` : '')
+                                    + (kelly.edge != null ? ` · edge ${(kelly.edge * 100).toFixed(1)}%` : '')
+                                    + ' — clic per usare questo stake (nessun ordine viene inviato)'}
+                                className={`px-1.5 py-0.5 rounded-md border text-[10px] font-bold tabular-nums transition-colors ${
+                                    kelly.side === 'back'
+                                        ? 'border-sky-400/40 text-sky-200 hover:bg-sky-400/10'
+                                        : 'border-pink-400/40 text-pink-200 hover:bg-pink-400/10'
+                                }`}
+                            >
+                                K€{kelly.stake.toFixed(2)}
+                            </button>
+                        )}
+                        <span className="text-[10px] text-muted-foreground tabular-nums">
+                            Matched <span className="text-white/80 font-mono">{fmtMoney(sel.tv)}</span>
+                        </span>
+                    </div>
                 </div>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                     <WomBar wom={sel.wom} />
@@ -1278,6 +1305,10 @@ interface Props {
     // "aggiungi al multi-ladder": slot precostruito dall'host (che conosce i nomi evento);
     // se presente, mostra il bottone che salva questo mercato nel workspace /multi-ladder.
     multiSlot?: Omit<LadderSlot, 'id'>;
+    // E36: riga live_signals dell'evento (iniettata dall'host, es. SeguiLive). Se presente
+    // e FRESCA, accanto al nome selezione compare il chip Kelly del motore (stake suggerito,
+    // UN click per accettarlo — MAI auto-applicato). Sport senza motore (tennis) non la passano.
+    signals?: LiveSignalsRow | null;
 }
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
@@ -1300,7 +1331,7 @@ function initLadderProfile(sport: string): LadderProfile {
 export function LadderView({
     marketId, marketName, orderMode = 'off', handicap = 0, sport = 'calcio', fallbackSelections = [],
     ladderSource = DEFAULT_LADDER_SOURCE, orderApi = DEFAULT_ORDER_API, enableDragMove = true,
-    popout, multiSlot,
+    popout, multiSlot, signals = null,
 }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [loading, setLoading] = useState(true);
@@ -1356,6 +1387,26 @@ export function LadderView({
         && !(Number.isFinite(Number(customStake)) && Number(customStake) > 0);
     const stakeInvalidRef = useRef(stakeInvalid);
     stakeInvalidRef.current = stakeInvalid;
+
+    // E36: suggerimenti Kelly del motore (live_signals) per selezione. Il tick 30s
+    // ri-valuta la FRESCHEZZA (segnale >2min = stantio → chip nascosto, mai suggerire
+    // su dati vecchi). Accettare = un click che imposta lo stake: MAI auto-applicato.
+    const [kellyTick, setKellyTick] = useState(0);
+    useEffect(() => {
+        if (!signals) return undefined;
+        const t = setInterval(() => setKellyTick(k => k + 1), 30_000);
+        return () => clearInterval(t);
+    }, [signals]);
+    const kellyMap = useMemo(
+        () => kellySuggestions(signals, marketId, Date.now()),
+        // kellyTick forza la rivalutazione periodica della freschezza
+        [signals, marketId, kellyTick], // eslint-disable-line react-hooks/exhaustive-deps
+    );
+    const onAcceptKelly = useCallback((stakeVal: number) => {
+        // stesso effetto dell'input custom: stake aggiornato E visibile nella casella.
+        setStake(stakeVal);
+        setCustomStake(String(stakeVal));
+    }, []);
 
     // persistenza ordine condivisa (default LAPSE, come i tool pro).
     const [persistence, setPersistence] = useState<LivePersistence>('LAPSE');
@@ -2546,6 +2597,8 @@ export function LadderView({
                                 onMoveOrder={onMoveOrder}
                                 onHoverRow={onHoverRow}
                                 onWindowShift={onWindowShift}
+                                kelly={kellyMap.get(s.selection_id) ?? null}
+                                onAcceptKelly={onAcceptKelly}
                             />
                         ))}
                     </div>
