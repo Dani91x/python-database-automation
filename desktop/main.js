@@ -12,16 +12,46 @@
 // ============================================================================
 'use strict';
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
 
 const UI_PORT = 47330;
-const REPO_ROOT = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(REPO_ROOT, 'frontend', 'dist');
-const PYTHON = path.join(REPO_ROOT, '.venv', 'Scripts', 'python.exe');
+
+// ---------------------------------------------------------------------------
+// RADICE REPO — fix avvio da exe PACCHETTIZZATO: __dirname punta dentro app.asar
+// (portable: scompattato in %TEMP%), quindi i path relativi si rompono. Si prova,
+// in ordine: env esplicita → cartella dell'exe (desktop/release → repo) → exe
+// copiato nella radice → dev (npm start). Valida = contiene .venv e frontend/dist.
+// ---------------------------------------------------------------------------
+function isRepoRoot(dir) {
+    try {
+        return fs.existsSync(path.join(dir, '.venv', 'Scripts', 'python.exe'))
+            && fs.existsSync(path.join(dir, 'frontend', 'dist', 'index.html'));
+    } catch (_) { return false; }
+}
+
+function resolveRepoRoot() {
+    const exeDir = process.env.PORTABLE_EXECUTABLE_DIR
+        || path.dirname(app.getPath('exe'));
+    const candidates = [
+        process.env.ALPHASCORE_REPO,                 // override esplicito
+        path.resolve(exeDir, '..', '..'),            // desktop/release/*.exe → repo
+        path.resolve(exeDir, '..'),                  // desktop/*.exe → repo
+        exeDir,                                      // exe copiato nella radice repo
+        path.resolve(__dirname, '..'),               // dev: npm start da desktop/
+    ].filter(Boolean);
+    for (const c of candidates) {
+        if (isRepoRoot(c)) return c;
+    }
+    return null;
+}
+
+let repoRoot = null; // risolta in app.whenReady (serve app.getPath)
+let DIST_DIR = null;
+let PYTHON = null;
 
 // figli (watchdog calcio + watchdog tennis) da terminare SEMPRE alla chiusura.
 const children = [];
@@ -91,7 +121,7 @@ function spawnRunner(label, args) {
         TENNIS_LADDER_PUBLISH_SEC: '0.3',
     };
     const child = spawn(PYTHON, args, {
-        cwd: REPO_ROOT,
+        cwd: repoRoot,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -153,6 +183,21 @@ function createWindow() {
 
 // ---------------------------------------------------------------- lifecycle
 app.whenReady().then(async () => {
+    repoRoot = resolveRepoRoot();
+    if (!repoRoot) {
+        dialog.showErrorBox(
+            'AlphaScore Trading — repo non trovato',
+            'Non trovo la cartella del progetto (.venv + frontend/dist).\n\n'
+            + "L'exe va tenuto in desktop\\release\\ dentro il repo (o imposta la "
+            + 'variabile ALPHASCORE_REPO col percorso del repo).\n'
+            + 'Se manca frontend\\dist: esegui "npm run build" nella cartella frontend.',
+        );
+        app.quit();
+        return;
+    }
+    DIST_DIR = path.join(repoRoot, 'frontend', 'dist');
+    PYTHON = path.join(repoRoot, '.venv', 'Scripts', 'python.exe');
+    console.log(`[desktop] repo: ${repoRoot}`);
     try {
         await startStaticServer();
     } catch (err) {
