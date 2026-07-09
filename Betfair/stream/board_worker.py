@@ -30,7 +30,7 @@ _STATE: Dict[str, Any] = {"catalogue_ts": 0.0, "markets": []}
 
 def _today_window_iso() -> "tuple[str, str]":
     now = datetime.now(timezone.utc)
-    start = now - timedelta(hours=2)          # include gli appena iniziati
+    start = now - timedelta(hours=8)          # include i LIVE anche lunghi (start nel passato)
     end = now.replace(hour=23, minute=59, second=59)
     if end <= start:
         end = start + timedelta(hours=24)

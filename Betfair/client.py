@@ -256,12 +256,16 @@ class BetfairClient:
     # =========================
     # CONVENIENCE METHODS
     # =========================
-    def list_events(self, event_type_ids: list[str], days_ahead: int = 1, to_date: Optional[str] = None) -> Any:
+    def list_events(self, event_type_ids: list[str], days_ahead: int = 1, to_date: Optional[str] = None,
+                    from_date: Optional[str] = None) -> Any:
         """
         Ritorna la lista degli eventi (partite) per i prossimi X giorni.
         Se to_date è fornito, usa quello come limite superiore (formato ISO 8601).
+        from_date opzionale: default = ADESSO (storico) — NB gli eventi già INIZIATI
+        (live) hanno marketStartTime nel passato: per includerli passare un from
+        arretrato (es. now-12h), come fa betfair_tennis_odds.
         """
-        now_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        now_utc = from_date or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         if to_date:
             end_utc = to_date
         else:

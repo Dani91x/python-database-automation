@@ -197,7 +197,10 @@ def run_once(c: Any, sb: Any, today: str, name_filter: str = "") -> int:
     now_utc = datetime.now(timezone.utc)
     end_today = now_utc.replace(hour=23, minute=59, second=59, microsecond=0)
     to_date_str = end_today.strftime("%Y-%m-%dT%H:%M:%SZ")
-    raw_evs = c.list_events([TENNIS_EVENT_TYPE_ID], to_date=to_date_str) or []
+    # from ARRETRATO di 12h: i match LIVE hanno marketStartTime nel passato — col
+    # default (from=now) sparivano dalla lista (bug: "non vedo i live").
+    from_str = (now_utc - dt.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    raw_evs = c.list_events([TENNIS_EVENT_TYPE_ID], to_date=to_date_str, from_date=from_str) or []
 
     events = []
     for e in raw_evs:
