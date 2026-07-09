@@ -1107,6 +1107,305 @@ def _best_prices(
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# A4 — FOLLOW-THROUGH dei cash-out MANUALI (greenup / cashout_all / cashout_event)
+# ---------------------------------------------------------------------------
+# Come per le regole di rischio (risk_engine_worker._follow_through), ma per i
+# comandi manuali: dopo un cash-out 'done' si VERIFICA che ogni hedge si sia
+# abbinato; un hedge rimasto unmatched oltre la soglia viene CANCELLATO e
+# ri-accodato come NUOVO greenup (che ricalcola dalle esposizioni reali →
+# self-correcting anche su fill parziali), con retry BOUNDED e alert CRITICAL
+# finale se la posizione resta scoperta. Stato persistito nella colonna
+# ``result`` della riga coda (jsonb ``ft``) → sopravvive ai restart; gli ordini
+# si ri-risolvono per bet_id/customer_order_ref come nel registro FoK.
+_FT_ACTIONS = ("greenup", "cashout_all", "cashout_event")
+_FT_WINDOW_MIN = 15.0          # oltre questa età la riga non viene più seguita
+_FT_FILL_AFTER_SEC = 10.0      # attesa fill prima di intervenire
+_FT_MAX_RETRIES = 2            # re-hedge massimi per gamba (poi alert CRITICAL)
+_FT_POLL_SEC = 5.0             # throttle dello sweep
+
+
+def _ft_age_seconds(processed_at: Any) -> Optional[float]:
+    if not processed_at:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(processed_at).replace("Z", "+00:00"))
+        return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
+    except Exception:  # noqa: BLE001 - timestamp malformato
+        return None
+
+
+def _ft_legs_from_result(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Gambe hedge da verificare per una riga 'done' di cash-out/greenup."""
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    action = str(row.get("action") or "")
+    if action == "greenup":
+        if not result.get("bet_id") and not result.get("customer_order_ref"):
+            return []
+        if result.get("size") is None:
+            return []  # no-op (posizione già piatta): nessun hedge da seguire
+        return [{
+            "market_id": row.get("market_id"),
+            "selection_id": _int(row.get("selection_id")),
+            "handicap": _f(row.get("handicap")) or 0.0,
+            "ref": result.get("customer_order_ref"),
+            "bet_id": result.get("bet_id"),
+        }]
+    legs = result.get("legs")
+    if not isinstance(legs, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        out.append({
+            "market_id": leg.get("market_id"),
+            "selection_id": _int(leg.get("selection_id")),
+            "handicap": _f(leg.get("handicap")) or 0.0,
+            "ref": leg.get("ref"),
+            "bet_id": leg.get("bet_id"),
+        })
+    return out
+
+
+def _ft_leg_key(leg: Dict[str, Any]) -> str:
+    return f"{leg.get('market_id')}:{leg.get('selection_id')}"
+
+
+def _ft_enqueue_rehedge(
+    sb: Any, row: Dict[str, Any], leg: Dict[str, Any], retry_n: int, fraction: float
+) -> Optional[int]:
+    """Accoda il re-hedge (NUOVO greenup) per la gamba. client_ref DETERMINISTICO
+    ``ft<rid>s<sel>r<n>`` → il vincolo UNIQUE della coda garantisce UN SOLO
+    re-hedge anche se lo sweep rivaluta la riga più volte."""
+    payload = {
+        "client_ref": f"ft{row.get('id')}s{leg.get('selection_id')}r{retry_n}",
+        "action": "greenup",
+        "mode": str(row.get("mode") or ""),
+        "market_id": leg.get("market_id"),
+        "selection_id": leg.get("selection_id"),
+        "handicap": leg.get("handicap") or 0,
+        "params": {
+            "fraction": fraction,
+            "ft_parent": row.get("id"),
+            "ft_retry": retry_n,
+        },
+    }
+    try:
+        res = sb.rpc("request_betfair_live_order", {"p": payload}).execute()
+        data = getattr(res, "data", None)
+        return int(data) if data is not None else None
+    except Exception as ex:  # noqa: BLE001 - enqueue KO transitorio: riprova al prossimo giro
+        logger.warning("[live-order] follow-through: enqueue re-hedge KO: %s", str(ex)[:160])
+        return None
+
+
+def _ft_alert(msg: str) -> bool:
+    """True se l'alert è ARRIVATO al DB. fix review CRITICAL: il flag 'alerted'
+    va persistito SOLO a consegna avvenuta — un blip di rete nel momento
+    peggiore perderebbe per sempre l'unico segnale "CHIUDERE A MANO".
+    Il log locale resta comunque (fallback minimo)."""
+    logger.error("[live-order] follow-through CRITICAL: %s", msg)
+    try:
+        from . import db as dbm
+
+        dbm.insert_alert("CRITICAL", "CASHOUT_FT", msg)
+        return True
+    except Exception as ex:  # noqa: BLE001 - riprova al prossimo ciclo
+        logger.warning("[live-order] follow-through: alert KO (%s), riprovo", str(ex)[:120])
+        return False
+
+
+def _check_manual_followthrough(sb: Any, flumine: Any, mode_l: str) -> int:
+    """Sweep del follow-through (A4): una passata sulle righe cash-out recenti.
+
+    Regole money-critical:
+      * righe originate dal RISK ENGINE (params.risk_rule_id) → ESCLUSE: hanno
+        già il loro follow-through (mai due meccanismi sullo stesso hedge);
+      * mai due hedge vivi per gamba: il re-hedge parte SOLO dopo il cancel
+        riuscito dell'hedge stantio;
+      * retry BOUNDED per gamba; esauriti → alert CRITICAL "chiudere a mano"
+        UNA volta (flag persistito).
+    """
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=_FT_WINDOW_MIN)).isoformat()
+    try:
+        rows = (
+            sb.table(_TABLE)
+            .select("id,action,mode,market_id,selection_id,handicap,params,result,processed_at")
+            .eq("status", "done")
+            .eq("mode", mode_l)
+            .in_("action", list(_FT_ACTIONS))
+            .gte("processed_at", cutoff)
+            .order("id")
+            .limit(30)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as ex:  # noqa: BLE001 - lettura KO: riprova al prossimo giro
+        logger.warning("[live-order] follow-through: lettura righe KO: %s", str(ex)[:160])
+        return 0
+
+    handled = 0
+    for row in rows:
+        params = row.get("params") if isinstance(row.get("params"), dict) else {}
+        if params.get("risk_rule_id"):
+            continue  # già seguito dal risk engine
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        ft = dict(result.get("ft") or {})
+        if ft.get("done"):
+            continue
+        age = _ft_age_seconds(row.get("processed_at"))
+        if age is None or age < _FT_FILL_AFTER_SEC:
+            continue  # troppo presto per giudicare il fill
+
+        legs = _ft_legs_from_result(row)
+        if not legs:
+            # nulla da seguire (no-op/piatta): chiudi il follow-through.
+            _ft_mark(sb, row, result, {**ft, "done": True, "note": "nessun hedge da seguire"})
+            handled += 1
+            continue
+
+        leg_state: Dict[str, Any] = dict(ft.get("legs") or {})
+        changed = False
+        all_ok = True
+        # frazione originale del comando: il re-hedge deve riprodurre l'INTENTO
+        # (un cash-out parziale resta parziale), mai chiudere più del richiesto.
+        fraction = _f(params.get("fraction")) or 1.0
+        retry_base = _int(params.get("ft_retry")) or 0
+
+        for leg in legs:
+            key = _ft_leg_key(leg)
+            st = dict(leg_state.get(key) or {})
+            if st.get("ok") or st.get("handed_off") or st.get("alerted"):
+                if not (st.get("ok") or st.get("handed_off")):
+                    all_ok = False
+                continue
+            order = None
+            if leg.get("bet_id"):
+                order = _find_order_by_bet_id(flumine, leg.get("market_id"), str(leg["bet_id"]))
+            if order is None and leg.get("ref"):
+                order = _find_order_by_cust_ref(flumine, leg.get("market_id"), str(leg["ref"]))
+
+            status = None
+            rem = None
+            if order is not None:
+                status = getattr(getattr(order, "status", None), "name", None) or str(
+                    getattr(order, "status", "")
+                )
+                rem = _f(_val(order, "size_remaining")) or 0.0
+            if order is not None and (status == "EXECUTION_COMPLETE" or (rem is not None and rem <= 0)):
+                st["ok"] = True
+                leg_state[key] = st
+                changed = True
+                continue
+            # fix review HIGH: stato AMBIGUO (PENDING/None: ordine appena piazzato,
+            # stream non ancora allineato) → NIENTE re-hedge alla cieca, si aspetta
+            # il prossimo giro (mai rischiare due hedge vivi sulla stessa gamba).
+            if order is not None and status not in ("EXECUTABLE", "EXPIRED", "LAPSED", "VIOLATION", "CANCELLED"):
+                all_ok = False
+                continue
+
+            # hedge NON (interamente) abbinato oltre la soglia → intervieni.
+            all_ok = False
+            total_retry = retry_base + 1
+            if total_retry > _FT_MAX_RETRIES:
+                delivered = _ft_alert(
+                    f"CASH-OUT NON COMPLETATO dopo {retry_base + 1} tentativi: hedge "
+                    f"non abbinato su {leg.get('market_id')} sel {leg.get('selection_id')} "
+                    f"(resta €{rem if rem is not None else '?'} unmatched) — CHIUDERE A MANO."
+                )
+                if delivered:
+                    st["alerted"] = True
+                    leg_state[key] = st
+                    changed = True
+                continue
+            # 1) cancella l'hedge stantio (mai due hedge vivi per gamba).
+            if order is not None and status == "EXECUTABLE" and (rem or 0) > 0:
+                try:
+                    market = _resolve_market(flumine, leg.get("market_id"))
+                    _cancel_or_raise(market, order, None, "follow-through cancel hedge stantio")
+                except Exception as ex:  # noqa: BLE001 - cancel KO: riprova al prossimo giro
+                    logger.warning(
+                        "[live-order] follow-through: cancel hedge stantio KO: %s", str(ex)[:160]
+                    )
+                    continue
+            # 2) ri-accoda il greenup (ricalcola dalle esposizioni REALI correnti).
+            new_req = _ft_enqueue_rehedge(sb, row, leg, total_retry, fraction)
+            if new_req is None:
+                continue  # enqueue KO: riprova senza consumare il tentativo
+            st["handed_off"] = True
+            st["retry_req"] = new_req
+            leg_state[key] = st
+            changed = True
+            logger.info(
+                "[live-order] follow-through: re-hedge accodato (req %s) per %s (retry %d)",
+                new_req, key, total_retry,
+            )
+
+        new_ft = {**ft, "legs": leg_state}
+        if all_ok and all(
+            (leg_state.get(_ft_leg_key(leg)) or {}).get("ok")
+            or (leg_state.get(_ft_leg_key(leg)) or {}).get("handed_off")
+            for leg in legs
+        ):
+            new_ft["done"] = True
+        if changed or new_ft.get("done") != ft.get("done"):
+            _ft_mark(sb, row, result, new_ft)
+        handled += 1
+    return handled
+
+
+def _ft_mark(sb: Any, row: Dict[str, Any], result: Dict[str, Any], ft: Dict[str, Any]) -> None:
+    """Persiste lo stato follow-through nella colonna result della riga coda."""
+    try:
+        sb.table(_TABLE).update({"result": {**result, "ft": ft}}).eq("id", row.get("id")).execute()
+    except Exception as ex:  # noqa: BLE001 - retry al prossimo giro (stato ricostruibile)
+        logger.warning("[live-order] follow-through: persist stato KO: %s", str(ex)[:160])
+
+
+def _cancel_unmatched(
+    market: Any, strategy: Any, selection_id: Optional[int] = None
+) -> "tuple[int, List[Dict[str, Any]]]":
+    """A3 — cancella i NOSTRI ordini unmatched del mercato (o della sola selezione).
+
+    Sequenza pro del cash-out COMPLETO (Bet Angel): prima si annullano i resting,
+    POI si hedgia il matched — altrimenti un resting dimenticato può abbinarsi
+    DOPO l'hedge e riaprire l'esposizione appena chiusa. Cancella solo ordini
+    EXECUTABLE con size_remaining > 0 (gli unici cancellabili). Un fallimento
+    non blocca gli altri cancel. Ritorna (n_cancellati, falliti)."""
+    blotter = _val(market, "blotter")
+    if blotter is None or strategy is None:
+        return 0, []
+    try:
+        orders = list(blotter.strategy_orders(strategy))
+    except Exception:  # noqa: BLE001 - blotter mock/edge: niente da cancellare
+        return 0, []
+    cancelled = 0
+    failed: List[Dict[str, Any]] = []
+    for order in orders:
+        if selection_id is not None and _int(_val(order, "selection_id")) != int(selection_id):
+            continue
+        status = getattr(getattr(order, "status", None), "name", None) or str(
+            getattr(order, "status", "")
+        )
+        rem = _f(_val(order, "size_remaining")) or 0.0
+        if status != "EXECUTABLE" or rem <= 0:
+            continue
+        try:
+            _cancel_or_raise(market, order, None, "cash-out cancel-unmatched")
+            cancelled += 1
+        except Exception as ex:  # noqa: BLE001 - continua con gli altri
+            failed.append({
+                "bet_id": _val(order, "bet_id"),
+                "selection_id": _int(_val(order, "selection_id")),
+                "error": f"cancel unmatched fallito: {str(ex)[:120]}",
+            })
+    return cancelled, failed
+
+
 def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
     """Green-up / cash-out: chiude (totale o frazione) l'esposizione MATCHED di una selezione.
 
@@ -1146,6 +1445,34 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
                 f"greenup: params.target_price non valido ({params.get('target_price')!r}): "
                 "atteso un prezzo in (1.0, 1000]"
             )
+    # A3 (fix review HIGH): la coda accetta richieste da QUALUNQUE origine → la
+    # incompatibilità cancel_unmatched+target_price va rifiutata ANCHE qui, non
+    # solo nel client TS: annullare i resting e poi piazzare un take-profit
+    # resting è una combinazione contraddittoria (mai eseguirla in silenzio).
+    if isinstance(params, dict) and params.get("cancel_unmatched") and params.get("target_price") is not None:
+        raise ValueError(
+            "greenup: params.cancel_unmatched non è compatibile con params.target_price "
+            "(cash-out completo vs take-profit resting)"
+        )
+
+    # A3 (opt-in dal frontend, params.cancel_unmatched): cash-out COMPLETO della
+    # selezione — prima annulla i resting della selezione, POI hedgia il matched.
+    # MAI per la greening column (target_price = take-profit resting intenzionale)
+    # né per i flatten del risk engine (che non passano il flag): cancellerebbero
+    # ordini resting NON legati a questo cash-out.
+    cancel_note = ""
+    cancel_failed: List[Dict[str, Any]] = []
+    if isinstance(params, dict) and params.get("cancel_unmatched"):
+        n_cancelled, cancel_failed = _cancel_unmatched(market, strategy, selection_id)
+        cancel_note = f"; unmatched annullati: {n_cancelled}"
+        if cancel_failed:
+            # fix review CRITICAL: l'hedge del matched procede COMUNQUE (chiudere
+            # l'esposizione vale più di fermarsi), ma l'esito NON può essere un
+            # "done ok" bugiardo: il resting rimasto vivo può riabbinarsi e
+            # riaprire la posizione appena chiusa. Si piazza l'hedge e POI si
+            # alza INCOMPLETO (retry idempotente: greenup su piatta = no-op,
+            # restano solo i cancel da ritentare).
+            cancel_note += f" ({len(cancel_failed)} cancel FALLITI)"
 
     w, l = _read_matched_exposures(flumine, market, strategy, selection_id, handicap)
     best_back, best_lay = _best_prices(market, selection_id, handicap)
@@ -1168,10 +1495,15 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
                 f"greenup NON eseguibile con esposizione aperta (W={w:.2f} L={l:.2f}): "
                 f"{plan.note} — ritentare (mercato sospeso/book vuoto?)"
             )
+        if cancel_failed:
+            raise ValueError(
+                f"cash-out selezione INCOMPLETO: posizione piatta ma {len(cancel_failed)} "
+                f"resting NON annullati ({cancel_failed[0].get('error')}) — ritentare"
+            )
         # niente da chiudere: esito ok con motivo, nessun ordine (mai un place a vuoto).
         result = _result(
             ok=True, action="greenup", mode=mode, request_row=request_row,
-            cust_ref=cust_ref, detail=plan.note,
+            cust_ref=cust_ref, detail=f"{plan.note}{cancel_note}",
         )
         _write_done(sb, rid, result)
         return
@@ -1195,11 +1527,20 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         reduces_liability=True,         # green-up: sotto-minimo .it consentito
     )
     _place_or_raise(market, built.order, "greenup")
+    if cancel_failed:
+        # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
+        # (mai un done bugiardo — stessa semantica di _flatten_market).
+        raise ValueError(
+            f"cash-out selezione INCOMPLETO: hedge {plan.side} {built.size}@{built.price} "
+            f"piazzato ma {len(cancel_failed)} resting NON annullati "
+            f"({cancel_failed[0].get('error')}) — ritentare il cash-out"
+        )
     result = _result(
         ok=True, action="greenup", mode=mode, request_row=request_row,
         cust_ref=cust_ref, order=built.order, price=built.price, size=built.size,
         side=plan.side,
-        detail=f"{plan.note}; atteso vince={plan.expected_if_win} perde={plan.expected_if_lose}",
+        detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+               f"perde={plan.expected_if_lose}{cancel_note}",
     )
     _write_done(sb, rid, result)
 
@@ -1368,12 +1709,17 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
 # ---------------------------------------------------------------------------
 def _flatten_market(
     flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int
-) -> "tuple[list, int, list]":
+) -> "tuple[list, int, list, int]":
     """Flatten (green-up) di ogni selezione del mercato con esposizione ≠ 0. Ritorna
-    (gambe_chiuse, prossimo_indice, gambe_rifiutate). Ogni gamba ha un customer_order_ref
-    UNIVOCO ``awlq<rid>x<idx>`` (idx globale progressivo → nessuna collisione nello specchio
-    anche su più mercati). Riusa la matematica di greenup (esposizioni FRESCHE + best opposto)
-    con ``reduces_liability=True``.
+    (gambe_chiuse, prossimo_indice, gambe_rifiutate, unmatched_annullati). Ogni gamba ha
+    un customer_order_ref UNIVOCO ``awlq<rid>x<idx>`` (idx globale progressivo → nessuna
+    collisione nello specchio anche su più mercati). Riusa la matematica di greenup
+    (esposizioni FRESCHE + best opposto) con ``reduces_liability=True``.
+
+    A3 (cash-out COMPLETO): PRIMA si annullano TUTTI i nostri ordini unmatched del
+    mercato, POI si hedgia il matched — un resting dimenticato si abbinerebbe DOPO
+    l'hedge riaprendo l'esposizione appena chiusa. Un cancel fallito finisce in
+    ``failed`` (cash-out INCOMPLETO, il chiamante alza l'errore e si ritenta).
 
     Fix CRITICAL-1: l'esito di OGNI place è verificato. Un rifiuto NON interrompe il flatten
     (in emergenza chiudere le altre selezioni vale più di fermarsi): la gamba finisce in
@@ -1389,6 +1735,12 @@ def _flatten_market(
     closed: list = []
     failed: list = []
     idx = idx0
+
+    # A3: cancel-first di TUTTI gli unmatched del mercato (sequenza pro).
+    cancelled, cancel_failed = _cancel_unmatched(market, strategy)
+    for cf in cancel_failed:
+        failed.append({"market_id": market_id, "selection_id": cf.get("selection_id"),
+                       "error": cf.get("error")})
     for r in runners:
         sel = _int(_val(r, "selection_id"))
         if sel is None:
@@ -1420,10 +1772,11 @@ def _flatten_market(
             failed.append({"market_id": market_id, "selection_id": sel, "error": str(ex)[:160]})
             idx += 1
             continue
-        closed.append({"market_id": market_id, "selection_id": sel, "side": plan.side,
-                       "price": built.price, "size": built.size})
+        closed.append({"market_id": market_id, "selection_id": sel, "handicap": hcap,
+                       "side": plan.side, "price": built.price, "size": built.size,
+                       "ref": _leg_ref(rid, f"x{idx}")})
         idx += 1
-    return closed, idx, failed
+    return closed, idx, failed, cancelled
 
 
 def _cashout_fraction(request_row: Dict[str, Any]) -> float:
@@ -1440,7 +1793,7 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     rid = request_row["id"]
     market = _resolve_market(flumine, request_row.get("market_id"))
     fraction = _cashout_fraction(request_row)
-    closed, _, failed = _flatten_market(flumine, market, strategy, fraction, rid, 0)
+    closed, _, failed, cancelled = _flatten_market(flumine, market, strategy, fraction, rid, 0)
     if failed:
         # MAI un 'done ok=True' con selezioni rimaste aperte: errore ESPLICITO (il greenup è
         # idempotente: un nuovo cash-out chiude solo ciò che è ancora sbilanciato).
@@ -1451,10 +1804,11 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     result = _result(
         ok=True, action="cashout_all", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
-        detail=f"cash-out MERCATO {_val(market, 'market_id')}: {len(closed)} selezioni chiuse "
-               f"(frazione {fraction:.2f})",
+        detail=f"cash-out MERCATO {_val(market, 'market_id')}: {cancelled} unmatched "
+               f"annullati, {len(closed)} selezioni chiuse (frazione {fraction:.2f})",
     )
     result["legs"] = closed
+    result["cancelled"] = cancelled
     result["scope"] = "market"
     _write_done(sb, rid, result)
 
@@ -1480,12 +1834,14 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
     failed_all: list = []
     idx = 0
     markets_done = 0
+    cancelled_all = 0
     for m in flumine.markets:
         if _val(m, "event_id") != event_id:
             continue
-        legs, idx, failed = _flatten_market(flumine, m, strategy, fraction, rid, idx)
+        legs, idx, failed, cancelled = _flatten_market(flumine, m, strategy, fraction, rid, idx)
         closed.extend(legs)
         failed_all.extend(failed)
+        cancelled_all += cancelled
         markets_done += 1
 
     if failed_all:
@@ -1496,10 +1852,11 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
     result = _result(
         ok=True, action="cashout_event", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
-        detail=f"cash-out EVENTO {event_id}: {len(closed)} selezioni su {markets_done} mercati "
-               f"(frazione {fraction:.2f})",
+        detail=f"cash-out EVENTO {event_id}: {cancelled_all} unmatched annullati, "
+               f"{len(closed)} selezioni su {markets_done} mercati (frazione {fraction:.2f})",
     )
     result["legs"] = closed
+    result["cancelled"] = cancelled_all
     result["scope"] = "event"
     result["event_id"] = event_id
     result["markets"] = markets_done
@@ -1928,7 +2285,13 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
             _journal_done(sb, flumine, r, mode_l)
         handled += 1
 
-    # 3) righe pending della mode OPPOSTA → error (mai lasciate appese all'infinito)
+    # 3) A4 — follow-through dei cash-out MANUALI: verifica fill degli hedge,
+    # re-hedge bounded, alert CRITICAL se resta scoperto. È un'azione di
+    # CHIUSURA: gira anche col kill-switch tirato (come i cancel FoK).
+    if not _throttled("manual_ft", _FT_POLL_SEC):
+        handled += _check_manual_followthrough(sb, flumine, mode_l)
+
+    # 4) righe pending della mode OPPOSTA → error (mai lasciate appese all'infinito)
     handled += _fail_cross_mode(sb, mode_l)
     return handled
 

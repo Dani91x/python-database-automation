@@ -247,3 +247,9 @@ XHEDGE_POLL_SEC: float = float(os.getenv("LIVE_XHEDGE_POLL_SEC", "5.0"))
 # La soglia vive in betfair_live_settings.daily_loss_limit (runtime, NULL = off).
 # ----------------------------------------------------------------------------
 DAILY_STOP_POLL_SEC: float = float(os.getenv("LIVE_DAILY_STOP_POLL_SEC", "5.0"))
+
+# ----------------------------------------------------------------------------
+# A2/A5 — riconciliazione col conto Betfair + heartbeat runner.
+# ----------------------------------------------------------------------------
+RECONCILE_POLL_SEC: float = float(os.getenv("LIVE_RECONCILE_POLL_SEC", "30.0"))
+HEARTBEAT_SEC: float = float(os.getenv("LIVE_HEARTBEAT_SEC", "10.0"))

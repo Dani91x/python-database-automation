@@ -42,6 +42,22 @@ def get_tennis_client() -> Client:
     return sb
 
 
+def _exec_retry(builder) -> object:
+    """Esegue una query PostgREST con retry SOLO su errori transitori di rete
+    (A1 — WinError 10035 sotto picco in-play, come Betfair/stream/db.py).
+    Upsert idempotenti → un retry non può mai duplicare."""
+    from ..net_retry import with_backoff
+
+    return with_backoff(
+        builder.execute,
+        attempts=3,
+        base_delay=0.15,
+        on_retry=lambda exc, i: logger.warning(
+            "[tennis-db] scrittura transitoriamente KO (tentativo %d): %s", i, str(exc)[:120]
+        ),
+    )
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -107,7 +123,7 @@ def upsert_tennis_ladder(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("tennis_live_ladder").upsert(payload, on_conflict="market_id").execute()
+    _exec_retry(sb.table("tennis_live_ladder").upsert(payload, on_conflict="market_id"))
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +152,7 @@ def upsert_tennis_now(
         "points": points,
         "updated_at": _now_iso(),
     }
-    sb.table("tennis_live_now").upsert(row, on_conflict="event_id").execute()
+    _exec_retry(sb.table("tennis_live_now").upsert(row, on_conflict="event_id"))
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +285,9 @@ def upsert_tennis_order(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("tennis_live_orders").upsert(
+    _exec_retry(sb.table("tennis_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
-    ).execute()
+    ))
 
 
 def upsert_tennis_position(row: Dict[str, Any]) -> None:
@@ -282,6 +298,6 @@ def upsert_tennis_position(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("tennis_live_positions").upsert(
+    _exec_retry(sb.table("tennis_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
-    ).execute()
+    ))

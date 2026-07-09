@@ -31,9 +31,12 @@ import { TerminalPositionsRail } from '@/components/live/TerminalPositionsRail';
 import {
     sendCashoutAll, sendCashoutEvent, setKillSwitch,
     fetchLiveRiskState, subscribeLiveRiskState, fetchLivePositionsEvent,
-    type LiveOrderMode, type LiveRiskState,
+    fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
+    type LiveOrderMode, type LiveRiskState, type LiveAccountRow, type LiveHeartbeatRow,
+    type LivePositionRow,
 } from '@/lib/liveOrders';
-import { eventExposure } from '@/lib/eventPnl';
+import { eventExposure, eventMtm } from '@/lib/eventPnl';
+import { heartbeatState, heartbeatAgeSec } from '@/lib/runnerHealth';
 import { countdownToOff, formatMinute, formatScore } from '@/lib/matchClock';
 import {
     loadLayout, saveLayout, setActiveMarket, setCenterView, resolveHotkey,
@@ -156,20 +159,42 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
         return () => { alive = false; unsub(); };
     }, []);
 
-    // E35: esposizione worst-case aggregata dell'EVENTO (specchio posizioni, poll 10s).
-    // Upper bound onesto: Σ selection_exposure delle posizioni aperte dell'evento.
-    const [eventExp, setEventExp] = useState<number | null>(null);
+    // E35/A3: posizioni dell'EVENTO (specchio, poll 10s) — alimentano l'esposizione
+    // aggregata in top bar E il P&L bloccabile mostrato sui bottoni di cash-out.
+    const [eventPositions, setEventPositions] = useState<LivePositionRow[] | null>(null);
     useEffect(() => {
         let alive = true;
         const load = () => {
             fetchLivePositionsEvent(eventId)
-                .then(rows => { if (alive) setEventExp(eventExposure(rows)); })
-                .catch(() => { if (alive) setEventExp(null); });
+                .then(rows => { if (alive) setEventPositions(rows.filter(r => r.mode === mode)); })
+                .catch(() => { if (alive) setEventPositions(null); });
         };
         load();
         const t = setInterval(load, 10_000);
         return () => { alive = false; clearInterval(t); };
-    }, [eventId]);
+    }, [eventId, mode]);
+    const eventExp = useMemo(
+        () => (eventPositions == null ? null : eventExposure(eventPositions)),
+        [eventPositions],
+    );
+
+    // A2: saldo del conto Betfair (reconcile_worker → betfair_live_account, realtime).
+    const [account, setAccount] = useState<LiveAccountRow | null>(null);
+    useEffect(() => {
+        let alive = true;
+        fetchLiveAccount().then(r => { if (alive) setAccount(r); }).catch(() => {});
+        const unsub = subscribeLiveAccount(r => { if (r) setAccount(r); });
+        return () => { alive = false; unsub(); };
+    }, []);
+
+    // A5: heartbeat del runner (chip "runner vivo" in top bar, rosso se stantio).
+    const [heartbeat, setHeartbeat] = useState<LiveHeartbeatRow | null>(null);
+    useEffect(() => {
+        let alive = true;
+        fetchLiveHeartbeat().then(r => { if (alive) setHeartbeat(r); }).catch(() => {});
+        const unsub = subscribeLiveHeartbeat(r => { if (r) setHeartbeat(r); });
+        return () => { alive = false; unsub(); };
+    }, []);
 
     // strumento attivo nella colonna destra (UN tab alla volta), persistito per-evento.
     const [tool, setTool] = useState<ToolKey>(() => loadTool(eventId));
@@ -206,6 +231,45 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
             lay: nL === sels.length && nL > 0 ? laySum * 100 : null,
         };
     }, [market]);
+
+    // A3: P&L BLOCCABILE mostrato sui bottoni di cash-out (stile Betfair): MTM delle
+    // posizioni (specchio) valutate ai prezzi correnti di live_now (stessa matematica
+    // del green-up: eventPnl.positionMtm/lockedPnlAt). unpriced>0 → ⚠ dichiarato.
+    const priceMaps = useMemo(() => {
+        const maps = new Map<string, Map<number, { back: number | null; lay: number | null }>>();
+        for (const m of markets) {
+            const pm = new Map<number, { back: number | null; lay: number | null }>();
+            for (const sel of m.selections ?? []) {
+                pm.set(sel.selection_id, { back: sel.back ?? null, lay: sel.lay ?? null });
+            }
+            maps.set(m.market_id, pm);
+        }
+        return maps;
+    }, [markets]);
+    const marketCashout = useMemo(() => {
+        if (!eventPositions || !marketId) return null;
+        const rows = eventPositions.filter(r => r.market_id === marketId);
+        if (!rows.length) return null;
+        return eventMtm(rows, priceMaps.get(marketId) ?? new Map());
+    }, [eventPositions, marketId, priceMaps]);
+    const eventCashout = useMemo(() => {
+        if (!eventPositions?.length) return null;
+        let mtm = 0; let priced = 0; let unpriced = 0;
+        const byMarket = new Map<string, LivePositionRow[]>();
+        for (const r of eventPositions) {
+            (byMarket.get(r.market_id) ?? byMarket.set(r.market_id, []).get(r.market_id)!).push(r);
+        }
+        for (const [mid, rows] of byMarket) {
+            const res = eventMtm(rows, priceMaps.get(mid) ?? new Map());
+            mtm += res.mtm; priced += res.priced; unpriced += res.unpriced;
+        }
+        return { mtm, priced, unpriced };
+    }, [eventPositions, priceMaps]);
+    const fmtCashout = (r: { mtm: number; priced: number; unpriced: number } | null): string => {
+        if (!r || (r.priced === 0 && r.unpriced === 0)) return '';
+        const sign = r.mtm < 0 ? '−' : '+';
+        return ` (${sign}€${Math.abs(r.mtm).toFixed(2)}${r.unpriced > 0 ? ' ⚠' : ''})`;
+    };
 
     // memoizzati su `market`: live_now si aggiorna ogni pochi secondi → evita una nuova
     // reference di `selections` ad ogni tick (lavoro inutile nei pannelli).
@@ -366,6 +430,32 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                         {riskState.stop_fired ? '🛑 STOP ' : ''}oggi {riskState.total < 0 ? '−' : '+'}€{Math.abs(riskState.total).toFixed(2)}
                     </span>
                 )}
+                {/* A2: saldo disponibile del CONTO Betfair (reconcile_worker, realtime) */}
+                {account?.available != null && (
+                    <span className="text-[10px] font-mono tabular-nums text-white/80"
+                        title={`Saldo disponibile sul conto Betfair (getAccountFunds)${account.exposure != null ? ` · exposure conto €${Math.abs(account.exposure).toFixed(2)}` : ''} — agg. ${account.updated_at ? new Date(account.updated_at).toLocaleTimeString('it-IT') : 'n/d'}`}>
+                        saldo €{account.available.toFixed(2)}
+                    </span>
+                )}
+                {/* A5: heartbeat del runner — mai un finto verde (unknown = nessun chip) */}
+                {heartbeatState(heartbeat?.ts, nowTick) === 'ok' && (
+                    <span className="text-[10px] font-mono tabular-nums text-emerald-400/90"
+                        title={`Runner vivo (heartbeat ${Math.round(heartbeatAgeSec(heartbeat?.ts, nowTick) ?? 0)}s fa, pid ${heartbeat?.pid ?? '?'})${heartbeatState(heartbeat?.watchdog_ts, nowTick, 90) === 'ok' ? ' · watchdog ATTIVO' : ''}`}>
+                        ♥ runner{heartbeatState(heartbeat?.watchdog_ts, nowTick, 90) === 'ok' ? '+wd' : ''}
+                    </span>
+                )}
+                {heartbeatState(heartbeat?.ts, nowTick) === 'unknown' && (
+                    <span className="text-[10px] font-mono tabular-nums text-white/40"
+                        title="Nessun heartbeat leggibile dal runner (mai visto, o clock sballato): stato SCONOSCIUTO — richiede la migrazione betfair_live_account_heartbeat.sql e il runner attivo.">
+                        runner n/d
+                    </span>
+                )}
+                {heartbeatState(heartbeat?.ts, nowTick) === 'stale' && (
+                    <span className="text-[10px] font-mono tabular-nums text-red-300 font-black animate-pulse"
+                        title={`Ultimo heartbeat ${Math.round(heartbeatAgeSec(heartbeat?.ts, nowTick) ?? 0)}s fa: runner GIÙ o appeso — stop/regole armate NON esistono più!`}>
+                        ⚠ RUNNER GIÙ {Math.round(heartbeatAgeSec(heartbeat?.ts, nowTick) ?? 0)}s
+                    </span>
+                )}
                 {/* E35: esposizione worst-case aggregata dell'evento (specchio posizioni) */}
                 {eventExp != null && eventExp > 0 && (
                     <span className="text-[10px] font-mono tabular-nums text-amber-200/90"
@@ -393,20 +483,23 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                         onClick={handleCashoutMarket}
                         disabled={busy || mode === 'off'}
                         className="h-7 bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
-                        title="Green-up di TUTTE le selezioni del SOLO mercato attivo (hotkey G)"
+                        title={"Cash-out COMPLETO del mercato attivo: annulla i resting, poi green-up del matched (hotkey G). "
+                            + "Il P&L mostrato è l'MTM bloccabile ORA (specchio posizioni + prezzi live, agg. ~10s)."
+                            + (marketCashout && marketCashout.unpriced > 0 ? ` ⚠ ${marketCashout.unpriced} posizioni senza prezzo (escluse dal numero).` : '')}
                     >
                         {cashingMarket ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Banknote className="w-3.5 h-3.5 mr-1.5" />}
-                        Cash-out MERCATO
+                        Cash-out MERCATO{fmtCashout(marketCashout)}
                     </Button>
                     <Button
                         size="sm"
                         onClick={handleCashoutEvent}
                         disabled={busy || mode === 'off'}
                         className="h-7 bg-rose-600 hover:bg-rose-500 text-white font-black disabled:opacity-40"
-                        title="Green-up di TUTTI i mercati dell'evento — conferma rafforzata in LIVE (hotkey X)"
+                        title={"Cash-out COMPLETO dell'evento: annulla i resting, poi green-up del matched su TUTTI i mercati — conferma rafforzata in LIVE (hotkey X). "
+                            + (eventCashout && eventCashout.unpriced > 0 ? ` ⚠ ${eventCashout.unpriced} posizioni senza prezzo (escluse dal numero).` : '')}
                     >
                         {cashingEvent ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />}
-                        Cash-out EVENTO
+                        Cash-out EVENTO{fmtCashout(eventCashout)}
                     </Button>
                     <Button
                         size="sm"

@@ -164,17 +164,21 @@ def _order_realized_profit(order: Any, mode_l: str) -> Optional[float]:
     return _simulated_profit(order)
 
 
-def _sweep_settled(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> None:
+def _sweep_settled(
+    sb: Any, flumine: Any, mode_l: str, strategy: Any, settled_markets: Optional[set] = None
+) -> None:
     """Upsert del P&L REALIZZATO per i mercati CHIUSI → betfair_live_settled.
 
-    LIVE  → somma dei cleared orders Betfair già arrivati (poll_market_closure).
+    SOLO PAPER scrive qui (fix review CRITICAL — race con reconcile_worker): in
+    LIVE l'unico scrittore è il reconcile_worker (listClearedOrders dal CONTO,
+    autoritativo e completo anche dopo un restart); il blotter post-restart
+    sarebbe INCOMPLETO e sovrascriverebbe il valore giusto. In LIVE questa
+    funzione si limita a rilevare il GAP cleared (mercato chiuso con nostri
+    ordini e ancora senza settled nel DB) per l'alert.
     PAPER → somma di order.simulated.profit: è il BACKSTOP con retry di
-            LiveTradingStrategy.process_closed_market (fix review CRITICAL: la
-            scrittura alla chiusura è one-shot — un blip DB in quel momento non
-            deve mai perdere per sempre il P&L del mercato). Upsert idempotente
-            sulla stessa chiave (mode, market_id): nessun doppio conteggio.
-    Write-on-change per mercato; un upsert riuscito registra il mercato in
-    _LAST_SETTLED_SIG → da quel momento esce dal calcolo MTM (realized nel DB).
+            LiveTradingStrategy.process_closed_market (la scrittura alla
+            chiusura è one-shot — un blip DB non deve mai perdere il P&L del
+            mercato). Upsert idempotente su (mode, market_id).
     """
     markets = low._val(low._val(flumine, "markets"), "markets") or {}
     for market_id, market in dict(markets).items():
@@ -187,6 +191,20 @@ def _sweep_settled(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> None:
             orders = list(blotter.strategy_orders(strategy))
         except Exception:  # noqa: BLE001 - blotter mock/edge
             continue
+        if mode_l == "live":
+            # LIVE: nessuna scrittura (reconcile_worker è l'unico scrittore, dal
+            # conto REST). Qui solo il rilevamento del GAP per l'alert: chiusi con
+            # nostri ordini e ANCORA senza settled nel DB restano worst-case nell'MTM.
+            if orders and str(market_id) not in (settled_markets or set()):
+                elapsed = low._f(low._val(market, "elapsed_seconds_closed"))
+                if elapsed is not None and elapsed > 120:
+                    _alert_cooldown(
+                        f"cleared_gap:{market_id}",
+                        "WARN",
+                        f"STOP GIORNALIERO: mercato {market_id} chiuso da {int(elapsed)}s "
+                        "senza settled dal conto — P&L stimato worst-case nel frattempo.",
+                    )
+            continue
         total = 0.0
         count = 0
         for order in orders:
@@ -196,18 +214,6 @@ def _sweep_settled(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> None:
             total += profit
             count += 1
         if count == 0:
-            # fix review CRITICAL (gap cleared LIVE): mercato chiuso con nostri ordini
-            # ma senza P&L realizzato disponibile → resta nel calcolo MTM (worst-case)
-            # e, se il ritardo persiste, lo si DICHIARA (mai un buco silenzioso).
-            if orders and mode_l == "live":
-                elapsed = low._f(low._val(market, "elapsed_seconds_closed"))
-                if elapsed is not None and elapsed > 120:
-                    _alert_cooldown(
-                        f"cleared_gap:{market_id}",
-                        "WARN",
-                        f"STOP GIORNALIERO: mercato {market_id} chiuso da {int(elapsed)}s "
-                        "senza cleared orders Betfair — P&L stimato worst-case nel frattempo.",
-                    )
             continue
         sig = (round(total, 2), count)
         if _LAST_SETTLED_SIG.get(market_id) == sig:
@@ -233,21 +239,29 @@ def _sweep_settled(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> None:
 # ---------------------------------------------------------------------------
 # 2) P&L di giornata: realized (DB) + MTM aperto (blotter)
 # ---------------------------------------------------------------------------
-def _read_realized(sb: Any, mode_l: str, start_iso: str, end_iso: str) -> float:
-    """Somma dei profit settled della giornata. Dati corrotti → ValueError (loud)."""
+def _read_realized(sb: Any, mode_l: str, start_iso: str, end_iso: str) -> "Tuple[float, set]":
+    """(Somma profit settled della giornata, set dei market_id già settled nel DB).
+
+    Il set arriva dal DB (non da cache in-memory): vale per QUALUNQUE scrittore
+    (fix review CRITICAL — in LIVE il settled lo scrive il reconcile_worker dal
+    conto REST, su un ALTRO thread: l'esclusione MTM deve vederlo comunque).
+    Dati corrotti → ValueError (loud)."""
     res = (
         sb.table(_SETTLED_TABLE)
-        .select("profit")
+        .select("profit,market_id")
         .eq("mode", mode_l)
         .gte("settled_at", start_iso)
         .lt("settled_at", end_iso)
         .execute()
     )
     rows = getattr(res, "data", None) or []
-    return daily_pnl.realized_pnl(rows)
+    settled_markets = {str(r.get("market_id")) for r in rows if r.get("market_id")}
+    return daily_pnl.realized_pnl(rows), settled_markets
 
 
-def _open_positions(flumine: Any, strategy: Any) -> Tuple[List[daily_pnl.OpenPosition], int]:
+def _open_positions(
+    flumine: Any, strategy: Any, settled_markets: Optional[set] = None
+) -> Tuple[List[daily_pnl.OpenPosition], int]:
     """Snapshot delle posizioni della strategia dai blotter flumine, per l'MTM.
 
     Include: mercati APERTI + mercati CHIUSI il cui realized NON è ancora stato
@@ -260,9 +274,10 @@ def _open_positions(flumine: Any, strategy: Any) -> Tuple[List[daily_pnl.OpenPos
     """
     positions: List[daily_pnl.OpenPosition] = []
     unreadable = 0
+    settled = settled_markets if settled_markets is not None else set(_LAST_SETTLED_SIG)
     markets = low._val(low._val(flumine, "markets"), "markets") or {}
     for market_id, market in dict(markets).items():
-        if low._val(market, "closed") and market_id in _LAST_SETTLED_SIG:
+        if low._val(market, "closed") and str(market_id) in settled:
             continue  # realized già persistito nel DB → mai doppio conteggio
         blotter = low._val(market, "blotter")
         if blotter is None or strategy is None:
@@ -405,10 +420,6 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> None:
     now_local = _now_local()
     day = now_local.date().isoformat()
 
-    # settled sweep per ENTRAMBE le mode: LIVE = cleared orders Betfair; PAPER =
-    # backstop con retry del settle one-shot della strategy (fix review CRITICAL).
-    _sweep_settled(sb, flumine, mode_l, strategy)
-
     limit, invalid = _daily_loss_limit()
     if invalid:
         _warn_once(
@@ -420,7 +431,9 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> None:
 
     start_utc, end_utc = daily_pnl.day_window_utc(now_local)
     try:
-        realized = _read_realized(sb, mode_l, start_utc.isoformat(), end_utc.isoformat())
+        realized, settled_markets = _read_realized(
+            sb, mode_l, start_utc.isoformat(), end_utc.isoformat()
+        )
     except ValueError as ex:
         _warn_once(
             "settled_corrotti",
@@ -434,7 +447,13 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> None:
         logger.warning("[daily-stop] lettura settled KO: %s", str(ex)[:200])
         return
 
-    positions, unreadable = _open_positions(flumine, strategy)
+    # settled sweep DOPO la lettura (il set dal DB guida gap-alert LIVE ed
+    # esclusione MTM): PAPER = backstop con retry; LIVE = solo rilevamento gap.
+    _sweep_settled(sb, flumine, mode_l, strategy, settled_markets)
+    # i mercati appena scritti dallo sweep paper escono SUBITO dall'MTM
+    settled_markets = settled_markets | set(_LAST_SETTLED_SIG)
+
+    positions, unreadable = _open_positions(flumine, strategy, settled_markets)
     try:
         mtm, degraded = daily_pnl.open_mtm(positions)
     except ValueError as ex:

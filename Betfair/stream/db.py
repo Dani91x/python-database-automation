@@ -41,6 +41,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _exec_retry(builder: Any) -> Any:
+    """Esegue una query PostgREST con retry SOLO su errori transitori di rete
+    (A1 — WinError 10035 sotto picco in-play). Le scritture qui sono upsert
+    IDEMPOTENTI → un retry non può mai duplicare. L'ultima eccezione risale
+    al chiamante (le scritture specchio restano best-effort con log)."""
+    from .net_retry import with_backoff
+
+    return with_backoff(
+        builder.execute,
+        attempts=3,
+        base_delay=0.15,
+        on_retry=lambda exc, i: logger.warning(
+            "[db] scrittura transitoriamente KO (tentativo %d): %s", i, str(exc)[:120]
+        ),
+    )
+
+
 # ----------------------------------------------------------------------------
 # live_follow
 # ----------------------------------------------------------------------------
@@ -187,7 +204,7 @@ def update_live_now(
         "state": state,
         "updated_at": _now_iso(),
     }
-    sb.table("live_now").upsert(row, on_conflict="event_id").execute()
+    _exec_retry(sb.table("live_now").upsert(row, on_conflict="event_id"))
 
 
 # ----------------------------------------------------------------------------
@@ -310,7 +327,7 @@ def upsert_live_signals(
         "model_meta": model_meta,
         "updated_at": _now_iso(),
     }
-    sb.table("live_signals").upsert(row, on_conflict="event_id").execute()
+    _exec_retry(sb.table("live_signals").upsert(row, on_conflict="event_id"))
 
 
 # ----------------------------------------------------------------------------
@@ -330,9 +347,9 @@ def upsert_live_ladder(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("live_ladder").upsert(
+    _exec_retry(sb.table("live_ladder").upsert(
         payload, on_conflict="event_id,market_id"
-    ).execute()
+    ))
 
 
 # ----------------------------------------------------------------------------
@@ -428,9 +445,9 @@ def upsert_live_order(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("betfair_live_orders").upsert(
+    _exec_retry(sb.table("betfair_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
-    ).execute()
+    ))
 
 
 def find_live_order_ref(mode: str, bet_id: str) -> Optional[str]:
@@ -471,9 +488,9 @@ def upsert_live_position(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("betfair_live_positions").upsert(
+    _exec_retry(sb.table("betfair_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
-    ).execute()
+    ))
 
 
 # ----------------------------------------------------------------------------
@@ -489,9 +506,9 @@ def upsert_live_settled(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
-    sb.table("betfair_live_settled").upsert(
+    _exec_retry(sb.table("betfair_live_settled").upsert(
         payload, on_conflict="mode,market_id"
-    ).execute()
+    ))
 
 
 def upsert_live_risk_state(row: Dict[str, Any]) -> None:
@@ -504,7 +521,7 @@ def upsert_live_risk_state(row: Dict[str, Any]) -> None:
     payload = dict(row)
     payload["id"] = 1
     payload["updated_at"] = _now_iso()
-    sb.table("betfair_live_risk_state").upsert(payload, on_conflict="id").execute()
+    _exec_retry(sb.table("betfair_live_risk_state").upsert(payload, on_conflict="id"))
 
 
 def insert_live_journal(row: Dict[str, Any]) -> None:
@@ -515,3 +532,90 @@ def insert_live_journal(row: Dict[str, Any]) -> None:
     """
     sb = get_supabase_client()
     sb.table("betfair_live_journal").insert(dict(row)).execute()
+
+
+# ----------------------------------------------------------------------------
+# A2/A5/A6 — conto Betfair, heartbeat, pulizia specchio al riavvio
+# ----------------------------------------------------------------------------
+def upsert_live_account(available: Optional[float], exposure: Optional[float]) -> None:
+    """Saldo/exposure del CONTO Betfair (fonte REST getAccountFunds) →
+    ``betfair_live_account`` (singleton id=1, realtime → top bar)."""
+    sb = get_supabase_client()
+    _exec_retry(sb.table("betfair_live_account").upsert(
+        {"id": 1, "available": available, "exposure": exposure, "updated_at": _now_iso()},
+        on_conflict="id",
+    ))
+
+
+def upsert_live_heartbeat(*, runner: bool, pid: int, mode: Optional[str] = None) -> None:
+    """Heartbeat del runner (``runner=True``: ts/pid/mode) o del watchdog
+    (``runner=False``: watchdog_ts/watchdog_pid) → singleton id=1."""
+    sb = get_supabase_client()
+    now = _now_iso()
+    if runner:
+        payload = {"id": 1, "ts": now, "pid": pid, "mode": mode, "updated_at": now}
+    else:
+        payload = {"id": 1, "watchdog_ts": now, "watchdog_pid": pid, "updated_at": now}
+    _exec_retry(sb.table("betfair_live_heartbeat").upsert(payload, on_conflict="id"))
+
+
+def cleanup_paper_mirror() -> "tuple[int, int]":
+    """A6 — pulizia dello specchio PAPER stantio al RIAVVIO del runner.
+
+    Dopo un restart il blotter PAPER è vuoto: le righe paper di sessioni
+    precedenti sono orfane (ordini/posizioni che non esistono più). Si
+    eliminano SOLO le righe ``mode='paper'`` — le righe LIVE non vengono
+    MAI toccate (specchiano denaro reale). Ritorna (n_ordini, n_posizioni).
+    """
+    sb = get_supabase_client()
+    res_o = sb.table("betfair_live_orders").delete().eq("mode", "paper").execute()
+    res_p = sb.table("betfair_live_positions").delete().eq("mode", "paper").execute()
+    n_o = len(getattr(res_o, "data", None) or [])
+    n_p = len(getattr(res_p, "data", None) or [])
+    return n_o, n_p
+
+
+def fail_stale_pending_requests(max_age_sec: float = 120.0) -> int:
+    """A6 — al RIAVVIO marca ERROR le richieste orfane più vecchie di
+    ``max_age_sec`` (entrambe le mode): sia le ``pending`` mai claimate, sia le
+    ``processing`` interrotte a metà da un crash (fix review CRITICAL — senza
+    questo restano bloccate per sempre, invisibili a ogni recupero).
+
+    MONEY-CRITICAL: un comando accodato PRIMA di un crash e processato minuti
+    dopo eseguirebbe a un mercato completamente diverso — mai eseguire comandi
+    stantii. Le ``processing`` interrotte hanno esito INCERTO (parte delle
+    operazioni può essere arrivata a Betfair): il messaggio lo DICHIARA e la
+    riconciliazione col conto (reconcile_worker) mostra la verità.
+    Eccezione: ``place_submin`` in processing ha la sua macchina a stati
+    ripristinabile (submin_state) e NON va toccata.
+    """
+    from datetime import timedelta
+
+    sb = get_supabase_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_sec)).isoformat()
+    res = (
+        sb.table("betfair_live_order_requests")
+        .update({
+            "status": "error",
+            "error": "richiesta STANTIA al riavvio del runner: non eseguita (ripetere se serve)",
+            "processed_at": _now_iso(),
+        })
+        .eq("status", "pending")
+        .lt("requested_at", cutoff)
+        .execute()
+    )
+    n = len(getattr(res, "data", None) or [])
+    res2 = (
+        sb.table("betfair_live_order_requests")
+        .update({
+            "status": "error",
+            "error": "richiesta INTERROTTA a metà da un riavvio del runner: esito INCERTO — "
+                     "VERIFICARE ordini/posizioni sul conto (riconciliazione in corso) prima di ripetere",
+            "processed_at": _now_iso(),
+        })
+        .eq("status", "processing")
+        .neq("action", "place_submin")
+        .lt("requested_at", cutoff)
+        .execute()
+    )
+    return n + len(getattr(res2, "data", None) or [])

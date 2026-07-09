@@ -59,7 +59,9 @@ from .config_stream import (
     ORDER_STREAM_CONFLATE_MS,
     PAPER_SIMULATED_LATENCY_MS,
     DAILY_STOP_POLL_SEC,
+    HEARTBEAT_SEC,
     RAW_RECORDING,
+    RECONCILE_POLL_SEC,
     RISK_ENGINE_POLL_SEC,
     SAFE_MARKET_THRESHOLD,
     SCORE_POLL_SEC,
@@ -72,6 +74,7 @@ from .config_stream import (
     XHEDGE_POLL_SEC,
 )
 from .daily_stop_worker import daily_stop_worker
+from .reconcile_worker import reconcile_worker
 from .engine.live_trading_strategy import LiveTradingStrategy
 from .live_order_worker import live_order_worker
 from .risk_engine_worker import risk_engine_worker
@@ -704,6 +707,18 @@ def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
     return None
 
 
+def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
+    """A5 — battito del runner → betfair_live_heartbeat (singleton, realtime).
+
+    La UI mostra "runner vivo Xs fa" in top bar; oltre soglia il chip diventa
+    rosso (runner giù/appeso). Best-effort: un DB momentaneamente KO non deve
+    mai far cadere il runner (il prossimo battito riallinea)."""
+    try:
+        db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
+    except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
+        logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
+
+
 def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
     """Spegne il runner quando non serve più (mai più 'martellare Betfair' per giorni).
 
@@ -979,6 +994,30 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     # I restart F3 ricostruiscono il framework ma non ri-annunciano (niente spam alert).
     _announce_order_mode(LIVE_ORDER_MODE, LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"))
 
+    # A6 — RIPRESA dopo crash/riavvio (una volta per processo, PRIMA del framework):
+    #   * specchio PAPER stantio → pulito (il blotter paper riparte vuoto: le righe
+    #     di sessioni precedenti sono orfane). Le righe LIVE non si toccano MAI.
+    #   * richieste ancora 'pending' più vecchie di 120s → ERROR esplicito: un
+    #     comando accodato prima di un crash NON va eseguito minuti dopo a un
+    #     mercato completamente diverso (money-critical, mai comandi stantii).
+    # La ricostruzione LIVE dal conto (listCurrentOrders) è del reconcile_worker.
+    if LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"):
+        try:
+            n_ord, n_pos = db.cleanup_paper_mirror()
+            n_stale = db.fail_stale_pending_requests(120.0)
+            if n_ord or n_pos or n_stale:
+                logger.info(
+                    "[runner] ripresa: specchio paper pulito (%d ordini, %d posizioni), "
+                    "%d richieste stantie marcate error", n_ord, n_pos, n_stale,
+                )
+                db.insert_alert(
+                    "INFO", "RUNNER_RESUME",
+                    f"riavvio runner: specchio paper pulito ({n_ord} ordini, {n_pos} "
+                    f"posizioni), {n_stale} richieste stantie scartate",
+                )
+        except Exception as ex:  # noqa: BLE001 - la ripresa non blocca l'avvio
+            logger.warning("[runner] pulizia ripresa KO: %s", str(ex)[:200])
+
     try:
         while not interrupted:
             session.restart_requested.clear()
@@ -1081,6 +1120,14 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     framework, function=daily_stop_worker, interval=DAILY_STOP_POLL_SEC or 5.0,
                     func_kwargs={"session": session, "strategy": live_strategy},
                     name="daily_stop_worker"))
+                # A2/A6 — riconciliazione col CONTO Betfair (verità ultima):
+                # saldo in betfair_live_account; in LIVE: ordini esterni visibili,
+                # divergenze specchio↔conto corrette+alert, settled da REST,
+                # report di ripresa + verifica regole armate al primo giro.
+                framework.add_worker(BackgroundWorker(
+                    framework, function=reconcile_worker, interval=RECONCILE_POLL_SEC or 30.0,
+                    func_kwargs={"session": session, "strategy": live_strategy},
+                    name="reconcile_worker"))
             framework.add_worker(BackgroundWorker(
                 framework, function=score_worker, interval=SCORE_POLL_SEC,
                 func_kwargs={"session": session}, name="score_worker"))
@@ -1094,6 +1141,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,
                 func_kwargs={"session": session}, name="finalize_worker"))
+            # A5 — heartbeat del runner (SEMPRE, anche in OFF): la top bar mostra
+            # "runner vivo Xs fa" e il watchdog/l'utente vedono subito un runner giù.
+            framework.add_worker(BackgroundWorker(
+                framework, function=heartbeat_worker, interval=HEARTBEAT_SEC or 10.0,
+                func_kwargs={"session": session}, name="heartbeat_worker"))
             # auto-spegnimento (fix 2026-07-08): controlla ogni minuto vita massima
             # e inattività — mai più runner accesi per giorni a martellare Betfair.
             framework.add_worker(BackgroundWorker(

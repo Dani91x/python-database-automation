@@ -385,3 +385,34 @@ describe('fetchLiveAudit', () => {
         await expect(fetchLiveAudit()).rejects.toThrow('audit down');
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// A3 — buildGreenupParams: guardie money-critical (fix review MEDIUM)
+// ---------------------------------------------------------------------------
+import { buildGreenupParams } from './liveOrders';
+
+describe('buildGreenupParams (A3)', () => {
+    it('fraction <= 0 → errore', () => {
+        expect(() => buildGreenupParams(0)).toThrow(/fraction/);
+        expect(() => buildGreenupParams(-0.5)).toThrow(/fraction/);
+    });
+    it('targetPrice fuori (1, 1000] → errore', () => {
+        expect(() => buildGreenupParams(undefined, 1)).toThrow(/targetPrice/);
+        expect(() => buildGreenupParams(undefined, 1001)).toThrow(/targetPrice/);
+        expect(() => buildGreenupParams(undefined, NaN)).toThrow(/targetPrice/);
+    });
+    it('cancelUnmatched + targetPrice insieme → errore (mai combinazione contraddittoria)', () => {
+        expect(() => buildGreenupParams(undefined, 2.5, true)).toThrow(/cancelUnmatched/);
+    });
+    it('cancelUnmatched da solo → params.cancel_unmatched true', () => {
+        expect(buildGreenupParams(undefined, undefined, true)).toEqual({ cancel_unmatched: true });
+    });
+    it('fraction parziale + cancelUnmatched: consentito dalla lib (la POLICY 100%-only è nel call-site)', () => {
+        expect(buildGreenupParams(0.5, undefined, true)).toEqual({ fraction: 0.5, cancel_unmatched: true });
+    });
+    it('default: nessun param', () => {
+        expect(buildGreenupParams()).toEqual({});
+        expect(buildGreenupParams(1)).toEqual({});
+    });
+});

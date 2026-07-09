@@ -373,7 +373,10 @@ def test_unreadable_positions_degrade_and_alert_critical(env):
 # ---------------------------------------------------------------------------
 # Sweep LIVE dei cleared orders → settled (fonte autoritativa Betfair)
 # ---------------------------------------------------------------------------
-def test_live_sweep_writes_settled_from_cleared(env):
+def test_live_mode_never_writes_settled_reconcile_owns_it(env):
+    # fix review CRITICAL (race settled): in LIVE il settled lo scrive SOLO il
+    # reconcile_worker (conto REST, completo anche post-restart) — il blotter
+    # post-restart sarebbe incompleto e sovrascriverebbe il valore giusto.
     env["mode"] = "LIVE"
     lookup = ("1.99", 222, 0.0)
     m = _market(
@@ -382,15 +385,27 @@ def test_live_sweep_writes_settled_from_cleared(env):
     )
     sb = _FakeSb([])
     dsw._process_once(sb, _flumine(m), _STRATEGY)
-    assert len(env["settled_writes"]) == 1
-    row = env["settled_writes"][0]
-    assert row["mode"] == "live"
-    assert row["source"] == "cleared"
-    assert row["profit"] == pytest.approx(-8.5)
-    assert row["orders"] == 2
-    # write-on-change: stesso stato → nessuna seconda scrittura
+    assert env["settled_writes"] == []
+
+
+def test_settled_from_db_excludes_closed_market_from_mtm(env):
+    # il set dei settled arriva dal DB: una riga scritta da QUALUNQUE scrittore
+    # (es. reconcile_worker su altro thread) esclude il mercato chiuso dall'MTM.
+    env["mode"] = "LIVE"
+    lookup = ("1.99", 222, 0.0)
+    exp = {
+        "matched_profit_if_win": -80.0,
+        "matched_profit_if_lose": -60.0,
+        "worst_possible_profit_on_win": -80.0,
+        "worst_possible_profit_on_lose": -60.0,
+    }
+    m = _market("1.99", closed=True, orders=[_order(lookup)], exposures={lookup: exp},
+                best_back=None, best_lay=None)
+    sb = _FakeSb([{"mode": "live", "profit": -40.0, "market_id": "1.99"}])
     dsw._process_once(sb, _flumine(m), _STRATEGY)
-    assert len(env["settled_writes"]) == 1
+    state = env["risk_states"][-1]
+    assert state["open_mtm"] == pytest.approx(0.0)      # escluso: realized nel DB
+    assert state["realized"] == pytest.approx(-40.0)
 
 
 def test_live_sweep_skips_open_markets_and_uncleared(env):

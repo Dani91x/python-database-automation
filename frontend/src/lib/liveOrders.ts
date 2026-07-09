@@ -68,6 +68,8 @@ export interface LiveOrderResult {
 // ---------- Specchio ordini (mirror betfair_live_orders, INTERFACES.md §1.2) ----------
 export interface LiveOrderRow {
     id: number;
+    /** A2: origine della riga — 'runner' (nostra) o 'account' (trovata sul conto, es. dal sito). */
+    source?: 'runner' | 'account' | null;
     bet_id: string | null;
     client_order_ref: string | null;
     request_id: number | null;
@@ -167,14 +169,25 @@ export async function sendLiveOrderCommand(cmd: LiveOrderCommand): Promise<LiveO
 //   omettendo params, il worker farebbe un green-up TOTALE inatteso).
 //   target_price malformato = errore del chiamante, MAI inviato (il worker chiuderebbe
 //   al best: prezzo diverso da quello cliccato → ordine inatteso).
-export function buildGreenupParams(fraction?: number, targetPrice?: number): Record<string, number> {
+export function buildGreenupParams(
+    fraction?: number,
+    targetPrice?: number,
+    cancelUnmatched?: boolean,
+): Record<string, number | boolean> {
     if (fraction != null && fraction <= 0) throw new Error('greenup: fraction deve essere > 0');
     if (targetPrice != null && !(Number.isFinite(targetPrice) && targetPrice > 1 && targetPrice <= 1000)) {
         throw new Error('greenup: targetPrice deve essere un prezzo in (1, 1000]');
     }
-    const params: Record<string, number> = {};
+    // A3: cancel_unmatched è il CASH-OUT COMPLETO (annulla i resting della selezione
+    // prima dell'hedge) — incompatibile con la greening column (targetPrice = take-profit
+    // resting intenzionale: annullare i resting sarebbe l'opposto dell'intento).
+    if (cancelUnmatched && targetPrice != null) {
+        throw new Error('greenup: cancelUnmatched non è compatibile con targetPrice');
+    }
+    const params: Record<string, number | boolean> = {};
     if (fraction != null && fraction > 0 && fraction < 1) params.fraction = Math.round(fraction * 1000) / 1000;
     if (targetPrice != null) params.target_price = targetPrice;
+    if (cancelUnmatched) params.cancel_unmatched = true;
     return params;
 }
 
@@ -185,8 +198,9 @@ export async function sendGreenup(args: {
     handicap?: number;
     fraction?: number;             // (0,1] — default 1.0 (green-up totale)
     targetPrice?: number;          // "greening column": chiudi A QUEL prezzo (resting), non al best
+    cancelUnmatched?: boolean;     // A3: cash-out COMPLETO — annulla i resting della selezione prima dell'hedge
 }): Promise<LiveOrderResult> {
-    const params = buildGreenupParams(args.fraction, args.targetPrice);
+    const params = buildGreenupParams(args.fraction, args.targetPrice, args.cancelUnmatched);
     return sendLiveOrderCommand({
         action: 'greenup',
         mode: args.mode,
@@ -773,4 +787,79 @@ export async function setLiveJournalNote(
     });
     if (error) throw new Error(error.message);
     return (data as LiveJournalRow | null) ?? null;
+}
+
+
+// ============================================================================
+// A2/A5 — CONTO Betfair (saldo) + HEARTBEAT runner/watchdog (top bar)
+// ============================================================================
+export interface LiveAccountRow {
+    id: number;
+    available: number | null;   // availableToBetBalance (EUR)
+    exposure: number | null;    // exposure del conto (EUR)
+    updated_at: string;
+}
+
+export async function fetchLiveAccount(): Promise<LiveAccountRow | null> {
+    const { data, error } = await supabase
+        .from('betfair_live_account')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as LiveAccountRow | null) ?? null;
+}
+
+export function subscribeLiveAccount(cb: (row: LiveAccountRow | null) => void): () => void {
+    const channel = supabase
+        .channel('betfair_live_account:1')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'betfair_live_account', filter: 'id=eq.1' },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as LiveAccountRow | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+}
+
+export interface LiveHeartbeatRow {
+    id: number;
+    ts: string | null;             // ultimo battito del RUNNER
+    pid: number | string | null;   // BIGINT: PostgREST può serializzarlo come stringa
+    mode: string | null;
+    watchdog_ts: string | null;    // ultimo battito del WATCHDOG
+    watchdog_pid: number | string | null;
+    updated_at: string;
+}
+
+export async function fetchLiveHeartbeat(): Promise<LiveHeartbeatRow | null> {
+    const { data, error } = await supabase
+        .from('betfair_live_heartbeat')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as LiveHeartbeatRow | null) ?? null;
+}
+
+export function subscribeLiveHeartbeat(cb: (row: LiveHeartbeatRow | null) => void): () => void {
+    const channel = supabase
+        .channel('betfair_live_heartbeat:1')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'betfair_live_heartbeat', filter: 'id=eq.1' },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as LiveHeartbeatRow | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
 }

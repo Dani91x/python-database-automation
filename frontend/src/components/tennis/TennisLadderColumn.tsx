@@ -58,10 +58,10 @@ export const TENNIS_ORDER_API: LadderOrderApi = {
     send: (cmd) => sendTennisOrderCommand(cmd),
     fetchOrders: (marketId, mode) => fetchTennisOrders(marketId, mode),
     fetchPositions: (marketId, mode) => fetchTennisPositions(marketId, mode),
-    greenup: async ({ marketId, selectionId, mode, handicap, fraction, targetPrice }) => {
+    greenup: async ({ marketId, selectionId, mode, handicap, fraction, targetPrice, cancelUnmatched }) => {
         // validazione CONDIVISA col calcio (liveOrders.buildGreenupParams): una sola fonte
-        // di verità per fraction/target_price, mai due copie che possono disallinearsi.
-        const params = buildGreenupParams(fraction, targetPrice);
+        // di verità per fraction/target_price/cancel_unmatched, mai copie disallineate.
+        const params = buildGreenupParams(fraction, targetPrice, cancelUnmatched);
         return sendTennisOrderCommand({
             action: 'greenup',
             mode,

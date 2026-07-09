@@ -80,6 +80,9 @@ export interface LadderGreenupArgs {
     // "greening column" (Bet Angel): chiudi la posizione A QUESTO prezzo assoluto invece
     // che al best opposto — l'ordine può restare sul book come take-profit resting.
     targetPrice?: number;
+    // A3 (cash-out COMPLETO): annulla i resting della selezione PRIMA dell'hedge.
+    // Mai insieme a targetPrice (la greening column è un take-profit resting).
+    cancelUnmatched?: boolean;
 }
 // argomenti per armare una regola del risk engine (mirror di requestRiskRule).
 export interface LadderArmRuleArgs {
@@ -749,7 +752,9 @@ const SelectionLadder = memo(function SelectionLadder({
                                 disabled={!canGreen}
                                 onClick={() => onGreenup(fraction, selId, selName)}
                                 title={canGreen
-                                    ? `Cash-out ${pct < 100 ? `${pct}% ` : ''}al miglior prezzo (hedge dalle esposizioni reali)`
+                                    ? (pct < 100
+                                        ? `Cash-out ${pct}% al miglior prezzo (hedge dalle esposizioni reali). I resting NON vengono toccati.`
+                                        : 'Cash-out COMPLETO al miglior prezzo: annulla i resting della selezione, poi hedge dalle esposizioni reali (A3).')
                                     : 'Cash-out: richiede una posizione aperta e mercato operabile'}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-purple-400/40 bg-purple-500/15 text-[10px] font-bold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
@@ -1733,7 +1738,8 @@ export function LadderView({
                             break;
                         }
                         last = await orderApi.greenup({
-                            marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode, handicap, fraction: 1,
+                            marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode, handicap,
+                            fraction: 1, cancelUnmatched: true,  // A3: cash-out COMPLETO
                         });
                     } else {
                         const ids = ordersRef.current
@@ -1801,8 +1807,12 @@ export function LadderView({
             const greenup = orderApi.greenup;
             // greenup_at = "greening column" (B13): chiusura TOTALE al prezzo del livello
             // cliccato (il runner valida target_price e piazza l'hedge a QUEL tick).
+            // A3 (fix review HIGH): il cash-out è COMPLETO (annulla i resting prima
+            // dell'hedge) SOLO al 100% — un cash-out PARZIALE non deve mai cancellare
+            // gli altri resting della selezione come effetto collaterale non dichiarato.
+            // La greening column resta un take-profit resting (mai cancel).
             const args = it.kind === 'greenup'
-                ? { fraction: it.fraction }
+                ? { fraction: it.fraction, ...(it.fraction >= 1 ? { cancelUnmatched: true } : {}) }
                 : { fraction: 1, targetPrice: it.price };
             submit(() => greenup({
                 marketId, selectionId: it.selectionId, mode: mode as LiveOrderMode,
