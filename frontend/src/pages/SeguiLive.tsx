@@ -24,26 +24,38 @@ import { XHedgePanel } from '@/components/live/XHedgePanel';
 import { ScalperPanel } from '@/components/live/ScalperPanel';
 import { HabitatCard } from '@/components/live/HabitatCard';
 import { LadderView } from '@/components/live/LadderView';
+import { GridView } from '@/components/live/GridView';
+import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
+import { DepthPanel } from '@/components/live/DepthPanel';
 import { TerminalPositionsRail } from '@/components/live/TerminalPositionsRail';
-import { sendCashoutAll, sendCashoutEvent, setKillSwitch, type LiveOrderMode } from '@/lib/liveOrders';
 import {
-    loadLayout, saveLayout, setActiveMarket, resolveHotkey,
+    sendCashoutAll, sendCashoutEvent, setKillSwitch,
+    fetchLiveRiskState, subscribeLiveRiskState, fetchLivePositionsEvent,
+    type LiveOrderMode, type LiveRiskState,
+} from '@/lib/liveOrders';
+import { eventExposure } from '@/lib/eventPnl';
+import { countdownToOff, formatMinute, formatScore } from '@/lib/matchClock';
+import {
+    loadLayout, saveLayout, setActiveMarket, setCenterView, resolveHotkey,
     type WorkspaceLayout,
 } from '@/lib/workspace';
 import {
     fetchLiveFollows, fetchLiveNow, subscribeLiveNow,
-    type LiveFollow, type LiveNowRow, type LiveNowMarket,
+    fetchLiveSignals, subscribeLiveSignals,
+    type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
 
 // Strumenti della colonna DESTRA del terminal (UN tab attivo alla volta, stile Bet Angel:
 // One-click | Dutching | Bookmaking | ... come tab, mai tutti i pannelli impilati).
-type ToolKey = 'trading' | 'dutching' | 'risk' | 'xhedge' | 'scalper';
+type ToolKey = 'trading' | 'dutching' | 'risk' | 'xhedge' | 'scalper' | 'chart' | 'depth';
 const TOOL_TABS: { key: ToolKey; label: string }[] = [
     { key: 'trading', label: 'Trading' },
     { key: 'dutching', label: 'Dutching' },
     { key: 'risk', label: 'Risk' },
     { key: 'xhedge', label: 'X-Hedge' },
     { key: 'scalper', label: 'Scalper' },
+    { key: 'chart', label: 'Chart' },
+    { key: 'depth', label: 'Depth' },
 ];
 const toolStorageKey = (eventId: string) => `live.terminal.tool.${eventId}`;
 function loadTool(eventId: string): ToolKey {
@@ -76,9 +88,17 @@ function TerminalModeBadge({ mode }: { mode: PanelMode }) {
 // e "Cash-out EVENTO" (tutti i mercati dell'evento → sendCashoutEvent, conferma rafforzata in
 // LIVE). Scorciatoie da tastiera (attive solo in PAPER/LIVE, disattivate mentre si digita).
 // La modalità (OFF/PAPER/LIVE) arriva dal runner via live_now.state.order_mode.
-function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt }: {
+function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt, clock }: {
     markets: LiveNowMarket[]; orderMode: string; eventName: string; eventId: string;
     updatedAt: string | null;
+    // D32: dati orologio/score dalla pagina (live_now + live_follow — già nel DB).
+    clock?: {
+        openDate: string | null;
+        minute: number | null;
+        scoreHome: number | null;
+        scoreAway: number | null;
+        inplay: boolean | null;
+    };
 }) {
     const defaultId = useMemo(() => {
         const mo = markets.find(m => m.market_type === 'MATCH_ODDS' || /match odds/i.test(m.market_name ?? ''));
@@ -116,6 +136,40 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
     }, [marketId, layout.activeMarketId]);
 
     const selectMarket = useCallback((id: string) => setLayout(l => setActiveMarket(l, id)), []);
+
+    // E36: segnali del motore per l'evento (fetch + realtime) → chip Kelly nel ladder.
+    const [signalsRow, setSignalsRow] = useState<LiveSignalsRow | null>(null);
+    useEffect(() => {
+        let alive = true;
+        setSignalsRow(null);
+        fetchLiveSignals(eventId).then(r => { if (alive) setSignalsRow(r); }).catch(() => {});
+        const unsub = subscribeLiveSignals(eventId, r => { if (r) setSignalsRow(r); });
+        return () => { alive = false; unsub(); };
+    }, [eventId]);
+
+    // E34: stato dello stop giornaliero (P&L di giornata dal runner, realtime → top bar).
+    const [riskState, setRiskState] = useState<LiveRiskState | null>(null);
+    useEffect(() => {
+        let alive = true;
+        fetchLiveRiskState().then(r => { if (alive) setRiskState(r); }).catch(() => {});
+        const unsub = subscribeLiveRiskState(r => { if (r) setRiskState(r); });
+        return () => { alive = false; unsub(); };
+    }, []);
+
+    // E35: esposizione worst-case aggregata dell'EVENTO (specchio posizioni, poll 10s).
+    // Upper bound onesto: Σ selection_exposure delle posizioni aperte dell'evento.
+    const [eventExp, setEventExp] = useState<number | null>(null);
+    useEffect(() => {
+        let alive = true;
+        const load = () => {
+            fetchLivePositionsEvent(eventId)
+                .then(rows => { if (alive) setEventExp(eventExposure(rows)); })
+                .catch(() => { if (alive) setEventExp(null); });
+        };
+        load();
+        const t = setInterval(load, 10_000);
+        return () => { alive = false; clearInterval(t); };
+    }, [eventId]);
 
     // strumento attivo nella colonna destra (UN tab alla volta), persistito per-evento.
     const [tool, setTool] = useState<ToolKey>(() => loadTool(eventId));
@@ -285,6 +339,40 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                 freschezza dati, azioni d'emergenza SEMPRE visibili (cash-out + kill). */}
             <div className="sticky top-16 z-40 rounded-xl border border-white/10 bg-black/80 backdrop-blur-xl px-3 py-2 flex items-center gap-3 flex-wrap">
                 <TerminalModeBadge mode={mode} />
+                {/* D32: minuto+score in-play, countdown all'off pre-match (dati già nel DB) */}
+                {clock && (clock.inplay
+                    ? (formatMinute(clock.minute) != null || formatScore(clock.scoreHome, clock.scoreAway) != null) && (
+                        <span className="text-[10px] font-mono tabular-nums text-emerald-300 font-black"
+                            title="Minuto di gioco e punteggio (live_now)">
+                            {formatMinute(clock.minute) ?? ''}{formatMinute(clock.minute) && formatScore(clock.scoreHome, clock.scoreAway) ? ' · ' : ''}{formatScore(clock.scoreHome, clock.scoreAway) ?? ''}
+                        </span>
+                    )
+                    : countdownToOff(clock.openDate, nowTick) != null && (
+                        <span className="text-[10px] font-mono tabular-nums text-amber-300"
+                            title="Countdown all'off (open_date)">
+                            OFF in {countdownToOff(clock.openDate, nowTick)}
+                        </span>
+                    ))}
+                {/* E34: P&L di giornata dal runner (settled + MTM) + stato stop */}
+                {riskState?.day != null && riskState?.total != null && (
+                    <span
+                        className={`text-[10px] font-mono tabular-nums font-black ${
+                            riskState.stop_fired ? 'text-red-300' : riskState.total < 0 ? 'text-rose-300' : 'text-emerald-300'
+                        }`}
+                        title={`P&L di giornata (${riskState.day}): settled €${(riskState.realized ?? 0).toFixed(2)} + MTM €${(riskState.open_mtm ?? 0).toFixed(2)}`
+                            + (riskState.limit_value != null ? ` · stop a −€${riskState.limit_value}` : ' · stop giornaliero spento')
+                            + (riskState.detail?.degraded ? ' · ⚠ stima worst-case' : '')}
+                    >
+                        {riskState.stop_fired ? '🛑 STOP ' : ''}oggi {riskState.total < 0 ? '−' : '+'}€{Math.abs(riskState.total).toFixed(2)}
+                    </span>
+                )}
+                {/* E35: esposizione worst-case aggregata dell'evento (specchio posizioni) */}
+                {eventExp != null && eventExp > 0 && (
+                    <span className="text-[10px] font-mono tabular-nums text-amber-200/90"
+                        title="Esposizione worst-case aggregata dell'evento (Σ per selezione dallo specchio posizioni; upper bound onesto). I limiti per evento/campionato si impostano nei Controlli runner.">
+                        exp evento €{eventExp.toFixed(2)}
+                    </span>
+                )}
                 {bookPct.back != null && bookPct.lay != null && (
                     <span className="text-[10px] font-mono tabular-nums text-white/70" title="Over-round: book back / book lay del mercato attivo">
                         <span className="text-sky-300">{bookPct.back.toFixed(1)}%</span>
@@ -386,23 +474,55 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                         />
                     </div>
 
-                    {/* -------- CENTRO: LADDER dominante -------- */}
-                    <div className="order-1 xl:order-2 min-w-0">
-                        <LadderView
-                            key={market.market_id}
-                            marketId={market.market_id}
-                            marketName={market.market_name || market.market_type}
-                            orderMode={mode}
-                            fallbackSelections={panelSelections}
-                            popout={{ sport: 'calcio', eventId, eventName }}
-                            multiSlot={{
-                                sport: 'calcio',
-                                eventId,
-                                marketId: market.market_id,
-                                marketName: market.market_name || market.market_type,
-                                eventName,
-                            }}
-                        />
+                    {/* -------- CENTRO: LADDER dominante o GRID one-click (D28) -------- */}
+                    <div className="order-1 xl:order-2 min-w-0 space-y-1.5">
+                        {/* toggle vista centrale (persistito nel workspace per-evento) */}
+                        <div className="flex items-center gap-1">
+                            {(['ladder', 'grid'] as const).map(v => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    aria-pressed={layout.centerView === v}
+                                    onClick={() => setLayout(l => setCenterView(l, v))}
+                                    title={v === 'ladder'
+                                        ? 'Vista ladder classica (colonne prezzo)'
+                                        : 'Vista GRID one-click: righe = selezioni, 3 best back + 3 best lay cliccabili'}
+                                    className={`px-2.5 py-0.5 rounded-md text-[10px] font-black border transition-colors ${
+                                        layout.centerView === v
+                                            ? 'bg-amber-400 text-black border-amber-400'
+                                            : 'border-white/10 text-white/60 hover:border-amber-400/40'
+                                    }`}
+                                >
+                                    {v === 'ladder' ? 'Ladder' : 'Grid'}
+                                </button>
+                            ))}
+                        </div>
+                        {layout.centerView === 'grid' ? (
+                            <GridView
+                                key={`grid:${market.market_id}`}
+                                marketId={market.market_id}
+                                marketName={market.market_name || market.market_type}
+                                orderMode={mode}
+                                sport="calcio"
+                            />
+                        ) : (
+                            <LadderView
+                                key={market.market_id}
+                                marketId={market.market_id}
+                                marketName={market.market_name || market.market_type}
+                                orderMode={mode}
+                                fallbackSelections={panelSelections}
+                                signals={signalsRow}
+                                popout={{ sport: 'calcio', eventId, eventName }}
+                                multiSlot={{
+                                    sport: 'calcio',
+                                    eventId,
+                                    marketId: market.market_id,
+                                    marketName: market.market_name || market.market_type,
+                                    eventName,
+                                }}
+                            />
+                        )}
                     </div>
 
                     {/* -------- DESTRA: strumenti a TAB (uno alla volta) -------- */}
@@ -454,6 +574,12 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt 
                         )}
                         {tool === 'scalper' && (
                             <ScalperPanel eventId={eventId} eventName={eventName} />
+                        )}
+                        {tool === 'chart' && (
+                            <SelectionChartPanel key={`chart:${market.market_id}`} marketId={market.market_id} />
+                        )}
+                        {tool === 'depth' && (
+                            <DepthPanel key={`depth:${market.market_id}`} marketId={market.market_id} />
                         )}
                     </div>
                 </div>
@@ -539,6 +665,21 @@ export default function SeguiLive() {
                         </span>
                     </div>
                     <div className="flex items-center gap-3">
+                        <Link to="/market-watch">
+                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                                <span className="hidden md:inline">Market Watch</span><span className="md:hidden">MW</span>
+                            </Button>
+                        </Link>
+                        <Link to="/live-pnl">
+                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                                P&amp;L
+                            </Button>
+                        </Link>
+                        <Link to="/trade-journal">
+                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                                Journal
+                            </Button>
+                        </Link>
                         <Link to="/match-replay">
                             <Button variant="outline" size="sm" className="border-secondary/30 text-secondary hover:bg-secondary/10">
                                 <History className="w-4 h-4 md:mr-2" /> <span className="hidden md:inline">Match Replay</span>
@@ -605,6 +746,13 @@ export default function SeguiLive() {
                                         eventName={`${selected.home_name} vs ${selected.away_name}`}
                                         eventId={selected.event_id}
                                         updatedAt={liveNow.updated_at ?? null}
+                                        clock={{
+                                            openDate: selected.open_date ?? null,
+                                            minute: liveNow.minute,
+                                            scoreHome: liveNow.score_home,
+                                            scoreAway: liveNow.score_away,
+                                            inplay: liveNow.inplay,
+                                        }}
                                     />
                                 )}
 

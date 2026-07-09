@@ -18,6 +18,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Layers, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
+import { GridView } from '@/components/live/GridView';
+import { loadLayout, saveLayout, setCenterView, type CenterView } from '@/lib/workspace';
 // SOLO la validazione pura condivisa (nessun accesso a tabelle calcio: la regola d'oro
 // tennis≠calcio riguarda i DATI; buildGreenupParams è matematica di validazione).
 import { buildGreenupParams } from '@/lib/liveOrders';
@@ -42,7 +44,8 @@ export interface TennisLadderColumnProps {
 
 // Sorgente ladder TENNIS: legge/soscrive unicamente `tennis_live_ladder` (stessa
 // SHAPE LiveLadderRow del calcio, ma dati tennis). Stabile a livello di modulo.
-const TENNIS_LADDER_SOURCE: LadderSource = {
+// EXPORT: riusata da GridView/Chart/Depth del terminal tennis (stessa injection).
+export const TENNIS_LADDER_SOURCE: LadderSource = {
     fetch: fetchTennisLadder,
     subscribe: subscribeTennisLadder,
 };
@@ -51,7 +54,7 @@ const TENNIS_LADDER_SOURCE: LadderSource = {
 // `tennis_live_orders` / `tennis_live_positions`. Il green-up (cash-out) è supportato
 // riusando l'action 'greenup' della coda tennis: il runner tennis deriva side/price/size
 // dalle esposizioni MATCHED reali (nessun numero stantio), come nel calcio.
-const TENNIS_ORDER_API: LadderOrderApi = {
+export const TENNIS_ORDER_API: LadderOrderApi = {
     send: (cmd) => sendTennisOrderCommand(cmd),
     fetchOrders: (marketId, mode) => fetchTennisOrders(marketId, mode),
     fetchPositions: (marketId, mode) => fetchTennisPositions(marketId, mode),
@@ -80,6 +83,14 @@ function normalizeMode(raw: string | undefined | null): 'OFF' | 'PAPER' | 'LIVE'
 
 export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: TennisLadderColumnProps) {
     const [now, setNow] = useState<TennisLiveNowRow | null>(null);
+
+    // D28: vista centrale ladder/grid, persistita nel workspace per-evento (come il calcio).
+    const [centerView, setCenterViewState] = useState<CenterView>(() => loadLayout(eventId).centerView);
+    useEffect(() => { setCenterViewState(loadLayout(eventId).centerView); }, [eventId]);
+    const selectCenterView = (v: CenterView) => {
+        setCenterViewState(v);
+        saveLayout(setCenterView(loadLayout(eventId), v));
+    };
 
     // order_mode + selezioni note dallo stato live tennis (realtime). Snapshot + subscribe.
     useEffect(() => {
@@ -120,23 +131,56 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                 </div>
             </div>
 
-            {/* ladder riusabile alimentata SOLO con dati tennis (DI) + drag-to-move abilitato */}
-            <div className="p-2">
-                <LadderView
-                    marketId={marketId}
-                    marketName={marketName}
-                    sport="tennis"
-                    orderMode={orderMode}
-                    fallbackSelections={fallbackSelections}
-                    enableDragMove
-                    ladderSource={TENNIS_LADDER_SOURCE}
-                    orderApi={TENNIS_ORDER_API}
-                    popout={{ sport: 'tennis', eventId, eventName: `${p1} — ${p2}`, p1, p2 }}
-                    multiSlot={{
-                        sport: 'tennis', eventId, marketId, marketName,
-                        eventName: `${p1} — ${p2}`, p1, p2,
-                    }}
-                />
+            {/* ladder riusabile alimentata SOLO con dati tennis (DI) + drag-to-move abilitato;
+                D28: in alternativa la GRID one-click (stessa injection tennis, stesse guardie) */}
+            <div className="p-2 space-y-1.5">
+                <div className="flex items-center gap-1">
+                    {(['ladder', 'grid'] as const).map(v => (
+                        <button
+                            key={v}
+                            type="button"
+                            aria-pressed={centerView === v}
+                            onClick={() => selectCenterView(v)}
+                            title={v === 'ladder'
+                                ? 'Vista ladder classica (colonne prezzo)'
+                                : 'Vista GRID one-click: righe = selezioni, 3 best back + 3 best lay cliccabili'}
+                            className={`px-2.5 py-0.5 rounded-md text-[10px] font-black border transition-colors ${
+                                centerView === v
+                                    ? 'bg-amber-400 text-black border-amber-400'
+                                    : 'border-white/10 text-white/60 hover:border-amber-400/40'
+                            }`}
+                        >
+                            {v === 'ladder' ? 'Ladder' : 'Grid'}
+                        </button>
+                    ))}
+                </div>
+                {centerView === 'grid' ? (
+                    <GridView
+                        key={`grid:${marketId}`}
+                        marketId={marketId}
+                        marketName={marketName}
+                        orderMode={orderMode}
+                        sport="tennis"
+                        ladderSource={TENNIS_LADDER_SOURCE}
+                        orderApi={TENNIS_ORDER_API}
+                    />
+                ) : (
+                    <LadderView
+                        marketId={marketId}
+                        marketName={marketName}
+                        sport="tennis"
+                        orderMode={orderMode}
+                        fallbackSelections={fallbackSelections}
+                        enableDragMove
+                        ladderSource={TENNIS_LADDER_SOURCE}
+                        orderApi={TENNIS_ORDER_API}
+                        popout={{ sport: 'tennis', eventId, eventName: `${p1} — ${p2}`, p1, p2 }}
+                        multiSlot={{
+                            sport: 'tennis', eventId, marketId, marketName,
+                            eventName: `${p1} — ${p2}`, p1, p2,
+                        }}
+                    />
+                )}
             </div>
 
             {/* legenda overlay ordini: manuali + bot condividono `tennis_live_orders` (lo

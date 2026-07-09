@@ -425,6 +425,19 @@ export async function fetchTennisPositions(marketId: string, mode: string): Prom
     return raw?.rows ?? [];
 }
 
+// TUTTE le posizioni tennis aperte (watchlist multi-evento D30 / dashboard D33).
+// SOLO tabelle tennis_* (mai dati calcio). Richiede la migrazione
+// tennis_live_positions_all_rpc.sql. mode omessa = entrambe.
+export async function fetchTennisPositionsAll(mode?: string): Promise<LivePositionRow[]> {
+    const { data, error } = await supabase.rpc('get_tennis_live_positions_all', {
+        p_mode: mode ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const raw = data as { rows?: LivePositionRow[] } | LivePositionRow[] | null;
+    if (Array.isArray(raw)) return raw;
+    return raw?.rows ?? [];
+}
+
 // ============================================================================
 // 5) BOT TENNIS — control multi-bot DEDICATO (tennis_bot_control)
 //    Ogni bot è armabile/disarmabile in contemporanea per-evento.

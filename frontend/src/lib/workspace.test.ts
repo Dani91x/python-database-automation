@@ -12,6 +12,7 @@ import {
     collapsePanel,
     setActiveMarket,
     setColumnsProfile,
+    setCenterView,
     resolveHotkey,
 } from './workspace';
 
@@ -142,5 +143,24 @@ describe('resolveHotkey', () => {
     it('accetta binding custom', () => {
         const custom = { ...DEFAULT_KEYBINDINGS, z: 'greenup' as const };
         expect(resolveHotkey('z', custom)).toBe('greenup');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// D28 — centerView (vista centrale ladder/grid)
+// ---------------------------------------------------------------------------
+describe('centerView (D28)', () => {
+    it('default = ladder', () => {
+        expect(defaultLayout('ev1').centerView).toBe('ladder');
+    });
+    it('setCenterView è pura e persiste via save/load', () => {
+        const l = setCenterView(defaultLayout('ev1'), 'grid');
+        expect(l.centerView).toBe('grid');
+        saveLayout(l);
+        expect(loadLayout('ev1').centerView).toBe('grid');
+    });
+    it('valore corrotto → ladder (fail-safe)', () => {
+        expect(normalizeLayout('ev1', { centerView: 'boh' }).centerView).toBe('ladder');
+        expect(normalizeLayout('ev1', { centerView: 42 }).centerView).toBe('ladder');
     });
 });

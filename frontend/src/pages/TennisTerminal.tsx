@@ -1,11 +1,19 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { TennisNav } from '@/components/tennis/TennisNav';
 import { TennisBotPanel } from '@/components/tennis/TennisBotPanel';
-import { TennisLadderColumn } from '@/components/tennis/TennisLadderColumn';
+import {
+    TennisLadderColumn, TENNIS_LADDER_SOURCE,
+} from '@/components/tennis/TennisLadderColumn';
 import { TennisMatchStats } from '@/components/tennis/TennisMatchStats';
-import { followTennisEvent } from '@/lib/tennis';
+import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
+import { DepthPanel } from '@/components/live/DepthPanel';
+import { countdownToOff } from '@/lib/matchClock';
+import {
+    followTennisEvent, fetchTennisFollows, fetchTennisNow, subscribeTennisNow,
+    type TennisLiveNowRow,
+} from '@/lib/tennis';
 
 /**
  * SCREEN 3 — Tennis Trading Terminal (fullscreen, 3 colonne, stile trading pro).
@@ -30,6 +38,36 @@ export default function TennisTerminal() {
     const p2 = params.get('p2') ?? 'Giocatore 2';
 
     const title = useMemo(() => `${p1} vs ${p2} · Terminal Tennis | Alpha Score`, [p1, p2]);
+
+    // D32: score compatto in top bar (tennis_live_now.score, SOLO dati tennis) +
+    // countdown all'off (open_date da tennis_live_follow) quando non in-play.
+    const [now, setNow] = useState<TennisLiveNowRow | null>(null);
+    const [openDate, setOpenDate] = useState<string | null>(null);
+    const [nowTick, setNowTick] = useState(() => Date.now());
+    useEffect(() => {
+        if (!eventId) return undefined;
+        let alive = true;
+        fetchTennisNow(eventId).then(r => { if (alive) setNow(r); }).catch(() => {});
+        const unsub = subscribeTennisNow(eventId, r => { if (r) setNow(r); });
+        fetchTennisFollows()
+            .then(rows => {
+                if (!alive) return;
+                const f = rows.find(r => r.event_id === eventId);
+                setOpenDate(f?.open_date ?? null);
+            })
+            .catch(() => {});
+        return () => { alive = false; unsub(); };
+    }, [eventId]);
+    useEffect(() => {
+        const t = setInterval(() => setNowTick(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+    const countdown = !now?.inplay ? countdownToOff(openDate, nowTick) : null;
+    const setSummary = now?.score?.set_summary ?? null;
+    const points = now?.score?.points ?? null;
+
+    // D29/D31: tab della colonna destra (Stats / Chart / Depth) — injection SOLO tennis.
+    const [rightTab, setRightTab] = useState<'stats' | 'chart' | 'depth'>('stats');
 
     // Registra l'evento nello stream tennis (tennis_live_follow → PENDING) così il runner
     // inizia a pubblicare ladder + tabellone + punteggio su tennis_live_ladder/tennis_live_now.
@@ -77,6 +115,19 @@ export default function TennisTerminal() {
                         {p1} <span className="text-white/30 mx-1">vs</span> {p2}
                     </span>
                     <span className="text-xs text-muted-foreground font-mono">· {marketName}</span>
+                    {/* D32: score live (set_summary + punti del game) o countdown all'off */}
+                    {now?.inplay && setSummary && (
+                        <span className="text-[11px] font-mono tabular-nums text-emerald-300 font-black"
+                            title={`Punteggio set (tennis_live_now)${points ? ` · game: ${points.p1}–${points.p2}` : ''}`}>
+                            {setSummary}{points ? ` · ${points.p1}–${points.p2}` : ''}
+                        </span>
+                    )}
+                    {countdown && (
+                        <span className="text-[11px] font-mono tabular-nums text-amber-300"
+                            title="Countdown all'inizio del match (open_date)">
+                            OFF in {countdown}
+                        </span>
+                    )}
                     <span className="ml-auto text-[10px] text-muted-foreground font-mono">
                         event {eventId} · market {marketId}
                     </span>
@@ -100,8 +151,32 @@ export default function TennisTerminal() {
                         />
                     </section>
 
-                    <section key={`stats:${eventId}:${marketId}`} className="min-w-0">
-                        <TennisMatchStats eventId={eventId} p1={p1} p2={p2} />
+                    <section key={`stats:${eventId}:${marketId}`} className="min-w-0 space-y-2">
+                        {/* tab colonna destra: Stats / Chart (D29) / Depth (D31) — dati SOLO tennis */}
+                        <div className="flex items-stretch gap-1 border-b border-white/5">
+                            {([['stats', 'Stats'], ['chart', 'Chart'], ['depth', 'Depth']] as const).map(([k, label]) => (
+                                <button
+                                    key={k}
+                                    type="button"
+                                    aria-pressed={rightTab === k}
+                                    onClick={() => setRightTab(k)}
+                                    className={`px-2.5 py-1 -mb-px rounded-t-lg text-[11px] font-bold border-b-2 transition-colors ${
+                                        rightTab === k
+                                            ? 'border-amber-400 text-white bg-white/[0.06]'
+                                            : 'border-transparent text-muted-foreground hover:text-white hover:bg-white/[0.03]'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        {rightTab === 'stats' && <TennisMatchStats eventId={eventId} p1={p1} p2={p2} />}
+                        {rightTab === 'chart' && (
+                            <SelectionChartPanel key={`chart:${marketId}`} marketId={marketId} ladderSource={TENNIS_LADDER_SOURCE} />
+                        )}
+                        {rightTab === 'depth' && (
+                            <DepthPanel key={`depth:${marketId}`} marketId={marketId} ladderSource={TENNIS_LADDER_SOURCE} />
+                        )}
                     </section>
                 </div>
             </main>

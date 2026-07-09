@@ -14,6 +14,9 @@ import Analytics from "@/pages/Analytics";
 import Watchlist from "@/pages/Watchlist";
 import ReportPersonale from "@/pages/ReportPersonale";
 import SeguiLive from "@/pages/SeguiLive";
+import MarketWatch from "@/pages/MarketWatch";
+import LivePnl from "@/pages/LivePnl";
+import TradeJournal from "@/pages/TradeJournal";
 import MultiLadder from "@/pages/MultiLadder";
 import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
@@ -97,6 +100,30 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <SeguiLive />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/market-watch"
+                                element={
+                                    <ProtectedRoute>
+                                        <MarketWatch />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/live-pnl"
+                                element={
+                                    <ProtectedRoute>
+                                        <LivePnl />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/trade-journal"
+                                element={
+                                    <ProtectedRoute>
+                                        <TradeJournal />
                                     </ProtectedRoute>
                                 }
                             />

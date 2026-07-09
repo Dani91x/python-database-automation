@@ -24,12 +24,16 @@ export interface PanelState {
     collapsed: boolean;  // montato ma ridotto a intestazione
 }
 
+// Vista della zona CENTRALE del terminal: ladder classico o grid one-click (D28).
+export type CenterView = 'ladder' | 'grid';
+
 // Layout completo dell'area di lavoro per un evento.
 export interface WorkspaceLayout {
     eventId: string;
     panels: PanelState[];
     activeMarketId: string | null;  // tab mercato attivo
     columnsProfile: string;         // sport-key del profilo colonne ladder (vedi ladderConfig)
+    centerView: CenterView;         // vista centrale: 'ladder' (default) o 'grid' (D28)
 }
 
 // Pannelli di default (aperti, non collassati; audit/settings partono chiusi).
@@ -60,6 +64,7 @@ export function defaultLayout(eventId: string, columnsProfile = 'calcio'): Works
         })),
         activeMarketId: null,
         columnsProfile,
+        centerView: 'ladder',
     };
 }
 
@@ -97,8 +102,9 @@ export function normalizeLayout(eventId: string, raw: unknown): WorkspaceLayout 
     const columnsProfile = typeof obj.columnsProfile === 'string' && obj.columnsProfile.length > 0
         ? obj.columnsProfile
         : base.columnsProfile;
+    const centerView: CenterView = obj.centerView === 'grid' ? 'grid' : 'ladder';
 
-    return { eventId, panels, activeMarketId, columnsProfile };
+    return { eventId, panels, activeMarketId, columnsProfile, centerView };
 }
 
 // Carica il layout di un evento da localStorage (o default se assente/illeggibile).
@@ -164,6 +170,11 @@ export function setActiveMarket(layout: WorkspaceLayout, marketId: string | null
 // Imposta il profilo colonne selezionato (PURA).
 export function setColumnsProfile(layout: WorkspaceLayout, sport: string): WorkspaceLayout {
     return { ...layout, columnsProfile: sport };
+}
+
+// Imposta la vista centrale (PURA): 'ladder' o 'grid' (D28).
+export function setCenterView(layout: WorkspaceLayout, view: CenterView): WorkspaceLayout {
+    return { ...layout, centerView: view };
 }
 
 // ---------- KEYBINDINGS (dati; nessun DOM/listener qui) ----------
