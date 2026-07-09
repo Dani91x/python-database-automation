@@ -54,7 +54,13 @@ class TennisSwingStrategy(BaseStrategy):
         self.conf_ticks = int(c.get("conf_ticks", 2))
         self.target_frac = float(c.get("target_frac", 0.5))
         self.stop_ticks = int(c.get("stop_ticks", 8))
+        # time-stop in SECONDI di publish_time (fix 2026-07-09: prima contava gli
+        # UPDATE del book — in live sono molti al secondo → usciva dopo ~15-20s
+        # invece dei 90s documentati; il fallback a update resta solo senza pt).
         self.tmax = int(c.get("tmax", 90))
+        # update del book concessi alla chiusura MAKER prima dell'escalation a
+        # TAKER al touch (fix orfani: l'hedge maker può non riempirsi MAI).
+        self.close_retry_ticks = int(c.get("close_retry_ticks", 20))
         self.maker = bool(c.get("maker", True))
         self.maker_offset = int(c.get("maker_offset", 1))
         self.min_matched = float(c.get("min_matched", 10_000.0))
@@ -127,17 +133,105 @@ class TennisSwingStrategy(BaseStrategy):
         except Exception as e:  # noqa
             logger.debug("place fail %s", e); return None
 
-    def _close(self, market: Any, sel: int, price: float) -> float:
+    def _close(self, market: Any, sel: int, price: float) -> Tuple[float, Optional[Any]]:
+        """Piazza l'hedge di green. Ritorna (locked stimato, ordine di chiusura)."""
         b, ba, l, la = self._pos(market, sel)
         nw, nl = b*(ba-1)-l*(la-1), l-b
         g = compute_green(nw, nl, price)
-        if g is None: return min(nw, nl)
+        if g is None: return min(nw, nl), None
         side, sz, locked = g
-        self._place(market, sel, side, get_nearest_price(price), sz)
-        return float(locked)
+        o = self._place(market, sel, side, get_nearest_price(price), sz)
+        return float(locked), o
+
+    @staticmethod
+    def _runner_by_sel(mb: Any, sel: int) -> Optional[Any]:
+        for r in mb.runners:
+            if int(getattr(r, "selection_id", 0) or 0) == int(sel):
+                return r
+        return None
+
+    def _cancel(self, market: Any, order: Any) -> None:
+        if order is None: return
+        try: market.cancel_order(order)
+        except Exception: pass  # noqa
+
+    def _manage_trade(self, market: Any, mb: Any, mid: str, tr: Dict[str, Any]) -> None:
+        """Gestione del trade aperto sulla SELEZIONE TRADATA (fix 2026-07-09).
+
+        BUG storico: la gestione usava il FAVORITO CORRENTE del book; se il favorito
+        flippava a metà trade, la posizione sul vecchio favorito restava ORFANA
+        (b+l=0 sul nuovo sel → dopo 40 update il trade veniva scartato con la
+        posizione matched ancora aperta, senza stop né uscita). Ora sel/prezzi
+        vengono SEMPRE dalla selezione su cui si è entrati.
+        """
+        sel = int(tr.get("sel") or 0)
+        r = self._runner_by_sel(mb, sel)
+        ex = getattr(r, "ex", None) if r is not None else None
+        if ex is None:
+            return  # runner non nel book in questo update: si riprova al prossimo
+        bb = get_price(ex.available_to_back, 0); bl = get_price(ex.available_to_lay, 0)
+        if not bb or not bl: return
+        tmid = _tki((bb+bl)/2)
+        side = tr["side"]
+        b, ba, l, la = self._pos(market, sel)
+
+        # fase CLOSING: l'hedge MAKER può non riempirsi MAI → mai abbandonare la
+        # posizione: dopo close_retry_ticks update si cancella e si chiude TAKER
+        # al touch (fill certo, si paga lo spread). Pop SOLO a posizione flat.
+        if tr.get("closing"):
+            nw, nl = b*(ba-1)-l*(la-1), l-b
+            if (b + l) <= _EPS or abs(nw - nl) < 0.01:
+                self._cancel(market, tr.get("order"))
+                self._cancel(market, tr.get("close_order"))
+                self._tr.pop(mid, None)
+                return
+            tr["close_wait"] = tr.get("close_wait", 0) + 1
+            if tr["close_wait"] > self.close_retry_ticks:
+                self._cancel(market, tr.get("close_order"))
+                px = bl if side == "BACK" else bb   # TAKER al touch: attraversa
+                _, o2 = self._close(market, sel, px)
+                tr["close_order"] = o2
+                tr["close_wait"] = 0
+                self._emit("close_escalate", sel=sel, price=px)
+            return
+
+        if (b+l) <= _EPS:
+            tr["wait"] = tr.get("wait", 0)+1
+            if tr["wait"] > 40:  # entry non riempita -> cancella
+                self._cancel(market, tr.get("order"))
+                self._tr.pop(mid, None)
+            return
+        tr["held"] = tr.get("held", 0)+1
+        etk = tr["etk"]; anchor = tr["anchor"]
+        tgt = anchor + (etk-anchor)*(1-self.target_frac)
+        hit = (tmid <= tgt) if side == "BACK" else (tmid >= tgt)
+        adverse = (tmid >= etk+self.stop_ticks) if side == "BACK" else (tmid <= etk-self.stop_ticks)
+        # time-stop in SECONDI di publish_time (fallback: numero update se pt assente)
+        pt = getattr(mb, "publish_time_epoch", None)
+        t0 = tr.get("t0")
+        timed_out = ((pt is not None and t0 is not None and (pt - t0) / 1000.0 >= self.tmax)
+                     or ((pt is None or t0 is None) and tr["held"] >= self.tmax))
+        if hit or adverse or timed_out:
+            # esci a quota migliore (maker) o al touch
+            px = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)
+            locked, close_order = self._close(market, sel, px)
+            self.stats["pnl"] += locked
+            self.stats["wins" if hit else "losses"] += 1
+            self._emit("exit", sel=sel, kind="target" if hit else ("stop" if adverse else "time"), locked=round(locked,3))
+            self._cancel(market, tr.get("order"))
+            # NON si abbandona la posizione: stato closing finché il blotter è flat
+            tr["closing"] = True
+            tr["close_order"] = close_order
+            tr["close_wait"] = 0
+        return
 
     def process_market_book(self, market: Any, mb: Any) -> None:
         mid = mb.market_id
+        tr = self._tr.get(mid)
+        if tr:  # la GESTIONE della posizione non è mai gateata (né da min_matched
+            #     né dal favorito corrente): prima il denaro, poi i segnali.
+            self._manage_trade(market, mb, mid, tr)
+            return
         if float(getattr(mb, "total_matched", 0) or 0) < self.min_matched: return
         fav = self._favourite(mb)
         if fav is None: return
@@ -149,33 +243,6 @@ class TennisSwingStrategy(BaseStrategy):
         h = self._hist.setdefault(mid, deque(maxlen=200)); h.append(tmid)
         tk = list(h)
         r = self._rsi(tk); pr = self._prev_rsi.get(mid, 50.0); self._prev_rsi[mid] = r
-
-        tr = self._tr.get(mid)
-        if tr:  # gestione
-            b, ba, l, la = self._pos(market, sel)
-            if (b+l) <= _EPS:
-                tr["wait"] = tr.get("wait", 0)+1
-                if tr["wait"] > 40:  # entry non riempita -> cancella
-                    try: market.cancel_order(tr["order"])
-                    except Exception: pass  # noqa
-                    self._tr.pop(mid, None)
-                return
-            tr["held"] = tr.get("held", 0)+1
-            side = tr["side"]; etk = tr["etk"]; anchor = tr["anchor"]
-            tgt = anchor + (etk-anchor)*(1-self.target_frac)
-            hit = (tmid <= tgt) if side == "BACK" else (tmid >= tgt)
-            adverse = (tmid >= etk+self.stop_ticks) if side == "BACK" else (tmid <= etk-self.stop_ticks)
-            if hit or adverse or tr["held"] >= self.tmax:
-                # esci a quota migliore (maker) o al touch
-                px = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)
-                locked = self._close(market, sel, px)
-                self.stats["pnl"] += locked
-                self.stats["wins" if hit else "losses"] += 1
-                self._emit("exit", sel=sel, kind="target" if hit else ("stop" if adverse else "time"), locked=round(locked,3))
-                try: market.cancel_order(tr["order"])
-                except Exception: pass  # noqa
-                self._tr.pop(mid, None)
-            return
 
         # ingresso
         if len(tk) <= self.N: return
@@ -194,7 +261,11 @@ class TennisSwingStrategy(BaseStrategy):
         if side is None: return
         o = self._place(market, sel, side, get_nearest_price(entry_price), self.stake)
         if o is None and not self.dry_run: return
-        self._tr[mid] = {"side": side, "etk": tmid, "anchor": med, "order": o, "held": 0, "wait": 0}
+        # sel + t0 MEMORIZZATI nel trade (fix 2026-07-09): la gestione deve seguire la
+        # selezione TRADATA (non il favorito corrente) e il time-stop conta i secondi.
+        self._tr[mid] = {"sel": sel, "side": side, "etk": tmid, "anchor": med,
+                         "order": o, "held": 0, "wait": 0,
+                         "t0": getattr(mb, "publish_time_epoch", None)}
         self.stats["entries"] += 1
         self._emit("entry", sel=sel, side=side, z=round(z,2), price=entry_price)
 

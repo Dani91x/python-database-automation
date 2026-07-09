@@ -74,7 +74,7 @@ export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
     scalp_ticks: 1,
     stop_ticks: 1,
     min_flow: 10,
-    min_size: 150,
+    min_size: 300,
     price_min: 1.5,
     price_max: 4.6,
     entry_stop_before_s: 420,

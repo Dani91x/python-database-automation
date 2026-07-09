@@ -101,22 +101,34 @@ def match_runner_roles(
     def norm(s: str) -> str:
         return " ".join(str(s).lower().split())
 
-    def team_match(sel: str, team: str) -> bool:
+    def match_score(sel: str, team: str) -> int:
+        """0 = nessun match; 1 = parola condivisa; 2 = esatto/substring."""
         a, b = norm(sel), norm(team)
         if not a or not b:
-            return False
+            return 0
         if a == b or a in b or b in a:
-            return True
-        return len(set(a.split()) & set(b.split())) >= 1
+            return 2
+        if len(set(a.split()) & set(b.split())) >= 1:
+            return 1
+        return 0
 
+    # fix 09/07: il vecchio "prima squadra che matcha vince" era
+    # ordine-dipendente su nomi con parola condivisa ("Real Madrid" vs
+    # "Real Sociedad", suffissi "FC"): ora vince il match PIU' FORTE e
+    # ogni ambiguita' (pari merito, ruolo doppio) → None (bot neutro).
     roles: Dict[str, int] = {}
     for sid, name in runner_names.items():
         if norm(name) == "the draw":
-            roles["D"] = int(sid)
-        elif team_match(name, home_name):
-            roles["H"] = int(sid)
-        elif team_match(name, away_name):
-            roles["A"] = int(sid)
+            role = "D"
+        else:
+            sh = match_score(name, home_name)
+            sa = match_score(name, away_name)
+            if sh == sa:        # 0-0 (nessun match) o pari merito (ambiguo)
+                continue
+            role = "H" if sh > sa else "A"
+        if role in roles:       # due runner sullo stesso ruolo: inaffidabile
+            return None
+        roles[role] = int(sid)
     if len(roles) != 3:
         return None
     return roles
@@ -166,21 +178,31 @@ def resolve_bias(
     edge = None
     if market_mid_probs:
         p_mkt = market_mid_probs.get(direction)
-        if p_mkt and p_mkt > 0:
-            edge = p_avg / p_mkt - 1.0
-            if edge < min_edge:
-                return BiasDecision(
-                    consensus=True, direction=direction, prob_ml=ml[1],
-                    prob_poisson=po[1], prob_market=p_mkt, edge=edge,
-                    reasons=(f"edge {edge:+.1%} sotto il minimo {min_edge:.0%} → bot neutro",),
-                )
-            if edge > max_edge:
-                return BiasDecision(
-                    consensus=True, direction=direction, prob_ml=ml[1],
-                    prob_poisson=po[1], prob_market=p_mkt, edge=edge,
-                    reasons=(f"edge {edge:+.1%} SOSPETTO (> {max_edge:.0%}): "
-                             "probabile errore modello → bot neutro",),
-                )
+        if not p_mkt or p_mkt <= 0:
+            # fix 09/07: prob della direzione mancante/invalida = edge NON
+            # verificabile → stesso trattamento di "quote assenti": niente
+            # bias (prima cadeva oltre il gate e ATTIVAVA il bias senza
+            # verifica dell'edge — violazione della regola 3).
+            return BiasDecision(
+                consensus=True, direction=direction, prob_ml=ml[1],
+                prob_poisson=po[1],
+                reasons=("prob di mercato della direzione mancante: edge non "
+                         "verificato → bias prudente NON attivato",),
+            )
+        edge = p_avg / p_mkt - 1.0
+        if edge < min_edge:
+            return BiasDecision(
+                consensus=True, direction=direction, prob_ml=ml[1],
+                prob_poisson=po[1], prob_market=p_mkt, edge=edge,
+                reasons=(f"edge {edge:+.1%} sotto il minimo {min_edge:.0%} → bot neutro",),
+            )
+        if edge > max_edge:
+            return BiasDecision(
+                consensus=True, direction=direction, prob_ml=ml[1],
+                prob_poisson=po[1], prob_market=p_mkt, edge=edge,
+                reasons=(f"edge {edge:+.1%} SOSPETTO (> {max_edge:.0%}): "
+                         "probabile errore modello → bot neutro",),
+            )
     else:
         reasons.append("quote di mercato non disponibili: edge non verificato → bias prudente NON attivato")
         return BiasDecision(

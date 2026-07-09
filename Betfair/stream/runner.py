@@ -58,6 +58,7 @@ from .config_stream import (
     MIN_RESUBSCRIBE_INTERVAL_SEC,
     ORDER_STREAM_CONFLATE_MS,
     PAPER_SIMULATED_LATENCY_MS,
+    BOARD_POLL_SEC,
     DAILY_STOP_POLL_SEC,
     HEARTBEAT_SEC,
     RAW_RECORDING,
@@ -73,6 +74,8 @@ from .config_stream import (
     WATCHLIST_POLL_SEC,
     XHEDGE_POLL_SEC,
 )
+from . import local_channel as _lc
+from .board_worker import board_worker
 from .daily_stop_worker import daily_stop_worker
 from .reconcile_worker import reconcile_worker
 from .engine.live_trading_strategy import LiveTradingStrategy
@@ -571,6 +574,22 @@ def ladder_worker(context: dict, flumine: Flumine, session: LiveSession) -> None
                 "status": book.get("status"),
                 "ladder": payload,
             }
+            # A7: push locale IMMEDIATO su ogni cambio del book (il desktop vede il
+            # tick alla velocità del worker); il DB resta il fallback remoto e viene
+            # scritto al massimo ogni 2s per mercato quando il desktop è collegato
+            # (write-on-change invariato quando il desktop NON c'è).
+            local_on = _lc.channel_active()
+            if local_on:
+                _lc.publish("ladder", row)
+                now_m = time.monotonic()
+                ts_map = getattr(session, "_last_ladder_db_ts", None)
+                if ts_map is None:
+                    ts_map = {}
+                    session._last_ladder_db_ts = ts_map
+                if now_m - ts_map.get(mid, 0.0) < 2.0:
+                    session._last_ladder_sig[mid] = sig
+                    continue
+                ts_map[mid] = now_m
             try:
                 db.upsert_live_ladder(row)
                 session._last_ladder_sig[mid] = sig
@@ -988,6 +1007,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
     session = LiveSession()
     session.context_api_client = api_client  # type: ignore[attr-defined]
     session.only_event = only_event  # type: ignore[attr-defined]
+    # A7 — canale LOCALE per l'app desktop (bind SOLO 127.0.0.1). Best-effort:
+    # se la porta è occupata il runner vive comunque (path DB invariato).
+    ch = _lc.start_channel(int(os.getenv("LIVE_LOCAL_WS_PORT", "47331")), "calcio")
+    if ch is not None:
+        ch.set_hello(mode=LIVE_ORDER_MODE)
     interrupted = False
 
     # Annuncia UNA volta la modalità ordini (il banner nei log + alert se PAPER/LIVE).
@@ -1141,6 +1165,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             framework.add_worker(BackgroundWorker(
                 framework, function=finalize_worker, interval=FINALIZE_POLL_SEC,
                 func_kwargs={"session": session}, name="finalize_worker"))
+            # A7 — board del giorno per il desktop (quote standard, REST leggero;
+            # NESSUN costo senza client locali collegati).
+            framework.add_worker(BackgroundWorker(
+                framework, function=board_worker, interval=BOARD_POLL_SEC or 10.0,
+                func_kwargs={"session": session, "event_type_id": "1"},
+                name="board_worker"))
             # A5 — heartbeat del runner (SEMPRE, anche in OFF): la top bar mostra
             # "runner vivo Xs fa" e il watchdog/l'utente vedono subito un runner giù.
             framework.add_worker(BackgroundWorker(

@@ -2089,6 +2089,258 @@ def _persist_submin_step(
 
 
 # ---------------------------------------------------------------------------
+# A7 — CANALE LOCALE (desktop): drain dei comandi dal WebSocket localhost.
+# STESSO path di validazione/esecuzione del path DB (_dispatch + guardie +
+# controls + FoK + journal): cambia SOLO il trasporto. La risposta torna al
+# client via WS; SUBITO DOPO il comando viene REGISTRATO come riga reale nella
+# coda DB (status done/error) così audit, storico e follow-through A4 lavorano
+# in modo identico sui comandi locali. MAI un ordine dal thread del WS: il
+# drain avviene QUI, nel thread del worker (un solo thread tocca flumine).
+# ---------------------------------------------------------------------------
+import itertools as _itertools
+
+_LOCAL_RID = _itertools.count(9_000_000_000)  # id sintetici: mai in collisione col bigserial
+_LOCAL_ACTIONS = frozenset(
+    {"place", "cancel", "replace", "greenup", "dutch", "cashout_all", "cashout_event"}
+)  # place_submin ESCLUSO: la sua macchina a stati vive sulla coda DB
+
+_LOCAL_ROW_KEYS = (
+    "market_id", "selection_id", "handicap", "side", "order_type", "price", "size",
+    "liability", "persistence", "time_in_force", "min_fill_size", "bet_id",
+    "new_price", "size_reduction", "params",
+)
+
+# fix review HIGH: DEDUP server-side per client_ref (come l'UNIQUE della coda DB).
+# Un reinvio dello stesso comando (bug UI/retry futuro) NON deve mai rieseguire:
+# risponde l'esito già calcolato. Cache bounded con TTL.
+_LOCAL_SEEN: "Dict[str, tuple]" = {}   # client_ref -> (monotonic_ts, ok, result)
+_LOCAL_SEEN_TTL = 300.0
+_LOCAL_SEEN_MAX = 500
+
+
+def _local_dedup_get(client_ref: Optional[str]) -> Optional[tuple]:
+    if not client_ref:
+        return None
+    import time as _t
+
+    now = _t.monotonic()
+    # purge scaduti/bounded
+    if len(_LOCAL_SEEN) > _LOCAL_SEEN_MAX:
+        for k in list(_LOCAL_SEEN)[: len(_LOCAL_SEEN) - _LOCAL_SEEN_MAX]:
+            _LOCAL_SEEN.pop(k, None)
+    hit = _LOCAL_SEEN.get(client_ref)
+    if hit and now - hit[0] <= _LOCAL_SEEN_TTL:
+        return hit
+    _LOCAL_SEEN.pop(client_ref, None)
+    return None
+
+
+def _local_dedup_put(client_ref: Optional[str], ok: bool, result: Any) -> None:
+    if client_ref:
+        import time as _t
+
+        _LOCAL_SEEN[client_ref] = (_t.monotonic(), ok, result)
+
+
+class _LocalTable:
+    """Proxy della tabella coda per i comandi LOCALI: cattura update/select
+    sull'rid sintetico invece di scrivere/leggere il DB."""
+
+    def __init__(self, owner: "_LocalSb") -> None:
+        self._o = owner
+        self._op: Optional[str] = None
+        self._payload: Dict[str, Any] = {}
+
+    def update(self, payload: Dict[str, Any]) -> "_LocalTable":
+        self._op = "update"
+        self._payload = dict(payload)
+        return self
+
+    def select(self, *_a: Any) -> "_LocalTable":
+        self._op = "select"
+        return self
+
+    def eq(self, *_a: Any) -> "_LocalTable":
+        return self
+
+    def limit(self, *_a: Any) -> "_LocalTable":
+        return self
+
+    def execute(self) -> Any:
+        from types import SimpleNamespace
+
+        if self._op == "update":
+            self._o.captured.update(self._payload)
+            return SimpleNamespace(data=[])
+        # select (journal: bet_id della riga) → servito dall'esito catturato
+        res = self._o.captured.get("result") or {}
+        return SimpleNamespace(
+            data=[{"bet_id": self._o.captured.get("bet_id") or res.get("bet_id")}]
+        )
+
+
+class _LocalSb:
+    """sb adapter per un comando locale: intercetta SOLO la tabella coda;
+    audit/journal/live_now/segnali passano al client Supabase REALE."""
+
+    def __init__(self, real: Any) -> None:
+        self._real = real
+        self.captured: Dict[str, Any] = {}
+
+    def table(self, name: str) -> Any:
+        if name == _TABLE:
+            return _LocalTable(self)
+        return self._real.table(name)
+
+    def rpc(self, *a: Any, **k: Any) -> Any:
+        return self._real.rpc(*a, **k)
+
+
+def _local_snapshot(flumine: Any, strategy: Any, market_id: str, mode_l: str) -> Dict[str, Any]:
+    """Snapshot iniziale ordini+posizioni di UN mercato, dal blotter (zero DB)."""
+    orders: List[Dict[str, Any]] = []
+    positions: List[Dict[str, Any]] = []
+    try:
+        market = _resolve_market(flumine, market_id)
+    except Exception:  # noqa: BLE001 - mercato non sottoscritto: snapshot vuoto
+        return {"orders": orders, "positions": positions}
+    blotter = _val(market, "blotter")
+    if blotter is None or strategy is None:
+        return {"orders": orders, "positions": positions}
+    event_id = _val(market, "event_id")
+    lookups = set()
+    try:
+        for o in blotter.strategy_orders(strategy):
+            row = strategy._order_row(o, event_id=event_id, market_id=market_id)
+            if row is not None and row.get("mode") == mode_l:
+                orders.append(row)
+            lk = _val(o, "lookup")
+            if lk is not None:
+                lookups.add(lk)
+        for lk in lookups:
+            pos = strategy._position_row(market, event_id, lk[0], lk[1], lk[2])
+            if pos is not None:
+                positions.append(pos)
+    except Exception as ex:  # noqa: BLE001 - snapshot best-effort
+        logger.debug("[local] snapshot KO %s: %s", market_id, str(ex)[:120])
+    return {"orders": orders, "positions": positions}
+
+
+def _record_local_request(
+    sb: Any, row: Dict[str, Any], captured: Dict[str, Any], mode_l: str
+) -> Optional[int]:
+    """Registra il comando locale come riga REALE della coda (status done/error):
+    audit-trail completo e follow-through A4 identici al path DB. Best-effort:
+    un KO qui non tocca l'ordine (già eseguito e già risposto al client)."""
+    try:
+        payload = {k: row.get(k) for k in _LOCAL_ROW_KEYS}
+        payload.update({
+            "client_ref": f"local{row['id']}",
+            "action": row.get("action"),
+            "mode": mode_l,
+            "status": captured.get("status") or "done",
+            "result": captured.get("result"),
+            "error": captured.get("error"),
+            "processed_at": _now_iso(),
+        })
+        from .net_retry import with_backoff
+
+        res = with_backoff(sb.table(_TABLE).insert(payload).execute, attempts=3, base_delay=0.2)
+        data = getattr(res, "data", None) or []
+        return int(data[0]["id"]) if data and data[0].get("id") is not None else None
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[local] registrazione comando KO: %s", str(ex)[:160])
+        # fix review CRITICAL: un cash-out ESEGUITO ma non registrato perde il
+        # follow-through A4 (verifica fill) — mai in silenzio: alert CRITICAL.
+        if str(row.get("action") or "") in ("greenup", "cashout_all", "cashout_event"):
+            try:
+                from . import db as dbm
+
+                dbm.insert_alert(
+                    "CRITICAL", "LOCAL_RECORD",
+                    f"{row.get('action')} LOCALE eseguito ma NON registrato in coda "
+                    f"({str(ex)[:100]}): follow-through NON attivo — VERIFICARE il fill "
+                    f"dell'hedge su {row.get('market_id')} manualmente.",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        return None
+
+
+def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -> int:
+    """Esegue i comandi arrivati dal canale locale (drain nel thread del worker)."""
+    from . import local_channel
+
+    ch = local_channel.get_channel()
+    if ch is None:
+        return 0
+    reqs = ch.pop_requests()
+    if not reqs:
+        return 0
+    handled = 0
+    for req in reqs:
+        handled += 1
+        try:
+            if req.method == "snapshot":
+                mid = str(req.params.get("market_id") or "")
+                ch.respond(req, True, _local_snapshot(flumine, strategy, mid, mode_l))
+                continue
+            cmd = req.params
+            action = str(cmd.get("action") or "")
+            if action not in _LOCAL_ACTIONS:
+                ch.respond(req, False, error=f"azione non supportata dal canale locale: {action}")
+                continue
+            if str(cmd.get("mode") or "") != mode_l:
+                ch.respond(req, False,
+                           error=f"mode richiesta '{cmd.get('mode')}' diversa dal runner '{mode_l}'")
+                continue
+            # kill-switch RI-LETTO PER-COMANDO: stessa semantica del path DB
+            # (aperture bloccate, chiusure sempre permesse).
+            if (_kill_switch() or _db_kill_switch()) and action not in _CLOSING_ACTIONS:
+                ch.respond(req, False, error="kill-switch ATTIVO: solo chiusure permesse")
+                continue
+            # fix review HIGH: dedup per client_ref — un reinvio identico risponde
+            # l'esito già calcolato, MAI una seconda esecuzione reale.
+            client_ref = str(cmd.get("client_ref") or "") or None
+            dup = _local_dedup_get(client_ref)
+            if dup is not None:
+                ch.respond(req, dup[1], dup[2],
+                           error=None if dup[1] else "comando già eseguito (dedup)")
+                continue
+            rid = next(_LOCAL_RID)
+            row: Dict[str, Any] = {k: cmd.get(k) for k in _LOCAL_ROW_KEYS}
+            row["id"] = rid
+            row["action"] = action
+            row["mode"] = mode_l
+            lsb = _LocalSb(sb)
+            try:
+                _dispatch(lsb, flumine, row, mode_l, strategy)
+            except Exception as ex:  # noqa: BLE001 - errore del comando, worker vivo
+                try:
+                    _write_error(lsb, rid, row, mode_l, ex)  # cattura esito + audit reale
+                except Exception:  # noqa: BLE001
+                    pass
+                ch.respond(req, False, lsb.captured.get("result"), error=str(ex))
+                _local_dedup_put(client_ref, False, lsb.captured.get("result"))
+                _record_local_request(sb, row, lsb.captured, mode_l)
+                continue
+            # esito catturato da _write_done → risposta IMMEDIATA al client
+            result = lsb.captured.get("result") or {"ok": True, "action": action, "mode": mode_l}
+            ch.respond(req, True, result)
+            _local_dedup_put(client_ref, True, result)
+            db_id = _record_local_request(sb, row, lsb.captured, mode_l)
+            # journal E37 col rid REALE della riga registrata (contesto al click)
+            _journal_done(sb, flumine, {**row, "id": db_id or rid}, mode_l)
+        except Exception as ex:  # noqa: BLE001 - mai far cadere il worker per un comando locale
+            logger.exception("[local] comando locale KO")
+            try:
+                ch.respond(req, False, error=str(ex))
+            except Exception:  # noqa: BLE001
+                pass
+    return handled
+
+
+# ---------------------------------------------------------------------------
 # Dispatch + ciclo
 # ---------------------------------------------------------------------------
 def _dispatch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
@@ -2213,11 +2465,21 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
     mode = _live_order_mode()
     if mode not in ("PAPER", "LIVE"):
         return 0  # OFF (o valore ignoto): worker inerte
-    # Fase 6: snapshot settings UNA volta per ciclo (kill-switch da UI + limiti custom + velocità).
-    _refresh_settings(sb)
-    # #15 velocità runtime: rallenta la cadenza al target order_poll_sec (se impostato), senza riavvio.
-    if _throttled("order_cycle", _order_poll_target()):
-        return 0
+    # Fase 6 + A7: snapshot settings a cadenza ~1s — col canale locale il worker
+    # gira a intervallo BREVE per il drain (env LIVE_ORDER_QUEUE_POLL_SEC bassa):
+    # mai martellare la RPC settings ad ogni giro (freschezza effettiva invariata).
+    if not _throttled("settings_refresh", 1.0):
+        _refresh_settings(sb)
+    # A7: comandi dal canale LOCALE (desktop) — drenati SEMPRE, ad ogni giro.
+    handled_local = _process_local_requests(sb, flumine, mode.lower(), strategy)
+    # #15 velocità runtime: poll DB al target esplicito, oppure 1s di default quando
+    # il canale locale è attivo (i comandi passano dal locale; la coda DB resta per
+    # uso remoto/fallback e per il follow-through).
+    from . import local_channel as _lc
+
+    _db_target = _order_poll_target() or (1.0 if _lc.channel_active() else None)
+    if _throttled("order_cycle", _db_target):
+        return handled_local
     # C22: Fill-or-Kill software — cancella gli ordini col timer scaduto non abbinati.
     # PRIMA del gate kill-switch: il cancel è un'azione di CHIUSURA (sempre permessa).
     _sweep_fok_ttls(flumine)
@@ -2233,7 +2495,7 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
         )
 
     mode_l = mode.lower()
-    handled = 0
+    handled = handled_local
 
     # 1) sequenze submin in corso (place_submin) → avanza di uno step (APERTURE: mai col freno)
     if not kill_cycle:

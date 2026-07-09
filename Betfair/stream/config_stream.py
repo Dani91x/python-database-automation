@@ -253,3 +253,9 @@ DAILY_STOP_POLL_SEC: float = float(os.getenv("LIVE_DAILY_STOP_POLL_SEC", "5.0"))
 # ----------------------------------------------------------------------------
 RECONCILE_POLL_SEC: float = float(os.getenv("LIVE_RECONCILE_POLL_SEC", "30.0"))
 HEARTBEAT_SEC: float = float(os.getenv("LIVE_HEARTBEAT_SEC", "10.0"))
+
+
+# ----------------------------------------------------------------------------
+# A7 — canale locale desktop + board del giorno.
+# ----------------------------------------------------------------------------
+BOARD_POLL_SEC: float = float(os.getenv("LIVE_BOARD_POLL_SEC", "10.0"))

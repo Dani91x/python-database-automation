@@ -14,6 +14,7 @@ import Analytics from "@/pages/Analytics";
 import Watchlist from "@/pages/Watchlist";
 import ReportPersonale from "@/pages/ReportPersonale";
 import SeguiLive from "@/pages/SeguiLive";
+import Board from "@/pages/Board";
 import MarketWatch from "@/pages/MarketWatch";
 import LivePnl from "@/pages/LivePnl";
 import TradeJournal from "@/pages/TradeJournal";
@@ -100,6 +101,15 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <SeguiLive />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* Programma di oggi (app desktop): tabellone dai canali LOCALI */}
+                            <Route
+                                path="/board"
+                                element={
+                                    <ProtectedRoute>
+                                        <Board />
                                     </ProtectedRoute>
                                 }
                             />

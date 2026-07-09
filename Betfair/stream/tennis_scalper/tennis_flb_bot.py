@@ -217,7 +217,12 @@ class TennisFLBStrategy(BaseStrategy):
             if self.exit_mode == "green":
                 self._cancel(market, st.get("order"))
                 self._pos_state[key] = {"state": DONE}
-            # "hybrid": resta aperto col residuo fino al settlement
+            else:
+                # "hybrid" (fix 2026-07-09): la parte MATCHED residua resta hold fino
+                # al settlement, ma il RESTO INEVASO dell'entry LAY va cancellato:
+                # un fill successivo al green riaprirebbe esposizione OLTRE la
+                # frazione dichiarata (green_frac), falsando il residuo greened.
+                self._cancel(market, st.get("order"))
         # "hold" / residuo hybrid: nessuno stop, si tiene fino alla chiusura mercato
 
     def process_closed_market(self, market: Any, mb: Any) -> None:

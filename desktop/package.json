@@ -1,0 +1,34 @@
+{
+    "name": "alphascore-desktop",
+    "productName": "AlphaScore Trading",
+    "version": "1.0.0",
+    "description": "App desktop AlphaScore Trading: UI locale (frontend/dist) + runner calcio/tennis con canale WS locale",
+    "main": "main.js",
+    "private": true,
+    "scripts": {
+        "postinstall_NOTA": "1) installa: npm install · 2) avvia: npm start (richiede frontend/dist buildato: cd ../frontend && npm run build) · 3) exe: npm run dist",
+        "start": "electron .",
+        "dist": "electron-builder --win"
+    },
+    "devDependencies": {
+        "electron": "^33.0.0",
+        "electron-builder": "^25.1.8"
+    },
+    "build": {
+        "appId": "com.alphascore.trading",
+        "productName": "AlphaScore Trading",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "main.js",
+            "preload.js"
+        ],
+        "win": {
+            "target": [
+                "nsis",
+                "portable"
+            ]
+        }
+    }
+}

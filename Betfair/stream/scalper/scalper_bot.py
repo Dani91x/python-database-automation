@@ -799,6 +799,30 @@ class ScalperStrategy(BaseStrategy):
             slot.cooldown_until = now + self.cooldown_ms
             return
 
+        # ---- GATE DI EVENTO: loss cap duro + cricchetto post-target ----
+        # PRIMA del routing: vale per OGNI modalita' (fix 09/07: viveva solo
+        # nel ramo maker/join, la reversion ignorava loss cap e target).
+        locked = float(self.stats.get("pnl_locked", 0.0))
+        if locked > float(self.stats.get("pnl_peak", 0.0)):
+            self.stats["pnl_peak"] = locked
+        if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
+            # tetto di perdita partita: FORCE-FLAT totale (non solo stop
+            # ingressi: i cicli in volo continuerebbero a perdere — visto
+            # -2.10 con cap -1.00 in backtest)
+            if not self.force_flat:
+                self.force_flat = True
+                self._emit("loss_cap", locked=round(locked, 2))
+            return
+        if (
+            self.event_profit_target > 0
+            and self.stats.get("pnl_peak", 0.0) >= self.event_profit_target
+        ):
+            if not self.stats.get("target_hit"):
+                self.stats["target_hit"] = 1
+                self._emit("target_raggiunto", locked=round(locked, 2))
+            if locked <= self.stats["pnl_peak"] - self.event_target_giveback:
+                return  # cricchetto: profitti della partita protetti
+
         # ---- ROUTING modalita' ----
         if self.mode != "reversion":
             # gate di FLUSSO: senza volume recente su ENTRAMBI i lati non si
@@ -846,28 +870,6 @@ class ScalperStrategy(BaseStrategy):
                 dr = self._long_drift(slot, now, mp)
                 if dr is not None and dr >= self.max_drift_ticks:
                     return
-            # ---- GATE DI EVENTO: loss cap duro + cricchetto post-target ----
-            locked = float(self.stats.get("pnl_locked", 0.0))
-            if locked > float(self.stats.get("pnl_peak", 0.0)):
-                self.stats["pnl_peak"] = locked
-            if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
-                # tetto di perdita partita: FORCE-FLAT totale (non solo stop
-                # ingressi: i cicli in volo continuerebbero a perdere — visto
-                # -2.10 con cap -1.00 in backtest)
-                if not self.force_flat:
-                    self.force_flat = True
-                    self._emit("loss_cap", locked=round(locked, 2))
-                return
-            if (
-                self.event_profit_target > 0
-                and self.stats.get("pnl_peak", 0.0) >= self.event_profit_target
-            ):
-                if not self.stats.get("target_hit"):
-                    self.stats["target_hit"] = 1
-                    self._emit("target_raggiunto", locked=round(locked, 2))
-                if locked <= self.stats["pnl_peak"] - self.event_target_giveback:
-                    return  # cricchetto: profitti della partita protetti
-
             # BIAS: quota SOLO dal lato del segnale, in coda al touch (maker)
             side_bias = self.bias.get(int(runner.selection_id))
             # TREND SURF: se deriva e flusso CONCORDANO, bias automatico col
@@ -1270,15 +1272,22 @@ class ScalperStrategy(BaseStrategy):
         # guardia anti-gap: movimento troppo grande = rottura regime (gol) -> niente fade
         if move > self.max_signal_ticks:
             return None
+        # Convenzione (coerente con micro_price/wom_imbalance): WoM > 0 =
+        # size_back >> size_lay = micro-price spinto VERSO il lay = pressione
+        # in SU; WoM < 0 = pressione in GIU'. Il filtro blocca quando la
+        # pressione estrema e' CONTRO la reversione attesa.
+        # (fix 09/07: i segni erano INVERTITI — bloccava la conferma e
+        # lasciava passare la pressione contraria, adverse selection pura.)
         wom = wom_imbalance(size_back, size_lay)
         if mp > ref:
             # quote salite -> reversione attesa giu' -> BACK (back alto, lay basso)
-            # blocca se troppa pressione di lay (WoM molto negativa) che spinge su'
-            if wom < -self.wom_block:
+            # blocca se il book spinge ANCORA SU (WoM molto positiva)
+            if wom > self.wom_block:
                 return None
             return "BACK"
         # quote scese -> reversione attesa su' -> LAY
-        if wom > self.wom_block:
+        # blocca se il book spinge ANCORA GIU' (WoM molto negativa)
+        if wom < -self.wom_block:
             return None
         return "LAY"
 

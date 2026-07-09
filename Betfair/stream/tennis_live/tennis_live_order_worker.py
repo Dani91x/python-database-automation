@@ -706,11 +706,98 @@ def _reject_cross_mode(rid: int, row: Dict[str, Any], runner_mode_l: str) -> Non
         logger.warning("[tennis-order] scrittura cross-mode %s KO: %s", rid, e)
 
 
+import itertools as _itertools
+
+_LOCAL_SID = _itertools.count(9_000_000_000)
+_LOCAL_TENNIS_ACTIONS = frozenset({"place", "cancel", "replace", "greenup"})
+# fix review HIGH: dedup per client_ref (mai doppia esecuzione su reinvio)
+_LOCAL_SEEN: Dict[str, tuple] = {}
+_LOCAL_SEEN_TTL = 300.0
+
+
+def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> None:
+    """A7 — comandi dal canale locale desktop: STESSO _dispatch della coda tennis
+    (greenup incluso: fallisce forte come da design). Il comando viene poi
+    REGISTRATO nella coda DB (status done/error) per storico/audit. Il drain
+    avviene nel thread di QUESTO worker (un solo thread tocca flumine)."""
+    from .. import local_channel
+
+    ch = local_channel.get_channel()
+    if ch is None:
+        return
+    for req in ch.pop_requests():
+        try:
+            if req.method == "snapshot":
+                # tennis: snapshot iniziale via DB (le push tengono fresco il resto)
+                ch.respond(req, True, {"orders": [], "positions": []})
+                continue
+            cmd = dict(req.params)
+            action = str(cmd.get("action") or "")
+            if action not in _LOCAL_TENNIS_ACTIONS:
+                ch.respond(req, False, error=f"azione non supportata dal canale locale tennis: {action}")
+                continue
+            if str(cmd.get("mode") or "") != runner_mode_l:
+                ch.respond(req, False,
+                           error=f"mode richiesta '{cmd.get('mode')}' diversa dal runner '{runner_mode_l}'")
+                continue
+            client_ref = str(cmd.get("client_ref") or "") or None
+            if client_ref:
+                import time as _t
+
+                hit = _LOCAL_SEEN.get(client_ref)
+                if hit and _t.monotonic() - hit[0] <= _LOCAL_SEEN_TTL:
+                    ch.respond(req, hit[1], hit[2],
+                               error=None if hit[1] else "comando già eseguito (dedup)")
+                    continue
+            sid = next(_LOCAL_SID)
+            cust_ref = ("awtq" + str(sid))[:32]
+            status = "done"
+            try:
+                cmd_parsed = parse_order_payload({"payload": cmd, "id": sid})
+                result = _dispatch(flumine, session, cmd_parsed, cust_ref)
+            except Exception as ex:  # noqa: BLE001
+                status = "error"
+                result = _result(ok=False, action=action, mode=runner_mode_l,
+                                 cmd=cmd, cust_ref=cust_ref, error=str(ex))
+            ch.respond(req, bool(result.get("ok")), result,
+                       error=None if result.get("ok") else result.get("error"))
+            if client_ref:
+                import time as _t
+
+                _LOCAL_SEEN[client_ref] = (_t.monotonic(), bool(result.get("ok")), result)
+            if result.get("ok") and action in ("place", "replace"):
+                rec = (getattr(session, "tracked_orders", {}) or {}).get(cust_ref)                     if session is not None else None
+                order = rec.get("order") if isinstance(rec, dict) else None
+                _mirror_order(runner_mode_l, _event_id_of(session, cmd.get("market_id")),
+                              cust_ref, order, cmd_parsed)
+            # registrazione best-effort nella coda DB (storico, mai bloccante)
+            try:
+                sb = tennis_db.get_tennis_client()
+                sb.table("tennis_live_order_queue").insert({
+                    "client_ref": f"local{sid}",
+                    "payload": cmd,
+                    "status": status,
+                    "result": result,
+                    "error": result.get("error"),
+                    "processed_at": tennis_db._now_iso(),
+                }).execute()
+            except Exception as ex:  # noqa: BLE001
+                logger.warning("[tennis-local] registrazione comando KO: %s", str(ex)[:120])
+        except Exception:  # noqa: BLE001 - mai far cadere il worker
+            logger.exception("[tennis-local] comando locale KO")
+            try:
+                ch.respond(req, False, error="errore interno")
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -> None:  # noqa: ARG001
     runner_mode = _runner_mode()
     if runner_mode not in ("PAPER", "LIVE"):
         return  # OFF/ignoto: worker inerte (non dovrebbe nemmeno essere registrato)
     runner_mode_l = runner_mode.lower()
+    # A7: drain dei comandi desktop PRIMA della coda DB (stesso path _dispatch)
+    _process_local_requests(flumine, session, runner_mode_l)
     try:
         rows = tennis_db.list_pending_tennis_orders(limit=5)
     except Exception as e:  # noqa: BLE001

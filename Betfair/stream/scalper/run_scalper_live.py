@@ -81,6 +81,42 @@ def select_liquid_markets(
     return out
 
 
+def _streaming_filter(market_ids: List[str]) -> Dict[str, Any]:
+    """Filtro nel formato STREAMING Betfair (camelCase: ``marketIds``).
+
+    ⚠️ fix 09/07: prima si passava ``{"market_ids": [...]}`` (snake_case):
+    per lo stream e' una chiave SCONOSCIUTA → filtro vuoto → flumine si
+    abbona a TUTTO l'exchange → SUBSCRIPTION_LIMIT_EXCEEDED (stesso bug
+    visto live il 02/07 e gia' fixato in scalper_session).
+    """
+    from betfairlightweight import filters
+
+    return filters.streaming_market_filter(market_ids=list(market_ids))
+
+
+def _parse_param_value(v: str) -> Any:
+    """Valore di un --param: bool/int/float/str.
+
+    fix 09/07: il vecchio parser lasciava "false"/"true" come STRINGHE →
+    ``bool("false") is True``: un ``--param exact_exits=false`` ATTIVAVA il
+    flag. Inoltre i negativi ("-1.5") restavano stringhe.
+    """
+    s = str(v).strip()
+    low = s.lower()
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        return s
+
+
 def _kill_switch_worker(framework: Flumine) -> None:
     """Ferma il framework se compare il file KILL_FILE."""
     while True:
@@ -131,22 +167,29 @@ def main() -> None:
     scalper_params: Dict[str, Any] = {
         "stake": args.stake,
         "allow_inplay": False,  # FORZATO: il live e' SOLO pre-match
+        # PROTEZIONI EXCHANGE .it (come scalper_session, fix 09/07): senza,
+        # una size non multipla di 0,50 € viene RIFIUTATA (INVALID_BET_SIZE,
+        # verificato live 02/07) e la posizione resta NUDA.
+        "live_min_bet": 2.0,
+        "size_step": 0.5,
+        "flatten_min_interval_ms": 1500,
     }
     for kv in args.param:
         k, _, v = kv.partition("=")
-        try:
-            scalper_params[k] = float(v) if "." in v or v.isdigit() else v
-        except ValueError:
-            scalper_params[k] = v
+        scalper_params[k] = _parse_param_value(v)
     scalper_params["allow_inplay"] = False
 
-    framework = Flumine(client=clients.BetfairClient(trading))
+    # min_bet_validation=False COME scalper_session (fix CRITICAL-3 del
+    # live-trading): l'OrderValidation di flumine rifiuterebbe gli hedge di
+    # size esatta sotto-minimo; i minimi veri li garantisce la strategia.
+    framework = Flumine(client=clients.BetfairClient(
+        trading, min_bet_validation=False))
     # cap esposizione: il worst-case di un ciclo e' ~stake*(price_max-1) sul
     # lay; margine 2x per gli hedge in volo.
     price_max = float(scalper_params.get("price_max", 4.6))
     exposure_cap = args.stake * (price_max - 1.0) * 2.0
     strategy = ScalperStrategy(
-        market_filter={"market_ids": market_ids},
+        market_filter=_streaming_filter(market_ids),
         scalper_params=scalper_params,
         max_selection_exposure=exposure_cap,
         max_order_exposure=exposure_cap,

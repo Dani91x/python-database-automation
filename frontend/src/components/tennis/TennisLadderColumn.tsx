@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
 import { GridView } from '@/components/live/GridView';
 import { loadLayout, saveLayout, setCenterView, type CenterView } from '@/lib/workspace';
+import { localLadderSource, localOrderApi, useLocalStatus } from '@/lib/localTransport';
 // SOLO la validazione pura condivisa (nessun accesso a tabelle calcio: la regola d'oro
 // tennis≠calcio riguarda i DATI; buildGreenupParams è matematica di validazione).
 import { buildGreenupParams } from '@/lib/liveOrders';
@@ -84,6 +85,14 @@ function normalizeMode(raw: string | undefined | null): 'OFF' | 'PAPER' | 'LIVE'
 export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: TennisLadderColumnProps) {
     const [now, setNow] = useState<TennisLiveNowRow | null>(null);
 
+    // ---- CANALE LOCALE tennis (desktop, ws://127.0.0.1:47332) ----
+    // Connesso → ladder/ordini via push locali (wrap di TENNIS_LADDER_SOURCE/TENNIS_ORDER_API,
+    // fallback DB integrato). Off → injection tennis INVARIATA (solo tabelle tennis_*).
+    const localStatus = useLocalStatus('tennis');
+    const localLadder = useMemo(() => localLadderSource('tennis', TENNIS_LADDER_SOURCE), []);
+    const localOrders = useMemo(() => localOrderApi('tennis', TENNIS_ORDER_API), []);
+    const isLocal = localStatus === 'connected';
+
     // D28: vista centrale ladder/grid, persistita nel workspace per-evento (come il calcio).
     const [centerView, setCenterViewState] = useState<CenterView>(() => loadLayout(eventId).centerView);
     useEffect(() => { setCenterViewState(loadLayout(eventId).centerView); }, [eventId]);
@@ -125,6 +134,15 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                     </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-bold">
+                    {/* chip canale LOCALE: solo quando connesso (off → niente, path DB invariato) */}
+                    {isLocal && (
+                        <span
+                            className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-black"
+                            title="Canale LOCALE attivo (ws://127.0.0.1:47332): ladder e ordini direttamente dal runner tennis sul PC — latenza ~0. Se cade, fallback automatico al DB."
+                        >
+                            ⚡ LOCALE
+                        </span>
+                    )}
                     <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-200 truncate max-w-[120px]" title={p1}>{p1}</span>
                     <span className="text-muted-foreground/60">vs</span>
                     <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-200 truncate max-w-[120px]" title={p2}>{p2}</span>
@@ -161,8 +179,8 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                         marketName={marketName}
                         orderMode={orderMode}
                         sport="tennis"
-                        ladderSource={TENNIS_LADDER_SOURCE}
-                        orderApi={TENNIS_ORDER_API}
+                        ladderSource={isLocal ? localLadder : TENNIS_LADDER_SOURCE}
+                        orderApi={isLocal ? localOrders : TENNIS_ORDER_API}
                     />
                 ) : (
                     <LadderView
@@ -172,8 +190,8 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                         orderMode={orderMode}
                         fallbackSelections={fallbackSelections}
                         enableDragMove
-                        ladderSource={TENNIS_LADDER_SOURCE}
-                        orderApi={TENNIS_ORDER_API}
+                        ladderSource={isLocal ? localLadder : TENNIS_LADDER_SOURCE}
+                        orderApi={isLocal ? localOrders : TENNIS_ORDER_API}
                         popout={{ sport: 'tennis', eventId, eventName: `${p1} — ${p2}`, p1, p2 }}
                         multiSlot={{
                             sport: 'tennis', eventId, marketId, marketName,

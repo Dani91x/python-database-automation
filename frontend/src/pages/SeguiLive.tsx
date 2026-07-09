@@ -23,7 +23,7 @@ import { LiveControlsPanel } from '@/components/live/LiveControlsPanel';
 import { XHedgePanel } from '@/components/live/XHedgePanel';
 import { ScalperPanel } from '@/components/live/ScalperPanel';
 import { HabitatCard } from '@/components/live/HabitatCard';
-import { LadderView } from '@/components/live/LadderView';
+import { LadderView, type LadderSource, type LadderOrderApi } from '@/components/live/LadderView';
 import { GridView } from '@/components/live/GridView';
 import { SelectionChartPanel } from '@/components/live/SelectionChartPanel';
 import { DepthPanel } from '@/components/live/DepthPanel';
@@ -32,9 +32,11 @@ import {
     sendCashoutAll, sendCashoutEvent, setKillSwitch,
     fetchLiveRiskState, subscribeLiveRiskState, fetchLivePositionsEvent,
     fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
+    sendLiveOrderCommand, fetchLiveOrders, fetchLivePositions, sendGreenup, requestRiskRule,
     type LiveOrderMode, type LiveRiskState, type LiveAccountRow, type LiveHeartbeatRow,
     type LivePositionRow,
 } from '@/lib/liveOrders';
+import { localLadderSource, localOrderApi, subscribeLocalNow, useLocalStatus } from '@/lib/localTransport';
 import { eventExposure, eventMtm } from '@/lib/eventPnl';
 import { heartbeatState, heartbeatAgeSec } from '@/lib/runnerHealth';
 import { countdownToOff, formatMinute, formatScore } from '@/lib/matchClock';
@@ -43,10 +45,34 @@ import {
     type WorkspaceLayout,
 } from '@/lib/workspace';
 import {
-    fetchLiveFollows, fetchLiveNow, subscribeLiveNow,
+    fetchLiveFollows, fetchLiveNow, subscribeLiveNow, fetchLiveLadder, subscribeLiveLadder,
     fetchLiveSignals, subscribeLiveSignals,
     type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
+
+// ---- CANALE LOCALE (app desktop, latenza ~0) ----
+// Wrapper dei DEFAULT calcio (le stesse funzioni di LadderView): quando il canale
+// ws://127.0.0.1:47331 è connesso, ladder e ordini viaggiano in locale; quando è
+// off NON passiamo i prop → LadderView/GridView usano i default DB (path invariato).
+const CALCIO_DB_LADDER_SOURCE: LadderSource = {
+    fetch: fetchLiveLadder,
+    subscribe: subscribeLiveLadder,
+};
+const CALCIO_DB_ORDER_API: LadderOrderApi = {
+    send: sendLiveOrderCommand,
+    fetchOrders: fetchLiveOrders,
+    fetchPositions: fetchLivePositions,
+    greenup: sendGreenup,
+    armRule: requestRiskRule,  // risk rules RESTANO su path DB by design
+    supportsFok: true,
+};
+
+// "più recente vince": merge tra live_now dal DB (realtime) e push 'now' locale.
+// Senza updated_at confrontabile accettiamo il nuovo (mai bloccarsi su dati vecchi).
+function newerLiveNow(prev: LiveNowRow | null, next: LiveNowRow): LiveNowRow {
+    if (!prev?.updated_at || !next.updated_at) return next;
+    return Date.parse(next.updated_at) >= Date.parse(prev.updated_at) ? next : prev;
+}
 
 // Strumenti della colonna DESTRA del terminal (UN tab attivo alla volta, stile Bet Angel:
 // One-click | Dutching | Bookmaking | ... come tab, mai tutti i pannelli impilati).
@@ -139,6 +165,14 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     }, [marketId, layout.activeMarketId]);
 
     const selectMarket = useCallback((id: string) => setLayout(l => setActiveMarket(l, id)), []);
+
+    // ---- CANALE LOCALE (desktop): stato reattivo + sorgenti wrappate ----
+    // Connesso → ladder/ordini via ws://127.0.0.1 (latenza ~0). Off → prop NON passati
+    // ai componenti: usano i loro default DB, comportamento byte-identico a prima.
+    const localStatus = useLocalStatus('calcio');
+    const localLadder = useMemo(() => localLadderSource('calcio', CALCIO_DB_LADDER_SOURCE), []);
+    const localOrders = useMemo(() => localOrderApi('calcio', CALCIO_DB_ORDER_API), []);
+    const isLocal = localStatus === 'connected';
 
     // E36: segnali del motore per l'evento (fetch + realtime) → chip Kelly nel ladder.
     const [signalsRow, setSignalsRow] = useState<LiveSignalsRow | null>(null);
@@ -403,6 +437,15 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                 freschezza dati, azioni d'emergenza SEMPRE visibili (cash-out + kill). */}
             <div className="sticky top-16 z-40 rounded-xl border border-white/10 bg-black/80 backdrop-blur-xl px-3 py-2 flex items-center gap-3 flex-wrap">
                 <TerminalModeBadge mode={mode} />
+                {/* chip canale LOCALE: solo quando connesso (off → niente, path DB invariato) */}
+                {isLocal && (
+                    <span
+                        className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-black"
+                        title="Canale LOCALE attivo (ws://127.0.0.1:47331): ladder, quote e ordini direttamente dal runner sul PC — latenza ~0. Se cade, fallback automatico al DB."
+                    >
+                        ⚡ LOCALE
+                    </span>
+                )}
                 {/* D32: minuto+score in-play, countdown all'off pre-match (dati già nel DB) */}
                 {clock && (clock.inplay
                     ? (formatMinute(clock.minute) != null || formatScore(clock.scoreHome, clock.scoreAway) != null) && (
@@ -597,6 +640,8 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                                 marketName={market.market_name || market.market_type}
                                 orderMode={mode}
                                 sport="calcio"
+                                ladderSource={isLocal ? localLadder : undefined}
+                                orderApi={isLocal ? localOrders : undefined}
                             />
                         ) : (
                             <LadderView
@@ -606,6 +651,8 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                                 orderMode={mode}
                                 fallbackSelections={panelSelections}
                                 signals={signalsRow}
+                                ladderSource={isLocal ? localLadder : undefined}
+                                orderApi={isLocal ? localOrders : undefined}
                                 popout={{ sport: 'calcio', eventId, eventName }}
                                 multiSlot={{
                                     sport: 'calcio',
@@ -734,14 +781,29 @@ export default function SeguiLive() {
             .finally(() => { if (alive) setDetailLoading(false); });
 
         unsubRef.current = subscribeLiveNow(selected.event_id, (row) => {
-            // payload DELETE → row null: manteniamo l'ultimo stato noto
-            if (row) setLiveNow(row);
+            // payload DELETE → row null: manteniamo l'ultimo stato noto.
+            // merge col canale locale: il PIÙ RECENTE vince (mai regredire a dati vecchi).
+            if (row) setLiveNow(prev => newerLiveNow(prev, row));
         });
 
         return () => {
             alive = false;
             if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         };
+    }, [selected]);
+
+    // --- canale LOCALE: push 'now' (riga live_now dal runner, cadenza più alta del
+    // realtime DB). Filtrati per evento selezionato; merge "più recente vince" con il
+    // path DB sopra (che resta attivo invariato come fallback).
+    useEffect(() => {
+        if (!selected) return undefined;
+        const eventId = selected.event_id;
+        const unsub = subscribeLocalNow('calcio', (d) => {
+            const row = d as LiveNowRow | null;
+            if (!row || row.event_id !== eventId) return;
+            setLiveNow(prev => newerLiveNow(prev, row));
+        });
+        return unsub;
     }, [selected]);
 
     return (

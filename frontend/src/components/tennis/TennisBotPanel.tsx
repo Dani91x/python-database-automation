@@ -94,7 +94,7 @@ interface CardProps {
     control: TennisBotControl | null;
     busy: boolean;
     nowTs: number;
-    onArm: (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number>) => void;
+    onArm: (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number | string | boolean>) => void;
     onDisarm: (botKey: TennisBotKey) => void;
 }
 
@@ -102,7 +102,7 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
     const accent = ACCENTS[descriptor.accent];
     const [dryRun, setDryRun] = useState(true);
     const [stake, setStake] = useState<number>(descriptor.defaultStake);
-    const [params, setParams] = useState<Record<string, number>>({ ...descriptor.defaults });
+    const [params, setParams] = useState<Record<string, number | string>>({ ...descriptor.defaults });
     const [showParams, setShowParams] = useState(false);
 
     const active = !!control && ACTIVE_STATUSES.includes(control.status);
@@ -126,7 +126,12 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
         if (active) {
             onDisarm(descriptor.key);
         } else {
-            onArm(descriptor.key, dryRun, stake, params);
+            // select bool: 'on'/'off' → boolean (il bot Python attende veri boolean)
+            const payload: Record<string, number | string | boolean> = { ...params };
+            for (const f of descriptor.params) {
+                if (f.type === 'select' && f.bool) payload[f.key] = payload[f.key] === 'on';
+            }
+            onArm(descriptor.key, dryRun, stake, payload);
         }
     };
 
@@ -249,6 +254,20 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
                                             {f.hint}
                                         </TooltipContent>
                                     </Tooltip>
+                                    {f.type === 'select' ? (
+                                        <select
+                                            value={String(params[f.key] ?? descriptor.defaults[f.key])}
+                                            disabled={active || busy}
+                                            onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
+                                            className="h-7 w-full rounded-md bg-white/5 border border-white/10 text-white text-xs px-2"
+                                        >
+                                            {(f.options ?? []).map((o) => (
+                                                <option key={o.value} value={o.value} className="bg-slate-900">
+                                                    {o.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : (
                                     <Input
                                         type="number"
                                         step={f.step}
@@ -263,11 +282,14 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
                                         }}
                                         onBlur={(e) => {
                                             const raw = Number(e.target.value);
-                                            const v = Number.isFinite(raw) ? clamp(f, raw) : descriptor.defaults[f.key];
+                                            const v = Number.isFinite(raw)
+                                                ? clamp(f, raw)
+                                                : Number(descriptor.defaults[f.key]);
                                             setParams((p) => ({ ...p, [f.key]: v }));
                                         }}
                                         className="h-7 bg-white/5 border-white/10 text-white text-xs"
                                     />
+                                    )}
                                 </div>
                             </TooltipProvider>
                         ))}
@@ -371,7 +393,7 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
         setBusyBots((prev) => ({ ...prev, [botKey]: v }));
 
     const handleArm = useCallback(
-        async (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number>) => {
+        async (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number | string | boolean>) => {
             if (inflight.current.has(botKey)) return;
             const desc = TENNIS_BOT_REGISTRY.find((d) => d.key === botKey);
             // Gate money-critical: armare un bot con ORDINI REALI attiva un agente autonomo

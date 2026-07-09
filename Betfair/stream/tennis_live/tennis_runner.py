@@ -46,6 +46,7 @@ from ..auth import build_client, safe_logout
 from ..recorder import serialize_book
 from ..runner_lifecycle import any_follow_alive, uptime_exceeded
 from ..single_instance import acquire_single_instance_lock
+from ..tennis_scalper.run_tennis_scalper import TENNIS_PARAMS as SCALPER_TENNIS_PARAMS
 from ..tennis_scalper.tennis_flb_bot import TennisFLBStrategy
 from ..tennis_scalper.tennis_pro_bot import TennisProStrategy
 from ..tennis_scalper.tennis_scalper_bot import TennisScalperStrategy
@@ -460,7 +461,20 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     # dry-run forzato fuori da LIVE (difesa in profondità oltre al paper_trade del client).
     params["dry_run"] = True if not is_live else bool(control.get("dry_run", True))
     if bot_key == "tennis_scalper":
-        params.setdefault("allow_inplay", True)  # i bot tennis sono in-play
+        # PRESET TENNIS (fix 2026-07-09): senza questa base lo scalper armato dalla UI
+        # partiva coi default CALCIO della classe (max_signal_ticks=4 → l'anti-gap blocca
+        # OGNI punto tennis che muove 2-6 tick; max_spread_ticks=2, min_size=150,
+        # price 1.50-4.6; e in LIVE mancavano le blindature .it size_step/live_min_bet →
+        # green-up con size non-multipla di 0,50 RIFIUTATO = posizione scoperta).
+        # Base = preset validato del runner standalone (run_tennis_scalper.TENNIS_PARAMS);
+        # i valori del control (UI) hanno SEMPRE la precedenza (setdefault).
+        for _k, _v in SCALPER_TENNIS_PARAMS.items():
+            params.setdefault(_k, _v)
+        if not is_live:
+            # PAPER/OFF: fill simulati a size ESATTE (mirror di run_tennis_scalper
+            # --paper): la granularità .it non esiste in simulazione → green-up esatti.
+            params["size_step"] = 0.0
+            params["live_min_bet"] = 0.0
     stake = params["stake"]
     cap = stake * (float(params.get("price_max", 6.0)) + 2.0) * 3.0
     kwargs: Dict[str, Any] = {
@@ -591,6 +605,20 @@ def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
                 "status": book.get("status"),
                 "ladder": payload,
             }
+            # A7: push locale immediato; DB throttled a 2s/mercato col desktop attivo
+            # (write-on-change invariato senza desktop) — stesso schema del calcio.
+            from .. import local_channel as _lc
+            if _lc.channel_active():
+                _lc.publish("ladder", row)
+                now_m = time.monotonic()
+                ts_map = getattr(session, "_ladder_db_ts", None)
+                if ts_map is None:
+                    ts_map = {}
+                    session._ladder_db_ts = ts_map
+                if now_m - ts_map.get(mid, 0.0) < 2.0:
+                    session._ladder_sig[mid] = sig
+                    continue
+                ts_map[mid] = now_m
             try:
                 tennis_db.upsert_tennis_ladder(row)
                 session._ladder_sig[mid] = sig
@@ -896,6 +924,12 @@ def _announce_order_mode(mode: str) -> None:
 def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) -> List[str]:
     trading = build_client(login=True)
     session = TennisLiveSession(trading)
+    session.context_api_client = trading  # per board_worker (REST leggero)
+    # A7 — canale LOCALE desktop (bind SOLO 127.0.0.1); best-effort come il calcio.
+    from .. import local_channel as _lc
+    _ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
+    if _ch is not None:
+        _ch.set_hello(mode=live_order_mode())
     interrupted = False
     _announce_order_mode(live_order_mode())
     try:
@@ -957,6 +991,11 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             framework.add_worker(BackgroundWorker(
                 framework, function=ladder_worker, interval=LADDER_PUBLISH_SEC or 1.0,
                 func_kwargs={"session": session}, name="tennis_ladder"))
+            from ..board_worker import board_worker as _board
+            framework.add_worker(BackgroundWorker(
+                framework, function=_board, interval=float(os.getenv("LIVE_BOARD_POLL_SEC", "10.0")),
+                func_kwargs={"session": session, "event_type_id": "2"},
+                name="tennis_board"))
             framework.add_worker(BackgroundWorker(
                 framework, function=score_and_now_worker, interval=SCORE_POLL_SEC or 2.0,
                 func_kwargs={"session": session}, name="tennis_score_now"))

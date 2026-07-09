@@ -314,18 +314,20 @@ class TennisProStrategy(BaseStrategy):
             pass
 
     def _close_at(self, market: Any, sel: int, price: float,
-                  frac: float = 1.0) -> float:
-        """Piazza l'hedge di green-up. Ritorna il profitto BLOCCATO (se l'hedge
-        si riempie): e' l'unica stima corretta del P&L (a hedge pendente il
-        netto e' ancora a una gamba)."""
+                  frac: float = 1.0) -> "Tuple[float, Optional[Any]]":
+        """Piazza l'hedge di green-up. Ritorna (profitto BLOCCATO, ordine hedge).
+
+        Il locked e' una stima corretta SOLO se l'hedge si riempie (a hedge
+        pendente il netto e' ancora a una gamba); l'ordine viene ritornato per
+        poterlo tracciare/cancellare (fix 2026-07-09: doppio-hedge staged)."""
         b, ba, l, la = self._position(market, sel)
         nw, nl = self._net(b, ba, l, la)
         g = compute_green(nw, nl, price)
         if g is None:
-            return min(nw, nl)
+            return min(nw, nl), None
         side, size, locked = g
-        self._place(market, sel, side, get_nearest_price(price), size * frac)
-        return float(locked)
+        o = self._place(market, sel, side, get_nearest_price(price), size * frac)
+        return float(locked), o
 
     # ------------------------------------------------------------- apertura
     def _open_trade(self, market: Any, sel: int, side: str, book: Dict[str, Any],
@@ -360,7 +362,7 @@ class TennisProStrategy(BaseStrategy):
         self._trade[market.market_id] = {
             "state": OPEN, "sel": int(sel), "side": side, "entry": entry,
             "target": target, "stop": stop, "kind": kind, "staged_done": False,
-            "order": order, "wait": 0,
+            "staged_order": None, "order": order, "wait": 0,
             "entry_games": (s.games_home, s.games_away, s.sets_home, s.sets_away)
             if s else None,
         }
@@ -580,25 +582,39 @@ class TennisProStrategy(BaseStrategy):
         # scaglione: a meta' strada verso il target, green del frac
         if (self.staged and not trade["staged_done"] and favorable
                 and move_t >= max(1, target_t // 2)):
-            self._close_at(market, sel, mkt, frac=self.staged_frac)
+            _, staged_o = self._close_at(market, sel, mkt, frac=self.staged_frac)
             trade["staged_done"] = True
+            trade["staged_order"] = staged_o
             self._emit("staged_green", sel=sel, price=mkt)
 
         if favorable and move_t >= target_t:      # TARGET -> green totale
             self._finish(market, trade, "green", sel,
-                         self._close_at(market, sel, mkt))
+                         self._full_close(market, trade, sel, mkt))
             return
         if (not favorable) and move_t >= stop_t:  # STOP
             self._finish(market, trade, "stop", sel,
-                         self._close_at(market, sel, mkt))
+                         self._full_close(market, trade, sel, mkt))
             return
         # USCITA STRUTTURALE: il game/set che ha innescato si e' risolto -> chiudi
         s = self.score
         if s is not None and trade.get("entry_games") is not None:
             if (s.games_home, s.games_away, s.sets_home, s.sets_away) != trade["entry_games"]:
                 self._finish(market, trade, "scratch", sel,
-                             self._close_at(market, sel, mkt))
+                             self._full_close(market, trade, sel, mkt))
                 return
+
+    def _full_close(self, market: Any, trade: Dict[str, Any], sel: int,
+                    price: float) -> float:
+        """Chiusura TOTALE del trade (fix 2026-07-09: doppio-hedge staged).
+
+        Col bet delay in-play del tennis (3s) l'hedge dello SCAGLIONE può essere
+        ancora PENDENTE quando scatta target/stop/scratch: il green finale —
+        calcolato sulla sola posizione MATCHED — ri-hedgerebbe l'intera size e,
+        al fill di entrambi, la posizione risulterebbe ROVESCIATA (over-hedge).
+        Prima del green finale si CANCELLA il residuo vivo dello staged hedge."""
+        self._cancel(market, trade.get("staged_order"))
+        locked, _ = self._close_at(market, sel, price)
+        return locked
 
     def _finish(self, market: Any, trade: Dict[str, Any], outcome: str,
                 sel: int, locked: float) -> None:

@@ -204,6 +204,10 @@ def update_live_now(
         "state": state,
         "updated_at": _now_iso(),
     }
+    # A7: push locale PRIMA della scrittura cloud (il desktop non aspetta la rete).
+    from .local_channel import publish as _lpub
+
+    _lpub("now", row)
     _exec_retry(sb.table("live_now").upsert(row, on_conflict="event_id"))
 
 
@@ -445,6 +449,9 @@ def upsert_live_order(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
+    from .local_channel import publish as _lpub
+
+    _lpub("order", payload)  # A7: fill realtime sul desktop
     _exec_retry(sb.table("betfair_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
     ))
@@ -488,6 +495,9 @@ def upsert_live_position(row: Dict[str, Any]) -> None:
     sb = get_supabase_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
+    from .local_channel import publish as _lpub
+
+    _lpub("position", payload)  # A7: esposizioni realtime sul desktop
     _exec_retry(sb.table("betfair_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
     ))

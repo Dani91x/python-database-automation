@@ -507,6 +507,13 @@ export interface TennisBotParamField {
     min: number;
     max: number;
     hint: string;
+    /** campo a SCELTA (stringa/bool) invece che numerico: la UI rende una <select>.
+     *  I default rispecchiano ESATTAMENTE i default del bot Python (nessun cambio
+     *  di comportamento finché l'utente non sceglie). */
+    type?: 'number' | 'select';
+    options?: { value: string; label: string }[];
+    /** true = inviare come boolean ('on'→true, 'off'→false). */
+    bool?: boolean;
 }
 
 export interface TennisBotDescriptor {
@@ -517,9 +524,9 @@ export interface TennisBotDescriptor {
     phase: 'pre-match' | 'in-play' | 'both';
     accent: 'primary' | 'secondary' | 'cyan' | 'magenta';
     defaultStake: number;
-    /** parametri numerici modificabili con i loro default validati. */
+    /** parametri modificabili con i loro default validati (numerici o select). */
     params: TennisBotParamField[];
-    defaults: Record<string, number>;
+    defaults: Record<string, number | string>;
 }
 
 // NB: default validati in backtest (dossier tennis_scalper). Rifiniti dopo la lettura
@@ -565,8 +572,21 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'fade_target_ticks', label: 'Fade: tick target', step: 1, min: 2, max: 40, hint: 'obiettivo fade over-reaction' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.1, max: 10, hint: 'non entrare sopra questa quota' },
+            { key: 'surface', label: 'Superficie', step: 0, min: 0, max: 0, type: 'select',
+              options: [{ value: 'hard', label: 'hard' }, { value: 'clay', label: 'clay' }, { value: 'grass', label: 'grass' }],
+              hint: 'ATTENZIONE: su grass il bot DISATTIVA serving-for-set / doppio break / favorito compresso. Imposta la superficie reale del match.' },
+            { key: 'trend', label: 'Filtro trend', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
+              hint: 'entra solo con expected-rate favorevole (er_trend)' },
+            { key: 'adapt', label: 'Sizing adattivo', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
+              hint: 'riduce lo stake dopo perdite consecutive' },
+            { key: 'maker', label: 'Ingresso maker', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
+              hint: 'entra passivo a maker_offset tick dal best (fill non garantito)' },
         ],
-        defaults: { bp_target_ticks: 5, bp_stop_ticks: 3, fade_target_ticks: 4, min_matched: 50000, price_max: 3.6 },
+        defaults: { bp_target_ticks: 5, bp_stop_ticks: 3, fade_target_ticks: 4, min_matched: 50000, price_max: 3.6,
+            surface: 'grass', trend: 'off', adapt: 'off', maker: 'off' },
     },
     {
         key: 'tennis_flb',
@@ -581,8 +601,12 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'green_frac', label: 'Frazione green', step: 0.1, min: 0.1, max: 1, hint: 'quota di posizione da chiudere' },
             { key: 'rearm_mult', label: 'Rearm mult', step: 0.05, min: 1, max: 2, hint: 'riarmo dopo movimento' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
+            { key: 'exit_mode', label: 'Uscita', step: 0, min: 0, max: 0, type: 'select',
+              options: [{ value: 'hybrid', label: 'hybrid' }, { value: 'hold', label: 'hold' }, { value: 'green', label: 'green' }],
+              hint: 'hold = preset col miglior backtest (direzionale, locked può restare <0); hybrid = green parziale' },
         ],
-        defaults: { lay_max: 1.1, green_ticks: 8, green_frac: 0.5, rearm_mult: 1.1, min_matched: 10000 },
+        defaults: { lay_max: 1.1, green_ticks: 8, green_frac: 0.5, rearm_mult: 1.1, min_matched: 10000,
+            exit_mode: 'hybrid' },
     },
     {
         key: 'tennis_swing',
@@ -619,7 +643,7 @@ export async function armTennisBot(
     botKey: TennisBotKey,
     dryRun: boolean,
     stake: number,
-    params: Record<string, number>,
+    params: Record<string, number | string | boolean>,
 ): Promise<TennisBotControl> {
     const { data, error } = await supabase.rpc('tennis_bot_arm', {
         p_event_id: eventId,

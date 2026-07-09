@@ -152,6 +152,9 @@ def upsert_tennis_now(
         "points": points,
         "updated_at": _now_iso(),
     }
+    from ..local_channel import publish as _lpub
+
+    _lpub("now", row)  # A7: push locale prima del cloud
     _exec_retry(sb.table("tennis_live_now").upsert(row, on_conflict="event_id"))
 
 
@@ -285,6 +288,9 @@ def upsert_tennis_order(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
+    from ..local_channel import publish as _lpub
+
+    _lpub("order", payload)  # A7: fill realtime sul desktop
     _exec_retry(sb.table("tennis_live_orders").upsert(
         payload, on_conflict="mode,client_order_ref"
     ))
@@ -298,6 +304,9 @@ def upsert_tennis_position(row: Dict[str, Any]) -> None:
     sb = get_tennis_client()
     payload = dict(row)
     payload["updated_at"] = _now_iso()
+    from ..local_channel import publish as _lpub
+
+    _lpub("position", payload)  # A7: esposizioni realtime sul desktop
     _exec_retry(sb.table("tennis_live_positions").upsert(
         payload, on_conflict="mode,market_id,selection_id,handicap"
     ))

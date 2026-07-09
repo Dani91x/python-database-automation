@@ -33,7 +33,10 @@ VALIDATED_PARAMS: Dict[str, Any] = {
     "mode": "auto", "allow_inplay": False,
     "scalp_ticks": 1, "stop_ticks": 1,
     "entry_ttl_ms": 600_000, "lock_ttl_ms": 3_600_000, "max_cycles": 500,
-    "min_size": 150.0, "min_flow": 10.0, "flow_window_ms": 90_000,
+    # min_size 300 = gate VALIDATO (backtest 12 match 07-08/07, dossier
+    # §6.4: 150 → -0.90 €, 300 → +0.77 €). fix 09/07: qui era rimasto 150
+    # e sovrascriveva il default 300 gia' portato in produzione nel bot.
+    "min_size": 300.0, "min_flow": 10.0, "flow_window_ms": 90_000,
     "warmup_ms": 60_000, "price_min": 1.50, "price_max": 4.6,
     "join_max_spread": 2, "improve_inside": True, "reprice_ticks": 2,
     "capture_min_ticks": 3, "capture_max_ticks": 10,
