@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from flumine import Flumine, clients
 
@@ -117,17 +117,55 @@ def _parse_param_value(v: str) -> Any:
         return s
 
 
+def _live_orders(framework: Flumine) -> List[Tuple[Any, Any]]:
+    """(market, order) per ogni ordine ancora VIVO nei blotter (best-effort)."""
+    out: List[Tuple[Any, Any]] = []
+    try:
+        for market in list(getattr(framework, "markets", []) or []):
+            blotter = getattr(market, "blotter", None)
+            for order in list(getattr(blotter, "live_orders", []) or []):
+                out.append((market, order))
+    except Exception:  # noqa: BLE001 - lo shutdown non deve mai bloccarsi
+        pass
+    return out
+
+
 def _kill_switch_worker(framework: Flumine) -> None:
-    """Ferma il framework se compare il file KILL_FILE."""
+    """Ferma il framework se compare il file KILL_FILE.
+
+    ⚠️ In PRE-MATCH gli ordini LAPSE NON decadono da soli: restano vivi
+    fino al turn-in-play. Un hard-exit secco lasciava quote resting
+    sull'exchange (fix 10/07): prima di uscire, best-effort, si arma il
+    force-flat sulle strategie (stesso percorso near-KO: cancella e chiude
+    flat), si attende fino a 10s e si cancellano gli ordini superstiti.
+    """
     while True:
         if os.path.isfile(KILL_FILE):
-            logger.warning("[scalper-live] KILL-SWITCH rilevato (%s): stop.",
-                           KILL_FILE)
+            logger.warning("[scalper-live] KILL-SWITCH rilevato (%s): "
+                           "force-flat + cancel ordini, poi stop.", KILL_FILE)
+            # 1) force-flat: le strategie cancellano le entry e chiudono
+            #    le posizioni matchate al prossimo book update
+            try:
+                for s in list(getattr(framework, "strategies", []) or []):
+                    s.force_flat = True
+            except Exception:  # noqa: BLE001
+                pass
+            # 2) attesa best-effort (max 10s): nessun ordine vivo nei blotter
+            deadline = time.time() + 10.0
+            while time.time() < deadline and _live_orders(framework):
+                time.sleep(1.0)
+            # 3) sweep finale: cancella qualunque ordine ancora vivo
+            for market, order in _live_orders(framework):
+                try:
+                    market.cancel_order(order)
+                except Exception:  # noqa: BLE001
+                    pass
+            time.sleep(2.0)  # lascia partire le cancel prima dell'hard-exit
             try:
                 framework.handler_queue.put(None)  # segnala lo shutdown
             except Exception:  # noqa: BLE001
                 pass
-            os._exit(0)  # hard-stop: gli ordini LAPSE decadono da soli
+            os._exit(0)  # hard-stop (dopo la pulizia best-effort qui sopra)
         time.sleep(2.0)
 
 
@@ -173,6 +211,10 @@ def main() -> None:
         "live_min_bet": 2.0,
         "size_step": 0.5,
         "flatten_min_interval_ms": 1500,
+        # USCITE A SIZE ESATTA come scalper_session (allineamento 10/07):
+        # senza, gli hedge non-multipli di 0,50 € venivano solo arrotondati
+        # o saltati invece di passare dal park-trim-replace.
+        "exact_exits": True,
     }
     for kv in args.param:
         k, _, v = kv.partition("=")

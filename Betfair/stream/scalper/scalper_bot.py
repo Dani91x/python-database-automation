@@ -201,29 +201,37 @@ class _Slot:
 class ScalperStrategy(BaseStrategy):
     """Strategia di micro-scalping mean-reversion.
 
-    Parametri (``context`` o kwargs dedicati, tutti con default sensati):
+    Parametri (``context`` o kwargs dedicati, default REALI del codice —
+    configurazione VALIDATA in backtest, dossier §9):
 
     Esecuzione / rischio
-        stake: float = 2.0            size per ingresso (>= MIN_STAKE)
+        stake: float = 25.0           size per ingresso (>= MIN_STAKE)
         scalp_ticks: int = 1          tick di profitto target alla chiusura
-        stop_ticks: int = 3           tick avversi che innescano lo stop
-        entry_ttl_ms: int = 6000      ms max per riempire l'ingresso (poi cancella)
-        lock_ttl_ms: int = 20000      ms max in LOCKING prima del flatten
-        max_cycles: int = 50          cicli max per selezione/mercato
+        stop_ticks: int = 1           tick avversi che innescano lo stop
+        entry_ttl_ms: int = 600000    ms max per riempire l'ingresso (poi cancella)
+        lock_ttl_ms: int = 3600000    ms max in LOCKING prima del flatten
+        max_cycles: int = 500         cicli max per selezione/mercato
         allow_inplay: bool = False    se False opera SOLO pre-match
+
+    Missione (prodotto "2 tick per evento")
+        one_green_per_phase: bool = False
+                                      un ciclo verde (locked >= 0.05) PRE-MATCH
+                                      + uno IN-PLAY (finestra intervallo) per
+                                      evento: fatto il tick della fase, in
+                                      quella fase non si aprono altri cicli
 
     Gate (selezione automatica dei mercati/momenti adatti)
         max_spread_ticks: int = 2     spread massimo per quotare
         min_size: float = 300.0       liquidita' minima sui best back/lay (validato)
         min_total_matched: float = 0  total_matched minimo del runner
-        price_min: float = 1.20       quota minima operabile
-        price_max: float = 8.0        quota massima operabile
+        price_min: float = 1.50       quota minima operabile
+        price_max: float = 4.6        quota massima operabile
         market_types: set|None        whitelist tipi mercato (None = tutti)
 
     Segnale (mean-reversion)
         signal_ticks: float = 1.0     movimento (in tick) per innescare il segnale
-        signal_window_ms: int = 8000  finestra del momentum sul micro-price
-        wom_block: float = 0.85       se |WoM| oltre soglia ED e' contro la
+        signal_window_ms: int = 15000 finestra del momentum sul micro-price
+        wom_block: float = 0.90       se |WoM| oltre soglia ED e' contro la
                                       reversion, blocca l'ingresso
     """
 
@@ -430,6 +438,9 @@ class ScalperStrategy(BaseStrategy):
             "scalps": 0, "roundtrips": 0, "scratches": 0, "stops": 0,
             "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
             "trend_entries": 0, "target_hit": 0,
+            # contabilita' per FASE (missione one_green_per_phase)
+            "pnl_prematch": 0.0, "pnl_inplay": 0.0,
+            "greens_prematch": 0, "greens_inplay": 0,
         }
 
         # ---- TREND SURF (il fix dei "segni negativi" sui mercati in deriva) ----
@@ -456,6 +467,12 @@ class ScalperStrategy(BaseStrategy):
         self.event_profit_target: float = float(c.get("event_profit_target", 0.0))
         self.event_target_giveback: float = float(c.get("event_target_giveback", 0.30))
         self.event_loss_cap: float = float(c.get("event_loss_cap", 0.0))
+        # ---- MISSIONE "1 tick per fase" (default off) ----
+        # Un ciclo verde (locked >= _GREEN_MIN) PRE-MATCH + uno IN-PLAY
+        # (finestra intervallo) per evento: raggiunto il tick della fase,
+        # in QUELLA fase non si aprono nuovi cicli (quelli in volo si
+        # gestiscono normalmente fino a flat).
+        self.one_green_per_phase: bool = bool(c.get("one_green_per_phase", False))
 
         # ---- STOP ADATTIVO SUL TEMPO AL KICKOFF (0 = off) ----
         # lontano dal KO il rischio settlement e' solo teorico: stop largo
@@ -472,7 +489,8 @@ class ScalperStrategy(BaseStrategy):
         # kickoff (ms epoch) per market_id, dal market_definition (NON wall-clock:
         # market.seconds_to_start usa datetime.now() ed e' insensato in replay)
         self._ko_ms: Dict[str, Optional[float]] = {}
-        # log diagnostico dei cicli chiusi (per analisi, non usato dalla logica)
+        # log diagnostico dei cicli chiusi ({"phase","locked","kind","ts"},
+        # bounded agli ultimi _CYCLE_LOG_MAX; per analisi, MAI dalla logica)
         self.cycle_log: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------ API
@@ -549,6 +567,10 @@ class ScalperStrategy(BaseStrategy):
             return
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
+        # GATE DI EVENTO valutato PER-BOOK (fix 10/07: prima viveva solo in
+        # _try_enter — con gli slot in cooldown o quota fuori banda il loss
+        # cap non si armava). Arma il force-flat e blocca i nuovi ingressi.
+        guard_block = self._check_event_guards()
         if self.inplay_close_now and inplay:
             for (mid_, sid_), s_ in list(self._slots.items()):
                 if mid_ != market.market_id:
@@ -564,7 +586,7 @@ class ScalperStrategy(BaseStrategy):
         # al KO deriva dal publish_time del book vs il market_time del
         # market_definition (coerente anche in replay; MAI wall-clock).
         near_ko = False
-        no_entry = False
+        no_entry = guard_block
         if self.force_flat:
             near_ko = True
         elif not self.allow_inplay:
@@ -578,6 +600,14 @@ class ScalperStrategy(BaseStrategy):
                         near_ko = True
                     if self.entry_stop_before_s > 0 and left_s <= self.entry_stop_before_s:
                         no_entry = True
+        # MISSIONE one_green_per_phase: completato il tick della fase
+        # corrente (pre-match o in-play), in quella fase niente nuovi cicli;
+        # no_entry fa anche cancellare le quote resting inevase (ramo A2).
+        if self.one_green_per_phase:
+            fase_done = self.stats[
+                "greens_inplay" if inplay else "greens_prematch"] >= 1
+            if fase_done:
+                no_entry = True
         for runner in market_book.runners:
             if getattr(runner, "status", None) != "ACTIVE":
                 continue
@@ -629,9 +659,10 @@ class ScalperStrategy(BaseStrategy):
                     self._drive_flatten(market, slot, best_back, best_lay, now)
                 continue  # nessun nuovo ingresso vicino al KO
 
-            # A2) finestra "no i nuovi ingressi" pre-KO: gli ingressi ancora
-            # inevasi vanno CANCELLATI (un fill a ridosso del KO non ha il
-            # tempo di chiudersi da maker); le posizioni aperte si gestiscono
+            # A2) "no nuovi ingressi" (buffer pre-KO, gate di evento o
+            # missione di fase, anche IN-PLAY): gli ingressi ancora inevasi
+            # vanno CANCELLATI (un fill qui non ha il tempo/il permesso di
+            # chiudersi da maker); le posizioni aperte si gestiscono
             # normalmente fino alla finestra di flatten.
             if no_entry and slot.status in (QUOTING, QUOTING2):
                 matched_any = any(
@@ -723,8 +754,11 @@ class ScalperStrategy(BaseStrategy):
                         self._cancel_if_live(market, ne)
                     continue
             # D) nuovo ingresso (IDLE) — mai in-play senza allow_inplay, mai
-            # dentro il buffer pre-KO (entry_stop_before_s)
+            # dentro il buffer pre-KO (entry_stop_before_s), mai con no_entry
+            # armato (gate evento / missione di fase: vale anche IN-PLAY)
             if slot.status == IDLE:
+                if no_entry:
+                    continue
                 if inplay and not self.allow_inplay:
                     continue
                 if inplay and self.inplay_to_s > 0:
@@ -770,6 +804,69 @@ class ScalperStrategy(BaseStrategy):
             oid = getattr(order, "id", None) or id(order)
             self._settled_by_id[oid] = (order, mtype)
 
+    # ------------------------------------------------- contabilita' di ciclo
+    # soglia "ciclo verde" (EUR) per la missione one_green_per_phase
+    _GREEN_MIN: float = 0.05
+    # cycle_log bounded: si tengono solo gli ultimi N cicli (diagnostica)
+    _CYCLE_LOG_MAX: int = 200
+
+    def _on_cycle_closed(
+        self, slot: _Slot, locked: float,
+        kind: str = "cycle", now: Optional[int] = None,
+    ) -> None:
+        """Contabilita' UNICA di chiusura ciclo: P&L per FASE + missione.
+
+        Va chiamata in OGNI punto in cui un ciclo si chiude con un ``locked``
+        noto (roundtrip, scalp, flatten, residuo accettato). ``pnl_locked``
+        resta aggiornato dai chiamanti (contratto esistente); qui si
+        aggiornano le viste per fase (pre-match / in-play) e si emette
+        l'evento di missione al PRIMO verde della fase.
+        """
+        fase = "inplay" if slot.inplay_cycle else "prematch"
+        self.stats[f"pnl_{fase}"] += locked
+        self.cycle_log.append({
+            "phase": fase, "locked": round(locked, 4), "kind": kind,
+            "ts": int(now) if now is not None else None,
+        })
+        if len(self.cycle_log) > self._CYCLE_LOG_MAX:
+            del self.cycle_log[: len(self.cycle_log) - self._CYCLE_LOG_MAX]
+        if locked >= self._GREEN_MIN:
+            self.stats[f"greens_{fase}"] += 1
+            if self.one_green_per_phase and self.stats[f"greens_{fase}"] == 1:
+                self._emit("mission", phase=fase, locked=round(locked, 4),
+                           msg="tick di fase completato")
+
+    def _check_event_guards(self) -> bool:
+        """Gate di EVENTO: loss cap duro + cricchetto post-target.
+
+        Valutato UNA volta per book in process_market_book (fix 10/07: prima
+        viveva solo in _try_enter, quindi con lo slot in cooldown o la quota
+        fuori banda il loss cap non si armava MAI — il force-flat arrivava
+        solo quando un ingresso tornava possibile). Ritorna True se i NUOVI
+        ingressi vanno bloccati; il force-flat viene armato qui.
+        """
+        locked = float(self.stats.get("pnl_locked", 0.0))
+        if locked > float(self.stats.get("pnl_peak", 0.0)):
+            self.stats["pnl_peak"] = locked
+        if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
+            # tetto di perdita partita: FORCE-FLAT totale (non solo stop
+            # ingressi: i cicli in volo continuerebbero a perdere — visto
+            # -2.10 con cap -1.00 in backtest)
+            if not self.force_flat:
+                self.force_flat = True
+                self._emit("loss_cap", locked=round(locked, 2))
+            return True
+        if (
+            self.event_profit_target > 0
+            and self.stats.get("pnl_peak", 0.0) >= self.event_profit_target
+        ):
+            if not self.stats.get("target_hit"):
+                self.stats["target_hit"] = 1
+                self._emit("target_raggiunto", locked=round(locked, 2))
+            if locked <= self.stats["pnl_peak"] - self.event_target_giveback:
+                return True  # cricchetto: profitti della partita protetti
+        return False
+
     # ----------------------------------------------------------------- logica
     def _try_enter(
         self, market: Any, market_book: Any, runner: Any, slot: _Slot,
@@ -800,28 +897,10 @@ class ScalperStrategy(BaseStrategy):
             return
 
         # ---- GATE DI EVENTO: loss cap duro + cricchetto post-target ----
-        # PRIMA del routing: vale per OGNI modalita' (fix 09/07: viveva solo
-        # nel ramo maker/join, la reversion ignorava loss cap e target).
-        locked = float(self.stats.get("pnl_locked", 0.0))
-        if locked > float(self.stats.get("pnl_peak", 0.0)):
-            self.stats["pnl_peak"] = locked
-        if self.event_loss_cap > 0 and locked <= -self.event_loss_cap:
-            # tetto di perdita partita: FORCE-FLAT totale (non solo stop
-            # ingressi: i cicli in volo continuerebbero a perdere — visto
-            # -2.10 con cap -1.00 in backtest)
-            if not self.force_flat:
-                self.force_flat = True
-                self._emit("loss_cap", locked=round(locked, 2))
+        # Valutato per-book in process_market_book (_check_event_guards, fix
+        # 10/07); ricontrollato qui (idempotente) per i chiamanti diretti.
+        if self._check_event_guards():
             return
-        if (
-            self.event_profit_target > 0
-            and self.stats.get("pnl_peak", 0.0) >= self.event_profit_target
-        ):
-            if not self.stats.get("target_hit"):
-                self.stats["target_hit"] = 1
-                self._emit("target_raggiunto", locked=round(locked, 2))
-            if locked <= self.stats["pnl_peak"] - self.event_target_giveback:
-                return  # cricchetto: profitti della partita protetti
 
         # ---- ROUTING modalita' ----
         if self.mode != "reversion":
@@ -1079,13 +1158,19 @@ class ScalperStrategy(BaseStrategy):
             sb, ob, sl, ol = self._matched_position(eb, el)
             net_win = sb * (ob - 1.0) - sl * (ol - 1.0)
             net_lose = sl - sb
-            if abs(net_win - net_lose) <= _EPS:
+            # FIX 11/07 (validazione): tolleranza 0.02 come il monitor DONE e
+            # il percorso scalp — con le size a 2 decimali l'_EPS (1e-9) non
+            # veniva mai soddisfatto e il ciclo scivolava SEMPRE nel flatten
+            # (dove il completamento aveva lo stesso bug). locked = worst-case.
+            if abs(net_win - net_lose) <= 0.02:
+                locked = min(net_win, net_lose)
                 slot.status = DONE
                 slot.cycles += 1
                 self.stats["cycles"] += 1
                 self.stats["roundtrips"] += 1
-                self.stats["pnl_locked"] += net_lose
-                self._emit("cycle", esito="roundtrip", locked=round(net_lose, 4),
+                self.stats["pnl_locked"] += locked
+                self._on_cycle_closed(slot, locked, kind="roundtrip", now=now)
+                self._emit("cycle", esito="roundtrip", locked=round(locked, 4),
                            selection_id=getattr(eb, "selection_id", None))
             else:
                 # roundtrip completato ma NON equalizzato (o residuo che puo'
@@ -1117,7 +1202,27 @@ class ScalperStrategy(BaseStrategy):
                 slot.entry, slot.entry_side = eb, "BACK"
                 slot.entry_back = slot.entry_lay = None
                 self._open_lock(market, slot, now, eb, best_back, best_lay)
-            return  # parziale ancora vivo: lascia lavorare entrambe le gambe
+                return
+            # FIX 10/07: parziale col resting ANCORA VIVO oltre il TTL entry
+            # (prima: return incondizionato → gamba mezza piena parcheggiata
+            # senza gestione). FIX 11/07 (validazione): anche STOP AVVERSO —
+            # book mosso CONTRO la parte matchata di >= stop_ticks (semantica
+            # LOCKING: BACK avverso = best_back SALITO oltre il nostro prezzo)
+            # → non aspettare il TTL, converti subito al percorso LOCKING.
+            adverse_pb = None
+            if best_back is not None and pb0 > 0 and best_back > pb0 + _EPS:
+                adverse_pb = ticks_between(pb0, best_back)
+            ttl_hit = (
+                slot.t_quote is not None
+                and now - slot.t_quote > self.entry_ttl_ms
+            )
+            if (adverse_pb is not None and adverse_pb >= self.stop_ticks) or ttl_hit:
+                self._cancel_if_live(market, eb)
+                self._cancel_if_live(market, el)
+                slot.entry, slot.entry_side = eb, "BACK"
+                slot.entry_back = slot.entry_lay = None
+                self._open_lock(market, slot, now, eb, best_back, best_lay)
+            return  # parziale vivo entro TTL e non avverso: lascia lavorare
         if ml > 0:
             done = not self._has_live(el)
             if done and eb is not None and abs(ml - float(
@@ -1131,6 +1236,23 @@ class ScalperStrategy(BaseStrategy):
                 slot.status = LOCKING
                 return
             if done:
+                self._cancel_if_live(market, eb)
+                slot.entry, slot.entry_side = el, "LAY"
+                slot.entry_back = slot.entry_lay = None
+                self._open_lock(market, slot, now, el, best_back, best_lay)
+                return
+            # FIX 10/07: come sopra, per la gamba LAY parzialmente riempita.
+            # FIX 11/07: anche stop avverso (LAY avverso = best_lay SCESO
+            # sotto il nostro prezzo).
+            adverse_pl = None
+            if best_lay is not None and pl0 > 0 and best_lay < pl0 - _EPS:
+                adverse_pl = ticks_between(best_lay, pl0)
+            ttl_hit = (
+                slot.t_quote is not None
+                and now - slot.t_quote > self.entry_ttl_ms
+            )
+            if (adverse_pl is not None and adverse_pl >= self.stop_ticks) or ttl_hit:
+                self._cancel_if_live(market, el)
                 self._cancel_if_live(market, eb)
                 slot.entry, slot.entry_side = el, "LAY"
                 slot.entry_back = slot.entry_lay = None
@@ -1349,6 +1471,7 @@ class ScalperStrategy(BaseStrategy):
                     self.stats["cycles"] += 1
                     self.stats["scalps"] += 1
                     self.stats["pnl_locked"] += nl0
+                    self._on_cycle_closed(slot, nl0, kind="scalp", now=now)
                     self._emit("cycle", esito="scalp", locked=round(nl0, 4),
                                selection_id=getattr(slot.entry, "selection_id", None))
                 return
@@ -1544,14 +1667,21 @@ class ScalperStrategy(BaseStrategy):
                   slot.next_entry):
             self._cancel_if_live(market, o)
         net_win, net_lose = self._net_position(slot)
-        if abs(net_win - net_lose) < _EPS:
+        # FIX 11/07 (validazione): tolleranza 0.02 come il monitor DONE — con
+        # size a 2 decimali l'_EPS non veniva mai soddisfatto: gli stop/scratch
+        # finivano in un limbo FLATTENING mai contabilizzato (pnl_locked=0,
+        # loss cap CIECO alle perdite da stop, missione inerte — visto nel
+        # backtest di validazione su 74 run). locked = worst-case dei 2 esiti.
+        if abs(net_win - net_lose) <= 0.02:
+            locked = min(net_win, net_lose)
             slot.status = DONE
             self.stats["flattens"] += 1
-            self.stats["pnl_locked"] += net_lose
-            self._emit("flatten_done", locked=round(net_lose, 4))
+            self.stats["pnl_locked"] += locked
+            self._on_cycle_closed(slot, locked, kind="flatten", now=now)
+            self._emit("flatten_done", locked=round(locked, 4))
             if (
                 self.cycle_loss_breaker > 0
-                and net_lose <= -self.cycle_loss_breaker
+                and locked <= -self.cycle_loss_breaker
                 and slot.inplay_cycle
                 and not self.force_flat
             ):
@@ -1599,24 +1729,37 @@ class ScalperStrategy(BaseStrategy):
             slot.flatten_orders.append(fo)
             if now is not None:
                 slot.t_last_flat = int(now)
-        elif self.size_step > 0 or self.live_min_bet > 0 or self.exact_exits:
-            # green sotto il minimo piazzabile: se il residuo NON puo' perdere
-            # piu' di pochi centesimi, accettalo UNA VOLTA (flag) e chiudi il
-            # ciclo. Senza flag il monitor DONE rivedrebbe l'esposizione != 0
-            # e riaprirebbe il flatten ad ogni book update (loop, visto live).
+        else:
+            # flatten NON piazzabile (size sotto il minimo/rounding, o book
+            # monco): se il residuo NON puo' perdere piu' di pochi centesimi,
+            # accettalo UNA VOLTA (flag) e chiudi il ciclo. Senza flag il
+            # monitor DONE rivedrebbe l'esposizione != 0 e riaprirebbe il
+            # flatten ad ogni book update (loop, visto live).
+            # FIX 11/07 (validazione): il ramo era gated su size_step>0/
+            # live_min_bet>0/exact_exits — ma in sim/paper sono azzerati,
+            # quindi il residuo non veniva MAI accettato (slot in limbo,
+            # ciclo mai contabilizzato). L'accettazione vale in OGNI modalita'.
             if min(net_win, net_lose) >= -0.25:
-                slot.status = DONE
                 if not slot.residual_ok:
+                    # FIX 10/07: il residuo accettato ENTRA in contabilita'
+                    # (worst-case dei due esiti): prima spariva da pnl_locked,
+                    # quindi dal loss cap e dal P&L di fase. Il flag
+                    # residual_ok garantisce che si conti UNA volta sola.
                     slot.residual_ok = True
-                    self._emit("micro_residuo_accettato",
+                    locked = min(net_win, net_lose)
+                    self.stats["pnl_locked"] += locked
+                    self._on_cycle_closed(slot, locked,
+                                          kind="flatten_residual", now=now)
+                    self._emit("flatten_residual", locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3))
-        elif (
-            best_back is None and best_lay is None and slot.flat_tries > 50
-        ):
-            # solo con book DAVVERO vuoto e dopo molti tentativi: esci dal
-            # loop (il monitor dello stato DONE riprovera' se l'esposizione
-            # non e' piatta). MAI arrendersi con prezzi disponibili.
-            slot.status = DONE
+                slot.status = DONE
+            elif (
+                best_back is None and best_lay is None and slot.flat_tries > 50
+            ):
+                # solo con book DAVVERO vuoto e dopo molti tentativi: esci dal
+                # loop (il monitor dello stato DONE riprovera' se l'esposizione
+                # non e' piatta). MAI arrendersi con prezzi disponibili.
+                slot.status = DONE
 
     def _flatten(
         self, market: Any, slot: _Slot,
@@ -1653,33 +1796,9 @@ class ScalperStrategy(BaseStrategy):
         return self._place(market, sid, side, price, size, floor_min=False, slot=slot)
 
     # --------------------------------------------------------------- utility
-    def _should_stop(
-        self, slot: _Slot, now: int,
-        best_back: Optional[float], best_lay: Optional[float],
-        size_back: Optional[float], size_lay: Optional[float],
-    ) -> bool:
-        if slot.t_lock is not None and now - slot.t_lock > self.lock_ttl_ms:
-            return True
-        ref = slot.ref_price
-        if ref is None or best_back is None or best_lay is None:
-            return False
-        # confronto COERENTE col riferimento (micro-price), non col mid aritmetico
-        mid = micro_price(best_back, size_back, best_lay, size_lay)
-        if mid is None:
-            mid = (best_back + best_lay) / 2.0
-        # avverso = il mercato si muove CONTRO la nostra reversione attesa
-        if slot.entry_side == "BACK":
-            # abbiamo backato attendendo discesa: avverso = quote SALITE ancora
-            if mid <= ref:
-                return False
-            adverse = ticks_between(ref, mid)
-        else:
-            # abbiamo laiato attendendo salita: avverso = quote SCESE ancora
-            if mid >= ref:
-                return False
-            adverse = ticks_between(mid, ref)
-        return adverse is not None and adverse >= self.stop_ticks
-
+    # NB: il vecchio _should_stop (stop sul micro-price vs ref_price) era
+    # codice MORTO — mai chiamato: lo stop reale vive in _manage (prezzo
+    # d'ingresso + eff_stop). Rimosso il 10/07.
     @staticmethod
     def _matched_position(*orders: Any) -> Tuple[float, float, float, float]:
         """Aggrega gli ordini matchati in (SB, OB, SL, OL).

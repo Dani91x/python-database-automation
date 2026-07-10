@@ -34,6 +34,9 @@ export interface ScalperControl {
         orders_placed?: number; dry_quotes?: number; cycles?: number;
         scalps?: number; roundtrips?: number; scratches?: number;
         stops?: number; flattens?: number; pnl_locked?: number;
+        // missione "2 tick": contabilità per fase (presenti se il bot le espone)
+        greens_prematch?: number; greens_inplay?: number;
+        pnl_prematch?: number; pnl_inplay?: number;
     } | null;
     error: string | null;
     requested_at: string;
@@ -68,6 +71,9 @@ export interface ScalperParams {
     flatten_before_s: number;
     event_profit_target: number;
     event_loss_cap: number;
+    // MISSIONE "2 Tick": 1 ciclo verde pre-match + 1 nell'intervallo, poi
+    // stop ingressi di fase. È IL PRODOTTO: default ON (forza anche ht_mode).
+    one_green_per_phase: boolean;
 }
 
 export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
@@ -81,10 +87,17 @@ export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
     flatten_before_s: 180,
     event_profit_target: 1,
     event_loss_cap: 1.5,
+    one_green_per_phase: true,
 };
 
+// Solo le chiavi NUMERICHE finiscono nei campi numerici del pannello: i
+// boolean (one_green_per_phase) hanno una checkbox dedicata, MAI un Input number.
+export type ScalperNumericParamKey = {
+    [K in keyof ScalperParams]: ScalperParams[K] extends number ? K : never;
+}[keyof ScalperParams];
+
 export const SCALPER_PARAM_FIELDS: {
-    key: keyof ScalperParams; label: string; step: number;
+    key: ScalperNumericParamKey; label: string; step: number;
     min: number; max: number; hint: string;
 }[] = [
     { key: 'scalp_ticks', label: 'Tick di profitto', step: 1, min: 1, max: 5, hint: 'target di chiusura per ciclo' },

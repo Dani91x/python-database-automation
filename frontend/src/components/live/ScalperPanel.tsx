@@ -64,6 +64,15 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     const [mode, setMode] = useState<ScalperMode>('maker');
     const [dryRun, setDryRun] = useState(true);
     const [htMode, setHtMode] = useState(false);
+    // MISSIONE "2 Tick" (il prodotto): 1 verde pre-match + 1 nell'intervallo,
+    // poi stop di fase. Default ON; quando ON forza anche ht_mode (il tick
+    // in-play si fa SOLO nella finestra intervallo certificata).
+    const [missionTwoTicks, setMissionTwoTicks] = useState(
+        SCALPER_PARAM_DEFAULTS.one_green_per_phase);
+    // SNIPER in-play (bibbia §6, config S16): 1 tick sull'Under al momento
+    // letto dal book (cadenza+coda+spread), poi stop. Alternativo a ht_mode.
+    const [sniperMode, setSniperMode] = useState(false);
+    const [sniperStake, setSniperStake] = useState(10);
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -95,11 +104,32 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     const handleActivate = useCallback(async () => {
         if (busyRef.current) return;
+        // Gate money-critical: armare con ORDINI REALI attiva un agente
+        // autonomo che piazza scommesse vere non presidiato → conferma
+        // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
+        if (!dryRun) {
+            const ok = window.confirm(
+                `⚠️ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
+                    `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
+                    `Confermi?`,
+            );
+            if (!ok) return;
+        }
         busyRef.current = true;
         setBusy(true);
         try {
-            await activateScalper(eventId, mode, dryRun, stake,
-                { ...params, ht_mode: htMode } as Partial<ScalperParams> & { ht_mode: boolean });
+            // missione ON → one_green_per_phase=true. La gamba HT NON è più
+            // forzata dalla missione (backtest di validazione 11/07: 3/13
+            // intervalli con verde, aggregato −1.74€): resta OPT-IN esplicito.
+            await activateScalper(eventId, mode, dryRun, stake, {
+                ...params,
+                one_green_per_phase: missionTwoTicks,
+                ht_mode: htMode,
+                sniper_mode: sniperMode,
+                sniper_stake: sniperStake,
+            } as Partial<ScalperParams> & {
+                ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
+            });
             toast.success(`Scalper ${dryRun ? 'ARMATO (nessun ordine)' : 'ATTIVATO'} — ${eventName}`);
             setShowForm(false);
             void refresh();
@@ -109,7 +139,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             busyRef.current = false;
             setBusy(false);
         }
-    }, [eventId, eventName, mode, dryRun, stake, params, htMode, refresh]);
+    }, [eventId, eventName, mode, dryRun, stake, params, htMode, missionTwoTicks,
+        sniperMode, sniperStake, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -117,7 +148,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         setBusy(true);
         try {
             await stopScalper(eventId);
-            toast.success('Stop richiesto: il bot chiude flat e si ferma');
+            // niente promesse: la chiusura è in corso, l'esito lo dice lo stato
+            toast.success('Stop richiesto: chiusura flat in corso… se una posizione resta aperta comparirà un errore');
             void refresh();
         } catch (e) {
             toast.error(`Stop fallito: ${e instanceof Error ? e.message : e}`);
@@ -211,12 +243,52 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             </span>
                         </label>
                         <label className="flex items-center gap-2 text-xs cursor-pointer">
-                            <Checkbox checked={htMode} onCheckedChange={v => setHtMode(v === true)} />
-                            <span className={htMode ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
-                                Modalità INTERVALLO (HT): riparte da solo nella pausa (48'-59', zero rischio gol).
-                                Solo partite GO — mai elite.
+                            <Checkbox
+                                checked={missionTwoTicks}
+                                onCheckedChange={v => setMissionTwoTicks(v === true)}
+                            />
+                            <span className={missionTwoTicks ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
+                                Missione Tick Pre-Match: al primo ciclo verde il bot smette di aprire
+                                (validato: 5/6 eventi col tick in 3-27 min, zero eventi rossi).
                             </span>
                         </label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                                checked={htMode}
+                                onCheckedChange={v => {
+                                    setHtMode(v === true);
+                                    if (v === true) setSniperMode(false);
+                                }}
+                            />
+                            <span className={htMode ? 'text-amber-300 font-semibold' : 'text-white/60'}>
+                                ⚠️ Gamba INTERVALLO (HT, sperimentale): il backtest di validazione la boccia
+                                (3/13 intervalli col verde, aggregato −1.74€). Solo nazionali liquide, mai elite.
+                            </span>
+                        </label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                                checked={sniperMode}
+                                onCheckedChange={v => {
+                                    setSniperMode(v === true);
+                                    if (v === true) setHtMode(false);
+                                }}
+                            />
+                            <span className={sniperMode ? 'text-sky-300 font-semibold' : 'text-white/60'}>
+                                🎯 SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
+                                (cadenza+coda+spread), poi stop. Backtest: +0.99€/14 eventi, worst −0.49.
+                                In dry-run mostra solo i trigger. Alternativo alla gamba HT.
+                            </span>
+                        </label>
+                        {sniperMode && (
+                            <label className="flex items-center gap-2 text-sm text-white/80">
+                                <span className="text-white/50">Stake sniper €</span>
+                                <Input
+                                    type="number" min={2} max={100} step={1} value={sniperStake}
+                                    onChange={e => setSniperStake(Math.max(2, Math.min(100, Number(e.target.value) || 2)))}
+                                    className="w-20 h-8 bg-white/5 border-white/10 text-white"
+                                />
+                            </label>
+                        )}
                         {!dryRun && (
                             <span className="flex items-center gap-1 text-xs text-red-300 font-bold">
                                 <ShieldAlert className="h-4 w-4" /> ORDINI REALI
@@ -321,6 +393,39 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             </div>
                         ))}
                     </div>
+
+                    {/* missione "2 Tick": contabilità per fase (se il bot la espone) */}
+                    {stats && (stats.greens_prematch !== undefined || stats.greens_inplay !== undefined) && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                            {[
+                                {
+                                    l: 'Tick pre-match',
+                                    v: num(stats.greens_prematch) >= 1 ? '✓' : '—',
+                                    ok: num(stats.greens_prematch) >= 1,
+                                },
+                                {
+                                    l: 'Tick intervallo',
+                                    v: num(stats.greens_inplay) >= 1 ? '✓' : '—',
+                                    ok: num(stats.greens_inplay) >= 1,
+                                },
+                                {
+                                    l: 'P&L pre-match',
+                                    v: `€${num(stats.pnl_prematch).toFixed(2)}`,
+                                    ok: num(stats.pnl_prematch) > 0,
+                                },
+                                {
+                                    l: 'P&L intervallo',
+                                    v: `€${num(stats.pnl_inplay).toFixed(2)}`,
+                                    ok: num(stats.pnl_inplay) > 0,
+                                },
+                            ].map((s, i) => (
+                                <div key={i} className="rounded-lg bg-white/5 border border-white/10 p-2">
+                                    <div className="text-[10px] uppercase text-white/40">{s.l}</div>
+                                    <div className={`text-sm font-black ${s.ok ? 'text-emerald-300' : 'text-white'}`}>{s.v}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {/* feed attività (debug veloce) */}
                     <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 space-y-1">

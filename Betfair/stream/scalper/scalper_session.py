@@ -54,6 +54,10 @@ VALIDATED_PARAMS: Dict[str, Any] = {
     # tetto di perdita che scatena il force-flat totale.
     "event_profit_target": 1.0, "event_target_giveback": 0.30,
     "event_loss_cap": 1.5,
+    # MISSIONE "2 tick per evento": 1 ciclo verde pre-match + 1 in-play
+    # (intervallo), poi stop ingressi di fase. Off di default: la UI la
+    # attiva esplicitamente (e forza anche ht_mode).
+    "one_green_per_phase": False,
 }
 UI_PARAM_WHITELIST = {
     "scalp_ticks", "stop_ticks", "min_size", "min_flow", "price_min",
@@ -62,13 +66,68 @@ UI_PARAM_WHITELIST = {
     "cooldown_ms", "flatten_before_s", "entry_stop_before_s", "wom_block",
     "entry_ttl_ms", "lock_ttl_ms", "max_cycles", "max_txn_hour",
     "event_profit_target", "event_target_giveback", "event_loss_cap",
-    "ht_mode",
+    "ht_mode", "one_green_per_phase",
     "flow_balance_min", "flow_balance_window_ms", "min_inside_flow",
     "require_oscillation", "trend_mode", "max_drift_ticks",
+    # SNIPER in-play (bibbia §6): toggle + stake dedicato (default 10)
+    "sniper_mode", "sniper_stake",
 }
 SESSION_MARKET_TYPES = [
     "MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
 ]
+# SNIPER: tutte le linee O/U — la linea target Under (gol+1).5 si sposta coi
+# gol, quindi a stream servono anche le alte (bibbia §6).
+SNIPER_MARKET_TYPES = [f"OVER_UNDER_{n}5" for n in range(0, 9)]
+
+# ---- WATCHER INTERVALLO: firma "minuto congelato" (dati storici 35768365) ----
+# Il minuto del feed si blocca a 45-46 per ~15-18 minuti durante l'intervallo.
+# fix 10/07: staleness a 300s (i recuperi del 1° tempo arrivano a 5': con la
+# vecchia soglia 150s il watcher scattava DURANTE il recupero, con la palla in
+# gioco; l'intervallo dura 15', i 5 minuti di attesa non lo consumano) e
+# vincolo minute <= 48 (un feed che avanza oltre non e' l'intervallo).
+HT_STALE_S = 300.0
+HT_MINUTE_MIN = 45
+HT_MINUTE_MAX = 48
+
+
+def ht_should_start(minute: Optional[int], stale_s: float) -> bool:
+    """True se il feed indica l'INIZIO dell'intervallo (minuto congelato).
+
+    ``minute`` = minuto corrente da live_now; ``stale_s`` = da quanti secondi
+    il minuto non avanza. Logica pura, testabile senza thread/DB.
+    """
+    return (
+        minute is not None
+        and HT_MINUTE_MIN <= int(minute) <= HT_MINUTE_MAX
+        and stale_s >= HT_STALE_S
+    )
+
+
+def _strategy_flat(strategy: Any) -> bool:
+    """True se la strategia e' FLAT: slot tutti a riposo (IDLE/DONE) e nessun
+    ordine ancora vivo. Usata dallo stop sicuro (fix 10/07: prima si dormiva
+    12s "alla cieca" e si usciva anche con posizioni aperte)."""
+    try:
+        for slot in getattr(strategy, "_slots", {}).values():
+            if slot.status not in ("IDLE", "DONE"):
+                return False
+            for o in (slot.entry, slot.entry_back, slot.entry_lay,
+                      slot.close, slot.next_entry, *slot.flatten_orders):
+                if strategy._has_live(o):  # noqa: SLF001 - helper del bot
+                    return False
+    except Exception:  # noqa: BLE001 - il check non deve mai rompere lo stop
+        return False
+    return True
+
+
+def _wait_flat(strategy: Any, timeout_s: float = 30.0) -> bool:
+    """Attende (max ``timeout_s``) che la strategia risulti flat."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if _strategy_flat(strategy):
+            return True
+        time.sleep(1.0)
+    return _strategy_flat(strategy)
 
 
 def _now_iso() -> str:
@@ -210,9 +269,16 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # login DEDICATO a questo processo (nessuna condivisione tra sessioni)
         trading = build_client(login=True)
 
+        # SNIPER: la linea target e' Under (gol totali + 1).5 e in live si
+        # SPOSTA coi gol -> a catalogo/stream servono TUTTE le OU (05..85).
+        # Il maker resta blindato sui SESSION_MARKET_TYPES (vedi sotto).
+        sniper_mode = bool((control.get("params") or {}).get("sniper_mode"))
+        cat_types = list(SESSION_MARKET_TYPES)
+        if sniper_mode:
+            cat_types = sorted(set(cat_types) | set(SNIPER_MARKET_TYPES))
         cat = trading.betting.list_market_catalogue(
             filter=filters.market_filter(
-                event_ids=[ev], market_type_codes=SESSION_MARKET_TYPES),
+                event_ids=[ev], market_type_codes=cat_types),
             market_projection=["RUNNER_DESCRIPTION", "MARKET_START_TIME"],
             sort="MAXIMUM_TRADED", max_results=25,
         )
@@ -260,9 +326,29 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             params.setdefault("inplay_to_s", 3540.0)
             params.setdefault("max_inplay_slots", 3)
             params.setdefault("cycle_loss_breaker", 0.50)
-            params.setdefault("event_loss_cap", 1.0)
+            # fix 10/07: il vecchio setdefault era INEFFICACE (la chiave
+            # esiste gia' in VALIDATED_PARAMS a 1.5, quindi restava 1.5).
+            # In ht_mode il cap evento DEVE essere 1.0 come certificato
+            # 03/07: si puo' solo ABBASSARE (min), mai alzare.
+            params["event_loss_cap"] = min(
+                float(params.get("event_loss_cap", 1.0)), 1.0)
         else:
             params["allow_inplay"] = False
+
+        # ---- SNIPER IN-PLAY (bibbia §6, config S16) ----
+        # Strategia SEPARATA accanto al maker pre-match: un tick sull'Under
+        # al momento letto dal book (cadenza + coda + spread), poi stop.
+        # Con dry_run (default della sessione) emette solo i trigger
+        # ``sniper_dry_fire``: e' la modalita' DEMO. (sniper_mode e' letto
+        # PRIMA del catalogo: servono le OU alte a stream.)
+        if sniper_mode and ht_mode:
+            raise RuntimeError(
+                "sniper_mode e ht_mode insieme non sono supportati "
+                "(bibbia §5: ht_mode e' NO-GO; usa solo sniper_mode)")
+        if sniper_mode:
+            # il maker NON deve quotare le OU alte aggiunte per lo sniper:
+            # blindalo sui tipi di sessione storici.
+            params["market_types"] = list(SESSION_MARKET_TYPES)
 
         price_max = float(params.get("price_max", 4.6))
         cap = params["stake"] * (price_max - 1.0) * 2.0
@@ -279,15 +365,42 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             max_trade_count=int(1e6),
             max_live_trade_count=int(1e6),
         )
+        sniper = None
+        if sniper_mode:
+            from .sniper_bot import SniperStrategy
+            sniper_stake = float(
+                (control.get("params") or {}).get("sniper_stake") or 10.0)
+            sniper = SniperStrategy(
+                market_filter=filters.streaming_market_filter(
+                    market_ids=market_ids),
+                sniper_params={
+                    "stake": sniper_stake,
+                    "dry_run": params["dry_run"],
+                    # protezioni .it IDENTICHE al maker (multipli 0,50,
+                    # minimi per lato, uscite a size ESATTA via submin):
+                    # il green resta spalmato al centesimo sui due esiti
+                    "exact_exits": True,
+                    "size_step": 0.5,
+                    "live_min_bet": 2.0,
+                },
+                event_sink=sink,
+                # esposizione: BACK -> liability = stake (margine x3)
+                max_selection_exposure=sniper_stake * 3.0,
+                max_order_exposure=sniper_stake * 3.0,
+                max_trade_count=int(1e6),
+                max_live_trade_count=int(1e6),
+            )
+            db.log(ev, "info", {"msg": "sniper armato (S16)",
+                                "stake": sniper_stake,
+                                "dry_run": params["dry_run"]})
         # min_bet_validation=False COME IL RUNNER LIVE (fix CRITICAL-3 del
         # live-trading): l'OrderValidation di flumine (size>=1 o payout>=20)
         # non conosce le eccezioni Betfair (green-up sotto-minimo, park-trim)
         # e ci ha rifiutato 528 park LAY il 02/07. I minimi veri li garantisce
         # la strategia (side-aware + park legali).
         # ---- WATCHER INTERVALLO (solo ht_mode): rilevatore REALE da live_now.
-        # Firma misurata sui dati storici (35768365): il minuto si CONGELA a
-        # 45-46 per ~15-18 min. Regole: minute>=45 fermo da >=150s -> HT
-        # INIZIATO (ht_active=True); minute che riavanza (>=46 con nuovo
+        # Regole (vedi ht_should_start): minute in 45-48 fermo da >=300s ->
+        # HT INIZIATO (ht_active=True); minute che riavanza (>=46 con nuovo
         # update) -> HT FINITO: stop ingressi + chiusura immediata dei cicli.
         # Il clock 48'-59' resta come sanita' dentro la strategia.
         stop_flag = threading.Event()
@@ -322,10 +435,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                         return
                     last_min = m
                     last_change = now_t
-                elif (
-                    not started and m is not None and m >= 45
-                    and now_t - last_change >= 150
-                ):
+                elif not started and ht_should_start(m, now_t - last_change):
                     started = True
                     strategy_ref.ht_active = True
                     db.log(ev, "ht_start", {"minute": m})
@@ -334,7 +444,16 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             trading, min_bet_validation=False, order_stream=True,
         ))
         framework.add_strategy(strategy)
-        db.set_control(ev, status="running", stats=strategy.stats)
+        if sniper is not None:
+            framework.add_strategy(sniper)
+
+        def _stats() -> Dict[str, Any]:
+            s = dict(strategy.stats)
+            if sniper is not None:
+                s.update({f"sniper_{k}": v for k, v in sniper.stats.items()})
+            return s
+
+        db.set_control(ev, status="running", stats=_stats())
 
         runner = threading.Thread(target=framework.run, daemon=True,
                                   name=f"flumine-{ev}")
@@ -355,33 +474,94 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 daemon=True, name="ht-watcher",
             ).start()
 
+        # ---- WATCHER LINEA SNIPER: Under (gol totali + 1).5 da live_now ----
+        # (pattern del watcher HT: feed punteggi -> controllo esterno del bot)
+        def _sniper_line_watcher(sniper_ref) -> None:
+            while not stop_flag.is_set():
+                try:
+                    r = db.sb.table("live_now").select(
+                        "score_home,score_away").eq("event_id", ev).execute()
+                    row = (r.data or [None])[0] or {}
+                    h, a = row.get("score_home"), row.get("score_away")
+                    if h is not None and a is not None:
+                        tot = int(h) + int(a)
+                        # oltre 8.5 non esistono linee: "NONE" spegne il fuoco
+                        line = (f"OVER_UNDER_{tot + 1}5" if tot <= 7
+                                else "NONE")
+                        sniper_ref.set_line(line)
+                except Exception:  # noqa: BLE001 - il watcher non muore mai
+                    pass
+                time.sleep(15)
+
+        if sniper is not None:
+            threading.Thread(
+                target=_sniper_line_watcher, args=(sniper,),
+                daemon=True, name="sniper-line",
+            ).start()
+
+        def _force_flat_all() -> None:
+            strategy.force_flat = True
+            if sniper is not None:
+                sniper.force_flat = True
+
+        def _all_flat(timeout_s: float = 30.0) -> bool:
+            ok = _wait_flat(strategy, timeout_s=timeout_s)
+            if sniper is not None:
+                deadline = time.time() + timeout_s
+                while time.time() < deadline and not sniper.is_flat():
+                    time.sleep(1.0)
+                ok = ok and sniper.is_flat()
+            return ok
+
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
             flush()
-            db.set_control(ev, heartbeat_at=_now_iso(), stats=strategy.stats)
+            db.set_control(ev, heartbeat_at=_now_iso(), stats=_stats())
             status = db.control_status(ev)
             if status == "stopping" or os.path.isfile(KILL_FILE):
                 stopped_by_ui = status == "stopping"
-                strategy.force_flat = True
+                _force_flat_all()
                 db.log(ev, "info", {"msg": "stop richiesto: force-flat"})
-                time.sleep(12)   # tempo per chiudere flat da maker/cross
+                # fix 10/07: niente sleep cieco da 12s — si attende (max 30s)
+                # che la strategia sia DAVVERO flat (slot IDLE/DONE, nessun
+                # ordine vivo); se non lo e', si esce comunque e lo stato
+                # finale lo raccontera' (mai promettere il flat).
+                if not _all_flat(timeout_s=30.0):
+                    db.log(ev, "error",
+                           {"msg": "stop: posizione NON flat dopo 30s"})
                 break
-            _life_s = 4200 if ht_mode else 600   # HT: vivo fino a ~KO+70'
+            # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper fino a
+            # fine partita (KO+130', recupero incluso)
+            _life_s = 7800 if sniper_mode else (4200 if ht_mode else 600)
             if ko_ts is not None and time.time() > ko_ts + _life_s:
+                # fix 10/07: anche il fine-vita passa dal force-flat (in
+                # ht_mode un ciclo intervallo ancora aperto restava vivo
+                # mentre il framework veniva spento 2s dopo).
+                _force_flat_all()
                 db.log(ev, "info", {"msg": "kickoff passato: fine sessione"})
+                if not _all_flat(timeout_s=30.0):
+                    db.log(ev, "error",
+                           {"msg": "fine sessione: posizione NON flat dopo 30s"})
                 break
         stop_flag.set()
         try:
-            framework._running = False  # noqa: SLF001 - stop documentato flumine
+            # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
+            # TerminationEvent in handler_queue — _running=False non è mai testato
+            # (stesso fix di runner/tennis_runner._stop_framework).
+            from flumine.events.events import TerminationEvent
+
+            framework._running = False  # noqa: SLF001 - coerenza di stato
+            framework.handler_queue.put(TerminationEvent(framework))
         except Exception:  # noqa: BLE001
             pass
         time.sleep(2)
         flush()
         final = "stopped" if stopped_by_ui else "done"
+        _final_stats = _stats() if strategy is not None else None
         db.set_control(ev, status=final, stopped_at=_now_iso(),
-                       stats=strategy.stats if strategy else None)
+                       stats=_final_stats)
         db.log(ev, "info", {"msg": f"sessione {final}",
-                            "stats": strategy.stats if strategy else None})
+                            "stats": _final_stats})
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scalper-sess] sessione %s in errore", ev)
         flush()
