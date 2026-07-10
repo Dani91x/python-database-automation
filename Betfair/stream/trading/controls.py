@@ -5,12 +5,13 @@ Per chi: si registrano sul framework flumine con ``framework.add_trading_control
 inviare l'istruzione a Betfair; un ``self._on_error(order, reason)`` marca l'ordine come
 violazione e solleva ``flumine.exceptions.ControlError``, impedendo l'invio.
 
-Questi due control sono la versione NATIVA e STRETTA di guardie che oggi vivono best-effort nel
-worker (``live_order_worker._check_exposure_guard`` / ``_rate_limited``). Girando nel path di
-esecuzione di flumine coprono OGNI ordine (place del worker, submin, dutch, green-up, ecc.),
-non solo quelli passati esplicitamente dal worker.
+§7.2 (dedupe guardie): questo modulo è la SINGLE SOURCE OF TRUTH della logica delle guardie
+(``rate_violation``/``record_place`` con finestra condivisa + ``selection_exposure_violation``).
+I control nativi girano nel path SINCRONO di ``market.place_order`` e coprono OGNI ordine;
+il worker chiama le STESSE funzioni nei pre-check di atomicità (dutch all-or-nothing, submin
+prima della persistenza INIT) — mai due implementazioni che possono divergere.
 
-Semantica (identica alle guardie del worker):
+Semantica:
   * ``LiveExposureControl`` — rifiuta un PLACE se l'esposizione RISULTANTE sulla (market,
     selection) supererebbe ``max_exposure_per_selection`` (NULL/assente = disattivato). Esposizione
     corrente = ``market.blotter.selection_exposure(strategy, order.lookup)``; contributo del nuovo
@@ -32,8 +33,9 @@ reale (si può istanziare il control con un flumine fittizio e chiamare ``__call
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from flumine.controls import BaseControl
 from flumine.order.orderpackage import OrderPackageType
@@ -150,6 +152,85 @@ def _order_exposure(order: Any) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
+# §7.2 — LOGICA CONDIVISA guardie worker ↔ control nativi (single source of truth).
+#
+# Il worker fa PRE-CHECK espliciti SOLO dove serve atomicità (dutch all-or-nothing,
+# submin prima della persistenza dello step INIT); i control nativi restano l'ultima
+# barriera nel path SINCRONO di market.place_order (Transaction._validate_controls:
+# un rifiuto fa tornare False al place e il worker lo trasforma in errore esplicito
+# via _place_or_raise). Entrambi i lati chiamano QUESTE funzioni: la matematica e la
+# finestra rate non possono divergere. Il CAP è passato dal chiamante (il worker usa
+# il suo snapshot per-ciclo _SETTINGS, i control la cache TTL get_live_settings:
+# stessa riga DB, freschezza equivalente — è il caching a essere legato al thread).
+# ---------------------------------------------------------------------------
+_RATE_LOCK = threading.Lock()
+_RATE_TS: List[float] = []  # epoch (s) dei place recenti — finestra scorrevole 60s CONDIVISA
+
+
+def rate_violation(cap: Optional[int], extra: int = 1) -> Optional[str]:
+    """Messaggio di violazione se EXTRA place in più sfonderebbero il cap ordini/min
+    sulla finestra condivisa. None = capacità disponibile o limite disattivato.
+    NON registra: la registrazione è di record_place() (LiveRateControl al pass)."""
+    if cap is None or cap <= 0:
+        return None
+    now = _now_epoch()
+    with _RATE_LOCK:
+        _RATE_TS[:] = [t for t in _RATE_TS if now - t < 60.0]
+        count = len(_RATE_TS)
+    if count + max(1, int(extra)) > int(cap):
+        return (
+            "rate-limit ordini/min raggiunto: %d nell'ultimo minuto + %d richiesti oltre "
+            "il cap %d (betfair_live_settings.max_orders_per_min)" % (count, extra, int(cap))
+        )
+    return None
+
+
+def record_place() -> None:
+    """Registra UN place nella finestra condivisa. Chiamato dal LiveRateControl quando il
+    check passa (path sincrono di OGNI place reale) — SEMPRE, anche a cap disattivato,
+    così la storia è già presente se il cap viene attivato a runtime dai settings."""
+    with _RATE_LOCK:
+        _RATE_TS.append(_now_epoch())
+
+
+def reset_rate_window() -> None:
+    """Svuota la finestra condivisa (solo per i test)."""
+    with _RATE_LOCK:
+        _RATE_TS.clear()
+
+
+def selection_exposure_violation(
+    cap: Optional[float],
+    market: Any,
+    strategy: Any,
+    selection_id: Any,
+    handicap: Any,
+    order_risk: Any,
+) -> Optional[str]:
+    """Messaggio di violazione se l'esposizione RISULTANTE sulla (market, selection)
+    supera il cap. None = ok, limite disattivato o fail-open (dati non calcolabili:
+    semantica difensiva IDENTICA per worker e control — mai un falso blocco)."""
+    if cap is None or cap <= 0 or strategy is None:
+        return None
+    blotter = _val(market, "blotter")
+    if blotter is None:
+        return None
+    try:
+        lookup = (_val(market, "market_id"), int(selection_id), float(handicap or 0.0))
+        current = abs(_f(blotter.selection_exposure(strategy, lookup)) or 0.0)
+        risk = max(0.0, float(order_risk))
+    except Exception:  # noqa: BLE001 - esposizione non determinabile => fail-open
+        return None
+    resulting = current + risk
+    if resulting > float(cap) + 1e-9:
+        return (
+            "max esposizione selezione: €%.2f (corrente €%.2f + ordine €%.2f) "
+            "oltre il tetto €%.2f" % (resulting, current, risk, float(cap))
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # LiveExposureControl — max esposizione per selezione (STRETTA, NATIVA)
 # ---------------------------------------------------------------------------
 class LiveExposureControl(BaseControl):
@@ -171,10 +252,6 @@ class LiveExposureControl(BaseControl):
         if package_type != OrderPackageType.PLACE:
             return
 
-        cap = _max_exposure_per_selection()
-        if cap is None or cap <= 0:
-            return  # limite disattivato
-
         # strategy dall'ordine (order.trade.strategy). Senza di essa non si legge l'esposizione.
         trade = _val(order, "trade")
         strategy = _val(trade, "strategy") if trade is not None else None
@@ -188,27 +265,22 @@ class LiveExposureControl(BaseControl):
             market = None
         if market is None:
             return
-        blotter = _val(market, "blotter")
-        if blotter is None:
-            return
 
         order_risk = _order_exposure(order)
         if order_risk is None:
             return  # contributo non calcolabile => non bloccare
 
-        try:
-            lookup = _val(order, "lookup")
-            current = abs(_f(blotter.selection_exposure(strategy, lookup)) or 0.0)
-        except Exception:  # noqa: BLE001 - esposizione non determinabile => fail-open
-            return
-
-        resulting = current + max(0.0, float(order_risk))
-        if resulting > float(cap) + 1e-9:
-            self._on_error(
-                order,
-                "max esposizione selezione: €%.2f (corrente €%.2f + ordine €%.2f) "
-                "oltre il tetto €%.2f" % (resulting, current, float(order_risk), float(cap)),
-            )
+        # §7.2: matematica CONDIVISA col pre-check del worker (selection_exposure_violation).
+        lookup = _val(order, "lookup") or ()
+        selection_id = lookup[1] if len(lookup) >= 2 else _val(order, "selection_id")
+        handicap = lookup[2] if len(lookup) >= 3 else _val(order, "handicap")
+        if selection_id is None:
+            return  # fail-open: selezione non identificabile
+        msg = selection_exposure_violation(
+            _max_exposure_per_selection(), market, strategy, selection_id, handicap, order_risk
+        )
+        if msg is not None:
+            self._on_error(order, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -218,16 +290,13 @@ class LiveRateControl(BaseControl):
     """Rifiuta un PLACE se nei 60s scorsi i place hanno raggiunto
     ``betfair_live_settings.max_orders_per_min`` (NULL/assente = disattivato).
 
-    Finestra scorrevole in-memory per istanza del control. Un place che PASSA il check viene
-    registrato (come nel worker: ``_record_order`` dopo il place riuscito); uno RIFIUTATO non
-    viene registrato. Difensivo: cap assente => non blocca.
+    §7.2: finestra scorrevole CONDIVISA a livello di modulo (la stessa letta dai pre-check
+    del worker via ``rate_violation``). Un place che PASSA il check viene registrato
+    (``record_place``, sempre — anche a cap disattivato); uno RIFIUTATO non viene
+    registrato. Difensivo: cap assente => non blocca.
     """
 
     NAME = "LIVE_RATE"
-
-    def __init__(self, flumine: Any, *args: Any, **kwargs: Any) -> None:
-        super().__init__(flumine, *args, **kwargs)
-        self._order_ts: list = []  # epoch (s) dei place recenti (finestra scorrevole 60s)
 
     def _validate(self, order: Any, package_type: OrderPackageType) -> None:
         if package_type != OrderPackageType.PLACE:
@@ -241,22 +310,15 @@ class LiveRateControl(BaseControl):
         if isinstance(ctx, dict) and ctx.get("reduces_liability"):
             return
 
-        cap = _max_orders_per_min()
-        if cap is None or cap <= 0:
-            return  # limite disattivato
-
-        now = _now_epoch()
-        # purge della finestra: tieni solo i place nell'ultimo minuto.
-        self._order_ts = [t for t in self._order_ts if now - t < 60.0]
-        if len(self._order_ts) >= cap:
-            self._on_error(
-                order,
-                "rate-limit ordini/min raggiunto: %d nell'ultimo minuto "
-                "(betfair_live_settings.max_orders_per_min=%d)" % (len(self._order_ts), cap),
-            )
+        # §7.2: finestra CONDIVISA (module-level) col pre-check del worker — un solo
+        # conteggio, mai due finestre che divergono. Questo control gira nel path
+        # sincrono di OGNI place → è LUI l'unico a registrare (record_place).
+        msg = rate_violation(_max_orders_per_min(), extra=1)
+        if msg is not None:
+            self._on_error(order, msg)
             return  # _on_error solleva; return è difensivo se venisse sovrascritto
-        # check passato => questo place conta per la finestra.
-        self._order_ts.append(now)
+        # check passato => questo place conta per la finestra condivisa.
+        record_place()
 
 
 # ---------------------------------------------------------------------------

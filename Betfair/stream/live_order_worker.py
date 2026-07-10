@@ -147,9 +147,12 @@ def _kill_switch() -> bool:
 # Fase 6 — settings runtime (kill-switch da UI / limiti), audit, rate-limit.
 # Snapshot letto UNA volta per ciclo (thread singolo del worker) → nessun read DB
 # per-ordine. I limiti sono OPT-IN (NULL in betfair_live_settings = disattivato).
+# §7.2: la LOGICA delle guardie (finestra rate condivisa + math esposizione) vive in
+# trading/controls.py — unica implementazione per pre-check del worker e control nativi.
 # ---------------------------------------------------------------------------
+from .trading.controls import rate_violation, selection_exposure_violation
+
 _SETTINGS: Dict[str, Any] = {}
-_ORDER_TS: list = []  # epoch (s) dei place recenti (finestra scorrevole per il rate-limit)
 
 
 def _now_epoch() -> float:
@@ -219,43 +222,27 @@ def _risk_poll_target() -> Optional[float]:
     return v if (v and v > 0) else None
 
 
-def _rate_limited() -> bool:
-    """True se nel minuto scorso i place hanno raggiunto ``max_orders_per_min`` (se impostato)."""
-    cap = _max_orders_per_min()
-    if cap is None or cap <= 0:
-        return False
-    now = _now_epoch()
-    global _ORDER_TS
-    _ORDER_TS = [t for t in _ORDER_TS if now - t < 60.0]
-    return len(_ORDER_TS) >= cap
-
-
-def _record_order() -> None:
-    _ORDER_TS.append(_now_epoch())
+def _rate_guard(extra: int = 1) -> None:
+    """Pre-check ESPLICITO rate-limit (§7.2: logica in trading/controls.rate_violation,
+    finestra CONDIVISA coi control nativi). Usato SOLO dove serve atomicità: dutch
+    (capacità per TUTTE le gambe prima di piazzarne una) e submin (prima di persistere
+    lo step INIT). Il place semplice è coperto dal LiveRateControl nativo, sincrono
+    dentro market.place_order → errore esplicito via _place_or_raise."""
+    msg = rate_violation(_max_orders_per_min(), extra=extra)
+    if msg is not None:
+        raise ValueError(msg)
 
 
 def _check_exposure_guard(market: Any, strategy: Any, selection_id: int, handicap: float, order_risk: float) -> None:
-    """Guardia OPT-IN max esposizione per selezione (Fase 6). Solleva se il rischio RISULTANTE
-    (esposizione corrente della selezione da flumine + rischio del nuovo ordine) supera il tetto
-    ``max_exposure_per_selection``. NULL/assente = nessun limite. Difensiva: se non calcolabile
-    NON blocca (nessun falso positivo su mock/edge)."""
-    cap = _max_exposure_per_selection()
-    if cap is None or cap <= 0 or strategy is None:
-        return
-    blotter = _val(market, "blotter")
-    if blotter is None:
-        return
-    try:
-        lookup = (_val(market, "market_id"), int(selection_id), float(handicap or 0.0))
-        current = abs(_f(blotter.selection_exposure(strategy, lookup)) or 0.0)
-    except Exception:  # noqa: BLE001 - esposizione non determinabile → non bloccare
-        return
-    resulting = current + max(0.0, float(order_risk))
-    if resulting > float(cap) + 1e-9:
-        raise ValueError(
-            f"max esposizione selezione: €{resulting:.2f} (corrente €{current:.2f} + ordine "
-            f"€{order_risk:.2f}) oltre il tetto €{float(cap):.2f}"
-        )
+    """Pre-check ESPLICITO max esposizione per selezione (§7.2: math in
+    trading/controls.selection_exposure_violation, la STESSA del LiveExposureControl
+    nativo — mai due implementazioni). Solleva sul superamento; fail-open difensivo
+    (dati non calcolabili → non blocca) dentro la funzione condivisa."""
+    msg = selection_exposure_violation(
+        _max_exposure_per_selection(), market, strategy, selection_id, handicap, order_risk
+    )
+    if msg is not None:
+        raise ValueError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -696,9 +683,10 @@ def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: st
             book = _book_snapshot(market, selection_id, handicap)
             ltp = _ltp_of(market, selection_id, handicap)
 
-        from . import db as dbm
-
-        dbm.insert_live_journal(
+        # BUG FIX cert 10/07: usare il ``sb`` DEL CICLO (per-thread nel runner, FAKE nei
+        # test) — la vecchia dbm.insert_live_journal apriva il client REALE anche nei
+        # test unit, che INQUINAVANO il journal di produzione con righe fake ("1.1").
+        sb.table("betfair_live_journal").insert(
             {
                 "mode": mode_l,
                 "request_id": rid,
@@ -723,18 +711,19 @@ def _journal_done(sb: Any, flumine: Any, request_row: Dict[str, Any], mode_l: st
                 "signals": signal,
                 "params": params if isinstance(params, dict) and params else None,
             }
-        )
+        ).execute()
     except Exception as ex:  # noqa: BLE001 - journal best-effort: MAI bloccare l'ordine
         logger.warning("[live-order] journal KO: %s", str(ex)[:200])
         day = datetime.now(timezone.utc).date().isoformat()
         if _JOURNAL_WARNED_DAY.get("ko") != day:
             _JOURNAL_WARNED_DAY["ko"] = day
             try:
-                from . import db as dbm
-
-                dbm.insert_alert(
-                    "WARN", "JOURNAL", f"trade journal KO (ordini NON impattati): {str(ex)[:200]}"
-                )
+                # BUG FIX cert 10/07: anche l'alert passa dal ``sb`` del ciclo (mai il
+                # client reale nei test: scrivevano alert fake su live_alerts di produzione).
+                sb.table("live_alerts").insert({
+                    "level": "WARN", "code": "JOURNAL",
+                    "message": f"trade journal KO (ordini NON impattati): {str(ex)[:200]}",
+                }).execute()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -853,14 +842,11 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         max_stake=_effective_cap(request_row),
         customer_order_ref=cust_ref,
     )
-    # Fase 6: guardie custom OPT-IN (settings). rate-limit ordini/min + max esposizione/selezione.
-    if _rate_limited():
-        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
-    order_risk = built.size if built.side == "BACK" else (built.liability or 0.0)
-    _check_exposure_guard(market, strategy, int(request_row["selection_id"]),
-                          float(request_row.get("handicap") or 0), float(order_risk or 0.0))
+    # §7.2: NESSUN pre-check duplicato qui — rate-limit e max esposizione/selezione sono
+    # dei control NATIVI (LiveRateControl/LiveExposureControl), che girano SINCRONI dentro
+    # market.place_order (Transaction._validate_controls): un rifiuto fa tornare False e
+    # _place_or_raise lo trasforma in errore esplicito sulla riga coda (violation_msg).
     _place_or_raise(market, built.order, "place")
-    _record_order()
     # C22 (roadmap): Fill-or-Kill SOFTWARE con timer — params.fok_ttl_sec > 0 registra
     # l'ordine nel registro TTL: se dopo N secondi non è (tutto) abbinato, il worker lo
     # CANCELLA al giro successivo. Caveat software-side (come stop/offset): se il runner
@@ -1642,12 +1628,11 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         return
 
     live_legs = [leg for leg in plan.legs if leg.size > 0]
-    # Fase 6 (fix review MEDIUM): le gambe dutch APRONO esposizione → passano dalle stesse
-    # guardie del place. Rate-limit UNA volta (mai un dutching a metà per il rate) e pre-check
-    # esposizione di TUTTE le gambe PRIMA di piazzarne una sola (all-or-nothing: mai lasciare un
-    # dutching sbilanciato perché una gamba sfonda il cap di esposizione).
-    if _rate_limited():
-        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
+    # Fase 6 + §7.2 (pre-check di ATOMICITÀ, logica condivisa coi control nativi): le gambe
+    # dutch APRONO esposizione → capacità rate per TUTTE le gambe e pre-check esposizione di
+    # OGNI gamba PRIMA di piazzarne una sola (all-or-nothing: mai un dutching a metà perché
+    # la gamba i>0 viene rifiutata dai control quando le precedenti sono GIÀ a mercato).
+    _rate_guard(extra=len(live_legs))
     for leg in live_legs:
         leg_risk = leg.size if plan.side == "back" else round(leg.size * (leg.price - 1.0), 2)
         _check_exposure_guard(market, strategy, leg.selection_id, hcap, float(leg_risk))
@@ -1687,7 +1672,6 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
                 f"{ex}; dutch interrotto: {len(placed_orders)} gambe piazzate, "
                 f"{cancelled} cancellate in rollback — VERIFICARE il mercato"
             ) from ex
-        _record_order()
         placed_orders.append(built.order)
         placed.append({"selection_id": leg.selection_id, "side": plan.side,
                        "price": built.price, "size": built.size,
@@ -1953,12 +1937,11 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
         target_size=target_size,
         jurisdiction=juris,
     )
-    # Fase 6 (fix review #10): anche il submin APRE esposizione reale → passa dalle stesse
-    # guardie del place PRIMA di piazzare (rate-limit + max esposizione/selezione). Il rischio è
-    # il target_size (BACK) o la liability target (LAY). Solleva PRIMA di persistere lo step INIT,
-    # così una richiesta oltre i limiti non lascia una riga 'processing' orfana.
-    if _rate_limited():
-        raise ValueError("rate-limit ordini/min raggiunto (betfair_live_settings.max_orders_per_min)")
+    # Fase 6 + §7.2 (pre-check di ATOMICITÀ, logica condivisa coi control nativi): anche il
+    # submin APRE esposizione reale → rate-limit + max esposizione/selezione PRIMA di
+    # persistere lo step INIT, così una richiesta oltre i limiti non lascia una riga
+    # 'processing' orfana (il control nativo rifiuterebbe DOPO la persistenza).
+    _rate_guard()
     _sub_side = str(request_row["side"]).lower()
     _sub_risk = target_size if _sub_side == "back" else round(target_size * (float(request_row["price"]) - 1.0), 2)
     _check_exposure_guard(market, strategy, int(request_row["selection_id"]),
@@ -1985,8 +1968,8 @@ def _start_submin(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str,
         market, state, order=None, jurisdiction=juris, customer_order_ref=cust_ref, ops=ops,
     )
     order = ops.last_order
-    if order is not None:
-        _record_order()  # conteggia il place del submin nel rate-limit ordini/min
+    # §7.2: il place del submin è conteggiato dal LiveRateControl nativo (finestra
+    # condivisa) nel path sincrono di market.place_order — nessuna doppia registrazione.
     order_id = _val(order, "id")
     try:
         _persist_submin_step(sb, rid, request_row, mode, cust_ref, new_state, order, order_id)
@@ -2520,13 +2503,22 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
 
     for r in rows:
         # kill-switch RI-LETTO PER-ORDINE (non solo a inizio ciclo): flipparlo a metà
-        # batch blocca SUBITO le aperture rimanenti, che restano 'pending' (mai claimate →
-        # mai bloccate in 'processing'). Si controlla PRIMA del claim, di proposito.
+        # batch blocca SUBITO le aperture rimanenti. Si controlla PRIMA del claim.
         # Le azioni di CHIUSURA passano sempre (vedi nota sul kill-switch a inizio funzione).
+        # BUG FIX cert 10/07 (VISTO DAL VIVO): lasciare l'apertura 'pending' era una
+        # TRAPPOLA — la riga sopravviveva al freno e veniva ESEGUITA al RIARMO (36s dopo
+        # nel test), quando l'utente la credeva morta (timeout UI "NON reinviare").
+        # Ora l'apertura è RIFIUTATA con esito esplicito (stessa semantica del canale
+        # locale): errore in UI subito, e nessun ordine parte "da solo" a freno spento.
         if (kill_cycle or _kill_switch()) and str(r.get("action") or "") not in _CLOSING_ACTIONS:
-            logger.warning(
-                "[live-order] kill-switch ATTIVO: apertura %s lasciata pending", r.get("id")
-            )
+            rid_k = r.get("id")
+            if _claim(sb, rid_k):
+                try:
+                    _write_error(sb, rid_k, r, mode_l, ValueError(
+                        "kill-switch ATTIVO: apertura RIFIUTATA — riprovare a freno spento"))
+                except Exception:  # noqa: BLE001 - perfino la scrittura errore è best-effort
+                    logger.exception("[live-order] esito kill per riga %s non scritto", rid_k)
+            handled += 1
             continue
         rid = r.get("id")
         # claim: se un altro l'ha già preso (o non è più pending), salta.

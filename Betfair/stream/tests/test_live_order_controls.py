@@ -1,5 +1,7 @@
 """Test delle guardie Fase 6 nel live_order_worker: kill-switch DB, rate-limit,
-max esposizione per selezione, audit. Nessuna rete: settings/blotter mockati."""
+max esposizione per selezione, audit. Nessuna rete: settings/blotter mockati.
+§7.2: la logica delle guardie vive in trading/controls.py (finestra rate condivisa +
+math esposizione condivisa); qui si testa il LATO WORKER (pre-check → ValueError)."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -7,15 +9,16 @@ from types import SimpleNamespace
 import pytest
 
 import Betfair.stream.live_order_worker as wk
+import Betfair.stream.trading.controls as ctl
 
 
 @pytest.fixture(autouse=True)
 def _clean_state():
     wk._SETTINGS.clear()
-    wk._ORDER_TS.clear()
+    ctl.reset_rate_window()
     yield
     wk._SETTINGS.clear()
-    wk._ORDER_TS.clear()
+    ctl.reset_rate_window()
 
 
 # ---------------------------------------------------------------------------
@@ -28,22 +31,33 @@ def test_db_kill_switch_from_settings():
 
 
 # ---------------------------------------------------------------------------
-# rate-limit (finestra scorrevole 60s)
+# rate-limit (§7.2: pre-check worker sulla finestra CONDIVISA di trading/controls)
 # ---------------------------------------------------------------------------
-def test_rate_limit_disabled_when_unset():
-    assert wk._rate_limited() is False
+def test_rate_guard_disabled_when_unset():
+    wk._rate_guard()  # nessun cap → non solleva mai
 
 
-def test_rate_limit_trips_at_cap(monkeypatch):
+def test_rate_guard_trips_at_cap(monkeypatch):
     wk._SETTINGS["max_orders_per_min"] = 2
     t = [1000.0]
-    monkeypatch.setattr(wk, "_now_epoch", lambda: t[0])
-    assert wk._rate_limited() is False
-    wk._record_order()
-    wk._record_order()
-    assert wk._rate_limited() is True          # raggiunto il tetto
+    monkeypatch.setattr(ctl, "_now_epoch", lambda: t[0])
+    wk._rate_guard()                            # finestra vuota → passa
+    ctl.record_place()
+    ctl.record_place()
+    with pytest.raises(ValueError):
+        wk._rate_guard()                        # raggiunto il tetto
     t[0] += 61.0                                # oltre la finestra → si azzera
-    assert wk._rate_limited() is False
+    wk._rate_guard()
+
+
+def test_rate_guard_extra_capacity_all_or_nothing(monkeypatch):
+    # §7.2: il dutch chiede capacità per TUTTE le gambe in un colpo (extra=N).
+    wk._SETTINGS["max_orders_per_min"] = 3
+    monkeypatch.setattr(ctl, "_now_epoch", lambda: 1000.0)
+    ctl.record_place()                          # 1 slot consumato, 2 liberi
+    wk._rate_guard(extra=2)                     # 1+2 = 3 <= 3 → passa
+    with pytest.raises(ValueError):
+        wk._rate_guard(extra=3)                 # 1+3 = 4 > 3 → all-or-nothing
 
 
 # ---------------------------------------------------------------------------

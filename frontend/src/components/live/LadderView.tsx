@@ -51,6 +51,7 @@ import {
     type LiveLadderRow, type LiveLadderSelection, type LiveSignalsRow,
 } from '@/lib/live';
 import { kellySuggestions, type KellySuggestion } from '@/lib/kellySuggest';
+import { fairInfos, fmtEvAt, type FairInfo } from '@/lib/fairOverlay';
 import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup, requestRiskRule,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
@@ -329,6 +330,7 @@ const COL_WIDTH: Record<ColumnKey, string> = {
     trd: '42px',
     piq: '34px',
     wom: '0px', // WOM resta nell'header della selezione, non è una colonna per-riga
+    ev: '54px', // F38: EV per livello dal fair del motore
 };
 
 // intestazioni brevi per colonna (come i ladder pro Geeks Toy / Bet Angel).
@@ -342,12 +344,17 @@ const COL_HEADER: Record<ColumnKey, { label: string; cls: string; title?: string
     trd: { label: 'Trd', cls: '', title: 'Volume tradato a questo prezzo' },
     piq: { label: 'PIQ', cls: 'text-white/40', title: 'PIQ: coda STIMATA (piqAhead + volume tradato)' },
     wom: { label: 'WOM', cls: '' },
+    ev: {
+        label: 'EV', cls: 'text-violet-300/80',
+        title: 'F38: EV a questo prezzo secondo il FAIR del motore (netta commissione). '
+            + 'B = value BACK, L = value LAY; vuoto = nessun valore a quel livello.',
+    },
 };
 
 // colonne effettivamente renderizzabili nella griglia per-riga (WOM è escluso: è un
 // aggregato di selezione mostrato nell'header, non un valore per-prezzo).
 export const GRID_KEYS: ReadonlySet<ColumnKey> = new Set<ColumnKey>([
-    'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq',
+    'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq', 'ev',
 ]);
 
 // stima RAFFINATA della coda usando il volume tradato: la coda davanti a te non può
@@ -419,6 +426,8 @@ interface SelectionLadderProps {
     // E36: suggerimento Kelly del motore per QUESTA selezione (null = niente chip).
     kelly: KellySuggestion | null;
     onAcceptKelly: (stake: number) => void;
+    // F38: fair del motore per QUESTA selezione (null = nessun overlay/colonna EV).
+    fair: FairInfo | null;
 }
 
 // mappa flash vuota, referenza stabile (nessun re-render quando non c'è nulla da lampeggiare).
@@ -428,7 +437,7 @@ const SelectionLadder = memo(function SelectionLadder({
     sel, orders, position, stake, stakeMode, status, canTrade, busy, columns, greenupSupported, enableDragMove,
     recenterSeq, nudge, samples,
     onPlace, onCancel, onGreenup, onGreenupAt, onCancelSide, onMoveOrder, onHoverRow, onWindowShift,
-    kelly, onAcceptKelly,
+    kelly, onAcceptKelly, fair,
 }: SelectionLadderProps) {
     // ---- navigazione/centraggio (B11/B18): auto-center sul LTP (default, come Bet Angel)
     // o centro MANUALE (click su prezzo/price bar/frecce). localSeq forza lo scroll one-shot.
@@ -442,6 +451,8 @@ const SelectionLadder = memo(function SelectionLadder({
         () => buildLadder(sel, orders, position, autoCenter ? null : manualCenter),
         [sel, orders, position, autoCenter, manualCenter],
     );
+    // F38: tick del FAIR del motore (riga evidenziata + colonna EV). null = niente overlay.
+    const fairTick = fair != null ? roundToTick(fair.fair) : null;
     const builtRef = useRef(built);
     builtRef.current = built;
     const [armedPrice, setArmedPrice] = useState<number | null>(null); // evidenziazione livello (OFF/non-trade)
@@ -826,6 +837,8 @@ const SelectionLadder = memo(function SelectionLadder({
                         const isBestBack = built.bestBack != null && Math.abs(r.price - built.bestBack) < 1e-9;
                         const isBestLay = built.bestLay != null && Math.abs(r.price - built.bestLay) < 1e-9;
                         const isArmed = armedPrice != null && Math.abs(r.price - armedPrice) < 1e-9;
+                        // F38: riga del FAIR del motore (marker viola sulla cella prezzo).
+                        const isFair = fairTick != null && Math.abs(r.price - fairTick) < 1e-9;
                         const pnl = built.hasPosition ? lockedPnlAt(r.price, built.win, built.lose) : null;
                         const trdPct = built.maxTrd > 0 ? (r.trd / built.maxTrd) * 100 : 0;
                         // PIQ: un BACK risiede sul lato LAY del book → coda ≈ layAvail − tuoBack; e
@@ -908,10 +921,13 @@ const SelectionLadder = memo(function SelectionLadder({
                                                     : (isBestBack || isBestLay)
                                                         ? 'bg-white/[0.06] text-white'
                                                         : 'text-white/70 hover:bg-white/5'
-                                            }`}
-                                            title={isLtp
-                                                ? 'Ultimo prezzo tradato (LTP) · clic = ricentra'
-                                                : 'Clic = ricentra il ladder sul prezzo corrente'}
+                                            } ${isFair ? 'shadow-[inset_0_0_0_1.5px_rgba(167,139,250,0.85)]' : ''}`}
+                                            title={(isFair && fair != null
+                                                ? `FAIR del motore: ${fair.fair.toFixed(2)} (prob ${(fair.prob * 100).toFixed(1)}%) · `
+                                                : '')
+                                                + (isLtp
+                                                    ? 'Ultimo prezzo tradato (LTP) · clic = ricentra'
+                                                    : 'Clic = ricentra il ladder sul prezzo corrente')}
                                         >
                                             {fmtPrice(r.price)}
                                         </button>
@@ -1015,6 +1031,25 @@ const SelectionLadder = memo(function SelectionLadder({
                                             {piqStatic > 0 ? `~${fmtSize(piqEst) || '0'}` : '·'}
                                         </div>
                                     );
+                                case 'ev': {
+                                    // F38: EV a QUESTO prezzo dal fair del motore (stessa formula
+                                    // del motore, netta commissione). Vuoto = nessun lato con EV
+                                    // positivo qui (mai un valore inventato); nessun fair valido
+                                    // (segnale assente/stantio/deciso) = colonna interamente vuota.
+                                    const evTxt = fair != null ? fmtEvAt(fair, r.price) : null;
+                                    const evCls = evTxt == null ? 'text-white/15'
+                                        : evTxt.startsWith('B') ? 'text-sky-300/90' : 'text-rose-300/90';
+                                    return (
+                                        <div key={k}
+                                            className={`flex items-center justify-center font-mono tabular-nums ${evCls}`}
+                                            title={fair != null
+                                                ? `EV a ${fmtPrice(r.price)} secondo il fair del motore ${fair.fair.toFixed(2)} `
+                                                    + `(prob ${(fair.prob * 100).toFixed(1)}%, netta comm. ${(fair.commission * 100).toFixed(0)}%)`
+                                                : undefined}>
+                                            {evTxt ?? (fair != null ? '·' : '')}
+                                        </div>
+                                    );
+                                }
                                 default:
                                     return null;
                             }
@@ -1318,13 +1353,18 @@ interface Props {
 
 // profilo iniziale delle colonne: se non c'è nulla salvato per lo sport, usa il layout
 // storico a 8 colonne (con PIQ visibile); altrimenti il profilo salvato dall'utente.
+// F38: sul CALCIO (sport col motore) la colonna EV parte VISIBILE dopo il P&L; sugli
+// sport senza motore (tennis) resta disponibile ma nascosta (sarebbe sempre vuota).
 const LADDER_DEFAULT_ORDER: ColumnKey[] = [
     'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq',
 ];
 function eightColProfile(sport: string): LadderProfile {
+    const order: ColumnKey[] = sport === 'calcio'
+        ? ['my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'ev', 'trd', 'piq']
+        : LADDER_DEFAULT_ORDER;
     return normalizeProfile(sport, {
         sport,
-        columns: LADDER_DEFAULT_ORDER.map((key) => ({ key, visible: true })),
+        columns: order.map((key) => ({ key, visible: true })),
     });
 }
 function initLadderProfile(sport: string): LadderProfile {
@@ -1405,6 +1445,13 @@ export function LadderView({
     const kellyMap = useMemo(
         () => kellySuggestions(signals, marketId, Date.now()),
         // kellyTick forza la rivalutazione periodica della freschezza
+        [signals, marketId, kellyTick], // eslint-disable-line react-hooks/exhaustive-deps
+    );
+    // F38: fair del motore per selezione (linea fair + colonna EV). Stessa fonte del
+    // chip Kelly (live_signals) e stessa rivalutazione periodica della freschezza —
+    // col keepalive del runner "fresco" = "il motore lo sta ancora confermando".
+    const fairMap = useMemo(
+        () => fairInfos(signals, marketId, Date.now()),
         [signals, marketId, kellyTick], // eslint-disable-line react-hooks/exhaustive-deps
     );
     const onAcceptKelly = useCallback((stakeVal: number) => {
@@ -2609,6 +2656,7 @@ export function LadderView({
                                 onWindowShift={onWindowShift}
                                 kelly={kellyMap.get(s.selection_id) ?? null}
                                 onAcceptKelly={onAcceptKelly}
+                                fair={fairMap.get(s.selection_id) ?? null}
                             />
                         ))}
                     </div>

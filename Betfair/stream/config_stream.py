@@ -100,6 +100,10 @@ KELLY_FRACTION: float = float(os.getenv("LIVE_KELLY_FRACTION", "0.25"))
 # size minima disponibile al prezzo perché un segnale sia AZIONABILE (controparte reale):
 # evita segnali su mercati illiquidi/quote-fantasma, dove l'edge del modello è inaffidabile.
 SIGNAL_MIN_LIQUIDITY: float = float(os.getenv("LIVE_SIGNAL_MIN_LIQUIDITY", "50"))
+# F38 keepalive: un segnale INVARIATO ma ancora confermato dal motore viene riscritto
+# (refresh updated_at) al più tardi ogni N secondi — così la UI distingue "stabile e
+# valido" (overlay visibile) da "motore fermo" (stantio → overlay nascosto).
+SIGNALS_KEEPALIVE_SEC: float = float(os.getenv("LIVE_SIGNALS_KEEPALIVE_SEC", "60"))
 
 # ----------------------------------------------------------------------------
 # Sottoscrizione automatica (F3)

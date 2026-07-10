@@ -339,7 +339,20 @@ def _make_capture(market_id: str, event_id: str) -> Any:
             with self._lock:
                 return dict(self._latest)
 
-    return _Capture(market_filter=streaming_market_filter(market_ids=[market_id]))
+    # BUG FIX cert 10/07 (VISTO DAL VIVO — stesso CRITICAL-2 già fixato sul calcio):
+    # BaseStrategy ha default NASCOSTI pensati per bot automatici — max_order_exposure=10
+    # (€10 di rischio max per ordine!), max_selection_exposure=100, max_live_trade_count=1
+    # (UN solo ordine vivo per selezione: il 2° click sul ladder veniva RIFIUTATO con
+    # STRATEGY_EXPOSURE, visto dal vivo su Fery v Zverev). Gli ordini MANUALI del
+    # terminal si agganciano a QUESTA strategy → i default vanno disattivati; le
+    # protezioni vere restano ai cap espliciti del build (max_stake) e ai limiti bot.
+    return _Capture(
+        market_filter=streaming_market_filter(market_ids=[market_id]),
+        max_order_exposure=None,
+        max_selection_exposure=None,
+        max_trade_count=int(1e9),
+        max_live_trade_count=int(1e9),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -420,9 +433,17 @@ def _catalog_follow(session: TennisLiveSession, follow: Dict[str, Any]) -> None:
     try:
         meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
     except Exception as e:  # noqa: BLE001
-        logger.warning("[tennis-runner] catalogo KO %s: %s", event_id, e)
-        tennis_db.set_tennis_follow_status(event_id, "ERROR", str(e))
-        return
+        # SESSIONE SCADUTA (INVALID_SESSION dopo inattività .it): UN relogin e
+        # retry prima di marcare ERROR — altrimenti ogni primo follow dopo un
+        # periodo di quiete fallirebbe definitivamente (ladder mai partito).
+        logger.warning("[tennis-runner] catalogo KO %s (%s): relogin e retry", event_id, str(e)[:80])
+        try:
+            session.trading.login()
+            meta = _resolve_market(session.trading, follow.get("market_id"), event_id)
+        except Exception as e2:  # noqa: BLE001
+            logger.warning("[tennis-runner] catalogo KO anche dopo relogin %s: %s", event_id, e2)
+            tennis_db.set_tennis_follow_status(event_id, "ERROR", str(e2))
+            return
     session.market_meta[event_id] = meta
 
 
@@ -690,8 +711,10 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
                 continue
             if hasattr(strat, "score"):
                 strat.score = ts
-            if hasattr(strat, "point_pressure"):
-                strat.point_pressure = bool(ts.point_pressure) if ts is not None else False
+            if hasattr(strat, "point_pressure") and ts is not None:
+                # FAIL-SAFE (fix 2026-07-10): con ts None (feed KO/pre-match) la
+                # gap-guard resta INVARIATA — mai spegnerla per un buco del feed.
+                strat.point_pressure = bool(ts.point_pressure)
 
         # punto-per-punto (write-on-change della score key)
         prev = session.last_score.get(event_id)
@@ -723,6 +746,35 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         for bot_key in desired:
             if (event_id, bot_key) not in session.hosted:
                 need_restart = True
+        # MISSIONE COMPIUTA (one_tick_per_phase): il bot alza ``mission_done``
+        # dopo 1 green pre-match + 1 green in-play (e si e' gia' auto-appiattito
+        # via force_flat). Come per il disarm: si disabilita SOLO a flat
+        # verificato dal blotter e lo status DB diventa 'done' (gia' nel
+        # contratto tennis_bots.sql). NESSUN restart del framework: il bot
+        # disabilitato resta ospitato ma inerte fino al prossimo restart utile.
+        for (ev, bot_key), strat in list(session.hosted.items()):
+            if ev != event_id or getattr(strat, "_tennis_disabled", False):
+                continue
+            if not getattr(strat, "mission_done", False):
+                continue
+            if not _strategy_is_flat(flumine, strat):
+                continue  # il force_flat interno sta ancora chiudendo: aspetta
+            _disable_strategy(strat)
+            try:
+                tennis_db.set_tennis_bot_status(
+                    ev, bot_key, "done", stopped=True,
+                    stats=getattr(strat, "stats", None),
+                )
+                tennis_db.write_tennis_bot_activity(
+                    ev, bot_key, "mission",
+                    {"phase": "done",
+                     "note": "missione compiuta: 1 tick pre-match + 1 tick in-play"},
+                )
+            except Exception as e:  # noqa: BLE001 - lo stato DB non rompe il worker
+                logger.warning("[tennis-runner] status 'done' %s/%s KO: %s",
+                               ev, bot_key, e)
+            # rimosso dai desiderati di questo giro: heartbeat 'running' saltato
+            desired.pop(bot_key, None)
         # DISARM (contratto tennis_bots.sql: 'stopping' → chiusura FLAT → 'stopped').
         # Fix review CRITICAL: prima di questo fix lo stato 'stopping' era ignorato e il
         # bot veniva congelato all'istante con la posizione APERTA (mentre la UI diceva
@@ -942,6 +994,16 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
                     time.sleep(15)
+                    # sessione .it: keepAlive ogni ~8 min o scade per inattività
+                    _ka = getattr(session, "_idle_ka_count", 0) + 1
+                    session._idle_ka_count = _ka
+                    if _ka % 32 == 0:
+                        try:
+                            from ..auth import keep_alive as _bf_keep_alive
+                            _bf_keep_alive(session.trading)
+                            logger.info("[tennis-runner] keepAlive sessione Betfair ok (idle).")
+                        except Exception as _ex:  # noqa: BLE001
+                            logger.warning("[tennis-runner] keepAlive KO: %s", str(_ex)[:120])
                     continue
                 logger.warning("[tennis-runner] nessun evento tennis da streammare.")
                 break

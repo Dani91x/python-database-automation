@@ -319,7 +319,10 @@ export type RiskRuleType =
     // C23: ordine condizionale — ENTRA quando l'LTP tocca la soglia nella direzione armata
     | 'stop_entry'
     // C25: tick-offset sul re-quote — insegue il best re-quotando l'unmatched (cancel→place)
-    | 'chase';
+    | 'chase'
+    // F39: floor-keeper del worst-case SCORELINE dell'evento — quando sfora −params.floor
+    // il risk engine accoda la copertura CS suggerita (richiede migrazione v4)
+    | 'auto_hedge';
 export type RiskRuleStatus = 'armed' | 'triggered' | 'cancelled' | 'done' | 'error';
 // Momento di attivazione: 'immediate' arma subito; 'on_fill' aspetta l'abbinamento
 // dell'ordine di ingresso (entry_bet_id) prima di sorvegliare (niente offset nudo).
@@ -350,6 +353,13 @@ export interface RiskRuleParams {
     // C25 chase: distanza in tick dal best del proprio lato (0 = join) + cap re-quote
     // (max_chases NON ancora esposto in UI: il worker usa il default 20)
     max_chases?: number;
+    // F39 auto_hedge: floor (€ perdita worst-case massima tollerata) + evento;
+    // opzionali: max_hedges (default worker 3), cooldown_sec (60), max_stake per copertura.
+    floor?: number;
+    event_id?: string;
+    max_hedges?: number;
+    cooldown_sec?: number;
+    max_stake?: number;
 }
 
 // Specchio di una riga regola (get_live_risk_rules → rows[]).
@@ -414,6 +424,18 @@ export async function requestRiskRule(args: {
         }
         if (!(Number.isFinite(args.entrySize) && (args.entrySize as number) > 0)) {
             throw new Error('requestRiskRule: stop_entry richiede entrySize > 0');
+        }
+    }
+    // F39 auto_hedge: floor>0 + event_id obbligatori, lato back (validati anche dalla RPC v4).
+    if (args.ruleType === 'auto_hedge') {
+        if (!(Number.isFinite(args.params?.floor) && (args.params.floor as number) > 0)) {
+            throw new Error('requestRiskRule: auto_hedge richiede params.floor > 0 (€ worst-case massimo tollerato)');
+        }
+        if (!args.params?.event_id) {
+            throw new Error('requestRiskRule: auto_hedge richiede params.event_id');
+        }
+        if (args.entrySide !== 'back') {
+            throw new Error('requestRiskRule: auto_hedge richiede entrySide back (copertura BACK sul CS)');
         }
     }
     // entry_price richiesto solo se il riferimento NON è derivato dall'ordine di ingresso.
@@ -497,6 +519,11 @@ export interface XhedgeSuggestion {
     new_worst: number;
     new_best: number;
     note: string;
+    /** F39: ID ESATTI (dal catalogo, scritti dal worker) della gamba CS suggerita per il
+     *  piazzamento 1-click. Assenti/null (righe pre-deploy o scoreline non in catalogo)
+     *  → il bottone "Copri" NON è mostrato: mai piazzare su una selezione indovinata. */
+    market_id?: string | null;
+    selection_id?: number | null;
 }
 export interface XhedgeAnalysis {
     n_positions: number;
@@ -504,6 +531,9 @@ export interface XhedgeAnalysis {
      *  griglia: > 0 ⟹ la matrice è INCOMPLETA e la UI DEVE avvisare (esposizione reale
      *  assente dai P&L mostrati). Campo assente nelle analisi pre-fix → trattare come 0. */
     ignored_orders?: number;
+    /** F39: market_id del CORRECT_SCORE dal catalogo (per armare l'auto-hedge).
+     *  Assente/null = CS non in catalogo → auto-hedge non armabile. */
+    cs_market_id?: string | null;
     summary: {
         worst: number;
         best: number;

@@ -159,3 +159,29 @@ def test_compute_xhedge_end_to_end():
     assert out["summary"]["worst"] == -70.0
     assert out["suggestion"]["actionable"] is True
     assert out["suggestion"]["scoreline"] == [0, 0]
+    # F39: senza mappa catalogo gli ID NON sono presenti → la UI non mostra il 1-click
+    assert out["suggestion"]["market_id"] is None
+    assert out["suggestion"]["selection_id"] is None
+
+
+def test_compute_xhedge_suggestion_ids_from_catalog():
+    # F39: con cs_market_id + mappa {(h,a): selection_id} il suggerimento include gli ID
+    # ESATTI della gamba (per il piazzamento 1-click — mai risoluzione per nome in UI).
+    orders = [
+        {"market_id": "1.2", "selection_id": 30, "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0},
+    ]
+    meta = {"1.2": {"market_type": "CORRECT_SCORE", "selections": {30: {"name": "0 - 0", "sort_priority": 1}}}}
+    out = x.compute_xhedge(
+        orders, meta, {(0, 0): 8.0}, max_goals=4,
+        cs_market_id="1.2", cs_sel_by_score={(0, 0): 30},
+    )
+    assert out["suggestion"]["actionable"] is True
+    assert out["suggestion"]["market_id"] == "1.2"
+    assert out["suggestion"]["selection_id"] == 30
+    # scoreline suggerito NON in mappa (catalogo incompleto) → selection_id None, mai indovinato
+    out2 = x.compute_xhedge(
+        orders, meta, {(0, 0): 8.0}, max_goals=4,
+        cs_market_id="1.2", cs_sel_by_score={(1, 1): 99},
+    )
+    assert out2["suggestion"]["actionable"] is True
+    assert out2["suggestion"]["selection_id"] is None

@@ -790,6 +790,185 @@ def _handle_chase(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> N
 
 
 # ---------------------------------------------------------------------------
+# AUTO-HEDGE (F39) — floor-keeper del worst-case SCORELINE dell'evento
+# ---------------------------------------------------------------------------
+# Analisi più vecchia di così = stantia: MAI coprire su quote/esposizioni vecchie
+# (l'xhedge_worker riscrive ogni ~5s → 30s = 6 cicli di tolleranza).
+_AUTOHEDGE_FRESH_SEC = 30.0
+_AUTOHEDGE_DEFAULT_MAX = 3
+_AUTOHEDGE_DEFAULT_COOLDOWN_SEC = 60.0
+# sotto il minimo stake .it il place normale verrebbe rifiutato → flusso submin.
+_AUTOHEDGE_MIN_STAKE_IT = 2.0
+
+
+def _handle_auto_hedge(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str) -> None:
+    """Mantiene il worst-case scoreline dell'EVENTO ≥ −params.floor: quando sfora,
+    accoda la copertura CS suggerita da betfair_live_xhedge (ID esatti dal worker).
+
+    MONEY-CRITICAL — guardie esplicite, MAI una copertura al buio:
+      * analisi FRESCA (≤30s) e matrice COMPLETA (ignored_orders=0);
+      * suggerimento actionable CON market_id/selection_id/odds/size validi;
+      * cooldown tra coperture (default 60s: lascia abbinare e rientrare l'analisi);
+      * cap coperture (default 3): raggiunto con worst ancora sotto il floor →
+        alert CRITICAL e regola 'done' (mai inseguire all'infinito);
+      * kill-switch → nessuna copertura (resta armata);
+      * la regola RESTA armata dopo una copertura (floor-keeper), stato in result.
+    """
+    p = _params(rule)
+    res = _result(rule)
+    floor = low._f(p.get("floor"))
+    event_id = str(p.get("event_id") or "")
+    if floor is None or floor <= 0 or not event_id:
+        _update_rule(sb, rule["id"], {"status": "error",
+                                      "error": "auto_hedge: params.floor>0 e params.event_id obbligatori"})
+        _alert("CRITICAL", f"Auto-hedge {rule.get('id')} DISATTIVATO: parametri non validi.")
+        return
+    max_hedges = int(low._f(p.get("max_hedges")) or _AUTOHEDGE_DEFAULT_MAX)
+    cooldown = float(low._f(p.get("cooldown_sec")) or _AUTOHEDGE_DEFAULT_COOLDOWN_SEC)
+    hedges = int(res.get("hedges_done") or 0)
+
+    # cooldown fra coperture: la copertura precedente deve abbinarsi ed entrare
+    # nello specchio prima di rivalutare (altrimenti si copre due volte lo stesso buco).
+    age_last = _age_seconds(res.get("last_hedge_ts"))
+    if age_last is not None and age_last < cooldown:
+        return
+
+    # analisi x-hedge dell'evento (scritta dall'xhedge_worker ogni ~5s)
+    try:
+        rows = (sb.table("betfair_live_xhedge").select("analysis,updated_at")
+                .eq("event_id", event_id).eq("mode", mode_l).limit(1).execute().data or [])
+    except Exception:  # noqa: BLE001 - blip DB: transitorio, riprova al giro dopo
+        return
+    if not rows:
+        return  # nessuna analisi (ancora): resta armata
+    row = rows[0]
+    if (_age_seconds(row.get("updated_at")) or 1e9) > _AUTOHEDGE_FRESH_SEC:
+        return  # analisi stantia: MAI coprire su dati vecchi (riprova al giro dopo)
+    analysis = row.get("analysis") or {}
+    if int(analysis.get("ignored_orders") or 0) > 0:
+        # matrice INCOMPLETA = il worst mostrato NON è il worst reale → mai auto-coprire.
+        if not res.get("warned_incomplete"):
+            res["warned_incomplete"] = True
+            _update_rule(sb, rule["id"], {"result": res})
+            _alert("WARN", f"Auto-hedge {rule.get('id')}: matrice x-hedge INCOMPLETA "
+                           "(ordini non modellati) — coperture SOSPESE finché non si risolve.")
+        return
+    if res.get("warned_incomplete"):
+        res.pop("warned_incomplete", None)  # rientrata: riabilita (e azzera l'anti-spam)
+        _update_rule(sb, rule["id"], {"result": res})
+
+    worst = low._f((analysis.get("summary") or {}).get("worst"))
+    if worst is None:
+        return
+    if worst >= -floor:
+        return  # floor rispettato: resta armata, nessuna azione
+
+    # floor SFORATO → serve una copertura
+    if hedges >= max_hedges:
+        _update_rule(sb, rule["id"], {"status": "done", "triggered_at": _now_iso(),
+            "result": {**res, "note": f"cap coperture raggiunto ({max_hedges}) con worst "
+                                      f"{worst:.2f} < −{floor:.2f}: intervento manuale richiesto"}})
+        _alert("CRITICAL", f"Auto-hedge {rule.get('id')}: cap {max_hedges} coperture raggiunto "
+                           f"ma worst-case €{worst:.2f} ancora sotto −€{floor:.2f} — INTERVENIRE A MANO.")
+        return
+    if _kill_active():
+        return  # freno d'emergenza: nessuna apertura, resta armata
+
+    sug = analysis.get("suggestion") or {}
+    sug_mid = sug.get("market_id")
+    sug_sel = sug.get("selection_id")
+    odds = low._f(sug.get("odds"))
+    size = low._f(sug.get("size"))
+    if not (sug.get("actionable") and sug_mid and sug_sel is not None
+            and odds is not None and odds > 1.01 and size is not None and size >= 0.01):
+        # floor sforato ma nessuna copertura eseguibile (quota CS assente, ID mancanti):
+        # l'utente DEVE saperlo — alert una volta per episodio (flag azzerato al rientro).
+        if not res.get("warned_nosug"):
+            res["warned_nosug"] = True
+            _update_rule(sb, rule["id"], {"result": res})
+            _alert("CRITICAL", f"Auto-hedge {rule.get('id')}: worst-case €{worst:.2f} sotto "
+                               f"−€{floor:.2f} ma NESSUNA copertura eseguibile (quota/ID CS "
+                               "mancanti) — VALUTARE A MANO.")
+        return
+    res.pop("warned_nosug", None)
+
+    max_stake = low._f(p.get("max_stake"))
+    if max_stake is not None and max_stake > 0:
+        size = min(size, max_stake)
+    size = round(size, 2)
+    submin = size < _AUTOHEDGE_MIN_STAKE_IT
+    n = hedges + 1
+    ref = f"risk{rule['id']}h{n}"  # deterministico: mai due coperture per lo stesso trigger
+    payload = {
+        "client_ref": ref, "action": ("place_submin" if submin else "place"),
+        "mode": mode_l, "market_id": str(sug_mid), "selection_id": int(sug_sel),
+        "handicap": 0, "side": "back", "price": odds, "size": size,
+        "persistence": "LAPSE",
+        "params": {"risk_rule_id": rule["id"], "role": "auto_hedge",
+                   # FoK 10s (C22) sul place normale: una copertura non abbinata NON deve
+                   # restare sul book a un prezzo vecchio (il submin ha la sua macchina a stati).
+                   **({} if submin else {"fok_ttl_sec": 10})},
+    }
+    req_id = _enqueue(sb, payload)
+    res.update({"hedges_done": n, "last_hedge_ts": _now_iso(), "last_request_id": req_id,
+                "note": f"copertura #{n}: BACK CS {sug.get('scoreline')} €{size:.2f}@{odds} "
+                        f"(worst €{worst:.2f} < −€{floor:.2f})"})
+    _update_rule(sb, rule["id"], {"result": res, "triggered_at": _now_iso()})
+    _alert("WARN", f"AUTO-HEDGE {rule.get('id')}: worst-case €{worst:.2f} sotto −€{floor:.2f} → "
+                   f"copertura #{n}/{max_hedges} accodata: BACK CS {sug.get('scoreline')} "
+                   f"€{size:.2f}@{odds} ({'submin' if submin else 'FoK 10s'}).")
+
+
+# ---------------------------------------------------------------------------
+# BUG FIX cert 10/07 (#9) — DISARM di una regola con TP resting GIÀ piazzato:
+# l'ordine offset creato DALLA REGOLA restava VIVO sul book (ordine nudo che può
+# abbinarsi dopo = perdita). Al disarm (status 'cancelled') il worker ora CANCELLA
+# anche l'offset resting. Idempotente via flag result.offset_cleanup.
+# ---------------------------------------------------------------------------
+def _cleanup_cancelled_offsets(sb: Any, flumine: Any, mode_l: str) -> int:
+    """Cancella gli offset resting delle regole DISARMATE manualmente. Ritorna
+    quante regole ha ripulito. Best-effort: un KO non ferma il ciclo."""
+    try:
+        rows = (
+            sb.table(_TABLE).select("*").eq("status", "cancelled").eq("mode", mode_l)
+            .order("id", desc=True).limit(20).execute().data or []
+        )
+    except Exception:  # noqa: BLE001 - lettura best-effort
+        return 0
+    cleaned = 0
+    for rule in rows:
+        res = _result(rule)
+        req_id = res.get("offset_request_id")
+        if req_id is None or res.get("offset_cleanup"):
+            continue  # nessun TP creato dalla regola, o già ripulito
+        order = _offset_order_obj(flumine, rule.get("market_id"), req_id)
+        note = None
+        if order is None:
+            # ordine non risolvibile sul framework CORRENTE (restart/mercato chiuso):
+            # non possiamo garantire il ritiro → ALERT esplicito, mai silenzio.
+            note = "disarm: offset NON risolvibile sul framework — VERIFICARE a mano"
+            _alert("CRITICAL", f"Regola {rule.get('id')} disarmata ma il take-profit "
+                               "resting non è risolvibile: VERIFICA il book a mano.")
+        else:
+            rem = low._f(low._val(order, "size_remaining")) or 0.0
+            if rem > 0:
+                bet_id = low._val(order, "bet_id")
+                _enqueue(sb, {"client_ref": f"risk{rule['id']}dc", "action": "cancel",
+                              "mode": mode_l, "market_id": rule.get("market_id"),
+                              "bet_id": bet_id})
+                note = f"disarm: take-profit resting CANCELLATO (bet {bet_id})"
+                _alert("INFO", f"Regola {rule.get('id')} disarmata: TP resting ritirato dal book.")
+            else:
+                note = "disarm: offset già abbinato/terminale — nulla da ritirare"
+        res["offset_cleanup"] = True
+        if note:
+            res["cleanup_note"] = note
+        _update_rule(sb, rule["id"], {"result": res})
+        cleaned += 1
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
 # Dispatch + ciclo
 # ---------------------------------------------------------------------------
 def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
@@ -804,6 +983,8 @@ def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, stra
         _handle_stop_entry(sb, flumine, rule, mode_l)
     elif rt == "chase":
         _handle_chase(sb, flumine, rule, mode_l)
+    elif rt == "auto_hedge":
+        _handle_auto_hedge(sb, flumine, rule, mode_l)
     else:
         _update_rule(sb, rule["id"], {"status": "error", "error": f"rule_type sconosciuto: {rt!r}"})
 
@@ -843,6 +1024,8 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
     # Fix HIGH-3: 'triggered' non è terminale di fiducia — verifica esito/fill delle chiusure
     # accodate, ritenta le fallite (bounded) ed escala con alert quelle irrecuperabili.
     handled += _check_triggered_rules(sb, flumine, mode_l)
+    # BUG FIX #9 (cert 10/07): disarm manuale → ritira anche il TP resting della regola
+    handled += _cleanup_cancelled_offsets(sb, flumine, mode_l)
     return handled
 
 

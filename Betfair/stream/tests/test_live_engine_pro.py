@@ -54,6 +54,47 @@ def test_signals_shape_and_json():
     js = signals_to_json(sigs)
     assert "signals" in js and len(js["signals"]) == 3
     assert all("direction" in s for s in js["signals"])
+    # F38: la commissione usata da EV/Kelly viaggia nel payload — la colonna EV
+    # del ladder usa la STESSA aliquota (mai due formule che divergono).
+    assert js["commission"] == 0.05
+    assert signals_to_json(sigs, commission=0.02)["commission"] == 0.02
+
+
+def test_event_goal_hazard_bounds_and_semantics():
+    # F40: p in (0,1), None pre-match, e coerenza col modello (chi insegue tardi
+    # con λ alti → hazard maggiore di un match spento a inizio gara).
+    from Betfair.stream.engine.live_engine_pro import event_goal_hazard
+
+    base = dict(prematch_lambda_home=1.4, prematch_lambda_away=1.2, league_id=135)
+    assert event_goal_hazard(score_home=None, score_away=None, minute=None, **base) is None
+
+    early = event_goal_hazard(score_home=0, score_away=0, minute=10, **base)
+    assert early is not None and 0.0 < early["p_next"] < 1.0
+    assert early["horizon_min"] == 5.0 and early["minute"] == 10
+    # exp_goals ~ (λ_tot residuo)·share(5') → p = 1−exp(−exp_goals): coerenza interna
+    import math as _m
+    assert abs(early["p_next"] - (1.0 - _m.exp(-early["exp_goals_next"]))) < 1e-3
+
+    # λ molto bassi → hazard più basso (monotonia nel volume gol atteso)
+    quiet = event_goal_hazard(score_home=0, score_away=0, minute=10,
+                              prematch_lambda_home=0.4, prematch_lambda_away=0.3, league_id=135)
+    assert quiet is not None and quiet["p_next"] < early["p_next"]
+
+    # a tempo (modello) esaurito → None, mai un hazard inventato
+    assert event_goal_hazard(score_home=1, score_away=0, minute=200, **base) is None
+
+
+def test_signals_write_due_keepalive():
+    # F38: write-on-change + keepalive — segnale cambiato → scrive sempre; invariato
+    # → scrive SOLO se l'ultima scrittura è più vecchia del keepalive.
+    from Betfair.stream.runner import _signals_write_due
+
+    key = (("1.1", 11, "BACK", 0.55),)
+    assert _signals_write_due(None, 0.0, key, 1000.0, 60.0) is True          # prima volta
+    assert _signals_write_due(key, 1000.0, key, 1030.0, 60.0) is False       # invariato, fresco
+    assert _signals_write_due(key, 1000.0, key, 1060.0, 60.0) is True        # invariato, keepalive
+    other = (("1.1", 11, "LAY", 0.55),)
+    assert _signals_write_due(key, 1059.0, other, 1060.0, 60.0) is True      # cambiato → subito
 
 
 def test_match_odds_probs_sum_to_one():

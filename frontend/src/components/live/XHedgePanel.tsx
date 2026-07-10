@@ -8,15 +8,31 @@
 //   • SUGGERIMENTO di copertura: se actionable, la gamba Correct Score che migliora
 //     il caso peggiore ("BACK h-a size@quota → worst X→Y").
 //
-// IMPORTANTE (money-critical): questo pannello NON piazza ordini. Non disponiamo lato
-// client del market_id / selection_id del mercato Correct Score, quindi il suggerimento
-// è puramente INFORMATIVO: va piazzato MANUALMENTE sul mercato Correct Score. In tutte
-// le modalità (incl. 'off') il pannello resta in sola lettura.
+// F39 (money-critical): il piazzamento 1-CLICK della copertura è disponibile SOLO se
+// il worker ha scritto nel suggerimento gli ID ESATTI (market_id + selection_id del
+// Correct Score, presi dal CATALOGO — mai risolti per nome lato client). Guardie:
+// analisi fresca (≤30s), matrice COMPLETA (ignored_orders=0), odds/size validi,
+// conferma esplicita one-shot in LIVE, FoK software 10s sul place (una copertura che
+// non si abbina subito NON deve restare sul book a un prezzo vecchio). Senza gli ID
+// il suggerimento resta informativo: piazzamento manuale.
 // ============================================================================
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Grid3x3, TrendingUp, TrendingDown, Sigma, Lightbulb, Info } from 'lucide-react';
-import { fetchXhedge, type XhedgeRow, type XhedgeAnalysis } from '@/lib/liveOrders';
+import { Button } from '@/components/ui/button';
+import { Loader2, Grid3x3, TrendingUp, TrendingDown, Sigma, Lightbulb, Info, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+    cancelRiskRule, fetchRiskRules, fetchXhedge, requestRiskRule, sendLiveOrderCommand,
+    shouldResetLiveConfirm,
+    type RiskRuleRow, type XhedgeRow, type XhedgeAnalysis,
+} from '@/lib/liveOrders';
+
+// Analisi più vecchia di così = suggerimento STANTIO: 1-click disabilitato (il book
+// CS si muove; il worker riscrive ogni ~5s, 30s = 6 cicli di tolleranza).
+const XHEDGE_FRESH_MS = 30_000;
+// Sotto il minimo stake .it (€2) il place normale verrebbe rifiutato: si usa il
+// flusso place_submin (place-and-trim), che è il path progettato per questi importi.
+const MIN_STAKE_IT = 2.0;
 
 export type XHedgePanelMode = 'off' | 'paper' | 'live';
 
@@ -171,6 +187,155 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
     const summary = analysis?.summary ?? null;
     const suggestion = analysis?.suggestion ?? null;
 
+    // ---------------- F39: piazzamento 1-click della copertura CS ----------------
+    const [confirmLive, setConfirmLive] = useState(false);
+    const [placing, setPlacing] = useState(false);
+    const isLive = mode === 'live';
+    const canTrade = mode === 'paper' || mode === 'live';
+    const matrixIncomplete = (analysis?.ignored_orders ?? 0) > 0;
+    const rowFresh = row != null && Number.isFinite(Date.parse(row.updated_at))
+        && Date.now() - Date.parse(row.updated_at) <= XHEDGE_FRESH_MS;
+    // il bottone esiste SOLO con ID esatti dal worker + numeri validi (mai indovinare)
+    const coverReady = !!(suggestion?.actionable
+        && suggestion.market_id && suggestion.selection_id != null
+        && suggestion.odds != null && suggestion.odds > 1.01
+        && suggestion.size != null && suggestion.size >= 0.01);
+
+    const handleCover = useCallback(async () => {
+        // Guardie MONEY-CRITICAL ri-verificate AL CLICK (non solo al render): il
+        // pannello polla ogni 5s e il suggerimento può cambiare sotto il cursore.
+        const s = suggestion;
+        const r = row;
+        if (placing || !canTrade || !s?.actionable) return;
+        if (!s.market_id || s.selection_id == null
+            || s.odds == null || !(s.odds > 1.01) || s.size == null || !(s.size >= 0.01)) return;
+        if (matrixIncomplete) {
+            toast.error('Matrice INCOMPLETA', { description: 'Ordini matched non modellati: la copertura suggerita non è affidabile.' });
+            return;
+        }
+        if (!r || !Number.isFinite(Date.parse(r.updated_at))
+            || Date.now() - Date.parse(r.updated_at) > XHEDGE_FRESH_MS) {
+            toast.error('Suggerimento stantio', { description: 'Attendi il refresh dell\'analisi (~5s) e riprova.' });
+            return;
+        }
+        if (isLive && !confirmLive) return;
+        setPlacing(true);
+        try {
+            const size = Math.round(s.size * 100) / 100;
+            const submin = size < MIN_STAKE_IT;
+            const res = await sendLiveOrderCommand({
+                action: submin ? 'place_submin' : 'place',
+                mode: mode as 'paper' | 'live',
+                market_id: s.market_id,
+                selection_id: s.selection_id,
+                handicap: 0,
+                side: 'back',
+                order_type: 'LIMIT',
+                price: s.odds,
+                size,
+                persistence: 'LAPSE',
+                // FoK software 10s (C22): una copertura non abbinata subito NON deve
+                // restare sul book a un prezzo vecchio. Non sul submin (ha la sua
+                // macchina a stati place-and-trim).
+                ...(submin ? {} : { params: { fok_ttl_sec: 10 } }),
+            });
+            if (res.ok) {
+                const matched = res.size_matched ?? null;
+                toast.success('Copertura inviata', {
+                    description: `BACK CS ${scoreLabel(s.scoreline)} €${size.toFixed(2)} @ ${s.odds.toFixed(2)}`
+                        + (matched != null ? ` · abbinato €${Number(matched).toFixed(2)}` : '')
+                        + (submin ? ' · flusso sotto-minimo (place-and-trim)' : ' · FoK 10s se non abbinato')
+                        + ' — verifica il blotter: la matrice si aggiorna in ~5s.',
+                });
+            } else {
+                toast.error('Copertura RIFIUTATA', { description: res.error ?? res.detail ?? 'motivo non noto' });
+            }
+        } catch (e: any) {
+            toast.error('Errore copertura', { description: e?.message ?? 'errore sconosciuto — NON reinviare senza verificare il blotter' });
+        } finally {
+            setPlacing(false);
+            // conferma LIVE one-shot: SEMPRE resettata dopo un tentativo (ok o errore)
+            if (shouldResetLiveConfirm(isLive, true)) setConfirmLive(false);
+            void reload();
+        }
+    }, [suggestion, row, placing, canTrade, matrixIncomplete, isLive, confirmLive, mode, reload]);
+
+    // ---------------- F39: regola AUTO-HEDGE armabile (floor-keeper) ----------------
+    const csMarketId = analysis?.cs_market_id ?? null;
+    const [ahRules, setAhRules] = useState<RiskRuleRow[]>([]);
+    const [floorInput, setFloorInput] = useState('');
+    const [maxStakeInput, setMaxStakeInput] = useState('');
+    const [armBusy, setArmBusy] = useState(false);
+    const [confirmArmLive, setConfirmArmLive] = useState(false);
+    const reloadAhRules = useCallback(async () => {
+        if (!csMarketId || !canTrade) { setAhRules([]); return; }
+        try {
+            const rules = await fetchRiskRules(csMarketId);
+            setAhRules(rules.filter(r => r.rule_type === 'auto_hedge' && r.mode === mode
+                && (r.status === 'armed' || r.status === 'error')));
+        } catch { /* best-effort: pannello informativo, riprova al prossimo poll */ }
+    }, [csMarketId, canTrade, mode]);
+    useEffect(() => {
+        void reloadAhRules();
+        if (pollMs <= 0) return;
+        const t = setInterval(() => { void reloadAhRules(); }, pollMs);
+        return () => clearInterval(t);
+    }, [reloadAhRules, pollMs]);
+    const armedAh = ahRules.find(r => r.status === 'armed') ?? null;
+    const errorAh = ahRules.find(r => r.status === 'error') ?? null;
+
+    const handleArmAutoHedge = useCallback(async () => {
+        if (armBusy || !canTrade || !csMarketId || armedAh) return;
+        const floor = Number(floorInput);
+        if (!(Number.isFinite(floor) && floor > 0)) {
+            toast.error('Floor non valido', { description: 'Inserisci la perdita worst-case massima tollerata (€ > 0).' });
+            return;
+        }
+        const maxStake = maxStakeInput === '' ? null : Number(maxStakeInput);
+        if (maxStake != null && !(Number.isFinite(maxStake) && maxStake > 0)) {
+            toast.error('Max stake non valido', { description: 'Lascia vuoto (nessun cap) o inserisci un importo > 0.' });
+            return;
+        }
+        if (isLive && !confirmArmLive) return;
+        setArmBusy(true);
+        try {
+            await requestRiskRule({
+                mode: mode as 'paper' | 'live',
+                ruleType: 'auto_hedge',
+                marketId: csMarketId,
+                selectionId: 0,       // la selezione CS varia per copertura (worst scoreline)
+                entrySide: 'back',
+                params: {
+                    floor, event_id: eventId,
+                    ...(maxStake != null ? { max_stake: maxStake } : {}),
+                },
+            });
+            toast.success('Auto-hedge ARMATO', {
+                description: `Mantiene il worst-case scoreline ≥ −€${floor.toFixed(2)} (max 3 coperture, cooldown 60s). Richiede runner attivo + migrazione risk_rules_v4.`,
+            });
+        } catch (e: any) {
+            toast.error('Auto-hedge NON armato', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            setArmBusy(false);
+            if (shouldResetLiveConfirm(isLive, true)) setConfirmArmLive(false);
+            void reloadAhRules();
+        }
+    }, [armBusy, canTrade, csMarketId, armedAh, floorInput, maxStakeInput, isLive, confirmArmLive, mode, eventId, reloadAhRules]);
+
+    const handleDisarmAutoHedge = useCallback(async (id: number) => {
+        if (armBusy) return;
+        setArmBusy(true);
+        try {
+            await cancelRiskRule(id);
+            toast.success('Auto-hedge disarmato');
+        } catch (e: any) {
+            toast.error('Disarmo fallito', { description: e?.message ?? 'errore sconosciuto' });
+        } finally {
+            setArmBusy(false);
+            void reloadAhRules();
+        }
+    }, [armBusy, reloadAhRules]);
+
     return (
         <div className="glass-card rounded-2xl border border-white/10 bg-black/40 p-4 md:p-5 space-y-5">
             {/* header + badge modalità */}
@@ -191,12 +356,13 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
                 {loading && <Loader2 className="w-4 h-4 animate-spin text-amber-400" />}
             </div>
 
-            {/* nota: sola lettura / analisi */}
+            {/* nota: analisi + 1-click F39 */}
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-muted-foreground flex items-start gap-2">
                 <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-400/80" />
                 <span>
-                    Solo <b>analisi</b>: questo pannello non piazza ordini. L'eventuale copertura Correct Score
-                    va <b>piazzata manualmente</b> sul relativo mercato.
+                    Analisi cross-market + copertura <b>1-click</b> (F39): il bottone "Copri" appare solo
+                    con gli ID esatti della gamba Correct Score dal runner, analisi fresca e matrice
+                    completa. In LIVE serve la conferma esplicita; FoK 10s se non si abbina.
                 </span>
             </div>
 
@@ -314,9 +480,49 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
                                     {money(suggestion.new_best)}
                                 </span>
                             </div>
-                            <div className="mt-2 text-[11px] font-bold text-amber-300">
-                                ⚠️ Piazza manualmente sul mercato Correct Score.
-                            </div>
+                            {/* F39: 1-click SOLO con gli ID esatti dal worker; altrimenti manuale. */}
+                            {coverReady && canTrade ? (
+                                <div className="mt-2.5 space-y-2">
+                                    {isLive && (
+                                        <label className="flex items-center gap-2 text-[11px] text-red-200 font-bold cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={confirmLive}
+                                                onChange={e => setConfirmLive(e.target.checked)}
+                                                className="accent-red-500"
+                                            />
+                                            Confermo la copertura con DENARO REALE (one-shot)
+                                        </label>
+                                    )}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <Button
+                                            size="sm"
+                                            onClick={handleCover}
+                                            disabled={placing || !rowFresh || matrixIncomplete || (isLive && !confirmLive)}
+                                            className="h-7 bg-amber-500 hover:bg-amber-400 text-black font-black disabled:opacity-40"
+                                            title={matrixIncomplete
+                                                ? 'Matrice INCOMPLETA (ordini non modellati): 1-click disabilitato'
+                                                : !rowFresh
+                                                    ? 'Analisi stantia: attendi il refresh (~5s)'
+                                                    : `BACK Correct Score ${scoreLabel(suggestion.scoreline)} €${(suggestion.size ?? 0).toFixed(2)} @ ${(suggestion.odds ?? 0).toFixed(2)} — FoK software 10s: se non si abbina viene cancellata (mai una copertura resting a prezzo vecchio).`}
+                                        >
+                                            {placing
+                                                ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                                : <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />}
+                                            Copri (1-click)
+                                        </Button>
+                                        {!rowFresh && (
+                                            <span className="text-[10px] text-amber-300/80 font-bold">analisi stantia — refresh in corso</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-2 text-[11px] font-bold text-amber-300">
+                                    ⚠️ {canTrade
+                                        ? 'ID selezione CS non disponibili (riga pre-deploy o scoreline fuori catalogo): piazza manualmente sul mercato Correct Score.'
+                                        : 'Modalità OFF: piazza manualmente sul mercato Correct Score.'}
+                                </div>
+                            )}
                             {suggestion.note && (
                                 <div className="mt-1 text-[10px] text-white/50">{suggestion.note}</div>
                             )}
@@ -325,6 +531,89 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
                         <div className="mt-2 text-[12px] text-muted-foreground">
                             Nessuna copertura utile al momento.
                             {suggestion.note ? <span className="text-white/50"> {suggestion.note}</span> : null}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ---------------- F39: AUTO-HEDGE armabile (floor-keeper) ---------------- */}
+            {canTrade && csMarketId && (
+                <div className="rounded-xl border border-violet-400/30 bg-violet-400/[0.05] p-3 md:p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-violet-300" />
+                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+                            Auto-hedge (mantieni il worst-case scoreline)
+                        </div>
+                    </div>
+                    {errorAh && (
+                        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">
+                            ⚠ Regola #{errorAh.id} in ERRORE: {errorAh.error ?? 'vedi pannello Risk'}
+                        </div>
+                    )}
+                    {armedAh ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-[12px] font-bold text-violet-200">
+                                🛡 ATTIVO: worst-case ≥ −€{Number((armedAh.params as Record<string, unknown>)?.floor ?? 0).toFixed(2)}
+                                {(() => {
+                                    const done = Number((armedAh.result as Record<string, unknown>)?.hedges_done ?? 0);
+                                    return done > 0 ? ` · coperture ${done}/3` : '';
+                                })()}
+                            </span>
+                            <span className="text-[10px] text-white/50"
+                                title="Il risk engine (runner attivo) controlla ogni secondo il worst-case cross-market: se sfora il floor, accoda la copertura CS suggerita (mai su matrice incompleta o analisi stantia; max 3 coperture, cooldown 60s).">
+                                runner attivo richiesto
+                            </span>
+                            <span className="flex-1" />
+                            <Button size="sm" variant="outline" disabled={armBusy}
+                                onClick={() => handleDisarmAutoHedge(armedAh.id)}
+                                className="h-6 border-white/20 text-white/80 hover:bg-white/10 text-[11px] font-bold">
+                                Disarma
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <label className="text-[11px] text-muted-foreground">
+                                    Perdita worst-case max{' '}
+                                    <input
+                                        type="number" min="0.5" step="0.5" value={floorInput}
+                                        onChange={e => setFloorInput(e.target.value)}
+                                        placeholder="es. 20"
+                                        aria-label="Floor auto-hedge (euro)"
+                                        className="w-20 ml-1 px-1.5 py-0.5 rounded-md bg-black/40 border border-white/15 text-white font-mono text-[11px]"
+                                    /> €
+                                </label>
+                                <label className="text-[11px] text-muted-foreground">
+                                    Max stake/copertura{' '}
+                                    <input
+                                        type="number" min="0.5" step="0.5" value={maxStakeInput}
+                                        onChange={e => setMaxStakeInput(e.target.value)}
+                                        placeholder="nessun cap"
+                                        aria-label="Max stake per copertura (euro)"
+                                        className="w-20 ml-1 px-1.5 py-0.5 rounded-md bg-black/40 border border-white/15 text-white font-mono text-[11px]"
+                                    /> €
+                                </label>
+                            </div>
+                            {isLive && (
+                                <label className="flex items-center gap-2 text-[11px] text-red-200 font-bold cursor-pointer select-none">
+                                    <input type="checkbox" checked={confirmArmLive}
+                                        onChange={e => setConfirmArmLive(e.target.checked)}
+                                        className="accent-red-500" />
+                                    Confermo: le coperture verranno piazzate con DENARO REALE senza ulteriore conferma
+                                </label>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <Button size="sm" onClick={handleArmAutoHedge}
+                                    disabled={armBusy || (isLive && !confirmArmLive)}
+                                    className="h-7 bg-violet-500 hover:bg-violet-400 text-white font-black disabled:opacity-40"
+                                    title="Arma il floor-keeper: quando il P&L peggiore cross-market scende sotto −floor, il risk engine piazza da solo la copertura CS suggerita (guardie: analisi fresca, matrice completa, max 3 coperture, cooldown 60s, FoK 10s). Richiede migrazione betfair_live_risk_rules_v4.sql + runner attivo.">
+                                    {armBusy ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />}
+                                    Arma auto-hedge
+                                </Button>
+                                <span className="text-[10px] text-white/50">
+                                    copre da solo via coda ordini · mai su matrice incompleta
+                                </span>
+                            </div>
                         </div>
                     )}
                 </div>

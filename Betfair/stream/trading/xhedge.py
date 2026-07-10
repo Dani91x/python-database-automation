@@ -320,10 +320,14 @@ def compute_xhedge(
     *,
     max_goals: int = 8,
     max_size: Optional[float] = None,
+    cs_market_id: Optional[str] = None,
+    cs_sel_by_score: Optional[Dict[Tuple[int, int], int]] = None,
 ) -> Dict[str, Any]:
     """Analisi cross-market completa da dati live: costruisce le posizioni, la matrice P&L per
     scoreline, la sintesi e (se ci sono quote Correct Score) il suggerimento di copertura.
-    Ritorna un dict serializzabile per DB/UI. Nessun I/O."""
+    F39: se il chiamante passa ``cs_market_id`` + ``cs_sel_by_score`` ({(h,a): selection_id}
+    dal CATALOGO), il suggerimento include gli ID ESATTI per il piazzamento 1-click — mai
+    una risoluzione per nome lato UI. Ritorna un dict serializzabile per DB/UI. Nessun I/O."""
     positions = build_positions(orders, market_meta)
     # MONEY-CRITICAL: gli ordini matched NON mappabili (es. "Any Other" del Correct Score,
     # mercati fuori modello) sono esposizione REALE assente dalla matrice. Contarli ed
@@ -336,16 +340,27 @@ def compute_xhedge(
     suggestion = None
     if cs_back_odds:
         sug = suggest_cs_hedge(grid, cs_back_odds, max_size=max_size)
+        # F39: ID esatti (dal CATALOGO) della gamba suggerita per il piazzamento 1-click.
+        # None se non risolvibili → la UI mostra il suggerimento ma NON il bottone
+        # (mai piazzare su una selezione indovinata).
+        sel_id = None
+        if sug.actionable and sug.scoreline and cs_sel_by_score:
+            sel_id = cs_sel_by_score.get(tuple(sug.scoreline))
         suggestion = {
             "actionable": sug.actionable, "scoreline": list(sug.scoreline) if sug.scoreline else None,
             "side": sug.side, "odds": sug.odds, "size": sug.size,
             "new_worst": sug.new_worst, "new_best": sug.new_best, "note": sug.note,
+            "market_id": (cs_market_id or None) if sug.actionable else None,
+            "selection_id": int(sel_id) if sel_id is not None else None,
         }
     return {
         "n_positions": len(positions),
         # > 0 ⟹ la matrice è INCOMPLETA: esposizione matched reale non modellata (la UI
         # DEVE mostrare un avviso, mai presentare la griglia come esatta).
         "ignored_orders": ignored_orders,
+        # F39: market_id del CORRECT_SCORE dal catalogo (per armare l'auto-hedge anche
+        # quando il suggerimento non è ancora azionabile). None = CS non in catalogo.
+        "cs_market_id": cs_market_id or None,
         "summary": {
             "worst": summary.worst, "best": summary.best, "mean": summary.mean,
             "worst_scoreline": list(summary.worst_scoreline),

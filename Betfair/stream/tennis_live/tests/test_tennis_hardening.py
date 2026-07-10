@@ -419,3 +419,18 @@ def test_tennis_lifecycle_deferred_with_live_orders(monkeypatch):
     tennis_runner.lifecycle_worker({}, fl, session)
 
     assert not session.shutdown_requested.is_set()
+
+
+# ===========================================================================
+# BUG FIX cert 10/07 — _Capture senza i default nascosti di BaseStrategy
+# (visto dal vivo: 2° ordine sulla stessa selezione RIFIUTATO da STRATEGY_EXPOSURE
+#  live_trade_count(1); e max_order_exposure=10 → ordini manuali >€10 rifiutati)
+# ===========================================================================
+def test_capture_strategy_disables_hidden_flumine_caps():
+    from Betfair.stream.tennis_live.tennis_runner import _make_capture
+
+    s = _make_capture("1.234", "ev1")
+    assert s.max_order_exposure is None        # era 10 (€10 per ordine!)
+    assert s.max_selection_exposure is None    # era 100
+    assert s.max_live_trade_count >= 10**9     # era 1 (un ordine vivo per selezione)
+    assert s.max_trade_count >= 10**9

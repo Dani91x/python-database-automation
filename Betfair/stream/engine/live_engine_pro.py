@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 from dataclasses import asdict, dataclass
@@ -27,6 +28,7 @@ from tactical_engine.dixon_coles import score_matrix
 from .live_engine import (
     estimate_prematch_lambdas,
     inplay_residual_rates,
+    residual_time_weight,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,8 +136,79 @@ class MarketSignal:
     kelly_stake: float
 
 
-def signals_to_json(signals: List[MarketSignal]) -> Dict[str, Any]:
-    return {"signals": [asdict(s) for s in signals], "updated_ms": None}
+# Commissione Betfair di DEFAULT usata da evaluate_event (EV/Kelly al netto) E
+# serializzata nel payload: il frontend (colonna EV del ladder, F38) usa la STESSA
+# aliquota — mai due formule che divergono.
+DEFAULT_COMMISSION: float = 0.05
+
+
+def signals_to_json(
+    signals: List[MarketSignal], commission: float = DEFAULT_COMMISSION,
+) -> Dict[str, Any]:
+    return {
+        "signals": [asdict(s) for s in signals],
+        "updated_ms": None,
+        # F38: la commissione con cui il motore ha calcolato EV/Kelly — la UI la
+        # riusa per la colonna EV per-livello (identica formula, identico netto).
+        "commission": commission,
+    }
+
+
+# ----------------------------------------------------------------------------
+# F40 — hazard gol imminente (pre-goal warning)
+# ----------------------------------------------------------------------------
+def event_goal_hazard(
+    *,
+    score_home: Optional[int],
+    score_away: Optional[int],
+    minute: Optional[int],
+    prematch_lambda_home: float,
+    prematch_lambda_away: float,
+    league_id: Optional[int],
+    red_home: int = 0,
+    red_away: int = 0,
+    yellow_home: int = 0,
+    yellow_away: int = 0,
+    horizon_min: float = 5.0,
+) -> Optional[Dict[str, Any]]:
+    """P(almeno un gol nei prossimi ``horizon_min`` minuti) dal MODELLO in-play.
+
+    ONESTÀ (F40): usa ESATTAMENTE la stessa matematica dei segnali — λ residui
+    calibrati per lega (tempo CDF reale × stato di gioco × cartellini,
+    ``inplay_residual_rates``) — e ripartisce i gol residui attesi sull'orizzonte
+    con la CDF empirica dei tempi-gol (``residual_time_weight``). NON usa tiri/
+    corner live (hook pressure non calibrato → neutro): è un hazard da
+    minuto/punteggio/cartellini, e va dichiarato tale in UI. Poisson:
+    p = 1 − exp(−gol_attesi_nell_orizzonte).
+
+    Ritorna None pre-match o a partita finita (nessun "imminente" sensato).
+    """
+    if minute is None:
+        return None
+    m = max(0, int(minute))
+    lam_h, lam_a = inplay_residual_rates(
+        prematch_lambda_home, prematch_lambda_away, m,
+        int(score_home or 0), int(score_away or 0),
+        red_home=red_home, red_away=red_away,
+        yellow_home=yellow_home, yellow_away=yellow_away, league_id=league_id,
+    )
+    lam_tot = lam_h + lam_a  # gol RESIDUI attesi (già pesati sul tempo restante)
+    w_now = residual_time_weight(m, league_id)
+    if w_now <= 1e-9:
+        return None  # tempo (modello) esaurito: nessun residuo su cui ripartire
+    w_then = residual_time_weight(m + max(1, int(round(horizon_min))), league_id)
+    # quota dei gol residui che cade nell'orizzonte (clamp difensivo [0,1]).
+    share = max(0.0, min(1.0, (w_now - w_then) / w_now))
+    exp_goals = lam_tot * share
+    p = 1.0 - math.exp(-exp_goals)
+    return {
+        "p_next": round(p, 4),
+        "exp_goals_next": round(exp_goals, 4),
+        "horizon_min": float(horizon_min),
+        "minute": m,
+        "lam_home": round(lam_h, 4),
+        "lam_away": round(lam_a, 4),
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -356,7 +429,7 @@ def evaluate_event(
     bankroll: float = 100.0,
     min_edge: float = 0.03,
     kelly_fraction: float = 0.25,
-    commission: float = 0.05,
+    commission: float = DEFAULT_COMMISSION,
     min_liquidity: float = 0.0,   # size minima disponibile al prezzo per un segnale azionabile
     red_home: int = 0,
     red_away: int = 0,

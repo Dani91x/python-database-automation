@@ -69,6 +69,7 @@ from .config_stream import (
     SIGNAL_MIN_EDGE,
     SIGNAL_MIN_LIQUIDITY,
     SIGNALS_ENABLED,
+    SIGNALS_KEEPALIVE_SEC,
     STREAM_CONFLATE_MS,
     STREAM_FIELDS,
     WATCHLIST_POLL_SEC,
@@ -156,6 +157,10 @@ class LiveSession:
         self._recent_events: Dict[str, list] = {}  # event_id -> ultimi eventi (per live_now)
         self._last_score_sig: Dict[str, tuple] = {}
         self._last_signal_sig: Dict[str, Any] = {}
+        # F38: epoch dell'ultima SCRITTURA di live_signals per evento (keepalive:
+        # un segnale invariato ma ancora CONFERMATO dal motore va rinfrescato, o
+        # la UI lo crederebbe stantio e nasconderebbe fair/Kelly ancora validi).
+        self._last_signal_write: Dict[str, float] = {}
         self._last_ladder_sig: Dict[str, str] = {}  # market_id -> firma (write-on-change ladder)
         self._finalize_lock = threading.Lock()
         self.restart_requested = threading.Event()
@@ -348,6 +353,18 @@ def _capture_timeline(event_id: str, session: LiveSession) -> None:
     session._recent_events[event_id] = events[-8:]
 
 
+def _signals_write_due(
+    last_sig: Any, last_write_ts: float, sig_key: Any, now_s: float, keepalive_sec: float,
+) -> bool:
+    """PURA (testabile): va scritta la riga live_signals? True se il segnale è CAMBIATO
+    (write-on-change) oppure se è invariato ma l'ultima scrittura è più vecchia del
+    keepalive (F38: il motore lo sta ri-confermando → refresh updated_at, così la UI
+    distingue 'stabile e valido' da 'motore fermo')."""
+    if last_sig != sig_key:
+        return True
+    return (now_s - last_write_ts) >= keepalive_sec
+
+
 def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -> None:
     try:
         from .engine import live_engine_pro as pro  # import lazy (modulo costruito a parte)
@@ -409,13 +426,41 @@ def _compute_and_write_signals(event_id: str, session: LiveSession, snap: Any) -
         )
         payload = pro.signals_to_json(signals)
         payload["updated_ms"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+        # F40: hazard gol imminente (stessa matematica dei segnali: λ residui calibrati
+        # + CDF tempi-gol). None pre-match → chiave assente; best-effort dichiarato.
+        try:
+            hz = pro.event_goal_hazard(
+                score_home=getattr(snap, "score_home", None),
+                score_away=getattr(snap, "score_away", None),
+                minute=getattr(snap, "minute", None),
+                prematch_lambda_home=lam[0], prematch_lambda_away=lam[1], league_id=lam[2],
+                red_home=getattr(snap, "red_home", 0) or 0,
+                red_away=getattr(snap, "red_away", 0) or 0,
+                yellow_home=getattr(snap, "yellow_home", 0) or 0,
+                yellow_away=getattr(snap, "yellow_away", 0) or 0,
+            )
+            if hz is not None:
+                payload["hazard"] = hz
+        except Exception as e:  # noqa: BLE001 - l'hazard non deve mai rompere i segnali
+            logger.debug("[signals] hazard KO %s: %s", event_id, e)
         # write-on-change: aggiorna quando cambia direzione O la prob (arrotondata
         # a 2 decimali) di qualche selezione → fresco ma senza stressare il DB.
+        # F38 KEEPALIVE: un segnale INVARIATO è comunque ri-CONFERMATO dal motore a
+        # ogni snapshot — se dall'ultima scrittura è passato più di
+        # SIGNALS_KEEPALIVE_SEC, riscriviamo la riga (refresh updated_at) così la UI
+        # distingue "stabile e ancora valido" (visibile) da "motore fermo/evento non
+        # più seguito" (stantio → overlay nascosto). Mai un fair vecchio in UI.
         sig_key = tuple(sorted(
             (s.market_id, s.selection_id, s.direction, round(s.model_prob, 2)) for s in signals
         ))
-        if session._last_signal_sig.get(event_id) != sig_key:
+        now_s = datetime.now(timezone.utc).timestamp()
+        if _signals_write_due(
+            session._last_signal_sig.get(event_id),
+            session._last_signal_write.get(event_id, 0.0),
+            sig_key, now_s, SIGNALS_KEEPALIVE_SEC,
+        ):
             session._last_signal_sig[event_id] = sig_key
+            session._last_signal_write[event_id] = now_s
             db.upsert_live_signals(event_id, payload)
     except Exception as e:  # noqa: BLE001
         logger.warning("[signals] calcolo KO %s: %s", event_id, e)
@@ -680,9 +725,23 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
 
 
 def _stop_framework(flumine: Flumine) -> None:
-    """Ferma flumine in modo pulito (per ricostruire la subscription)."""
+    """Ferma DAVVERO ``framework.run()`` (resubscribe/auto-spegnimento/daily-stop).
+
+    BUG FIX (cert PAPER 10/07): flumine 2.13.11 (flumine/flumine.py::run) è un
+    ``while True`` bloccato su ``handler_queue.get()`` che esce SOLO estraendo un
+    evento TERMINATOR — ``_running=False`` non è MAI testato nel loop. Con lo
+    stream quieto (mercati chiusi) il vecchio stop non fermava nulla: il
+    sub-worker chiedeva la ricostruzione ogni 2 minuti senza effetto e le nuove
+    partite restavano PENDING per sempre. Stesso fix già presente nel tennis
+    (tennis_runner._stop_framework): accodiamo un ``TerminationEvent`` → il loop
+    fa ``break`` → ``__exit__`` chiude worker/stream puliti → il main loop
+    ricostruisce la subscription.
+    """
     try:
-        flumine._running = False  # noqa: SLF001 - meccanismo di stop documentato di flumine
+        from flumine.events.events import TerminationEvent
+
+        flumine._running = False  # noqa: SLF001 - coerenza di stato (non basta a fermare run())
+        flumine.handler_queue.put(TerminationEvent(flumine))
     except Exception as e:  # noqa: BLE001
         logger.warning("[runner] stop framework KO: %s", e)
 
@@ -752,6 +811,14 @@ def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     reason: Optional[str] = None
     if uptime_exceeded(session.started_monotonic, time.monotonic(), _RUNNER_MAX_HOURS):
         reason = f"vita massima {_RUNNER_MAX_HOURS:.0f}h raggiunta"
+    # BUG FIX cert 10/07 (VISTO DAL VIVO): con LIVE_RUNNER_KEEP_ALIVE=1 (app desktop)
+    # il ramo IDLE non deve spegnere — il main loop è progettato per restare in
+    # ATTESA senza eventi (canale locale + board vivi), ma il lifecycle spegneva
+    # comunque alla fine dell'ultima partita e il watchdog (correttamente) non
+    # riavvia su exit 0 → runner desktop MORTO dopo la prima partita. La vita
+    # massima resta attiva anche col keep-alive (backstop anti-"giorni acceso").
+    elif os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+        pass  # idle-exit disattivato dal keep-alive desktop
     elif _RUNNER_IDLE_EXIT_MIN > 0:
         try:
             follows = db.list_pending_follows()
@@ -1064,6 +1131,19 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
                     logger.info("[runner] nessun evento da streammare: attendo (keep-alive desktop).")
                     time.sleep(15)
+                    # SESSIONE Betfair .it: scade dopo ~20 min di INATTIVITA' —
+                    # senza keepAlive periodico il primo Segui live fallirebbe
+                    # con INVALID_SESSION. Ogni ~8 min (32 giri da 15s).
+                    _ka = getattr(session, "_idle_ka_count", 0) + 1
+                    session._idle_ka_count = _ka
+                    if _ka % 32 == 0:
+                        try:
+                            from .auth import keep_alive as _bf_keep_alive
+                            _bf_keep_alive(api_client)
+                            rest.login_cert()  # anche la sessione JSON-RPC del catalogo
+                            logger.info("[runner] keepAlive sessione Betfair ok (idle).")
+                        except Exception as _ex:  # noqa: BLE001
+                            logger.warning("[runner] keepAlive sessione KO: %s", str(_ex)[:120])
                     continue
                 logger.warning("[runner] nessun evento da streammare.")
                 break

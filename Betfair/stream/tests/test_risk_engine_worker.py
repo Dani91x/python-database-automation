@@ -52,8 +52,9 @@ class _Query:
         self._filters.append((k, v))
         return self
 
-    def order(self, k: str) -> "_Query":
+    def order(self, k: str, **kw: Any) -> "_Query":
         self._order = k
+        self._order_desc = bool(kw.get("desc"))
         return self
 
     def limit(self, n: int) -> "_Query":
@@ -577,3 +578,225 @@ def test_chase_placing_completes_back_to_tracking(monkeypatch):
     assert rule["result"]["phase"] == "tracking"
     assert rule["result"]["current_bet_id"] == "B2"
     assert rule["result"]["chase_count"] == 1
+
+
+# ===========================================================================
+# F39 — AUTO-HEDGE (floor-keeper del worst-case scoreline)
+# ===========================================================================
+from datetime import datetime, timedelta, timezone as _tz
+
+
+class _FakeSbTables:
+    """Fake Supabase con ROUTING per tabella (regole + betfair_live_xhedge)."""
+
+    def __init__(self, rules, xhedge_rows):
+        self.tables = {
+            "betfair_live_risk_rules": rules,
+            "betfair_live_xhedge": xhedge_rows,
+        }
+        self.enqueued = []
+        self._next_req_id = 2000
+
+    def table(self, name):
+        return _Query(self.tables[name])
+
+    def rpc(self, name, args):
+        assert name == "request_betfair_live_order"
+        self.enqueued.append(args["p"])
+        self._next_req_id += 1
+        return _RpcCall(self._next_req_id)
+
+
+def _iso_ago(sec: float) -> str:
+    return (datetime.now(_tz.utc) - timedelta(seconds=sec)).isoformat()
+
+
+def _ah_rule(**over):
+    rule = {
+        "id": 7, "status": "armed", "mode": "paper", "rule_type": "auto_hedge",
+        "market_id": "1.99", "selection_id": 0, "handicap": 0, "entry_side": "back",
+        "params": {"floor": 10.0, "event_id": "ev1"}, "result": None,
+    }
+    rule.update(over)
+    return rule
+
+
+def _ah_xrow(worst=-25.0, *, age_sec=2.0, ignored=0, sug=None):
+    suggestion = {
+        "actionable": True, "scoreline": [1, 1], "side": "back",
+        "odds": 8.0, "size": 5.0, "new_worst": -8.0, "new_best": 3.0, "note": "",
+        "market_id": "1.99", "selection_id": 55,
+    }
+    if sug is not None:
+        suggestion = sug
+    return {
+        "event_id": "ev1", "mode": "paper", "updated_at": _iso_ago(age_sec),
+        "analysis": {
+            "n_positions": 2, "ignored_orders": ignored,
+            "summary": {"worst": worst, "best": 3.0, "mean": -1.0,
+                        "worst_scoreline": [1, 1], "best_scoreline": [0, 0], "n_scorelines": 81},
+            "suggestion": suggestion,
+        },
+    }
+
+
+@pytest.fixture()
+def _no_kill(monkeypatch):
+    monkeypatch.setattr(rw.low, "_kill_switch", lambda: False)
+    monkeypatch.setattr(rw.low, "_db_kill_switch", lambda: False)
+
+
+def test_auto_hedge_fires_and_stays_armed(_no_kill):
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-25.0)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert len(sb.enqueued) == 1
+    p = sb.enqueued[0]
+    # payload ESATTO: ID dal suggerimento, ref deterministico, FoK 10s, back CS
+    assert p["client_ref"] == "risk7h1"
+    assert p["action"] == "place" and p["side"] == "back"
+    assert p["market_id"] == "1.99" and p["selection_id"] == 55
+    assert p["price"] == 8.0 and p["size"] == 5.0
+    assert p["params"]["fok_ttl_sec"] == 10 and p["params"]["role"] == "auto_hedge"
+    # floor-keeper: la regola RESTA armata con lo stato aggiornato
+    assert rule["status"] == "armed"
+    assert rule["result"]["hedges_done"] == 1
+    assert rule["result"]["last_hedge_ts"]
+
+
+def test_auto_hedge_no_action_when_floor_ok(_no_kill):
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-9.99)])  # floor 10 → −9.99 ok
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == [] and rule["status"] == "armed"
+
+
+def test_auto_hedge_stale_analysis_never_hedges(_no_kill):
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-99.0, age_sec=120.0)])  # stantia
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == [] and rule["status"] == "armed"
+
+
+def test_auto_hedge_incomplete_matrix_suspends_with_warning(_no_kill):
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-99.0, ignored=2)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == []
+    assert rule["result"]["warned_incomplete"] is True  # avvisato, MAI coperto al buio
+
+
+def test_auto_hedge_cap_reached_goes_done_with_alert(_no_kill):
+    rule = _ah_rule(result={"hedges_done": 3})
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-99.0)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == []
+    assert rule["status"] == "done"  # mai inseguire all'infinito: intervento manuale
+
+
+def test_auto_hedge_cooldown_blocks_second_hedge(_no_kill):
+    rule = _ah_rule(result={"hedges_done": 1, "last_hedge_ts": _iso_ago(10.0)})
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-99.0)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == []  # 10s < cooldown 60s
+
+
+def test_auto_hedge_kill_switch_blocks(monkeypatch):
+    monkeypatch.setattr(rw.low, "_kill_switch", lambda: True)
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-99.0)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == [] and rule["status"] == "armed"
+
+
+def test_auto_hedge_submin_flow_below_min_stake(_no_kill):
+    sug = {"actionable": True, "scoreline": [1, 1], "side": "back", "odds": 8.0,
+           "size": 1.4, "new_worst": -8.0, "new_best": 3.0, "note": "",
+           "market_id": "1.99", "selection_id": 55}
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-25.0, sug=sug)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    p = sb.enqueued[0]
+    assert p["action"] == "place_submin" and p["size"] == 1.4
+    assert "fok_ttl_sec" not in p["params"]  # il submin ha la sua macchina a stati
+
+
+def test_auto_hedge_no_ids_alerts_and_waits(_no_kill):
+    sug = {"actionable": True, "scoreline": [1, 1], "side": "back", "odds": 8.0,
+           "size": 5.0, "new_worst": -8.0, "new_best": 3.0, "note": "",
+           "market_id": None, "selection_id": None}
+    rule = _ah_rule()
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-25.0, sug=sug)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued == []
+    assert rule["result"]["warned_nosug"] is True  # floor sforato senza copertura: avvisato
+
+
+def test_auto_hedge_invalid_params_error(_no_kill):
+    rule = _ah_rule(params={"floor": 0, "event_id": "ev1"})
+    sb = _FakeSbTables([rule], [])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert rule["status"] == "error" and sb.enqueued == []
+
+
+def test_auto_hedge_max_stake_clamps_size(_no_kill):
+    rule = _ah_rule(params={"floor": 10.0, "event_id": "ev1", "max_stake": 3.0})
+    sb = _FakeSbTables([rule], [_ah_xrow(worst=-25.0)])
+    rw._handle_auto_hedge(sb, SimpleNamespace(), rule, "paper")
+    assert sb.enqueued[0]["size"] == 3.0  # clamp esplicito al cap utente
+
+
+# ===========================================================================
+# BUG FIX #9 cert 10/07 — DISARM: ritiro del TP resting creato dalla regola
+# (visto dal vivo: bracket disarmato → lay 2.0@4.0 RESTAVA sul book = ordine nudo)
+# ===========================================================================
+def _cancelled_rule_with_offset(req_id=84, cleanup=False):
+    return {
+        "id": 13, "status": "cancelled", "mode": "paper", "rule_type": "bracket",
+        "market_id": "1.9", "selection_id": 1, "handicap": 0, "entry_side": "back",
+        "params": {}, "result": {"state": "offset_placed", "offset_request_id": req_id,
+                                  **({"offset_cleanup": True} if cleanup else {})},
+    }
+
+
+def test_disarm_cancels_resting_offset(monkeypatch):
+    rule = _cancelled_rule_with_offset()
+    sb = _FakeSbTables([rule], [])
+    live = SimpleNamespace(bet_id="B77", size_remaining=2.0, status="EXECUTABLE")
+    monkeypatch.setattr(rw, "_offset_order_obj", lambda fl, mid, rid: live)
+    n = rw._cleanup_cancelled_offsets(sb, SimpleNamespace(), "paper")
+    assert n == 1
+    assert len(sb.enqueued) == 1
+    p = sb.enqueued[0]
+    assert p["action"] == "cancel" and p["bet_id"] == "B77"
+    assert p["client_ref"] == "risk13dc"          # deterministico: mai doppio cancel
+    assert rule["result"]["offset_cleanup"] is True
+
+
+def test_disarm_offset_already_matched_no_cancel(monkeypatch):
+    rule = _cancelled_rule_with_offset()
+    sb = _FakeSbTables([rule], [])
+    done = SimpleNamespace(bet_id="B77", size_remaining=0.0, status="EXECUTION_COMPLETE")
+    monkeypatch.setattr(rw, "_offset_order_obj", lambda fl, mid, rid: done)
+    n = rw._cleanup_cancelled_offsets(sb, SimpleNamespace(), "paper")
+    assert n == 1 and sb.enqueued == []           # niente da ritirare
+    assert rule["result"]["offset_cleanup"] is True
+
+
+def test_disarm_cleanup_idempotent(monkeypatch):
+    rule = _cancelled_rule_with_offset(cleanup=True)  # già ripulita
+    sb = _FakeSbTables([rule], [])
+    monkeypatch.setattr(rw, "_offset_order_obj", lambda fl, mid, rid: None)
+    n = rw._cleanup_cancelled_offsets(sb, SimpleNamespace(), "paper")
+    assert n == 0 and sb.enqueued == []
+
+
+def test_disarm_offset_unresolvable_alerts(monkeypatch):
+    rule = _cancelled_rule_with_offset()
+    sb = _FakeSbTables([rule], [])
+    alerts = []
+    monkeypatch.setattr(rw, "_offset_order_obj", lambda fl, mid, rid: None)
+    monkeypatch.setattr(rw, "_alert", lambda lvl, msg: alerts.append((lvl, msg)))
+    n = rw._cleanup_cancelled_offsets(sb, SimpleNamespace(), "paper")
+    assert n == 1 and sb.enqueued == []
+    assert alerts and alerts[0][0] == "CRITICAL"  # mai silenzio su un resting non ritirabile

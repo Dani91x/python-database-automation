@@ -39,7 +39,8 @@ import {
 import { localLadderSource, localOrderApi, subscribeLocalNow, useLocalStatus } from '@/lib/localTransport';
 import { eventExposure, eventMtm } from '@/lib/eventPnl';
 import { heartbeatState, heartbeatAgeSec } from '@/lib/runnerHealth';
-import { countdownToOff, formatMinute, formatScore } from '@/lib/matchClock';
+import { countLapseResting, countdownToOff, formatMinute, formatScore, secondsToOff } from '@/lib/matchClock';
+import { preGoalWarning } from '@/lib/preGoal';
 import {
     loadLayout, saveLayout, setActiveMarket, setCenterView, resolveHotkey,
     type WorkspaceLayout,
@@ -230,6 +231,32 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
         return () => { alive = false; unsub(); };
     }, []);
 
+    // A9: warning persistenza pre-kickoff — resting EXECUTABLE con persistence LAPSE
+    // che DECADRANNO al passaggio in-play (visto in cert: resting dimenticati che
+    // spariscono all'off). Poll 15s SOLO pre-match e con modalità ordini attiva;
+    // in-play o dopo l'off il warning non ha più senso (i LAPSE sono già decaduti).
+    // Best-effort dichiarato: fetch KO → conteggio invariato, mai un warning inventato.
+    const [lapseCount, setLapseCount] = useState(0);
+    const marketsKey = useMemo(() => markets.map(m => m.market_id).join(','), [markets]);
+    const clockInplay = clock?.inplay ?? null;
+    const clockOpenDate = clock?.openDate ?? null;
+    useEffect(() => {
+        if (mode === 'off' || clockInplay === true || !clockOpenDate) { setLapseCount(0); return; }
+        let alive = true;
+        const api = isLocal ? localOrders : CALCIO_DB_ORDER_API;
+        const ids = marketsKey ? marketsKey.split(',') : [];
+        const load = async () => {
+            if (secondsToOff(clockOpenDate, Date.now()) == null) { if (alive) setLapseCount(0); return; }
+            try {
+                const lists = await Promise.all(ids.map(id => api.fetchOrders(id)));
+                if (alive) setLapseCount(countLapseResting(lists.flat(), mode));
+            } catch { /* best-effort: niente warning nuovo su fetch KO */ }
+        };
+        void load();
+        const t = setInterval(() => { void load(); }, 15_000);
+        return () => { alive = false; clearInterval(t); };
+    }, [mode, isLocal, localOrders, marketsKey, clockInplay, clockOpenDate]);
+
     // strumento attivo nella colonna destra (UN tab alla volta), persistito per-evento.
     const [tool, setTool] = useState<ToolKey>(() => loadTool(eventId));
     useEffect(() => { setTool(loadTool(eventId)); }, [eventId]);
@@ -247,6 +274,13 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     }, []);
     const ageSec = updatedAt ? Math.max(0, Math.round((nowTick - new Date(updatedAt).getTime()) / 1000)) : null;
     const staleData = ageSec != null && ageSec > 15;
+    // A9: secondi all'off (ticchetta con nowTick) — sotto i 5 minuti il warning LAPSE è rosso.
+    const offSec = secondsToOff(clockOpenDate, nowTick);
+    // F40: pre-goal warning dal modello (nowTick rivaluta la freschezza ogni secondo).
+    const preGoal = useMemo(
+        () => preGoalWarning(signalsRow, clockInplay, nowTick),
+        [signalsRow, clockInplay, nowTick],
+    );
 
     const market = markets.find(m => m.market_id === marketId) ?? null;
     const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
@@ -460,6 +494,20 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                             OFF in {countdownToOff(clock.openDate, nowTick)}
                         </span>
                     ))}
+                {/* A9: warning persistenza pre-kickoff — resting LAPSE che decadranno all'off.
+                    Ambra pre-match, ROSSO lampeggiante sotto i 5 minuti (urgenza reale). */}
+                {lapseCount > 0 && offSec != null && (
+                    <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+                            offSec < 300
+                                ? 'bg-red-500/20 text-red-300 animate-pulse'
+                                : 'bg-amber-500/20 text-amber-300'
+                        }`}
+                        title={`${lapseCount} ordini resting con persistenza LAPSE su questo evento: al calcio d'inizio DECADRANNO (cancellati da Betfair al turn-in-play). Se li vuoi mantenere in-play, ripiazzali con Keep (PERSIST) o Take SP dal ladder; altrimenti verifica che sia voluto.`}
+                    >
+                        ⚠ {lapseCount} LAPSE decadono all'off
+                    </span>
+                )}
                 {/* E34: P&L di giornata dal runner (settled + MTM) + stato stop */}
                 {riskState?.day != null && riskState?.total != null && (
                     <span
@@ -563,6 +611,46 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                     )}
                 </div>
             </div>
+
+            {/* F40: PRE-GOAL WARNING dal modello (hazard in live_signals, keepalive runner).
+                Solo in-play, solo se fresco e sopra soglia; il numero è SEMPRE mostrato.
+                "Copri ora" riusa il cash-out EVENTO esistente (conferma inclusa): l'utente
+                decide, mai un'azione automatica. */}
+            {preGoal && (
+                <div className={`rounded-xl border px-3 py-2 flex items-center gap-3 flex-wrap ${
+                    preGoal.level === 'red'
+                        ? 'border-red-500/50 bg-red-500/10'
+                        : 'border-amber-500/40 bg-amber-500/10'
+                }`}>
+                    <span
+                        className={`text-[11px] font-black ${
+                            preGoal.level === 'red' ? 'text-red-300 animate-pulse' : 'text-amber-300'
+                        }`}
+                        title={'Hazard dal MODELLO in-play: λ gol residui calibrati per lega '
+                            + '(minuto, punteggio, cartellini) × distribuzione empirica dei tempi-gol. '
+                            + 'NON vede tiri/corner live. Gol attesi nell\'orizzonte: '
+                            + `${preGoal.expGoals.toFixed(2)}.`}
+                    >
+                        ⚠ RISCHIO GOL: P(gol ≤{Math.round(preGoal.horizonMin)}&apos;) ≈ {(preGoal.p * 100).toFixed(0)}%
+                        <span className="font-normal opacity-80"> · modello al {preGoal.minute}&apos;</span>
+                    </span>
+                    <span className="flex-1" />
+                    <Button
+                        size="sm"
+                        onClick={handleCashoutEvent}
+                        disabled={busy || mode === 'off'}
+                        className={`h-7 font-black disabled:opacity-40 ${
+                            preGoal.level === 'red'
+                                ? 'bg-red-600 hover:bg-red-500 text-white'
+                                : 'bg-amber-500 hover:bg-amber-400 text-black'
+                        }`}
+                        title="Copri ORA: cash-out COMPLETO dell'evento (annulla resting + green-up del matched su tutti i mercati) — stessa azione e stesse conferme del bottone in top bar."
+                    >
+                        {cashingEvent ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />}
+                        Copri ora{fmtCashout(eventCashout)}
+                    </Button>
+                </div>
+            )}
 
             {/* TABS multi-mercato (stile Bet Angel) + link al workspace Multi-ladder */}
             <div className="flex items-stretch gap-1 flex-wrap border-b border-white/5 overflow-x-auto">
@@ -713,7 +801,9 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                             <XHedgePanel eventId={eventId} mode={mode} />
                         )}
                         {tool === 'scalper' && (
-                            <ScalperPanel eventId={eventId} eventName={eventName} />
+                            /* key={eventId}: lo stato del pannello (form, flag
+                               missione) NON deve sopravvivere al cambio evento */
+                            <ScalperPanel key={eventId} eventId={eventId} eventName={eventName} />
                         )}
                         {tool === 'chart' && (
                             <SelectionChartPanel key={`chart:${market.market_id}`} marketId={market.market_id} />

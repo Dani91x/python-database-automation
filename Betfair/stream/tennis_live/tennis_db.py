@@ -93,7 +93,7 @@ def set_tennis_follow_status(
     event_id: str, status: str, error_detail: Optional[str] = None
 ) -> None:
     sb = get_tennis_client()
-    safe_detail = (error_detail or "")[:200] or None
+    safe_detail = (error_detail or "")[:500] or None
     sb.table("tennis_live_follow").update(
         {"status": status, "error_detail": safe_detail, "updated_at": _now_iso()}
     ).eq("event_id", event_id).execute()
@@ -253,13 +253,18 @@ def claim_tennis_order(rid: int) -> bool:
 
 
 def write_tennis_order_done(rid: int, result: Dict[str, Any]) -> None:
+    # BUG FIX cert 10/07 (VISTO DAL VIVO): la coda ``tennis_live_order_queue`` NON ha
+    # la colonna top-level ``bet_id`` (colonne reali: id, client_ref, payload, status,
+    # result, error, processed_at, created_at — il bet_id era copiato dal pattern
+    # dello SPECCHIO): l'update falliva con PGRST204/42703 e la riga finiva 'error'
+    # CON L'ORDINE GIÀ A MERCATO (l'utente lo crede fallito e lo ripete = doppio
+    # ordine). Il bet_id resta dentro ``result`` jsonb, che è ciò che la UI legge.
     sb = get_tennis_client()
     sb.table(_ORDER_TABLE).update(
         {
             "status": "done",
             "result": result,
             "error": result.get("error"),
-            "bet_id": result.get("bet_id"),
             "processed_at": _now_iso(),
         }
     ).eq("id", rid).execute()

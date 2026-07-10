@@ -195,20 +195,26 @@ def test_dutch_build_failure_places_nothing():
 # Kill-switch: blocca le APERTURE, lascia passare le CHIUSURE
 # ===========================================================================
 def test_kill_switch_blocks_opening_but_allows_cancel(monkeypatch):
+    # BUG FIX cert 10/07 (visto dal vivo): l'apertura col freno tirato NON resta più
+    # 'pending' (veniva ESEGUITA al riarmo, 36s dopo nel test reale, quando l'utente
+    # la credeva morta) → ora è RIFIUTATA con esito 'error' esplicito. Le chiusure
+    # passano sempre.
     monkeypatch.setattr(wk, "_kill_switch", lambda: True)
     market = _FakeMarket("1.1")
     order = _fake_order(bet_id="B9", market_id="1.1")
     market.blotter.add(order)
     fl = _FakeFlumine({"1.1": market})
     sb = _FakeSupabase([
-        _row(1),  # place (apertura) → deve restare pending
+        _row(1),  # place (apertura) → RIFIUTATA esplicitamente
         _row(2, action="cancel", bet_id="B9", price=None, size=None),  # chiusura → passa
     ])
 
     wk._process_once(sb, fl, strategy=_STRAT)
 
-    assert _by_id(sb, 1)["status"] == "pending"   # apertura NON claimata col freno tirato
-    assert _by_id(sb, 2)["status"] == "done"      # cancel eseguito
+    r1 = _by_id(sb, 1)
+    assert r1["status"] == "error"                       # mai più pending-trappola
+    assert "kill-switch" in str(r1.get("error") or "")   # motivo ESPLICITO per l'utente
+    assert _by_id(sb, 2)["status"] == "done"             # cancel eseguito
     assert [c[0] for c in market.calls] == ["cancel_order"]
 
 
@@ -346,7 +352,7 @@ def test_rate_control_skips_reduces_liability(monkeypatch):
     from flumine.order.orderpackage import OrderPackageType
 
     control = LiveRateControl.__new__(LiveRateControl)
-    control._order_ts = []
+    ctl.reset_rate_window()  # §7.2: finestra condivisa a livello modulo
     control.flumine = None
 
     def _on_error(order, msg):  # come BaseControl: registra la violazione

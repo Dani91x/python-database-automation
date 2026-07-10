@@ -9,6 +9,7 @@ import pytest
 from flumine import BaseStrategy
 
 import Betfair.stream.live_order_worker as wk
+import Betfair.stream.trading.controls as ctl
 
 _STRAT = BaseStrategy(market_filter={}, name="live_trading")
 
@@ -80,10 +81,10 @@ class _Market:
 @pytest.fixture(autouse=True)
 def _clean_controls_state():
     wk._SETTINGS.clear()
-    wk._ORDER_TS.clear()
+    ctl.reset_rate_window()
     yield
     wk._SETTINGS.clear()
-    wk._ORDER_TS.clear()
+    ctl.reset_rate_window()
 
 
 class _Markets:
@@ -130,10 +131,11 @@ def test_dutch_no_selections_errors():
 
 
 def test_dutch_rate_limited_places_nothing(monkeypatch):
-    # fix review MEDIUM: le gambe dutch passano dal rate-limit (una volta, all-or-nothing).
+    # fix review MEDIUM + §7.2: le gambe dutch chiedono capacità per TUTTE le gambe
+    # sulla finestra CONDIVISA (all-or-nothing) prima di piazzarne una.
     wk._SETTINGS["max_orders_per_min"] = 1
-    monkeypatch.setattr(wk, "_now_epoch", lambda: 1000.0)
-    wk._record_order()  # raggiunge il tetto
+    monkeypatch.setattr(ctl, "_now_epoch", lambda: 1000.0)
+    ctl.record_place()  # raggiunge il tetto
     row = {"id": 5, "market_id": "1.1", "handicap": 0, "action": "dutch",
            "params": {"selections": [{"selection_id": 10, "price": 4.0},
                                      {"selection_id": 20, "price": 4.0}],

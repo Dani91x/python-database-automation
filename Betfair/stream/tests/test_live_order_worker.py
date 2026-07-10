@@ -437,9 +437,13 @@ def test_kill_switch_blocks_everything(monkeypatch):
 
     n = wk._process_once(sb, fl, strategy=_STRAT)
 
-    assert n == 0
+    # BUG FIX cert 10/07: l'apertura col freno NON resta pending (veniva eseguita
+    # al riarmo) -> claim + esito 'error' esplicito, contata come handled.
+    assert n == 1
     assert market.calls == []
-    assert _by_id(sb, 1)["status"] == "pending"
+    r1 = _by_id(sb, 1)
+    assert r1["status"] == "error"
+    assert "kill-switch" in str(r1.get("error") or "")
 
 
 def test_kill_switch_flip_midbatch_blocks_remaining_orders(monkeypatch):
@@ -460,11 +464,14 @@ def test_kill_switch_flip_midbatch_blocks_remaining_orders(monkeypatch):
 
     n = wk._process_once(sb, fl, strategy=_STRAT)
 
-    # solo il 1° ordine è stato piazzato; il 2° è bloccato a metà batch
-    assert n == 1
+    # solo il 1° ordine è stato piazzato; il 2° è RIFIUTATO esplicitamente a metà
+    # batch (BUG FIX cert 10/07: mai più pending-trappola eseguita al riarmo)
+    assert n == 2
     assert [c[0] for c in market.calls] == ["place_order"]
     assert _by_id(sb, 1)["status"] == "done"
-    assert _by_id(sb, 2)["status"] == "pending"  # rimasto pending, NON 'processing'
+    r2 = _by_id(sb, 2)
+    assert r2["status"] == "error"
+    assert "kill-switch" in str(r2.get("error") or "")
 
 
 def test_off_mode_is_inert(monkeypatch):
@@ -540,9 +547,11 @@ def test_kill_switch_reread_from_env_live(monkeypatch):
     sb2 = _FakeSupabase([_row(2)])
     market2 = _FakeMarket("1.1")
     fl2 = _FakeFlumine({"1.1": market2})
-    assert wk._process_once(sb2, fl2, strategy=_STRAT) == 0
+    assert wk._process_once(sb2, fl2, strategy=_STRAT) == 1
     assert market2.calls == []
-    assert _by_id(sb2, 2)["status"] == "pending"
+    r2 = _by_id(sb2, 2)
+    assert r2["status"] == "error"  # BUG FIX cert 10/07: rifiuto esplicito
+    assert "kill-switch" in str(r2.get("error") or "")
 
 
 def test_max_stake_reread_from_env_live(monkeypatch):
@@ -580,7 +589,8 @@ def test_live_order_mode_reread_from_env_live(monkeypatch):
     assert wk._process_once(sb1, fl, strategy=_STRAT) == 1
     assert _by_id(sb1, 1)["status"] == "done"
 
-    # downgrade a runtime → OFF: worker inerte, riga intatta (pending)
+    # downgrade a runtime → OFF: worker INERTE (diverso dal kill: qui non si
+    # processa nulla e la riga resta pending — nessun claim, nessun esito)
     monkeypatch.setenv("LIVE_ORDER_MODE", "OFF")
     sb2 = _FakeSupabase([_row(2)])
     market2 = _FakeMarket("1.1")

@@ -51,10 +51,16 @@ class _FakeSb:
         queue_rows: Optional[List[Dict[str, Any]]] = None,
         live_now: Optional[List[Dict[str, Any]]] = None,
         signals: Optional[List[Dict[str, Any]]] = None,
+        journal_raises: bool = False,
     ) -> None:
         self.queue_rows = queue_rows or []
         self.live_now = live_now or []
         self.signals = signals or []
+        # BUG FIX cert 10/07: il journal ora passa dal *sb del ciclo* (mai piu' il
+        # client reale nei test) -> il fake lo raccoglie qui.
+        self.journal: List[Dict[str, Any]] = []
+        self.alerts: List[Dict[str, Any]] = []
+        self._journal_raises = journal_raises
 
     def table(self, name: str) -> Any:
         if name == wk._TABLE:
@@ -63,6 +69,35 @@ class _FakeSb:
             return _SelectQuery(self.live_now)
         if name == "live_signals":
             return _SelectQuery(self.signals)
+        if name == "live_alerts":
+            outer = self
+
+            class _AIns:
+                def insert(self, row):
+                    self._row = dict(row)
+                    return self
+
+                def execute(self):
+                    outer.alerts.append(self._row)
+                    return _Resp([self._row])
+
+            return _AIns()
+        if name == "betfair_live_journal":
+            sink = self.journal
+            raises = self._journal_raises
+
+            class _Ins:
+                def insert(self, row):
+                    self._row = dict(row)
+                    return self
+
+                def execute(self):
+                    if raises:
+                        raise RuntimeError("insert KO")
+                    sink.append(self._row)
+                    return _Resp([self._row])
+
+            return _Ins()
         raise AssertionError(f"tabella inattesa: {name}")
 
 
@@ -139,8 +174,8 @@ def test_journal_captures_full_context(sink):
         }],
     )
     wk._journal_done(sb, _flumine(_market()), _request(), "paper")
-    assert len(sink["journal"]) == 1
-    row = sink["journal"][0]
+    assert len(sb.journal) == 1
+    row = sb.journal[0]
     assert row["mode"] == "paper"
     assert row["request_id"] == 42
     assert row["bet_id"] == "B99"
@@ -160,14 +195,14 @@ def test_journal_origin_risk_rule(sink):
     sb = _FakeSb(queue_rows=[{"id": 42, "bet_id": None}])
     req = _request(action="greenup", params={"risk_rule_id": 7, "fraction": 1.0})
     wk._journal_done(sb, _flumine(_market()), req, "live")
-    assert sink["journal"][0]["origin"] == "risk_rule"
-    assert sink["journal"][0]["params"] == {"risk_rule_id": 7, "fraction": 1.0}
+    assert sb.journal[0]["origin"] == "risk_rule"
+    assert sb.journal[0]["params"] == {"risk_rule_id": 7, "fraction": 1.0}
 
 
 def test_journal_without_market_still_writes_row(sink):
     sb = _FakeSb(queue_rows=[{"id": 42, "bet_id": None}])
     wk._journal_done(sb, _flumine(), _request(market_id="1.404"), "paper")
-    row = sink["journal"][0]
+    row = sb.journal[0]
     assert row["market_id"] == "1.404"
     assert row["book"] is None and row["ltp"] is None and row["event_id"] is None
 
@@ -177,7 +212,7 @@ def test_journal_dutch_without_selection(sink):
     req = _request(action="dutch", selection_id=None,
                    params={"selections": [111, 222], "total_stake": 20})
     wk._journal_done(sb, _flumine(_market()), req, "paper")
-    row = sink["journal"][0]
+    row = sb.journal[0]
     assert row["action"] == "dutch"
     assert row["selection_id"] is None
     assert row["book"] is None
@@ -185,16 +220,10 @@ def test_journal_dutch_without_selection(sink):
 
 
 def test_journal_errors_never_raise_and_warn_once(sink, monkeypatch):
-    import Betfair.stream.db as dbmod
-
-    def _boom(row):
-        raise RuntimeError("insert KO")
-
-    monkeypatch.setattr(dbmod, "insert_live_journal", _boom)
-    sb = _FakeSb(queue_rows=[{"id": 42, "bet_id": None}])
+    sb = _FakeSb(queue_rows=[{"id": 42, "bet_id": None}], journal_raises=True)
     wk._journal_done(sb, _flumine(_market()), _request(), "paper")   # nessuna eccezione
     wk._journal_done(sb, _flumine(_market()), _request(), "paper")
-    warns = [m for (lvl, code, m) in sink["alerts"] if lvl == "WARN" and code == "JOURNAL"]
+    warns = [a for a in sb.alerts if a.get("level") == "WARN" and a.get("code") == "JOURNAL"]
     assert len(warns) == 1  # anti-spam: una volta al giorno
 
 
@@ -207,7 +236,7 @@ def test_signal_not_matched_for_other_selection(sink):
         }],
     )
     wk._journal_done(sb, _flumine(_market()), _request(), "paper")
-    assert sink["journal"][0]["signals"] is None
+    assert sb.journal[0]["signals"] is None
 
 
 # ---------------------------------------------------------------------------

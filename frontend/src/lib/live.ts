@@ -217,10 +217,26 @@ export interface Signal {
     kelly_stake: number;         // £ (Kelly frazionato)
 }
 
-// La colonna `signals` è un jsonb { signals: Signal[]; updated_ms: number|null }.
+// F40: hazard gol imminente dal modello (λ residui calibrati + CDF tempi-gol).
+// Presente SOLO in-play; deriva da minuto/punteggio/cartellini (NON tiri live).
+export interface GoalHazardState {
+    p_next: number;          // P(≥1 gol nei prossimi horizon_min minuti), 0..1
+    exp_goals_next: number;  // gol attesi nell'orizzonte
+    horizon_min: number;     // ampiezza orizzonte (default 5')
+    minute: number;          // minuto a cui è stato calcolato
+    lam_home: number;
+    lam_away: number;
+}
+
+// La colonna `signals` è un jsonb { signals: Signal[]; updated_ms; commission; hazard }.
 export interface LiveSignalsState {
     signals: Signal[];
     updated_ms: number | null;
+    // F38: commissione con cui il motore ha calcolato EV/Kelly (assente nelle righe
+    // scritte prima del deploy: il frontend ricade sul default 5% del motore).
+    commission?: number | null;
+    // F40: assente pre-match o nelle righe scritte prima del deploy.
+    hazard?: GoalHazardState | null;
 }
 
 export interface LiveSignalsRow {

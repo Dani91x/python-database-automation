@@ -28,9 +28,11 @@ import Betfair.stream.trading.controls as ctl
 def _clean_settings_cache():
     ctl._SETTINGS_CACHE["data"] = {}
     ctl._SETTINGS_CACHE["ts"] = 0.0
+    ctl.reset_rate_window()  # §7.2: finestra rate CONDIVISA a livello modulo
     yield
     ctl._SETTINGS_CACHE["data"] = {}
     ctl._SETTINGS_CACHE["ts"] = 0.0
+    ctl.reset_rate_window()
 
 
 def _set_settings(monkeypatch, **kw):
@@ -222,6 +224,28 @@ def test_rate_non_place_ignored(monkeypatch):
     for _ in range(10):
         control(order, OrderPackageType.CANCEL)       # non-place non conta mai
     assert order.violation_msg is None
+
+
+def test_rate_window_shared_between_control_and_worker_precheck(monkeypatch):
+    # §7.2: UNA finestra sola — i place contati dal control sono visti dal pre-check
+    # del worker (rate_violation) e viceversa: mai due conteggi che divergono.
+    _set_settings(monkeypatch, max_orders_per_min=2)
+    monkeypatch.setattr(ctl, "_now_epoch", lambda: 1000.0)
+    control = ctl.LiveRateControl(SimpleNamespace())
+    order = _Order("BACK", "1.1", 10, 0.0, size=1.0, price=2.0)
+
+    control(order, OrderPackageType.PLACE)            # 1 place registrato dal control
+    assert ctl.rate_violation(2, extra=1) is None      # 1+1 = 2 <= 2 → capacità ok
+    assert ctl.rate_violation(2, extra=2) is not None  # 1+2 = 3 > 2 → violazione
+
+    ctl.record_place()                                 # 2° slot consumato
+    with pytest.raises(ControlError):
+        control(order, OrderPackageType.PLACE)         # il control vede la finestra piena
+
+
+def test_rate_violation_disabled_when_cap_none():
+    assert ctl.rate_violation(None) is None
+    assert ctl.rate_violation(0) is None
 
 
 # ===========================================================================

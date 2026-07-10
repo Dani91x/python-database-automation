@@ -38,3 +38,47 @@ export function formatScore(home: number | null | undefined, away: number | null
     if (!Number.isFinite(home) || !Number.isFinite(away)) return null;
     return `${home}–${away}`;
 }
+
+// ============================================================================
+// A9 — warning persistenza LAPSE pre-kickoff: gli ordini resting con
+// persistence LAPSE DECADONO al passaggio in-play (turn-in-play di Betfair).
+// Visto in certificazione: resting dimenticati che spariscono all'off.
+// ============================================================================
+
+// Secondi mancanti all'off. null se openDate mancante/invalida o già passata
+// (coerente con countdownToOff: dopo l'off non c'è più niente da avvisare).
+export function secondsToOff(openDate: string | null | undefined, nowMs: number): number | null {
+    if (!openDate || !Number.isFinite(nowMs)) return null;
+    const off = Date.parse(openDate);
+    if (!Number.isFinite(off) || nowMs >= off) return null;
+    return Math.floor((off - nowMs) / 1000);
+}
+
+// Sottoinsieme di LiveOrderRow che serve al conteggio (strutturale: nessun import).
+export interface LapseOrderLike {
+    mode: string;
+    status: string;
+    persistence: string | null;
+    size_remaining: number;
+}
+
+// Conta gli ordini RESTING (EXECUTABLE con residuo > 0) a persistenza LAPSE per la
+// modalità corrente: sono quelli che decadranno al calcio d'inizio. Difensivo:
+// input null/campi mancanti → 0 (mai un warning inventato).
+export function countLapseResting(
+    orders: readonly LapseOrderLike[] | null | undefined,
+    mode: string,
+): number {
+    if (!orders || !mode) return 0;
+    const m = mode.toLowerCase();
+    let n = 0;
+    for (const o of orders) {
+        if (!o) continue;
+        if ((o.mode ?? '').toLowerCase() !== m) continue;
+        if ((o.status ?? '').toUpperCase() !== 'EXECUTABLE') continue;
+        if ((o.persistence ?? '').toUpperCase() !== 'LAPSE') continue;
+        if (!(Number(o.size_remaining) > 0)) continue;
+        n += 1;
+    }
+    return n;
+}

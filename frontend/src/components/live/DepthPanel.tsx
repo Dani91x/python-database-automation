@@ -20,6 +20,10 @@ import type { LadderSource } from '@/components/live/LadderView';
 import {
     cumulativeLevels, depthDelta, pushDepthSample, sideTotals, type DepthSample,
 } from '@/lib/depthFlow';
+import {
+    detectPulledWalls, newFlowState, pushFlowSample, tradeSpike, womShift,
+    SPIKE_MIN_EUR, SPIKE_MIN_RATIO, WOM_SHIFT_ALERT_PP, type FlowState,
+} from '@/lib/orderFlow';
 
 const DEFAULT_SOURCE: LadderSource = { fetch: fetchLiveLadder, subscribe: subscribeLiveLadder };
 const WINDOWS = [10, 30, 60] as const;
@@ -62,9 +66,48 @@ function DepthBar({ levels, tone }: {
     );
 }
 
-function SelectionDepth({ sel, buf, windowSec, now }: {
+// F44: alert order-flow per selezione (muri finti / shift WOM / picco volume).
+// ONESTÀ: sono INDIZI statistici su ciò che il book mostra, mai prove — presentati
+// come "possibile", mai bloccanti. Nessuna anomalia → nessuna riga (zero rumore).
+function OrderFlowAlerts({ flow, now }: { flow: FlowState | undefined; now: number }) {
+    if (!flow) return null;
+    const walls = detectPulledWalls(flow, now);
+    const shift = womShift(flow, now);
+    const spike = tradeSpike(flow, now);
+    const shiftAlert = shift != null && Math.abs(shift) >= WOM_SHIFT_ALERT_PP;
+    const spikeAlert = spike != null && spike.ratio >= SPIKE_MIN_RATIO && spike.recent >= SPIKE_MIN_EUR;
+    if (walls.length === 0 && !shiftAlert && !spikeAlert) return null;
+    return (
+        <div className="space-y-0.5">
+            {walls.map(w => (
+                <div key={`${w.side}@${w.price}`}
+                    className="text-[10px] text-fuchsia-300 tabular-nums"
+                    title={'INDIZIO (non prova): size grossa sparita dal book senza essere consumata dai trade — '
+                        + `picco €${Math.round(w.peak)}, sparita €${Math.round(w.dropped)}, tradati solo €${Math.round(w.traded)} in 15s.`}>
+                    🎭 possibile muro finto {w.side.toUpperCase()} @ {w.price}: −{fmtEur(w.dropped)} non consumati
+                </div>
+            ))}
+            {shiftAlert && (
+                <div className="text-[10px] text-amber-300 tabular-nums"
+                    title="Sbilanciamento del denaro vicino al best (top-3 livelli) cambiato bruscamente negli ultimi 30s.">
+                    ⚖ shift WOM {shift! > 0 ? '+' : '−'}{Math.abs(shift!).toFixed(0)}pp in 30s ({shift! > 0 ? 'pressione BACK' : 'pressione LAY'})
+                </div>
+            )}
+            {spikeAlert && (
+                <div className="text-[10px] text-orange-300 tabular-nums"
+                    title={`Volume tradato nell'ultimo minuto (€${Math.round(spike!.recent)}) ≥ ${SPIKE_MIN_RATIO}× il minuto precedente (€${Math.round(spike!.baseline)}).`}>
+                    ⚡ picco volume: {fmtEur(spike!.recent)} nell'ultimo minuto
+                    ({Number.isFinite(spike!.ratio) ? `${spike!.ratio.toFixed(1)}×` : 'da fermo'})
+                </div>
+            )}
+        </div>
+    );
+}
+
+function SelectionDepth({ sel, buf, flow, windowSec, now }: {
     sel: LiveLadderSelection;
     buf: DepthSample[] | undefined;
+    flow: FlowState | undefined;
     windowSec: number;
     now: number;
 }) {
@@ -109,6 +152,8 @@ function SelectionDepth({ sel, buf, windowSec, now }: {
                     </span>
                 )}
             </div>
+            {/* F44: order-flow analytics (indizi, mai bloccanti) */}
+            <OrderFlowAlerts flow={flow} now={now} />
         </div>
     );
 }
@@ -119,9 +164,12 @@ export function DepthPanel({ marketId, ladderSource = DEFAULT_SOURCE }: Props) {
     const [now, setNow] = useState(() => Date.now());
     // buffer campioni per selezione (mutati in place, azzerati al cambio mercato)
     const bufsRef = useRef<Map<number, DepthSample[]>>(new Map());
+    // F44: stato order-flow per selezione (snapshot per-livello: muri/WOM/volume)
+    const flowsRef = useRef<Map<number, FlowState>>(new Map());
 
     useEffect(() => {
         bufsRef.current = new Map();
+        flowsRef.current = new Map();
         let alive = true;
         const ingest = (r: LiveLadderRow | null) => {
             if (!alive || !r) return;
@@ -130,6 +178,9 @@ export function DepthPanel({ marketId, ladderSource = DEFAULT_SOURCE }: Props) {
                 let buf = bufsRef.current.get(sel.selection_id);
                 if (!buf) { buf = []; bufsRef.current.set(sel.selection_id, buf); }
                 pushDepthSample(buf, t, sideTotals(sel.back), sideTotals(sel.lay));
+                let flow = flowsRef.current.get(sel.selection_id);
+                if (!flow) { flow = newFlowState(); flowsRef.current.set(sel.selection_id, flow); }
+                pushFlowSample(flow, t, sel.back, sel.lay, sel.trd);
             }
             setRow(r);
         };
@@ -175,6 +226,7 @@ export function DepthPanel({ marketId, ladderSource = DEFAULT_SOURCE }: Props) {
                         key={sel.selection_id}
                         sel={sel}
                         buf={bufsRef.current.get(sel.selection_id)}
+                        flow={flowsRef.current.get(sel.selection_id)}
                         windowSec={windowSec}
                         now={now}
                     />

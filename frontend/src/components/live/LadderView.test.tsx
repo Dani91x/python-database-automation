@@ -377,3 +377,55 @@ describe('LadderView — chip Kelly (E36)', () => {
         expect(screen.queryByText(/K€/)).not.toBeInTheDocument();
     });
 });
+
+// ===========================================================================
+// F38 — fair del motore nel ladder: colonna EV + marker fair
+// ===========================================================================
+import type { LiveSignalsRow } from '@/lib/live';
+
+function signalsRowFair(fair: number, prob: number): LiveSignalsRow {
+    return {
+        event_id: 'evt1',
+        signals: {
+            updated_ms: Date.now(),
+            commission: 0.05,
+            signals: [{
+                market_id: '1.234', market_type: 'MATCH_ODDS', selection_id: 1,
+                selection_name: 'Casa', model_prob: prob, market_back: 2.9, market_lay: 3.0,
+                fair_back: fair, fair_lay: fair, edge: 0.02, direction: 'HOLD',
+                confidence: 0.5, kelly_stake: 0,
+            }],
+        },
+        model_meta: null,
+        updated_at: new Date().toISOString(),
+    };
+}
+
+describe('LadderView — F38 fair/EV', () => {
+    it('con segnale valido mostra la colonna EV con valori B/L e il marker FAIR', async () => {
+        // fair 3.0 (prob 1/3): sotto il fair il LAY ha EV>0, sopra (fuori spread) il BACK.
+        render(<LadderView marketId="1.234" orderMode="paper" sport="calcio"
+            signals={signalsRowFair(3.0, 1 / 3)} />);
+        await screen.findByText('Casa');
+        expect(screen.getByText('EV')).toBeInTheDocument();          // header colonna (calcio default)
+        const evCells = screen.getAllByText(/^[BL] \+\d+\.\d%$/);    // livelli con valore
+        expect(evCells.length).toBeGreaterThan(0);
+        // marker fair sulla cella prezzo (tooltip esplicito col valore del fair)
+        expect(screen.getByTitle(/FAIR del motore: 3\.00/)).toBeInTheDocument();
+    });
+
+    it('segnale STANTIO → nessuna EV e nessun marker (mai un fair vecchio)', async () => {
+        const stale = signalsRowFair(3.0, 1 / 3);
+        stale.updated_at = new Date(Date.now() - 10 * 60_000).toISOString(); // 10 min fa
+        render(<LadderView marketId="1.234" orderMode="paper" sport="calcio" signals={stale} />);
+        await screen.findByText('Casa');
+        expect(screen.queryByText(/^[BL] \+\d+\.\d%$/)).not.toBeInTheDocument();
+        expect(screen.queryByTitle(/FAIR del motore: 3\.00/)).not.toBeInTheDocument();
+    });
+
+    it('senza segnali (tennis/nessun motore) la colonna EV non è nel layout di default', async () => {
+        render(<LadderView marketId="1.234" orderMode="paper" sport="tennis" />);
+        await screen.findByText('Casa');
+        expect(screen.queryByText('EV')).not.toBeInTheDocument();
+    });
+});

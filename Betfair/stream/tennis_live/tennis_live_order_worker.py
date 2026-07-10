@@ -647,7 +647,17 @@ def positions_worker(context: dict, flumine: Any, session: Any = None) -> None: 
     if session is None or flumine is None:
         return
     mode = _runner_mode().lower()
-    seen: set = set()
+    # AGGREGAZIONE per (mode, market_id, selection_id, handicap) — fix 2026-07-10:
+    # prima un dedup "first-wins" scartava i duplicati: l'esposizione della PRIMA
+    # strategy (di norma la capture) vinceva e quella dei BOT andava PERSA nella
+    # riga tennis_live_positions. Ora si SOMMANO le esposizioni di tutte le
+    # strategy sulla stessa chiave (nessun cambio di schema DB).
+    _SUM_FIELDS = (
+        "matched_if_win", "matched_if_lose", "worst_if_win", "worst_if_lose",
+        "selection_exposure", "unmatched_back_exposure", "unmatched_lay_exposure",
+        "net_position",
+    )
+    agg: Dict[tuple, Dict[str, Any]] = {}
     for strategy, event_id in _iter_tracked_strategies(session):
         meta = getattr(session, "market_meta", {}).get(event_id) or {}
         market_id = meta.get("market_id")
@@ -673,15 +683,23 @@ def positions_worker(context: dict, flumine: Any, session: Any = None) -> None: 
                 continue
             lookups.add((sel, _f(_val(o, "handicap")) or 0.0))
         for sel, hcap in lookups:
-            if (mode, market_id, sel, hcap) in seen:
-                continue
-            seen.add((mode, market_id, sel, hcap))
             row = _position_row(market, strategy, mode, event_id, market_id, sel, hcap)
-            if row is not None:
-                try:
-                    tennis_db.upsert_tennis_position(row)
-                except Exception as e:  # noqa: BLE001
-                    logger.debug("[tennis-pos] upsert KO %s/%s: %s", market_id, sel, e)
+            if row is None:
+                continue
+            key = (mode, market_id, sel, hcap)
+            cur = agg.get(key)
+            if cur is None:
+                agg[key] = row
+            else:
+                for f in _SUM_FIELDS:
+                    cur[f] = round(
+                        float(cur.get(f) or 0.0) + float(row.get(f) or 0.0), 2
+                    )
+    for (_mode_k, market_id, sel, _hcap), row in agg.items():
+        try:
+            tennis_db.upsert_tennis_position(row)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-pos] upsert KO %s/%s: %s", market_id, sel, e)
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +833,7 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
         if not tennis_db.claim_tennis_order(rid):
             continue  # preso da un altro poll
         cust_ref = _cust_ref(rid)
+        result = None
         try:
             cmd = parse_order_payload(row)
             result = _dispatch(flumine, session, cmd, cust_ref)
@@ -828,8 +847,31 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
         except Exception as e:  # noqa: BLE001 - riga in error, mai crash del runner
             logger.warning("[tennis-order] riga %s KO: %s", rid, e)
             mode = _declared_mode(row)
-            tennis_db.write_tennis_order_error(
-                rid, _result(ok=False, action=_declared_action(row),
-                             mode=mode, cmd=row, cust_ref=cust_ref, error=str(e)))
+            # BUG FIX cert 10/07 (VISTO DAL VIVO): se il DISPATCH è riuscito e a fallire
+            # è stata solo la SCRITTURA dell'esito, un errore generico fa credere
+            # l'ordine NON eseguito (l'utente lo ripete = doppio ordine con soldi veri).
+            # Si RITENTA il done; se fallisce ancora, l'errore DICHIARA che l'ordine
+            # È STATO eseguito ("NON reinviare").
+            if isinstance(result, dict) and result.get("ok"):
+                try:
+                    tennis_db.write_tennis_order_done(rid, result)
+                    continue
+                except Exception:  # noqa: BLE001 - retry esaurito: errore ONESTO sotto
+                    logger.exception("[tennis-order] retry write_done %s KO", rid)
+                err_msg = ("ORDINE ESEGUITO ma esito non registrato (errore di scrittura: "
+                           f"{str(e)[:120]}) — NON reinviare: verifica la lista ordini")
+                try:
+                    tennis_db.write_tennis_order_error(
+                        rid, _result(ok=False, action=_declared_action(row), mode=mode,
+                                     cmd=row, cust_ref=cust_ref, error=err_msg))
+                except Exception:  # noqa: BLE001 - perfino l'errore è best-effort
+                    logger.exception("[tennis-order] scrittura errore %s KO", rid)
+                continue
+            try:
+                tennis_db.write_tennis_order_error(
+                    rid, _result(ok=False, action=_declared_action(row),
+                                 mode=mode, cmd=row, cust_ref=cust_ref, error=str(e)))
+            except Exception:  # noqa: BLE001 - perfino l'errore è best-effort
+                logger.exception("[tennis-order] scrittura errore %s KO", rid)
     # riconcilia i fill degli ordini tracciati (manuali + bot), write-on-change + prune.
     _reconcile_tracked(session, flumine)

@@ -69,3 +69,53 @@ describe('formatScore', () => {
         expect(formatScore(1, Infinity)).toBeNull();
     });
 });
+
+// ============================================================================
+// A9 — warning persistenza LAPSE pre-kickoff
+// ============================================================================
+import { countLapseResting, secondsToOff, type LapseOrderLike } from './matchClock';
+
+const mkOrder = (over: Partial<LapseOrderLike> = {}): LapseOrderLike => ({
+    mode: 'paper', status: 'EXECUTABLE', persistence: 'LAPSE', size_remaining: 2, ...over,
+});
+
+describe('secondsToOff', () => {
+    it('openDate mancante/invalida o già passata → null (coerente con countdownToOff)', () => {
+        expect(secondsToOff(null, T0)).toBeNull();
+        expect(secondsToOff('non-una-data', T0)).toBeNull();
+        expect(secondsToOff(iso, T0)).toBeNull();       // nowMs == off
+        expect(secondsToOff(iso, T0 + 1)).toBeNull();   // già partita
+    });
+    it('secondi interi mancanti all\'off', () => {
+        expect(secondsToOff(iso, T0 - 299_000)).toBe(299);      // sotto i 5 min → soglia rosso
+        expect(secondsToOff(iso, T0 - 3_600_000)).toBe(3600);
+        expect(secondsToOff(iso, T0 - 1)).toBe(0);
+    });
+});
+
+describe('countLapseResting', () => {
+    it('input null/vuoto/mode assente → 0 (mai un warning inventato)', () => {
+        expect(countLapseResting(null, 'paper')).toBe(0);
+        expect(countLapseResting(undefined, 'paper')).toBe(0);
+        expect(countLapseResting([], 'paper')).toBe(0);
+        expect(countLapseResting([mkOrder()], '')).toBe(0);
+    });
+    it('conta SOLO resting EXECUTABLE con residuo > 0 e persistence LAPSE', () => {
+        expect(countLapseResting([
+            mkOrder(),                                            // conta
+            mkOrder({ status: 'EXECUTION_COMPLETE' }),            // già abbinato: no
+            mkOrder({ size_remaining: 0 }),                       // nessun residuo: no
+            mkOrder({ persistence: 'PERSIST' }),                  // sopravvive in-play: no
+            mkOrder({ persistence: 'MARKET_ON_CLOSE' }),          // Take SP: no
+            mkOrder({ persistence: null }),                       // ignoto: no (mai inventare)
+        ], 'paper')).toBe(1);
+    });
+    it('filtra per modalità corrente (mai contare paper quando si opera LIVE)', () => {
+        const rows = [mkOrder({ mode: 'paper' }), mkOrder({ mode: 'live' }), mkOrder({ mode: 'live' })];
+        expect(countLapseResting(rows, 'live')).toBe(2);
+        expect(countLapseResting(rows, 'paper')).toBe(1);
+    });
+    it('case-insensitive su mode/status/persistence (valori dal mirror)', () => {
+        expect(countLapseResting([mkOrder({ mode: 'PAPER', status: 'executable', persistence: 'lapse' })], 'paper')).toBe(1);
+    });
+});

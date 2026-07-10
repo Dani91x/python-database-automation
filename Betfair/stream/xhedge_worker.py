@@ -55,7 +55,13 @@ def _cs_back_odds(session: Any, cs_market_id: str, cs_map: Dict[int, Tuple[int, 
         return odds
     book = (session.recorder.latest_books() or {}).get(cs_market_id)
     if not book:
+        # DIAG cert 10/07: quota CS assente vista dal vivo — capire il perché
+        lb = session.recorder.latest_books() or {}
+        logger.info("[xhedge-diag] CS %s NON in latest_books (%d mercati in cache, cs_map=%d)",
+                    cs_market_id, len(lb), len(cs_map))
         return odds
+    if not cs_map:
+        logger.info("[xhedge-diag] cs_map VUOTO per CS %s (selections senza nomi nel catalogo?)", cs_market_id)
     runners = book.get("runners") or {}
     for sel, score in cs_map.items():
         r = runners.get(str(sel)) or runners.get(sel)
@@ -89,7 +95,13 @@ def _process_once(sb: Any, session: Any) -> int:
             if not orders:
                 continue
             cs_odds = _cs_back_odds(session, cs_mid, cs_map)
-            analysis = xhedge.compute_xhedge(orders, meta, cs_odds)
+            # F39: mappa inversa {(h,a): selection_id} dal catalogo → il suggerimento
+            # include gli ID esatti per il piazzamento 1-click (mai per nome in UI).
+            sel_by_score = {score: sel for sel, score in cs_map.items()}
+            analysis = xhedge.compute_xhedge(
+                orders, meta, cs_odds,
+                cs_market_id=cs_mid or None, cs_sel_by_score=sel_by_score,
+            )
             sb.table("betfair_live_xhedge").upsert(
                 {"event_id": event_id, "mode": mode, "analysis": analysis, "updated_at": _now_iso()},
                 on_conflict="event_id,mode",

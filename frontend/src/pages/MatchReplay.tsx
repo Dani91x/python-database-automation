@@ -27,6 +27,12 @@ import {
     type SimBet, type BetSide, type LadderMap, type SettleCtx, type MarketSettleEval,
 } from '@/lib/replay-pnl';
 import { simulateOrder, type BookSnapshot, type OrderRequest, type Persistence } from '@/lib/matching';
+// F41: TRAINING sul ladder — LadderView reale + orderApi SIMULATO (matching engine)
+import { LadderView, type LadderSource } from '@/components/live/LadderView';
+import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
+import type { LiveLadderRow } from '@/lib/live';
+// F42: backtest del ladder-trading sullo storico full-depth (lib pura testata)
+import { LadderBacktestPanel } from '@/components/replay/LadderBacktestPanel';
 import { buildSnapshots } from '@/lib/opportunities/snapshot';
 import { runDetectors, DEFAULT_OPP_CONFIG } from '@/lib/opportunities/engine';
 import { harnessDetectors, validateFromDetections } from '@/lib/opportunities/validate';
@@ -87,8 +93,12 @@ export default function MatchReplay() {
     const [playSpeed, setPlaySpeed] = useState(PLAY_NORMAL_MS); // base (normale/veloce); l'intervallo reale = playSpeed/speedMult
     const [speedMult, setSpeedMult] = useState(1);              // moltiplicatore x1..x5
     const [activeCategory, setActiveCategory] = useState<CatKey>('MATCH_ODDS');
-    // vista del pannello sotto la timeline: 'markets' (tab mercati) | 'opps' (Opportunità).
-    const [view, setView] = useState<'markets' | 'opps'>('markets');
+    // vista del pannello sotto la timeline: 'markets' | 'opps' | 'ladder' (F41) | 'backtest' (F42).
+    const [view, setView] = useState<'markets' | 'opps' | 'ladder' | 'backtest'>('markets');
+    // F41: mercato mostrato nel ladder TRAINING + tick di reset degli ordini simulati.
+    const [trainingMarketId, setTrainingMarketId] = useState<string | null>(null);
+    const [trainingResetTick, setTrainingResetTick] = useState(0);
+    const [replayEventId, setReplayEventId] = useState('');
     const [orders, setOrders] = useState<SimOrder[]>([]);
     const [stakes, setStakes] = useState<Record<string, number>>({});
     // P&L già REALIZZATO da cash-out precedenti (le bet vengono rimosse, ma il
@@ -120,6 +130,11 @@ export default function MatchReplay() {
             setOrders([]);
             setStakes({});
             setRealizedPnl(0);
+            // F41: nuova sessione di training pulita per il nuovo replay
+            setReplayEventId(item.event_id);
+            setTrainingMarketId(null);
+            trainApiRef.current = null;
+            setTrainingResetTick(0);
         } catch (e: any) {
             setError(e?.message ?? 'errore sconosciuto');
         } finally {
@@ -208,6 +223,14 @@ export default function MatchReplay() {
     const currentMinute = current.minute;
     const currentMs = currentTs ? new Date(currentTs).getTime() : 0;
 
+    // ---- F41: TRAINING sul ladder — api simulato + sorgente ladder dal replay ----
+    // I closures leggono da REF (mai catturare stato stantio): l'api è creato UNA
+    // volta per replay e sopravvive a scrubbing/riavvolgimenti (determinismo del
+    // matching: gli ordini si ri-risolvono a ogni istante della timeline).
+    const nowMsRef = useRef(0);
+    nowMsRef.current = currentMs;
+    const trainApiRef = useRef<TrainingApi | null>(null);
+
     // ---- frame raggruppati per mercato (ordinati per ts) ----
     const framesByMarket = useMemo(() => {
         const map = new Map<string, Frame[]>();
@@ -278,6 +301,70 @@ export default function MatchReplay() {
     // status corrente (frame <= currentTs) di un mercato — per il badge SOSPESO/CHIUSO.
     const currentStatus = (marketId: string): string | undefined =>
         statusAtTs(framesByMarket.get(marketId), currentTs) ?? undefined;
+
+    // ---- F41 (segue): closures per l'api di training, sempre sui dati correnti ----
+    const snapsRef = useRef(selectionSnaps);
+    snapsRef.current = selectionSnaps;
+    const framesRef = useRef(framesByMarket);
+    framesRef.current = framesByMarket;
+    // in-play a un istante? (decide il bet-delay del matching). Prudente: se non
+    // determinabile → true (delay applicato: mai un fill più facile del reale).
+    const trainingInplayAt = (marketId: string, tsMs: number): boolean => {
+        const arr = framesRef.current.get(marketId);
+        if (!arr || arr.length === 0) return true;
+        const iso = new Date(tsMs).toISOString();
+        let lo = 0, hi = arr.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (arr[mid].ts <= iso) lo = mid + 1; else hi = mid;
+        }
+        return lo > 0 ? (arr[lo - 1].inplay ?? true) : true;
+    };
+    if (replay && replayEventId && !trainApiRef.current) {
+        trainApiRef.current = createTrainingApi({
+            eventId: replayEventId,
+            getSnaps: (m, s) => snapsRef.current(m, s),
+            getNow: () => nowMsRef.current,
+            isInplayAt: trainingInplayAt,
+        });
+    }
+    // riga LadderView dal frame corrente (nomi selezioni dal catalogo del replay)
+    const buildTrainingRow = (mid: string): LiveLadderRow | null => {
+        if (!replay) return null;
+        const m = replay.markets.find(x => x.market_id === mid);
+        if (!m) return null;
+        const names = new Map<number, string>(
+            (m.selections ?? []).map(s => [s.selection_id, s.name ?? `#${s.selection_id}`]),
+        );
+        return frameToLadderRow({
+            eventId: replayEventId, marketId: mid,
+            marketType: m.market_type ?? null, marketName: m.market_name ?? null,
+            status: currentStatus(mid) ?? null, nowMs: currentMs,
+            ladder: currentLadder(mid), names,
+        });
+    };
+    const buildTrainingRowRef = useRef(buildTrainingRow);
+    buildTrainingRowRef.current = buildTrainingRow;
+    // sorgente ladder del TRAINING: fetch = frame corrente; subscribe = push a ogni
+    // avanzamento della timeline (referenza STABILE: LadderView non si ri-sottoscrive).
+    const trainSubRef = useRef<{ mid: string; cb: (row: LiveLadderRow | null) => void } | null>(null);
+    const trainingSource = useMemo<LadderSource>(() => ({
+        fetch: async (mid: string) => buildTrainingRowRef.current(mid),
+        subscribe: (mid: string, cb: (row: LiveLadderRow | null) => void) => {
+            trainSubRef.current = { mid, cb };
+            return () => { if (trainSubRef.current?.mid === mid) trainSubRef.current = null; };
+        },
+    }), []);
+    useEffect(() => {
+        const s = trainSubRef.current;
+        if (s && view === 'ladder') s.cb(buildTrainingRowRef.current(s.mid));
+    }, [currentTs, view]);
+    // default: mercato MATCH_ODDS (o il primo) quando si apre la vista training
+    useEffect(() => {
+        if (view !== 'ladder' || trainingMarketId || !replay) return;
+        const mo = replay.markets.find(m => m.market_type === 'MATCH_ODDS');
+        setTrainingMarketId((mo ?? replay.markets[0])?.market_id ?? null);
+    }, [view, trainingMarketId, replay]);
 
     // ---- score timeline pre-ordinata PER TIMESTAMP (non per minuto) ----
     const sortedScoreTimeline = useMemo(() => {
@@ -898,9 +985,87 @@ export default function MatchReplay() {
                                     <span className="ml-0.5 opacity-70 tabular-nums">{currentOpps.length}</span>
                                 )}
                             </button>
+                            {/* F41: TRAINING sul ladder vero (ordini simulati dal matching engine) */}
+                            <button
+                                onClick={() => setView('ladder')}
+                                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+                                    view === 'ladder'
+                                        ? 'bg-violet-500 text-white border-violet-500'
+                                        : 'border-violet-500/40 text-violet-300 hover:bg-violet-500/10'
+                                }`}
+                            >
+                                🎓 Ladder TRAINING
+                            </button>
+                            {/* F42: backtest strategie di ladder-trading sullo storico */}
+                            <button
+                                onClick={() => setView('backtest')}
+                                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap ${
+                                    view === 'backtest'
+                                        ? 'bg-cyan-500 text-black border-cyan-500'
+                                        : 'border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10'
+                                }`}
+                            >
+                                ⚗ Backtest
+                            </button>
                         </div>
 
-                        {view === 'opps' ? (
+                        {view === 'backtest' ? (
+                            /* ===== F42: backtest del ladder-trading (matching engine fedele) ===== */
+                            <LadderBacktestPanel
+                                markets={replay.markets}
+                                getSnaps={(m, s) => selectionSnaps(m, s)}
+                                isInplayAt={trainingInplayAt}
+                            />
+                        ) : view === 'ladder' ? (
+                            /* ===== F41: TRAINING — il LADDER VERO sul book storico =====
+                               Ordini SIMULATI dal matching engine fedele (taker con price
+                               improvement, maker con coda e volumi reali, bet-delay in-play,
+                               LAPSE che decade alla sospensione). NESSUN denaro reale. */
+                            <div className="space-y-3">
+                                <div className="rounded-xl border border-violet-400/50 bg-violet-500/10 px-3 py-2 flex items-center gap-3 flex-wrap">
+                                    <span className="px-2 py-0.5 rounded-md bg-violet-500 text-white text-[10px] font-black">
+                                        🎓 TRAINING
+                                    </span>
+                                    <span className="text-[11px] text-violet-200"
+                                        title="Fill calcolati dal matching engine sul book registrato: price improvement, coda al tuo prezzo, cap sul volume realmente tradato, bet-delay in-play. Riavvolgere la timeline ricalcola tutto in modo deterministico.">
+                                        ordini SIMULATI sul book storico — nessun denaro reale · bet-delay in-play applicato
+                                    </span>
+                                    <span className="flex-1" />
+                                    <select
+                                        value={trainingMarketId ?? ''}
+                                        onChange={e => setTrainingMarketId(e.target.value || null)}
+                                        aria-label="Mercato del ladder training"
+                                        className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]"
+                                    >
+                                        {replay.markets.map(m => (
+                                            <option key={m.market_id} value={m.market_id}>
+                                                {m.market_name || m.market_type || m.market_id}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        size="sm" variant="outline"
+                                        onClick={() => { trainApiRef.current?.reset(); setTrainingResetTick(t => t + 1); }}
+                                        className="h-7 border-white/20 text-white/80 hover:bg-white/10 text-[11px] font-bold"
+                                        title="Azzera TUTTI gli ordini simulati di questa sessione di training"
+                                    >
+                                        Azzera ordini
+                                    </Button>
+                                </div>
+                                {trainingMarketId && trainApiRef.current && (
+                                    <LadderView
+                                        key={`train:${trainingMarketId}:${trainingResetTick}`}
+                                        marketId={trainingMarketId}
+                                        orderMode="paper"
+                                        sport="calcio"
+                                        ladderSource={trainingSource}
+                                        orderApi={trainApiRef.current}
+                                        fallbackSelections={(replay.markets.find(m => m.market_id === trainingMarketId)?.selections ?? [])
+                                            .map(s => ({ selection_id: s.selection_id, name: s.name ?? `#${s.selection_id}` }))}
+                                    />
+                                )}
+                            </div>
+                        ) : view === 'opps' ? (
                             /* ===== VISTA OPPORTUNITÀ: card validazione + 3 fasce di rischio ===== */
                             <div className="space-y-4">
                                 {validationReport && validationReport.totalOpportunities > 0 && (

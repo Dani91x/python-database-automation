@@ -18,6 +18,7 @@
 //   trd        — volume TRADED a quel prezzo
 //   piq        — Position In Queue (denaro davanti a te)
 //   wom        — Weight Of Money (sbilanciamento back/lay)
+//   ev         — F38: EV per livello dal fair del MOTORE (solo sport con motore)
 export type ColumnKey =
     | 'my_lay'
     | 'avail_back'
@@ -27,7 +28,8 @@ export type ColumnKey =
     | 'pnl'
     | 'trd'
     | 'piq'
-    | 'wom';
+    | 'wom'
+    | 'ev';
 
 // Una colonna del profilo: chiave + se è visibile. L'ORDINE nell'array = ordine
 // di rendering (sinistra→destra).
@@ -53,6 +55,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
     trd: 'TRD',
     piq: 'PIQ',
     wom: 'WOM',
+    ev: 'EV',
 };
 
 // Ordine di DEFAULT delle colonne (layout classico a scaletta: le mie size ai lati,
@@ -64,13 +67,15 @@ export const DEFAULT_COLUMN_ORDER: readonly ColumnKey[] = [
     'price',
     'avail_lay',
     'pnl',
+    'ev',
     'my_back',
     'piq',
     'wom',
 ] as const;
 
-// Colonne visibili di default (le "extra" piq/wom partono nascoste per non affollare).
-const DEFAULT_HIDDEN: ReadonlySet<ColumnKey> = new Set<ColumnKey>(['piq', 'wom']);
+// Colonne visibili di default (le "extra" piq/wom/ev partono nascoste per non affollare;
+// F38: la UI dello sport CON motore — calcio — la accende nel suo profilo iniziale).
+const DEFAULT_HIDDEN: ReadonlySet<ColumnKey> = new Set<ColumnKey>(['piq', 'wom', 'ev']);
 
 // 'price' non può mai essere nascosta né rimossa: è la spina dorsale del ladder.
 export const REQUIRED_COLUMN: ColumnKey = 'price';
