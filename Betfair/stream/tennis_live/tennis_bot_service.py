@@ -27,6 +27,7 @@ import threading
 import time
 from typing import Any, Dict, List
 
+from ..single_instance import acquire_single_instance_lock
 from . import tennis_db
 
 logger = logging.getLogger(__name__)
@@ -106,10 +107,29 @@ def _ensure_loop(stop: threading.Event) -> None:
 
 
 def run() -> None:
-    """Avvia il ponte follow + il runner tennis (che ospita i bot)."""
+    """Avvia il ponte follow + il runner tennis (che ospita i bot).
+
+    FIX CRITICAL doppio runner (2026-07-10): l'app desktop avvia SIA il watchdog
+    (→ ``tennis_runner``) SIA questo servizio, e ``setup_and_run()`` ospita i bot
+    in-process → due framework con GLI STESSI bot = stake DOPPIO. Prima di
+    ospitare si acquisisce il lock di SINGOLA ISTANZA del runner (stessa porta di
+    ``tennis_runner``): se è occupato, un runner è già attivo e ospita lui i bot
+    → in questo ciclo si fa SOLO ensure_follows_for_bots() e si riprova al giro
+    dopo. Se acquisito, il lock resta vivo per tutta la durata dell'hosting.
+    """
     from .tennis_runner import setup_and_run
 
     ensure_follows_for_bots()
+    lock_port = int(os.getenv("TENNIS_RUNNER_LOCK_PORT", "47312"))
+    try:
+        lock = acquire_single_instance_lock(lock_port, "tennis-runner")
+    except SystemExit:
+        logger.info(
+            "[tennis-bot-svc] runner tennis GIÀ attivo (lock 127.0.0.1:%d): "
+            "hosting saltato in questo ciclo (solo ensure-follows), riprovo al giro dopo.",
+            lock_port,
+        )
+        return
     stop = threading.Event()
     t = threading.Thread(target=_ensure_loop, args=(stop,), daemon=True, name="tennis-ensure-follows")
     t.start()
@@ -117,6 +137,10 @@ def run() -> None:
         setup_and_run()
     finally:
         stop.set()
+        try:
+            lock.close()  # rilascia il lock: il runner watchdog può subentrare
+        except OSError:
+            pass
 
 
 def _main() -> None:

@@ -497,6 +497,34 @@ class TennisScalperStrategy(BaseStrategy):
         # (order-book, max_signal_ticks) resta la difesa anti-gap primaria.
         self.point_pressure: bool = False
 
+        # ---- MISSIONE "1 TICK PER FASE" (prodotto tennis) ----
+        # one_tick_per_phase=True: obiettivo 1 green (>=0.05 EUR) PRE-MATCH +
+        # 1 green IN-PLAY per match; a fase verde niente nuovi ingressi in
+        # quella fase; a missione compiuta (entrambe verdi) stop totale.
+        self.one_tick_per_phase: bool = bool(c.get("one_tick_per_phase", False))
+        # inplay_tick_enabled: gamba IN-PLAY della missione. Il backtest di
+        # validazione (11/07, 34 eventi) ha bocciato il tick in-play sul
+        # MATCH_ODDS tennis (1 green/34, coda -13/ciclo non comprimibile:
+        # adverse selection da gap punto-per-punto col delay 3s) → il preset
+        # live lo SPEGNE; il default di classe resta True per compatibilita'
+        # (fuori missione non ha effetto).
+        self.inplay_tick_enabled: bool = bool(c.get("inplay_tick_enabled", True))
+        # runner_filter: "all" | "favorite". Con "favorite" i NUOVI ingressi
+        # avvengono SOLO sul favorito (best-back piu' basso al momento della
+        # valutazione): evita la doppia esposizione correlata sui 2 runner.
+        self.runner_filter: str = str(c.get("runner_filter", "all")).strip().lower()
+        # True quando entrambe le fasi sono verdi (valutato SOLO in missione:
+        # fuori missione i contatori restano diagnostici e non fermano il bot).
+        self.mission_done: bool = False
+        # inplay PRECEDENTE per mercato: rileva la transizione pre-match→in-play
+        # (il gap di apertura puo' lasciare una gamba nuda: si chiude ASAP).
+        self._prev_inplay: Dict[str, bool] = {}
+        # contabilita' di FASE (letta dalla UI: badge missione)
+        self.stats.update({
+            "pnl_prematch": 0.0, "pnl_inplay": 0.0,
+            "greens_prematch": 0, "greens_inplay": 0,
+        })
+
     # ------------------------------------------------------------------ API
     def _emit(self, kind: str, **payload: Any) -> None:
         """Telemetria best-effort: MAI un errore del sink tocca la logica."""
@@ -519,6 +547,77 @@ class TennisScalperStrategy(BaseStrategy):
             s = _Slot()
             self._slots[key] = s
         return s
+
+    # ------------------------------------------------- missione 1-tick-per-fase
+    def _phase_green(self, inplay: bool) -> bool:
+        """True se la fase indicata ha gia' incassato il suo green (>=1)."""
+        key = "greens_inplay" if inplay else "greens_prematch"
+        return int(self.stats.get(key, 0) or 0) >= 1
+
+    def _mission_blocks(self, inplay: bool) -> bool:
+        """True se la missione vieta NUOVI ingressi nella fase corrente:
+        fase gia' verde, oppure gamba in-play disattivata (verdetto backtest
+        11/07: il tick in-play sul MATCH_ODDS tennis non e' catturabile)."""
+        if not self.one_tick_per_phase:
+            return False
+        if inplay and not self.inplay_tick_enabled:
+            return True
+        return self._phase_green(inplay)
+
+    def _on_cycle_closed(self, slot: _Slot, locked: float) -> None:
+        """Contabilita' di FASE di un ciclo CHIUSO (missione one_tick_per_phase).
+
+        La fase e' quella di APERTURA del ciclo (``slot.inplay_cycle``): un ciclo
+        nato pre-match e trascinato oltre il via conta come pre-match. Un ciclo
+        con ``locked >= 0.05`` EUR e' un green di fase. A entrambe le fasi verdi
+        (SOLO in missione) ``mission_done`` diventa True e si alza ``force_flat``:
+        nessun nuovo ingresso e chiusura di ogni residuo (il runner leggera'
+        ``mission_done`` e portera' lo status DB a 'done').
+        """
+        phase = "inplay" if slot.inplay_cycle else "prematch"
+        locked_f = float(locked)
+        self.stats[f"pnl_{phase}"] = float(self.stats.get(f"pnl_{phase}", 0.0)) + locked_f
+        if locked_f >= 0.05:
+            self.stats[f"greens_{phase}"] = int(self.stats.get(f"greens_{phase}", 0)) + 1
+            if self.one_tick_per_phase and int(self.stats[f"greens_{phase}"]) == 1:
+                self._emit("mission", phase=phase, locked=round(locked_f, 4))
+        # missione compiuta = tick pre-match + (tick in-play SE la gamba
+        # in-play e' abilitata; disabilitata → basta il pre-match).
+        inplay_ok = (
+            not self.inplay_tick_enabled
+            or int(self.stats.get("greens_inplay", 0)) >= 1
+        )
+        if (
+            self.one_tick_per_phase
+            and not self.mission_done
+            and int(self.stats.get("greens_prematch", 0)) >= 1
+            and inplay_ok
+        ):
+            self.mission_done = True
+            # force-flat: blocca ogni nuovo ingresso (oltre al gating di fase)
+            # e chiude/cancella ogni residuo con il percorso provato del near-KO.
+            self.force_flat = True
+            self._emit("mission", phase="done")
+
+    def _favourite_sel(self, market_book: Any) -> Tuple[Optional[int], bool]:
+        """(selection_id del favorito, dati_completi) per ``runner_filter``.
+
+        Favorito = runner ACTIVE col best-back piu' BASSO al momento della
+        valutazione. Se un runner ACTIVE non ha best-back il confronto e'
+        ambiguo -> ``(None, False)``: fail-safe, nessun nuovo ingresso.
+        """
+        best_sel: Optional[int] = None
+        best_bb: Optional[float] = None
+        for r in market_book.runners:
+            if getattr(r, "status", None) != "ACTIVE":
+                continue
+            ex = getattr(r, "ex", None)
+            bb = get_price(ex.available_to_back, 0) if ex is not None else None
+            if not bb:
+                return None, False
+            if best_bb is None or bb < best_bb:
+                best_bb, best_sel = float(bb), int(r.selection_id)
+        return best_sel, True
 
     # ------------------------------------------------------------ flumine hook
     def check_market_book(self, market: Any, market_book: Any) -> bool:
@@ -571,6 +670,24 @@ class TennisScalperStrategy(BaseStrategy):
             return
         mid = market_book.market_id
         inplay = bool(getattr(market_book, "inplay", False))
+        # TRANSIZIONE PRE-MATCH → IN-PLAY (bug critico: il gap di apertura puo'
+        # lasciare una gamba nuda). Al flip False→True, per OGNI ciclo nato
+        # pre-match ancora aperto: cancella gli ordini resting inevasi e avvia
+        # SUBITO il flatten della parte matchata (chiusura ASAP, senza aspettare
+        # che lo stop scatti sul book post-gap). Vale SEMPRE, non solo in missione.
+        prev_inplay = self._prev_inplay.get(mid)
+        self._prev_inplay[mid] = inplay
+        if inplay and prev_inplay is False:
+            for (mid_, _sid), s_ in list(self._slots.items()):
+                if mid_ != mid:
+                    continue
+                if not s_.inplay_cycle and s_.status not in (IDLE, DONE):
+                    for o in (s_.entry, s_.entry_back, s_.entry_lay,
+                              s_.close, s_.next_entry):
+                        self._cancel_if_live(market, o)
+                    self._begin_flatten(s_)
+                    self._emit("ko_transition_flatten", market_id=mid,
+                               selection_id=int(_sid))
         if self.inplay_close_now and inplay:
             for (mid_, sid_), s_ in list(self._slots.items()):
                 if mid_ != market.market_id:
@@ -606,6 +723,17 @@ class TennisScalperStrategy(BaseStrategy):
         # posizioni gia' aperte restano gestite da green/stop normali.
         if self.point_pressure:
             no_entry = True
+        # MISSIONE 1-tick-per-fase: fase corrente gia' verde → nessun nuovo
+        # ingresso in questa fase. Riusa il percorso provato di ``no_entry``
+        # (blocco A2: le quote inevase vengono ritirate); i cicli aperti si
+        # gestiscono normalmente fino alla chiusura.
+        if self._mission_blocks(inplay):
+            no_entry = True
+        # RUNNER FILTER "favorite": favorito calcolato UNA volta per book.
+        fav_sel: Optional[int] = None
+        fav_ok = True
+        if self.runner_filter == "favorite":
+            fav_sel, fav_ok = self._favourite_sel(market_book)
         for runner in market_book.runners:
             if getattr(runner, "status", None) != "ACTIVE":
                 continue
@@ -755,6 +883,17 @@ class TennisScalperStrategy(BaseStrategy):
             if slot.status == IDLE:
                 # GAP-GUARD PUNTEGGIO: nessun nuovo ingresso su un punto che pesa
                 if self.point_pressure:
+                    continue
+                # MISSIONE: fase gia' verde → niente nuovi ingressi in fase
+                if self._mission_blocks(inplay):
+                    continue
+                # RUNNER FILTER "favorite": nuovi ingressi SOLO sul favorito.
+                # fav_ok False = best-back mancante su un runner → fail-safe,
+                # niente ingressi su nessuno in questo giro. Le posizioni
+                # aperte sugli altri runner restano gestite normalmente.
+                if self.runner_filter == "favorite" and (
+                    not fav_ok or int(runner.selection_id) != fav_sel
+                ):
                     continue
                 if inplay and not self.allow_inplay:
                     continue
@@ -1108,14 +1247,21 @@ class TennisScalperStrategy(BaseStrategy):
             sb, ob, sl, ol = self._matched_position(eb, el)
             net_win = sb * (ob - 1.0) - sl * (ol - 1.0)
             net_lose = sl - sb
-            if abs(net_win - net_lose) <= _EPS:
+            # FIX 11/07 (validazione): tolleranza 0.02 come il monitor DONE e
+            # il percorso scalp — con le size arrotondate a 2 decimali l'_EPS
+            # (1e-9) non veniva MAI soddisfatto e il ciclo finiva in un flatten
+            # infinito da centesimi (deadlock visto nel backtest paper).
+            # locked = worst-case dei due esiti (mai l'esito migliore).
+            if abs(net_win - net_lose) <= 0.02:
+                locked = min(net_win, net_lose)
                 slot.status = DONE
                 slot.cycles += 1
                 self.stats["cycles"] += 1
                 self.stats["roundtrips"] += 1
-                self.stats["pnl_locked"] += net_lose
-                self._emit("cycle", esito="roundtrip", locked=round(net_lose, 4),
+                self.stats["pnl_locked"] += locked
+                self._emit("cycle", esito="roundtrip", locked=round(locked, 4),
                            selection_id=getattr(eb, "selection_id", None))
+                self._on_cycle_closed(slot, locked)
             else:
                 # roundtrip completato ma NON equalizzato (o residuo che puo'
                 # perdere): green/chiusura GARANTITA -> ogni ciclo finisce
@@ -1146,7 +1292,30 @@ class TennisScalperStrategy(BaseStrategy):
                 slot.entry, slot.entry_side = eb, "BACK"
                 slot.entry_back = slot.entry_lay = None
                 self._open_lock(market, slot, now, eb, best_back, best_lay)
-            return  # parziale ancora vivo: lascia lavorare entrambe le gambe
+                return
+            # FIX 11/07 (validazione): parziale col resting ANCORA VIVO =
+            # posizione SENZA stop (visto -13 EUR nel backtest: gamba parziale
+            # esposta 27 min in trend). Due guardie, poi percorso LOCKING
+            # standard (close + stop sul prezzo d'ingresso):
+            #   a) stop avverso: book mosso CONTRO la parte matchata di
+            #      >= stop_ticks (stessa semantica del LOCKING: BACK avverso
+            #      = best_back SALITO oltre il nostro prezzo);
+            #   b) TTL: oltre entry_ttl_ms il parziale non e' piu' un maker
+            #      in attesa, e' un rischio aperto.
+            adverse_pb = None
+            if best_back is not None and pb0 > 0 and best_back > pb0 + _EPS:
+                adverse_pb = ticks_between(pb0, best_back)
+            ttl_hit = (
+                slot.t_quote is not None
+                and now - slot.t_quote > self.entry_ttl_ms
+            )
+            if (adverse_pb is not None and adverse_pb >= self.stop_ticks) or ttl_hit:
+                self._cancel_if_live(market, eb)
+                self._cancel_if_live(market, el)
+                slot.entry, slot.entry_side = eb, "BACK"
+                slot.entry_back = slot.entry_lay = None
+                self._open_lock(market, slot, now, eb, best_back, best_lay)
+            return  # parziale vivo entro TTL e non avverso: lascia lavorare
         if ml > 0:
             done = not self._has_live(el)
             if done and eb is not None and abs(ml - float(
@@ -1160,6 +1329,22 @@ class TennisScalperStrategy(BaseStrategy):
                 slot.status = LOCKING
                 return
             if done:
+                self._cancel_if_live(market, eb)
+                slot.entry, slot.entry_side = el, "LAY"
+                slot.entry_back = slot.entry_lay = None
+                self._open_lock(market, slot, now, el, best_back, best_lay)
+                return
+            # FIX 11/07: come sopra, per la gamba LAY parzialmente riempita
+            # (LAY avverso = best_lay SCESO sotto il nostro prezzo).
+            adverse_pl = None
+            if best_lay is not None and pl0 > 0 and best_lay < pl0 - _EPS:
+                adverse_pl = ticks_between(best_lay, pl0)
+            ttl_hit = (
+                slot.t_quote is not None
+                and now - slot.t_quote > self.entry_ttl_ms
+            )
+            if (adverse_pl is not None and adverse_pl >= self.stop_ticks) or ttl_hit:
+                self._cancel_if_live(market, el)
                 self._cancel_if_live(market, eb)
                 slot.entry, slot.entry_side = el, "LAY"
                 slot.entry_back = slot.entry_lay = None
@@ -1373,6 +1558,7 @@ class TennisScalperStrategy(BaseStrategy):
                     self.stats["pnl_locked"] += nl0
                     self._emit("cycle", esito="scalp", locked=round(nl0, 4),
                                selection_id=getattr(slot.entry, "selection_id", None))
+                    self._on_cycle_closed(slot, nl0)
                 return
             # ---- gestione avversita' basata sul PREZZO D'INGRESSO ----
             sb, ob, sl, ol = self._matched_position(slot.entry)
@@ -1566,14 +1752,20 @@ class TennisScalperStrategy(BaseStrategy):
                   slot.next_entry):
             self._cancel_if_live(market, o)
         net_win, net_lose = self._net_position(slot)
-        if abs(net_win - net_lose) < _EPS:
+        # FIX 11/07 (validazione): tolleranza 0.02 come il monitor DONE — con
+        # size a 2 decimali l'_EPS non veniva mai soddisfatto e lo slot restava
+        # in FLATTENING per sempre (ping-pong di ordini da centesimi, cicli MAI
+        # contabilizzati: la missione non poteva completarsi in paper).
+        if abs(net_win - net_lose) <= 0.02:
+            locked = min(net_win, net_lose)
             slot.status = DONE
             self.stats["flattens"] += 1
-            self.stats["pnl_locked"] += net_lose
-            self._emit("flatten_done", locked=round(net_lose, 4))
+            self.stats["pnl_locked"] += locked
+            self._emit("flatten_done", locked=round(locked, 4))
+            self._on_cycle_closed(slot, locked)
             if (
                 self.cycle_loss_breaker > 0
-                and net_lose <= -self.cycle_loss_breaker
+                and locked <= -self.cycle_loss_breaker
                 and slot.inplay_cycle
                 and not self.force_flat
             ):
@@ -1621,24 +1813,34 @@ class TennisScalperStrategy(BaseStrategy):
             slot.flatten_orders.append(fo)
             if now is not None:
                 slot.t_last_flat = int(now)
-        elif self.size_step > 0 or self.live_min_bet > 0 or self.exact_exits:
-            # green sotto il minimo piazzabile: se il residuo NON puo' perdere
-            # piu' di pochi centesimi, accettalo UNA VOLTA (flag) e chiudi il
-            # ciclo. Senza flag il monitor DONE rivedrebbe l'esposizione != 0
-            # e riaprirebbe il flatten ad ogni book update (loop, visto live).
+        else:
+            # flatten NON piazzabile (size sotto il minimo/rounding, o book
+            # monco): se il residuo NON puo' perdere piu' di pochi centesimi,
+            # accettalo UNA VOLTA (flag) e chiudi il ciclo. Senza flag il
+            # monitor DONE rivedrebbe l'esposizione != 0 e riaprirebbe il
+            # flatten ad ogni book update (loop, visto live).
+            # FIX 11/07 (validazione): il ramo era gated su size_step>0/
+            # live_min_bet>0/exact_exits — ma fuori LIVE il runner li azzera,
+            # quindi in sim/PAPER il residuo non veniva MAI accettato (slot
+            # bloccato per sempre). L'accettazione vale in OGNI modalita'.
             if min(net_win, net_lose) >= -0.25:
                 slot.status = DONE
                 if not slot.residual_ok:
                     slot.residual_ok = True
                     self._emit("micro_residuo_accettato",
                                nw=round(net_win, 3), nl=round(net_lose, 3))
-        elif (
-            best_back is None and best_lay is None and slot.flat_tries > 50
-        ):
-            # solo con book DAVVERO vuoto e dopo molti tentativi: esci dal
-            # loop (il monitor dello stato DONE riprovera' se l'esposizione
-            # non e' piatta). MAI arrendersi con prezzi disponibili.
-            slot.status = DONE
+                    # contabilita': il residuo accettato entra in pnl_locked
+                    # (loss cap/telemetria oneste) e nella fase col FLOOR
+                    # garantito (min sui due esiti), mai l'esito migliore.
+                    self.stats["pnl_locked"] += min(net_win, net_lose)
+                    self._on_cycle_closed(slot, min(net_win, net_lose))
+            elif (
+                best_back is None and best_lay is None and slot.flat_tries > 50
+            ):
+                # solo con book DAVVERO vuoto e dopo molti tentativi: esci dal
+                # loop (il monitor dello stato DONE riprovera' se l'esposizione
+                # non e' piatta). MAI arrendersi con prezzi disponibili.
+                slot.status = DONE
 
     def _flatten(
         self, market: Any, slot: _Slot,

@@ -122,6 +122,11 @@ function spawnRunner(label, args) {
         // desktop: i runner NON escono quando non ci sono eventi seguiti — restano
         // in attesa (canale locale + board vivi) finché non clicchi "Segui live".
         LIVE_RUNNER_KEEP_ALIVE: '1',
+        // MODALITÀ ORDINI TENNIS: l'app nasce in PAPER (ordini SIMULATI, mai soldi
+        // veri) se l'ambiente non specifica altro. Col vecchio default OFF il
+        // worker ordini restava spento e i bot armati non piazzavano NEMMENO
+        // ordini paper. MAI 'LIVE' di default: il LIVE va scelto esplicitamente.
+        TENNIS_LIVE_ORDER_MODE: process.env.TENNIS_LIVE_ORDER_MODE || 'PAPER',
     };
     const child = spawn(PYTHON, args, {
         cwd: repoRoot,

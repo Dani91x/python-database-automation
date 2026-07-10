@@ -32,9 +32,12 @@ class _Market:
 
 
 class _MB:
-    def __init__(self, runners, tm=100000.0, status="OPEN"):
+    def __init__(self, runners, tm=100000.0, status="OPEN", inplay=True):
         self.runners = runners; self.total_matched = tm
         self.status = status; self.market_id = "1.1"
+        # tesi FLB validata IN-PLAY (require_inplay default True): i book dei
+        # test di ingresso sono in-play; il gate pre-match ha un test dedicato.
+        self.inplay = inplay
 
 
 def _make(**p):
@@ -101,3 +104,18 @@ def test_liability_is_small_at_short_odds():
     # a 1.10 con stake 2: liability = 2*0.10 = 0.20 (asimmetria FLB)
     s = _make(lay_max=1.10, stake=2.0)
     assert round(s.stake * (1.10 - 1.0), 2) == 0.20
+
+
+def test_require_inplay_blocks_prematch_entry():
+    # default require_inplay=True: nessun ingresso su book PRE-MATCH
+    s = _make(lay_max=1.10, min_lay_size=5.0)
+    mb = _MB([_Runner(111, (1.09, 200), (1.10, 200), ltp=1.10)], inplay=False)
+    s.process_market_book(_Market(), mb)
+    assert s.stats["entries"] == 0
+
+
+def test_require_inplay_off_allows_prematch_entry():
+    s = _make(lay_max=1.10, min_lay_size=5.0, require_inplay=False)
+    mb = _MB([_Runner(111, (1.09, 200), (1.10, 200), ltp=1.10)], inplay=False)
+    s.process_market_book(_Market(), mb)
+    assert s.stats["entries"] == 1

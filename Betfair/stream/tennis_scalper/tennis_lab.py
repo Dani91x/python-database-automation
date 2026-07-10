@@ -156,6 +156,17 @@ class TennisLabStrategy(BaseStrategy):
         except Exception:  # noqa: BLE001
             pass
 
+    def _cancel_entry_orders(self, market: Any, st: Dict[str, Any]) -> None:
+        """Cancella entry + ordini della PIRAMIDE (adds) ancora vivi.
+
+        Fix 2026-07-10: gli add non venivano salvati né cancellati a
+        stop/green/lock_trail — un add inevaso poteva riempirsi DOPO la
+        chiusura riaprendo esposizione direzionale non gestita.
+        """
+        self._cancel(market, st.get("order"))
+        for o in st.get("adds") or []:
+            self._cancel(market, o)
+
     def _green(self, market: Any, sel: int, price: float, frac: float) -> Optional[float]:
         b, ba, l, la = self._matched(market, sel)
         nw, nl = self._net(b, ba, l, la)
@@ -229,7 +240,7 @@ class TennisLabStrategy(BaseStrategy):
                     self._state[key] = {"state": OPEN, "entry": price, "order": o,
                                         "wait": 0, "greened": False, "peak": 0.0,
                                         "locked_armed": False, "units": 1,
-                                        "last_add": price}
+                                        "last_add": price, "adds": []}
                     self.stats["entries"] += 1
                 self._pending.pop(key, None)
             return
@@ -299,7 +310,7 @@ class TennisLabStrategy(BaseStrategy):
         if (b + l) <= _EPS:
             st["wait"] += 1
             if st["wait"] > self.entry_timeout:
-                self._cancel(market, st.get("order"))
+                self._cancel_entry_orders(market, st)
                 self._state[key] = {"state": DONE}
             return
 
@@ -318,7 +329,10 @@ class TennisLabStrategy(BaseStrategy):
             adverse = (self.side == "LAY" and add_price and add_price < last) or \
                       (self.side == "BACK" and add_price and add_price > last)
             if adverse and self._ticks(last, add_price) >= self.add_spacing_ticks:
-                self._place(market, sel, self.side, add_price, self.stake)
+                add_o = self._place(market, sel, self.side, add_price, self.stake)
+                if add_o is not None:
+                    # tracciato: va cancellato in OGNI percorso di uscita
+                    st.setdefault("adds", []).append(add_o)
                 st["units"] = st.get("units", 1) + 1
                 st["last_add"] = add_price
                 self.stats["adds"] += 1
@@ -331,7 +345,7 @@ class TennisLabStrategy(BaseStrategy):
             if adverse and adverse >= self.stop_ticks:
                 self._green(market, sel, close_price, 1.0)
                 self.stats["stops"] += 1
-                self._cancel(market, st.get("order"))
+                self._cancel_entry_orders(market, st)
                 self._state[key] = {"state": DONE}
                 return
 
@@ -344,7 +358,7 @@ class TennisLabStrategy(BaseStrategy):
                 self._green(market, sel, close_price, 1.0)
                 st["greened"] = True
                 self.stats["greens"] += 1
-                self._cancel(market, st.get("order"))
+                self._cancel_entry_orders(market, st)
                 self._state[key] = {"state": DONE}
                 return
 
@@ -358,7 +372,7 @@ class TennisLabStrategy(BaseStrategy):
             if st["locked_armed"] and (st["peak"] - lockable) >= self.trail_give_back:
                 # ritraccia oltre il give-back -> chiudi e incassa
                 self._green(market, sel, close_price, 1.0)
-                self._cancel(market, st.get("order"))
+                self._cancel_entry_orders(market, st)
                 self._state[key] = {"state": DONE}
                 return
         # "hold" / residuo: nessuna azione, tiene fino al settlement

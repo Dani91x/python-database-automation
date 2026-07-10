@@ -196,8 +196,17 @@ class TennisSwingStrategy(BaseStrategy):
             return
 
         if (b+l) <= _EPS:
+            # entry non riempita: timeout in SECONDI di publish_time (fix
+            # 2026-07-10, come tmax) — fallback a 40 update solo senza pt.
             tr["wait"] = tr.get("wait", 0)+1
-            if tr["wait"] > 40:  # entry non riempita -> cancella
+            pt0 = getattr(mb, "publish_time_epoch", None)
+            t00 = tr.get("t0")
+            entry_timed_out = (
+                (pt0 is not None and t00 is not None
+                 and (pt0 - t00) / 1000.0 >= 40.0)
+                or ((pt0 is None or t00 is None) and tr["wait"] > 40)
+            )
+            if entry_timed_out:
                 self._cancel(market, tr.get("order"))
                 self._tr.pop(mid, None)
             return

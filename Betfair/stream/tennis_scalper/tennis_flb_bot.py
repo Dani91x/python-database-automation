@@ -63,7 +63,13 @@ class TennisFLBStrategy(BaseStrategy):
         self.green_frac: float = float(c.get("green_frac", 0.5))  # quota greenata (hybrid)
         self.min_matched: float = float(c.get("min_matched", 10_000.0))
         self.min_lay_size: float = float(c.get("min_lay_size", 5.0))
-        self.entry_timeout: int = int(c.get("entry_timeout", 40))
+        # TIMEOUT ENTRY in SECONDI di publish_time (fix 2026-07-10 live≠backtest:
+        # prima contava gli UPDATE del book — in live sono molti al secondo →
+        # l'entry moriva in pochi secondi invece dei ~40s attesi). Nome storico
+        # mantenuto: 40 update → 40 s equivalenti (fallback a update senza pt).
+        self.entry_timeout: float = float(c.get("entry_timeout", 40))
+        # la tesi FLB e' validata IN-PLAY: di default nessun ingresso pre-match.
+        self.require_inplay: bool = bool(c.get("require_inplay", True))
         self.dry_run: bool = bool(c.get("dry_run", False))
 
         # stato runtime
@@ -134,22 +140,41 @@ class TennisFLBStrategy(BaseStrategy):
         except Exception:  # noqa: BLE001
             pass
 
-    def _green(self, market: Any, sel: int, price: float, frac: float) -> float:
-        """Green-up (parziale se frac<1). Ritorna il profitto bloccato stimato."""
+    def _green(self, market: Any, sel: int, price: float,
+               frac: float) -> Tuple[float, Optional[Any]]:
+        """Green-up (parziale se frac<1). Ritorna (locked stimato, ordine hedge).
+
+        Il locked e' REALE solo quando l'hedge risulta matched: l'ordine viene
+        ritornato per poterlo sorvegliare/ripiazzare (fix 2026-07-10: prima
+        l'hedge non era tracciato e un lapse lasciava la posizione scoperta
+        con ``greened=True`` bugiardo in telemetria).
+        """
         b, ba, l, la = self._matched(market, sel)
         nw, nl = self._net(b, ba, l, la)
         g = compute_green(nw, nl, price)
         if g is None:
-            return min(nw, nl)
+            return min(nw, nl), None
         gside, gsize, locked = g
-        self._place(market, sel, gside, get_nearest_price(price), gsize * frac)
-        return float(locked)
+        o = self._place(market, sel, gside, get_nearest_price(price), gsize * frac)
+        return float(locked), o
+
+    # stati flumine di un ordine ancora VIVO sul book (il resto e' terminale)
+    _LIVE_ORDER_STATUSES = frozenset(
+        {"PENDING", "CANCELLING", "UPDATING", "REPLACING", "EXECUTABLE"})
+
+    @classmethod
+    def _order_alive(cls, order: Any) -> bool:
+        st = getattr(order, "status", None)
+        name = getattr(st, "name", None) or (str(st) if st is not None else "")
+        return name in cls._LIVE_ORDER_STATUSES
 
     # -------------------------------------------------------------- main loop
     def process_market_book(self, market: Any, mb: Any) -> None:
         if float(getattr(mb, "total_matched", 0.0) or 0.0) < self.min_matched:
             return
         mid = mb.market_id
+        pt = getattr(mb, "publish_time_epoch", None)
+        inplay = bool(getattr(mb, "inplay", False))
         for r in mb.runners:
             if getattr(r, "status", None) != "ACTIVE":
                 continue
@@ -166,13 +191,18 @@ class TennisFLBStrategy(BaseStrategy):
             st = self._pos_state.get(key)
 
             if st and st["state"] in (PENDING, OPEN):
-                self._manage(market, sel, key, st, bb, bl)
+                self._manage(market, sel, key, st, bb, bl, pt)
                 continue
 
             # ri-arma quando il prezzo e' RIUSCITO dalla zona estrema
             if self._armed.get(key, True) is False:
                 if bl > self.lay_max * self.rearm_mult:
                     self._armed[key] = True
+                continue
+
+            # gate IN-PLAY: la tesi FLB e' validata in-play — pre-match niente
+            # ingressi (le posizioni aperte restano gestite sopra).
+            if self.require_inplay and not inplay:
                 continue
 
             # INGRESSO: laya il favorito estremo (best-lay <= soglia)
@@ -182,7 +212,8 @@ class TennisFLBStrategy(BaseStrategy):
                 if o is None and not self.dry_run:
                     continue
                 self._pos_state[key] = {"state": OPEN, "entry": entry,
-                                        "order": o, "wait": 0, "greened": False}
+                                        "order": o, "wait": 0, "greened": False,
+                                        "t0": pt}
                 self._armed[key] = False
                 self.stats["entries"] += 1
                 self._emit("entry", sel=sel, side="LAY", price=entry,
@@ -190,16 +221,62 @@ class TennisFLBStrategy(BaseStrategy):
                 logger.info("[FLB] LAY favorito estremo sel=%s @%.2f (liab %.2f)",
                             sel, entry, self.stake * (entry - 1.0))
 
+    def _confirm_green(self, sel: int, st: Dict[str, Any]) -> None:
+        """Telemetria del green CONFERMATO: solo a hedge completamente matched."""
+        st["green_locked"] = True
+        self.stats["greens"] += 1
+        self._emit("green", sel=sel, price=st.get("green_price"),
+                   frac=st.get("green_fr"), locked=st.get("green_est"))
+        logger.info("[FLB] GREEN matched sel=%s @%s frac=%s locked~%s",
+                    sel, st.get("green_price"), st.get("green_fr"),
+                    st.get("green_est"))
+
     def _manage(self, market: Any, sel: int, key: Tuple[str, int],
-                st: Dict[str, Any], bb: float, bl: float) -> None:
+                st: Dict[str, Any], bb: float, bl: float,
+                pt: Optional[int] = None) -> None:
         b, ba, l, la = self._matched(market, sel)
         if (b + l) <= _EPS:
-            # entry LAY non ancora riempita: timeout -> cancella
+            # entry LAY non ancora riempita: timeout in SECONDI di publish_time
+            # (fallback al conteggio update SOLO se il publish_time manca).
             st["wait"] = int(st.get("wait", 0)) + 1
-            if st["wait"] > self.entry_timeout:
+            t0 = st.get("t0")
+            timed_out = (
+                pt is not None and t0 is not None
+                and (pt - t0) / 1000.0 >= self.entry_timeout
+            ) or ((pt is None or t0 is None) and st["wait"] > self.entry_timeout)
+            if timed_out:
                 self._cancel(market, st.get("order"))
                 self._pos_state[key] = {"state": DONE}
                 self._emit("entry_timeout", sel=sel)
+            return
+
+        # --- sorveglianza dell'HEDGE di green (fix 2026-07-10: prima non era
+        # tracciato: greened=True fisso anche con hedge lapsed = scoperti) ---
+        if st.get("greened") and not st.get("green_locked"):
+            go = st.get("green_order")
+            if go is None:
+                # dry-run o posizione gia' pari: nulla da sorvegliare
+                self._confirm_green(sel, st)
+                if self.exit_mode == "green":
+                    self._pos_state[key] = {"state": DONE}
+                return
+            rem = float(getattr(go, "size_remaining", 0.0) or 0.0)
+            if rem <= _EPS:
+                # hedge completamente matched → il locked e' REALE
+                self._confirm_green(sel, st)
+                if self.exit_mode == "green":
+                    self._pos_state[key] = {"state": DONE}
+            elif not self._order_alive(go):
+                # hedge MORTO (lapsed/cancelled/violation) con residuo: si
+                # ripiazza la size residua al touch corrente — best-effort,
+                # al piu' UN retry per book update.
+                gside = (getattr(go, "side", "") or "").upper() or "BACK"
+                px = bb if gside == "BACK" else bl
+                o2 = self._place(market, sel, gside, get_nearest_price(px), rem)
+                if o2 is not None:
+                    st["green_order"] = o2
+                    self._emit("green_replaced", sel=sel, side=gside,
+                               size=round(rem, 2), price=px)
             return
 
         entry = st["entry"]
@@ -208,21 +285,23 @@ class TennisFLBStrategy(BaseStrategy):
         if self.exit_mode in ("green", "hybrid") and not st["greened"] \
                 and up and up >= self.green_ticks:
             frac = 1.0 if self.exit_mode == "green" else self.green_frac
-            locked = self._green(market, sel, bb, frac)
+            locked, go = self._green(market, sel, bb, frac)
             st["greened"] = True
-            self.stats["greens"] += 1
-            self._emit("green", sel=sel, price=bb, frac=frac, locked=round(locked, 3))
-            logger.info("[FLB] GREEN swing sel=%s @%.2f frac=%.1f locked~%.3f",
+            st["green_order"] = go
+            st["green_locked"] = False
+            st["green_price"] = bb
+            st["green_fr"] = frac
+            st["green_est"] = round(float(locked), 3)
+            # telemetria di PIAZZAMENTO: il "green" vero arriva a hedge matched
+            self._emit("green_placed", sel=sel, price=bb, frac=frac,
+                       locked_est=round(float(locked), 3))
+            logger.info("[FLB] GREEN piazzato sel=%s @%.2f frac=%.1f locked~%.3f",
                         sel, bb, frac, locked)
-            if self.exit_mode == "green":
-                self._cancel(market, st.get("order"))
-                self._pos_state[key] = {"state": DONE}
-            else:
-                # "hybrid" (fix 2026-07-09): la parte MATCHED residua resta hold fino
-                # al settlement, ma il RESTO INEVASO dell'entry LAY va cancellato:
-                # un fill successivo al green riaprirebbe esposizione OLTRE la
-                # frazione dichiarata (green_frac), falsando il residuo greened.
-                self._cancel(market, st.get("order"))
+            # ENTRAMBE le modalita' (fix 2026-07-09): il resto INEVASO dell'entry
+            # LAY va cancellato — un fill successivo riaprirebbe esposizione
+            # oltre la frazione dichiarata. In "green" lo stato passa a DONE
+            # SOLO quando l'hedge risulta matched (vedi sorveglianza sopra).
+            self._cancel(market, st.get("order"))
         # "hold" / residuo hybrid: nessuno stop, si tiene fino alla chiusura mercato
 
     def process_closed_market(self, market: Any, mb: Any) -> None:

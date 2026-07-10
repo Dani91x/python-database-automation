@@ -54,6 +54,55 @@ def _is_limit(ex) -> bool:
     return any(m in str(ex) for m in LIMIT_MARKERS)
 
 
+def _is_stmt_timeout(ex) -> bool:
+    """Statement timeout Postgres (57014): quasi sempre ATTESA DI LOCK su
+    betfair_market_odds (worker quote / stream / run appesa) piu' che scansione
+    lenta — la tabella e' piccola. Ritentabile con backoff."""
+    s = str(ex)
+    return "57014" in s or "statement timeout" in s.lower()
+
+
+def _delete_with_retry(sb, filters, *, what, retries=6, base_delay=1.5):
+    """DELETE su betfair_market_odds resiliente a lock/timeout (57014).
+    Ritenta con backoff lineare: se un altro processo tiene il lock, di norma
+    lo rilascia entro pochi secondi. Sui limiti Betfair NON c'entra (e' solo DB).
+    Rilancia l'ultima eccezione se non e' un timeout o se esauriamo i tentativi."""
+    last = None
+    for attempt in range(1, retries + 1):
+        try:
+            q = sb.table("betfair_market_odds").delete()
+            for col, val in filters:
+                q = q.eq(col, val)
+            return q.execute()
+        except Exception as ex:  # noqa: BLE001
+            last = ex
+            if not _is_stmt_timeout(ex) or attempt == retries:
+                raise
+            wait = base_delay * attempt
+            print(f"  [retry {attempt}/{retries}] DELETE {what}: timeout/lock DB, "
+                  f"ritento tra {wait:.1f}s...")
+            time.sleep(wait)
+    raise last  # difensivo: non dovrebbe mai arrivarci
+
+
+def _insert_with_retry(sb, rows, *, what, retries=6, base_delay=1.5):
+    """INSERT su betfair_market_odds resiliente a lock/timeout (57014).
+    Stessa logica di _delete_with_retry: ritenta con backoff lineare."""
+    last = None
+    for attempt in range(1, retries + 1):
+        try:
+            return sb.table("betfair_market_odds").insert(rows).execute()
+        except Exception as ex:  # noqa: BLE001
+            last = ex
+            if not _is_stmt_timeout(ex) or attempt == retries:
+                raise
+            wait = base_delay * attempt
+            print(f"  [retry {attempt}/{retries}] INSERT {what}: timeout/lock DB, "
+                  f"ritento tra {wait:.1f}s...")
+            time.sleep(wait)
+    raise last  # difensivo
+
+
 def best_levels(arr, n=3):
     return [{"price": x.get("price"), "size": x.get("size")} for x in (arr or [])[:n]]
 
@@ -128,8 +177,15 @@ def main():
 
     # PURGE quote di oggi: SEMPRE. La run riparte pulita (la precedente aveva
     # abbinamenti errati). Niente resume parziale -> niente mix stale+fresh.
-    sb.table("betfair_market_odds").delete().eq("run_date", today).execute()
-    print(f"[purge] cancellate tutte le quote run_date={today}")
+    # NON deve MAI bloccare la run: se la purge globale va in lock/timeout DB, si
+    # prosegue lo stesso -> ogni fixture viene ripulita per-fixture PRIMA di scrivere
+    # (piu' sotto). Eventuali righe stale di fixture non piu' matchate oggi verranno
+    # rimosse alla prossima run riuscita.
+    try:
+        _delete_with_retry(sb, [("run_date", today)], what=f"purge run_date={today}")
+        print(f"[purge] cancellate tutte le quote run_date={today}")
+    except Exception as ex:  # noqa: BLE001
+        print(f"[purge] NON riuscita ({str(ex)[:120]}) -> proseguo con purge per-fixture.")
 
     written = 0
     written_fids = set()
@@ -166,58 +222,68 @@ def main():
                 print(f"  [WARN] fixture {fid} gia' scritto in questa run: salto (anti-sovrascrittura).")
                 continue
 
-            cats = cats_by_event.get(eid, [])
+            # Ogni fixture e' ISOLATA: un errore qui (rete, dati, DB) NON deve mai
+            # fermare la run -> log e passa alla prossima. UNICA eccezione: il limite
+            # Betfair, che propaga per fermarsi PULITI (niente ban, niente retry-storm).
+            try:
+                cats = cats_by_event.get(eid, [])
 
-            meta = {}
-            mids = []
-            for mk in cats:
-                mid = mk["marketId"]
-                mids.append(mid)
-                meta[mid] = {"name": mk["marketName"],
-                             "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
-                                         for r in mk.get("runners", [])}}
+                meta = {}
+                mids = []
+                for mk in cats:
+                    mid = mk["marketId"]
+                    mids.append(mid)
+                    meta[mid] = {"name": mk["marketName"],
+                                 "runners": {r["selectionId"]: (r.get("runnerName", "?"), r.get("sortPriority"))
+                                             for r in mk.get("runners", [])}}
 
-            books = []
-            for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 195 < 200
-                try:
-                    books += c.list_market_book(mids[i:i + BATCH]) or []
-                except Exception as ex:
-                    if _is_limit(ex):
-                        raise BetfairLimitHit(str(ex))
-                    raise
-                time.sleep(REQ_DELAY)
+                books = []
+                for i in range(0, len(mids), BATCH):  # peso = BATCH*5 = 195 < 200
+                    try:
+                        books += c.list_market_book(mids[i:i + BATCH]) or []
+                    except Exception as ex:
+                        if _is_limit(ex):
+                            raise BetfairLimitHit(str(ex))
+                        raise
+                    time.sleep(REQ_DELAY)
 
-            rows = []
-            for b in books:
-                mm = meta.get(b["marketId"])
-                if not mm:
+                rows = []
+                for b in books:
+                    mm = meta.get(b["marketId"])
+                    if not mm:
+                        continue
+                    for r in b.get("runners", []):
+                        rn, sp = mm["runners"].get(r["selectionId"], ("?", None))
+                        ex = r.get("ex", {})
+                        rows.append({
+                            "fixture_id": fid, "market_name": mm["name"], "selection": rn,
+                            "sort_priority": sp, "market_id": b["marketId"], "run_date": today,
+                            "back": best_levels(ex.get("availableToBack")),
+                            "lay": best_levels(ex.get("availableToLay")),
+                        })
+                if not rows:
+                    print(f"  [skip] '{name}' (fid {fid}): nessuna quota")
                     continue
-                for r in b.get("runners", []):
-                    rn, sp = mm["runners"].get(r["selectionId"], ("?", None))
-                    ex = r.get("ex", {})
-                    rows.append({
-                        "fixture_id": fid, "market_name": mm["name"], "selection": rn,
-                        "sort_priority": sp, "market_id": b["marketId"], "run_date": today,
-                        "back": best_levels(ex.get("availableToBack")),
-                        "lay": best_levels(ex.get("availableToLay")),
-                    })
-            if not rows:
-                print(f"  [skip] '{name}' (fid {fid}): nessuna quota")
+
+                # Idempotenza: sostituisci SOLO le righe di QUESTO fixture per OGGI.
+                _delete_with_retry(sb, [("fixture_id", fid), ("run_date", today)],
+                                   what=f"fixture {fid} run_date={today}")
+                for i in range(0, len(rows), 500):
+                    _insert_with_retry(sb, rows[i:i + 500], what=f"fixture {fid}")
+                written_fids.add(fid)
+                written += 1
+
+                tag = "strong" if m["strong"] else f"weak/{m['score']}"
+                dtm = f"Δt={m['dt_min']}m" if m["dt_min"] is not None else "Δt=?"
+                print(f"  [ok] {name} -> fid {fid} [{tag},{dtm}]: {len(rows)} righe "
+                      f"({len(set(x['market_name'] for x in rows))} mercati) | DB: "
+                      f"{fixture.get('home_team_name')} v {fixture.get('away_team_name')}")
+                time.sleep(EVENT_DELAY)
+            except BetfairLimitHit:
+                raise  # propaga: stop pulito sui limiti Betfair
+            except Exception as ex:  # noqa: BLE001
+                print(f"  [ERRORE fixture {fid} '{name}']: {str(ex)[:160]} -> salto, continuo.")
                 continue
-
-            # Idempotenza: sostituisci SOLO le righe di QUESTO fixture per OGGI.
-            sb.table("betfair_market_odds").delete().eq("fixture_id", fid).eq("run_date", today).execute()
-            for i in range(0, len(rows), 500):
-                sb.table("betfair_market_odds").insert(rows[i:i + 500]).execute()
-            written_fids.add(fid)
-            written += 1
-
-            tag = "strong" if m["strong"] else f"weak/{m['score']}"
-            dtm = f"Δt={m['dt_min']}m" if m["dt_min"] is not None else "Δt=?"
-            print(f"  [ok] {name} -> fid {fid} [{tag},{dtm}]: {len(rows)} righe "
-                  f"({len(set(x['market_name'] for x in rows))} mercati) | DB: "
-                  f"{fixture.get('home_team_name')} v {fixture.get('away_team_name')}")
-            time.sleep(EVENT_DELAY)
 
     print(f"\nFatto. Eventi oggi: {len(events)} | match: {len(matched)} | fixture scritte: {written}")
     if unmatched:

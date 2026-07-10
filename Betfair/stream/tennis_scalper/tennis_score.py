@@ -186,8 +186,8 @@ def tennis_score_poll(
     """Worker flumine: interroga l'IPS e aggiorna ``strategy.point_pressure``.
 
     Firma richiesta da ``BackgroundWorker``: ``function(context, flumine, ...)``.
-    Best-effort: qualsiasi errore lascia ``point_pressure`` invariato-sicuro
-    (False) e il bot continua sull'anti-gap dell'order-book.
+    Best-effort e FAIL-SAFE: qualsiasi errore (o punteggio assente) lascia
+    ``point_pressure`` INVARIATO e il bot continua sull'anti-gap dell'order-book.
     """
     try:
         raw = trading.in_play_service.get_scores(
@@ -195,13 +195,16 @@ def tennis_score_poll(
             lightweight=True,
         )
     except Exception as exc:  # noqa: BLE001 - il feed non deve mai rompere il bot
+        # FAIL-SAFE (fix 2026-07-10): su errore NON si tocca point_pressure.
+        # Prima veniva forzato a False (fail-OPEN): un blackout del feed sul
+        # break point spegneva la guardia proprio nel momento del gap.
         logger.debug("[tennis-score] get_scores fallito: %s", exc)
-        strategy.point_pressure = False
         return
 
     ts = parse_tennis_scores(raw, event_id)
     if ts is None:
-        strategy.point_pressure = False
+        # nessun punteggio utile (pre-match/non coperto/feed vuoto transitorio):
+        # anche qui la guardia resta INVARIATA (mai fail-open).
         context["last_score"] = None
         return
 

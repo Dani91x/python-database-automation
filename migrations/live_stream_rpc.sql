@@ -115,22 +115,25 @@ $$;
 -- arriva fino a fine partita (niente troncamento alla prima parte).
 CREATE OR REPLACE FUNCTION public.get_replay(
     p_event_id text,
-    p_max_frames integer DEFAULT 40000,
-    p_bucket_sec integer DEFAULT 6
+    p_max_frames integer DEFAULT 6000,   -- TARGET di frame (bucket adattivo per rispettarlo)
+    p_bucket_sec integer DEFAULT 10      -- bucket MINIMO (allargato se serve)
 )
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
+SET statement_timeout = '25s'   -- rete di sicurezza per gli eventi più grandi
 AS $$
 DECLARE
     v_event    jsonb;
     v_markets  jsonb;
     v_frames   jsonb;
     v_timeline jsonb;
-    v_lim      integer := least(greatest(coalesce(p_max_frames, 40000), 1), 60000);
-    v_bucket   integer := greatest(coalesce(p_bucket_sec, 6), 1);
+    v_target   integer := least(greatest(coalesce(p_max_frames, 6000), 500), 40000);
+    v_bucket   integer := greatest(coalesce(p_bucket_sec, 10), 1);
+    v_span     integer;
+    v_nmarkets integer;
 BEGIN
     IF p_event_id IS NULL THEN
         RAISE EXCEPTION 'p_event_id nullo';
@@ -171,9 +174,24 @@ BEGIN
       FROM public.live_markets m
      WHERE m.event_id = p_event_id;
 
+    -- BUCKET ADATTIVO: stima lo span temporale e allarga il bucket in modo che il
+    -- totale frame (~ span/bucket * n_mercati) resti intorno a v_target. Il minimo
+    -- resta p_bucket_sec. Scan leggera min/max(ts) (indice idx_lms_event_ts). Cosi'
+    -- get_replay resta veloce a prescindere dalla durata/volume, SENZA troncare.
+    v_nmarkets := greatest(coalesce(jsonb_array_length(v_markets), 1), 1);
+    SELECT extract(epoch FROM (max(s.ts) - min(s.ts)))::int
+      INTO v_span
+      FROM public.live_market_snapshots s
+     WHERE s.event_id = p_event_id;
+    IF v_span IS NOT NULL AND v_span > 0 THEN
+        v_bucket := greatest(v_bucket, ceil(v_span::numeric * v_nmarkets / v_target)::int);
+    END IF;
+
     -- frames DOWNSAMPLED su bucket temporali: max 1 frame per mercato ogni
     -- v_bucket secondi → copre l'INTERA partita (no troncamento) con payload
     -- limitato. DISTINCT ON tiene il primo frame di ogni (mercato, bucket).
+    -- NIENTE ORDER BY nell'agg: il frontend riordina i frame per ts (MatchReplay.tsx
+    -- e buildSnapshots) → si evita di ordinare un grande array JSONB (costo dominante).
     SELECT coalesce(jsonb_agg(
              jsonb_build_object(
                'market_id', x.market_id,
@@ -182,7 +200,7 @@ BEGIN
                'inplay',    x.inplay,
                'status',    x.status,
                'ladder',    x.ladder
-             ) ORDER BY x.ts, x.market_id
+             )
            ), '[]'::jsonb)
       INTO v_frames
       FROM (
@@ -191,7 +209,6 @@ BEGIN
           FROM public.live_market_snapshots s
          WHERE s.event_id = p_event_id
          ORDER BY s.market_id, floor(extract(epoch FROM s.ts) / v_bucket), s.ts
-         LIMIT v_lim
       ) x;
 
     SELECT coalesce(jsonb_agg(

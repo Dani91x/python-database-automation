@@ -58,6 +58,17 @@ TENNIS_PARAMS: Dict[str, Any] = {
     "min_flow": 2.0,          # EUR/lato minimi nella finestra
     "allow_inplay": True,     # in-play continuo (niente kickoff/HT)
     "warmup_ms": 30000,       # osservazione minima prima di quotare (30s)
+    # ---- MISSIONE (il prodotto): 1 tick di profitto PRE-MATCH per match,
+    # poi stop (mission_done → status 'done' nel runner live).
+    "one_tick_per_phase": True,
+    # Gamba IN-PLAY: SPENTA per verdetto del backtest di validazione (11/07,
+    # 34 eventi): 1 green/34, mediana ciclo -0.79, coda -13/ciclo NON
+    # comprimibile (adverse selection da gap punto-per-punto, delay 3s).
+    # Riattivabile dalla UI SOLO in via sperimentale su match ultra-liquidi.
+    "inplay_tick_enabled": False,
+    # nuovi ingressi SOLO sul favorito (best-back piu' basso): evita la
+    # doppia esposizione correlata sui 2 runner del MATCH_ODDS.
+    "runner_filter": "favorite",
     # ---- BLINDATURE BETFAIR .it (identiche a VALIDATED_PARAMS del calcio) ----
     # OBBLIGATORIE per il live: su .it lo stake e' a multipli di €0,50
     # (size_step) e il green-up sotto il minimo va over-hedgato a €2

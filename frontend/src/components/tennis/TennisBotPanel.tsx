@@ -297,6 +297,32 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
                 )}
             </div>
 
+            {/* MISSIONE "1 tick per fase": badge di avanzamento (✓ = fase verde) */}
+            {stats && (stats.greens_prematch !== undefined || stats.greens_inplay !== undefined) && (
+                <div className="flex items-center gap-1.5">
+                    <span
+                        className={cn(
+                            'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                            num(stats.greens_prematch) >= 1
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : 'bg-white/10 text-white/45',
+                        )}
+                    >
+                        Tick pre-match {num(stats.greens_prematch) >= 1 ? '✓' : '…'}
+                    </span>
+                    <span
+                        className={cn(
+                            'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                            num(stats.greens_inplay) >= 1
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : 'bg-white/10 text-white/45',
+                        )}
+                    >
+                        Tick in-play {num(stats.greens_inplay) >= 1 ? '✓' : '…'}
+                    </span>
+                </div>
+            )}
+
             {/* statistiche live (visibili quando c'è un control con stats) */}
             {active && (
                 <div className="grid grid-cols-3 gap-1.5 text-center">

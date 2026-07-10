@@ -468,6 +468,11 @@ export interface TennisBotStats {
     flattens?: number;
     pnl_locked?: number;
     pnl_open?: number;
+    /** missione "1 tick per fase" (tennis_scalper): contatori/P&L per fase. */
+    greens_prematch?: number;
+    greens_inplay?: number;
+    pnl_prematch?: number;
+    pnl_inplay?: number;
 }
 
 export interface TennisBotControl {
@@ -535,28 +540,41 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
     {
         key: 'tennis_scalper',
         name: 'Tennis Scalper',
-        short: 'Maker micro-scalp mean-reversion sul micro-prezzo. Basso rischio, in-play continuo.',
-        phase: 'in-play',
+        short: 'Missione tick pre-match: 1 tick di profitto prima del via, poi stop. Maker micro-scalp sul favorito (gamba in-play OFF: bocciata dal backtest di validazione).',
+        phase: 'both',
         accent: 'primary',
         defaultStake: 5,
         params: [
             { key: 'scalp_ticks', label: 'Tick profitto', step: 1, min: 1, max: 5, hint: 'target chiusura per ciclo' },
-            { key: 'stop_ticks', label: 'Tick stop', step: 1, min: 1, max: 8, hint: 'tick avversi dopo scratch' },
+            { key: 'stop_ticks', label: 'Tick stop', step: 1, min: 1, max: 8, hint: 'tick avversi che innescano lo stop (preset validato: 3)' },
             { key: 'signal_ticks', label: 'Tick segnale', step: 1, min: 1, max: 10, hint: 'ampiezza deviazione per entrare' },
-            { key: 'min_flow', label: 'Flusso min €/lato', step: 5, min: 0, max: 500, hint: 'gate volume stampato' },
+            { key: 'min_flow', label: 'Flusso min €/lato', step: 1, min: 0, max: 500, hint: 'gate volume stampato (preset validato: 2)' },
             { key: 'min_size', label: 'Size min ai best €', step: 1, min: 0, max: 2000, hint: 'liquidità minima sul touch' },
             { key: 'price_min', label: 'Quota min', step: 0.1, min: 1.01, max: 5, hint: 'sotto: code lente' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.5, max: 20, hint: 'sopra: tick larghi' },
+            { key: 'one_tick_per_phase', label: 'Missione 1 tick/fase', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [{ value: 'on', label: 'on' }, { value: 'off', label: 'off' }],
+              hint: '1 tick di profitto pre-match, poi stop automatico (stato "Concluso"). off = scalping continuo' },
+            { key: 'inplay_tick_enabled', label: 'Gamba in-play (sperimentale)', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
+              hint: '⚠️ BOCCIATA dal backtest di validazione (1 verde/34 match, coda −13€/ciclo): tenere OFF salvo test su match ultra-liquidi' },
+            { key: 'runner_filter', label: 'Runner operato', step: 0, min: 0, max: 0, type: 'select',
+              options: [{ value: 'favorite', label: 'solo favorito' }, { value: 'all', label: 'entrambi' }],
+              hint: 'favorito = best-back più basso al momento della quotazione; evita la doppia esposizione correlata sui 2 runner' },
         ],
-        // preset live TENNIS_PARAMS (run_tennis_scalper.py)
+        // preset live TENNIS_PARAMS (run_tennis_scalper.py) — la UI VINCE sul
+        // setdefault del runner: questi default DEVONO restare allineati al preset.
         defaults: {
             scalp_ticks: 1,
-            stop_ticks: 1,
+            stop_ticks: 3,
             signal_ticks: 1,
-            min_flow: 10,
+            min_flow: 2,
             min_size: 5,
             price_min: 1.2,
             price_max: 6,
+            one_tick_per_phase: 'on',
+            inplay_tick_enabled: 'off',
+            runner_filter: 'favorite',
         },
     },
     {

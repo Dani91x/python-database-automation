@@ -59,6 +59,7 @@ class _MB:
         self.total_matched = tm
         self.status = "OPEN"
         self.market_id = "1.1"
+        self.inplay = True  # tesi FLB validata in-play (require_inplay default)
 
 
 def test_hybrid_green_cancels_unmatched_entry_residual():

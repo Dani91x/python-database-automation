@@ -79,6 +79,19 @@ class ThetaStrategy(BaseStrategy):
         self.price_max = float(c.get("price_max", 1000.0))
         self.min_size = float(c.get("min_size", 50.0))
         self.reenter = bool(c.get("reenter", True))
+        # CHIUSURA A MERCATO (fix utente 07/07): appena la quota e' scesa di
+        # target_ticks sotto l'ingresso, laya al best_lay (a mercato) e incassa,
+        # invece di aspettare un lay passivo che puo' non riempirsi mai (il
+        # mercato scende "oltre" il prezzo target senza scambiarci sopra).
+        self.close_market = bool(c.get("close_market", True))
+        # STOP DOPO PROFITTO (fix utente 07/07): appena il profitto accumulato
+        # dell'evento raggiunge profit_target, FERMA i nuovi ingressi (incassa e
+        # non restituire i guadagni a un gol). E dopo uno stop-loss da gol
+        # (stop_after_stop) ferma l'evento: non re-entrare nel caos. Le posizioni
+        # gia' aperte vengono comunque gestite fino a chiusura.
+        self.profit_target = float(c.get("profit_target", 0.5))
+        self.stop_after_stop = bool(c.get("stop_after_stop", True))
+        self._event_done = False
         self.force_flat = False
 
         self._pos: Dict[Tuple[str, int], _Pos] = {}
@@ -200,22 +213,31 @@ class ThetaStrategy(BaseStrategy):
                         self.stats["stops"] += 1
                         self._emit("stop", up=up)
                         self._begin_flatten(market, pos)
+                        if self.stop_after_stop:
+                            self._event_done = True   # dopo un gol, basta per l'evento
                         continue
-                    # TARGET PRE-PIAZZATO (fix utente 07/07): appena l'ingresso e'
-                    # riempito, metti UNA VOLTA il lay di chiusura al prezzo ESATTO
-                    # (ingresso - target_ticks) come maker resting e ASPETTA che si
-                    # riempia. Niente inseguimento del best_lay (che con 8s di ritardo
-                    # riempie a prezzo peggiore -> layava piu' ALTO del back = perdita).
+                    # CHIUSURA (fix utente 07/07): appena il best_lay e' sceso di
+                    # >= target_ticks SOTTO l'ingresso medio, il profitto e'
+                    # disponibile A MERCATO -> layalo SUBITO al best_lay (taker
+                    # contro l'offerta del backer), non aspettare un passivo che il
+                    # mercato "scavalca" senza riempire. close_market=False torna al
+                    # lay passivo pre-piazzato al target (vecchio comportamento).
                     if pos.close is None and ob and ob > 1.0:
-                        tgt = price_ticks_away(get_nearest_price(ob), -self.target_ticks)
-                        if tgt and tgt > 1.0:
-                            nw = sb_m * (ob - 1.0) - sl_m * (ol - 1.0)
-                            nl = sl_m - sb_m
-                            g = compute_green(nw, nl, tgt)
+                        nw = sb_m * (ob - 1.0) - sl_m * (ol - 1.0)
+                        nl = sl_m - sb_m
+                        dn = ticks_between(get_nearest_price(bl), get_nearest_price(ob)) \
+                            if (bl and bl < ob) else None
+                        target_ok = dn is not None and dn >= self.target_ticks
+                        if self.close_market:
+                            price = get_nearest_price(bl) if target_ok else None
+                        else:
+                            price = price_ticks_away(get_nearest_price(ob), -self.target_ticks)
+                        if price and price > 1.0:
+                            g = compute_green(nw, nl, price)
                             if g is not None:
                                 side, size, locked = g
                                 o = self._place(market, runner.selection_id, side,
-                                                tgt, size, floor=False)
+                                                price, size, floor=False)
                                 if o is not None:
                                     pos.close = o
                                     pos.close_locked = locked
@@ -225,6 +247,8 @@ class ThetaStrategy(BaseStrategy):
                         self.stats["greens"] += 1
                         self.stats["pnl_locked"] += getattr(pos, "close_locked", 0.0)
                         self._emit("green", locked=round(getattr(pos, "close_locked", 0.0), 3))
+                        if self.profit_target > 0 and self.stats["pnl_locked"] >= self.profit_target:
+                            self._event_done = True   # profitto raggiunto: incassa e fermati
                         pos.flatten_orders.extend(pos.entries)
                         pos.flatten_orders.append(pos.close)
                         pos.entries = []
@@ -246,8 +270,8 @@ class ThetaStrategy(BaseStrategy):
                 continue
 
             # --- nessuna posizione: entra se in finestra e liquidita' ok ---
-            if out_window:
-                continue
+            if out_window or self._event_done:
+                continue   # profitto raggiunto o gia' stoppato: niente nuovi ingressi
             if (sb or 0) < self.min_size or (sl or 0) < self.min_size:
                 continue
             self._enter(market, runner, pos, bb, bl, sb, sl)

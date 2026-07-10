@@ -1,10 +1,10 @@
 """Test del feed punteggio tennis e della gap-guard (break/set point)."""
 
-import pytest
+import types
 
 from Betfair.stream.tennis_scalper.tennis_score import (
-    TennisScore,
     parse_tennis_scores,
+    tennis_score_poll,
     _rank,
 )
 
@@ -96,3 +96,49 @@ def test_currentpoint_fallback():
     }]
     ts = parse_tennis_scores(raw, "1")
     assert ts.point_home == "40" and ts.point_away == "15"
+
+
+# ---------------------------------------------------------------------------
+# GAP-GUARD FAIL-SAFE (fix 2026-07-10): errore/score assente → point_pressure
+# INVARIATO (prima veniva forzato a False = fail-OPEN proprio sul break point).
+# ---------------------------------------------------------------------------
+class _FailingIPS:
+    def get_scores(self, **kw):  # noqa: ARG002
+        raise RuntimeError("feed KO")
+
+
+class _EmptyIPS:
+    def get_scores(self, **kw):  # noqa: ARG002
+        return []
+
+
+class _OkIPS:
+    def __init__(self, raw):
+        self._raw = raw
+
+    def get_scores(self, **kw):  # noqa: ARG002
+        return self._raw
+
+
+def test_gap_guard_unchanged_on_feed_error():
+    strategy = types.SimpleNamespace(point_pressure=True)
+    trading = types.SimpleNamespace(in_play_service=_FailingIPS())
+    tennis_score_poll({}, None, trading=trading, event_id="1", strategy=strategy)
+    assert strategy.point_pressure is True   # MAI fail-open su errore
+
+
+def test_gap_guard_unchanged_on_missing_score():
+    strategy = types.SimpleNamespace(point_pressure=True)
+    trading = types.SimpleNamespace(in_play_service=_EmptyIPS())
+    tennis_score_poll({}, None, trading=trading, event_id="1", strategy=strategy)
+    assert strategy.point_pressure is True   # score assente: guardia invariata
+
+
+def test_gap_guard_still_updates_with_valid_score():
+    # a feed sano la guardia si aggiorna normalmente (qui: nessuna pressione)
+    strategy = types.SimpleNamespace(point_pressure=True)
+    trading = types.SimpleNamespace(
+        in_play_service=_OkIPS(_payload(ph="15", pa="15")))
+    tennis_score_poll({}, None, trading=trading, event_id="35790084",
+                      strategy=strategy)
+    assert strategy.point_pressure is False

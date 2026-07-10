@@ -30,6 +30,9 @@ from Betfair.stream.scalper.scalper_bot import compute_green  # noqa: E402
 DATA = os.path.join(REPO, "_live_raw")
 COMM = 0.05
 INPLAY_DELAY = 8.0
+# modello di fill: False = solo volume tradato (conservativo, giusto per maker puri);
+# True = riempie contro le quote disponibili (realistico per i TAKE a mercato di theta).
+AVAIL_PRICES = False
 COMPLETE = ["35674515", "35759636", "35760084", "35764745", "35765620",
             "35768297", "35768365", "35772591", "35774000", "35777617",
             "35780184", "35781607"]
@@ -50,7 +53,7 @@ def run_event(ev: str, params: Dict[str, Any]) -> Dict[str, Any]:
             getattr(flumine.config, "simulation_available_prices", False),
             getattr(flumine.config, "place_latency", 0.120))
     flumine.config.simulated = True
-    flumine.config.simulation_available_prices = False
+    flumine.config.simulation_available_prices = AVAIL_PRICES
     flumine.config.place_latency = INPLAY_DELAY
     flumine.config.cancel_latency = 0.170
     try:
@@ -119,9 +122,13 @@ def main() -> None:
     params = dict(stake=10.0, max_units=3, add_step_ticks=3, target_ticks=4,
                   stop_ticks=3, entry_mode="maker", inplay_from_s=300.0,
                   inplay_to_s=2400.0, min_size=50.0)
+    global AVAIL_PRICES
     for a in sys.argv[1:]:
         if "=" in a:
             k, v = a.split("=", 1)
+            if k == "avail":            # modello di fill (0/1), non e' un theta_param
+                AVAIL_PRICES = bool(int(v))
+                continue
             params[k] = float(v) if v.replace(".", "").replace("-", "").isdigit() else v
     print(f"params: {params}\n")
     print(f"{'event':>10} {'NETmtm':>8} {'locked':>8} {'resid':>6} {'ent':>4} "

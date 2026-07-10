@@ -108,7 +108,13 @@ class TennisProStrategy(BaseStrategy):
         self.price_max: float = float(c.get("price_max", 3.6))
         self.staged: bool = bool(c.get("staged", True))
         self.staged_frac: float = float(c.get("staged_frac", 0.4))
-        self.entry_timeout_ticks: int = int(c.get("entry_timeout_ticks", 25))
+        # TIMEOUT ENTRY in SECONDI di publish_time (fix 2026-07-10 live≠backtest:
+        # prima contava gli UPDATE del book — in live sono molti al secondo →
+        # l'entry veniva cancellata in 2-3s invece dei ~25s attesi). Il vecchio
+        # nome ``entry_timeout_ticks`` resta accettato (retrocompatibilità) ma
+        # il valore è interpretato in secondi (25 update → 25 s equivalenti).
+        self.entry_timeout_s: float = float(
+            c.get("entry_timeout_s", c.get("entry_timeout_ticks", 25)))
         # MAKER: entra a quota MIGLIORE del touch (in coda) -> INCASSA lo spread
         # invece di pagarlo ("bancare"). Fill non garantito (gestito dal timeout).
         self.maker: bool = bool(c.get("maker", False))
@@ -147,6 +153,7 @@ class TennisProStrategy(BaseStrategy):
 
         # runtime
         self.score: Optional[TennisScore] = None
+        self._now_pt: Optional[int] = None  # publish_time del book corrente (ms)
         self._trade: Dict[str, Dict[str, Any]] = {}                # mid -> trade attivo
         self._last_key: Dict[str, Any] = {}                        # mid -> ultima score-key
         self._prev_sets: Dict[str, Tuple[int, int]] = {}           # mid -> (sh,sa) tick prec.
@@ -363,6 +370,8 @@ class TennisProStrategy(BaseStrategy):
             "state": OPEN, "sel": int(sel), "side": side, "entry": entry,
             "target": target, "stop": stop, "kind": kind, "staged_done": False,
             "staged_order": None, "order": order, "wait": 0,
+            # publish_time del piazzamento: base del timeout entry in secondi
+            "t_open": getattr(self, "_now_pt", None),
             "entry_games": (s.games_home, s.games_away, s.sets_home, s.sets_away)
             if s else None,
         }
@@ -508,8 +517,10 @@ class TennisProStrategy(BaseStrategy):
             }
 
         # traccia set + PREZZO (per il regime adattivo) ad OGNI tick
+        pt = getattr(market_book, "publish_time_epoch", None)
+        self._now_pt = pt  # publish_time corrente (timeout entry in secondi)
         self._track_sets(mid, px)
-        self._track_px(getattr(market_book, "publish_time_epoch", None), px)
+        self._track_px(pt, px)
 
         # 1) gestisci trade aperto
         trade = self._trade.get(mid)
@@ -556,9 +567,18 @@ class TennisProStrategy(BaseStrategy):
         b, ba, l, la = self._position(market, sel)
 
         if (b + l) <= _EPS:
-            # entry NON ancora riempita: timeout -> cancella e libera il mercato
+            # entry NON ancora riempita: timeout in SECONDI di publish_time
+            # (fallback al conteggio update SOLO se il publish_time manca).
             trade["wait"] = int(trade.get("wait", 0)) + 1
-            if trade["wait"] > self.entry_timeout_ticks:
+            pt = getattr(self, "_now_pt", None)
+            t0 = trade.get("t_open")
+            timed_out = (
+                pt is not None and t0 is not None
+                and (pt - t0) / 1000.0 >= self.entry_timeout_s
+            ) or (
+                (pt is None or t0 is None) and trade["wait"] > self.entry_timeout_s
+            )
+            if timed_out:
                 self._cancel(market, trade.get("order"))
                 self._trade[market.market_id] = {"state": FLAT}
                 self._emit("entry_timeout", sel=sel, kind=trade.get("kind"))
