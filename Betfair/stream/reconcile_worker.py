@@ -166,11 +166,16 @@ def _account_order_row(order: Any) -> Dict[str, Any]:
     bet_id = str(low._val(order, "bet_id"))
     side = low._val(order, "side")
     ps = low._val(order, "price_size")
+    # fix 11/07 (rumore live 10/07): flumine stampa customerStrategyRef su
+    # OGNI ordine bot → un ordine col ref NON e' "esterno dal sito", e' di un
+    # bot noto (scalper/sniper girano in un processo separato dal runner).
+    csr = low._val(order, "customer_strategy_ref")
+    source = (f"bot:{csr}"[:32] if csr and str(csr) != "live" else "account")
     return {
         "bet_id": bet_id,
         "client_order_ref": f"ext{bet_id}"[:32],
         "mode": "live",
-        "source": "account",
+        "source": source,
         "market_id": low._val(order, "market_id"),
         "selection_id": low._int(low._val(order, "selection_id")),
         "handicap": low._f(low._val(order, "handicap")) or 0.0,
@@ -199,12 +204,17 @@ def _reconcile_orders(sb: Any, current: Dict[str, Any], mirror: List[Dict[str, A
     for bet_id, order in current.items():
         if bet_id in by_bet:
             continue
-        externals += 1
         row = _account_order_row(order)
         try:
             sb.table(_RECONCILE_TABLE).upsert(row, on_conflict="mode,client_order_ref").execute()
         except Exception as ex:  # noqa: BLE001 - upsert idempotente: retry al prossimo ciclo
             logger.warning("[reconcile] upsert esterno %s KO: %s", bet_id, str(ex)[:200])
+        if str(row.get("source") or "").startswith("bot:"):
+            # ordine di un BOT noto (customerStrategyRef presente): entra
+            # nello specchio ma NIENTE allarme — la pioggia di WARN del
+            # 10/07 rendeva il feed alert inutile proprio quando serviva.
+            continue
+        externals += 1
         _warn_once(
             f"ext:{bet_id}",
             f"ordine ESTERNO sul conto (dal sito?): bet {bet_id} "
@@ -249,10 +259,16 @@ def _reconcile_orders(sb: Any, current: Dict[str, Any], mirror: List[Dict[str, A
 
     # d) specchio NON-terminale ma assente dal conto: MAI toccare (lo stream può
     # essere più aggiornato del REST) — WARN solo se persiste 2 cicli consecutivi.
+    # gli ordini bot (source 'bot:*' o 'account') spariscono dal conto per i
+    # cancel rapidi del maker (requote/scratch): e' il loro funzionamento
+    # normale, non un'anomalia da segnalare (rumore live 10/07).
     missing_now = {
         str(r["bet_id"])
         for r in mirror
-        if r.get("bet_id") and r.get("status") == "EXECUTABLE" and str(r["bet_id"]) not in current
+        if r.get("bet_id") and r.get("status") == "EXECUTABLE"
+        and str(r["bet_id"]) not in current
+        and not str(r.get("source") or "").startswith("bot:")
+        and str(r.get("source") or "") != "account"
     }
     for bet_id in list(_MISSING_SEEN):
         if bet_id not in missing_now:

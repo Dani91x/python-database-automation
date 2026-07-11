@@ -32,6 +32,8 @@ Nessuna rete, nessun login: testabile a unità.
 """
 from __future__ import annotations
 
+import time
+
 from dataclasses import dataclass, replace as _dc_replace
 from enum import Enum
 from typing import Any, Optional, Protocol, runtime_checkable
@@ -73,6 +75,14 @@ _UNMATCHABLE_PHASES = (SubminStep.INIT, SubminStep.PLACED, SubminStep.TRIMMED)
 # Stati terminali (idempotenti: nessuna ulteriore azione).
 _TERMINAL = (SubminStep.DONE, SubminStep.ABORTED)
 
+# Verifica del trim (fix 11/07 — bug live 10/07 21:43): la promozione a TRIMMED
+# avviene SOLO su OSSERVAZIONE fresca dell'ordine (size_remaining ≈ target),
+# MAI sulla fiducia dell'esito API del cancel. Senza questa verifica il replace
+# dello step3 può portare la size PIENA del park a una quota abbinabile
+# (fill istantaneo del park intero, ripetuto = loop auto-amplificante).
+_TRIM_RECHECK_MS = 5_000    # residuo intatto dopo il cancel → UNA ri-emissione
+_TRIM_TIMEOUT_MS = 15_000   # trim mai osservato → full cancel + ABORTED
+
 
 @dataclass
 class SubminState:
@@ -83,6 +93,9 @@ class SubminState:
     placed_size: float           # = minimo di giurisdizione (€2 .it BACK / €0,50 LAY)
     side: str                    # 'back' | 'lay'
     note: str = ""
+    # epoch ms della RICHIESTA di cancel (step2); 0 = non ancora richiesto.
+    # Il passaggio a TRIMMED avviene solo quando il trim viene OSSERVATO.
+    trim_requested_ms: int = 0
 
     @property
     def size_reduction(self) -> float:
@@ -114,8 +127,9 @@ class SubminOps(Protocol):
         il BetfairOrder flumine (il cui `bet_id` arriverà async)."""
         ...
 
-    def cancel(self, market: Any, order: Any, size_reduction: float) -> None:
-        """Cancel PARZIALE di `size_reduction` (riduce l'ordine sotto il minimo)."""
+    def cancel(self, market: Any, order: Any, size_reduction: Optional[float]) -> None:
+        """Cancel PARZIALE di `size_reduction` (riduce l'ordine sotto il minimo).
+        Con ``size_reduction=None`` cancella l'INTERO residuo (ritiro totale)."""
         ...
 
     def replace(self, market: Any, order: Any, new_price: float) -> None:
@@ -182,7 +196,8 @@ class FlumineSubminOps:
             raise ValueError(f"submin place RIFIUTATO — {_violation_reason(built.order)}")
         return built.order
 
-    def cancel(self, market: Any, order: Any, size_reduction: float) -> None:
+    def cancel(self, market: Any, order: Any, size_reduction: Optional[float]) -> None:
+        # size_reduction=None = ritiro TOTALE del residuo (usato dagli abort).
         if market.cancel_order(order, size_reduction) is False:
             raise ValueError(f"submin cancel RIFIUTATO — {_violation_reason(order)}")
 
@@ -364,6 +379,7 @@ def advance_submin(
     customer_order_ref: str,
     ops: Optional[SubminOps] = None,
     allow_place: bool = True,
+    now_ms: Optional[int] = None,
 ) -> SubminState:
     """Avanza la sequenza submin di UNO step in base allo stato REALE dell'ordine.
 
@@ -450,28 +466,95 @@ def advance_submin(
         )
 
     # --- STEP 2: cancel parziale (size_reduction) → resta target -----------
+    # FIX 11/07 (bug live 10/07 21:43, money-critical): il passaggio a TRIMMED
+    # avviene SOLO quando il trim viene OSSERVATO sull'ordine (size_remaining
+    # ≈ target). L'esito API del cancel NON è una prova: quella sera il log
+    # diceva "trimmed ✓" mentre il park era intatto (o già abbinato), e il
+    # replace successivo ha portato 2€ PIENI a quota reale, 4 volte di fila.
     if state.step == SubminStep.PLACED:
-        # Serve l'ordine a riposo (EXECUTABLE) con bet_id assegnato prima di cancellare.
+        now = int(now_ms if now_ms is not None else time.time() * 1000)
         bid = _bet_id(order)
         if order is None or bid is None or not _is_executable(order):
+            # Park SPARITO dopo la richiesta di trim (zero matched, zero
+            # residuo, non executable) = cancellato per intero (es. doppia
+            # riduzione): sequenza fallita in modo PULITO, nessun rischio.
+            rem_gone = _size_remaining(order) if order is not None else None
+            if (
+                state.trim_requested_ms > 0
+                and order is not None
+                and _size_matched(order) <= _TOL
+                and rem_gone is not None
+                and rem_gone <= _TOL
+            ):
+                return _dc_replace(
+                    state, step=SubminStep.ABORTED,
+                    bet_id=_bet_id(order) or state.bet_id,
+                    note=(
+                        "step2: park scomparso (cancellato per intero) — "
+                        "sequenza fallita pulita, nessun residuo a rischio"
+                    ),
+                )
             return state  # attesa: l'ordine non è ancora confermato/abbinabile
-        # Idempotenza/ripresa: se è già stato ridotto (size_remaining ~ target), avanza.
         rem = _size_remaining(order)
+        # UNICA promozione a TRIMMED: l'osservazione del residuo al target.
         if rem is not None and rem <= state.target_size + _TOL:
             return _dc_replace(
                 state, step=SubminStep.TRIMMED, bet_id=bid,
-                note="resume: ordine già ridotto a target (no re-cancel)",
+                note=(
+                    f"step2 VERIFICATO su osservazione: residuo {rem:.2f} "
+                    f"≤ target {state.target_size:.2f}"
+                ),
             )
-        _require_ops(ops).cancel(market, order, state.size_reduction)
-        return _dc_replace(
-            state, step=SubminStep.TRIMMED, bet_id=bid,
-            note=f"step2 cancel {state.size_reduction:.2f} → resta {state.target_size:.2f}",
-        )
+        if state.trim_requested_ms <= 0:
+            _require_ops(ops).cancel(market, order, state.size_reduction)
+            return _dc_replace(
+                state, bet_id=bid, trim_requested_ms=now,
+                note=(
+                    f"step2 cancel {state.size_reduction:.2f} RICHIESTO → "
+                    "in attesa della verifica osservata"
+                ),
+            )
+        waited = now - state.trim_requested_ms
+        if waited >= _TRIM_TIMEOUT_MS:
+            # Trim mai osservato: MAI proseguire (il replace porterebbe la
+            # size piena a quota abbinabile). Ritiro totale e stop.
+            _require_ops(ops).cancel(market, order, None)
+            return _dc_replace(
+                state, step=SubminStep.ABORTED, bet_id=bid,
+                note=(
+                    "step2: trim NON osservato entro timeout → full cancel + "
+                    "abort (mai replace a size piena)"
+                ),
+            )
+        if waited >= _TRIM_RECHECK_MS and rem is not None and rem >= state.placed_size - _TOL:
+            # Residuo INTATTO oltre la latenza attesa: il cancel non ha agito.
+            # UNA ri-emissione per volta (il timestamp riparte → la prossima
+            # scadenza utile è il timeout). Se entrambe le riduzioni agissero,
+            # l'ordine sparisce per intero → ramo "park scomparso" (pulito).
+            _require_ops(ops).cancel(market, order, state.size_reduction)
+            return _dc_replace(
+                state, bet_id=bid, trim_requested_ms=now,
+                note="step2 cancel RI-EMESSO (residuo intatto oltre la latenza attesa)",
+            )
+        return state  # attesa dell'osservazione del trim
 
     # --- STEP 3: replace alla quota target reale ---------------------------
     if state.step == SubminStep.TRIMMED:
         bid = _bet_id(order) or state.bet_id
         if order is None or not _is_executable(order):
+            # Park sparito senza matched (cancellato per intero) → abort
+            # pulito invece di attesa infinita.
+            rem_gone = _size_remaining(order) if order is not None else None
+            if (
+                order is not None
+                and _size_matched(order) <= _TOL
+                and rem_gone is not None
+                and rem_gone <= _TOL
+            ):
+                return _dc_replace(
+                    state, step=SubminStep.ABORTED, bet_id=bid,
+                    note="step3: park scomparso (cancellato per intero) — sequenza fallita pulita",
+                )
             return state  # attesa
         # Idempotenza/ripresa: se è già alla target_price, avanza.
         cur_price = _order_price(order)
@@ -479,6 +562,19 @@ def advance_submin(
             return _dc_replace(
                 state, step=SubminStep.REPRICED, bet_id=bid,
                 note="resume: ordine già alla target_price (no re-replace)",
+            )
+        # DIFESA IN PROFONDITÀ (bug 21:43): mai un replace se il residuo
+        # osservato NON è al target — porterebbe una size piena a quota reale.
+        rem = _size_remaining(order)
+        if rem is None or rem > state.target_size + _TOL:
+            _require_ops(ops).cancel(market, order, None)
+            return _dc_replace(
+                state, step=SubminStep.ABORTED, bet_id=bid,
+                note=(
+                    f"step3: residuo osservato {rem if rem is not None else 'sconosciuto'} "
+                    f"oltre il target {state.target_size:.2f} — replace VIETATO, "
+                    "full cancel + abort"
+                ),
             )
         _require_ops(ops).replace(market, order, state.target_price)
         return _dc_replace(

@@ -687,8 +687,14 @@ def test_kill_switch_flip_stops_remaining_inflight_submins(monkeypatch):
 
     assert n == 1  # solo row1 avanzata
     assert [c[0] for c in market.calls] == ["cancel_order"]  # un solo cancel (row1)
-    assert _by_id(sb, 1)["result"]["submin_step"] == "trimmed"
-    assert _by_id(sb, 2)["result"]["submin_step"] == "placed"  # bloccata, invariata
+    # fix 11/07: il cancel NON promuove piu' a TRIMMED (serve l'osservazione);
+    # la row1 resta 'placed' ma con la richiesta di trim registrata
+    r1 = _by_id(sb, 1)["result"]
+    assert r1["submin_step"] == "placed"
+    assert r1["submin_state"]["trim_requested_ms"] > 0
+    r2 = _by_id(sb, 2)["result"]
+    assert r2["submin_step"] == "placed"  # bloccata, invariata
+    assert not r2["submin_state"].get("trim_requested_ms")
 
 
 # ===========================================================================
@@ -811,11 +817,20 @@ def test_submin_inflight_advance_to_trimmed():
     n = wk._process_once(sb, fl, strategy=_STRAT)
 
     assert n == 1
-    # PLACED→TRIMMED: cancel parziale della size_reduction (0.20)
+    # PLACED: cancel parziale RICHIESTO (size_reduction 0.20); la promozione a
+    # TRIMMED richiede l'OSSERVAZIONE del trim (fix 11/07, bug live 21:43)
     assert market.calls[0] == ("cancel_order", order, 0.20)
     row = _by_id(sb, 1)
     assert row["status"] == "processing"
-    assert row["result"]["submin_step"] == "trimmed"
+    assert row["result"]["submin_step"] == "placed"
+    assert row["result"]["submin_state"]["trim_requested_ms"] > 0
+
+    # il trim viene OSSERVATO (size_remaining ~ target) → TRIMMED, no re-cancel
+    order.size_remaining = 0.30
+    n = wk._process_once(sb, fl, strategy=_STRAT)
+    assert n == 1
+    assert len([c for c in market.calls if c[0] == "cancel_order"]) == 1
+    assert _by_id(sb, 1)["result"]["submin_step"] == "trimmed"
 
 
 def test_submin_inflight_unexpected_match_aborts_to_error():

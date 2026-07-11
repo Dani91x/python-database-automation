@@ -77,10 +77,13 @@ class _RecordingOps:
         return [name for name, _ in self.calls]
 
 
-def _advance(state: SubminState, ops: _RecordingOps, order=None) -> SubminState:
+def _advance(
+    state: SubminState, ops: _RecordingOps, order=None,
+    now_ms: Optional[int] = None,
+) -> SubminState:
     return advance_submin(
         _market(), state, order=order, jurisdiction="it",
-        customer_order_ref="awlq999", ops=ops,
+        customer_order_ref="awlq999", ops=ops, now_ms=now_ms,
     )
 
 
@@ -155,12 +158,20 @@ def test_happy_path_full_sequence():
     assert ops.calls[0][1]["price"] == 1.01
     assert ops.calls[0][1]["size"] == 0.50  # placed_size = min lay .it
 
-    # step2: ordine a riposo (EXECUTABLE) con size piena → cancel size_reduction
+    # step2a: ordine a riposo (EXECUTABLE) con size piena → cancel RICHIESTO,
+    # ma NIENTE promozione sulla fiducia dell'API (fix bug live 10/07 21:43)
     resting = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
-    st = _advance(st, ops, order=resting)
-    assert st.step is SubminStep.TRIMMED
+    st = _advance(st, ops, order=resting, now_ms=1_000_000)
+    assert st.step is SubminStep.PLACED          # ancora PLACED: attesa verifica
+    assert st.trim_requested_ms == 1_000_000
     assert ops.names() == ["place", "cancel"]
     assert ops.calls[1][1]["size_reduction"] == 0.20  # 0.50 - 0.30
+
+    # step2b: il trim viene OSSERVATO (size_remaining ~ target) → TRIMMED
+    observed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
+    st = _advance(st, ops, order=observed, now_ms=1_001_000)
+    assert st.step is SubminStep.TRIMMED
+    assert ops.names() == ["place", "cancel"]     # nessuna nuova operazione
 
     # step3: ridotto a target → replace alla target_price reale (5.0)
     trimmed = _order(bet_id="BET-77", status="EXECUTABLE", size_matched=0.0, size_remaining=0.30, price=1.01)
@@ -378,6 +389,120 @@ def test_advance_requires_ops_for_place():
     st = start_submin(side="lay", target_price=5.0, target_size=0.30, jurisdiction="it")
     with pytest.raises(ValueError):
         advance_submin(_market(), st, jurisdiction="it", customer_order_ref="awlq1", ops=None)
+
+
+# ===========================================================================
+# REGRESSIONE BUG LIVE 10/07 21:43 — "trimmed ✓" su park abbinato intero
+# (il replace portava la size PIENA a quota reale → fill istantaneo, ×4)
+# ===========================================================================
+def _placed_state(trim_requested_ms: int = 0) -> SubminState:
+    return SubminState(
+        step=SubminStep.PLACED, bet_id="BET-1", target_size=0.30,
+        target_price=5.0, placed_size=0.50, side="lay",
+        trim_requested_ms=trim_requested_ms,
+    )
+
+
+def test_bug_2143_snapshot_stantio_poi_match_niente_replace():
+    """LA regressione della serata: al poll del cancel lo snapshot è stantio
+    (matched=0), al poll dopo il park risulta ABBINATO INTERO. La macchina
+    NON deve mai arrivare al replace: guardia rischio → ABORTED."""
+    ops = _RecordingOps()
+    st = _placed_state()
+    # poll 1: snapshot stantio, size piena a riposo → cancel richiesto, NO promozione
+    stale = _order(bet_id="BET-1", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
+    st = _advance(st, ops, order=stale, now_ms=1_000_000)
+    assert st.step is SubminStep.PLACED
+    assert ops.names() == ["cancel"]
+    # poll 2: la verità arriva — park abbinato per intero → ABORT, mai replace
+    matched = _order(bet_id="BET-1", status="EXECUTION_COMPLETE", size_matched=0.50, size_remaining=0.0, price=1.01)
+    st = _advance(st, ops, order=matched, now_ms=1_002_000)
+    assert st.step is SubminStep.ABORTED
+    assert "ABORT" in st.note
+    assert "replace" not in ops.names()  # MAI il replace della size piena
+
+
+def test_step2_attesa_senza_nuove_operazioni_prima_del_recheck():
+    """Dopo la richiesta di cancel, entro la latenza attesa NON si ri-emette
+    nulla: si aspetta l'osservazione."""
+    ops = _RecordingOps()
+    st = _placed_state(trim_requested_ms=1_000_000)
+    intact = _order(bet_id="BET-1", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
+    st = _advance(st, ops, order=intact, now_ms=1_002_000)  # +2s < recheck 5s
+    assert st.step is SubminStep.PLACED
+    assert ops.names() == []
+
+
+def test_step2_riemissione_unica_su_residuo_intatto():
+    """Residuo INTATTO oltre la latenza attesa (cancel mai agito) → UNA
+    ri-emissione del cancel parziale, timestamp aggiornato."""
+    ops = _RecordingOps()
+    st = _placed_state(trim_requested_ms=1_000_000)
+    intact = _order(bet_id="BET-1", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
+    st = _advance(st, ops, order=intact, now_ms=1_006_000)  # +6s ≥ recheck 5s
+    assert st.step is SubminStep.PLACED
+    assert ops.names() == ["cancel"]
+    assert ops.calls[0][1]["size_reduction"] == 0.20  # parziale, non full
+    assert st.trim_requested_ms == 1_006_000
+
+
+def test_step2_timeout_full_cancel_e_abort():
+    """Trim MAI osservato entro il timeout → ritiro TOTALE (size_reduction
+    None) + ABORTED: mai proseguire verso il replace."""
+    ops = _RecordingOps()
+    st = _placed_state(trim_requested_ms=1_000_000)
+    # rem parziale strano (né target né intatto): niente ri-emissione, al
+    # timeout si ritira tutto
+    weird = _order(bet_id="BET-1", status="EXECUTABLE", size_matched=0.0, size_remaining=0.42, price=1.01)
+    st = _advance(st, ops, order=weird, now_ms=1_016_000)  # +16s ≥ timeout 15s
+    assert st.step is SubminStep.ABORTED
+    assert ops.names() == ["cancel"]
+    assert ops.calls[0][1]["size_reduction"] is None  # full cancel
+    assert "mai replace" in st.note
+
+
+def test_step2_park_scomparso_abort_pulito():
+    """Park sparito dopo la richiesta (zero matched, zero residuo, non
+    executable) = cancellato per intero → ABORT pulito, nessuna attesa infinita."""
+    ops = _RecordingOps()
+    st = _placed_state(trim_requested_ms=1_000_000)
+    gone = _order(bet_id="BET-1", status="EXECUTION_COMPLETE", size_matched=0.0, size_remaining=0.0, price=1.01)
+    st = _advance(st, ops, order=gone, now_ms=1_003_000)
+    assert st.step is SubminStep.ABORTED
+    assert "scomparso" in st.note
+    assert ops.names() == []
+
+
+def test_step3_rifiuta_replace_con_residuo_oltre_target():
+    """DIFESA IN PROFONDITÀ: in TRIMMED (es. stato ripristinato) con residuo
+    osservato OLTRE il target il replace è VIETATO → full cancel + ABORTED.
+    È esattamente la mossa che il 10/07 ha portato 2€ pieni a quota reale."""
+    ops = _RecordingOps()
+    st = SubminState(
+        step=SubminStep.TRIMMED, bet_id="BET-1", target_size=0.30,
+        target_price=5.0, placed_size=0.50, side="lay",
+    )
+    full = _order(bet_id="BET-1", status="EXECUTABLE", size_matched=0.0, size_remaining=0.50, price=1.01)
+    st = _advance(st, ops, order=full, now_ms=1_000_000)
+    assert st.step is SubminStep.ABORTED
+    assert ops.names() == ["cancel"]
+    assert ops.calls[0][1]["size_reduction"] is None  # ritiro totale
+    assert "replace VIETATO" in st.note
+    assert "replace" not in ops.names()
+
+
+def test_step3_park_scomparso_abort_pulito():
+    """Anche in TRIMMED un park sparito senza matched → ABORT pulito."""
+    ops = _RecordingOps()
+    st = SubminState(
+        step=SubminStep.TRIMMED, bet_id="BET-1", target_size=0.30,
+        target_price=5.0, placed_size=0.50, side="lay",
+    )
+    gone = _order(bet_id="BET-1", status="EXECUTION_COMPLETE", size_matched=0.0, size_remaining=0.0, price=1.01)
+    st = _advance(st, ops, order=gone, now_ms=1_000_000)
+    assert st.step is SubminStep.ABORTED
+    assert "scomparso" in st.note
+    assert ops.names() == []
 
 
 # ===========================================================================

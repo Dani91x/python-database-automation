@@ -184,6 +184,7 @@ class _Slot:
     cooldown_until: int = 0              # niente ingressi prima di questo ts (gap/loss)
     t_last_flat: Optional[int] = None    # ultimo piazzamento flatten (anti-churn live)
     residual_ok: bool = False            # micro-residuo accettato: NON ri-flattenare
+    residual_accepted: float = 0.0       # entita' |nw-nl| del residuo accettato
     # sequenze park-trim-replace (uscite a size ESATTA su .it): vedi _drive_submins
     submins: list = field(default_factory=list)
     # prints DENTRO lo spread (ts, EUR): il CIBO diretto dei maker
@@ -435,7 +436,8 @@ class ScalperStrategy(BaseStrategy):
         # statistiche cumulative (lette dal servizio per la UI)
         self.stats: Dict[str, float] = {
             "orders_placed": 0, "dry_quotes": 0, "cycles": 0,
-            "scalps": 0, "roundtrips": 0, "scratches": 0, "stops": 0,
+            "scalps": 0, "scratch_pars": 0, "ledger_divergences": 0,
+            "roundtrips": 0, "scratches": 0, "stops": 0,
             "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
             "trend_entries": 0, "target_hit": 0,
             # contabilita' per FASE (missione one_green_per_phase)
@@ -653,7 +655,12 @@ class ScalperStrategy(BaseStrategy):
                               slot.close, slot.next_entry, *slot.flatten_orders):
                         self._cancel_if_live(market, o)
                     nw0, nl0 = self._net_position(slot)
-                    if abs(nw0 - nl0) > (0.30 if slot.residual_ok else 0.02):
+                    # tolleranza allineata al residuo ACCETTATO (fix 11/07):
+                    # un residuo forzato > 0.30 non deve riaprire il flatten
+                    # in loop; una NUOVA esposizione (orfano riempito) si'.
+                    tol = (max(0.30, slot.residual_accepted + 0.02)
+                           if slot.residual_ok else 0.02)
+                    if abs(nw0 - nl0) > tol:
                         self._begin_flatten(slot)
                 if slot.status == FLATTENING:
                     self._drive_flatten(market, slot, best_back, best_lay, now)
@@ -699,8 +706,26 @@ class ScalperStrategy(BaseStrategy):
                 if slot.submins:
                     continue  # uscita esatta ancora in corso: niente riciclo
                 nw0, nl0 = self._net_position(slot)
-                tol = 0.30 if slot.residual_ok else 0.02
+                tol = (max(0.30, slot.residual_accepted + 0.02)
+                       if slot.residual_ok else 0.02)
                 if abs(nw0 - nl0) > tol:
+                    # RICONCILIAZIONE LEDGER↔ORDINI (fix 11/07, rete del bug
+                    # 21:43): ciclo CHIUSO con esposizione direzionale =
+                    # posizione INVISIBILE al ledger. Auto-heal (flatten
+                    # certificato) + CRITICAL oltre 0.5€; divergenze ripetute
+                    # → FREEZE della sessione (force_flat: chiude tutto e
+                    # blocca gli ingressi). MAI piu' posizioni fantasma.
+                    self.stats["ledger_divergences"] += 1
+                    if abs(nw0 - nl0) > 0.5:
+                        self._emit("ledger_divergence", level="CRITICAL",
+                                   nw=round(nw0, 2), nl=round(nl0, 2),
+                                   n=int(self.stats["ledger_divergences"]))
+                    if (self.stats["ledger_divergences"] >= 3
+                            and not self.force_flat):
+                        self._emit("recon_freeze", level="CRITICAL",
+                                   msg="divergenze ledger ripetute: FREEZE "
+                                       "sessione (force-flat)")
+                        self.force_flat = True
                     self._begin_flatten(slot)
                     self._drive_flatten(market, slot, best_back, best_lay, now)
                     continue
@@ -1132,6 +1157,56 @@ class ScalperStrategy(BaseStrategy):
         slot.t_quote = now
         slot.ref_price = mp
 
+    def _presize_close(self, market: Any, slot: _Slot) -> None:
+        """DIRETTIVA OPERATORE 10/07 (§12.1 bibbia): il verde si spalma NEGLI
+        STAKE, non con una terza gamba correttiva a fine ciclo.
+
+        Quando l'entry e' abbinata e la gamba opposta in coda diventa la
+        close, la porta alla size verde-simmetrica ``exit = entry x P_entry /
+        P_exit`` SENZA perdere la priorita' di coda:
+          * close troppo GRANDE (entry LAY → close BACK): cancel PARZIALE
+            (l'exchange conserva la posizione in coda del residuo);
+          * close troppo PICCOLA (entry BACK → close LAY): micro ordine
+            AGGIUNTIVO alla stessa quota (la parte in coda resta intatta),
+            via esecuzione esatta .it se sotto-minimo.
+        Cosi' il fill della close chiude il ciclo GIA' piatto e verde sui due
+        esiti (la missione og1 VEDE il verde) e il submin resta un caso raro.
+        """
+        entry, close = slot.entry, slot.close
+        if entry is None or close is None:
+            return
+        m = float(getattr(entry, "size_matched", 0.0) or 0.0)
+        if m <= 0:
+            return
+        pe = float(getattr(entry, "average_price_matched", 0.0) or 0.0)
+        if pe <= 1.0:
+            pe = float(getattr(getattr(entry, "order_type", None), "price", 0.0) or 0.0)
+        pc = float(getattr(getattr(close, "order_type", None), "price", 0.0) or 0.0)
+        if pe <= 1.0 or pc <= 1.0:
+            return
+        ideal = round(m * pe / pc, 2)
+        cur = float(getattr(getattr(close, "order_type", None), "size", 0.0) or 0.0)
+        delta = round(ideal - cur, 2)
+        if abs(delta) < 0.02:
+            return  # gia' simmetrica al centesimo
+        sid = getattr(entry, "selection_id", None)
+        cs = (getattr(close, "side", "") or "").upper()
+        if delta < 0:
+            # riduzione: il cancel parziale conserva la coda del residuo
+            if not self.dry_run:
+                try:
+                    market.cancel_order(close, size_reduction=round(-delta, 2))
+                except Exception:  # noqa: BLE001 - difensivo: meglio close intera
+                    return         # (residuo gestito dal flatten) che un crash
+            self._emit("close_presize", selection_id=sid, side=cs,
+                       adjust=round(delta, 2), ideal=ideal)
+        else:
+            o = self._place(market, sid, cs, pc, delta, floor_min=False,
+                            slot=slot)
+            self._emit("close_presize", selection_id=sid, side=cs,
+                       adjust=round(delta, 2), ideal=ideal,
+                       placed=bool(o is not None))
+
     def _manage_maker(
         self, market: Any, slot: _Slot, now: int,
         best_back: Optional[float], best_lay: Optional[float],
@@ -1195,6 +1270,9 @@ class ScalperStrategy(BaseStrategy):
                 slot.entry_back = slot.entry_lay = None
                 slot.t_lock = now
                 slot.status = LOCKING
+                # stake pre-dimensionati (direttiva 10/07): close alla size
+                # verde-simmetrica senza perdere la coda
+                self._presize_close(market, slot)
                 return
             if done:
                 # fill parziale poi chiuso: hedge di size esatta (vecchia via)
@@ -1234,6 +1312,9 @@ class ScalperStrategy(BaseStrategy):
                 slot.entry_back = slot.entry_lay = None
                 slot.t_lock = now
                 slot.status = LOCKING
+                # stake pre-dimensionati (direttiva 10/07): close alla size
+                # verde-simmetrica senza perdere la coda
+                self._presize_close(market, slot)
                 return
             if done:
                 self._cancel_if_live(market, eb)
@@ -1466,13 +1547,21 @@ class ScalperStrategy(BaseStrategy):
                 if abs(nw0 - nl0) > 0.02:
                     self._begin_flatten(slot)
                 else:
+                    # TELEMETRIA ONESTA (fix 11/07, §12.1 bibbia): "scalp" =
+                    # TICK VERO (locked >= soglia green). Lo scratch chiuso a
+                    # pari NON e' uno scalp: live 10/07 le stats dicevano
+                    # "scalp" su 7 cicli con 0€ catturati.
+                    kind = "scalp" if nl0 >= self._GREEN_MIN else "scratch_par"
                     slot.status = DONE
                     slot.cycles += 1
                     self.stats["cycles"] += 1
-                    self.stats["scalps"] += 1
+                    if kind == "scalp":
+                        self.stats["scalps"] += 1
+                    else:
+                        self.stats["scratch_pars"] += 1
                     self.stats["pnl_locked"] += nl0
-                    self._on_cycle_closed(slot, nl0, kind="scalp", now=now)
-                    self._emit("cycle", esito="scalp", locked=round(nl0, 4),
+                    self._on_cycle_closed(slot, nl0, kind=kind, now=now)
+                    self._emit("cycle", esito=kind, locked=round(nl0, 4),
                                selection_id=getattr(slot.entry, "selection_id", None))
                 return
             # ---- gestione avversita' basata sul PREZZO D'INGRESSO ----
@@ -1746,11 +1835,33 @@ class ScalperStrategy(BaseStrategy):
                     # quindi dal loss cap e dal P&L di fase. Il flag
                     # residual_ok garantisce che si conti UNA volta sola.
                     slot.residual_ok = True
+                    slot.residual_accepted = abs(net_win - net_lose)
                     locked = min(net_win, net_lose)
                     self.stats["pnl_locked"] += locked
                     self._on_cycle_closed(slot, locked,
                                           kind="flatten_residual", now=now)
                     self._emit("flatten_residual", locked=round(locked, 4),
+                               nw=round(net_win, 3), nl=round(net_lose, 3))
+                slot.status = DONE
+            elif not slot.submins and slot.flat_tries > 12:
+                # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
+                # TERMINA, sempre, con ledger chiuso): niente e' piazzabile
+                # (minimi .it, submin esauriti/rate-limited), nessuna sequenza
+                # exact attiva, molti tentativi → il residuo si ACCETTA e si
+                # CONTABILIZZA SUBITO, qualunque sia l'entita' (bounded
+                # by-design: sotto il minimo di piazzamento del lato).
+                # Live 10/07 20:58: TRE residui cosi' hanno tenuto il
+                # force-flat in skip-loop OLTRE la deadline KO-3' (flattens=0,
+                # "mai posizioni aperte al KO" violata). Mai piu'.
+                if not slot.residual_ok:
+                    slot.residual_ok = True
+                    slot.residual_accepted = abs(net_win - net_lose)
+                    locked = min(net_win, net_lose)
+                    self.stats["pnl_locked"] += locked
+                    self._on_cycle_closed(slot, locked,
+                                          kind="flatten_residual", now=now)
+                    self._emit("flatten_residual_forced", level="WARN",
+                               locked=round(locked, 4),
                                nw=round(net_win, 3), nl=round(net_lose, 3))
                 slot.status = DONE
             elif (
@@ -1804,13 +1915,17 @@ class ScalperStrategy(BaseStrategy):
         """Aggrega gli ordini matchati in (SB, OB, SL, OL).
 
         SB/SL = stake matchato lato back/lay; OB/OL = prezzo medio matchato
-        (media pesata per size). Ordini ``None`` ignorati.
+        (media pesata per size). Ordini ``None`` ignorati. Lo STESSO oggetto
+        ordine passato due volte (es. slot.close + flatten_orders) conta UNA
+        volta sola: un duplicato raddoppierebbe il matched (money-critical).
         """
         sb = sl = 0.0
         sb_pw = sl_pw = 0.0  # somma price*size per la media pesata
+        seen: set = set()
         for o in orders:
-            if o is None:
+            if o is None or id(o) in seen:
                 continue
+            seen.add(id(o))
             m = float(getattr(o, "size_matched", 0.0) or 0.0)
             if m <= 0:
                 continue
@@ -1921,6 +2036,11 @@ class ScalperStrategy(BaseStrategy):
             order_type=LimitOrder(price=price, size=size, persistence_type="LAPSE"),
         )
         market.place_order(order)
+        # ANTI-ORFANI (lezione live 10/07: exit rimasta viva 40+ min): ogni
+        # ordine piazzato con uno slot noto entra nella contabilita' dello
+        # slot (dedup by-identity) → il flatten lo vede e lo cancella SEMPRE.
+        if slot is not None:
+            self._track(slot, order)
         return order
 
     # ---------------------------------------------- uscite a size ESATTA (.it)
@@ -1990,8 +2110,10 @@ class ScalperStrategy(BaseStrategy):
         rest = round(size - main, 2)
         main_order = None
         if main >= smin - _EPS:
+            # slot passato per il tracking anti-orfani; nessuna ricorsione:
+            # main e' multiplo di 0,50 → _size_direct_ok=True → place diretto.
             main_order = self._place(market, selection_id, side, price, main,
-                                     floor_min=False, slot=None)  # diretto
+                                     floor_min=False, slot=slot)
         if rest < 0.05:
             if rest >= 0.01:
                 self._emit("min_bet_skip", selection_id=int(selection_id),
@@ -2099,8 +2221,21 @@ class ScalperStrategy(BaseStrategy):
             if new_state.step == SubminStep.DONE:
                 slot.submins.remove(entry)
             elif new_state.step == SubminStep.ABORTED:
-                self._emit("submin_abort", note=new_state.note[:200])
+                o_ab = entry.get("order")
+                matched = float(getattr(o_ab, "size_matched", 0.0) or 0.0) \
+                    if o_ab is not None else 0.0
+                self._emit("submin_abort", note=new_state.note[:200],
+                           matched=round(matched, 2))
                 slot.submins.remove(entry)
+                # COMPENSAZIONE IMMEDIATA (bug live 10/07 21:43): un park
+                # abbinato e' posizione REALE non prevista. L'ordine e' gia'
+                # tracciato in flatten_orders → la macchina flatten certificata
+                # equalizza TUTTO il matched dello slot. Mai lasciarla al caso.
+                if matched > 0.02 and slot.status != FLATTENING:
+                    self._emit("submin_abort_matched", level="CRITICAL",
+                               matched=round(matched, 2),
+                               selection_id=getattr(o_ab, "selection_id", None))
+                    self._begin_flatten(slot)
 
     @staticmethod
     def _has_live(order: Any) -> bool:
@@ -2138,6 +2273,7 @@ class ScalperStrategy(BaseStrategy):
         slot.close = None
         slot.close_scratched = False
         slot.residual_ok = False
+        slot.residual_accepted = 0.0
         slot.submin_count = 0
         slot.next_entry = None
         slot.flatten_orders = []

@@ -480,7 +480,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             while not stop_flag.is_set():
                 try:
                     r = db.sb.table("live_now").select(
-                        "score_home,score_away").eq("event_id", ev).execute()
+                        "score_home,score_away,minute").eq("event_id", ev).execute()
                     row = (r.data or [None])[0] or {}
                     h, a = row.get("score_home"), row.get("score_away")
                     if h is not None and a is not None:
@@ -489,6 +489,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                         line = (f"OVER_UNDER_{tot + 1}5" if tot <= 7
                                 else "NONE")
                         sniper_ref.set_line(line)
+                    # clock REALE di partita per la telemetria (fix 11/07,
+                    # conferma live 10/07 22:22: marketTime conta anche l'HT
+                    # → log "min 81.9" al minuto reale 59). SOLO telemetria:
+                    # le finestre/gate validati S16 restano su elapsed KO.
+                    mn = row.get("minute")
+                    if mn is not None:
+                        sniper_ref.live_minute = float(mn)
                 except Exception:  # noqa: BLE001 - il watcher non muore mai
                     pass
                 time.sleep(15)
@@ -513,10 +520,32 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 ok = ok and sniper.is_flat()
             return ok
 
+        _recon_alerted = 0
+
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
             flush()
             db.set_control(ev, heartbeat_at=_now_iso(), stats=_stats())
+            # RICONCILIAZIONE bot↔ordini (condizione §0-bis n.1, fix 11/07):
+            # le divergenze ledger↔ordini rilevate dalle strategie diventano
+            # alert CRITICAL in-app (live_alerts) — mai piu' posizioni
+            # invisibili scoperte a occhio dall'operatore.
+            try:
+                _div = int(strategy.stats.get("ledger_divergences", 0) or 0)
+                if sniper is not None:
+                    _div += int(sniper.stats.get("ledger_divergences", 0) or 0)
+                if _div > _recon_alerted:
+                    _recon_alerted = _div
+                    db.sb.table("live_alerts").insert({
+                        "level": "CRITICAL", "code": "SCALPER_RECON",
+                        "message": (f"divergenza ledger↔ordini n.{_div} "
+                                    f"(evento {ev}): auto-heal flatten in "
+                                    "corso; a 3 divergenze la sessione si "
+                                    "congela (force-flat)"),
+                        "event_id": ev,
+                    }).execute()
+            except Exception:  # noqa: BLE001 - alert best-effort, mai bloccare
+                pass
             status = db.control_status(ev)
             if status == "stopping" or os.path.isfile(KILL_FILE):
                 stopped_by_ui = status == "stopping"

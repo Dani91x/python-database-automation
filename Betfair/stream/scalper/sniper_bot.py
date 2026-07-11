@@ -62,6 +62,7 @@ class _Pos:
     submins: List[dict] = field(default_factory=list)
     t_last_submin: int = 0
     submin_count: int = 0
+    residual_accepted: float = 0.0   # entita' |nw-nl| del residuo accettato
 
 
 class SniperStrategy(BaseStrategy):
@@ -119,6 +120,10 @@ class SniperStrategy(BaseStrategy):
         self.exact_exits: bool = bool(c.get("exact_exits", False))
         self.force_flat: bool = False
         self._event_done: bool = False
+        # clock REALE di partita (da live_now.minute, spinto dal watcher di
+        # sessione). SOLO telemetria: i gate S16 validati restano su elapsed
+        # KO (fix 11/07: marketTime conta l'HT → "min 81.9" al 59' reale).
+        self.live_minute: Optional[float] = None
 
         # stato
         self._pos: Dict[Tuple[str, int], _Pos] = {}
@@ -135,6 +140,7 @@ class SniperStrategy(BaseStrategy):
             "orders": 0, "entries": 0, "greens": 0, "stops": 0,
             "timeouts": 0, "flattens": 0, "dry_fires": 0,
             "pnl_locked": 0.0, "pos_ms_total": 0.0, "cycles": 0,
+            "ledger_divergences": 0,
         }
 
     # ------------------------------------------------------------------ util
@@ -314,6 +320,32 @@ class SniperStrategy(BaseStrategy):
             pos = self._p(mid, int(runner.selection_id))
             # avanza le sequenze exact (park-trim-replace) PRIMA di tutto
             self._drive_submins(market, pos)
+
+            # RICONCILIAZIONE LEDGER↔ORDINI (fix 11/07 — LA rete del bug
+            # 21:43): posizione considerata CHIUSA/inattiva ma gli ordini
+            # reali mostrano esposizione direzionale = posizione INVISIBILE
+            # (il 10/07: ledger "+0.03 flat" contro conto short ~10€, chiuso
+            # a mano dall'operatore). Auto-heal col flatten certificato +
+            # CRITICAL; divergenze ripetute → FREEZE (force_flat).
+            if not pos.entries and not pos.flattening and not pos.submins:
+                sb0, ob0, sl0, ol0 = self._matched(pos.flatten_orders)
+                nw0 = sb0 * (ob0 - 1.0) - sl0 * (ol0 - 1.0)
+                nl0 = sl0 - sb0
+                if abs(nw0 - nl0) > max(0.30, pos.residual_accepted + 0.02):
+                    self.stats["ledger_divergences"] += 1
+                    self._emit("ledger_divergence", level="CRITICAL",
+                               nw=round(nw0, 2), nl=round(nl0, 2),
+                               n=int(self.stats["ledger_divergences"]))
+                    if (self.stats["ledger_divergences"] >= 3
+                            and not self.force_flat):
+                        self._emit("recon_freeze", level="CRITICAL",
+                                   msg="divergenze ledger ripetute: FREEZE "
+                                       "sessione sniper (force-flat)")
+                        self.force_flat = True
+                    self._begin_flatten(market, pos)
+                    self._drive_flatten(market, pos, bb, bl, now)
+                    continue
+
             if pos.done:
                 continue
 
@@ -380,9 +412,10 @@ class SniperStrategy(BaseStrategy):
                         self.stats["pnl_locked"] += locked
                         self._close_cycle_clock(pos, now)
                         self._emit("sniper_green", locked=round(locked, 3),
-                                   minute=round(el / 60.0, 1) if el else None)
-                        pos.flatten_orders.extend(pos.entries)
-                        pos.flatten_orders.append(pos.close)
+                                   minute=self._minute(el))
+                        for o_t in pos.entries:
+                            self._track(pos, o_t)
+                        self._track(pos, pos.close)
                         pos.entries = []
                         pos.close = None
                         pos.close_locked = 0.0
@@ -431,7 +464,7 @@ class SniperStrategy(BaseStrategy):
             self._dry_last_fire[key] = now
             self.stats["dry_fires"] += 1
             self._emit("sniper_dry_fire", price=price, size=self.stake,
-                       minute=round(el / 60.0, 1) if el else None,
+                       minute=self._minute(el),
                        best_back=bb, best_lay=bl, size_back=sb, size_lay=sl,
                        exit_price=price_ticks_away(price, -self.target_ticks))
             return
@@ -441,7 +474,14 @@ class SniperStrategy(BaseStrategy):
             pos.entry_odds = price
             self.stats["entries"] += 1
             self._emit("sniper_fire", price=price, size=self.stake,
-                       minute=round(el / 60.0, 1) if el else None)
+                       minute=self._minute(el))
+
+    def _minute(self, el: Optional[float]) -> Optional[float]:
+        """Minuto per la TELEMETRIA: live_now.minute se disponibile (clock
+        reale di partita), altrimenti fallback elapsed-KO/60."""
+        if self.live_minute is not None:
+            return round(float(self.live_minute), 1)
+        return round(el / 60.0, 1) if el else None
 
     def _close_cycle_clock(self, pos: _Pos, now: Optional[float]) -> None:
         if pos.entry_fill_pt is not None and now is not None:
@@ -450,10 +490,14 @@ class SniperStrategy(BaseStrategy):
         pos.entry_fill_pt = None
 
     def _matched(self, orders) -> Tuple[float, float, float, float]:
+        # dedup by-identity: lo stesso oggetto ordine conta UNA volta sola
+        # (un duplicato raddoppierebbe il matched: money-critical).
         sb = sl = sbp = slp = 0.0
+        seen: set = set()
         for o in orders:
-            if o is None:
+            if o is None or id(o) in seen:
                 continue
+            seen.add(id(o))
             m = float(getattr(o, "size_matched", 0.0) or 0.0)
             if m <= 0:
                 continue
@@ -471,9 +515,13 @@ class SniperStrategy(BaseStrategy):
     def _begin_flatten(self, market: Any, pos: _Pos) -> None:
         for o in pos.entries + ([pos.close] if pos.close else []):
             self._cancel_if_live(market, o)
-        pos.flatten_orders.extend([o for o in pos.entries if o is not None])
+        # _track (dedup by-identity): con l'auto-tracking di _place gli ordini
+        # possono essere GIA' in flatten_orders — un duplicato raddoppierebbe
+        # il matched in _matched (money-critical).
+        for o in pos.entries:
+            self._track(pos, o)
         if pos.close is not None:
-            pos.flatten_orders.append(pos.close)
+            self._track(pos, pos.close)
         pos.entries = []
         pos.close = None
         pos.flattening = True
@@ -509,10 +557,28 @@ class SniperStrategy(BaseStrategy):
             locked = min(nw, nl)
             pos.flattening = False
             pos.done = False
+            pos.residual_accepted = abs(nw - nl)
             self.stats["flattens"] += 1
             self.stats["pnl_locked"] += locked
             self._close_cycle_clock(pos, now)
             self._emit("sniper_flat_residual", locked=round(locked, 3),
+                       nw=round(nw, 3), nl=round(nl, 3))
+            self._loss_capped()
+            return
+        if not pos.submins and pos.flat_tries > 12:
+            # ULTIMA SPIAGGIA (direttiva operatore 10/07 §12.1: il flatten
+            # TERMINA sempre, con ledger chiuso): niente e' piazzabile e
+            # nessuna sequenza exact attiva dopo molti tentativi → il residuo
+            # si ACCETTA e si CONTABILIZZA subito (worst-case), mai skip-loop.
+            locked = min(nw, nl)
+            pos.flattening = False
+            pos.done = False
+            pos.residual_accepted = abs(nw - nl)
+            self.stats["flattens"] += 1
+            self.stats["pnl_locked"] += locked
+            self._close_cycle_clock(pos, now)
+            self._emit("sniper_flat_forced", level="WARN",
+                       locked=round(locked, 3),
                        nw=round(nw, 3), nl=round(nl, 3))
             self._loss_capped()
             return
@@ -606,6 +672,11 @@ class SniperStrategy(BaseStrategy):
         o = tr.create_order(side=side, order_type=LimitOrder(
             price=float(price), size=size, persistence_type="LAPSE"))
         market.place_order(o)
+        # ANTI-ORFANI (lezione live 10/07: exit rimasta viva 40+ min): ogni
+        # ordine con una posizione nota entra in flatten_orders (dedup
+        # by-identity) → il blanket-cancel del flatten lo copre SEMPRE.
+        if pos is not None:
+            self._track(pos, o)
         return o
 
     # ---- park-trim-replace (porting fedele da ScalperStrategy) ----
@@ -635,8 +706,10 @@ class SniperStrategy(BaseStrategy):
         rest = round(size - main, 2)
         main_order = None
         if main >= smin - _EPS:
+            # pos passato per il tracking anti-orfani; nessuna ricorsione:
+            # main e' multiplo di 0,50 → _size_direct_ok=True → place diretto.
             main_order = self._place(market, sid, side, price, main,
-                                     floor=False, pos=None)  # diretto
+                                     floor=False, pos=pos)
         if rest < 0.05:
             if rest >= 0.01:
                 self._emit("min_bet_skip", selection_id=int(sid), side=side,
@@ -737,8 +810,19 @@ class SniperStrategy(BaseStrategy):
             if new_state.step == SubminStep.DONE:
                 pos.submins.remove(entry)
             elif new_state.step == SubminStep.ABORTED:
-                self._emit("submin_abort", note=new_state.note[:200])
+                o_ab = entry.get("order")
+                matched = float(getattr(o_ab, "size_matched", 0.0) or 0.0) \
+                    if o_ab is not None else 0.0
+                self._emit("submin_abort", note=new_state.note[:200],
+                           matched=round(matched, 2))
                 pos.submins.remove(entry)
+                # COMPENSAZIONE IMMEDIATA (bug live 10/07 21:43): park abbinato
+                # = posizione reale non prevista → flatten certificato SUBITO
+                # (l'ordine e' gia' tracciato in flatten_orders).
+                if matched > 0.02 and not pos.flattening:
+                    self._emit("submin_abort_matched", level="CRITICAL",
+                               matched=round(matched, 2))
+                    self._begin_flatten(market, pos)
 
     @staticmethod
     def _has_live(o: Any) -> bool:

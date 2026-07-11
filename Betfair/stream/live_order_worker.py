@@ -1881,6 +1881,7 @@ def _submin_state_to_dict(state: Any) -> Dict[str, Any]:
         "placed_size": state.placed_size,
         "side": state.side,
         "note": state.note,
+        "trim_requested_ms": int(getattr(state, "trim_requested_ms", 0) or 0),
     }
 
 
@@ -1895,6 +1896,9 @@ def _submin_state_from_dict(d: Dict[str, Any]) -> Any:
         placed_size=float(d["placed_size"]),
         side=str(d["side"]),
         note=str(d.get("note") or ""),
+        # persistito dal fix 11/07 (verifica osservata del trim); default 0
+        # per righe scritte prima del fix.
+        trim_requested_ms=int(d.get("trim_requested_ms") or 0),
     )
 
 

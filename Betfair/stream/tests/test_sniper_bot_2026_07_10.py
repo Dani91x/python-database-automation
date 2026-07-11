@@ -344,3 +344,45 @@ def test_force_flat_e_is_flat():
     # il flatten ha piazzato la chiusura (LAY) per pareggiare la gamba
     lays = [o for o in mkt.orders if o.side == "LAY"]
     assert lays, "attesa chiusura LAY dal flatten"
+
+
+def test_ledger_divergence_riapre_flatten_con_critical():
+    """Regressione 10/07 21:43: posizione considerata CHIUSA (niente entries,
+    niente flattening, niente submins) ma gli ordini reali mostrano una
+    esposizione direzionale (park abbinati) -> la rete ledger<->ordini emette
+    CRITICAL e riapre il flatten certificato. Prima del fix il bot restava
+    "flat +0.03" mentre il conto era short ~10 EUR (chiuso a mano)."""
+    s = _strategy(dry_run=False)
+    mkt = _FakeMarket()
+    pos = s._p("1.234", 1221385)
+    # short invisibile: LAY 8@2.4 matchato orfano; il ledger lo crede chiuso
+    pos.flatten_orders.append(_FakeOrder("LAY", price=2.4, size=8.0,
+                                         size_matched=8.0, avg=2.4))
+
+    s.process_market_book(mkt, _book(1200, bb=3.40, bl=3.45, sb=200))
+
+    kinds = [k for k, _ in s._test_events]
+    assert "ledger_divergence" in kinds
+    assert pos.flattening is True                # auto-heal partito
+    assert s.stats["ledger_divergences"] == 1
+    # l'equalizzazione e' stata piazzata (BACK per chiudere lo short)
+    backs = [o for o in mkt.orders if o.side == "BACK"]
+    assert backs, "attesa equalizzazione BACK dal flatten"
+
+
+def test_ledger_flat_non_scatta():
+    """Un ciclo chiuso SANO (green equalizzato) non deve far scattare la rete."""
+    s = _strategy(dry_run=False)
+    mkt = _FakeMarket()
+    pos = s._p("1.234", 1221385)
+    # entry BACK 5@3.45 + green LAY 5.07@3.40: equalizzato (|nw-nl|<=0.02)
+    pos.flatten_orders.append(_FakeOrder("BACK", price=3.45, size=5.0,
+                                         size_matched=5.0, avg=3.45))
+    pos.flatten_orders.append(_FakeOrder("LAY", price=3.40, size=5.07,
+                                         size_matched=5.07, avg=3.40))
+
+    s.process_market_book(mkt, _book(1200, bb=3.40, bl=3.45, sb=200))
+
+    kinds = [k for k, _ in s._test_events]
+    assert "ledger_divergence" not in kinds
+    assert pos.flattening is False
