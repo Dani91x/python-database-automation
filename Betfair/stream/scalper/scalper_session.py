@@ -368,8 +368,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         sniper = None
         if sniper_mode:
             from .sniper_bot import SniperStrategy
-            sniper_stake = float(
-                (control.get("params") or {}).get("sniper_stake") or 10.0)
+            _cp = control.get("params") or {}
+            sniper_stake = float(_cp.get("sniper_stake") or 10.0)
             sniper = SniperStrategy(
                 market_filter=filters.streaming_market_filter(
                     market_ids=market_ids),
@@ -382,6 +382,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     "exact_exits": True,
                     "size_step": 0.5,
                     "live_min_bet": 2.0,
+                    # ---- F4 (11/07): layer multi-colpo/multi-linea, tutti
+                    # SPENTI di default (= S16 certificata). Si armano dai
+                    # params della sessione per il paper out-of-sample:
+                    # conteggio 10/07: multi-linea +1.28 vs mono +0.10 (n=1).
+                    "max_shots": int(_cp.get("sniper_max_shots") or 0),
+                    "shot_cooldown_s": float(
+                        _cp.get("sniper_cooldown_s") or 0.0),
+                    "parallel_lines": int(
+                        _cp.get("sniper_parallel_lines") or 0),
+                    "profit_target": float(
+                        _cp.get("sniper_profit_target") or 0.01),
                 },
                 event_sink=sink,
                 # esposizione: BACK -> liability = stake (margine x3)
@@ -393,6 +404,24 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             db.log(ev, "info", {"msg": "sniper armato (S16)",
                                 "stake": sniper_stake,
                                 "dry_run": params["dry_run"]})
+        # ---- F5 (11/07): RISK MANAGER unico per evento -------------------
+        # UN semaforo condiviso: sospensione in-play (gol) → stop NUOVI
+        # ingressi di TUTTE le strategie per risk_cooldown_s (default 120s,
+        # tarabile a pagella); le chiusure passano sempre. N strategie, UN
+        # rischio. + cap perdita GLOBALE evento nel heartbeat (sotto).
+        from .risk_semaphore import EventRiskSemaphore
+        _risk_cooldown = float(
+            (control.get("params") or {}).get("risk_cooldown_s") or 120.0)
+        _global_cap = float(
+            (control.get("params") or {}).get("event_global_cap") or 2.0)
+        risk_sem = EventRiskSemaphore(
+            post_suspension_cooldown_s=_risk_cooldown, emit=sink)
+        strategy.risk_sem = risk_sem
+        if sniper is not None:
+            sniper.risk_sem = risk_sem
+        db.log(ev, "info", {"msg": "risk manager evento armato",
+                            "cooldown_s": _risk_cooldown,
+                            "global_cap": _global_cap})
         # min_bet_validation=False COME IL RUNNER LIVE (fix CRITICAL-3 del
         # live-trading): l'OrderValidation di flumine (size>=1 o payout>=20)
         # non conosce le eccezioni Betfair (green-up sotto-minimo, park-trim)
@@ -485,10 +514,19 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     h, a = row.get("score_home"), row.get("score_away")
                     if h is not None and a is not None:
                         tot = int(h) + int(a)
-                        # oltre 8.5 non esistono linee: "NONE" spegne il fuoco
-                        line = (f"OVER_UNDER_{tot + 1}5" if tot <= 7
-                                else "NONE")
-                        sniper_ref.set_line(line)
+                        if tot > 7:
+                            # oltre 8.5 non esistono linee: spegne il fuoco
+                            sniper_ref.set_line("NONE")
+                        else:
+                            # F4a multi-linea: dinamica + N parallele sopra
+                            # (parallel_lines=0 → solo dinamica, S16 attuale)
+                            lines = [f"OVER_UNDER_{tot + 1}5"]
+                            extra = int(getattr(
+                                sniper_ref, "parallel_lines", 0) or 0)
+                            for k in range(1, extra + 1):
+                                if tot + 1 + k <= 8:
+                                    lines.append(f"OVER_UNDER_{tot + 1 + k}5")
+                            sniper_ref.set_lines(lines)
                     # clock REALE di partita per la telemetria (fix 11/07,
                     # conferma live 10/07 22:22: marketTime conta anche l'HT
                     # → log "min 81.9" al minuto reale 59). SOLO telemetria:
@@ -545,6 +583,20 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                         "event_id": ev,
                     }).execute()
             except Exception:  # noqa: BLE001 - alert best-effort, mai bloccare
+                pass
+            # F5: cap perdita GLOBALE evento (maker+sniper insieme —
+            # N strategie, UN rischio). Superato → force-flat totale.
+            try:
+                _pl = float(strategy.stats.get("pnl_locked", 0.0) or 0.0)
+                if sniper is not None:
+                    _pl += float(sniper.stats.get("pnl_locked", 0.0) or 0.0)
+                if (_global_cap > 0 and _pl <= -_global_cap
+                        and not strategy.force_flat):
+                    db.log(ev, "error", {
+                        "msg": (f"CAP GLOBALE evento: P&L {_pl:.2f} <= "
+                                f"-{_global_cap:.2f} → force-flat totale")})
+                    _force_flat_all()
+            except Exception:  # noqa: BLE001 - guardia best-effort
                 pass
             status = db.control_status(ev)
             if status == "stopping" or os.path.isfile(KILL_FILE):

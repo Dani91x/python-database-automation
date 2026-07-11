@@ -103,6 +103,19 @@ class SniperStrategy(BaseStrategy):
         # ---- missione / protezioni evento ----
         # primo verde -> evento chiuso (il "1 tick in-play")
         self.profit_target: float = float(c.get("profit_target", 0.01))
+        # ---- MULTI-COLPO (F4b, 11/07): layer SOPRA la S16 validata — i gate
+        # non cambiano. Default = comportamento attuale (nessun cap extra,
+        # nessun cooldown): la cella multi-colpo si accende via parametri
+        # (profit_target alzato/0 + max_shots + cooldown) SOLO dopo i numeri
+        # del conteggio occasioni (registro ipotesi §11).
+        self.max_shots: int = max(0, int(c.get("max_shots", 0)))       # 0 = no cap
+        self.shot_cooldown_s: float = float(c.get("shot_cooldown_s", 0.0))
+        self._last_cycle_end_ms: float = 0.0
+        # ---- MULTI-LINEA (F4a, 11/07): N linee OU parallele sopra quella
+        # dinamica (conteggio 10/07: multi-linea +1.28 EUR/partita vs +0.10
+        # mono, fill 74% stop 5% — n=1, da falsificare out-of-sample).
+        # 0 = solo linea dinamica (comportamento S16 certificato).
+        self.parallel_lines: int = max(0, int(c.get("parallel_lines", 0)))
         self.event_loss_cap: float = float(c.get("event_loss_cap", 1.0))
         self.dry_run: bool = bool(c.get("dry_run", False))
         # ---- PROTEZIONI LIVE .it (0 = off, i backtest restano identici) ----
@@ -124,6 +137,9 @@ class SniperStrategy(BaseStrategy):
         # sessione). SOLO telemetria: i gate S16 validati restano su elapsed
         # KO (fix 11/07: marketTime conta l'HT → "min 81.9" al 59' reale).
         self.live_minute: Optional[float] = None
+        # F5: semaforo di rischio UNICO per evento (condiviso col maker),
+        # iniettato dalla sessione: momenti caldi = niente nuovi fire.
+        self.risk_sem: Optional[Any] = None
 
         # stato
         self._pos: Dict[Tuple[str, int], _Pos] = {}
@@ -159,8 +175,12 @@ class SniperStrategy(BaseStrategy):
     def set_line(self, market_type: Optional[str]) -> None:
         """Aggiorna la linea target dal feed punteggi (controllo esterno).
 
-        La microstruttura della vecchia linea viene azzerata (cadenza/coda
-        misurate su un mercato che non e' piu' il target non hanno senso).
+        F4a (fix 11/07 — CECITA' POST-GOL, difetto meccanico visto live il
+        10/07): lo storico di microstruttura NON viene piu' azzerato. Le
+        history sono per (market_id, selection_id) e con il tracking
+        multi-linea (check_market_book accetta TUTTI gli OU) la nuova linea
+        ha i gate GIA' CALDI al momento dello switch: prima il bot restava
+        cieco ~4 minuti esattamente nella finestra post-gol.
         Le posizioni aperte su mercati usciti dalla whitelist restano
         GESTITE: check_market_book li accetta finche' non sono flat.
         """
@@ -170,11 +190,17 @@ class SniperStrategy(BaseStrategy):
         if self.lines == {mt}:
             return
         self.lines = {mt}
-        self._dn_ts.clear()
-        self._prev_bb.clear()
-        self._level_max_sb.clear()
-        self._gate_ok.clear()
         self._emit("sniper_line", line=mt)
+
+    def set_lines(self, market_types) -> None:
+        """Whitelist di fuoco MULTI-LINEA (F4a): piu' canne in parallelo,
+        stessi gate S16 per-linea. Il watcher di sessione la aggiorna dal
+        punteggio: [dinamica, dinamica+1, ...] secondo ``parallel_lines``."""
+        mts = {str(m) for m in market_types if m}
+        if not mts or mts == self.lines:
+            return
+        self.lines = mts
+        self._emit("sniper_lines", lines=sorted(mts))
 
     def _has_open_pos(self, market_id: str) -> bool:
         for (mid, _sid), pos in self._pos.items():
@@ -239,6 +265,9 @@ class SniperStrategy(BaseStrategy):
     # -------------------------------------------------------------- flumine
     def check_market_book(self, market: Any, market_book: Any) -> bool:
         if getattr(market_book, "status", None) != "OPEN":
+            # F5: la sospensione in-play (gol) arma il semaforo condiviso
+            from .risk_semaphore import notice_suspension
+            notice_suspension(self.risk_sem, market_book)
             return False
         if not getattr(market_book, "runners", None):
             return False
@@ -247,10 +276,11 @@ class SniperStrategy(BaseStrategy):
                  or getattr(market, "market_type", None))
         if mtype in self.lines:
             return True
-        # linea cambiata con posizione ancora aperta su questo mercato:
-        # va GESTITA (stop/timeout/flatten) finche' non e' flat.
-        return (str(mtype or "").startswith("OVER_UNDER")
-                and self._has_open_pos(market_book.market_id))
+        # F4a (multi-linea a storico caldo): TUTTI i mercati OU sottoscritti
+        # alimentano la microstruttura (il fuoco resta SOLO sulla linea
+        # attiva, vedi process_market_book) e le posizioni residue su linee
+        # uscite dalla whitelist restano gestite finche' non sono flat.
+        return str(mtype or "").startswith("OVER_UNDER")
 
     # ------------------------------------------------------- microstruttura
     def _update_micro(self, key: Tuple[str, int], now: float,
@@ -297,8 +327,12 @@ class SniperStrategy(BaseStrategy):
         # lo chiama gia', ma il cambio linea puo' avvenire TRA i due hook)
         md = getattr(market_book, "market_definition", None)
         mtype = getattr(md, "market_type", None)
-        if mtype not in self.lines and not self._has_open_pos(mid):
+        # F4a: ogni OU tiene la microstruttura CALDA; spara solo la linea attiva
+        if (mtype not in self.lines
+                and not str(mtype or "").startswith("OVER_UNDER")
+                and not self._has_open_pos(mid)):
             return
+        active_line = mtype in self.lines
         inplay = bool(getattr(market_book, "inplay", False))
         ko = self._ko_epoch_ms(market_book)
         el = (now - ko) / 1000.0 if ko else None
@@ -428,12 +462,27 @@ class SniperStrategy(BaseStrategy):
                 continue
 
             # ---- nessuna posizione: si spara SOLO col gate verde ----
+            # F4a: le linee NON attive alimentano lo storico e gestiscono i
+            # residui, ma NON sparano mai.
+            if not active_line:
+                continue
             if (out_window or self._event_done or self.force_flat
                     or self._loss_capped()):
                 continue
             if (sb or 0) < self.min_size or (sl or 0) < self.min_size:
                 continue
             if not self._gate_ok.get(key, False):
+                continue
+            # F5: semaforo di rischio evento — momento caldo = niente fire
+            if self.risk_sem is not None and self.risk_sem.entries_halted(now):
+                continue
+            # F4b multi-colpo: cap colpi/evento + cooldown dal fine-ciclo
+            # (0 = disattivi, comportamento identico alla S16 certificata).
+            if self.max_shots > 0 and self.stats["entries"] >= self.max_shots:
+                continue
+            if (self.shot_cooldown_s > 0 and self._last_cycle_end_ms > 0
+                    and now - self._last_cycle_end_ms
+                    < self.shot_cooldown_s * 1000.0):
                 continue
             self._fire(market, runner, pos, bb, bl, sb, sl, el, now)
 
@@ -487,6 +536,8 @@ class SniperStrategy(BaseStrategy):
         if pos.entry_fill_pt is not None and now is not None:
             self.stats["pos_ms_total"] += max(0.0, now - pos.entry_fill_pt)
             self.stats["cycles"] += 1
+        if now is not None:
+            self._last_cycle_end_ms = float(now)  # ancora del cooldown F4b
         pos.entry_fill_pt = None
 
     def _matched(self, orders) -> Tuple[float, float, float, float]:

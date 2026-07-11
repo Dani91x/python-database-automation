@@ -210,20 +210,27 @@ def test_loss_cap_blocca_ingressi():
 def test_set_line_dinamica_e_posizioni_gestite():
     s = _strategy()
     mkt = _FakeMarket()
-    # posizione APERTA su OU15, poi il gol sposta la linea a OU65
+    # posizione APERTA su OU15 + storico caldo, poi il gol sposta la linea
     pos = s._p("1.234", 1221385)
     pos.entries = [_FakeOrder("BACK", price=3.40, size_matched=10.0, avg=3.40)]
+    s._prev_bb[("1.234", 1221385)] = 3.40
+    s._level_max_sb[("1.234", 1221385)] = 400.0
     s.set_line("OVER_UNDER_65")
     assert s.lines == {"OVER_UNDER_65"}
     assert "sniper_line" in [k for k, _ in s._test_events]
     # il book OU15 (posizione aperta) resta GESTITO...
     assert s.check_market_book(mkt, _book(700)) is True
-    # ...ma senza posizione un OU15 non passa piu'
+    # F4a: anche SENZA posizione gli OU restano accettati (storico caldo)...
     s2 = _strategy()
     s2.set_line("OVER_UNDER_65")
-    assert s2.check_market_book(mkt, _book(700)) is False
-    # e la microstruttura e' stata azzerata dal cambio linea
-    assert not s._dn_ts and not s._level_max_sb
+    assert s2.check_market_book(mkt, _book(700)) is True
+    # ...ma una linea NON attiva non spara MAI (book OU15, linea OU65)
+    _walk_to_armed(s2, mkt)
+    assert mkt.orders == []
+    # F4a (fix cecita' post-gol): lo storico NON viene piu' azzerato dal
+    # cambio linea — al switch i gate della nuova linea sono gia' caldi
+    assert s._prev_bb.get(("1.234", 1221385)) == 3.40
+    assert s._level_max_sb.get(("1.234", 1221385)) == 400.0
 
 
 def test_set_line_none_spegne_il_fuoco():

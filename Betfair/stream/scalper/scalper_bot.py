@@ -432,6 +432,10 @@ class ScalperStrategy(BaseStrategy):
         # FORCE-FLAT: il servizio lo alza per fermare il bot in sicurezza
         # (stesso percorso del near-KO: cancella tutto e chiude flat).
         self.force_flat: bool = False
+        # F5 (11/07): semaforo di rischio UNICO per evento, iniettato dalla
+        # sessione (condiviso con lo sniper). Sospende i NUOVI ingressi nei
+        # momenti caldi (sospensioni in-play = gol); le chiusure passano.
+        self.risk_sem: Optional[Any] = None
 
         # statistiche cumulative (lette dal servizio per la UI)
         self.stats: Dict[str, float] = {
@@ -521,6 +525,10 @@ class ScalperStrategy(BaseStrategy):
     # ------------------------------------------------------------ flumine hook
     def check_market_book(self, market: Any, market_book: Any) -> bool:
         if getattr(market_book, "status", None) != "OPEN":
+            # F5: una sospensione in-play (gol) arma il semaforo di rischio
+            # condiviso PRIMA di scartare il book.
+            from .risk_semaphore import notice_suspension
+            notice_suspension(self.risk_sem, market_book)
             return False
         if not getattr(market_book, "runners", None):
             return False
@@ -898,6 +906,10 @@ class ScalperStrategy(BaseStrategy):
         now: int, best_back: Optional[float], best_lay: Optional[float],
         size_back: Optional[float], size_lay: Optional[float], mp: Optional[float],
     ) -> None:
+        # F5: semaforo di rischio evento — momenti caldi = niente NUOVI
+        # ingressi (le posizioni aperte restano gestite normalmente).
+        if self.risk_sem is not None and self.risk_sem.entries_halted(now):
+            return
         # ---- GATE: condizioni di mercato adatte ----
         if best_back is None or best_lay is None or mp is None:
             return
