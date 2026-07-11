@@ -73,6 +73,11 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // letto dal book (cadenza+coda+spread), poi stop. Alternativo a ht_mode.
     const [sniperMode, setSniperMode] = useState(false);
     const [sniperStake, setSniperStake] = useState(10);
+    // CACCIA MULTI-LINEA (F4, 11/07): canne parallele (dinamica +2) +
+    // multi-colpo (cap 10, cooldown 120s) + nessun tetto profitto. Conteggio
+    // 10/07: +1.28 €/partita vs +0.10 mono (n=1) — da VALIDARE in paper
+    // prima dei soldi veri (registro ipotesi §11 bibbia).
+    const [sniperHunt, setSniperHunt] = useState(false);
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -108,9 +113,14 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         // autonomo che piazza scommesse vere non presidiato → conferma
         // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
         if (!dryRun) {
+            const huntWarn = (sniperMode && sniperHunt)
+                ? '\n⚠️ CACCIA MULTI-LINEA ATTIVA: cella NON ancora validata ' +
+                  'out-of-sample (n=1) — la bibbia prescrive prima il PAPER.\n'
+                : '';
             const ok = window.confirm(
                 `⚠️ ATTIVARE LO SCALPER CON ORDINI REALI su "${eventName}"?\n\n` +
                     `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
+                    huntWarn +
                     `Confermi?`,
             );
             if (!ok) return;
@@ -127,6 +137,14 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                 ht_mode: htMode,
                 sniper_mode: sniperMode,
                 sniper_stake: sniperStake,
+                // caccia multi-linea: parametri del conteggio 10/07 (F6);
+                // assenti = S16 mono certificata, nessun cambio di default
+                ...(sniperMode && sniperHunt ? {
+                    sniper_parallel_lines: 2,
+                    sniper_max_shots: 10,
+                    sniper_cooldown_s: 120,
+                    sniper_profit_target: 0,
+                } : {}),
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
@@ -140,7 +158,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             setBusy(false);
         }
     }, [eventId, eventName, mode, dryRun, stake, params, htMode, missionTwoTicks,
-        sniperMode, sniperStake, refresh]);
+        sniperMode, sniperStake, sniperHunt, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -287,6 +305,21 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     onChange={e => setSniperStake(Math.max(2, Math.min(100, Number(e.target.value) || 2)))}
                                     className="w-20 h-8 bg-white/5 border-white/10 text-white"
                                 />
+                            </label>
+                        )}
+                        {sniperMode && (
+                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                <Checkbox
+                                    checked={sniperHunt}
+                                    onCheckedChange={v => setSniperHunt(v === true)}
+                                />
+                                <span className={sniperHunt ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
+                                    🔫 CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
+                                    multi-colpo (cap 10, cooldown 120s), nessun tetto profitto.
+                                    Conteggio 10/07: +1.28 vs +0.10 €/partita (n=1) —
+                                    VALIDARE IN PAPER prima dei soldi veri. Semaforo post-gol
+                                    e cap globale evento sempre attivi.
+                                </span>
                             </label>
                         )}
                         {!dryRun && (
