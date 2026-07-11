@@ -63,6 +63,10 @@ class _Pos:
     t_last_submin: int = 0
     submin_count: int = 0
     residual_accepted: float = 0.0   # entita' |nw-nl| del residuo accettato
+    # F4b: contatori PER LINEA (ogni linea OU e' un mercato → una _Pos):
+    # il conteggio 10/07 (+1.28€) e' con cap e cooldown PER LINEA, non globali
+    shots: int = 0                   # colpi sparati su QUESTA linea
+    last_cycle_end_ms: float = 0.0   # fine ultimo ciclo su QUESTA linea
 
 
 class SniperStrategy(BaseStrategy):
@@ -105,12 +109,12 @@ class SniperStrategy(BaseStrategy):
         self.profit_target: float = float(c.get("profit_target", 0.01))
         # ---- MULTI-COLPO (F4b, 11/07): layer SOPRA la S16 validata — i gate
         # non cambiano. Default = comportamento attuale (nessun cap extra,
-        # nessun cooldown): la cella multi-colpo si accende via parametri
-        # (profit_target alzato/0 + max_shots + cooldown) SOLO dopo i numeri
-        # del conteggio occasioni (registro ipotesi §11).
+        # nessun cooldown). Cap e cooldown sono PER LINEA (ogni linea OU =
+        # un mercato = una _Pos), fedeli alla cella misurata dal conteggio
+        # 10/07 (cap 10/linea, cd 120s → 19 colpi, +1.28€). Il tetto GLOBALE
+        # di rischio resta al risk manager (cap perdita evento + semaforo).
         self.max_shots: int = max(0, int(c.get("max_shots", 0)))       # 0 = no cap
         self.shot_cooldown_s: float = float(c.get("shot_cooldown_s", 0.0))
-        self._last_cycle_end_ms: float = 0.0
         # ---- MULTI-LINEA (F4a, 11/07): N linee OU parallele sopra quella
         # dinamica (conteggio 10/07: multi-linea +1.28 EUR/partita vs +0.10
         # mono, fill 74% stop 5% — n=1, da falsificare out-of-sample).
@@ -476,12 +480,13 @@ class SniperStrategy(BaseStrategy):
             # F5: semaforo di rischio evento — momento caldo = niente fire
             if self.risk_sem is not None and self.risk_sem.entries_halted(now):
                 continue
-            # F4b multi-colpo: cap colpi/evento + cooldown dal fine-ciclo
-            # (0 = disattivi, comportamento identico alla S16 certificata).
-            if self.max_shots > 0 and self.stats["entries"] >= self.max_shots:
+            # F4b multi-colpo: cap colpi e cooldown PER LINEA (fedeli alla
+            # cella misurata: un colpo su OU25 non blocca OU35).
+            # 0 = disattivi, comportamento identico alla S16 certificata.
+            if self.max_shots > 0 and pos.shots >= self.max_shots:
                 continue
-            if (self.shot_cooldown_s > 0 and self._last_cycle_end_ms > 0
-                    and now - self._last_cycle_end_ms
+            if (self.shot_cooldown_s > 0 and pos.last_cycle_end_ms > 0
+                    and now - pos.last_cycle_end_ms
                     < self.shot_cooldown_s * 1000.0):
                 continue
             self._fire(market, runner, pos, bb, bl, sb, sl, el, now)
@@ -521,6 +526,7 @@ class SniperStrategy(BaseStrategy):
         if o is not None:
             pos.entries.append(o)
             pos.entry_odds = price
+            pos.shots += 1              # cap F4b: conteggio PER LINEA
             self.stats["entries"] += 1
             self._emit("sniper_fire", price=price, size=self.stake,
                        minute=self._minute(el))
@@ -537,7 +543,7 @@ class SniperStrategy(BaseStrategy):
             self.stats["pos_ms_total"] += max(0.0, now - pos.entry_fill_pt)
             self.stats["cycles"] += 1
         if now is not None:
-            self._last_cycle_end_ms = float(now)  # ancora del cooldown F4b
+            pos.last_cycle_end_ms = float(now)  # ancora del cooldown F4b (per linea)
         pos.entry_fill_pt = None
 
     def _matched(self, orders) -> Tuple[float, float, float, float]:

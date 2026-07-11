@@ -315,10 +315,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 />
                                 <span className={sniperHunt ? 'text-emerald-300 font-semibold' : 'text-white/60'}>
                                     🔫 CACCIA MULTI-LINEA: spara su dinamica +2 linee sopra,
-                                    multi-colpo (cap 10, cooldown 120s), nessun tetto profitto.
-                                    Conteggio 10/07: +1.28 vs +0.10 €/partita (n=1) —
-                                    VALIDARE IN PAPER prima dei soldi veri. Semaforo post-gol
-                                    e cap globale evento sempre attivi.
+                                    multi-colpo PER LINEA (cap 10/linea, cooldown 120s/linea),
+                                    nessun tetto profitto. Conteggio 10/07: +1.28 vs +0.10
+                                    €/partita (n=1) — VALIDARE IN PAPER prima dei soldi veri.
+                                    Semaforo post-gol e cap globale evento sempre attivi.
                                 </span>
                             </label>
                         )}
