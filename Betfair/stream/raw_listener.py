@@ -32,6 +32,13 @@ class _RawState:
         self.enabled: bool = False
         self._files: Dict[str, Any] = {}
         self._lock = threading.Lock()
+        # HEARTBEAT "recorder vivo" (fix 11/07, lezione 10/07: tee morto in
+        # silenzio = in-play perso per sempre): contatori esposti alla
+        # telemetria — bytes scritti, ts ultimo write, errori di scrittura.
+        self.bytes_written: Dict[str, int] = {}
+        self.last_write_ms: Dict[str, int] = {}
+        self.write_errors: int = 0
+        self._err_logged: Dict[str, float] = {}
 
     def configure(self, data_dir: str, market_to_event: Dict[str, str], enabled: bool) -> None:
         self.dir = data_dir
@@ -47,6 +54,16 @@ class _RawState:
             self._files[event_id] = fh
             logger.info("[raw] apro file nativo: %s", os.path.join(ev_dir, f"{event_id}.raw.jsonl"))
         return fh
+
+    def health(self) -> Dict[str, Any]:
+        """Snapshot per la telemetria (bytes/ultimo write per evento)."""
+        with self._lock:
+            return {
+                "enabled": self.enabled,
+                "bytes": dict(self.bytes_written),
+                "last_write_ms": dict(self.last_write_ms),
+                "write_errors": self.write_errors,
+            }
 
     def write_message(self, raw_data: str) -> None:
         if not self.enabled or not self.dir:
@@ -70,9 +87,35 @@ class _RawState:
             for ev, changes in by_event.items():
                 out = {k: msg[k] for k in ("op", "clk", "pt", "ct") if k in msg}
                 out["mc"] = changes
-                fh = self.file_for(ev)
-                fh.write(json.dumps(out, separators=(",", ":")) + "\n")
-                fh.flush()
+                line = json.dumps(out, separators=(",", ":")) + "\n"
+                # SELF-HEAL (fix 11/07): un handle rotto (disco, close
+                # concorrente durante un soft-restart) prima uccideva il tee
+                # PER SEMPRE in silenzio (debug-log). Ora: drop dell'handle e
+                # riapertura al prossimo messaggio, WARNING visibile
+                # (throttled 60s per evento), contatore errori esposto.
+                try:
+                    fh = self.file_for(ev)
+                    fh.write(line)
+                    fh.flush()
+                except Exception as exc:  # noqa: BLE001 - mai rompere lo stream
+                    self.write_errors += 1
+                    bad = self._files.pop(ev, None)
+                    if bad is not None:
+                        try:
+                            bad.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    import time as _t
+                    now_s = _t.time()
+                    if now_s - self._err_logged.get(ev, 0.0) >= 60.0:
+                        self._err_logged[ev] = now_s
+                        logger.warning(
+                            "[raw] write KO per evento %s (riapro al prossimo "
+                            "messaggio): %s", ev, str(exc)[:150])
+                    continue
+                self.bytes_written[ev] = self.bytes_written.get(ev, 0) + len(line)
+                pt = msg.get("pt")
+                self.last_write_ms[ev] = int(pt) if isinstance(pt, (int, float)) else 0
 
     def close(self) -> None:
         with self._lock:

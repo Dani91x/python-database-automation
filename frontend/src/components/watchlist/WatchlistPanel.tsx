@@ -7,7 +7,7 @@
 // Design system: glass-card, badge a colori, emerald positivo / amber Betfair /
 // red negativo, framer-motion, sonner.
 // ============================================================================
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -27,6 +27,7 @@ import {
     type WatchlistRow, type RejectReason, type SnapshotEdge, type WatchlistStatus,
 } from '@/lib/watchlist';
 import { refreshBetfairOdds, fetchBetfairDirectionOdds } from '@/lib/betfair';
+import { fetchLiveFollows } from '@/lib/live';
 import { TradeForm } from '@/components/watchlist/TradeForm';
 import { MultiTradeForm, edgeKey } from '@/components/watchlist/MultiTradeForm';
 import { PlacedOrdersPanel } from '@/components/watchlist/PlacedOrdersPanel';
@@ -136,6 +137,52 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
     const [oddsOverlay, setOddsOverlay] = useState<OddsOverlay>({});
     // "Segui live": toggle del flag follow_live (iscrizione stream, nessun ordine)
     const [followBusy, setFollowBusy] = useState(false);
+    // ACK REGISTRAZIONE (fix 11/07 — danno 10/07: 2 partite cliccate durante
+    // un crash UI, follow MAI registrato, dati persi per sempre): dopo
+    // l'attivazione si VERIFICA che il runner prenda in carico il follow
+    // (get_live_follows → PENDING/STREAMING) e lo stato è mostrato accanto al
+    // bottone. Il silenzio NON è una conferma di registrazione.
+    const [followAck, setFollowAck] = useState<'idle' | 'waiting' | 'pending' | 'streaming' | 'timeout'>('idle');
+    const ackTimer = useRef<number | null>(null);
+    const stopAckWatch = useCallback(() => {
+        if (ackTimer.current != null) { window.clearInterval(ackTimer.current); ackTimer.current = null; }
+    }, []);
+    useEffect(() => () => stopAckWatch(), [stopAckWatch]);
+    const startAckWatch = useCallback(() => {
+        stopAckWatch();
+        setFollowAck('waiting');
+        const t0 = Date.now();
+        const tick = async () => {
+            try {
+                const follows = await fetchLiveFollows();
+                const f = follows.find(x => x.fixture_id === row.fixture_id);
+                if (f?.status === 'STREAMING') {
+                    setFollowAck('streaming');
+                    toast.success('Registrazione CONFERMATA ●', {
+                        description: 'Il runner sta registrando lo stream della partita.',
+                    });
+                    stopAckWatch();
+                    return;
+                }
+                if (f?.status === 'ERROR') {
+                    setFollowAck('timeout');
+                    toast.error('Follow in ERRORE', { description: f.error_detail ?? 'vedi log runner' });
+                    stopAckWatch();
+                    return;
+                }
+                if (f?.status === 'PENDING') setFollowAck('pending');
+            } catch { /* transitorio: riprova al prossimo giro */ }
+            if (Date.now() - t0 > 4 * 60_000) {
+                setFollowAck('timeout');
+                toast.warning('Registrazione NON confermata', {
+                    description: 'Nessuna presa in carico dal runner in 4 minuti: la partita NON si sta registrando. Verificare che il runner sia acceso.',
+                });
+                stopAckWatch();
+            }
+        };
+        void tick();
+        ackTimer.current = window.setInterval(tick, 20_000);
+    }, [row.fixture_id, stopAckWatch]);
     // bump per forzare il refresh immediato del pannello "Ordini piazzati" dopo una giocata
     const [orderRefresh, setOrderRefresh] = useState(0);
     // dopo un piazzamento: aggiorna subito il pannello ordini E ricarica la lista
@@ -227,9 +274,11 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
             await setWatchlistFollowLive(row.id, next);
             toast.success(next ? 'Segui live attivato' : 'Segui live disattivato', {
                 description: next
-                    ? 'La partita entra nello stream al prossimo ciclo del runner (nessun ordine).'
+                    ? 'Richiesta scritta. In attesa della PRESA IN CARICO del runner (ack entro ~90s)…'
                     : undefined,
             });
+            if (next) startAckWatch();
+            else { stopAckWatch(); setFollowAck('idle'); }
             onChanged?.();
         } catch (err: unknown) {
             toast.error('Errore Segui live', {
@@ -307,6 +356,29 @@ function WatchlistCard({ row, onChanged }: { row: WatchlistRow; onChanged?: () =
                             : <Radio className="w-3.5 h-3.5 md:mr-1.5" />}
                         <span className="hidden md:inline">{row.follow_live ? 'Segui live ✓' : 'Segui live'}</span>
                     </Button>
+                    {row.follow_live && followAck !== 'idle' && (
+                        <span
+                            className={
+                                followAck === 'streaming'
+                                    ? 'text-[10px] font-semibold text-red-400 animate-pulse'
+                                    : followAck === 'timeout'
+                                        ? 'text-[10px] font-semibold text-amber-400'
+                                        : 'text-[10px] text-muted-foreground'
+                            }
+                            title={
+                                followAck === 'streaming'
+                                    ? 'Il runner sta registrando lo stream'
+                                    : followAck === 'timeout'
+                                        ? 'Presa in carico NON confermata: la partita non si sta registrando'
+                                        : 'In attesa della presa in carico del runner'
+                            }
+                        >
+                            {followAck === 'streaming' ? '● REC'
+                                : followAck === 'pending' ? 'in coda…'
+                                    : followAck === 'waiting' ? 'verifica…'
+                                        : '⚠ non confermata'}
+                        </span>
+                    )}
                 </div>
                 <button
                     onClick={() => setExpanded(v => !v)}

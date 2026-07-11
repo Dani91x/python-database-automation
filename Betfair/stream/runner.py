@@ -785,6 +785,9 @@ def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
     return None
 
 
+_RAW_STALL_ALERTED = False
+
+
 def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
     """A5 — battito del runner → betfair_live_heartbeat (singleton, realtime).
 
@@ -795,6 +798,31 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
     except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
         logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
+    # RECORDER VIVO (fix 11/07, lezione 10/07: tee nativo morto in silenzio =
+    # in-play irrecuperabile): se il tee e' abilitato, ci sono mercati
+    # sottoscritti ma NESSUN write raw da >120s → alert WARN (una volta,
+    # si riarma quando il flusso riprende). write_errors incluso.
+    try:
+        from .raw_listener import RAW_STATE
+
+        global _RAW_STALL_ALERTED
+        h = RAW_STATE.health()
+        if h.get("enabled") and session.market_to_event:
+            last = max(h.get("last_write_ms", {}).values() or [0])
+            now_ms = time.time() * 1000.0
+            stalled = last > 0 and now_ms - last > 120_000
+            if stalled and not _RAW_STALL_ALERTED:
+                _RAW_STALL_ALERTED = True
+                db.insert_alert(
+                    "WARN", "RAW_RECORDER",
+                    f"tee raw NATIVO fermo da {(now_ms - last) / 1000:.0f}s "
+                    f"con stream attivo (write_errors={h.get('write_errors')}) "
+                    "— i backtest/Atlante perderebbero questi dati",
+                )
+            elif not stalled:
+                _RAW_STALL_ALERTED = False
+    except Exception:  # noqa: BLE001 - telemetria best-effort
+        pass
 
 
 def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
