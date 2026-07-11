@@ -175,6 +175,13 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     const localOrders = useMemo(() => localOrderApi('calcio', CALCIO_DB_ORDER_API), []);
     const isLocal = localStatus === 'connected';
 
+    // DICHIARATE IN CIMA (fix pagina bianca 10/07): market/mode sono usate dagli
+    // effect sottostanti (dep array valutati AL RENDER) — dichiararle dopo = TDZ
+    // ReferenceError a runtime che tsc NON rileva. Mai spostarle sotto gli effect.
+    const market = markets.find(m => m.market_id === marketId) ?? null;
+    const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
+        ? (orderMode || 'off').toLowerCase() : 'off') as PanelMode;
+
     // E36: segnali del motore per l'evento (fetch + realtime) → chip Kelly nel ladder.
     const [signalsRow, setSignalsRow] = useState<LiveSignalsRow | null>(null);
     useEffect(() => {
@@ -281,10 +288,6 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
         () => preGoalWarning(signalsRow, clockInplay, nowTick),
         [signalsRow, clockInplay, nowTick],
     );
-
-    const market = markets.find(m => m.market_id === marketId) ?? null;
-    const mode = (['off', 'paper', 'live'].includes((orderMode || 'off').toLowerCase())
-        ? (orderMode || 'off').toLowerCase() : 'off') as PanelMode;
 
     // book % back/lay del mercato attivo (over-round, come la barra mercato dei tool pro).
     const bookPct = useMemo(() => {
