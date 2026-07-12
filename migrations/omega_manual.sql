@@ -17,6 +17,18 @@ ALTER TABLE public.omega_trades
     ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'auto'
     CHECK (origin IN ('auto','manual'));
 
+-- Unique index rivisto: l'invariante I1 "un solo lay per match" vale per
+-- l'AUTOMATICO; il MANUALE deve poter piazzare su PIU' mercati/selezioni dello
+-- stesso evento (e anche su un evento gia' toccato dall'auto). Quindi:
+--  • unique PARZIALE su event_id solo per origin='auto' (I1 automatico)
+--  • unique per-gamba (event_id,market_id,selection_id,side) contro i doppioni
+--    ESATTI, sia auto sia manuale (reserve-first).
+DROP INDEX IF EXISTS public.uq_omega_trades_event;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_omega_trades_auto_event
+    ON public.omega_trades (event_id) WHERE origin = 'auto';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_omega_trades_leg
+    ON public.omega_trades (event_id, market_id, selection_id, side);
+
 -- 1. omega_events — cache degli eventi calcio di oggi (per il menu a tendina UI).
 CREATE TABLE IF NOT EXISTS public.omega_events (
     event_id    TEXT PRIMARY KEY,
@@ -68,6 +80,20 @@ BEGIN
         END IF;
     END LOOP;
 EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
+
+-- Realtime OWNER-ONLY sulle tabelle manuali (policy SELECT + GRANT authenticated).
+DO $$
+DECLARE t text;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['omega_events','omega_market_snapshot','omega_manual_requests'] LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_select_owner', t);
+        EXECUTE format(
+            'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.betfair_live_is_owner())',
+            t || '_select_owner', t);
+        EXECUTE format('GRANT SELECT ON TABLE public.%I TO authenticated', t);
+        EXECUTE format('REVOKE SELECT ON TABLE public.%I FROM anon', t);
+    END LOOP;
 END $$;
 
 -- ----------------------------------------------------------------------------

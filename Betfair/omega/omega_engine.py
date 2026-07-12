@@ -240,6 +240,62 @@ def paper_fill(
 # ---------------------------------------------------------------------------
 # Settlement (§6, I3): P&L dal risultato del mercato.
 # ---------------------------------------------------------------------------
+def aggregate_trades(rows: list[dict]) -> dict:
+    """Aggrega le righe ``omega_trades`` → totali. PURA e testabile (money-critical).
+
+    'won/lost/void' → realizzato; 'open' → liability aperta; 'pending' CON ``bet_id``
+    → ordine reale già a mercato: conta nell'esposizione aperta (I8). 'pending'
+    senza bet_id ed 'error' NON contano come piazzati.
+    """
+    realized = 0.0
+    open_liab = 0.0
+    settled = 0
+    traded = 0
+    open_n = 0
+    for r in rows:
+        st = r.get("status")
+        if st in ("won", "lost", "void"):
+            realized += float(r.get("pnl") or 0.0)
+            settled += 1
+            traded += 1
+        elif st == "open" or (st == "pending" and r.get("bet_id")):
+            open_liab += float(r.get("liability") or 0.0)
+            open_n += 1
+            traded += 1
+    return {
+        "realized_profit": round(realized, 2),
+        "open_liability": round(open_liab, 2),
+        "matches_traded": traded,
+        "matches_open": open_n,
+        "settled_count": settled,
+        "total_count": len(rows),
+    }
+
+
+_TERMINAL_RUNNER = {"WINNER", "LOSER", "REMOVED", "REMOVED_VACANT"}
+
+
+def resolve_settlement(
+    market_status: Optional[str],
+    runner_statuses: list[Optional[str]],
+    any_winner: bool,
+) -> tuple[bool, bool]:
+    """Decide (closed, voided) da stato mercato + stati runner. PURA e testabile.
+
+    Regola money-critical (I3): un mercato è REGOLATO solo se ``CLOSED`` **e** OGNI
+    runner ha uno stato TERMINALE (WINNER/LOSER/REMOVED/REMOVED_VACANT); altrimenti
+    è trattato come NON-chiuso (settle_open ritenta al ciclo dopo — mai un P&L
+    sbagliato). ``voided`` = regolato senza alcun vincitore (mercato annullato).
+    """
+    closed = market_status == "CLOSED"
+    if not closed:
+        return (False, False)
+    all_terminal = bool(runner_statuses) and all(s in _TERMINAL_RUNNER for s in runner_statuses)
+    if not all_terminal:
+        return (False, False)  # chiuso ma non finalizzato → non regolare ora
+    return (True, not any_winner)
+
+
 def settle_pnl(
     *,
     our_selection_id: int,

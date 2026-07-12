@@ -61,7 +61,12 @@ class FakeMarket:
         return self._events
 
     def get_correct_score_market(self, ev):
-        return self._cs
+        # mercato DISTINTO per evento (come nella realtà)
+        return M.CorrectScoreMarket(
+            market_id=f"m-{ev.event_id}", event_id=ev.event_id, event_name="Home vs Away",
+            market_start_time=ev.open_date,
+            runner_names={1: "0 - 0", 2: "1 - 0", 3: "2 - 1", 4: "3 - 2"},
+        )
 
     def read_market(self, cs):
         return self._snapshot
@@ -112,8 +117,20 @@ class FakeDB:
         self.activity.append((kind, payload or {}))
 
     def insert_trade(self, trade):
-        if any(t["event_id"] == trade["event_id"] for t in self.trades):
-            raise Exception("unique event_id")  # simula unique index (I1)
+        origin = trade.get("origin", "auto")
+        # partial unique su (event_id) WHERE origin='auto' → I1 automatico
+        if origin == "auto" and any(
+            t["event_id"] == trade["event_id"] and t.get("origin", "auto") == "auto"
+            for t in self.trades
+        ):
+            raise Exception("unique auto event_id")
+        # unique per-gamba (event_id,market_id,selection_id,side) → doppione esatto
+        leg = (trade["event_id"], trade.get("market_id"), trade.get("selection_id"), trade.get("side"))
+        if any(
+            (t["event_id"], t.get("market_id"), t.get("selection_id"), t.get("side")) == leg
+            for t in self.trades
+        ):
+            raise Exception("unique leg")
         self._id += 1
         row = dict(trade)
         row["id"] = self._id
@@ -161,14 +178,7 @@ class FakeDB:
         return {t["event_id"] for t in self.trades}
 
     def aggregates(self):
-        realized = sum(t.get("pnl", 0) for t in self.trades if t["status"] in ("won", "lost", "void"))
-        open_liab = sum(t.get("liability", 0) for t in self.trades if t["status"] == "open")
-        return {
-            "realized_profit": round(realized, 2),
-            "open_liability": round(open_liab, 2),
-            "matches_traded": len(self.trades),
-            "matches_open": len(self.list_trades("open")),
-        }
+        return E.aggregate_trades(self.trades)  # stessa logica pura del backend reale
 
 
 def _control(status="running", mode="paper", goal=250, params=None):
@@ -545,6 +555,45 @@ def test_manuale_commissione_clampata():
     t = db.trades[0]
     # con comm clampata a 20% → size = 8/0.8 = 10.0 (NON milioni)
     assert t["size"] == round(8 / 0.8, 2)
+
+
+def test_due_eventi_stesso_ciclo_piazzano_entrambi():
+    # regressione del bug 'contatore cumulativo': 2 eventi in finestra → 2 trade distinti
+    events = [_event("1.100", 42), _event("1.200", 42)]
+    db = FakeDB(_control())
+    market = FakeMarket(events, _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 2
+    assert len(db.trades) == 2
+    assert {t["market_id"] for t in db.trades} == {"m-1.100", "m-1.200"}
+    assert all(t["status"] == "open" for t in db.trades)
+
+
+def test_auto_poi_manuale_stesso_evento_altro_mercato_consentito():
+    # I1 auto NON deve bloccare un manuale legittimo sullo stesso evento (altro mercato)
+    db = FakeDB(_control())
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)          # auto piazza su 1.100 / m-1.100 / sel 4
+    assert len(db.trades) == 1 and db.trades[0]["origin"] == "auto"
+    db.control["status"] = "idle"                       # spengo l'auto
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-altro",
+                                  "selection_id": 3, "side": "lay", "mode": "paper", "size": 2})
+    S.run_once(market=market, db=db, now=NOW)
+    assert len(db.trades) == 2                          # manuale CONSENTITO
+    assert db.trades[1]["origin"] == "manual"
+    assert db.manual_reqs[0]["status"] == "done"
+
+
+def test_manuale_cap_sotto_minimo_rifiutato():
+    # cap liability/match troppo basso → size sotto il minimo → rifiutato (niente riga)
+    db = FakeDB(_control(status="idle", params={"max_liability_per_match": 1}))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 110, "target": 8})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    assert len(db.trades) == 0
+    assert db.manual_reqs[0]["status"] == "error"
 
 
 def test_target_dinamico_scala_con_piu_eventi():

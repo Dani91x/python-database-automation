@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export type OmegaStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type OmegaMode = 'paper' | 'live';
-export type OmegaTradeStatus = 'open' | 'won' | 'lost' | 'void' | 'error';
+export type OmegaTradeStatus = 'pending' | 'open' | 'won' | 'lost' | 'void' | 'error';
 
 export interface OmegaStats {
     events_total?: number;

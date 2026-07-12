@@ -578,6 +578,10 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
             size = E.apply_liability_cap(size, price, cap_match)
         elif size > cap_match:
             size = round(cap_match, 2)  # BACK: rischio = stake
+        size = round(size, 2)
+        # il cap non deve mai portare sotto il minimo piazzabile .it
+        if size < min_stake:
+            return {"error": f"cap troppo basso: size sotto il minimo €{min_stake:.2f}"}
     liability = _back_liability(size, side, price)
     cap_open = params["max_open_liability"]
     if cap_open and cap_open > 0:

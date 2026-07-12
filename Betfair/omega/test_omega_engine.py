@@ -214,6 +214,47 @@ def test_settle_lost_quando_risultato_esce():
     assert pnl == pytest.approx(-573.34, abs=0.01)
 
 
+def test_resolve_settlement_open():
+    assert E.resolve_settlement("OPEN", ["ACTIVE", "ACTIVE"], False) == (False, False)
+    assert E.resolve_settlement("SUSPENDED", [], False) == (False, False)
+
+
+def test_resolve_settlement_regolato_con_vincitore():
+    assert E.resolve_settlement("CLOSED", ["WINNER", "LOSER", "LOSER"], True) == (True, False)
+
+
+def test_resolve_settlement_void_senza_vincitore():
+    # tutti terminali, nessun WINNER → void
+    assert E.resolve_settlement("CLOSED", ["LOSER", "REMOVED", "LOSER"], False) == (True, True)
+
+
+def test_resolve_settlement_closed_ma_non_finalizzato():
+    # CLOSED ma un runner ancora ACTIVE → NON regolare (ritenta)
+    assert E.resolve_settlement("CLOSED", ["WINNER", "ACTIVE"], True) == (False, False)
+
+
+def test_resolve_settlement_closed_senza_runner():
+    assert E.resolve_settlement("CLOSED", [], False) == (False, False)
+
+
+def test_aggregate_trades():
+    rows = [
+        {"status": "won", "pnl": 5, "liability": 100},
+        {"status": "lost", "pnl": -300, "liability": 300},
+        {"status": "void", "pnl": 0, "liability": 50},
+        {"status": "open", "pnl": 0, "liability": 200},
+        {"status": "pending", "pnl": 0, "liability": 150, "bet_id": "b1"},   # reale a mercato
+        {"status": "pending", "pnl": 0, "liability": 999},                    # solo riservato
+        {"status": "error", "pnl": 0, "liability": 999},
+    ]
+    agg = E.aggregate_trades(rows)
+    assert agg["realized_profit"] == pytest.approx(-295.0)   # 5 -300 +0
+    assert agg["open_liability"] == pytest.approx(350.0)     # 200 (open) + 150 (pending+bet_id)
+    assert agg["matches_open"] == 2                          # open + pending-con-bet_id
+    assert agg["matches_traded"] == 5                        # 3 settled + 2 aperti (no pending-riservato/error)
+    assert agg["settled_count"] == 3
+
+
 def test_settle_void():
     status, pnl = E.settle_pnl(
         our_selection_id=4, winner_selection_id=None, size=5.26, price=110.0, commission=0.05

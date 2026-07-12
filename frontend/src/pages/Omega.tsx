@@ -118,6 +118,7 @@ function EquityCurve({ series }: { series: { t: number; v: number; iso: string }
 // -------------------------------------------------------------- trade badge
 function tradeBadge(status: OmegaTrade['status']): { label: string; cls: string } {
     switch (status) {
+        case 'pending': return { label: 'IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' };
         case 'open': return { label: 'APERTO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' };
         case 'won': return { label: 'VINTO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' };
         case 'lost': return { label: 'PERSO', cls: 'bg-red-500/15 text-red-300 border-red-500/40' };

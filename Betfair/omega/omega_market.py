@@ -176,17 +176,10 @@ def read_market(market: CorrectScoreMarket) -> Optional[MarketSnapshot]:
                 lay_ladder=ladder,
             )
         )
-    # FIX review (money-critical): non dedurre 'void' dalla sola assenza di WINNER.
-    # Betfair può riportare status=CLOSED un attimo PRIMA che i runner siano
-    # finalizzati. Consideriamo il mercato regolato SOLO se ogni runner ha uno
-    # stato TERMINALE; se chiuso ma non finalizzato → trattalo come non-chiuso
-    # (settle_open ritenta al ciclo successivo). 'void' solo se tutti terminali e
-    # nessun vincitore (mercato annullato/abbandonato).
-    _TERMINAL = {"WINNER", "LOSER", "REMOVED", "REMOVED_VACANT"}
-    all_terminal = bool(runner_statuses) and all(s in _TERMINAL for s in runner_statuses)
-    if closed and not all_terminal:
-        closed = False  # chiuso ma runner non ancora finalizzati → non regolare ora
-    voided = closed and not any_winner
+    # money-critical: la decisione closed/voided è delegata a E.resolve_settlement
+    # (funzione PURA e testata) — vedi omega_engine. Non dedurre mai 'void' dalla
+    # sola assenza di WINNER: serve che TUTTI i runner siano terminali.
+    closed, voided = E.resolve_settlement(status, runner_statuses, any_winner)
     return MarketSnapshot(
         status=status,
         inplay=inplay,

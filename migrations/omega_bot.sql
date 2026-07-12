@@ -96,6 +96,21 @@ EXCEPTION WHEN undefined_object THEN
     NULL;
 END $$;
 
+-- Realtime OWNER-ONLY: senza una policy SELECT il canale non consegna righe
+-- (RLS attiva). Owner-only via betfair_live_is_owner() + GRANT SELECT ad
+-- authenticated (l'auth-lockdown ammette solo l'owner). anon resta escluso.
+DROP POLICY IF EXISTS omega_control_select_owner ON public.omega_control;
+CREATE POLICY omega_control_select_owner ON public.omega_control
+    FOR SELECT TO authenticated USING (public.betfair_live_is_owner());
+GRANT SELECT ON TABLE public.omega_control TO authenticated;
+REVOKE SELECT ON TABLE public.omega_control FROM anon;
+
+DROP POLICY IF EXISTS omega_trades_select_owner ON public.omega_trades;
+CREATE POLICY omega_trades_select_owner ON public.omega_trades
+    FOR SELECT TO authenticated USING (public.betfair_live_is_owner());
+GRANT SELECT ON TABLE public.omega_trades TO authenticated;
+REVOKE SELECT ON TABLE public.omega_trades FROM anon;
+
 -- ----------------------------------------------------------------------------
 -- RPC: attivazione (avvia il bot; il servizio locale vede status='running').
 -- ----------------------------------------------------------------------------
@@ -206,11 +221,13 @@ BEGIN
     END IF;
     SELECT to_jsonb(c.*) INTO v_ctrl FROM public.omega_control c WHERE c.id = 1;
 
+    -- 'pending' con bet_id = ordine REALE già a mercato (conferma DB fallita):
+    -- conta nell'esposizione aperta (I8), come fa Betfair/omega/omega_db.aggregates.
     SELECT jsonb_build_object(
         'realized_profit', coalesce(sum(pnl) FILTER (WHERE status IN ('won','lost','void')), 0),
-        'open_liability',  coalesce(sum(liability) FILTER (WHERE status = 'open'), 0),
-        'matches_traded',  count(*) FILTER (WHERE status IN ('open','won','lost','void')),
-        'matches_open',    count(*) FILTER (WHERE status = 'open'),
+        'open_liability',  coalesce(sum(liability) FILTER (WHERE status = 'open' OR (status = 'pending' AND bet_id IS NOT NULL)), 0),
+        'matches_traded',  count(*) FILTER (WHERE status IN ('open','won','lost','void') OR (status = 'pending' AND bet_id IS NOT NULL)),
+        'matches_open',    count(*) FILTER (WHERE status = 'open' OR (status = 'pending' AND bet_id IS NOT NULL)),
         'matches_won',     count(*) FILTER (WHERE status = 'won'),
         'matches_lost',    count(*) FILTER (WHERE status = 'lost')
     ) INTO v_agg FROM public.omega_trades;

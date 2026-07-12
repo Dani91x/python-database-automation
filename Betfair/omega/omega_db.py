@@ -143,28 +143,7 @@ def read_live_now(event_id: str) -> Optional[dict[str, Any]]:
 
 def aggregates() -> dict[str, float]:
     """Somma realizzato (won/lost/void settled) e liability aperta."""
-    rows = _sb().table("omega_trades").select("status,pnl,liability").execute().data or []
-    realized = 0.0
-    open_liab = 0.0
-    settled = 0
-    traded = 0
-    open_n = 0
-    for r in rows:
-        st = r.get("status")
-        if st in ("won", "lost", "void"):
-            realized += float(r.get("pnl") or 0.0)
-            settled += 1
-            traded += 1
-        elif st == "open":
-            open_liab += float(r.get("liability") or 0.0)
-            open_n += 1
-            traded += 1
-        # 'pending'/'error' NON contano come piazzati (ma restano in traded_event_ids: I1)
-    return {
-        "realized_profit": round(realized, 2),
-        "open_liability": round(open_liab, 2),
-        "matches_traded": traded,
-        "matches_open": open_n,
-        "settled_count": settled,
-        "total_count": len(rows),
-    }
+    rows = _sb().table("omega_trades").select("status,pnl,liability,bet_id").execute().data or []
+    from Betfair.omega import omega_engine as E
+
+    return E.aggregate_trades(rows)  # logica PURA e testata (§I8: pending+bet_id contano)
