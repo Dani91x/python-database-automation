@@ -21,6 +21,7 @@ import TradeJournal from "@/pages/TradeJournal";
 import MultiLadder from "@/pages/MultiLadder";
 import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
+import Omega from "@/pages/Omega";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
@@ -158,6 +159,14 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <MatchReplay />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/omega"
+                                element={
+                                    <ProtectedRoute>
+                                        <Omega />
                                     </ProtectedRoute>
                                 }
                             />

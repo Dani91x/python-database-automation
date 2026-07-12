@@ -163,6 +163,11 @@ function startRunners() {
     // avviare anche i .bat a mano: l'app avvia già tutto.
     spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service']);
     spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service']);
+    // OMEGA (Correct Score LAY): servizio leggero e ISOLATO. A riposo NON chiama
+    // Betfair (idle = nessuna richiesta); agisce solo quando lo attivi/usi da /omega,
+    // e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio
+    // avvio se lanci anche avvia_omega_service.bat. Nessun impatto sugli altri runner.
+    spawnRunner('omega-service', ['-m', 'Betfair.omega.omega_service']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
     const runTennisOdds = () => spawnRunner('tennis-odds', ['betfair_tennis_odds.py']);
