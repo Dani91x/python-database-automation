@@ -59,6 +59,12 @@ def update_trade(trade_id: int, **fields: Any) -> None:
     _sb().table("omega_trades").update(fields).eq("id", trade_id).execute()
 
 
+def delete_trade(trade_id: int) -> None:
+    # GUARD su status='pending': se nel frattempo un operatore ha corretto a mano la
+    # riga (es. a 'open' con bet_id reale dopo l'allarme CRITICAL), NON la cancella.
+    _sb().table("omega_trades").delete().eq("id", trade_id).eq("status", "pending").execute()
+
+
 def list_trades(status: Optional[str] = None) -> list[dict[str, Any]]:
     q = _sb().table("omega_trades").select("*")
     if status:

@@ -220,6 +220,15 @@ def scan_and_place(
             target, commission=commission, min_stake=params["min_stake"]
         )
         size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
+        # cap alla LIQUIDITÀ disponibile al best lay: evita fill parziali (che
+        # lascerebbero esposizione reale non tracciata / cap elusi). Meglio un lay
+        # più piccolo ma COMPLETO che uno parziale.
+        if sel.lay_size_available and size > sel.lay_size_available:
+            size = round(sel.lay_size_available, 2)
+        if size < params["min_stake"]:
+            db.log("skip", {"event_id": ev.event_id, "reason": "insufficient_liquidity",
+                            "avail": sel.lay_size_available})
+            continue
         liability = E.liability_from_lay(size, sel.price)
 
         # cap liability aperta totale (default OFF)
@@ -374,6 +383,69 @@ def _place_one(
 # ---------------------------------------------------------------------------
 # Fase SETTLEMENT (regola i trade aperti — §6, I3)
 # ---------------------------------------------------------------------------
+def reconcile_pending(*, market, db, now: datetime) -> int:
+    """Riallinea i trade 'pending' ORFANI con la realtà (I3). Ritorna n. riconciliati.
+
+    Un 'pending' resta solo se la conferma DB è fallita DOPO l'esecuzione (o il
+    processo è morto a metà). PAPER: nessun ordine reale → conferma con i dati
+    riservati. LIVE: interroga Betfair (listCurrentOrders/listClearedOrders) e
+    apre (fill reale) / lascia in attesa / libera (mai piazzato, recente) / marca
+    error (vecchio e non trovato). Così NESSUN ordine reale resta non tracciato.
+    """
+    pendings = db.list_trades("pending")
+    if not pendings:
+        return 0
+    n = 0
+    # FAIL-SAFE: solo mode ESPLICITAMENTE 'paper' va nel ramo paper; qualsiasi altro
+    # valore (live/None/ignoto) → ramo LIVE (verifica su Betfair), mai il contrario.
+    paper_pendings = [t for t in pendings if str(t.get("mode")) == "paper"]
+    live = [t for t in pendings if str(t.get("mode")) != "paper"]
+    # PAPER: nessun ordine reale a mercato → conferma con i dati della riserva.
+    for tr in paper_pendings:
+        size = float(tr.get("size") or 0.0)
+        price = float(tr.get("price") or 0.0)
+        _confirm_open_trade(
+            db, tr["id"], event_id=tr["event_id"], price=price, size=size,
+            liability=float(tr.get("liability") or _back_liability(size, tr.get("side", "lay"), price)),
+            bet_id=None, meta={"reconciled": "paper"}, mode="paper",
+        )
+        n += 1
+    if not live:
+        return n
+    try:
+        current = market.list_current_orders()
+        cleared = market.list_cleared_orders()
+    except Exception as ex:  # noqa: BLE001 — senza dati NON decidere (si ritenta al prossimo ciclo)
+        db.log("reconcile_error", {"reason": "fetch_failed", "err": str(ex)[:160]})
+        return n
+    for tr in live:
+        try:
+            d = E.reconcile_decision(tr, current, cleared, now.isoformat())
+            act = d.get("action")
+            if act == "confirm":
+                size = float(d["size"])
+                price = float(d["price"])
+                _confirm_open_trade(
+                    db, tr["id"], event_id=tr["event_id"], price=price, size=size,
+                    liability=_back_liability(size, tr.get("side", "lay"), price),
+                    bet_id=d.get("bet_id"), meta={"reconciled": "live"}, mode="live",
+                )
+                db.log("reconciled_open", {"trade_id": tr["id"], "event_id": tr["event_id"], "bet_id": d.get("bet_id")})
+                n += 1
+            elif act == "free":
+                db.delete_trade(tr["id"])
+                db.log("reconciled_free", {"trade_id": tr["id"], "event_id": tr["event_id"]})
+                n += 1
+            elif act == "error":
+                db.update_trade(tr["id"], status="error", meta={"reason": "reconcile_orphan_old"})
+                db.log("reconciled_error", {"trade_id": tr["id"], "event_id": tr["event_id"]})
+                n += 1
+            # 'keep' → ordine reale ancora non matchato: non toccare
+        except Exception as ex:  # noqa: BLE001
+            db.log("reconcile_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
+    return n
+
+
 def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     """Per ogni trade aperto legge il mercato; se CLOSED calcola P&L. Ritorna n. settled."""
     settled = 0
@@ -582,6 +654,16 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         # il cap non deve mai portare sotto il minimo piazzabile .it
         if size < min_stake:
             return {"error": f"cap troppo basso: size sotto il minimo €{min_stake:.2f}"}
+
+    # cap alla LIQUIDITÀ disponibile sul lato scelto → niente fill parziali
+    # (esposizione reale non tracciata). Meglio completo che parziale.
+    avail = None
+    if runner:
+        avail = runner.get("lay_size") if side == "lay" else runner.get("back_size")
+    if avail and size > float(avail):
+        size = round(float(avail), 2)
+    if size < min_stake:
+        return {"error": f"liquidità insufficiente per lo stake minimo €{min_stake:.2f}"}
     liability = _back_liability(size, side, price)
     cap_open = params["max_open_liability"]
     if cap_open and cap_open > 0:
@@ -658,6 +740,11 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     status = control.get("status")
     params = omega_config.resolve_params(control.get("params"))
+
+    # 0) RICONCILIAZIONE dei 'pending' orfani con la realtà Betfair (I3) — SEMPRE e
+    #    per prima: un ordine reale non deve mai restare non tracciato (kill a metà
+    #    piazzamento / conferma DB fallita). Toglie il gate LIVE.
+    n_reconciled = reconcile_pending(market=market, db=db, now=now)
 
     # 1) settlement dei trade aperti — SEMPRE, anche a bot fermo: fermare il bot
     #    blocca i NUOVI ingressi, non la regolazione dei lay già piazzati (I3).

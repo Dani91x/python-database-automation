@@ -278,18 +278,21 @@ def place_order_live(
 ) -> PlaceResult:
     """Piazza un ordine REALE (lay/back). customerRef deterministico = de-dup Betfair (I1)."""
     side_bf = "BACK" if str(side).lower() == "back" else "LAY"
+    customer_ref = (customer_ref or f"omega-{event_id}")[:32]
     instruction = {
         "selectionId": int(selection_id),
         "handicap": 0,
         "side": side_bf,
         "orderType": "LIMIT",
+        # customerOrderRef è PERSISTITO sull'ordine e RITORNA in listCurrentOrders/
+        # listClearedOrders → è la chiave forte per la riconciliazione (I3).
+        "customerOrderRef": customer_ref,
         "limitOrder": {
             "size": round(float(size), 2),
             "price": E.round_to_tick(float(price)),
             "persistenceType": "LAPSE",
         },
     }
-    customer_ref = (customer_ref or f"omega-{event_id}")[:32]
     report = call(
         lambda c: c.place_orders(
             market_id,
@@ -320,3 +323,62 @@ def place_lay_live(
         market_id=market_id, selection_id=selection_id, price=price,
         size=size, event_id=event_id, side="lay",
     )
+
+
+# ---------------------------------------------------------------------------
+# RICONCILIAZIONE: stato reale degli ordini Omega su Betfair
+# ---------------------------------------------------------------------------
+def list_current_orders(strategy_ref: str = CUSTOMER_STRATEGY_REF) -> list[dict]:
+    """Ordini Omega APERTI/matchati (normalizzati) per la riconciliazione."""
+    resp = call(lambda c: c.list_current_orders(customer_strategy_refs=[strategy_ref])) or {}
+    out: list[dict] = []
+    for o in resp.get("currentOrders", []) or []:
+        sid = o.get("selectionId")
+        out.append({
+            "bet_id": o.get("betId"),
+            "market_id": str(o["marketId"]) if o.get("marketId") else None,
+            "selection_id": int(sid) if sid is not None else None,
+            "side": str(o.get("side", "")).lower(),
+            "status": o.get("status"),
+            "size_matched": float(o.get("sizeMatched") or 0.0),
+            "avg_price_matched": o.get("averagePriceMatched"),
+            "size_remaining": float(o.get("sizeRemaining") or 0.0),
+            "customer_order_ref": o.get("customerOrderRef"),
+        })
+    return out
+
+
+def list_cleared_orders(
+    strategy_ref: str = CUSTOMER_STRATEGY_REF,
+    market_ids: Optional[list] = None,
+    lookback_hours: int = 72,
+) -> list[dict]:
+    """Ordini Omega REGOLATI (normalizzati). Finestra temporale (default 72h) +
+    stati SETTLED **e** VOIDED (un ordine parzialmente matchato su un mercato
+    annullato non è SETTLED): così un ordine reale non sfugge alla riconciliazione.
+    """
+    settled_from = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    out: list[dict] = []
+    for status in ("SETTLED", "VOIDED"):
+        resp = call(
+            lambda c, s=status: c.list_cleared_orders(
+                bet_status=s, customer_strategy_refs=[strategy_ref],
+                market_ids=market_ids, settled_from=settled_from,
+            )
+        ) or {}
+        for o in resp.get("clearedOrders", []) or []:
+            sid = o.get("selectionId")
+            out.append({
+                "bet_id": o.get("betId"),
+                "market_id": str(o["marketId"]) if o.get("marketId") else None,
+                "selection_id": int(sid) if sid is not None else None,
+                "side": str(o.get("side", "")).lower(),
+                "size_settled": float(o.get("sizeSettled") or 0.0),
+                "price": o.get("priceMatched") or o.get("priceRequested"),
+                "profit": float(o.get("profit") or 0.0),
+                "bet_outcome": o.get("betOutcome"),
+                "customer_order_ref": o.get("customerOrderRef"),
+            })
+    return out

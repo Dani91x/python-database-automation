@@ -272,6 +272,91 @@ def aggregate_trades(rows: list[dict]) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Riconciliazione dei trade 'pending' con lo stato reale Betfair (I3) — PURA
+# ---------------------------------------------------------------------------
+def _order_matches(o: dict, ref: Optional[str], market_id, selection_id, side: str) -> bool:
+    """Un ordine Betfair (normalizzato) corrisponde al trade pending?
+
+    Se l'ordine DICHIARA un customerOrderRef, è un match SOLO se coincide con
+    ``omega-<event_id>`` (mai un fallback ambiguo che confonderebbe due trade
+    diversi sullo stesso mercato/selezione). Solo se l'ordine NON ha ref si
+    ricade su market_id + selection_id (+ side).
+    """
+    o_ref = o.get("customer_order_ref")
+    if o_ref:
+        return bool(ref) and o_ref == ref
+    if o.get("market_id") != market_id or o.get("selection_id") != selection_id:
+        return False
+    o_side = o.get("side")
+    return (not o_side) or (o_side == side)
+
+
+# GRACE PERIOD: sotto questa età un pending non trovato su Betfair NON viene
+# liberato (potrebbe essere un ordine reale non ancora propagato via API). Deve
+# essere >> di qualunque latenza di propagazione Betfair (sub-secondo tipico).
+RECON_GRACE_S = 120
+
+
+def _age_seconds(iso: Optional[str], now_iso: str) -> Optional[float]:
+    """Età in secondi di ``iso`` rispetto a ``now_iso`` (None se non parsabile)."""
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        n = datetime.fromisoformat(str(now_iso).replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError):
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    if n.tzinfo is None:
+        n = n.replace(tzinfo=timezone.utc)
+    return (n - t).total_seconds()
+
+
+def reconcile_decision(
+    trade: dict, current_orders: list[dict], cleared_orders: list[dict], now_iso: str,
+) -> dict:
+    """Decide cosa fare di un trade 'pending' LIVE dato lo stato reale Betfair. PURA.
+
+    - trovato tra gli ordini CORRENTI e matchato → 'confirm' (apri con fill reale)
+    - trovato corrente ma NON ancora matchato → 'keep' (aspetta il prossimo ciclo)
+    - trovato tra i REGOLATI → 'confirm' (poi settle_open lo chiude sul mercato)
+    - non trovato da nessuna parte e recente (<24h) → 'free' (mai piazzato → libera)
+    - non trovato e vecchio → 'error' (non rischiare: mai un doppio ordine)
+    """
+    ref = f"omega-{trade.get('event_id')}"[:32]  # stesso troncamento del place (customerRef)
+    mid = trade.get("market_id")
+    sid = trade.get("selection_id")
+    sid = int(sid) if sid is not None else None
+    side = str(trade.get("side", "lay")).lower()
+
+    for o in current_orders:
+        if _order_matches(o, ref, mid, sid, side):
+            matched = float(o.get("size_matched") or 0.0)
+            remaining = float(o.get("size_remaining") or 0.0)
+            # conferma SOLO a fill COMPLETO: un ordine ancora parzialmente in
+            # esecuzione (remaining>0) verrebbe congelato con size sbagliata →
+            # esposizione/cap errati. Finché non è completo → 'keep' (aspetta).
+            if matched > 0 and remaining <= 0:
+                return {"action": "confirm",
+                        "price": float(o.get("avg_price_matched") or trade.get("price") or 0.0),
+                        "size": matched, "bet_id": o.get("bet_id")}
+            return {"action": "keep"}
+    for o in cleared_orders:
+        if _order_matches(o, ref, mid, sid, side):
+            return {"action": "confirm",
+                    "price": float(o.get("price") or trade.get("price") or 0.0),
+                    "size": float(o.get("size_settled") or trade.get("size") or 0.0),
+                    "bet_id": o.get("bet_id")}
+    # non trovato in nessuna lista: decidi con GRACE PERIOD (mai 'free' su un ordine
+    # appena piazzato ma non ancora visibile via API → eviterebbe un doppio).
+    age = _age_seconds(trade.get("placed_at"), now_iso)
+    if age is None or age > 24 * 3600:
+        return {"action": "error"}   # non parsabile o vecchio → non rischiare un doppio
+    if age < RECON_GRACE_S:
+        return {"action": "keep"}    # troppo fresco: aspetta un ciclo (propagazione Betfair)
+    return {"action": "free"}        # abbastanza vecchio e non trovato → mai piazzato
+
+
 _TERMINAL_RUNNER = {"WINNER", "LOSER", "REMOVED", "REMOVED_VACANT"}
 
 

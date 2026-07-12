@@ -353,3 +353,70 @@ class BetfairClient:
         return self.betting_rpc(
             method="SportsAPING/v1.0/placeOrders", params=params, max_retries=max_retries
         )
+
+    def list_current_orders(
+        self,
+        customer_strategy_refs: Optional[list] = None,
+        customer_order_refs: Optional[list] = None,
+        market_ids: Optional[list] = None,
+        max_pages: int = 5,
+        page_size: int = 1000,
+    ) -> Any:
+        """listCurrentOrders — ordini APERTI/matchati (per riconciliazione).
+
+        PAGINATO (come Betfair/stream/reconcile_worker.py): accumula tutte le pagine
+        finché ``moreAvailable`` è vero (cap ``max_pages``). Ritorna
+        ``{"currentOrders": [...tutte le pagine...]}``.
+        """
+        all_orders: list = []
+        from_record = 0
+        for _ in range(max_pages):
+            params: Dict[str, Any] = {
+                "orderProjection": "ALL", "fromRecord": from_record, "recordCount": page_size,
+            }
+            if customer_strategy_refs:
+                params["customerStrategyRefs"] = customer_strategy_refs
+            if customer_order_refs:
+                params["customerOrderRefs"] = customer_order_refs
+            if market_ids:
+                params["marketIds"] = market_ids
+            resp = self.betting_rpc(method="SportsAPING/v1.0/listCurrentOrders", params=params) or {}
+            page = resp.get("currentOrders") or []
+            all_orders += page
+            from_record += len(page)
+            if not page or not resp.get("moreAvailable"):
+                break
+        return {"currentOrders": all_orders}
+
+    def list_cleared_orders(
+        self,
+        bet_status: str = "SETTLED",
+        customer_strategy_refs: Optional[list] = None,
+        market_ids: Optional[list] = None,
+        settled_from: Optional[str] = None,
+        max_pages: int = 5,
+        page_size: int = 1000,
+    ) -> Any:
+        """listClearedOrders — ordini REGOLATI (per riconciliazione). PAGINATO.
+
+        Ritorna ``{"clearedOrders": [...tutte le pagine...]}``.
+        """
+        all_orders: list = []
+        from_record = 0
+        for _ in range(max_pages):
+            params: Dict[str, Any] = {
+                "betStatus": bet_status, "fromRecord": from_record, "recordCount": page_size,
+            }
+            if customer_strategy_refs:
+                params["customerStrategyRefs"] = customer_strategy_refs
+            if market_ids:
+                params["marketIds"] = market_ids
+            if settled_from:
+                params["settledDateRange"] = {"from": settled_from}
+            resp = self.betting_rpc(method="SportsAPING/v1.0/listClearedOrders", params=params) or {}
+            page = resp.get("clearedOrders") or []
+            all_orders += page
+            from_record += len(page)
+            if not page or not resp.get("moreAvailable"):
+                break
+        return {"clearedOrders": all_orders}

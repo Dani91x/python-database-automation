@@ -99,6 +99,17 @@ class FakeMarket:
         return M.PlaceResult(ok=True, order_status="EXECUTION_COMPLETE",
                              bet_id="bm1", size_matched=kw["size"], avg_price_matched=kw["price"])
 
+    # --- riconciliazione ---
+    def list_current_orders(self, strategy_ref="omega"):
+        if getattr(self, "orders_raise", False):
+            raise RuntimeError("betfair down")
+        return getattr(self, "current_orders", [])
+
+    def list_cleared_orders(self, strategy_ref="omega", market_ids=None, lookback_hours=72):
+        if getattr(self, "orders_raise", False):
+            raise RuntimeError("betfair down")
+        return getattr(self, "cleared_orders", [])
+
 
 class FakeDB:
     def __init__(self, control):
@@ -141,6 +152,11 @@ class FakeDB:
         for t in self.trades:
             if t["id"] == trade_id:
                 t.update(fields)
+
+    def delete_trade(self, trade_id):
+        # guard status='pending' come il DB reale
+        self.trades = [t for t in self.trades
+                       if not (t["id"] == trade_id and t.get("status") == "pending")]
 
     def list_trades(self, status=None):
         return [t for t in self.trades if status is None or t["status"] == status]
@@ -555,6 +571,109 @@ def test_manuale_commissione_clampata():
     t = db.trades[0]
     # con comm clampata a 20% → size = 8/0.8 = 10.0 (NON milioni)
     assert t["size"] == round(8 / 0.8, 2)
+
+
+def _pending_row(mode="live", **over):
+    row = {"id": 1, "event_id": "1.100", "market_id": "m1", "selection_id": 4,
+           "side": "lay", "mode": mode, "price": 110, "size": 5, "liability": 545,
+           "status": "pending", "placed_at": NOW.isoformat()}
+    row.update(over)
+    return row
+
+
+def test_reconcile_paper_pending_confermato():
+    db = FakeDB(_control())
+    db.trades = [_pending_row(mode="paper")]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 1
+    assert db.trades[0]["status"] == "open"      # paper: confermato senza Betfair
+
+
+def test_reconcile_live_pending_trovato_su_betfair():
+    db = FakeDB(_control())
+    db.trades = [_pending_row(mode="live")]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = [{"customer_order_ref": "omega-1.100", "market_id": "m1",
+                              "selection_id": 4, "side": "lay", "size_matched": 5.0,
+                              "avg_price_matched": 110.0, "bet_id": "bX"}]
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 1
+    assert db.trades[0]["status"] == "open"       # ordine reale ritrovato → tracciato
+    assert db.trades[0]["bet_id"] == "bX"
+
+
+def test_reconcile_live_pending_non_trovato_liberato():
+    db = FakeDB(_control())
+    # oltre il grace period (5 min) ma entro le 24h → non piazzato → liberato
+    db.trades = [_pending_row(mode="live", placed_at=(NOW - timedelta(minutes=5)).isoformat())]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = []
+    market.cleared_orders = []
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 1
+    assert len(db.trades) == 0                     # mai piazzato → liberato
+
+
+def test_reconcile_live_pending_troppo_fresco_keep():
+    # appena piazzato (< grace) e non ancora visibile via API → NON liberare (attendi)
+    db = FakeDB(_control())
+    db.trades = [_pending_row(mode="live", placed_at=NOW.isoformat())]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = []
+    market.cleared_orders = []
+    S.reconcile_pending(market=market, db=db, now=NOW)
+    assert db.trades[0]["status"] == "pending"     # grace: mai free su ordine freschissimo
+
+
+def test_reconcile_fetch_error_non_libera_ne_decide():
+    # se Betfair è irraggiungibile, NESSUNA decisione sui live pending (no free/error)
+    db = FakeDB(_control())
+    db.trades = [_pending_row(mode="live")]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.orders_raise = True
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 0
+    assert db.trades[0]["status"] == "pending"     # intatto, ritentato dopo
+
+
+def test_reconcile_live_pending_vecchio_non_trovato_error():
+    db = FakeDB(_control())
+    old = (NOW - timedelta(hours=48)).isoformat()
+    db.trades = [_pending_row(mode="live", placed_at=old)]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = []
+    market.cleared_orders = []
+    S.reconcile_pending(market=market, db=db, now=NOW)
+    assert db.trades[0]["status"] == "error"       # vecchio+non trovato → error (mai free)
+
+
+def test_reconcile_live_pending_parziale_keep():
+    # ordine reale ancora parzialmente in esecuzione (remaining>0) → resta pending
+    db = FakeDB(_control())
+    db.trades = [_pending_row(mode="live")]
+    db._id = 1
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = [{"customer_order_ref": "omega-1.100", "market_id": "m1",
+                              "selection_id": 4, "side": "lay", "size_matched": 2.0,
+                              "size_remaining": 3.0, "avg_price_matched": 110.0, "bet_id": "bP"}]
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 0
+    assert db.trades[0]["status"] == "pending"     # non congelare un fill parziale
+
+
+def test_reconcile_non_confonde_ordine_di_altro_trade():
+    # un ordine con customerOrderRef DIVERSO non deve confermare questo pending
+    other = [{"customer_order_ref": "omega-9.999", "market_id": "m1", "selection_id": 4,
+              "side": "lay", "size_matched": 5.0, "size_remaining": 0.0, "bet_id": "bZ"}]
+    d = E.reconcile_decision(_pending_row(mode="live"), other, [], NOW.isoformat())
+    assert d["action"] != "confirm"                # mai 'confirm' con l'ordine sbagliato
 
 
 def test_due_eventi_stesso_ciclo_piazzano_entrambi():

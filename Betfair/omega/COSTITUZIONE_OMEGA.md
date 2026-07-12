@@ -39,12 +39,14 @@ probabile** con **quota entro un range configurabile** (non 600).
    settlement scatta SOLO quando ogni runner ha uno stato terminale
    (`WINNER/LOSER/REMOVED`): un `CLOSED` non ancora finalizzato viene ritentato,
    mai regolato a `void` per errore. Dopo un ordine LIVE la conferma DB è
-   **robusta** (retry) e, se fallisce, si logga CRITICAL con il `bet_id` per la
-   riconciliazione. Mai dedurre un incasso da un ordine non ancora regolato.
-   🔴 **GATE LIVE**: la riconciliazione automatica via `listCurrentOrders`
-   (`customerStrategyRef='omega'`) per righe `pending` residue (es. kill del
-   processo a metà piazzamento) è **TODO** e va implementata PRIMA di operare in
-   LIVE con importi reali. In PAPER il rischio è nullo.
+   **robusta** (retry) e, se fallisce, si logga CRITICAL con il `bet_id`. Mai
+   dedurre un incasso da un ordine non ancora regolato.
+   ✅ **RICONCILIAZIONE (LIVE-ready)**: a ogni ciclo `reconcile_pending` riallinea i
+   `pending` orfani con la realtà — PAPER: conferma; LIVE: interroga Betfair
+   (`listCurrentOrders`/`listClearedOrders`, `customerStrategyRef='omega'`) e apre
+   col fill reale / attende (non ancora matchato) / libera (mai piazzato, recente)
+   / marca error (vecchio, per non rischiare un doppio). Un ordine reale non può
+   mai restare non tracciato: Omega è pronto sia in PAPER sia in LIVE.
 4. **I4 — Nessun ricalcolo retroattivo del passato.** Il target per-match si
    ricalcola **solo in avanti** sui match ancora da piazzare; i trade già
    piazzati non si toccano.

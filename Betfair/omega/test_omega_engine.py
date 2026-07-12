@@ -255,6 +255,67 @@ def test_aggregate_trades():
     assert agg["settled_count"] == 3
 
 
+def _pending(placed_at="2026-07-12T15:00:00+00:00"):
+    return {"event_id": "1.100", "market_id": "m1", "selection_id": 4,
+            "side": "lay", "price": 110, "size": 5, "placed_at": placed_at}
+
+
+NOW_ISO = "2026-07-12T16:00:00+00:00"
+
+
+def test_reconcile_confirm_da_current_matchato():
+    current = [{"customer_order_ref": "omega-1.100", "market_id": "m1", "selection_id": 4,
+                "side": "lay", "size_matched": 5.0, "avg_price_matched": 110.0, "bet_id": "b9"}]
+    d = E.reconcile_decision(_pending(), current, [], NOW_ISO)
+    assert d["action"] == "confirm" and d["bet_id"] == "b9"
+    assert d["size"] == 5.0 and d["price"] == 110.0
+
+
+def test_reconcile_keep_se_non_matchato():
+    current = [{"customer_order_ref": "omega-1.100", "market_id": "m1", "selection_id": 4,
+                "side": "lay", "size_matched": 0.0, "bet_id": "b9"}]
+    assert E.reconcile_decision(_pending(), current, [], NOW_ISO)["action"] == "keep"
+
+
+def test_reconcile_keep_se_parzialmente_matchato():
+    # matched>0 ma remaining>0 → ordine ancora in esecuzione → keep (non congelare)
+    current = [{"customer_order_ref": "omega-1.100", "market_id": "m1", "selection_id": 4,
+                "side": "lay", "size_matched": 2.0, "size_remaining": 3.0, "bet_id": "bP"}]
+    assert E.reconcile_decision(_pending(), current, [], NOW_ISO)["action"] == "keep"
+
+
+def test_reconcile_ref_diverso_non_matcha():
+    # ordine con customerOrderRef di un ALTRO trade → non deve confermare questo
+    current = [{"customer_order_ref": "omega-9.999", "market_id": "m1", "selection_id": 4,
+                "side": "lay", "size_matched": 5.0, "size_remaining": 0.0, "bet_id": "bZ"}]
+    assert E.reconcile_decision(_pending(), current, [], NOW_ISO)["action"] != "confirm"
+
+
+def test_reconcile_confirm_da_cleared():
+    cleared = [{"customer_order_ref": "omega-1.100", "market_id": "m1", "selection_id": 4,
+                "side": "lay", "size_settled": 5.0, "price": 110.0, "bet_id": "bc"}]
+    d = E.reconcile_decision(_pending(), [], cleared, NOW_ISO)
+    assert d["action"] == "confirm" and d["bet_id"] == "bc" and d["size"] == 5.0
+
+
+def test_reconcile_free_se_recente_e_non_trovato():
+    # non trovato da nessuna parte, piazzato di recente → mai piazzato → libera
+    assert E.reconcile_decision(_pending(), [], [], NOW_ISO)["action"] == "free"
+
+
+def test_reconcile_error_se_vecchio_e_non_trovato():
+    # non trovato e VECCHIO (>24h) → non rischiare un doppio → error
+    old = _pending(placed_at="2026-07-10T10:00:00+00:00")
+    assert E.reconcile_decision(old, [], [], NOW_ISO)["action"] == "error"
+
+
+def test_reconcile_match_per_market_selection_senza_ref():
+    # se il customerOrderRef manca, match su market_id + selection_id + side
+    current = [{"market_id": "m1", "selection_id": 4, "side": "lay",
+                "size_matched": 5.0, "avg_price_matched": 110.0, "bet_id": "b1"}]
+    assert E.reconcile_decision(_pending(), current, [], NOW_ISO)["action"] == "confirm"
+
+
 def test_settle_void():
     status, pnl = E.settle_pnl(
         our_selection_id=4, winner_selection_id=None, size=5.26, price=110.0, commission=0.05
