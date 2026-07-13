@@ -216,8 +216,8 @@ export default function ManualPanel() {
 
                     <div className="flex gap-2">
                         <div className="flex rounded-md border border-white/10 overflow-hidden text-xs font-bold flex-1">
-                            <button onClick={() => setSide('lay')} className={`flex-1 py-1.5 ${side === 'lay' ? 'bg-primary/25 text-primary' : 'text-slate-400'}`}>LAY</button>
                             <button onClick={() => setSide('back')} className={`flex-1 py-1.5 ${side === 'back' ? 'bg-sky-500/25 text-sky-300' : 'text-slate-400'}`}>BACK</button>
+                            <button onClick={() => setSide('lay')} className={`flex-1 py-1.5 ${side === 'lay' ? 'bg-rose-500/25 text-rose-300' : 'text-slate-400'}`}>LAY</button>
                         </div>
                         <div className="flex rounded-md border border-white/10 overflow-hidden text-xs font-bold flex-1">
                             <button onClick={() => setMode('paper')} className={`flex-1 py-1.5 ${mode === 'paper' ? 'bg-emerald-500/25 text-emerald-300' : 'text-slate-400'}`}>PAPER</button>
@@ -226,7 +226,7 @@ export default function ManualPanel() {
                     </div>
 
                     <div className="text-xs text-slate-400">
-                        Selezione: {sel ? <span className="text-secondary font-bold">{sel.name}</span> : <span className="italic">nessuna (scegli dal book)</span>}
+                        Selezione: {sel ? <span className={`font-bold ${side === 'lay' ? 'text-rose-300' : 'text-sky-300'}`}>{sel.name}</span> : <span className="italic">nessuna (scegli dal book)</span>}
                     </div>
 
                     <div className="flex gap-2">
@@ -267,7 +267,7 @@ export default function ManualPanel() {
 
                     <Button onClick={() => { if (mode === 'live') setLiveConfirmOpen(true); else void doPlace(); }}
                         disabled={!sel || busy === 'place'}
-                        className={`w-full ${mode === 'live' ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-primary text-black hover:bg-primary/90'}`}>
+                        className={`w-full ${mode === 'live' ? 'bg-red-600 hover:bg-red-500 text-white' : side === 'lay' ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}>
                         {busy === 'place' ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Zap className="w-4 h-4 mr-1" />}
                         Piazza {side.toUpperCase()} {mode === 'live' ? '(SOLDI VERI)' : '(paper)'}
                     </Button>
@@ -301,7 +301,7 @@ export default function ManualPanel() {
                                     <tr key={r.selection_id} className={`border-t border-white/5 hover:bg-white/5 ${sel?.selection_id === r.selection_id ? 'bg-primary/10' : ''}`}>
                                         <td className="px-4 py-2 font-medium">{r.name}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-sky-300/90">{fmtQuote(r.back_price)}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums text-primary">{fmtQuote(r.lay_price)}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums text-rose-300">{fmtQuote(r.lay_price)}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-slate-400">€{r.lay_size.toFixed(0)}</td>
                                         <td className="px-4 py-2 text-center">
                                             <Button variant="ghost" size="sm" onClick={() => pickRunner(r)}>usa</Button>

@@ -383,7 +383,7 @@ export default function Omega() {
                                                 <tr key={t.id} className="border-t border-white/5 hover:bg-white/5">
                                                     <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
                                                     <td className="px-4 py-2 max-w-[240px] truncate" title={t.event_name ?? t.event_id}>{t.event_name ?? t.event_id}</td>
-                                                    <td className="px-4 py-2 text-center font-bold text-secondary">{t.runner_name ?? '—'}</td>
+                                                    <td className="px-4 py-2 text-center font-bold text-rose-300">{t.runner_name ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{t.price?.toFixed(2) ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>
