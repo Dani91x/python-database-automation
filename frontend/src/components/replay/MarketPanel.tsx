@@ -32,6 +32,9 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
     const isSuspended = status === 'SUSPENDED';
     const isClosed = status === 'CLOSED';
     const noBet = isSuspended || isClosed; // niente nuove giocate quando sospeso/chiuso
+    // minimo Betfair £2: sotto, il piazzamento verrebbe rifiutato → bottoni spenti
+    // (feedback esplicito invece del click che non fa nulla).
+    const stakeTooLow = stake < 2;
 
     return (
         <Card className="glass-card border-white/10 overflow-hidden">
@@ -47,29 +50,39 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                     )}
                 </span>
                 <div className="flex items-center gap-2">
-                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Stake</label>
+                    <label htmlFor={`stake-${market.market_id}`} className="text-[10px] uppercase tracking-wider text-muted-foreground">Stake</label>
                     <select
                         value={STAKE_OPTIONS.includes(stake) ? stake : ''}
                         onChange={e => e.target.value && onStakeChange(Number(e.target.value))}
+                        aria-label="Stake preimpostato"
                         className="bg-black/60 border border-white/10 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-primary/60"
                     >
                         {!STAKE_OPTIONS.includes(stake) && <option value="">{fmtStake(stake)}</option>}
                         {STAKE_OPTIONS.map(o => <option key={o} value={o}>{fmtStake(o)}</option>)}
                     </select>
                     <input
-                        type="number" min={0} step={1} value={stake}
+                        id={`stake-${market.market_id}`}
+                        type="number" min={2} step={1} value={stake}
                         onChange={e => onStakeChange(Math.max(0, Number(e.target.value)))}
+                        title="Minimo Betfair £2"
                         className="w-20 bg-black/60 border border-white/10 rounded-md px-2 py-1 text-xs text-white tabular-nums focus:outline-none focus:border-primary/60"
                     />
                     <button
                         onClick={onCashOut}
-                        disabled={bets.every(b => (b.stake ?? 0) <= 1e-9)}
+                        // non cliccabile se: niente abbinato, o mercato SOSPESO/CHIUSO con
+                        // esito NON deciso (su Betfair non si chiude durante la sospensione;
+                        // qui il book vuoto bloccherebbe £0 distruggendo la posizione).
+                        disabled={bets.every(b => (b.stake ?? 0) <= 1e-9) || (noBet && !settled)}
                         className={`px-2.5 py-1 rounded-md text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${
                             settled
                                 ? (marketValue >= 0 ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : 'bg-red-500/20 text-red-200 hover:bg-red-500/30')
                                 : 'bg-secondary text-black hover:bg-secondary/90'
                         }`}
-                        title={settled ? 'Esito deciso: P&L definitivo (clic per incassare)' : 'Chiude le posizioni di questo mercato alle quote correnti'}
+                        title={settled
+                            ? 'Esito deciso: P&L definitivo (clic per incassare)'
+                            : noBet
+                                ? 'Mercato sospeso/chiuso: cash-out non disponibile (come su Betfair)'
+                                : 'Chiude le posizioni di questo mercato alle quote correnti'}
                     >
                         {settled ? `Esito: ${formatGbp(marketValue)}` : `Cash out: ${formatGbp(marketValue)}`}
                     </button>
@@ -104,8 +117,9 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                                     <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">{wp != null ? `${wp}%` : '—'}</td>
                                     <td className="px-2 py-1.5">
                                         <button
-                                            disabled={back == null || noBet}
-                                            onClick={() => back != null && !noBet && onPlaceBet(s.selection_id, s.name, 'back', back)}
+                                            disabled={back == null || noBet || stakeTooLow}
+                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (£2)' : undefined}
+                                            onClick={() => back != null && !noBet && !stakeTooLow && onPlaceBet(s.selection_id, s.name, 'back', back)}
                                             className="w-full rounded-md px-2 py-1.5 text-center text-xs font-bold tabular-nums bg-blue-500/15 text-blue-200 hover:bg-blue-500/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                         >
                                             {back != null ? back.toFixed(2) : '—'}
@@ -113,8 +127,9 @@ export function MarketPanel({ market, ladder, stake, onStakeChange, bets, onPlac
                                     </td>
                                     <td className="px-2 py-1.5">
                                         <button
-                                            disabled={lay == null || noBet}
-                                            onClick={() => lay != null && !noBet && onPlaceBet(s.selection_id, s.name, 'lay', lay)}
+                                            disabled={lay == null || noBet || stakeTooLow}
+                                            title={stakeTooLow ? 'Stake sotto il minimo Betfair (£2)' : undefined}
+                                            onClick={() => lay != null && !noBet && !stakeTooLow && onPlaceBet(s.selection_id, s.name, 'lay', lay)}
                                             className="w-full rounded-md px-2 py-1.5 text-center text-xs font-bold tabular-nums bg-pink-500/15 text-pink-200 hover:bg-pink-500/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                                         >
                                             {lay != null ? lay.toFixed(2) : '—'}

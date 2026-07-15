@@ -26,8 +26,10 @@ export function categoryOf(type: string | null): CatKey {
 }
 
 // linea numerica da un market_type tipo OVER_UNDER_25 -> 2.5 (per ordinamento ASC).
+// OVER_UNDER_105 -> 10.5: ultima cifra = frazione, le precedenti = parte intera
+// (tenere IDENTICO a replay-pnl.ts e opportunities/helpers.ts).
 export function lineOf(type: string | null): number {
-    const m = /(\d)(\d)$/.exec((type || '').toUpperCase());
+    const m = /_(\d+)(\d)$/.exec((type || '').toUpperCase());
     return m ? Number(`${m[1]}.${m[2]}`) : Number.MAX_SAFE_INTEGER;
 }
 

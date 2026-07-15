@@ -237,3 +237,61 @@ describe('simulateOrder — guardie input', () => {
         expect(r.matched).toBe(0);
     });
 });
+
+describe('simulateOrder — book SOSPESO/CHIUSO all\'arrivo al matcher (fedeltà)', () => {
+    // il ladder residuo di un frame sospeso NON è liquidità disponibile: nessun
+    // fill taker. LAPSE → decade; PERSIST → riposa e si abbina alla riapertura.
+    const req: OrderRequest = { side: 'back', limitPrice: 2.82, stake: 100, placedTs: 0, inPlay: false };
+
+    it('SUSPENDED + LAPSE → nessun fill, LAPSED', () => {
+        const frames = [snap({ ts: 0, back: [[2.82, 500]], status: 'SUSPENDED' })];
+        const r = simulateOrder(req, frames, 10_000);
+        expect(r.matched).toBe(0);
+        expect(r.status).toBe('LAPSED');
+        expect(r.remaining).toBe(0);
+    });
+
+    it('CLOSED → LAPSED anche con PERSIST', () => {
+        const frames = [snap({ ts: 0, back: [[2.82, 500]], status: 'CLOSED' })];
+        const r = simulateOrder({ ...req, persistence: 'PERSIST' }, frames, 10_000);
+        expect(r.matched).toBe(0);
+        expect(r.status).toBe('LAPSED');
+    });
+
+    it('SUSPENDED + PERSIST → resta a riposo e si abbina alla RIAPERTURA (trd)', () => {
+        const frames = [
+            snap({ ts: 0, back: [[2.82, 500]], status: 'SUSPENDED', trd: [[2.82, 0]] }),
+            // riapre: volume tradato attraversa il limite → fill maker al proprio prezzo
+            snap({ ts: 5000, back: [[2.80, 100]], lay: [[2.84, 100]], ltp: 2.82, status: 'OPEN', trd: [[2.82, 300]] }),
+        ];
+        const r = simulateOrder({ ...req, persistence: 'PERSIST' }, frames, 10_000);
+        expect(r.status).toBe('MATCHED');
+        expect(r.matched).toBe(100);
+        expect(r.avgPrice).toBe(2.82);
+    });
+
+    it('in-play col delay: piazzato su book OPEN ma SOSPESO all\'arrivo → LAPSED (mai fill post-gol)', () => {
+        const frames = [
+            snap({ ts: 0, back: [[2.82, 500]], status: 'OPEN' }),
+            snap({ ts: 3000, back: [[2.82, 500]], status: 'SUSPENDED' }), // gol durante il delay
+        ];
+        const r = simulateOrder({ side: 'back', limitPrice: 2.82, stake: 100, placedTs: 0, inPlay: true, delayMs: 5000 }, frames, 10_000);
+        expect(r.matched).toBe(0);
+        expect(r.status).toBe('LAPSED');
+    });
+});
+
+describe('simulateOrder — CLOSED durante il riposo maker', () => {
+    it('PERSIST a riposo decade quando il mercato CHIUDE (mai ordini vivi post-regolamento)', () => {
+        const frames = [
+            snap({ ts: 0, back: [[2.80, 50]], lay: [[2.84, 100]], status: 'OPEN' }),
+            snap({ ts: 5000, back: [], lay: [], status: 'CLOSED' }),
+        ];
+        const r = simulateOrder(
+            { side: 'back', limitPrice: 2.82, stake: 100, placedTs: 0, inPlay: false, persistence: 'PERSIST' },
+            frames, 10_000,
+        );
+        expect(r.remaining).toBe(0);
+        expect(r.status).toBe('LAPSED'); // niente fill taker (limite 2.82 > best 2.80)
+    });
+});

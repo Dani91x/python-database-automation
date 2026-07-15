@@ -21,9 +21,12 @@ export type { MarketMeta, SelectionMeta, SettleCtx } from '@/lib/replay-pnl';
 // ---------------------------------------------------------------- predicati
 // IDENTICI a quelli (module-private) di replay-pnl.ts.
 
-// OVER_UNDER_25 -> 2.5 ; OVER_UNDER_05 -> 0.5
+// OVER_UNDER_25 -> 2.5 ; OVER_UNDER_05 -> 0.5 ; OVER_UNDER_105 -> 10.5
+// (l'ultima cifra è la frazione, TUTTE le precedenti sono la parte intera:
+//  con /(\d)(\d)$/ una linea a doppia cifra diventava 0.5 → falsi arbitraggi
+//  di monotonicità su eventuali tipi futuri a 3 cifre).
 export function lineFromType(t: string): number | null {
-    const m = /(\d)(\d)$/.exec(t);
+    const m = /_(\d+)(\d)$/.exec(t);
     if (!m) return null;
     return Number(`${m[1]}.${m[2]}`);
 }
@@ -45,9 +48,13 @@ export interface MatchOddsTriple {
 export function matchOddsTriple(selections: SelLite[]): MatchOddsTriple {
     const draw = selections.find((s) => isDraw(s.name)) ?? null;
     const nd = selections
-        .filter((s) => !isDraw(s.name))
-        .sort((a, b) => (a.sort_priority ?? 0) - (b.sort_priority ?? 0));
-    return { home: nd[0] ?? null, away: nd[1] ?? null, draw };
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => !isDraw(s.name))
+        // sort_priority mancante → fallback DETERMINISTICO sull'ordine del catalogo
+        // (con `?? 0` per entrambe l'ordinamento era instabile: home/away potevano
+        // invertirsi e i detector direzionali bancare la squadra sbagliata).
+        .sort((a, b) => (a.s.sort_priority ?? a.i + 1) - (b.s.sort_priority ?? b.i + 1));
+    return { home: nd[0]?.s ?? null, away: nd[1]?.s ?? null, draw };
 }
 
 // --------------------------------------------------------- CORRECT_SCORE

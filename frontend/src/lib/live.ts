@@ -188,11 +188,143 @@ export interface ReplayData {
     score_timeline: ScoreEvent[];
 }
 
-// get_replay(p_event_id) -> ReplayData
+// get_replay(p_event_id) -> ReplayData (chiamata UNICA: usata solo come fallback
+// finché la migrazione live_stream_rpc_chunked.sql non è applicata — sugli eventi
+// grandi muore col timeout del ruolo API ~8s).
 export async function fetchReplay(eventId: string): Promise<ReplayData> {
     const { data, error } = await supabase.rpc('get_replay', { p_event_id: eventId });
     if (error) throw new Error(error.message);
     return data as ReplayData;
+}
+
+// --- caricamento a FINESTRE TEMPORALI (fix timeout eventi grandi) ---
+// get_replay_meta -> anagrafica + catalogo + score_timeline + estremi temporali.
+export interface ReplayMeta {
+    event: ReplayEvent;
+    markets: Market[];
+    score_timeline: ScoreEvent[];
+    ts_min: string | null;
+    ts_max: string | null;
+    inplay_from_ts: string | null;
+}
+
+export interface ReplayProgress {
+    done: number;      // finestre completate
+    total: number;     // finestre totali
+    frames: number;    // frame accumulati finora
+}
+
+// Budget di frame del replay: bucket adattivo per restarci dentro.
+const REPLAY_TARGET_FRAMES = 9000;   // in-play (granularità fine)
+const REPLAY_TARGET_PRE = 2500;      // pre-match (granularità grossa)
+const WINDOW_MS = 10 * 60_000;       // finestra di fetch: 10 minuti
+// p_max_rows per finestra: DEVE superare il budget teorico di frame di una
+// finestra (WINDOW_MS/bucket × mercati) — se il server tronca, il client lo
+// rileva (n === max) e DIMEZZA la finestra: mai un troncamento silenzioso.
+const FRAMES_PER_CALL = 10000;       // = clamp massimo di p_max_rows lato SQL
+// pre-match caricato al massimo per queste ore prima del kickoff: un follow
+// armato giorni prima non deve generare centinaia di finestre vuote.
+const PRE_MATCH_MAX_MS = 4 * 3600_000;
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+// Errore PostgREST "funzione non trovata" (migrazione non ancora applicata).
+const isMissingFunction = (e: { code?: string; message?: string } | null): boolean =>
+    !!e && (e.code === 'PGRST202' || /get_replay_meta|schema cache/i.test(e.message ?? ''));
+
+async function fetchReplayFramesWindow(
+    eventId: string, fromMs: number, toMs: number, bucketSec: number,
+): Promise<Frame[]> {
+    const fromIso = new Date(fromMs).toISOString();
+    const toIso = new Date(toMs).toISOString();
+    const call = async () => supabase.rpc('get_replay_frames', {
+        p_event_id: eventId,
+        p_from_ts: fromIso,
+        p_to_ts: toIso,
+        p_bucket_sec: bucketSec,
+        p_max_rows: FRAMES_PER_CALL,
+    });
+    let { data, error } = await call();
+    if (error) {
+        // un retry per errori transitori (rete/timeout): finestra piccola, costa poco
+        await new Promise(r => setTimeout(r, 800));
+        ({ data, error } = await call());
+        if (error) throw new Error(`finestra ${fromIso}–${toIso}: ${error.message}`);
+    }
+    const raw = data as { frames?: Frame[] } | null;
+    const frames = raw?.frames ?? [];
+    // finestra TRONCATA dal LIMIT server (il taglio avviene per market_id → interi
+    // mercati spariti in silenzio): dimezza la finestra e riprova ricorsivamente.
+    if (frames.length >= FRAMES_PER_CALL && toMs - fromMs > 30_000) {
+        const mid = fromMs + Math.floor((toMs - fromMs) / 2);
+        const [a, b] = [
+            await fetchReplayFramesWindow(eventId, fromMs, mid, bucketSec),
+            await fetchReplayFramesWindow(eventId, mid, toMs, bucketSec),
+        ];
+        return [...a, ...b];
+    }
+    return frames;
+}
+
+// Carica un replay a finestre temporali con progresso. Se le RPC chunked non
+// esistono ancora sul DB, ripiega in automatico sulla vecchia get_replay.
+export async function fetchReplayChunked(
+    eventId: string,
+    onProgress?: (p: ReplayProgress) => void,
+): Promise<ReplayData> {
+    const { data, error } = await supabase.rpc('get_replay_meta', { p_event_id: eventId });
+    if (error) {
+        if (isMissingFunction(error)) return fetchReplay(eventId); // fallback pre-migrazione
+        throw new Error(error.message);
+    }
+    const meta = data as ReplayMeta;
+    const base: ReplayData = {
+        event: meta.event,
+        markets: meta.markets ?? [],
+        frames: [],
+        score_timeline: meta.score_timeline ?? [],
+    };
+    if (!meta.ts_min || !meta.ts_max) return base; // nessuno snapshot registrato
+
+    let tsMin = new Date(meta.ts_min).getTime();
+    const tsMax = new Date(meta.ts_max).getTime();
+    const inplayFrom = meta.inplay_from_ts ? new Date(meta.inplay_from_ts).getTime() : tsMin;
+    const nMkts = Math.max(1, base.markets.length);
+
+    // pre-match cappato alle ultime PRE_MATCH_MAX_MS ore prima del kickoff:
+    // registrazioni armate con giorni d'anticipo non generano finestre inutili.
+    if (inplayFrom - tsMin > PRE_MATCH_MAX_MS) tsMin = inplayFrom - PRE_MATCH_MAX_MS;
+
+    // bucket adattivi: pre-match grossolano, in-play fine (indipendenti tra loro,
+    // così 2h di pre-match non degradano la granularità della partita).
+    const preSpanSec = Math.max(0, (Math.min(inplayFrom, tsMax) - tsMin) / 1000);
+    const inSpanSec = Math.max(0, (tsMax - Math.max(inplayFrom, tsMin)) / 1000);
+    const bucketPre = clamp(Math.ceil((preSpanSec * nMkts) / REPLAY_TARGET_PRE), 30, 300);
+    const bucketIn = clamp(Math.ceil((inSpanSec * nMkts) / REPLAY_TARGET_FRAMES), 2, 60);
+
+    // pianifica le finestre [from, to) con il bucket della fase corrispondente
+    const windows: { from: number; to: number; bucket: number }[] = [];
+    const pushWindows = (from: number, to: number, bucket: number) => {
+        for (let t = from; t < to; t += WINDOW_MS) {
+            windows.push({ from: t, to: Math.min(t + WINDOW_MS, to), bucket });
+        }
+    };
+    const endExclusive = tsMax + 1000; // p_to_ts esclusivo: includi l'ultimo frame
+    if (inplayFrom > tsMin) {
+        pushWindows(tsMin, Math.min(inplayFrom, endExclusive), bucketPre);
+        pushWindows(inplayFrom, endExclusive, bucketIn);
+    } else {
+        pushWindows(tsMin, endExclusive, bucketIn);
+    }
+
+    const frames: Frame[] = [];
+    for (let i = 0; i < windows.length; i++) {
+        const w = windows[i];
+        const part = await fetchReplayFramesWindow(eventId, w.from, w.to, w.bucket);
+        frames.push(...part);
+        onProgress?.({ done: i + 1, total: windows.length, frames: frames.length });
+    }
+    return { ...base, frames };
 }
 
 // ----------------------------------------------------------- Live Signals (#2)

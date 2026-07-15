@@ -48,13 +48,20 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                 const remaining = b.remaining ?? 0;
                                 const hasRemaining = remaining > 1e-6;
                                 const status = b.matchStatus;
+                                // parte richiesta MAI abbinata né più in coda (annullata dall'utente
+                                // o decaduta): senza questa etichetta un parziale-poi-annullato
+                                // appariva "interamente abbinato" (fix review #9).
+                                const requested = b.requestedStake ?? b.stake;
+                                const unfilledGone = !hasRemaining && status !== 'PENDING'
+                                    && requested - b.stake - remaining > 1e-6;
                                 // etichetta di stato per la parte NON ancora abbinata
                                 const stateLabel =
                                     status === 'PENDING' ? 'in ritardo…'
                                         : status === 'CANCELLED' ? 'annullato'
                                             : status === 'LAPSED' ? 'annullato (sospensione)'
                                                 : hasRemaining ? `£${remaining.toLocaleString('it', { maximumFractionDigits: 2 })} in coda`
-                                                    : null;
+                                                    : unfilledGone ? 'resto annullato'
+                                                        : null;
                                 const canCancel = !closed && (hasRemaining || status === 'PENDING');
                                 return (
                                     <tr key={b.id} className={`border-b border-white/5 ${closed ? 'opacity-45' : ''}`}>
@@ -112,7 +119,12 @@ export function TradesPanel({ bets, onRemove }: { bets: SimBet[]; onRemove: (id:
                                                     <X className="w-3.5 h-3.5" />
                                                 </button>
                                             ) : (
-                                                <span className="text-[9px] uppercase tracking-wider text-emerald-400/70 font-bold" title="Interamente abbinato">abbinato</span>
+                                                <span
+                                                    className="text-[9px] uppercase tracking-wider text-emerald-400/70 font-bold"
+                                                    title={unfilledGone ? 'Parte abbinata tenuta; il resto è stato annullato/decaduto' : 'Interamente abbinato'}
+                                                >
+                                                    abbinato
+                                                </span>
                                             )}
                                         </td>
                                     </tr>

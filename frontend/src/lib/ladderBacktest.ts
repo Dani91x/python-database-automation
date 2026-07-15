@@ -126,8 +126,11 @@ export function runLadderBacktest(
     const trades: BacktestTrade[] = [];
     let attempted = 0;
     let unfilled = 0;
+    // guard completo: senza everySec/entryTtlSec/maxHoldSec > 0 il cursore non
+    // avanza (cursor += 0) → while infinito che congela la tab. Mai un hang.
     if (snaps.length < 2 || !(params.stake >= 2) || params.tpTicks < 1 || params.stopTicks < 1
-        || params.entryOffsetTicks < 0) {
+        || params.entryOffsetTicks < 0
+        || !(params.everySec > 0) || !(params.entryTtlSec > 0) || !(params.maxHoldSec > 0)) {
         return { trades, attempted, unfilled, totalPnl: 0, wins: 0, losses: 0, incomplete: 0 };
     }
     const endTs = snaps[snaps.length - 1].ts;

@@ -36,6 +36,9 @@ export interface MarketState {
     market_type: string | null;
     status: string;
     ladder: LadderMap; // ladder[selId] = {back:[[price,size]...], lay:[[...]], ltp, tv}; index0 = best
+    // ts del FRAME sottostante (carry-forward): serve alla validazione per capire
+    // se un look-ahead osserva dati NUOVI o lo stesso frame trascinato.
+    frame_ts?: string;
 }
 
 // Fotografia dell'intera partita in un bucket temporale.

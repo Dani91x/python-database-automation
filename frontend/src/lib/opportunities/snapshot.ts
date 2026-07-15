@@ -106,10 +106,18 @@ export function buildSnapshots(replay: ReplayData, bucketMs = 10000): Snapshot[]
         let latestFrameMinute: number | null = null;
         let latestFrameTs = -Infinity;
 
+        // FIX CRITICAL (specchio della realtà): il carry-forward include i frame
+        // DENTRO il bucket (ts <= fine bucket), non solo quelli precedenti al suo
+        // inizio. La timeline UI usa come ts dello step un frame interno al bucket:
+        // con il vecchio `<= bucketTs` lo snapshot era in ritardo di un frame e
+        // mostrava opportunità su prezzi/status più vecchi di quelli a schermo
+        // (es. book pre-gol OPEN mentre il MarketPanel mostrava SOSPESO).
+        const bucketEnd = bucketTs + bucketMs - 1;
+
         for (const m of markets) {
             const arr = framesByMarket.get(m.market_id);
             if (!arr || arr.length === 0) continue;
-            const idx = bisectLast(arr, bucketTs, (f) => tsMs(f.ts));
+            const idx = bisectLast(arr, bucketEnd, (f) => tsMs(f.ts));
             if (idx < 0) continue; // nessun frame ancora disponibile a questo bucket
             const f = arr[idx];
             state[m.market_id] = {
@@ -117,6 +125,7 @@ export function buildSnapshots(replay: ReplayData, bucketMs = 10000): Snapshot[]
                 market_type: m.market_type,
                 status: f.status,
                 ladder: f.ladder,
+                frame_ts: f.ts,
             };
             const fts = tsMs(f.ts);
             if (fts > latestFrameTs) {
@@ -125,11 +134,11 @@ export function buildSnapshots(replay: ReplayData, bucketMs = 10000): Snapshot[]
             }
         }
 
-        // Score: ultimo evento <= bucketTs.
+        // Score: ultimo evento dentro il bucket (stessa finestra dei frame).
         let scoreHome = 0;
         let scoreAway = 0;
         let scoreMinute: number | null = null;
-        const sIdx = bisectLast(scoresSorted, bucketTs, (s) => tsMs(s.ts));
+        const sIdx = bisectLast(scoresSorted, bucketEnd, (s) => tsMs(s.ts));
         if (sIdx >= 0) {
             const sc = scoresSorted[sIdx];
             scoreHome = sc.score_home ?? 0;

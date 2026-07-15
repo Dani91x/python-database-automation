@@ -288,9 +288,20 @@ export function simulateOrder(req: OrderRequest, frames: ReadonlyArray<BookSnaps
     let cost = 0;
 
     // --- FASE 1: TAKER al book di invio ---
+    // FEDELTÀ: se all'arrivo al matcher il mercato è SOSPESO/CHIUSO non si abbina
+    // NULLA (il ladder residuo del frame sospeso non è liquidità disponibile).
+    // CLOSED → ordine decaduto sempre; SUSPENDED → LAPSE decade, PERSIST resta
+    // a riposo e potrà abbinarsi alla riapertura (fase maker).
     const takeBook = frames[takeIdx];
-    const taker = matchMarketable(req.side, req.limitPrice, req.stake, takeBook);
-    for (const f of taker.fills) { fills.push(f); matched += f.size; cost += f.size * f.price; }
+    const takeSt = (takeBook.status ?? '').toUpperCase();
+    if (takeSt === 'CLOSED') return { ...base, remaining: 0, status: 'LAPSED' };
+    if (takeSt === 'SUSPENDED' && persistence === 'LAPSE') {
+        return { ...base, remaining: 0, status: 'LAPSED' };
+    }
+    if (takeSt !== 'SUSPENDED') {
+        const taker = matchMarketable(req.side, req.limitPrice, req.stake, takeBook);
+        for (const f of taker.fills) { fills.push(f); matched += f.size; cost += f.size * f.price; }
+    }
     let remaining = Math.max(0, req.stake - matched);
 
     // posizione in coda al momento del riposo (sul book di invio)
@@ -315,9 +326,11 @@ export function simulateOrder(req: OrderRequest, frames: ReadonlyArray<BookSnaps
 
         if (remaining <= SIZE_EPS) { status = 'MATCHED'; break; }
 
-        // sospensione/chiusura: LAPSE annulla il resto, PERSIST lo mantiene
+        // sospensione: LAPSE annulla il resto, PERSIST lo mantiene.
+        // chiusura (mercato REGOLATO): il resto decade SEMPRE, anche PERSIST —
+        // su Betfair alla chiusura non restano ordini vivi (coerente con la fase taker).
         const st = (cur.status ?? '').toUpperCase();
-        if ((st === 'SUSPENDED' || st === 'CLOSED') && persistence === 'LAPSE') {
+        if (st === 'CLOSED' || (st === 'SUSPENDED' && persistence === 'LAPSE')) {
             status = matched > SIZE_EPS ? 'OPEN' : 'LAPSED';
             remaining = 0;
             break;

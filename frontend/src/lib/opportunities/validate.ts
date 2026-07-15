@@ -21,7 +21,7 @@
 import type { ReplayData } from '@/lib/live';
 import type { Opportunity, OppConfig, RiskTier, Snapshot, Leg, Detector } from './types';
 import { buildSnapshots } from './snapshot';
-import { runDetectors, DEFAULT_OPP_CONFIG } from './engine';
+import { runDetectors, DEFAULT_OPP_CONFIG, opportunitySignature } from './engine';
 import { matchedStake } from './fill';
 import { TIER0_DETECTORS } from './tier0_arb';
 import { tier1Detectors } from './tier1_quasi';
@@ -132,29 +132,55 @@ function legMatchedOn(snap: Snapshot, leg: Leg): number {
     return matchedStake(lv, leg.price, leg.matchedStake, leg.side);
 }
 
-// Indice della prima snapshot con ts >= ts(snapshots[i]) + delaySec (o -1).
-function lookAheadIndex(snapshots: Snapshot[], i: number, delaySec: number): number {
-    const target = tsMs(snapshots[i].ts) + delaySec * 1000;
-    for (let j = i + 1; j < snapshots.length; j++) {
-        if (tsMs(snapshots[j].ts) >= target) return j;
-    }
-    return -1;
-}
-
 // Controllo di eseguibilità di una singola opportunità.
 const EPS = 1e-6;
 function execCheck(o: Opportunity, snapshots: Snapshot[], i: number, delaySec: number): ExecCheck {
     const legs = entryLegs(o);
     const fillable = legs.length > 0 && legs.every((l) => l.matchedStake > EPS);
 
-    const aheadIdx = lookAheadIndex(snapshots, i, delaySec);
-    const checkedAhead = aheadIdx >= 0;
+    // FIX (look-ahead vacuo): con frame downsampled lo snapshot a +delaySec è
+    // quasi sempre il CARRY-FORWARD dello stesso frame → confrontarlo con sé
+    // stesso dava "persisted" gratis. Il check vale solo su un'osservazione
+    // NUOVA: la prima snapshot in cui TUTTI i mercati delle gambe hanno un frame
+    // (a) più recente di quello della detection e (b) ad ALMENO +delaySec dal
+    // frame della detection (ancora al frame_ts REALE, non all'inizio bucket:
+    // un frame a fine bucket renderebbe il ritardo quasi nullo). Se non esiste
+    // (fine registrazione, mercato muto) → NON verificabile → NON eseguibile.
+    let checkedAhead = false;
     let persisted = false;
-    if (checkedAhead && fillable) {
-        const ahead = snapshots[aheadIdx];
-        // il prezzo "regge" se, dopo il ritardo, lo STESSO stake è ancora abbinabile
-        // al prezzo di ogni gamba d'ingresso (depth >= matchedStake richiesto).
-        persisted = legs.every((l) => legMatchedOn(ahead, l) >= l.matchedStake - EPS);
+    if (fillable) {
+        // un frame base per MERCATO (più gambe possono condividere lo stesso
+        // mercato, es. back+lay della stessa selezione): se anche un solo
+        // mercato è senza frame → non verificabile.
+        const baseTs = new Map<string, number>();
+        let missingBase = false;
+        for (const l of legs) {
+            if (baseTs.has(l.marketId)) continue;
+            const b = snapshots[i].state[l.marketId]?.frame_ts;
+            const ms = b != null ? tsMs(b) : NaN;
+            if (!Number.isFinite(ms)) { missingBase = true; break; }
+            baseTs.set(l.marketId, ms);
+        }
+        const target = !missingBase && baseTs.size > 0
+            ? Math.max(...baseTs.values()) + delaySec * 1000
+            : NaN;
+        if (Number.isFinite(target)) {
+            for (let j = i + 1; j < snapshots.length; j++) {
+                const fresh = legs.every((l) => {
+                    const b = baseTs.get(l.marketId);
+                    const a = snapshots[j].state[l.marketId]?.frame_ts;
+                    if (b == null || a == null) return false;
+                    const aMs = tsMs(a);
+                    return aMs > b && aMs >= target;
+                });
+                if (!fresh) continue;
+                checkedAhead = true;
+                // il prezzo "regge" se, alla prima osservazione nuova dopo il ritardo,
+                // lo STESSO stake è ancora abbinabile al prezzo di ogni gamba.
+                persisted = legs.every((l) => legMatchedOn(snapshots[j], l) >= l.matchedStake - EPS);
+                break;
+            }
+        }
     }
     return { fillable, persisted, executable: fillable && persisted, checkedAhead };
 }
@@ -177,9 +203,18 @@ export function validateFromDetections(
     bucketMs = 10000,
 ): Report {
     const records: OppRecord[] = [];
+    // DEDUP EPISODI: la stessa opportunità che persiste per N snapshot consecutivi
+    // (o resta "viva" per carry-forward del medesimo frame) è UN episodio, non N
+    // opportunità: si conta alla prima apparizione della sua firma. Senza dedup i
+    // totali del report erano conteggi ponderati per durata ("30 arb" per 1 episodio).
+    let prevSignatures = new Set<string>();
     for (let i = 0; i < snapshots.length; i++) {
         const opps = detectionsPerSnap[i] ?? [];
+        const curSignatures = new Set<string>();
         for (const o of opps) {
+            const sig = opportunitySignature(o);
+            curSignatures.add(sig);
+            if (prevSignatures.has(sig)) continue; // episodio già contato
             records.push({
                 id: o.id,
                 type: o.type,
@@ -194,6 +229,7 @@ export function validateFromDetections(
                 exec: execCheck(o, snapshots, i, cfg.delaySec),
             });
         }
+        prevSignatures = curSignatures;
     }
 
     return aggregateReport(records, snapshots.length, cfg, bucketMs);

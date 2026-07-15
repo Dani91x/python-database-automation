@@ -23,30 +23,32 @@ export function PlaybackControls(p: PlaybackControlsProps) {
     const btn = 'border-white/10 text-muted-foreground hover:text-white h-9 w-9 p-0';
     return (
         <div className="flex items-center justify-center gap-1.5">
-            <Button variant="outline" size="sm" className={btn} title="Inizio" onClick={p.onSkipStart}>
+            <Button variant="outline" size="sm" className={btn} title="Inizio" aria-label="Salta all'inizio" onClick={p.onSkipStart}>
                 <ChevronsLeft className="w-4 h-4" />
             </Button>
-            <Button variant="outline" size="sm" className={btn} title="Riavvolgi" onClick={p.onRewind}>
+            <Button variant="outline" size="sm" className={btn} title="Riavvolgi" aria-label="Riavvolgi" onClick={p.onRewind}>
                 <Rewind className="w-4 h-4" />
             </Button>
-            <Button variant="outline" size="sm" className={btn} title="Indietro" onClick={p.onStepBack}>
+            <Button variant="outline" size="sm" className={btn} title="Indietro" aria-label="Un passo indietro" onClick={p.onStepBack}>
                 <StepBack className="w-4 h-4" />
             </Button>
             <Button
                 size="sm"
                 className="bg-primary text-black hover:bg-primary/90 h-10 w-10 p-0"
                 title={p.isPlaying ? 'Pausa' : 'Play'}
+                aria-label={p.isPlaying ? 'Pausa' : 'Play'}
+                aria-pressed={p.isPlaying}
                 onClick={p.onTogglePlay}
             >
                 {p.isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
             </Button>
-            <Button variant="outline" size="sm" className={btn} title="Avanti" onClick={p.onStepForward}>
+            <Button variant="outline" size="sm" className={btn} title="Avanti" aria-label="Un passo avanti" onClick={p.onStepForward}>
                 <StepForward className="w-4 h-4" />
             </Button>
-            <Button variant="outline" size="sm" className={btn} title="Avanti veloce" onClick={p.onFastForward}>
+            <Button variant="outline" size="sm" className={btn} title="Avanti veloce" aria-label="Avanti veloce" onClick={p.onFastForward}>
                 <FastForward className="w-4 h-4" />
             </Button>
-            <Button variant="outline" size="sm" className={btn} title="Fine" onClick={p.onSkipEnd}>
+            <Button variant="outline" size="sm" className={btn} title="Fine" aria-label="Salta alla fine" onClick={p.onSkipEnd}>
                 <ChevronsRight className="w-4 h-4" />
             </Button>
         </div>

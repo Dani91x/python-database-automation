@@ -36,21 +36,41 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
     const [p, setP] = useState<LadderBacktestParams>(DEFAULTS);
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState<BacktestResult | null>(null);
+    const [runError, setRunError] = useState<string | null>(null);
 
+    // parametri TICK = interi (1.5 tick non esiste: il matching lo tratterebbe da 2);
+    // ogni modifica INVALIDA il risultato mostrato (mai P&L accanto a parametri diversi).
+    const TICK_KEYS: ReadonlyArray<keyof LadderBacktestParams> = ['entryOffsetTicks', 'tpTicks', 'stopTicks'];
     const num = (key: keyof LadderBacktestParams, min: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
-        const v = Number(e.target.value);
+        const raw = Number(e.target.value);
+        const v = TICK_KEYS.includes(key) ? Math.round(raw) : raw;
         setP(prev => ({ ...prev, [key]: Number.isFinite(v) ? Math.max(min, v) : prev[key] }));
+        setResult(null);
+        setRunError(null);
+    };
+    const setParam = <K extends keyof LadderBacktestParams>(key: K, v: LadderBacktestParams[K]) => {
+        setP(prev => ({ ...prev, [key]: v }));
+        setResult(null);
+        setRunError(null);
     };
 
+    // il calcolo è pesante (simulateOrder O(snaps) per tentativo): va DOPO il paint
+    // (setTimeout 0) così spinner/disabled si vedono e la UI non sembra morta.
     const run = () => {
         if (!marketId || effectiveSel == null || running) return;
         setRunning(true);
-        try {
-            const snaps = getSnaps(marketId, effectiveSel);
-            setResult(runLadderBacktest(snaps, p, (ts) => isInplayAt(marketId, ts)));
-        } finally {
-            setRunning(false);
-        }
+        setRunError(null);
+        setTimeout(() => {
+            try {
+                const snaps = getSnaps(marketId, effectiveSel);
+                setResult(runLadderBacktest(snaps, p, (ts) => isInplayAt(marketId, ts)));
+            } catch (e: any) {
+                setResult(null);
+                setRunError(e?.message ?? 'errore sconosciuto nel backtest');
+            } finally {
+                setRunning(false);
+            }
+        }, 0);
     };
 
     const inputCls = 'w-16 px-1.5 py-0.5 rounded-md bg-black/40 border border-white/15 text-white font-mono text-[11px]';
@@ -84,13 +104,13 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
                             <option key={s.selection_id} value={s.selection_id}>{s.name ?? `#${s.selection_id}`}</option>
                         ))}
                     </select>
-                    <select value={p.side} onChange={e => setP(prev => ({ ...prev, side: e.target.value as 'back' | 'lay' }))}
+                    <select value={p.side} onChange={e => setParam('side', e.target.value as 'back' | 'lay')}
                         aria-label="Lato entrata"
                         className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]">
                         <option value="back">Entrata BACK</option>
                         <option value="lay">Entrata LAY</option>
                     </select>
-                    <select value={p.phase} onChange={e => setP(prev => ({ ...prev, phase: e.target.value as LadderBacktestParams['phase'] }))}
+                    <select value={p.phase} onChange={e => setParam('phase', e.target.value as LadderBacktestParams['phase'])}
                         aria-label="Fase"
                         className="px-2 py-1 rounded-md bg-black/40 border border-white/15 text-white text-[11px]">
                         <option value="both">Pre + in-play</option>
@@ -113,6 +133,12 @@ export function LadderBacktestPanel({ markets, getSnaps, isInplayAt }: Props) {
                     </Button>
                 </div>
             </div>
+
+            {runError && (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+                    Backtest fallito: {runError}
+                </div>
+            )}
 
             {result && (
                 <div className="rounded-xl border border-white/10 bg-black/40 p-3 space-y-2">

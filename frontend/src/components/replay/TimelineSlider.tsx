@@ -32,6 +32,8 @@ export interface TimelineSliderProps {
     suspended?: boolean[]; // allineato agli indici della timeline: true = mercato SOSPESO a quell'istante
     events?: TimelineEventMarker[]; // marker eventi (gol, cartellini, angoli, …)
     arbMarkers?: TimelineArbMarker[]; // istanti con un arbitraggio rilevato (rombi verdi)
+    pre?: boolean;         // il cursore è PRIMA del calcio d'inizio (pre-match)
+    kickoffPct?: number;   // 0..1 — posizione del calcio d'inizio sulla track (marker)
 }
 
 // Render del singolo marker-icona (sopra la track, non blocca la drag).
@@ -53,7 +55,7 @@ function EventIcon({ kind }: { kind: string }) {
     return <span className="block w-1.5 h-1.5 rounded-full bg-white/70" />;
 }
 
-export function TimelineSlider({ min, max, value, minute, onChange, suspended, events, arbMarkers }: TimelineSliderProps) {
+export function TimelineSlider({ min, max, value, minute, onChange, suspended, events, arbMarkers, pre, kickoffPct }: TimelineSliderProps) {
     const span = Math.max(1, max - min);
     const pct = ((value - min) / span) * 100;
     const steps = (max - min) + 1; // numero di bucket della timeline
@@ -102,6 +104,17 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                     )}
                 </div>
 
+                {/* marker CALCIO D'INIZIO: lineetta verticale sulla track (se c'è pre-match) */}
+                {kickoffPct != null && kickoffPct > 0 && (
+                    <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 pointer-events-none"
+                        style={{ left: `${Math.min(Math.max(kickoffPct, 0), 1) * 100}%` }}
+                        title="Calcio d'inizio"
+                    >
+                        <span className="block w-[3px] h-4 rounded-full bg-white/80 border border-black/30 shadow" />
+                    </div>
+                )}
+
                 {/* marker ARBITRAGGI sotto la track (rombi verdi, non bloccano la drag) */}
                 {arbMarkers && arbMarkers.map((m, i) => (
                     <div
@@ -121,7 +134,7 @@ export function TimelineSlider({ min, max, value, minute, onChange, suspended, e
                                border-2 border-black/30 z-20"
                     style={{ left: `${pct}%` }}
                 >
-                    {minute != null ? `${minute}` : '—'}
+                    {pre ? <span className="text-[8px] leading-none font-black">PRE</span> : (minute != null ? `${minute}` : '—')}
                 </div>
 
                 {/* range trasparente per la drag */}

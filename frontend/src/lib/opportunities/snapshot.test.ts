@@ -56,9 +56,12 @@ describe('buildSnapshots', () => {
         expect(s.scoreAway).toBe(0);
     });
 
-    it('bucket 10s: carry-forward still first frame (frame@15s not yet), score 0-0', () => {
+    it('bucket 10s: include il frame DENTRO il bucket (frame@15s), come la timeline UI', () => {
+        // fix specchio-della-realtà: lo snapshot del bucket K copre i frame fino a
+        // fine bucket [K, K+10s) — il frame @15s appartiene al bucket 10s.
         const s = snaps[1];
-        expect(s.state['m1'].ladder['1'].ltp).toBe(2.0);
+        expect(s.state['m1'].ladder['1'].ltp).toBe(1.5);
+        expect(s.state['m1'].frame_ts).toBe(T15);
         expect(s.scoreHome).toBe(0);
     });
 

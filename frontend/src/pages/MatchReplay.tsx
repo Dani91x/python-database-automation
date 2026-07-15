@@ -19,14 +19,14 @@ import { TradesPanel } from '@/components/replay/TradesPanel';
 import { OpportunitaPanel } from '@/components/replay/OpportunitaPanel';
 import { ValidationCard } from '@/components/replay/ValidationCard';
 import {
-    fetchReplayList, fetchReplay,
-    type ReplayItem, type ReplayData, type Frame,
+    fetchReplayList, fetchReplayChunked,
+    type ReplayItem, type ReplayData, type Frame, type ReplayProgress,
 } from '@/lib/live';
 import {
     formatGbp, settleOrCashOut, overallSettled,
     type SimBet, type BetSide, type LadderMap, type SettleCtx, type MarketSettleEval,
 } from '@/lib/replay-pnl';
-import { simulateOrder, type BookSnapshot, type OrderRequest, type Persistence } from '@/lib/matching';
+import { simulateOrder, MIN_STAKE_GBP, type BookSnapshot, type OrderRequest, type Persistence } from '@/lib/matching';
 // F41: TRAINING sul ladder — LadderView reale + orderApi SIMULATO (matching engine)
 import { LadderView, type LadderSource } from '@/components/live/LadderView';
 import { createTrainingApi, frameToLadderRow, type TrainingApi } from '@/lib/trainingLadder';
@@ -77,6 +77,21 @@ function uid(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// PRIMO indice della timeline con step.ts >= ts (bisect O(log n), clampato):
+// è lo step in cui un evento/opportunità diventa VISIBILE durante il playback
+// (coerente col filtro di reveal `m.ts <= currentTs`). I marker sulla barra
+// vanno posizionati per INDICE (la barra avanza a step), non per frazione di
+// tempo: con bucket non uniformi (pre-match grossolano, buchi di registrazione)
+// le due scale divergono.
+function stepIndexFor(timeline: ReadonlyArray<{ ts: string }>, ts: string): number {
+    let lo = 0, hi = timeline.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (timeline[mid].ts < ts) lo = mid + 1; else hi = mid;
+    }
+    return Math.min(lo, Math.max(0, timeline.length - 1));
+}
+
 export default function MatchReplay() {
     // ---- selector vs simulatore ----
     const [list, setList] = useState<ReplayItem[]>([]);
@@ -85,6 +100,8 @@ export default function MatchReplay() {
 
     const [replay, setReplay] = useState<ReplayData | null>(null);
     const [replayLoading, setReplayLoading] = useState(false);
+    // progresso del caricamento a finestre (eventi grandi: decine di MB di frame)
+    const [replayProgress, setReplayProgress] = useState<ReplayProgress | null>(null);
 
     // ---- stato simulatore ----
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -118,12 +135,15 @@ export default function MatchReplay() {
     // ---- selezione di un replay ----
     const selectReplay = async (item: ReplayItem) => {
         setReplayLoading(true);
+        setReplayProgress(null);
         setError(null);
         try {
-            const data = await fetchReplay(item.event_id);
+            const data = await fetchReplayChunked(item.event_id, p => setReplayProgress(p));
             setReplay(data);
             setCurrentIndex(0);
             setIsPlaying(false);
+            setPlayDir(1);
+            setPlaySpeed(PLAY_NORMAL_MS);
             setSpeedMult(1);
             setActiveCategory('MATCH_ODDS');
             setView('markets');
@@ -139,12 +159,15 @@ export default function MatchReplay() {
             setError(e?.message ?? 'errore sconosciuto');
         } finally {
             setReplayLoading(false);
+            setReplayProgress(null);
         }
     };
 
     const endSimulation = () => {
         setReplay(null);
         setIsPlaying(false);
+        setPlayDir(1);
+        setPlaySpeed(PLAY_NORMAL_MS);
         setSpeedMult(1);
         setActiveCategory('MATCH_ODDS');
         setView('markets');
@@ -152,6 +175,12 @@ export default function MatchReplay() {
         setStakes({});
         setCurrentIndex(0);
         setRealizedPnl(0);
+        // F41: senza reset, ricaricando lo STESSO replay l'api di training riuserebbe
+        // gli ordini della sessione precedente.
+        trainApiRef.current = null;
+        setTrainingMarketId(null);
+        setTrainingResetTick(0);
+        setReplayEventId('');
     };
 
     // ---- lista replay raggruppata per LEGA → ANNO (per la vista selettore) ----
@@ -180,13 +209,13 @@ export default function MatchReplay() {
             }));
     }, [list]);
 
-    // ---- KICKOFF: la timeline parte dal calcio d'inizio (minuto 0), non dal pre-match.
-    // kickoffTs = ts della prima voce score_timeline con minute===0;
-    // fallback: primo frame con inplay===true; ultimo fallback: primo frame in assoluto.
+    // ---- KICKOFF: primo frame con inplay===true (flag di MERCATO Betfair, l'unica
+    // fonte affidabile). NON si usa score_timeline minute===0: Betfair ri-emette
+    // "KickOff/minute 0" a ogni riconnessione del feed, anche a metà partita →
+    // era la causa dei replay che partivano "da un momento a caso".
+    // Fallback: primo frame in assoluto (registrazione iniziata in-play senza flag).
     const kickoffTs = useMemo(() => {
         if (!replay) return null;
-        const zero = replay.score_timeline.find(e => e.minute === 0);
-        if (zero?.ts) return zero.ts;
         const sorted = [...replay.frames].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
         const ip = sorted.find(f => f.inplay === true);
         return ip?.ts ?? sorted[0]?.ts ?? null;
@@ -195,7 +224,9 @@ export default function MatchReplay() {
     // ---- timeline: griglia temporale ~10s (scorribile), non ogni singolo tick ----
     // (i frame sono migliaia; raggruppiamo a bucket di 10s per un playback usabile;
     //  currentLadder usa comunque l'ultimo frame <= currentTs, quindi è preciso).
-    // I bucket PRIMA del kickoff vengono scartati → index 0 = calcio d'inizio.
+    // La timeline COPRE TUTTA LA REGISTRAZIONE (pre-match incluso, a granularità
+    // più grossa): il replay PARTE dal kickoff (indice iniziale) ma si può
+    // riavvolgere fino all'inizio della registrazione.
     const TIMELINE_BUCKET_MS = 10_000;
     const timeline = useMemo(() => {
         if (!replay) return [] as { ts: string; minute: number | null }[];
@@ -206,17 +237,36 @@ export default function MatchReplay() {
             if (!cur) byBucket.set(b, { ts: f.ts, minute: f.minute });
             else if (cur.minute == null && f.minute != null) cur.minute = f.minute;
         }
-        // scarta i bucket PRIMA del kickoff confrontando la CHIAVE-bucket (non il ts
-        // del primo frame del bucket): così il bucket che contiene il kickoff resta
-        // anche se include frame pre-match nello stesso intervallo di 10s.
-        const kBucket = kickoffTs ? Math.floor(new Date(kickoffTs).getTime() / TIMELINE_BUCKET_MS) : null;
-        return Array.from(byBucket.entries())
-            .filter(([k]) => kBucket == null || k >= kBucket)
-            .sort(([, a], [, b]) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
-            .map(([, step]) => step);
-    }, [replay, kickoffTs]);
+        return Array.from(byBucket.values())
+            .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    }, [replay]);
 
     const maxIndex = Math.max(0, timeline.length - 1);
+
+    // indice del calcio d'inizio sulla timeline (0 se non determinabile):
+    // primo step con ts >= kickoffTs.
+    const kickoffIndex = useMemo(() => {
+        if (!kickoffTs || timeline.length === 0) return 0;
+        let lo = 0, hi = timeline.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (timeline[mid].ts < kickoffTs) lo = mid + 1; else hi = mid;
+        }
+        return Math.min(lo, timeline.length - 1);
+    }, [timeline, kickoffTs]);
+
+    // al caricamento di un replay, posiziona il cursore sul CALCIO D'INIZIO
+    // (il pre-match resta raggiungibile riavvolgendo / "salta all'inizio").
+    const loadedEventRef = useRef<string | null>(null);
+    useEffect(() => {
+        const eid = replay?.event?.event_id ?? null;
+        if (eid && loadedEventRef.current !== eid) {
+            loadedEventRef.current = eid;
+            setCurrentIndex(kickoffIndex);
+        }
+        if (!eid) loadedEventRef.current = null;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [replay]);
     const safeIndex = Math.min(currentIndex, maxIndex);
     const current = timeline[safeIndex] ?? { ts: '', minute: null };
     const currentTs = current.ts;
@@ -377,27 +427,77 @@ export default function MatchReplay() {
     //  • usa event_type quando presente (Goal/YellowCard/RedCard/Corner/…);
     //  • DERIVA i gol dagli incrementi di punteggio quando event_type è null
     //    (registrazioni precedenti alla cattura eventi: solo i SCORE cambiano).
-    // Dedup: se un'entry ha event_type 'Goal' la usiamo come gol e NON deriviamo
-    // anche dal suo delta di punteggio (l'esplicito ha precedenza sul derivato).
+    //
+    // REALTÀ DEL FEED (verificata sui dati): Betfair RI-EMETTE l'intero storico
+    // eventi a ogni (ri)connessione, con ts = momento del fetch (non dell'evento).
+    // Quindi: (a) DEDUP per (tipo, minuto, team) tenendo la PRIMA emissione;
+    // (b) un'entry il cui minuto non torna col ts (ri-emissione/dump) viene
+    // RIPOSIZIONATA al ts del suo minuto via la mappa minuto→ts delle righe
+    // punteggio; (c) eventi accaduti PRIMA dell'inizio registrazione → nessun
+    // marker (non esiste un istante della barra in cui siano avvenuti).
+    // Posizione = INDICE di timeline (la barra avanza a step, non a tempo).
     const timelineEvents = useMemo(() => {
         if (!replay || timeline.length === 0) return [];
         const homeName = replay.event.home_name || 'Casa';
         const awayName = replay.event.away_name || 'Ospiti';
-        const firstTs = new Date(timeline[0].ts).getTime();
-        const lastTs = new Date(timeline[maxIndex].ts).getTime();
-        const span = lastTs - firstTs;
-        const pctOf = (ts: string) => {
-            if (!Number.isFinite(span) || span <= 0) return 0;
-            const p = (new Date(ts).getTime() - firstTs) / span;
-            return p < 0 ? 0 : p > 1 ? 1 : p;
+        const span = Math.max(1, timeline.length - 1);
+
+        // mappa minuto→ts (prima occorrenza) e funzione ts→minuto dalle sole righe
+        // PUNTEGGIO (score_home valorizzato): le righe-evento possono avere ts di
+        // ri-emissione e inquinerebbero la mappa.
+        const minuteTs = new Map<number, string>();
+        const scoreRows: { ts: string; minute: number }[] = [];
+        for (const ev of sortedScoreTimeline) {
+            if (ev.score_home == null || ev.minute == null) continue;
+            if (!minuteTs.has(ev.minute)) minuteTs.set(ev.minute, ev.ts);
+            scoreRows.push({ ts: ev.ts, minute: ev.minute });
+        }
+        const minMapped = minuteTs.size > 0 ? Math.min(...minuteTs.keys()) : null;
+        const minuteAt = (ts: string): number | null => {
+            let best: number | null = null;
+            for (const r of scoreRows) {
+                if (r.ts <= ts) best = r.minute; else break;
+            }
+            return best;
         };
+        // ts a cui posizionare un evento discreto; null = fuori registrazione.
+        const placedTs = (ev: typeof sortedScoreTimeline[number]): string | null => {
+            if (ev.minute == null) return ev.ts;
+            const implied = minuteAt(ev.ts);
+            if (implied != null && Math.abs(implied - ev.minute) <= 2) return ev.ts; // ts coerente col minuto
+            const mapped = minuteTs.get(ev.minute)
+                ?? minuteTs.get(ev.minute + 1) ?? minuteTs.get(ev.minute - 1) ?? null;
+            if (mapped) return mapped;
+            if (minMapped != null && ev.minute < minMapped) return null; // prima della registrazione
+            return ev.ts;
+        };
+
         type Marker = { ts: string; pctLeft: number; kind: string; team?: string | null; minute: number | null; label: string };
         const out: Marker[] = [];
+        const seen = new Set<string>(); // dedup ri-emissioni feed: kind|minuto|team
         const teamName = (t: string | null | undefined) => (t === 'home' ? homeName : t === 'away' ? awayName : null);
         const numH = (p: any, k: string) => Number(p?.score?.home?.[k] ?? 0) || 0;
         const numA = (p: any, k: string) => Number(p?.score?.away?.[k] ?? 0) || 0;
-        const add = (ev: typeof sortedScoreTimeline[number], kind: string, team: string | null, label: string) =>
-            out.push({ ts: ev.ts, pctLeft: pctOf(ev.ts), kind, team, minute: ev.minute, label });
+        const add = (ev: typeof sortedScoreTimeline[number], kind: string, team: string | null, label: string) => {
+            let ts: string | null = ev.ts;
+            if (ev.event_type) { // solo gli eventi discreti hanno il problema dump/ri-emissione
+                const key = `${kind}|${ev.minute ?? '?'}|${team ?? ''}`;
+                if (seen.has(key)) {
+                    // chiave già vista: è quasi sempre una RI-EMISSIONE del feed (ts
+                    // incoerente col minuto). Ma una doppietta REALE nello stesso
+                    // minuto ha ts coerente → va tenuta, non deduplicata.
+                    const implied = ev.minute != null ? minuteAt(ev.ts) : null;
+                    const coherent = implied != null && ev.minute != null && Math.abs(implied - ev.minute) <= 2;
+                    if (!coherent) return;
+                } else {
+                    seen.add(key);
+                }
+                ts = placedTs(ev);
+                if (!ts) return;
+            }
+            const idx = stepIndexFor(timeline, ts);
+            out.push({ ts, pctLeft: Math.min(Math.max(idx / span, 0), 1), kind, team, minute: ev.minute, label });
+        };
 
         // se ci sono eventi DISCRETI (get_event_timeline) usiamo SOLO quelli; altrimenti
         // deriviamo TUTTO dai delta (punteggio → gol; conteggi payload → cartellini/angoli).
@@ -449,7 +549,8 @@ export default function MatchReplay() {
             if (ev.score_home != null) prevHome = ev.score_home;
             if (ev.score_away != null) prevAway = ev.score_away;
         }
-        return out;
+        // ordina per ts (il riposizionamento può aver spostato eventi ri-emessi)
+        return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [replay, sortedScoreTimeline, timeline, maxIndex]);
 
@@ -518,7 +619,12 @@ export default function MatchReplay() {
         return idx;
     }, [snapshots, currentTs]);
 
-    const rawOpps = curSnapIdx >= 0 ? (detectionsPerSnap[curSnapIdx] ?? []) : [];
+    const EMPTY_OPPS = useMemo<Opportunity[]>(() => [], []);
+    const rawOpps = curSnapIdx >= 0 ? (detectionsPerSnap[curSnapIdx] ?? EMPTY_OPPS) : EMPTY_OPPS;
+
+    // in-play a un dato istante = dopo il kickoff (flag di mercato Betfair), NON
+    // dal minuto (nullable nei buchi dati: azzererebbe il bet-delay in piena partita).
+    const isInplayTs = (ts: string): boolean => kickoffTs != null && ts >= kickoffTs;
 
     // GATE ESECUZIONE ARBITRAGGI: un arb (tier 'arb') è "garantito" solo se TUTTE le
     // gambe si abbinerebbero ai prezzi mostrati anche DOPO il ritardo Betfair. Lo
@@ -527,31 +633,39 @@ export default function MatchReplay() {
     // (low/directional) passano invariati.
     const currentOpps = useMemo(() => {
         if (rawOpps.length === 0) return rawOpps;
-        const inPlay = currentMinute != null && currentMinute >= 0;
+        const inPlay = isInplayTs(currentTs);
         return rawOpps.filter(o =>
             o.tier !== 'arb'
             || arbExecutableUnderDelay(o, selectionSnaps, currentMs, inPlay, OPP_CFG.delaySec * 1000),
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rawOpps, selectionSnaps, currentMs, currentMinute]);
+    }, [rawOpps, selectionSnaps, currentMs, currentTs, kickoffTs]);
 
-    // marker degli istanti con un arbitraggio rilevato (rombi verdi sulla barra).
+    // marker degli istanti con un arbitraggio ESEGUIBILE (rombi verdi sulla barra).
+    // Stesso gate del pannello (arbExecutableUnderDelay): mai un rombo sulla barra
+    // che poi il pannello nasconde. Posizione per INDICE di timeline (come il knob).
     const arbMarkers = useMemo(() => {
         if (snapshots.length === 0 || timeline.length === 0) return [];
-        const firstTs = new Date(timeline[0].ts).getTime();
-        const lastTs = new Date(timeline[maxIndex].ts).getTime();
-        const span = lastTs - firstTs;
+        const span = Math.max(1, timeline.length - 1);
         const out: { pctLeft: number; minute: number | null; label: string }[] = [];
         for (let i = 0; i < snapshots.length; i++) {
-            const arb = detectionsPerSnap[i]?.find(o => o.tier === 'arb');
-            if (!arb) continue;
-            const t = new Date(snapshots[i].ts).getTime();
-            if (span > 0 && t < firstTs) continue; // pre-kickoff
-            const p = span > 0 ? (t - firstTs) / span : 0;
-            out.push({ pctLeft: Math.min(Math.max(p, 0), 1), minute: snapshots[i].minute, label: arb.title });
+            const arbs = (detectionsPerSnap[i] ?? []).filter(o => o.tier === 'arb');
+            if (arbs.length === 0) continue;
+            // STESSO ancoraggio del pannello: il gate si valuta al ts dello STEP
+            // di timeline corrispondente (placedMs e inPlay identici a currentOpps
+            // quando il knob è su quello step) — mai un rombo che il pannello nasconde.
+            const idx = stepIndexFor(timeline, snapshots[i].ts);
+            const stepTs = timeline[idx].ts;
+            const t = new Date(stepTs).getTime();
+            const inPlay = isInplayTs(stepTs);
+            const exec = arbs.find(o =>
+                arbExecutableUnderDelay(o, selectionSnaps, t, inPlay, OPP_CFG.delaySec * 1000));
+            if (!exec) continue;
+            out.push({ pctLeft: Math.min(Math.max(idx / span, 0), 1), minute: snapshots[i].minute, label: exec.title });
         }
         return out;
-    }, [snapshots, detectionsPerSnap, timeline, maxIndex]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [snapshots, detectionsPerSnap, timeline, kickoffTs, selectionSnaps]);
 
     // Report di validazione (eseguibili vs teoriche, % media, per fase).
     // Riusa snapshots + detectionsPerSnap già calcolati → nessuna seconda passata
@@ -610,8 +724,9 @@ export default function MatchReplay() {
 
     // ---- contesto esito: partita finita = fine del replay (ultimo frame, mercati
     // chiusi). NON usiamo "minuto>=90": col recupero si settlerebbero in anticipo i
-    // mercati a fine-gara (Match Odds/Under) mentre possono ancora entrare gol. ----
-    const finished = safeIndex >= maxIndex;
+    // mercati a fine-gara (Match Odds/Under) mentre possono ancora entrare gol.
+    // Guard maxIndex>0: un replay degenere (0-1 step) non deve nascere "finito". ----
+    const finished = maxIndex > 0 && safeIndex >= maxIndex;
     const ctx: SettleCtx = { home: currentScore.home, away: currentScore.away, finished };
 
     // ---- FILL REALI: ogni ordine viene risolto dal motore di matching (matching.ts)
@@ -697,7 +812,9 @@ export default function MatchReplay() {
     }, [isPlaying, playDir, playSpeed, speedMult, maxIndex]);
 
     // ---- controlli ----
-    const togglePlay = () => { setPlayDir(1); setIsPlaying(p => !p); };
+    // Play = SEMPRE velocità normale: senza il reset, dopo un rewind/fast-forward
+    // il playback "normale" restava per sempre a 300ms (fix review #1).
+    const togglePlay = () => { setPlayDir(1); setPlaySpeed(PLAY_NORMAL_MS); setIsPlaying(p => !p); };
     const fastForward = () => { setPlayDir(1); setPlaySpeed(PLAY_FAST_MS); setIsPlaying(true); };
     const rewind = () => { setPlayDir(-1); setPlaySpeed(PLAY_FAST_MS); setIsPlaying(true); };
     const stepFwd = () => { setIsPlaying(false); setCurrentIndex(i => Math.min(maxIndex, i + 1)); };
@@ -715,8 +832,12 @@ export default function MatchReplay() {
     const placeBet = (m: { market_id: string; market_name: string | null; market_type: string | null }) =>
         (selectionId: number, selectionName: string, side: BetSide, price: number) => {
             const requested = getStake(m.market_id);
-            if (requested <= 0 || price <= 1) return;
-            const inPlay = currentMinute != null && currentMinute >= 0;
+            // minimo Betfair £2: sotto, il piazzamento reale verrebbe rifiutato →
+            // il simulatore fa lo stesso (fedeltà, mai fill impossibili live).
+            if (requested < MIN_STAKE_GBP || price <= 1) return;
+            // in-play dal FRAME di mercato (inplay flag Betfair), non dal minuto
+            // nullable: un buco dati non deve mai azzerare il bet-delay.
+            const inPlay = trainingInplayAt(m.market_id, currentMs) && isInplayTs(currentTs);
             setOrders(prev => [...prev, {
                 id: uid(),
                 marketId: m.market_id,
@@ -746,7 +867,12 @@ export default function MatchReplay() {
         const m = markets.find(mk => mk.market_id === marketId);
         if (!m) return;
         if (bets.filter(b => b.marketId === marketId && !b.closed && b.stake > 1e-9).length === 0) return;
-        const locked = marketEval(m).value;
+        const ev = marketEval(m);
+        // mercato SOSPESO/CHIUSO e esito NON deciso → su Betfair non si può chiudere:
+        // qui il book è vuoto e il "cash out" bloccherebbe £0 distruggendo la posizione.
+        const st = (currentStatus(marketId) ?? 'OPEN').toUpperCase();
+        if (!ev.settled && st !== 'OPEN') return;
+        const locked = ev.value;
         setRealizedPnl(p => p + locked);
         setOrders(prev => {
             let first = true;
@@ -816,7 +942,28 @@ export default function MatchReplay() {
                 {!replay ? (
                     replayLoading || listLoading ? (
                         <div className="space-y-3">
-                            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 w-full bg-white/5" />)}
+                            {replayLoading && (
+                                <Card className="glass-card border-white/10 p-5 space-y-3">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-white font-bold">Caricamento replay…</span>
+                                        <span className="text-muted-foreground tabular-nums text-xs">
+                                            {replayProgress
+                                                ? `finestra ${replayProgress.done}/${replayProgress.total} · ${replayProgress.frames.toLocaleString('it')} frame`
+                                                : 'preparazione…'}
+                                        </span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                        <div
+                                            className="h-full bg-secondary transition-all duration-300"
+                                            style={{ width: `${replayProgress ? Math.round((replayProgress.done / Math.max(1, replayProgress.total)) * 100) : 5}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground">
+                                        Le partite lunghe vengono caricate a finestre temporali: qualche secondo per decine di migliaia di quote storiche.
+                                    </p>
+                                </Card>
+                            )}
+                            {Array.from({ length: replayLoading ? 2 : 5 }).map((_, i) => <Skeleton key={i} className="h-20 w-full bg-white/5" />)}
                         </div>
                     ) : list.length === 0 ? (
                         <Card className="glass-card border-white/10 p-10 text-center">
@@ -907,7 +1054,9 @@ export default function MatchReplay() {
                                 <span className="text-amber-400 font-bold text-lg truncate max-w-[36%]">{replay.event.away_name}</span>
                             </div>
                             <div className="text-center text-xs text-muted-foreground mt-1 tabular-nums">
-                                {displayMinute != null ? `${displayMinute}'` : '—'}{finished ? ' · FT' : ''}
+                                {safeIndex < kickoffIndex
+                                    ? 'PRE-MATCH'
+                                    : (displayMinute != null ? `${displayMinute}'` : '—')}{finished ? ' · FT' : ''}
                             </div>
                         </Card>
 
@@ -931,6 +1080,8 @@ export default function MatchReplay() {
                                         <button
                                             key={s}
                                             onClick={() => setSpeedMult(s)}
+                                            aria-pressed={speedMult === s}
+                                            aria-label={`Velocità x${s}`}
                                             className={`px-2.5 py-1 rounded-md text-xs font-bold tabular-nums border transition-colors ${
                                                 speedMult === s
                                                     ? 'bg-primary text-black border-primary'
@@ -944,6 +1095,8 @@ export default function MatchReplay() {
                             </div>
                             <TimelineSlider
                                 min={0} max={maxIndex} value={safeIndex} minute={displayMinute}
+                                pre={safeIndex < kickoffIndex}
+                                kickoffPct={maxIndex > 0 ? kickoffIndex / maxIndex : 0}
                                 suspended={suspended}
                                 events={timelineEvents.filter(m => !currentTs || m.ts <= currentTs)}
                                 arbMarkers={arbMarkers}

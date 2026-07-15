@@ -204,7 +204,8 @@ function mkLeg(
 }
 
 function gbp(v: number): string {
-    return `£${v.toFixed(2)}`;
+    // segno PRIMA del simbolo: "−£23.00", mai "£-23.00"
+    return `${v < 0 ? '-' : ''}£${Math.abs(v).toFixed(2)}`;
 }
 
 // ============================================================================
@@ -212,7 +213,7 @@ function gbp(v: number): string {
 //    In partita goalless la quota del pareggio (MATCH_ODDS) CALA col tempo:
 //    PUNTI ora @B e prevedi di BANCARE più in basso @L (back-then-lay).
 //    profitto ATTESO = netWin(stake*(B-L)/L). Rischio: un gol fa schizzare la
-//    quota (hedge-on-goal = stop-loss). tier 'low'.
+//    quota (hedge-on-goal = stop-loss). tier 'directional' (proiezione, non lock).
 //    PROFIT FORMULA: profit = netWin( matchedBack*(B-L)/L , commission ),
 //      con B = best back del pareggio ORA, L = max(1.01, B - decay),
 //      decay = prezzoPrecedente(pareggio) - B (>0), partita senza gol nuovi.
@@ -303,12 +304,22 @@ export function layTheDrawWithInsurance(): Detector {
             const Dl = bestLay(mo.state.ladder, draw.selection_id);
             if (Dl == null || Dl <= 1) continue;
 
-            const Sd = matchedStake(levels(mo.state, draw.selection_id, 'lay'), Dl, cfg.stake, 'lay');
+            let Sd = matchedStake(levels(mo.state, draw.selection_id, 'lay'), Dl, cfg.stake, 'lay');
             if (Sd <= 0) continue;
-            const ins = ltdInsurance(Sd, Dl, Zb, cfg.commission);
+            let ins = ltdInsurance(Sd, Dl, Zb, cfg.commission);
             if (ins.c <= 0) continue; // non conviene: lo 0-0 costa più del guadagno
             const szMatched = matchedStake(levels(cs.state, zero.selection_id, 'back'), Zb, ins.sz, 'back');
             if (szMatched <= 0) continue;
+            // FIX (fill parziale assicurazione): se sul book dello 0-0 c'è meno
+            // liquidità di ins.sz, la struttura va RIDIMENSIONATA sulla liquidità
+            // reale — mai dichiarare "0-0 coperto" con una copertura parziale
+            // (con £5 abbinati su £31 richiesti l'esito 0-0 era una voragine).
+            if (szMatched < ins.sz - 1e-9) {
+                Sd = r6(Sd * (szMatched / ins.sz)); // scala lineare: sz(Sd) ∝ Sd
+                if (Sd <= 0) continue;
+                ins = ltdInsurance(Sd, Dl, Zb, cfg.commission);
+                if (ins.c <= 0 || ins.sz > szMatched + 1e-6) continue;
+            }
 
             const maxLoss = -ins.b; // perdita su pareggio ≠ 0-0
             const profitPct = r6((ins.c / maxLoss) * 100);
@@ -324,7 +335,7 @@ export function layTheDrawWithInsurance(): Detector {
                     + `→ profitto ${gbp(ins.c)} se esce un vincitore, 0-0 coperto.`,
                 legs: [
                     mkLeg(mo.lite, draw, 'lay', Dl, Sd, Sd),
-                    mkLeg(cs.lite, zero, 'back', Zb, ins.sz, szMatched),
+                    mkLeg(cs.lite, zero, 'back', Zb, ins.sz, r6(Math.min(szMatched, ins.sz))),
                 ],
                 profit: ins.c,
                 profitPct,
@@ -555,12 +566,23 @@ export function backToLay(history: Snapshot[] = []): Detector {
 //    NB: i cartellini NON sono nello schema Snapshot → si rileva solo il gol
 //    (delta punteggio). Stop-loss se la quota continua a scendere.
 // ============================================================================
+// Finestra post-gol entro cui l'overreaction è plausibile: oltre, il nuovo prezzo
+// è il re-pricing legittimo (fade = segnale sistematicamente perdente).
+const REVERSION_WINDOW_MS = 120_000;
+
 export function meanReversionPostEvent(history: Snapshot[] = []): Detector {
     return (snap: Snapshot, cfg: OppConfig): Opportunity[] => {
         const out: Opportunity[] = [];
         const currentTotal = snap.scoreHome + snap.scoreAway;
         const pre = preEventSnap(history, currentTotal);
         if (!pre) return out;
+        // FIX: il gol deve essere RECENTE. Senza finestra, il confronto col
+        // pre-gol restava vero per tutto il resto della partita (una favorita
+        // 2.0→1.5 emetteva "fade" a ogni snapshot fino al 90').
+        const preTs = Date.parse(pre.ts);
+        const curTs = Date.parse(snap.ts);
+        if (!Number.isFinite(preTs) || !Number.isFinite(curTs)
+            || curTs - preTs > REVERSION_WINDOW_MS) return out;
         const homeScored = snap.scoreHome > pre.scoreHome;
         const awayScored = snap.scoreAway > pre.scoreAway;
         if (!homeScored && !awayScored) return out;

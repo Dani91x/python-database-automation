@@ -158,7 +158,10 @@ export interface SettleCtx {
 }
 
 function lineFromType(t: string): number | null {
-    const m = /(\d)(\d)$/.exec(t); // OVER_UNDER_25 -> 2.5, OVER_UNDER_05 -> 0.5
+    // OVER_UNDER_25 -> 2.5, OVER_UNDER_05 -> 0.5, OVER_UNDER_105 -> 10.5
+    // (ultima cifra = frazione, TUTTE le precedenti = parte intera — tenere
+    //  IDENTICO a opportunities/helpers.ts e market-categories.ts)
+    const m = /_(\d+)(\d)$/.exec(t);
     if (!m) return null;
     return Number(`${m[1]}.${m[2]}`);
 }
