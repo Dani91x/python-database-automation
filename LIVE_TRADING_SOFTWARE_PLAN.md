@@ -8,6 +8,58 @@
 > Path PRE-MATCH (`Betfair/order_exec.py`) = INVARIATO. Tutto il nuovo vive nel processo del
 > runner stream (`Betfair/stream/`).
 
+## ⏱️ STATO AVANZAMENTO (aggiornato 2026-06-30) — PARTIRE DA QUI DOMANI
+
+### ✅ FATTO e su master
+- **Fase 1 — Foundation** (commit 9b4cdd2 / e43299b / 7d87787 / 4d25ac1): place/cancel/replace
+  tutti i mercati back+lay, toggle `LIVE_ORDER_MODE` via `.env`, coda DB + RPC owner-only,
+  worker nel runner (claim atomico, kill-switch+cap runtime), validazione/tick, place-and-trim
+  `.it`, specchio ordini+posizioni (da `blotter.get_exposures`), controlli nativi flumine,
+  pannelli `LiveTradingPanel`+`PlacedOrdersPanel`. PAPER E2E funzionante.
+- **Ladder Step 1+2** (commit 1559901): pipeline realtime `live_ladder` (runner `ladder_worker`
+  dallo stream già sottoscritto, ZERO API extra, write-on-change, cadenza 2.0s) + UI `LadderView`
+  8 colonne, WOM, colori standard (BACK=blu/LAY=rosa). Migrazione `migrations/live_ladder.sql` applicata.
+- **Ⓐ One-click + Ⓑ Green-up/Cash-out** (commit 074cd0c): one-click place/cancel mode-aware (OFF/
+  PAPER/LIVE + arm "1-click"), colonna PIQ; green-up totale+parziale calcolato dalle esposizioni
+  MATCHED reali di flumine (`trading/greenup.py`), preview al prezzo di esecuzione reale.
+  Migrazione `migrations/betfair_live_greenup.sql` applicata. 295 pytest + 236 vitest + tsc OK,
+  review code+database recepita.
+
+### 🔜 DA FARE DOMANI (ordine consigliato)
+1. **Fase 3 — Risk engine** (§9) ← **INIZIARE DA QUI**
+   - `Betfair/stream/trading/risk_engine.py` (worker): **Offset** (al fill piazza opposto a N tick,
+     `price_ticks_away`), **Stop-loss/Take-profit** (soglie P&L o prezzo → chiusura/green-up),
+     **Trailing stop** (soglia che insegue il prezzo). Riusa coda + `greenup.py` già costruiti.
+   - config per-ordine in `params jsonb` (azione `stoploss_set`) + migrazione coda; bottoni UI.
+2. **Fase 5 — Dutching & Hedging** (§10): `trading/dutching.py` (stake su N selezioni, profitto/
+   liability uguale) + `trading/hedging.py` (mercati correlati) + azione `dutch` + bottoni UI.
+3. **Fase 6 — Controlli avanzati / audit / velocità** (§11–§12):
+   - trading_controls CUSTOM (max esposizione per selezione/mercato + rate-limit ordini/min);
+   - **kill-switch dalla UI** (oggi solo env `LIVE_KILL_SWITCH`);
+   - **audit log** DB di ogni comando/ordine; **pannello impostazioni velocità** UI;
+   - verifica restart framework LIVE (`create_order_from_current`).
+4. **Rifiniture UI** (§13): pannello **posizioni/P&L dedicato** (da `betfair_live_positions`);
+   **cancel/replace inline** in `PlacedOrdersPanel`; **replace via drag** sul ladder.
+
+### 🔒 A CARICO UTENTE (soldi veri — non Claude)
+- E2E PAPER di green-up + one-click su partita vera; **test empirico place-and-trim .it**;
+  **cert LIVE minimale** (stake minimo per ogni azione: place/cancel/replace/green-up).
+
+### ❓ DECISIONI APERTE
+- Persistenza in-play di default (oggi `LAPSE`) → confermare `LAPSE` vs `PERSIST`.
+- Stake/preset/cap di default (oggi cap €10, preset 2/5/10/25).
+
+### ⚠️ LIMITI NOTI da rifinire
+- Green-up chiude solo la posizione **MATCHED**: gli ordini non abbinati NON sono auto-cancellati
+  prima dell'hedge (un vero "cash out" li cancella prima) → cancellali col one-click, poi green-up.
+  Valutare un "cash-out completo" = cancel-all + hedge.
+- Green-up al best opposto con `LAPSE`: se il book è sottile l'hedge può abbinarsi in parte e il
+  resto lapsa (riclicca). Possibile versione più aggressiva (cross dello spread) in futuro.
+- Ladder passa `handicap=0` (OK MATCH_ODDS/O-U/BTTS; estendere per handicap asiatici).
+- TODO separato: riconciliazione P&L/chiusura ordini **pre-match** via `listCurrentOrders`/`listClearedOrders`.
+
+---
+
 ## 0. Principi
 - **Riusare flumine, non reinventare.** Usiamo: modello ordini (Trade/BetfairOrder/LimitOrder),
   `market.place_order/cancel_order/replace_order/update_order`, **order stream** (fill reali),

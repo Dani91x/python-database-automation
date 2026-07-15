@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 # ---------------------------------------------------------------------------
 # Betfair price ladder (tick validi Exchange). Correct Score sta quasi sempre
@@ -137,6 +138,42 @@ def select_lay_runner(
 
 
 # ---------------------------------------------------------------------------
+# Giornata operativa (§2): "oggi" = giorno solare Europe/Rome. Senza questo
+# scoping R/matches_traded sarebbero CUMULATIVI A VITA → con stop_on_goal=true
+# il bot smetterebbe di piazzare per sempre dal 2° giorno in profitto.
+# ---------------------------------------------------------------------------
+OPERATIONAL_TZ = "Europe/Rome"
+
+
+def day_start_utc(now: datetime, tz_name: str = OPERATIONAL_TZ) -> datetime:
+    """Mezzanotte locale (tz operativa) del giorno di ``now``, come datetime UTC."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    local = now.astimezone(ZoneInfo(tz_name))
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight.astimezone(timezone.utc)
+
+
+def _ts_on_or_after(iso: Optional[str], boundary: Optional[datetime]) -> bool:
+    """True se ``iso`` >= ``boundary`` (o se il confine manca: retro-compatibile).
+
+    Un timestamp assente/non parsabile con un confine attivo ritorna False:
+    un trade senza data certa non deve MAI gonfiare i contatori di oggi.
+    """
+    if boundary is None:
+        return True
+    if not iso:
+        return False
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t >= boundary
+
+
+# ---------------------------------------------------------------------------
 # Target dinamico e sizing (§2)
 # ---------------------------------------------------------------------------
 def dynamic_target(goal: float, realized: float, matches_remaining: int) -> float:
@@ -240,28 +277,42 @@ def paper_fill(
 # ---------------------------------------------------------------------------
 # Settlement (§6, I3): P&L dal risultato del mercato.
 # ---------------------------------------------------------------------------
-def aggregate_trades(rows: list[dict]) -> dict:
+def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> dict:
     """Aggrega le righe ``omega_trades`` → totali. PURA e testabile (money-critical).
 
     'won/lost/void' → realizzato; 'open' → liability aperta; 'pending' CON ``bet_id``
     → ordine reale già a mercato: conta nell'esposizione aperta (I8). 'pending'
     senza bet_id ed 'error' NON contano come piazzati.
+
+    Con ``day_start`` (mezzanotte operativa, vedi ``day_start_utc``) calcola ANCHE
+    i valori della GIORNATA (§2: R = P&L dei trade regolati OGGI; match/giorno =
+    piazzati OGGI). liability aperta resta SEMPRE totale: il rischio vivo non ha
+    giorno. Senza ``day_start`` i campi _today coincidono col cumulato (fallback).
     """
     realized = 0.0
     open_liab = 0.0
     settled = 0
     traded = 0
     open_n = 0
+    realized_today = 0.0
+    traded_today = 0
     for r in rows:
         st = r.get("status")
         if st in ("won", "lost", "void"):
-            realized += float(r.get("pnl") or 0.0)
+            pnl = float(r.get("pnl") or 0.0)
+            realized += pnl
             settled += 1
             traded += 1
+            if _ts_on_or_after(r.get("settled_at"), day_start):
+                realized_today += pnl
+            if _ts_on_or_after(r.get("placed_at"), day_start):
+                traded_today += 1
         elif st == "open" or (st == "pending" and r.get("bet_id")):
             open_liab += float(r.get("liability") or 0.0)
             open_n += 1
             traded += 1
+            if _ts_on_or_after(r.get("placed_at"), day_start):
+                traded_today += 1
     return {
         "realized_profit": round(realized, 2),
         "open_liability": round(open_liab, 2),
@@ -269,6 +320,8 @@ def aggregate_trades(rows: list[dict]) -> dict:
         "matches_open": open_n,
         "settled_count": settled,
         "total_count": len(rows),
+        "realized_today": round(realized_today if day_start else realized, 2),
+        "matches_traded_today": traded_today if day_start else traded,
     }
 
 
@@ -290,6 +343,19 @@ def _order_matches(o: dict, ref: Optional[str], market_id, selection_id, side: s
         return False
     o_side = o.get("side")
     return (not o_side) or (o_side == side)
+
+
+def expected_customer_ref(trade: dict) -> str:
+    """customerOrderRef atteso per un trade (stesso troncamento del place).
+
+    AUTO: ``omega-<event_id>`` (unico: I1 = un solo lay auto per evento).
+    MANUALE: ``omega-m<trade_id>`` — per-GAMBA, derivabile dalla riga stessa:
+    due lay manuali sullo stesso evento NON devono mai condividere il ref,
+    altrimenti la riconciliazione confonderebbe due ordini reali distinti.
+    """
+    if str(trade.get("origin") or "auto") == "manual" and trade.get("id") is not None:
+        return f"omega-m{trade['id']}"[:32]
+    return f"omega-{trade.get('event_id')}"[:32]
 
 
 # GRACE PERIOD: sotto questa età un pending non trovato su Betfair NON viene
@@ -323,7 +389,7 @@ def reconcile_decision(
     - non trovato da nessuna parte e recente (<24h) → 'free' (mai piazzato → libera)
     - non trovato e vecchio → 'error' (non rischiare: mai un doppio ordine)
     """
-    ref = f"omega-{trade.get('event_id')}"[:32]  # stesso troncamento del place (customerRef)
+    ref = expected_customer_ref(trade)
     mid = trade.get("market_id")
     sid = trade.get("selection_id")
     sid = int(sid) if sid is not None else None
@@ -410,6 +476,81 @@ def settle_pnl(
     if is_winner:
         return ("lost", -liability_from_lay(size, price))
     return ("won", net_profit_if_win(size, commission))
+
+
+# ---------------------------------------------------------------------------
+# MISSIONI (centro di controllo per partita) — funzioni PURE
+# ---------------------------------------------------------------------------
+_PHASE_FINISHED = ("finished", "matchended", "fulltime", "ended")
+# supplementari/rigori PRIMA dell'intervallo: "ExtraTimeHalfTime" contiene
+# anche "halftime" e senza precedenza verrebbe classificato 'ht' (review 15/07)
+_PHASE_ET = ("extratime", "penalt")
+_PHASE_HT = ("halftime", "firsthalfend")
+_PHASE_2T = ("secondhalf",)
+_PHASE_1T = ("firsthalf", "kickoff")
+
+
+def mission_phase(
+    *,
+    status: Optional[str],
+    minute: Optional[int],
+    kickoff: Optional[datetime],
+    now: datetime,
+    prev: str = "pre",
+) -> str:
+    """Fase della partita: 'pre'|'1t'|'ht'|'2t'|'finita'. PURA e difensiva.
+
+    Priorità: status del provider (FirstHalf/HalfTime/SecondHalf/Finished, con
+    matching per SOTTOSTRINGA normalizzata: 'FirstHalfEnd' deve battere
+    'FirstHalf' → l'ordine dei check conta). Fallback: minuto; poi kickoff
+    (futuro → pre; passato da >3h senza dati → finita); altrimenti la fase
+    precedente (mai retrocedere a caso su un buco dati).
+    """
+    s = re.sub(r"[^a-z]", "", str(status or "").lower())
+    if s:
+        if any(k in s for k in _PHASE_FINISHED):
+            return "finita"
+        if any(k in s for k in _PHASE_ET):
+            return "2t"
+        if any(k in s for k in _PHASE_HT):
+            return "ht"
+        if any(k in s for k in _PHASE_2T):
+            return "2t"
+        if any(k in s for k in _PHASE_1T):
+            return "1t"
+    if minute is not None:
+        return "1t" if int(minute) <= 45 else "2t"
+    if kickoff is not None:
+        k = kickoff if kickoff.tzinfo else kickoff.replace(tzinfo=timezone.utc)
+        n = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+        if n < k:
+            return "pre"
+        if (n - k).total_seconds() > 3 * 3600:
+            return "finita"
+    return prev if prev in ("pre", "1t", "ht", "2t", "finita") else "pre"
+
+
+def scalp_market_types(total_goals: int) -> list[str]:
+    """Tipi mercato Over/Under per lo scalp back-Under: linea = gol attuali + 2.5
+    (es. 1-0 → Under 3.5 → 'OVER_UNDER_35'), con fallback alla linea sopra.
+    Verificati LIVE su Betfair: 'OVER_UNDER_15'..'OVER_UNDER_85'."""
+    g = max(int(total_goals), 0)
+    out = []
+    for line in (g + 2, g + 3):
+        if line <= 8:
+            out.append(f"OVER_UNDER_{line}5")
+    return out
+
+
+def pick_under_runner(runners: list) -> Optional[object]:
+    """Il runner 'Under X.5 Goals' scelto PER NOME (mai per posizione: se
+    l'ordine dei runner cambiasse, un match posizionale punterebbe l'Over —
+    utenti che perdono soldi). Ritorna il runner o None."""
+    for r in runners:
+        name = str(getattr(r, "name", "") or "").strip().lower()
+        if name.startswith("under"):
+            return r
+    return None
 
 
 # ---------------------------------------------------------------------------

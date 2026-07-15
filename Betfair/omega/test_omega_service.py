@@ -84,6 +84,10 @@ class FakeMarket:
                  "runner_names": {3: "2 - 1", 4: "3 - 2"}}]
 
     def read_book(self, market_id, runner_names):
+        # override per-mercato (test missioni/scalp): self.books[market_id]
+        books = getattr(self, "books", None)
+        if books is not None and market_id in books:
+            return books[market_id]
         return {"market_id": market_id, "status": "OPEN", "inplay": True, "event_name": "Home vs Away",
                 "runners": [
                     {"selection_id": 3, "name": "2 - 1", "status": "ACTIVE",
@@ -98,6 +102,24 @@ class FakeMarket:
         self.placed.append(kw)
         return M.PlaceResult(ok=True, order_status="EXECUTION_COMPLETE",
                              bet_id="bm1", size_matched=kw["size"], avg_price_matched=kw["price"])
+
+    # --- missioni ---
+    def get_inplay_scores(self, event_ids):
+        return getattr(self, "scores", {})
+
+    def get_event_market_by_type(self, event_id, event_name, market_type):
+        # configurabile per test: self.markets_by_type[(event_id, market_type)]
+        by_type = getattr(self, "markets_by_type", None)
+        if by_type is not None:
+            return by_type.get((str(event_id), market_type))
+        # default: CS/HT risolvono sul mercato standard del fake
+        if market_type in ("CORRECT_SCORE", "HALF_TIME_SCORE"):
+            return M.CorrectScoreMarket(
+                market_id=f"m-{event_id}-{market_type}", event_id=str(event_id),
+                event_name=event_name or "Home vs Away", market_start_time=None,
+                runner_names={1: "0 - 0", 3: "2 - 1", 4: "3 - 2"},
+            )
+        return None
 
     # --- riconciliazione ---
     def list_current_orders(self, strategy_ref="omega"):
@@ -145,6 +167,9 @@ class FakeDB:
         self._id += 1
         row = dict(trade)
         row["id"] = self._id
+        # fedeltà al DB reale: placed_at DEFAULT now() (i contatori della
+        # giornata operativa §2 filtrano su placed_at/settled_at)
+        row.setdefault("placed_at", NOW.isoformat())
         self.trades.append(row)
         return self._id
 
@@ -193,8 +218,23 @@ class FakeDB:
     def traded_event_ids(self):
         return {t["event_id"] for t in self.trades}
 
-    def aggregates(self):
-        return E.aggregate_trades(self.trades)  # stessa logica pura del backend reale
+    def aggregates(self, day_start=None):
+        return E.aggregate_trades(self.trades, day_start)  # stessa logica pura del backend reale
+
+    # --- missioni ---
+    def active_missions(self):
+        return [m for m in getattr(self, "missions", []) if m.get("status", "active") == "active"]
+
+    def mission_event_ids(self):
+        return {str(m["event_id"]) for m in self.active_missions()}
+
+    def update_mission(self, event_id, **fields):
+        for m in getattr(self, "missions", []):
+            if str(m["event_id"]) == str(event_id):
+                m.update(fields)
+
+    def trades_for_event(self, event_id):
+        return [t for t in self.trades if str(t.get("event_id")) == str(event_id)]
 
 
 def _control(status="running", mode="paper", goal=250, params=None):
@@ -344,6 +384,8 @@ def test_daily_loss_cap_ferma_nuovi_ingressi():
     db.trades.append({
         "id": 99, "event_id": "past", "status": "lost", "pnl": -20, "liability": 500,
         "selection_id": 1, "price": 50, "size": 10, "commission": 0.05,
+        # la perdita conta per il cap solo se regolata OGGI (giornata operativa §2)
+        "placed_at": NOW.isoformat(), "settled_at": NOW.isoformat(),
     })
     db._id = 99
     market = FakeMarket([_event()], _cs(), _open_snapshot())
@@ -723,3 +765,137 @@ def test_target_dinamico_scala_con_piu_eventi():
     S.run_once(market=market, db=db, now=NOW)
     assert len(db.trades) == 1
     assert db.trades[0]["target"] == pytest.approx(5.0, abs=0.2)
+
+
+# ---------------------------------------------------------------------------
+# Regressioni review 2026-07-15: giornata operativa (§2), ref per-gamba (I3),
+# FILL_OR_KILL, log size_reduced.
+# ---------------------------------------------------------------------------
+def test_giornata_operativa_profitto_di_ieri_non_blocca_oggi():
+    # CRITICAL fix: +255 regolati IERI con stop_on_goal=true NON devono
+    # bloccare i piazzamenti di OGGI (prima erano cumulativi a vita).
+    yesterday = (NOW - timedelta(days=2)).isoformat()
+    db = FakeDB(_control())
+    db.trades.append({
+        "id": 98, "event_id": "old-event", "status": "won", "pnl": 255.0,
+        "liability": 100, "selection_id": 1, "price": 50, "size": 10,
+        "commission": 0.05, "placed_at": yesterday, "settled_at": yesterday,
+    })
+    db._id = 98
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 1                       # oggi si riparte da zero
+    stats = db.control["stats"]
+    assert stats["realized_today"] == 0.0           # R di oggi, non il cumulato
+    assert stats["realized_profit"] == 255.0        # storico preservato
+    assert stats["target_match"] > 0
+
+
+def test_giornata_operativa_profitto_di_oggi_blocca():
+    # controprova: obiettivo raggiunto OGGI → stop_on_goal ferma i nuovi ingressi
+    db = FakeDB(_control())
+    db.trades.append({
+        "id": 98, "event_id": "done-today", "status": "won", "pnl": 255.0,
+        "liability": 100, "selection_id": 1, "price": 50, "size": 10,
+        "commission": 0.05, "placed_at": NOW.isoformat(), "settled_at": NOW.isoformat(),
+    })
+    db._id = 98
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 0
+
+
+def test_loss_di_ieri_non_fa_scattare_il_cap_oggi():
+    yesterday = (NOW - timedelta(days=2)).isoformat()
+    db = FakeDB(_control(params={"daily_loss_cap": 10}))
+    db.trades.append({
+        "id": 97, "event_id": "old-loss", "status": "lost", "pnl": -500.0,
+        "liability": 500, "selection_id": 1, "price": 50, "size": 10,
+        "commission": 0.05, "placed_at": yesterday, "settled_at": yesterday,
+    })
+    db._id = 97
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 1                       # il cap è GIORNALIERO
+
+
+def test_expected_customer_ref_auto_vs_manuale():
+    assert E.expected_customer_ref({"origin": "auto", "id": 7, "event_id": "1.100"}) == "omega-1.100"
+    assert E.expected_customer_ref({"event_id": "1.100"}) == "omega-1.100"  # default auto
+    assert E.expected_customer_ref({"origin": "manual", "id": 7, "event_id": "1.100"}) == "omega-m7"
+
+
+def test_manuale_live_passa_ref_per_gamba():
+    # CRITICAL fix: il LIVE manuale deve usare omega-m<trade_id>, MAI omega-<event_id>
+    db = FakeDB(_control(status="idle", mode="live"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "live",
+                                  "price": 110, "size": 2})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    assert len(market.placed) == 1
+    ref = market.placed[0].get("customer_ref")
+    assert ref is not None and ref.startswith("omega-m")
+    assert ref == f"omega-m{db.trades[0]['id']}"
+
+
+def test_reconcile_due_manuali_stesso_evento_non_si_confondono():
+    # CRITICAL fix: due pending manuali LIVE sullo stesso evento, due ordini reali
+    # distinti → ciascuno confermato col PROPRIO ordine (mai scambiati).
+    db = FakeDB(_control())
+    t1 = _pending_row(mode="live", id=1, origin="manual", market_id="mA", selection_id=3)
+    t2 = _pending_row(mode="live", id=2, origin="manual", market_id="mB", selection_id=4)
+    db.trades = [t1, t2]
+    db._id = 2
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.current_orders = [
+        {"customer_order_ref": "omega-m2", "market_id": "mB", "selection_id": 4,
+         "side": "lay", "size_matched": 7.0, "size_remaining": 0.0,
+         "avg_price_matched": 95.0, "bet_id": "bB"},
+        {"customer_order_ref": "omega-m1", "market_id": "mA", "selection_id": 3,
+         "side": "lay", "size_matched": 3.0, "size_remaining": 0.0,
+         "avg_price_matched": 80.0, "bet_id": "bA"},
+    ]
+    market.cleared_orders = []
+    n = S.reconcile_pending(market=market, db=db, now=NOW)
+    assert n == 2
+    assert db.trades[0]["bet_id"] == "bA" and db.trades[0]["size"] == 3.0
+    assert db.trades[1]["bet_id"] == "bB" and db.trades[1]["size"] == 7.0
+
+
+def test_place_order_live_usa_fill_or_kill(monkeypatch):
+    # HIGH fix: l'istruzione reale deve avere timeInForce=FILL_OR_KILL (niente
+    # residui parziali vivi sul book dopo il piazzamento).
+    captured = {}
+
+    def fake_call(fn):
+        class C:
+            def place_orders(self, market_id, instructions, **kw):
+                captured["instructions"] = instructions
+                captured["kw"] = kw
+                return {"status": "SUCCESS", "instructionReports": [
+                    {"status": "SUCCESS", "orderStatus": "EXECUTION_COMPLETE",
+                     "betId": "bF", "sizeMatched": 2.0, "averagePriceMatched": 110.0}]}
+        return fn(C())
+
+    monkeypatch.setattr(M, "call", fake_call)
+    res = M.place_order_live(market_id="m1", selection_id=4, price=110, size=2,
+                             event_id="1.100", side="lay")
+    assert res.ok
+    lo = captured["instructions"][0]["limitOrder"]
+    assert lo["timeInForce"] == "FILL_OR_KILL"
+
+
+def test_size_ridotta_da_liquidita_loggata():
+    # LOW fix §6: la riduzione per liquidità va loggata con requested_size pre-taglio
+    snap = M.MarketSnapshot(
+        status="OPEN", inplay=True, closed=False, winner_selection_id=None, voided=False,
+        runners=[E.ScoreRunner(4, "3 - 2", lay_price=110.0, lay_size=10.0,
+                               lay_ladder=((110.0, 10.0),))],
+    )
+    db = FakeDB(_control(goal=25000))               # target alto → size >> liquidità (10€)
+    market = FakeMarket([_event()], _cs(), snap)
+    S.run_once(market=market, db=db, now=NOW)
+    assert any(k == "size_reduced" for k, _ in db.activity)
+    t = db.trades[0]
+    assert t["meta"]["requested_size"] > t["size"]  # audit: pre-taglio > effettiva

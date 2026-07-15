@@ -183,12 +183,18 @@ def test_verde_chiude_l_evento():
     assert locked > 0
     # la close si riempie -> verde, missione compiuta (fill simulato
     # sostituendo l'ordine flumine con un fake matchato, come nella suite)
-    pos.close = _FakeOrder("LAY", price=3.35,
-                           size=pos.close.order_type.size,
-                           size_matched=pos.close.order_type.size, avg=3.35)
+    size = pos.close.order_type.size
+    pos.close = _FakeOrder("LAY", price=3.35, size=size,
+                           size_matched=size, avg=3.35)
     s.process_market_book(mkt, _book(660, bb=3.35, bl=3.40, sb=200))
     assert s.stats["greens"] == 1
-    assert s.stats["pnl_locked"] == pytest.approx(locked)
+    # FIX 15/07 (bug 1): si accredita il NET REALE ricalcolato dagli ordini
+    # matchati (la size della close e' arrotondata a 2 decimali al
+    # piazzamento), MAI il close_locked teorico pre-arrotondamento.
+    nw_real = 10.0 * 2.40 - size * 2.35
+    nl_real = size - 10.0
+    assert s.stats["pnl_locked"] == pytest.approx(min(nw_real, nl_real))
+    assert s.stats["pnl_locked"] == pytest.approx(locked, abs=0.01)
     assert s._event_done is True
     # dopo la missione NIENTE nuovi ingressi anche col gate verde
     n0 = len(mkt.orders)
@@ -277,6 +283,24 @@ def test_place_exact_spezza_parte_diretta_piu_submin():
     st = pos.submins[0]["state"]
     assert st.target_size == pytest.approx(0.13)
     assert st.target_price == pytest.approx(1.27)
+
+
+def test_place_exact_size_interamente_subminima():
+    """FIX S6.4: LAY 0.30 (main < 0.50, sotto il minimo .it): NESSUNA parte
+    diretta piazzabile — il verde arriva SOLO via park-trim-replace, con la
+    sequenza submin che copre l'INTERO importo."""
+    s = _strategy(exact_exits=True, size_step=0.5, live_min_bet=2.0)
+    mkt = _FakeMarket()
+    pos = s._p("1.234", 1221385)
+    o = s._place(mkt, 1221385, "LAY", 1.27, 0.30, floor=False, pos=pos)
+    assert o is None                                   # niente parte diretta
+    assert mkt.orders == []                            # nessun ordine diretto
+    assert len(pos.submins) == 1                       # TUTTA la size via submin
+    st = pos.submins[0]["state"]
+    assert st.target_size == pytest.approx(0.30)
+    assert st.target_price == pytest.approx(1.27)
+    assert st.side == "lay"
+    assert any(k == "submin_start" for k, _ in s._test_events)
 
 
 def test_place_exact_micro_resto_accettato():

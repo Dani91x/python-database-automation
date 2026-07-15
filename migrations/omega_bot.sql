@@ -223,10 +223,17 @@ BEGIN
 
     -- 'pending' con bet_id = ordine REALE già a mercato (conferma DB fallita):
     -- conta nell'esposizione aperta (I8), come fa Betfair/omega/omega_db.aggregates.
+    -- I campi *_today sono scopati sulla GIORNATA OPERATIVA Europe/Rome (§2:
+    -- R = P&L regolato OGGI; match/giorno = piazzati OGGI): senza, obiettivo e
+    -- barra resterebbero cumulativi a vita. liability aperta = SEMPRE totale.
     SELECT jsonb_build_object(
         'realized_profit', coalesce(sum(pnl) FILTER (WHERE status IN ('won','lost','void')), 0),
+        'realized_today',  coalesce(sum(pnl) FILTER (WHERE status IN ('won','lost','void')
+                               AND settled_at >= (date_trunc('day', now() AT TIME ZONE 'Europe/Rome') AT TIME ZONE 'Europe/Rome')), 0),
         'open_liability',  coalesce(sum(liability) FILTER (WHERE status = 'open' OR (status = 'pending' AND bet_id IS NOT NULL)), 0),
         'matches_traded',  count(*) FILTER (WHERE status IN ('open','won','lost','void') OR (status = 'pending' AND bet_id IS NOT NULL)),
+        'matches_traded_today', count(*) FILTER (WHERE (status IN ('open','won','lost','void') OR (status = 'pending' AND bet_id IS NOT NULL))
+                               AND placed_at >= (date_trunc('day', now() AT TIME ZONE 'Europe/Rome') AT TIME ZONE 'Europe/Rome')),
         'matches_open',    count(*) FILTER (WHERE status = 'open' OR (status = 'pending' AND bet_id IS NOT NULL)),
         'matches_won',     count(*) FILTER (WHERE status = 'won'),
         'matches_lost',    count(*) FILTER (WHERE status = 'lost')

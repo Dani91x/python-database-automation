@@ -64,8 +64,14 @@ export default function ManualPanel() {
         try {
             await requestManual('refresh_events');
             toast('Aggiornamento eventi richiesto', { description: 'Il servizio Omega deve essere in esecuzione.' });
+            // confronto su fetch FRESCO (non sullo state React: stale closure →
+            // il loop non usciva mai in anticipo e lo spinner durava sempre 12s)
             const before = events.length;
-            for (let i = 0; i < 8; i++) { await sleep(1500); await loadEvents(); if (events.length !== before) break; }
+            for (let i = 0; i < 8; i++) {
+                await sleep(1500);
+                const fresh = await fetchOmegaEvents().catch(() => null);
+                if (fresh) { setEvents(fresh); if (fresh.length !== before) break; }
+            }
         } catch (e) { toast.error('Richiesta fallita', { description: String((e as Error).message) }); }
         finally { setBusy(null); }
     }

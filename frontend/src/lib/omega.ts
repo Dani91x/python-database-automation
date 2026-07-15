@@ -15,8 +15,10 @@ export type OmegaTradeStatus = 'pending' | 'open' | 'won' | 'lost' | 'void' | 'e
 export interface OmegaStats {
     events_total?: number;
     matches_traded?: number;
+    matches_traded_today?: number;
     matches_open?: number;
     realized_profit?: number;
+    realized_today?: number;   // §2: P&L regolato nella GIORNATA operativa (Europe/Rome)
     open_liability?: number;
     matches_remaining?: number;
     target_match?: number;
@@ -48,6 +50,7 @@ export interface OmegaTrade {
     runner_name: string | null;
     side: string;
     mode: OmegaMode;
+    origin?: 'auto' | 'manual';  // chi ha deciso il trade (badge in tabella)
     price: number | null;
     size: number | null;
     liability: number | null;
@@ -65,8 +68,10 @@ export interface OmegaTrade {
 
 export interface OmegaAggregates {
     realized_profit: number;
+    realized_today?: number;        // giornata operativa Europe/Rome (RPC aggiornata)
     open_liability: number;
     matches_traded: number;
+    matches_traded_today?: number;
     matches_open: number;
     matches_won: number;
     matches_lost: number;
@@ -259,6 +264,8 @@ export interface OmegaPlacePayload {
     size?: number | null;
     target?: number | null;
     commission_pct?: number;
+    /** gamba della missione (tab MISSIONE): etichetta il trade per fase */
+    phase?: 'ht_cs' | 'ft_cs' | 'scalp';
 }
 
 export async function requestManual(

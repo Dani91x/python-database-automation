@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ManualPanel from '@/components/omega/ManualPanel';
+import MissionPanel from '@/components/omega/MissionPanel';
 import {
     ArrowLeft, Play, Square, Settings, Target, TrendingUp, Zap, ShieldAlert, Activity,
 } from 'lucide-react';
@@ -175,20 +176,32 @@ export default function Omega() {
             if (seenSettled.current.has(t.id)) continue;
             seenSettled.current.add(t.id);
             const name = t.event_name || t.event_id;
+            // distingue i trade decisi a mano da quelli del bot (trasparenza)
+            const tag = t.origin === 'manual' ? '✋ ' : '';
             if (t.status === 'won') {
-                toast.success(`💰 ${name}`, { description: `Incassato ${fmtSignedEur(Number(t.pnl))} · lay ${t.runner_name}` });
+                toast.success(`💰 ${tag}${name}`, { description: `Incassato ${fmtSignedEur(Number(t.pnl))} · ${t.side === 'back' ? 'back' : 'lay'} ${t.runner_name}` });
             } else if (t.status === 'lost') {
-                toast.error(`⚠️ ${name}`, { description: `Perso ${fmtSignedEur(Number(t.pnl))} · uscito ${t.runner_name}` });
+                toast.error(`⚠️ ${tag}${name}`, { description: `Perso ${fmtSignedEur(Number(t.pnl))} · ${t.side === 'back' ? 'back' : 'lay'} ${t.runner_name}` });
             } else {
-                toast(`${name}`, { description: `Match VOID · P&L €0` });
+                toast(`${tag}${name}`, { description: `Match VOID · P&L €0` });
             }
         }
     }
 
     useEffect(() => {
         reload().catch(e => { toast.error('Errore caricamento Omega', { description: String(e?.message ?? e) }); setLoading(false); });
-        const unsub = subscribeOmega(() => { reload().catch(() => {}); });
-        const poll = setInterval(() => { reload().catch(() => {}); }, 15_000);
+        // errori dei reload periodici: non silenziarli del tutto (dashboard
+        // money-critical) ma nemmeno spammare — al massimo un toast al minuto.
+        let lastErrToast = 0;
+        const onReloadError = (e: unknown) => {
+            const now = Date.now();
+            if (now - lastErrToast > 60_000) {
+                lastErrToast = now;
+                toast.error('Aggiornamento dati Omega fallito', { description: String((e as Error)?.message ?? e) });
+            }
+        };
+        const unsub = subscribeOmega(() => { reload().catch(onReloadError); });
+        const poll = setInterval(() => { reload().catch(onReloadError); }, 15_000);
         return () => { unsub(); clearInterval(poll); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -249,7 +262,10 @@ export default function Omega() {
     // I numeri "soldi" vengono dagli AGGREGATI freschi (RPC, calcolati sul DB e
     // ORIGIN-AGNOSTICI: includono i trade manuali anche a bot automatico fermo).
     // Fallback alla fotografia stats se l'RPC non li fornisse.
-    const realized = Number(aggregates?.realized_profit ?? stats.realized_profit ?? 0);
+    // §2: obiettivo/barra sono della GIORNATA operativa (realized_today); il
+    // cumulato storico resta visibile come sottotitolo del KPI.
+    const realizedTotal = Number(aggregates?.realized_profit ?? stats.realized_profit ?? 0);
+    const realized = Number(aggregates?.realized_today ?? stats.realized_today ?? realizedTotal);
     const goal = Number(control?.daily_goal ?? stats.goal ?? goalInput ?? 250);
     const goalPct = goal > 0 ? Math.max(0, Math.min(100, (realized / goal) * 100)) : 0;
     const openLiability = Number(aggregates?.open_liability ?? stats.open_liability ?? 0);
@@ -309,11 +325,16 @@ export default function Omega() {
                         <Activity className="w-6 h-6 animate-spin mx-auto mb-3 text-primary" />caricamento Omega…
                     </div>
                 ) : (
-                    <Tabs defaultValue="auto" className="w-full">
+                    <Tabs defaultValue="mission" className="w-full">
                         <TabsList className="mb-4">
+                            <TabsTrigger value="mission">🎯 Missione</TabsTrigger>
                             <TabsTrigger value="auto">⚙️ Automatico</TabsTrigger>
                             <TabsTrigger value="manual">✋ Manuale</TabsTrigger>
                         </TabsList>
+                        <TabsContent value="mission">
+                            {/* mode paper/live dal toggle globale in alto (control.mode) */}
+                            <MissionPanel mode={mode} />
+                        </TabsContent>
                         <TabsContent value="auto" className="space-y-6">
                         {/* barra obiettivo */}
                         <Card className="glass-card border-white/10 p-5">
@@ -339,7 +360,7 @@ export default function Omega() {
 
                         {/* KPI */}
                         <div className="flex flex-wrap gap-3">
-                            <StatTile label="P&L realizzato" value={fmtSignedEur(realized)} tone={realized >= 0 ? 'pos' : 'neg'} icon={<TrendingUp className="w-3.5 h-3.5" />} />
+                            <StatTile label="P&L oggi" value={fmtSignedEur(realized)} tone={realized >= 0 ? 'pos' : 'neg'} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={`totale storico ${fmtSignedEur(realizedTotal)}`} />
                             <StatTile label="Target / match" value={fmtEur(stats.target_match)} tone="gold" icon={<Zap className="w-3.5 h-3.5" />} sub={`${stats.matches_remaining ?? '—'} match rimasti`} />
                             <StatTile label="Eventi oggi" value={String(stats.events_total ?? '—')} icon={<Activity className="w-3.5 h-3.5" />} />
                             <StatTile label="Match piazzati" value={String(matchesTraded)} sub={`${trades.filter(t => t.status === 'won').length}V · ${trades.filter(t => t.status === 'lost').length}P · ${aggregates?.matches_open ?? stats.matches_open ?? 0} aperti`} />
@@ -382,8 +403,13 @@ export default function Omega() {
                                             return (
                                                 <tr key={t.id} className="border-t border-white/5 hover:bg-white/5">
                                                     <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
-                                                    <td className="px-4 py-2 max-w-[240px] truncate" title={t.event_name ?? t.event_id}>{t.event_name ?? t.event_id}</td>
-                                                    <td className="px-4 py-2 text-center font-bold text-rose-300">{t.runner_name ?? '—'}</td>
+                                                    <td className="px-4 py-2 max-w-[240px] truncate" title={t.event_name ?? t.event_id}>
+                                                        {t.origin === 'manual' && (
+                                                            <Badge variant="outline" className="mr-1.5 px-1 py-0 text-[10px] bg-violet-500/15 text-violet-300 border-violet-500/40" title="trade piazzato manualmente">✋</Badge>
+                                                        )}
+                                                        {t.event_name ?? t.event_id}
+                                                    </td>
+                                                    <td className={`px-4 py-2 text-center font-bold ${t.side === 'back' ? 'text-sky-300' : 'text-rose-300'}`}>{t.runner_name ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{t.price?.toFixed(2) ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>

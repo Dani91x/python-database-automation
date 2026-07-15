@@ -147,9 +147,90 @@ def read_live_now(event_id: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def aggregates() -> dict[str, float]:
-    """Somma realizzato (won/lost/void settled) e liability aperta."""
-    rows = _sb().table("omega_trades").select("status,pnl,liability,bet_id").execute().data or []
+# ---------------------------------------------------------------------------
+# MISSIONI (centro di controllo per partita)
+# ---------------------------------------------------------------------------
+def active_missions() -> list[dict[str, Any]]:
+    """Missioni con status='active' (le stantie si auto-chiudono via fase 'finita')."""
+    res = _sb().table("omega_missions").select("*").eq("status", "active").execute()
+    return res.data or []
+
+
+def mission_event_ids() -> set[str]:
+    """event_id con missione ATTIVA: il loop automatico li deve saltare."""
+    res = _sb().table("omega_missions").select("event_id").eq("status", "active").execute()
+    return {str(r["event_id"]) for r in (res.data or []) if r.get("event_id")}
+
+
+def update_mission(event_id: str, **fields: Any) -> None:
+    if not fields:
+        return
+    _sb().table("omega_missions").update(fields).eq("event_id", event_id).execute()
+
+
+def trades_for_event(event_id: str) -> list[dict[str, Any]]:
+    res = (
+        _sb().table("omega_trades")
+        .select("id,phase,status,pnl,liability,bet_id,side,size,price,mode")
+        .eq("event_id", str(event_id))
+        .execute()
+    )
+    return res.data or []
+
+
+# ---------------------------------------------------------------------------
+# CONSULENTE DATI (advisor) — SOLO LETTURE per i segnali informativi delle
+# proposte CS: fixture del giorno (matching), Poisson del motore, frequenze lega.
+# Nessuna scrittura, nessun ordine: se una lettura fallisce l'advisor resta None.
+# ---------------------------------------------------------------------------
+def fixtures_for_window(start_iso: str, end_iso: str) -> list[dict[str, Any]]:
+    """Fixture 'light' in [start, end) da fixture_predictions (per il matcher).
+    Colonne minime: il db_json_analisi (pesante) si legge solo per la fixture
+    abbinata via fixture_analysis()."""
+    res = (
+        _sb().table("fixture_predictions")
+        .select("fixture_id,home_team_name,away_team_name,fixture_date,"
+                "league_id,home_team_id,away_team_id")
+        .gte("fixture_date", start_iso).lt("fixture_date", end_iso)
+        .limit(2000).execute()
+    )
+    return res.data or []
+
+
+def fixture_analysis(fixture_id: int) -> Optional[dict[str, Any]]:
+    """db_json_analisi (output motore Poisson) della singola fixture abbinata."""
+    rows = (
+        _sb().table("fixture_predictions").select("db_json_analisi")
+        .eq("fixture_id", int(fixture_id)).limit(1).execute().data or []
+    )
+    return rows[0].get("db_json_analisi") if rows else None
+
+
+def market_frequency(league_id: int, market: str, selection: str) -> Optional[dict[str, Any]]:
+    """RPC read-only get_market_frequency (baseline storica del punteggio in lega)."""
+    res = _sb().rpc("get_market_frequency", {
+        "p_league_id": int(league_id),
+        "p_market": market,
+        "p_selection": selection,
+        "p_mode": "last_n",
+        "p_last_n": 300,
+    }).execute()
+    return res.data or None
+
+
+def aggregates(day_start=None) -> dict[str, float]:
+    """Somma realizzato (won/lost/void settled) e liability aperta.
+
+    ``day_start`` (datetime UTC, vedi ``omega_engine.day_start_utc``) aggiunge i
+    campi della GIORNATA operativa (realized_today/matches_traded_today): senza,
+    i contatori sarebbero cumulativi a vita e stop_on_goal/max_events/daily_loss_cap
+    resterebbero scattati per sempre dal giorno dopo (§2 Costituzione).
+    """
+    rows = (
+        _sb().table("omega_trades")
+        .select("status,pnl,liability,bet_id,placed_at,settled_at")
+        .execute().data or []
+    )
     from Betfair.omega import omega_engine as E
 
-    return E.aggregate_trades(rows)  # logica PURA e testata (§I8: pending+bet_id contano)
+    return E.aggregate_trades(rows, day_start)  # logica PURA e testata (§I8: pending+bet_id contano)

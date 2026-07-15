@@ -31,9 +31,11 @@ probabile** con **quota entro un range configurabile** (non 600).
    (d) single-instance lock di processo (socket 127.0.0.1:47313). Così un ordine
    LIVE **non può mai raddoppiarsi né restare orfano**.
 2. **I2 — PAPER prima, LIVE dopo.** Il default è **PAPER** (soldi finti su prezzi
-   live reali). Il passaggio a **LIVE** (soldi veri) avviene **solo** con azione
-   esplicita dalla UI (toggle mode → `live`). Nessun ordine reale è possibile
-   finché `mode != 'live'`.
+   live reali). Esistono **due gate indipendenti**, entrambi espliciti e con
+   conferma UI: (a) l'AUTOMATICO piazza ordini reali solo se `omega_control.mode
+   = 'live'` (toggle globale); (b) il MANUALE solo se la singola richiesta ha
+   `mode='live'` (scelta per-ordine con dialog "SOLDI VERI"). Nessun percorso
+   arriva al LIVE per default o per fallback.
 3. **I3 — Betfair è la verità.** Il P&L di un trade è determinato dal
    **settlement del mercato** (runner `WINNER`/`LOSER`), non da stime interne. Il
    settlement scatta SOLO quando ogni runner ha uno stato terminale
@@ -80,6 +82,16 @@ P = (G − R) / max(M, 1)
 ```
 Se `stop_on_goal = true` (default) e `R ≥ G` → Omega **non piazza più** (obiettivo
 raggiunto). `P` è vincolato a `P ≥ 0`.
+
+**Giornata operativa (definizione di "oggi")**: il giorno solare **Europe/Rome**
+(`omega_engine.day_start_utc`). `R` = P&L dei trade **regolati oggi**
+(`settled_at ≥ mezzanotte locale`); i contatori "per giorno" (`max_events`,
+`daily_loss_cap`, `stop_on_goal`) usano i trade **piazzati/regolati oggi**. A
+mezzanotte il conteggio riparte da solo — senza questo scoping i contatori
+sarebbero cumulativi a vita e, dal 2° giorno in profitto, `stop_on_goal`
+bloccherebbe il bot per sempre. La **liability aperta** resta invece SEMPRE
+totale: il rischio vivo non ha giorno. Il cumulato storico resta visibile in
+dashboard accanto al P&L di oggi.
 
 **Sizing del LAY** (backer stake `s` = ciò che incassi se il risultato NON esce):
 ```
@@ -177,8 +189,17 @@ seguiti Omega usa il `clock` (`marketStartTime`), senza mai fermarsi (I6).
 
 - **PAPER fill model**: si assume il match al **best lay price** live per una size
   ≤ `availableToLay.size` a quel prezzo. Se la size target eccede la liquidità al
-  best, si cammina la ladder (prezzi lay peggiori) o si riduce la size (loggato).
+  best, si cammina la ladder (prezzi lay peggiori) o si riduce la size (loggato
+  `size_reduced` in `omega_activity`, con `requested_size` pre-taglio nel meta).
   Modello onesto per la validazione; il LIVE userà i fill reali riconciliati.
+- **LIVE = `FILL_OR_KILL`**: l'istruzione reale usa `timeInForce: FILL_OR_KILL`
+  (immediato-o-annullato). La parte non matchata subito viene **cancellata da
+  Betfair**: mai un residuo vivo sul book che, matchando più tardi, sfuggirebbe
+  alla contabilità (la riga sarebbe già `open` con size congelata).
+- **customerOrderRef**: AUTO = `omega-<event_id>` (unico per I1); MANUALE =
+  `omega-m<trade_id>` (**per-gamba**, derivabile dalla riga): due ordini manuali
+  sullo stesso evento non condividono mai il ref → la riconciliazione non può
+  confondere due ordini reali distinti.
 - **Settlement PAPER**: si polla il market book della CS finché `status='CLOSED'`,
   poi si leggono gli stati runner (`WINNER`/`LOSER`). Autorevole quanto il LIVE.
 
@@ -187,8 +208,8 @@ seguiti Omega usa il `clock` (`marketStartTime`), senza mai fermarsi (I6).
 ## 7. Parametri configurabili dalla UI
 
 Colonne dedicate su `omega_control`: `daily_goal`, `mode` (`paper|live`),
-`status`, più `params JSONB` con **whitelist doppia** (frontend `OMEGA_PARAM_*` ↔
-backend `OMEGA_VALIDATED_PARAMS`). Chiavi e default:
+`status`, più `params JSONB` con **whitelist doppia** (frontend `OMEGA_PARAM_*`
+in `lib/omega.ts` ↔ backend `omega_config.resolve_params`). Chiavi e default:
 
 | chiave | default | significato |
 |---|---:|---|
@@ -227,14 +248,22 @@ UI React (/omega)  ──RPC owner-only──►  Supabase (omega_control, omega
       ▲  realtime/polling                         ▲  service_role
       └───────────────────────────────  omega_service.py (loop locale)
                                           ├─ omega_market.py  (Betfair REST: events/catalogue/book/place)
-                                          ├─ omega_engine.py  (LOGICA PURA: selezione/sizing/target/settlement) ← TESTATA
-                                          ├─ omega_paper.py   (motore simulazione PAPER)
+                                          ├─ omega_engine.py  (LOGICA PURA: selezione/sizing/target/
+                                          │                    settlement/fill PAPER/riconciliazione) ← TESTATA
                                           └─ omega_db.py      (I/O Supabase)
 ```
 - **Backend**: `Betfair/omega/` — supervisore singolo (una `omega_control`
   "singleton", non per-evento). Riusa `odds_refresh.get_shared_client()`
   (sessione Betfair condivisa), `db_client.get_supabase_client()`,
   `live_order_build.{lay_size_from_liability, min_stake_rules}`, `scores/`.
+  Nota: il fill PAPER (`paper_fill`) vive in `omega_engine` (non esiste un
+  modulo `omega_paper` separato).
+- **Convivenza AUTO ↔ MANUALE sullo stesso evento**: il manuale può piazzare su
+  un evento già toccato dall'automatico (unique per-gamba); il contrario NO —
+  un evento toccato dal MANUALE è **escluso dall'automatico** (scelta di
+  sicurezza: evita che bot e utente accumulino esposizione doppia sullo stesso
+  match; coerente con gli aggregati origin-agnostici che contano il P&L manuale
+  dentro `R`).
 - **DB**: `migrations/omega_bot.sql` — `omega_control` (singleton) + `omega_trades`
   (mirror append/update) + `omega_activity` (log) + RPC `omega_activate` /
   `omega_stop` / `omega_update_params` / `get_omega_state` / `get_omega_trades`.
@@ -246,6 +275,46 @@ UI React (/omega)  ──RPC owner-only──►  Supabase (omega_control, omega
 
 **Avvio locale**: `python -m Betfair.omega.omega_service`
 (+ `.bat` dedicato e voce in `desktop/main.js`).
+
+---
+
+## 8-bis. MISSIONI — centro di controllo per partita (2026-07-15)
+
+Il tab **MISSIONE** di `/omega` è la modalità SUPERVISIONATA: l'utente attiva una
+missione su una partita con un target €, e il sistema **propone** — mai piazza da
+solo. Ogni ordine parte da un click (coda `omega_manual_requests` con `phase`).
+
+- **Fasi**: `pre → 1t → ht (intervallo) → 2t → finita`, rilevate dall'endpoint
+  in-play pubblico Betfair (`ips.betfair.com/inplayservice`, GET **senza sessione**
+  → coerente con §5: nessun secondo login; parser condiviso col runner). Fallback:
+  minuto → kickoff (futuro=pre; +3h senza dati=finita) → fase precedente.
+- **Gambe**: `ht_cs` = lay Correct Score **PRIMO TEMPO** (`HALF_TIME_SCORE`),
+  proposta in pre/1T; `ft_cs` = lay Correct Score generale, proposta
+  ALL'INTERVALLO; `scalp` = back `Under X.5` con linea = gol+2.5 (fallback linea
+  sopra), runner scelto **PER NOME** (mai per posizione). Stake default: €1 fisso
+  per le gambe CS, importo esplicito per lo scalp.
+- **Verità degli id (money-critical)**: ogni suggerimento porta market_id +
+  selection_id + runner_name **dallo stesso catalogo** (mai rimappati); la UI
+  piazza ESATTAMENTE quegli id e mostra il nome nel dialog di conferma.
+- **Guardia**: un evento con missione attiva è territorio dell'utente — il loop
+  automatico lo salta SEMPRE; se la lettura delle missioni fallisce, l'automatico
+  NON piazza nulla in quel ciclo (fail-safe, mai esposizione doppia).
+- **Gamba pre-match**: bottone scalper (`scalper_activate`, `dry_run=true` in v1)
+  previa `omega_mission_follow` (inserisce in `live_follow` solo se assente);
+  P&L letto da `scalper_control.stats.pnl_locked`.
+- Il P&L per gamba NON è duplicato: si calcola da `omega_trades.phase` +
+  scalper stats nella RPC `get_omega_missions`. Auto-chiusura a partita finita
+  con tutte le gambe regolate. DB: `migrations/omega_missions.sql`.
+- **CONSULENTE DATI** (`omega_advisor.py`, 2026-07-15): le suggestion CS portano
+  un blocco `advisor` PURAMENTE INFORMATIVO — `{poisson_prob, freq_league, h2h,
+  matched_fixture_id, sources}` — dai NOSTRI dati (Poisson interno da
+  `fixture_predictions.db_json_analisi`, frequenza lega via RPC
+  `get_market_frequency`, H2H da `hazard_atlas_v2.h2h_hint`). Matching evento→
+  fixture col matcher money-critical `betfair_match.py`; se non affidabile →
+  `advisor: null` DICHIARATO, mai un match forzato. Best-effort con cache per
+  evento (budget ~1s); qualunque errore → null, la proposta esce comunque.
+  MONEY-CRITICAL: l'advisor non deriva MAI market_id/selection_id/prezzi;
+  la UI lo mostra in piccolo sotto la proposta, bottoni e payload INTOCCATI.
 
 ---
 

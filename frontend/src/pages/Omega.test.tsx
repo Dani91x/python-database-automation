@@ -2,11 +2,18 @@
 // Verifica: header/stato, barra obiettivo (realizzato/goal), KPI, riga trade.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
 vi.mock('sonner', () => ({
     toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}));
+
+// Il tab MISSIONE (default) ha il suo data-layer: qui stub — è testato a parte
+// in lib/omegaMissions.test.ts.
+vi.mock('@/components/omega/MissionPanel', () => ({
+    default: () => <div data-testid="mission-panel-stub" />,
 }));
 
 vi.mock('@/lib/omega', () => ({
@@ -71,6 +78,13 @@ function renderPage() {
     );
 }
 
+// Il default è il tab MISSIONE: per i contenuti della dashboard automatica
+// bisogna prima cliccare "⚙️ Automatico".
+async function gotoAutoTab() {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: /Automatico/ }));
+}
+
 describe('Omega dashboard', () => {
     it('mostra header OMEGA e stato IN CORSA', async () => {
         renderPage();
@@ -78,8 +92,14 @@ describe('Omega dashboard', () => {
         expect(await screen.findByText('IN CORSA')).toBeInTheDocument();
     });
 
+    it('il tab Missione è il default e monta il pannello', async () => {
+        renderPage();
+        expect(await screen.findByTestId('mission-panel-stub')).toBeInTheDocument();
+    });
+
     it('barra obiettivo mostra realizzato e goal', async () => {
         renderPage();
+        await gotoAutoTab();
         expect(await screen.findByText('Obiettivo giornaliero')).toBeInTheDocument();
         // +€60.00 compare sia nella barra obiettivo sia nel KPI "P&L realizzato"
         expect((await screen.findAllByText('+€60.00')).length).toBeGreaterThanOrEqual(1);
@@ -88,6 +108,7 @@ describe('Omega dashboard', () => {
 
     it('KPI target/match e liability aperta presenti', async () => {
         renderPage();
+        await gotoAutoTab();
         expect(await screen.findByText('Target / match')).toBeInTheDocument();
         expect(await screen.findByText('€9.50')).toBeInTheDocument();
         expect(await screen.findByText('Liability aperta')).toBeInTheDocument();
@@ -96,6 +117,7 @@ describe('Omega dashboard', () => {
 
     it('elenca il trade piazzato con il punteggio laid', async () => {
         renderPage();
+        await gotoAutoTab();
         expect(await screen.findByText('Roma vs Lazio')).toBeInTheDocument();
         expect(await screen.findByText('3 - 2')).toBeInTheDocument();
         expect(await screen.findByText('APERTO')).toBeInTheDocument();

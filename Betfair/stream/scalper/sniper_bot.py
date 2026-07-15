@@ -56,6 +56,10 @@ class _Pos:
     done: bool = False
     entry_odds: Optional[float] = None
     close_locked: float = 0.0
+    # FIX 15/07 (bug 1 dossier theta): baseline del P&L GIA' contabilizzato su
+    # questa posizione. Gli ordini restano tracciati tra i cicli (anti-orfani):
+    # senza baseline il multi-colpo ricontava i verdi dei cicli precedenti.
+    booked_locked: float = 0.0
     entry_fill_pt: Optional[float] = None
     # sequenze park-trim-replace (uscite a size ESATTA su .it) — identico
     # al meccanismo di produzione dello scalper (_place_exact/_drive_submins)
@@ -444,8 +448,23 @@ class SniperStrategy(BaseStrategy):
                                     pos.close_locked = locked
                     if (pos.close is not None and not self._has_live(pos.close)
                             and float(getattr(pos.close, "size_matched", 0.0)
-                                      or 0.0) > 0):
-                        locked = float(getattr(pos, "close_locked", 0.0))
+                                      or 0.0) > 0
+                            and not pos.submins):
+                        # FIX 15/07 (bug 1, dossier theta): il verde si
+                        # accredita SOLO col NET REALE ricalcolato dagli ordini
+                        # matchati — MAI col close_locked TEORICO. Una close
+                        # PARZIALE (LAPSE alla sospensione-gol) non e' un verde:
+                        # lasciava posizione viva e accreditava il locked pieno
+                        # (doppio conteggio alla riconciliazione) → flatten.
+                        nw_r, nl_r = self._real_net(pos)
+                        if abs(nw_r - nl_r) > max(0.02,
+                                                  pos.residual_accepted + 0.02):
+                            self._emit("sniper_close_partial", level="WARN",
+                                       nw=round(nw_r, 3), nl=round(nl_r, 3))
+                            self._begin_flatten(market, pos)
+                            self._drive_flatten(market, pos, bb, bl, now)
+                            continue
+                        locked = self._book_locked(pos, nw_r, nl_r)
                         self.stats["greens"] += 1
                         self.stats["pnl_locked"] += locked
                         self._close_cycle_clock(pos, now)
@@ -546,6 +565,26 @@ class SniperStrategy(BaseStrategy):
             pos.last_cycle_end_ms = float(now)  # ancora del cooldown F4b (per linea)
         pos.entry_fill_pt = None
 
+    def _real_net(self, pos: _Pos) -> Tuple[float, float]:
+        """NET REALE (net_win, net_lose) da TUTTI gli ordini matchati della
+        posizione (entries + close + tracciati), dedup by-identity.
+
+        FIX 15/07 (bug 1): e' QUESTA la fonte di verita' al verde — mai il
+        locked teorico calcolato al piazzamento della close."""
+        sb, ob, sl, ol = self._matched(
+            pos.entries + ([pos.close] if pos.close else [])
+            + pos.flatten_orders)
+        return sb * (ob - 1.0) - sl * (ol - 1.0), sl - sb
+
+    def _book_locked(self, pos: _Pos, nw: float, nl: float) -> float:
+        """P&L DELTA del ciclo: min(nw,nl) cumulato meno il gia' contabilizzato
+        su questa posizione (fix 15/07: gli ordini restano tracciati tra i
+        cicli — senza baseline il multi-colpo ricontava i cicli precedenti)."""
+        total = min(nw, nl)
+        delta = total - pos.booked_locked
+        pos.booked_locked = total
+        return delta
+
     def _matched(self, orders) -> Tuple[float, float, float, float]:
         # dedup by-identity: lo stesso oggetto ordine conta UNA volta sola
         # (un duplicato raddoppierebbe il matched: money-critical).
@@ -595,7 +634,7 @@ class SniperStrategy(BaseStrategy):
         nw = sb * (ob - 1.0) - sl * (ol - 1.0)
         nl = sl - sb
         if abs(nw - nl) <= 0.02:
-            locked = min(nw, nl)
+            locked = self._book_locked(pos, nw, nl)   # delta, mai il cumulato
             pos.flattening = False
             pos.done = False  # riarmabile (salvo event_done)
             self.stats["flattens"] += 1
@@ -611,7 +650,7 @@ class SniperStrategy(BaseStrategy):
         # chiude contabilizzando il worst-case (evita l'inseguimento infinito
         # quando il residuo non e' piazzabile sull'exchange)
         if not pos.submins and abs(nw - nl) <= 0.30:
-            locked = min(nw, nl)
+            locked = self._book_locked(pos, nw, nl)   # delta, mai il cumulato
             pos.flattening = False
             pos.done = False
             pos.residual_accepted = abs(nw - nl)
@@ -627,7 +666,7 @@ class SniperStrategy(BaseStrategy):
             # TERMINA sempre, con ledger chiuso): niente e' piazzabile e
             # nessuna sequenza exact attiva dopo molti tentativi → il residuo
             # si ACCETTA e si CONTABILIZZA subito (worst-case), mai skip-loop.
-            locked = min(nw, nl)
+            locked = self._book_locked(pos, nw, nl)   # delta, mai il cumulato
             pos.flattening = False
             pos.done = False
             pos.residual_accepted = abs(nw - nl)

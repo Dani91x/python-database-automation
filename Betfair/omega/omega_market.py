@@ -191,6 +191,88 @@ def read_market(market: CorrectScoreMarket) -> Optional[MarketSnapshot]:
 
 
 # ---------------------------------------------------------------------------
+# MISSIONI: mercato per TIPO (HALF_TIME_SCORE / CORRECT_SCORE / OVER_UNDER_X5)
+# ---------------------------------------------------------------------------
+def get_event_market_by_type(
+    event_id: str, event_name: str, market_type: str,
+) -> Optional[CorrectScoreMarket]:
+    """Risolve il mercato di ``market_type`` per l'evento, con i runner names
+    presi DALLO STESSO catalogo (selectionId → runnerName: la coppia id/nome
+    non può mai disallinearsi). Ritorna None se il mercato non esiste.
+    """
+    cats = call(lambda c: c.betting_rpc(
+        "SportsAPING/v1.0/listMarketCatalogue",
+        {
+            "filter": {"eventIds": [event_id], "marketTypeCodes": [market_type]},
+            "maxResults": 3,
+            "marketProjection": ["MARKET_DESCRIPTION", "RUNNER_DESCRIPTION",
+                                 "MARKET_START_TIME", "EVENT"],
+        },
+    )) or []
+    for mk in cats:
+        mid = mk.get("marketId")
+        # difesa money-critical: accetta SOLO il tipo richiesto (mai un mercato
+        # "simile" restituito per errore dal filtro).
+        mtype = (mk.get("description", {}) or {}).get("marketType")
+        if not mid or mtype != market_type:
+            continue
+        names = {
+            int(r["selectionId"]): r.get("runnerName", "?")
+            for r in mk.get("runners", [])
+            if r.get("selectionId") is not None
+        }
+        return CorrectScoreMarket(
+            market_id=str(mid),
+            event_id=str(event_id),
+            event_name=(mk.get("event", {}) or {}).get("name") or event_name,
+            market_start_time=_parse_iso(mk.get("marketStartTime")),
+            runner_names=names,
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# MISSIONI: punteggi live BATCH dall'in-play service Betfair (endpoint pubblico,
+# GET senza sessione exchange → NESSUN secondo login, coerente con §5).
+# Parser riusato da Betfair/stream/scores (lo stesso in produzione nel runner).
+# ---------------------------------------------------------------------------
+_INPLAY_SCORES_URL = "https://ips.betfair.com/inplayservice/v1.1/scores"
+
+
+def get_inplay_scores(event_ids: list) -> dict:
+    """{event_id: ScoreSnapshot} per gli eventi live. Difensivo: errori → {}."""
+    if not event_ids:
+        return {}
+    import requests
+
+    from Betfair.stream.scores.betfair_inplay import parse_score_dict
+
+    try:
+        resp = requests.get(
+            _INPLAY_SCORES_URL,
+            params={"eventIds": ",".join(str(e) for e in event_ids),
+                    "alt": "json", "regionCode": "UK", "locale": "en_GB"},
+            headers={"Connection": "keep-alive", "Content-Type": "application/json"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+    except Exception as ex:  # noqa: BLE001 — il punteggio non deve mai fermare il bot
+        logger.warning("[omega] inplay scores KO: %s", str(ex)[:120])
+        return {}
+    out: dict = {}
+    for item in raw if isinstance(raw, list) else []:
+        eid = item.get("eventId")
+        if eid is None:
+            continue
+        try:
+            out[str(eid)] = parse_score_dict(str(eid), item)
+        except Exception:  # noqa: BLE001 — una riga malformata non blocca le altre
+            continue
+    return out
+
+
+# ---------------------------------------------------------------------------
 # MANUALE: elenco mercati di un evento + lettura book generico
 # ---------------------------------------------------------------------------
 def list_event_markets(event_id: str, max_results: int = 30) -> list[dict]:
@@ -291,6 +373,11 @@ def place_order_live(
             "size": round(float(size), 2),
             "price": E.round_to_tick(float(price)),
             "persistenceType": "LAPSE",
+            # FILL_OR_KILL = "immediato o annullato": la parte NON matchata subito
+            # viene cancellata da Betfair. Senza, un fill parziale lascerebbe un
+            # residuo VIVO sul book che, matchando più tardi, sfuggirebbe alla
+            # contabilità (la riga è già 'open' con la size congelata → I8 violato).
+            "timeInForce": "FILL_OR_KILL",
         },
     }
     report = call(

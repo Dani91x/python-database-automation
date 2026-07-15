@@ -389,3 +389,45 @@ def test_is_eligible_max_events_e_goal():
         already_traded=False, traded_count=1, max_events=0,
         goal_reached=True, stop_on_goal=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Giornata operativa (§2) — regressione review 2026-07-15
+# ---------------------------------------------------------------------------
+def test_day_start_utc_ora_legale():
+    from datetime import datetime, timezone
+    from Betfair.omega.omega_engine import day_start_utc
+    # 15/07 01:30 Rome (23:30 UTC del 14) → mezzanotte Rome = 22:00 UTC del 14
+    now = datetime(2026, 7, 14, 23, 30, tzinfo=timezone.utc)
+    ds = day_start_utc(now)
+    assert ds == datetime(2026, 7, 14, 22, 0, tzinfo=timezone.utc)
+    # alle 21:59 UTC del 14 (23:59 Rome) il giorno operativo è ancora il 14
+    before = datetime(2026, 7, 14, 21, 59, tzinfo=timezone.utc)
+    assert day_start_utc(before) == datetime(2026, 7, 13, 22, 0, tzinfo=timezone.utc)
+
+
+def test_aggregate_trades_scoping_giornaliero():
+    from datetime import datetime, timezone
+    from Betfair.omega.omega_engine import aggregate_trades, day_start_utc
+    now = datetime(2026, 7, 15, 10, 0, tzinfo=timezone.utc)
+    ds = day_start_utc(now)
+    rows = [
+        # regolato IERI: conta nel cumulato, NON in oggi
+        {"status": "won", "pnl": 100.0, "placed_at": "2026-07-13T10:00:00+00:00",
+         "settled_at": "2026-07-13T12:00:00+00:00"},
+        # regolato OGGI
+        {"status": "lost", "pnl": -30.0, "placed_at": "2026-07-15T08:00:00+00:00",
+         "settled_at": "2026-07-15T09:30:00+00:00"},
+        # aperto (piazzato oggi): liability sempre totale
+        {"status": "open", "liability": 200.0, "placed_at": "2026-07-15T09:00:00+00:00"},
+        # senza date con confine attivo: NON deve gonfiare i contatori di oggi
+        {"status": "won", "pnl": 7.0},
+    ]
+    agg = aggregate_trades(rows, ds)
+    assert agg["realized_profit"] == 77.0        # cumulato storico
+    assert agg["realized_today"] == -30.0        # solo il regolato di oggi
+    assert agg["matches_traded_today"] == 2      # lost+open piazzati oggi
+    assert agg["open_liability"] == 200.0        # rischio vivo: mai scopato
+    # senza confine: fallback retro-compatibile (today == cumulato)
+    agg2 = aggregate_trades(rows)
+    assert agg2["realized_today"] == agg2["realized_profit"] == 77.0

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from Betfair.omega import omega_config, omega_engine as E
+from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 
@@ -132,8 +132,11 @@ def scan_and_place(
     """Scansiona gli eventi e piazza UN lay sui match in finestra. Ritorna n. piazzati."""
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
     mode = control.get("mode", "paper")
-    realized = float(aggregates.get("realized_profit", 0.0))
-    traded_count = int(aggregates.get("matches_traded", 0))
+    # §2: R e i contatori di gate sono della GIORNATA operativa (realized_today/
+    # matches_traded_today), NON cumulativi a vita: altrimenti stop_on_goal,
+    # max_events e daily_loss_cap resterebbero scattati per sempre dal 2° giorno.
+    realized = float(aggregates.get("realized_today", aggregates.get("realized_profit", 0.0)))
+    traded_count = int(aggregates.get("matches_traded_today", aggregates.get("matches_traded", 0)))
     goal_reached = params["stop_on_goal"] and realized >= goal
 
     # STOP-LOSS giornaliero (default OFF): se il P&L realizzato scende sotto −cap,
@@ -222,9 +225,13 @@ def scan_and_place(
         size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
         # cap alla LIQUIDITÀ disponibile al best lay: evita fill parziali (che
         # lascerebbero esposizione reale non tracciata / cap elusi). Meglio un lay
-        # più piccolo ma COMPLETO che uno parziale.
+        # più piccolo ma COMPLETO che uno parziale. §6: la riduzione va LOGGATA
+        # (requested_size = size PRIMA del taglio, per audit target vs effettivo).
+        requested_size = size
         if sel.lay_size_available and size > sel.lay_size_available:
             size = round(sel.lay_size_available, 2)
+            db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
+                                    "available": sel.lay_size_available, "size": size})
         if size < params["min_stake"]:
             db.log("skip", {"event_id": ev.event_id, "reason": "insufficient_liquidity",
                             "avail": sel.lay_size_available})
@@ -244,6 +251,7 @@ def scan_and_place(
             ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size, price=sel.price,
             target=target, minute=minute, score_str=score_str, mode=mode,
             commission=commission, market=market, db=db, now=now,
+            requested_size=requested_size,
         )
         placed += did_place
         if did_place:
@@ -290,7 +298,7 @@ def _confirm_open_trade(
 
 def _place_one(
     *, ev, cs, sel, snapshot, size, price, target, minute, score_str, mode,
-    commission, market, db, now,
+    commission, market, db, now, requested_size: Optional[float] = None,
 ) -> int:
     """Piazza il lay con pattern RESERVE-FIRST (I1/I3). 0/1 piazzati.
 
@@ -322,7 +330,10 @@ def _place_one(
         "kickoff": cs.market_start_time.isoformat() if cs.market_start_time else None,
         "status": "pending",
         "pnl": 0.0,
-        "meta": {"phase": "reserved", "requested_size": size},
+        # requested_size = size PRIMA del cap di liquidità (audit: quanto il trade
+        # è rimasto sotto target per colpa del book, §6).
+        "meta": {"phase": "reserved",
+                 "requested_size": requested_size if requested_size is not None else size},
     }
 
     # 1) RISERVA (il conflitto su event_id = già riservato/piazzato → skip pulito, I1)
@@ -343,7 +354,8 @@ def _place_one(
             db.log("skip", {"event_id": ev.event_id, "reason": "paper_no_fill"})
             return 0
         final_price, final_size = fill.avg_price, fill.matched_size
-        meta = {"fully_matched": fill.fully_matched, "requested_size": size}
+        meta = {"fully_matched": fill.fully_matched,
+                "requested_size": requested_size if requested_size is not None else size}
         bet_id = None
     else:  # live — soldi veri
         try:
@@ -363,7 +375,8 @@ def _place_one(
             return 0
         final_price = float(res.avg_price_matched or price)
         final_size = res.size_matched
-        meta = {"order_status": res.order_status, "requested_size": size}
+        meta = {"order_status": res.order_status,
+                "requested_size": requested_size if requested_size is not None else size}
         bet_id = res.bet_id
 
     # 3) CONFERMA → 'open' (robusta: un ordine LIVE non deve mai restare non tracciato)
@@ -591,6 +604,12 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     side = str(payload.get("side", "lay")).lower()
     if side not in ("lay", "back"):
         return {"error": f"side non valido: {side}"}
+    # gamba della missione (opzionale): whitelist rigida, mai valori liberi
+    phase = payload.get("phase")
+    if phase is not None:
+        phase = str(phase).lower()
+        if phase not in ("ht_cs", "ft_cs", "scalp"):
+            return {"error": f"phase non valida: {phase}"}
 
     # --- parametri/caps dalla stessa whitelist del path automatico ---
     control = db.read_control() or {}
@@ -680,6 +699,7 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         "side": side,
         "mode": mode,
         "origin": "manual",
+        "phase": phase,
         "price": price,
         "size": size,
         "liability": liability,
@@ -698,9 +718,15 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
 
     if mode == "live":  # soldi veri — ramo ESPLICITO
         try:
+            # ref PER-GAMBA (omega-m<trade_id>): due ordini manuali sullo stesso
+            # evento (o manuale+auto) NON devono mai condividere il customerOrderRef,
+            # altrimenti la riconciliazione li confonderebbe (I3). Derivabile dalla
+            # riga stessa → reconcile_decision lo ricostruisce senza storage extra.
             res = market.place_order_live(
                 market_id=market_id, selection_id=selection_id, price=price,
                 size=size, event_id=event_id, side=side,
+                customer_ref=E.expected_customer_ref({"origin": "manual", "id": trade_id,
+                                                      "event_id": event_id}),
             )
         except Exception as ex:  # noqa: BLE001
             db.update_trade(trade_id, status="error", meta={"reason": "place_exception", "err": str(ex)[:160]})
@@ -726,6 +752,237 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
 
 def now_iso() -> str:
     return _now().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# MISSIONI — centro di controllo per partita (tab MISSIONE).
+# Il servizio AGGIORNA punteggio/fase e PROPONE le gambe; non piazza mai da
+# solo: ogni ordine parte da un click utente (coda manuale, con `phase`).
+# ---------------------------------------------------------------------------
+_MISSION_MARKET_LABEL = {
+    "HALF_TIME_SCORE": "Half Time Score",
+    "CORRECT_SCORE": "Correct Score",
+}
+
+
+def _parse_iso_dt(s: Any) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _sugg_equal(a: Optional[dict], b: Optional[dict]) -> bool:
+    """Confronto suggerimenti IGNORANDO updated_at (write-on-change)."""
+    if a is None or b is None:
+        return a is b
+    ka = {k: v for k, v in a.items() if k != "updated_at"}
+    kb = {k: v for k, v in b.items() if k != "updated_at"}
+    return ka == kb
+
+
+def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
+                   now: datetime, min_score: Optional[tuple] = None,
+                   db: Any = None) -> Optional[dict]:
+    """Suggerimento lay CS (HT o FT): il runner MENO PROBABILE IN ASSOLUTO
+    (quota lay più alta) con liquidità minima. id+nome dal medesimo catalogo.
+
+    ``min_score``=(home,away): esclude i punteggi ormai IRRAGGIUNGIBILI (es. a
+    1-0 il runner "0 - 0" non può più uscire). Betfair li rimuove da solo, ma la
+    cintura evita di proporre un runner stantio se il book è in ritardo.
+
+    ``db`` (opzionale) abilita il blocco ``advisor`` (CONSULENTE DATI): segnali
+    INFORMATIVI best-effort — Poisson interno, frequenza lega, H2H — che NON
+    toccano mai id/prezzi e NON bloccano mai la proposta (errore -> None)."""
+    cs = market.get_event_market_by_type(
+        mission["event_id"], mission.get("event_name") or "", market_type)
+    if cs is None:
+        return None
+    snap = market.read_market(cs)
+    if snap is None or snap.closed:
+        return None
+    runners = snap.runners
+    if min_score is not None:
+        mh, ma = int(min_score[0]), int(min_score[1])
+        reachable = []
+        for r in runners:
+            parsed = E.parse_scoreline(r.name)
+            if parsed is None or (parsed[0] >= mh and parsed[1] >= ma):
+                reachable.append(r)
+        runners = reachable
+    # FASCIA QUOTE dai params (default [20,120]) — EVIDENZA backtest 26 partite
+    # (15/07): senza pavimento, sui book sottili dei minori l'unico runner con
+    # liquidità è il FAVORITO → "meno probabile in assoluto" si ribalta e
+    # propone di layare lo 0-0 a 3.35 (6 degli 8 colpi del backtest venivano
+    # da lì). Fuori fascia → nessun candidato → la gamba si SALTA (I6).
+    sel = E.select_lay_runner(
+        runners,
+        price_min=params["price_min"], price_max=params["price_max"],
+        min_liquidity=params["min_lay_liquidity"],
+        include_aggregate=False,               # mai gli aggregati "Any Other/Unquoted"
+    )
+    if sel is None:
+        return None
+    return {
+        "market_id": cs.market_id,
+        "market_name": _MISSION_MARKET_LABEL.get(market_type, market_type),
+        "market_type": market_type,
+        "selection_id": sel.selection_id,
+        "runner_name": sel.name,
+        "lay_price": sel.price,
+        "lay_size": sel.lay_size_available,
+        # CONSULENTE DATI: blocco informativo (o None dichiarato). Calcolato
+        # DOPO la selezione: non influenza MAI quale runner viene proposto.
+        "advisor": omega_advisor.advisor_for_suggestion(
+            mission=mission, market_type=market_type, runner_name=sel.name,
+            db=db, now=now),
+        "updated_at": now.isoformat(),
+    }
+
+
+def _scalp_suggestion(*, market, mission: dict, total_goals: int,
+                      params: dict, now: datetime) -> Optional[dict]:
+    """Suggerimento scalp: BACK 'Under X.5 Goals' (linea = gol+2.5, fallback
+    linea sopra). Runner scelto PER NOME (mai per posizione)."""
+    for mtype in E.scalp_market_types(total_goals):
+        cs = market.get_event_market_by_type(
+            mission["event_id"], mission.get("event_name") or "", mtype)
+        if cs is None:
+            continue
+        book = market.read_book(cs.market_id, cs.runner_names)
+        if not book or book.get("status") == "CLOSED":
+            continue
+        from types import SimpleNamespace
+
+        runners = [SimpleNamespace(**r) for r in book.get("runners", [])]
+        under = E.pick_under_runner(runners)
+        if under is None or not getattr(under, "back_price", None):
+            continue
+        return {
+            "market_id": cs.market_id,
+            "market_name": f"Over/Under {mtype[-2]}.5 Goals",
+            "market_type": mtype,
+            "selection_id": int(under.selection_id),
+            "runner_name": str(under.name),
+            "back_price": float(under.back_price),
+            "back_size": float(getattr(under, "back_size", 0.0) or 0.0),
+            "line": f"{mtype[-2]}.5",
+            "updated_at": now.isoformat(),
+        }
+    return None
+
+
+def _process_one_mission(m: dict, snap: Any, *, market, db, now: datetime,
+                         params: Optional[dict] = None) -> int:
+    updates: dict[str, Any] = {}
+    phase = E.mission_phase(
+        status=getattr(snap, "status", None),
+        minute=getattr(snap, "minute", None),
+        kickoff=_parse_iso_dt(m.get("kickoff")),
+        now=now,
+        prev=str(m.get("phase_now") or "pre"),
+    )
+    if snap is not None:
+        for field, val in (("minute", getattr(snap, "minute", None)),
+                           ("score_home", getattr(snap, "score_home", None)),
+                           ("score_away", getattr(snap, "score_away", None)),
+                           ("score_status", getattr(snap, "status", None))):
+            if val is not None and m.get(field) != val:
+                updates[field] = val
+    if phase != m.get("phase_now"):
+        updates["phase_now"] = phase
+
+    if params is None:
+        control = db.read_control() or {}
+        params = omega_config.resolve_params(control.get("params"))
+    trades = db.trades_for_event(m["event_id"])
+    # una gamba conta come "già fatta" se ha un trade NON-error (pending incluso:
+    # reserve-first → mai proporre di nuovo una gamba con riserva in corso)
+    have = {t.get("phase") for t in trades if t.get("phase") and t.get("status") != "error"}
+
+    # punteggio corrente (per filtro punteggi irraggiungibili e linea scalp)
+    sh0 = getattr(snap, "score_home", None) if snap is not None else m.get("score_home")
+    sa0 = getattr(snap, "score_away", None) if snap is not None else m.get("score_away")
+    min_score = (sh0, sa0) if sh0 is not None and sa0 is not None else None
+
+    # gamba 1T (HT CS): proponibile in pre e 1T; finestra chiusa dopo.
+    # Stesso filtro irraggiungibili del FT (nel 1T il punteggio corrente è il
+    # minimo anche per il mercato HALF_TIME_SCORE) — review 15/07.
+    if phase in ("pre", "1t") and "ht_cs" not in have:
+        sugg = _cs_suggestion(market=market, mission=m,
+                              market_type="HALF_TIME_SCORE", params=params, now=now,
+                              min_score=min_score if phase == "1t" else None, db=db)
+        if not _sugg_equal(sugg, m.get("suggestion_ht")):
+            updates["suggestion_ht"] = sugg
+    elif m.get("suggestion_ht") is not None and (phase not in ("pre", "1t") or "ht_cs" in have):
+        updates["suggestion_ht"] = None
+
+    # gamba 2T (FT CS): proposta all'INTERVALLO (o nel 2T se non ancora fatta);
+    # esclude i punteggi irraggiungibili dato il risultato corrente
+    if phase in ("ht", "2t") and "ft_cs" not in have:
+        sugg = _cs_suggestion(market=market, mission=m,
+                              market_type="CORRECT_SCORE", params=params, now=now,
+                              min_score=min_score, db=db)
+        if not _sugg_equal(sugg, m.get("suggestion_ft")):
+            updates["suggestion_ft"] = sugg
+    elif m.get("suggestion_ft") is not None and (phase not in ("ht", "2t") or "ft_cs" in have):
+        updates["suggestion_ft"] = None
+
+    # scalp: solo a palla in gioco, punteggio noto e NESSUNA gamba scalp già
+    # fatta (CRITICAL review 15/07: dopo un gol la linea cambia MERCATO → senza
+    # questa guardia la scheda riproporrebbe un secondo back sulla stessa
+    # missione, non bloccato dall'unique per-gamba → doppio stake reale).
+    # Multi-scalp iterativo = v2, quando ci sarà la gamba di chiusura.
+    if phase in ("1t", "2t") and sh0 is not None and sa0 is not None and "scalp" not in have:
+        sugg = _scalp_suggestion(market=market, mission=m,
+                                 total_goals=int(sh0) + int(sa0), params=params, now=now)
+        if not _sugg_equal(sugg, m.get("suggestion_scalp")):
+            updates["suggestion_scalp"] = sugg
+    elif m.get("suggestion_scalp") is not None and (phase not in ("1t", "2t") or "scalp" in have):
+        updates["suggestion_scalp"] = None
+
+    # auto-chiusura: partita finita e nessun trade ancora vivo. Un 'pending'
+    # LIVE conta come vivo ANCHE senza bet_id persistito (conferma DB fallita:
+    # l'ordine reale può esistere — mai riaprire l'evento all'automatico
+    # chiudendo la missione prima della riconciliazione) — review 15/07.
+    alive = any(t.get("status") in ("open",) or
+                (t.get("status") == "pending" and
+                 (t.get("bet_id") or str(t.get("mode")) == "live"))
+                for t in trades if t.get("phase"))
+    if phase == "finita" and not alive:
+        updates["status"] = "closed"
+
+    if updates:
+        updates["updated_at"] = now.isoformat()
+        db.update_mission(m["event_id"], **updates)
+        return 1
+    return 0
+
+
+def process_missions(*, market, db, now: datetime) -> int:
+    """Aggiorna punteggio/fase/suggerimenti di ogni missione attiva. Ritorna
+    quante ne ha aggiornate. Un errore su una missione non ferma le altre (I6)."""
+    missions = db.active_missions()
+    if not missions:
+        return 0
+    try:
+        scores = market.get_inplay_scores([m["event_id"] for m in missions])
+    except Exception as ex:  # noqa: BLE001 — senza punteggi si degrada (kickoff/prev)
+        db.log("mission_scores_error", {"err": str(ex)[:160]})
+        scores = {}
+    control = db.read_control() or {}
+    params = omega_config.resolve_params(control.get("params"))
+    n = 0
+    for m in missions:
+        try:
+            n += _process_one_mission(m, scores.get(str(m["event_id"])),
+                                      market=market, db=db, now=now, params=params)
+        except Exception as ex:  # noqa: BLE001
+            db.log("mission_error", {"event_id": m.get("event_id"), "err": str(ex)[:160]})
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -758,6 +1015,13 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "manual_failed", "err": str(ex)[:160]})
         n_manual = 0
 
+    # 2-bis) MISSIONI — SEMPRE: punteggio live, fase, suggerimenti per gamba.
+    try:
+        n_missions = process_missions(market=market, db=db, now=now)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "missions_failed", "err": str(ex)[:160]})
+        n_missions = 0
+
     if status == "stopping":
         db.set_control(status="stopped", stopped_at=now.isoformat())
         db.log("stop", {})
@@ -772,7 +1036,20 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "list_events_failed", "err": str(ex)[:160]})
         events = []
     traded_ids = db.traded_event_ids()
-    agg = db.aggregates()
+    day_start = E.day_start_utc(now)  # §2: giornata operativa Europe/Rome
+    agg = db.aggregates(day_start)
+
+    # GUARDIA MISSIONI: gli eventi con missione ATTIVA sono territorio
+    # dell'utente — l'automatico NON deve mai aggiungere esposizione lì.
+    # FAIL-SAFE: se la lettura fallisce NON si piazza nulla in questo ciclo
+    # (meglio un ciclo fermo che un lay doppio su una missione).
+    try:
+        mission_ids = db.mission_event_ids()
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "mission_ids_failed", "err": str(ex)[:160]})
+        return {"skipped": "mission_ids_failed", "settled": n_settled,
+                "manual": n_manual, "missions": n_missions}
+    traded_ids = traded_ids | mission_ids
 
     # 3) scan + place
     n_placed = scan_and_place(
@@ -780,28 +1057,34 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         aggregates=agg, market=market, db=db, now=now, score_lookup=score_lookup,
     )
 
-    # 4) heartbeat + stats per la dashboard
+    # 4) heartbeat + stats per la dashboard (obiettivo/target = GIORNATA operativa;
+    #    realized_profit resta il cumulato storico per trasparenza)
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
-    agg2 = db.aggregates()
+    agg2 = db.aggregates(day_start)
+    realized_today = float(agg2.get("realized_today", agg2.get("realized_profit", 0.0)))
+    traded_today = int(agg2.get("matches_traded_today", agg2.get("matches_traded", 0)))
     m_rem = matches_remaining(
         events, db.traded_event_ids(), now=now,
         entry_minute_max=params["entry_minute_max"],
-        max_events=params["max_events"], traded_count=int(agg2.get("matches_traded", 0)),
+        max_events=params["max_events"], traded_count=traded_today,
     )
     stats = {
         "events_total": len(events),
         "matches_traded": int(agg2.get("matches_traded", 0)),
+        "matches_traded_today": traded_today,
         "matches_open": int(agg2.get("matches_open", 0)),
         "realized_profit": round(float(agg2.get("realized_profit", 0.0)), 2),
+        "realized_today": round(realized_today, 2),
         "open_liability": round(float(agg2.get("open_liability", 0.0)), 2),
         "matches_remaining": m_rem,
-        "target_match": round(E.dynamic_target(goal, float(agg2.get("realized_profit", 0.0)), m_rem), 2),
+        "target_match": round(E.dynamic_target(goal, realized_today, m_rem), 2),
         "goal": goal,
-        "goal_pct": round(min(float(agg2.get("realized_profit", 0.0)) / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
+        "goal_pct": round(min(realized_today / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
         "last_cycle": now.isoformat(),
     }
     db.set_control(stats=stats, heartbeat_at=now.isoformat())
-    return {"placed": n_placed, "settled": n_settled, "events": len(events), "stats": stats}
+    return {"placed": n_placed, "settled": n_settled, "events": len(events),
+            "missions": n_missions, "stats": stats}
 
 
 # ---------------------------------------------------------------------------

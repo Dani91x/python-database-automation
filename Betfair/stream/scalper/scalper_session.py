@@ -71,6 +71,12 @@ UI_PARAM_WHITELIST = {
     "require_oscillation", "trend_mode", "max_drift_ticks",
     # SNIPER in-play (bibbia §6): toggle + stake dedicato (default 10)
     "sniper_mode", "sniper_stake",
+    # THETA SCALPER in-play (dossier 15/07): toggle + parametri dedicati.
+    # theta_only=True NON arma il maker (sessione solo-theta).
+    # theta_preset (S4 16/07): 'classico' (C7, default) | 'overshoot' (C17).
+    "theta_mode", "theta_stake", "theta_scratch_s", "theta_confirm_mode",
+    "theta_hazard_max", "theta_only", "theta_max_shots", "theta_loss_cap",
+    "theta_preset",
 }
 SESSION_MARKET_TYPES = [
     "MATCH_ODDS", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
@@ -132,6 +138,44 @@ def _wait_flat(strategy: Any, timeout_s: float = 30.0) -> bool:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sweep_cancel(trading: Any, market_ids: List[str]) -> Dict[str, Any]:
+    """SWEEP CANCEL di emergenza: cancella gli ordini unmatched del CONTO sui
+    mercati della sessione via REST (bypassa flumine).
+
+    FIX 15/07 (bug 3, dossier theta): se il thread flumine MUORE la sessione
+    usciva con status 'done' silenzioso lasciando ordini vivi sull'exchange.
+    Questo sweep e' l'ultima rete: gli unmatched cadono; l'eventuale matched
+    residuo NON si chiude da qui (serve l'operatore) e l'alert lo dice.
+    """
+    out: Dict[str, Any] = {"ok": [], "ko": []}
+    for mid in market_ids or []:
+        try:
+            trading.betting.cancel_orders(market_id=mid)
+            out["ok"].append(mid)
+        except Exception as exc:  # noqa: BLE001 - si prova su TUTTI i mercati
+            out["ko"].append({"market_id": mid, "err": str(exc)[:120]})
+    return out
+
+
+def _theta_atlas_or_none(db: Any, event_id: str,
+                         path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Carica l'Atlante Hazard SENZA far morire la sessione (fix S6 review).
+
+    File assente/corrotto → None + log esplicito: il theta NON si arma
+    (senza Atlante e' cieco, fail-closed) ma la sessione VIVE — sniper e
+    maker partono comunque. Prima l'eccezione qui mandava in error l'INTERA
+    sessione, disarmando anche le strategie che dell'Atlante non hanno
+    bisogno."""
+    try:
+        from .theta_bot import load_hazard_atlas
+        return load_hazard_atlas(path)
+    except Exception as exc:  # noqa: BLE001 - qualunque guasto = niente theta
+        db.log(event_id, "warn", {
+            "msg": "atlas assente: theta NON armato",
+            "error": str(exc)[:200]})
+        return None
 
 
 class Db:
@@ -273,8 +317,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # SPOSTA coi gol -> a catalogo/stream servono TUTTE le OU (05..85).
         # Il maker resta blindato sui SESSION_MARKET_TYPES (vedi sotto).
         sniper_mode = bool((control.get("params") or {}).get("sniper_mode"))
+        # THETA: linea Under (gol+2).5, si sposta coi gol → servono TUTTE le
+        # OU a stream (stesso requisito dello sniper).
+        theta_mode = bool((control.get("params") or {}).get("theta_mode"))
+        theta_only = theta_mode and bool(
+            (control.get("params") or {}).get("theta_only"))
         cat_types = list(SESSION_MARKET_TYPES)
-        if sniper_mode:
+        if sniper_mode or theta_mode:
             cat_types = sorted(set(cat_types) | set(SNIPER_MARKET_TYPES))
         cat = trading.betting.list_market_catalogue(
             filter=filters.market_filter(
@@ -345,8 +394,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             raise RuntimeError(
                 "sniper_mode e ht_mode insieme non sono supportati "
                 "(bibbia §5: ht_mode e' NO-GO; usa solo sniper_mode)")
-        if sniper_mode:
-            # il maker NON deve quotare le OU alte aggiunte per lo sniper:
+        if sniper_mode or theta_mode:
+            # il maker NON deve quotare le OU alte aggiunte per sniper/theta:
             # blindalo sui tipi di sessione storici.
             params["market_types"] = list(SESSION_MARKET_TYPES)
 
@@ -404,6 +453,76 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             db.log(ev, "info", {"msg": "sniper armato (S16)",
                                 "stake": sniper_stake,
                                 "dry_run": params["dry_run"]})
+        # ---- THETA SCALPER in-play (dossier 15/07) ----------------------
+        # Gemella dello sniper: BACK Under (gol+2.5) col semaforo Atlante
+        # Hazard, coppia atomica back+green a -1 tick, scratch timer,
+        # post-gol al riprezzo. dry_run di scalper_control = paper/live.
+        theta = None
+        if theta_mode:
+            # senza Atlante il theta e' cieco: NON si arma (esplicito), ma la
+            # sessione VIVE — sniper/maker partono comunque (fix S6 review:
+            # prima l'eccezione qui uccideva l'INTERA sessione).
+            atlas = _theta_atlas_or_none(db, ev)
+            if atlas is None:
+                theta_mode = False
+                theta_only = False
+        if theta_mode:
+            from .theta_bot import ThetaStrategy
+            _cp = control.get("params") or {}
+            theta_stake = max(2.0, min(500.0, float(
+                _cp.get("theta_stake") or 25.0)))
+            _confirm = str(_cp.get("theta_confirm_mode") or "auto").lower()
+            # nomi runner dal catalogo: l'Under si riconosce PER NOME
+            _names = {}
+            for m in cat:
+                for r in (m.runners or []):
+                    _names[(str(m.market_id), int(r.selection_id))] = \
+                        str(getattr(r, "runner_name", "") or "")
+            # PRESET S4 (16/07): 'classico' (C7, default paper raccolta
+            # dati) | 'overshoot' (C17, unica pista EV+, da campionare).
+            # Il preset fissa scratch/hazard/finestre; gli override UI
+            # espliciti (theta_scratch_s, theta_hazard_max) vincono sempre.
+            _theta_params = {
+                "stake": theta_stake,
+                "dry_run": params["dry_run"],
+                "preset": str(_cp.get("theta_preset") or "classico"),
+                "max_shots": int(_cp.get("theta_max_shots") or 10),
+                "loss_cap": float(_cp.get("theta_loss_cap") or 5.0),
+                "confirm_mode": _confirm in ("manual", "true", "1"),
+                # protezioni .it IDENTICHE a maker/sniper (multipli 0,50,
+                # minimi per lato, uscite a size ESATTA via submin)
+                "exact_exits": True,
+                "size_step": 0.5,
+                "live_min_bet": 2.0,
+                # contesto Atlante (catena squadre→lega→globale)
+                "atlas": atlas,
+                "league_id": follow.get("league_id"),
+                "home_team": follow.get("home_name"),
+                "away_team": follow.get("away_name"),
+                "runner_names": _names,
+            }
+            if _cp.get("theta_scratch_s") is not None:
+                _theta_params["scratch_s"] = float(_cp["theta_scratch_s"])
+            if _cp.get("theta_hazard_max") is not None:
+                _theta_params["hazard_max"] = float(_cp["theta_hazard_max"])
+            theta = ThetaStrategy(
+                market_filter=filters.streaming_market_filter(
+                    market_ids=market_ids),
+                theta_params=_theta_params,
+                event_sink=sink,
+                # esposizione: BACK -> liability = stake (margine x4: entry
+                # + green LAY con liability ~ stake)
+                max_selection_exposure=theta_stake * 4.0,
+                max_order_exposure=theta_stake * 4.0,
+                max_trade_count=int(1e6),
+                max_live_trade_count=int(1e6),
+            )
+            db.log(ev, "info", {"msg": "theta armato",
+                                "stake": theta_stake,
+                                "dry_run": params["dry_run"],
+                                "confirm": _confirm,
+                                "preset": theta.theta_preset,
+                                "theta_only": theta_only})
         # ---- F5 (11/07): RISK MANAGER unico per evento -------------------
         # UN semaforo condiviso: sospensione in-play (gol) → stop NUOVI
         # ingressi di TUTTE le strategie per risk_cooldown_s (default 120s,
@@ -419,6 +538,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         strategy.risk_sem = risk_sem
         if sniper is not None:
             sniper.risk_sem = risk_sem
+        if theta is not None:
+            theta.risk_sem = risk_sem
         db.log(ev, "info", {"msg": "risk manager evento armato",
                             "cooldown_s": _risk_cooldown,
                             "global_cap": _global_cap})
@@ -472,14 +593,21 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         framework = Flumine(client=clients.BetfairClient(
             trading, min_bet_validation=False, order_stream=True,
         ))
-        framework.add_strategy(strategy)
+        # theta_only: il maker NON si arma (l'oggetto strategy resta per le
+        # stats/flat check, ma fuori dal framework non piazza nulla)
+        if not theta_only:
+            framework.add_strategy(strategy)
         if sniper is not None:
             framework.add_strategy(sniper)
+        if theta is not None:
+            framework.add_strategy(theta)
 
         def _stats() -> Dict[str, Any]:
             s = dict(strategy.stats)
             if sniper is not None:
                 s.update({f"sniper_{k}": v for k, v in sniper.stats.items()})
+            if theta is not None:
+                s.update({f"theta_{k}": v for k, v in theta.stats.items()})
             return s
 
         db.set_control(ev, status="running", stats=_stats())
@@ -544,21 +672,100 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 daemon=True, name="sniper-line",
             ).start()
 
+        # ---- WATCHER PUNTEGGIO/MINUTO THETA (pattern del watcher sniper):
+        # live_now → set_goals (linea Under gol+2.5) + live_minute (zone
+        # rosse 40-45/80-90 sul clock REALE, mai marketTime che conta l'HT).
+        def _theta_score_watcher(theta_ref) -> None:
+            while not stop_flag.is_set():
+                try:
+                    r = db.sb.table("live_now").select(
+                        "score_home,score_away,minute") \
+                        .eq("event_id", ev).execute()
+                    row = (r.data or [None])[0] or {}
+                    h, a = row.get("score_home"), row.get("score_away")
+                    if h is not None and a is not None:
+                        theta_ref.set_goals(int(h) + int(a))
+                    mn = row.get("minute")
+                    if mn is not None:
+                        theta_ref.live_minute = float(mn)
+                except Exception:  # noqa: BLE001 - il watcher non muore mai
+                    pass
+                time.sleep(15)
+
+        # ---- WATCHER CONFERME THETA (modalita' MANUALE): il bus della
+        # strategia propone; qui si fa l'I/O su theta_confirm_requests.
+        # Il TIMEOUT lo decide il BOT (la protezione parte comunque): il
+        # watcher si limita a inserire, leggere le decisioni UI e riportare
+        # gli stati finali (expired/executed) sul DB.
+        def _theta_confirm_watcher(theta_ref) -> None:
+            bus = theta_ref.confirm_bus
+            while not stop_flag.is_set():
+                try:
+                    for p in bus.take_unsent():
+                        ttl = max(1.0, theta_ref.confirm_ttl_s)
+                        r = db.sb.table("theta_confirm_requests").insert({
+                            "event_id": ev, "kind": p["kind"],
+                            "payload": json.loads(json.dumps(
+                                p["payload"], default=str)),
+                            "expires_at": datetime.fromtimestamp(
+                                time.time() + ttl, tz=timezone.utc
+                            ).isoformat(),
+                        }).execute()
+                        bus.attach_db_id(
+                            p["local_id"], ((r.data or [{}])[0] or {}).get("id"))
+                    for local_id, db_id in bus.awaiting_db():
+                        r = db.sb.table("theta_confirm_requests") \
+                            .select("status").eq("id", db_id).execute()
+                        st = ((r.data or [{}])[0] or {}).get("status")
+                        if st in ("confirmed", "rejected", "expired"):
+                            bus.apply_db_status(local_id, st)
+                    for db_id, st in bus.take_dirty():
+                        if db_id is None:
+                            continue
+                        fields = {"status": st}
+                        if st == "executed":
+                            fields["executed_at"] = _now_iso()
+                        db.sb.table("theta_confirm_requests").update(fields) \
+                            .eq("id", db_id) \
+                            .in_("status", ["awaiting", "confirmed"]).execute()
+                except Exception:  # noqa: BLE001 - il watcher non muore mai
+                    pass
+                time.sleep(2)
+
+        if theta is not None:
+            threading.Thread(
+                target=_theta_score_watcher, args=(theta,),
+                daemon=True, name="theta-score",
+            ).start()
+            if theta.confirm_mode:
+                threading.Thread(
+                    target=_theta_confirm_watcher, args=(theta,),
+                    daemon=True, name="theta-confirm",
+                ).start()
+
         def _force_flat_all() -> None:
             strategy.force_flat = True
             if sniper is not None:
                 sniper.force_flat = True
+            if theta is not None:
+                theta.force_flat = True
 
         def _all_flat(timeout_s: float = 30.0) -> bool:
             ok = _wait_flat(strategy, timeout_s=timeout_s)
-            if sniper is not None:
+            for extra in (sniper, theta):
+                if extra is None:
+                    continue
                 deadline = time.time() + timeout_s
-                while time.time() < deadline and not sniper.is_flat():
+                while time.time() < deadline and not extra.is_flat():
                     time.sleep(1.0)
-                ok = ok and sniper.is_flat()
+                ok = ok and extra.is_flat()
             return ok
 
         _recon_alerted = 0
+        # fix 15/07 (bug 3): traccia le uscite PULITE dal loop (stop/fine vita).
+        # Se il loop esce perche' il thread flumine e' MORTO (clean_break
+        # False) la sessione NON deve chiudersi 'done' in silenzio.
+        clean_break = False
 
         while runner.is_alive():
             time.sleep(HEARTBEAT_S)
@@ -572,6 +779,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 _div = int(strategy.stats.get("ledger_divergences", 0) or 0)
                 if sniper is not None:
                     _div += int(sniper.stats.get("ledger_divergences", 0) or 0)
+                if theta is not None:
+                    _div += int(theta.stats.get("ledger_divergences", 0) or 0)
                 if _div > _recon_alerted:
                     _recon_alerted = _div
                     db.sb.table("live_alerts").insert({
@@ -590,6 +799,8 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 _pl = float(strategy.stats.get("pnl_locked", 0.0) or 0.0)
                 if sniper is not None:
                     _pl += float(sniper.stats.get("pnl_locked", 0.0) or 0.0)
+                if theta is not None:
+                    _pl += float(theta.stats.get("pnl_locked", 0.0) or 0.0)
                 if (_global_cap > 0 and _pl <= -_global_cap
                         and not strategy.force_flat):
                     db.log(ev, "error", {
@@ -599,8 +810,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             except Exception:  # noqa: BLE001 - guardia best-effort
                 pass
             status = db.control_status(ev)
-            if status == "stopping" or os.path.isfile(KILL_FILE):
-                stopped_by_ui = status == "stopping"
+            # fix 15/07 (bug 2, lato sessione): anche 'stopped'/'error' scritti
+            # da fuori (supervisore/UI) sono un ordine di stop — mai continuare
+            # a tradare su una riga che il resto del sistema considera chiusa.
+            if (status in ("stopping", "stopped", "error")
+                    or os.path.isfile(KILL_FILE)):
+                stopped_by_ui = status in ("stopping", "stopped", "error")
                 _force_flat_all()
                 db.log(ev, "info", {"msg": "stop richiesto: force-flat"})
                 # fix 10/07: niente sleep cieco da 12s — si attende (max 30s)
@@ -610,10 +825,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 if not _all_flat(timeout_s=30.0):
                     db.log(ev, "error",
                            {"msg": "stop: posizione NON flat dopo 30s"})
+                clean_break = True
                 break
-            # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper fino a
-            # fine partita (KO+130', recupero incluso)
-            _life_s = 7800 if sniper_mode else (4200 if ht_mode else 600)
+            # vita sessione: pre-match KO+10'; ht_mode ~KO+70'; sniper/theta
+            # fino a fine partita (KO+130', recupero incluso)
+            _life_s = (7800 if (sniper_mode or theta_mode)
+                       else (4200 if ht_mode else 600))
             if ko_ts is not None and time.time() > ko_ts + _life_s:
                 # fix 10/07: anche il fine-vita passa dal force-flat (in
                 # ht_mode un ciclo intervallo ancora aperto restava vivo
@@ -623,8 +840,31 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                 if not _all_flat(timeout_s=30.0):
                     db.log(ev, "error",
                            {"msg": "fine sessione: posizione NON flat dopo 30s"})
+                clean_break = True
                 break
         stop_flag.set()
+        # ---- FIX 15/07 (bug 3): CRASH del thread flumine ------------------
+        # Uscita dal loop SENZA break = thread morto (eccezione dentro
+        # flumine): ordini potenzialmente ancora vivi sull'exchange. Sweep
+        # cancel REST su tutti i mercati della sessione + alert CRITICAL +
+        # stato finale 'error' (mai piu' 'done' silenzioso).
+        crashed = not clean_break and not runner.is_alive()
+        if crashed:
+            swept = _sweep_cancel(trading, market_ids)
+            db.log(ev, "error", {
+                "msg": "CRASH thread flumine: sweep cancel eseguito",
+                "sweep": swept})
+            try:
+                db.sb.table("live_alerts").insert({
+                    "level": "CRITICAL", "code": "SCALPER_CRASH",
+                    "message": (f"sessione {ev}: thread flumine MORTO. Sweep "
+                                f"cancel unmatched su {len(swept['ok'])} "
+                                f"mercati (KO: {len(swept['ko'])}). "
+                                "VERIFICA il matched residuo sul conto."),
+                    "event_id": ev,
+                }).execute()
+            except Exception:  # noqa: BLE001 - alert best-effort
+                pass
         try:
             # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
             # TerminationEvent in handler_queue — _running=False non è mai testato
@@ -637,10 +877,12 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             pass
         time.sleep(2)
         flush()
-        final = "stopped" if stopped_by_ui else "done"
+        final = "stopped" if stopped_by_ui else ("error" if crashed else "done")
         _final_stats = _stats() if strategy is not None else None
-        db.set_control(ev, status=final, stopped_at=_now_iso(),
-                       stats=_final_stats)
+        db.set_control(
+            ev, status=final, stopped_at=_now_iso(), stats=_final_stats,
+            error=("thread flumine morto: sweep cancel eseguito"
+                   if crashed else None))
         db.log(ev, "info", {"msg": f"sessione {final}",
                             "stats": _final_stats})
     except Exception as exc:  # noqa: BLE001

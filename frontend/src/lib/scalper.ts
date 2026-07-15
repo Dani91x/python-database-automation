@@ -37,6 +37,10 @@ export interface ScalperControl {
         // missione "2 tick": contabilità per fase (presenti se il bot le espone)
         greens_prematch?: number; greens_inplay?: number;
         pnl_prematch?: number; pnl_inplay?: number;
+        // THETA in-play: scalper_session riversa theta.stats nel control con
+        // prefisso theta_* (presenti SOLO se il theta è armato)
+        theta_shots?: number; theta_greens?: number; theta_scratches?: number;
+        theta_dry_fires?: number; theta_pnl_locked?: number;
     } | null;
     error: string | null;
     requested_at: string;
@@ -74,6 +78,20 @@ export interface ScalperParams {
     // MISSIONE "2 Tick": 1 ciclo verde pre-match + 1 nell'intervallo, poi
     // stop ingressi di fase. È IL PRODOTTO: default ON (forza anche ht_mode).
     one_green_per_phase: boolean;
+    // THETA SCALPER in-play (whitelist scalper_session.py, dossier 15/07):
+    // campi OPZIONALI, stesso pattern di sniper_mode/sniper_stake — presenti
+    // nel payload SOLO quando il toggle è acceso. theta_confirm_mode: la UI
+    // manda SEMPRE 'auto' (la UI delle conferme manuali non esiste ancora:
+    // 'manual' bloccherebbe il bot in attesa di conferme che nessuno dà).
+    theta_mode?: boolean;
+    theta_stake?: number;
+    theta_preset?: 'classico' | 'overshoot';
+    theta_max_shots?: number;
+    theta_loss_cap?: number;
+    theta_scratch_s?: number;
+    theta_hazard_max?: number;
+    theta_confirm_mode?: 'auto' | 'manual';
+    theta_only?: boolean;
 }
 
 export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
@@ -90,10 +108,12 @@ export const SCALPER_PARAM_DEFAULTS: ScalperParams = {
     one_green_per_phase: true,
 };
 
-// Solo le chiavi NUMERICHE finiscono nei campi numerici del pannello: i
-// boolean (one_green_per_phase) hanno una checkbox dedicata, MAI un Input number.
+// Solo le chiavi NUMERICHE OBBLIGATORIE finiscono nei campi numerici del
+// pannello: i boolean (one_green_per_phase) hanno una checkbox dedicata, MAI
+// un Input number; i campi theta_* opzionali hanno il loro blocco dedicato
+// (il -? evita che l'opzionalità inietti `undefined` nell'unione delle chiavi).
 export type ScalperNumericParamKey = {
-    [K in keyof ScalperParams]: ScalperParams[K] extends number ? K : never;
+    [K in keyof ScalperParams]-?: ScalperParams[K] extends number ? K : never;
 }[keyof ScalperParams];
 
 export const SCALPER_PARAM_FIELDS: {

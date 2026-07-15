@@ -78,6 +78,17 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // 10/07: +1.28 €/partita vs +0.10 mono (n=1) — da VALIDARE in paper
     // prima dei soldi veri (registro ipotesi §11 bibbia).
     const [sniperHunt, setSniperHunt] = useState(false);
+    // THETA in-play (dossier 15/07, verdetto S4 16/07): scalping post-gol
+    // guidato dall'Atlante hazard. NON validato out-of-sample → v1 SOLO PAPER
+    // (dry_run obbligatorio, gate in handleActivate). Mutuamente esclusivo
+    // con sniper/HT. theta_confirm_mode NON esposto: si manda SEMPRE 'auto'
+    // (la UI delle conferme manuali non esiste: 'manual' bloccherebbe il bot).
+    const [thetaMode, setThetaMode] = useState(false);
+    const [thetaStake, setThetaStake] = useState(25);
+    const [thetaPreset, setThetaPreset] = useState<'classico' | 'overshoot'>('classico');
+    // stringa vuota = "usa il default del backend" (max_shots 10, loss_cap 5)
+    const [thetaMaxShots, setThetaMaxShots] = useState<string>('');
+    const [thetaLossCap, setThetaLossCap] = useState<string>('');
     const [stake, setStake] = useState(25);
     const [params, setParams] = useState<ScalperParams>({ ...SCALPER_PARAM_DEFAULTS });
     const busyRef = useRef(false);
@@ -109,6 +120,15 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     const handleActivate = useCallback(async () => {
         if (busyRef.current) return;
+        // Gate THETA (v1): NON validato out-of-sample → può armarsi SOLO in
+        // paper. Con dry_run spento si blocca qui, prima di ogni conferma.
+        if (thetaMode && !dryRun) {
+            toast.error(
+                'THETA solo PAPER: non validato out-of-sample (verdetto S4). ' +
+                'Riattiva "Solo ARMATO (nessun ordine reale)" per armarlo.',
+            );
+            return;
+        }
         // Gate money-critical: armare con ORDINI REALI attiva un agente
         // autonomo che piazza scommesse vere non presidiato → conferma
         // esplicita (stessa asimmetria del bot tennis / 1-click LIVE).
@@ -145,6 +165,20 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     sniper_cooldown_s: 120,
                     sniper_profit_target: 0,
                 } : {}),
+                // THETA in-play: chiavi presenti SOLO col toggle acceso.
+                // confirm_mode SEMPRE 'auto' (niente UI conferme → 'manual'
+                // lascerebbe il bot in attesa di conferme che nessuno dà).
+                // max_shots/loss_cap vuoti = default del backend (10 / 5€).
+                ...(thetaMode ? {
+                    theta_mode: true,
+                    theta_stake: thetaStake,
+                    theta_preset: thetaPreset,
+                    theta_confirm_mode: 'auto' as const,
+                    ...(thetaMaxShots !== '' && Number.isFinite(Number(thetaMaxShots))
+                        ? { theta_max_shots: Number(thetaMaxShots) } : {}),
+                    ...(thetaLossCap !== '' && Number.isFinite(Number(thetaLossCap))
+                        ? { theta_loss_cap: Number(thetaLossCap) } : {}),
+                } : {}),
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
@@ -158,7 +192,8 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             setBusy(false);
         }
     }, [eventId, eventName, mode, dryRun, stake, params, htMode, missionTwoTicks,
-        sniperMode, sniperStake, sniperHunt, refresh]);
+        sniperMode, sniperStake, sniperHunt, thetaMode, thetaStake, thetaPreset,
+        thetaMaxShots, thetaLossCap, refresh]);
 
     const handleStop = useCallback(async () => {
         if (busyRef.current) return;
@@ -275,7 +310,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 checked={htMode}
                                 onCheckedChange={v => {
                                     setHtMode(v === true);
-                                    if (v === true) setSniperMode(false);
+                                    if (v === true) { setSniperMode(false); setThetaMode(false); }
                                 }}
                             />
                             <span className={htMode ? 'text-amber-300 font-semibold' : 'text-white/60'}>
@@ -288,7 +323,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 checked={sniperMode}
                                 onCheckedChange={v => {
                                     setSniperMode(v === true);
-                                    if (v === true) setHtMode(false);
+                                    if (v === true) { setHtMode(false); setThetaMode(false); }
                                 }}
                             />
                             <span className={sniperMode ? 'text-sky-300 font-semibold' : 'text-white/60'}>
@@ -321,6 +356,64 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     Semaforo post-gol e cap globale evento sempre attivi.
                                 </span>
                             </label>
+                        )}
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                                checked={thetaMode}
+                                onCheckedChange={v => {
+                                    setThetaMode(v === true);
+                                    if (v === true) { setSniperMode(false); setHtMode(false); }
+                                }}
+                            />
+                            <span className={thetaMode ? 'text-violet-300 font-semibold' : 'text-white/60'}>
+                                🔬 THETA in-play (sperimentale): scalp post-gol sull&apos;Under
+                                guidato dall&apos;Atlante hazard (coppia atomica entry+green,
+                                scratch a tempo). Alternativo a Sniper e gamba HT.
+                                ⚠️ Theta NON validato out-of-sample (verdetto S4: classico EV−,
+                                overshoot da campionare) — SOLO PAPER: armalo esclusivamente
+                                con dry_run attivo.
+                            </span>
+                        </label>
+                        {thetaMode && (
+                            <>
+                                <label className="flex items-center gap-2 text-sm text-white/80">
+                                    <span className="text-white/50">Stake theta €</span>
+                                    <Input
+                                        type="number" min={2} max={500} step={1} value={thetaStake}
+                                        onChange={e => setThetaStake(Math.max(2, Math.min(500, Number(e.target.value) || 2)))}
+                                        className="w-20 h-8 bg-white/5 border-white/10 text-white"
+                                    />
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-white/80">
+                                    <span className="text-white/50">Preset</span>
+                                    <select
+                                        value={thetaPreset}
+                                        onChange={e => setThetaPreset(e.target.value === 'overshoot' ? 'overshoot' : 'classico')}
+                                        className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-sm text-white [&>option]:bg-slate-900"
+                                    >
+                                        <option value="classico">classico (C7)</option>
+                                        <option value="overshoot">overshoot (C17)</option>
+                                    </select>
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-white/80">
+                                    <span className="text-white/50">Max colpi</span>
+                                    <Input
+                                        type="number" min={1} max={50} step={1} placeholder="10"
+                                        value={thetaMaxShots}
+                                        onChange={e => setThetaMaxShots(e.target.value)}
+                                        className="w-20 h-8 bg-white/5 border-white/10 text-white"
+                                    />
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-white/80">
+                                    <span className="text-white/50">Tetto perdita €</span>
+                                    <Input
+                                        type="number" min={0} max={100} step={0.5} placeholder="5"
+                                        value={thetaLossCap}
+                                        onChange={e => setThetaLossCap(e.target.value)}
+                                        className="w-20 h-8 bg-white/5 border-white/10 text-white"
+                                    />
+                                </label>
+                            </>
                         )}
                         {!dryRun && (
                             <span className="flex items-center gap-1 text-xs text-red-300 font-bold">
@@ -455,6 +548,26 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 <div key={i} className="rounded-lg bg-white/5 border border-white/10 p-2">
                                     <div className="text-[10px] uppercase text-white/40">{s.l}</div>
                                     <div className={`text-sm font-black ${s.ok ? 'text-emerald-300' : 'text-white'}`}>{s.v}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* THETA in-play: contatori dedicati (scalper_session riversa
+                        theta.stats nel control con prefisso theta_*) — visibili
+                        SOLO se il theta è armato e il bot li espone */}
+                    {stats && (stats.theta_shots !== undefined || stats.theta_pnl_locked !== undefined) && (
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                            {[
+                                { l: 'Theta colpi', v: num(stats.theta_shots) },
+                                { l: 'Theta verdi', v: num(stats.theta_greens) },
+                                { l: 'Theta scratch', v: num(stats.theta_scratches) },
+                                { l: 'Theta dry-fire', v: num(stats.theta_dry_fires) },
+                                { l: 'P&L theta', v: `€${num(stats.theta_pnl_locked).toFixed(2)}` },
+                            ].map((s, i) => (
+                                <div key={i} className="rounded-lg bg-violet-500/5 border border-violet-400/20 p-2">
+                                    <div className="text-[10px] uppercase text-violet-300/60">{s.l}</div>
+                                    <div className="text-sm font-black text-white">{s.v}</div>
                                 </div>
                             ))}
                         </div>

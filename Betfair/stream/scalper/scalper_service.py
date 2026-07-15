@@ -78,6 +78,20 @@ def _hb_age_s(row: Dict[str, Any]) -> Optional[float]:
         return None
 
 
+def _stopping_zombie(row: Dict[str, Any]) -> bool:
+    """True se una riga 'stopping' SENZA figlio registrato e' davvero zombie.
+
+    FIX 15/07 (bug 2, dossier theta): dopo un RESTART del supervisore i figli
+    vivi delle run precedenti NON sono in ``children`` — flippare subito
+    'stopping'→'stopped' bruciava lo stop: la sessione viva (che polla lo
+    status) non vedeva mai 'stopping' e restava armata SENZA force-flat.
+    Zombie = heartbeat assente o fermo da oltre ORPHAN_HEARTBEAT_S; con un
+    heartbeat fresco la sessione e' viva altrove e gestira' lo stop da sola.
+    """
+    age = _hb_age_s(row)
+    return age is None or age > ORPHAN_HEARTBEAT_S
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -145,9 +159,13 @@ def main() -> None:
                                 children[ev].pid, row.get("mode"),
                                 row.get("dry_run"), row.get("stake"))
                 elif status == "stopping" and not alive:
-                    # nessun processo vivo: chiudi la riga zombie
-                    db.set_control(ev, status="stopped",
-                                   stopped_at=_now_iso())
+                    # fix 15/07 (bug 2): chiudi la riga SOLO se davvero zombie
+                    # (heartbeat fermo). Un figlio di un supervisore precedente
+                    # (post-restart) e' vivo ma non registrato: deve vedere
+                    # 'stopping' da solo e chiudere flat.
+                    if _stopping_zombie(row):
+                        db.set_control(ev, status="stopped",
+                                       stopped_at=_now_iso())
                 elif status in ("running", "arming") and not alive:
                     age = _hb_age_s(row)
                     if age is not None and age > ORPHAN_HEARTBEAT_S:
