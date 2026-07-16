@@ -157,11 +157,12 @@ class FakeDB:
             for t in self.trades
         ):
             raise Exception("unique auto event_id")
-        # unique per-gamba (event_id,market_id,selection_id,side) → doppione esatto
+        # unique per-gamba PARZIALE (WHERE status <> 'error', audit H1 16/07):
+        # una gamba fallita NON blocca il ripiazzamento della stessa gamba
         leg = (trade["event_id"], trade.get("market_id"), trade.get("selection_id"), trade.get("side"))
         if any(
             (t["event_id"], t.get("market_id"), t.get("selection_id"), t.get("side")) == leg
-            for t in self.trades
+            for t in self.trades if t.get("status") != "error"
         ):
             raise Exception("unique leg")
         self._id += 1
@@ -206,6 +207,11 @@ class FakeDB:
     def upsert_events(self, events):
         self.events_cache = events
 
+    def replace_events(self, events):
+        # come il DB reale: upsert + purge (la cache è SOSTITUITA)
+        self.events_cache = events
+        self.replace_calls = getattr(self, "replace_calls", 0) + 1
+
     def update_event_markets(self, event_id, markets):
         pass
 
@@ -226,7 +232,9 @@ class FakeDB:
         return [m for m in getattr(self, "missions", []) if m.get("status", "active") == "active"]
 
     def mission_event_ids(self):
-        return {str(m["event_id"]) for m in self.active_missions()}
+        # come il DB reale (audit M7): attive + PAUSATE, l'automatico le salta
+        return {str(m["event_id"]) for m in getattr(self, "missions", [])
+                if m.get("status", "active") in ("active", "paused")}
 
     def update_mission(self, event_id, **fields):
         for m in getattr(self, "missions", []):
@@ -899,3 +907,198 @@ def test_size_ridotta_da_liquidita_loggata():
     assert any(k == "size_reduced" for k, _ in db.activity)
     t = db.trades[0]
     assert t["meta"]["requested_size"] > t["size"]  # audit: pre-taglio > effettiva
+
+
+# ---------------------------------------------------------------------------
+# Fix 16/07 — cache eventi (purge+enrichment), guardie book, gamba error, orfani
+# ---------------------------------------------------------------------------
+def test_refresh_events_sostituisce_cache_con_metadati():
+    # la cache è SOSTITUITA (replace, non upsert-only) e porta competizione+updated_at
+    db = FakeDB(_control())
+    ev = M.EventInfo("111", "AC Milan v Inter", NOW, country_code="IT",
+                     competition_id="81", competition_name="Serie A")
+    market = FakeMarket([ev], _cs(), _open_snapshot())
+    n = S.refresh_events(market=market, db=db, now=NOW)
+    assert n == 1 and getattr(db, "replace_calls", 0) == 1
+    row = db.events_cache[0]
+    assert row["competition_name"] == "Serie A" and row["country_code"] == "IT"
+    assert row["updated_at"] == NOW.isoformat()
+    # senza fixtures_for_window l'enrichment è NULL dichiarato, mai un crash
+    assert row["league_id"] is None and row["home_team_id"] is None
+
+
+def test_refresh_events_enrichment_da_fixture_reale():
+    # matcher vero (betfair_match): "AC Milan v Inter" ↔ fixture DB → id per i loghi
+    db = FakeDB(_control())
+    db.fixtures_for_window = lambda s, e: [{
+        "fixture_id": 555, "home_team_name": "AC Milan", "away_team_name": "Inter",
+        "fixture_date": NOW.isoformat(), "league_id": 135,
+        "home_team_id": 489, "away_team_id": 505,
+    }]
+    ev = M.EventInfo("111", "AC Milan v Inter", NOW)
+    market = FakeMarket([ev], _cs(), _open_snapshot())
+    S.refresh_events(market=market, db=db, now=NOW)
+    row = db.events_cache[0]
+    assert row["fixture_id"] == 555 and row["league_id"] == 135
+    assert row["home_team_id"] == 489 and row["away_team_id"] == 505
+
+
+def test_refresh_events_enrichment_rotto_non_blocca():
+    # fixtures_for_window che esplode → enrichment {} dichiarato, refresh OK
+    db = FakeDB(_control())
+    def _boom(s, e):
+        raise RuntimeError("db down")
+    db.fixtures_for_window = _boom
+    market = FakeMarket([M.EventInfo("111", "A v B", NOW)], _cs(), _open_snapshot())
+    assert S.refresh_events(market=market, db=db, now=NOW) == 1
+    assert db.events_cache[0]["league_id"] is None
+
+
+def test_manuale_rifiuta_book_assente():
+    # audit H4: book non leggibile → NIENTE fill paper al prezzo congelato
+    db = FakeDB(_control(status="idle"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-x",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 110, "size": 10})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.books = {"m-x": None}
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.trades == []
+    assert db.manual_reqs[0]["result"]["error"] == "book_non_disponibile"
+
+
+def test_manuale_rifiuta_mercato_sospeso():
+    db = FakeDB(_control(status="idle"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 110, "size": 10})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.books = {"m-1.100": {"market_id": "m-1.100", "status": "SUSPENDED", "inplay": True,
+                                "event_name": "Home vs Away", "runners": [
+                                    {"selection_id": 4, "name": "3 - 2", "status": "ACTIVE",
+                                     "lay_price": 110.0, "lay_size": 40, "back_price": 108.0,
+                                     "back_size": 30, "lay_ladder": [[110.0, 40.0]]}]}}
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.trades == []
+    assert db.manual_reqs[0]["result"]["error"] == "mercato_suspended"
+
+
+def test_manuale_rifiuta_selezione_rimossa_o_assente():
+    db = FakeDB(_control(status="idle"))
+    base = {"event_id": "1.100", "market_id": "m-1.100", "side": "lay",
+            "mode": "paper", "price": 110, "size": 10}
+    book = {"market_id": "m-1.100", "status": "OPEN", "inplay": True,
+            "event_name": "Home vs Away", "runners": [
+                {"selection_id": 4, "name": "3 - 2", "status": "REMOVED",
+                 "lay_price": 110.0, "lay_size": 40, "back_price": 108.0,
+                 "back_size": 30, "lay_ladder": [[110.0, 40.0]]}]}
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.books = {"m-1.100": book}
+    db.manual_reqs = _manual_req(dict(base, selection_id=4))     # runner REMOVED
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.manual_reqs[0]["result"]["error"] == "selezione_removed"
+    db.manual_reqs = _manual_req(dict(base, selection_id=99))    # runner assente
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.manual_reqs[0]["result"]["error"] == "selezione_non_sul_book"
+    assert db.trades == []
+
+
+def test_gamba_in_error_e_ripiazzabile():
+    # audit H1: FOK fallito → riga error → il RETRY della stessa gamba passa
+    db = FakeDB(_control(status="idle"))
+    payload = {"event_id": "1.100", "market_id": "m-1.100", "selection_id": 4,
+               "side": "lay", "mode": "paper", "price": 110, "size": 10}
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    db.manual_reqs = _manual_req(payload)
+    S.run_once(market=market, db=db, now=NOW)
+    assert db.trades[0]["status"] == "open"
+    db.trades[0]["status"] = "error"          # simula esito FOK live_not_matched
+    db.manual_reqs = _manual_req(payload)
+    S.run_once(market=market, db=db, now=NOW)
+    ok = [t for t in db.trades if t["status"] == "open"]
+    assert len(ok) == 1 and len(db.trades) == 2  # nuova riga, la error resta storia
+
+
+def test_settle_open_orfano_paper_void_dopo_sparizione_consecutiva():
+    # review 16/07: si voida SOLO se il mercato resta sparito per
+    # ORPHAN_GONE_MAX_H CONSECUTIVE (marker meta.market_gone_since), mai
+    # in base all'età del trade — un weekend di servizio spento non deve
+    # voidare esiti reali al primo ciclo.
+    db = FakeDB(_control())
+    gone = (NOW - timedelta(hours=S.ORPHAN_GONE_MAX_H + 1)).isoformat()
+    db.trades = [{"id": 1, "event_id": "1.100", "market_id": "m-x", "selection_id": 4,
+                  "side": "lay", "mode": "paper", "price": 110.0, "size": 10.0,
+                  "status": "open", "placed_at": NOW.isoformat(),
+                  "meta": {"market_gone_since": gone}}]
+    market = FakeMarket([_event()], _cs(), None)   # read_market → None (mercato sparito)
+    n = S.settle_open(params=S.omega_config.resolve_params({}), market=market, db=db, now=NOW)
+    assert n == 1 and db.trades[0]["status"] == "void" and db.trades[0]["pnl"] == 0.0
+    assert any(k == "settle_orphan" for k, _ in db.activity)
+
+
+def test_settle_open_orfano_primo_avvistamento_solo_marker():
+    # 1ª lettura vuota: NIENTE void (anche su trade vecchio) — solo il marker
+    db = FakeDB(_control())
+    old = (NOW - timedelta(hours=200)).isoformat()
+    db.trades = [{"id": 1, "event_id": "1.100", "market_id": "m-x", "selection_id": 4,
+                  "side": "lay", "mode": "paper", "price": 110.0, "size": 10.0,
+                  "status": "open", "placed_at": old, "meta": {}}]
+    market = FakeMarket([_event()], _cs(), None)
+    n = S.settle_open(params=S.omega_config.resolve_params({}), market=market, db=db, now=NOW)
+    assert n == 0 and db.trades[0]["status"] == "open"
+    assert db.trades[0]["meta"].get("market_gone_since") == NOW.isoformat()
+
+
+def test_settle_open_orfano_live_mai_void_automatico():
+    # LIVE: l'esito vero è su Betfair — pnl=0 corromperebbe aggregati e cap.
+    # Alert CRITICAL una volta sola, trade resta open.
+    db = FakeDB(_control())
+    gone = (NOW - timedelta(hours=S.ORPHAN_GONE_MAX_H + 1)).isoformat()
+    db.trades = [{"id": 1, "event_id": "1.100", "market_id": "m-x", "selection_id": 4,
+                  "side": "lay", "mode": "live", "bet_id": "b9", "price": 110.0,
+                  "size": 10.0, "status": "open", "placed_at": NOW.isoformat(),
+                  "meta": {"market_gone_since": gone}}]
+    market = FakeMarket([_event()], _cs(), None)
+    params = S.omega_config.resolve_params({})
+    n = S.settle_open(params=params, market=market, db=db, now=NOW)
+    assert n == 0 and db.trades[0]["status"] == "open"
+    assert any(k == "orphan_live_alert" for k, _ in db.activity)
+    # 2° ciclo: nessun secondo alert (orphan_alerted)
+    db.activity.clear()
+    S.settle_open(params=params, market=market, db=db, now=NOW)
+    assert not any(k == "orphan_live_alert" for k, _ in db.activity)
+
+
+def test_settle_open_marker_azzerato_se_mercato_torna():
+    # il mercato torna leggibile → marker di sparizione rimosso
+    db = FakeDB(_control())
+    db.trades = [{"id": 1, "event_id": "1.100", "market_id": "m-1.100", "selection_id": 4,
+                  "side": "lay", "mode": "paper", "price": 110.0, "size": 10.0,
+                  "status": "open", "placed_at": NOW.isoformat(),
+                  "meta": {"market_gone_since": NOW.isoformat()}}]
+    market = FakeMarket([_event()], _cs(), _open_snapshot())   # book di nuovo vivo
+    S.settle_open(params=S.omega_config.resolve_params({}), market=market, db=db, now=NOW)
+    assert "market_gone_since" not in (db.trades[0]["meta"] or {})
+
+
+def test_manuale_live_exception_resta_pending_per_riconciliazione():
+    # review 16/07: eccezione al place LIVE = ESITO IGNOTO → la riserva resta
+    # 'pending' (reconcile_pending decide), MAI 'error' subito ripiazzabile.
+    db = FakeDB(_control(status="idle", mode="live"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "live",
+                                  "price": 110, "size": 10})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    def _boom(**kw):
+        raise RuntimeError("timeout betfair")
+    market.place_order_live = _boom
+    S.run_once(market=market, db=db, now=NOW)
+    t = db.trades[0]
+    assert t["status"] == "pending"
+    assert t["meta"]["reason"] == "place_exception_reconciling"
+    # la gamba NON è ripiazzabile finché la riserva pending vive (unique leg)
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "live",
+                                  "price": 110, "size": 10})
+    S.run_once(market=market, db=db, now=NOW)
+    assert len([x for x in db.trades if x.get("side") == "lay"]) == 1

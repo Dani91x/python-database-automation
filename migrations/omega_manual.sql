@@ -26,8 +26,14 @@ ALTER TABLE public.omega_trades
 DROP INDEX IF EXISTS public.uq_omega_trades_event;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_omega_trades_auto_event
     ON public.omega_trades (event_id) WHERE origin = 'auto';
+-- PARZIALE (audit H1 16/07): una gamba finita in 'error' (FOK non matchato,
+-- place_exception, rigetto) NON deve bloccare per sempre il ripiazzamento
+-- della stessa gamba — il design della missione prevede il retry (il servizio
+-- esclude i trade 'error' dal conteggio "gamba già fatta").
+DROP INDEX IF EXISTS public.uq_omega_trades_leg;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_omega_trades_leg
-    ON public.omega_trades (event_id, market_id, selection_id, side);
+    ON public.omega_trades (event_id, market_id, selection_id, side)
+    WHERE status <> 'error';
 
 -- 1. omega_events — cache degli eventi calcio di oggi (per il menu a tendina UI).
 CREATE TABLE IF NOT EXISTS public.omega_events (
@@ -39,6 +45,18 @@ CREATE TABLE IF NOT EXISTS public.omega_events (
 );
 ALTER TABLE public.omega_events ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.omega_events FROM anon, authenticated;
+
+-- Enrichment 16/07 (tab MISSIONE): competizione da Betfair (COMPETITION
+-- projection) + abbinamento fixture DB (betfair_match) per i loghi API-Football
+-- (media.api-sports.io/football/{leagues|teams}/{id}.png). Tutto best-effort:
+-- NULL = metadato non risolto, la UI degrada senza logo.
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS country_code     TEXT;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS competition_id   TEXT;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS competition_name TEXT;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS fixture_id       BIGINT;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS league_id        INTEGER;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS home_team_id     INTEGER;
+ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS away_team_id     INTEGER;
 
 -- 2. omega_market_snapshot — quote di UN mercato caricato a richiesta.
 CREATE TABLE IF NOT EXISTS public.omega_market_snapshot (

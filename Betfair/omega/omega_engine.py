@@ -481,7 +481,12 @@ def settle_pnl(
 # ---------------------------------------------------------------------------
 # MISSIONI (centro di controllo per partita) — funzioni PURE
 # ---------------------------------------------------------------------------
-_PHASE_FINISHED = ("finished", "matchended", "fulltime", "ended")
+# 'secondhalfend' DEVE stare qui: contiene 'secondhalf' e il check FINISHED
+# corre prima del check 2T (ordine dei check = precedenza). abandoned/postponed/
+# cancelled → 'finita': niente da tradare oggi, la missione si chiude e i trade
+# si regolano al settlement (void) del mercato.
+_PHASE_FINISHED = ("finished", "matchended", "fulltime", "ended",
+                   "secondhalfend", "abandoned", "postponed", "cancelled")
 # supplementari/rigori PRIMA dell'intervallo: "ExtraTimeHalfTime" contiene
 # anche "halftime" e senza precedenza verrebbe classificato 'ht' (review 15/07)
 _PHASE_ET = ("extratime", "penalt")

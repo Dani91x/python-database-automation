@@ -164,11 +164,14 @@ export async function fetchMissions(): Promise<MissionsPayload> {
     };
 }
 
-// Realtime sulla tabella omega_missions (stesso pattern di subscribeOmega).
+// Realtime su omega_missions + omega_trades (audit L12 16/07: fill/settle dei
+// trade arrivavano solo col poll 10s → la scheda mostrava una gamba "senza
+// trade" già piazzata). Stesso pattern di subscribeOmega.
 export function subscribeOmegaMissions(onChange: () => void): () => void {
     const channel = supabase
         .channel('omega-missions-live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_missions' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_trades' }, onChange)
         .subscribe();
     return () => { void supabase.removeChannel(channel); };
 }
@@ -203,11 +206,23 @@ export function missionLegsRealized(m: Pick<MissionRow, 'legs'>): number {
 
 // Realizzato TOTALE della missione = gambe + pnl_locked dello scalper.
 // È il numero che avanza verso il target (e nella barra di giornata).
-export function missionRealized(m: Pick<MissionRow, 'legs' | 'scalper'>): number {
-    return missionLegsRealized(m) + toNum(m.scalper?.pnl_locked);
+// AUDIT H2 16/07: lo scalper in DRY-RUN produce P&L SIMULATO — non deve mai
+// ridurre il gap che l'utente copre a soldi veri, né gonfiare la barra di
+// giornata. Conta solo se dry_run === false.
+export function scalperRealized(m: Pick<MissionRow, 'scalper'>): number {
+    return m.scalper?.dry_run === false ? toNum(m.scalper.pnl_locked) : 0;
 }
 
-// Gap residuo verso il target: target − pnl_locked − Σ legs.realized.
+// P&L simulato dello scalper dry-run (da mostrare come voce separata, mai sommato).
+export function scalperSimulated(m: Pick<MissionRow, 'scalper'>): number {
+    return m.scalper && m.scalper.dry_run !== false ? toNum(m.scalper.pnl_locked) : 0;
+}
+
+export function missionRealized(m: Pick<MissionRow, 'legs' | 'scalper'>): number {
+    return missionLegsRealized(m) + scalperRealized(m);
+}
+
+// Gap residuo verso il target: target − scalper REALE − Σ legs.realized.
 export function missionGap(m: Pick<MissionRow, 'target' | 'legs' | 'scalper'>): number {
     return toNum(m.target) - missionRealized(m);
 }

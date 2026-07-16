@@ -219,6 +219,15 @@ export interface OmegaEvent {
     open_date: string | null;
     markets: OmegaEventMarket[];
     updated_at: string;
+    // enrichment 16/07 (best-effort, null = non risolto): competizione da
+    // Betfair + id fixture/lega/squadre abbinati dal matcher per i loghi.
+    country_code?: string | null;
+    competition_id?: string | null;
+    competition_name?: string | null;
+    fixture_id?: number | null;
+    league_id?: number | null;
+    home_team_id?: number | null;
+    away_team_id?: number | null;
 }
 export interface OmegaMarketRunner {
     selection_id: number;

@@ -299,9 +299,17 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                             {mission.scalper.status.toUpperCase()}
                         </Badge>
                         {mission.scalper.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">DRY</Badge>}
-                        <span className={`text-sm tabular-nums font-bold ${toNum(mission.scalper.pnl_locked) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {fmtSignedEur(toNum(mission.scalper.pnl_locked))}
-                        </span>
+                        {/* audit H2 16/07: P&L dry-run = SIMULATO — grigio e marcato
+                            "sim", NON conta nel gap/target (vedi missionRealized) */}
+                        {mission.scalper.dry_run ? (
+                            <span className="text-sm tabular-nums font-bold text-slate-400" title="P&L simulato (dry-run): non conta nel target">
+                                {fmtSignedEur(toNum(mission.scalper.pnl_locked))} <span className="text-[10px] font-normal">sim</span>
+                            </span>
+                        ) : (
+                            <span className={`text-sm tabular-nums font-bold ${toNum(mission.scalper.pnl_locked) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {fmtSignedEur(toNum(mission.scalper.pnl_locked))}
+                            </span>
+                        )}
                     </>
                 ) : (
                     <span className="text-xs text-slate-500 italic">scalper non attivo</span>

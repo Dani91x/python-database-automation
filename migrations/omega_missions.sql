@@ -97,6 +97,22 @@ BEGIN
     IF p_target IS NULL OR p_target <= 0 OR p_target > 10000 THEN
         RAISE EXCEPTION 'target fuori range (0,10000]: %', p_target;
     END IF;
+    -- guardie 16/07 (audit): SOLO per le NUOVE attivazioni — kickoff obbligatorio
+    -- (senza, un evento non coperto dall'inplay service resterebbe 'pre' per
+    -- sempre = missione eterna) e non più vecchio di 3h (cache eventi stantia →
+    -- missione auto-chiusa subito). La RIATTIVAZIONE di una missione in pausa
+    -- NON passa di qui (review 16/07: una partita coi supplementari supera le 3h
+    -- dal kickoff — bloccare il resume la renderebbe irrecuperabile mentre M7
+    -- tiene l'evento riservato).
+    IF NOT EXISTS (SELECT 1 FROM public.omega_missions g
+                    WHERE g.event_id = p_event_id AND g.status IN ('active','paused')) THEN
+        IF p_kickoff IS NULL THEN
+            RAISE EXCEPTION 'kickoff mancante: aggiorna gli eventi e riprova';
+        END IF;
+        IF p_kickoff < now() - interval '3 hours' THEN
+            RAISE EXCEPTION 'partita già terminata (calcio d''inizio %): aggiorna gli eventi', p_kickoff;
+        END IF;
+    END IF;
     INSERT INTO public.omega_missions AS m
         (event_id, event_name, kickoff, mission_date, target, status, updated_at)
     VALUES (p_event_id, p_event_name, p_kickoff,
@@ -108,6 +124,11 @@ BEGIN
         target       = EXCLUDED.target,
         status       = 'active',
         error        = NULL,
+        -- suggestion CONGELATE durante la pausa = prezzi stantii piazzabili al
+        -- rientro (audit M9): si azzerano, il servizio le ricalcola al 1° ciclo.
+        suggestion_ht    = NULL,
+        suggestion_ft    = NULL,
+        suggestion_scalp = NULL,
         updated_at   = now()
     RETURNING * INTO v_row;
     RETURN to_jsonb(v_row);
@@ -132,6 +153,10 @@ BEGIN
     END IF;
     UPDATE public.omega_missions SET
         status     = CASE WHEN p_close THEN 'closed' ELSE 'paused' END,
+        -- audit M9 16/07: mai lasciare suggestion congelate su missione ferma
+        suggestion_ht    = NULL,
+        suggestion_ft    = NULL,
+        suggestion_scalp = NULL,
         updated_at = now()
     WHERE event_id = p_event_id
     RETURNING * INTO v_row;
@@ -237,7 +262,12 @@ BEGIN
                                          WHERE f.event_id = m.event_id)
                   ) AS r
           FROM public.omega_missions m
+         -- oggi + ATTIVE e IN PAUSA di giorni passati (audit H3c + review 16/07:
+         -- una missione attiva o pausata di ieri era processata/riservata dal
+         -- servizio ma INVISIBILE in UI → l'utente non poteva né riprenderla
+         -- né chiuderla, e M7 teneva l'evento bloccato per sempre)
          WHERE m.mission_date = (now() AT TIME ZONE 'Europe/Rome')::date
+            OR m.status IN ('active','paused')
       ) sub(r);
 
     SELECT jsonb_build_object(
@@ -245,7 +275,8 @@ BEGIN
              'missions_active', count(*) FILTER (WHERE status = 'active'))
       INTO v_summary
       FROM public.omega_missions
-     WHERE mission_date = (now() AT TIME ZONE 'Europe/Rome')::date;
+     WHERE mission_date = (now() AT TIME ZONE 'Europe/Rome')::date
+        OR status IN ('active','paused');
 
     RETURN jsonb_build_object('missions', v_rows, 'summary', v_summary);
 END;

@@ -14,7 +14,8 @@ from Betfair.omega import omega_engine as E
 from Betfair.omega import omega_market as M
 from Betfair.omega import omega_service as S
 from Betfair.omega.test_omega_service import (
-    NOW, FakeDB, FakeMarket, _control, _cs, _event, _manual_req, _open_snapshot,
+    NOW, FakeDB, FakeMarket, _closed_snapshot, _control, _cs, _event, _manual_req,
+    _open_snapshot,
 )
 
 
@@ -528,3 +529,85 @@ def test_advisor_h2h_orientamento_chiavi_e_punteggi():
         {"n_meetings": 5, "n_score": 3}
     # coppia assente → None (fallback pulito, mai un match forzato)
     assert A.h2h_score_stats(1, 2, 0, 0, half=False, atlas=atlas) is None
+
+
+# ---------------------------------------------------------------------------
+# Fix 16/07 — fasi provider mancanti + chiusura da solo orologio verificata
+# ---------------------------------------------------------------------------
+def test_mission_phase_secondhalfend_e_stati_abbandono():
+    # 'SecondHalfEnd' contiene 'secondhalf': DEVE vincere il check FINISHED
+    assert E.mission_phase(status="SecondHalfEnd", minute=90, kickoff=NOW, now=NOW) == "finita"
+    assert E.mission_phase(status="Abandoned", minute=30, kickoff=NOW, now=NOW) == "finita"
+    assert E.mission_phase(status="Postponed", minute=None, kickoff=NOW, now=NOW) == "finita"
+    assert E.mission_phase(status="Cancelled", minute=None, kickoff=NOW, now=NOW) == "finita"
+
+
+def test_mission_clock_finita_ma_book_vivo_non_chiude():
+    # kickoff+4h senza MAI dati provider, ma il mercato CS è ancora vivo su
+    # Betfair (partita rinviata/spostata) → la missione NON si chiude e la
+    # fase resta quella precedente (mai 'finita' scritta dal solo orologio)
+    S._REALLY_OVER_CACHE.clear()
+    db = FakeDB(_control())
+    kick = (NOW - timedelta(hours=4)).isoformat()
+    db.missions = [_mission("77", kickoff=kick)]
+    market = FakeMarket([], _cs("77"), _open_snapshot())   # book OPEN, non closed
+    market.scores = {}                                     # provider muto
+    S.process_missions(market=market, db=db, now=NOW)
+    m = db.missions[0]
+    assert m["status"] == "active"
+    assert m["phase_now"] == "pre"
+    # review 16/07 (finding 4): la missione tenuta viva deve CONSERVARE i
+    # suggerimenti — la fase usata dalla logica suggerimenti è quella
+    # ripristinata ('pre'), non 'finita' → la gamba HT resta proposta
+    assert m["suggestion_ht"] is not None
+
+
+def test_mission_clock_finita_e_book_chiuso_chiude():
+    S._REALLY_OVER_CACHE.clear()
+    db = FakeDB(_control())
+    kick = (NOW - timedelta(hours=4)).isoformat()
+    db.missions = [_mission("77", kickoff=kick)]
+    market = FakeMarket([], _cs("77"), _closed_snapshot(1))  # mercato CLOSED
+    market.scores = {}
+    S.process_missions(market=market, db=db, now=NOW)
+    m = db.missions[0]
+    assert m["status"] == "closed" and m["phase_now"] == "finita"
+
+
+def test_mission_clock_verifica_book_in_cache_ttl():
+    # finding 10: la verifica "davvero finita" è cachata (TTL) — su cicli
+    # ravvicinati NON si richiama Betfair a ogni giro
+    S._REALLY_OVER_CACHE.clear()
+    db = FakeDB(_control())
+    kick = (NOW - timedelta(hours=4)).isoformat()
+    db.missions = [_mission("77", kickoff=kick)]
+    market = FakeMarket([], _cs("77"), _open_snapshot())
+    market.scores = {}
+    calls = {"n": 0}
+    orig = market.get_correct_score_market
+    def counting(ev):
+        calls["n"] += 1
+        return orig(ev)
+    market.get_correct_score_market = counting
+    S.process_missions(market=market, db=db, now=NOW)
+    S.process_missions(market=market, db=db, now=NOW + timedelta(seconds=30))
+    assert calls["n"] == 1  # 2° ciclo dentro il TTL → nessuna nuova chiamata
+
+
+def test_mission_finita_da_provider_chiude_senza_verifica_book():
+    # dato provider esplicito ('Finished') → si chiude anche se il fake book
+    # è ancora OPEN: la verifica extra vale SOLO per il fallback orologio
+    db = FakeDB(_control())
+    db.missions = [_mission("77", kickoff=NOW.isoformat())]
+    market = FakeMarket([], _cs("77"), _open_snapshot())
+    market.scores = {"77": _Snap(minute=90, home=1, away=0, status="Finished")}
+    S.process_missions(market=market, db=db, now=NOW)
+    assert db.missions[0]["status"] == "closed"
+
+
+def test_guardia_auto_salta_anche_missioni_in_pausa():
+    # audit M7: missione PAUSATA = evento comunque riservato alla scheda
+    db = FakeDB(_control())
+    db.missions = [_mission("1.100", status="paused")]
+    ids = db.mission_event_ids()
+    assert "1.100" in ids

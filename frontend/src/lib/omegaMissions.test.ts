@@ -79,18 +79,29 @@ describe('missionGap / missionRealized', () => {
         expect(missionGap({ target: 10, legs: null, scalper: null })).toBe(10);
         expect(missionRealized({ legs: null, scalper: null })).toBe(0);
     });
-    it('somma realized delle gambe + pnl_locked dello scalper', () => {
+    it('somma realized delle gambe + pnl_locked dello scalper REALE', () => {
         const m = {
             target: 10,
             legs: {
                 ht_cs: { realized: 2, open_liability: 0, n_open: 0, n_settled: 1, trades: [] },
                 scalp: { realized: 1.5, open_liability: 0, n_open: 0, n_settled: 1, trades: [] },
             },
-            scalper: { status: 'done', dry_run: true, pnl_locked: 0.5 },
+            scalper: { status: 'done', dry_run: false, pnl_locked: 0.5 },
         };
         expect(missionLegsRealized(m)).toBe(3.5);
         expect(missionRealized(m)).toBe(4);
         expect(missionGap(m)).toBe(6);
+    });
+    it('scalper DRY-RUN = P&L simulato: MAI sommato al realizzato (audit H2)', () => {
+        const m = {
+            target: 10,
+            legs: { ht_cs: { realized: 2, open_liability: 0, n_open: 0, n_settled: 1, trades: [] } },
+            scalper: { status: 'done', dry_run: true, pnl_locked: 3 },
+        };
+        expect(missionRealized(m)).toBe(2);      // il +3 simulato non conta
+        expect(missionGap(m)).toBe(8);           // il gap resta da coprire a soldi veri
+        // dry_run assente/null = prudenza: trattato come simulato
+        expect(missionRealized({ legs: null, scalper: { status: 'done', dry_run: null as unknown as boolean, pnl_locked: 3 } })).toBe(0);
     });
     it('gamba con realized mancante/spazzatura conta 0 (mai NaN)', () => {
         const m = {
@@ -155,7 +166,8 @@ const MISSION: MissionRow = {
     event_id: 'ev1',
     event_name: 'Roma v Lazio',
     kickoff: new Date().toISOString(),
-    mission_date: '2026-07-15',
+    // OGGI: la barra di giornata somma solo le missioni di oggi (review 16/07)
+    mission_date: new Date().toLocaleDateString('sv-SE'),
     target: 10,
     status: 'active',
     phase_now: '1t',
@@ -190,8 +202,10 @@ describe('MissionPanel (render minimo)', () => {
         // punteggio LIVE grande e fase
         expect(await screen.findByText('1 - 0')).toBeInTheDocument();
         expect(await screen.findByText('1T')).toBeInTheDocument();
-        // realized = 2 (gamba) + 1.5 (scalper locked) = 3.5: compare sia nella
-        // barra di giornata sia nella riga della missione
-        expect((await screen.findAllByText('+€3.50')).length).toBeGreaterThanOrEqual(2);
+        // realized = 2 (gamba); l'1.5 dello scalper è DRY-RUN → simulato,
+        // NON sommato (audit H2). Compare sia nella barra di giornata sia
+        // nella riga della missione.
+        expect((await screen.findAllByText('+€2.00')).length).toBeGreaterThanOrEqual(2);
+        expect(screen.queryByText('+€3.50')).toBeNull();
     });
 });

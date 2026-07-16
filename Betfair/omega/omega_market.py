@@ -46,6 +46,10 @@ class EventInfo:
     event_id: str
     name: str
     open_date: Optional[datetime]
+    # metadati per la UI (menu Missione): competizione da Betfair, best-effort.
+    country_code: Optional[str] = None
+    competition_id: Optional[str] = None
+    competition_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -99,7 +103,12 @@ def _best_back_price(levels: Any) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # Listing eventi calcio di oggi (include i match già iniziati)
 # ---------------------------------------------------------------------------
-def list_today_football_events(lookback_hours: int = 12) -> list[EventInfo]:
+def list_today_football_events(lookback_hours: int = 12,
+                               with_competitions: bool = False) -> list[EventInfo]:
+    """Eventi calcio di oggi. ``with_competitions=True`` aggiunge la competizione
+    (1 listMarketCatalogue extra per chunk da 100): serve SOLO al refresh della
+    cache UI — il loop automatico, che chiama questa funzione a ogni ciclo,
+    NON deve pagare la chiamata in più."""
     now = datetime.now(timezone.utc)
     from_date = (now - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end_today = now.replace(hour=23, minute=59, second=59, microsecond=0)
@@ -111,7 +120,48 @@ def list_today_football_events(lookback_hours: int = 12) -> list[EventInfo]:
         eid = ev.get("id")
         if not eid:
             continue
-        out.append(EventInfo(str(eid), ev.get("name", "") or "", _parse_iso(ev.get("openDate"))))
+        out.append(EventInfo(str(eid), ev.get("name", "") or "", _parse_iso(ev.get("openDate")),
+                             country_code=ev.get("countryCode")))
+    if with_competitions:
+        comps = competitions_by_event([e.event_id for e in out])
+        if comps:
+            from dataclasses import replace as _dc_replace
+
+            out = [
+                _dc_replace(e, competition_id=comps[e.event_id][0], competition_name=comps[e.event_id][1])
+                if e.event_id in comps else e
+                for e in out
+            ]
+    return out
+
+
+def competitions_by_event(event_ids: list[str]) -> dict[str, tuple[Optional[str], Optional[str]]]:
+    """event_id -> (competition_id, competition_name) via listMarketCatalogue
+    MATCH_ODDS con projection EVENT+COMPETITION (1 chiamata per chunk di 100).
+    BEST-EFFORT: su errore torna la mappa parziale (la lista eventi non deve
+    mai fallire per colpa dei metadati)."""
+    out: dict[str, tuple[Optional[str], Optional[str]]] = {}
+    for i in range(0, len(event_ids), 100):
+        chunk = event_ids[i:i + 100]
+        try:
+            cats = call(lambda c: c.list_market_catalogue(
+                chunk, ["MATCH_ODDS"], max_results=200,
+                market_projection=["EVENT", "COMPETITION"])) or []
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[omega] competizioni non lette (chunk %s): %s", i, str(ex)[:160])
+            continue
+        for mk in cats:
+            ev = mk.get("event") or {}
+            comp = mk.get("competition") or {}
+            eid = ev.get("id")
+            if not eid or str(eid) in out:
+                continue
+            if comp.get("id") is None and not comp.get("name"):
+                continue
+            out[str(eid)] = (
+                str(comp["id"]) if comp.get("id") is not None else None,
+                comp.get("name") or None,
+            )
     return out
 
 

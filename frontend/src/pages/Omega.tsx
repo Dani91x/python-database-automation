@@ -333,7 +333,7 @@ export default function Omega() {
                         </TabsList>
                         <TabsContent value="mission">
                             {/* mode paper/live dal toggle globale in alto (control.mode) */}
-                            <MissionPanel mode={mode} />
+                            <MissionPanel mode={mode} dailyGoal={goal} />
                         </TabsContent>
                         <TabsContent value="auto" className="space-y-6">
                         {/* barra obiettivo */}

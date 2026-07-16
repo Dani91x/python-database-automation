@@ -284,10 +284,13 @@ class BetfairClient:
         event_ids: list[str],
         market_types: list[str] = ["MATCH_ODDS"],
         max_results: int = 200,
+        market_projection: Optional[list[str]] = None,
     ) -> Any:
         """
         Ritorna i cataloghi dei mercati per una lista di eventi.
         Supporta il batching naturale dell'API (più eventIds).
+        market_projection opzionale (es. ["EVENT","COMPETITION"] per leggere la
+        competizione senza il peso dei runner); default invariato.
         """
         params = {
             "filter": {
@@ -295,7 +298,8 @@ class BetfairClient:
                 "marketTypeCodes": market_types,
             },
             "maxResults": max_results,
-            "marketProjection": ["MARKET_START_TIME", "RUNNER_DESCRIPTION", "EVENT", "MARKET_DESCRIPTION"],
+            "marketProjection": market_projection
+            or ["MARKET_START_TIME", "RUNNER_DESCRIPTION", "EVENT", "MARKET_DESCRIPTION"],
         }
         return self.betting_rpc(method="SportsAPING/v1.0/listMarketCatalogue", params=params)
 

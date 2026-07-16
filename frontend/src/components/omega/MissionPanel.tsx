@@ -14,16 +14,17 @@ import { Badge } from '@/components/ui/badge';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy } from 'lucide-react';
 import {
-    requestManual, fetchOmegaEvents,
+    requestManual, fetchOmegaEvents, fetchManualRequests,
     type OmegaEvent, type OmegaMode,
 } from '@/lib/omega';
 import {
     fetchMissions, activateMission, subscribeOmegaMissions,
-    missionRealized, toNum,
+    missionRealized, toNum, splitEventName,
     type MissionRow, type MissionsSummary, type MissionPhase,
 } from '@/lib/omegaMissions';
+import { leagueLogo, teamLogo } from '@/lib/sportsLogos';
 import MissionCard from '@/components/omega/MissionCard';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -37,6 +38,44 @@ function fmtSignedEur(v: number): string {
 function timeLabel(iso: string | null | undefined): string {
     if (!iso) return '—';
     return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+function isSameLocalDay(iso: string, ref: Date): boolean {
+    const d = new Date(iso);
+    return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+}
+// data breve (es. "13/07") mostrata SOLO se il kickoff non è oggi: senza data
+// visibile l'utente ha attivato una missione su un evento vecchio di 3 giorni.
+function dateLabel(iso: string | null | undefined): string | null {
+    if (!iso) return null;
+    if (isSameLocalDay(iso, new Date())) return null;
+    return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+}
+// stato desunto dal solo kickoff (per gli eventi SENZA missione, dove non c'è
+// fase dal servizio): pre | live (iniziata <3h fa) | finita (>3h, come il
+// fallback di omega_engine.mission_phase).
+type KickoffState = 'pre' | 'live' | 'finita';
+function kickoffState(iso: string | null | undefined, now = Date.now()): KickoffState {
+    if (!iso) return 'pre';
+    const k = new Date(iso).getTime();
+    if (Number.isNaN(k) || now < k) return 'pre';
+    return now - k > 3 * 3600_000 ? 'finita' : 'live';
+}
+
+// logo con fallback pulito: se l'immagine non esiste (id non abbinato o 404
+// API-Football) l'<img> sparisce, niente icona rotta.
+function Logo({ src, size = 18, alt = '' }: { src: string; size?: number; alt?: string }) {
+    const [broken, setBroken] = useState(false);
+    // src può cambiare sulla stessa istanza (righe riordinate): il flag broken
+    // del vecchio src non deve nascondere il logo del nuovo (review 16/07)
+    useEffect(() => { setBroken(false); }, [src]);
+    if (!src || broken) return null;
+    return (
+        <img
+            src={src} alt={alt} width={size} height={size} loading="lazy"
+            className="rounded-sm object-contain shrink-0"
+            onError={() => setBroken(true)}
+        />
+    );
 }
 
 const PHASE_META: Record<MissionPhase, { label: string; cls: string }> = {
@@ -58,16 +97,21 @@ function statusDot(m: MissionRow): string {
 interface Props {
     // mode paper/live dal toggle globale della pagina (control.mode)
     mode?: OmegaMode;
+    // obiettivo € di giornata dal control (audit M8: prima era stato locale
+    // scollegato da daily_goal); resta editabile localmente.
+    dailyGoal?: number;
 }
 
-export default function MissionPanel({ mode = 'paper' }: Props) {
+export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     const [missions, setMissions] = useState<MissionRow[]>([]);
     const [summary, setSummary] = useState<MissionsSummary>({ missions_total: 0, missions_active: 0 });
     const [events, setEvents] = useState<OmegaEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<string | null>(null);
 
-    const [dayGoal, setDayGoal] = useState(250);      // obiettivo di GIORNATA €
+    const [dayGoal, setDayGoal] = useState(dailyGoal ?? 250);  // obiettivo di GIORNATA €
+    // segue il daily_goal del control quando cambia (l'edit locale resta possibile)
+    useEffect(() => { if (dailyGoal != null && dailyGoal > 0) setDayGoal(dailyGoal); }, [dailyGoal]);
     const [onlyActive, setOnlyActive] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -100,40 +144,131 @@ export default function MissionPanel({ mode = 'paper' }: Props) {
             }
         };
         reload().catch(onErr);
-        const unsub = subscribeOmegaMissions(() => { reload().catch(onErr); });
+        // realtime su missions+trades: le raffiche (fill+settle ravvicinati)
+        // vengono coalizzate in UNA reload ogni 400ms (review 16/07)
+        let pending: number | undefined;
+        const unsub = subscribeOmegaMissions(() => {
+            if (pending !== undefined) return;
+            pending = window.setTimeout(() => { pending = undefined; reload().catch(onErr); }, 400);
+        });
         const poll = setInterval(() => { reload().catch(onErr); }, 10_000);
-        return () => { unsub(); clearInterval(poll); };
+        return () => { unsub(); if (pending !== undefined) clearTimeout(pending); clearInterval(poll); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ---- derivati (Number(...) con fallback: mai NaN in UI) -------------
-    const missionByEvent = useMemo(() => new Map(missions.map(m => [m.event_id, m])), [missions]);
+    const eventById = useMemo(() => new Map(events.map(e => [e.event_id, e])), [events]);
     const activeMissions = useMemo(
         () => missions.filter(m => m.status === 'active')
             .sort((a, b) => String(a.kickoff ?? '').localeCompare(String(b.kickoff ?? ''))),
         [missions]);
-    const otherMissions = useMemo(() => missions.filter(m => m.status !== 'active'), [missions]);
-    const plainEvents = useMemo(() => events.filter(e => !missionByEvent.has(e.event_id)), [events, missionByEvent]);
+    // in pausa sempre visibili; le CHIUSE solo se hanno avuto attività reale
+    // (trade o P&L): una missione attivata per sbaglio e auto-chiusa a zero
+    // (es. evento stantio) non deve restare in lista come rumore.
+    const otherMissions = useMemo(() => missions.filter(m => {
+        if (m.status === 'active') return false;
+        if (m.status === 'paused') return true;
+        const legs = m.legs ?? {};
+        const hasTrades = Object.values(legs).some(l => toNum(l?.n_open) > 0 || toNum(l?.n_settled) > 0);
+        return hasTrades || missionRealized(m) !== 0;
+    }), [missions]);
+    // un evento sparisce dalla lista SOLO se la sua missione è visibile sopra:
+    // una chiusa-a-zero nascosta deve far RIapparire l'evento tra gli attivabili
+    // (review 16/07: prima il match svaniva dal pannello per il resto del giorno)
+    const plainEvents = useMemo(() => {
+        const visible = new Set([...activeMissions, ...otherMissions].map(m => m.event_id));
+        return events.filter(e => !visible.has(e.event_id));
+    }, [events, activeMissions, otherMissions]);
 
-    const eventsCount = events.length > 0 ? events.length : missions.length;
+    // gruppi per COMPETIZIONE, ordinati per primo kickoff; dentro, per orario.
+    // Le partite già FINITE (kickoff >3h fa) scendono in coda al proprio gruppo.
+    const eventGroups = useMemo(() => {
+        const by = new Map<string, { name: string; leagueId: number | null; events: OmegaEvent[] }>();
+        for (const ev of plainEvents) {
+            const key = ev.competition_name?.trim() || 'Altre competizioni';
+            let g = by.get(key);
+            if (!g) { g = { name: key, leagueId: null, events: [] }; by.set(key, g); }
+            if (g.leagueId == null && ev.league_id != null) g.leagueId = toNum(ev.league_id);
+            g.events.push(ev);
+        }
+        const groups = [...by.values()];
+        for (const g of groups) {
+            g.events.sort((a, b) => {
+                const fa = kickoffState(a.open_date) === 'finita' ? 1 : 0;
+                const fb = kickoffState(b.open_date) === 'finita' ? 1 : 0;
+                if (fa !== fb) return fa - fb;
+                return String(a.open_date ?? '').localeCompare(String(b.open_date ?? ''));
+            });
+        }
+        groups.sort((a, b) => {
+            // "Altre competizioni" sempre in fondo; le altre per primo kickoff
+            if (a.name === 'Altre competizioni') return 1;
+            if (b.name === 'Altre competizioni') return -1;
+            const ka = a.events.find(e => kickoffState(e.open_date) !== 'finita')?.open_date ?? a.events[0]?.open_date ?? '';
+            const kb = b.events.find(e => kickoffState(e.open_date) !== 'finita')?.open_date ?? b.events[0]?.open_date ?? '';
+            return String(ka).localeCompare(String(kb));
+        });
+        return groups;
+    }, [plainEvents]);
+
+    // per il target/partita contano solo gli eventi ANCORA OPERABILI (pre o
+    // live): dividere l'obiettivo per partite già finite gonfiava il denominatore.
+    // Fallback (review 16/07): solo le missioni ancora vive, non tutte.
+    const operableEvents = useMemo(
+        () => events.filter(e => kickoffState(e.open_date) !== 'finita').length,
+        [events]);
+    const liveMissionsCount = useMemo(
+        () => missions.filter(m => m.status === 'active' || m.status === 'paused').length,
+        [missions]);
+    const eventsCount = operableEvents > 0 ? operableEvents : liveMissionsCount;
     const goal = toNum(dayGoal);
     // target/partita suggerito = obiettivo / n° eventi, 2 decimali
     const targetSuggested = eventsCount > 0 ? Math.round((goal / eventsCount) * 100) / 100 : goal;
-    const totalRealized = missions.reduce((s, m) => s + missionRealized(m), 0);
+    // barra di giornata: SOLO le missioni di OGGI (review 16/07: le attive di
+    // ieri restano in lista per essere gestite, ma il loro P&L è di ieri e non
+    // deve gonfiare l'avanzamento verso l'obiettivo di oggi)
+    const todayStr = new Date().toLocaleDateString('sv-SE');  // YYYY-MM-DD locale
+    const totalRealized = missions
+        .filter(m => (m.mission_date ?? todayStr) === todayStr)
+        .reduce((s, m) => s + missionRealized(m), 0);
     const goalPct = goal > 0 ? Math.max(0, Math.min(100, (totalRealized / goal) * 100)) : 0;
 
     // ---- azioni ----------------------------------------------------------
     async function doRefreshEvents() {
         setBusy('events');
         try {
-            await requestManual('refresh_events');
-            toast('Aggiornamento eventi richiesto', { description: 'Il servizio Omega deve essere in esecuzione.' });
-            // attesa breve del servizio, su fetch fresco (come ManualPanel)
-            const before = events.length;
-            for (let i = 0; i < 8; i++) {
-                await sleep(1500);
+            const reqId = await requestManual('refresh_events');
+            // polla la RICHIESTA (non la lunghezza della lista: 62→62 eventi non
+            // cambia il count e prima sembrava "non succede nulla"). Finestra 50
+            // richieste e 45s (review 16/07: con enrichment il refresh può
+            // superare i 20s, e altre richieste possono spingere la nostra
+            // fuori dalle ultime 10 → falso "servizio non risponde").
+            let settled = false;
+            for (let i = 0; i < 45 && !settled; i++) {
+                await sleep(1000);
+                const reqs = await fetchManualRequests(50).catch(() => null);
+                const r = reqs?.find(x => x.id === reqId);
+                if (!r || (r.status !== 'done' && r.status !== 'error')) continue;
+                settled = true;
+                if (r.status === 'error') {
+                    toast.error('Aggiornamento eventi fallito', {
+                        description: String((r.result as { err?: string } | null)?.err ?? 'errore nel servizio Omega'),
+                    });
+                } else {
+                    const fresh = await fetchOmegaEvents().catch(() => null);
+                    if (fresh) setEvents(fresh);
+                    const n = toNum((r.result as { events?: number } | null)?.events, fresh?.length ?? 0);
+                    toast.success(`Eventi aggiornati: ${n} partite di oggi`);
+                }
+            }
+            if (!settled) {
+                // il refresh potrebbe comunque essere andato a buon fine più
+                // tardi: si ricarica la lista prima di allarmare l'utente
                 const fresh = await fetchOmegaEvents().catch(() => null);
-                if (fresh) { setEvents(fresh); if (fresh.length !== before) break; }
+                if (fresh) setEvents(fresh);
+                toast.warning('Il servizio Omega non ha ancora risposto', {
+                    description: 'Se l’app desktop è aperta la lista si aggiornerà da sola; altrimenti avvia il servizio (avvia_omega_service.bat).',
+                });
             }
         } catch (e) { toast.error('Richiesta fallita', { description: String((e as Error)?.message ?? e) }); }
         finally { setBusy(null); }
@@ -176,9 +311,14 @@ export default function MissionPanel({ mode = 'paper' }: Props) {
                 >
                     {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                     <span className={`w-2.5 h-2.5 rounded-full ${statusDot(m)}`} />
+                    <Logo src={teamLogo(eventById.get(m.event_id)?.home_team_id)} alt="" />
                     <span className="font-medium truncate max-w-[260px]" title={m.event_name ?? m.event_id}>
                         {m.event_name ?? m.event_id}
                     </span>
+                    <Logo src={teamLogo(eventById.get(m.event_id)?.away_team_id)} alt="" />
+                    {dateLabel(m.kickoff) && (
+                        <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">{dateLabel(m.kickoff)}</Badge>
+                    )}
                     <Badge variant="outline" className={meta.cls}>{meta.label}</Badge>
                     {phase !== 'pre' && phase !== 'finita' && m.minute != null && (
                         <span className="text-xs text-slate-400 tabular-nums">{toNum(m.minute)}'</span>
@@ -209,11 +349,58 @@ export default function MissionPanel({ mode = 'paper' }: Props) {
         );
     }
 
+    // riga di un evento SENZA missione: loghi squadre, orario, stato (pre/live/
+    // finita). ATTIVA solo se la partita non è già finita.
+    function eventRow(ev: OmegaEvent) {
+        const state = kickoffState(ev.open_date);
+        const { home, away } = splitEventName(ev.name);
+        const dLabel = dateLabel(ev.open_date);
+        return (
+            <div
+                key={ev.event_id}
+                className={`rounded-lg border border-white/5 bg-white/[0.01] px-4 py-2.5 flex items-center gap-3 ${state === 'finita' ? 'opacity-50' : ''}`}
+            >
+                <span className="flex items-center gap-2 min-w-0 flex-1">
+                    <Logo src={teamLogo(ev.home_team_id)} alt={home} />
+                    <span className="text-sm text-slate-200 truncate" title={ev.name ?? ev.event_id}>{home || (ev.name ?? ev.event_id)}</span>
+                    {away && <span className="text-[11px] text-slate-500 shrink-0">v</span>}
+                    {away && <span className="text-sm text-slate-200 truncate" title={away}>{away}</span>}
+                    <Logo src={teamLogo(ev.away_team_id)} alt={away} />
+                </span>
+                {dLabel && (
+                    <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">{dLabel}</Badge>
+                )}
+                {state === 'live' && (
+                    <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/40">LIVE</Badge>
+                )}
+                {state === 'finita' && (
+                    <Badge variant="outline" className="bg-slate-500/15 text-slate-400 border-slate-500/40">FINITA</Badge>
+                )}
+                <span className="text-sm font-display font-bold tabular-nums text-slate-300 w-12 text-right">
+                    {timeLabel(ev.open_date)}
+                </span>
+                <span className="w-24 text-right">
+                    {state !== 'finita' && (
+                        <Button
+                            size="sm" variant="outline"
+                            onClick={() => openActivation(ev.event_id, ev.name ?? ev.event_id, ev.open_date)}
+                        >
+                            <Target className="w-3.5 h-3.5 mr-1" />ATTIVA
+                        </Button>
+                    )}
+                </span>
+            </div>
+        );
+    }
+
     function inactiveRow(key: string, name: string, kickoff: string | null, m?: MissionRow) {
         return (
             <div key={key} className="rounded-lg border border-white/5 bg-white/[0.01] px-4 py-2.5 flex items-center gap-3">
                 <span className={`w-2.5 h-2.5 rounded-full ${m ? statusDot(m) : 'bg-slate-600'}`} />
                 <span className="text-sm text-slate-300 truncate max-w-[300px]" title={name}>{name}</span>
+                {dateLabel(kickoff) && (
+                    <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">{dateLabel(kickoff)}</Badge>
+                )}
                 <span className="text-xs text-slate-500 tabular-nums">{timeLabel(kickoff)}</span>
                 {m && (
                     <Badge variant="outline" className={m.status === 'paused'
@@ -315,17 +502,28 @@ export default function MissionPanel({ mode = 'paper' }: Props) {
                         </div>
                     )}
 
-                    {/* poi le altre (missioni in pausa/chiuse + eventi senza missione) */}
-                    {!onlyActive && (
-                        <>
-                            {otherMissions.map(m => inactiveRow(m.event_id, m.event_name ?? m.event_id, m.kickoff, m))}
-                            {plainEvents.map(ev => inactiveRow(ev.event_id, ev.name ?? ev.event_id, ev.open_date))}
-                            {otherMissions.length === 0 && plainEvents.length === 0 && (
-                                <div className="text-center text-xs text-muted-foreground py-4">
-                                    nessun evento in cache — premi "Aggiorna eventi" (servizio locale acceso)
-                                </div>
-                            )}
-                        </>
+                    {/* poi le missioni in pausa/chiuse */}
+                    {!onlyActive && otherMissions.map(m => inactiveRow(m.event_id, m.event_name ?? m.event_id, m.kickoff, m))}
+
+                    {/* infine gli eventi senza missione, raggruppati per COMPETIZIONE
+                        e ordinati per orario (le partite finite in coda, attenuate) */}
+                    {!onlyActive && eventGroups.map(g => (
+                        <div key={g.name} className="space-y-1.5">
+                            <div className="flex items-center gap-2 pt-3 pb-0.5 px-1">
+                                {g.leagueId != null
+                                    ? <Logo src={leagueLogo(g.leagueId)} size={20} alt={g.name} />
+                                    : <Trophy className="w-4 h-4 text-slate-500" />}
+                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{g.name}</span>
+                                <span className="text-[11px] text-slate-600 tabular-nums">({g.events.length})</span>
+                                <span className="flex-1 border-t border-white/5" />
+                            </div>
+                            {g.events.map(eventRow)}
+                        </div>
+                    ))}
+                    {!onlyActive && otherMissions.length === 0 && plainEvents.length === 0 && (
+                        <div className="text-center text-xs text-muted-foreground py-4">
+                            nessun evento in cache — premi "Aggiorna eventi" (servizio locale acceso)
+                        </div>
                     )}
                 </div>
             )}

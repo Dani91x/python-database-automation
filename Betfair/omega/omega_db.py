@@ -110,6 +110,54 @@ def upsert_events(events: list[dict[str, Any]]) -> None:
     _sb().table("omega_events").upsert(events, on_conflict="event_id").execute()
 
 
+# colonne aggiunte da migrations/omega_manual.sql (enrichment 16/07): se la
+# migrazione non è ancora applicata l'upsert fallirebbe → retry senza di esse.
+_EVENT_ENRICH_COLS = (
+    "country_code", "competition_id", "competition_name",
+    "fixture_id", "league_id", "home_team_id", "away_team_id",
+)
+
+
+def fail_stale_processing(max_age_min: int = 10) -> None:
+    """Richieste manuali rimaste in 'processing' (servizio morto a metà) → 'error'
+    dopo max_age_min: senza questo una 'place' interrotta spariva in silenzio e
+    la UI restava senza esito per sempre (AUDIT L10 16/07). Il reserve-first
+    evita comunque il doppio ordine."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_min)).isoformat()
+    (
+        _sb().table("omega_manual_requests")
+        .update({
+            "status": "error",
+            "result": {"err": "servizio interrotto durante l'elaborazione"},
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .eq("status", "processing").lt("created_at", cutoff).execute()
+    )
+
+
+def replace_events(events: list[dict[str, Any]]) -> None:
+    """SOSTITUISCE la cache eventi: upsert delle righe fresche + DELETE delle
+    righe non più presenti. Senza purge la cache accumulava eventi di giorni
+    passati (mostrati senza data → missioni attivate su partite già finite)."""
+    if events:
+        try:
+            _sb().table("omega_events").upsert(events, on_conflict="event_id").execute()
+        except Exception as ex:  # noqa: BLE001 — colonne enrichment assenti (migrazione non applicata)
+            logger.warning("[omega] upsert eventi con enrichment fallito (%s): retry legacy — applicare migrations/omega_manual.sql", str(ex)[:120])
+            legacy = [{k: v for k, v in r.items() if k not in _EVENT_ENRICH_COLS} for r in events]
+            _sb().table("omega_events").upsert(legacy, on_conflict="event_id").execute()
+    ids = [str(r.get("event_id")) for r in events if r.get("event_id")]
+    q = _sb().table("omega_events").delete()
+    if ids:
+        # PostgREST: not_.in_ vuole la lista fra parentesi
+        q = q.not_.in_("event_id", ids)
+    else:
+        q = q.neq("event_id", "")  # lista vuota → svuota tutta la cache
+    q.execute()
+
+
 def update_event_markets(event_id: str, markets: list[dict[str, Any]]) -> None:
     from datetime import datetime, timezone
 
@@ -157,8 +205,13 @@ def active_missions() -> list[dict[str, Any]]:
 
 
 def mission_event_ids() -> set[str]:
-    """event_id con missione ATTIVA: il loop automatico li deve saltare."""
-    res = _sb().table("omega_missions").select("event_id").eq("status", "active").execute()
+    """event_id con missione attiva O IN PAUSA: il loop automatico li salta.
+    (AUDIT M7 16/07: una missione pausata senza trade lasciava l'evento libero
+    all'automatico → al rientro dalla pausa esposizione doppia invisibile.)"""
+    res = (
+        _sb().table("omega_missions").select("event_id")
+        .in_("status", ["active", "paused"]).execute()
+    )
     return {str(r["event_id"]) for r in (res.data or []) if r.get("event_id")}
 
 

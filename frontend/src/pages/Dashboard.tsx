@@ -8,7 +8,7 @@ import { TeamPanel } from '@/components/dashboard/TeamPanel';
 import { ComparisonSection } from '@/components/dashboard/ComparisonSection';
 import { H2HSection } from '@/components/dashboard/H2HSection';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogOut, ChevronLeft, BarChart3, Bookmark, Wallet, Radio, History } from 'lucide-react';
+import { Loader2, LogOut, ChevronLeft, BarChart3, Bookmark, Wallet, Radio, History, LayoutGrid } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -127,6 +127,12 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {/* come TennisNav: ritorno rapido allo Sport Selector */}
+                        <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')}
+                            className="border-secondary/30 text-secondary hover:bg-secondary/10" aria-label="Cambia sport">
+                            <LayoutGrid className="w-4 h-4 md:mr-2" />
+                            <span className="hidden md:inline">Cambia sport</span>
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => navigate('/watchlist')}
                             className="border-amber-400/30 text-amber-300 hover:bg-amber-400/10" aria-label="Watchlist">
                             <Bookmark className="w-4 h-4 md:mr-2" />

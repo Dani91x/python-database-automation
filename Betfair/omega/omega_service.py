@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
@@ -459,6 +459,54 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     return n
 
 
+# trade 'open' il cui mercato non è più leggibile: si traccia DA QUANDO è
+# sparito (meta.market_gone_since) e si agisce solo se resta sparito per
+# ORPHAN_GONE_MAX_H CONSECUTIVE (review 16/07: l'età dal piazzamento non basta —
+# un weekend di servizio spento avrebbe voidato al PRIMO ciclo esiti reali).
+ORPHAN_GONE_MAX_H = 48
+
+
+def _maybe_void_orphan(tr: dict[str, Any], *, db, now: datetime) -> bool:
+    """Gestisce un trade 'open' orfano di mercato (read_market → None).
+
+    1° avvistamento: marca meta.market_gone_since e basta. Dopo ORPHAN_GONE_MAX_H
+    di sparizione continua: PAPER → void pnl=0 (nessun soldo vero, sblocca la
+    contabilità e l'auto-close missione); LIVE → MAI void automatico (l'esito
+    vero — vinto/perso — è su Betfair: registrare pnl=0 corromperebbe aggregati,
+    daily_loss_cap e curva equity) → alert CRITICAL una sola volta, resta open
+    per verifica manuale. Il marker si azzera se il mercato torna leggibile."""
+    try:
+        meta = dict(tr.get("meta") or {})
+        gone_since = _parse_iso_dt(meta.get("market_gone_since"))
+        if gone_since is None:
+            meta["market_gone_since"] = now.isoformat()
+            db.update_trade(tr["id"], meta=meta)
+            return False
+        if (now - gone_since).total_seconds() < ORPHAN_GONE_MAX_H * 3600:
+            return False
+        if str(tr.get("mode")) == "live":
+            if not meta.get("orphan_alerted"):
+                meta["orphan_alerted"] = True
+                db.update_trade(tr["id"], meta=meta)
+                logger.critical(
+                    "[omega] trade LIVE %s orfano di mercato da %sh: VERIFICARE SU BETFAIR "
+                    "(nessun void automatico sui soldi veri)", tr.get("id"), ORPHAN_GONE_MAX_H)
+                db.log("orphan_live_alert", {
+                    "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                    "market_id": tr.get("market_id"), "bet_id": tr.get("bet_id"),
+                })
+            return False
+        db.update_trade(tr["id"], status="void", pnl=0.0, settled_at=now.isoformat(), meta=meta)
+        db.log("settle_orphan", {
+            "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+            "reason": f"market_gone_{ORPHAN_GONE_MAX_H}h_consecutive", "mode": tr.get("mode"),
+        })
+        return True
+    except Exception as ex:  # noqa: BLE001
+        db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
+        return False
+
+
 def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     """Per ogni trade aperto legge il mercato; se CLOSED calcola P&L. Ritorna n. settled."""
     settled = 0
@@ -472,7 +520,18 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
                 event_name=tr.get("event_name") or "", market_start_time=None, runner_names={},
             )
             snap = market.read_market(cs)
-            if snap is None or not snap.closed:
+            if snap is None:
+                # mercato sparito da Betfair (evento rimosso/void)
+                if _maybe_void_orphan(tr, db=db, now=now):
+                    settled += 1
+                continue
+            # mercato di nuovo leggibile: azzera l'eventuale marker di sparizione
+            if (tr.get("meta") or {}).get("market_gone_since"):
+                meta = dict(tr.get("meta") or {})
+                meta.pop("market_gone_since", None)
+                meta.pop("orphan_alerted", None)
+                db.update_trade(tr["id"], meta=meta)
+            if not snap.closed:
                 continue
             # commissione FISSATA al piazzamento (coerenza P&L anche se il param cambia)
             tr_commission = tr.get("commission")
@@ -502,20 +561,88 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
 # MODALITÀ MANUALE (COSTITUZIONE §7-bis): coda comandi dalla UI, eseguiti dal
 # servizio indipendentemente dallo stato dell'automatico.
 # ---------------------------------------------------------------------------
-def refresh_events(*, market, db) -> int:
-    """Aggiorna la cache eventi calcio di oggi (menu Manuale). Ritorna n. eventi."""
-    events = market.list_today_football_events()
-    rows = [{
-        "event_id": e.event_id,
-        "name": e.name,
-        "open_date": e.open_date.isoformat() if e.open_date else None,
-    } for e in events]
-    db.upsert_events(rows)
+def _enrich_events_with_fixtures(events: list, db, now: datetime) -> dict[str, dict]:
+    """event_id -> {fixture_id, league_id, home_team_id, away_team_id} abbinando
+    in BATCH gli eventi Betfair alle fixture del DB (stesso matcher money-critical
+    dell'advisor: Betfair/betfair_match.resolve_matches, assegnazione 1:1).
+    Serve alla UI per loghi squadre/lega (media.api-sports.io). BEST-EFFORT:
+    su qualsiasi errore torna {} — il refresh eventi non deve mai fallire per
+    colpa dei metadati."""
+    try:
+        fn = getattr(db, "fixtures_for_window", None)
+        if not callable(fn) or not events:
+            return {}
+        from Betfair.betfair_match import load_name_map, resolve_matches
+
+        dates = [e.open_date for e in events if e.open_date]
+        lo = (min(dates) if dates else now) - timedelta(hours=12)
+        hi = (max(dates) if dates else now) + timedelta(hours=12)
+        fixtures = fn(lo.isoformat(), hi.isoformat()) or []
+        ev_dicts = [{
+            "id": e.event_id,
+            "name": e.name,
+            "openDate": e.open_date.isoformat() if e.open_date else None,
+        } for e in events]
+        matched, _ = resolve_matches(ev_dicts, fixtures, name_map=load_name_map())
+        out: dict[str, dict] = {}
+        for m in matched:
+            fx = m.get("fixture") or {}
+            eid = str((m.get("event") or {}).get("id") or "")
+            if eid:
+                out[eid] = {
+                    "fixture_id": fx.get("fixture_id"),
+                    "league_id": fx.get("league_id"),
+                    "home_team_id": fx.get("home_team_id"),
+                    "away_team_id": fx.get("away_team_id"),
+                }
+        return out
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] enrichment fixture fallito (loghi assenti): %s", str(ex)[:160])
+        return {}
+
+
+def refresh_events(*, market, db, now: Optional[datetime] = None) -> int:
+    """Aggiorna la cache eventi calcio di oggi (menu Manuale + tab Missione).
+
+    La cache è SOSTITUITA (upsert + purge dei non più presenti): senza purge
+    gli eventi di giorni passati restavano in lista senza data visibile e
+    l'utente poteva attivare missioni su partite già finite (bug 16/07)."""
+    now = now or _now()
+    try:
+        events = market.list_today_football_events(with_competitions=True)
+    except TypeError:
+        # fake/market legacy senza il parametro: lista senza competizioni
+        events = market.list_today_football_events()
+    enrich = _enrich_events_with_fixtures(events, db, now)
+    rows = []
+    for e in events:
+        ex = enrich.get(e.event_id) or {}
+        rows.append({
+            "event_id": e.event_id,
+            "name": e.name,
+            "open_date": e.open_date.isoformat() if e.open_date else None,
+            "country_code": getattr(e, "country_code", None),
+            "competition_id": getattr(e, "competition_id", None),
+            "competition_name": getattr(e, "competition_name", None),
+            "fixture_id": ex.get("fixture_id"),
+            "league_id": ex.get("league_id"),
+            "home_team_id": ex.get("home_team_id"),
+            "away_team_id": ex.get("away_team_id"),
+            "updated_at": now.isoformat(),
+        })
+    db.replace_events(rows)
     return len(rows)
 
 
 def process_manual(*, market, db, now: datetime) -> int:
     """Esegue le richieste manuali pendenti. Ritorna quante ne ha processate."""
+    # richieste orfane in 'processing' (crash a metà) → error, mai perse in silenzio
+    fail_stale = getattr(db, "fail_stale_processing", None)
+    if callable(fail_stale):
+        try:
+            fail_stale()
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[omega] fail_stale_processing KO: %s", str(ex)[:120])
     reqs = db.pending_manual_requests()
     n = 0
     for r in reqs:
@@ -624,14 +751,23 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     target = payload.get("target")
     runner_name = payload.get("runner_name")
 
-    # legge il book per prezzo/fill mancanti
+    # legge il book: prezzo/fill mancanti + GUARDIA DI STATO (audit H4 16/07).
+    # Mai piazzare su book assente o non OPEN: in PAPER il fill simulato al
+    # prezzo congelato su mercato sospeso/chiuso = piazzare "a risultato noto"
+    # (corrompe il P&L paper); in LIVE produce solo una riga error da rigetto.
     snap = market.read_book(market_id, {})
-    runner = None
-    if snap:
-        runner = next((r for r in snap["runners"] if r["selection_id"] == selection_id), None)
+    if snap is None:
+        return {"error": "book_non_disponibile"}
+    book_status = str(snap.get("status") or "OPEN").upper()
+    if book_status != "OPEN":
+        return {"error": f"mercato_{book_status.lower()}"}
+    runner = next((r for r in snap["runners"] if r["selection_id"] == selection_id), None)
+    if runner is None:
+        return {"error": "selezione_non_sul_book"}
+    runner_status = str(runner.get("status") or "ACTIVE").upper()
+    if runner_status != "ACTIVE":
+        return {"error": f"selezione_{runner_status.lower()}"}
     if price in (None, "", 0):
-        if runner is None:
-            return {"error": "prezzo assente e book non disponibile"}
         price = runner["lay_price"] if side == "lay" else runner["back_price"]
     if price in (None, "", 0):
         return {"error": "prezzo non disponibile sul book"}
@@ -729,8 +865,18 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
                                                       "event_id": event_id}),
             )
         except Exception as ex:  # noqa: BLE001
-            db.update_trade(trade_id, status="error", meta={"reason": "place_exception", "err": str(ex)[:160]})
-            return {"error": "place_exception", "trade_id": trade_id}
+            # ESITO IGNOTO (review 16/07): l'eccezione può arrivare DOPO che
+            # Betfair ha accettato l'ordine. Con l'indice per-gamba parziale una
+            # riga 'error' sarebbe SUBITO ripiazzabile → doppio ordine reale.
+            # La riserva resta 'pending': reconcile_pending la risolve contro
+            # Betfair (match forte su customerOrderRef omega-m<id>) o la libera
+            # dopo il GRACE se l'ordine non esiste davvero.
+            db.update_trade(trade_id, meta={"phase": "reserved", "manual": True,
+                                            "reason": "place_exception_reconciling",
+                                            "err": str(ex)[:160]})
+            db.log("manual_place_exception", {"trade_id": trade_id, "event_id": event_id,
+                                              "err": str(ex)[:160]})
+            return {"error": "place_exception_in_riconciliazione", "trade_id": trade_id}
         if not res.ok or res.size_matched <= 0:
             db.update_trade(trade_id, status="error", meta={"reason": "live_not_matched", "order_status": res.order_status})
             return {"error": "live_not_matched", "trade_id": trade_id}
@@ -885,6 +1031,14 @@ def _process_one_mission(m: dict, snap: Any, *, market, db, now: datetime,
         now=now,
         prev=str(m.get("phase_now") or "pre"),
     )
+    # AUDIT M6 (review 16/07): la verifica del "finita da solo orologio" va fatta
+    # QUI, prima della logica suggerimenti — se fatta dopo, i suggerimenti
+    # venivano azzerati con phase='finita' e mai più riproposti sulla missione
+    # tenuta deliberatamente viva (partita rinviata/non coperta dal provider).
+    if phase == "finita":
+        clock_only = getattr(snap, "status", None) is None and m.get("score_status") is None
+        if clock_only and not _event_really_over_cached(m, market, now):
+            phase = str(m.get("phase_now") or "pre")
     if snap is not None:
         for field, val in (("minute", getattr(snap, "minute", None)),
                            ("score_home", getattr(snap, "score_home", None)),
@@ -953,6 +1107,8 @@ def _process_one_mission(m: dict, snap: Any, *, market, db, now: datetime,
                  (t.get("bet_id") or str(t.get("mode")) == "live"))
                 for t in trades if t.get("phase"))
     if phase == "finita" and not alive:
+        # la verifica clock-only è già stata fatta in testa (M6): se siamo qui
+        # con 'finita', la partita è finita davvero (provider o book chiuso).
         updates["status"] = "closed"
 
     if updates:
@@ -960,6 +1116,44 @@ def _process_one_mission(m: dict, snap: Any, *, market, db, now: datetime,
         db.update_mission(m["event_id"], **updates)
         return 1
     return 0
+
+
+# cache TTL della verifica "davvero finita": senza, una missione su partita
+# rinviata costerebbe 2 chiamate Betfair OGNI ciclo (~8.600/die) solo per
+# ri-sentirsi dire "non ancora" (review 16/07). False = ricontrolla tra TTL;
+# True chiude la missione e la cache non serve più.
+_REALLY_OVER_TTL_S = 600
+_REALLY_OVER_CACHE: dict[str, tuple[datetime, bool]] = {}
+
+
+def _event_really_over_cached(m: dict, market, now: datetime) -> bool:
+    eid = str(m.get("event_id") or "")
+    hit = _REALLY_OVER_CACHE.get(eid)
+    if hit is not None and (now - hit[0]).total_seconds() < _REALLY_OVER_TTL_S:
+        return hit[1]
+    res = _event_really_over(m, market)
+    _REALLY_OVER_CACHE[eid] = (now, res)
+    if len(_REALLY_OVER_CACHE) > 500:  # bound: mai crescita illimitata
+        _REALLY_OVER_CACHE.pop(next(iter(_REALLY_OVER_CACHE)))
+    return res
+
+
+def _event_really_over(m: dict, market) -> bool:
+    """Conferma da Betfair che l'evento è davvero concluso, usata SOLO quando la
+    fase 'finita' deriva dal fallback orologio (kickoff+3h senza alcun dato del
+    provider). Mercato CS assente o CLOSED (o errore di lettura) → finita davvero
+    (fail-closed: meglio chiudere che tenere missioni zombie). Book ancora vivo
+    (OPEN/SUSPENDED, anche non inplay = partita rinviata/spostata) → NON finita."""
+    try:
+        ev = _real_market.EventInfo(str(m.get("event_id") or ""), m.get("event_name") or "", None)
+        cs = market.get_correct_score_market(ev)
+        if cs is None:
+            return True
+        book = market.read_market(cs)
+        return book is None or book.closed
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega] verifica fine evento fallita per %s: %s", m.get("event_id"), str(ex)[:120])
+        return True
 
 
 def process_missions(*, market, db, now: datetime) -> int:
