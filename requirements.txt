@@ -26,7 +26,7 @@ python-Levenshtein  # backend veloce per thefuzz
 # meccanismo con cui arm/disarm bot e downgrade di modalità hanno effetto. Un upgrade
 # silenzioso può rompere il restart path mentre un bot continua a tradare (money-critical).
 flumine==2.13.11            # framework streaming/recording (sopra betfairlightweight)
-betfairlightweight==2.23.2  # pin esplicito (portato da flumine, versione verificata)
+betfairlightweight[speed]==2.23.2  # pin esplicito + extra [speed] (parsing stream C, best practice ufficiale flumine)
 
 # ── Opzionale / heavy (meta-learner neurale) ─────────────────────────────────
 # L'ensemble degrada con grazia a LogisticRegression se assenti (try/except import).

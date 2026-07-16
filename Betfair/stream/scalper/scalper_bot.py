@@ -443,6 +443,7 @@ class ScalperStrategy(BaseStrategy):
             "scalps": 0, "scratch_pars": 0, "ledger_divergences": 0,
             "roundtrips": 0, "scratches": 0, "stops": 0,
             "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
+            "pnl_settled": 0.0,  # verità del settlement simulato (paper)
             "trend_entries": 0, "target_hit": 0,
             # contabilita' per FASE (missione one_green_per_phase)
             "pnl_prematch": 0.0, "pnl_inplay": 0.0,
@@ -833,9 +834,24 @@ class ScalperStrategy(BaseStrategy):
             orders = market.blotter.strategy_orders(self)
         except Exception:  # noqa: BLE001
             orders = []
+        settled = 0.0
         for order in orders:
             oid = getattr(order, "id", None) or id(order)
+            # pnl_settled (16/07, pattern tennis): VERITÀ del settlement
+            # simulato (order.simulated.profit), ADDITIVA a pnl_locked
+            # (proiezione). Dedup via _settled_by_id: chiusure ripetute dello
+            # stesso mercato non contano due volte. In LIVE resta 0
+            # (simulated non matcha): la verità live sono i cleared Betfair.
+            if oid not in self._settled_by_id:
+                try:
+                    sim = getattr(order, "simulated", None)
+                    settled += float(getattr(sim, "profit", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    pass
             self._settled_by_id[oid] = (order, mtype)
+        if settled:
+            self.stats["pnl_settled"] = round(
+                float(self.stats.get("pnl_settled", 0.0)) + settled, 3)
 
     # ------------------------------------------------- contabilita' di ciclo
     # soglia "ciclo verde" (EUR) per la missione one_green_per_phase

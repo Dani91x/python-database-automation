@@ -130,6 +130,10 @@ def _scalp(path):
 
 def _run(path, params):
     prev = getattr(flumine.config, "simulation_available_prices", False)
+    # FIX igiene test: ripristinare ANCHE config.simulated — è un globale flumine
+    # di processo: lasciarlo True inquinava i test collezionati dopo (i "config
+    # pin" di test_flumine_paper_fidelity asseriscono simulated=False a runtime).
+    prev_sim = getattr(flumine.config, "simulated", False)
     flumine.config.simulated = True
     flumine.config.simulation_available_prices = False
     try:
@@ -149,6 +153,7 @@ def _run(path, params):
         return s.settled_pnl, dict(s.stats)
     finally:
         flumine.config.simulation_available_prices = prev
+        flumine.config.simulated = prev_sim
 
 
 _FLB = {"side": "LAY", "target": "favorite", "price_min": 1.01, "price_max": 1.10,

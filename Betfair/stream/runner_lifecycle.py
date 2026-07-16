@@ -68,3 +68,42 @@ def uptime_exceeded(started_monotonic: float, now_monotonic: float, max_hours: f
     if max_hours <= 0:
         return False
     return (now_monotonic - started_monotonic) > max_hours * 3600.0
+
+
+# ----------------------------------------------------------------------------
+# Stallo del recorder raw (incidente 2026-07-16: stream MUTO per ~1.5h con
+# runner vivo → nessun dato di mercato registrato, raw mai creati per i nuovi
+# follow). Qui SOLO la matematica pura (testabile); l'azione è in runner.py.
+# ----------------------------------------------------------------------------
+def raw_stall_seconds(
+    last_write_ms: float,
+    now_ms: float,
+    seconds_since_stream_start: Optional[float],
+) -> Optional[float]:
+    """Da quanti secondi il tee raw NON scrive.
+
+    * ``last_write_ms > 0``: secondi trascorsi dall'ultimo write.
+    * ``last_write_ms == 0`` (MAI scritto — il caso 16/07: stream mai connesso):
+      l'età dello stream corrente, se nota.
+    * altrimenti ``None`` (non determinabile → nessuna azione).
+    """
+    if last_write_ms and last_write_ms > 0:
+        return max(0.0, (now_ms - last_write_ms) / 1000.0)
+    if seconds_since_stream_start is not None:
+        return max(0.0, seconds_since_stream_start)
+    return None
+
+
+def stall_restart_due(
+    stall_s: Optional[float],
+    threshold_s: float,
+    last_restart_monotonic: float,
+    now_monotonic: float,
+    min_interval_s: float,
+) -> bool:
+    """True se lo stallo persistente giustifica una ricostruzione della
+    subscription (throttled: mai più spesso di ``min_interval_s``).
+    ``threshold_s <= 0`` disattiva il meccanismo."""
+    if threshold_s <= 0 or stall_s is None or stall_s < threshold_s:
+        return False
+    return (now_monotonic - last_restart_monotonic) >= min_interval_s

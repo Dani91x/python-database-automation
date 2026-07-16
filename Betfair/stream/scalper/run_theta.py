@@ -175,6 +175,20 @@ def run_theta(
     event_ids = [str(e) for e in (params.get("event_ids") or [])]
     if not event_ids:
         raise ValueError("params['event_ids'] vuoto")
+
+    # GUARDIA REGISTRAZIONI PARZIALI (fix 16/07, come run_backtest): default solo
+    # WARNING per evento non-COMPLETE; con ``params['min_coverage']`` (percento)
+    # gli eventi sotto soglia vengono ESCLUSI (ValueError se non resta nulla).
+    try:
+        from ..tools.validate_recordings import check_events_for_backtest
+
+        event_ids = check_events_for_backtest(
+            event_ids, root, params.get("min_coverage"))
+    except ValueError:
+        raise  # filtro esplicito richiesto e nessun evento valido: deve fallire
+    except Exception as e:  # noqa: BLE001 - la guardia non blocca il replay
+        logger.warning("[theta] validazione registrazioni KO (ignorata): %s", e)
+
     try:
         commission_rate = float(params.get("commission_rate", 0.0) or 0.0)
     except (TypeError, ValueError):

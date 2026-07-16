@@ -196,6 +196,74 @@ def read_live_now(event_id: str) -> Optional[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# ESECUZIONE PAPER VIA FLUMINE — omega come CLIENT della coda ESISTENTE del
+# runner calcio (betfair_live_order_queue.sql / live_order_worker.py). SOLO
+# enqueue (RPC) + letture: il worker della coda NON è mai toccato. Usato dal
+# gate _flumine_paper_gate e dal poll di conferma in omega_service.
+# v1: SOLO mode='paper' — il percorso LIVE di omega non passa MAI di qui.
+# ---------------------------------------------------------------------------
+def live_follow_status(event_id: str) -> Optional[str]:
+    """``live_follow.status`` per l'evento ('STREAMING' = runner agganciato)."""
+    rows = (
+        _sb().table("live_follow").select("status")
+        .eq("event_id", str(event_id)).limit(1).execute().data or []
+    )
+    return rows[0].get("status") if rows else None
+
+
+def runner_heartbeat() -> Optional[dict[str, Any]]:
+    """Heartbeat del runner calcio (singleton ``betfair_live_heartbeat`` id=1):
+    ``ts`` (freschezza = runner vivo) + ``mode`` (OFF|PAPER|LIVE)."""
+    rows = (
+        _sb().table("betfair_live_heartbeat").select("ts,mode,pid")
+        .eq("id", 1).limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def enqueue_live_order(payload: dict[str, Any]) -> Optional[int]:
+    """Accoda UN comando sulla coda del runner via RPC ``request_betfair_live_order``
+    (contratto esistente: idempotente su client_ref, owner/service_role only).
+    Ritorna l'id della richiesta accodata (o già esistente)."""
+    res = _sb().rpc("request_betfair_live_order", {"p": payload}).execute()
+    data = getattr(res, "data", None)
+    return int(data) if data is not None else None
+
+
+def get_live_order_request_by_ref(client_ref: str) -> Optional[dict[str, Any]]:
+    """Riga della coda per ``client_ref`` (idempotenza): recovery quando il
+    processo è morto tra enqueue e persistenza di ``flumine_request_id``
+    (fix F1 review 16/07)."""
+    rows = (
+        _sb().table("betfair_live_order_requests")
+        .select("id,status,result,error,bet_id,processed_at")
+        .eq("client_ref", str(client_ref)).limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def get_live_order_request(request_id: int) -> Optional[dict[str, Any]]:
+    """Riga della coda (status/result/error/bet_id) per id — poll dell'esito."""
+    rows = (
+        _sb().table("betfair_live_order_requests")
+        .select("id,status,result,error,bet_id,processed_at")
+        .eq("id", int(request_id)).limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def get_live_order_mirror(client_order_ref: str, mode: str = "paper") -> Optional[dict[str, Any]]:
+    """Riga dello specchio ``betfair_live_orders`` per (mode, client_order_ref =
+    ``awlq<request_id>``): fill/size/prezzo medio REALI simulati da flumine."""
+    rows = (
+        _sb().table("betfair_live_orders").select("*")
+        .eq("mode", str(mode)).eq("client_order_ref", str(client_order_ref))
+        .limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+# ---------------------------------------------------------------------------
 # MISSIONI (centro di controllo per partita)
 # ---------------------------------------------------------------------------
 def active_missions() -> list[dict[str, Any]]:

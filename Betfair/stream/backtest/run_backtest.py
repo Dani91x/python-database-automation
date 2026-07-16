@@ -354,6 +354,21 @@ def run_backtest(
     if not event_ids:
         raise ValueError("params['event_ids'] vuoto")
 
+    # GUARDIA REGISTRAZIONI PARZIALI (fix 16/07): i raw registrati possono coprire
+    # solo una parte della partita (inizio tardivo, stream morto, buchi F3) → un
+    # backtest su un raw monco MENTE. Default: solo WARNING visibile per evento
+    # (zero regressioni); con ``params['min_coverage']`` (percento, es. 90) gli
+    # eventi sotto soglia vengono ESCLUSI (ValueError se non resta nulla).
+    try:
+        from ..tools.validate_recordings import check_events_for_backtest
+
+        event_ids = check_events_for_backtest(
+            event_ids, root, params.get("min_coverage"))
+    except ValueError:
+        raise  # filtro esplicito richiesto e nessun evento valido: deve fallire
+    except Exception as e:  # noqa: BLE001 - la guardia non blocca il backtest
+        logger.warning("[backtest] validazione registrazioni KO (ignorata): %s", e)
+
     try:
         commission_rate = float(params.get("commission_rate", 0.0) or 0.0)
     except (TypeError, ValueError):

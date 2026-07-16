@@ -164,6 +164,7 @@ class SniperStrategy(BaseStrategy):
             "orders": 0, "entries": 0, "greens": 0, "stops": 0,
             "timeouts": 0, "flattens": 0, "dry_fires": 0,
             "pnl_locked": 0.0, "pos_ms_total": 0.0, "cycles": 0,
+            "pnl_settled": 0.0,  # verità del settlement simulato (paper)
             "ledger_divergences": 0,
         }
 
@@ -953,6 +954,19 @@ class SniperStrategy(BaseStrategy):
             orders = market.blotter.strategy_orders(self)
         except Exception:  # noqa: BLE001
             orders = []
+        settled = 0.0
         for o in orders:
             oid = getattr(o, "id", None) or id(o)
+            # pnl_settled (16/07, pattern tennis): verità del settlement
+            # simulato, additiva, dedup via _settled_by_id (chiusure ripetute
+            # non raddoppiano). Copre anche il theta (chiama super()).
+            if oid not in self._settled_by_id:
+                try:
+                    sim = getattr(o, "simulated", None)
+                    settled += float(getattr(sim, "profit", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    pass
             self._settled_by_id[oid] = (o, mtype)
+        if settled:
+            self.stats["pnl_settled"] = round(
+                float(self.stats.get("pnl_settled", 0.0)) + settled, 3)

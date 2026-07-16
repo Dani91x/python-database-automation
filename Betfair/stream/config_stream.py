@@ -123,7 +123,12 @@ FINALIZE_SPACING_SEC: float = float(os.getenv("LIVE_FINALIZE_SPACING_SEC", "8"))
 # Limiti Betfair / multi-match (F5) — NO BAN
 # ----------------------------------------------------------------------------
 # soglia mercati totali oltre cui AVVISARE (WARN), e tetto oltre cui RIFIUTARE.
-SAFE_MARKET_THRESHOLD: int = int(os.getenv("LIVE_SAFE_MARKET_THRESHOLD", "250"))
+# SOGLIA DI ALLERTA (solo warning, il blocco resta HARD_MARKET_CAP): 200 è il
+# limite ufficiale Betfair di mercati per subscription stream (best practice
+# 16/07, docs/BETFAIR_BEST_PRACTICES_2026-07.md) — sopra i 200 l'alert avvisa
+# che serve segmentare su più subscription (lavoro del piano scala, non si
+# alza il cap).
+SAFE_MARKET_THRESHOLD: int = int(os.getenv("LIVE_SAFE_MARKET_THRESHOLD", "200"))
 HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "400"))
 BACKOFF_BASE_SEC: float = float(os.getenv("LIVE_BACKOFF_BASE_SEC", "5"))
 BACKOFF_MAX_SEC: float = float(os.getenv("LIVE_BACKOFF_MAX_SEC", "300"))

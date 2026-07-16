@@ -281,8 +281,11 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     """Aggrega le righe ``omega_trades`` → totali. PURA e testabile (money-critical).
 
     'won/lost/void' → realizzato; 'open' → liability aperta; 'pending' CON ``bet_id``
-    → ordine reale già a mercato: conta nell'esposizione aperta (I8). 'pending'
-    senza bet_id ed 'error' NON contano come piazzati.
+    → ordine reale già a mercato: conta nell'esposizione aperta (I8). Anche il
+    'pending' PAPER in attesa del fill flumine (``meta.flumine_client_ref``,
+    fix F2 review 16/07) conta come piazzato: l'ordine simulato È sul book del
+    runner — senza, ``max_events``/liability sarebbero aggirabili nella finestra
+    TTL. 'pending' senza bet_id/marker ed 'error' NON contano come piazzati.
 
     Con ``day_start`` (mezzanotte operativa, vedi ``day_start_utc``) calcola ANCHE
     i valori della GIORNATA (§2: R = P&L dei trade regolati OGGI; match/giorno =
@@ -307,7 +310,8 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
                 realized_today += pnl
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 traded_today += 1
-        elif st == "open" or (st == "pending" and r.get("bet_id")):
+        elif st == "open" or (st == "pending" and (
+                r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref"))):
             open_liab += float(r.get("liability") or 0.0)
             open_n += 1
             traded += 1

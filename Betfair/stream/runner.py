@@ -86,7 +86,12 @@ from .trading.controls import LiveEventExposureControl, LiveExposureControl, Liv
 from .xhedge_worker import xhedge_worker
 from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
-from .runner_lifecycle import any_follow_alive, uptime_exceeded
+from .runner_lifecycle import (
+    any_follow_alive,
+    raw_stall_seconds,
+    stall_restart_due,
+    uptime_exceeded,
+)
 from .single_instance import acquire_single_instance_lock
 from .scores.api_football import ApiFootballProvider
 from .scores.betfair_inplay import BetfairInPlayProvider
@@ -141,6 +146,9 @@ class LiveSession:
         # auto-spegnimento (fix 2026-07-08: runner mai più attivi per giorni)
         self.shutdown_requested = threading.Event()
         self.started_monotonic = time.monotonic()
+        # epoca (monotonic) dell'ULTIMO framework.run(): rilevamento stallo
+        # "stream mai connesso" nel heartbeat_worker (None = mai avviato).
+        self.stream_started_monotonic: Optional[float] = None
         self.pollers: Dict[str, ScorePoller] = {}             # event_id -> poller
         self.markets_by_event: Dict[str, List[Dict[str, Any]]] = {}
         self.fixture_by_event: Dict[str, Any] = {}            # event_id -> fixture_id (per λ DB)
@@ -786,6 +794,20 @@ def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
 
 
 _RAW_STALL_ALERTED = False
+# Stallo PERSISTENTE del flusso di mercato (incidente 2026-07-16: stream MUTO
+# dalle 15:29Z con runner vivo per ~1.5h → nessun dato registrato, raw MAI
+# creati per i nuovi follow): oltre questa soglia il runner ricostruisce la
+# subscription da solo (stesso path collaudato del restart F3). 0 = disattivo.
+_RAW_STALL_RESTART_SEC = float(os.getenv("LIVE_RAW_STALL_RESTART_SEC", "600"))
+# throttle delle ricostruzioni forzate (mai churn di subscription)
+_RAW_STALL_RESTART_MIN_INTERVAL_SEC = float(
+    os.getenv("LIVE_RAW_STALL_RESTART_MIN_INTERVAL_SEC", "900"))
+_RAW_STALL_LAST_RESTART = 0.0
+# keepAlive sessione Betfair ANCHE durante lo streaming (fix 16/07): prima era
+# rinnovata SOLO nel loop idle → dopo ore di stream una RICONNESSIONE (drop di
+# rete, restart F3) usava un token scaduto e lo stream restava muto per sempre.
+_STREAM_KEEPALIVE_SEC = float(os.getenv("LIVE_STREAM_KEEPALIVE_SEC", "480"))
+_STREAM_KA_LAST = 0.0
 
 
 def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:  # noqa: ARG001
@@ -798,6 +820,18 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
     except Exception as ex:  # noqa: BLE001 - heartbeat best-effort
         logger.debug("[runner] heartbeat KO: %s", str(ex)[:120])
+    # keepAlive periodico della sessione Betfair mentre si streamma (fix 16/07,
+    # vedi _STREAM_KEEPALIVE_SEC): best-effort, mai far cadere il runner.
+    global _STREAM_KA_LAST
+    now_mono = time.monotonic()
+    if _STREAM_KEEPALIVE_SEC > 0 and now_mono - _STREAM_KA_LAST >= _STREAM_KEEPALIVE_SEC:
+        _STREAM_KA_LAST = now_mono
+        try:
+            from .auth import keep_alive as _bf_keep_alive
+
+            _bf_keep_alive(session.context_api_client)
+        except Exception as ex:  # noqa: BLE001 - keepAlive best-effort
+            logger.warning("[runner] keepAlive sessione (stream) KO: %s", str(ex)[:120])
     # RECORDER VIVO (fix 11/07, lezione 10/07: tee nativo morto in silenzio =
     # in-play irrecuperabile): se il tee e' abilitato, ci sono mercati
     # sottoscritti ma NESSUN write raw da >120s → alert WARN (una volta,
@@ -805,22 +839,69 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     try:
         from .raw_listener import RAW_STATE
 
-        global _RAW_STALL_ALERTED
+        global _RAW_STALL_ALERTED, _RAW_STALL_LAST_RESTART
         h = RAW_STATE.health()
         if h.get("enabled") and session.market_to_event:
             last = max(h.get("last_write_ms", {}).values() or [0])
             now_ms = time.time() * 1000.0
-            stalled = last > 0 and now_ms - last > 120_000
+            started = getattr(session, "stream_started_monotonic", None)
+            # last==0 = MAI scritto in questa vita del processo (il caso 16/07:
+            # stream mai connesso dopo il rebuild) → conta dall'avvio dello stream.
+            stall_s = raw_stall_seconds(
+                last, now_ms, (now_mono - started) if started is not None else None)
+            stalled = stall_s is not None and stall_s > 120.0
             if stalled and not _RAW_STALL_ALERTED:
                 _RAW_STALL_ALERTED = True
                 db.insert_alert(
                     "WARN", "RAW_RECORDER",
-                    f"tee raw NATIVO fermo da {(now_ms - last) / 1000:.0f}s "
+                    f"tee raw NATIVO fermo da {stall_s:.0f}s "
                     f"con stream attivo (write_errors={h.get('write_errors')}) "
                     "— i backtest/Atlante perderebbero questi dati",
                 )
             elif not stalled:
                 _RAW_STALL_ALERTED = False
+            # ESCALATION (fix 16/07): stallo PERSISTENTE → CRITICAL + ricostruzione
+            # della subscription (throttled). L'alert WARN da solo non recupera
+            # nulla: il 16/07 lo stream e' rimasto muto per ore con runner vivo.
+            if (not session.shutdown_requested.is_set()
+                    and stall_restart_due(
+                        stall_s, _RAW_STALL_RESTART_SEC,
+                        _RAW_STALL_LAST_RESTART, now_mono,
+                        _RAW_STALL_RESTART_MIN_INTERVAL_SEC)):
+                # GUARDIA MONEY-CRITICAL (review 16/07, stessa lezione del
+                # tennis audit #1): il restart ricostruisce flumine con un
+                # blotter VUOTO — MAI a ordini vivi o regole armate. Con un
+                # blocker si alza solo l'alert (il retry avviene al prossimo
+                # scadere del throttle, quando si è flat).
+                blocker = _lifecycle_blockers(flumine)
+                _RAW_STALL_LAST_RESTART = now_mono
+                if blocker is not None:
+                    logger.critical(
+                        "[runner] stream MUTO da %.0fs ma restart RINVIATO: %s "
+                        "— chiudi/gestisci manualmente per sbloccare il recovery.",
+                        stall_s, blocker)
+                    try:
+                        db.insert_alert(
+                            "CRITICAL", "RAW_RECORDER",
+                            f"stream mercati MUTO da {stall_s:.0f}s ma recovery "
+                            f"RINVIATO ({blocker}): il restart azzererebbe il "
+                            "blotter con esposizione viva.")
+                    except Exception:  # noqa: BLE001
+                        pass
+                else:
+                    logger.critical(
+                        "[runner] REGISTRAZIONE INTERROTTA: nessun dato di mercato da "
+                        "%.0fs con %d mercati sottoscritti — ricostruisco la subscription.",
+                        stall_s, len(session.market_to_event))
+                    try:
+                        db.insert_alert(
+                            "CRITICAL", "RAW_RECORDER",
+                            f"stream mercati MUTO da {stall_s:.0f}s: registrazione "
+                            "interrotta, ricostruisco la subscription (auto-recovery).")
+                    except Exception:  # noqa: BLE001 - l'alert non blocca il recovery
+                        pass
+                    session.restart_requested.set()
+                    _stop_framework(flumine)
     except Exception:  # noqa: BLE001 - telemetria best-effort
         pass
 
@@ -1308,6 +1389,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
 
             logger.info("[runner] stream avviato: %d eventi, %d mercati.",
                         len(session.cataloged_events) - len(session.finished_events), len(market_ids))
+            # epoca dello stream corrente: serve al rilevamento "stream MAI
+            # connesso" del heartbeat_worker (stallo con last_write_ms==0).
+            session.stream_started_monotonic = time.monotonic()
             try:
                 framework.run()
             except KeyboardInterrupt:

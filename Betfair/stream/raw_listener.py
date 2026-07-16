@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import threading
+import time
 from typing import Any, Dict, Optional
 
 from betfairlightweight import StreamListener
@@ -44,16 +45,46 @@ class _RawState:
         self.dir = data_dir
         self.market_to_event = market_to_event  # riferimento vivo (aggiornato dal runner)
         self.enabled = enabled
+        # reset dei contatori di salute a ogni (ri)configurazione (review 16/07):
+        # il singleton sopravvive ai restart della subscription — senza reset,
+        # dopo un rebuild lo "stall" veniva misurato sui timestamp della vita
+        # precedente e uno stream sano-ma-quieto rischiava un re-restart inutile.
+        self.last_write_ms = {}
 
     def file_for(self, event_id: str) -> Any:
         fh = self._files.get(event_id)
         if fh is None:
             ev_dir = os.path.join(self.dir or ".", event_id)
             os.makedirs(ev_dir, exist_ok=True)
-            fh = open(os.path.join(ev_dir, f"{event_id}.raw.jsonl"), "a", encoding="utf-8")  # noqa: SIM115
+            raw_path = os.path.join(ev_dir, f"{event_id}.raw.jsonl")
+            # MARKER DI COPERTURA (fix registrazioni parziali 16/07): documenta
+            # l'inizio di una SESSIONE di registrazione nel sidecar .recmeta.jsonl
+            # (mai dentro il raw: il formato nativo deve restare replayabile).
+            # raw_bytes_at_open > 0 = ripresa in append dopo un restart → il
+            # confine del possibile buco e' esplicito per la validazione.
+            size0 = os.path.getsize(raw_path) if os.path.exists(raw_path) else 0
+            self._write_meta(event_id, {
+                "kind": "open",
+                "ts_ms": int(time.time() * 1000),
+                "raw_bytes_at_open": size0,
+                "pid": os.getpid(),
+            })
+            fh = open(raw_path, "a", encoding="utf-8")  # noqa: SIM115 - chiuso in close()
             self._files[event_id] = fh
-            logger.info("[raw] apro file nativo: %s", os.path.join(ev_dir, f"{event_id}.raw.jsonl"))
+            logger.info("[raw] apro file nativo: %s", raw_path)
         return fh
+
+    def _write_meta(self, event_id: str, record: Dict[str, Any]) -> None:
+        """Appende una riga al sidecar `<event>.recmeta.jsonl`. Best-effort:
+        un errore sul meta NON deve mai toccare il tee del raw."""
+        try:
+            ev_dir = os.path.join(self.dir or ".", event_id)
+            os.makedirs(ev_dir, exist_ok=True)
+            path = os.path.join(ev_dir, f"{event_id}.recmeta.jsonl")
+            with open(path, "a", encoding="utf-8") as mfh:
+                mfh.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except Exception as exc:  # noqa: BLE001 - solo telemetria
+            logger.debug("[raw] recmeta KO per %s (ignorato): %s", event_id, exc)
 
     def health(self) -> Dict[str, Any]:
         """Snapshot per la telemetria (bytes/ultimo write per evento)."""
@@ -119,11 +150,19 @@ class _RawState:
 
     def close(self) -> None:
         with self._lock:
-            for fh in self._files.values():
+            for ev, fh in self._files.items():
                 try:
                     fh.close()
                 except Exception:  # noqa: BLE001
                     pass
+                # MARKER DI COPERTURA: fine sessione di registrazione (shutdown
+                # pulito). last_pt_ms = publish-time dell'ultimo messaggio scritto.
+                self._write_meta(ev, {
+                    "kind": "close",
+                    "ts_ms": int(time.time() * 1000),
+                    "last_pt_ms": self.last_write_ms.get(ev, 0),
+                    "bytes_written": self.bytes_written.get(ev, 0),
+                })
             self._files.clear()
 
 

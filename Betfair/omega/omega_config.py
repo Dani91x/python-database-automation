@@ -35,6 +35,13 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     "max_liability_per_match": (0.0, float, 0.0, 1_000_000.0),
     "daily_loss_cap": (0.0, float, 0.0, 1_000_000.0),
     "max_open_liability": (0.0, float, 0.0, 10_000_000.0),
+    # Esecuzione PAPER (DEMO=LIVE): 'auto' = coda flumine del runner quando il
+    # gate passa (fallback legacy sempre disponibile) | 'rest' = forza il fill
+    # legacy istantaneo su snapshot. SOLO paper: il LIVE non passa MAI di qui.
+    "execution_mode": ("auto", str, None, None),
+    # TTL quasi-FOK del place paper via flumine: senza fill sufficiente entro
+    # questo tempo si accoda il cancel del residuo (vedi COSTITUZIONE §6).
+    "paper_fill_ttl_s": (45, int, 5, 600),
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}
@@ -50,6 +57,8 @@ def _coerce(key: str, raw: Any) -> Any:
     except (TypeError, ValueError):
         return default
     if key == "entry_window_source" and val not in ("score", "clock"):
+        return default
+    if key == "execution_mode" and val not in ("auto", "rest"):
         return default
     if lo is not None and isinstance(val, (int, float)) and val < lo:
         val = lo if cast is float else int(lo)

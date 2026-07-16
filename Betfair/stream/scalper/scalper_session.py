@@ -784,6 +784,17 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                                   name=f"flumine-{ev}")
         runner.start()
 
+        # KEEP-ALIVE sessione .it (best practice 16/07): il token REST scade
+        # in ~20 min e le chiamate API NON lo estendono; senza rinnovo lo
+        # sweep di emergenza sul crash (LIVE) fallirebbe proprio quando serve.
+        def _keepalive_loop() -> None:
+            from ..auth import keep_alive as _ka
+            while not stop_flag.wait(600.0):
+                _ka(trading)
+
+        threading.Thread(target=_keepalive_loop, daemon=True,
+                         name=f"keepalive-{ev}").start()
+
         # SPECCHIO ORDINI → betfair_live_orders (regola specchio 16/07): le
         # operazioni dei bot — demo E live — compaiono sul ladder come
         # my_lay/my_back, in realtime, come quelle manuali.

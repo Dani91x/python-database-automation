@@ -203,6 +203,50 @@ seguiti Omega usa il `clock` (`marketStartTime`), senza mai fermarsi (I6).
 - **Settlement PAPER**: si polla il market book della CS finché `status='CLOSED'`,
   poi si leggono gli stati runner (`WINNER`/`LOSER`). Autorevole quanto il LIVE.
 
+### 6-bis. Esecuzione PAPER via flumine — DEMO = LIVE (2026-07-16, v1 SOLO PAPER)
+
+Quando possibile, il fill PAPER non è più istantaneo su snapshot ma passa dal
+**runner calcio** (flumine `paper_trade=True`: SimulatedExecution su stream
+reale — coda al prezzo, liquidità consumata, betDelay), riusando la coda
+ESISTENTE `betfair_live_order_requests` (contratto di `live_order_worker`, che
+NON viene toccato: omega è un normale client della coda, come il frontend).
+
+- **Gate** `_flumine_paper_gate(event_id)` — True SOLO se **tutte**: omega in
+  `mode='paper'`; `execution_mode='auto'`; evento in `live_follow` con status
+  `STREAMING`; runner vivo (heartbeat `betfair_live_heartbeat.ts` fresco ≤90s)
+  e in order mode `PAPER`. FAIL-CLOSED: qualunque dubbio → percorso legacy.
+- **Flusso**: riserva `pending` (reserve-first INVARIATO, I1) → enqueue `place`
+  (`client_ref='omega-t<trade_id>'`, idempotente sulla coda) → la riserva resta
+  `pending` con `meta.flumine_request_id` → il poll di ciclo
+  (`poll_flumine_paper`, ~20s) legge la riga di coda e lo specchio
+  `betfair_live_orders` (`client_order_ref='awlq<request_id>'`) e conferma con
+  **size/prezzo medio REALI simulati** (`_confirm_open_trade`, robusta).
+- **TTL quasi-FOK** (`paper_fill_ttl_s`, default 45s) — **deviazione consapevole**
+  dal `FILL_OR_KILL` nativo del LIVE: la coda non offre un FoK atomico
+  end-to-end in paper, quindi l'ordine simulato lavora il book fino al TTL;
+  scaduto, si accoda il `cancel` del residuo e si confermano SOLO i € realmente
+  matchati (qualunque `matched>0` è contabilizzato — **mai posizioni nude**;
+  sotto `min_stake` la riga porta la nota `below_min_stake`); nessun fill →
+  riserva liberata a `error` (`flumine_no_fill`, stessa semantica di
+  `paper_no_fill`). La finestra di esposizione non contabilizzata è quindi al
+  più TTL+grace, e sempre su soldi finti.
+- **FALLBACK SEMPRE DISPONIBILE**: gate KO in qualunque punto (runner giù,
+  evento non seguito, mode mismatch, enqueue/coda in errore, specchio muto oltre
+  TTL+grace) → percorso legacy INVARIATO (`E.paper_fill` automatico /
+  `paper_at_price` manuale, o conferma coi dati della riserva se l'ordine era
+  già accodato) con log esplicito `paper_fill_fallback`. Il sistema non resta
+  MAI bloccato per l'assenza del runner. `execution_mode='rest'` forza il
+  legacy senza log di fallback (scelta esplicita, non un degrado).
+- **LIVE INTOCCATO**: in `mode='live'` non viene MAI accodato nulla (gate chiuso
+  per costruzione + test dedicato); place FOK REST + riconciliazione esistenti,
+  byte-identici. **Settlement INVARIATO**: REST resta autoritativo (§6), anche
+  per i trade riempiti via flumine.
+- Limiti noti dichiarati: durante la finestra `pending` (≤TTL) la liability
+  riservata non entra in `open_liability` (i pending paper senza `bet_id` non
+  contano negli aggregati, come da I8); il `cancel` richiede il `bet_id`
+  simulato dallo specchio — se non arriva, il poll risolve comunque alla hard
+  deadline (TTL+60s) col miglior dato disponibile.
+
 ---
 
 ## 7. Parametri configurabili dalla UI
@@ -228,6 +272,8 @@ in `lib/omega.ts` ↔ backend `omega_config.resolve_params`). Chiavi e default:
 | `max_liability_per_match` | 0 | cap liability/match (0 = off) |
 | `daily_loss_cap` | 0 | stop-loss giornaliero (0 = off) |
 | `max_open_liability` | 0 | cap liability aperta totale (0 = off) |
+| `execution_mode` | "auto" | esecuzione PAPER (§6-bis): `auto` (coda flumine se il gate passa, fallback legacy) \| `rest` (forza il fill legacy su snapshot). Il LIVE non passa mai di qui |
+| `paper_fill_ttl_s` | 45 | TTL quasi-FOK del place paper via flumine: senza fill entro il TTL → cancel del residuo, conferma dei soli € matchati |
 
 > Scelta utente 11/07: **set-and-forget senza limiti** → i tre cap
 > (`max_liability_per_match`, `daily_loss_cap`, `max_open_liability`) sono
