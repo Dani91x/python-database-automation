@@ -25,6 +25,7 @@ vi.mock('@/lib/omega', () => ({
 vi.mock('@/lib/scalper', () => ({
     activateScalper: vi.fn(async () => ({})),
     stopScalper: vi.fn(async () => ({})),
+    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
     SCALPER_PARAM_DEFAULTS: { one_green_per_phase: true },
 }));
 
@@ -41,12 +42,14 @@ vi.mock('@/lib/omegaMissions', async importOriginal => {
 
 import MissionCard from './MissionCard';
 import { requestManual } from '@/lib/omega';
+import { activateScalper } from '@/lib/scalper';
 import { toast } from 'sonner';
 import type {
     MissionRow, MissionSuggestionLay, MissionSuggestionScalp,
 } from '@/lib/omegaMissions';
 
 const mRequest = vi.mocked(requestManual);
+const mActivate = vi.mocked(activateScalper);
 
 // ------------------------------------------------------------------ fixture
 const SUGG_HT: MissionSuggestionLay = {
@@ -210,29 +213,30 @@ describe('MissionCard — piazzamento manuale (money-critical)', () => {
         }));
     });
 
-    it('SCALPA: size cappata alla liquidità mostrata al best', async () => {
+    it('AVVIA SCALPER 1-TICK: arma il THETA in paper (mai back manuali nudi)', async () => {
+        // 16/07: la riga Scalp NON piazza più back manuali senza uscita — arma
+        // il bot stream (theta_only) che entra/esce da solo a 1 tick.
         const user = userEvent.setup();
         renderCard(makeMission());
 
-        // default UI €100 > liq. €60 → avviso e cap
-        expect(screen.getByText(/importo limitato a €60/)).toBeInTheDocument();
+        // nessun bottone SCALPA manuale deve esistere più
+        expect(screen.queryByRole('button', { name: /SCALPA/ })).toBeNull();
 
-        await user.click(screen.getByRole('button', { name: /SCALPA/ }));
-        expect(await screen.findByText('Conferma ordine (PAPER)')).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: 'Piazza (paper)' }));
-
-        await waitFor(() => expect(mRequest).toHaveBeenCalledTimes(1));
-        expect(mRequest).toHaveBeenCalledWith('place', {
-            event_id: 'ev1',
-            event_name: 'Roma v Lazio',
-            market_id: SUGG_SCALP.market_id,        // '1.222'
-            selection_id: SUGG_SCALP.selection_id,  // 77
-            runner_name: SUGG_SCALP.runner_name,    // 'Under 2.5'
-            side: 'back',
-            mode: 'paper',
-            price: 1.62,
-            size: 60,                               // cap ≤ back_size (mai 100)
-            phase: 'scalp',
+        await user.click(screen.getByRole('button', { name: /AVVIA SCALPER 1-TICK/ }));
+        await waitFor(() => expect(mActivate).toHaveBeenCalledTimes(1));
+        const [eventId, scalperMode, dryRun, stake, params] = mActivate.mock.calls[0];
+        expect(eventId).toBe('ev1');
+        expect(scalperMode).toBe('maker');
+        expect(dryRun).toBe(true);                    // v1: SEMPRE paper da UI
+        expect(stake).toBe(25);
+        expect(params).toMatchObject({
+            theta_mode: true,
+            theta_only: true,                         // NON armare il maker
+            theta_stake: 25,
+            theta_preset: 'classico',
+            theta_confirm_mode: 'auto',
         });
+        // niente ordini manuali: requestManual mai chiamato dalla riga scalp
+        expect(mRequest).not.toHaveBeenCalled();
     });
 });

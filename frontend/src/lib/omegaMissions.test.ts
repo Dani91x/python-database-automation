@@ -32,6 +32,7 @@ vi.mock('@/lib/omega', () => ({
 vi.mock('@/lib/scalper', () => ({
     activateScalper: vi.fn(),
     stopScalper: vi.fn(),
+    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
     SCALPER_PARAM_DEFAULTS: {},
 }));
 

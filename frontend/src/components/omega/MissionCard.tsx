@@ -16,7 +16,10 @@ import {
 } from '@/components/ui/dialog';
 import { Bot, Info, Loader2, Lock, Pause, ShieldAlert, Square, Zap } from 'lucide-react';
 import { requestManual, type OmegaMode } from '@/lib/omega';
-import { activateScalper, stopScalper, SCALPER_PARAM_DEFAULTS } from '@/lib/scalper';
+import {
+    activateScalper, stopScalper, fetchScalperState, SCALPER_PARAM_DEFAULTS,
+    type ScalperControl,
+} from '@/lib/scalper';
 import {
     stopMission, followMission, splitEventName, missionGap, toNum,
     formatAdvisorParts, advisorTooltip,
@@ -83,13 +86,29 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
     const [busy, setBusy] = useState<string | null>(null);
     const [laySizeHt, setLaySizeHt] = useState(1);    // default €1 (editabile)
     const [laySizeFt, setLaySizeFt] = useState(1);
-    const [scalpSize, setScalpSize] = useState(100);  // default €100 (editabile)
     const [draft, setDraft] = useState<PlaceDraft | null>(null);
 
     const phase = phaseIdx(mission.phase_now);
     const legs = mission.legs ?? {};
     const gap = missionGap(mission);
-    const scalperActive = !!mission.scalper && SCALPER_ACTIVE.includes(mission.scalper.status);
+
+    // stato del BOT SCALPER (theta 1-tick) letto DIRETTO da scalper_control:
+    // la RPC missioni espone solo pnl_locked del maker — qui servono i numeri
+    // theta (colpi/green/scratch/pnl) in tempo quasi reale (poll 5s).
+    const [scalperCtl, setScalperCtl] = useState<ScalperControl | null>(null);
+    useEffect(() => {
+        let alive = true;
+        const load = () => {
+            fetchScalperState(mission.event_id, 0)
+                .then(s => { if (alive) setScalperCtl(s.control); })
+                .catch(() => { /* servizio spento: il poll riprova */ });
+        };
+        load();
+        const t = setInterval(load, 5_000);
+        return () => { alive = false; clearInterval(t); };
+    }, [mission.event_id]);
+    const scalperActive = !!scalperCtl && SCALPER_ACTIVE.includes(scalperCtl.status);
+    const thetaStats = (scalperCtl?.stats ?? {}) as Record<string, number | undefined>;
 
     // INVALIDAZIONE del dialog (review 15/07, money-critical): se mentre il
     // dialog è aperto la suggestion di riferimento cambia mercato/selezione/
@@ -148,8 +167,11 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
         } finally { setBusy(null); }
     }
 
-    // Avvia scalper: prima il follow se manca (prerequisito), poi activate.
-    // v1: dry_run SEMPRE true (nessun ordine reale dallo scalper da questa UI).
+    // Avvia il BOT SCALPER 1-TICK (theta, stream sub-secondo): entra quando il
+    // suo semaforo dà il via, GREEN a 1 tick spalmato sui due lati, scratch,
+    // gestione post-gol, poi rientra se le condizioni tornano — fino ai suoi
+    // kill-switch. v1: SEMPRE paper da questa UI (gate come ScalperPanel).
+    // Prerequisito: follow dell'evento (stream dedicato).
     async function handleStartScalper() {
         setBusy('scalper');
         try {
@@ -157,8 +179,18 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                 const { home, away } = splitEventName(mission.event_name);
                 await followMission(mission.event_id, home, away, mission.kickoff);
             }
-            await activateScalper(mission.event_id, 'maker', true, 25, { ...SCALPER_PARAM_DEFAULTS });
-            toast.success('Scalper avviato (dry-run)', { description: mission.event_name ?? mission.event_id });
+            await activateScalper(mission.event_id, 'maker', true, 25, {
+                ...SCALPER_PARAM_DEFAULTS,
+                // stesso payload del pannello Scalper (theta_only: NON armare il maker)
+                theta_mode: true,
+                theta_only: true,
+                theta_stake: 25,
+                theta_preset: 'classico',
+                theta_confirm_mode: 'auto',
+            } as Parameters<typeof activateScalper>[4]);
+            toast.success('SCALPER 1-TICK avviato (paper)', {
+                description: `${mission.event_name ?? mission.event_id} — entra/esce da solo, green a 1 tick`,
+            });
             onChanged();
         } catch (e) {
             toast.error('Avvio scalper fallito', { description: String((e as Error)?.message ?? e) });
@@ -274,45 +306,42 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
         );
     }
 
-    const suggScalp = mission.suggestion_scalp;
-    const scalpPrice = toNum(suggScalp?.back_price);
-    const scalpLiquidity = toNum(suggScalp?.back_size);
-    // cap conservativo: mai più della liquidità mostrata al best
-    const scalpSizeCapped = Math.min(toNum(scalpSize), scalpLiquidity);
-    const canScalp = !!suggScalp && scalpPrice > 1 && scalpSizeCapped > 0;
-
     // trade compatti di TUTTE le gambe per il footer
     const allTrades = (Object.keys(legs) as MissionLegKey[])
         .flatMap(k => ((legs[k] as MissionLeg | null)?.trades ?? []).map(t => ({ ...t, legKey: k })));
 
     return (
         <div className="rounded-lg border border-white/10 bg-black/30 overflow-hidden">
-            {/* riga PRE-MATCH: scalper */}
+            {/* riga SCALP: il BOT LIVE 1-TICK (theta, stream sub-secondo).
+                Entra e esce DA SOLO: green a 1 tick spalmato sui due lati,
+                scratch, post-gol; rientra se le condizioni tornano. Sostituisce
+                il vecchio back manuale nudo (16/07: posizione senza uscita). */}
             <div className="px-4 py-3 flex flex-wrap items-center gap-3">
-                <span className="text-[11px] uppercase tracking-wide text-slate-400 w-16">Pre</span>
+                <span className="text-[11px] uppercase tracking-wide text-slate-400 w-16">Scalp</span>
                 <Bot className="w-4 h-4 text-primary" />
-                {mission.scalper ? (
+                <span className="text-xs text-slate-400">gap</span>
+                <span className={`text-sm tabular-nums font-bold ${gap <= 0 ? 'text-emerald-400' : 'text-secondary'}`}>{fmtEur(gap)}</span>
+                {scalperCtl ? (
                     <>
                         <Badge variant="outline" className={scalperActive
                             ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
                             : 'bg-slate-500/15 text-slate-300 border-slate-500/40'}>
-                            {mission.scalper.status.toUpperCase()}
+                            {scalperCtl.status.toUpperCase()}
                         </Badge>
-                        {mission.scalper.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">DRY</Badge>}
-                        {/* audit H2 16/07: P&L dry-run = SIMULATO — grigio e marcato
-                            "sim", NON conta nel gap/target (vedi missionRealized) */}
-                        {mission.scalper.dry_run ? (
-                            <span className="text-sm tabular-nums font-bold text-slate-400" title="P&L simulato (dry-run): non conta nel target">
-                                {fmtSignedEur(toNum(mission.scalper.pnl_locked))} <span className="text-[10px] font-normal">sim</span>
-                            </span>
-                        ) : (
-                            <span className={`text-sm tabular-nums font-bold ${toNum(mission.scalper.pnl_locked) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {fmtSignedEur(toNum(mission.scalper.pnl_locked))}
-                            </span>
-                        )}
+                        {scalperCtl.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">PAPER</Badge>}
+                        {/* numeri del theta: colpi/green/scratch + P&L bloccato */}
+                        <span className="text-[11px] text-slate-400 tabular-nums">
+                            {toNum(thetaStats.theta_shots)} colpi · {toNum(thetaStats.theta_greens)} green · {toNum(thetaStats.theta_scratches)} scratch
+                        </span>
+                        <span
+                            className={`text-sm tabular-nums font-bold ${scalperCtl.dry_run ? 'text-slate-400' : (toNum(thetaStats.theta_pnl_locked) >= 0 ? 'text-emerald-400' : 'text-red-400')}`}
+                            title={scalperCtl.dry_run ? 'P&L simulato (paper): non conta nel target' : 'P&L bloccato dallo scalper'}
+                        >
+                            {fmtSignedEur(toNum(thetaStats.theta_pnl_locked))}{scalperCtl.dry_run && <span className="text-[10px] font-normal"> sim</span>}
+                        </span>
                     </>
                 ) : (
-                    <span className="text-xs text-slate-500 italic">scalper non attivo</span>
+                    <span className="text-xs text-slate-500 italic">bot non attivo su questa partita</span>
                 )}
                 <span className="ml-auto">
                     {scalperActive ? (
@@ -321,9 +350,10 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                             Ferma scalper
                         </Button>
                     ) : (
-                        <Button variant="outline" size="sm" onClick={handleStartScalper} disabled={busy === 'scalper'}>
-                            {busy === 'scalper' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Bot className="w-3.5 h-3.5 mr-1" />}
-                            Avvia scalper (dry)
+                        <Button size="sm" className="bg-sky-600 hover:bg-sky-500 text-white"
+                            onClick={handleStartScalper} disabled={busy === 'scalper'}>
+                            {busy === 'scalper' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Zap className="w-3.5 h-3.5 mr-1" />}
+                            AVVIA SCALPER 1-TICK
                         </Button>
                     )}
                 </span>
@@ -342,51 +372,6 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
             ) : (
                 layRow('ft', '2T', mission.suggestion_ft, 'ft_cs', laySizeFt, setLaySizeFt)
             )}
-
-            {/* riga SCALP: gap residuo + back Under */}
-            <div className="px-4 py-3 border-t border-white/5 flex flex-wrap items-center gap-3">
-                <span className="text-[11px] uppercase tracking-wide text-slate-400 w-16">Scalp</span>
-                <span className="text-xs text-slate-400">gap</span>
-                <span className={`text-sm tabular-nums font-bold ${gap <= 0 ? 'text-emerald-400' : 'text-secondary'}`}>{fmtEur(gap)}</span>
-                {suggScalp ? (
-                    <>
-                        <span className="text-sm font-bold text-sky-300">{suggScalp.runner_name ?? '—'}</span>
-                        <span className="text-sm tabular-nums">back @ <b>{fmtQuote(suggScalp.back_price)}</b></span>
-                        <span className="text-xs text-slate-400 tabular-nums">liq. €{scalpLiquidity.toFixed(0)}</span>
-                        <span className="ml-auto flex items-center gap-2">
-                            <input
-                                type="number" min={1} step={10} value={scalpSize}
-                                onChange={e => setScalpSize(toNum(e.target.value))}
-                                className="w-24 rounded-md bg-black/50 border border-white/10 px-2 py-1 text-sm tabular-nums"
-                                aria-label="Importo scalp"
-                            />
-                            <Button
-                                size="sm" disabled={!canScalp || busy === 'place'}
-                                className="bg-sky-600 hover:bg-sky-500 text-white"
-                                onClick={() => setDraft({
-                                    label: 'Scalp',
-                                    phase: 'scalp',
-                                    side: 'back',
-                                    market_id: suggScalp.market_id,
-                                    market_name: suggScalp.market_name,
-                                    selection_id: suggScalp.selection_id,
-                                    runner_name: suggScalp.runner_name,
-                                    price: scalpPrice,
-                                    // cap ≤ liquidità mostrata (money-critical)
-                                    size: scalpSizeCapped,
-                                })}
-                            >
-                                <Zap className="w-3.5 h-3.5 mr-1" />SCALPA
-                            </Button>
-                        </span>
-                        {toNum(scalpSize) > scalpLiquidity && (
-                            <span className="w-full text-[11px] text-amber-300">importo limitato a €{scalpLiquidity.toFixed(0)} (liquidità al best)</span>
-                        )}
-                    </>
-                ) : (
-                    <span className="text-xs text-slate-500 italic">nessun candidato scalp</span>
-                )}
-            </div>
 
             {/* footer: pausa/chiudi + trade compatti */}
             <div className="px-4 py-3 border-t border-white/5 space-y-2">
