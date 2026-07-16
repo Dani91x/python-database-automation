@@ -83,7 +83,8 @@ def _paper(monkeypatch):
 def test_xhedge_worker_computes_and_upserts():
     orders = [
         {"event_id": "EVT1", "mode": "paper", "market_id": "1.2", "selection_id": 30,
-         "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0},
+         "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0,
+         "client_order_ref": "awlq7"},
     ]
     sb = _Sb(orders)
     n = xw._process_once(sb, _session())
@@ -107,6 +108,43 @@ def test_xhedge_worker_skips_finished_event():
     sess = _session()
     sess.finished_events = {"EVT1"}
     orders = [{"event_id": "EVT1", "mode": "paper", "market_id": "1.2", "selection_id": 30,
-               "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0}]
+               "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0,
+               "client_order_ref": "awlq7"}]
     sb = _Sb(orders)
     assert xw._process_once(sb, sess) == 0 and sb.store["upserts"] == []
+
+
+def test_xhedge_worker_esclude_gli_ordini_dei_bot_scalper():
+    """Review 16/07 (2ª passata): il mirror delle sessioni scalper scrive nello
+    specchio ordini con ref hash flumine (non-awlq). L'xhedge NON deve sommarli:
+    è esposizione dei BOT (gestita dai bot) — sommarla gonfierebbe il worst e
+    l'auto-hedge piazzerebbe coperture REALI sul libro dei bot."""
+    orders = [
+        # ordine manuale/coda: incluso
+        {"event_id": "EVT1", "mode": "paper", "market_id": "1.2", "selection_id": 30,
+         "side": "lay", "average_price_matched": 8.0, "size_matched": 10.0,
+         "client_order_ref": "awlq7"},
+        # ordine del mirror scalper (ref hash flumine): ESCLUSO
+        {"event_id": "EVT1", "mode": "paper", "market_id": "1.1", "selection_id": 10,
+         "side": "back", "average_price_matched": 2.0, "size_matched": 500.0,
+         "client_order_ref": "scalper-1.1-abcdef"},
+    ]
+    sb = _Sb(orders)
+    n = xw._process_once(sb, _session())
+    assert n == 1
+    analysis = sb.store["upserts"][0]["analysis"]
+    assert analysis["n_positions"] == 1                  # SOLO l'ordine awlq
+    assert analysis["summary"]["worst"] == -70.0         # invariato: il bot non pesa
+
+
+def test_xhedge_worker_solo_bot_niente_analisi():
+    """Evento con SOLI ordini bot: nessuna analisi (status-quo-ante, prima del
+    16/07 quelle righe non esistevano nello specchio)."""
+    orders = [
+        {"event_id": "EVT1", "mode": "paper", "market_id": "1.1", "selection_id": 10,
+         "side": "back", "average_price_matched": 2.0, "size_matched": 500.0,
+         "client_order_ref": "scalper-1.1-abcdef"},
+    ]
+    sb = _Sb(orders)
+    assert xw._process_once(sb, _session()) == 0
+    assert sb.store["upserts"] == []

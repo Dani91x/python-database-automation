@@ -91,7 +91,17 @@ def _process_once(sb: Any, session: Any) -> int:
                 sb.table("betfair_live_orders").select("*")
                 .eq("event_id", event_id).eq("mode", mode).execute().data or []
             )
-            orders = [r for r in rows if float(r.get("size_matched") or 0) > 0]
+            # SOLO ordini della CODA del runner (ref ``awlq<rid>``: manuali +
+            # omega). Le righe del mirror delle sessioni scalper (ref hash
+            # flumine, review 16/07) sono l'esposizione dei BOT, che i bot
+            # gestiscono da soli: sommarle qui gonfierebbe il worst-case e
+            # l'auto-hedge piazzerebbe coperture REALI sul libro dei bot
+            # (status-quo-ante: prima del 16/07 quelle righe non esistevano).
+            orders = [
+                r for r in rows
+                if float(r.get("size_matched") or 0) > 0
+                and str(r.get("client_order_ref") or "").startswith("awlq")
+            ]
             if not orders:
                 continue
             cs_odds = _cs_back_odds(session, cs_mid, cs_map)
