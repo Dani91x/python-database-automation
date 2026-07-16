@@ -108,9 +108,12 @@ def test_flb_entry_timeout_counts_seconds_not_updates():
 
 # ---------------------------------------------------------------- tennis_swing
 def test_swing_entry_wait_counts_seconds_not_updates():
+    # modo REALE (16/07): il ramo "entry non riempita" esiste solo con ordini
+    # veri — in dry la posizione e' fillata VIRTUALMENTE subito (paper con
+    # esito), quindi la regressione secondi-vs-update si testa su dry_run=False
     s = TennisSwingStrategy(
         market_filter=filters.streaming_market_filter(market_ids=["1.1"]),
-        swing_params={"dry_run": True})
+        swing_params={"dry_run": False})
     m = _Market()
 
     class _MB:
