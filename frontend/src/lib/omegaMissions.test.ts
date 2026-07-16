@@ -199,9 +199,13 @@ describe('MissionPanel (render minimo)', () => {
         render(createElement(MissionPanel, { mode: 'paper' }));
         expect(await screen.findByText('Obiettivo giornata €')).toBeInTheDocument();
         expect(await screen.findByText('Roma v Lazio')).toBeInTheDocument();
-        // punteggio LIVE grande e fase
+        // punteggio LIVE grande e fase; la scheda attiva è AUTO-ESPANSA (16/07)
+        // quindi '1T' appare sia come badge fase sia come riga della card
         expect(await screen.findByText('1 - 0')).toBeInTheDocument();
-        expect(await screen.findByText('1T')).toBeInTheDocument();
+        expect((await screen.findAllByText('1T')).length).toBeGreaterThanOrEqual(1);
+        // con la card espansa i pulsanti missione sono SUBITO visibili
+        expect(await screen.findByText('Pausa')).toBeInTheDocument();
+        expect(await screen.findByText('Chiudi missione')).toBeInTheDocument();
         // realized = 2 (gamba); l'1.5 dello scalper è DRY-RUN → simulato,
         // NON sommato (audit H2). Compare sia nella barra di giornata sia
         // nella riga della missione.

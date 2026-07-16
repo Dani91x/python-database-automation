@@ -113,7 +113,10 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     // segue il daily_goal del control quando cambia (l'edit locale resta possibile)
     useEffect(() => { if (dailyGoal != null && dailyGoal > 0) setDayGoal(dailyGoal); }, [dailyGoal]);
     const [onlyActive, setOnlyActive] = useState(false);
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    // le missioni ATTIVE nascono ESPANSE (16/07: l'utente non trovava posizioni
+    // né pulsanti — erano dietro un click invisibile); qui si tiene solo chi
+    // ha volutamente RICHIUSO la scheda.
+    const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
 
     // dialog ATTIVA: target precompilato editabile
     const [activation, setActivation] = useState<{ eventId: string; name: string; kickoff: string | null } | null>(null);
@@ -155,6 +158,37 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         return () => { unsub(); if (pending !== undefined) clearTimeout(pending); clearInterval(poll); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // ---- notifiche live (16/07: "non vedo niente di quello che fa il bot") --
+    // Confronta lo stato precedente delle missioni: GOL (punteggio cambiato) e
+    // gambe REGOLATE (n_settled aumentato) → toast immediato. Solo display.
+    const prevMissions = useRef<Map<string, MissionRow>>(new Map());
+    useEffect(() => {
+        const prev = prevMissions.current;
+        const LEG_LABEL: Record<string, string> = { ht_cs: 'Gamba 1T', ft_cs: 'Gamba 2T', scalp: 'Scalp' };
+        for (const m of missions) {
+            const p = prev.get(m.event_id);
+            if (!p) continue;
+            if (m.score_home != null && m.score_away != null && p.score_home != null && p.score_away != null
+                && (m.score_home !== p.score_home || m.score_away !== p.score_away)) {
+                toast(`⚽ GOL — ${m.event_name ?? m.event_id}`, {
+                    description: `${m.score_home} - ${m.score_away}${m.minute != null ? ` (${m.minute}')` : ''}`,
+                    duration: 10_000,
+                });
+            }
+            for (const k of ['ht_cs', 'ft_cs', 'scalp'] as const) {
+                const legNow = m.legs?.[k];
+                const legPrev = p.legs?.[k];
+                if (legNow && toNum(legNow.n_settled) > toNum(legPrev?.n_settled)) {
+                    const delta = toNum(legNow.realized) - toNum(legPrev?.realized);
+                    const msg = `${LEG_LABEL[k]} regolata: ${fmtSignedEur(delta)}`;
+                    if (delta >= 0) toast.success(msg, { description: m.event_name ?? m.event_id, duration: 12_000 });
+                    else toast.error(msg, { description: m.event_name ?? m.event_id, duration: 12_000 });
+                }
+            }
+        }
+        prevMissions.current = new Map(missions.map(m => [m.event_id, m]));
+    }, [missions]);
 
     // ---- derivati (Number(...) con fallback: mai NaN in UI) -------------
     const eventById = useMemo(() => new Map(events.map(e => [e.event_id, e])), [events]);
@@ -287,7 +321,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         try {
             await activateMission(activation.eventId, activation.name, activation.kickoff, tgt);
             toast.success('Missione attivata', { description: `${activation.name} · target ${fmtEur(tgt)}` });
-            setExpandedId(activation.eventId);
+            setCollapsedIds(prev => { const next = new Set(prev); next.delete(activation.eventId); return next; });
             setActivation(null);
             await reload();
         } catch (e) {
@@ -302,12 +336,20 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         const realized = missionRealized(m);
         const target = toNum(m.target);
         const pct = target > 0 ? Math.max(0, Math.min(100, (realized / target) * 100)) : 0;
-        const expanded = expandedId === m.event_id;
+        const expanded = !collapsedIds.has(m.event_id);
+        // riepilogo posizioni SEMPRE visibile anche a scheda richiusa
+        const legsObj = m.legs ?? {};
+        const nOpen = Object.values(legsObj).reduce((s, l) => s + toNum(l?.n_open), 0);
+        const nSettled = Object.values(legsObj).reduce((s, l) => s + toNum(l?.n_settled), 0);
         return (
             <div key={m.event_id} className="rounded-lg border border-white/10 bg-white/[0.02]">
                 <button
                     className="w-full px-4 py-3 flex flex-wrap items-center gap-3 text-left hover:bg-white/5 transition"
-                    onClick={() => setExpandedId(expanded ? null : m.event_id)}
+                    onClick={() => setCollapsedIds(prev => {
+                        const next = new Set(prev);
+                        if (expanded) next.add(m.event_id); else next.delete(m.event_id);
+                        return next;
+                    })}
                 >
                     {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                     <span className={`w-2.5 h-2.5 rounded-full ${statusDot(m)}`} />
@@ -328,6 +370,14 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         {phase === 'pre' ? timeLabel(m.kickoff) : `${toNum(m.score_home)} - ${toNum(m.score_away)}`}
                     </span>
                     <span className="ml-auto flex items-center gap-3 min-w-[190px]">
+                        {/* posizioni SEMPRE in vista, anche a scheda richiusa */}
+                        {(nOpen > 0 || nSettled > 0) && (
+                            <span className="text-[11px] text-slate-400 tabular-nums whitespace-nowrap">
+                                {nOpen > 0 && <span className="text-sky-300">{nOpen} apert{nOpen === 1 ? 'a' : 'e'}</span>}
+                                {nOpen > 0 && nSettled > 0 && ' · '}
+                                {nSettled > 0 && <span>{nSettled} regolat{nSettled === 1 ? 'a' : 'e'}</span>}
+                            </span>
+                        )}
                         <span className={`text-sm tabular-nums font-bold ${realized >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {fmtSignedEur(realized)}
                         </span>

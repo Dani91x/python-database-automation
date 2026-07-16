@@ -408,8 +408,12 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                                 <span className="uppercase text-[10px] text-slate-500 w-10">{t.legKey === 'ht_cs' ? '1T' : t.legKey === 'ft_cs' ? '2T' : 'SCALP'}</span>
                                 <span>{String(t.side).toUpperCase()} {t.runner_name ?? '—'} @ {fmtQuote(t.price)}</span>
                                 <Badge variant="outline" className={tradeBadgeCls(t.status)}>{t.status.toUpperCase()}</Badge>
-                                <span className={`ml-auto tabular-nums ${toNum(t.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(toNum(t.pnl)) : '—'}
+                                <span className={`ml-auto tabular-nums ${['won', 'lost', 'void'].includes(t.status)
+                                    ? (toNum(t.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400')
+                                    : 'text-sky-300'}`}>
+                                    {['won', 'lost', 'void'].includes(t.status)
+                                        ? fmtSignedEur(toNum(t.pnl))
+                                        : `in gioco · rischio ${fmtEur(toNum(t.liability))}`}
                                 </span>
                             </div>
                         ))}
