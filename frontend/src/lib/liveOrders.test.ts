@@ -276,32 +276,52 @@ describe('requestRiskRule v2 (bracket / on_fill / entry_bet_id)', () => {
         })).rejects.toThrow(/entry_bet_id/);
         expect(rpc).not.toHaveBeenCalled();
     });
-    it('on_fill con entry_bet_id NON richiede entry_price (deriva dal fill)', async () => {
+    // fix audit #4: la RPC v4 esige entry_price per offset/stop_loss/trailing/bracket
+    // ANCHE con entry_bet_id/on_fill (dal fill si deriva solo la SIZE, mai il prezzo):
+    // il client deve fallire PRIMA della rete, con messaggio chiaro.
+    it('on_fill con entry_bet_id RICHIEDE comunque entry_price (contratto RPC v4)', async () => {
+        await expect(requestRiskRule({
+            mode: 'live', ruleType: 'offset', marketId: '1.1', selectionId: 47,
+            entrySide: 'back', entryBetId: 'BET-9',
+            params: { offset_ticks: 3, timing: 'on_fill' },
+        })).rejects.toThrow(/entry_price obbligatorio/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('on_fill con entry_bet_id + entry_price arma e passa i params v2', async () => {
         rpc.mockResolvedValue({ data: 55, error: null });
         const id = await requestRiskRule({
             mode: 'live', ruleType: 'offset', marketId: '1.1', selectionId: 47,
-            entrySide: 'back', entryBetId: 'BET-9',
+            entrySide: 'back', entryBetId: 'BET-9', entryPrice: 2.5,
             params: { offset_ticks: 3, timing: 'on_fill', place_at_ticks: 2, on_inplay: 'rebaseline' },
         });
         expect(id).toBe(55);
         const p = rpc.mock.calls[0][1].p;
         expect(p.entry_bet_id).toBe('BET-9');
-        expect(p.entry_price).toBeUndefined();
+        expect(p.entry_price).toBe(2.5);
         expect(p.params.timing).toBe('on_fill');
         expect(p.params.place_at_ticks).toBe(2);
         expect(p.params.on_inplay).toBe('rebaseline');
     });
-    it('bracket con entry_bet_id arma (entry_price non obbligatorio) e passa i params v2', async () => {
+    it('bracket senza entry_price è RIFIUTATO client-side (fix audit #4)', async () => {
+        await expect(requestRiskRule({
+            mode: 'live', ruleType: 'bracket', marketId: '1.1', selectionId: 47,
+            entrySide: 'lay', entryBetId: 'BET-1',
+            params: { offset_ticks: 4, trigger_ticks: 5 },
+        })).rejects.toThrow(/entry_price obbligatorio/);
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it('bracket con entry_bet_id + entry_price arma e passa i params v2', async () => {
         rpc.mockResolvedValue({ data: 88, error: null });
         const id = await requestRiskRule({
             mode: 'live', ruleType: 'bracket', marketId: '1.1', selectionId: 47,
-            entrySide: 'lay', entryBetId: 'BET-1',
+            entrySide: 'lay', entryBetId: 'BET-1', entryPrice: 3.2,
             params: { offset_ticks: 4, stop_amount: 6, target_amount: 8, greening: true, trail_ticks: 2 },
         });
         expect(id).toBe(88);
         const p = rpc.mock.calls[0][1].p;
         expect(p.rule_type).toBe('bracket');
         expect(p.entry_bet_id).toBe('BET-1');
+        expect(p.entry_price).toBe(3.2);
         expect(p.params.stop_amount).toBe(6);
         expect(p.params.target_amount).toBe(8);
         expect(p.params.trail_ticks).toBe(2);

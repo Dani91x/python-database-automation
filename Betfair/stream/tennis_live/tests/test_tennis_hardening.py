@@ -31,7 +31,12 @@ def test_build_order_client_off_forces_paper_trade():
     assert enabled is False  # worker ordini NON registrato in OFF
 
 
-def test_build_order_client_paper_forces_paper_trade():
+def test_build_order_client_paper_forces_paper_trade(monkeypatch):
+    # PAPER ora imposta flumine_config.place_latency (bet delay simulato, fix
+    # audit #3): setattr con lo stesso valore = ripristino automatico a fine test
+    # (nessun leak del delay 3s verso i test di simulazione/golden).
+    from flumine import config as flumine_config
+    monkeypatch.setattr(flumine_config, "place_latency", flumine_config.place_latency)
     client, enabled = tennis_runner.build_order_client(object(), "PAPER")
     assert client.paper_trade is True
     assert enabled is True
@@ -43,23 +48,49 @@ def test_build_order_client_live_is_real():
     assert enabled is True
 
 
-def test_instantiate_bot_forces_dry_run_outside_live():
+def test_instantiate_bot_forces_dry_run_when_off():
+    """OFF: kill-switch invariato — dry_run FORZATO qualunque cosa chieda il control."""
     df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
     bot = tennis_runner._instantiate_bot(
         "tennis_scalper", {"stake": 2.0, "dry_run": False, "params": {}},
-        "1.100", {}, lambda *a, **k: None, df, "PAPER",
+        "1.100", {}, lambda *a, **k: None, df, "OFF",
     )
-    assert bot.dry_run is True                # forzato: fuori da LIVE non piazza
+    assert bot.dry_run is True                # forzato: runner spento non piazza MAI
     assert bot.market_data_filter is df       # #1: stesso data_filter della capture
 
 
-def test_instantiate_bot_live_respects_control():
+def test_instantiate_bot_paper_defaults_to_placing_simulated():
+    """REGOLA SPECCHIO (16/07): in PAPER il default è dry_run=False — gli ordini sono
+    comunque simulati (paper_trade forzato dal client) ma passano dal blotter e dal
+    mirror tennis_live_orders, quindi VISIBILI sul ladder come dal vivo."""
+    df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
+    # default (control senza dry_run) → piazza simulato
+    bot = tennis_runner._instantiate_bot(
+        "tennis_scalper", {"stake": 2.0, "params": {}},
+        "1.100", {}, lambda *a, **k: None, df, "PAPER",
+    )
+    assert bot.dry_run is False
+    # dry_run esplicito del control → rispettato anche in PAPER
+    bot2 = tennis_runner._instantiate_bot(
+        "tennis_scalper", {"stake": 2.0, "dry_run": True, "params": {}},
+        "1.100", {}, lambda *a, **k: None, df, "PAPER",
+    )
+    assert bot2.dry_run is True
+
+
+def test_instantiate_bot_live_respects_control_but_defaults_safe():
     df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
     bot = tennis_runner._instantiate_bot(
         "tennis_scalper", {"stake": 2.0, "dry_run": False, "params": {}},
         "1.100", {}, lambda *a, **k: None, df, "LIVE",
     )
     assert bot.dry_run is False
+    # LIVE senza dry_run esplicito → default PRUDENTE (soldi veri solo consapevolmente)
+    bot2 = tennis_runner._instantiate_bot(
+        "tennis_scalper", {"stake": 2.0, "params": {}},
+        "1.100", {}, lambda *a, **k: None, df, "LIVE",
+    )
+    assert bot2.dry_run is True
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +380,11 @@ def test_same_mode_row_is_dispatched(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# #9 GREENUP: FAIL LOUDLY (niente più no-op ok=True)
+# #9 GREENUP: mai un no-op ok=True su input non eseguibile. Il greenup ora È
+# implementato (fix audit 16/07, vedi test_tennis_audit_runner) ma senza mercato
+# risolvibile deve continuare a FALLIRE FORTE, mai fingere di aver chiuso.
 # ---------------------------------------------------------------------------
-def test_greenup_fails_loudly():
+def test_greenup_fails_loudly_without_market():
     with pytest.raises(ValueError):
         tow._dispatch(flumine=None, session=None,
                       cmd={"action": "greenup", "mode": "paper"}, cust_ref="awtq1")

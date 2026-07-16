@@ -58,8 +58,12 @@ class TennisSwingStrategy(BaseStrategy):
         # UPDATE del book — in live sono molti al secondo → usciva dopo ~15-20s
         # invece dei 90s documentati; il fallback a update resta solo senza pt).
         self.tmax = int(c.get("tmax", 90))
-        # update del book concessi alla chiusura MAKER prima dell'escalation a
-        # TAKER al touch (fix orfani: l'hedge maker può non riempirsi MAI).
+        # escalation della chiusura MAKER → TAKER al touch in SECONDI di
+        # publish_time (fix audit #10, come tmax: prima contava gli UPDATE del
+        # book — in live sono molti al secondo → escalation in 1-2s invece dei
+        # ~20s attesi). close_retry_ticks resta come FALLBACK a conteggio update
+        # quando il publish_time manca (replay/mocks vecchi).
+        self.close_retry_s = float(c.get("close_retry_s", 20.0))
         self.close_retry_ticks = int(c.get("close_retry_ticks", 20))
         self.maker = bool(c.get("maker", True))
         self.maker_offset = int(c.get("maker_offset", 1))
@@ -199,13 +203,25 @@ class TennisSwingStrategy(BaseStrategy):
                 self._cancel(market, tr.get("close_order"))
                 self._tr.pop(mid, None)
                 return
+            # escalation in SECONDI di publish_time (fix audit #10, come tmax);
+            # fallback al conteggio update SOLO se il publish_time manca.
             tr["close_wait"] = tr.get("close_wait", 0) + 1
-            if tr["close_wait"] > self.close_retry_ticks:
+            ptc = getattr(mb, "publish_time_epoch", None)
+            tc = tr.get("t_close")
+            if tc is None and ptc is not None:
+                tr["t_close"] = ptc  # base tempo mancante (closing legacy): parte ora
+                tc = ptc
+            escalate = (
+                ptc is not None and tc is not None
+                and (ptc - tc) / 1000.0 >= self.close_retry_s
+            ) or ((ptc is None or tc is None) and tr["close_wait"] > self.close_retry_ticks)
+            if escalate:
                 self._cancel(market, tr.get("close_order"))
                 px = bl if side == "BACK" else bb   # TAKER al touch: attraversa
                 _, o2 = self._close(market, sel, px)
                 tr["close_order"] = o2
                 tr["close_wait"] = 0
+                tr["t_close"] = ptc
                 self._emit("close_escalate", sel=sel, price=px)
             return
 
@@ -260,6 +276,7 @@ class TennisSwingStrategy(BaseStrategy):
             tr["closing"] = True
             tr["close_order"] = close_order
             tr["close_wait"] = 0
+            tr["t_close"] = pt  # base dell'escalation in secondi (fix audit #10)
         return
 
     def process_market_book(self, market: Any, mb: Any) -> None:

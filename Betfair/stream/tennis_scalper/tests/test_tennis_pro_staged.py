@@ -11,7 +11,7 @@ from __future__ import annotations
 from betfairlightweight import filters
 from flumine.utils import price_ticks_away
 
-from Betfair.stream.tennis_scalper.tennis_pro_bot import OPEN, FLAT, TennisProStrategy
+from Betfair.stream.tennis_scalper.tennis_pro_bot import CLOSING, OPEN, TennisProStrategy
 
 
 class _Ex:
@@ -110,7 +110,9 @@ def test_final_close_cancels_pending_staged_hedge():
     mb = _MB([_Runner(111, (1.74, 100), (1.75, 100))])
     s.process_market_book(m, mb)
     assert staged in m.cancelled, "staged hedge cancellato PRIMA del green finale"
-    assert s._trade["1.1"] == {"state": FLAT}
+    # fix audit #7: dopo il green finale la posizione va SORVEGLIATA (CLOSING),
+    # mai FLAT dichiarato col solo hedge piazzato (delay 3s / cancel falliti).
+    assert s._trade["1.1"]["state"] == CLOSING
     assert s.stats["greens"] == 1
 
 

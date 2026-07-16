@@ -3,8 +3,8 @@
 // e @/lib/ladderMath restano REALI (pura logica), così colonne+PIQ sono calcolate come
 // in produzione. Copre: rendering colonne di default, column-picker (toggle+persistenza),
 // PIQ come STIMA (~) e non-regressione del one-click place.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('@/lib/live', () => ({
@@ -17,6 +17,9 @@ vi.mock('@/lib/liveOrders', () => ({
     sendLiveOrderCommand: vi.fn(),
     sendGreenup: vi.fn(),
     requestRiskRule: vi.fn(),
+    // realtime WS overlay (16/07): no-op nel test — resta attivo il poll di fallback
+    subscribeLiveOrders: vi.fn(() => () => {}),
+    subscribeLivePositions: vi.fn(() => () => {}),
 }));
 
 import { LadderView } from './LadderView';
@@ -77,6 +80,8 @@ function openPositionSel1(): LivePositionRow {
     };
 }
 
+let confirmSpy: MockInstance<(message?: string) => boolean>;
+
 beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -86,7 +91,16 @@ beforeEach(() => {
     mSend.mockResolvedValue({ ok: true, action: 'place', mode: 'paper', bet_id: 'B9' });
     mGreen.mockResolvedValue({ ok: true, action: 'greenup', mode: 'paper' });
     mArm.mockResolvedValue(1);
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
+
+// Regola specchio (WP2): NON armato, ogni click chiede conferma anche in PAPER.
+// I test storici qui sotto verificano l'ESECUZIONE degli intent, quindi armano
+// prima il 1-CLICK (window.confirm mockato a true): il flusso post-armamento è
+// identico a prima. Il flusso di conferma ha i suoi test dedicati più in basso.
+async function armOneClick(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /1-CLICK/ }));
+}
 
 describe('LadderView', () => {
     it('renderizza il layout di default a 8 colonne (PIQ inclusa)', async () => {
@@ -127,10 +141,11 @@ describe('LadderView', () => {
         expect(await screen.findByText('~15')).toBeInTheDocument();
     });
 
-    it('one-click BACK in PAPER invia il comando place (non-regressione)', async () => {
+    it('one-click BACK in PAPER (armato) invia il comando place (non-regressione)', async () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         // clic sulla size disponibile al BACK (2.9 → size 10)
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
@@ -157,6 +172,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         // il P&L del livello 2.90 diventa cliccabile con posizione aperta
         const cell = await screen.findByTitle(/chiudendo a 2\.90/);
         await user.click(cell);
@@ -172,6 +188,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         const btn = await screen.findByTitle(/Annulla TUTTI i 1 ordini BACK/);
         await user.click(btn);
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
@@ -184,6 +201,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: 'Liab' }));
         await user.click(screen.getByTitle(/LAY resp\. €5\.00 @ 3\.00/));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
@@ -201,6 +219,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         // punta la riga 2.90 col mouse, poi premi B
         await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await user.keyboard('b');
@@ -214,6 +233,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         // digita 'b' dentro il campo stake custom: nessun ordine deve partire
         await user.type(screen.getByPlaceholderText('€'), 'b');
@@ -235,6 +255,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: 'Offset' }));
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await waitFor(() => expect(mArm).toHaveBeenCalledTimes(1));
@@ -248,6 +269,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: 'Offset' }));
         await user.click(screen.getByRole('button', { name: 'Stop' }));
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
@@ -263,6 +285,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: 'Offset' }));
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
@@ -274,6 +297,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: /FoK/ }));
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
@@ -286,6 +310,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: 'Scala' }));
         await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(3));
@@ -298,6 +323,7 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.click(screen.getByRole('button', { name: /Entry/ }));
         // click su un livello SOPRA l'LTP (3.0) → direzione at_or_above
         await user.click(screen.getByTitle(/LAY €5\.00 @ 3\.05/));
@@ -316,12 +342,118 @@ describe('LadderView', () => {
         const user = userEvent.setup();
         render(<LadderView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
+        await armOneClick(user);
         await user.hover(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
         await user.keyboard('1');
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
         expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
             action: 'place', side: 'back', price: 2.9, size: 5, // best back del book mock
         }));
+    });
+});
+
+// ===========================================================================
+// WP2 — popup di conferma place (regola specchio PAPER/LIVE) + 1-CLICK in paper
+// ===========================================================================
+describe('LadderView — popup conferma ordine (non armato)', () => {
+    it('PAPER non armato: click BACK apre il popup con proiezione P&L, conferma → send', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        // nessun invio al primo click: si apre il dialog
+        expect(mSend).not.toHaveBeenCalled();
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('SIMULATO')).toBeInTheDocument();
+        // proiezione BACK €5 @ 2.90: vince +€9.50, perde −€5.00
+        expect(within(dialog).getByText('+€9.50')).toBeInTheDocument();
+        expect(within(dialog).getByText('−€5.00')).toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: /Conferma simulato/ }));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'place', mode: 'paper', side: 'back', price: 2.9, size: 5,
+        }));
+    });
+
+    it('il popup permette di EDITARE l\'importo: l\'ordine parte con la size editata', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/LAY €5\.00 @ 3\.00/));
+        const dialog = await screen.findByRole('dialog');
+        const input = within(dialog).getByLabelText(/Importo/);
+        await user.clear(input);
+        await user.type(input, '12');
+        // proiezione LAY €12 @ 3.00: vince −€24.00 (liability), perde +€12.00
+        expect(within(dialog).getByText('−€24.00')).toBeInTheDocument();
+        expect(within(dialog).getByText('+€12.00')).toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: /Conferma/ }));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            side: 'lay', price: 3.0, size: 12,
+        }));
+    });
+
+    it('Annulla nel popup → nessun invio', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: /Annulla/ }));
+        expect(mSend).not.toHaveBeenCalled();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('importo invalido nel popup → Conferma disabilitata', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        const dialog = await screen.findByRole('dialog');
+        await user.clear(within(dialog).getByLabelText(/Importo/));
+        expect(within(dialog).getByRole('button', { name: /Conferma/ })).toBeDisabled();
+        expect(mSend).not.toHaveBeenCalled();
+    });
+
+    it('LIVE non armato: il popup è marcato REALE', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="live" />);
+        await screen.findByText('Casa');
+        await user.click(screen.getByTitle(/BACK €5\.00 @ 2\.90/));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('REALE')).toBeInTheDocument();
+        expect(mSend).not.toHaveBeenCalled();
+    });
+
+    it('intent non-place (cancella lato) in PAPER non armato → barra di conferma SIMULATO', async () => {
+        mOrders.mockResolvedValue([backOrderAt3()]);
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await user.click(await screen.findByTitle(/Annulla TUTTI i 1 ordini BACK/));
+        expect(mSend).not.toHaveBeenCalled();
+        expect(screen.getByText(/\(SIMULATO\)/)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /^Conferma$/ }));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({ action: 'cancel', bet_id: 'b1' }));
+    });
+
+    it('il toggle 1-CLICK è visibile anche in PAPER e chiede conferma SIMULATO', async () => {
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        const btn = screen.getByRole('button', { name: /1-CLICK/ });
+        await user.click(btn);
+        expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/SIMULATO/));
+        // banner ambra di armamento paper
+        expect(screen.getByText(/1-CLICK SIMULATO ATTIVO/)).toBeInTheDocument();
+    });
+
+    it('OFF: il toggle 1-CLICK non è renderizzato', async () => {
+        render(<LadderView marketId="1.234" orderMode="off" />);
+        await screen.findByText('Casa');
+        expect(screen.queryByRole('button', { name: /1-CLICK/ })).not.toBeInTheDocument();
     });
 });
 
@@ -427,5 +559,84 @@ describe('LadderView — F38 fair/EV', () => {
         render(<LadderView marketId="1.234" orderMode="paper" sport="tennis" />);
         await screen.findByText('Casa');
         expect(screen.queryByText('EV')).not.toBeInTheDocument();
+    });
+});
+
+// ===========================================================================
+// FIX AUDIT 2026-07-16 — #10 move con size reale · #11 cancel in SUSPENDED ·
+// #23 persistence dell'ordine trascinato
+// ===========================================================================
+describe('LadderView — fix audit #10/#11/#23', () => {
+    const DT = { effectAllowed: 'move', dropEffect: 'move', setData: () => {} };
+
+    it('#11: mercato SUSPENDED — il CANCEL parte, il place NO', async () => {
+        mLadder.mockResolvedValue({ ...LADDER_ROW, status: 'SUSPENDED' });
+        mOrders.mockResolvedValue([backOrderAt3()]);
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await armOneClick(user);
+        // il click sulla disponibilità (place) NON invia nulla a mercato sospeso.
+        await user.click(screen.getAllByTitle(/Back \(sola lettura/)[0]);
+        expect(mSend).not.toHaveBeenCalled();
+        // il cancel del TUO ordine invece parte (Betfair accetta i cancel in sospensione).
+        await user.click(await screen.findByTitle(/Annulla i tuoi BACK a questo prezzo/));
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+            action: 'cancel', bet_id: 'b1',
+        }));
+        // anche il cancel di lato (header) resta operabile.
+        expect(screen.getByTitle(/Annulla TUTTI i 1 ordini BACK/)).toBeInTheDocument();
+    });
+
+    it('#10/#23: drag-move ripiazza SOLO la size realmente annullata, con la persistence dell\'ordine', async () => {
+        // ordine PERSIST da 5 a 3.0; tra overlay e cancel si abbinano 2 → il cancel
+        // ritira solo 3 (size_remaining nel risultato). Il ripiazzo DEVE essere 3, non 5.
+        mOrders.mockResolvedValue([{ ...backOrderAt3(), persistence: 'PERSIST' }]);
+        mSend.mockImplementation(async (cmd: { action: string }) =>
+            cmd.action === 'cancel'
+                ? { ok: true, action: 'cancel', mode: 'paper', size_remaining: 3 }
+                : { ok: true, action: 'place', mode: 'paper', bet_id: 'B9' });
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await armOneClick(user);
+
+        const dragCell = await screen.findByTitle(/Trascina per SPOSTARE/);
+        fireEvent.dragStart(dragCell, { dataTransfer: DT });
+        const targetRow = screen.getByText('2.94').closest('div')!;
+        fireEvent.dragOver(targetRow, { dataTransfer: DT });
+        fireEvent.drop(targetRow, { dataTransfer: DT });
+
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(2));
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({ action: 'cancel', bet_id: 'b1' }));
+        expect(mSend.mock.calls[1][0]).toEqual(expect.objectContaining({
+            action: 'place', price: 2.94,
+            size: 3,                    // #10: min(richiesta 5, annullata 3) — mai la size stantia
+            persistence: 'PERSIST',     // #23: quella dell'ordine trascinato, non della toolbar (LAPSE)
+        }));
+    });
+
+    it('#10: tutto abbinato prima del cancel (annullato 0) → NESSUN ripiazzo', async () => {
+        mOrders.mockResolvedValue([backOrderAt3()]);
+        mSend.mockImplementation(async (cmd: { action: string }) =>
+            cmd.action === 'cancel'
+                ? { ok: true, action: 'cancel', mode: 'paper', size_remaining: 0 }
+                : { ok: true, action: 'place', mode: 'paper', bet_id: 'B9' });
+        const user = userEvent.setup();
+        render(<LadderView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        await armOneClick(user);
+
+        const dragCell = await screen.findByTitle(/Trascina per SPOSTARE/);
+        fireEvent.dragStart(dragCell, { dataTransfer: DT });
+        const targetRow = screen.getByText('2.94').closest('div')!;
+        fireEvent.dragOver(targetRow, { dataTransfer: DT });
+        fireEvent.drop(targetRow, { dataTransfer: DT });
+
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1)); // SOLO il cancel
+        expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({ action: 'cancel' }));
+        // esito esplicito: spostamento concluso senza nuovo ordine.
+        expect(await screen.findByText(/nulla da ripiazzare/)).toBeInTheDocument();
     });
 });

@@ -18,7 +18,7 @@
 // kill-switch locale blocca ogni invio; sendDutch è idempotente e su timeout NON
 // reinvia. In modalità 'off' il pannello è in sola lettura.
 // ============================================================================
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,7 +57,15 @@ interface Props {
     eventLabel?: string;
     handicap?: number;
     pollMs?: number; // riservato per parità API con gli altri pannelli
+    /** fix audit #14: timestamp del book (live_now.updated_at). Se il snapshot è più
+     *  vecchio di DUTCH_FRESH_MS il "Piazza" è disabilitato con avviso — mai piazzare
+     *  gambe su quote stantie. Assente = nessun guardiano (compat chiamanti legacy). */
+    updatedAt?: string | null;
 }
+
+// snapshot più vecchio di così = quote stantie: piazzamento bloccato (pattern
+// XHEDGE_FRESH_MS di XHedgePanel, ri-verificato AL CLICK oltre che al render).
+export const DUTCH_FRESH_MS = 10_000;
 
 const SELECT_CLS =
     'w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-sm text-white ' +
@@ -104,9 +112,23 @@ export function DutchingPanel({
     selections,
     eventLabel,
     handicap = 0,
+    updatedAt,
 }: Props) {
     const readOnly = mode === 'off';
     const isLive = mode === 'live';
+
+    // fix audit #14: freschezza del book — tick di rivalutazione (2s) così il bottone
+    // si disabilita da solo quando lo snapshot invecchia, senza aspettare un re-render.
+    const [nowTick, setNowTick] = useState(() => Date.now());
+    useEffect(() => {
+        if (updatedAt == null) return;
+        const t = setInterval(() => setNowTick(Date.now()), 2000);
+        return () => clearInterval(t);
+    }, [updatedAt]);
+    // null = nessun timestamp fornito (nessun guardiano); true/false = fresco/stantio.
+    const bookFresh: boolean | null = updatedAt == null
+        ? null
+        : Number.isFinite(Date.parse(updatedAt)) && nowTick - Date.parse(updatedAt) <= DUTCH_FRESH_MS;
 
     // -------------------- form --------------------
     const [side, setSide] = useState<LiveOrderSide>('back');
@@ -127,6 +149,9 @@ export function DutchingPanel({
     const [confirmLive, setConfirmLive] = useState(false);
     const [killSwitch, setKillSwitch] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    // fix audit #28: guardia SINCRONA anti-doppio-invio (lo stato `submitting` è
+    // asincrono: due click ravvicinati passerebbero entrambi). Pattern ScalperPanel.
+    const busyRef = useRef(false);
 
     const isTargetMode = calcMode === 'target';
     const isNominated = pricing === 'nominated';
@@ -212,6 +237,15 @@ export function DutchingPanel({
         if (readOnly) return 'Modalità OFF: il runner non accetta ordini.';
         if (killSwitch) return 'Blocco pannello attivo: invio bloccato. Disattivalo per operare.';
         if (isLive && !confirmLive) return 'Spunta "Confermo dutching REALE" prima di inviare in LIVE.';
+        // fix audit #14: RI-verifica la freschezza AL CLICK (non solo al render).
+        if (updatedAt != null &&
+            !(Number.isFinite(Date.parse(updatedAt)) && Date.now() - Date.parse(updatedAt) <= DUTCH_FRESH_MS)) {
+            return `Quote stantie (snapshot > ${DUTCH_FRESH_MS / 1000}s): attendi l'aggiornamento del book prima di piazzare.`;
+        }
+        // fix audit #19: Lay + Target è SEMPRE rifiutato dal worker → blocco client-side.
+        if (side === 'lay' && isTargetMode) {
+            return 'Modalità Target non disponibile sul lato Lay (il worker la rifiuta): usa Equal/Variable.';
+        }
         if (preview.count < 2) return 'Seleziona almeno 2 selezioni con quota valida.';
         if (isTargetMode) {
             if (preview.target <= 0) return 'Profitto obiettivo non valido (> 0).';
@@ -227,8 +261,10 @@ export function DutchingPanel({
     const toggle = (id: number) => setChecked(c => ({ ...c, [id]: !c[id] }));
 
     const handleDutch = async () => {
+        if (busyRef.current) return; // anti-doppio-invio sincrono (fix audit #28)
         const blocked = guardBeforeSend();
         if (blocked) { toast.error(blocked); return; }
+        busyRef.current = true;
         setSubmitting(true);
         try {
             const res = await sendDutch({
@@ -270,6 +306,7 @@ export function DutchingPanel({
             // nuova spunta esplicita → nessun secondo set di ordini reali con un click.
             if (isLive) setConfirmLive(false);
         } finally {
+            busyRef.current = false;
             setSubmitting(false);
         }
     };
@@ -322,7 +359,13 @@ export function DutchingPanel({
                     <div>
                         <Label className={FIELD_LABEL}>Lato</Label>
                         <select className={SELECT_CLS} value={side}
-                            onChange={e => setSide(e.target.value as LiveOrderSide)}>
+                            onChange={e => {
+                                const s = e.target.value as LiveOrderSide;
+                                setSide(s);
+                                // fix audit #19: Lay+Target è sempre rifiutato dal worker →
+                                // al passaggio su Lay la modalità Target ripiega su Equal.
+                                if (s === 'lay' && calcMode === 'target') setCalcMode('equal');
+                            }}>
                             <option value="back">Back (dutch)</option>
                             <option value="lay">Lay (bookmaking)</option>
                         </select>
@@ -333,7 +376,10 @@ export function DutchingPanel({
                             onChange={e => setCalcMode(e.target.value as DutchMode)}>
                             <option value="equal">Equal (profitto pari)</option>
                             <option value="variable">Variable (peso)</option>
-                            <option value="target">Target (profitto obiettivo)</option>
+                            {/* fix audit #19: Target non disponibile sul lato Lay (il worker lo rifiuta) */}
+                            <option value="target" disabled={side === 'lay'}>
+                                Target (profitto obiettivo{side === 'lay' ? ' — solo Back' : ''})
+                            </option>
                         </select>
                     </div>
                     {isTargetMode ? (
@@ -539,11 +585,19 @@ export function DutchingPanel({
                         </span>
                     )}
 
+                    {/* fix audit #14: avviso quote stantie (bottone disabilitato sotto) */}
+                    {bookFresh === false && !readOnly && (
+                        <span className="text-[11px] font-bold text-amber-300">
+                            ⚠ Quote stantie (snapshot &gt; {DUTCH_FRESH_MS / 1000}s): piazzamento bloccato finché il book non si aggiorna.
+                        </span>
+                    )}
                     <Button
                         onClick={handleDutch}
                         disabled={submitting || killSwitch || preview.count < 2
                             || (isTargetMode ? preview.target <= 0 : preview.total <= 0)
                             || (isNominated && !((num(nominatedPrice) ?? 0) > 1))
+                            || bookFresh === false
+                            || (side === 'lay' && isTargetMode)
                             || (isLive && !confirmLive)}
                         className={`font-black ${
                             sideIsBack

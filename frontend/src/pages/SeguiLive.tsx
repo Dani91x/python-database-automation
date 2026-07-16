@@ -6,7 +6,7 @@
 // ============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Radio, AlertTriangle, History, Banknote, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,7 @@ import {
     fetchLiveRiskState, subscribeLiveRiskState, fetchLivePositionsEvent,
     fetchLiveAccount, subscribeLiveAccount, fetchLiveHeartbeat, subscribeLiveHeartbeat,
     sendLiveOrderCommand, fetchLiveOrders, fetchLivePositions, sendGreenup, requestRiskRule,
+    subscribeLiveOrders, subscribeLivePositions,
     type LiveOrderMode, type LiveRiskState, type LiveAccountRow, type LiveHeartbeatRow,
     type LivePositionRow,
 } from '@/lib/liveOrders';
@@ -66,6 +67,10 @@ const CALCIO_DB_ORDER_API: LadderOrderApi = {
     greenup: sendGreenup,
     armRule: requestRiskRule,  // risk rules RESTANO su path DB by design
     supportsFok: true,
+    // realtime WS overlay (fix audit #8b): senza queste, col canale locale connesso
+    // localOrderApi perderebbe il fallback realtime DB (solo riconciliazione lenta)
+    subscribeOrders: subscribeLiveOrders,
+    subscribePositions: subscribeLivePositions,
 };
 
 // "più recente vince": merge tra live_now dal DB (realtime) e push 'now' locale.
@@ -365,9 +370,10 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
             toast.error('Runner in OFF: cash-out non disponibile. Avvia in PAPER o LIVE.');
             return;
         }
-        // MONEY-CRITICAL: in LIVE serve conferma esplicita (soldi veri).
-        if (mode === 'live' &&
-            !window.confirm(`CASH-OUT REALE del SOLO mercato "${market.market_name || market.market_type}"?\nAppiattisce TUTTE le selezioni con esposizione aperta di QUESTO mercato (soldi veri).`)) {
+        // MONEY-CRITICAL + regola specchio (fix audit #18): conferma esplicita in
+        // ENTRAMBE le modalità — la demo ha lo stesso identico flusso del vivo.
+        const label = mode === 'live' ? 'REALE (soldi veri)' : 'SIMULATO (paper)';
+        if (!window.confirm(`CASH-OUT ${label} del SOLO mercato "${market.market_name || market.market_type}"?\nAppiattisce TUTTE le selezioni con esposizione aperta di QUESTO mercato.`)) {
             return;
         }
         cashingMarketRef.current = true;
@@ -398,13 +404,15 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
             toast.error('Runner in OFF: cash-out non disponibile. Avvia in PAPER o LIVE.');
             return;
         }
-        if (mode === 'live') {
-            if (!window.confirm(`CASH-OUT REALE dell'INTERO EVENTO "${eventName}"?\nAppiattisce TUTTE le selezioni con esposizione aperta su TUTTI i mercati dell'evento (non solo quello attivo). SOLDI VERI.`)) {
-                return;
-            }
-            if (!window.confirm('Conferma DEFINITIVA: green-up di TUTTI i mercati dell\'evento. Procedere?')) {
-                return;
-            }
+        // regola specchio (fix audit #18): conferma anche in PAPER, copy SIMULATO;
+        // la DOPPIA conferma resta riservata al LIVE (soldi veri).
+        const evLabel = mode === 'live' ? 'REALE' : 'SIMULATO (paper)';
+        if (!window.confirm(`CASH-OUT ${evLabel} dell'INTERO EVENTO "${eventName}"?\nAppiattisce TUTTE le selezioni con esposizione aperta su TUTTI i mercati dell'evento (non solo quello attivo).${mode === 'live' ? ' SOLDI VERI.' : ''}`)) {
+            return;
+        }
+        if (mode === 'live'
+            && !window.confirm('Conferma DEFINITIVA: green-up REALE di TUTTI i mercati dell\'evento. Procedere?')) {
+            return;
         }
         cashingEventRef.current = true;
         setCashingEvent(true);
@@ -785,11 +793,14 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
                             />
                         )}
                         {tool === 'dutching' && (
+                            /* fix audit #14: updatedAt = freschezza del book (live_now) —
+                               il pannello blocca il piazzamento su quote stantie (>10s) */
                             <DutchingPanel
                                 key={market.market_id}
                                 marketId={market.market_id}
                                 mode={mode}
                                 selections={richSelections}
+                                updatedAt={updatedAt}
                             />
                         )}
                         {tool === 'risk' && (
@@ -841,6 +852,27 @@ export default function SeguiLive() {
     const [liveNow, setLiveNow] = useState<LiveNowRow | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const unsubRef = useRef<(() => void) | null>(null);
+
+    // Deep-link da Omega (pulsante "Trading"): /segui-live?event=<id>&from=omega.
+    // Snapshot UNA volta al mount (stesso pattern di Dashboard ?fixture=): le
+    // navigazioni interne non cambiano l'URL. `pendingEventRef` resta armato
+    // finché il follow (appena registrato, PENDING) non compare in get_live_follows,
+    // poi auto-seleziona la partita e si spegne.
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const pendingEventRef = useRef<string | null>(searchParams.get('event'));
+    const [pendingEvent, setPendingEvent] = useState<string | null>(pendingEventRef.current);
+    const [cameFromOmega] = useState(() => searchParams.get('from') === 'omega');
+    useEffect(() => {
+        const pending = pendingEventRef.current;
+        if (!pending) return;
+        const f = follows.find(x => x.event_id === pending);
+        if (f) {
+            pendingEventRef.current = null;
+            setPendingEvent(null);
+            setSelected(prev => prev ?? f);
+        }
+    }, [follows]);
 
     // --- lista: caricamento + refetch ogni 15s come backup al realtime ---
     useEffect(() => {
@@ -957,13 +989,30 @@ export default function SeguiLive() {
                             Partite sottoscritte allo stream Betfair. Clic su una partita per le quote in tempo reale.
                         </p>
                     </div>
-                    {selected && (
-                        <Button variant="outline" size="sm" onClick={() => setSelected(null)}
-                            className="shrink-0 border-white/10 text-muted-foreground hover:text-white">
-                            <ChevronLeft className="w-4 h-4 mr-1" /> Tutte le partite
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                        {cameFromOmega && (
+                            <Button variant="outline" size="sm" onClick={() => navigate('/omega')}
+                                className="border-secondary/30 text-secondary hover:bg-secondary/10">
+                                <ChevronLeft className="w-4 h-4 mr-1" /> Torna a Omega
+                            </Button>
+                        )}
+                        {selected && (
+                            <Button variant="outline" size="sm" onClick={() => setSelected(null)}
+                                className="border-white/10 text-muted-foreground hover:text-white">
+                                <ChevronLeft className="w-4 h-4 mr-1" /> Tutte le partite
+                            </Button>
+                        )}
+                    </div>
                 </div>
+
+                {/* deep-link da Omega: il follow è appena stato registrato e lo stream
+                    parte in PENDING — avvisa finché l'evento non compare nella lista */}
+                {pendingEvent && !selected && !loading && (
+                    <Card className="glass-card border-secondary/30 p-4 mb-4 flex items-center gap-2 text-sm text-secondary">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        In attesa dello stream per la partita richiesta da Omega… si aprirà da sola appena disponibile.
+                    </Card>
+                )}
 
                 {error && (
                     <Card className="glass-card border-red-500/30 p-4 mb-4 flex items-center gap-2 text-red-400 text-sm">

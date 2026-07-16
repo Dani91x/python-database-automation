@@ -13,8 +13,9 @@ vi.mock('@/lib/liveOrders', () => ({
     fetchRiskRules: vi.fn(),
     requestRiskRule: vi.fn(),
     cancelRiskRule: vi.fn(),
-    // one-shot in LIVE (comportamento reale: resetta sempre dopo un tentativo)
-    shouldResetLiveConfirm: (isLive: boolean, _ok: boolean) => isLive,
+    // one-shot in LIVE (fix audit #20: contratto ONESTO — reset solo su successo;
+    // su rifiuto esplicito la spunta resta; su eccezione ambigua il pannello resetta a parte)
+    shouldResetLiveConfirm: (isLive: boolean, ok: boolean) => isLive === true && ok === true,
 }));
 
 import { XHedgePanel } from './XHedgePanel';
@@ -244,6 +245,32 @@ describe('XHedgePanel — F39 copertura 1-click', () => {
         await user.click(await screen.findByRole('button', { name: /Copri \(1-click\)/ }));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
         expect(mSend).toHaveBeenCalledTimes(1); // mai retry automatico
+    });
+
+    it('fix audit #20 — LIVE: rifiuto ESPLICITO (ordine NON piazzato) → la conferma RESTA', async () => {
+        const user = userEvent.setup();
+        mFetch.mockResolvedValue([makeCoverRow({}, 'live')]);
+        mSend.mockResolvedValue({ ok: false, action: 'place', mode: 'live', error: 'rifiutato' } as any);
+        render(<XHedgePanel eventId="evt-1" mode="live" pollMs={0} />);
+        const btn = await screen.findByRole('button', { name: /Copri \(1-click\)/ });
+        await user.click(screen.getByRole('checkbox'));
+        await user.click(btn);
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        // contratto onesto: nessun ordine a mercato → l'utente può ritentare senza rispuntare.
+        expect(screen.getByRole('checkbox')).toBeChecked();
+    });
+
+    it('fix audit #20 — LIVE: eccezione AMBIGUA (timeout) → la conferma si resetta', async () => {
+        const user = userEvent.setup();
+        mFetch.mockResolvedValue([makeCoverRow({}, 'live')]);
+        mSend.mockRejectedValue(new Error('timeout: NON reinviare'));
+        render(<XHedgePanel eventId="evt-1" mode="live" pollMs={0} />);
+        const btn = await screen.findByRole('button', { name: /Copri \(1-click\)/ });
+        await user.click(screen.getByRole('checkbox'));
+        await user.click(btn);
+        await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+        // la copertura POTREBBE essere stata piazzata: serve una NUOVA spunta esplicita.
+        await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked());
     });
 });
 

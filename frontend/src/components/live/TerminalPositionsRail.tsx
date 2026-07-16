@@ -41,6 +41,7 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
     const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
     const [pollErr, setPollErr] = useState<string | null>(null);
     const [cancelling, setCancelling] = useState<string | null>(null); // bet_id in volo
+    const [cancelErr, setCancelErr] = useState<string | null>(null);   // fix audit #13: mai muto
     const cancellingRef = useRef<string | null>(null);
 
     const nameOf = useMemo(() => {
@@ -83,12 +84,19 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
         )) return;
         cancellingRef.current = o.bet_id;
         setCancelling(o.bet_id);
+        setCancelErr(null);
         try {
-            await sendLiveOrderCommand({
+            const res = await sendLiveOrderCommand({
                 action: 'cancel', mode: mode as LiveOrderMode,
                 market_id: o.market_id, bet_id: o.bet_id,
             });
-        } catch { /* l'esito comparirà nello specchio al prossimo poll */ }
+            // esito negativo esplicito dal worker: dillo subito, non solo allo specchio.
+            if (!res.ok) setCancelErr(res.error ?? 'cancel rifiutato');
+        } catch (e: any) {
+            // fix audit #13: MAI inghiottire l'errore — l'ordine potrebbe essere ANCORA
+            // vivo sul book. Banner esplicito (lo specchio confermerà al prossimo poll).
+            setCancelErr(e?.message ?? 'annullamento non riuscito');
+        }
         finally {
             cancellingRef.current = null;
             setCancelling(null);
@@ -119,6 +127,12 @@ export function TerminalPositionsRail({ marketId, mode, selections }: Props) {
                 <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-200">
                     ⚠ Dati NON aggiornati{lastGoodAt ? ` (ultimo ok ${new Date(lastGoodAt).toLocaleTimeString('it-IT')})` : ''}
                     {pollErr ? ` — ${pollErr}` : ''}
+                </div>
+            )}
+            {/* fix audit #13: errore del cancel SEMPRE visibile (l'ordine può essere ancora vivo) */}
+            {cancelErr && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-200">
+                    ⚠ Annullamento NON riuscito: {cancelErr} — verifica gli ordini (potrebbe essere ancora sul book).
                 </div>
             )}
 

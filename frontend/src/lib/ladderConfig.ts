@@ -39,10 +39,16 @@ export interface LadderColumn {
 }
 
 // Un profilo = lista ordinata di colonne per uno sport.
+// `version` è lo schema del layout persistito: v2 = LAY a sinistra della quota,
+// BACK a destra (richiesta utente 2026-07-16). I profili v1 (o senza versione)
+// vengono migrati in load swappando le posizioni di avail_back/avail_lay.
 export interface LadderProfile {
     sport: string;
     columns: LadderColumn[];
+    version?: number;
 }
+
+export const PROFILE_VERSION = 2;
 
 // Etichette IT brevi per intestazione colonna (informative; la UI può sovrascrivere).
 export const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -58,14 +64,15 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
     ev: 'EV',
 };
 
-// Ordine di DEFAULT delle colonne (layout classico a scaletta: le mie size ai lati,
-// la quota al centro, il banco sui due lati). 'price' è SEMPRE presente e visibile.
+// Ordine di DEFAULT delle colonne (v2): lato LAY (rosa) a SINISTRA della quota,
+// lato BACK (blu) a DESTRA — miei LAY + banco LAY | quota | banco BACK + miei BACK.
+// 'price' è SEMPRE presente e visibile.
 export const DEFAULT_COLUMN_ORDER: readonly ColumnKey[] = [
     'my_lay',
     'trd',
-    'avail_back',
-    'price',
     'avail_lay',
+    'price',
+    'avail_back',
     'pnl',
     'ev',
     'my_back',
@@ -97,6 +104,7 @@ export function defaultProfile(sport: string): LadderProfile {
             key,
             visible: !DEFAULT_HIDDEN.has(key),
         })),
+        version: PROFILE_VERSION,
     };
 }
 
@@ -129,7 +137,29 @@ export function normalizeProfile(sport: string, raw: unknown): LadderProfile {
     const price = columns.find((c) => c.key === REQUIRED_COLUMN);
     if (price) price.visible = true;
     else columns.push({ key: REQUIRED_COLUMN, visible: true });
-    return { sport, columns };
+    return { sport, columns, version: PROFILE_VERSION };
+}
+
+// Migrazione v1 → v2: nel layout v1 il banco BACK stava a sinistra della quota e
+// il banco LAY a destra; in v2 i lati sono invertiti. Per qualunque profilo v1
+// (default o personalizzato) basta scambiare le POSIZIONI di avail_back e
+// avail_lay preservando la visibilità di ciascuna colonna. Idempotente solo se
+// applicata una volta: il chiamante deve controllare `version` prima.
+export function migrateProfileV1(raw: unknown): unknown {
+    if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { columns?: unknown }).columns)) {
+        return raw;
+    }
+    const columns = [...((raw as { columns: unknown[] }).columns)];
+    const idx = (key: string) =>
+        columns.findIndex(
+            (c) => !!c && typeof c === 'object' && (c as { key?: unknown }).key === key,
+        );
+    const iBack = idx('avail_back');
+    const iLay = idx('avail_lay');
+    if (iBack >= 0 && iLay >= 0) {
+        [columns[iBack], columns[iLay]] = [columns[iLay], columns[iBack]];
+    }
+    return { ...(raw as object), columns, version: PROFILE_VERSION };
 }
 
 // Carica il profilo di uno sport da localStorage (o il default se assente/illeggibile).
@@ -138,7 +168,12 @@ export function loadProfile(sport: string): LadderProfile {
     try {
         const rawStr = safeStorage()?.getItem(storageKey(sport));
         if (!rawStr) return defaultProfile(sport);
-        return normalizeProfile(sport, JSON.parse(rawStr));
+        let raw: unknown = JSON.parse(rawStr);
+        const ver = (raw as { version?: unknown } | null)?.version;
+        if (typeof ver !== 'number' || ver < PROFILE_VERSION) {
+            raw = migrateProfileV1(raw);
+        }
+        return normalizeProfile(sport, raw);
     } catch {
         return defaultProfile(sport);
     }

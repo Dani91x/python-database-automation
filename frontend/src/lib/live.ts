@@ -83,12 +83,16 @@ export async function fetchLiveNow(eventId: string): Promise<LiveNowRow | null> 
 
 // Sottoscrizione realtime alla riga `live_now` di un evento. Ritorna una
 // funzione di unsubscribe da invocare a smontaggio / cambio selezione.
+// Fix audit #21: il nome del canale è UNICO per sottoscrizione (suffisso random) —
+// due iscrizioni allo stesso evento (es. due slot multi-ladder) con lo stesso topic
+// si contendevano il canale e una restava a secco. Il nome è solo un identificatore
+// client-side: nessun altro codice dipende dalla stringa del topic.
 export function subscribeLiveNow(
     eventId: string,
     cb: (row: LiveNowRow | null) => void,
 ): () => void {
     const channel = supabase
-        .channel(`live_now:${eventId}`)
+        .channel(`live_now:${eventId}:${Math.random().toString(36).slice(2, 10)}`)
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'live_now', filter: `event_id=eq.${eventId}` },

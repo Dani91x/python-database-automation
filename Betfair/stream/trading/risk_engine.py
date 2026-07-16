@@ -562,8 +562,16 @@ def evaluate_rule(
 
     # --- take_profit -------------------------------------------------------------------
     if rt == "take_profit":
+        # FIX audit #2: la UI storica armava il take-profit tick/% con trigger_ticks/
+        # trigger_pct → qui si leggevano SOLO offset_* e la regola non scattava MAI
+        # (in silenzio). trigger_* è accettato come ALIAS (compat con le regole già
+        # armate); offset_* resta il nome canonico e vince se presente.
         off_ticks = _int_param(params, "offset_ticks")
+        if off_ticks is None:
+            off_ticks = _int_param(params, "trigger_ticks")
         off_pct = _num(params, "offset_pct")
+        if off_pct is None:
+            off_pct = _num(params, "trigger_pct")
         if entry_price is not None and (off_ticks is not None or off_pct is not None) \
            and current_price is not None:
             try:
@@ -577,6 +585,35 @@ def evaluate_rule(
         return RuleDecision(False, "take-profit: nessuno scatto")
 
     return RuleDecision(False, f"rule_type non monitorato: {rule_type!r}")
+
+
+# ---------------------------------------------------------------------------
+# BRACKET (OCO) — validazione della gamba STOP (fix audit #1)
+# ---------------------------------------------------------------------------
+# Parametri che possono innescare la gamba stop di un bracket: trigger di prezzo,
+# soglia P&L o trailing. Senza ALMENO uno di questi lo stop non scatterebbe MAI.
+BRACKET_STOP_PARAM_KEYS = (
+    "trigger_ticks", "trigger_pct", "stop_amount", "trail_ticks", "trail_pct",
+)
+
+
+def bracket_missing_stop(params: Optional[dict]) -> Optional[str]:
+    """Motivo di invalidità di un bracket SENZA gamba stop (None = bracket valido).
+
+    FIX audit #1 (defense in depth): un bracket armato con la sola gamba offset
+    (nessun trigger_*/stop_amount/trail_*) resterebbe armato PER SEMPRE con lo stop
+    MORTO, in silenzio. È un errore PERMANENTE dei dati della regola: il worker DEVE
+    disarmarla in modo VISIBILE (status 'error' + alert), mai lasciarla armata.
+    """
+    p = params if isinstance(params, dict) else {}
+    for key in BRACKET_STOP_PARAM_KEYS:
+        if _num(p, key) is not None:
+            return None
+    return (
+        "bracket senza gamba STOP: serve almeno uno tra "
+        + "/".join(BRACKET_STOP_PARAM_KEYS)
+        + " (lo stop non scatterebbe MAI)"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -47,7 +47,9 @@ logger = logging.getLogger(__name__)
 MIN_STAKE = 2.0
 _EPS = 1e-9
 
-FLAT, OPEN, DONE = "FLAT", "OPEN", "DONE"
+# CLOSING (fix audit #7): dopo il green/stop finale la posizione va SORVEGLIATA
+# finche' il blotter non e' pari — mai un FLAT dichiarato col solo hedge piazzato.
+FLAT, OPEN, CLOSING, DONE = "FLAT", "OPEN", "CLOSING", "DONE"
 
 
 def _norm(name: Optional[str]) -> str:
@@ -77,10 +79,18 @@ class TennisProStrategy(BaseStrategy):
         # (ultimo token) cosi' il match e' robusto.
         _raw = {_norm(k): int(v) for k, v in dict(kwargs.pop("name_to_sel", {})).items()}
         self.name_to_sel: Dict[str, int] = dict(_raw)
+        # fix audit #13: se i due runner CONDIVIDONO il cognome (sorelle/fratelli,
+        # doppi omonimi) il cognome e' AMBIGUO e NON va indicizzato — un match
+        # sbagliato scambierebbe server/receiver (direzione del trade invertita:
+        # money-critical). Si indicizzano solo i cognomi univoci.
+        _by_surname: Dict[str, set] = {}
         for _nm, _sid in _raw.items():
             parts = _nm.split()
             if parts:
-                self.name_to_sel.setdefault(parts[-1], _sid)
+                _by_surname.setdefault(parts[-1], set()).add(_sid)
+        for _sn, _sids in _by_surname.items():
+            if len(_sids) == 1:
+                self.name_to_sel.setdefault(_sn, next(iter(_sids)))
         super().__init__(*args, **kwargs)
         c = {**(self.context or {}), **ctx_in}
 
@@ -119,6 +129,9 @@ class TennisProStrategy(BaseStrategy):
         # invece di pagarlo ("bancare"). Fill non garantito (gestito dal timeout).
         self.maker: bool = bool(c.get("maker", False))
         self.maker_offset: int = int(c.get("maker_offset", 1))
+        # CLOSING (fix audit #7): secondi di publish_time tra i re-hedge della
+        # sorveglianza post-chiusura (fallback a conteggio update senza pt).
+        self.close_retry_s: float = float(c.get("close_retry_s", 20.0))
         self.dry_run: bool = bool(c.get("dry_run", False))
 
         # 1) BREAK POINT
@@ -527,6 +540,12 @@ class TennisProStrategy(BaseStrategy):
         if trade and trade["state"] == OPEN:
             self._manage(market, trade, px)
             return
+        # 1b) CLOSING (fix audit #7): la chiusura va SORVEGLIATA finche' il
+        # blotter non e' pari — cancel falliti o hedge non riempito (bet delay
+        # 3s) lascerebbero un'esposizione nuda/rovesciata non gestita.
+        if trade and trade["state"] == CLOSING:
+            self._surveil_closing(market, trade, px)
+            return
 
         # 2) gate ingresso
         if not market_book.inplay:
@@ -609,43 +628,111 @@ class TennisProStrategy(BaseStrategy):
 
         if favorable and move_t >= target_t:      # TARGET -> green totale
             self._finish(market, trade, "green", sel,
-                         self._full_close(market, trade, sel, mkt))
+                         *self._full_close(market, trade, sel, mkt))
             return
         if (not favorable) and move_t >= stop_t:  # STOP
             self._finish(market, trade, "stop", sel,
-                         self._full_close(market, trade, sel, mkt))
+                         *self._full_close(market, trade, sel, mkt))
             return
         # USCITA STRUTTURALE: il game/set che ha innescato si e' risolto -> chiudi
         s = self.score
         if s is not None and trade.get("entry_games") is not None:
             if (s.games_home, s.games_away, s.sets_home, s.sets_away) != trade["entry_games"]:
                 self._finish(market, trade, "scratch", sel,
-                             self._full_close(market, trade, sel, mkt))
+                             *self._full_close(market, trade, sel, mkt))
                 return
 
     def _full_close(self, market: Any, trade: Dict[str, Any], sel: int,
-                    price: float) -> float:
+                    price: float) -> "Tuple[float, Optional[Any]]":
         """Chiusura TOTALE del trade (fix 2026-07-09: doppio-hedge staged).
 
         Col bet delay in-play del tennis (3s) l'hedge dello SCAGLIONE può essere
         ancora PENDENTE quando scatta target/stop/scratch: il green finale —
         calcolato sulla sola posizione MATCHED — ri-hedgerebbe l'intera size e,
         al fill di entrambi, la posizione risulterebbe ROVESCIATA (over-hedge).
-        Prima del green finale si CANCELLA il residuo vivo dello staged hedge."""
+        Prima del green finale si CANCELLA il residuo vivo dello staged hedge.
+        Ritorna (locked stimato, ordine hedge) — l'ordine va SORVEGLIATO in
+        CLOSING (fix audit #7): il locked e' reale solo a hedge matched."""
         self._cancel(market, trade.get("staged_order"))
-        locked, _ = self._close_at(market, sel, price)
-        return locked
+        locked, order = self._close_at(market, sel, price)
+        return locked, order
 
     def _finish(self, market: Any, trade: Dict[str, Any], outcome: str,
-                sel: int, locked: float) -> None:
+                sel: int, locked: float, close_order: Any = None) -> None:
         # cancella l'eventuale residuo dell'ordine di ingresso ancora vivo
         self._cancel(market, trade.get("order"))
         self.stats["pnl"] += float(locked)
+        # contabilita' incrementale (review 16/07, pattern _book_locked dello
+        # scalper): si ricorda quanto e' gia' stato accreditato — se la
+        # sorveglianza CLOSING ri-hedgia a un prezzo diverso, stats["pnl"] viene
+        # CORRETTO col delta (mai lasciare una stima vecchia nel dashboard).
+        trade["booked"] = float(locked)
         self.stats[{"green": "greens", "stop": "stops",
                     "scratch": "scratches"}.get(outcome, "greens")] += 1
-        trade["state"] = DONE
-        self._trade[market.market_id] = {"state": FLAT}
         self._emit("exit", outcome=outcome, kind=trade.get("kind"), sel=sel,
                    locked=round(float(locked), 3))
         logger.info("[PRO] EXIT %s (%s) sel=%s locked=%+.3f | stats=%s",
                     outcome, trade.get("kind"), sel, locked, self.stats)
+        # CLOSING (fix audit #7): prima si passava dritti a FLAT col solo hedge
+        # PIAZZATO — un cancel fallito del residuo entry o un hedge non riempito
+        # sotto il delay 3s lasciava esposizione nuda/rovesciata NON gestita.
+        # Ora la chiusura resta sorvegliata in process_market_book (pattern
+        # tennis_swing_bot): FLAT solo quando il blotter dice |nw−nl| < 0.02.
+        trade["state"] = CLOSING
+        trade["close_order"] = close_order
+        trade["t_close"] = getattr(self, "_now_pt", None)
+        trade["close_wait"] = 0
+        self._trade[market.market_id] = trade
+
+    def _surveil_closing(self, market: Any, trade: Dict[str, Any],
+                         px: Dict[int, Dict[str, Any]]) -> None:
+        """Sorveglianza dello stato CLOSING (fix audit #7).
+
+        A ogni update: ritenta i cancel dei residui (entry/staged, idempotenti);
+        quando il blotter e' PARI (|nw−nl| < 0.02, o nessun matched) cancella
+        l'eventuale residuo dell'hedge e SOLO allora dichiara FLAT. Se dopo
+        ``close_retry_s`` secondi di publish_time (fallback: update senza pt) la
+        posizione non e' ancora pari, l'hedge stantio viene cancellato e si
+        RI-HEDGIA al touch corrente (compute_green sulle esposizioni fresche:
+        self-correcting anche su fill parziali). Mai abbandonare la posizione."""
+        sel = int(trade.get("sel") or 0)
+        # residui di ingresso/scaglione: ritenta il cancel (puo' essere fallito)
+        self._cancel(market, trade.get("order"))
+        self._cancel(market, trade.get("staged_order"))
+        b, ba, l, la = self._position(market, sel)
+        nw, nl = self._net(b, ba, l, la)
+        if (b + l) <= _EPS or abs(nw - nl) < 0.02:
+            # blotter pari: cancella il residuo dell'hedge (un fill tardivo
+            # ROVESCEREBBE la posizione appena chiusa) e chiudi davvero.
+            self._cancel(market, trade.get("close_order"))
+            self._trade[market.market_id] = {"state": FLAT}
+            self._emit("closed_flat", sel=sel, kind=trade.get("kind"))
+            return
+        trade["close_wait"] = int(trade.get("close_wait", 0)) + 1
+        pt = getattr(self, "_now_pt", None)
+        t0 = trade.get("t_close")
+        retry = (
+            pt is not None and t0 is not None
+            and (pt - t0) / 1000.0 >= self.close_retry_s
+        ) or ((pt is None or t0 is None) and trade["close_wait"] > self.close_retry_s)
+        if not retry:
+            return
+        d = px.get(sel)
+        mkt = (d.get("bl") if trade.get("side") == "BACK" else d.get("bb")) if d else None
+        if mkt is None:
+            return  # book monco: si riprova al prossimo update (mai mollare)
+        self._cancel(market, trade.get("close_order"))
+        locked2, o2 = self._close_at(market, sel, mkt)
+        # correzione contabile (review 16/07): il locked accreditato in _finish era
+        # una STIMA al vecchio prezzo dell'hedge; il re-hedge cambia l'esito reale →
+        # stats["pnl"] va aggiornato col DELTA rispetto all'ultimo accredito.
+        booked = float(trade.get("booked") or 0.0)
+        delta = float(locked2) - booked
+        if abs(delta) > 1e-9:
+            self.stats["pnl"] += delta
+            trade["booked"] = float(locked2)
+        trade["close_order"] = o2
+        trade["t_close"] = pt
+        trade["close_wait"] = 0
+        self._emit("close_escalate", sel=sel, kind=trade.get("kind"), price=mkt,
+                   locked=round(float(locked2), 3))

@@ -384,12 +384,13 @@ export interface RiskRuleRow {
     triggered_at: string | null;
 }
 
-// entry_price è OBBLIGATORIO per offset/stop_loss/trailing_stop (contratto backend):
-// serve un riferimento per calcolare target/trigger. take_profit può basarsi su P&L
-// (target_amount). ECCEZIONE: con entry_bet_id o timing 'on_fill' il server deriva il
-// riferimento dall'ABBINAMENTO reale dell'ordine di ingresso → entry_price non richiesto.
+// entry_price è OBBLIGATORIO per offset/stop_loss/trailing_stop/bracket (contratto RPC
+// betfair_live_risk_rules_v4: la SQL lo esige SEMPRE per questi tipi, ANCHE con
+// entry_bet_id / timing 'on_fill' — il worker deriva dal fill solo la SIZE, mai il
+// prezzo). take_profit può basarsi su P&L (target_amount). (fix audit #4: il vecchio
+// skip "derivesFromFill" faceva fallire l'arming alla RPC.)
 const RISK_RULE_ENTRY_PRICE_REQUIRED: ReadonlySet<RiskRuleType> = new Set<RiskRuleType>([
-    'offset', 'stop_loss', 'trailing_stop',
+    'offset', 'stop_loss', 'trailing_stop', 'bracket',
 ]);
 
 // Arma una regola di rischio (request_live_risk_rule → bigint id). MONEY-CRITICAL:
@@ -438,9 +439,10 @@ export async function requestRiskRule(args: {
             throw new Error('requestRiskRule: auto_hedge richiede entrySide back (copertura BACK sul CS)');
         }
     }
-    // entry_price richiesto solo se il riferimento NON è derivato dall'ordine di ingresso.
-    const derivesFromFill = hasEntryBet || timing === 'on_fill';
-    if (RISK_RULE_ENTRY_PRICE_REQUIRED.has(args.ruleType) && !derivesFromFill &&
+    // entry_price SEMPRE richiesto per questi tipi (fix audit #4): la RPC v4 lo esige
+    // anche con entry_bet_id/on_fill — meglio fallire QUI con un messaggio chiaro che
+    // alla RPC. Dal fill il worker deriva solo la SIZE, mai il prezzo di riferimento.
+    if (RISK_RULE_ENTRY_PRICE_REQUIRED.has(args.ruleType) &&
         !(args.entryPrice != null && Number.isFinite(args.entryPrice))) {
         throw new Error(`requestRiskRule: entry_price obbligatorio per rule_type '${args.ruleType}'`);
     }
@@ -503,6 +505,47 @@ export async function fetchLivePositions(marketId: string): Promise<LivePosition
     const raw = data as { rows?: LivePositionRow[] } | LivePositionRow[] | null;
     if (Array.isArray(raw)) return raw;
     return raw?.rows ?? [];
+}
+
+// ---------- ordini/posizioni: REALTIME (WS) ----------
+// Richiesta 16/07 ("non polling, canale WS"): postgres_changes sugli specchi
+// betfair_live_orders / betfair_live_positions filtrati per market_id. Richiede
+// la migrazione realtime_orders_bots.sql (publication + policy SELECT owner-only).
+// Notifica il CAMBIAMENTO; il chiamante ricarica via RPC (pattern notify→reload).
+// onHealth (fix audit #8): segnala lo stato del canale — su CHANNEL_ERROR/TIMED_OUT
+// il chiamante DEVE tornare al poll pieno, mai degradare in silenzio.
+export function subscribeLiveOrders(
+    marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+): () => void {
+    // suffisso univoco (review 16/07): due subscribe sullo stesso topic sullo stesso
+    // client possono affamarsi a vicenda (stesso bug fixato in live.ts subscribeLiveNow)
+    const channel = supabase
+        .channel(`betfair_live_orders:${marketId}:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'betfair_live_orders', filter: `market_id=eq.${marketId}` },
+            () => cb(),
+        )
+        .subscribe((status) => onHealth?.(status === 'SUBSCRIBED'));
+    return () => {
+        void supabase.removeChannel(channel);
+    };
+}
+
+export function subscribeLivePositions(
+    marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+): () => void {
+    const channel = supabase
+        .channel(`betfair_live_positions:${marketId}:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'betfair_live_positions', filter: `market_id=eq.${marketId}` },
+            () => cb(),
+        )
+        .subscribe((status) => onHealth?.(status === 'SUBSCRIBED'));
+    return () => {
+        void supabase.removeChannel(channel);
+    };
 }
 
 // ---------- cross-market hedge (x-hedge) per EVENTO ----------

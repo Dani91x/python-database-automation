@@ -250,10 +250,45 @@ export function localOrderApi(sport: LocalSport, dbApi: LadderOrderApi): LadderO
         }
         : undefined;
 
+    // REALTIME (16/07 "non polling"): notifica di cambiamento per l'overlay del ladder.
+    // Canale locale connesso → i push 'order'/'position' del runner notificano subito;
+    // in parallelo resta attiva l'eventuale subscribe DB del dbApi (Supabase Realtime),
+    // così la notifica arriva comunque quando il canale locale è giù. Il reload passa
+    // da fetchOrders/fetchPositions (cache locale o DB, con fallback già gestito).
+    const subscribeOrders = (
+        marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+    ): (() => void) => {
+        const unLocal = store.channel.subscribe('order', (d) => {
+            const r = d as { market_id?: string } | null;
+            if (r?.market_id === marketId) cb();
+        });
+        // salute: canale locale connesso conta come "up" anche se il canale DB è giù
+        const unDb = dbApi.subscribeOrders
+            ? dbApi.subscribeOrders(marketId, cb, (up) => onHealth?.(up || connected()))
+            : undefined;
+        if (!dbApi.subscribeOrders) onHealth?.(connected());
+        return () => { unLocal(); unDb?.(); };
+    };
+    const subscribePositions = (
+        marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+    ): (() => void) => {
+        const unLocal = store.channel.subscribe('position', (d) => {
+            const r = d as { market_id?: string } | null;
+            if (r?.market_id === marketId) cb();
+        });
+        const unDb = dbApi.subscribePositions
+            ? dbApi.subscribePositions(marketId, cb, (up) => onHealth?.(up || connected()))
+            : undefined;
+        if (!dbApi.subscribePositions) onHealth?.(connected());
+        return () => { unLocal(); unDb?.(); };
+    };
+
     return {
         send,
         fetchOrders,
         fetchPositions,
+        subscribeOrders,
+        subscribePositions,
         ...(greenup ? { greenup } : {}),
         // risk rules RESTANO su path DB by design (il canale locale non le gestisce).
         ...(dbApi.armRule ? { armRule: dbApi.armRule } : {}),

@@ -65,6 +65,18 @@ MIN_STAKE: float = 2.0
 # Tolleranza per confronti su importi (EUR).
 _EPS: float = 1e-9
 
+# Stati flumine di un ordine ancora VIVO sul book (mirror di
+# tennis_runner._LIVE_ORDER_STATUSES, fix audit #5): CANCELLING/UPDATING/REPLACING
+# sono transizioni con esito NON confermato — mai trattarle come "morto" (una
+# cancel inviata puo' ancora perdere la corsa con un fill tardivo).
+_LIVE_ORDER_STATUSES = (
+    OrderStatus.PENDING,
+    OrderStatus.EXECUTABLE,
+    OrderStatus.CANCELLING,
+    OrderStatus.UPDATING,
+    OrderStatus.REPLACING,
+)
+
 # Stati della macchina.
 # QUOTING  = una gamba resting (modalita' reversion/momentum)
 # QUOTING2 = due gambe resting (modalita' market-maker, cattura spread)
@@ -174,6 +186,11 @@ class _Slot:
     t_lock: Optional[int] = None         # publish_time ms del lock avviato
     ref_price: Optional[float] = None    # prezzo di riferimento (mid all'ingresso)
     cycles: int = 0                      # cicli completati su questa selezione
+    # contabilita' INCREMENTALE del ciclo corrente (fix audit #6: un ciclo puo'
+    # chiudersi PIU' volte — DONE → fill orfano → flatten riaperto — e ogni
+    # booking deve accreditare SOLO la differenza rispetto al gia' contabilizzato)
+    booked: float = 0.0                  # locked gia' accreditato in pnl_locked
+    cycle_counted: bool = False          # ciclo gia' contato in slot.cycles
     history: Deque[Tuple[int, float]] = field(default_factory=lambda: deque(maxlen=64))
     # --- flusso tradato (prints) per lato, per il gate min_flow ---
     prev_trd: Dict[float, float] = field(default_factory=dict)  # ladder trd cumulata
@@ -563,6 +580,32 @@ class TennisScalperStrategy(BaseStrategy):
         if inplay and not self.inplay_tick_enabled:
             return True
         return self._phase_green(inplay)
+
+    def _book_locked(self, slot: _Slot, locked: float) -> float:
+        """Accredita in ``stats['pnl_locked']`` SOLO il DELTA rispetto a quanto gia'
+        contabilizzato per il ciclo corrente (fix audit #6, money-critical).
+
+        Un ciclo puo' chiudersi PIU' volte: DONE → fill orfano → flatten riaperto
+        (_drive_flatten). Prima ogni chiusura ri-sommava l'INTERO min(nw,nl) su
+        tutti gli ordini dello slot → P&L raddoppiato in telemetria/missione.
+        Ora ``slot.booked`` ricorda il locked gia' accreditato: ogni booking
+        aggiunge (locked − booked) e aggiorna booked. Ritorna il delta (da passare
+        a ``_on_cycle_closed``: anche la contabilita' di FASE resta esatta)."""
+        delta = float(locked) - float(slot.booked)
+        slot.booked = float(locked)
+        self.stats["pnl_locked"] += delta
+        return delta
+
+    def _count_cycle(self, slot: _Slot, stats_too: bool = False) -> None:
+        """Incrementa ``slot.cycles`` UNA sola volta per ciclo (fix audit #6:
+        _begin_flatten su una riapertura post-DONE non deve ricontare).
+        ``stats_too``: incrementa anche stats['cycles'] (solo chiusure pulite,
+        comportamento storico invariato)."""
+        if not slot.cycle_counted:
+            slot.cycle_counted = True
+            slot.cycles += 1
+            if stats_too:
+                self.stats["cycles"] += 1
 
     def _on_cycle_closed(self, slot: _Slot, locked: float) -> None:
         """Contabilita' di FASE di un ciclo CHIUSO (missione one_tick_per_phase).
@@ -1255,13 +1298,13 @@ class TennisScalperStrategy(BaseStrategy):
             if abs(net_win - net_lose) <= 0.02:
                 locked = min(net_win, net_lose)
                 slot.status = DONE
-                slot.cycles += 1
-                self.stats["cycles"] += 1
+                self._count_cycle(slot, stats_too=True)
                 self.stats["roundtrips"] += 1
-                self.stats["pnl_locked"] += locked
+                # fix audit #6: booking INCREMENTALE (mai ri-sommare su riapertura)
+                delta = self._book_locked(slot, locked)
                 self._emit("cycle", esito="roundtrip", locked=round(locked, 4),
                            selection_id=getattr(eb, "selection_id", None))
-                self._on_cycle_closed(slot, locked)
+                self._on_cycle_closed(slot, delta)
             else:
                 # roundtrip completato ma NON equalizzato (o residuo che puo'
                 # perdere): green/chiusura GARANTITA -> ogni ciclo finisce
@@ -1551,14 +1594,17 @@ class TennisScalperStrategy(BaseStrategy):
                 if abs(nw0 - nl0) > 0.02:
                     self._begin_flatten(slot)
                 else:
+                    # fix audit #12: locked = min(nw0, nl0) come OVUNQUE (il floor
+                    # garantito sui due esiti), mai il solo nl0 (esito migliore).
+                    locked = min(nw0, nl0)
                     slot.status = DONE
-                    slot.cycles += 1
-                    self.stats["cycles"] += 1
+                    self._count_cycle(slot, stats_too=True)
                     self.stats["scalps"] += 1
-                    self.stats["pnl_locked"] += nl0
-                    self._emit("cycle", esito="scalp", locked=round(nl0, 4),
+                    # fix audit #6: booking INCREMENTALE (mai ri-sommare su riapertura)
+                    delta = self._book_locked(slot, locked)
+                    self._emit("cycle", esito="scalp", locked=round(locked, 4),
                                selection_id=getattr(slot.entry, "selection_id", None))
-                    self._on_cycle_closed(slot, nl0)
+                    self._on_cycle_closed(slot, delta)
                 return
             # ---- gestione avversita' basata sul PREZZO D'INGRESSO ----
             sb, ob, sl, ol = self._matched_position(slot.entry)
@@ -1731,7 +1777,9 @@ class TennisScalperStrategy(BaseStrategy):
         if slot.status != FLATTENING:
             slot.status = FLATTENING
             slot.flat_tries = 0
-            slot.cycles += 1
+            # fix audit #6: un flatten RIAPERTO su un ciclo gia' chiuso (fill
+            # orfano post-DONE) non e' un ciclo nuovo: niente doppio conteggio.
+            self._count_cycle(slot)
 
     def _net_position(self, slot: _Slot) -> Tuple[float, float]:
         """(net_win, net_lose) su TUTTI gli ordini matchati dello slot."""
@@ -1760,9 +1808,12 @@ class TennisScalperStrategy(BaseStrategy):
             locked = min(net_win, net_lose)
             slot.status = DONE
             self.stats["flattens"] += 1
-            self.stats["pnl_locked"] += locked
+            # fix audit #6: booking INCREMENTALE — su un flatten RIAPERTO (fill
+            # orfano dopo il DONE) si accredita solo la CORREZIONE, non tutto il
+            # locked un'altra volta.
+            delta = self._book_locked(slot, locked)
             self._emit("flatten_done", locked=round(locked, 4))
-            self._on_cycle_closed(slot, locked)
+            self._on_cycle_closed(slot, delta)
             if (
                 self.cycle_loss_breaker > 0
                 and locked <= -self.cycle_loss_breaker
@@ -1832,8 +1883,9 @@ class TennisScalperStrategy(BaseStrategy):
                     # contabilita': il residuo accettato entra in pnl_locked
                     # (loss cap/telemetria oneste) e nella fase col FLOOR
                     # garantito (min sui due esiti), mai l'esito migliore.
-                    self.stats["pnl_locked"] += min(net_win, net_lose)
-                    self._on_cycle_closed(slot, min(net_win, net_lose))
+                    # fix audit #6: anche qui booking INCREMENTALE.
+                    delta = self._book_locked(slot, min(net_win, net_lose))
+                    self._on_cycle_closed(slot, delta)
             elif (
                 best_back is None and best_lay is None and slot.flat_tries > 50
             ):
@@ -2209,12 +2261,15 @@ class TennisScalperStrategy(BaseStrategy):
 
     @staticmethod
     def _has_live(order: Any) -> bool:
-        """True se l'ordine e' ancora attivo (PENDING/EXECUTABLE con residuo)."""
+        """True se l'ordine e' ancora VIVO sul book con residuo.
+
+        Fix audit #5: includere CANCELLING/UPDATING/REPLACING (mirror di
+        tennis_runner._LIVE_ORDER_STATUSES). Un ordine in CANCELLING ha la cancel
+        INVIATA ma l'esito NON confermato: trattarlo come morto resettava lo slot
+        e un fill tardivo diventava una posizione NUDA non gestita."""
         if order is None:
             return False
-        if getattr(order, "status", None) not in (
-            OrderStatus.EXECUTABLE, OrderStatus.PENDING
-        ):
+        if getattr(order, "status", None) not in _LIVE_ORDER_STATUSES:
             return False
         return float(getattr(order, "size_remaining", 0.0) or 0.0) > _EPS
 
@@ -2222,10 +2277,10 @@ class TennisScalperStrategy(BaseStrategy):
     def _cancel_if_live(market: Any, order: Any) -> None:
         if order is None:
             return
-        # include PENDING: in live un ordine appena piazzato non e' ancora EXECUTABLE
-        if getattr(order, "status", None) in (
-            OrderStatus.EXECUTABLE, OrderStatus.PENDING
-        ):
+        # include PENDING (appena piazzato, non ancora EXECUTABLE) e gli stati
+        # transitori CANCELLING/UPDATING/REPLACING (fix audit #5): il retry della
+        # cancel e' idempotente e un esito non confermato NON e' un ordine morto.
+        if getattr(order, "status", None) in _LIVE_ORDER_STATUSES:
             rem = float(getattr(order, "size_remaining", 0.0) or 0.0)
             if rem > _EPS:
                 try:
@@ -2253,6 +2308,10 @@ class TennisScalperStrategy(BaseStrategy):
         slot.t_quote = None
         slot.t_lock = None
         slot.ref_price = None
+        # contabilita' incrementale del ciclo (fix audit #6): il NUOVO ciclo
+        # riparte da zero accreditato e non ancora contato.
+        slot.booked = 0.0
+        slot.cycle_counted = False
         # NB: history/flow/prev_trd/first_seen/cooldown NON si azzerano:
         # sono memoria di mercato, non del ciclo.
 

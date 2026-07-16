@@ -34,7 +34,10 @@ function CalcioStandaloneLadder({ eventId, marketId, marketName, eventName }: {
             .catch((e: unknown) => {
                 if ((e as { code?: string })?.code !== 'PGRST116') console.warn('[StandaloneLadder] fetchLiveNow:', e);
             });
-        unsubRef.current = subscribeLiveNow(eventId, (r) => { if (r) setNow(r); });
+        // fix audit #22: propaga anche il DELETE (r = null) — tenere l'ultima riga
+        // manterrebbe l'order_mode vecchio; con null il fallback sotto degrada a 'off'
+        // (sola lettura), il fail-safe corretto quando lo stato live sparisce.
+        unsubRef.current = subscribeLiveNow(eventId, (r) => setNow(r));
         return () => {
             alive = false;
             if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }

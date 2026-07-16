@@ -60,6 +60,9 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
     const [audit, setAudit] = useState<LiveAuditRow[]>([]);
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState<string | null>(null);
+    // fix audit #27: errore del registro audit SEPARATO e visibile (prima veniva
+    // inghiottito in una lista vuota silenziosa).
+    const [auditErr, setAuditErr] = useState<string | null>(null);
     const [toggling, setToggling] = useState(false);
     const [saving, setSaving] = useState(false);
     const busyRef = useRef(false);
@@ -103,13 +106,18 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
         setLoading(true);
         try {
             // difensivo: le due letture sono indipendenti, un fallimento non azzera l'altra.
+            // fix audit #27: un fallimento dell'audit NON è una lista vuota silenziosa —
+            // si mantiene l'ultima lista buona e si mostra l'errore.
             const [s, a] = await Promise.all([
                 getLiveSettings().catch(() => null),
-                fetchLiveAudit(AUDIT_LIMIT).catch(() => [] as LiveAuditRow[]),
+                fetchLiveAudit(AUDIT_LIMIT).catch((e: any) => {
+                    setAuditErr(e?.message ?? 'registro eventi non disponibile');
+                    return null;
+                }),
             ]);
             if (s) { setSettings(s); syncForm(s); setErr(null); }
             else setErr('Impostazioni non disponibili (runner/DB non raggiungibile).');
-            setAudit(a);
+            if (a) { setAudit(a); setAuditErr(null); }
         } catch (e: any) {
             setErr(e?.message ?? 'errore di caricamento');
         } finally {
@@ -139,7 +147,9 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
             const s = await setKillSwitch(next);
             if (s) { setSettings(s); syncForm(s); }
             toast.success(next ? 'Kill-switch ATTIVATO' : 'Kill-switch disattivato', {
-                description: next ? 'Nessun ordine verrà processato dal runner.' : 'Il runner torna operativo.',
+                description: next
+                    ? 'Aperture rifiutate; cancel e chiusure passano. Gli stop SOFTWARE non scattano.'
+                    : 'Il runner torna operativo.',
             });
             await reload();
         } catch (e: any) {
@@ -151,15 +161,21 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
 
     // -------------------- salvataggio impostazioni --------------------
     const handleSave = useCallback(async () => {
-        // E34/E35: i limiti, se presenti, devono essere > 0 (il DB li rifiuterebbe comunque).
+        // E34/E35 + fix audit #27: TUTTI i limiti/velocità, se presenti, devono essere > 0
+        // (un cap a 0/negativo bloccherebbe tutto o non avrebbe senso; il DB li rifiuterebbe
+        // comunque — meglio dirlo subito e non salvare nulla).
         for (const [label, raw] of [
             ['Stop giornaliero', dailyLossLimit],
             ['Max esposizione / evento', maxExpEvent],
             ['Max esposizione / campionato', maxExpLeague],
+            ['Max esposizione / selezione', maxExposure],
+            ['Max ordini / min', maxOrdersPerMin],
+            ['Poll ordini (s)', orderPollSec],
+            ['Poll rischio (s)', riskPollSec],
         ] as const) {
             const v = num(raw);
             if (raw.trim() !== '' && (v == null || v <= 0)) {
-                toast.error(`${label}: valore non valido`, { description: 'Inserisci un importo > 0, oppure lascia vuoto per disattivare.' });
+                toast.error(`${label}: valore non valido`, { description: 'Inserisci un valore > 0, oppure lascia vuoto per disattivare.' });
                 return;
             }
         }
@@ -242,15 +258,17 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
                         ? <ShieldAlert className="w-7 h-7 shrink-0" />
                         : <ShieldCheck className="w-7 h-7 shrink-0 text-emerald-400" />}
                     <div>
+                        {/* fix audit #27: copy ONESTA — il kill-switch rifiuta le APERTURE ma
+                            lascia passare cancel e chiusure; gli stop SOFTWARE non scattano. */}
                         <div className="font-display font-black text-base md:text-lg">
                             {killOn
-                                ? '🔴 KILL-SWITCH ATTIVO — nessun ordine viene processato'
+                                ? '🔴 KILL-SWITCH ATTIVO — aperture rifiutate, chiusure permesse'
                                 : 'Kill-switch disattivato — runner operativo'}
                         </div>
                         <div className={`text-[11px] mt-0.5 ${killOn ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {killOn
-                                ? 'Il runner ignora ogni comando finché non riattivi.'
-                                : 'Clic per bloccare immediatamente ogni invio ordini (globale).'}
+                                ? 'Il runner rifiuta le APERTURE; cancel e chiusure (green-up/cash-out) passano. ⚠ Gli stop/offset SOFTWARE NON scattano finché è attivo.'
+                                : 'Clic per bloccare immediatamente le aperture (globale); chiusure e cancel restano permessi.'}
                         </div>
                     </div>
                 </div>
@@ -383,6 +401,12 @@ export function LiveControlsPanel({ pollMs = 4000 }: Props) {
                         </span>
                     )}
                 </div>
+                {/* fix audit #27: errore del registro SEMPRE visibile (mai lista vuota muta) */}
+                {auditErr && (
+                    <p className="text-xs text-red-400 mb-2">
+                        ⚠ Registro eventi NON aggiornato: {auditErr}
+                    </p>
+                )}
                 {audit.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Nessun evento registrato.</p>
                 ) : (

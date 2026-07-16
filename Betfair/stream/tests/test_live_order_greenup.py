@@ -379,3 +379,45 @@ def test_greenup_target_price_malformed_is_error_never_best(bad):
     row = _by_id(sb, 1)
     assert row["status"] == "error"
     assert "target_price" in (row["error"] or "")
+
+
+# ---------------------------------------------------------------------------
+# FIX audit #25 — params.persistence onorata dall'hedge (default LAPSE invariato)
+# ---------------------------------------------------------------------------
+def test_greenup_honours_params_persistence():
+    """persistence=PERSIST nei params (flatten del risk engine) → l'ordine di hedge
+    la porta con sé (prima era HARDCODED LAPSE e la scelta UI veniva ignorata)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"persistence": "PERSIST"})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    wk._process_once(sb, _FakeFlumine({"1.1": market}), strategy=_STRAT)
+    placed = market.calls[0][1]
+    assert placed.order_type.persistence_type == "PERSIST"
+    assert _by_id(sb, 1)["status"] == "done"
+
+
+def test_greenup_default_persistence_stays_lapse():
+    sb = _FakeSupabase([_greenup_row(1)])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    wk._process_once(sb, _FakeFlumine({"1.1": market}), strategy=_STRAT)
+    assert market.calls[0][1].order_type.persistence_type == "LAPSE"
+
+
+def test_greenup_invalid_persistence_is_error_never_silent_default():
+    """Valore malformato = errore ESPLICITO della richiesta (mai ripiegare in silenzio
+    su un default diverso da quello chiesto)."""
+    sb = _FakeSupabase([_greenup_row(1, params={"persistence": "KEEPZ"})])
+    market = _FakeMarket(
+        "1.1", {"matched_profit_if_win": 10.0, "matched_profit_if_lose": -5.0},
+        atb=[(2.98, 60)], atl=[(3.0, 80)],
+    )
+    wk._process_once(sb, _FakeFlumine({"1.1": market}), strategy=_STRAT)
+    assert market.calls == []                       # NESSUN ordine piazzato
+    row = _by_id(sb, 1)
+    assert row["status"] == "error"
+    assert "persistence" in (row["error"] or "")

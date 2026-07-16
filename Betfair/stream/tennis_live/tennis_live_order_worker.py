@@ -296,14 +296,17 @@ def _result(*, ok: bool, action: str, mode: str, cmd: Dict[str, Any],
 
 
 def _mirror_order(mode: str, event_id: Optional[str], cust_ref: str, order: Any,
-                  cmd: Dict[str, Any], source: str = "manual") -> None:
+                  cmd: Dict[str, Any], source: str = "manual",
+                  status_override: Optional[str] = None) -> None:
     """Specchia l'ordine in ``tennis_live_orders`` (best-effort).
 
     ``source`` = 'manual' (ordini da coda) | bot_key (ordini di un bot ospitato, fix #8).
     ``status`` è NOT NULL nello specchio: se lo snapshot non ha status (ordine non ancora
-    materializzato) si salta la scrittura invece di violare il vincolo (fix #6)."""
+    materializzato) si salta la scrittura invece di violare il vincolo (fix #6).
+    ``status_override``: stato TERMINALE forzato (fix audit #8: ordine simulato di un
+    framework smontato → la riga specchio va chiusa una volta, mai EXECUTABLE fantasma)."""
     snap = _order_snapshot(order)
-    status = snap.get("status")
+    status = status_override or snap.get("status")
     if status is None:
         # niente status → ordine non ancora reale (es. rimpiazzo async non materializzato):
         # NON scrivere (status è NOT NULL). Il prossimo giro di reconcile lo prenderà.
@@ -461,6 +464,229 @@ def _do_replace(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
                    cust_ref=cust_ref, order=order, detail=f"replace → {new_price}")
 
 
+def _level_price(level: Any) -> Optional[float]:
+    """Prezzo di UN livello del book, tollerante alla forma (port dal calcio).
+
+    MONEY-CRITICAL: con lo stream LIVE betfairlightweight espone
+    ``ex.available_to_back/lay`` come lista di **dict** ``{'price':…,'size':…}``,
+    NON di oggetti PriceSize. Il solo ``getattr`` ritornerebbe sempre None sui
+    dati reali → ogni green-up sarebbe un no-op "prezzo non disponibile"."""
+    if level is None:
+        return None
+    if isinstance(level, dict):
+        return _f(level.get("price"))
+    return _f(_val(level, "price"))
+
+
+def _best_prices(market: Any, selection_id: int,
+                 handicap: float) -> "tuple[Optional[float], Optional[float]]":
+    """(best_available_to_back, best_available_to_lay) dal MarketBook flumine GIÀ in
+    memoria (stesso stream, ZERO chiamate API). Port 1:1 dal worker calcio."""
+    mb = _val(market, "market_book")
+    if mb is None:
+        return None, None
+    runners = _val(mb, "runners") or []
+    for r in runners:
+        if _int(_val(r, "selection_id")) != int(selection_id):
+            continue
+        rh = _f(_val(r, "handicap")) or 0.0
+        if abs(rh - float(handicap or 0.0)) > 1e-6:
+            continue
+        ex = _val(r, "ex")
+        atb = (_val(ex, "available_to_back") or []) if ex is not None else []
+        atl = (_val(ex, "available_to_lay") or []) if ex is not None else []
+        best_back = _level_price(atb[0]) if atb else None
+        best_lay = _level_price(atl[0]) if atl else None
+        return best_back, best_lay
+    return None, None
+
+
+def _read_matched_exposures(market: Any, strategy: Any, selection_id: int,
+                            handicap: float) -> "tuple[float, float]":
+    """(profit_if_win, profit_if_lose) MATCHED dal blotter flumine — autoritativo.
+
+    MONEY-CRITICAL: il green-up si calcola sulle esposizioni REALI al MOMENTO
+    dell'esecuzione (mai su numeri pollati dal frontend, potenzialmente stantii).
+    Difensivo: struttura inattesa → (0,0) → no-op a monte (posizione piatta)."""
+    blotter = _val(market, "blotter")
+    if blotter is None or strategy is None:
+        return 0.0, 0.0
+    lookup = (_val(market, "market_id"), int(selection_id), float(handicap or 0.0))
+    try:
+        exp = blotter.get_exposures(strategy, lookup)
+    except Exception:  # noqa: BLE001 - blotter mock/edge → nessuna esposizione
+        return 0.0, 0.0
+    if not isinstance(exp, dict):
+        return 0.0, 0.0
+    w = _f(exp.get("matched_profit_if_win")) or 0.0
+    l = _f(exp.get("matched_profit_if_lose")) or 0.0
+    return w, l
+
+
+def _cancel_unmatched_selection(market: Any, strategy: Any,
+                                selection_id: int) -> "tuple[int, list]":
+    """Cancella i NOSTRI resting della selezione (cash-out COMPLETO, port dal calcio):
+    prima si annullano gli unmatched, POI si hedgia il matched — un resting
+    dimenticato può abbinarsi DOPO l'hedge e riaprire l'esposizione appena chiusa.
+    Ritorna (n_cancellati, falliti)."""
+    blotter = _val(market, "blotter")
+    if blotter is None or strategy is None:
+        return 0, []
+    try:
+        orders = list(blotter.strategy_orders(strategy))
+    except Exception:  # noqa: BLE001 - blotter mock/edge: niente da cancellare
+        return 0, []
+    cancelled = 0
+    failed: list = []
+    for order in orders:
+        if _int(_val(order, "selection_id")) != int(selection_id):
+            continue
+        rem = _f(_val(order, "size_remaining")) or 0.0
+        if _status_name(order) != "EXECUTABLE" or rem <= 0:
+            continue
+        try:
+            ok = market.cancel_order(order)
+            if ok is False:
+                raise ValueError(_val(order, "violation_msg") or "violation")
+            cancelled += 1
+        except Exception as ex:  # noqa: BLE001 - continua con gli altri, ma TRACCIA
+            failed.append({
+                "bet_id": _val(order, "bet_id"),
+                "error": f"cancel unmatched fallito: {str(ex)[:120]}",
+            })
+    return cancelled, failed
+
+
+def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) -> Dict[str, Any]:
+    """Green-up / cash-out (fix audit #2): chiude (totale o frazione) l'esposizione
+    MATCHED di una selezione, modellato 1:1 sul ``_do_greenup`` del calcio.
+
+    Esposizioni FRESCHE dal blotter flumine (capture-strategy dell'evento) + best
+    price opposto dal book già in memoria → UNICO ordine di hedge calcolato dalla
+    matematica condivisa ``trading.greenup.compute_greenup`` (stessa formula del
+    display lockedPnl del ladder). Onora ``params``: fraction, target_price
+    (greening column), place_at_ticks, cancel_unmatched. L'hedge è self-bounded
+    (liability < |W−L|) → ``min_stake_rules(..., reduces_liability=True)`` consente
+    il sotto-minimo .it. Gating di modalità identico a ``_do_place`` (cross-mode
+    rifiutato a monte dal worker; OFF non registra il worker).
+
+    DEVIAZIONE CONSAPEVOLE dal calcio (review 16/07): l'ordine è costruito
+    direttamente via ``Trade.create_order`` e NON passa da ``build_order`` — il
+    cap MAX_PAYOUT_IT e la validazione generica di range non servono qui perché
+    l'hedge è per costruzione limitato dall'esposizione già aperta (validata al
+    piazzamento originale) e il prezzo arriva dal book/target già validato sopra."""
+    from flumine.order.ordertype import LimitOrder
+    from flumine.order.trade import Trade
+
+    from ..live_order_build import min_stake_rules
+    from ..trading.greenup import FLAT_EPS, compute_greenup
+
+    market = _resolve_market(flumine, cmd.get("market_id"))
+    strategy = _capture_strategy(session, cmd.get("market_id"))
+    # MONEY-CRITICAL: senza la capture-strategy NON possiamo leggere le esposizioni
+    # (blotter.get_exposures(strategy, ...)) → (0,0) → "posizione piatta" FALSO con
+    # la posizione APERTA. Fallire forte invece di un 'done' bugiardo.
+    if strategy is None:
+        raise ValueError("greenup richiede la capture-strategy del mercato (esposizioni dal blotter)")
+    if cmd.get("selection_id") is None:
+        raise ValueError("greenup richiede selection_id")
+    selection_id = int(cmd["selection_id"])
+    handicap = float(cmd.get("handicap") or 0.0)
+
+    params = cmd.get("params") if isinstance(cmd.get("params"), dict) else {}
+    fraction = _f(params.get("fraction"))
+    if fraction is None:
+        fraction = 1.0
+    place_at = _int(params.get("place_at_ticks")) or 0
+    # target_price ("greening column"): chiudi A QUEL prezzo assoluto. Un target
+    # malformato è un ERRORE di richiesta: mai ripiegare in silenzio sul best.
+    target_price = _f(params.get("target_price"))
+    if params.get("target_price") is not None and (
+        target_price is None or not (1.0 < target_price <= 1000.0)
+    ):
+        raise ValueError(
+            f"greenup: params.target_price non valido ({params.get('target_price')!r}): "
+            "atteso un prezzo in (1.0, 1000]"
+        )
+    # combinazione contraddittoria (mirror calcio): annullare i resting e POI
+    # piazzare un take-profit resting non ha senso — mai eseguirla in silenzio.
+    if params.get("cancel_unmatched") and params.get("target_price") is not None:
+        raise ValueError(
+            "greenup: params.cancel_unmatched non è compatibile con params.target_price "
+            "(cash-out completo vs take-profit resting)"
+        )
+
+    cancel_note = ""
+    cancel_failed: list = []
+    if params.get("cancel_unmatched"):
+        n_cancelled, cancel_failed = _cancel_unmatched_selection(market, strategy, selection_id)
+        cancel_note = f"; unmatched annullati: {n_cancelled}"
+        if cancel_failed:
+            cancel_note += f" ({len(cancel_failed)} cancel FALLITI)"
+
+    w, l = _read_matched_exposures(market, strategy, selection_id, handicap)
+    best_back, best_lay = _best_prices(market, selection_id, handicap)
+    plan = compute_greenup(
+        matched_if_win=w, matched_if_lose=l,
+        best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
+        place_at_ticks=place_at, target_price=target_price,
+    )
+
+    if not plan.actionable:
+        # posizione APERTA ma piano non eseguibile (book vuoto/sospeso): FALLIRE
+        # forte — un ok=True qui direbbe "chiuso" con la posizione a sanguinare.
+        if abs(w - l) >= FLAT_EPS:
+            raise ValueError(
+                f"greenup NON eseguibile con esposizione aperta (W={w:.2f} L={l:.2f}): "
+                f"{plan.note} — ritentare (mercato sospeso/book vuoto?)"
+            )
+        if cancel_failed:
+            raise ValueError(
+                f"cash-out selezione INCOMPLETO: posizione piatta ma {len(cancel_failed)} "
+                f"resting NON annullati ({cancel_failed[0].get('error')}) — ritentare"
+            )
+        # niente da chiudere: esito ok con motivo, nessun ordine (mai place a vuoto)
+        return _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
+                       cust_ref=cust_ref, detail=f"{plan.note}{cancel_note}")
+
+    # hedge SELF-BOUNDED: riduce la liability → sotto-minimo .it consentito
+    verdict = min_stake_rules(_jurisdiction(), str(plan.side), float(plan.price),
+                              float(plan.size), reduces_liability=True)
+    if not verdict.valid or verdict.legalized_size is None:
+        raise ValueError(f"greenup: size hedge non valida: {verdict.reason}")
+    size = verdict.legalized_size
+    trade = Trade(market_id=market.market_id, selection_id=selection_id,
+                  handicap=handicap, strategy=strategy)
+    order = trade.create_order(
+        side=str(plan.side).upper(),
+        order_type=LimitOrder(price=float(plan.price), size=round(float(size), 2),
+                              persistence_type="LAPSE"),
+    )
+    try:
+        # marca la CHIUSURA (come build_order calcio): eventuali control di flusso
+        # devono lasciare SEMPRE passare un'uscita.
+        order.context["reduces_liability"] = True
+    except Exception:  # noqa: BLE001 - context assente su mock: solo metadato
+        pass
+    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    if ok is False:
+        raise ValueError(f"greenup RIFIUTATO — {_val(order, 'violation_msg') or 'violation'}")
+    _track_manual(session, cust_ref, order, cmd["mode"],
+                  _event_id_of(session, cmd.get("market_id")))
+    if cancel_failed:
+        # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
+        # (mai un done bugiardo: il resting vivo può riaprire la posizione).
+        raise ValueError(
+            f"cash-out selezione INCOMPLETO: hedge {plan.side} {size}@{plan.price} "
+            f"piazzato ma {len(cancel_failed)} resting NON annullati "
+            f"({cancel_failed[0].get('error')}) — ritentare il cash-out"
+        )
+    return _result(ok=True, action="greenup", mode=cmd["mode"], cmd=cmd,
+                   cust_ref=cust_ref, order=order,
+                   detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
+                          f"perde={plan.expected_if_lose}{cancel_note}")
+
+
 def _dispatch(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) -> Dict[str, Any]:
     action = cmd["action"]
     if action == "place":
@@ -470,14 +696,9 @@ def _dispatch(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) ->
     if action == "replace":
         return _do_replace(flumine, session, cmd, cust_ref)
     if action == "greenup":
-        # FAIL LOUDLY (fix #9): il green-up NON è implementato lato tennis. Un tempo ritornava
-        # ok=True (no-op) → il frontend lo dava per ESEGUITO mentre la posizione restava aperta
-        # (azione di RISCHIO: bugia money-critical). Ora solleva → riga 'error' col motivo,
-        # così la UI mostra un errore reale e l'utente può chiudere a mano.
-        raise ValueError(
-            "greenup non supportato dal runner tennis: usare place/cancel/replace per "
-            "chiudere manualmente (azione non eseguita)"
-        )
+        # fix audit #2: green-up IMPLEMENTATO (prima falliva sempre → ogni click
+        # di cash-out sul ladder tennis era un errore). Stesso modello del calcio.
+        return _do_greenup(flumine, session, cmd, cust_ref)
     raise ValueError(f"azione non supportata: {action}")
 
 
@@ -497,6 +718,10 @@ def _track_manual(session: Any, cust_ref: str, order: Any, mode: str,
         "mode": str(mode or "paper").strip().lower(),
         "event_id": event_id,
         "source": "manual",
+        # generazione del framework al piazzamento (fix audit #8): dopo un restart
+        # l'Order appartiene a un framework smontato e va chiuso/scartato, non
+        # ri-specchiato per sempre come EXECUTABLE fantasma.
+        "gen": getattr(session, "framework_gen", 0),
     }
 
 
@@ -522,11 +747,32 @@ def _reconcile_tracked(session: Any, flumine: Any) -> None:
     if session is None:
         return
     cache = _sig_cache(session)
+    cur_gen = getattr(session, "framework_gen", 0)
 
     # 1) ordini manuali
     for cust_ref, rec in list(getattr(session, "tracked_orders", {}).items()):
         try:
             order = _trade_current_order(rec.get("trade"), rec.get("order"))
+            # fix audit #8: ordine di un framework SMONTATO (restart avvenuto dopo
+            # il piazzamento) non terminale → in paper l'ordine simulato è morto
+            # col framework: specchio chiuso UNA volta con stato terminale (VOIDED)
+            # e tracking rimosso. In LIVE non si falsifica nulla (l'ordine reale
+            # può vivere sull'Exchange): si smette solo di seguirlo, con warning
+            # esplicito (fail-loud) — il nuovo blotter/ordine stream lo rivedrà.
+            if rec.get("gen", cur_gen) != cur_gen and not _is_terminal(order):
+                if (rec.get("mode") or "paper") != "live":
+                    _mirror_order(rec.get("mode") or "paper", rec.get("event_id"),
+                                  cust_ref, order, {}, source=rec.get("source") or "manual",
+                                  status_override="VOIDED")
+                else:
+                    logger.warning(
+                        "[tennis-order] ordine LIVE %s appartiene a un framework "
+                        "smontato: tracking rimosso — verifica lo stato su Betfair",
+                        cust_ref,
+                    )
+                session.tracked_orders.pop(cust_ref, None)
+                cache.pop(cust_ref, None)
+                continue
             sig = _order_sig(order)
             if cache.get(cust_ref) == sig:
                 if _is_terminal(order):
@@ -545,6 +791,18 @@ def _reconcile_tracked(session: Any, flumine: Any) -> None:
 
     # 2) ordini dei bot ospitati (source=bot_key)
     _reconcile_bots(session, flumine, cache)
+
+
+def _session_mode(session: Any) -> str:
+    """Mode (lower) CATTURATA al build del framework (fix audit #14).
+
+    Gli specchi di ordini bot/posizioni devono restare coerenti con la mode con cui
+    gli ordini sono stati PIAZZATI: ri-leggere l'env a ogni ciclo permetterebbe a un
+    cambio di TENNIS_LIVE_ORDER_MODE a metà processo di far divergere lo specchio
+    dagli ordini (righe 'live' per ordini paper o viceversa). Fallback all'env solo
+    se la session non espone la mode (mock/percorsi legacy)."""
+    m = getattr(session, "order_mode", None)
+    return str(m or _runner_mode()).strip().lower()
 
 
 def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
@@ -569,7 +827,8 @@ def _reconcile_bots(session: Any, flumine: Any, cache: Dict[str, Any]) -> None:
             orders = blotter.strategy_orders(strat)
         except Exception:  # noqa: BLE001 - blotter mock/edge → niente ordini bot
             continue
-        mode = _runner_mode().lower()  # bot → paper|live (OFF non registra il worker)
+        # bot → paper|live (OFF non registra il worker); mode di BUILD (fix #14)
+        mode = _session_mode(session)
         for order in orders or []:
             oid = _val(order, "id")
             ref = ("bot:" + str(oid))[:32] if oid is not None else None
@@ -646,7 +905,7 @@ def positions_worker(context: dict, flumine: Any, session: Any = None) -> None: 
     solo in PAPER/LIVE. Non apre subscription: legge solo blotter già in memoria. Best-effort."""
     if session is None or flumine is None:
         return
-    mode = _runner_mode().lower()
+    mode = _session_mode(session)  # mode di BUILD del framework (fix audit #14)
     # AGGREGAZIONE per (mode, market_id, selection_id, handicap) — fix 2026-07-10:
     # prima un dedup "first-wins" scartava i duplicati: l'esposizione della PRIMA
     # strategy (di norma la capture) vinceva e quella dei BOT andava PERSA nella
@@ -695,11 +954,53 @@ def positions_worker(context: dict, flumine: Any, session: Any = None) -> None: 
                     cur[f] = round(
                         float(cur.get(f) or 0.0) + float(row.get(f) or 0.0), 2
                     )
-    for (_mode_k, market_id, sel, _hcap), row in agg.items():
+    # registro delle chiavi scritte in sessione (fix audit #8): serve per azzerare
+    # le righe rimaste ORFANE quando una chiave sparisce dal blotter corrente
+    # (tipicamente dopo un restart del framework: blotter nuovo e VUOTO, ma le
+    # vecchie righe tennis_live_positions resterebbero non-zero per sempre).
+    written = getattr(session, "positions_written", None)
+    if written is None:
+        written = {}
+        try:
+            session.positions_written = written
+        except Exception:  # noqa: BLE001 - session mock senza slot: registro effimero
+            pass
+    for key, row in agg.items():
+        (_mode_k, market_id, sel, _hcap) = key
         try:
             tennis_db.upsert_tennis_position(row)
+            written[key] = {"event_id": row.get("event_id"), "miss": 0}
         except Exception as e:  # noqa: BLE001
             logger.debug("[tennis-pos] upsert KO %s/%s: %s", market_id, sel, e)
+    # chiavi scritte in passato ma ASSENTI dall'aggregato corrente → riga azzerata
+    # UNA volta (write-once: la chiave esce dal registro solo a upsert riuscito).
+    # ANTI-FALSO-FLAT (review 16/07): l'assenza deve persistere per ≥2 cicli
+    # consecutivi — una lettura del blotter fallita TRANSITORIAMENTE (market/blotter
+    # None, strategy_orders in eccezione: sopra sono tutti `continue` best-effort)
+    # non deve mai mostrare "flat" al trader con l'esposizione ancora aperta.
+    _ZERO_AFTER_MISSES = 2
+    for key in [k for k in list(written.keys()) if k not in agg]:
+        mode_k, market_id, sel, hcap = key
+        info = written.get(key) or {}
+        miss = int(info.get("miss") or 0) + 1
+        if miss < _ZERO_AFTER_MISSES:
+            info["miss"] = miss
+            written[key] = info
+            continue
+        written.pop(key, None)
+        zero = {
+            "mode": mode_k,
+            "event_id": info.get("event_id"),
+            "market_id": market_id,
+            "selection_id": int(sel),
+            "handicap": float(hcap or 0.0),
+        }
+        zero.update({f: 0.0 for f in _SUM_FIELDS})
+        try:
+            tennis_db.upsert_tennis_position(zero)
+        except Exception as e:  # noqa: BLE001 - riprova al prossimo giro
+            written[key] = info
+            logger.debug("[tennis-pos] azzeramento KO %s/%s: %s", market_id, sel, e)
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +1036,7 @@ _LOCAL_SEEN_TTL = 300.0
 
 def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> None:
     """A7 — comandi dal canale locale desktop: STESSO _dispatch della coda tennis
-    (greenup incluso: fallisce forte come da design). Il comando viene poi
+    (greenup incluso: hedge calcolato dalle esposizioni fresche). Il comando viene poi
     REGISTRATO nella coda DB (status done/error) per storico/audit. Il drain
     avviene nel thread di QUESTO worker (un solo thread tocca flumine)."""
     from .. import local_channel
@@ -783,7 +1084,7 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> N
                 import time as _t
 
                 _LOCAL_SEEN[client_ref] = (_t.monotonic(), bool(result.get("ok")), result)
-            if result.get("ok") and action in ("place", "replace"):
+            if result.get("ok") and action in ("place", "replace", "greenup"):
                 rec = (getattr(session, "tracked_orders", {}) or {}).get(cust_ref)                     if session is not None else None
                 order = rec.get("order") if isinstance(rec, dict) else None
                 _mirror_order(runner_mode_l, _event_id_of(session, cmd.get("market_id")),
@@ -838,7 +1139,7 @@ def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -
             cmd = parse_order_payload(row)
             result = _dispatch(flumine, session, cmd, cust_ref)
             tennis_db.write_tennis_order_done(rid, result)
-            if result.get("ok") and cmd["action"] in ("place", "replace"):
+            if result.get("ok") and cmd["action"] in ("place", "replace", "greenup"):
                 rec = (getattr(session, "tracked_orders", {}) or {}).get(cust_ref) \
                     if session is not None else None
                 order = rec.get("order") if isinstance(rec, dict) else None

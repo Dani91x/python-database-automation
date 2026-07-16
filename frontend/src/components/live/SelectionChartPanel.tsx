@@ -72,9 +72,12 @@ function niceTicks(lo: number, hi: number, n = 3): number[] {
 interface Props {
     marketId: string;
     ladderSource?: LadderSource;
+    // timeframe iniziale (l'utente può sempre cambiarlo dai bottoni): il tennis
+    // passa 5s — i punti muovono la quota ogni pochi secondi, 15s appiattisce tutto.
+    defaultBucketMs?: number;
 }
 
-export function SelectionChartPanel({ marketId, ladderSource }: Props) {
+export function SelectionChartPanel({ marketId, ladderSource, defaultBucketMs }: Props) {
     const source = ladderSource ?? DEFAULT_LADDER_SOURCE;
 
     // buffer campioni per-selezione (mutati in place: la "storia" vive qui, da
@@ -83,7 +86,7 @@ export function SelectionChartPanel({ marketId, ladderSource }: Props) {
     const [row, setRow] = useState<LiveLadderRow | null>(null);
     const [ver, setVer] = useState(0);
     const [selId, setSelId] = useState<number | null>(null);
-    const [bucketMs, setBucketMs] = useState<number>(DEFAULT_BUCKET_MS);
+    const [bucketMs, setBucketMs] = useState<number>(defaultBucketMs ?? DEFAULT_BUCKET_MS);
     const [hoverI, setHoverI] = useState<number | null>(null);
 
     useEffect(() => {

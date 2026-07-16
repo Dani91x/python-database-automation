@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createElement } from 'react';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 // ---- mock hoisted: supabase (usato dalla lib), sonner, lib omega/scalper ----
 vi.mock('sonner', () => ({
@@ -197,7 +198,8 @@ describe('MissionPanel (render minimo)', () => {
     });
 
     it('mostra header giornata e la missione attiva con punteggio live', async () => {
-        render(createElement(MissionPanel, { mode: 'paper' }));
+        // MemoryRouter: i pulsanti per-partita Statistiche/Trading (16/07) usano useNavigate
+        render(createElement(MemoryRouter, null, createElement(MissionPanel, { mode: 'paper' })));
         expect(await screen.findByText('Obiettivo giornata €')).toBeInTheDocument();
         expect(await screen.findByText('Roma v Lazio')).toBeInTheDocument();
         // punteggio LIVE grande e fase; la scheda attiva è AUTO-ESPANSA (16/07)

@@ -159,6 +159,36 @@ def _sweep_cancel(trading: Any, market_ids: List[str]) -> Dict[str, Any]:
     return out
 
 
+def _sniper_profit_target(cp: Dict[str, Any]) -> float:
+    """Tetto profitto della caccia sniper dai params UI (default 0.01).
+
+    FIX audit #5: ``float(cp.get("sniper_profit_target") or 0.01)`` trasformava lo 0
+    ESPLICITO ("nessun tetto profitto", caccia multi-linea F4) in 0.01 per coercizione
+    falsy → il bot si fermava al primo centesimo. 0 è un valore legittimo e va
+    preservato: solo l'ASSENZA della chiave usa il default.
+    """
+    pt = cp.get("sniper_profit_target")
+    return float(pt) if pt is not None else 0.01
+
+
+def _theta_dry_run(db: Any, event_id: str, session_dry_run: bool) -> bool:
+    """dry_run EFFETTIVO del theta: SEMPRE True (v1 solo PAPER, verdetto S4 16/07).
+
+    FIX audit #7: il gate "THETA solo PAPER" viveva SOLO nel client (ScalperPanel):
+    una scalper_control con theta_mode=true e dry_run=false (scritta da qualunque
+    origine) armava il theta con ORDINI REALI non validati out-of-sample. Qui il
+    gate è SERVER-SIDE: con dry_run=false il theta viene FORZATO in paper, con log
+    forte in attività (mai in silenzio) — sniper/maker mantengono il loro dry_run.
+    """
+    if session_dry_run:
+        return True
+    db.log(event_id, "warn", {
+        "msg": "THETA solo PAPER: dry_run FORZATO a true (non validato "
+               "out-of-sample, verdetto S4) — le altre strategie restano live",
+    })
+    return True
+
+
 def _theta_atlas_or_none(db: Any, event_id: str,
                          path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Carica l'Atlante Hazard SENZA far morire la sessione (fix S6 review).
@@ -440,8 +470,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                         _cp.get("sniper_cooldown_s") or 0.0),
                     "parallel_lines": int(
                         _cp.get("sniper_parallel_lines") or 0),
-                    "profit_target": float(
-                        _cp.get("sniper_profit_target") or 0.01),
+                    # FIX audit #5: 0 esplicito = NESSUN tetto profitto (F4), da
+                    # preservare — mai `or 0.01` (coercizione falsy lo mangiava).
+                    "profit_target": _sniper_profit_target(_cp),
                 },
                 event_sink=sink,
                 # esposizione: BACK -> liability = stake (margine x3)
@@ -482,9 +513,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # dati) | 'overshoot' (C17, unica pista EV+, da campionare).
             # Il preset fissa scratch/hazard/finestre; gli override UI
             # espliciti (theta_scratch_s, theta_hazard_max) vincono sempre.
+            # FIX audit #7: gate "THETA solo PAPER" anche SERVER-SIDE — con
+            # dry_run=false il theta è forzato in paper (log forte), le altre
+            # strategie mantengono il dry_run della sessione.
+            _theta_dry = _theta_dry_run(db, ev, bool(params["dry_run"]))
             _theta_params = {
                 "stake": theta_stake,
-                "dry_run": params["dry_run"],
+                "dry_run": _theta_dry,
                 "preset": str(_cp.get("theta_preset") or "classico"),
                 "max_shots": int(_cp.get("theta_max_shots") or 10),
                 "loss_cap": float(_cp.get("theta_loss_cap") or 5.0),
@@ -519,7 +554,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             )
             db.log(ev, "info", {"msg": "theta armato",
                                 "stake": theta_stake,
-                                "dry_run": params["dry_run"],
+                                "dry_run": _theta_dry,
                                 "confirm": _confirm,
                                 "preset": theta.theta_preset,
                                 "theta_only": theta_only})

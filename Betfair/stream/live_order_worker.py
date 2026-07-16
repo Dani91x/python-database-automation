@@ -1420,6 +1420,17 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         fraction = 1.0
     # place_at_ticks (stop a 2 parametri): chiude N tick più a fondo nel book per fill sicuro.
     place_at = _int(params.get("place_at_ticks")) if isinstance(params, dict) else None
+    # persistence dell'ordine di hedge (fix audit #25: le regole risk la passano dal form).
+    # Valore malformato = errore di richiesta ESPLICITO, mai un default silenzioso diverso
+    # da quello chiesto. Assente → LAPSE (comportamento storico invariato).
+    persistence = "LAPSE"
+    if isinstance(params, dict) and params.get("persistence") is not None:
+        persistence = str(params.get("persistence"))
+        if persistence not in ("LAPSE", "PERSIST", "MARKET_ON_CLOSE"):
+            raise ValueError(
+                f"greenup: params.persistence non valida ({params.get('persistence')!r}): "
+                "attesa LAPSE|PERSIST|MARKET_ON_CLOSE"
+            )
     # target_price ("greening column"): chiudi A QUEL prezzo assoluto invece che al best
     # opposto — l'ordine può restare sul book come take-profit resting. Un target malformato
     # è un ERRORE di richiesta: mai ripiegare in silenzio sul best (l'utente ha cliccato UN
@@ -1504,7 +1515,7 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         price=plan.price,
         size=plan.size,
         liability=None,
-        persistence="LAPSE",
+        persistence=persistence,
         time_in_force=None,
         min_fill_size=None,
         jurisdiction=_jurisdiction(),

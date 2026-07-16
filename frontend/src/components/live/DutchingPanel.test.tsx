@@ -148,3 +148,41 @@ describe('DutchingPanel', () => {
         expect(mSend).not.toHaveBeenCalled();
     });
 });
+
+// ===========================================================================
+// FIX audit #14 (freschezza book) e #19 (Lay + Target bloccato client-side)
+// ===========================================================================
+describe('DutchingPanel — fix audit #14/#19', () => {
+    it('#14: snapshot stantio (>10s) → Piazza DISABILITATO con avviso', async () => {
+        const stale = new Date(Date.now() - 60_000).toISOString();
+        render(<DutchingPanel marketId="1.234" mode="paper" selections={selections} updatedAt={stale} />);
+        expect(screen.getByRole('button', { name: /Piazza Dutch/ })).toBeDisabled();
+        expect(screen.getByText(/Quote stantie/)).toBeInTheDocument();
+        expect(mSend).not.toHaveBeenCalled();
+    });
+
+    it('#14: snapshot fresco → Piazza abilitato (nessun avviso)', async () => {
+        render(<DutchingPanel marketId="1.234" mode="paper" selections={selections}
+            updatedAt={new Date().toISOString()} />);
+        expect(screen.getByRole('button', { name: /Piazza Dutch/ })).toBeEnabled();
+        expect(screen.queryByText(/Quote stantie/)).not.toBeInTheDocument();
+    });
+
+    it('#14: senza updatedAt (chiamante legacy) → nessun guardiano, bottone operabile', async () => {
+        render(<DutchingPanel marketId="1.234" mode="paper" selections={selections} />);
+        expect(screen.getByRole('button', { name: /Piazza Dutch/ })).toBeEnabled();
+    });
+
+    it('#19: sul lato Lay la modalità Target è disabilitata e ripiega su Equal', async () => {
+        const user = userEvent.setup();
+        render(<DutchingPanel marketId="1.234" mode="paper" selections={selections} />);
+        // scegli Target sul lato Back, poi passa a Lay: il worker rifiuterebbe SEMPRE →
+        // il client ripiega su Equal e l'opzione Target resta disabilitata.
+        const modeSel = screen.getByDisplayValue('Equal (profitto pari)');
+        await user.selectOptions(modeSel, 'target');
+        const sideSel = screen.getByDisplayValue('Back (dutch)');
+        await user.selectOptions(sideSel, 'lay');
+        expect((screen.getByRole('option', { name: /Target/ }) as HTMLOptionElement).disabled).toBe(true);
+        expect(screen.getByDisplayValue('Equal (profitto pari)')).toBeInTheDocument();
+    });
+});

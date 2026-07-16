@@ -59,6 +59,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [showForm, setShowForm] = useState(false);
+    // fix audit #28: errore PERSISTENTE di get_scalper_state visibile (un blip singolo
+    // resta silenzioso: il polling riprova; 3 fallimenti di fila = stato NON affidabile).
+    const [stateErr, setStateErr] = useState<string | null>(null);
+    const failsRef = useRef(0);
 
     // ---- form di attivazione (default VALIDATI) ----
     const [mode, setMode] = useState<ScalperMode>('maker');
@@ -99,8 +103,15 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
         try {
             const s = await fetchScalperState(eventId);
             setState(s);
-        } catch {
-            /* transitorio: il polling riprova */
+            failsRef.current = 0;
+            setStateErr(null);
+        } catch (e) {
+            // fix audit #28: un blip è transitorio (il polling riprova); un fallimento
+            // PERSISTENTE va detto — lo stato mostrato potrebbe essere vecchio.
+            failsRef.current += 1;
+            if (failsRef.current >= 3) {
+                setStateErr(e instanceof Error ? e.message : 'stato scalper non raggiungibile');
+            }
         } finally {
             setLoading(false);
         }
@@ -229,6 +240,12 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
 
     return (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+            {/* fix audit #28: stato NON aggiornabile in modo persistente → avviso esplicito */}
+            {stateErr && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-[11px] font-bold text-rose-200">
+                    ⚠ Stato scalper NON aggiornato: {stateErr} — i dati mostrati potrebbero essere vecchi.
+                </div>
+            )}
             {/* intestazione */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">

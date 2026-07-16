@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
     DEFAULT_COLUMN_ORDER,
+    PROFILE_VERSION,
     REQUIRED_COLUMN,
     defaultProfile,
     normalizeProfile,
@@ -13,6 +14,7 @@ import {
     listColumns,
     toggleColumn,
     reorderColumn,
+    migrateProfileV1,
     type LadderProfile,
 } from './ladderConfig';
 
@@ -89,6 +91,80 @@ describe('save/load/reset round-trip', () => {
         saveProfile(defaultProfile('tennis'));
         expect(loadProfile('calcio').columns.find((c) => c.key === 'piq')?.visible).toBe(true);
         expect(loadProfile('tennis').columns.find((c) => c.key === 'piq')?.visible).toBe(false);
+    });
+});
+
+// v2: LAY a sinistra della quota, BACK a destra — i profili v1 salvati (senza
+// `version`) devono migrare in load scambiando le posizioni di avail_back/avail_lay.
+describe('migrazione profili v1 → v2 (swap lati BACK/LAY)', () => {
+    // ordine di default STORICO v1 (BACK a sinistra, LAY a destra)
+    const V1_DEFAULT_ORDER = [
+        'my_lay', 'trd', 'avail_back', 'price', 'avail_lay', 'pnl', 'ev', 'my_back', 'piq', 'wom',
+    ];
+
+    it('il nuovo default ha LAY a sinistra e BACK a destra della quota', () => {
+        const keys = [...DEFAULT_COLUMN_ORDER];
+        const iLay = keys.indexOf('avail_lay');
+        const iPrice = keys.indexOf('price');
+        const iBack = keys.indexOf('avail_back');
+        expect(iLay).toBeLessThan(iPrice);
+        expect(iPrice).toBeLessThan(iBack);
+        // le mie size restano sul lato del proprio side
+        expect(keys.indexOf('my_lay')).toBeLessThan(iPrice);
+        expect(keys.indexOf('my_back')).toBeGreaterThan(iPrice);
+    });
+
+    it('profilo v1 = default storico → dopo load l\'ordine è il default v2', () => {
+        const raw = {
+            sport: 'calcio',
+            columns: V1_DEFAULT_ORDER.map((key) => ({ key, visible: true })),
+        }; // senza version → v1
+        localStorage.setItem('ladderProfile:calcio', JSON.stringify(raw));
+        const loaded = loadProfile('calcio');
+        expect(loaded.columns.map((c) => c.key)).toEqual([...DEFAULT_COLUMN_ORDER]);
+    });
+
+    it('profilo v1 personalizzato → swap solo di avail_back/avail_lay, visibilità preservata', () => {
+        const raw = {
+            sport: 'tennis',
+            columns: [
+                { key: 'pnl', visible: false },
+                { key: 'avail_back', visible: true },
+                { key: 'price', visible: true },
+                { key: 'avail_lay', visible: false },
+                { key: 'my_back', visible: true },
+            ],
+        };
+        localStorage.setItem('ladderProfile:tennis', JSON.stringify(raw));
+        const loaded = loadProfile('tennis');
+        const keys = loaded.columns.map((c) => c.key);
+        // le posizioni 1 e 3 sono scambiate
+        expect(keys[1]).toBe('avail_lay');
+        expect(keys[3]).toBe('avail_back');
+        // la visibilità segue la CHIAVE, non la posizione
+        expect(loaded.columns.find((c) => c.key === 'avail_lay')?.visible).toBe(false);
+        expect(loaded.columns.find((c) => c.key === 'avail_back')?.visible).toBe(true);
+        expect(loaded.columns.find((c) => c.key === 'pnl')?.visible).toBe(false);
+    });
+
+    it('profilo v2 già migrato → load NON riapplica lo swap (idempotenza)', () => {
+        const p = defaultProfile('calcio');
+        expect(saveProfile(p)).toBe(true); // salva con version corrente
+        const loaded = loadProfile('calcio');
+        expect(loaded.columns.map((c) => c.key)).toEqual([...DEFAULT_COLUMN_ORDER]);
+        expect(loaded.version).toBe(PROFILE_VERSION);
+    });
+
+    it('migrateProfileV1 su input malformato → passthrough senza throw', () => {
+        expect(migrateProfileV1(null)).toBeNull();
+        expect(migrateProfileV1(42)).toBe(42);
+        expect(migrateProfileV1({ columns: 'x' })).toEqual({ columns: 'x' });
+    });
+
+    it('save/load round-trip stampa la version', () => {
+        saveProfile(defaultProfile('calcio'));
+        const raw = JSON.parse(localStorage.getItem('ladderProfile:calcio') ?? '{}');
+        expect(raw.version).toBe(PROFILE_VERSION);
     });
 });
 

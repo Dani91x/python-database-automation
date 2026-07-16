@@ -106,19 +106,57 @@ describe('GridView', () => {
         expect(screen.getByText(/72\.94%/)).toBeInTheDocument();
     });
 
-    it('PAPER: click sulla cella best BACK piazza SUBITO un LIMIT a quel prezzo', async () => {
+    it('layout v2: il gruppo LAY sta a SINISTRA del gruppo BACK (header e celle)', async () => {
+        render(<GridView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+        // header: "Lay" prima di "Back"
+        const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+        expect(headers.indexOf('Lay')).toBeLessThan(headers.indexOf('Back'));
+        // celle riga "Casa": i LAY (2.90/2.92/2.94) precedono i BACK (2.88/2.86/2.84),
+        // con i due best adiacenti al centro (…2.92, 2.90 | 2.88, 2.86…)
+        const row = screen.getByText('Casa').closest('tr')!;
+        const titles = Array.from(row.querySelectorAll('[title]')).map((el) => el.getAttribute('title') ?? '');
+        const seq = titles.filter((t) => /@ 2\.\d\d/.test(t)).map((t) => t.match(/@ (2\.\d\d)/)![1]);
+        expect(seq).toEqual(['2.94', '2.92', '2.90', '2.88', '2.86', '2.84']);
+    });
+
+    it('PAPER non armato (regola specchio): il click NON piazza; "CONFERMA SIMULATA" invia', async () => {
         const user = userEvent.setup();
         render(<GridView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
         await user.click(screen.getByTitle(/BACK €2\.00 @ 2\.88/));
+        // primo click = SOLO conferma (identico al vivo), nessun invio
+        expect(mSend).not.toHaveBeenCalled();
+        expect(screen.getByText(/Ordine SIMULATO/)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /CONFERMA SIMULATA/ }));
         await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
         expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
             action: 'place', mode: 'paper', market_id: '1.234', selection_id: 1,
             handicap: 0, side: 'back', order_type: 'LIMIT', price: 2.88, size: 2,
             persistence: 'LAPSE',
         }));
-        // esito verde con bet_id
+        // esito verde con bet_id + conferma one-shot resettata
         expect(await screen.findByText(/bet B9/)).toBeInTheDocument();
+        await waitFor(() =>
+            expect(screen.queryByRole('button', { name: /CONFERMA SIMULATA/ })).not.toBeInTheDocument());
+    });
+
+    it('PAPER armato (1-click): il click piazza SUBITO senza conferma', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        try {
+            const user = userEvent.setup();
+            render(<GridView marketId="1.234" orderMode="paper" />);
+            await screen.findByText('Casa');
+            await user.click(screen.getByRole('button', { name: /armato/ }));
+            expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/SIMULATO/));
+            await user.click(screen.getByTitle(/BACK €2\.00 @ 2\.88/));
+            await waitFor(() => expect(mSend).toHaveBeenCalledTimes(1));
+            expect(mSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+                action: 'place', mode: 'paper', side: 'back', price: 2.88, size: 2,
+            }));
+        } finally {
+            confirmSpy.mockRestore();
+        }
     });
 
     it('LIVE non armato: il click NON piazza; "CONFERMA REALE" invia con mode live', async () => {
@@ -183,17 +221,49 @@ describe('GridView', () => {
         expect(mSend).not.toHaveBeenCalled();
     });
 
-    it('anti-doppio-invio: due click rapidi = UN solo send (inFlightRef)', async () => {
+    it('anti-doppio-invio: due click rapidi sulla CONFERMA = UN solo send (inFlightRef)', async () => {
         let release!: (v: LiveOrderResult) => void;
         mSend.mockImplementation(() => new Promise<LiveOrderResult>(r => { release = r; }));
         render(<GridView marketId="1.234" orderMode="paper" />);
         await screen.findByText('Casa');
-        const cell = screen.getByTitle(/BACK €2\.00 @ 2\.88/);
+        fireEvent.click(screen.getByTitle(/BACK €2\.00 @ 2\.88/));
+        const confirmBtn = screen.getByRole('button', { name: /CONFERMA SIMULATA/ });
         // fireEvent dispatcha anche su bottone disabled: testa la guardia su ref
-        fireEvent.click(cell);
-        fireEvent.click(cell);
+        fireEvent.click(confirmBtn);
+        fireEvent.click(confirmBtn);
         expect(mSend).toHaveBeenCalledTimes(1);
         await act(async () => { release({ ok: true, action: 'place', mode: 'paper', bet_id: 'B1' }); });
         await waitFor(() => expect(screen.getByText(/bet B1/)).toBeInTheDocument());
+    });
+});
+
+// ===========================================================================
+// FIX audit #29 — la conferma RI-verifica lo stato mercato al momento dell'invio
+// ===========================================================================
+import { subscribeLiveLadder } from '@/lib/live';
+
+describe('GridView — fix audit #29 (suspend entro il TTL della conferma)', () => {
+    it('mercato che si SOSPENDE con la barra di conferma aperta → CONFERMA non invia', async () => {
+        let pushRow: ((r: unknown) => void) | undefined;
+        vi.mocked(subscribeLiveLadder).mockImplementation(((_id: string, cb: (r: unknown) => void) => {
+            pushRow = cb;
+            return () => {};
+        }) as never);
+        mLadder.mockResolvedValue(GRID_ROW as never);
+        const user = userEvent.setup();
+        render(<GridView marketId="1.234" orderMode="paper" />);
+        await screen.findByText('Casa');
+
+        // click su una cella (non armato) → barra di conferma aperta, mercato ancora OPEN.
+        await user.click(screen.getByTitle(/BACK €2\.00 @ 2\.88 · Casa$/));
+        expect(await screen.findByRole('button', { name: /CONFERMA SIMULATA/ })).toBeInTheDocument();
+        expect(mSend).not.toHaveBeenCalled();
+
+        // il mercato si SOSPENDE mentre la conferma è aperta (entro il TTL).
+        act(() => { pushRow?.({ ...GRID_ROW, status: 'SUSPENDED' }); });
+
+        await user.click(screen.getByRole('button', { name: /CONFERMA SIMULATA/ }));
+        expect(mSend).not.toHaveBeenCalled();                       // MAI piazzare su non-OPEN
+        expect(await screen.findByText(/ordine NON inviato/)).toBeInTheDocument();
     });
 });

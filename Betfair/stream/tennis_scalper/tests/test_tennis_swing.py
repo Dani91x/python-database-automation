@@ -136,23 +136,27 @@ def test_time_stop_uses_publish_time_seconds_not_update_count():
 # 3) chiusura: escalation a TAKER e pop SOLO a posizione flat
 # ---------------------------------------------------------------------------
 def test_closing_escalates_to_taker_and_pops_only_when_flat():
-    s = _make(close_retry_ticks=2, maker=True)
+    # fix audit #10: l'escalation conta i SECONDI di publish_time (come tmax),
+    # non gli update del book (in live sono molti al secondo → escalation in 1-2s).
+    s = _make(close_retry_s=2.0, maker=True)
     orders = [_Order(111, "BACK", 2.0, 2.00)]
     m = _Market(_Blotter(orders))
     s._tr["1.1"] = {"sel": 111, "side": "BACK", "etk": _tki(2.00),
                     "anchor": _tki(1.80), "order": None, "held": 0, "wait": 0,
-                    "t0": 1, "closing": True, "close_order": None, "close_wait": 0}
-    mb = _MB([_Runner(111, (2.00, 100), (2.02, 100))], pt=10_000)
-    s.process_market_book(m, mb)   # close_wait 1
-    s.process_market_book(m, mb)   # close_wait 2
+                    "t0": 1, "closing": True, "close_order": None, "close_wait": 0,
+                    "t_close": 10_000}
+    def _mb(pt):
+        return _MB([_Runner(111, (2.00, 100), (2.02, 100))], pt=pt)
+    s.process_market_book(m, _mb(10_500))   # +0.5s
+    s.process_market_book(m, _mb(11_500))   # +1.5s
     assert not m.placed, "dentro la finestra maker non si ripiazza"
-    s.process_market_book(m, mb)   # close_wait 3 > 2 → escalation TAKER
+    s.process_market_book(m, _mb(12_100))   # +2.1s >= close_retry_s → TAKER
     assert m.placed, "chiusura taker piazzata"
     assert float(m.placed[-1].order_type.price) == 2.02  # touch lay = attraversa
     assert "1.1" in s._tr, "trade ancora vivo finché non è flat"
     # la gamba di chiusura si riempie: posizione pareggiata → pop
     orders.append(_Order(111, "LAY", 1.98, 2.02))
-    s.process_market_book(m, mb)
+    s.process_market_book(m, _mb(12_200))
     assert "1.1" not in s._tr, "flat verificato → trade chiuso"
 
 

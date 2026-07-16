@@ -354,3 +354,63 @@ def test_chase_should_requote():
     assert not chase_should_requote(3.0, 3.0)
     assert not chase_should_requote(None, 3.0)
     assert not chase_should_requote(3.0, None)
+
+
+# ---------------------------------------------------------------------------
+# FIX audit #2 — take_profit tick/%: trigger_* accettati come ALIAS di offset_*
+# ---------------------------------------------------------------------------
+def test_take_profit_trigger_ticks_alias_fires():
+    """La UI storica armava il take-profit con trigger_ticks: prima veniva IGNORATO
+    (si leggeva solo offset_ticks) e la regola non scattava MAI. Ora è un alias."""
+    from Betfair.stream.trading.risk_engine import evaluate_rule
+    # back a 3.0, take-profit 10 tick → target 2.80; LTP 2.80 = raggiunto.
+    d = evaluate_rule(
+        rule_type="take_profit", entry_side="back", entry_price=3.0,
+        params={"trigger_ticks": 10}, current_price=2.80,
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.78, best_lay_price=2.80, trail_extreme=None,
+    )
+    assert d.fire and d.error is None
+
+
+def test_take_profit_trigger_pct_alias_fires():
+    from Betfair.stream.trading.risk_engine import evaluate_rule
+    # back a 3.0, −10% → target snap(2.7); LTP 2.7 = raggiunto.
+    d = evaluate_rule(
+        rule_type="take_profit", entry_side="back", entry_price=3.0,
+        params={"trigger_pct": 0.10}, current_price=2.7,
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.68, best_lay_price=2.70, trail_extreme=None,
+    )
+    assert d.fire and d.error is None
+
+
+def test_take_profit_offset_ticks_canonico_vince_sull_alias():
+    """offset_* resta il nome canonico: se presente, l'alias non interferisce."""
+    from Betfair.stream.trading.risk_engine import evaluate_rule
+    d = evaluate_rule(
+        rule_type="take_profit", entry_side="back", entry_price=3.0,
+        params={"offset_ticks": 10, "trigger_ticks": 40}, current_price=2.80,
+        matched_if_win=10.0, matched_if_lose=-5.0,
+        best_back_price=2.78, best_lay_price=2.80, trail_extreme=None,
+    )
+    assert d.fire  # target dal canonico (2.80), non dall'alias (2.20)
+
+
+# ---------------------------------------------------------------------------
+# FIX audit #1 — bracket senza gamba STOP = errore PERMANENTE dichiarato
+# ---------------------------------------------------------------------------
+def test_bracket_missing_stop_flags_error():
+    from Betfair.stream.trading.risk_engine import bracket_missing_stop
+    msg = bracket_missing_stop({"offset_ticks": 3, "greening": True})
+    assert msg is not None and "gamba STOP" in msg
+    assert bracket_missing_stop({}) is not None
+    assert bracket_missing_stop(None) is not None
+
+
+def test_bracket_missing_stop_ok_with_any_stop_param():
+    from Betfair.stream.trading.risk_engine import bracket_missing_stop
+    assert bracket_missing_stop({"offset_ticks": 3, "trigger_ticks": 5}) is None
+    assert bracket_missing_stop({"offset_pct": 2, "trigger_pct": 1.5}) is None
+    assert bracket_missing_stop({"offset_ticks": 3, "stop_amount": 5.0}) is None
+    assert bracket_missing_stop({"offset_ticks": 3, "trail_ticks": 4}) is None

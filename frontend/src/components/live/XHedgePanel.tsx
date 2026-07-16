@@ -16,7 +16,7 @@
 // non si abbina subito NON deve restare sul book a un prezzo vecchio). Senza gli ID
 // il suggerimento resta informativo: piazzamento manuale.
 // ============================================================================
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, Grid3x3, TrendingUp, TrendingDown, Sigma, Lightbulb, Info, ShieldCheck } from 'lucide-react';
@@ -190,6 +190,9 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
     // ---------------- F39: piazzamento 1-click della copertura CS ----------------
     const [confirmLive, setConfirmLive] = useState(false);
     const [placing, setPlacing] = useState(false);
+    // fix audit #28: guardia SINCRONA anti-doppio-invio (`placing` è stato asincrono:
+    // due click ravvicinati passerebbero entrambi). Pattern ScalperPanel.
+    const coverBusyRef = useRef(false);
     const isLive = mode === 'live';
     const canTrade = mode === 'paper' || mode === 'live';
     const matrixIncomplete = (analysis?.ignored_orders ?? 0) > 0;
@@ -206,7 +209,7 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
         // pannello polla ogni 5s e il suggerimento può cambiare sotto il cursore.
         const s = suggestion;
         const r = row;
-        if (placing || !canTrade || !s?.actionable) return;
+        if (coverBusyRef.current || placing || !canTrade || !s?.actionable) return;
         if (!s.market_id || s.selection_id == null
             || s.odds == null || !(s.odds > 1.01) || s.size == null || !(s.size >= 0.01)) return;
         if (matrixIncomplete) {
@@ -218,7 +221,12 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
             toast.error('Suggerimento stantio', { description: 'Attendi il refresh dell\'analisi (~5s) e riprova.' });
             return;
         }
-        if (isLive && !confirmLive) return;
+        if (isLive && !confirmLive) {
+            // fix audit #20: mai un return MUTO su un click money-critical.
+            toast.error('Conferma REALE richiesta', { description: 'Spunta "Confermo la copertura con DENARO REALE" prima di piazzare.' });
+            return;
+        }
+        coverBusyRef.current = true;
         setPlacing(true);
         try {
             const size = Math.round(s.size * 100) / 100;
@@ -250,12 +258,18 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
             } else {
                 toast.error('Copertura RIFIUTATA', { description: res.error ?? res.detail ?? 'motivo non noto' });
             }
+            // fix audit #20: contratto ONESTO di shouldResetLiveConfirm — reset SOLO su
+            // successo; su rifiuto ESPLICITO (ordine NON piazzato) la spunta resta e
+            // l'utente può ritentare senza ri-confermare.
+            if (shouldResetLiveConfirm(isLive, res.ok)) setConfirmLive(false);
         } catch (e: any) {
             toast.error('Errore copertura', { description: e?.message ?? 'errore sconosciuto — NON reinviare senza verificare il blotter' });
+            // esito AMBIGUO (timeout/eccezione: la copertura POTREBBE essere piazzata):
+            // in LIVE la spunta si resetta — un re-click richiede nuova conferma esplicita.
+            if (isLive) setConfirmLive(false);
         } finally {
+            coverBusyRef.current = false;
             setPlacing(false);
-            // conferma LIVE one-shot: SEMPRE resettata dopo un tentativo (ok o errore)
-            if (shouldResetLiveConfirm(isLive, true)) setConfirmLive(false);
             void reload();
         }
     }, [suggestion, row, placing, canTrade, matrixIncomplete, isLive, confirmLive, mode, reload]);
@@ -296,7 +310,11 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
             toast.error('Max stake non valido', { description: 'Lascia vuoto (nessun cap) o inserisci un importo > 0.' });
             return;
         }
-        if (isLive && !confirmArmLive) return;
+        if (isLive && !confirmArmLive) {
+            // fix audit #20: mai un return MUTO su un arming money-critical.
+            toast.error('Conferma REALE richiesta', { description: 'Spunta la conferma prima di armare l\'auto-hedge in LIVE.' });
+            return;
+        }
         setArmBusy(true);
         try {
             await requestRiskRule({
@@ -313,11 +331,15 @@ export function XHedgePanel({ eventId, mode, pollMs = 5000 }: Props) {
             toast.success('Auto-hedge ARMATO', {
                 description: `Mantiene il worst-case scoreline ≥ −€${floor.toFixed(2)} (max 3 coperture, cooldown 60s). Richiede runner attivo + migrazione risk_rules_v4.`,
             });
+            // fix audit #20: reset one-shot SOLO su successo (contratto onesto).
+            if (shouldResetLiveConfirm(isLive, true)) setConfirmArmLive(false);
         } catch (e: any) {
             toast.error('Auto-hedge NON armato', { description: e?.message ?? 'errore sconosciuto' });
+            // esito AMBIGUO (requestRiskRule conia un client_ref nuovo a ogni chiamata:
+            // un re-click armerebbe una regola DUPLICATA) → in LIVE serve nuova spunta.
+            if (isLive) setConfirmArmLive(false);
         } finally {
             setArmBusy(false);
-            if (shouldResetLiveConfirm(isLive, true)) setConfirmArmLive(false);
             void reloadAhRules();
         }
     }, [armBusy, canTrade, csMarketId, armedAh, floorInput, maxStakeInput, isLive, confirmArmLive, mode, eventId, reloadAhRules]);

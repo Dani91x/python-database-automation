@@ -179,3 +179,52 @@ describe('LiveControlsPanel — limiti E34/E35', () => {
         expect(await screen.findByText(/stop giornaliero spento/)).toBeInTheDocument();
     });
 });
+
+// ===========================================================================
+// FIX audit #27 — audit error visibile · copy onesta kill-switch · validazioni >0
+// ===========================================================================
+describe('LiveControlsPanel — fix audit #27', () => {
+    it('fetchLiveAudit in errore → avviso esplicito (mai lista vuota muta)', async () => {
+        mGet.mockResolvedValue(settings());
+        mAudit.mockRejectedValue(new Error('permission denied'));
+        render(<LiveControlsPanel pollMs={0} />);
+        expect(await screen.findByText(/Registro eventi NON aggiornato/)).toBeInTheDocument();
+        expect(screen.getByText(/permission denied/)).toBeInTheDocument();
+    });
+
+    it('copy ONESTA del kill-switch attivo: aperture rifiutate, chiusure permesse, stop software fermi', async () => {
+        mGet.mockResolvedValue(settings({ kill_switch: true }));
+        mAudit.mockResolvedValue([]);
+        render(<LiveControlsPanel pollMs={0} />);
+        expect(await screen.findByText(/aperture rifiutate, chiusure permesse/)).toBeInTheDocument();
+        expect(screen.getByText(/stop\/offset SOFTWARE NON scattano/)).toBeInTheDocument();
+    });
+
+    it('validazione client-side: max ordini/min ≤ 0 → NESSUN salvataggio', async () => {
+        mGet.mockResolvedValue(settings());
+        mAudit.mockResolvedValue([]);
+        const user = userEvent.setup();
+        render(<LiveControlsPanel pollMs={0} />);
+        await screen.findByText(/Kill-switch disattivato/);
+        const field = screen.getAllByPlaceholderText('nessun limite')[1]; // Max ordini / min
+        await user.clear(field);
+        await user.type(field, '0');
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        expect(mSet).not.toHaveBeenCalled();
+        expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+            expect.stringMatching(/Max ordini \/ min/), expect.anything());
+    });
+
+    it('validazione client-side: poll rischio negativo → NESSUN salvataggio', async () => {
+        mGet.mockResolvedValue(settings());
+        mAudit.mockResolvedValue([]);
+        const user = userEvent.setup();
+        render(<LiveControlsPanel pollMs={0} />);
+        await screen.findByText(/Kill-switch disattivato/);
+        const field = screen.getAllByPlaceholderText('default')[1]; // Poll rischio (s)
+        await user.clear(field);
+        await user.type(field, '-1');
+        await user.click(screen.getByRole('button', { name: /Salva/ }));
+        expect(mSet).not.toHaveBeenCalled();
+    });
+});

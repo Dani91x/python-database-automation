@@ -74,3 +74,31 @@ export function nextPreset(presets: readonly number[], current: number): number 
     const i = presets.findIndex(p => Math.abs(p - current) < 1e-9);
     return presets[(i + 1) % presets.length];
 }
+
+// ---------------------------------------------------------------------------
+// Proiezione P&L di un PLACE (popup di conferma, stile Bet Angel/Fairbot).
+// PURA: dato lato, prezzo e importo (stake, o responsabilità per i LAY in
+// liability-mode) ritorna cosa succede se la selezione VINCE o PERDE.
+//   BACK  €S @ P → vince: +S×(P−1) ; perde: −S
+//   LAY   €S @ P → vince (la selezione): −S×(P−1) ; perde: +S
+//   LAY con `asLiability`: l'importo è la responsabilità L → S = L/(P−1).
+// Importi arrotondati ai 2 decimali (denaro). Input non validi → null.
+export interface PlaceProjection {
+    stake: number;       // size Betfair (backer's stake)
+    liability: number;   // rischio massimo dell'ordine
+    ifWin: number;       // P&L se la selezione VINCE
+    ifLose: number;      // P&L se la selezione PERDE
+}
+export function placeProjection(
+    side: 'back' | 'lay', price: number, amount: number, asLiability = false,
+): PlaceProjection | null {
+    if (!Number.isFinite(price) || price <= 1) return null;
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    if (side === 'back') {
+        return { stake: r2(amount), liability: r2(amount), ifWin: r2(amount * (price - 1)), ifLose: r2(-amount) };
+    }
+    const stake = asLiability ? amount / (price - 1) : amount;
+    const liability = stake * (price - 1);
+    return { stake: r2(stake), liability: r2(liability), ifWin: r2(-liability), ifLose: r2(stake) };
+}

@@ -154,9 +154,19 @@ class TennisFLBStrategy(BaseStrategy):
         g = compute_green(nw, nl, price)
         if g is None:
             return min(nw, nl), None
-        gside, gsize, locked = g
-        o = self._place(market, sel, gside, get_nearest_price(price), gsize * frac)
-        return float(locked), o
+        gside, gsize, _locked_full = g
+        p = float(get_nearest_price(price))
+        size = gsize * frac
+        o = self._place(market, sel, gside, p, size)
+        # STIMA ESATTA col frac (fix audit #11): compute_green ritorna il locked
+        # del green TOTALE; con frac<1 l'hedge copre solo una parte → il floor
+        # reale e' min(nw', nl') DOPO l'hedge parziale. Prima la telemetria
+        # sovrastimava il locked di ~2x (green_est bugiardo con hybrid frac=0.5).
+        if gside == "LAY":
+            nw2, nl2 = nw - size * (p - 1.0), nl + size
+        else:
+            nw2, nl2 = nw + size * (p - 1.0), nl - size
+        return float(min(nw2, nl2)), o
 
     # stati flumine di un ordine ancora VIVO sul book (il resto e' terminale)
     _LIVE_ORDER_STATUSES = frozenset(

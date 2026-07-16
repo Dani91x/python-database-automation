@@ -58,6 +58,9 @@ def test_ui_params_override_preset():
     assert bot.price_max == 4.0
 
 
-def test_dry_run_still_forced_outside_live():
-    bot = _mk("PAPER", dry_run=False)
-    assert bot.dry_run is True  # kill-switch invariato
+def test_dry_run_forced_only_when_off():
+    """Regola specchio 16/07: in PAPER dry_run=False è AMMESSO (ordini simulati per
+    costruzione, visibili sul ladder); il kill-switch forza dry_run solo con OFF."""
+    assert _mk("PAPER", dry_run=False).dry_run is False
+    assert _mk("PAPER", dry_run=True).dry_run is True
+    assert _mk("OFF", dry_run=False).dry_run is True  # kill-switch invariato

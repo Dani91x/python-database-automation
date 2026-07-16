@@ -87,3 +87,27 @@ describe('TerminalPositionsRail', () => {
         expect(await screen.findByText(/dati non aggiornati/i)).toBeInTheDocument();
     });
 });
+
+// ===========================================================================
+// FIX audit #13 — l'errore del cancel non viene MAI inghiottito
+// ===========================================================================
+describe('TerminalPositionsRail — fix audit #13 (errori cancel visibili)', () => {
+    it('eccezione dal comando cancel → banner esplicito (mai catch muto)', async () => {
+        (fetchLiveOrders as any).mockResolvedValue([ORD()]);
+        (sendLiveOrderCommand as any).mockRejectedValue(new Error('timeout: NON reinviare'));
+        const user = userEvent.setup();
+        render(<TerminalPositionsRail marketId="1.1" mode="paper" selections={SELS} />);
+        await user.click(await screen.findByRole('button', { name: /Annulla ordine/ }));
+        expect(await screen.findByText(/Annullamento NON riuscito/)).toBeInTheDocument();
+        expect(screen.getByText(/timeout: NON reinviare/)).toBeInTheDocument();
+    });
+
+    it('rifiuto esplicito del worker (ok:false) → banner con il motivo', async () => {
+        (fetchLiveOrders as any).mockResolvedValue([ORD()]);
+        (sendLiveOrderCommand as any).mockResolvedValue({ ok: false, action: 'cancel', mode: 'paper', error: 'bet non trovata' });
+        const user = userEvent.setup();
+        render(<TerminalPositionsRail marketId="1.1" mode="paper" selections={SELS} />);
+        await user.click(await screen.findByRole('button', { name: /Annulla ordine/ }));
+        expect(await screen.findByText(/bet non trovata/)).toBeInTheDocument();
+    });
+});

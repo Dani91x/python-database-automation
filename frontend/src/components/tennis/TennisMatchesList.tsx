@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
     fetchTennisFixtures,
+    subscribeTennisMarkets,
     TennisFixtureRow,
     TennisMoneylineRunner,
     TennisOddLevel,
@@ -180,21 +181,39 @@ export function TennisMatchesList() {
         let active = true;
         setLoading(true);
         setError(null);
-        fetchTennisFixtures(dateKey)
-            .then((data) => {
-                if (!active) return;
-                setRows(Array.isArray(data) ? data : []);
-            })
-            .catch((e: unknown) => {
-                if (!active) return;
-                setError(e instanceof Error ? e.message : 'Errore di caricamento');
-                setRows([]);
-            })
-            .finally(() => {
-                if (active) setLoading(false);
-            });
+        const load = (silent = false) => {
+            if (!silent) setLoading(true);
+            fetchTennisFixtures(dateKey)
+                .then((data) => {
+                    if (!active) return;
+                    setRows(Array.isArray(data) ? data : []);
+                    setError(null);
+                })
+                .catch((e: unknown) => {
+                    if (!active) return;
+                    // in refresh silenzioso NON si azzera la lista già mostrata
+                    if (!silent) {
+                        setError(e instanceof Error ? e.message : 'Errore di caricamento');
+                        setRows([]);
+                    }
+                })
+                .finally(() => {
+                    if (active && !silent) setLoading(false);
+                });
+        };
+        load();
+        // REALTIME (16/07 "non polling, canale WS"): quando il worker aggiorna
+        // tennis_markets la lista si ricarica da sola (debounce 500ms: gli upsert
+        // del refresh quote arrivano a raffica).
+        let debounce: ReturnType<typeof setTimeout> | undefined;
+        const unsub = subscribeTennisMarkets(() => {
+            if (!active || debounce !== undefined) return;
+            debounce = setTimeout(() => { debounce = undefined; load(true); }, 500);
+        });
         return () => {
             active = false;
+            if (debounce !== undefined) clearTimeout(debounce);
+            unsub();
         };
     }, [dateKey]);
 

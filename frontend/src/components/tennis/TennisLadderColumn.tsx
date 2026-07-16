@@ -30,6 +30,8 @@ import {
     sendTennisOrderCommand,
     fetchTennisOrders,
     fetchTennisPositions,
+    subscribeTennisOrders,
+    subscribeTennisPositions,
     fetchTennisNow,
     subscribeTennisNow,
     type TennisLiveNowRow,
@@ -59,6 +61,9 @@ export const TENNIS_ORDER_API: LadderOrderApi = {
     send: (cmd) => sendTennisOrderCommand(cmd),
     fetchOrders: (marketId, mode) => fetchTennisOrders(marketId, mode),
     fetchPositions: (marketId, mode) => fetchTennisPositions(marketId, mode),
+    // realtime WS (16/07 "non polling"): overlay ordini/posizioni via postgres_changes
+    subscribeOrders: subscribeTennisOrders,
+    subscribePositions: subscribeTennisPositions,
     greenup: async ({ marketId, selectionId, mode, handicap, fraction, targetPrice, cancelUnmatched }) => {
         // validazione CONDIVISA col calcio (liveOrders.buildGreenupParams): una sola fonte
         // di verità per fraction/target_price/cancel_unmatched, mai copie disallineate.
@@ -148,6 +153,15 @@ export function TennisLadderColumn({ eventId, marketId, marketName, p1, p2 }: Te
                     <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-200 truncate max-w-[120px]" title={p2}>{p2}</span>
                 </div>
             </div>
+
+            {/* banner esplicito quando il runner ordini è SPENTO: prima il ladder mostrava
+                silenziosamente zero ordini e sembrava rotto (16/07) */}
+            {orderMode === 'OFF' && (
+                <div className="px-3 py-1.5 bg-slate-500/10 border-b border-white/10 text-[10px] font-bold text-slate-300">
+                    Ordini OFF — il runner tennis non accetta ordini (nemmeno simulati) e il ladder non
+                    mostra ordini/posizioni. Per la DEMO: imposta TENNIS_LIVE_ORDER_MODE=PAPER e riavvia il runner.
+                </div>
+            )}
 
             {/* ladder riusabile alimentata SOLO con dati tennis (DI) + drag-to-move abilitato;
                 D28: in alternativa la GRID one-click (stessa injection tennis, stesse guardie) */}

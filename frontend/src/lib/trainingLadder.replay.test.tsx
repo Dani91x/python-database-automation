@@ -22,6 +22,8 @@ vi.mock('@/lib/liveOrders', () => ({
     sendLiveOrderCommand: vi.fn(),
     sendGreenup: vi.fn(),
     requestRiskRule: vi.fn(),
+    subscribeLiveOrders: vi.fn(() => () => {}),
+    subscribeLivePositions: vi.fn(() => () => {}),
 }));
 
 import { LadderView, type LadderSource } from '@/components/live/LadderView';

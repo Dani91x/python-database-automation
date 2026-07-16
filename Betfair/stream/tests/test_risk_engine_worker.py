@@ -800,3 +800,90 @@ def test_disarm_offset_unresolvable_alerts(monkeypatch):
     n = rw._cleanup_cancelled_offsets(sb, SimpleNamespace(), "paper")
     assert n == 1 and sb.enqueued == []
     assert alerts and alerts[0][0] == "CRITICAL"  # mai silenzio su un resting non ritirabile
+
+
+# ===========================================================================
+# FIX AUDIT 2026-07-16 — #1 bracket fail-loud · #3 on_fill monitorati ·
+# #16 on_inplay sugli offset · #25 persistence nel flatten
+# ===========================================================================
+def test_bracket_without_stop_leg_is_visible_error():
+    """#1: bracket con la SOLA gamba offset (nessun trigger_*/stop_amount/trail_*)
+    → disarmo VISIBILE subito (status 'error'), mai armato con lo stop MORTO."""
+    rule = _rule(rule_type="bracket", params={"offset_ticks": 10, "greening": True})
+    sb = _FakeSb([rule])
+    fl = _flumine(_market_v2(ltp=3.0))
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []                       # NESSUN offset piazzato
+    assert rule["status"] == "error"
+    assert "gamba STOP" in rule["error"]
+
+
+def test_monitored_on_fill_waits_for_entry_fill():
+    """#3: stop_loss con timing on_fill NON viene valutato finché l'ingresso non è
+    abbinato — anche se la condizione di prezzo sarebbe GIÀ vera."""
+    entry = _orderobj(bet_id="E1", matched=0.0, status="EXECUTABLE")
+    rule = _rule(rule_type="stop_loss",
+                 params={"trigger_ticks": 10, "timing": "on_fill"}, entry_bet_id="E1")
+    sb = _FakeSb([rule])
+    # LTP 3.55 >= trigger 3.50: scatterebbe, ma l'ingresso non è ancora abbinato.
+    market = _market_v2(ltp=3.55, bb=3.5, bl=3.55, orders=[entry])
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == [] and rule["status"] == "armed"   # attende il fill
+    entry.size_matched = 5.0                                  # l'ingresso si abbina
+    rw._process_once(sb, fl, strategy=object())
+    assert len(sb.enqueued) == 1
+    assert sb.enqueued[0]["action"] == "greenup"
+    assert rule["status"] == "triggered"
+
+
+def test_monitored_on_fill_naked_entry_closes_rule():
+    """#3 (anti-gamba-nuda): ingresso lapsato senza match → la protezione non serve,
+    regola chiusa 'done' (mai un flatten su una posizione inesistente)."""
+    entry = _orderobj(bet_id="E1", matched=0.0, status="LAPSED")
+    rule = _rule(rule_type="stop_loss",
+                 params={"trigger_ticks": 10, "timing": "on_fill"}, entry_bet_id="E1")
+    sb = _FakeSb([rule])
+    rw._process_once(sb, _flumine(_market_v2(ltp=3.55, bb=3.5, bl=3.55, orders=[entry])),
+                     strategy=object())
+    assert sb.enqueued == []
+    assert rule["status"] == "done" and "gamba-nuda" in rule["result"]["note"]
+
+
+def test_offset_on_inplay_cancel_policy_disarms():
+    """#16: la policy on_inplay=cancel vale ANCHE per gli offset (prima ignorata).
+    Ciclo 1 pre-match = semina inplay=False; ciclo 2 in-play = transizione → cancel."""
+    entry = _orderobj(bet_id="E1", matched=0.0, status="EXECUTABLE")  # on_fill: resta armata
+    rule = _rule(rule_type="offset",
+                 params={"offset_ticks": 10, "timing": "on_fill", "on_inplay": "cancel"},
+                 entry_bet_id="E1")
+    sb = _FakeSb([rule])
+    market = _market_v2(ltp=3.0, inplay=False, orders=[entry])
+    fl = _flumine(market)
+    rw._process_once(sb, fl, strategy=object())
+    assert rule["status"] == "armed" and rule["result"]["inplay"] is False  # seminato
+    market.market_book.inplay = True             # calcio d'inizio → transizione vera
+    rw._process_once(sb, fl, strategy=object())
+    assert sb.enqueued == []                     # nessun offset piazzato
+    assert rule["status"] == "cancelled"
+
+
+def test_flatten_forwards_rule_persistence():
+    """#25: la persistence scelta armando la regola è inoltrata al greenup di chiusura
+    (prima ignorata in silenzio: il flatten era sempre LAPSE)."""
+    rule = _rule(rule_type="stop_loss",
+                 params={"trigger_ticks": 10, "persistence": "PERSIST"})
+    sb = _FakeSb([rule])
+    rw._process_once(sb, _flumine(_market_v2(ltp=3.55, bb=3.5, bl=3.55)), strategy=object())
+    assert sb.enqueued[0]["action"] == "greenup"
+    assert sb.enqueued[0]["params"]["persistence"] == "PERSIST"
+
+
+def test_flatten_without_persistence_keeps_legacy_payload():
+    """#25 non-regressione: senza persistence nei params il payload non la include
+    (il worker greenup usa il default storico LAPSE)."""
+    rule = _rule(rule_type="stop_loss", params={"trigger_ticks": 10})
+    sb = _FakeSb([rule])
+    rw._process_once(sb, _flumine(_market_v2(ltp=3.55, bb=3.5, bl=3.55)), strategy=object())
+    assert sb.enqueued[0]["action"] == "greenup"
+    assert "persistence" not in sb.enqueued[0]["params"]

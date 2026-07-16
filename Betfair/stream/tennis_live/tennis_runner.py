@@ -112,9 +112,13 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
             api_client, order_stream=True, paper_trade=False, min_bet_validation=False
         ), True
     if mode_u == "PAPER":
-        lat = float(os.getenv("TENNIS_PAPER_LATENCY_MS", "0") or 0)
-        if lat > 0:
-            flumine_config.place_latency = lat / 1000.0
+        # BET DELAY SIMULATO (fix audit 16/07): il tennis in-play ha ~3s di ritardo
+        # di piazzamento. Default 3000 ms così la DEMO PAPER subisce la STESSA
+        # adverse selection del vivo (un PAPER a latenza 0 "cattura" tick che in
+        # LIVE non esistono → paper bugiardo). Override esplicito via env
+        # TENNIS_PAPER_LATENCY_MS (0 = nessun delay, solo per debug consapevole).
+        lat = float(os.getenv("TENNIS_PAPER_LATENCY_MS", "3000") or 0)
+        flumine_config.place_latency = max(0.0, lat) / 1000.0
         return clients.BetfairClient(
             api_client, order_stream=True, paper_trade=True, min_bet_validation=False
         ), True
@@ -379,11 +383,32 @@ class TennisLiveSession:
         # auto-spegnimento (fix 2026-07-08: runner mai più attivi per giorni)
         self.shutdown_requested = threading.Event()
         self.started_monotonic = time.monotonic()
+        # mode ordini CATTURATA al build del framework (fix audit #14): i worker
+        # specchio (ordini bot / posizioni) usano QUESTA, mai una ri-lettura env a
+        # metà processo (la mode dello specchio non può divergere dagli ordini).
+        self.order_mode: Optional[str] = None
+        # generazione del framework (fix audit #8): incrementata a ogni rebuild;
+        # gli ordini tracciati di una generazione smontata vanno chiusi/scartati.
+        self.framework_gen: int = 0
+        # (event_id, bot_key) già tracciati come 'restart_deferred' nell'episodio
+        # di rinvio corrente (fix audit #1: una riga di attività per episodio).
+        self._restart_deferred_logged: set = set()
+        # inizio (monotonic) dell'episodio di rinvio restart e ultimo log di
+        # escalation LIVE (fix controcheck 16/07: il rinvio non è mai eterno —
+        # vedi _RESTART_GRACE_S in _request_restart).
+        self.restart_deferred_since: Optional[float] = None
+        self._restart_blocked_logged_at: Optional[float] = None
+        # chiavi (mode, market_id, selection_id, handicap) scritte in
+        # tennis_live_positions in questa sessione (fix audit #8: azzeramento
+        # delle righe rimaste orfane dopo un restart del framework).
+        self.positions_written: Dict[tuple, Dict[str, Any]] = {}
 
     def reset_streams(self) -> None:
         self.capture.clear()
         self.hosted.clear()
         self.stopping_deadline.clear()
+        # nuovo framework in arrivo: gli Order del vecchio blotter sono orfani
+        self.framework_gen += 1
 
     def points_deque(self, event_id: str) -> Deque[Dict[str, Any]]:
         dq = self.recent_points.get(event_id)
@@ -471,16 +496,30 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     ``data_filter`` (streaming_timeout/conflate = default None): qui usiamo identici →
     UNA sola subscription Betfair per evento (capture + bot).
 
-    KILL-SWITCH DI MODALITA' (#3): se ``mode != LIVE`` il bot è FORZATO in ``dry_run=True``
+    KILL-SWITCH DI MODALITA' (#3): se ``mode == OFF`` il bot è FORZATO in ``dry_run=True``
     (i bot tennis gateano ogni ``market.place_order`` su ``self.dry_run``): impossibile
-    piazzare al di fuori di LIVE, a prescindere da ciò che chiede il control.
+    piazzare con il runner spento, a prescindere da ciò che chiede il control.
+
+    REGOLA SPECCHIO PAPER/LIVE (16/07): in PAPER il default è ``dry_run=False`` — gli
+    ordini sono comunque SIMULATI per costruzione (``build_order_client`` forza
+    ``paper_trade=True`` fuori da LIVE), ma così passano da ``market.place_order`` →
+    blotter → mirror ``tennis_live_orders`` e diventano VISIBILI sul ladder come dal
+    vivo. Il flag del control resta rispettato (un dry_run esplicito vince). In LIVE il
+    default resta ``dry_run=True`` (prudenza sui soldi veri: va tolto consapevolmente).
     """
     cls, params_kw, needs_names = _BOT_REGISTRY[bot_key]
     params = dict(control.get("params") or {})
     params["stake"] = float(control.get("stake") or params.get("stake") or 2.0)
-    is_live = (mode or "OFF").strip().upper() == "LIVE"
-    # dry-run forzato fuori da LIVE (difesa in profondità oltre al paper_trade del client).
-    params["dry_run"] = True if not is_live else bool(control.get("dry_run", True))
+    mode_u = (mode or "OFF").strip().upper()
+    is_live = mode_u == "LIVE"
+    if mode_u == "PAPER":
+        # simulato per costruzione: default dry_run=False per la visibilità sul ladder
+        params["dry_run"] = bool(control.get("dry_run", False))
+    elif is_live:
+        params["dry_run"] = bool(control.get("dry_run", True))
+    else:
+        # OFF: dry-run FORZATO (kill-switch, il control non può aggirarlo)
+        params["dry_run"] = True
     if bot_key == "tennis_scalper":
         # PRESET TENNIS (fix 2026-07-09): senza questa base lo scalper armato dalla UI
         # partiva coi default CALCIO della classe (max_signal_ticks=4 → l'anti-gap blocca
@@ -550,6 +589,15 @@ def _desired_controls(event_id: str) -> Dict[str, Dict[str, Any]]:
 # finestra senza flat, lo stato diventa 'error' (MAI uno 'stopped' bugiardo).
 _STOPPING_GRACE_S = 45.0
 
+# Finestra massima di un episodio di rinvio del restart (fix controcheck 16/07:
+# solo lo scalper ha force_flat — un bot pro/flb/swing non flat rinviava il
+# restart ALL'INFINITO bloccando arm/disarm e nuovi follow su TUTTI gli eventi).
+# Scaduta la grazia: PAPER/OFF → il restart parte comunque (posizione SIMULATA,
+# la liveness vince; i tracciati orfani li gestisce framework_gen → VOIDED);
+# LIVE → MAI forzato (posizione reale orfana), ma il blocco diventa VISIBILE
+# (activity CRITICAL per finestra) finché l'utente non chiude a mano.
+_RESTART_GRACE_S = 180.0
+
 # Stati flumine di un ordine ancora VIVO sul book (tutto il resto è terminale).
 _LIVE_ORDER_STATUSES = frozenset({"PENDING", "CANCELLING", "UPDATING", "REPLACING", "EXECUTABLE"})
 
@@ -598,6 +646,131 @@ def _strategy_is_flat(flumine: Any, strat: Any) -> bool:
     except Exception:  # noqa: BLE001
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Restart del framework SOLO a bot FLAT (fix audit #1 HIGH)
+# ---------------------------------------------------------------------------
+def _hosted_not_flat(flumine: Any, session: TennisLiveSession) -> List[tuple]:
+    """(event_id, bot_key, strategy) dei bot ospitati ATTIVI (non disabilitati) con
+    posizione NON flat. Fonte: SOLO ``_strategy_is_flat`` (blotter autoritativo,
+    fail-safe: blotter illeggibile = non flat)."""
+    out: List[tuple] = []
+    for (ev, bot_key), strat in list(session.hosted.items()):
+        if getattr(strat, "_tennis_disabled", False):
+            continue
+        if not _strategy_is_flat(flumine, strat):
+            out.append((ev, bot_key, strat))
+    return out
+
+
+def _reset_restart_episode(session: TennisLiveSession) -> None:
+    """Chiude l'episodio di rinvio corrente (restart partito o bot tornati flat)."""
+    session._restart_deferred_logged = set()
+    session.restart_deferred_since = None
+    session._restart_blocked_logged_at = None
+
+
+def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> bool:
+    """Richiede il restart del framework SOLO se ogni bot ospitato è FLAT.
+
+    Fix audit #1 (HIGH): il restart ricostruisce flumine con un blotter VUOTO.
+    Riavviare con una posizione MATCHED aperta la renderebbe ORFANA in LIVE
+    (nessuno la gestisce più: ``_strategy_is_flat`` sul blotter nuovo mentirebbe
+    "flat") e cancellerebbe lo stato simulato in PAPER. Con almeno un bot non
+    flat il restart viene RINVIATO al prossimo giro del worker: dove il bot sa
+    appiattirsi da solo si alza ``force_flat`` e si scrive UNA riga di attività
+    'restart_deferred' per episodio.
+
+    Fix controcheck 16/07 (liveness): il rinvio non è mai eterno. Oltre
+    ``_RESTART_GRACE_S``: PAPER/OFF → restart FORZATO (posizione simulata,
+    activity 'restart_forced'); LIVE → mai forzato, escalation 'restart_blocked'
+    CRITICAL una volta per finestra. Ritorna True se il restart è partito."""
+    blockers = _hosted_not_flat(flumine, session)
+    if not blockers:
+        _reset_restart_episode(session)
+        session.restart_requested.set()
+        _stop_framework(flumine)
+        return True
+    now_mono = time.monotonic()
+    since = getattr(session, "restart_deferred_since", None)
+    if since is None:
+        since = now_mono
+        session.restart_deferred_since = since
+    grace_expired = (now_mono - since) > _RESTART_GRACE_S
+    is_live = (getattr(session, "order_mode", None) or "").upper() == "LIVE"
+    if grace_expired and not is_live:
+        # PAPER/OFF: posizione SIMULATA — dopo la grazia la liveness vince.
+        # Lo stato demo dei bot bloccanti riparte da zero (annunciato); gli
+        # ordini tracciati della generazione smontata li chiude framework_gen.
+        for ev, bot_key, _strat in blockers:
+            try:
+                tennis_db.write_tennis_bot_activity(
+                    ev, bot_key, "restart_forced",
+                    {"reason": reason,
+                     "note": (f"grazia {int(_RESTART_GRACE_S)}s scaduta con "
+                              "posizione SIMULATA non flat: restart forzato "
+                              "(solo paper/off) — lo stato demo del bot "
+                              "riparte da zero")},
+                )
+            except Exception as e:  # noqa: BLE001 - l'attività non rompe il worker
+                logger.debug("[tennis-runner] activity restart_forced %s/%s KO: %s",
+                             ev, bot_key, e)
+        logger.warning("[tennis-runner] restart FORZATO dopo %ds di rinvio (%s): "
+                       "%d bot non flat in modalità simulata.",
+                       int(_RESTART_GRACE_S), reason, len(blockers))
+        _reset_restart_episode(session)
+        session.restart_requested.set()
+        _stop_framework(flumine)
+        return True
+    if grace_expired:
+        # LIVE: MAI forzare (la posizione reale resterebbe orfana). Il blocco
+        # diventa VISIBILE: activity CRITICAL una volta per finestra di grazia.
+        last = getattr(session, "_restart_blocked_logged_at", None)
+        if last is None or (now_mono - last) >= _RESTART_GRACE_S:
+            session._restart_blocked_logged_at = now_mono
+            for ev, bot_key, _strat in blockers:
+                try:
+                    tennis_db.write_tennis_bot_activity(
+                        ev, bot_key, "restart_blocked",
+                        {"reason": reason, "level": "CRITICAL",
+                         "note": ("restart LIVE bloccato da posizione REALE non "
+                                  f"flat da oltre {int(_RESTART_GRACE_S)}s: "
+                                  "chiudi la posizione a mano (ladder/Betfair) "
+                                  "per sbloccare arm/disarm e nuovi follow")},
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("[tennis-runner] activity restart_blocked %s/%s KO: %s",
+                                 ev, bot_key, e)
+        logger.error("[tennis-runner] restart LIVE BLOCCATO da %d bot non flat "
+                     "oltre la grazia (%s): serve chiusura manuale.",
+                     len(blockers), reason)
+    logged = getattr(session, "_restart_deferred_logged", None)
+    if logged is None:
+        logged = set()
+        session._restart_deferred_logged = logged
+    for ev, bot_key, strat in blockers:
+        if hasattr(strat, "force_flat"):
+            # il bot sa appiattirsi da solo: chiediglielo subito (idempotente)
+            strat.force_flat = True
+        key = (ev, bot_key)
+        if key in logged:
+            continue
+        logged.add(key)
+        try:
+            tennis_db.write_tennis_bot_activity(
+                ev, bot_key, "restart_deferred",
+                {"reason": reason,
+                 "note": ("restart dello stream RINVIATO: posizione NON flat — "
+                          "il rebuild azzererebbe il blotter e la posizione "
+                          "resterebbe orfana; si riprova a chiusura completata")},
+            )
+        except Exception as e:  # noqa: BLE001 - l'attività non rompe il worker
+            logger.debug("[tennis-runner] activity restart_deferred %s/%s KO: %s",
+                         ev, bot_key, e)
+    logger.warning("[tennis-runner] restart RINVIATO (%s): %d bot non flat.",
+                   reason, len(blockers))
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -860,8 +1033,8 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
             except Exception as e:  # noqa: BLE001
                 logger.debug("[tennis-runner] heartbeat %s/%s KO: %s", event_id, bot_key, e)
     if need_restart:
-        session.restart_requested.set()
-        _stop_framework(flumine)
+        # fix audit #1: restart SOLO a bot flat (altrimenti rinviato al giro dopo)
+        _request_restart(flumine, session, "arm/disarm bot")
 
 
 # ---------------------------------------------------------------------------
@@ -936,8 +1109,9 @@ def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
     new = [f for f in follows if f["event_id"] not in session.market_meta]
     if new:
         logger.info("[tennis-follow] %d nuovi eventi → ricostruzione stream.", len(new))
-        session.restart_requested.set()
-        _stop_framework(flumine)
+        # fix audit #1: anche il follow nuovo NON può riavviare con bot non flat
+        # (il rinvio si risolve da solo: si riprova al prossimo giro del worker).
+        _request_restart(flumine, session, f"{len(new)} nuovi follow")
 
 
 def _stop_framework(flumine: Any) -> None:
@@ -1021,6 +1195,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 break
 
             mode = live_order_mode()
+            # fix audit #14: mode CATTURATA al build — gli specchi (ordini bot,
+            # posizioni) usano questa, così non possono divergere dalla mode con
+            # cui il client/gli ordini sono stati costruiti se l'env cambia dopo.
+            session.order_mode = mode
             client, orders_enabled = build_order_client(trading, mode)
             data_filter = streaming_market_data_filter(
                 fields=list(STREAM_FIELDS), ladder_levels=LADDER_DEPTH

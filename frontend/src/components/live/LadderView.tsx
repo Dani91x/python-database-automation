@@ -4,23 +4,28 @@
 // PREZZO al centro e LTP evidenziato, volume tradato per livello, i TUOI ordini
 // non abbinati sui livelli, WOM, P&L-per-livello, PIQ e ONE-CLICK trading.
 //
-// Per OGNI selezione, 8 colonne (sinistra → destra):
+// Per OGNI selezione, 8 colonne (sinistra → destra) — layout v2, lato LAY a
+// SINISTRA del prezzo e lato BACK a DESTRA (richiesta utente):
 //   1) Tuoi LAY non abbinati        5) Tuoi BACK non abbinati
-//   2) Disponibile al BACK (blu)    6) Cash-out/P&L per livello (viola)
+//   2) Disponibile al LAY (rosa)    6) Cash-out/P&L per livello (viola)
 //   3) PREZZO (centro) + LTP        7) Volume tradato (EUR) per prezzo
-//   4) Disponibile al LAY (rosa)    8) PIQ (coda al tuo livello, stima)
+//   4) Disponibile al BACK (blu)    8) PIQ (coda al tuo livello, stima)
 // (convenzione colori STANDARD Betfair/Bet Angel/Geeks Toy: BACK=blu, LAY=rosa)
 //
 // DATI: la profondità arriva dalla tabella realtime `live_ladder` (subscribeLiveLadder),
 // pubblicata dal runner dai soli dati dello stream già sottoscritto → ZERO API Betfair.
 // Ordini/posizioni (overlay) dalle RPC di sola lettura con poll gentile.
 //
-// ONE-CLICK (Fase A) — MEDIATO DAL DB (coda comandi), mode-aware:
+// REGOLA UNIVERSALE PAPER/LIVE: la DEMO (paper) è lo SPECCHIO del LIVE — stessi
+// flussi, stesse conferme, stessi ordini/posizioni visibili sul ladder; l'UNICA
+// differenza è che in paper i soldi non sono veri.
+//
+// ORDINI (Fase A) — MEDIATI DAL DB (coda comandi), mode-aware:
 //   * OFF   → ladder in sola lettura (nessun ordine possibile).
-//   * PAPER → click = ordine SIMULATO immediato (soldi finti).
-//   * LIVE  → click = ordine REALE. Per sicurezza: di default ogni click chiede CONFERMA;
-//             attivando "1-click" (armato, banner rosso) i click partono diretti come nei
-//             tool pro. Click su disp.BACK/LAY = place; click sui tuoi ordini = cancel.
+//   * PAPER/LIVE → stesso flusso: di default ogni click apre la CONFERMA (popup con
+//             importo editabile e proiezione P&L); attivando "1-click" (armato,
+//             banner rosso in LIVE / ambra in PAPER) i click partono diretti come
+//             nei tool pro. Click su disp.BACK/LAY = place; click sui tuoi ordini = cancel.
 // GREEN-UP / CASH-OUT (Fase B): bottone Cash-out (totale) + slider parziale; il runner
 //   calcola l'hedge dalle esposizioni MATCHED reali di flumine (non da numeri pollati).
 // ============================================================================
@@ -37,6 +42,7 @@ import {
 } from '@/lib/ladderMath';
 import { tickWindow } from '@/lib/priceAxis';
 import { pushSample, type PriceSample } from '@/lib/ladderChart';
+import { PlaceConfirmDialog } from './PlaceConfirmDialog';
 import { resolveHotkey } from '@/lib/workspace';
 import { addSlot, loadSlots, saveSlots, type LadderSlot } from '@/lib/multiLadder';
 import { MiniPriceChart } from './MiniPriceChart';
@@ -54,6 +60,7 @@ import { kellySuggestions, type KellySuggestion } from '@/lib/kellySuggest';
 import { fairInfos, fmtEvAt, type FairInfo } from '@/lib/fairOverlay';
 import {
     fetchLiveOrders, fetchLivePositions, sendLiveOrderCommand, sendGreenup, requestRiskRule,
+    subscribeLiveOrders, subscribeLivePositions,
     type LiveOrderRow, type LivePositionRow, type LiveOrderMode, type LiveOrderResult,
     type LivePersistence, type LiveOrderCommand, type RiskRuleType, type RiskRuleParams,
     type LiveOrderSide,
@@ -113,6 +120,13 @@ export interface LadderOrderApi {
     // opzionale (C22): true se il worker di questo sport onora params.fok_ttl_sec.
     // Assente/false = toggle FoK nascosto (un TTL ignorato in silenzio = protezione bugiarda).
     supportsFok?: boolean;
+    // REALTIME (16/07 "non polling, canale WS"): notifica di cambiamento sugli specchi
+    // ordini/posizioni del mercato → l'overlay ricarica SUBITO via fetch (notify→reload).
+    // Se presenti, il poll resta solo come riconciliazione lenta di sicurezza. onHealth
+    // (fix audit #8): stato del canale — se il canale NON è SUBSCRIBED il chiamante
+    // torna al poll pieno (mai degradare in silenzio a 10s con canale morto).
+    subscribeOrders?: (marketId: string, cb: () => void, onHealth?: (up: boolean) => void) => () => void;
+    subscribePositions?: (marketId: string, cb: () => void, onHealth?: (up: boolean) => void) => () => void;
 }
 
 const DEFAULT_LADDER_SOURCE: LadderSource = {
@@ -126,6 +140,8 @@ const DEFAULT_ORDER_API: LadderOrderApi = {
     greenup: sendGreenup,
     armRule: requestRiskRule,  // risk engine calcio (offset/stop/bracket/stop_entry/chase)
     supportsFok: true,         // il worker calcio onora params.fok_ttl_sec (C22)
+    subscribeOrders: subscribeLiveOrders,        // realtime WS (16/07): overlay senza poll
+    subscribePositions: subscribeLivePositions,
 };
 
 // modalità ordini del runner (per filtrare l'overlay "i tuoi ordini").
@@ -147,7 +163,8 @@ const PERSISTENCE_OPTIONS: { value: LivePersistence; label: string; title: strin
 const MAX_ROWS = 42;
 const PAD_TICKS = 1; // tick di contesto sopra/sotto il range back/lay/LTP/ordini.
 
-const ORDERS_POLL_MS = 5000; // poll gentile ordini/posizioni (no martellamento DB).
+const ORDERS_POLL_MS = 5000;       // poll ordini/posizioni SENZA realtime (fallback legacy).
+const ORDERS_RECONCILE_MS = 10000; // con realtime WS attivo: sola riconciliazione lenta di sicurezza.
 
 // Scadenza della barra di conferma LIVE (fix M1): oltre questa finestra il prezzo
 // dell'intent è considerato stantio e serve un nuovo clic.
@@ -381,11 +398,14 @@ function gridColumnsOf(columns: ColumnKey[]): ColumnKey[] {
 
 // payload di un drag-to-move in corso (una selezione): quali bet_id/lato/prezzo/size
 // stiamo trascinando da un livello all'altro (cancel-then-replace al rilascio).
+// persistence (fix audit #23): quella dell'ORDINE trascinato, non quella della toolbar —
+// spostare un ordine PERSIST non deve declassarlo in silenzio a LAPSE (o viceversa).
 interface DragPayload {
     side: TradeSide;
     fromPrice: number;
     betIds: string[];
     size: number;
+    persistence: LivePersistence | null;
 }
 
 // informazioni della riga sotto il cursore (per le hotkey B/L/C/frecce del terminal).
@@ -405,6 +425,9 @@ interface SelectionLadderProps {
     stakeMode: 'stake' | 'liability'; // interpreta lo stake dei LAY come puntata o responsabilità
     status: string | null;         // OPEN | SUSPENDED | CLOSED
     canTrade: boolean;             // mode != off && mercato OPEN
+    // fix audit #11: i CANCEL sono permessi anche in SUSPENDED (Betfair li accetta):
+    // mode != off && mercato OPEN o SUSPENDED. I place restano gated su canTrade.
+    canCancelOrders: boolean;
     busy: boolean;                 // un comando è in volo (disabilita i click)
     columns: ColumnKey[];          // colonne griglia (ordine + visibilità) dal profilo
     greenupSupported: boolean;     // se false, il Cash-out non è mostrato (orderApi.greenup assente)
@@ -417,7 +440,7 @@ interface SelectionLadderProps {
     onGreenup: (fraction: number, selectionId: number, selName: string) => void;
     onGreenupAt: (price: number, selectionId: number, selName: string) => void; // greening column
     onCancelSide: (side: TradeSide, betIds: string[], selectionId: number, selName: string) => void;
-    onMoveOrder: (betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string) => void;
+    onMoveOrder: (betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string, persistence: LivePersistence | null) => void;
     onHoverRow: (info: HoverInfo | null) => void;
     // MONEY-CRITICAL: il contenuto è scivolato sotto il cursore FERMO (auto-scroll/shift
     // della finestra) → il parent invalida l'hover di questa selezione (hotkey sospese
@@ -434,7 +457,7 @@ interface SelectionLadderProps {
 const EMPTY_FLASHES: ReadonlyMap<string, 'up' | 'down'> = new Map();
 
 const SelectionLadder = memo(function SelectionLadder({
-    sel, orders, position, stake, stakeMode, status, canTrade, busy, columns, greenupSupported, enableDragMove,
+    sel, orders, position, stake, stakeMode, status, canTrade, canCancelOrders, busy, columns, greenupSupported, enableDragMove,
     recenterSeq, nudge, samples,
     onPlace, onCancel, onGreenup, onGreenupAt, onCancelSide, onMoveOrder, onHoverRow, onWindowShift,
     kelly, onAcceptKelly, fair,
@@ -607,6 +630,17 @@ const SelectionLadder = memo(function SelectionLadder({
         return m;
     }, [orders]);
 
+    // fix audit #23: persistence dell'ORDINE trascinato (per il drag-to-move) — il
+    // ripiazzo mantiene quella dell'ordine di origine, non quella della toolbar.
+    const persistenceOf = useCallback((betIds: string[]): LivePersistence | null => {
+        for (const o of orders) {
+            if (!o.bet_id || !betIds.includes(o.bet_id)) continue;
+            const p = (o.persistence ?? '').toUpperCase();
+            if (p === 'LAPSE' || p === 'PERSIST' || p === 'MARKET_ON_CLOSE') return p as LivePersistence;
+        }
+        return null;
+    }, [orders]);
+
     const onLevel = useCallback((price: number) => {
         setArmedPrice(prev => (prev === price ? null : price));
     }, []);
@@ -647,7 +681,7 @@ const SelectionLadder = memo(function SelectionLadder({
         if (!p) return;
         e.preventDefault();
         if (Math.abs(toPrice - p.fromPrice) < 1e-9) return; // stesso livello: no-op
-        onMoveOrder(p.betIds, p.side, toPrice, p.size, selId, selName);
+        onMoveOrder(p.betIds, p.side, toPrice, p.size, selId, selName, p.persistence);
     }, [onMoveOrder, selId, selName]);
     const endDrag = useCallback(() => { dragRef.current = null; setDragOverPrice(null); }, []);
 
@@ -788,7 +822,8 @@ const SelectionLadder = memo(function SelectionLadder({
                     if (k === 'my_lay' || k === 'my_back') {
                         const side: TradeSide = k === 'my_lay' ? 'lay' : 'back';
                         const ids = side === 'lay' ? sideBets.lay : sideBets.back;
-                        if (ids.length > 0 && canTrade) {
+                        // fix audit #11: il cancel di lato resta operabile anche in SUSPENDED.
+                        if (ids.length > 0 && canCancelOrders) {
                             return (
                                 <button
                                     key={k}
@@ -852,7 +887,8 @@ const SelectionLadder = memo(function SelectionLadder({
                             refineQueue(piqLayStatic, piqBaseRef.current.get(`lay@${r.price}`), r.trd);
                         const layBetIds = myOrdersAt.get(`lay@${r.price}`) ?? [];
                         const backBetIds = myOrdersAt.get(`back@${r.price}`) ?? [];
-                        const canCancel = canTrade && !busy;
+                        // fix audit #11: cancel permesso anche in SUSPENDED (place NO).
+                        const canCancel = canCancelOrders && !busy;
 
                         const cell = (k: ColumnKey) => {
                             switch (k) {
@@ -866,7 +902,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                             disabled={r.myLay <= 0 || !canCancel}
                                             draggable={draggableLay}
                                             onDragStart={draggableLay
-                                                ? (e) => startDrag(e, { side: 'lay', fromPrice: r.price, betIds: layBetIds, size: r.myLay })
+                                                ? (e) => startDrag(e, { side: 'lay', fromPrice: r.price, betIds: layBetIds, size: r.myLay, persistence: persistenceOf(layBetIds) })
                                                 : undefined}
                                             onDragEnd={draggableLay ? endDrag : undefined}
                                             onClick={() => onCancel(layBetIds, 'lay', r.price, selName)}
@@ -965,7 +1001,7 @@ const SelectionLadder = memo(function SelectionLadder({
                                             disabled={r.myBack <= 0 || !canCancel}
                                             draggable={draggableBack}
                                             onDragStart={draggableBack
-                                                ? (e) => startDrag(e, { side: 'back', fromPrice: r.price, betIds: backBetIds, size: r.myBack })
+                                                ? (e) => startDrag(e, { side: 'back', fromPrice: r.price, betIds: backBetIds, size: r.myBack, persistence: persistenceOf(backBetIds) })
                                                 : undefined}
                                             onDragEnd={draggableBack ? endDrag : undefined}
                                             onClick={() => onCancel(backBetIds, 'back', r.price, selName)}
@@ -1355,12 +1391,14 @@ interface Props {
 // storico a 8 colonne (con PIQ visibile); altrimenti il profilo salvato dall'utente.
 // F38: sul CALCIO (sport col motore) la colonna EV parte VISIBILE dopo il P&L; sugli
 // sport senza motore (tennis) resta disponibile ma nascosta (sarebbe sempre vuota).
+// Layout v2 (richiesta utente): lato LAY (rosa) a SINISTRA della quota, lato BACK
+// (blu) a DESTRA — my_lay + avail_lay | price | avail_back + my_back.
 const LADDER_DEFAULT_ORDER: ColumnKey[] = [
-    'my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'trd', 'piq',
+    'my_lay', 'avail_lay', 'price', 'avail_back', 'my_back', 'pnl', 'trd', 'piq',
 ];
 function eightColProfile(sport: string): LadderProfile {
     const order: ColumnKey[] = sport === 'calcio'
-        ? ['my_lay', 'avail_back', 'price', 'avail_lay', 'my_back', 'pnl', 'ev', 'trd', 'piq']
+        ? ['my_lay', 'avail_lay', 'price', 'avail_back', 'my_back', 'pnl', 'ev', 'trd', 'piq']
         : LADDER_DEFAULT_ORDER;
     return normalizeProfile(sport, {
         sport,
@@ -1383,6 +1421,10 @@ export function LadderView({
     const [orders, setOrders] = useState<LiveOrderRow[]>([]);
     const [positions, setPositions] = useState<LivePositionRow[]>([]);
     const [activeSel, setActiveSel] = useState<number | null>(null);
+    // fix audit #12: freschezza dell'overlay ordini/posizioni ESPLICITA (pattern
+    // TerminalPositionsRail) — mai numeri stantii spacciati per vivi.
+    const [overlayGoodAt, setOverlayGoodAt] = useState<number | null>(null);
+    const [overlayErr, setOverlayErr] = useState<string | null>(null);
     const unsubRef = useRef<(() => void) | null>(null);
 
     // ---- profilo COLONNE configurabile (per-sport, persistito in localStorage) ----
@@ -1518,16 +1560,19 @@ export function LadderView({
     const ordersRef = useRef<LiveOrderRow[]>([]);
     ordersRef.current = orders;
 
-    // ---- one-click trading: armamento (LIVE), in-volo, esito, conferma ----
-    const [armed, setArmed] = useState(false);   // 1-click LIVE attivo (banner rosso)
+    // ---- one-click trading: armamento (PAPER e LIVE, regola specchio), in-volo, esito, conferma ----
+    const [armed, setArmed] = useState(false);   // 1-click attivo (banner rosso LIVE / ambra PAPER)
     const [busy, setBusy] = useState(false);
     const [statusMsg, setStatusMsg] = useState<StatusMsg | null>(null);
     const [confirm, setConfirm] = useState<Intent | null>(null);
     const busyRef = useRef(false);
     const [refreshTick, setRefreshTick] = useState(0);
 
-    // se la modalità non è LIVE, l'armamento non ha senso: tienilo spento.
-    useEffect(() => { if (!isLive) setArmed(false); }, [isLive]);
+    // MONEY-CRITICAL: a ogni cambio di modalità (off↔paper↔live) l'armamento si
+    // azzera — un 1-click armato in paper NON deve mai sopravvivere al passaggio in live.
+    // Idem l'intent in conferma (fix audit #17): un intent creato in PAPER non deve
+    // poter essere confermato come REALE dopo il flip di modalità entro il TTL.
+    useEffect(() => { setArmed(false); setConfirm(null); }, [mode]);
 
     // MONEY-CRITICAL (fix M1): la barra di conferma LIVE SCADE. Un intent "BACK €25 @ 2.40"
     // lasciato lì può essere confermato minuti dopo con il mercato mosso: prezzo stantio che
@@ -1581,7 +1626,11 @@ export function LadderView({
         }
     }, [row]);
 
-    // ---- overlay ordini/posizioni: fetch + poll gentile (+ refresh dopo azioni) ----
+    // ---- overlay ordini/posizioni: REALTIME (WS) prima di tutto (16/07 "non polling") ----
+    // Se l'orderApi espone subscribeOrders/subscribePositions, ogni cambiamento sugli
+    // specchi DB notifica il canale WS e l'overlay ricarica SUBITO (notify→reload,
+    // debounce 250ms per coalizzare le raffiche di fill). Il poll resta SOLO come
+    // riconciliazione lenta di sicurezza se il canale cade (10s con realtime, 5s senza).
     useEffect(() => {
         if (!marketId) return;
         let alive = true;
@@ -1602,15 +1651,53 @@ export function LadderView({
                 const p2 = mode === 'off' ? [] : p.filter(r => r.mode === mode);
                 setOrders(o2);
                 setPositions(p2);
+                setOverlayGoodAt(Date.now());
+                setOverlayErr(null);
             } catch (e) {
-                if (alive) console.warn('[LadderView] orders/positions:', e);
+                if (alive) {
+                    console.warn('[LadderView] orders/positions:', e);
+                    // fix audit #12: il fallimento del refresh dell'overlay va DETTO
+                    // (l'utente vede ordini/P&L che potrebbero non essere più veri).
+                    setOverlayErr((e as Error)?.message ?? 'refresh ordini/posizioni fallito');
+                }
             } finally {
                 inFlight = false;
             }
         };
-        load();
-        const t = setInterval(load, ORDERS_POLL_MS);
-        return () => { alive = false; clearInterval(t); };
+        let lastLoadTs = 0;
+        const loadStamped = async () => { lastLoadTs = Date.now(); await load(); };
+        void loadStamped();
+        let debounce: ReturnType<typeof setTimeout> | undefined;
+        const notify = () => {
+            if (!alive || debounce !== undefined) return;
+            debounce = setTimeout(() => { debounce = undefined; void loadStamped(); }, 250);
+        };
+        // salute canali: TUTTI i canali attesi devono essere SUBSCRIBED, altrimenti si
+        // torna al poll pieno (fix audit #8: publication mancante/CHANNEL_ERROR non deve
+        // MAI lasciare l'overlay più lento del legacy senza segnale).
+        const health = new Map<string, boolean>();
+        const healthy = () => health.size > 0 && [...health.values()].every(Boolean);
+        const unsubs: Array<() => void> = [];
+        if (orderApi.subscribeOrders) {
+            health.set('orders', false);
+            unsubs.push(orderApi.subscribeOrders(marketId, notify, (up) => health.set('orders', up)));
+        }
+        if (orderApi.subscribePositions) {
+            health.set('positions', false);
+            unsubs.push(orderApi.subscribePositions(marketId, notify, (up) => health.set('positions', up)));
+        }
+        // tick a cadenza legacy: con realtime SANO carica solo come riconciliazione
+        // lenta; con canale giù/parziale ricarica a ogni tick (comportamento legacy).
+        const t = setInterval(() => {
+            if (healthy() && Date.now() - lastLoadTs < ORDERS_RECONCILE_MS) return;
+            void loadStamped();
+        }, ORDERS_POLL_MS);
+        return () => {
+            alive = false;
+            if (debounce !== undefined) clearTimeout(debounce);
+            for (const u of unsubs) u();
+            clearInterval(t);
+        };
     }, [marketId, mode, refreshTick, orderApi]);
 
     // ---- esecuzione comando (mediato dal DB) ----
@@ -1832,9 +1919,20 @@ export function LadderView({
             submit(async () => {
                 let last: LiveOrderResult = { ok: true, action: 'cancel', mode };
                 let done = 0;
+                // fix audit #10: la size da ripiazzare è quella REALMENTE annullata — l'ordine
+                // può essersi abbinato in parte tra il refresh dell'overlay e il cancel: la
+                // size dell'overlay sarebbe STANTIA e il ripiazzo doppierebbe l'esposizione.
+                // L'esito del cancel porta size_remaining CATTURATA al momento del ritiro
+                // (= non-abbinato ritirato): si somma quella. Esiti senza size → fallback
+                // sullo specchio ordini (size_cancelled/lapsed/voided delle righe mosse).
+                let cancelledKnown = 0;
+                let sizesMissing = false;
                 for (const bet_id of ids) {
                     last = await orderApi.send({ action: 'cancel', mode: mode as LiveOrderMode, market_id: marketId, bet_id });
                     if (!last.ok) break;
+                    const rem = last.size_remaining;
+                    if (rem != null && Number.isFinite(rem)) cancelledKnown += Math.max(0, rem);
+                    else sizesMissing = true;
                     done++;
                 }
                 if (done < ids.length) {
@@ -1843,11 +1941,32 @@ export function LadderView({
                         error: `Spostamento interrotto: ${done}/${ids.length} annullati; ordine NON ripiazzato (nessun duplicato). ${last.error ?? ''}`.trim(),
                     };
                 }
-                // 2) piazza il nuovo ordine al prezzo target con la size spostata.
+                let cancelled = cancelledKnown;
+                if (sizesMissing) {
+                    // esiti senza size: rileggi lo specchio e conta la size effettivamente
+                    // ritirata dagli ordini mossi (mai ripiazzare size non verificata).
+                    try {
+                        const rows = await orderApi.fetchOrders(marketId, mode as LiveOrderMode);
+                        cancelled = rows
+                            .filter(o => o.bet_id != null && ids.includes(o.bet_id))
+                            .reduce((a, o) => a + (o.size_cancelled ?? 0) + (o.size_lapsed ?? 0) + (o.size_voided ?? 0), 0);
+                    } catch {
+                        cancelled = cancelledKnown; // specchio KO: resta il conteggio parziale (mai di più)
+                    }
+                }
+                // cap di sicurezza: mai più della size richiesta dal drag.
+                const placeSize = Math.round(Math.min(it.size, cancelled) * 100) / 100;
+                if (!(placeSize > 0)) {
+                    return {
+                        ok: true, action: 'cancel', mode,
+                        detail: 'ordini annullati; nulla da ripiazzare (size già abbinata prima del cancel) — spostamento concluso senza nuovo ordine',
+                    };
+                }
+                // 2) piazza il nuovo ordine al prezzo target con la size REALMENTE annullata.
                 return orderApi.send({
                     action: 'place', mode: mode as LiveOrderMode, market_id: marketId,
                     selection_id: it.selectionId, handicap, side: it.side,
-                    order_type: 'LIMIT', price: it.toPrice, size: it.size, persistence: it.persistence,
+                    order_type: 'LIMIT', price: it.toPrice, size: placeSize, persistence: it.persistence,
                 });
             }, label);
         } else if ((it.kind === 'greenup' || it.kind === 'greenup_at') && orderApi.greenup) {
@@ -1868,7 +1987,9 @@ export function LadderView({
         }
     }, [submit, mode, marketId, handicap, orderApi, armAfterPlace]);
 
-    // richiesta azione: in LIVE non-armato chiede conferma; altrimenti esegue subito.
+    // richiesta azione: NON armato → conferma (popup con P&L per i place, barra per il
+    // resto) in PAPER e in LIVE — regola specchio: la demo ha lo stesso identico flusso
+    // del vivo, cambia solo che i soldi non sono veri. Armato (1-click) → esegue subito.
     const requestAction = useCallback((it: Intent) => {
         if (mode === 'off') return;
         if (busyRef.current) return;
@@ -1878,9 +1999,9 @@ export function LadderView({
             setStatusMsg({ tone: 'err', text: '✗ Stake non valido: correggi l\'importo prima di piazzare.' });
             return;
         }
-        if (isLive && !armed) { setConfirm(it); return; }
+        if (!armed) { setConfirm(it); return; }
         execute(it);
-    }, [mode, isLive, armed, execute]);
+    }, [mode, armed, execute]);
 
     const onPlace = useCallback((side: TradeSide, price: number, selectionId: number, selName: string) => {
         const t = toolsRef.current;
@@ -1960,25 +2081,29 @@ export function LadderView({
 
     // drag-to-move: sposta i tuoi ordini di origine (betIds) al prezzo target via
     // cancel-then-replace. In LIVE non-armato passa dalla barra di CONFERMA come i place.
-    const onMoveOrder = useCallback((betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string) => {
+    // fix audit #23: il ripiazzo usa la persistence dell'ORDINE trascinato (fallback
+    // toolbar solo se lo specchio non la riporta) — mai declassare un PERSIST in silenzio.
+    const onMoveOrder = useCallback((betIds: string[], side: TradeSide, toPrice: number, size: number, selectionId: number, selName: string, persistence: LivePersistence | null) => {
         if (!enableDragMove) return;
         if (!betIds.length || !(size > 0)) return;
-        requestAction({ kind: 'move', selName, betIds, side, toPrice, size, selectionId, persistence: persistenceRef.current });
+        requestAction({ kind: 'move', selName, betIds, side, toPrice, size, selectionId, persistence: persistence ?? persistenceRef.current });
     }, [requestAction, enableDragMove]);
 
-    // toggle armamento 1-click (LIVE): conferma esplicita all'attivazione.
+    // toggle armamento 1-click (PAPER e LIVE): conferma esplicita all'attivazione in
+    // ENTRAMBE le modalità (regola specchio) — cambia solo il testo REALE/SIMULATO.
     const toggleArmed = useCallback(() => {
         setArmed(prev => {
             if (!prev) {
-                const ok = window.confirm(
-                    '1-CLICK REALE: ogni clic su BACK/LAY o sui tuoi ordini piazzerà/annullerà un ordine ' +
-                    'con SOLDI VERI SENZA ulteriore conferma. Attivare?'
-                );
+                const ok = window.confirm(isLive
+                    ? '1-CLICK REALE: ogni clic su BACK/LAY o sui tuoi ordini piazzerà/annullerà un ordine ' +
+                      'con SOLDI VERI SENZA ulteriore conferma. Attivare?'
+                    : '1-CLICK SIMULATO (paper): ogni clic piazzerà/annullerà un ordine SIMULATO senza ' +
+                      'ulteriore conferma — identico al vivo, ma senza soldi veri. Attivare?');
                 return ok ? true : false;
             }
             return false;
         });
-    }, []);
+    }, [isLive]);
 
     // selezioni da mostrare: quelle della ladder (full-depth) o, in attesa, le fallback.
     const selections: LiveLadderSelection[] = useMemo(() => {
@@ -2016,6 +2141,13 @@ export function LadderView({
     const updatedMs = row?.ladder?.updated_ms ?? null;
     const isOpen = (status ?? '').toUpperCase() === 'OPEN';
     const canTrade = mode !== 'off' && isOpen;
+    // fix audit #11: Betfair accetta i CANCEL anche a mercato SOSPESO — solo i place
+    // restano bloccati. In CLOSED non si opera nulla.
+    const canCancelOrders = mode !== 'off'
+        && (isOpen || (status ?? '').toUpperCase() === 'SUSPENDED');
+    // fix audit #12: overlay ordini/posizioni stantio (>15s senza un refresh buono) o in errore.
+    const overlayStale = mode !== 'off' && overlayGoodAt != null
+        && Date.now() - overlayGoodAt > 15_000;
     const canTradeRef = useRef(canTrade);
     canTradeRef.current = canTrade;
     const confirmOpenRef = useRef(false);
@@ -2131,7 +2263,7 @@ export function LadderView({
     }
 
     return (
-        <Card className="glass-card border-white/10 overflow-hidden">
+        <Card className="glass-card border-white/10 overflow-hidden relative">
             {/* header mercato: nome + modalità + stake preset + 1-click + stato */}
             <div className="px-3 py-2.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 min-w-0">
@@ -2288,18 +2420,22 @@ export function LadderView({
                             <ExternalLink className="w-3 h-3" />
                         </button>
                     )}
-                    {/* toggle 1-click (solo LIVE): armato = niente conferma per clic */}
-                    {isLive && (
+                    {/* toggle 1-click (PAPER e LIVE — regola specchio): armato = niente conferma per clic */}
+                    {mode !== 'off' && (
                         <button
                             type="button"
                             onClick={toggleArmed}
                             title={armed
-                                ? '1-click REALE ATTIVO: i clic partono diretti. Clic per disattivare.'
-                                : 'Attiva 1-click REALE (niente conferma per clic).'}
+                                ? `1-click ${isLive ? 'REALE' : 'SIMULATO'} ATTIVO: i clic partono diretti. Clic per disattivare.`
+                                : `Attiva 1-click ${isLive ? 'REALE' : 'SIMULATO (paper)'} (niente conferma per clic).`}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black border transition-colors ${
                                 armed
-                                    ? 'bg-red-500 text-white border-red-500 animate-pulse'
-                                    : 'border-red-400/40 text-red-300 hover:bg-red-500/15'
+                                    ? (isLive
+                                        ? 'bg-red-500 text-white border-red-500 animate-pulse'
+                                        : 'bg-amber-500 text-black border-amber-500 animate-pulse')
+                                    : (isLive
+                                        ? 'border-red-400/40 text-red-300 hover:bg-red-500/15'
+                                        : 'border-amber-400/40 text-amber-300 hover:bg-amber-500/15')
                             }`}
                         >
                             <Zap className="w-3 h-3" /> 1-CLICK
@@ -2557,24 +2693,57 @@ export function LadderView({
                 <ServantsPanel servants={servants} onChange={applyServants} greenupSupported={!!orderApi.greenup} />
             )}
 
-            {/* banner armamento LIVE */}
-            {isLive && armed && (
-                <div className="px-3 py-1 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[10px] font-bold text-red-200">
-                    <Zap className="w-3 h-3" /> 1-CLICK REALE ATTIVO — ogni clic piazza/annulla con SOLDI VERI senza conferma.
+            {/* banner armamento 1-click (rosso REALE in LIVE, ambra SIMULATO in PAPER) */}
+            {mode !== 'off' && armed && (
+                <div className={`px-3 py-1 border-b flex items-center gap-2 text-[10px] font-bold ${
+                    isLive
+                        ? 'bg-red-500/15 border-red-500/30 text-red-200'
+                        : 'bg-amber-500/15 border-amber-500/30 text-amber-200'
+                }`}>
+                    <Zap className="w-3 h-3" />
+                    {isLive
+                        ? '1-CLICK REALE ATTIVO — ogni clic piazza/annulla con SOLDI VERI senza conferma.'
+                        : '1-CLICK SIMULATO ATTIVO — ogni clic piazza/annulla un ordine paper senza conferma.'}
                 </div>
             )}
 
-            {/* barra di CONFERMA (LIVE non-armato): money-critical, esplicita */}
-            {confirm && (
-                <div className="px-3 py-2 bg-red-500/15 border-b border-red-500/40 flex items-center justify-between gap-3 flex-wrap">
-                    <span className="text-[11px] font-bold text-red-100 flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5" /> Confermi <span className="font-mono">{intentLabel(confirm)}</span> <span className="text-red-300">(REALE)</span>?
+            {/* POPUP di conferma dei PLACE (non-armato, PAPER e LIVE): importo editabile +
+                proiezione P&L come nei tool pro. Conferma → l'ordine parte con la size editata. */}
+            {confirm && confirm.kind === 'place' && (
+                <PlaceConfirmDialog
+                    side={confirm.side}
+                    price={confirm.price}
+                    priceLabel={fmtPrice(confirm.price)}
+                    initialAmount={confirm.size}
+                    asLiability={confirm.asLiability && confirm.side === 'lay'}
+                    selName={confirm.selName}
+                    mode={mode as 'paper' | 'live'}
+                    extraLabel={armAfterLabel(confirm.armAfter, confirm.fokSec).trim() || undefined}
+                    onConfirm={(amount) => {
+                        const it = confirm;
+                        setConfirm(null);
+                        if (it && it.kind === 'place') execute({ ...it, size: amount });
+                    }}
+                    onCancel={() => setConfirm(null)}
+                />
+            )}
+
+            {/* barra di CONFERMA per gli intent NON-place (cancel/move/greenup/…): money-critical, esplicita */}
+            {confirm && confirm.kind !== 'place' && (
+                <div className={`px-3 py-2 border-b flex items-center justify-between gap-3 flex-wrap ${
+                    isLive ? 'bg-red-500/15 border-red-500/40' : 'bg-amber-500/15 border-amber-500/40'
+                }`}>
+                    <span className={`text-[11px] font-bold flex items-center gap-1.5 ${isLive ? 'text-red-100' : 'text-amber-100'}`}>
+                        <ShieldCheck className="w-3.5 h-3.5" /> Confermi <span className="font-mono">{intentLabel(confirm)}</span>{' '}
+                        <span className={isLive ? 'text-red-300' : 'text-amber-300'}>({isLive ? 'REALE' : 'SIMULATO'})</span>?
                     </span>
                     <div className="flex items-center gap-1.5">
                         <button
                             type="button"
                             onClick={() => { const it = confirm; setConfirm(null); if (it) execute(it); }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500 text-white text-[11px] font-bold hover:bg-red-600"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                                isLive ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-amber-500 text-black hover:bg-amber-600'
+                            }`}
                         >
                             <Check className="w-3 h-3" /> Conferma
                         </button>
@@ -2586,6 +2755,16 @@ export function LadderView({
                             <X className="w-3 h-3" /> Annulla
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* fix audit #12: overlay ordini/posizioni NON fresco → avviso esplicito
+                (prima solo console.warn: numeri stantii spacciati per vivi). */}
+            {mode !== 'off' && (overlayErr || overlayStale) && (
+                <div className="px-3 py-1 border-b border-rose-500/30 bg-rose-500/10 text-[10px] font-bold text-rose-200">
+                    ⚠ Ordini/posizioni NON aggiornati
+                    {overlayGoodAt ? ` (ultimo ok ${new Date(overlayGoodAt).toLocaleTimeString('it-IT')})` : ''}
+                    {overlayErr ? ` — ${overlayErr}` : ''}
                 </div>
             )}
 
@@ -2639,6 +2818,7 @@ export function LadderView({
                                 stakeMode={stakeMode}
                                 status={status}
                                 canTrade={canTrade}
+                                canCancelOrders={canCancelOrders}
                                 busy={busy}
                                 columns={gridColumns}
                                 greenupSupported={!!orderApi.greenup}
@@ -2668,8 +2848,8 @@ export function LadderView({
                     {mode === 'off'
                         ? 'Sola lettura (modalità OFF) · per operare avvia il runner in PAPER/LIVE'
                         : isLive
-                            ? (armed ? '1-click REALE attivo' : 'Clic = ordine REALE con conferma')
-                            : 'Clic = ordine simulato (paper) immediato'}
+                            ? (armed ? '1-click REALE attivo' : 'Clic = ordine REALE con conferma e proiezione P&L')
+                            : (armed ? '1-click SIMULATO attivo' : 'Clic = ordine simulato con conferma e proiezione P&L (specchio del vivo)')}
                 </span>
                 {updatedMs && <span className="tabular-nums">Aggiornato: {new Date(updatedMs).toLocaleTimeString('it')}</span>}
             </div>

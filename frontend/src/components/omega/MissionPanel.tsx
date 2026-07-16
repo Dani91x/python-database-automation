@@ -7,6 +7,7 @@
 // in automatico: ogni ordine parte da un click nella MissionCard.
 // ============================================================================
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,13 +15,13 @@ import { Badge } from '@/components/ui/badge';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy } from 'lucide-react';
+import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy, BarChart3, TrendingUp } from 'lucide-react';
 import {
     requestManual, fetchOmegaEvents, fetchManualRequests,
     type OmegaEvent, type OmegaMode,
 } from '@/lib/omega';
 import {
-    fetchMissions, activateMission, subscribeOmegaMissions,
+    fetchMissions, activateMission, followMission, subscribeOmegaMissions,
     missionRealized, toNum, splitEventName,
     type MissionRow, type MissionsSummary, type MissionPhase,
 } from '@/lib/omegaMissions';
@@ -75,6 +76,63 @@ function Logo({ src, size = 18, alt = '' }: { src: string; size?: number; alt?: 
             className="rounded-sm object-contain shrink-0"
             onError={() => setBroken(true)}
         />
+    );
+}
+
+// Pulsanti per-partita (richiesta 16/07): "Statistiche" apre la scheda dettagliata
+// della Dashboard per QUESTA partita (deep-link ?fixture=&from=omega, ritorno con
+// "Torna a Omega"); "Trading" registra il follow live (RPC omega_mission_follow,
+// idempotente) e apre /segui-live PRESELEZIONATO sull'evento (?event=&from=omega).
+function RowActions({ eventId, eventName, kickoff, fixtureId }: {
+    eventId: string;
+    eventName: string;
+    kickoff: string | null;
+    fixtureId: number | null;
+}) {
+    const navigate = useNavigate();
+    const [busyTrade, setBusyTrade] = useState(false);
+    const goTrading = async () => {
+        if (busyTrade) return;
+        setBusyTrade(true);
+        try {
+            const { home, away } = splitEventName(eventName);
+            // il follow richiede il kickoff (open_date NOT NULL nella RPC)
+            if (!kickoff) throw new Error('orario di inizio mancante: impossibile seguire l\'evento');
+            await followMission(eventId, home || eventName, away, kickoff);
+            navigate(`/segui-live?event=${encodeURIComponent(eventId)}&from=omega`);
+        } catch (err) {
+            toast.error('Apertura trading fallita', { description: String((err as Error)?.message ?? err) });
+        } finally { setBusyTrade(false); }
+    };
+    return (
+        <span
+            className="flex items-center gap-1 shrink-0"
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
+        >
+            <span title={fixtureId == null ? 'Nessun match API-Football associato a questa partita' : 'Vai alle statistiche della partita (Dashboard)'}>
+                <Button
+                    size="sm" variant="ghost"
+                    disabled={fixtureId == null}
+                    className="h-7 px-2 text-[11px] text-slate-300 hover:text-white"
+                    onClick={() => { if (fixtureId != null) navigate(`/dashboard?fixture=${fixtureId}&from=omega`); }}
+                >
+                    <BarChart3 className="w-3.5 h-3.5 mr-1" />Statistiche
+                </Button>
+            </span>
+            <Button
+                size="sm" variant="ghost"
+                disabled={busyTrade}
+                title="Apri il LIVE TRADING su questa partita"
+                className="h-7 px-2 text-[11px] text-slate-300 hover:text-white"
+                onClick={() => void goTrading()}
+            >
+                {busyTrade
+                    ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    : <TrendingUp className="w-3.5 h-3.5 mr-1" />}
+                Trading
+            </Button>
+        </span>
     );
 }
 
@@ -341,15 +399,27 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         const legsObj = m.legs ?? {};
         const nOpen = Object.values(legsObj).reduce((s, l) => s + toNum(l?.n_open), 0);
         const nSettled = Object.values(legsObj).reduce((s, l) => s + toNum(l?.n_settled), 0);
+        // fixture API-Football per il deep-link Statistiche: dall'evento in cache
+        // o, in fallback, dal consulente dati delle suggestion (può mancare)
+        const fixtureId = eventById.get(m.event_id)?.fixture_id
+            ?? m.suggestion_ht?.advisor?.matched_fixture_id
+            ?? m.suggestion_ft?.advisor?.matched_fixture_id
+            ?? null;
+        const toggleExpanded = () => setCollapsedIds(prev => {
+            const next = new Set(prev);
+            if (expanded) next.add(m.event_id); else next.delete(m.event_id);
+            return next;
+        });
         return (
             <div key={m.event_id} className="rounded-lg border border-white/10 bg-white/[0.02]">
-                <button
-                    className="w-full px-4 py-3 flex flex-wrap items-center gap-3 text-left hover:bg-white/5 transition"
-                    onClick={() => setCollapsedIds(prev => {
-                        const next = new Set(prev);
-                        if (expanded) next.add(m.event_id); else next.delete(m.event_id);
-                        return next;
-                    })}
+                {/* header cliccabile: div role="button" (non <button>) perché contiene
+                    i veri <Button> Statistiche/Trading — bottoni annidati = HTML invalido */}
+                <div
+                    role="button"
+                    tabIndex={0}
+                    className="w-full px-4 py-3 flex flex-wrap items-center gap-3 text-left hover:bg-white/5 transition cursor-pointer"
+                    onClick={toggleExpanded}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(); } }}
                 >
                     {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                     <span className={`w-2.5 h-2.5 rounded-full ${statusDot(m)}`} />
@@ -369,6 +439,12 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                     <span className="font-display font-black text-2xl tabular-nums tracking-tight">
                         {phase === 'pre' ? timeLabel(m.kickoff) : `${toNum(m.score_home)} - ${toNum(m.score_away)}`}
                     </span>
+                    <RowActions
+                        eventId={m.event_id}
+                        eventName={m.event_name ?? m.event_id}
+                        kickoff={m.kickoff}
+                        fixtureId={fixtureId}
+                    />
                     <span className="ml-auto flex items-center gap-3 min-w-[190px]">
                         {/* posizioni SEMPRE in vista, anche a scheda richiusa */}
                         {(nOpen > 0 || nSettled > 0) && (
@@ -389,7 +465,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                             />
                         </span>
                     </span>
-                </button>
+                </div>
                 {expanded && (
                     <div className="px-3 pb-3">
                         <MissionCard mission={m} mode={mode} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
@@ -429,6 +505,12 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                 <span className="text-sm font-display font-bold tabular-nums text-slate-300 w-12 text-right">
                     {timeLabel(ev.open_date)}
                 </span>
+                <RowActions
+                    eventId={ev.event_id}
+                    eventName={ev.name ?? ev.event_id}
+                    kickoff={ev.open_date}
+                    fixtureId={ev.fixture_id ?? null}
+                />
                 <span className="w-24 text-right">
                     {state !== 'finita' && (
                         <Button
@@ -464,7 +546,16 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         {fmtSignedEur(missionRealized(m))}
                     </span>
                 )}
-                <span className="ml-auto">
+                <span className="ml-auto flex items-center gap-1">
+                    <RowActions
+                        eventId={key}
+                        eventName={name}
+                        kickoff={kickoff}
+                        fixtureId={eventById.get(key)?.fixture_id
+                            ?? m?.suggestion_ht?.advisor?.matched_fixture_id
+                            ?? m?.suggestion_ft?.advisor?.matched_fixture_id
+                            ?? null}
+                    />
                     {/* niente riattivazione per le missioni CHIUSE (conservativo) */}
                     {(!m || m.status === 'paused') && (
                         <Button

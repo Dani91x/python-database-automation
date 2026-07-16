@@ -29,18 +29,27 @@ import {
 import { cn } from '@/lib/utils';
 import {
     TENNIS_BOT_REGISTRY, TENNIS_BOT_STATUS_LABEL,
-    fetchTennisBotsState, armTennisBot, disarmTennisBot,
+    fetchTennisBotsState, armTennisBot, disarmTennisBot, subscribeTennisBots,
     type TennisBotDescriptor, type TennisBotControl, type TennisBotActivityRow,
     type TennisBotKey, type TennisBotStatus,
 } from '@/lib/tennis';
 import { TennisBotEquityChart } from './TennisBotEquityChart';
 
+// Modalità ordini GLOBALE del runner tennis (da tennis_live_now.state.order_mode).
+// Regola specchio PAPER/LIVE: in PAPER i bot piazzano ordini SIMULATI (visibili sul
+// ladder come dal vivo), in OFF il runner forza il dry-run e non parte nulla.
+export type TennisOrderMode = 'OFF' | 'PAPER' | 'LIVE';
+
 interface Props {
     eventId: string;
     marketId: string;
+    orderMode?: TennisOrderMode;
 }
 
-const POLL_MS = 4000;
+// REALTIME (16/07 "non polling, canale WS"): lo stato bot arriva da subscribeTennisBots
+// (postgres_changes su tennis_bot_control/tennis_bot_activity). Questo intervallo è
+// SOLO la riconciliazione lenta di sicurezza se il canale WS cade.
+const RECONCILE_MS = 30000;
 
 // stati in cui il bot è "attivo" (armato/operativo) → mostro il pulsante DISARMA
 const ACTIVE_STATUSES: TennisBotStatus[] = ['requested', 'arming', 'armed', 'running', 'stopping'];
@@ -94,18 +103,40 @@ interface CardProps {
     control: TennisBotControl | null;
     busy: boolean;
     nowTs: number;
+    orderMode: TennisOrderMode;
     onArm: (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number | string | boolean>) => void;
     onDisarm: (botKey: TennisBotKey) => void;
 }
 
-function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: CardProps) {
+function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onDisarm }: CardProps) {
     const accent = ACCENTS[descriptor.accent];
-    const [dryRun, setDryRun] = useState(true);
+    // default dry-run PER MODALITÀ (regola specchio 16/07): in PAPER gli ordini sono
+    // comunque simulati → default deselezionato, così i bot piazzano e si VEDONO sul
+    // ladder; in LIVE default selezionato (soldi veri solo consapevolmente); in OFF
+    // il runner forza comunque il dry-run.
+    const [dryRun, setDryRun] = useState(orderMode !== 'PAPER');
+    // fix audit #4: il pannello monta con orderMode='OFF' PRIMA che tennis_live_now
+    // arrivi → lo useState iniziale è stantio e l'effect sotto lo riallinea. Ma una
+    // scelta ESPLICITA dell'utente non va MAI sovrascritta da un cambio di modalità
+    // successivo: `dryRunTouched` blocca l'auto-allineamento dopo il primo click.
+    const [dryRunTouched, setDryRunTouched] = useState(false);
     const [stake, setStake] = useState<number>(descriptor.defaultStake);
     const [params, setParams] = useState<Record<string, number | string>>({ ...descriptor.defaults });
     const [showParams, setShowParams] = useState(false);
 
     const active = !!control && ACTIVE_STATUSES.includes(control.status);
+
+    // se la modalità del runner cambia mentre il bot NON è attivo E l'utente non ha
+    // ancora toccato il checkbox, riallinea il default alla modalità. ECCEZIONE
+    // money-critical (review 16/07): il passaggio a LIVE ri-applica SEMPRE il default
+    // prudente (dry-run ON) e azzera il "touched" — una scelta fatta in PAPER non
+    // deve mai restare appiccicata ai soldi veri; in LIVE si toglie consapevolmente.
+    useEffect(() => {
+        if (active) return;
+        if (orderMode === 'LIVE') { setDryRun(true); setDryRunTouched(false); return; }
+        if (!dryRunTouched) setDryRun(orderMode !== 'PAPER');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orderMode]);
     const status = control?.status ?? 'idle';
     const st = statusStyle(status);
     const stats = control?.stats ?? null;
@@ -199,15 +230,29 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
                     <Checkbox
                         checked={dryRun}
                         disabled={active || busy}
-                        onCheckedChange={(v) => setDryRun(v === true)}
+                        onCheckedChange={(v) => {
+                            // scelta esplicita: da ora nessun auto-allineamento (fix audit #4)
+                            setDryRunTouched(true);
+                            setDryRun(v === true);
+                        }}
                     />
                     <span className={dryRun ? 'text-amber-300 font-semibold' : 'text-white/55'}>
-                        Solo ARMATO (dry-run)
+                        Dry-run (solo log: nessun ordine, nemmeno simulato)
                     </span>
                 </label>
-                {!dryRun && !active && (
+                {!dryRun && !active && orderMode === 'LIVE' && (
                     <span className="flex items-center gap-1 text-[10px] font-bold text-red-300">
                         <ShieldAlert className="h-3.5 w-3.5" /> ORDINI REALI
+                    </span>
+                )}
+                {!dryRun && !active && orderMode === 'PAPER' && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300">
+                        <Zap className="h-3.5 w-3.5" /> ORDINI SIMULATI · visibili sul ladder
+                    </span>
+                )}
+                {orderMode === 'OFF' && !active && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                        <AlertTriangle className="h-3.5 w-3.5" /> runner OFF: dry-run forzato
                     </span>
                 )}
             </div>
@@ -361,7 +406,9 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
                     </>
                 ) : (
                     <>
-                        <Power className="h-4 w-4 mr-2" /> ARMA {dryRun ? '(dry-run)' : 'ORDINI REALI'}
+                        <Power className="h-4 w-4 mr-2" /> ARMA {dryRun
+                            ? '(dry-run)'
+                            : orderMode === 'LIVE' ? 'ORDINI REALI' : 'SIMULATO'}
                     </>
                 )}
             </Button>
@@ -372,7 +419,7 @@ function TennisBotCard({ descriptor, control, busy, nowTs, onArm, onDisarm }: Ca
 // ============================================================================
 // Pannello: elenco card + chart + feed attività, con polling.
 // ============================================================================
-export function TennisBotPanel({ eventId, marketId }: Props) {
+export function TennisBotPanel({ eventId, marketId, orderMode = 'OFF' }: Props) {
     const [controls, setControls] = useState<TennisBotControl[]>([]);
     const [activity, setActivity] = useState<TennisBotActivityRow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -399,9 +446,20 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
     useEffect(() => {
         setLoading(true);
         void refresh();
-        const t = setInterval(() => void refresh(), POLL_MS);
-        return () => clearInterval(t);
-    }, [refresh]);
+        // realtime WS: ogni cambiamento su control/activity ricarica lo stato (debounce
+        // 200ms per coalizzare le raffiche); intervallo lento SOLO come riconciliazione.
+        let debounce: ReturnType<typeof setTimeout> | undefined;
+        const unsub = subscribeTennisBots(eventId, () => {
+            if (debounce !== undefined) return;
+            debounce = setTimeout(() => { debounce = undefined; void refresh(); }, 200);
+        });
+        const t = setInterval(() => void refresh(), RECONCILE_MS);
+        return () => {
+            unsub();
+            if (debounce !== undefined) clearTimeout(debounce);
+            clearInterval(t);
+        };
+    }, [refresh, eventId]);
 
     // clock 1s per la freschezza "agg. Xs fa"
     useEffect(() => {
@@ -422,13 +480,15 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
         async (botKey: TennisBotKey, dryRun: boolean, stake: number, params: Record<string, number | string | boolean>) => {
             if (inflight.current.has(botKey)) return;
             const desc = TENNIS_BOT_REGISTRY.find((d) => d.key === botKey);
-            // Gate money-critical: armare un bot con ORDINI REALI attiva un agente autonomo
-            // che piazza scommesse vere non presidiato → conferma esplicita (come il 1-click LIVE del ladder).
-            if (!dryRun) {
+            // Gate money-critical: la conferma "ORDINI REALI" scatta SOLO quando i soldi
+            // sono davvero in gioco (runner LIVE + dry-run tolto). In PAPER gli ordini
+            // sono simulati per costruzione: niente falso allarme (prima il confirm REALE
+            // compariva anche in PAPER, fuorviante).
+            if (!dryRun && orderMode === 'LIVE') {
                 const ok = window.confirm(
                     `⚠️ ARMARE "${desc?.name ?? botKey}" CON ORDINI REALI?\n\n` +
                         `Il bot piazzerà scommesse REALI su Betfair in autonomia (stake €${stake}).\n` +
-                        `Assicurati che il runner sia in modalità LIVE. Confermi?`,
+                        `Confermi?`,
                 );
                 if (!ok) return;
             }
@@ -442,7 +502,9 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
                     return [...rest, ctrl];
                 });
                 toast.success(
-                    `${desc?.name ?? botKey} ARMATO${dryRun ? ' (dry-run · nessun ordine)' : ' · ORDINI REALI'}`,
+                    `${desc?.name ?? botKey} ARMATO${dryRun
+                        ? ' (dry-run · nessun ordine)'
+                        : orderMode === 'LIVE' ? ' · ORDINI REALI' : ' · SIMULATO (visibile sul ladder)'}`,
                 );
                 void refresh();
             } catch (e) {
@@ -521,6 +583,7 @@ export function TennisBotPanel({ eventId, marketId }: Props) {
                             control={controlByKey.get(desc.key) ?? null}
                             busy={!!busyBots[desc.key]}
                             nowTs={nowTs}
+                            orderMode={orderMode}
                             onArm={handleArm}
                             onDisarm={handleDisarm}
                         />

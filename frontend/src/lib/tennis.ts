@@ -193,6 +193,23 @@ export async function fetchTennisNow(eventId: string): Promise<TennisLiveNowRow 
     return (data as TennisLiveNowRow | null) ?? null;
 }
 
+// REALTIME lista partite del giorno (16/07 "non polling, canale WS"): notifica
+// quando il worker scrive/aggiorna righe in tennis_markets → il chiamante ricarica
+// la giornata via RPC. Richiede realtime_orders_bots.sql (publication + policy).
+export function subscribeTennisMarkets(cb: () => void): () => void {
+    const channel = supabase
+        .channel(`tennis_markets:list:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'tennis_markets' },
+            () => cb(),
+        )
+        .subscribe();
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}
+
 export function subscribeTennisNow(eventId: string, cb: (row: TennisLiveNowRow | null) => void): () => void {
     const channel = supabase
         .channel(`tennis_live_now:${eventId}`)
@@ -425,6 +442,46 @@ export async function fetchTennisPositions(marketId: string, mode: string): Prom
     return raw?.rows ?? [];
 }
 
+// ------------------------------------------- ordini/posizioni: REALTIME (WS)
+// Richiesta 16/07 ("non polling, canale WS"): postgres_changes su
+// tennis_live_orders / tennis_live_positions filtrate per market_id. Richiede
+// la migrazione realtime_orders_bots.sql (publication + policy SELECT).
+// Il payload notifica il CAMBIAMENTO; il chiamante ricarica via RPC (che
+// applica il filtro mode lato SQL) — pattern "notify → reload" del ladder.
+export function subscribeTennisOrders(
+    marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+): () => void {
+    // suffisso univoco (review 16/07): due subscribe sullo stesso topic sullo stesso
+    // client possono affamarsi a vicenda (stesso pattern di live.ts subscribeLiveNow)
+    const channel = supabase
+        .channel(`tennis_live_orders:${marketId}:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'tennis_live_orders', filter: `market_id=eq.${marketId}` },
+            () => cb(),
+        )
+        .subscribe((status) => onHealth?.(status === 'SUBSCRIBED'));
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}
+
+export function subscribeTennisPositions(
+    marketId: string, cb: () => void, onHealth?: (up: boolean) => void,
+): () => void {
+    const channel = supabase
+        .channel(`tennis_live_positions:${marketId}:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'tennis_live_positions', filter: `market_id=eq.${marketId}` },
+            () => cb(),
+        )
+        .subscribe((status) => onHealth?.(status === 'SUBSCRIBED'));
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}
+
 // TUTTE le posizioni tennis aperte (watchlist multi-evento D30 / dashboard D33).
 // SOLO tabelle tennis_* (mai dati calcio). Richiede la migrazione
 // tennis_live_positions_all_rpc.sql. mode omessa = entrambe.
@@ -590,15 +647,27 @@ export const TENNIS_BOT_REGISTRY: TennisBotDescriptor[] = [
             { key: 'fade_target_ticks', label: 'Fade: tick target', step: 1, min: 2, max: 40, hint: 'obiettivo fade over-reaction' },
             { key: 'min_matched', label: 'Matched min €', step: 5000, min: 0, max: 500000, hint: 'liquidità minima mercato' },
             { key: 'price_max', label: 'Quota max', step: 0.1, min: 1.1, max: 10, hint: 'non entrare sopra questa quota' },
+            // fix audit #9: il bot Python distingue ("grass","fast") vs il resto (clay/hard/WTA):
+            // le opzioni devono coprire TUTTE le chiavi su cui la logica si biforca.
             { key: 'surface', label: 'Superficie', step: 0, min: 0, max: 0, type: 'select',
-              options: [{ value: 'hard', label: 'hard' }, { value: 'clay', label: 'clay' }, { value: 'grass', label: 'grass' }],
-              hint: 'ATTENZIONE: su grass il bot DISATTIVA serving-for-set / doppio break / favorito compresso. Imposta la superficie reale del match.' },
-            { key: 'trend', label: 'Filtro trend', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              options: [
+                  { value: 'hard', label: 'hard' },
+                  { value: 'clay', label: 'clay' },
+                  { value: 'grass', label: 'grass' },
+                  { value: 'fast', label: 'Veloce/indoor' },
+                  { value: 'wta', label: 'WTA' },
+              ],
+              hint: 'ATTENZIONE: su grass/veloce il bot BACKa chi serve sui break point e DISATTIVA serving-for-set / doppio break / favorito compresso (attivi su clay/hard/WTA). Imposta la superficie reale del match.' },
+            // fix audit #9: hint VERITIERI — trend FLIPPA i setup di dominio in
+            // trend-following (BACK del dominante), non è un filtro expected-rate.
+            { key: 'trend', label: 'Trend-following', step: 0, min: 0, max: 0, type: 'select', bool: true,
               options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
-              hint: 'entra solo con expected-rate favorevole (er_trend)' },
-            { key: 'adapt', label: 'Sizing adattivo', step: 0, min: 0, max: 0, type: 'select', bool: true,
+              hint: 'FLIPPA i setup di dominio (serving-for-set, doppio break, set transition, favorito compresso) da LAY di reversione a BACK trend-following: cavalca il dominante invece di puntare sul rientro' },
+            // fix audit #9: adapt sceglie la DIREZIONE dal regime di prezzo (Kaufman ER),
+            // non riduce lo stake dopo perdite.
+            { key: 'adapt', label: 'Direzione adattiva', step: 0, min: 0, max: 0, type: 'select', bool: true,
               options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
-              hint: 'riduce lo stake dopo perdite consecutive' },
+              hint: 'sceglie la DIREZIONE dei setup di dominio dal regime di prezzo live (Efficiency Ratio di Kaufman): trend → BACK del dominante, range → LAY, regime neutro → nessun ingresso. Con on ignora il flag trend' },
             { key: 'maker', label: 'Ingresso maker', step: 0, min: 0, max: 0, type: 'select', bool: true,
               options: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on' }],
               hint: 'entra passivo a maker_offset tick dal best (fill non garantito)' },
@@ -653,6 +722,28 @@ export async function fetchTennisBotsState(eventId: string, activityLimit = 60):
     if (error) throw new Error(error.message);
     const d = (data ?? {}) as { controls?: TennisBotControl[]; activity?: TennisBotActivityRow[] };
     return { controls: d.controls ?? [], activity: d.activity ?? [] };
+}
+
+// REALTIME bot (richiesta 16/07 "non polling, canale WS"): postgres_changes su
+// tennis_bot_control + tennis_bot_activity per l'evento → il pannello ricarica
+// lo stato via RPC alla notifica. Richiede realtime_orders_bots.sql.
+export function subscribeTennisBots(eventId: string, cb: () => void): () => void {
+    const channel = supabase
+        .channel(`tennis_bots:${eventId}:${Math.random().toString(36).slice(2, 9)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'tennis_bot_control', filter: `event_id=eq.${eventId}` },
+            () => cb(),
+        )
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'tennis_bot_activity', filter: `event_id=eq.${eventId}` },
+            () => cb(),
+        )
+        .subscribe();
+    return () => {
+        supabase.removeChannel(channel);
+    };
 }
 
 /** tennis_bot_arm(...) -> TennisBotControl */

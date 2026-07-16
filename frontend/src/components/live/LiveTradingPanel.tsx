@@ -363,7 +363,11 @@ export function LiveTradingPanel({
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>Persistenza</Label>
-                        <select className={SELECT_CLS} value={persistence}
+                        {/* fix audit #6: il flusso submin (place-and-trim) usa SOLO lato/prezzo/
+                            size target: FoK/persistenza verrebbero IGNORATI in silenzio →
+                            controlli disabilitati (mai promettere protezioni non implementate). */}
+                        <select className={SELECT_CLS} value={persistence} disabled={submin}
+                            title={submin ? 'Non supportata dal place-and-trim (ignorata dal worker)' : undefined}
                             onChange={e => setPersistence(e.target.value as LivePersistence)}>
                             <option value="LAPSE">LAPSE (decade in-play)</option>
                             <option value="PERSIST">PERSIST (resta)</option>
@@ -377,14 +381,18 @@ export function LiveTradingPanel({
                     </div>
                 </div>
 
-                {/* opzioni FoK / submin */}
+                {/* opzioni FoK / submin — fix audit #6: submin ignora FoK/min_fill/persistence
+                    (il worker usa solo lato/prezzo/size target) → quando è attivo i controlli
+                    sono DISABILITATI e azzerati, con nota esplicita. */}
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-white/80">
-                    <label className="inline-flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={fillOrKill} onChange={e => setFillOrKill(e.target.checked)}
+                    <label className={`inline-flex items-center gap-2 ${submin ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                        title={submin ? 'Non supportato dal place-and-trim (verrebbe ignorato dal worker)' : undefined}>
+                        <input type="checkbox" checked={fillOrKill} disabled={submin}
+                            onChange={e => setFillOrKill(e.target.checked)}
                             className="accent-amber-400" />
                         Fill-or-Kill
                     </label>
-                    {fillOrKill && (
+                    {fillOrKill && !submin && (
                         <div className="inline-flex items-center gap-2">
                             <span className="text-muted-foreground text-[11px]">min fill</span>
                             <Input type="number" step="0.01" min="0" value={minFill}
@@ -393,10 +401,25 @@ export function LiveTradingPanel({
                         </div>
                     )}
                     <label className="inline-flex items-center gap-2 cursor-pointer" title="Place-and-trim: piazza al minimo e riduce alla size target (sotto-minimo)">
-                        <input type="checkbox" checked={submin} onChange={e => setSubmin(e.target.checked)}
+                        <input type="checkbox" checked={submin}
+                            onChange={e => {
+                                const on = e.target.checked;
+                                setSubmin(on);
+                                if (on) {
+                                    // azzera le opzioni non supportate: mai inviarle "per sbaglio"
+                                    setFillOrKill(false);
+                                    setMinFill('');
+                                    setPersistence('LAPSE');
+                                }
+                            }}
                             className="accent-amber-400" />
                         Place-and-trim (sotto-minimo)
                     </label>
+                    {submin && (
+                        <span className="text-[10px] text-amber-300/90">
+                            il flusso sotto-minimo usa solo lato/prezzo/size: FoK e persistenza non si applicano
+                        </span>
+                    )}
                 </div>
 
                 {/* feedback liability lay */}

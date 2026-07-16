@@ -32,6 +32,8 @@ export default function Dashboard() {
     // searchParams lascerebbe il bottone "Torna a Watchlist" anche su match aperte
     // dalla lista. Catturare al mount evita questo falso positivo.
     const [cameFromWatchlist] = useState(() => searchParams.get('from') === 'watchlist');
+    // idem per Omega: "Vai alle statistiche" da /omega → bottone "Torna a Omega"
+    const [cameFromOmega] = useState(() => searchParams.get('from') === 'omega');
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
@@ -120,6 +122,17 @@ export default function Dashboard() {
                                     >
                                         <ChevronLeft className="w-4 h-4" />
                                         Torna a Watchlist
+                                    </Button>
+                                )}
+                                {cameFromOmega && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => navigate('/omega')}
+                                        className="hidden md:flex items-center gap-2 border-secondary/30 text-secondary hover:bg-secondary/10"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        Torna a Omega
                                     </Button>
                                 )}
                             </>

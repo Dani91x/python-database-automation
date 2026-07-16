@@ -7,11 +7,12 @@
 // MONEY-CRITICAL — replica ESATTA della semantica di LadderView:
 //   * mode: solo 'paper'|'live' piazzano; OFF/ignoto = SOLA LETTURA fail-safe
 //     (celle NON-bottone, nessun click possibile).
-//   * LIVE non armato: il primo click NON piazza → barra di conferma sticky con
-//     i dettagli dell'ordine (liability per i LAY via layLiabilityFromSize) che
-//     SCADE dopo CONFIRM_TTL_MS (prezzo stantio = serve un nuovo click).
-//     Toggle "armato" (badge rosso ARMATO) = click LIVE diretti come nei tool pro.
-//   * PAPER: piazza sempre diretto (soldi finti).
+//   * REGOLA SPECCHIO paper/live: NON armato, il primo click NON piazza → barra di
+//     conferma sticky con i dettagli dell'ordine (liability per i LAY via
+//     layLiabilityFromSize) che SCADE dopo CONFIRM_TTL_MS (prezzo stantio = serve
+//     un nuovo click). Toggle "armato" (badge rosso REALE / ambra SIMULATO) =
+//     click diretti come nei tool pro. La demo è identica al vivo: cambia solo
+//     che i soldi non sono veri.
 //   * anti-doppio-invio: guardia su inFlightRef (non solo disabled dei bottoni).
 //   * il prezzo inviato è quello della CELLA al momento del click → LIMIT esplicito.
 //   * esito: successo → riga verde con bet_id (+ reset conferma LIVE via
@@ -179,8 +180,10 @@ export function GridView({
     }, [orderMode]);
     const isLive = mode === 'live';
 
-    // se la modalità non è LIVE, l'armamento non ha senso: tienilo spento.
-    useEffect(() => { if (!isLive) setArmed(false); }, [isLive]);
+    // MONEY-CRITICAL: a ogni cambio di modalità (off↔paper↔live) l'armamento si azzera —
+    // un 1-click armato in paper NON deve mai sopravvivere al passaggio in live. Idem
+    // l'intent in conferma (fix audit #17): mai confermare come REALE un intent paper.
+    useEffect(() => { setArmed(false); setConfirmIntent(null); }, [mode]);
 
     // ---- stake per riga: mappa {selection_id: stake} persistita per sport ----
     const stakeKey = `gridStake:${sport}`;
@@ -309,6 +312,14 @@ export function GridView({
         // anti-doppio-invio su ref: se un invio è in corso, ignora OGNI altro click.
         if (inFlightRef.current) return;
         if (mode === 'off') return; // belt & braces: mai piazzare in sola lettura
+        // fix audit #29: RI-verifica lo stato mercato AL momento dell'invio — la barra di
+        // conferma vive CONFIRM_TTL_MS e il mercato può SOSPENDERSI entro la finestra:
+        // mai piazzare su un mercato non più OPEN.
+        if (!isOpen) {
+            setConfirmIntent(null);
+            setStatusMsg({ tone: 'err', text: `✗ Mercato ${(status ?? 'non OPEN').toUpperCase()}: ordine NON inviato. Riclicca quando riapre.` });
+            return;
+        }
         inFlightRef.current = true;
         setBusy(true);
         const label = intentLabel(it);
@@ -325,9 +336,9 @@ export function GridView({
                 // errore SEMPRE esplicito (banner rosso), mai silenzioso.
                 setStatusMsg({ tone: 'err', text: `✗ ${label}: ${res.error ?? 'non eseguito'}` });
             }
-            // MONEY-CRITICAL: la conferma LIVE è one-shot — si resetta SOLO su successo;
-            // su errore resta aperta (retry senza ri-cliccare la cella).
-            if (shouldResetLiveConfirm(isLive, res.ok)) setConfirmIntent(null);
+            // MONEY-CRITICAL: la conferma è one-shot (paper e live, regola specchio) —
+            // si resetta SOLO su successo; su errore resta aperta (retry senza ri-cliccare).
+            if (shouldResetLiveConfirm(true, res.ok)) setConfirmIntent(null);
         } catch (e) {
             setStatusMsg({ tone: 'err', text: `✗ ${label}: ${(e as Error)?.message ?? 'errore'}` });
         } finally {
@@ -352,23 +363,26 @@ export function GridView({
             selectionId: sel.selection_id,
             selName: sel.name ?? String(sel.selection_id),
         };
-        // LIVE non armato → primo click = SOLO conferma (barra sticky con TTL).
-        if (isLive && !armed) { setConfirmIntent(it); return; }
+        // NON armato → primo click = SOLO conferma (barra sticky con TTL), in PAPER
+        // e in LIVE — regola specchio: la demo ha lo stesso identico flusso del vivo.
+        if (!armed) { setConfirmIntent(it); return; }
         void execute(it);
     };
 
-    // toggle armamento 1-click (LIVE): conferma esplicita all'attivazione, come il ladder.
+    // toggle armamento 1-click (PAPER e LIVE): conferma esplicita all'attivazione, come il
+    // ladder — cambia solo il testo REALE/SIMULATO (regola specchio).
     const toggleArmed = useCallback(() => {
         setArmed(prev => {
             if (!prev) {
-                return window.confirm(
-                    '1-CLICK REALE: ogni clic su una cella della griglia piazzerà un ordine ' +
-                    'con SOLDI VERI SENZA ulteriore conferma. Attivare?'
-                );
+                return window.confirm(isLive
+                    ? '1-CLICK REALE: ogni clic su una cella della griglia piazzerà un ordine ' +
+                      'con SOLDI VERI SENZA ulteriore conferma. Attivare?'
+                    : '1-CLICK SIMULATO (paper): ogni clic su una cella piazzerà un ordine SIMULATO ' +
+                      'senza ulteriore conferma — identico al vivo, ma senza soldi veri. Attivare?');
             }
             return false;
         });
-    }, []);
+    }, [isLive]);
 
     // ---- book% back/lay: Σ(100/best); se UN best manca → null (MAI parziale) ----
     const books = useMemo(() => {
@@ -448,33 +462,39 @@ export function GridView({
                         {status}
                     </span>
                 )}
-                {isLive && (
+                {mode !== 'off' && (
                     <button
                         type="button"
                         onClick={toggleArmed}
                         title={armed
-                            ? '1-click REALE ATTIVO: ogni clic piazza senza conferma. Clicca per disattivare.'
-                            : 'Attiva il 1-click REALE (i clic piazzeranno SENZA conferma)'}
+                            ? `1-click ${isLive ? 'REALE' : 'SIMULATO'} ATTIVO: ogni clic piazza senza conferma. Clicca per disattivare.`
+                            : `Attiva il 1-click ${isLive ? 'REALE' : 'SIMULATO (paper)'} (i clic piazzeranno SENZA conferma)`}
                         className={`rounded border px-1.5 py-0.5 text-[10px] ${
-                            armed ? 'border-red-500 bg-red-950/70 text-red-200'
+                            armed
+                                ? (isLive ? 'border-red-500 bg-red-950/70 text-red-200'
+                                    : 'border-amber-500 bg-amber-950/70 text-amber-200')
                                 : 'border-slate-700 text-slate-400 hover:text-slate-200'
                         }`}
                     >
                         🔓 armato
                     </button>
                 )}
-                {isLive && armed && (
-                    <span className="animate-pulse rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {mode !== 'off' && armed && (
+                    <span className={`animate-pulse rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                        isLive ? 'bg-red-600 text-white' : 'bg-amber-500 text-black'
+                    }`}>
                         ARMATO
                     </span>
                 )}
             </div>
 
-            {/* barra di conferma LIVE sticky (scade dopo CONFIRM_TTL_MS) */}
+            {/* barra di conferma sticky (paper e live — regola specchio; scade dopo CONFIRM_TTL_MS) */}
             {confirmIntent && (
-                <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded border border-red-600 bg-red-950/90 px-3 py-2">
-                    <span className="text-xs font-medium text-red-100">
-                        {`Ordine REALE: ${confirmIntent.side === 'back' ? 'BACK' : 'LAY'} €${confirmIntent.size.toFixed(2)} @ ${fmtPrice(confirmIntent.price)} su ${confirmIntent.selName}`
+                <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded border px-3 py-2 ${
+                    isLive ? 'border-red-600 bg-red-950/90' : 'border-amber-600 bg-amber-950/90'
+                }`}>
+                    <span className={`text-xs font-medium ${isLive ? 'text-red-100' : 'text-amber-100'}`}>
+                        {`Ordine ${isLive ? 'REALE' : 'SIMULATO'}: ${confirmIntent.side === 'back' ? 'BACK' : 'LAY'} €${confirmIntent.size.toFixed(2)} @ ${fmtPrice(confirmIntent.price)} su ${confirmIntent.selName}`
                             + (confirmIntent.side === 'lay'
                                 ? ` — responsabilità €${layLiabilityFromSize(confirmIntent.size, confirmIntent.price).toFixed(2)}`
                                 : '')}
@@ -483,9 +503,11 @@ export function GridView({
                         type="button"
                         onClick={() => { const it = confirmIntent; if (it) void execute(it); }}
                         disabled={busy}
-                        className="rounded bg-red-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-red-500 disabled:opacity-50"
+                        className={`rounded px-2 py-1 text-[11px] font-bold disabled:opacity-50 ${
+                            isLive ? 'bg-red-600 text-white hover:bg-red-500' : 'bg-amber-500 text-black hover:bg-amber-400'
+                        }`}
                     >
-                        CONFERMA REALE
+                        {isLive ? 'CONFERMA REALE' : 'CONFERMA SIMULATA'}
                     </button>
                     <button
                         type="button"
@@ -525,8 +547,8 @@ export function GridView({
                                 <th className="px-2 py-1 text-left">Selezione</th>
                                 <th className="px-1 py-1">P&L</th>
                                 <th className="px-1 py-1">LTP</th>
-                                <th colSpan={3} className="px-1 py-1 text-sky-400">Back</th>
                                 <th colSpan={3} className="px-1 py-1 text-pink-400">Lay</th>
+                                <th colSpan={3} className="px-1 py-1 text-sky-400">Back</th>
                                 <th className="px-1 py-1">Stake</th>
                             </tr>
                         </thead>
@@ -535,9 +557,10 @@ export function GridView({
                                 const pos = posBySel.get(sel.selection_id);
                                 const f = flash[sel.selection_id];
                                 const stake = stakeOf(sel.selection_id);
-                                // back dal 3° al best (best adiacente al centro), lay dal best al 3°
-                                const backLevels = [sel.back?.[2], sel.back?.[1], sel.back?.[0]];
-                                const layLevels = [sel.lay?.[0], sel.lay?.[1], sel.lay?.[2]];
+                                // layout v2: LAY a sinistra (dal 3° al best, best adiacente al
+                                // centro), BACK a destra (dal best al 3°) — i due best restano adiacenti.
+                                const layLevels = [sel.lay?.[2], sel.lay?.[1], sel.lay?.[0]];
+                                const backLevels = [sel.back?.[0], sel.back?.[1], sel.back?.[2]];
                                 return (
                                     <tr key={sel.selection_id} className="border-t border-slate-800/60">
                                         <td className="px-2 py-1">
@@ -569,11 +592,11 @@ export function GridView({
                                         <td className="px-1 py-1">
                                             <Sparkline points={histRef.current.get(sel.selection_id) ?? []} />
                                         </td>
-                                        {backLevels.map((lvl, i) => (
-                                            <td key={`b${i}`} className="w-14 p-0">{renderCell('back', lvl, sel)}</td>
-                                        ))}
                                         {layLevels.map((lvl, i) => (
                                             <td key={`l${i}`} className="w-14 p-0">{renderCell('lay', lvl, sel)}</td>
+                                        ))}
+                                        {backLevels.map((lvl, i) => (
+                                            <td key={`b${i}`} className="w-14 p-0">{renderCell('back', lvl, sel)}</td>
                                         ))}
                                         <td className="px-1 py-1">
                                             <input
@@ -600,14 +623,14 @@ export function GridView({
                             <tr className="border-t border-slate-800/60 text-[10px] tabular-nums">
                                 <td colSpan={3} className="px-2 py-1 text-right text-slate-500">book%</td>
                                 <td colSpan={3} className={`px-1 py-1 text-center ${
-                                    books.back != null && books.back < 100 ? 'font-semibold text-amber-400' : 'text-slate-400'
-                                }`}>
-                                    {books.back == null ? '—' : `${books.back.toFixed(2)}%`}
-                                </td>
-                                <td colSpan={3} className={`px-1 py-1 text-center ${
                                     books.lay != null && books.lay > 100 ? 'font-semibold text-amber-400' : 'text-slate-400'
                                 }`}>
                                     {books.lay == null ? '—' : `${books.lay.toFixed(2)}%`}
+                                </td>
+                                <td colSpan={3} className={`px-1 py-1 text-center ${
+                                    books.back != null && books.back < 100 ? 'font-semibold text-amber-400' : 'text-slate-400'
+                                }`}>
+                                    {books.back == null ? '—' : `${books.back.toFixed(2)}%`}
                                 </td>
                                 <td />
                             </tr>

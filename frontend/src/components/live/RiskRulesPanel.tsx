@@ -58,27 +58,44 @@ const money = (v?: number | null) =>
     v == null ? '—' : `${v < 0 ? '−' : ''}€${Math.abs(v).toFixed(2)}`;
 const price2 = (v: number) => v.toFixed(2);
 
-// entry_price OBBLIGATORIO per offset/stop_loss/trailing_stop (contratto backend).
+// entry_price OBBLIGATORIO per offset/stop_loss/trailing_stop/bracket (contratto RPC v4:
+// la SQL lo esige SEMPRE per questi tipi, anche con entry_bet_id/on_fill — fix audit #4).
 const ENTRY_PRICE_REQUIRED: ReadonlySet<RiskRuleType> = new Set<RiskRuleType>([
-    'offset', 'stop_loss', 'trailing_stop',
+    'offset', 'stop_loss', 'trailing_stop', 'bracket',
 ]);
 
-// unità ammesse per ciascun tipo di regola (la prima è il default).
+// unità ammesse per ciascun tipo di regola (la prima è il default). Completa per TUTTI
+// i RiskRuleType (fix audit #15): stop_entry/chase/auto_hedge non sono armabili da questo
+// form (vedi ARMABLE_RULES) ma le loro righe devono renderizzare correttamente.
 const UNITS_BY_RULE: Record<RiskRuleType, ParamUnit[]> = {
     offset: ['ticks', 'pct'],
     stop_loss: ['ticks', 'pct', 'amount'],
     take_profit: ['amount', 'ticks', 'pct'],
     trailing_stop: ['ticks', 'pct'],
     bracket: ['ticks', 'pct'],
+    stop_entry: ['ticks'],      // n/a: i parametri (soglia/direzione) sono nei params
+    chase: ['ticks'],
+    auto_hedge: ['amount'],
 };
 
+// etichette per TUTTI i tipi (anche quelli armati da LadderView/XHedge: la lista
+// li mostra). Fallback in render: `?? r.rule_type` per tipi futuri sconosciuti.
 const RULE_LABEL: Record<RiskRuleType, string> = {
     offset: 'Offset (presa profitto)',
     stop_loss: 'Stop-loss',
     take_profit: 'Take-profit',
     trailing_stop: 'Trailing-stop',
     bracket: 'Bracket (Offset + Stop OCO)',
+    stop_entry: 'Stop-entry (ingresso condizionale)',
+    chase: 'Chase (insegui il best)',
+    auto_hedge: 'Auto-hedge (floor worst-case)',
 };
+
+// tipi armabili DA QUESTO FORM (stop_entry/chase/auto_hedge si armano da ladder/x-hedge:
+// il form non sa costruirne i params — mai offrirli qui).
+const ARMABLE_RULES: readonly RiskRuleType[] = [
+    'offset', 'stop_loss', 'take_profit', 'trailing_stop', 'bracket',
+];
 const TIMING_LABEL: Record<RiskTiming, string> = {
     immediate: 'Immediata (arma subito)',
     on_fill: 'Al fill (attende l\'ingresso)',
@@ -157,6 +174,7 @@ export function RiskRulesPanel({
     const [entrySize, setEntrySize] = useState('');
     const [unit, setUnit] = useState<ParamUnit>('ticks');
     const [paramValue, setParamValue] = useState('');       // valore tick / % / € a seconda di `unit`
+    const [stopValue, setStopValue] = useState('');         // bracket: distanza della gamba STOP (tick/%)
     const [greening, setGreening] = useState(true);         // offset / bracket
     const [timing, setTiming] = useState<RiskTiming>('immediate');
     const [entryBetId, setEntryBetId] = useState('');       // ordine di ingresso da sorvegliare (on_fill/bracket)
@@ -179,15 +197,16 @@ export function RiskRulesPanel({
     }, [ruleType, unit]);
 
     const allowedUnits = UNITS_BY_RULE[ruleType];
-    // bracket e timing 'on_fill' derivano il riferimento dall'ABBINAMENTO reale
-    // dell'ordine di ingresso (entry_bet_id) → niente gamba nuda, entry_price non richiesto.
+    // bracket e timing 'on_fill' sorvegliano l'ordine di ingresso (entry_bet_id):
+    // dal fill il worker deriva la SIZE — niente gamba nuda.
     const derivesFromFill = ruleType === 'bracket' || timing === 'on_fill';
     const showGreening = ruleType === 'offset' || ruleType === 'bracket';
     const showPlaceAt = ruleType === 'stop_loss' || ruleType === 'bracket';
-    // serve un prezzo d'ingresso se il tipo lo impone O se l'unità è basata sul prezzo (tick/%),
-    // ma MAI quando il riferimento è derivato dal fill dell'ordine di ingresso.
+    // prezzo d'ingresso SEMPRE richiesto se il tipo lo impone (contratto RPC v4, fix
+    // audit #4: vale ANCHE con entry_bet_id/on_fill — dal fill si deriva solo la size,
+    // mai il prezzo) o se l'unità è basata sul prezzo (tick/%).
     const needsEntryPrice =
-        !derivesFromFill && (ENTRY_PRICE_REQUIRED.has(ruleType) || unit === 'ticks' || unit === 'pct');
+        ENTRY_PRICE_REQUIRED.has(ruleType) || unit === 'ticks' || unit === 'pct';
 
     // -------------------- anteprima LIVE --------------------
     const preview = useMemo<string | null>(() => {
@@ -231,15 +250,16 @@ export function RiskRulesPanel({
         setListErr(null);
         try {
             const rows = await fetchRiskRules(marketId);
-            // mostra solo le regole della modalità attiva (in OFF mostra tutto, sola lettura).
-            const m = readOnly ? null : (mode as LiveOrderMode);
-            setRules(m ? rows.filter(r => r.mode === m) : rows);
+            // FIX audit #26: mostra le regole di ENTRAMBE le modalità (badge per riga):
+            // filtrare sul mode corrente nascondeva una regola LIVE armata mentre il
+            // pannello è in paper → indisarmabile proprio quando conta di più.
+            setRules(rows);
         } catch (e: any) {
             setListErr(e?.message ?? 'errore di caricamento');
         } finally {
             setLoading(false);
         }
-    }, [marketId, mode, readOnly]);
+    }, [marketId]);
 
     useEffect(() => {
         reload();
@@ -255,16 +275,24 @@ export function RiskRulesPanel({
             if (unit === 'ticks') params.offset_ticks = v; else params.offset_pct = v;
             params.greening = greening;
         } else if (ruleType === 'bracket') {
-            // OCO: gamba di presa profitto (offset) + stop; il primo che scatta annulla l'altro.
+            // OCO: gamba di presa profitto (offset) + gamba STOP (trigger); il primo che
+            // scatta annulla l'altro. FIX audit #1: senza trigger_* lo stop non
+            // scatterebbe MAI — la distanza stop è un campo OBBLIGATORIO del form.
             if (unit === 'ticks') params.offset_ticks = v; else params.offset_pct = v;
+            const sv = num(stopValue);
+            if (sv != null && sv > 0) {
+                if (unit === 'ticks') params.trigger_ticks = sv; else params.trigger_pct = sv;
+            }
             params.greening = greening;
         } else if (ruleType === 'stop_loss') {
             if (unit === 'ticks') params.trigger_ticks = v;
             else if (unit === 'pct') params.trigger_pct = v;
             else params.stop_amount = v;
         } else if (ruleType === 'take_profit') {
-            if (unit === 'ticks') params.trigger_ticks = v;
-            else if (unit === 'pct') params.trigger_pct = v;
+            // FIX audit #2: il backend valuta il take-profit su offset_ticks/offset_pct
+            // (trigger_* è solo un alias legacy lato worker): inviare i nomi canonici.
+            if (unit === 'ticks') params.offset_ticks = v;
+            else if (unit === 'pct') params.offset_pct = v;
             else params.target_amount = v;
         } else { // trailing_stop
             if (unit === 'ticks') params.trail_ticks = v; else params.trail_pct = v;
@@ -301,6 +329,15 @@ export function RiskRulesPanel({
         if (needsEntryPrice && (ep == null || ep < 1.01 || ep > 1000)) {
             toast.error('Prezzo d\'ingresso non valido (1.01–1000): obbligatorio per questa regola.');
             return;
+        }
+        // FIX audit #1: bracket senza gamba STOP = stop che non scatta MAI (il worker
+        // ora la rifiuta fail-loud; qui si blocca prima dell'invio con un messaggio chiaro).
+        if (ruleType === 'bracket') {
+            const sv = num(stopValue);
+            if (sv == null || sv <= 0) {
+                toast.error(`Gamba STOP obbligatoria per il bracket: inserisci la distanza in ${unit === 'ticks' ? 'tick' : '%'} (> 0).`);
+                return;
+            }
         }
         const betId = entryBetId.trim();
         // no gamba nuda: bracket / timing on_fill devono sorvegliare un ordine d'ingresso.
@@ -370,6 +407,10 @@ export function RiskRulesPanel({
         if (p.stop_amount != null) bits.push(`stop ${money(-Math.abs(p.stop_amount))}`);
         if (p.target_amount != null) bits.push(`target ${money(Math.abs(p.target_amount))}`);
         if (p.place_at_ticks != null) bits.push(`@${p.place_at_ticks} tick`);
+        // fix audit #15: parametri dei tipi armati da ladder/x-hedge (mai più "—")
+        if (p.trigger_price != null) bits.push(`soglia ${price2(p.trigger_price)} (${p.trigger_direction === 'at_or_below' ? '≤' : '≥'})`);
+        if (p.floor != null) bits.push(`floor ${money(-Math.abs(p.floor))}`);
+        if (p.max_stake != null) bits.push(`max ${money(p.max_stake)}`);
         if (p.greening) bits.push('greening');
         if (p.timing === 'on_fill') bits.push('on-fill');
         if (p.on_inplay && p.on_inplay !== 'keep') bits.push(`in-play: ${p.on_inplay}`);
@@ -456,7 +497,7 @@ export function RiskRulesPanel({
                         <select className={SELECT_CLS} value={ruleType}
                             aria-label="Tipo regola"
                             onChange={e => setRuleType(e.target.value as RiskRuleType)}>
-                            {(Object.keys(RULE_LABEL) as RiskRuleType[]).map(rt => (
+                            {ARMABLE_RULES.map(rt => (
                                 <option key={rt} value={rt}>{RULE_LABEL[rt]}</option>
                             ))}
                         </select>
@@ -486,6 +527,7 @@ export function RiskRulesPanel({
                     <div>
                         <Label className={FIELD_LABEL}>Unità parametro</Label>
                         <select className={SELECT_CLS} value={unit}
+                            aria-label="Unità parametro"
                             onChange={e => setUnit(e.target.value as ParamUnit)}>
                             {allowedUnits.map(u => (
                                 <option key={u} value={u}>{UNIT_LABEL[u]}</option>
@@ -494,13 +536,32 @@ export function RiskRulesPanel({
                     </div>
                     <div>
                         <Label className={FIELD_LABEL}>
-                            {unit === 'ticks' ? 'Tick' : unit === 'pct' ? 'Percentuale (%)' : 'Importo (€)'}
+                            {ruleType === 'bracket'
+                                ? (unit === 'ticks' ? 'Offset (tick)' : 'Offset (%)')
+                                : unit === 'ticks' ? 'Tick' : unit === 'pct' ? 'Percentuale (%)' : 'Importo (€)'}
                         </Label>
                         <Input type="number" step={unit === 'ticks' ? '1' : '0.01'} min="0" value={paramValue}
                             onChange={e => setParamValue(e.target.value)}
                             placeholder={unit === 'ticks' ? 'es. 3' : unit === 'pct' ? 'es. 2.5' : 'es. 5.00'}
                             className="bg-black/60 border-white/10" />
                     </div>
+                    {/* FIX audit #1: gamba STOP del bracket — OBBLIGATORIA (senza trigger_*
+                        lo stop non scatterebbe MAI, in silenzio). Stessa unità dell'offset. */}
+                    {ruleType === 'bracket' && (
+                        <div>
+                            <Label className={FIELD_LABEL}>
+                                {unit === 'ticks' ? 'Stop (tick) *' : 'Stop (%) *'}
+                            </Label>
+                            <Input type="number" step={unit === 'ticks' ? '1' : '0.01'} min="0" value={stopValue}
+                                aria-label={unit === 'ticks' ? 'Stop (tick)' : 'Stop (%)'}
+                                onChange={e => setStopValue(e.target.value)}
+                                placeholder={unit === 'ticks' ? 'es. 5' : 'es. 2.5'}
+                                className="bg-black/60 border-white/10" />
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                                distanza AVVERSA della gamba stop (OCO)
+                            </p>
+                        </div>
+                    )}
                     <div>
                         <Label className={FIELD_LABEL}>Persistenza</Label>
                         <select className={SELECT_CLS} value={persistence}
@@ -640,7 +701,17 @@ export function RiskRulesPanel({
                                         <td className="py-1.5 pr-2 text-white/80 truncate max-w-[140px]">
                                             {selName(r.selection_id)}
                                         </td>
-                                        <td className="py-1.5 px-2 text-white/80">{RULE_LABEL[r.rule_type]}</td>
+                                        <td className="py-1.5 px-2 text-white/80">
+                                            {RULE_LABEL[r.rule_type] ?? r.rule_type}
+                                            {/* fix audit #26: badge modalità per riga (la lista mostra ENTRAMBE) */}
+                                            <span className={`ml-1.5 inline-block px-1 py-0.5 rounded border text-[9px] font-black uppercase align-middle ${
+                                                r.mode === 'live'
+                                                    ? 'text-red-300 border-red-500/40 bg-red-500/10'
+                                                    : 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+                                            }`}>
+                                                {r.mode === 'live' ? 'LIVE' : 'PAPER'}
+                                            </span>
+                                        </td>
                                         <td className="py-1.5 px-2">
                                             <span className={r.entry_side === 'back' ? 'text-sky-300' : 'text-rose-300'}>
                                                 {r.entry_side === 'back' ? 'Back' : 'Lay'}

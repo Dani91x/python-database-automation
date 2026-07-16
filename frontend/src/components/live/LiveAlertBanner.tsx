@@ -37,9 +37,17 @@ export function LiveAlertBanner() {
     async function dismiss(id: number) {
         setAcking(prev => new Set(prev).add(id));
         // rimozione ottimistica: l'avviso sparisce subito; il realtime conferma.
+        const removed = alerts.find(a => a.id === id) ?? null;
         setAlerts(prev => prev.filter(a => a.id !== id));
         try { await ackAlert(id); }
-        catch (e) { console.warn('[LiveAlertBanner] ackAlert:', e); }
+        catch (e) {
+            console.warn('[LiveAlertBanner] ackAlert:', e);
+            // fix audit #24: ack FALLITO → l'avviso NON è gestito lato server. Ripristinalo
+            // (mai far sparire in silenzio un alert money-critical con un ack mai avvenuto).
+            if (removed) {
+                setAlerts(prev => (prev.some(a => a.id === id) ? prev : [removed, ...prev]));
+            }
+        }
         finally { setAcking(prev => { const n = new Set(prev); n.delete(id); return n; }); }
     }
 

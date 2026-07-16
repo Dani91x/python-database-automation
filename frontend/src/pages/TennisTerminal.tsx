@@ -69,6 +69,14 @@ export default function TennisTerminal() {
     // D29/D31: tab della colonna destra (Stats / Chart / Depth) — injection SOLO tennis.
     const [rightTab, setRightTab] = useState<'stats' | 'chart' | 'depth'>('stats');
 
+    // Modalità ordini GLOBALE del runner tennis (OFF/PAPER/LIVE, da tennis_live_now.state):
+    // badge sempre visibile in top-bar — prima era invisibile e in OFF il ladder
+    // sembrava "rotto" (nessun ordine, nemmeno simulato).
+    const orderMode = useMemo(() => {
+        const m = String(now?.state?.order_mode ?? 'OFF').trim().toUpperCase();
+        return m === 'PAPER' || m === 'LIVE' ? m : 'OFF';
+    }, [now]) as 'OFF' | 'PAPER' | 'LIVE';
+
     // Registra l'evento nello stream tennis (tennis_live_follow → PENDING) così il runner
     // inizia a pubblicare ladder + tabellone + punteggio su tennis_live_ladder/tennis_live_now.
     // Senza questo la ladder resterebbe vuota in una sessione manuale (nessun bot armato):
@@ -128,6 +136,22 @@ export default function TennisTerminal() {
                             OFF in {countdown}
                         </span>
                     )}
+                    {/* badge modalità ordini del runner (regola specchio: PAPER = demo
+                        identica al vivo, cambia solo che i soldi non sono veri) */}
+                    <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                            orderMode === 'LIVE' ? 'bg-red-500 text-white'
+                                : orderMode === 'PAPER' ? 'bg-amber-500 text-black'
+                                    : 'bg-slate-700 text-slate-300'
+                        }`}
+                        title={orderMode === 'LIVE'
+                            ? 'Runner in LIVE: gli ordini sono REALI (soldi veri).'
+                            : orderMode === 'PAPER'
+                                ? 'Runner in PAPER: ordini SIMULATI, visibili sul ladder come dal vivo.'
+                                : 'Runner ordini SPENTO: nessun ordine possibile, nemmeno simulato. Imposta TENNIS_LIVE_ORDER_MODE=PAPER e riavvia il runner tennis.'}
+                    >
+                        {orderMode === 'LIVE' ? 'LIVE · REALE' : orderMode === 'PAPER' ? 'PAPER · SIMULATO' : 'ORDINI OFF'}
+                    </span>
                     <span className="ml-auto text-[10px] text-muted-foreground font-mono">
                         event {eventId} · market {marketId}
                     </span>
@@ -138,7 +162,7 @@ export default function TennisTerminal() {
             <main className="flex-1 w-full px-3 lg:px-4 py-3 relative z-10">
                 <div className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)_360px] gap-3 items-start">
                     <section key={`bot:${eventId}:${marketId}`} className="min-w-0">
-                        <TennisBotPanel eventId={eventId} marketId={marketId} />
+                        <TennisBotPanel eventId={eventId} marketId={marketId} orderMode={orderMode} />
                     </section>
 
                     <section key={`ladder:${eventId}:${marketId}`} className="min-w-0">
@@ -172,7 +196,12 @@ export default function TennisTerminal() {
                         </div>
                         {rightTab === 'stats' && <TennisMatchStats eventId={eventId} p1={p1} p2={p2} />}
                         {rightTab === 'chart' && (
-                            <SelectionChartPanel key={`chart:${marketId}`} marketId={marketId} ladderSource={TENNIS_LADDER_SOURCE} />
+                            <SelectionChartPanel
+                                key={`chart:${marketId}`}
+                                marketId={marketId}
+                                ladderSource={TENNIS_LADDER_SOURCE}
+                                defaultBucketMs={5_000}
+                            />
                         )}
                         {rightTab === 'depth' && (
                             <DepthPanel key={`depth:${marketId}`} marketId={marketId} ladderSource={TENNIS_LADDER_SOURCE} />

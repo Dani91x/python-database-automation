@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     lockedPnlAt, piqAhead, windowAround, flashDir, stepStake, nextPreset,
+    placeProjection,
     STAKE_MIN, STAKE_STEP,
 } from './ladderMath';
 
@@ -102,5 +103,36 @@ describe('stepStake / nextPreset', () => {
         expect(nextPreset(presets, 25)).toBe(2);   // ciclico
         expect(nextPreset(presets, 7.5)).toBe(2);  // non-preset → riparte
         expect(nextPreset([], 7)).toBe(7);         // lista vuota → invariato
+    });
+});
+
+describe('placeProjection', () => {
+    it('back €S @P: vince +S×(P−1), perde −S, liability = S', () => {
+        // il caso mostrato nel PlaceConfirmDialog: BACK €5 @2.90 → +9.50 / −5.00
+        expect(placeProjection('back', 2.9, 5)).toEqual(
+            { stake: 5, liability: 5, ifWin: 9.5, ifLose: -5 });
+    });
+    it('lay €S @P (size-mode): vince −S×(P−1), perde +S', () => {
+        expect(placeProjection('lay', 3.5, 5)).toEqual(
+            { stake: 5, liability: 12.5, ifWin: -12.5, ifLose: 5 });
+    });
+    it('lay in liability-mode: importo = responsabilità L → S = L/(P−1)', () => {
+        expect(placeProjection('lay', 3, 10, true)).toEqual(
+            { stake: 5, liability: 10, ifWin: -10, ifLose: 5 });
+        // la liability resta ESATTA anche quando la size derivata non è tonda
+        expect(placeProjection('lay', 1.3, 10, true)).toEqual(
+            { stake: 33.33, liability: 10, ifWin: -10, ifLose: 33.33 });
+    });
+    it('arrotonda ai 2 decimali (denaro)', () => {
+        expect(placeProjection('back', 2.75, 3.33)).toEqual(
+            { stake: 3.33, liability: 3.33, ifWin: 5.83, ifLose: -3.33 });
+    });
+    it('input non validi → null (mai proiezioni fantasiose)', () => {
+        expect(placeProjection('back', 1, 5)).toBeNull();      // quota non-quota
+        expect(placeProjection('back', 0.5, 5)).toBeNull();
+        expect(placeProjection('lay', NaN, 5)).toBeNull();
+        expect(placeProjection('back', 2.5, 0)).toBeNull();    // importo nullo
+        expect(placeProjection('lay', 2.5, -3)).toBeNull();
+        expect(placeProjection('lay', 2.5, NaN, true)).toBeNull();
     });
 });

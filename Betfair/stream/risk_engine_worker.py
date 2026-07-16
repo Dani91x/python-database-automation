@@ -240,6 +240,11 @@ def _handle_offset(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, str
     p = _params(rule)
     timing = str(p.get("timing") or ("on_fill" if rule.get("entry_bet_id") else "immediate")).lower()
     market = low._resolve_market(flumine, rule.get("market_id"))
+    # FIX audit #16: anche l'offset rispetta la policy on_inplay (cancel/rebaseline) alla
+    # transizione pre→in — prima veniva IGNORATA in silenzio (solo _handle_monitored la
+    # applicava): un offset on_fill armato pre-match sopravviveva al KO contro la policy.
+    if _apply_inplay_policy(sb, rule, market, _result(rule)) == "disarmed":
+        return
     sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
 
     if timing == "on_fill" or rule.get("entry_bet_id"):
@@ -279,6 +284,22 @@ def _handle_monitored(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, 
     res = _result(rule)
     if _apply_inplay_policy(sb, rule, market, res) == "disarmed":
         return
+
+    # FIX audit #3: timing 'on_fill' — NON sorvegliare finché l'INGRESSO (entry_bet_id)
+    # non è abbinato. Prima veniva ignorato: uno stop/take-profit/trailing "al fill"
+    # monitorava SUBITO e poteva scattare (flatten) su una posizione ancora inesistente.
+    # Stessa macchina anti-gamba-nuda di _handle_offset: wait → resta armata;
+    # naked (ingresso lapsato/cancellato senza match) → regola chiusa, niente da proteggere.
+    p = _params(rule)
+    if str(p.get("timing") or "").lower() == "on_fill" and rule.get("entry_bet_id"):
+        state = _entry_ready_or_naked(flumine, rule)
+        if state == "wait":
+            return  # attende il fill dell'ingresso: si valuta solo a posizione reale
+        if state == "naked":
+            _update_rule(sb, rule["id"], {"status": "done",
+                "result": {**res, "note": "ingresso non abbinato (lapse/cancel): "
+                                          "nessuna posizione da proteggere (anti-gamba-nuda)"}})
+            return
 
     ltp = _ltp(market, sel, hcap)
     best_back, best_lay = low._best_prices(market, sel, hcap)
@@ -335,6 +356,15 @@ def _enqueue_flatten(
     ritornerebbero la VECCHIA riga in error) → ogni retry usa un ref nuovo ``risk<id>s<n>``.
     """
     p = _params(rule)
+    flatten_params: Dict[str, Any] = {
+        "fraction": 1.0, "risk_rule_id": rule["id"],
+        "place_at_ticks": risk_engine._int_param(p, "place_at_ticks") or 0,
+    }
+    # FIX audit #25: la persistenza scelta armando la regola vale ANCHE per la chiusura
+    # (prima veniva ignorata in silenzio: la UI la mostrava, il flatten usava sempre
+    # LAPSE). Il worker greenup la valida e la applica all'ordine di hedge.
+    if p.get("persistence"):
+        flatten_params["persistence"] = p.get("persistence")
     payload = {
         "client_ref": client_ref or f"risk{rule['id']}s",
         "action": "greenup",
@@ -342,8 +372,7 @@ def _enqueue_flatten(
         "market_id": rule["market_id"],
         "selection_id": rule["selection_id"],
         "handicap": rule.get("handicap") or 0,
-        "params": {"fraction": 1.0, "risk_rule_id": rule["id"],
-                   "place_at_ticks": risk_engine._int_param(p, "place_at_ticks") or 0},
+        "params": flatten_params,
     }
     return _enqueue(sb, payload)
 
@@ -463,6 +492,16 @@ def _check_triggered_rules(sb: Any, flumine: Any, mode_l: str) -> int:
 # BRACKET (OCO) — offset take-profit + stop, one-cancels-other (#2)
 # ---------------------------------------------------------------------------
 def _handle_bracket(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, strategy: Any) -> None:
+    # FIX audit #1 (defense in depth): un bracket SENZA gamba stop (nessun trigger_*/
+    # stop_amount/trail_*) non potrà MAI scattare lo stop — errore PERMANENTE dei dati
+    # della regola: disarmo VISIBILE subito, mai "armata" con la protezione morta.
+    bad = risk_engine.bracket_missing_stop(_params(rule))
+    if bad is not None:
+        _update_rule(sb, rule["id"], {"status": "error", "error": f"parametri non validi: {bad}"})
+        _alert("CRITICAL",
+               f"Regola risk {rule.get('id')} (bracket) DISATTIVATA: {bad}. "
+               "LA PROTEZIONE NON È ATTIVA: ri-armare la regola con la gamba stop.")
+        return
     market = low._resolve_market(flumine, rule.get("market_id"))
     sel = int(rule["selection_id"]); hcap = float(rule.get("handicap") or 0)
     res = _result(rule)
