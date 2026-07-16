@@ -611,3 +611,65 @@ def test_guardia_auto_salta_anche_missioni_in_pausa():
     db.missions = [_mission("1.100", status="paused")]
     ids = db.mission_event_ids()
     assert "1.100" in ids
+
+
+def test_mission_cs_mai_il_punteggio_adiacente():
+    # CASO REALE 16/07 (Puskas Akademia v Basaksehir): sullo 0-1 il book
+    # sottile quotava il lay HT "0-2" in fascia [20,120] — il punteggio
+    # ADIACENTE, il piu' probabile di tutti... ed e' USCITO davvero.
+    # Regola: una proposta CS in-play richiede almeno CS_MIN_GOAL_DISTANCE
+    # (2) gol AGGIUNTIVI dal punteggio corrente.
+    db = FakeDB(_control(status="idle"))
+    db.missions = [_mission(phase="1t")]
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.scores = {"1.100": _Snap(minute=30, home=0, away=1, status="FirstHalf")}
+    cs_ht = M.CorrectScoreMarket(market_id="m-ht", event_id="1.100",
+                                 event_name="Home v Away", market_start_time=None,
+                                 runner_names={1: "0 - 2", 2: "1 - 1", 3: "2 - 2"})
+    market.markets_by_type = {("1.100", "HALF_TIME_SCORE"): cs_ht,
+                              ("1.100", "CORRECT_SCORE"): None,
+                              ("1.100", "OVER_UNDER_35"): None,
+                              ("1.100", "OVER_UNDER_45"): None}
+
+    class _SnapHt:
+        status = "OPEN"; inplay = True; closed = False
+        winner_selection_id = None; voided = False
+        runners = [
+            # trappola: adiacenti (1 gol di distanza) con quota IN FASCIA
+            E.ScoreRunner(1, "0 - 2", lay_price=30.0, lay_size=50, lay_ladder=((30.0, 50.0),)),
+            E.ScoreRunner(2, "1 - 1", lay_price=25.0, lay_size=60, lay_ladder=((25.0, 60.0),)),
+            E.ScoreRunner(3, "2 - 2", lay_price=60.0, lay_size=40, lay_ladder=((60.0, 40.0),)),
+        ]
+    market.read_market = lambda cs: _SnapHt() if cs.market_id == "m-ht" else _open_snapshot()
+    S.process_missions(market=market, db=db, now=NOW)
+    sugg = db.missions[0]["suggestion_ht"]
+    assert sugg is not None
+    assert sugg["runner_name"] == "2 - 2"       # 3 gol di distanza: ok
+    assert sugg["selection_id"] == 3            # MAI 0-2 o 1-1 (adiacenti)
+
+
+def test_mission_cs_nessun_candidato_se_tutti_adiacenti():
+    # se in fascia restano SOLO punteggi adiacenti, la gamba si SALTA (I6):
+    # meglio nessuna proposta che una proposta da book sottile
+    db = FakeDB(_control(status="idle"))
+    db.missions = [_mission(phase="1t")]
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    market.scores = {"1.100": _Snap(minute=30, home=0, away=1, status="FirstHalf")}
+    cs_ht = M.CorrectScoreMarket(market_id="m-ht", event_id="1.100",
+                                 event_name="Home v Away", market_start_time=None,
+                                 runner_names={1: "0 - 2", 2: "1 - 1"})
+    market.markets_by_type = {("1.100", "HALF_TIME_SCORE"): cs_ht,
+                              ("1.100", "CORRECT_SCORE"): None,
+                              ("1.100", "OVER_UNDER_35"): None,
+                              ("1.100", "OVER_UNDER_45"): None}
+
+    class _SnapHt:
+        status = "OPEN"; inplay = True; closed = False
+        winner_selection_id = None; voided = False
+        runners = [
+            E.ScoreRunner(1, "0 - 2", lay_price=30.0, lay_size=50, lay_ladder=((30.0, 50.0),)),
+            E.ScoreRunner(2, "1 - 1", lay_price=25.0, lay_size=60, lay_ladder=((25.0, 60.0),)),
+        ]
+    market.read_market = lambda cs: _SnapHt() if cs.market_id == "m-ht" else _open_snapshot()
+    S.process_missions(market=market, db=db, now=NOW)
+    assert db.missions[0]["suggestion_ht"] is None

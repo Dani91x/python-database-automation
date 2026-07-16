@@ -930,6 +930,11 @@ def _sugg_equal(a: Optional[dict], b: Optional[dict]) -> bool:
     return ka == kb
 
 
+# distanza minima (gol AGGIUNTIVI dal punteggio corrente) di una proposta CS
+# in-play: 2 = mai il punteggio corrente ne' quello a un solo gol di distanza
+CS_MIN_GOAL_DISTANCE = 2
+
+
 def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
                    now: datetime, min_score: Optional[tuple] = None,
                    db: Any = None) -> Optional[dict]:
@@ -956,8 +961,20 @@ def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
         reachable = []
         for r in runners:
             parsed = E.parse_scoreline(r.name)
-            if parsed is None or (parsed[0] >= mh and parsed[1] >= ma):
-                reachable.append(r)
+            if parsed is None:
+                reachable.append(r)   # aggregati: li governa include_aggregate
+                continue
+            if parsed[0] < mh or parsed[1] < ma:
+                continue              # IRRAGGIUNGIBILE (es. 0-0 quando e' 1-0)
+            # DISTANZA MINIMA in gol (caso reale 16/07: sullo 0-1 il book
+            # sottile quotava il lay "0-2" in fascia [20,120] — il punteggio
+            # ADIACENTE piu' probabile di tutti... ed e' USCITO davvero.
+            # La fascia quote non basta sui book sottili in-play: servono
+            # almeno CS_MIN_GOAL_DISTANCE gol AGGIUNTIVI dal punteggio
+            # corrente perche' un lay abbia senso "da punteggio improbabile".
+            if (parsed[0] - mh) + (parsed[1] - ma) < CS_MIN_GOAL_DISTANCE:
+                continue
+            reachable.append(r)
         runners = reachable
     # FASCIA QUOTE dai params (default [20,120]) — EVIDENZA backtest 26 partite
     # (15/07): senza pavimento, sui book sottili dei minori l'unico runner con
