@@ -727,7 +727,10 @@ class SniperStrategy(BaseStrategy):
 
     def _place(self, market: Any, sid: int, side: str, price: float,
                size: float, floor: bool = True,
-               pos: Optional[_Pos] = None) -> Optional[Any]:
+               pos: Optional[_Pos] = None,
+               persistence: str = "LAPSE") -> Optional[Any]:
+        # persistence: "LAPSE" (default, comportamento certificato) o
+        # "PERSIST" (theta STEP 1 pre-match: l'ordine regge il turn in-play)
         size = round(float(size), 2)
         if floor and size < MIN_STAKE:
             size = MIN_STAKE
@@ -766,7 +769,8 @@ class SniperStrategy(BaseStrategy):
         tr = Trade(market_id=market.market_id, selection_id=int(sid),
                    handicap=0.0, strategy=self)
         o = tr.create_order(side=side, order_type=LimitOrder(
-            price=float(price), size=size, persistence_type="LAPSE"))
+            price=float(price), size=size,
+            persistence_type=("PERSIST" if persistence == "PERSIST" else "LAPSE")))
         market.place_order(o)
         # ANTI-ORFANI (lezione live 10/07: exit rimasta viva 40+ min): ogni
         # ordine con una posizione nota entra in flatten_orders (dedup

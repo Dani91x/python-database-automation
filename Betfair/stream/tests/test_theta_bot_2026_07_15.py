@@ -630,6 +630,8 @@ def test_preset_overshoot_c17():
     assert s.hazard_max == pytest.approx(0.10)
     assert s.theta_line_offset == 2
     assert s.theta_green_ticks == 1
+    # MAKER = identita' della cella certificata C17 (review 16/07: mai
+    # cambiare silenziosamente una cella campionata; il taker e' del cecchino)
     assert s.theta_entry_mode == "maker"
     assert s.theta_entry_windows is None
     assert s.theta_max_goals is None

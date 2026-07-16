@@ -233,7 +233,7 @@ describe('MissionCard — piazzamento manuale (money-critical)', () => {
             theta_mode: true,
             theta_only: true,                         // NON armare il maker
             theta_stake: 25,
-            theta_preset: 'classico',
+            theta_preset: 'cecchino',                 // default: i 3 momenti
             theta_confirm_mode: 'auto',
         });
         // niente ordini manuali: requestManual mai chiamato dalla riga scalp

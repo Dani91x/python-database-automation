@@ -78,6 +78,15 @@ class _ThetaPos(_Pos):
 
     entry_placed_pt: Optional[float] = None   # ancora del TTL entry
     pending_protect: Optional[int] = None     # proposta protezione in corso
+    # ---- STEP 1 (cecchino): ciclo pre-match PERSIST ----
+    prematch: bool = False                    # posizione nata pre-match
+    prematch_taken: bool = False              # escalation: cancel richiesto
+    prematch_take_placed: bool = False        # escalation: taker gia' piazzato
+    prematch_exit_placed: bool = False        # target adattivo gia' piazzato
+    prematch_deadline_ms: Optional[float] = None  # KO + timeout adattivo
+    # scratch per-ingresso (STEP 3: overshoot 240s / 120s se hazard alto;
+    # None = scratch_s della strategia)
+    scratch_override_s: Optional[float] = None
 
 # ---------------------------------------------------------------------------
 # PRESET S4 (griglia 16/07) — pacchetti raccomandati per il PAPER.
@@ -109,11 +118,75 @@ THETA_PRESETS: Dict[str, Dict[str, Any]] = {
         "max_goals": None,          # si entra DOPO il gol: nessun cap gol
         "scratch_s": 240.0,
         "line_offset": 2,
+        # MAKER: identita' della cella CERTIFICATA C17 — il backtest che ha
+        # promosso questa pista e' stato misurato con fill maker; il taker
+        # "caccia liquidita'" e' del CECCHINO (override per-ingresso), mai un
+        # cambio silenzioso della cella campionata (review 16/07)
         "entry_mode": "maker",
         "green_ticks": 1,
         "hazard_max": 0.10,
     },
+    # CECCHINO (spec utente 16/07) — i 3 momenti in un bot solo:
+    #   STEP 1 pre-match: back Under 2.5 a KO-5' in PERSIST, target adattivo
+    #           al fischio (in profitto → tick guadagnati+2; in loss → 1 tick),
+    #           esposizione max 5' dal KO accorciata dall'hazard Atlante.
+    #   STEP 2 in-play:   scalp da 1 tick nella quiete (gate C7).
+    #   STEP 3 post-gol:  overshoot 30-90s dopo il gol, taker sulla liquidita',
+    #           scratch accorciato se l'Atlante teme il secondo gol rapido.
+    # Filo rosso: presi target_greens verdi, si ferma per la partita.
+    "cecchino": {
+        "prematch": True,
+        "entry_windows": ((0.0, 35.0), (46.0, 70.0)),
+        "max_goals": 1,             # (bypass per gli ingressi overshoot)
+        "scratch_s": 120.0,
+        "line_offset": 2,
+        "entry_mode": "maker",      # quiete: maker; overshoot: taker forzato
+        "green_ticks": 1,
+        "hazard_max": 0.085,
+        "overshoot_only": False,
+        "overshoot_combo": True,    # quiete E post-gol nella stessa sessione
+        "overshoot_min_s": 30.0,
+        "overshoot_max_s": 90.0,
+        "target_greens": 3,         # cecchino: presi 3 verdi, stop partita
+    },
 }
+
+# STEP 1 — timeout adattivo dell'esposizione pre-match→in-play: hazard
+# Atlante del bucket 0-5' a 0 gol (lega/squadre) → secondi massimi in
+# posizione dal KO. Fasce ESPLICITE e testabili (mai formule opache).
+PREMATCH_TIMEOUT_STEPS: Tuple[Tuple[float, float], ...] = (
+    (0.05, 300.0),   # rischio basso: tutta la finestra (5')
+    (0.08, 240.0),
+    (0.12, 180.0),
+)
+PREMATCH_TIMEOUT_FLOOR_S = 120.0   # rischio alto/atlante muto: 2' e fuori
+
+
+def prematch_timeout_s(p3: Optional[float]) -> float:
+    """Secondi massimi di esposizione dal KO per lo STEP 1 (puro)."""
+    if p3 is None:
+        return PREMATCH_TIMEOUT_FLOOR_S
+    for cap, secs in PREMATCH_TIMEOUT_STEPS:
+        if p3 <= cap:
+            return secs
+    return PREMATCH_TIMEOUT_FLOOR_S
+
+
+def prematch_exit_ticks(entry_price: float, price_at_ko: Optional[float],
+                        bonus_ticks: int = 2) -> int:
+    """STEP 1 — target ADATTIVO deciso al fischio d'inizio (puro).
+
+    Confronta prezzo d'ingresso e prezzo al KO:
+      * gia' in PROFITTO (quota scesa) → si tiene: tick guadagnati + bonus;
+      * in pari o in LOSS → ci si accontenta: 1 tick dal prezzo d'ingresso.
+    Ritorna il numero di tick SOTTO il prezzo d'ingresso a cui mettere il lay.
+    """
+    if price_at_ko is None or price_at_ko >= entry_price:
+        return 1
+    gained = ticks_between(price_at_ko, entry_price)
+    if gained is None or gained <= 0:
+        return 1
+    return int(gained) + max(0, int(bonus_ticks))
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +494,24 @@ class ThetaStrategy(SniperStrategy):
         self.theta_overshoot_only: bool = bool(c.get("overshoot_only", False))
         self.theta_overshoot_min_s: float = float(c.get("overshoot_min_s", 30.0))
         self.theta_overshoot_max_s: float = float(c.get("overshoot_max_s", 90.0))
+        # CECCHINO: quiete E overshoot nella stessa sessione (STEP 2+3)
+        self.theta_overshoot_combo: bool = bool(c.get("overshoot_combo", False))
+        # STEP 3: sopra questa soglia di hazard post-gol (secondo gol rapido,
+        # Atlante per lega/squadre/stato) lo scratch dell'overshoot si accorcia
+        self.theta_overshoot_fast_hazard: float = float(
+            c.get("overshoot_fast_hazard", 0.06))
+        self.theta_overshoot_scratch_s: float = float(
+            c.get("overshoot_scratch_s", 240.0))
+        # ---- STEP 1 (cecchino): ingresso PRE-MATCH PERSIST ----
+        self.theta_prematch: bool = bool(c.get("prematch", False))
+        self.prematch_entry_s: float = float(c.get("prematch_entry_s", 300.0))
+        self.prematch_take_s: float = float(c.get("prematch_take_s", 210.0))
+        self.prematch_bonus_ticks: int = max(0, int(c.get("prematch_bonus_ticks", 2)))
+        self.prematch_price_min: float = float(c.get("prematch_price_min", 1.2))
+        self.prematch_price_max: float = float(c.get("prematch_price_max", 4.0))
+        self._prematch_done: bool = False
+        # ---- filo rosso del cecchino: presi N verdi, stop partita ----
+        self.theta_target_greens: int = max(0, int(c.get("target_greens", 0)))
         self._last_goal_ms: Optional[float] = None
         self._now_ms: Optional[float] = None
         # ---- ciclo ----
@@ -461,6 +552,9 @@ class ThetaStrategy(SniperStrategy):
         self.stats.update({
             "shots": 0, "scratches": 0, "postgol_closes": 0,
             "hazard_blocks": 0, "proposals": 0, "confirm_timeouts": 0,
+            # STEP 1 (cecchino): telemetria del ciclo pre-match
+            "prematch_shots": 0, "prematch_greens": 0, "prematch_scratches": 0,
+            "target_greens_hits": 0,
             # --- AUDIT S4-bis: contatori PER-GATE (pura strumentazione, in
             # ordine di cascata; unita' = book-tick del runner target sulla
             # linea target, in-play, senza posizione aperta) ---
@@ -655,15 +749,28 @@ class ThetaStrategy(SniperStrategy):
                 continue
 
             if pos.entries:
-                self._manage_open(market, market_book, runner, pos,
-                                  bb, bl, float(now), el, postgol_here)
+                if pos.prematch:
+                    self._manage_prematch(market, market_book, runner, pos,
+                                          bb, bl, float(now), ko, inplay,
+                                          postgol_here)
+                else:
+                    self._manage_open(market, market_book, runner, pos,
+                                      bb, bl, float(now), el, postgol_here)
                 continue
 
-            # ---- NESSUNA posizione: semaforo d'ingresso ----
+            # ---- NESSUNA posizione ----
+            if not inplay:
+                # STEP 1 (cecchino): finestra PRE-MATCH KO-5' su Under 2.5
+                if (self.theta_prematch and not self._prematch_done
+                        and str(mtype or "") == "OVER_UNDER_25"
+                        and ko is not None):
+                    self._prematch_entry_tick(market, runner, pos, bb, bl,
+                                              float(sb or 0.0), float(now),
+                                              float(ko))
+                continue
+            # ---- semaforo d'ingresso in-play (STEP 2 quiete / STEP 3 post-gol)
             if mtype != target or target is None:
                 continue  # spara SOLO la linea target (gol correnti + 2.5)
-            if not inplay:
-                continue
             if (self.force_flat or self._event_done or self._loss_capped()):
                 self.stats["gate_done"] += 1
                 continue
@@ -677,8 +784,21 @@ class ThetaStrategy(SniperStrategy):
             if in_red_zone(minute):
                 self.stats["gate_red_zone"] += 1
                 continue
+            # finestra OVERSHOOT (STEP 3): sempre calcolata — nel combo un
+            # ingresso post-gol bypassa finestre/quiete/max_goals by-design
+            # (si compra il riprezzo, non la quiete)
+            in_overshoot = False
+            if self._last_goal_ms is not None:
+                dt_s = (float(now) - self._last_goal_ms) / 1000.0
+                in_overshoot = (self.theta_overshoot_min_s <= dt_s
+                                <= self.theta_overshoot_max_s)
+            overshoot_entry = in_overshoot and (
+                self.theta_overshoot_only or self.theta_overshoot_combo)
+            if self.theta_overshoot_only and not in_overshoot:
+                self.stats["gate_overshoot_win"] += 1
+                continue
             # finestra minuti parametrica (S4): fuori finestra = rosso
-            if (self.theta_entry_windows is not None
+            if (self.theta_entry_windows is not None and not overshoot_entry
                     and not any(lo <= float(minute) < hi
                                 for lo, hi in self.theta_entry_windows)):
                 self.stats["gate_window"] += 1
@@ -693,26 +813,17 @@ class ThetaStrategy(SniperStrategy):
             if (sb or 0.0) < self.min_back_size:
                 self.stats["gate_liquidity"] += 1
                 continue
-            if self.theta_overshoot_only:
-                # OVERSHOOT: SOLO nella finestra [min_s, max_s] dopo un gol
-                # (quiete disattivata by-design: si compra il riprezzo)
-                if self._last_goal_ms is None:
-                    self.stats["gate_overshoot_win"] += 1
-                    continue
-                dt_s = (float(now) - self._last_goal_ms) / 1000.0
-                if not (self.theta_overshoot_min_s <= dt_s
-                        <= self.theta_overshoot_max_s):
-                    self.stats["gate_overshoot_win"] += 1
-                    continue
             # QUIETE: nessuna sospensione recente (semaforo condiviso evento)
-            elif (self.risk_sem is not None
+            # — un ingresso overshoot la bypassa (entra APPOSTA nel post-gol)
+            if (not overshoot_entry and self.risk_sem is not None
                     and self.risk_sem.entries_halted(now)):
                 self.stats["gate_quiet"] += 1
                 continue
             # HAZARD Atlante (fail-closed: cella ignota = rosso)
             g = self._goals()
-            # gol correnti massimi parametrici (S4): oltre = rosso
-            if (self.theta_max_goals is not None
+            # gol correnti massimi parametrici (S4): oltre = rosso (gli
+            # ingressi overshoot non lo contano: il gol e' appena arrivato)
+            if (not overshoot_entry and self.theta_max_goals is not None
                     and int(g) > self.theta_max_goals):
                 self.stats["gate_max_goals"] += 1
                 continue
@@ -726,15 +837,29 @@ class ThetaStrategy(SniperStrategy):
                 self.stats["gate_pair"] += 1
                 continue
             self.stats["gate_pass"] += 1
+            # STEP 3: entry TAKER sulla liquidita' per l'overshoot; scratch
+            # accorciato se l'Atlante teme il secondo gol rapido (post-gol
+            # l'hazard e' gia' calcolato sullo stato NUOVO del punteggio)
+            entry_mode = "taker" if overshoot_entry else self.theta_entry_mode
+            scratch_override = None
+            if overshoot_entry:
+                # _EPS: 1-(1-p)^1 in float puo' superare p di 1e-17 — mai
+                # accorciare lo scratch per un errore di rappresentazione
+                scratch_override = (
+                    120.0 if float(p3) > self.theta_overshoot_fast_hazard + _EPS
+                    else self.theta_overshoot_scratch_s)
             ctx = {"price": pair["entry_price"],
                    "size": (round(min(self.stake, float(sb or 0.0)), 2)
-                            if self.theta_entry_mode == "taker"
+                            if entry_mode == "taker"
                             else self.stake),
                    "exit_price": pair["exit_price"],
                    "exit_size": pair["exit_size"],
                    "locked": pair["locked"], "line": target,
                    "minute": round(float(minute), 1),
-                   "hazard_p3": round(float(p3), 4), "hazard_src": src}
+                   "hazard_p3": round(float(p3), 4), "hazard_src": src,
+                   "entry_mode": entry_mode,
+                   "overshoot": bool(overshoot_entry),
+                   "scratch_s": scratch_override}
             if not self._entry_go(float(now), ctx):
                 continue
             self._fire_theta(market, runner, pos, ctx, float(now))
@@ -802,7 +927,9 @@ class ThetaStrategy(SniperStrategy):
             pos.close_locked = 0.0
             pos.entry_odds = None
             pos.pending_protect = None
+            pos.scratch_override_s = None
             self._loss_capped()
+            self._check_target_greens()
             return
 
         # ---- POST-GOL: chiusura al riprezzo (protezione, confermabile) ----
@@ -845,8 +972,11 @@ class ThetaStrategy(SniperStrategy):
             return
 
         # ---- SCRATCH TIMER (secondi di publish_time, mai conteggi book) ----
+        # per-ingresso (STEP 3): l'overshoot ha il suo scratch, accorciato se
+        # l'Atlante teme il secondo gol rapido; default = scratch_s strategia
+        scratch_s = pos.scratch_override_s or self.scratch_s
         if (pos.entry_fill_pt is not None
-                and now - pos.entry_fill_pt > self.scratch_s * 1000.0):
+                and now - pos.entry_fill_pt > scratch_s * 1000.0):
             if self._protect_go(pos, "scratch", now, {
                     "pos_s": round((now - pos.entry_fill_pt) / 1000.0, 1),
                     "best_back": bb, "best_lay": bl}):
@@ -930,6 +1060,302 @@ class ThetaStrategy(SniperStrategy):
         pos.pending_protect = None
         return True
 
+    # -------------------------------------------------- filo rosso cecchino
+    def _check_target_greens(self) -> None:
+        """Presi ``target_greens`` verdi (tutti gli step), STOP partita:
+        il cecchino ha fatto i suoi tick — niente overtrading (spec 16/07)."""
+        if (self.theta_target_greens > 0 and not self._event_done
+                and int(self.stats.get("greens", 0)) >= self.theta_target_greens):
+            self._event_done = True
+            self.stats["target_greens_hits"] += 1
+            self._emit("theta_target_greens_hit",
+                       greens=int(self.stats.get("greens", 0)),
+                       pnl_locked=round(float(self.stats.get("pnl_locked", 0.0)), 3))
+
+    # ------------------------------------------- STEP 1: pre-match PERSIST
+    @staticmethod
+    def _reset_prematch(pos: _ThetaPos) -> None:
+        """Chiude il CICLO pre-match sulla posizione (backtest 16/07: senza
+        questo reset il flag restava e i cicli standard successivi sullo
+        stesso runner finivano nel gestore pre-match — timeout gia' scaduto
+        → flatten immediato a ripetizione + divergenze ledger)."""
+        pos.prematch = False
+        pos.prematch_exit_placed = False
+        pos.prematch_deadline_ms = None
+        pos.prematch_taken = False
+        pos.prematch_take_placed = False
+
+    def _prematch_entry_tick(self, market: Any, runner: Any, pos: _ThetaPos,
+                             bb: Optional[float], bl: Optional[float],
+                             sb: float, now: float, ko_ms: float) -> None:
+        """Ingresso PRE-MATCH (spec cecchino 16/07): a KO−prematch_entry_s
+        back Under 2.5 in PERSIST (regge il turn in-play); se a
+        KO−prematch_take_s non e' fillato, escalation TAKER (attraversa lo
+        spread); il target e il timeout si decidono al KO (_manage_prematch).
+        UNA sola finestra per partita (_prematch_done)."""
+        left_s = (ko_ms - now) / 1000.0
+        if left_s <= 0 or left_s > self.prematch_entry_s:
+            return
+        if self.force_flat or self._event_done or self._loss_capped():
+            return
+        if bb is None or bl is None:
+            return
+        if not (self.prematch_price_min <= bb <= self.prematch_price_max):
+            return
+        spr = ticks_between(bb, bl)
+        if spr is None or spr > self.theta_max_spread_ticks:
+            return
+        if sb < self.min_back_size:
+            return
+        if self.dry_run:
+            # demo del cervello: UN solo annuncio per finestra
+            self._prematch_done = True
+            self.stats["dry_fires"] += 1
+            self._emit("theta_prematch_dry", price=bb, size=self.stake,
+                       left_s=round(left_s, 1))
+            return
+        o = self._place(market, runner.selection_id, "BACK", bb, self.stake,
+                        pos=pos, persistence="PERSIST")
+        if o is not None:
+            pos.entries.append(o)
+            pos.prematch = True
+            pos.entry_odds = bb
+            pos.entry_placed_pt = now
+            self._prematch_done = True
+            self.stats["prematch_shots"] += 1
+            self.stats["shots"] += 1
+            self.stats["entries"] += 1
+            self._emit("theta_prematch_fire", price=bb, size=self.stake,
+                       left_s=round(left_s, 1))
+
+    def _manage_prematch(self, market: Any, market_book: Any, runner: Any,
+                         pos: _ThetaPos, bb: Optional[float],
+                         bl: Optional[float], now: float,
+                         ko_ms: Optional[float], inplay: bool,
+                         postgol_here: bool) -> None:
+        """Ciclo STEP 1 dopo il fuoco pre-match (review 16/07 incorporata).
+
+        PRE-KO:  kill-switch attivo ANCHE qui (force_flat/event_done/loss_cap
+                 → cancel/flat, mai nuovi ordini); se non fillato a
+                 KO−prematch_take_s → escalation in DUE FASI (prima cancel,
+                 poi — a cancel confermato e zero matched — taker SOTTO il
+                 best back: un limite basso matcha al prezzo disponibile).
+        AL KO:   residuo PERSIST ri-cancellato a OGNI book; DEADLINE armata
+                 SUBITO col primo fill (mai posizione senza timeout); col
+                 matched si calcola il TARGET ADATTIVO (prematch_exit_ticks)
+                 e si piazza il lay; se la close muore senza matched (LAPSE a
+                 una sospensione ignorata) si RIPIAZZA.
+        GOL:     FAIL-CLOSED — l'unica sospensione ignorabile e' il turn
+                 in-play (entro 45s dal KO e punteggio NOTO 0-0); punteggio
+                 ignoto o sospensione tardiva → flat al riprezzo.
+        """
+        filled = sum(float(getattr(o, "size_matched", 0.0) or 0.0)
+                     for o in pos.entries)
+
+        # ---- PRE-KO ------------------------------------------------------
+        if not inplay:
+            # kill-switch anche pre-KO (review 16/07: prima il force-flat era
+            # ignorato e l'escalation piazzava PERSIST NUOVI dopo lo stop)
+            if self.force_flat or self._event_done or self._loss_capped():
+                for o in pos.entries:
+                    self._cancel_if_live(market, o)
+                if filled > 0:
+                    self._begin_flatten(market, pos)
+                    self._drive_flatten(market, pos, bb, bl, now)
+                    self._reset_prematch(pos)
+                elif not any(self._has_live(o) for o in pos.entries):
+                    pos.entries = []
+                    pos.entry_odds = None
+                    self._reset_prematch(pos)
+                return
+            if filled <= 0 and ko_ms is not None:
+                left_s = (ko_ms - now) / 1000.0
+                if left_s <= self.prematch_take_s:
+                    # ESCALATION IN DUE FASI (review: cancel+place nello
+                    # stesso tick = rischio doppio fill sul PERSIST)
+                    if not pos.prematch_taken:
+                        for o in pos.entries:
+                            self._cancel_if_live(market, o)
+                        pos.prematch_taken = True
+                        return
+                    if pos.prematch_take_placed:
+                        return
+                    if any(self._has_live(o) for o in pos.entries):
+                        return          # cancel non ancora confermato
+                    f2 = sum(float(getattr(o, "size_matched", 0.0) or 0.0)
+                             for o in pos.entries)
+                    if f2 > 0:
+                        return          # fillato durante il cancel: piano al KO
+                    if bb is None:
+                        return
+                    # TAKE vero: BACK con limite SOTTO il best back → matcha
+                    # subito al prezzo DISPONIBILE (review: al best lay
+                    # restava maker sopra il book, il contrario di un take)
+                    px = price_ticks_away(get_nearest_price(bb),
+                                          -self.theta_taker_ticks)
+                    if not px or px <= 1.0:
+                        return
+                    pos.entries = []
+                    o = self._place(market, runner.selection_id, "BACK", px,
+                                    self.stake, pos=pos, persistence="PERSIST")
+                    if o is not None:
+                        pos.entries.append(o)
+                        pos.entry_odds = bb
+                        pos.prematch_take_placed = True
+                        self._emit("theta_prematch_take", price=px, ref_bb=bb,
+                                   left_s=round(left_s, 1))
+            return
+
+        # ---- IN-PLAY -------------------------------------------------------
+        # kill-switch PRIMA di ogni piano (review): in force-flat non si
+        # piazzano close, si smonta e basta
+        if self.force_flat:
+            for o in pos.entries:
+                self._cancel_if_live(market, o)
+            if pos.close is not None and self._has_live(pos.close):
+                self._cancel_if_live(market, pos.close)
+            self._begin_flatten(market, pos)
+            self._drive_flatten(market, pos, bb, bl, now)
+            self._reset_prematch(pos)
+            return
+
+        # residuo PERSIST ri-cancellato a OGNI book (review: un singolo
+        # cancel puo' fallire/racere e il PERSIST continuerebbe a matchare)
+        for o in pos.entries:
+            self._cancel_if_live(market, o)
+
+        if filled <= 0:
+            # nessun fill pre-match: finestra chiusa, niente inseguimenti
+            if not any(self._has_live(o) for o in pos.entries):
+                self._emit("theta_prematch_unfilled")
+                pos.entries = []
+                pos.entry_odds = None
+                self._reset_prematch(pos)
+            return
+        if pos.entry_fill_pt is None:
+            pos.entry_fill_pt = now
+
+        # DEADLINE ARMATA SUBITO col fill (review: prima nasceva solo con la
+        # close piazzata — una close impossibile = posizione senza timeout)
+        if pos.prematch_deadline_ms is None:
+            p3, src = self._hazard(0.0, 0)
+            timeout = prematch_timeout_s(p3)
+            base = float(ko_ms) if ko_ms is not None else now
+            pos.prematch_deadline_ms = base + timeout * 1000.0
+            self._emit("theta_prematch_deadline", timeout_s=timeout,
+                       hazard_p3=(round(float(p3), 4) if p3 is not None
+                                  else None), hazard_src=src)
+
+        # ---- VERDE: close morta con matched → net REALE (fix bug 1) ----
+        if pos.close is not None and not self._has_live(pos.close):
+            close_matched = float(
+                getattr(pos.close, "size_matched", 0.0) or 0.0)
+            if close_matched > 0 and not pos.submins:
+                nw_r, nl_r = self._real_net(pos)
+                if abs(nw_r - nl_r) > max(0.02, pos.residual_accepted + 0.02):
+                    self._emit("theta_close_partial", level="WARN",
+                               nw=round(nw_r, 3), nl=round(nl_r, 3))
+                    self._begin_flatten(market, pos)
+                    self._drive_flatten(market, pos, bb, bl, now)
+                    self._reset_prematch(pos)
+                    return
+                locked = self._book_locked(pos, nw_r, nl_r)
+                self.stats["greens"] += 1
+                self.stats["prematch_greens"] += 1
+                self.stats["pnl_locked"] += locked
+                self._close_cycle_clock(pos, now)
+                self._emit("theta_prematch_green", locked=round(locked, 3))
+                for o_t in pos.entries:
+                    self._track(pos, o_t)
+                self._track(pos, pos.close)
+                pos.entries = []
+                pos.close = None
+                pos.close_locked = 0.0
+                pos.entry_odds = None
+                self._reset_prematch(pos)
+                self._loss_capped()
+                self._check_target_greens()
+                return
+            if close_matched <= 0:
+                # close morta SENZA matched (LAPSE a sospensione ignorata):
+                # il piano si RIPIAZZA (review: mai posizione senza uscita)
+                self._emit("theta_prematch_close_dead")
+                pos.close = None
+                pos.close_locked = 0.0
+                pos.prematch_exit_placed = False
+
+        # GOL: FAIL-CLOSED (review). Ignorabile SOLO il turn in-play: entro
+        # 45s dal KO e punteggio NOTO 0-0. Feed muto/in ritardo o sospensione
+        # tardiva (VAR/rosso) → flat al riprezzo, come il ciclo certificato.
+        if postgol_here:
+            g = self._goals()
+            in_ko_grace = (ko_ms is not None
+                           and now - float(ko_ms) <= 45_000.0)
+            if g is not None and int(g) == 0 and in_ko_grace:
+                self._postgol_mids.discard(str(market_book.market_id))
+                self._postgol_seen_ms.pop(str(market_book.market_id), None)
+            else:
+                if pos.close is not None and self._has_live(pos.close):
+                    self._cancel_if_live(market, pos.close)
+                self.stats["postgol_closes"] += 1
+                self._emit("theta_prematch_postgol_flat",
+                           best_back=bb, best_lay=bl)
+                self._begin_flatten(market, pos)
+                self._drive_flatten(market, pos, bb, bl, now)
+                self._postgol_mids.discard(str(market_book.market_id))
+                self._postgol_seen_ms.pop(str(market_book.market_id), None)
+                self._reset_prematch(pos)
+                return
+
+        # TIMEOUT: esposizione massima dal KO raggiunta → si esce al meglio
+        if (pos.prematch_deadline_ms is not None
+                and now > pos.prematch_deadline_ms):
+            if pos.close is not None and self._has_live(pos.close):
+                self._cancel_if_live(market, pos.close)
+            self.stats["scratches"] += 1
+            self.stats["prematch_scratches"] += 1
+            self._emit("theta_prematch_timeout")
+            self._begin_flatten(market, pos)
+            self._drive_flatten(market, pos, bb, bl, now)
+            self._reset_prematch(pos)
+            return
+
+        # ---- PIANO: target adattivo (si (ri)piazza finche' manca) ----
+        if not pos.prematch_exit_placed:
+            sb_m, ob, sl_m, ol = self._matched(pos.entries)
+            if not ob or ob <= 1.0:
+                return
+            # TARGET ADATTIVO al fischio: riferimento = best back attuale
+            # (il prezzo a cui il mercato ci ricomprerebbe subito)
+            t_ticks = prematch_exit_ticks(ob, bb, self.prematch_bonus_ticks)
+            price = price_ticks_away(get_nearest_price(ob), -t_ticks)
+            if not price or price <= 1.0:
+                # fondo ladder: si esce al meglio (mai posizione senza piano)
+                self._begin_flatten(market, pos)
+                self._drive_flatten(market, pos, bb, bl, now)
+                self._reset_prematch(pos)
+                return
+            nw = sb_m * (ob - 1.0) - sl_m * (ol - 1.0)
+            nl = sl_m - sb_m
+            g2 = compute_green(nw, nl, price)
+            if g2 is None:
+                self._begin_flatten(market, pos)
+                self._drive_flatten(market, pos, bb, bl, now)
+                self._reset_prematch(pos)
+                return
+            side, size, locked = g2
+            o = self._place(market, runner.selection_id, side, price, size,
+                            floor=False, pos=pos)
+            if o is None:
+                return  # riprova al prossimo book (la DEADLINE e' gia' armata)
+            pos.close = o
+            pos.close_locked = locked
+            pos.prematch_exit_placed = True
+            self._emit("theta_prematch_exit_plan",
+                       entry=ob, target_price=price, target_ticks=t_ticks,
+                       ref_bb=bb)
+            return
+
     # ----------------------------------------------------------------- fuoco
     def _fire_theta(self, market: Any, runner: Any, pos: _ThetaPos,
                     ctx: Dict[str, Any], now: float) -> None:
@@ -945,7 +1371,9 @@ class ThetaStrategy(SniperStrategy):
         size = max(0.0, float(ctx.get("size") or self.stake))
         if size <= 0.0:
             return
-        if self.theta_entry_mode == "taker":
+        # modalita' PER-INGRESSO (cecchino: quiete=maker, overshoot=taker)
+        entry_mode = str(ctx.get("entry_mode") or self.theta_entry_mode)
+        if entry_mode == "taker":
             # TAKER: limite a -taker_ticks dal best → tollera il movimento
             # nel betDelay e matcha al prezzo DISPONIBILE (best execution)
             lp = price_ticks_away(get_nearest_price(price),
@@ -959,6 +1387,9 @@ class ThetaStrategy(SniperStrategy):
             pos.entry_odds = price
             pos.entry_placed_pt = now   # ancora del TTL entry
             pos.pending_protect = None
+            # STEP 3: scratch accorciato per l'overshoot col rischio 2° gol
+            pos.scratch_override_s = (
+                float(ctx["scratch_s"]) if ctx.get("scratch_s") else None)
             self.stats["shots"] += 1
             self.stats["entries"] += 1
             self._emit("theta_fire", **ctx)

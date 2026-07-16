@@ -85,7 +85,9 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
     // (la UI delle conferme manuali non esiste: 'manual' bloccherebbe il bot).
     const [thetaMode, setThetaMode] = useState(false);
     const [thetaStake, setThetaStake] = useState(25);
-    const [thetaPreset, setThetaPreset] = useState<'classico' | 'overshoot'>('classico');
+    // default ALLINEATO alla MissionCard (review 16/07: due UI con default
+    // diversi = lo stesso gesto arma bot materialmente diversi)
+    const [thetaPreset, setThetaPreset] = useState<'cecchino' | 'classico' | 'overshoot'>('cecchino');
     // stringa vuota = "usa il default del backend" (max_shots 10, loss_cap 5)
     const [thetaMaxShots, setThetaMaxShots] = useState<string>('');
     const [thetaLossCap, setThetaLossCap] = useState<string>('');
@@ -388,9 +390,12 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                     <span className="text-white/50">Preset</span>
                                     <select
                                         value={thetaPreset}
-                                        onChange={e => setThetaPreset(e.target.value === 'overshoot' ? 'overshoot' : 'classico')}
+                                        onChange={e => setThetaPreset(
+                                            e.target.value === 'overshoot' ? 'overshoot'
+                                                : e.target.value === 'cecchino' ? 'cecchino' : 'classico')}
                                         className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-sm text-white [&>option]:bg-slate-900"
                                     >
+                                        <option value="cecchino">🎯 cecchino (3 step)</option>
                                         <option value="classico">classico (C7)</option>
                                         <option value="overshoot">overshoot (C17)</option>
                                     </select>

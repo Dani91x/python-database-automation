@@ -85,7 +85,7 @@ export interface ScalperParams {
     // 'manual' bloccherebbe il bot in attesa di conferme che nessuno dà).
     theta_mode?: boolean;
     theta_stake?: number;
-    theta_preset?: 'classico' | 'overshoot';
+    theta_preset?: 'cecchino' | 'classico' | 'overshoot';
     theta_max_shots?: number;
     theta_loss_cap?: number;
     theta_scratch_s?: number;

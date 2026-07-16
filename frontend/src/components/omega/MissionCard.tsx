@@ -87,10 +87,12 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
     const [laySizeHt, setLaySizeHt] = useState(1);    // default €1 (editabile)
     const [laySizeFt, setLaySizeFt] = useState(1);
     const [draft, setDraft] = useState<PlaceDraft | null>(null);
-    // preset del bot scalper: 'classico' = quiete pre-gol (C7) ·
-    // 'overshoot' = entra 30-90s DOPO il gol sul riprezzo gonfiato (C17,
-    // la cella migliore del backtest — pista viva da campionare)
-    const [thetaPreset, setThetaPreset] = useState<'classico' | 'overshoot'>('classico');
+    // preset del bot scalper:
+    //   'cecchino'  = i 3 momenti (pre-match PERSIST + quiete + post-gol,
+    //                 si ferma a 3 verdi) — spec utente 16/07, DEFAULT
+    //   'classico'  = solo quiete pre-gol (C7)
+    //   'overshoot' = solo post-gol 30-90s sul riprezzo gonfiato (C17)
+    const [thetaPreset, setThetaPreset] = useState<'cecchino' | 'classico' | 'overshoot'>('cecchino');
 
     const phase = phaseIdx(mission.phase_now);
     const legs = mission.legs ?? {};
@@ -193,9 +195,11 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                 theta_confirm_mode: 'auto',
             } as Parameters<typeof activateScalper>[4]);
             toast.success(`SCALPER 1-TICK avviato (paper, ${thetaPreset})`, {
-                description: thetaPreset === 'overshoot'
-                    ? `${mission.event_name ?? mission.event_id} — entra 30-90s DOPO il gol sul riprezzo`
-                    : `${mission.event_name ?? mission.event_id} — entra nella quiete, green a 1 tick`,
+                description: thetaPreset === 'cecchino'
+                    ? `${mission.event_name ?? mission.event_id} — 3 momenti: pre-match a KO−5', quiete, post-gol · stop a 3 verdi`
+                    : thetaPreset === 'overshoot'
+                        ? `${mission.event_name ?? mission.event_id} — entra 30-90s DOPO il gol sul riprezzo`
+                        : `${mission.event_name ?? mission.event_id} — entra nella quiete, green a 1 tick`,
             });
             onChanged();
         } catch (e) {
@@ -359,11 +363,12 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                         <>
                             <select
                                 value={thetaPreset}
-                                onChange={e => setThetaPreset(e.target.value as 'classico' | 'overshoot')}
+                                onChange={e => setThetaPreset(e.target.value as 'cecchino' | 'classico' | 'overshoot')}
                                 className="rounded-md bg-black/50 border border-white/10 px-2 py-1.5 text-xs"
                                 aria-label="Preset scalper"
-                                title="classico = entra nella quiete pre-gol · overshoot = entra 30-90s DOPO il gol sul riprezzo gonfiato"
+                                title="cecchino = 3 momenti: pre-match PERSIST a KO−5', quiete in-play, post-gol; stop a 3 verdi · classico = solo quiete · overshoot = solo post-gol"
                             >
+                                <option value="cecchino">🎯 cecchino (3 step)</option>
                                 <option value="classico">quiete (classico)</option>
                                 <option value="overshoot">post-gol (overshoot)</option>
                             </select>
