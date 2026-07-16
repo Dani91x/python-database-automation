@@ -171,22 +171,132 @@ def _sniper_profit_target(cp: Dict[str, Any]) -> float:
     return float(pt) if pt is not None else 0.01
 
 
-def _theta_dry_run(db: Any, event_id: str, session_dry_run: bool) -> bool:
-    """dry_run EFFETTIVO del theta: SEMPRE True (v1 solo PAPER, verdetto S4 16/07).
+def _theta_dry_run(db: Any, event_id: str, session_paper: bool) -> bool:
+    """dry_run EFFETTIVO del theta: ordini SOLO dentro un client paper.
 
-    FIX audit #7: il gate "THETA solo PAPER" viveva SOLO nel client (ScalperPanel):
-    una scalper_control con theta_mode=true e dry_run=false (scritta da qualunque
-    origine) armava il theta con ORDINI REALI non validati out-of-sample. Qui il
-    gate è SERVER-SIDE: con dry_run=false il theta viene FORZATO in paper, con log
-    forte in attività (mai in silenzio) — sniper/maker mantengono il loro dry_run.
+    REGOLA SPECCHIO 16/07: in sessione DEMO (client ``paper_trade=True``) il
+    theta gira PIENO — dry_run=False → ordini SIMULATI con ciclo completo
+    (coda, fill contro liquidità, scratch/stop ESEGUITI): è così che il PAPER
+    n>=40 misura la verità, non coi dry-fire.
+    In sessione LIVE il verdetto S4 resta: theta MAI con soldi veri →
+    dry_run FORZATO a True con log forte (fix audit #7, gate server-side —
+    una scalper_control con theta_mode=true e dry_run=false scritta da
+    qualunque origine non arma MAI ordini reali del theta).
     """
-    if session_dry_run:
-        return True
+    if session_paper:
+        return False
     db.log(event_id, "warn", {
         "msg": "THETA solo PAPER: dry_run FORZATO a true (non validato "
                "out-of-sample, verdetto S4) — le altre strategie restano live",
     })
     return True
+
+
+def _order_client_kwargs(session_paper: bool) -> Dict[str, Any]:
+    """kwargs del BetfairClient flumine della sessione — REGOLA SPECCHIO 16/07.
+
+    DEMO (scalper_control.dry_run=true) → ``paper_trade=True``: flumine attiva
+    SimulatedExecution + SimulatedMiddleware sul flusso live REALE (coda del
+    book, fill contro liquidità/volume scambiato, betDelay in-play dalla
+    marketDefinition) e un SimulatedOrderStream per i fill async — la demo è
+    il live SENZA SOLDI, mai più snapshot. LIVE → paper_trade=False,
+    INVARIATO rispetto a prima. ``min_bet_validation=False`` in entrambe
+    (fix CRITICAL-3 del live-trading: l'OrderValidation nativa non conosce
+    l'eccezione reduces_liability; i minimi veri li garantisce la strategia)."""
+    return {
+        "min_bet_validation": False,
+        "order_stream": True,
+        "paper_trade": bool(session_paper),
+    }
+
+
+def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
+                          market_ids: List[str], session_paper: bool) -> None:
+    """CRASH del thread flumine: rete di emergenza (fix 15/07, bug 3).
+
+    LIVE → sweep cancel REST degli unmatched + alert CRITICAL.
+    PAPER → NIENTE sweep: gli ordini della sessione sono SIMULATI, ma
+    ``cancel_orders(market_id)`` REST è market-wide sul CONTO e cancellerebbe
+    ordini REALI di ALTRI processi (es. manuali del runner) sugli stessi
+    mercati. Si logga soltanto (MONEY-CRITICAL, controcheck 16/07)."""
+    if session_paper:
+        db.log(event_id, "info", {
+            "msg": "CRASH thread flumine (PAPER): nessuno sweep REST — "
+                   "ordini simulati, nulla di vivo sull'exchange"})
+        return
+    swept = _sweep_cancel(trading, market_ids)
+    db.log(event_id, "error", {
+        "msg": "CRASH thread flumine: sweep cancel eseguito",
+        "sweep": swept})
+    try:
+        db.sb.table("live_alerts").insert({
+            "level": "CRITICAL", "code": "SCALPER_CRASH",
+            "message": (f"sessione {event_id}: thread flumine MORTO. Sweep "
+                        f"cancel unmatched su {len(swept['ok'])} "
+                        f"mercati (KO: {len(swept['ko'])}). "
+                        "VERIFICA il matched residuo sul conto."),
+            "event_id": event_id,
+        }).execute()
+    except Exception:  # noqa: BLE001 - alert best-effort
+        pass
+
+
+def _make_session_mirror(market_ids: List[str], exec_mode: str) -> Any:
+    """Specchio ordini della sessione → ``betfair_live_orders`` (ladder).
+
+    Riusa LiveTradingStrategy (write-on-change, riconciliazione ref, stessa
+    tabella letta dal ladder in realtime) ma:
+      * NON è aggiunta al framework: un thread dedicato (_order_mirror_loop)
+        le passa TUTTI gli ordini del blotter (maker+sniper+theta);
+      * NIENTE ``betfair_live_positions``: le posizioni restano al runner live
+        — due scrittori sulla stessa chiave (mode, market, selection) si
+        sovrascriverebbero a vicenda (controcheck 16/07)."""
+    from ..engine.live_trading_strategy import LiveTradingStrategy
+
+    class _SessionOrderMirror(LiveTradingStrategy):
+        def _position_row(self, *args: Any, **kwargs: Any) -> None:
+            return None  # solo ordini: mai in conflitto col runner
+
+        def _reconcile_ref_by_bet(self, dbm: Any, row: Dict[str, Any]) -> Dict[str, Any]:
+            # MAI riconciliare per bet_id (fix HIGH review 16/07): i ref della
+            # sessione sono i customer_order_ref flumine — unici e stabili per
+            # ordine, e il processo muore con la sessione (nessun post-restart
+            # da sanare). In PAPER i bet_id simulati NON sono univoci tra
+            # processi/sessioni (contatore locale da 100000000000): il lookup
+            # per bet_id aggancerebbe la riga di un ALTRO ordine e la
+            # sovrascriverebbe, corrompendo lo specchio del ladder.
+            return row
+
+    return _SessionOrderMirror(
+        market_filter={"marketIds": list(market_ids)},
+        mode=(exec_mode or "paper").lower(),
+    )
+
+
+def _order_mirror_loop(mirror: Any, framework: Any, stop_flag: Any,
+                       tick_s: float = 1.0) -> None:
+    """Thread specchio: ogni tick riflette gli ordini di TUTTI i mercati del
+    framework (qualunque strategia della sessione). Best-effort: non muore mai
+    e non ferma mai la sessione (il write-on-change del mirror evita spam)."""
+    while not stop_flag.is_set():
+        try:
+            markets = list(getattr(framework, "markets", None) or [])
+        except Exception:  # noqa: BLE001 - lo specchio non deve mai propagare
+            markets = []
+        for market in markets:
+            # try PER-MERCATO (fix LOW review 16/07): il blotter è mutato dal
+            # thread flumine — una race d'iterazione su UN mercato non deve
+            # far saltare il tick degli altri.
+            try:
+                blotter = getattr(market, "blotter", None)
+                if blotter is None:
+                    continue
+                orders = list(blotter)
+                if orders:
+                    mirror.process_orders(market, orders)
+            except Exception:  # noqa: BLE001
+                logger.debug("[scalper-sess] specchio ordini KO", exc_info=True)
+        stop_flag.wait(tick_s)
 
 
 def _theta_atlas_or_none(db: Any, event_id: str,
@@ -336,6 +446,14 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             raise RuntimeError(f"controllo non attivabile (status={control and control.get('status')})")
         db.set_control(ev, status="arming", started_at=_now_iso(), error=None)
 
+        # REGOLA SPECCHIO (16/07): scalper_control.dry_run è il toggle DEMO/LIVE
+        # della UI. DEMO → client flumine paper_trade=True e strategie PIENE
+        # (ordini SIMULATI con ciclo completo: coda, fill, protezioni eseguite,
+        # contatori/P&L da fill reali); LIVE → tutto invariato. Mai più
+        # demo-snapshot senza ordini (dry-fire).
+        session_paper = bool(control.get("dry_run", True))
+        exec_mode = "paper" if session_paper else "live"
+
         follow = db.follow(ev)
         if not follow:
             raise RuntimeError("evento non presente in live_follow")
@@ -377,7 +495,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             meta.update(res["meta"])
         db.set_control(ev, bias={str(k): v for k, v in bias.items()} or None,
                        bias_meta=meta)
-        db.log(ev, "info", {"msg": "armato", "mode": mode,
+        db.log(ev, "info", {"msg": "armato", "mode": mode, "exec": exec_mode,
                             "markets": market_ids, "bias_meta": meta,
                             "pid": os.getpid()})
         if mode == "bias" and not bias:
@@ -389,7 +507,11 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             if k in UI_PARAM_WHITELIST:
                 params[k] = v
         params["stake"] = float(control.get("stake") or 25.0)
-        params["dry_run"] = bool(control.get("dry_run", True))
+        # dry_run=False SEMPRE (regola specchio): le strategie piazzano ordini
+        # VERI per il framework — che in demo è paper_trade=True, quindi
+        # SIMULATI da flumine. Il vecchio dry-fire non è più una modalità
+        # operativa (resta solo nel gate theta-LIVE, vedi _theta_dry_run).
+        params["dry_run"] = False
         params["bias"] = {str(k): v for k, v in bias.items()}
         params["only_bias"] = mode == "bias"
         # MODALITA' INTERVALLO (ht_mode, whitelistata): dopo il pre-match il
@@ -483,7 +605,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             )
             db.log(ev, "info", {"msg": "sniper armato (S16)",
                                 "stake": sniper_stake,
-                                "dry_run": params["dry_run"]})
+                                "exec": exec_mode})
         # ---- THETA SCALPER in-play (dossier 15/07) ----------------------
         # Gemella dello sniper: BACK Under (gol+2.5) col semaforo Atlante
         # Hazard, coppia atomica back+green a -1 tick, scratch timer,
@@ -513,10 +635,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             # dati) | 'overshoot' (C17, unica pista EV+, da campionare).
             # Il preset fissa scratch/hazard/finestre; gli override UI
             # espliciti (theta_scratch_s, theta_hazard_max) vincono sempre.
-            # FIX audit #7: gate "THETA solo PAPER" anche SERVER-SIDE — con
-            # dry_run=false il theta è forzato in paper (log forte), le altre
-            # strategie mantengono il dry_run della sessione.
-            _theta_dry = _theta_dry_run(db, ev, bool(params["dry_run"]))
+            # FIX audit #7 + regola specchio: in sessione DEMO il theta gira
+            # PIENO (dry_run=False, ordini simulati dal client paper); in
+            # sessione LIVE resta FORZATO in dry-run (mai soldi veri, log forte).
+            _theta_dry = _theta_dry_run(db, ev, session_paper)
             _theta_params = {
                 "stake": theta_stake,
                 "dry_run": _theta_dry,
@@ -555,6 +677,7 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
             db.log(ev, "info", {"msg": "theta armato",
                                 "stake": theta_stake,
                                 "dry_run": _theta_dry,
+                                "exec": exec_mode,
                                 "confirm": _confirm,
                                 "preset": theta.theta_preset,
                                 "theta_only": theta_only})
@@ -625,8 +748,18 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
                     strategy_ref.ht_active = True
                     db.log(ev, "ht_start", {"minute": m})
 
+        if session_paper:
+            # Latenza di sottomissione simulata (come il runner PAPER): la
+            # SimulatedExecution usa flumine.config.place_latency; il betDelay
+            # in-play VERO lo applica la SimulatedMiddleware leggendolo dalla
+            # marketDefinition dello stream (stesso percorso certificato).
+            from ..config_stream import PAPER_SIMULATED_LATENCY_MS
+            if PAPER_SIMULATED_LATENCY_MS and PAPER_SIMULATED_LATENCY_MS > 0:
+                import flumine.config as _flumine_config
+                _flumine_config.place_latency = (
+                    float(PAPER_SIMULATED_LATENCY_MS) / 1000.0)
         framework = Flumine(client=clients.BetfairClient(
-            trading, min_bet_validation=False, order_stream=True,
+            trading, **_order_client_kwargs(session_paper),
         ))
         # theta_only: il maker NON si arma (l'oggetto strategy resta per le
         # stats/flat check, ma fuori dal framework non piazza nulla)
@@ -650,6 +783,16 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         runner = threading.Thread(target=framework.run, daemon=True,
                                   name=f"flumine-{ev}")
         runner.start()
+
+        # SPECCHIO ORDINI → betfair_live_orders (regola specchio 16/07): le
+        # operazioni dei bot — demo E live — compaiono sul ladder come
+        # my_lay/my_back, in realtime, come quelle manuali.
+        threading.Thread(
+            target=_order_mirror_loop,
+            args=(_make_session_mirror(market_ids, exec_mode), framework,
+                  stop_flag),
+            daemon=True, name=f"order-mirror-{ev}",
+        ).start()
 
         ko_ts = None
         ko_iso = follow.get("open_date")
@@ -885,21 +1028,9 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # stato finale 'error' (mai piu' 'done' silenzioso).
         crashed = not clean_break and not runner.is_alive()
         if crashed:
-            swept = _sweep_cancel(trading, market_ids)
-            db.log(ev, "error", {
-                "msg": "CRASH thread flumine: sweep cancel eseguito",
-                "sweep": swept})
-            try:
-                db.sb.table("live_alerts").insert({
-                    "level": "CRITICAL", "code": "SCALPER_CRASH",
-                    "message": (f"sessione {ev}: thread flumine MORTO. Sweep "
-                                f"cancel unmatched su {len(swept['ok'])} "
-                                f"mercati (KO: {len(swept['ko'])}). "
-                                "VERIFICA il matched residuo sul conto."),
-                    "event_id": ev,
-                }).execute()
-            except Exception:  # noqa: BLE001 - alert best-effort
-                pass
+            # PAPER: mai lo sweep REST market-wide (cancellerebbe ordini REALI
+            # di altri processi sul conto) — vedi _handle_flumine_crash.
+            _handle_flumine_crash(db, ev, trading, market_ids, session_paper)
         try:
             # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
             # TerminationEvent in handler_queue — _running=False non è mai testato

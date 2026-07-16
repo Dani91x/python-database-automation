@@ -195,7 +195,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
             } as Partial<ScalperParams> & {
                 ht_mode: boolean; sniper_mode: boolean; sniper_stake: number;
             });
-            toast.success(`Scalper ${dryRun ? 'ARMATO (nessun ordine)' : 'ATTIVATO'} — ${eventName}`);
+            toast.success(`Scalper ${dryRun ? 'ATTIVATO in PAPER (ordini simulati)' : 'ATTIVATO'} — ${eventName}`);
             setShowForm(false);
             void refresh();
         } catch (e) {
@@ -311,7 +311,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                             <Checkbox checked={dryRun} onCheckedChange={v => setDryRun(v === true)} />
                             <span className={dryRun ? 'text-amber-300 font-semibold' : 'text-white/60'}>
-                                Solo ARMATO (nessun ordine reale)
+                                DEMO · PAPER (ordini SIMULATI, ciclo completo — mai soldi veri)
                             </span>
                         </label>
                         <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -348,7 +348,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             <span className={sniperMode ? 'text-sky-300 font-semibold' : 'text-white/60'}>
                                 🎯 SNIPER in-play (S16): 1 tick sull&apos;Under al momento letto dal book
                                 (cadenza+coda+spread), poi stop. Backtest: +0.99€/14 eventi, worst −0.49.
-                                In dry-run mostra solo i trigger. Alternativo alla gamba HT.
+                                In DEMO piazza ordini simulati (paper flumine). Alternativo alla gamba HT.
                             </span>
                         </label>
                         {sniperMode && (
@@ -389,8 +389,9 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 guidato dall&apos;Atlante hazard (coppia atomica entry+green,
                                 scratch a tempo). Alternativo a Sniper e gamba HT.
                                 ⚠️ Theta NON validato out-of-sample (verdetto S4: classico EV−,
-                                overshoot da campionare) — SOLO PAPER: armalo esclusivamente
-                                con dry_run attivo.
+                                overshoot da campionare) — SOLO PAPER: in DEMO piazza ordini
+                                simulati a ciclo completo; con ordini REALI il server lo forza
+                                comunque in paper.
                             </span>
                         </label>
                         {thetaMode && (
@@ -483,7 +484,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black"
                         >
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
-                            {dryRun ? 'Arma il bot (dry-run)' : 'Attiva ORDINI REALI'}
+                            {dryRun ? 'Attiva in PAPER (simulato)' : 'Attiva ORDINI REALI'}
                         </Button>
                         <Button variant="secondary" onClick={() => setShowForm(false)} disabled={busy}>
                             Annulla
@@ -528,7 +529,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     {/* statistiche */}
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                         {[
-                            { l: ctrl.dry_run ? 'Quote (dry)' : 'Ordini', v: ctrl.dry_run ? num(stats?.dry_quotes) : num(stats?.orders_placed), i: Activity },
+                            { l: ctrl.dry_run ? 'Ordini (sim)' : 'Ordini', v: num(stats?.orders_placed), i: Activity },
                             { l: 'Cicli', v: num(stats?.cycles) + num(stats?.flattens), i: Gauge },
                             { l: 'Catture', v: num(stats?.scalps) + num(stats?.roundtrips), i: TrendingUp },
                             { l: 'Scratch', v: num(stats?.scratches), i: Activity },

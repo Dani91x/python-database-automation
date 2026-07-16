@@ -380,3 +380,91 @@ def test_flb_green_est_exact_with_partial_fraction():
     nw2, nl2 = nw + size * 0.20, nl - size
     assert est_half == pytest.approx(min(nw2, nl2), abs=1e-9)
     assert est_half < locked_full            # il vecchio bug sovrastimava ~2x
+
+
+# ---------------------------------------------------------------------------
+# pnl_settled (16/07) — verita' del settlement simulato in pro/scalper
+# (pattern tennis_flb/tennis_swing): ADDITIVO, non tocca pnl/pnl_locked.
+# ---------------------------------------------------------------------------
+def _settled_order(profit=None, with_sim=True):
+    o = types.SimpleNamespace(selection_id=1, side="BACK")
+    if with_sim:
+        o.simulated = types.SimpleNamespace(profit=profit)
+    return o
+
+
+def _closed_mb(market_type="MATCH_ODDS"):
+    return types.SimpleNamespace(
+        market_definition=types.SimpleNamespace(market_type=market_type))
+
+
+def test_pro_pnl_settled_accumulates_from_settlement():
+    s = _make_pro()
+    s.stats["pnl"] = 1.23                       # proiezione locked pre-esistente
+    m = _ProMarket(_ProBlotter([_settled_order(0.50), _settled_order(-0.20)]))
+    s.process_closed_market(m, _closed_mb())
+    assert s.stats["pnl_settled"] == pytest.approx(0.30)
+    assert s.stats["pnl"] == pytest.approx(1.23)        # MAI toccato dalla chiusura
+    # seconda chiusura (altro mercato): si accumula
+    m2 = _ProMarket(_ProBlotter([_settled_order(0.10)]))
+    s.process_closed_market(m2, _closed_mb())
+    assert s.stats["pnl_settled"] == pytest.approx(0.40)
+
+
+def test_pro_pnl_settled_dedups_on_repeated_close():
+    """Fix HIGH review 16/07: flumine può rilanciare process_closed_market
+    sullo stesso mercato (book CLOSED ripetuti) — ogni ordine si conta UNA
+    volta sola, come nello scalper."""
+    s = _make_pro()
+    m = _ProMarket(_ProBlotter([_settled_order(0.50), _settled_order(-0.20)]))
+    s.process_closed_market(m, _closed_mb())
+    s.process_closed_market(m, _closed_mb())   # ri-chiusura: NON raddoppia
+    s.process_closed_market(m, _closed_mb())
+    assert s.stats["pnl_settled"] == pytest.approx(0.30)
+
+
+def test_pro_pnl_settled_safe_without_simulated():
+    s = _make_pro()
+    # paper mock: simulated assente, simulated=None, profit=None
+    m = _ProMarket(_ProBlotter([
+        _settled_order(with_sim=False),
+        types.SimpleNamespace(simulated=None),
+        _settled_order(None),
+    ]))
+    s.process_closed_market(m, _closed_mb())    # non deve alzare eccezioni
+    assert s.stats["pnl_settled"] == pytest.approx(0.0)
+    assert s.stats["pnl"] == pytest.approx(0.0)
+
+
+def test_scalper_pnl_settled_accumulates_and_keeps_locked_untouched():
+    s = _make_scalper()
+    s.stats["pnl_locked"] = 0.77                # proiezione green pre-esistente
+    m = _Market(blotter=_ProBlotter([_settled_order(0.50), _settled_order(-0.20)]))
+    s.process_closed_market(m, _closed_mb())
+    assert s.stats["pnl_settled"] == pytest.approx(0.30)
+    assert s.stats["pnl_locked"] == pytest.approx(0.77)  # NON cambia alla chiusura
+    # la contabilita' slot esistente (settled_orders) resta intatta
+    assert len(s.settled_orders) == 2
+    assert all(mt == "MATCH_ODDS" for _, mt in s.settled_orders)
+
+
+def test_scalper_pnl_settled_dedups_on_repeated_close():
+    s = _make_scalper()
+    orders = [_settled_order(0.50)]
+    m = _Market(blotter=_ProBlotter(orders))
+    s.process_closed_market(m, _closed_mb())
+    s.process_closed_market(m, _closed_mb())    # ri-chiusura: stesso ordine
+    assert s.stats["pnl_settled"] == pytest.approx(0.50)   # contato UNA volta
+    assert len(s.settled_orders) == 1
+
+
+def test_scalper_pnl_settled_safe_without_simulated():
+    s = _make_scalper()
+    m = _Market(blotter=_ProBlotter([
+        _settled_order(with_sim=False),
+        types.SimpleNamespace(simulated=None),
+        _settled_order(None),
+    ]))
+    s.process_closed_market(m, _closed_mb())    # non deve alzare eccezioni
+    assert s.stats["pnl_settled"] == pytest.approx(0.0)
+    assert s.stats["pnl_locked"] == pytest.approx(0.0)

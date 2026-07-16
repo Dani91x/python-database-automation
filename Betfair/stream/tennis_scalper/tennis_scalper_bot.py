@@ -451,6 +451,10 @@ class TennisScalperStrategy(BaseStrategy):
             "scalps": 0, "roundtrips": 0, "scratches": 0, "stops": 0,
             "flattens": 0, "pnl_locked": 0.0, "pnl_peak": 0.0,
             "trend_entries": 0, "target_hit": 0,
+            # P&L VERO del settlement simulato (audit 16/07): ADDITIVO,
+            # accumulato in process_closed_market; pnl_locked resta la
+            # proiezione dei green e NON viene toccato.
+            "pnl_settled": 0.0,
         }
 
         # ---- TREND SURF (il fix dei "segni negativi" sui mercati in deriva) ----
@@ -979,9 +983,23 @@ class TennisScalperStrategy(BaseStrategy):
             orders = market.blotter.strategy_orders(self)
         except Exception:  # noqa: BLE001
             orders = []
+        settled = 0.0
         for order in orders:
             oid = getattr(order, "id", None) or id(order)
+            # pnl_settled (audit 16/07): somma di order.simulated.profit al
+            # settlement (pattern tennis_flb/tennis_swing). Il dedup per oid
+            # riusa _settled_by_id: una ri-chiusura dello stesso mercato non
+            # conta due volte lo stesso ordine.
+            if oid not in self._settled_by_id:
+                try:
+                    sim = getattr(order, "simulated", None)
+                    settled += float(getattr(sim, "profit", 0.0) or 0.0)
+                except (TypeError, ValueError):  # profit non-numerico: 0
+                    pass
             self._settled_by_id[oid] = (order, mtype)
+        if settled:
+            self.stats["pnl_settled"] = round(
+                float(self.stats.get("pnl_settled", 0.0)) + settled, 3)
 
     # ----------------------------------------------------------------- logica
     def _try_enter(

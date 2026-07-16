@@ -174,7 +174,10 @@ class TennisProStrategy(BaseStrategy):
         self._set_won: Dict[str, Tuple[int, int]] = {}             # mid -> (winner_sel, games_tot@win)
         self._last_game_traded: Dict[str, Any] = {}                # mid -> game gia' tradato
         self.stats = {"entries": 0, "greens": 0, "scratches": 0, "stops": 0,
-                      "pnl": 0.0}
+                      "pnl": 0.0, "pnl_settled": 0.0}
+        # ordini gia' contati in pnl_settled (dedup: flumine puo' richiamare
+        # process_closed_market piu' volte sullo stesso mercato)
+        self._pnl_settled_oids: set = set()
 
     # ------------------------------------------------------------- telemetria
     def _emit(self, event: str, **payload: Any) -> None:
@@ -736,3 +739,25 @@ class TennisProStrategy(BaseStrategy):
         trade["close_wait"] = 0
         self._emit("close_escalate", sel=sel, kind=trade.get("kind"), price=mkt,
                    locked=round(float(locked2), 3))
+
+    def process_closed_market(self, market: Any, mb: Any) -> None:
+        # P&L VERO del settlement simulato (audit 16/07): stats["pnl"] resta la
+        # proiezione locked di compute_green; "pnl_settled" e' ADDITIVO e somma
+        # order.simulated.profit alla chiusura (pattern tennis_flb/tennis_swing).
+        # DEDUP per ordine (fix HIGH review 16/07): flumine puo' rilanciare
+        # process_closed_market sullo stesso mercato (book CLOSED ripetuti) —
+        # ogni ordine si conta UNA volta sola (stesso schema dello scalper).
+        settled = 0.0
+        try:
+            for o in market.blotter.strategy_orders(self):
+                oid = str(getattr(o, "id", "") or id(o))
+                if oid in self._pnl_settled_oids:
+                    continue
+                self._pnl_settled_oids.add(oid)
+                sim = getattr(o, "simulated", None)
+                settled += float(getattr(sim, "profit", 0.0) or 0.0)
+        except Exception:  # noqa: BLE001
+            pass
+        if settled:
+            self.stats["pnl_settled"] = round(
+                float(self.stats.get("pnl_settled", 0.0)) + settled, 3)
