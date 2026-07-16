@@ -339,8 +339,11 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                             {scalperCtl.status.toUpperCase()}
                         </Badge>
                         {scalperCtl.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">PAPER</Badge>}
-                        {/* numeri del theta: colpi/green/scratch + P&L bloccato */}
+                        {/* numeri del theta: colpi/green/scratch + P&L bloccato.
+                            In PAPER il bot NON simula i fill: annuncia le
+                            decisioni → il contatore che si muove e' SEGNALI */}
                         <span className="text-[11px] text-slate-400 tabular-nums">
+                            {scalperCtl.dry_run && <>{toNum(thetaStats.theta_dry_fires)} segnali · </>}
                             {toNum(thetaStats.theta_shots)} colpi · {toNum(thetaStats.theta_greens)} green · {toNum(thetaStats.theta_scratches)} scratch
                         </span>
                         <span
