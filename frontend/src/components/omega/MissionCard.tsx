@@ -87,6 +87,10 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
     const [laySizeHt, setLaySizeHt] = useState(1);    // default €1 (editabile)
     const [laySizeFt, setLaySizeFt] = useState(1);
     const [draft, setDraft] = useState<PlaceDraft | null>(null);
+    // preset del bot scalper: 'classico' = quiete pre-gol (C7) ·
+    // 'overshoot' = entra 30-90s DOPO il gol sul riprezzo gonfiato (C17,
+    // la cella migliore del backtest — pista viva da campionare)
+    const [thetaPreset, setThetaPreset] = useState<'classico' | 'overshoot'>('classico');
 
     const phase = phaseIdx(mission.phase_now);
     const legs = mission.legs ?? {};
@@ -185,11 +189,13 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                 theta_mode: true,
                 theta_only: true,
                 theta_stake: 25,
-                theta_preset: 'classico',
+                theta_preset: thetaPreset,
                 theta_confirm_mode: 'auto',
             } as Parameters<typeof activateScalper>[4]);
-            toast.success('SCALPER 1-TICK avviato (paper)', {
-                description: `${mission.event_name ?? mission.event_id} — entra/esce da solo, green a 1 tick`,
+            toast.success(`SCALPER 1-TICK avviato (paper, ${thetaPreset})`, {
+                description: thetaPreset === 'overshoot'
+                    ? `${mission.event_name ?? mission.event_id} — entra 30-90s DOPO il gol sul riprezzo`
+                    : `${mission.event_name ?? mission.event_id} — entra nella quiete, green a 1 tick`,
             });
             onChanged();
         } catch (e) {
@@ -343,18 +349,30 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                 ) : (
                     <span className="text-xs text-slate-500 italic">bot non attivo su questa partita</span>
                 )}
-                <span className="ml-auto">
+                <span className="ml-auto flex items-center gap-2">
                     {scalperActive ? (
                         <Button variant="outline" size="sm" onClick={handleStopScalper} disabled={busy === 'scalper'}>
                             {busy === 'scalper' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Square className="w-3.5 h-3.5 mr-1" />}
                             Ferma scalper
                         </Button>
                     ) : (
-                        <Button size="sm" className="bg-sky-600 hover:bg-sky-500 text-white"
-                            onClick={handleStartScalper} disabled={busy === 'scalper'}>
-                            {busy === 'scalper' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Zap className="w-3.5 h-3.5 mr-1" />}
-                            AVVIA SCALPER 1-TICK
-                        </Button>
+                        <>
+                            <select
+                                value={thetaPreset}
+                                onChange={e => setThetaPreset(e.target.value as 'classico' | 'overshoot')}
+                                className="rounded-md bg-black/50 border border-white/10 px-2 py-1.5 text-xs"
+                                aria-label="Preset scalper"
+                                title="classico = entra nella quiete pre-gol · overshoot = entra 30-90s DOPO il gol sul riprezzo gonfiato"
+                            >
+                                <option value="classico">quiete (classico)</option>
+                                <option value="overshoot">post-gol (overshoot)</option>
+                            </select>
+                            <Button size="sm" className="bg-sky-600 hover:bg-sky-500 text-white"
+                                onClick={handleStartScalper} disabled={busy === 'scalper'}>
+                                {busy === 'scalper' ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Zap className="w-3.5 h-3.5 mr-1" />}
+                                AVVIA SCALPER 1-TICK
+                            </Button>
+                        </>
                     )}
                 </span>
             </div>
