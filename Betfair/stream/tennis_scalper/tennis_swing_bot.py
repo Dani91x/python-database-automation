@@ -173,7 +173,21 @@ class TennisSwingStrategy(BaseStrategy):
         if not bb or not bl: return
         tmid = _tki((bb+bl)/2)
         side = tr["side"]
-        b, ba, l, la = self._pos(market, sel)
+        # DRY (16/07): posizione VIRTUALE dal prezzo d'ingresso — cosi' il
+        # ciclo target/stop/time gira identico al reale e il paper produce
+        # un ESITO (prima: matched 0 → ramo 'non riempita' → trade evaporato
+        # a 40s senza exit ne' P&L)
+        if self.dry_run:
+            pe = float(tr.get("px") or 0.0)
+            if pe <= 1.0:
+                self._tr.pop(mid, None)
+                return
+            if side == "BACK":
+                b, ba, l, la = self.stake, pe, 0.0, 0.0
+            else:
+                b, ba, l, la = 0.0, 0.0, self.stake, pe
+        else:
+            b, ba, l, la = self._pos(market, sel)
 
         # fase CLOSING: l'hedge MAKER può non riempirsi MAI → mai abbandonare la
         # posizione: dopo close_retry_ticks update si cancella e si chiude TAKER
@@ -223,10 +237,24 @@ class TennisSwingStrategy(BaseStrategy):
         if hit or adverse or timed_out:
             # esci a quota migliore (maker) o al touch
             px = (bb if self.maker else bl) if side == "BACK" else (bl if self.maker else bb)
+            kind = "target" if hit else ("stop" if adverse else "time")
+            if self.dry_run:
+                # esito VIRTUALE al prezzo di uscita: green spalmato dalla
+                # posizione sintetica (stesso compute_green del reale)
+                nw = b*(ba-1.0) - l*(la-1.0)
+                nl = l - b
+                g = compute_green(nw, nl, px)
+                locked = float(g[2]) if g is not None else min(nw, nl)
+                self.stats["pnl"] += locked
+                self.stats["wins" if hit else "losses"] += 1
+                self._emit("exit", sel=sel, kind=kind,
+                           locked=round(locked, 3), dry=True)
+                self._tr.pop(mid, None)   # nessuna posizione reale da smontare
+                return
             locked, close_order = self._close(market, sel, px)
             self.stats["pnl"] += locked
             self.stats["wins" if hit else "losses"] += 1
-            self._emit("exit", sel=sel, kind="target" if hit else ("stop" if adverse else "time"), locked=round(locked,3))
+            self._emit("exit", sel=sel, kind=kind, locked=round(locked,3))
             self._cancel(market, tr.get("order"))
             # NON si abbandona la posizione: stato closing finché il blotter è flat
             tr["closing"] = True
@@ -256,7 +284,13 @@ class TennisSwingStrategy(BaseStrategy):
         # ingresso
         if len(tk) <= self.N: return
         base = tk[-self.N:-2] or tk[-self.N:]
-        med = statistics.median(base); mad = statistics.median([abs(x-med) for x in base]) or 1e-9
+        med = statistics.median(base); mad = statistics.median([abs(x-med) for x in base])
+        # FIX 16/07 (caso reale: entry LAY con z=-674.500.000): con book piatto
+        # la MAD e' 0 e il vecchio fallback 1e-9 trasformava UN tick di
+        # movimento in uno z astronomico → falso segnale garantito. Nessuna
+        # dispersione = nessuno z-score sensato = NESSUN segnale.
+        if mad <= 0:
+            return
         z = 0.6745*(tmid-med)/mad
         if self._er(tk, 20) >= self.er_max: return          # gate regime
         if not (self.price_min <= (bb+bl)/2 <= self.price_max): return
@@ -272,8 +306,12 @@ class TennisSwingStrategy(BaseStrategy):
         if o is None and not self.dry_run: return
         # sel + t0 MEMORIZZATI nel trade (fix 2026-07-09): la gestione deve seguire la
         # selezione TRADATA (non il favorito corrente) e il time-stop conta i secondi.
+        # px (16/07): prezzo d'ingresso FLOAT — in dry e' la base della posizione
+        # VIRTUALE (paper con esito: prima l'entry dry evaporava dopo 40s senza
+        # exit ne' P&L → il paper non misurava nulla).
         self._tr[mid] = {"sel": sel, "side": side, "etk": tmid, "anchor": med,
                          "order": o, "held": 0, "wait": 0,
+                         "px": float(get_nearest_price(entry_price) or 0.0),
                          "t0": getattr(mb, "publish_time_epoch", None)}
         self.stats["entries"] += 1
         self._emit("entry", sel=sel, side=side, z=round(z,2), price=entry_price)

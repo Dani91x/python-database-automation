@@ -175,3 +175,46 @@ def test_entry_stores_selection_and_t0():
     assert tr["t0"] == pt
     assert tr["side"] == "BACK"
     assert s.stats["entries"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 5) FIX 16/07 — caso reale: entry LAY con z=-674.500.000 su book piatto
+# ---------------------------------------------------------------------------
+def test_mad_zero_niente_falsi_segnali():
+    """Book piatto → MAD 0: il vecchio fallback 1e-9 trasformava UN tick di
+    movimento in z astronomico (firma: 0.6745/1e-9 ≈ 6.7e8) → falso segnale.
+    Nessuna dispersione = nessun segnale."""
+    s = _make(N=10, conf_ticks=1, zin=1.0, er_max=0.95, maker=False,
+              price_min=1.01, price_max=8.0)
+    s._hist["1.1"] = deque([147] * 21 + [155, 154], maxlen=200)
+    s._prev_rsi["1.1"] = 70.0
+    m = _Market(_Blotter([]))
+    mb = _MB([_Runner(111, (3.00, 100), (3.10, 100), ltp=3.05)], pt=777_000)
+    s.process_market_book(m, mb)
+    assert s._tr.get("1.1") is None, "MAD 0: nessun ingresso"
+    assert s.stats["entries"] == 0
+    assert m.placed == []
+
+
+# ---------------------------------------------------------------------------
+# 6) FIX 16/07 — dry: ciclo paper COMPLETO con esito (prima evaporava a 40s)
+# ---------------------------------------------------------------------------
+def test_dry_ciclo_completo_paper_con_esito():
+    s = _make(dry_run=True, stake=5.0, tmax=90, stop_ticks=50,
+              target_frac=0.5, maker=False)
+    m = _Market(_Blotter([]))
+    t0 = 1_000_000
+    s._tr["1.1"] = {"sel": 111, "side": "LAY", "etk": _tki(1.27),
+                    "anchor": _tki(1.35), "order": None, "held": 0,
+                    "wait": 0, "px": 1.27, "t0": t0}
+    # a 30s il trade virtuale e' ancora VIVO (prima: ramo 'non riempita')
+    s.process_market_book(
+        m, _MB([_Runner(111, (1.26, 100), (1.27, 100))], pt=t0 + 30_000))
+    assert "1.1" in s._tr, "posizione virtuale gestita, non evaporata"
+    # oltre tmax: uscita a tempo con ESITO virtuale (lay 1.27 → back 1.28)
+    s.process_market_book(
+        m, _MB([_Runner(111, (1.28, 100), (1.29, 100))], pt=t0 + 91_000))
+    assert "1.1" not in s._tr, "trade chiuso con esito"
+    assert s.stats["losses"] == 1              # uscita a tempo
+    assert s.stats["pnl"] != 0.0               # P&L virtuale contabilizzato
+    assert m.placed == [], "dry: MAI ordini piazzati"
