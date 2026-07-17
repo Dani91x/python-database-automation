@@ -187,12 +187,31 @@ def sweep_pending(min_idle_min: float = 30.0) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     rows = (
         get_supabase_client().table("live_follow")
-        .select("event_id,status").neq("status", "UPLOADED")
+        .select("event_id,status,open_date").neq("status", "UPLOADED")
         .execute().data or []
     )
-    now_ts = datetime.now(timezone.utc).timestamp()
+    now_dt = datetime.now(timezone.utc)
+    now_ts = now_dt.timestamp()
+    # GUARDIA (incidente 17/07): il solo "file fermo da N minuti" NON prova che
+    # la partita sia finita — dopo una finestra di riavvii dell'exe il raw di un
+    # match VIVO era fermo da 14', lo sweep l'ha marcato UPLOADED mentre il
+    # runner lo stava ri-streamando e la UI ("In attesa dello stream…") si è
+    # bloccata per sempre. Un match iniziato da meno della soglia stantia può
+    # essere ancora in corso: MAI toccarlo (il recupero delle finite-presto
+    # avviene comunque, solo dopo la soglia).
+    stale_s = float(os.getenv("LIVE_FOLLOW_STALE_HOURS", "3")) * 3600.0
     for r in rows:
         ev = str(r["event_id"])
+        od = r.get("open_date")
+        if od:
+            try:
+                dt = datetime.fromisoformat(str(od).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if (now_dt - dt).total_seconds() < stale_s:
+                    continue  # match potenzialmente ANCORA VIVO: mai lo sweep
+            except ValueError:
+                pass  # open_date illeggibile: si ricade sul criterio idle
         raw = market_file(ev)
         if not os.path.exists(raw):
             continue
