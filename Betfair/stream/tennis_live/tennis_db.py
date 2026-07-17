@@ -205,6 +205,45 @@ def set_tennis_bot_status(
     ).execute()
 
 
+# Marker che distingue un motivo d'ATTESA (benigno) da un errore terminale nel
+# campo condiviso ``error``: la UI lo renderizza come stato informativo, e la
+# pulizia NON può cancellare un errore reale scritto nel frattempo.
+WAIT_REASON_PREFIX = "[ATTESA] "
+
+
+def set_tennis_bot_wait_reason(
+    event_id: str, bot_key: str, reason: Optional[str]
+) -> None:
+    """Scrive/ripulisce il motivo d'ATTESA di un bot nel campo ``error`` ESISTENTE
+    di ``tennis_bot_control`` — SENZA toccare lo status (il bot resta
+    'requested'/'armed': è in coda, non in errore terminale). Usato dal fix
+    "restart bloccato visibile" (cantiere D 17/07): l'utente vede sul control-row
+    perché un bot armato non sta tradando. ``reason=None`` ripulisce.
+
+    Il testo è sempre prefissato con ``WAIT_REASON_PREFIX`` e sia la SCRITTURA
+    sia la pulizia sono CONDIZIONATE server-side: un errore reale scritto da un
+    altro percorso (senza prefisso) non viene MAI sovrascritto né cancellato —
+    la condizione vive nella singola UPDATE, quindi niente race lettura→scrittura."""
+    sb = get_tennis_client()
+    if reason is not None:
+        msg = str(reason)
+        if not msg.startswith(WAIT_REASON_PREFIX):
+            msg = WAIT_REASON_PREFIX + msg
+        upd = {"error": msg[:300]}
+        # due UPDATE condizionate (error assente / error ancora in attesa):
+        # una riga con errore REALE non matcha nessuna delle due.
+        sb.table("tennis_bot_control").update(upd).is_("error", "null").eq(
+            "event_id", event_id).eq("bot_key", bot_key).execute()
+        sb.table("tennis_bot_control").update(upd).like(
+            "error", f"{WAIT_REASON_PREFIX}%").eq(
+            "event_id", event_id).eq("bot_key", bot_key).execute()
+    else:
+        # solo le righe il cui error è ANCORA un motivo d'attesa
+        sb.table("tennis_bot_control").update({"error": None}).like(
+            "error", f"{WAIT_REASON_PREFIX}%").eq(
+            "event_id", event_id).eq("bot_key", bot_key).execute()
+
+
 def write_tennis_bot_activity(
     event_id: str, bot_key: str, kind: str, payload: Dict[str, Any]
 ) -> None:

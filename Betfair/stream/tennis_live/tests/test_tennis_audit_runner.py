@@ -118,6 +118,11 @@ def test_restart_paper_forced_after_grace_with_stubborn_bot(monkeypatch):
     activity = []
     monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
                         lambda ev, bk, kind, payload: activity.append(kind))
+    # fix cantiere D: il rinvio annota i bot in coda -> DB mockato (mai rete nei test)
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_wait_reason",
+                        lambda *a, **k: None)
     monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
 
     session = _session_with_bot(_FakeStrategy(), bot_key="tennis_pro")  # niente force_flat
@@ -145,6 +150,11 @@ def test_restart_live_never_forced_but_escalates_visibly(monkeypatch):
     activity = []
     monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
                         lambda ev, bk, kind, payload: activity.append((kind, payload)))
+    # fix cantiere D: il rinvio annota i bot in coda -> DB mockato (mai rete nei test)
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_wait_reason",
+                        lambda *a, **k: None)
     monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
 
     session = _session_with_bot(_FakeStrategy(), bot_key="tennis_pro")
@@ -192,6 +202,11 @@ def test_follow_worker_defers_restart_when_not_flat(monkeypatch):
                         lambda: [{"event_id": "ev2"}])
     monkeypatch.setattr(tennis_runner.tennis_db, "write_tennis_bot_activity",
                         lambda *a, **k: None)
+    # fix cantiere D: il rinvio annota i bot in coda -> DB mockato (mai rete nei test)
+    monkeypatch.setattr(tennis_runner.tennis_db, "list_tennis_bot_controls",
+                        lambda *a, **k: [])
+    monkeypatch.setattr(tennis_runner.tennis_db, "set_tennis_bot_wait_reason",
+                        lambda *a, **k: None)
     monkeypatch.setattr(tennis_runner, "_strategy_is_flat", lambda *a, **k: False)
 
     session = _session_with_bot(_FakeFlatBot())
@@ -229,7 +244,10 @@ def test_disabled_bot_never_blocks_restart(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# #3 — PAPER simula il bet delay in-play (default 3s, override via env)
+# #3 — PAPER: place_latency = SOLO rete/processing (fix cantiere D 17/07).
+# Il betDelay in-play arriva dal marketDefinition streamato ed è dormito da
+# flumine (sleep(bet_delay + place_latency)) con valore FRESCO garantito da
+# FreshDelaySimulatedExecution: il vecchio default 3000ms era doppio conteggio.
 # ---------------------------------------------------------------------------
 @pytest.fixture()
 def _restore_place_latency():
@@ -239,12 +257,15 @@ def _restore_place_latency():
     flumine_config.place_latency = orig
 
 
-def test_paper_latency_defaults_to_3s(monkeypatch, _restore_place_latency):
+def test_paper_latency_defaults_to_600ms_network_only(monkeypatch, _restore_place_latency):
     from flumine import config as flumine_config
     monkeypatch.delenv("TENNIS_PAPER_LATENCY_MS", raising=False)
     client, enabled = tennis_runner.build_order_client(object(), "PAPER")
     assert client.paper_trade is True and enabled is True
-    assert flumine_config.place_latency == pytest.approx(3.0)   # delay tennis in-play
+    # SOLO latenza rete/processing: il betDelay in-play lo aggiunge flumine dal
+    # marketDefinition streamato (mai doppio conteggio nel place_latency).
+    assert tennis_runner.TENNIS_PAPER_LATENCY_MS_DEFAULT == 600
+    assert flumine_config.place_latency == pytest.approx(0.6)
 
 
 def test_paper_latency_env_zero_disables_delay(monkeypatch, _restore_place_latency):

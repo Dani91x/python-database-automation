@@ -73,19 +73,30 @@ GAP-3  DOPPIO CONTEGGIO AL PIAZZAMENTO: il fill aggressivo al place consuma il
        middleware.py copre solo i fill passivi post-place.
 GAP-4  COMMISSIONE NON APPLICATA: ``commission_base  # not implemented``
        (clients/baseclient.py:45) -> i P&L paper sono LORDI.
-GAP-5  SNAPSHOT DEL BET DELAY: bet_delay è congelato alla creazione del
-       package (transaction.py:266); se il mercato passa in-play tra decisione
-       e submit si usa il valore vecchio (tipicamente 0 -> nessun delay).
-GAP-6  NIENTE ERRORI DI EXCHANGE: in paper il place riesce SEMPRE se mercato
-       OPEN e runner ACTIVE (niente rifiuti API, niente latenza di rete
-       variabile, niente ordini persi).
+GAP-5  SNAPSHOT DEL BET DELAY (OTTIMISTICO): bet_delay è congelato alla
+       creazione del package (transaction.py:266); se il mercato passa in-play
+       (o cambia regime post-sospensione) tra decisione e submit si dorme il
+       valore VECCHIO (tipicamente 0 -> nessun delay) -> fill PIÙ VELOCE del
+       reale proprio negli scenari post-gol/transizione, dove il delay conta.
+       Pinnato da TestBetDelay::test_GAP5_stale_bet_delay_snapshot_is_slept.
+       MITIGATO nel NOSTRO codice: FreshDelaySimulatedExecution
+       (Betfair/stream/tennis_live/paper_execution.py) ri-legge il betDelay
+       corrente dal market book al momento dell'esecuzione (cablato nel runner
+       tennis; wiring scalper da fare a parte).
+GAP-6  NIENTE ERRORI DI EXCHANGE (OTTIMISTICO): in paper il place riesce
+       SEMPRE se mercato OPEN e runner ACTIVE (niente rifiuti API, niente
+       latenza di rete variabile, niente ordini persi) -> il paper è PIÙ
+       AFFIDABILE del reale, mai meno.
 
 VERDETTO: il paper live flumine 2.13.11 rispetta betDelay in-play (sleep
 reale + match sul book DOPO il delay), rispetta coda e volume (PIQ + traded
 delta, fill mai oltre la size visibile) e non tocca l'exchange per gli ordini.
-I gap sono di GRANA (metà volume in coda, no cancellazioni davanti, no
-commissioni, no rifiuti API), tutti in direzione neutra/conservativa tranne
-GAP-3 (ottimistico se si piazzano più ordini aggressivi nello stesso istante).
+I gap NON sono tutti conservativi: GAP-1/GAP-2/GAP-4 sono neutri/conservativi;
+sono invece OTTIMISTICI GAP-3 (più ordini aggressivi nello stesso istante
+mangiano lo stesso volume), GAP-5 (betDelay stantio nelle transizioni
+pre-off->in-play/post-sospensione: fill più veloce del reale — mitigato da
+FreshDelaySimulatedExecution nel nostro codice) e GAP-6 (place sempre
+riuscito: nessun rifiuto/perdita d'ordine che dal vivo esiste).
 """
 from __future__ import annotations
 
@@ -517,6 +528,35 @@ class TestBetDelay:
         assert packages[0].simulated_delay == pytest.approx(
             config.place_latency + 7
         )
+
+    def test_GAP5_stale_bet_delay_snapshot_is_slept(self):
+        """GAP-5 PINNATO (transaction.py:266 + orderpackage.py:56 +
+        simulatedexecution.py:35-36): il bet_delay è CONGELATO alla creazione
+        del package. Se al momento dell'esecuzione il mercato è ormai in-play
+        (betDelay corrente 3s sul market book del framework), flumine vanilla
+        dorme comunque lo SNAPSHOT VECCHIO (0) -> fill più veloce del reale
+        proprio nelle transizioni pre-off->in-play/post-sospensione
+        (OTTIMISTICO). Mitigazione nel NOSTRO codice:
+        tennis_live/paper_execution.py::FreshDelaySimulatedExecution
+        (testata in tennis_live/tests/test_paper_execution_gap5.py)."""
+        mock_flumine = mock.MagicMock()
+        # il market book CORRENTE nel framework è già in-play, delay 3s...
+        mock_flumine.markets.markets.__getitem__.return_value.market_book.bet_delay = 3
+        execution = SimulatedExecution(mock_flumine)
+        order = mock.MagicMock()
+        order.simulated.place.return_value = mock.Mock(
+            status="SUCCESS", bet_id=None, error_code=None
+        )
+        # ...ma il package fu creato PRE-OFF: snapshot betDelay=0
+        package = self._package(bet_delay=0, order=order)
+
+        with mock.patch(
+            "flumine.execution.simulatedexecution.time.sleep"
+        ) as mock_sleep:
+            execution.execute_place(package, http_session=None)
+
+        # dorme lo SNAPSHOT stantio (0), NON il betDelay corrente (3)
+        mock_sleep.assert_called_once_with(0 + config.place_latency)
 
     def test_paper_handler_runs_async_in_thread_pool(self):
         """execution/simulatedexecution.py:27-28 — in paper il place va nel

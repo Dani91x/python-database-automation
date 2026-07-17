@@ -58,6 +58,7 @@ from ..tennis_scalper.tennis_score import (
 from ..tennis_scalper.tennis_swing_bot import TennisSwingStrategy
 from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from . import tennis_db
+from .paper_execution import install_fresh_delay_execution
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,11 @@ STREAM_CONFLATE_MS = int(os.getenv("TENNIS_STREAM_CONFLATE_MS", "0"))
 RECENT_POINTS = int(os.getenv("TENNIS_RECENT_POINTS", "12"))
 
 STREAM_FIELDS = ("EX_BEST_OFFERS", "EX_LTP", "EX_TRADED", "EX_TRADED_VOL", "EX_MARKET_DEF")
+
+# Latenza paper di default (ms): SOLO rete/processing nostra — il betDelay
+# in-play arriva dal marketDefinition streamato e lo dorme flumine (vedi
+# build_order_client e docs/DELAY_SIMULAZIONE_FLUMINE.md).
+TENNIS_PAPER_LATENCY_MS_DEFAULT = 600
 
 # whitelist bot → (classe, kwarg dei params, richiede name_to_sel)
 _BOT_REGISTRY: Dict[str, Any] = {
@@ -112,12 +118,19 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
             api_client, order_stream=True, paper_trade=False, min_bet_validation=False
         ), True
     if mode_u == "PAPER":
-        # BET DELAY SIMULATO (fix audit 16/07): il tennis in-play ha ~3s di ritardo
-        # di piazzamento. Default 3000 ms così la DEMO PAPER subisce la STESSA
-        # adverse selection del vivo (un PAPER a latenza 0 "cattura" tick che in
-        # LIVE non esistono → paper bugiardo). Override esplicito via env
-        # TENNIS_PAPER_LATENCY_MS (0 = nessun delay, solo per debug consapevole).
-        lat = float(os.getenv("TENNIS_PAPER_LATENCY_MS", "3000") or 0)
+        # LATENZA PAPER = SOLO rete/processing NOSTRA (fix cantiere D 17/07).
+        # flumine dorme GIÀ il betDelay in-play del marketDefinition streamato
+        # (execute_place: sleep(bet_delay + place_latency), simulatedexecution.py:35-36;
+        # betDelay fresco garantito da FreshDelaySimulatedExecution, fix GAP-5).
+        # Il vecchio default 3000ms metteva il "delay tennis ~3s" DENTRO
+        # place_latency = DOPPIO CONTEGGIO (betDelay stream + 3s) → paper troppo
+        # lento, distorto. Nessuna misura reale di round-trip place nei log/DB:
+        # default 600ms scelto per principio con margine conservativo (flumine
+        # modella 120ms co-locato; REST place da fibra IT ≈ 150-400ms + processing
+        # runner). Vedi docs/DELAY_SIMULAZIONE_FLUMINE.md. Override via env
+        # TENNIS_PAPER_LATENCY_MS (0 = nessuna latenza, solo debug consapevole);
+        # da ricalibrare con timestamp decision→ack reali appena disponibili.
+        lat = float(os.getenv("TENNIS_PAPER_LATENCY_MS", str(TENNIS_PAPER_LATENCY_MS_DEFAULT)) or 0)
         flumine_config.place_latency = max(0.0, lat) / 1000.0
         return clients.BetfairClient(
             api_client, order_stream=True, paper_trade=True, min_bet_validation=False
@@ -127,6 +140,18 @@ def build_order_client(api_client: Any, mode: str) -> "tuple[clients.BetfairClie
     return clients.BetfairClient(
         api_client, order_stream=True, paper_trade=True, min_bet_validation=False
     ), False
+
+
+def _wire_paper_execution(framework: Any, mode: str) -> bool:
+    """FIX GAP-5 (betDelay stantio): in ogni modalità NON-LIVE il paper deve
+    dormire il betDelay VIGENTE al momento dell'esecuzione (pre-off→in-play,
+    cambio regime post-sospensione), non lo snapshot della decisione.
+    Sostituisce ``framework.simulated_execution`` → shutdown pulito a ogni
+    restart (vedi paper_execution.py). Ritorna True se installata."""
+    if mode == "LIVE":
+        return False
+    install_fresh_delay_execution(framework)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +423,10 @@ class TennisLiveSession:
         # vedi _RESTART_GRACE_S in _request_restart).
         self.restart_deferred_since: Optional[float] = None
         self._restart_blocked_logged_at: Optional[float] = None
+        # control-row (event_id, bot_key) dei bot IN ATTESA annotati col motivo
+        # del rinvio restart (fix cantiere D 17/07: un bot B armato su un altro
+        # evento restava "armed" per sempre senza che l'utente sapesse perché).
+        self._restart_wait_marked: set = set()
         # chiavi (mode, market_id, selection_id, handicap) scritte in
         # tennis_live_positions in questa sessione (fix audit #8: azzeramento
         # delle righe rimaste orfane dopo un restart del framework).
@@ -664,11 +693,57 @@ def _hosted_not_flat(flumine: Any, session: TennisLiveSession) -> List[tuple]:
     return out
 
 
+def _mark_waiting_controls(session: TennisLiveSession, blockers: List[tuple],
+                           reason: str) -> None:
+    """Rende VISIBILE sul control-row dei bot IN ATTESA il motivo del rinvio.
+
+    Fix cantiere D (17/07): un bot A non-flat in LIVE rinvia il restart del
+    framework; un bot B armato/richiesto su un ALTRO evento resta in coda
+    (appare 'armed'/'requested', non trada mai) senza alcuna spiegazione per
+    l'utente. Qui si scrive nel campo ``error`` ESISTENTE della riga control
+    (nessuna migrazione) un motivo esplicito, UNA volta per episodio; alla
+    partenza del restart il motivo viene ripulito (``_clear_waiting_controls``)
+    e comunque sovrascritto dal normale ciclo arming/running del build.
+    """
+    blocker_desc = ", ".join(f"{bk}@{ev}" for ev, bk, _s in blockers) or "?"
+    msg = (f"in attesa: restart bloccato da {blocker_desc} non-flat "
+           f"({reason})")[:300]
+    try:
+        rows = tennis_db.list_tennis_bot_controls(statuses=list(_ARMED_STATUSES))
+    except Exception as e:  # noqa: BLE001 - visibilità best-effort, mai rompere il worker
+        logger.debug("[tennis-runner] mark waiting KO (list controls): %s", e)
+        return
+    for r in rows:
+        key = (r.get("event_id"), r.get("bot_key"))
+        if key[1] not in _BOT_REGISTRY or key in session.hosted:
+            continue  # ospitati/bloccanti: il loro stato lo gestisce il worker bot
+        if key in session._restart_wait_marked:
+            continue  # già annotato in questo episodio (no spam DB)
+        try:
+            tennis_db.set_tennis_bot_wait_reason(key[0], key[1], msg)
+            session._restart_wait_marked.add(key)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-runner] mark waiting KO %s/%s: %s",
+                         key[0], key[1], e)
+
+
+def _clear_waiting_controls(session: TennisLiveSession) -> None:
+    """Ripulisce il motivo d'attesa dai control-row annotati (restart partito)."""
+    for (ev, bot_key) in list(session._restart_wait_marked):
+        try:
+            tennis_db.set_tennis_bot_wait_reason(ev, bot_key, None)
+        except Exception as e:  # noqa: BLE001 - best-effort: riproverà il prossimo episodio
+            logger.debug("[tennis-runner] clear waiting KO %s/%s: %s", ev, bot_key, e)
+        session._restart_wait_marked.discard((ev, bot_key))
+
+
 def _reset_restart_episode(session: TennisLiveSession) -> None:
     """Chiude l'episodio di rinvio corrente (restart partito o bot tornati flat)."""
     session._restart_deferred_logged = set()
     session.restart_deferred_since = None
     session._restart_blocked_logged_at = None
+    # il restart parte: i bot in attesa non sono più bloccati → via il motivo
+    _clear_waiting_controls(session)
 
 
 def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> bool:
@@ -770,6 +845,9 @@ def _request_restart(flumine: Any, session: TennisLiveSession, reason: str) -> b
                          ev, bot_key, e)
     logger.warning("[tennis-runner] restart RINVIATO (%s): %d bot non flat.",
                    reason, len(blockers))
+    # fix cantiere D: i bot IN CODA (armati/richiesti ma non ospitati, anche su
+    # ALTRI eventi) mostrano sul control-row PERCHÉ non stanno tradando.
+    _mark_waiting_controls(session, blockers, reason)
     return False
 
 
@@ -1204,6 +1282,7 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 fields=list(STREAM_FIELDS), ladder_levels=LADDER_DEPTH
             )
             framework = Flumine(client=client)
+            _wire_paper_execution(framework, mode)
 
             for event_id, meta in session.market_meta.items():
                 cap = _make_capture(meta["market_id"], event_id)

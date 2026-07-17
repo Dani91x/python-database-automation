@@ -761,6 +761,13 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         framework = Flumine(client=clients.BetfairClient(
             trading, **_order_client_kwargs(session_paper),
         ))
+        if session_paper:
+            # Fix GAP-5 (17/07): il betDelay va ri-letto dal book CORRENTE al
+            # momento dell'esecuzione, non dallo snapshot alla creazione del
+            # package — altrimenti nelle transizioni pre-off→in-play il paper
+            # dorme il delay vecchio e filla più veloce del reale.
+            from ..tennis_live.paper_execution import install_fresh_delay_execution
+            install_fresh_delay_execution(framework)
         # theta_only: il maker NON si arma (l'oggetto strategy resta per le
         # stats/flat check, ma fuori dal framework non piazza nulla)
         if not theta_only:
