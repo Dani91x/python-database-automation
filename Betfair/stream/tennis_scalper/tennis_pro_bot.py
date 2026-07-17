@@ -130,8 +130,12 @@ class TennisProStrategy(BaseStrategy):
         self.maker: bool = bool(c.get("maker", False))
         self.maker_offset: int = int(c.get("maker_offset", 1))
         # CLOSING (fix audit #7): secondi di publish_time tra i re-hedge della
-        # sorveglianza post-chiusura (fallback a conteggio update senza pt).
+        # sorveglianza post-chiusura; senza pt (replay/backtest) il fallback
+        # conta gli UPDATE del book — parametro DEDICATO in tick, come nel
+        # tennis_swing_bot (fix 17/07: prima riusava close_retry_s — secondi —
+        # come contatore di update: escalation troppo aggressiva nei replay).
         self.close_retry_s: float = float(c.get("close_retry_s", 20.0))
+        self.close_retry_ticks: int = int(c.get("close_retry_ticks", 20))
         self.dry_run: bool = bool(c.get("dry_run", False))
 
         # 1) BREAK POINT
@@ -717,7 +721,8 @@ class TennisProStrategy(BaseStrategy):
         retry = (
             pt is not None and t0 is not None
             and (pt - t0) / 1000.0 >= self.close_retry_s
-        ) or ((pt is None or t0 is None) and trade["close_wait"] > self.close_retry_s)
+        ) or ((pt is None or t0 is None)
+              and trade["close_wait"] > self.close_retry_ticks)
         if not retry:
             return
         d = px.get(sel)

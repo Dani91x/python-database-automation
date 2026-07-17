@@ -36,7 +36,10 @@ const fracToPct = (v: number | null | undefined): string => (v == null ? '' : St
 // coverage_pct/coverage_verdict possono mancare (risultati vecchi, backtest
 // strategie) → non si mostra nulla.
 // ---------------------------------------------------------------------------
-function CoverageBadge({ pct, verdict }: { pct?: number | null; verdict?: string | null }) {
+function CoverageBadge({ pct, verdict, events }: {
+    pct?: number | null; verdict?: string | null;
+    events?: Record<string, { coverage_pct?: number; coverage_verdict?: string }> | null;
+}) {
     if (verdict == null || verdict === '') return null;
     const complete = verdict.toUpperCase() === 'COMPLETE';
     const p = typeof pct === 'number' && Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : null;
@@ -45,9 +48,24 @@ function CoverageBadge({ pct, verdict }: { pct?: number | null; verdict?: string
         : p != null && p >= 50
             ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
             : 'bg-red-500/15 text-red-300 border-red-500/40';
-    const tip = complete
+    // Breakdown per evento (fix 17/07, terza review): l'aggregato è il
+    // worst-case (MIN) — su un multi-evento "Parziale 40%" può nascondere che
+    // 4 partite su 5 erano perfette. Il tooltip elenca gli eventi non-COMPLETE.
+    const evEntries = Object.entries(events ?? {});
+    const evBad = evEntries.filter(([, e]) => (e?.coverage_verdict ?? '').toUpperCase() !== 'COMPLETE');
+    const breakdown = evEntries.length > 1
+        ? `\n${evEntries.length - evBad.length}/${evEntries.length} registrazioni complete.`
+          + (evBad.length
+              ? ` Non complete: ${evBad.map(([id, e]) =>
+                  `${id} (${e?.coverage_verdict ?? '?'}${typeof e?.coverage_pct === 'number' ? ` ${e.coverage_pct.toFixed(0)}%` : ''})`).join(', ')}.`
+              : '')
+        : '';
+    const tip = (complete
         ? `Registrazione completa${p != null ? ` (${p.toFixed(0)}%)` : ''}: il backtest copre l'intera partita.`
-        : `Il backtest gira su una registrazione MONCA: copre solo il ${p != null ? p.toFixed(0) : '?'}% della partita — gol e fasi mancanti possono falsare i risultati.`;
+        : evEntries.length > 1
+            ? `Copertura worst-case ${p != null ? p.toFixed(0) : '?'}% — almeno una registrazione è MONCA: gol e fasi mancanti possono falsare i risultati di QUELLE partite.`
+            : `Il backtest gira su una registrazione MONCA: copre solo il ${p != null ? p.toFixed(0) : '?'}% della partita — gol e fasi mancanti possono falsare i risultati.`)
+        + breakdown;
     return (
         <span
             title={tip}
@@ -102,7 +120,7 @@ export function BacktestResults({ rows }: { rows: BacktestRow[] }) {
                         <tr key={r.grp} className="border-b border-white/5 hover:bg-white/5">
                             <td className="px-3 py-2.5 text-white">
                                 {r.grp}
-                                <CoverageBadge pct={r.coverage_pct} verdict={r.coverage_verdict} />
+                                <CoverageBadge pct={r.coverage_pct} verdict={r.coverage_verdict} events={r.coverage_events} />
                             </td>
                             <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{r.n.toLocaleString('it')}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{r.n_settled.toLocaleString('it')}</td>

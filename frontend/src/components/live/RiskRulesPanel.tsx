@@ -380,10 +380,24 @@ export function RiskRulesPanel({
 
     const handleCancel = async (row: RiskRuleRow) => {
         if (readOnly) return;
+        // Fix 17/07 (terza review, scenario "bracket blocca nuovi aggancio"):
+        // disarmare NON chiude la posizione — la lascia NUDA, senza protezione
+        // automatica. Va detto esplicitamente prima di procedere, perché il
+        // disarmo è la via rapida suggerita dall'alert per sbloccare i nuovi
+        // eventi e l'operatore potrebbe non realizzare il trade-off.
+        if (row.mode === 'live' && !window.confirm(
+            `Disarmare la regola #${row.id}?\n\nATTENZIONE: il disarmo rimuove `
+            + `SOLO la protezione automatica — l'eventuale posizione reale resta `
+            + `APERTA e SENZA stop/uscita. Se serve, chiudila manualmente dal `
+            + `ladder e poi riarma una nuova regola.`)) {
+            return;
+        }
         setSubmitting(true);
         try {
             await cancelRiskRule(row.id);
-            toast.success('Regola disarmata', { description: `#${row.id}` });
+            toast.success('Regola disarmata', {
+                description: `#${row.id} — la posizione (se aperta) è ora SENZA protezione automatica`,
+            });
             await reload();
         } catch (e: any) {
             toast.error('Errore disarmo', { description: e?.message ?? 'errore sconosciuto' });

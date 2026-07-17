@@ -156,12 +156,15 @@ def _is_main_market_type(market_type: Any) -> bool:
 
     I mercati di primo tempo (HALF_TIME, FIRST_HALF_GOALS_*, HALF_TIME_SCORE,
     HALF_WITH_MOST_GOALS, ...) chiudono all'intervallo: il loro CLOSED NON prova
-    la fine della partita. marketType assente → True (prudenza/retro-compat).
+    la fine della partita. ECCEZIONE (fix 17/07, terza review):
+    HALF_TIME_FULL_TIME (doppio risultato HT/FT) si liquida a FINE partita —
+    il substring-match su "HALF" lo escludeva a torto dal ruolo di prova di
+    fine-gara. marketType assente → True (prudenza/retro-compat).
     """
     mt = str(market_type or "").upper()
     if not mt:
         return True
-    return "HALF" not in mt
+    return "HALF" not in mt or mt == "HALF_TIME_FULL_TIME"
 
 
 def scan_raw(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
@@ -219,8 +222,14 @@ def classify(
     *,
     min_coverage_pct: float = DEFAULT_MIN_COVERAGE_PCT,
     match_window_min: float = MATCH_WINDOW_MIN,
+    sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, Optional[float], List[str], List[Tuple[int, int]]]:
-    """PURA: (verdetto, copertura %, motivi, gap in-finestra) da una RawScan."""
+    """PURA: (verdetto, copertura %, motivi, gap in-finestra) da una RawScan.
+
+    ``sessions`` (opzionale, fix 17/07 terza review): i marker del sidecar
+    ``.recmeta.jsonl`` (open/close/resubscribe). Non cambiano il verdetto ma
+    ARRICCHISCONO i motivi: un buco che coincide con un marker è spiegato
+    (restart del recorder/resubscribe F3), non un mistero forense."""
     if scan.n_lines == 0 or scan.first_pt is None or scan.last_pt is None:
         return VERDICT_EMPTY, 0.0, ["nessuna riga mcm utile nel raw"], []
 
@@ -275,6 +284,24 @@ def classify(
         reasons.append(
             f"{len(gaps_in_window)} buchi interni in-finestra ({gap_ms / 60_000.0:.1f}m persi)"
         )
+        # marker recmeta dentro (o a ridosso di) un buco = buco SPIEGATO da un
+        # restart del recorder/resubscribe, non da un guasto ignoto.
+        marker_ts = [
+            int(s["ts_ms"]) for s in (sessions or [])
+            if isinstance(s, dict) and isinstance(s.get("ts_ms"), (int, float))
+            and str(s.get("kind")) in ("open", "resubscribe")
+        ]
+        if marker_ts:
+            margin = 30_000  # il marker può precedere di poco il buco reale
+            explained = sum(
+                1 for a, b in gaps_in_window
+                if any(a - margin <= ts <= b + margin for ts in marker_ts)
+            )
+            if explained:
+                reasons.append(
+                    f"{explained} buchi spiegati da restart/resubscribe del "
+                    "recorder (marker recmeta)"
+                )
 
     verdict = VERDICT_COMPLETE if coverage >= min_coverage_pct else VERDICT_PARTIAL
     # SENZA CLOSED dei mercati principali la fine vera è IGNOTA: una
@@ -341,7 +368,7 @@ def validate_event(
 
     scan = scan_raw(raw_path)
     verdict, coverage, reasons, gaps_in_window = classify(
-        scan, min_coverage_pct=min_coverage_pct
+        scan, min_coverage_pct=min_coverage_pct, sessions=sessions
     )
     kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
     report = RecordingReport(
@@ -515,7 +542,10 @@ def validate_raw_file(
         )
     scan = scan_raw(raw_path)
     verdict, coverage, reasons, gaps_in_window = classify(
-        scan, min_coverage_pct=min_coverage_pct
+        scan, min_coverage_pct=min_coverage_pct,
+        sessions=_load_recmeta(
+            raw_path[:-len(".raw.jsonl")] + ".recmeta.jsonl"
+            if raw_path.endswith(".raw.jsonl") else raw_path + ".recmeta.jsonl"),
     )
     kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
     report = RecordingReport(

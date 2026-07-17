@@ -279,6 +279,31 @@ def test_pro_closing_rehedges_after_timeout():
     assert s._trade["1.1"]["state"] == CLOSING
 
 
+def test_pro_closing_fallback_senza_pt_conta_update_con_parametro_dedicato():
+    """FIX 17/07 (terza review): senza publish_time (replay/backtest) il
+    fallback conta gli UPDATE contro ``close_retry_ticks`` DEDICATO — non
+    contro ``close_retry_s`` (secondi), che con book fitti faceva scattare
+    l'escalation in pochi secondi reali (refuso di porting dal swing bot)."""
+    s = _make_pro(close_retry_s=2.0, close_retry_ticks=5)
+    m = _ProMarket(_ProBlotter([_ProOrder(111, "BACK", 2.0, 1.80)]))
+    stale = object()
+    s._trade["1.1"] = {"state": CLOSING, "sel": 111, "side": "BACK",
+                       "kind": "break_point", "order": None, "staged_order": None,
+                       "close_order": stale, "close_wait": 0}
+    mb = lambda: _ProMB([_ProRunner(111, (1.74, 100), (1.75, 100))], pt=None)  # noqa: E731
+    # 4 update senza pt: sotto close_retry_ticks=5 → NIENTE escalation, anche
+    # se close_retry_s=2.0 (col vecchio bug sarebbe già scattata al 3° update)
+    for _ in range(4):
+        s.process_market_book(m, mb())
+    assert s._trade["1.1"]["close_order"] is stale
+    assert m.placed == []
+    # 6° update: oltre i ticks dedicati → escalation
+    s.process_market_book(m, mb())
+    s.process_market_book(m, mb())
+    assert stale in m.cancelled
+    assert len(m.placed) == 1
+
+
 # ---------------------------------------------------------------------------
 # #13 — tennis_pro: cognome condiviso = ambiguo, NON indicizzato
 # ---------------------------------------------------------------------------

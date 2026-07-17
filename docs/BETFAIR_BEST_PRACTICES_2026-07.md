@@ -89,7 +89,7 @@ Dove creiamo login:
 
 - Client REST proprietario (JSON-RPC, cert login .it, retry): `Betfair/client.py:95` (`login_cert`).
 - Client betfairlightweight (cert .it, `locale="italy"`): `Betfair/stream/auth.py:28-70` (`build_client`), con wrapper `keep_alive` (`auth.py:73`) e `safe_logout` (`auth.py:83`).
-- **Runner calcio**: 2 sessioni all'avvio — REST `rest.login_cert()` + blw `build_client(login=True)` (`Betfair/stream/runner.py:1098-1100`). keepAlive periodico (~8 min) SOLO nel ramo idle desktop `LIVE_RUNNER_KEEP_ALIVE=1` (`runner.py:1159-1174`); durante lo streaming attivo nessun keepAlive esplicito.
+- **Runner calcio**: 2 sessioni all'avvio — REST `rest.login_cert()` + blw `build_client(login=True)` (`Betfair/stream/runner.py:1098-1100`). keepAlive: ramo idle desktop (~8 min, `LIVE_RUNNER_KEEP_ALIVE=1`) E — fix 16/07 — ANCHE durante lo streaming attivo, ogni 480s dall'`heartbeat_worker` (`runner.py`, `_STREAM_KA_EVERY_SEC`); in più flumine registra il proprio worker `keep_alive` nativo (~600s per locale italy). Doppia rete, nessun gap.
 - **Runner tennis**: 1 login (`tennis_runner.py:1151`) + keepAlive idle (`tennis_runner.py:1176-1177`); gestione `INVALID_SESSION` con UN relogin+retry sul catalogo (`tennis_runner.py:461-471`).
 - **Scalper calcio**: 1 login DEDICATO per OGNI sessione-evento (`Betfair/stream/scalper/scalper_session.py:461-462`, commento esplicito "nessuna condivisione tra sessioni") + 1 login del thread habitat-scan del supervisore (`scalper_service.py:113`), ricostruito a ogni errore (`scalper_service.py:125`).
 - **Tennis scalper standalone**: login per processo (`run_tennis_pro.py:88`, `run_tennis_scalper.py:219`, `record_multi.py:280`, `record_tennis.py:41`).

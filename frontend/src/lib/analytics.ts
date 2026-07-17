@@ -268,8 +268,10 @@ export interface BacktestRow {
     // COPERTURA della registrazione (solo backtest flumine per-evento, campi
     // nuovi lato backend): assenti nei risultati vecchi e nel backtest strategie
     // → la UI non mostra nulla (difensivo).
-    coverage_pct?: number | null;      // 0-100
-    coverage_verdict?: string | null;  // COMPLETE | PARTIAL | ...
+    coverage_pct?: number | null;      // 0-100 (aggregato = MIN tra gli eventi)
+    coverage_verdict?: string | null;  // COMPLETE | PARTIAL | ... (peggiore)
+    // dettaglio per evento (fix 17/07): {event_id: {coverage_pct, coverage_verdict}}
+    coverage_events?: Record<string, { coverage_pct?: number; coverage_verdict?: string }> | null;
 }
 
 export interface Strategy {
@@ -489,6 +491,12 @@ function mapResultToBacktestRow(r: BacktestResultRow): BacktestRow {
         coverage_verdict: typeof r.coverage_verdict === 'string' ? r.coverage_verdict
             : typeof (r.metrics as Record<string, unknown> | null)?.coverage_verdict === 'string'
                 ? (r.metrics as Record<string, unknown>).coverage_verdict as string : undefined,
+        coverage_events: (() => {
+            const ev = (r.metrics as Record<string, unknown> | null)?.coverage_events;
+            return ev && typeof ev === 'object' && !Array.isArray(ev)
+                ? ev as Record<string, { coverage_pct?: number; coverage_verdict?: string }>
+                : undefined;
+        })(),
     };
 }
 

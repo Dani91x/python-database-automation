@@ -993,6 +993,19 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
     for event_id in list(session.market_meta.keys()):
         desired = _desired_controls(event_id)
         stopping = _stopping_controls(event_id)
+        # FIX 17/07 (terza review, CRITICAL "riarmo nella finestra stopping"):
+        # una riga control tornata 'requested' MENTRE l'istanza VECCHIA è
+        # ancora ospitata = riarmo dentro la finestra di disarm (guard SQL
+        # senza 'stopping' o migrazione non applicata). MAI dirottare la
+        # vecchia istanza (parametri stantii, force_flat bloccato): va chiusa
+        # SENZA toccare lo status 'requested', così il restart re-istanzia coi
+        # parametri NUOVI. Heartbeat e mission la SALTANO (mai sovrascrivere
+        # 'requested' con 'running'/'done' dell'istanza vecchia).
+        hijacked = {
+            bk for bk, row in desired.items()
+            if (event_id, bk) in session.hosted
+            and str((row or {}).get("status") or "") == "requested"
+        }
         # nuovi bot richiesti non ancora ospitati → restart per agganciarli allo stream
         for bot_key in desired:
             if (event_id, bot_key) not in session.hosted:
@@ -1004,7 +1017,8 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         # contratto tennis_bots.sql). NESSUN restart del framework: il bot
         # disabilitato resta ospitato ma inerte fino al prossimo restart utile.
         for (ev, bot_key), strat in list(session.hosted.items()):
-            if ev != event_id or getattr(strat, "_tennis_disabled", False):
+            if ev != event_id or bot_key in hijacked \
+                    or getattr(strat, "_tennis_disabled", False):
                 continue
             if not getattr(strat, "mission_done", False):
                 continue
@@ -1036,10 +1050,48 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         #   * bot senza chiusura autonoma: disabilitato subito, ma lo stato finale dice
         #     la VERITÀ ('stopped' solo se flat; altrimenti 'error' con avviso).
         for (ev, bot_key) in list(session.hosted.keys()):
-            if ev != event_id or bot_key in desired:
+            if ev != event_id or (bot_key in desired and bot_key not in hijacked):
                 continue
             strat = session.hosted[(ev, bot_key)]
             key = (ev, bot_key)
+            if bot_key in hijacked:
+                # chiusura dell'istanza VECCHIA senza toccare lo status
+                # 'requested' del riarmo: force_flat se possibile, poi disable
+                # a flat (o a fine grazia) e via da hosted → il restart
+                # istanzia quella NUOVA coi parametri nuovi.
+                if not getattr(strat, "_tennis_disabled", False):
+                    flat = _strategy_is_flat(flumine, strat)
+                    deadline = session.stopping_deadline.get(key)
+                    if not flat and hasattr(strat, "force_flat"):
+                        if deadline is None:
+                            strat.force_flat = True
+                            session.stopping_deadline[key] = (
+                                now_mono + _STOPPING_GRACE_S)
+                            try:
+                                tennis_db.write_tennis_bot_activity(
+                                    ev, bot_key, "disarm_flat",
+                                    {"note": "riarmo nella finestra di disarm: "
+                                             "chiudo l'istanza vecchia prima di "
+                                             "istanziare quella nuova"})
+                            except Exception:  # noqa: BLE001
+                                pass
+                            continue
+                        if now_mono < deadline:
+                            continue
+                    _disable_strategy(strat)
+                    if not flat:
+                        try:
+                            tennis_db.write_tennis_bot_activity(
+                                ev, bot_key, "warn",
+                                {"note": "riarmo con istanza vecchia NON flat a "
+                                         "fine grazia: verifica l'esposizione "
+                                         "su Betfair/ladder"})
+                        except Exception:  # noqa: BLE001
+                            pass
+                session.stopping_deadline.pop(key, None)
+                session.hosted.pop(key, None)
+                need_restart = True
+                continue
             if bot_key in stopping and not getattr(strat, "_tennis_disabled", False):
                 deadline = session.stopping_deadline.get(key)
                 if deadline is None:
@@ -1101,7 +1153,8 @@ def bot_control_worker(context: dict, flumine: Any, session: TennisLiveSession) 
         # disarmato resta in session.hosted fino al restart, ma il suo status DB dev'essere
         # 'stopped' (fix #2) — NON va sovrascritto con 'running' dall'heartbeat.
         for (ev, bot_key), strat in list(session.hosted.items()):
-            if ev != event_id or bot_key not in desired or getattr(strat, "_tennis_disabled", False):
+            if ev != event_id or bot_key not in desired or bot_key in hijacked \
+                    or getattr(strat, "_tennis_disabled", False):
                 continue
             try:
                 tennis_db.set_tennis_bot_status(

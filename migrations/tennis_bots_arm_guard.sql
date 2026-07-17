@@ -46,14 +46,18 @@ BEGIN
     -- GUARD anti re-arm (fix param fantasma): un bot ancora attivo NON è
     -- ri-armabile — il runner non re-istanzia la strategia ospitata e il
     -- reset di stats/params qui sotto mentirebbe sullo stato reale.
+    -- FIX 17/07 (terza review, CRITICAL): incluso anche 'stopping' — il
+    -- disarm lascia lo stato 'stopping' per 3-45s (poll + grazia flat) e un
+    -- riarmo in quella finestra dirottava l'istanza VECCHIA (parametri
+    -- stantii, force_flat bloccato) mentre la UI mostrava i parametri nuovi.
     IF EXISTS (
         SELECT 1
           FROM public.tennis_bot_control
          WHERE event_id = p_event_id
            AND bot_key  = p_bot_key
-           AND status IN ('requested','arming','armed','running')
+           AND status IN ('requested','arming','armed','running','stopping')
     ) THEN
-        RAISE EXCEPTION 'bot già attivo: disarma prima di riarmare';
+        RAISE EXCEPTION 'bot già attivo o in chiusura: attendi lo stop prima di riarmare';
     END IF;
 
     INSERT INTO public.tennis_bot_control AS c

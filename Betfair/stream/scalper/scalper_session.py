@@ -140,20 +140,69 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _sweep_cancel(trading: Any, market_ids: List[str]) -> Dict[str, Any]:
-    """SWEEP CANCEL di emergenza: cancella gli ordini unmatched del CONTO sui
-    mercati della sessione via REST (bypassa flumine).
+def _session_bet_ids(framework: Any) -> List[str]:
+    """bet_id degli ordini di QUESTA sessione, dai blotter del framework.
+
+    Best-effort dopo un crash del thread flumine: il blotter è un oggetto in
+    memoria che di norma sopravvive alla morte del thread run(). Lista vuota =
+    non ricostruibile (il chiamante decide il fallback)."""
+    ids: List[str] = []
+    try:
+        for m in list(getattr(framework, "markets", None) or []):
+            blotter = getattr(m, "blotter", None)
+            if blotter is None:
+                continue
+            for order in list(blotter):
+                bid = getattr(order, "bet_id", None)
+                if bid:
+                    ids.append(str(bid))
+    except Exception:  # noqa: BLE001 - blotter corrotto: fallback del chiamante
+        return []
+    return ids
+
+
+def _sweep_cancel(trading: Any, market_ids: List[str],
+                  own_bet_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """SWEEP CANCEL di emergenza degli ordini unmatched della SESSIONE via REST
+    (bypassa flumine).
 
     FIX 15/07 (bug 3, dossier theta): se il thread flumine MUORE la sessione
     usciva con status 'done' silenzioso lasciando ordini vivi sull'exchange.
-    Questo sweep e' l'ultima rete: gli unmatched cadono; l'eventuale matched
-    residuo NON si chiude da qui (serve l'operatore) e l'alert lo dice.
+
+    FIX 17/07 (review LIVE, CRITICAL): ``cancel_orders(market_id)`` SENZA
+    instructions è MARKET-WIDE sul CONTO — avrebbe cancellato anche ordini
+    REALI di ALTRI processi (omega, manuale via runner) sugli stessi mercati.
+    Con ``own_bet_ids`` (dal blotter della sessione) il cancel è MIRATO:
+    listCurrentOrders per mercato → intersezione coi propri bet_id → cancel
+    per betId. Fallback market-wide SOLO se i propri ordini non sono
+    ricostruibili (``market_wide=True`` nell'esito: l'alert lo deve dire).
+    L'eventuale matched residuo NON si chiude da qui (serve l'operatore).
     """
-    out: Dict[str, Any] = {"ok": [], "ko": []}
+    out: Dict[str, Any] = {"ok": [], "ko": [], "market_wide": False}
+    own = {str(b) for b in (own_bet_ids or []) if b}
     for mid in market_ids or []:
         try:
-            trading.betting.cancel_orders(market_id=mid)
-            out["ok"].append(mid)
+            if own:
+                cur = trading.betting.list_current_orders(market_ids=[mid])
+                rows = (getattr(cur, "orders", None)
+                        or getattr(cur, "current_orders", None) or [])
+                insts = []
+                for o in rows:
+                    bid = getattr(o, "bet_id", None) if not isinstance(o, dict) \
+                        else o.get("betId")
+                    if bid is not None and str(bid) in own:
+                        insts.append({"betId": str(bid)})
+                if insts:
+                    trading.betting.cancel_orders(market_id=mid,
+                                                  instructions=insts)
+                out["ok"].append(mid)
+            else:
+                # blotter illeggibile: meglio proteggere l'esposizione della
+                # sessione che lasciarla viva — ma è market-wide e l'operatore
+                # DEVE saperlo (possibili ordini di altri processi coinvolti).
+                out["market_wide"] = True
+                trading.betting.cancel_orders(market_id=mid)
+                out["ok"].append(mid)
         except Exception as exc:  # noqa: BLE001 - si prova su TUTTI i mercati
             out["ko"].append({"market_id": mid, "err": str(exc)[:120]})
     return out
@@ -211,29 +260,34 @@ def _order_client_kwargs(session_paper: bool) -> Dict[str, Any]:
 
 
 def _handle_flumine_crash(db: Any, event_id: str, trading: Any,
-                          market_ids: List[str], session_paper: bool) -> None:
+                          market_ids: List[str], session_paper: bool,
+                          framework: Any = None) -> None:
     """CRASH del thread flumine: rete di emergenza (fix 15/07, bug 3).
 
-    LIVE → sweep cancel REST degli unmatched + alert CRITICAL.
-    PAPER → NIENTE sweep: gli ordini della sessione sono SIMULATI, ma
-    ``cancel_orders(market_id)`` REST è market-wide sul CONTO e cancellerebbe
-    ordini REALI di ALTRI processi (es. manuali del runner) sugli stessi
-    mercati. Si logga soltanto (MONEY-CRITICAL, controcheck 16/07)."""
+    LIVE → sweep cancel REST degli unmatched della SESSIONE (mirato per betId
+    dal blotter — fix 17/07; market-wide solo come fallback dichiarato) +
+    alert CRITICAL.
+    PAPER → NIENTE sweep: gli ordini della sessione sono SIMULATI e un cancel
+    REST toccherebbe il conto reale. Si logga soltanto (MONEY-CRITICAL,
+    controcheck 16/07)."""
     if session_paper:
         db.log(event_id, "info", {
             "msg": "CRASH thread flumine (PAPER): nessuno sweep REST — "
                    "ordini simulati, nulla di vivo sull'exchange"})
         return
-    swept = _sweep_cancel(trading, market_ids)
+    swept = _sweep_cancel(trading, market_ids, _session_bet_ids(framework))
     db.log(event_id, "error", {
         "msg": "CRASH thread flumine: sweep cancel eseguito",
         "sweep": swept})
+    wide = ("⚠️ SWEEP MARKET-WIDE (blotter illeggibile): possono essere "
+            "caduti anche ordini di ALTRI processi — omega/manuale — sugli "
+            "stessi mercati: VERIFICALI. " if swept.get("market_wide") else "")
     try:
         db.sb.table("live_alerts").insert({
             "level": "CRITICAL", "code": "SCALPER_CRASH",
             "message": (f"sessione {event_id}: thread flumine MORTO. Sweep "
                         f"cancel unmatched su {len(swept['ok'])} "
-                        f"mercati (KO: {len(swept['ko'])}). "
+                        f"mercati (KO: {len(swept['ko'])}). {wide}"
                         "VERIFICA il matched residuo sul conto."),
             "event_id": event_id,
         }).execute()
@@ -1046,9 +1100,10 @@ def run_session(event_id: str) -> None:  # noqa: C901 - flusso lineare
         # stato finale 'error' (mai piu' 'done' silenzioso).
         crashed = not clean_break and not runner.is_alive()
         if crashed:
-            # PAPER: mai lo sweep REST market-wide (cancellerebbe ordini REALI
-            # di altri processi sul conto) — vedi _handle_flumine_crash.
-            _handle_flumine_crash(db, ev, trading, market_ids, session_paper)
+            # PAPER: mai lo sweep REST (toccherebbe il conto reale); LIVE:
+            # sweep MIRATO ai bet_id del blotter — vedi _handle_flumine_crash.
+            _handle_flumine_crash(db, ev, trading, market_ids, session_paper,
+                                  framework=framework)
         try:
             # BUG FIX (cert 10/07): flumine 2.13.11 esce dal run() SOLO con un
             # TerminationEvent in handler_queue — _running=False non è mai testato

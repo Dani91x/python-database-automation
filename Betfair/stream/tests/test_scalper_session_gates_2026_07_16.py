@@ -94,28 +94,73 @@ def test_order_client_kwargs_live_invariato():
 
 # --------------------------------------- regola specchio: sweep solo LIVE
 class _Trading:
-    def __init__(self) -> None:
-        self.cancelled = []
+    def __init__(self, account_orders=None) -> None:
+        # account_orders: {market_id: [bet_id, ...]} = TUTTI gli ordini del
+        # CONTO su quel mercato (anche di altri processi: omega/manuale).
+        self.cancelled = []          # market-wide (senza instructions)
+        self.cancelled_targeted = []  # (market_id, [betId, ...])
+        self._acct = account_orders or {}
+
+        def _cancel(market_id, instructions=None):
+            if instructions is None:
+                self.cancelled.append(market_id)
+            else:
+                self.cancelled_targeted.append(
+                    (market_id, [i["betId"] for i in instructions]))
+
+        def _list_current(market_ids):
+            rows = [SimpleNamespace(bet_id=b)
+                    for m in market_ids for b in self._acct.get(m, [])]
+            return SimpleNamespace(orders=rows)
+
         self.betting = SimpleNamespace(
-            cancel_orders=lambda market_id: self.cancelled.append(market_id))
+            cancel_orders=_cancel, list_current_orders=_list_current)
+
+
+def _fw_with_bets(bet_ids):
+    """Framework fake col blotter della sessione (iterabile di ordini)."""
+    orders = [SimpleNamespace(bet_id=b) for b in bet_ids]
+    return SimpleNamespace(markets=[SimpleNamespace(blotter=orders)])
 
 
 def test_crash_paper_non_fa_mai_sweep_rest():
-    """MONEY-CRITICAL: lo sweep REST è market-wide sul CONTO — in paper
-    cancellerebbe ordini REALI di altri processi. Mai eseguirlo."""
+    """MONEY-CRITICAL: lo sweep REST tocca il CONTO reale — in paper
+    non va mai eseguito (gli ordini della sessione sono simulati)."""
     db, trading = _Db(), _Trading()
     _handle_flumine_crash(db, "E1", trading, ["1.1", "1.2"], session_paper=True)
-    assert trading.cancelled == []
+    assert trading.cancelled == [] and trading.cancelled_targeted == []
     assert any("PAPER" in p["msg"] for _, _, p in db.logs)
 
 
-def test_crash_live_esegue_sweep_su_tutti_i_mercati():
-    db, trading = _Db(), _Trading()
+def test_crash_live_sweep_mirato_solo_ai_propri_bet_id():
+    """FIX 17/07 (review LIVE, CRITICAL): il cancel è MIRATO ai bet_id del
+    blotter della sessione — gli ordini di ALTRI processi (omega/manuale)
+    sugli stessi mercati NON vengono mai toccati."""
+    db = _Db()
     db.sb = SimpleNamespace(table=lambda *_: SimpleNamespace(
         insert=lambda row: SimpleNamespace(execute=lambda: None)))
+    # sul conto: b1 (nostro) + OMEGA1 (di omega) su 1.1; b2 (nostro) su 1.2
+    trading = _Trading({"1.1": ["b1", "OMEGA1"], "1.2": ["b2"]})
+    _handle_flumine_crash(db, "E1", trading, ["1.1", "1.2"],
+                          session_paper=False,
+                          framework=_fw_with_bets(["b1", "b2"]))
+    assert trading.cancelled == []                       # MAI market-wide
+    assert trading.cancelled_targeted == [("1.1", ["b1"]), ("1.2", ["b2"])]
+    assert any("sweep cancel eseguito" in p["msg"] for _, _, p in db.logs)
+
+
+def test_crash_live_fallback_market_wide_dichiarato_se_blotter_illeggibile():
+    """Senza blotter (framework=None) il fallback resta market-wide, ma
+    l'alert DEVE dichiararlo (possibili ordini di altri processi caduti)."""
+    db = _Db()
+    alerts = []
+    db.sb = SimpleNamespace(table=lambda *_: SimpleNamespace(
+        insert=lambda row: SimpleNamespace(
+            execute=lambda r=row: alerts.append(r))))
+    trading = _Trading()
     _handle_flumine_crash(db, "E1", trading, ["1.1", "1.2"], session_paper=False)
     assert trading.cancelled == ["1.1", "1.2"]
-    assert any("sweep cancel eseguito" in p["msg"] for _, _, p in db.logs)
+    assert alerts and "MARKET-WIDE" in alerts[0]["message"]
 
 
 # ------------------------------------- regola specchio: mirror solo-ordini

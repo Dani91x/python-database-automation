@@ -179,6 +179,10 @@ class LiveSession:
         # monotonic del PRIMO rinvio e dell'ultimo alert CRITICAL (anti-spam).
         self.sub_restart_deferred_since: Optional[float] = None
         self.sub_restart_defer_alert_ts = 0.0
+        # backoff dell'alert (fix 17/07, terza review "alert fatigue"): il
+        # blocco da regola armata è spesso ATTESO e può durare ore — l'alert
+        # si ripete a intervalli CRESCENTI (x2, cap 1h), non ogni 5 minuti.
+        self.sub_restart_defer_alert_interval = 0.0
         self.backoff = limits.Backoff(base_sec=BACKOFF_BASE_SEC, max_sec=BACKOFF_MAX_SEC)
 
     def score_file(self, event_id: str) -> Any:
@@ -738,12 +742,21 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         first = session.sub_restart_deferred_since
         if first is None:
             session.sub_restart_deferred_since = now
+            session.sub_restart_defer_alert_interval = _SUB_RESTART_DEFER_ALERT_SEC
             logger.warning(
                 "[sub-worker] %d nuove partite GIOCATA ma restart RINVIATO: %s.",
                 len(new_events), blocker)
         elif (now - first) >= _SUB_RESTART_DEFER_ALERT_SEC and (
-                now - session.sub_restart_defer_alert_ts) >= _SUB_RESTART_DEFER_ALERT_SEC:
+                now - session.sub_restart_defer_alert_ts) >= (
+                session.sub_restart_defer_alert_interval
+                or _SUB_RESTART_DEFER_ALERT_SEC):
             session.sub_restart_defer_alert_ts = now
+            # backoff esponenziale (fix "alert fatigue"): il primo CRITICAL
+            # arriva presto, i successivi si diradano (x2 fino a 1h) — un
+            # blocco by-design (stop armato per ore) non inonda il pannello.
+            session.sub_restart_defer_alert_interval = min(
+                3600.0, (session.sub_restart_defer_alert_interval
+                         or _SUB_RESTART_DEFER_ALERT_SEC) * 2.0)
             logger.critical(
                 "[sub-worker] %d nuove partite in ATTESA da %.0f min: restart "
                 "RINVIATO (%s) — gestisci l'esposizione per sbloccare l'aggancio.",

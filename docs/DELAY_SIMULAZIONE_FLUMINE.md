@@ -51,6 +51,12 @@ custom sul client NON verrebbe mai shutdownato, `baseflumine.py:525-527`).
   costruzione del framework, solo in sessione paper (`if session_paper:`),
   con lo stesso `install_fresh_delay_execution`.
 
+⚠️ NOTA ARCHITETTURALE (terza review 17/07): `flumine.config.place_latency` è
+uno stato GLOBALE di processo, riletto "live" a ogni sleep — oggi è sicuro solo
+perché scalper (processo per evento), tennis e runner girano in processi OS
+separati. MAI colocare due `Flumine.run()` con latenze diverse nello stesso
+processo Python (la latenza dell'uno leakerebbe sull'altro).
+
 ## Calibrazione latenza paper tennis
 
 Il vecchio `TENNIS_PAPER_LATENCY_MS=3000` metteva il "bet delay tennis ~3s"

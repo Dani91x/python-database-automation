@@ -34,6 +34,7 @@ def _env(monkeypatch, *, live_orders):
         restart_requested=threading.Event(),
         sub_restart_deferred_since=None,
         sub_restart_defer_alert_ts=0.0,
+        sub_restart_defer_alert_interval=0.0,  # backoff alert (fix 17/07 v3)
     )
     blotter = SimpleNamespace(live_orders=live_orders)
     flumine = SimpleNamespace(markets=[SimpleNamespace(market_id="1.1",
