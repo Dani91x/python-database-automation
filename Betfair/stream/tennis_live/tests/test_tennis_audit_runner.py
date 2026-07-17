@@ -534,3 +534,43 @@ def test_reconcile_live_stale_order_dropped_without_falsifying(monkeypatch):
     tow._reconcile_tracked(session, flumine=None)
     assert mirrored == []                       # niente stato falsificato
     assert session.tracked_orders == {}         # ma il fantasma non resta tracciato
+
+
+# ---------------------------------------------------------------------------
+# Fix 17/07 — pulizia bot ORFANI all'avvio (mai 'running' fantasma per giorni)
+# ---------------------------------------------------------------------------
+def test_cleanup_orfani_marca_solo_heartbeat_stantii(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from Betfair.stream.tennis_live import tennis_runner as tr
+
+    now = datetime.now(timezone.utc)
+    rows = [
+        # hb 20 ore fa: ORFANO (il caso "partita di ieri ancora running")
+        {"event_id": "E_OLD", "bot_key": "tennis_swing", "status": "running",
+         "heartbeat_at": (now - timedelta(hours=20)).isoformat(),
+         "requested_at": (now - timedelta(hours=21)).isoformat()},
+        # hb 3 secondi fa: VIVO, mai toccato
+        {"event_id": "E_LIVE", "bot_key": "tennis_pro", "status": "running",
+         "heartbeat_at": (now - timedelta(seconds=3)).isoformat(),
+         "requested_at": (now - timedelta(minutes=5)).isoformat()},
+        # appena richiesto (nessun heartbeat, requested_at fresco): mai toccato
+        {"event_id": "E_NEW", "bot_key": "tennis_flb", "status": "requested",
+         "heartbeat_at": None,
+         "requested_at": (now - timedelta(seconds=10)).isoformat()},
+    ]
+    monkeypatch.setattr(tr.tennis_db, "list_tennis_bot_controls",
+                        lambda statuses: rows)
+    marked = []
+    monkeypatch.setattr(
+        tr.tennis_db, "set_tennis_bot_status",
+        lambda ev, bk, st, stopped=False, error=None, **k:
+        marked.append((ev, bk, st, error)))
+
+    n = tr._cleanup_orphan_bot_controls()
+
+    assert n == 1
+    assert len(marked) == 1
+    ev, bk, st, err = marked[0]
+    assert (ev, bk, st) == ("E_OLD", "tennis_swing", "error")
+    assert "orfana" in err

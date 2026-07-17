@@ -1278,10 +1278,54 @@ def _announce_order_mode(mode: str) -> None:
     logger.info("[tennis-runner] MODALITA' ORDINI: %s", banner)
 
 
+def _cleanup_orphan_bot_controls(max_hb_age_s: float = 600.0) -> int:
+    """RIPRESA all'avvio (fix 17/07, parità con scalper_service): righe di
+    ``tennis_bot_control`` rimaste in stato ATTIVO con heartbeat stantio sono
+    sessioni ORFANE (runner ucciso a metà: nessuno le ospita più) — senza
+    questa pulizia un bot di IERI resta 'running' in UI per giorni. Stato
+    onesto: 'error' con motivo esplicito. Le righe appena richieste (nessun
+    heartbeat ma requested_at fresco) non vengono MAI toccate."""
+    from datetime import datetime, timezone
+
+    def _age_s(iso: Any) -> Optional[float]:
+        try:
+            dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - dt).total_seconds()
+        except (TypeError, ValueError):
+            return None
+
+    try:
+        rows = tennis_db.list_tennis_bot_controls(
+            statuses=["requested", "arming", "armed", "running", "stopping"])
+    except Exception as e:  # noqa: BLE001 - pulizia best-effort, mai bloccare l'avvio
+        logger.warning("[tennis-runner] cleanup orfani KO (ignorato): %s", e)
+        return 0
+    n = 0
+    for r in rows:
+        age = _age_s(r.get("heartbeat_at")) or _age_s(r.get("requested_at"))
+        if age is None or age <= max_hb_age_s:
+            continue
+        try:
+            tennis_db.set_tennis_bot_status(
+                r["event_id"], r["bot_key"], "error", stopped=True,
+                error=("sessione orfana (runner riavviato, heartbeat "
+                       f"fermo da {int(age / 60)} min) — riarma se serve"))
+            n += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[tennis-runner] cleanup orfano %s/%s KO: %s",
+                           r.get("event_id"), r.get("bot_key"), e)
+    if n:
+        logger.info("[tennis-runner] ripresa: %d bot orfani marcati 'error'", n)
+    return n
+
+
 def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) -> List[str]:
     trading = build_client(login=True)
     session = TennisLiveSession(trading)
     session.context_api_client = trading  # per board_worker (REST leggero)
+    _cleanup_orphan_bot_controls()  # mai bot 'running' fantasma dopo un riavvio
     # A7 — canale LOCALE desktop (bind SOLO 127.0.0.1); best-effort come il calcio.
     from .. import local_channel as _lc
     _ch = _lc.start_channel(int(os.getenv("TENNIS_LOCAL_WS_PORT", "47332")), "tennis")
