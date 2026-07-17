@@ -97,6 +97,13 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(message)s")
     sys.path.insert(0, os.path.abspath(os.path.join(
         os.path.dirname(__file__), "..", "..", "..")))
+    # Lock di SINGOLA ISTANZA (fix 17/07, parità con runner/tennis/omega):
+    # due supervisori concorrenti vedrebbero la stessa riga 'requested' nello
+    # stesso giro di poll e spawnerebbero DUE sessioni per lo stesso evento —
+    # in live = ordini reali duplicati. Il socket va tenuto referenziato.
+    from ..single_instance import acquire_single_instance_lock
+    _lock = acquire_single_instance_lock(  # noqa: F841 - vita = processo
+        int(os.getenv("SCALPER_SVC_LOCK_PORT", "47314")), "scalper-svc")
     db = Db()
     children: Dict[str, subprocess.Popen] = {}
     logger.info("[scalper-svc] supervisore avviato (un processo per partita). "
