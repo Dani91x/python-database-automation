@@ -483,7 +483,11 @@ def test_off_mode_is_inert(monkeypatch):
 
 
 def test_place_order_raising_does_not_crash_worker():
-    """market.place_order che solleva → riga error, nessuna eccezione propagata."""
+    """market.place_order che solleva → riga error, nessuna eccezione propagata.
+
+    CONTRATTO (fix 17/07): un'eccezione DENTRO place_order è AMBIGUA (l'ordine
+    può essere già in dispatch) → il messaggio DEVE portare il prefisso
+    ``post_place:`` così omega non libera mai la riserva su questo esito."""
     class _BoomMarket(_FakeMarket):
         def place_order(self, order: Any, **kwargs: Any) -> bool:
             raise RuntimeError("betfair boom")
@@ -496,6 +500,25 @@ def test_place_order_raising_does_not_crash_worker():
     assert n == 1
     assert _by_id(sb, 1)["status"] == "error"
     assert "boom" in _by_id(sb, 1)["error"]
+    assert _by_id(sb, 1)["error"].startswith("post_place:")
+
+
+def test_place_rifiutato_dai_control_resta_pre_place():
+    """Ritorno False dai trading control = ordine MAI inviato: l'errore NON
+    deve portare il prefisso post_place: (omega può liberare la riserva)."""
+    class _RejectMarket(_FakeMarket):
+        def place_order(self, order: Any, **kwargs: Any) -> bool:
+            return False
+
+    sb = _FakeSupabase([_row(1)])
+    fl = _FakeFlumine({"1.1": _RejectMarket("1.1")})
+
+    n = wk._process_once(sb, fl, strategy=_STRAT)
+
+    assert n == 1
+    assert _by_id(sb, 1)["status"] == "error"
+    assert not _by_id(sb, 1)["error"].startswith("post_place:")
+    assert "RIFIUTATO" in _by_id(sb, 1)["error"]
 
 
 def test_live_order_worker_none_flumine_is_noop():

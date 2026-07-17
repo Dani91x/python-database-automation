@@ -203,7 +203,7 @@ seguiti Omega usa il `clock` (`marketStartTime`), senza mai fermarsi (I6).
 - **Settlement PAPER**: si polla il market book della CS finché `status='CLOSED'`,
   poi si leggono gli stati runner (`WINNER`/`LOSER`). Autorevole quanto il LIVE.
 
-### 6-bis. Esecuzione PAPER via flumine — DEMO = LIVE (2026-07-16, v1 SOLO PAPER)
+### 6-bis. Esecuzione via flumine — DEMO = LIVE (v1 PAPER 2026-07-16, v2 LIVE 2026-07-17)
 
 Quando possibile, il fill PAPER non è più istantaneo su snapshot ma passa dal
 **runner calcio** (flumine `paper_trade=True`: SimulatedExecution su stream
@@ -211,10 +211,14 @@ reale — coda al prezzo, liquidità consumata, betDelay), riusando la coda
 ESISTENTE `betfair_live_order_requests` (contratto di `live_order_worker`, che
 NON viene toccato: omega è un normale client della coda, come il frontend).
 
-- **Gate** `_flumine_paper_gate(event_id)` — True SOLO se **tutte**: omega in
-  `mode='paper'`; `execution_mode='auto'`; evento in `live_follow` con status
-  `STREAMING`; runner vivo (heartbeat `betfair_live_heartbeat.ts` fresco ≤90s)
-  e in order mode `PAPER`. FAIL-CLOSED: qualunque dubbio → percorso legacy.
+- **Gate** `_flumine_gate(event_id, mode)` (unificato paper/live; il wrapper
+  storico `_flumine_paper_gate` resta solo-paper) — True SOLO se **tutte**:
+  `execution_mode='auto'`; evento in `live_follow` con status `STREAMING`;
+  runner vivo (heartbeat `betfair_live_heartbeat.ts` fresco ≤90s) e in order
+  mode **uguale al mode del trade** (`PAPER` per i trade paper, `LIVE` per i
+  live — mai cross-mode); per il LIVE anche kill-switch
+  `omega_live_via_flumine` acceso e contratto di revoca presente.
+  FAIL-CLOSED: qualunque dubbio → percorso legacy.
 - **Flusso**: riserva `pending` (reserve-first INVARIATO, I1) → enqueue `place`
   (`client_ref='omega-t<trade_id>'`, idempotente sulla coda) → la riserva resta
   `pending` con `meta.flumine_request_id` → il poll di ciclo
@@ -237,15 +241,63 @@ NON viene toccato: omega è un normale client della coda, come il frontend).
   già accodato) con log esplicito `paper_fill_fallback`. Il sistema non resta
   MAI bloccato per l'assenza del runner. `execution_mode='rest'` forza il
   legacy senza log di fallback (scelta esplicita, non un degrado).
-- **LIVE INTOCCATO**: in `mode='live'` non viene MAI accodato nulla (gate chiuso
-  per costruzione + test dedicato); place FOK REST + riconciliazione esistenti,
-  byte-identici. **Settlement INVARIATO**: REST resta autoritativo (§6), anche
-  per i trade riempiti via flumine.
-- Limiti noti dichiarati: durante la finestra `pending` (≤TTL) la liability
-  riservata non entra in `open_liability` (i pending paper senza `bet_id` non
-  contano negli aggregati, come da I8); il `cancel` richiede il `bet_id`
-  simulato dallo specchio — se non arriva, il poll risolve comunque alla hard
-  deadline (TTL+60s) col miglior dato disponibile.
+- **LIVE via coda (v2, 2026-07-17)** — anche il place LIVE passa dalla coda del
+  runner quando il gate live passa, per avere **book streamato** e **fill
+  confermati dall'order stream in tempo reale**, PRESERVANDO la semantica FOK:
+  - **FOK VERO**: la richiesta accodata porta `time_in_force='FILL_OR_KILL'`
+    (colonna già prevista dalla coda, passata da `live_order_worker` a
+    `build_order` → Betfair). È **Betfair** a uccidere il residuo non matchato:
+    NIENTE TTL software che lavora il book coi soldi veri (il TTL quasi-FOK
+    resta SOLO paper). Persistence irrilevante col FOK.
+  - **INVARIANTE SUPREMO**: il `mode` della richiesta accodata deriva SOLO dal
+    mode del trade (doppia guardia: gate + whitelist in `_flumine_enqueue_place`,
+    protetta da test) — un trade paper non produce MAI una richiesta `live`,
+    né viceversa; lo specchio è letto SOLO con il mode del trade.
+  - **Conferma**: dal MIRROR `betfair_live_orders` (order stream): stato
+    terminale con `matched>0` → riserva a `open` col prezzo medio REALE
+    (`meta.fill='flumine_live'`); terminale con `matched=0` (FOK ucciso) →
+    trade fallito **esattamente come il FOK legacy** (`error`,
+    `flumine_live_fok_*`); richiesta rifiutata dal worker prima del place →
+    `error` (`flumine_live_request_error`), deciso **solo oltre la hard
+    deadline** (allo specchio è dato tutto il tempo di smentire). Contratto
+    col worker (17/07): un fallimento DOPO il dispatch dell'ordine porta il
+    prefisso **`post_place:`** sul messaggio d'errore della riga coda — per
+    quei casi la riserva NON viene mai liberata (l'ordine reale può esistere):
+    si va nel ramo "esito ignoto" (alert CRITICAL + pending in verifica)
+    finché lo specchio non porta la verità.
+  - **Hard deadline** (`live_fill_deadline_s`, default 20s) — mai zombie:
+    oltre, con `bet_id` noto si riconcilia via REST
+    (`order_state_by_bet_id`: listCurrentOrders/listClearedOrders per betId —
+    l'ordine del runner NON porta il ref `omega-*` né la strategy `omega`,
+    il betId è l'unica chiave certa); richiesta rimasta `pending` (runner giù)
+    → **REVOCA atomica** pending→error (speculare al claim: il runner tornato
+    vivo non piazza un ordine stantio) e riserva a `error`; esito davvero
+    ignoto → alert CRITICAL una volta e la riserva resta `pending` in verifica
+    (conta come viva in aggregati/missione) — MAI esiti inventati sui soldi
+    veri, MAI il fallback "conferma coi dati della riserva" (quello è solo
+    paper).
+  - **Kill-switch** `omega_live_via_flumine` (default **True**): a `False` il
+    live torna al **legacy puro** (place REST FOK diretto + riconciliazione
+    polling), senza log di fallback. Con gate KO (runner giù, evento non
+    seguito, enqueue fallito e MAI creato) → stesso REST legacy + log
+    `live_fok_fallback` (mai bloccati). Enqueue con **esito ignoto** (rete giù
+    dopo l'insert idempotente) → NESSUN place REST (rischio doppio ordine
+    reale): riserva pending col marker, recovery del poll per client_ref
+    (adozione o `free`).
+  - I pending LIVE con marker flumine sono ESCLUSI da `reconcile_pending` (il
+    reconcile REST per ref li darebbe per mai piazzati) e contano negli
+    aggregati/liability come i paper (F2: `meta.flumine_client_ref`).
+  **Settlement INVARIATO**: REST resta autoritativo (§6), anche per i trade
+  riempiti via flumine.
+- **keepAlive proattivo** (§8): il loop di servizio chiama
+  `omega_market.keep_alive()` ~ogni 600s — il retry reattivo con re-login di
+  `call()` resta SOLO rete di sicurezza (il place LIVE non è idempotente oltre
+  i 60s di de-dup Betfair: mai arrivare al place con la sessione scaduta).
+- Limiti noti dichiarati: durante la finestra `pending` la liability riservata
+  entra in `open_liability` SOLO col marker flumine o il `bet_id` (I8/F2); in
+  paper il `cancel` richiede il `bet_id` simulato dallo specchio — se non
+  arriva, il poll risolve comunque alla hard deadline (TTL+60s) col miglior
+  dato disponibile.
 
 ---
 
@@ -272,8 +324,10 @@ in `lib/omega.ts` ↔ backend `omega_config.resolve_params`). Chiavi e default:
 | `max_liability_per_match` | 0 | cap liability/match (0 = off) |
 | `daily_loss_cap` | 0 | stop-loss giornaliero (0 = off) |
 | `max_open_liability` | 0 | cap liability aperta totale (0 = off) |
-| `execution_mode` | "auto" | esecuzione PAPER (§6-bis): `auto` (coda flumine se il gate passa, fallback legacy) \| `rest` (forza il fill legacy su snapshot). Il LIVE non passa mai di qui |
-| `paper_fill_ttl_s` | 45 | TTL quasi-FOK del place paper via flumine: senza fill entro il TTL → cancel del residuo, conferma dei soli € matchati |
+| `execution_mode` | "auto" | esecuzione via coda flumine (§6-bis, paper E live): `auto` (coda se il gate passa, fallback legacy) \| `rest` (forza il percorso legacy: fill snapshot in paper, place REST FOK in live) |
+| `paper_fill_ttl_s` | 45 | TTL quasi-FOK del place paper via flumine: senza fill entro il TTL → cancel del residuo, conferma dei soli € matchati. SOLO paper |
+| `omega_live_via_flumine` | true | kill-switch del LIVE via coda flumine (§6-bis v2): `false` = live legacy puro (REST FOK diretto), senza log di fallback |
+| `live_fill_deadline_s` | 20 | hard deadline dell'esito FOK live dallo specchio: oltre → riconciliazione REST per bet_id / revoca della richiesta mai presa in carico (mai zombie) |
 
 > Scelta utente 11/07: **set-and-forget senza limiti** → i tre cap
 > (`max_liability_per_match`, `daily_loss_cap`, `max_open_liability`) sono

@@ -76,7 +76,20 @@ class FakeQueueDB(FakeDB):
         return None
 
     def get_live_order_mirror(self, client_order_ref, mode="paper"):
-        return self.mirrors.get(str(client_order_ref))
+        # fedeltà all'indice reale (mode, client_order_ref): MAI letture cross-mode
+        row = self.mirrors.get(str(client_order_ref))
+        if row is not None and str(row.get("mode", mode)) != str(mode):
+            return None
+        return row
+
+    def revoke_live_order_request(self, request_id):
+        # transizione ATOMICA pending→error, come la revoca reale (omega_db)
+        row = self.queue.get(int(request_id))
+        if row is None or row.get("status") != "pending":
+            return False
+        row["status"] = "error"
+        row["error"] = "revocata da omega (deadline live)"
+        return True
 
 
 def _params(**over):

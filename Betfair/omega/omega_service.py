@@ -378,6 +378,25 @@ def _place_one(
                 "requested_size": requested_size if requested_size is not None else size}
         bet_id = None
     else:  # live — soldi veri
+        # LIVE=DEMO (§6-bis v2): se il gate live passa, il place va sulla coda
+        # flumine con FOK VERO (timeInForce=FILL_OR_KILL, lo esegue Betfair) e
+        # l'esito arriva dall'order stream (poll di ciclo). Gate/enqueue KO →
+        # percorso REST legacy INVARIATO qui sotto (mai bloccati).
+        req_size = requested_size if requested_size is not None else size
+        use_flumine, gate_reason = _flumine_gate(
+            ev.event_id, db=db, mode=mode, params=params or {}, now=now)
+        if use_flumine:
+            rid = _flumine_enqueue_place(
+                db=db, trade_id=trade_id, event_id=ev.event_id,
+                market_id=cs.market_id, selection_id=sel.selection_id, side="lay",
+                price=price, size=size,
+                base_meta={"requested_size": req_size}, now=now, mode=mode)
+            if rid:  # include _ENQUEUE_UNKNOWN: riserva pending, MAI place REST ora
+                return 1
+            gate_reason = "enqueue_failed"
+        if _live_flumine_expected(params or {}):
+            db.log("live_fok_fallback", {"event_id": ev.event_id,
+                                         "trade_id": trade_id, "reason": gate_reason})
         try:
             res = market.place_lay_live(
                 market_id=cs.market_id, selection_id=sel.selection_id,
@@ -414,35 +433,61 @@ def _place_one(
 
 
 # ---------------------------------------------------------------------------
-# ESECUZIONE PAPER VIA FLUMINE (DEMO = LIVE) — v1, SOLO PAPER (COSTITUZIONE §6).
-# Quando il gate passa, il place paper NON usa il fill istantaneo su snapshot
-# (E.paper_fill / paper_at_price): accoda un 'place' nella coda ESISTENTE
-# ``betfair_live_order_requests`` (contratto di live_order_worker: claim atomico,
-# client_ref UNIQUE) e la riserva resta 'pending' (reserve-first INVARIATO) con
-# ``meta.flumine_request_id``. Il fill REALE simulato (coda al prezzo, liquidità,
-# betDelay via flumine SimulatedExecution) torna dallo specchio
-# ``betfair_live_orders`` (client_order_ref = awlq<request_id>) ed è confermato
-# dal poll di ciclo (poll_flumine_paper). Il percorso LIVE di omega è INTOCCATO:
-# il gate esclude qualunque mode != 'paper'. FALLBACK SEMPRE DISPONIBILE: gate
-# KO in qualunque punto → percorso legacy invariato + log 'paper_fill_fallback'
+# ESECUZIONE VIA FLUMINE (COSTITUZIONE §6-bis).
+# v1 (16/07, PAPER): quando il gate passa, il place paper NON usa il fill
+# istantaneo su snapshot (E.paper_fill / paper_at_price): accoda un 'place'
+# nella coda ESISTENTE ``betfair_live_order_requests`` (contratto di
+# live_order_worker: claim atomico, client_ref UNIQUE) e la riserva resta
+# 'pending' (reserve-first INVARIATO) con ``meta.flumine_request_id``. Il fill
+# REALE simulato (coda al prezzo, liquidità, betDelay via flumine
+# SimulatedExecution) torna dallo specchio ``betfair_live_orders``
+# (client_order_ref = awlq<request_id>) ed è confermato dal poll di ciclo.
+# v2 (17/07, LIVE): anche il place LIVE passa dalla coda quando il gate live
+# passa (runner in order mode LIVE + kill-switch ``omega_live_via_flumine``):
+# la richiesta porta ``time_in_force='FILL_OR_KILL'`` → il FOK VERO lo esegue
+# BETFAIR (niente TTL software che lavora il book coi soldi veri) e l'esito
+# torna dallo specchio alimentato dall'order stream. Hard deadline breve
+# (``live_fill_deadline_s``) oltre la quale si riconcilia via REST per bet_id
+# o si REVOCA la richiesta mai presa in carico — mai pending live zombie.
+# INVARIANTE SUPREMO: il mode della richiesta accodata deriva SOLO dal mode
+# del trade — un trade paper non produce MAI una richiesta 'live' (né viceversa).
+# FALLBACK SEMPRE DISPONIBILE: gate KO in qualunque punto → percorso legacy
+# invariato (fill snapshot in paper / place REST FOK in live) + log esplicito
 # (il sistema non resta MAI bloccato per l'assenza del runner).
 # ---------------------------------------------------------------------------
 RUNNER_HB_MAX_AGE_S = 90       # heartbeat runner più vecchio → runner considerato giù
-FLUMINE_CANCEL_GRACE_S = 60    # attesa esito cancel / letture KO oltre il TTL
+FLUMINE_CANCEL_GRACE_S = 60    # attesa esito cancel / letture KO oltre il TTL (solo paper)
 _FLUMINE_TERMINAL = frozenset(
     {"EXECUTION_COMPLETE", "EXPIRED", "LAPSED", "VIOLATION", "VOIDED", "CANCELLED"}
 )
+# sentinella di _flumine_enqueue_place (solo LIVE): esito enqueue IGNOTO —
+# la riserva resta 'pending' col marker (recovery del poll via client_ref),
+# il chiamante NON deve ripiegare sul place REST (rischio doppio ordine reale).
+_ENQUEUE_UNKNOWN = -1
 
 
-def _flumine_paper_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
-                        now: datetime) -> tuple[bool, str]:
-    """True SOLO se il place PAPER può passare dalla coda flumine: omega in
-    'paper', execution_mode='auto', evento seguito in STREAMING dal runner,
-    runner vivo (heartbeat fresco) e in order mode PAPER.
-    FAIL-CLOSED: qualunque dubbio/errore → (False, motivo) → percorso legacy."""
+def _flumine_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
+                  now: datetime) -> tuple[bool, str]:
+    """Gate UNIFICATO paper/live per l'esecuzione via coda flumine (§6-bis).
+
+    PAPER: runner in order mode PAPER. LIVE: kill-switch
+    ``omega_live_via_flumine`` acceso + runner in order mode LIVE + contratto
+    di revoca presente (anti-zombie). Comuni: ``execution_mode='auto'``, evento
+    in follow STREAMING, heartbeat runner fresco ≤90s, contratto coda sul db.
+    Il mode qui è SEMPRE quello del trade (mai input esterno): niente cross-mode.
+    FAIL-CLOSED: qualunque dubbio/errore → (False, motivo) → percorso legacy
+    (fill snapshot in paper / place REST FOK in live) — mai bloccati."""
     try:
-        if str(mode) != "paper":
-            return False, "mode_non_paper"
+        mode = str(mode)
+        if mode == "paper":
+            hb_required = "PAPER"
+        elif mode == "live":
+            if not params.get("omega_live_via_flumine",
+                              omega_config.DEFAULTS["omega_live_via_flumine"]):
+                return False, "live_via_flumine_off"  # kill-switch → legacy puro
+            hb_required = "LIVE"
+        else:
+            return False, "mode_sconosciuto"
         if str(params.get("execution_mode", "auto")) != "auto":
             return False, "execution_mode_rest"
         fs = getattr(db, "live_follow_status", None)
@@ -452,12 +497,14 @@ def _flumine_paper_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
                 and callable(getattr(db, "get_live_order_request", None))
                 and callable(getattr(db, "get_live_order_mirror", None))):
             return False, "db_senza_coda"
+        if mode == "live" and not callable(getattr(db, "revoke_live_order_request", None)):
+            return False, "db_senza_revoca"  # senza revoca niente anti-zombie → legacy
         st = fs(str(event_id))
         if str(st or "").upper() != "STREAMING":
             return False, f"follow_{str(st or 'assente').lower()}"
         hb = hb_fn() or {}
-        if str(hb.get("mode") or "").upper() != "PAPER":
-            return False, "runner_mode_non_paper"
+        if str(hb.get("mode") or "").upper() != hb_required:
+            return False, f"runner_mode_non_{hb_required.lower()}"
         ts = _parse_iso_dt(hb.get("ts"))
         if ts is None or (now - ts).total_seconds() > RUNNER_HB_MAX_AGE_S:
             return False, "runner_heartbeat_stantio"
@@ -466,18 +513,46 @@ def _flumine_paper_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
         return False, f"gate_error:{str(ex)[:80]}"
 
 
+def _flumine_paper_gate(event_id: str, *, db, mode: str, params: dict[str, Any],
+                        now: datetime) -> tuple[bool, str]:
+    """(nome storico, v1) gate SOLO-PAPER: delega al gate unificato; qualunque
+    mode != 'paper' resta chiuso qui con il motivo storico ``mode_non_paper``."""
+    if str(mode) != "paper":
+        return False, "mode_non_paper"
+    return _flumine_gate(event_id, db=db, mode="paper", params=params, now=now)
+
+
+def _live_flumine_expected(params: dict[str, Any]) -> bool:
+    """True se il percorso LIVE via flumine era ATTESO (kill-switch acceso e
+    execution_mode='auto'): solo allora il ripiego sul REST va loggato come
+    fallback — con kill-switch spento o 'rest' è una scelta, non un degrado."""
+    return (str(params.get("execution_mode", "auto")) == "auto"
+            and bool(params.get("omega_live_via_flumine",
+                                omega_config.DEFAULTS["omega_live_via_flumine"])))
+
+
 def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
                            selection_id: int, side: str, price: float, size: float,
-                           base_meta: Optional[dict], now: datetime) -> Optional[int]:
-    """Accoda il place PAPER sulla coda del runner e marca la riserva in attesa
-    (meta.phase='flumine_wait'). Best-effort: qualunque errore → None e il
-    chiamante fa fallback al fill legacy (mai bloccati).
+                           base_meta: Optional[dict], now: datetime,
+                           mode: str = "paper") -> Optional[int]:
+    """Accoda il place sulla coda del runner e marca la riserva in attesa
+    (meta.phase='flumine_wait'). ``mode`` è SEMPRE il mode del trade (invariante
+    supremo: mai una richiesta 'live' da un trade paper o viceversa); in LIVE la
+    richiesta porta ``time_in_force='FILL_OR_KILL'`` (il FOK vero lo esegue
+    Betfair). Best-effort: errore ACCERTATO → None e il chiamante fa fallback al
+    percorso legacy (mai bloccati); esito enqueue IGNOTO in LIVE →
+    ``_ENQUEUE_UNKNOWN`` (la riserva resta pending col marker: MAI il place REST
+    subito, la richiesta potrebbe esistere → doppio ordine reale).
 
     ORDINE DELLE SCRITTURE (fix F1 review 16/07): il marker
     ``flumine_client_ref`` viene persistito PRIMA dell'enqueue — se il processo
     muore in mezzo, il trade pending resta riconoscibile (recovery nel poll via
     lookup per client_ref, idempotente) e NON può essere confermato due volte
-    dal reconcile mentre un ordine simulato vive nel runner."""
+    dal reconcile mentre un ordine (simulato o reale) vive nel runner."""
+    mode = str(mode)
+    if mode not in ("paper", "live"):  # INVARIANTE SUPREMO: mai un mode inventato
+        logger.error("[omega] enqueue rifiutato: mode %r fuori whitelist", mode)
+        return None
     ref = f"omega-t{trade_id}"  # deterministico: 1 richiesta per trade
     pre = dict(base_meta or {})
     pre.update({"phase": "flumine_wait", "flumine_client_ref": ref,
@@ -487,37 +562,45 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
     except Exception as ex:  # noqa: BLE001 — nessun enqueue avvenuto: legacy sicuro
         logger.warning("[omega] pre-mark flumine KO (trade %s): %s", trade_id, str(ex)[:160])
         return None
+    payload: dict[str, Any] = {
+        "client_ref": ref,
+        "action": "place",
+        "mode": mode,  # deriva SOLO dal mode del trade (mai da input esterno)
+        "market_id": str(market_id),
+        "selection_id": int(selection_id),
+        "side": str(side),
+        "order_type": "LIMIT",
+        "price": float(price),
+        "size": float(size),
+        "persistence": "LAPSE",
+        "params": {"source": "omega", "trade_id": int(trade_id)},
+    }
+    if mode == "live":
+        # FOK VERO: è Betfair a uccidere il residuo non matchato — NIENTE TTL
+        # software che lavora il book coi soldi veri (quello resta solo paper).
+        payload["time_in_force"] = "FILL_OR_KILL"
     try:
-        rid = db.enqueue_live_order({
-            "client_ref": ref,
-            "action": "place",
-            "mode": "paper",
-            "market_id": str(market_id),
-            "selection_id": int(selection_id),
-            "side": str(side),
-            "order_type": "LIMIT",
-            "price": float(price),
-            "size": float(size),
-            "persistence": "LAPSE",
-            "params": {"source": "omega", "trade_id": int(trade_id)},
-        })
+        rid = db.enqueue_live_order(payload)
         if not rid:
             raise RuntimeError("enqueue rifiutato (rid nullo)")
         meta = dict(pre)
         meta["flumine_request_id"] = int(rid)
         db.update_trade(trade_id, meta=meta)  # se fallisce: recovery via client_ref
         db.log("flumine_enqueue", {"trade_id": trade_id, "event_id": event_id,
-                                   "request_id": int(rid), "price": price, "size": size})
+                                   "request_id": int(rid), "price": price,
+                                   "size": size, "mode": mode})
         return int(rid)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega] enqueue flumine KO (trade %s): %s", trade_id, str(ex)[:160])
         # la risposta può essersi persa DOPO l'insert (idempotente): prima di
         # tornare al legacy verifica se la richiesta esiste già per client_ref —
-        # se sì va adottata (un ordine simulato potrebbe già vivere nel runner).
+        # se sì va adottata (un ordine potrebbe già vivere nel runner).
+        lookup_failed = False
         try:
             req = db.get_live_order_request_by_ref(ref)
         except Exception:  # noqa: BLE001
             req = None
+            lookup_failed = True
         if req is not None and req.get("id") is not None:
             meta = dict(pre)
             meta["flumine_request_id"] = int(req["id"])
@@ -526,9 +609,17 @@ def _flumine_enqueue_place(*, db, trade_id: int, event_id: str, market_id: str,
             except Exception:  # noqa: BLE001 — recovery al prossimo poll (client_ref)
                 pass
             return int(req["id"])
-        # richiesta MAI creata: rimuovi il marker così il trade resta nel
-        # perimetro legacy (reconcile); se anche questo fallisce, il poll lo
-        # risolve comunque via client_ref (request_missing → fallback).
+        if mode == "live" and lookup_failed:
+            # esito enqueue IGNOTO su SOLDI VERI: mai il place REST adesso (la
+            # richiesta potrebbe esistere → doppio ordine reale). La riserva
+            # resta pending col marker: il recovery del poll la adotta (se la
+            # richiesta esiste) o la libera (se non è mai stata creata).
+            logger.warning("[omega] enqueue LIVE esito IGNOTO (trade %s): riserva "
+                           "in attesa di recovery, NESSUN place REST", trade_id)
+            return _ENQUEUE_UNKNOWN
+        # richiesta MAI creata (verificato): rimuovi il marker così il trade
+        # resta nel perimetro legacy (reconcile); se anche questo fallisce, il
+        # poll lo risolve comunque via client_ref (request_missing).
         try:
             db.update_trade(trade_id, meta=dict(base_meta or {}))
         except Exception:  # noqa: BLE001
@@ -578,25 +669,26 @@ def _mirror_fill(mirror: Optional[dict], req: Optional[dict]) -> tuple[float, fl
 
 
 def _flumine_confirm(tr: dict[str, Any], *, db, matched: float, avg: float,
-                     bet_id: Any, min_stake: float) -> int:
-    """Conferma la riserva a 'open' con size/prezzo medio REALI simulati.
-    Qualunque matched>0 è contabilizzato (mai posizioni nude); sotto min_stake
-    viene annotato ``below_min_stake`` (scelta accounting-first)."""
+                     bet_id: Any, min_stake: float, mode: str = "paper") -> int:
+    """Conferma la riserva a 'open' con size/prezzo medio REALI (simulati in
+    paper, dall'order stream in live). Qualunque matched>0 è contabilizzato
+    (mai posizioni nude); sotto min_stake viene annotato ``below_min_stake``
+    (scelta accounting-first)."""
     side = str(tr.get("side") or "lay")
     price = avg if avg and avg > 1.0 else float(tr.get("price") or 0.0)
     size = round(float(matched), 2)
     meta = dict(tr.get("meta") or {})
     meta.pop("phase", None)
-    meta["fill"] = "flumine_paper"
+    meta["fill"] = f"flumine_{mode}"
     if size + 1e-9 < float(min_stake):
         meta["below_min_stake"] = True
     _confirm_open_trade(
         db, tr["id"], event_id=tr["event_id"], price=price, size=size,
         liability=_back_liability(size, side, price),
-        bet_id=str(bet_id) if bet_id else None, meta=meta, mode="paper",
+        bet_id=str(bet_id) if bet_id else None, meta=meta, mode=mode,
     )
     db.log("flumine_fill", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
-                            "size": size, "price": price,
+                            "size": size, "price": price, "mode": mode,
                             "request_id": meta.get("flumine_request_id")})
     return 1
 
@@ -721,8 +813,10 @@ def _poll_one_flumine_trade(tr: dict[str, Any], *, db, params: dict[str, Any],
 def _recover_flumine_orphan(tr: dict[str, Any], *, db, now: datetime) -> int:
     """Trade pending con ``flumine_client_ref`` ma SENZA request_id (processo
     morto tra enqueue e persistenza — fix F1). Adotta la richiesta esistente
-    per client_ref (idempotenza della coda) oppure, se non è mai stata creata,
-    risolve col fallback legacy (nessun ordine simulato può esistere)."""
+    per client_ref (idempotenza della coda); se non è mai stata creata:
+    PAPER → fallback legacy (nessun ordine simulato può esistere);
+    LIVE → LIBERA la riserva (nessun ordine reale può esistere — come il
+    reconcile 'free': l'evento torna disponibile, MAI conferme inventate)."""
     meta = dict(tr.get("meta") or {})
     ref = str(meta.get("flumine_client_ref"))
     try:
@@ -735,21 +829,154 @@ def _recover_flumine_orphan(tr: dict[str, Any], *, db, now: datetime) -> int:
         db.log("flumine_recovered", {"trade_id": tr.get("id"),
                                      "request_id": int(req["id"])})
         return 0  # risolto dal poll normale al prossimo passaggio
-    # nessuna richiesta con quel ref: l'enqueue non è mai avvenuto → il fill
-    # legacy è l'esito corretto (identico al percorso pre-flumine).
+    # nessuna richiesta con quel ref: l'enqueue non è mai avvenuto.
+    if str(tr.get("mode")) == "live":
+        db.delete_trade(tr["id"])
+        db.log("flumine_live_freed", {"trade_id": tr.get("id"),
+                                      "event_id": tr.get("event_id"),
+                                      "reason": "request_missing"})
+        return 1
+    # PAPER: il fill legacy è l'esito corretto (identico al percorso pre-flumine).
     return _flumine_fallback_confirm(tr, db=db, reason="request_missing")
 
 
-def poll_flumine_paper(*, db, params: Optional[dict[str, Any]] = None,
-                       now: datetime) -> int:
-    """Risolve i trade PAPER 'pending' in attesa del fill dalla coda flumine.
-    Ritorna quanti ne ha risolti (open/error/fallback).
+def _poll_one_flumine_live_trade(tr: dict[str, Any], *, db, market,
+                                 params: dict[str, Any], now: datetime) -> int:
+    """Fa avanzare di uno step UN trade LIVE in attesa dell'esito FOK dalla
+    coda flumine. Il FOK VERO lo ha eseguito Betfair (timeInForce=FILL_OR_KILL):
+    qui si LEGGE solo l'esito dallo specchio (order stream) — MAI conferme coi
+    dati della riserva (soldi veri, mai esiti inventati). Ritorna 1 se risolto.
 
-    Macchina a stati su meta.phase: 'flumine_wait' → (TTL) 'flumine_cancel' →
-    conferma/errore. Semantica quasi-FOK (COSTITUZIONE §6): fino a
-    ``paper_fill_ttl_s`` l'ordine simulato lavora il book reale; scaduto il TTL
-    si accoda il cancel del residuo e si confermano SOLO i € matchati; nessun
-    fill → riserva liberata a 'error'. Mai posizioni nude non contabilizzate."""
+    Oltre la hard deadline (``live_fill_deadline_s``): con bet_id → verità da
+    Betfair via REST (order_state_by_bet_id); richiesta MAI presa in carico →
+    REVOCA atomica (il runner tornato vivo non piazzi un ordine stantio); esito
+    davvero ignoto → alert CRITICAL una volta e resta pending in verifica
+    (conta come vivo in aggregati/missione) — mai zombie silenzioso."""
+    meta = dict(tr.get("meta") or {})
+    rid = int(meta["flumine_request_id"])
+    deadline_s = float(params.get("live_fill_deadline_s",
+                                  omega_config.DEFAULTS["live_fill_deadline_s"]))
+    min_stake = float(params.get("min_stake", omega_config.DEFAULTS["min_stake"]))
+    enq_at = _parse_iso_dt(meta.get("flumine_enqueued_at")) or _parse_iso_dt(tr.get("placed_at"))
+    age = (now - enq_at).total_seconds() if enq_at is not None else None
+    overdue = age is None or age >= deadline_s  # età ignota = deadline immediata (F4)
+
+    try:
+        req = db.get_live_order_request(rid)
+    except Exception:  # noqa: BLE001 — lettura KO transitoria: riprova
+        req = None
+    try:
+        mirror = db.get_live_order_mirror(f"awlq{rid}", "live")
+    except Exception:  # noqa: BLE001
+        mirror = None
+    matched, avg, status_name = _mirror_fill(mirror, req)
+    bet_id = (mirror or {}).get("bet_id") or (req or {}).get("bet_id")
+
+    # 1) esito TERMINALE dallo specchio (order stream: autoritativo, real-time)
+    if status_name in _FLUMINE_TERMINAL:
+        if matched > 0:
+            return _flumine_confirm(tr, db=db, matched=matched, avg=avg,
+                                    bet_id=bet_id, min_stake=min_stake, mode="live")
+        # FOK ucciso da Betfair senza alcun fill: stesso esito del legacy
+        # (live_not_matched) — riserva a 'error', evento consumato.
+        return _flumine_no_fill_error(
+            tr, db=db, reason=f"live_fok_{status_name.lower() or 'no_fill'}")
+
+    if not overdue:
+        # Dentro la deadline si aspetta SEMPRE lo specchio (order stream) —
+        # anche con richiesta in 'error': se il worker è fallito DOPO il place
+        # (rete KO su _write_done) l'ordine reale ESISTE e lo specchio sta per
+        # arrivare. Liberare qui creerebbe un ordine reale orfano (fix 17/07,
+        # review adversariale).
+        return 0
+
+    # 3) HARD DEADLINE — mai zombie. Con bet_id: la verità da Betfair via REST.
+    if bet_id:
+        state_fn = getattr(market, "order_state_by_bet_id", None) if market is not None else None
+        state = None
+        if callable(state_fn):
+            try:
+                state = state_fn(str(bet_id))
+            except Exception:  # noqa: BLE001 — REST muto: MAI decidere al buio
+                state = None
+        if state is not None:
+            if state.get("found"):
+                if float(state.get("size_remaining") or 0.0) > 0:
+                    return 0  # ancora vivo su Betfair (anomalo per un FOK): aspetta
+                m2 = float(state.get("size_matched") or 0.0)
+                if m2 > 0:
+                    return _flumine_confirm(
+                        tr, db=db, matched=m2,
+                        avg=float(state.get("avg_price_matched") or 0.0),
+                        bet_id=bet_id, min_stake=min_stake, mode="live")
+                return _flumine_no_fill_error(tr, db=db, reason="live_rest_no_fill")
+            # bet_id noto ma Betfair non lo conosce in NESSUNA lista → mai
+            # matchato (ordine ucciso/void): riserva a 'error', mai un doppio.
+            return _flumine_no_fill_error(tr, db=db, reason="live_rest_not_found")
+        # REST non disponibile/KO: si riprova al ciclo dopo (mai al buio)
+    else:
+        req_status = str((req or {}).get("status") or "")
+        if req_status == "error" and mirror is None:
+            err_msg = str((req or {}).get("error") or "")
+            if not err_msg.startswith("post_place:"):
+                # 2) richiesta in ERRORE PRIMA del place (validazione/trading
+                #    control/claim: contratto col worker — solo i fallimenti
+                #    successivi al dispatch portano il prefisso ``post_place:``):
+                #    nessun ordine reale esiste → stesso esito del FOK legacy
+                #    non matchato. Deciso SOLO oltre la deadline: allo specchio
+                #    è stato dato tutto il tempo di smentire.
+                return _flumine_no_fill_error(
+                    tr, db=db, reason=f"live_request_error:{err_msg[:80]}")
+            # post_place: l'ordine reale è (quasi certamente) partito ma non
+            # abbiamo né bet_id né specchio → esito IGNOTO su soldi veri: si
+            # cade nel ramo CRITICAL sotto (alert + resta pending in verifica).
+            # MAI liberare la riserva con un ordine potenzialmente vivo.
+        elif req_status == "pending":
+            # richiesta MAI presa in carico (runner giù): REVOCA atomica
+            # pending→error — il runner tornato vivo ORE dopo non deve piazzare
+            # un ordine reale stantio. Se la revoca perde la corsa col claim
+            # del worker, si riprova (l'esito arriverà dallo specchio).
+            revoked = False
+            try:
+                revoked = bool(db.revoke_live_order_request(rid))
+            except Exception:  # noqa: BLE001
+                revoked = False
+            if revoked:
+                return _flumine_no_fill_error(tr, db=db, reason="live_revoked_deadline")
+            return 0
+
+    # processing/done senza specchio né bet_id (o REST muto): esito IGNOTO su
+    # soldi veri → MAI inventare: alert CRITICAL una volta, resta pending in
+    # verifica (aggregati/missione lo contano come vivo; lo specchio, al
+    # rientro del runner, lo risolverà).
+    if not meta.get("live_orphan_alerted"):
+        meta["live_orphan_alerted"] = True
+        db.update_trade(tr["id"], meta=meta)
+        logger.critical(
+            "[omega] trade LIVE %s (event=%s) oltre la deadline flumine senza esito: "
+            "VERIFICARE SU BETFAIR (request_id=%s, bet_id=%s)",
+            tr.get("id"), tr.get("event_id"), rid, bet_id)
+        db.log("flumine_live_orphan", {"trade_id": tr.get("id"),
+                                       "event_id": tr.get("event_id"),
+                                       "request_id": rid, "bet_id": bet_id})
+    return 0
+
+
+def poll_flumine_pending(*, db, params: Optional[dict[str, Any]] = None,
+                         now: datetime, market=None) -> int:
+    """Risolve i trade 'pending' in attesa dell'esito dalla coda flumine
+    (PAPER e LIVE). Ritorna quanti ne ha risolti (open/error/fallback/free).
+
+    PAPER — macchina a stati su meta.phase: 'flumine_wait' → (TTL)
+    'flumine_cancel' → conferma/errore. Semantica quasi-FOK (COSTITUZIONE §6):
+    fino a ``paper_fill_ttl_s`` l'ordine simulato lavora il book reale; scaduto
+    il TTL si accoda il cancel del residuo e si confermano SOLO i € matchati;
+    nessun fill → riserva liberata a 'error'. Mai posizioni nude.
+
+    LIVE — il FOK vero lo esegue Betfair: qui si legge l'esito dallo specchio
+    (order stream) e oltre ``live_fill_deadline_s`` si riconcilia via REST
+    (bet_id) / si revoca la richiesta mai presa in carico. I pending LIVE SENZA
+    marker flumine restano territorio di ``reconcile_pending`` (legacy)."""
     params = params or {}
     try:
         pendings = db.list_trades("pending")
@@ -758,11 +985,16 @@ def poll_flumine_paper(*, db, params: Optional[dict[str, Any]] = None,
     n = 0
     for tr in pendings:
         meta = tr.get("meta") or {}
-        if str(tr.get("mode")) != "paper":
+        mode = str(tr.get("mode"))
+        if mode not in ("paper", "live"):
             continue
+        if mode == "live" and not (meta.get("flumine_request_id")
+                                   or meta.get("flumine_client_ref")):
+            continue  # pending live LEGACY: lo riconcilia reconcile_pending
         # RECOVERY F1 (review 16/07): marker presente ma request_id mai
         # persistito (crash tra enqueue e update) → adotta la richiesta per
-        # client_ref se esiste; se non esiste mai stata creata → fallback.
+        # client_ref se esiste; se non è mai stata creata → fallback (paper)
+        # o riserva liberata (live).
         if not meta.get("flumine_request_id"):
             if meta.get("flumine_client_ref"):
                 try:
@@ -772,10 +1004,18 @@ def poll_flumine_paper(*, db, params: Optional[dict[str, Any]] = None,
                            {"trade_id": tr.get("id"), "err": str(ex)[:160]})
             continue
         try:
-            n += _poll_one_flumine_trade(tr, db=db, params=params, now=now)
+            if mode == "live":
+                n += _poll_one_flumine_live_trade(tr, db=db, market=market,
+                                                  params=params, now=now)
+            else:
+                n += _poll_one_flumine_trade(tr, db=db, params=params, now=now)
         except Exception as ex:  # noqa: BLE001 — un trade rotto non ferma gli altri (I6)
             db.log("flumine_poll_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
     return n
+
+
+# nome storico (v1, solo paper): stessa funzione — ora copre anche i LIVE via coda.
+poll_flumine_paper = poll_flumine_pending
 
 
 # ---------------------------------------------------------------------------
@@ -796,15 +1036,23 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
     n = 0
     # FAIL-SAFE: solo mode ESPLICITAMENTE 'paper' va nel ramo paper; qualsiasi altro
     # valore (live/None/ignoto) → ramo LIVE (verifica su Betfair), mai il contrario.
-    # I pending paper IN ATTESA del fill flumine (meta.flumine_request_id) sono di
-    # poll_flumine_paper: confermarli qui coi dati della riserva bypasserebbe la coda.
+    # I pending IN ATTESA dell'esito flumine (meta.flumine_request_id) sono di
+    # poll_flumine_pending: confermarli qui coi dati della riserva bypasserebbe la
+    # coda; e un LIVE piazzato dal runner NON porta il customerOrderRef omega-*
+    # né la strategy 'omega' → il reconcile REST lo darebbe per MAI PIAZZATO
+    # ('free'/'error') mentre l'ordine reale esiste. Il poll (con hard deadline)
+    # è il SOLO proprietario di quei pending — mai zombie, mai doppi.
     # (fix F1: escluso anche il solo marker client_ref — un crash tra enqueue e
-    # persistenza del request_id NON deve far confermare qui un trade il cui
-    # ordine simulato potrebbe già vivere nel runner; lo risolve il poll.)
-    paper_pendings = [t for t in pendings if str(t.get("mode")) == "paper"
-                      and not (t.get("meta") or {}).get("flumine_request_id")
-                      and not (t.get("meta") or {}).get("flumine_client_ref")]
-    live = [t for t in pendings if str(t.get("mode")) != "paper"]
+    # persistenza del request_id NON deve far confermare/liberare qui un trade
+    # il cui ordine potrebbe già vivere nel runner; lo risolve il poll.)
+    def _is_flumine(t: dict) -> bool:
+        m = t.get("meta") or {}
+        return bool(m.get("flumine_request_id") or m.get("flumine_client_ref"))
+
+    paper_pendings = [t for t in pendings
+                      if str(t.get("mode")) == "paper" and not _is_flumine(t)]
+    live = [t for t in pendings
+            if str(t.get("mode")) != "paper" and not _is_flumine(t)]
     # PAPER: nessun ordine reale a mercato → conferma con i dati della riserva.
     for tr in paper_pendings:
         size = float(tr.get("size") or 0.0)
@@ -1245,6 +1493,28 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         return {"error": "reserve_no_id"}
 
     if mode == "live":  # soldi veri — ramo ESPLICITO
+        # LIVE=DEMO (§6-bis v2): stesso gate del path automatico — se passa, il
+        # place va sulla coda flumine con FOK vero e la UI riceve pending_fill
+        # (conferma dal poll, come il manuale paper). Gate/enqueue KO → REST
+        # legacy INVARIATO qui sotto.
+        use_flumine, gate_reason = _flumine_gate(
+            event_id, db=db, mode=mode, params=params, now=now)
+        if use_flumine:
+            rid = _flumine_enqueue_place(
+                db=db, trade_id=trade_id, event_id=event_id, market_id=market_id,
+                selection_id=selection_id, side=side, price=price, size=size,
+                base_meta={"manual": True}, now=now, mode=mode)
+            if rid:  # include _ENQUEUE_UNKNOWN: riserva pending, MAI place REST ora
+                db.log("manual_place", {"trade_id": trade_id, "event_id": event_id,
+                                        "side": side, "price": price, "size": size,
+                                        "mode": mode,
+                                        "flumine_request_id": int(rid) if rid > 0 else None})
+                return {"ok": True, "trade_id": trade_id, "pending_fill": True,
+                        "flumine_request_id": int(rid) if rid > 0 else None}
+            gate_reason = "enqueue_failed"
+        if _live_flumine_expected(params):
+            db.log("live_fok_fallback", {"event_id": event_id, "trade_id": trade_id,
+                                         "reason": gate_reason})
         try:
             # ref PER-GAMBA (omega-m<trade_id>): due ordini manuali sullo stesso
             # evento (o manuale+auto) NON devono mai condividere il customerOrderRef,
@@ -1626,11 +1896,12 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     #    piazzamento / conferma DB fallita). Toglie il gate LIVE.
     n_reconciled = reconcile_pending(market=market, db=db, now=now)
 
-    # 0-bis) PAPER via flumine — SEMPRE, anche a bot fermo/stopping: risolve i
-    #    trade paper in attesa del fill dalla coda del runner (conferma con i €
-    #    realmente matchati / cancel a TTL scaduto / fallback dichiarato).
+    # 0-bis) coda flumine (PAPER e LIVE) — SEMPRE, anche a bot fermo/stopping:
+    #    risolve i trade in attesa dell'esito dalla coda del runner (conferma
+    #    con i € realmente matchati / cancel a TTL scaduto in paper / deadline
+    #    REST+revoca in live / fallback dichiarato).
     try:
-        poll_flumine_paper(db=db, params=params, now=now)
+        poll_flumine_pending(db=db, params=params, now=now, market=market)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "flumine_poll_failed", "err": str(ex)[:160]})
 
@@ -1723,6 +1994,28 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 # ---------------------------------------------------------------------------
 _SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
 
+# keepAlive PROATTIVO della sessione Betfair (~600s): il retry reattivo con
+# re-login di omega_market.call() resta SOLO rete di sicurezza — il place LIVE
+# non è idempotente oltre i 60s di de-dup Betfair, quindi il loop non deve MAI
+# arrivare a un place con la sessione scaduta contando sul retry.
+KEEPALIVE_EVERY_S = 600.0
+
+
+def _maybe_keepalive(market, last_ts: float, *, now_ts: float) -> float:
+    """Chiama ``market.keep_alive()`` se sono passati ≥KEEPALIVE_EVERY_S dal
+    precedente. Ritorna il nuovo last_ts (invariato se non era ora). BEST-EFFORT:
+    un KO non ferma il loop (log WARN; resta il retry reattivo di call())."""
+    if now_ts - last_ts < KEEPALIVE_EVERY_S:
+        return last_ts
+    ka = getattr(market, "keep_alive", None)
+    if callable(ka):
+        try:
+            ka()
+        except Exception as ex:  # noqa: BLE001 — mai fermare il loop per un keepAlive
+            logger.warning("[omega] keepAlive proattivo KO (retry reattivo resta): %s",
+                           str(ex)[:160])
+    return now_ts
+
 
 def _acquire_single_instance_lock():
     """Impedisce due servizi Omega insieme (difesa in profondità oltre l'unique index).
@@ -1753,10 +2046,13 @@ def main() -> None:
         return
     logger.info("[omega] servizio avviato")
     score_lookup = _build_score_lookup()
+    last_keepalive = float("-inf")  # primo ciclo: keepAlive subito (scalda la sessione)
     try:
         while True:
             interval = 20
             try:
+                last_keepalive = _maybe_keepalive(
+                    _real_market, last_keepalive, now_ts=time.monotonic())
                 ctrl = _real_db.read_control()
                 params = omega_config.resolve_params((ctrl or {}).get("params"))
                 interval = int(params["poll_interval_s"])

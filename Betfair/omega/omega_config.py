@@ -35,13 +35,23 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     "max_liability_per_match": (0.0, float, 0.0, 1_000_000.0),
     "daily_loss_cap": (0.0, float, 0.0, 1_000_000.0),
     "max_open_liability": (0.0, float, 0.0, 10_000_000.0),
-    # Esecuzione PAPER (DEMO=LIVE): 'auto' = coda flumine del runner quando il
-    # gate passa (fallback legacy sempre disponibile) | 'rest' = forza il fill
-    # legacy istantaneo su snapshot. SOLO paper: il LIVE non passa MAI di qui.
+    # Esecuzione via coda flumine (DEMO=LIVE, §6-bis): 'auto' = coda del runner
+    # quando il gate passa (fallback legacy sempre disponibile) | 'rest' = forza
+    # il percorso legacy (fill snapshot in paper, place REST FOK in live).
     "execution_mode": ("auto", str, None, None),
     # TTL quasi-FOK del place paper via flumine: senza fill sufficiente entro
     # questo tempo si accoda il cancel del residuo (vedi COSTITUZIONE §6).
+    # SOLO PAPER: in live il FOK vero lo esegue Betfair (timeInForce).
     "paper_fill_ttl_s": (45, int, 5, 600),
+    # KILL-SWITCH del LIVE via coda flumine (§6-bis LIVE, 2026-07-17): True =
+    # il place live passa dalla coda del runner (book streamato + fill
+    # dall'order stream, timeInForce=FILL_OR_KILL); False = live legacy puro
+    # (place REST FOK diretto + riconciliazione polling), senza log di fallback.
+    "omega_live_via_flumine": (True, bool, None, None),
+    # hard deadline (s) dell'esito FOK live dallo specchio: oltre, il poll
+    # riconcilia via REST (per bet_id) o revoca la richiesta mai presa in
+    # carico — mai un pending live zombie.
+    "live_fill_deadline_s": (20, int, 5, 300),
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}

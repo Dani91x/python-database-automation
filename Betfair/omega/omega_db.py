@@ -196,11 +196,13 @@ def read_live_now(event_id: str) -> Optional[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# ESECUZIONE PAPER VIA FLUMINE — omega come CLIENT della coda ESISTENTE del
-# runner calcio (betfair_live_order_queue.sql / live_order_worker.py). SOLO
-# enqueue (RPC) + letture: il worker della coda NON è mai toccato. Usato dal
-# gate _flumine_paper_gate e dal poll di conferma in omega_service.
-# v1: SOLO mode='paper' — il percorso LIVE di omega non passa MAI di qui.
+# ESECUZIONE VIA FLUMINE — omega come CLIENT della coda ESISTENTE del runner
+# calcio (betfair_live_order_queue.sql / live_order_worker.py). SOLO enqueue
+# (RPC) + letture + revoca atomica di righe MAI prese in carico: il worker
+# della coda NON è mai toccato. Usato dal gate _flumine_gate e dal poll di
+# conferma in omega_service. v1 (16/07): solo paper; v2 (17/07): anche il LIVE
+# (timeInForce=FILL_OR_KILL nel payload, kill-switch omega_live_via_flumine).
+# Il mode della richiesta deriva SEMPRE e SOLO dal mode del trade.
 # ---------------------------------------------------------------------------
 def live_follow_status(event_id: str) -> Optional[str]:
     """``live_follow.status`` per l'evento ('STREAMING' = runner agganciato)."""
@@ -250,6 +252,24 @@ def get_live_order_request(request_id: int) -> Optional[dict[str, Any]]:
         .eq("id", int(request_id)).limit(1).execute().data or []
     )
     return rows[0] if rows else None
+
+
+def revoke_live_order_request(request_id: int) -> bool:
+    """REVOCA atomica di una richiesta ancora 'pending' (pending→error),
+    SPECULARE al claim del worker (una sola delle due transizioni vince).
+    Usata dal percorso LIVE via flumine oltre la hard deadline: il runner,
+    tornando vivo ore dopo, NON deve piazzare un ordine reale stantio.
+    Ritorna True SOLO se questa chiamata ha vinto la transizione."""
+    from datetime import datetime, timezone
+
+    res = (
+        _sb().table("betfair_live_order_requests")
+        .update({"status": "error",
+                 "error": "revocata da omega (deadline live)",
+                 "processed_at": datetime.now(timezone.utc).isoformat()})
+        .eq("id", int(request_id)).eq("status", "pending").execute()
+    )
+    return bool(res.data)
 
 
 def get_live_order_mirror(client_order_ref: str, mode: str = "paper") -> Optional[dict[str, Any]]:
@@ -347,9 +367,13 @@ def aggregates(day_start=None) -> dict[str, float]:
     i contatori sarebbero cumulativi a vita e stop_on_goal/max_events/daily_loss_cap
     resterebbero scattati per sempre dal giorno dopo (§2 Costituzione).
     """
+    # FIX F2 (review 16/07, HIGH): ``meta`` DEVE essere nella select — senza,
+    # aggregate_trades non vede ``meta.flumine_client_ref`` e i pending in attesa
+    # del fill flumine (paper E live) NON contano in liability/max_events (dead
+    # code con dati reali). ``mode`` incluso per la stessa ragione (audit/futuro).
     rows = (
         _sb().table("omega_trades")
-        .select("status,pnl,liability,bet_id,placed_at,settled_at")
+        .select("status,pnl,liability,bet_id,placed_at,settled_at,meta,mode")
         .execute().data or []
     )
     from Betfair.omega import omega_engine as E

@@ -796,7 +796,17 @@ def _violation_msg(order: Any) -> str:
 
 
 def _place_or_raise(market: Any, order: Any, what: str) -> None:
-    ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    # Il confine del contratto ``post_place:`` è "place_order è tornato senza
+    # sollevare": SOLO il rifiuto esplicito dei trading control (ritorno False,
+    # ordine mai inviato) è provabilmente pre-place. Un'eccezione sollevata
+    # DENTRO place_order è AMBIGUA (l'ordine può essere già nel blotter/in
+    # dispatch a seconda degli internals flumine): va marcata post_place: così
+    # chi legge l'esito (omega) non libera mai una riserva potenzialmente viva.
+    try:
+        ok = market.place_order(order, customer_strategy_ref=CUSTOMER_STRATEGY_REF)
+    except Exception as ex:  # noqa: BLE001 - ambiguo per contratto, mai pre-place
+        raise RuntimeError(
+            f"post_place:{type(ex).__name__}: {str(ex)[:200]}") from ex
     if ok is False:
         raise ValueError(f"{what}: place RIFIUTATO — {_violation_msg(order)}")
 
@@ -847,24 +857,33 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     # market.place_order (Transaction._validate_controls): un rifiuto fa tornare False e
     # _place_or_raise lo trasforma in errore esplicito sulla riga coda (violation_msg).
     _place_or_raise(market, built.order, "place")
-    # C22 (roadmap): Fill-or-Kill SOFTWARE con timer — params.fok_ttl_sec > 0 registra
-    # l'ordine nel registro TTL: se dopo N secondi non è (tutto) abbinato, il worker lo
-    # CANCELLA al giro successivo. Caveat software-side (come stop/offset): se il runner
-    # cade il TTL non esiste più — l'ordine resta a mercato con la sua persistence.
-    _register_fok_ttl(request_row, market, built.order)
-    result = _result(
-        ok=True,
-        action="place",
-        mode=mode,
-        request_row=request_row,
-        cust_ref=cust_ref,
-        order=built.order,
-        price=built.price,
-        size=built.size,
-        side=built.side.lower() if isinstance(built.side, str) else built.side,
-        detail=built.note,
-    )
-    _write_done(sb, rid, result)
+    # Da qui in poi l'ordine è STATO DISPATCHATO (in live: ordine reale in volo):
+    # un fallimento successivo (registro TTL, result, _write_done) NON può finire
+    # sulla riga coda come un normale errore di validazione — chi legge l'esito
+    # (es. omega, che su 'error' pre-place libera la riserva) deve poter
+    # distinguere. Prefisso contrattuale ``post_place:`` sul messaggio d'errore.
+    try:
+        # C22 (roadmap): Fill-or-Kill SOFTWARE con timer — params.fok_ttl_sec > 0 registra
+        # l'ordine nel registro TTL: se dopo N secondi non è (tutto) abbinato, il worker lo
+        # CANCELLA al giro successivo. Caveat software-side (come stop/offset): se il runner
+        # cade il TTL non esiste più — l'ordine resta a mercato con la sua persistence.
+        _register_fok_ttl(request_row, market, built.order)
+        result = _result(
+            ok=True,
+            action="place",
+            mode=mode,
+            request_row=request_row,
+            cust_ref=cust_ref,
+            order=built.order,
+            price=built.price,
+            size=built.size,
+            side=built.side.lower() if isinstance(built.side, str) else built.side,
+            detail=built.note,
+        )
+        _write_done(sb, rid, result)
+    except Exception as ex:  # noqa: BLE001
+        raise RuntimeError(
+            f"post_place:{type(ex).__name__}: {str(ex)[:200]}") from ex
 
 
 # ---------------------------------------------------------------------------

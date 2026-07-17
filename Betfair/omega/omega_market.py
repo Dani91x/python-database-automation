@@ -38,6 +38,18 @@ def call(fn: Callable[[Any], Any]) -> Any:
         return fn(get_shared_client())
 
 
+def keep_alive() -> None:
+    """Tiene VIVA la sessione condivisa con una chiamata leggera (listEventTypes).
+
+    PROATTIVO (~600s dal loop di servizio, §8): il retry con re-login di
+    ``call()`` resta solo rete di sicurezza — il place LIVE non è idempotente
+    oltre i 60s di de-dup Betfair, quindi non bisogna MAI arrivare al place con
+    la sessione scaduta contando sul retry. Passa da ``call()``: se la sessione
+    è già morta, re-login immediato.
+    """
+    call(lambda c: c.betting_rpc("SportsAPING/v1.0/listEventTypes", {"filter": {}}))
+
+
 # ---------------------------------------------------------------------------
 # Modelli
 # ---------------------------------------------------------------------------
@@ -465,6 +477,48 @@ def place_lay_live(
 # ---------------------------------------------------------------------------
 # RICONCILIAZIONE: stato reale degli ordini Omega su Betfair
 # ---------------------------------------------------------------------------
+def order_state_by_bet_id(bet_id: str) -> dict:
+    """Stato REALE di UN ordine per betId (riconciliazione del percorso LIVE via
+    flumine, §6-bis: l'ordine piazzato dal runner NON porta né il customerOrderRef
+    ``omega-*`` né la strategy 'omega' — l'unica chiave certa è il betId).
+
+    Ritorna ``{"found": True, "size_matched", "avg_price_matched",
+    "size_remaining"}`` oppure ``{"found": False}`` se Betfair non lo conosce
+    in nessuna lista. SOLLEVA su errori di rete (il chiamante NON deve mai
+    decidere al buio su soldi veri: riprova al ciclo dopo).
+    """
+    bid = str(bet_id)
+    resp = call(lambda c: c.betting_rpc(
+        "SportsAPING/v1.0/listCurrentOrders",
+        {"betIds": [bid], "orderProjection": "ALL",
+         "fromRecord": 0, "recordCount": 100},
+    )) or {}
+    for o in resp.get("currentOrders", []) or []:
+        if str(o.get("betId")) == bid:
+            return {
+                "found": True,
+                "size_matched": float(o.get("sizeMatched") or 0.0),
+                "avg_price_matched": o.get("averagePriceMatched"),
+                "size_remaining": float(o.get("sizeRemaining") or 0.0),
+            }
+    # SETTLED prima (porta i € matchati); poi gli stati "senza fill": un FOK
+    # ucciso finisce in CANCELLED/LAPSED con sizeSettled=0.
+    for status in ("SETTLED", "VOIDED", "LAPSED", "CANCELLED"):
+        resp = call(lambda c, s=status: c.betting_rpc(
+            "SportsAPING/v1.0/listClearedOrders",
+            {"betStatus": s, "betIds": [bid], "fromRecord": 0, "recordCount": 100},
+        )) or {}
+        for o in resp.get("clearedOrders", []) or []:
+            if str(o.get("betId")) == bid:
+                return {
+                    "found": True,
+                    "size_matched": float(o.get("sizeSettled") or 0.0),
+                    "avg_price_matched": o.get("priceMatched"),
+                    "size_remaining": 0.0,
+                }
+    return {"found": False}
+
+
 def list_current_orders(strategy_ref: str = CUSTOMER_STRATEGY_REF) -> list[dict]:
     """Ordini Omega APERTI/matchati (normalizzati) per la riconciliazione."""
     resp = call(lambda c: c.list_current_orders(customer_strategy_refs=[strategy_ref])) or {}
