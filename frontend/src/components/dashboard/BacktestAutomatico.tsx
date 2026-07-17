@@ -54,7 +54,10 @@ export default function BacktestAutomatico() {
     // --- esecuzione (realismo flumine), entrambe le modalità ---
     const [commissionPct, setCommissionPct] = useState('5');   // % commissione Betfair
     const [persistenceType, setPersistenceType] = useState<PersistenceType>('LAPSE');
-    const [availablePrices, setAvailablePrices] = useState(true);
+    // OFF di default (review 17/07): matchare contro i prezzi DISPONIBILI regala
+    // fill che il matcher reale potrebbe non dare → edge gonfiato nel percorso
+    // ufficiale. ON solo su scelta esplicita, con avviso ben visibile.
+    const [availablePrices, setAvailablePrices] = useState(false);
     const [placeLatency, setPlaceLatency] = useState('0.12');  // s
     const [cancelLatency, setCancelLatency] = useState('0.17'); // s
 
@@ -66,6 +69,9 @@ export default function BacktestAutomatico() {
     const [activeErr, setActiveErr] = useState<string | null>(null);
     const [results, setResults] = useState<BacktestRow[] | null>(null);
     const [resultsLoading, setResultsLoading] = useState(false);
+    // true se la run seguita è stata prodotta col matching sui prezzi disponibili
+    // (fill ottimistici) → avviso "NON conservativi" sui risultati mostrati.
+    const [activeAvailPrices, setActiveAvailPrices] = useState(false);
     const [workerWarn, setWorkerWarn] = useState(false);   // PENDING troppo a lungo → worker giù?
     const unsubRef = useRef<(() => void) | null>(null);
     const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,7 +108,7 @@ export default function BacktestAutomatico() {
     }
 
     // segue una richiesta: realtime → a DONE carica i risultati
-    function track(id: string, initialStatus: BacktestStatus = 'PENDING') {
+    function track(id: string, initialStatus: BacktestStatus = 'PENDING', availPrices = false) {
         if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
         if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
         setActiveId(id);
@@ -110,6 +116,7 @@ export default function BacktestAutomatico() {
         setActiveErr(null);
         setResults(null);
         setWorkerWarn(false);
+        setActiveAvailPrices(availPrices);
 
         // se entro 15s la richiesta non passa a RUNNING, il worker locale
         // probabilmente non è in esecuzione → mostra come avviarlo.
@@ -135,6 +142,18 @@ export default function BacktestAutomatico() {
                 loadRuns();
             }
         };
+
+        // Riga già DONE cliccata dallo storico: il realtime notifica solo i
+        // CAMBI futuri della riga (mai lo stato corrente) → senza questo fetch
+        // immediato i risultati (e i badge coverage/non-conservativo) non
+        // comparirebbero mai per le esecuzioni passate.
+        if (initialStatus === 'DONE') {
+            setResultsLoading(true);
+            fetchBacktestResults(id)
+                .then(setResults)
+                .catch(e => setActiveErr(String(e.message || e)))
+                .finally(() => setResultsLoading(false));
+        }
 
         unsubRef.current = subscribeBacktestRequest(id, (row) => {
             if (row) onStatus(row.status, row.error_detail);
@@ -169,7 +188,7 @@ export default function BacktestAutomatico() {
                 place_latency: numOrUndef(placeLatency) ?? undefined,
                 cancel_latency: numOrUndef(cancelLatency) ?? undefined,
             });
-            track(id, 'PENDING');
+            track(id, 'PENDING', availablePrices);
             loadRuns();
         } catch (e: any) {
             setError(String(e.message || e));
@@ -280,9 +299,21 @@ export default function BacktestAutomatico() {
                         </div>
                         <div><label className={LABEL_CLS}>Latenza piazz. (s)</label><input type="number" min={0} step="0.01" placeholder="0.12" className={INPUT_CLS} value={placeLatency} onChange={e => setPlaceLatency(e.target.value)} /></div>
                         <div><label className={LABEL_CLS}>Latenza cancel. (s)</label><input type="number" min={0} step="0.01" placeholder="0.17" className={INPUT_CLS} value={cancelLatency} onChange={e => setCancelLatency(e.target.value)} /></div>
-                        <div className="col-span-2 md:col-span-4 flex items-center gap-2 mt-1">
-                            <input id="availPrices" type="checkbox" checked={availablePrices} onChange={e => setAvailablePrices(e.target.checked)} className="accent-primary" />
-                            <label htmlFor="availPrices" className="text-xs text-muted-foreground cursor-pointer">Matcha anche contro i prezzi disponibili (fill più realistici dell'inmatchato)</label>
+                        <div className="col-span-2 md:col-span-4 mt-1">
+                            <div className="flex items-center gap-2">
+                                <input id="availPrices" type="checkbox" checked={availablePrices} onChange={e => setAvailablePrices(e.target.checked)} className="accent-primary" />
+                                <label htmlFor="availPrices" className="text-xs text-muted-foreground cursor-pointer">
+                                    Matcha anche contro i prezzi disponibili — fill OTTIMISTICI: assume di prendere
+                                    liquidità visibile che il matcher reale potrebbe non dare (edge gonfiato).
+                                    OFF = solo volume inmatchato (conservativo, percorso ufficiale).
+                                </label>
+                            </div>
+                            {availablePrices && (
+                                <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-300 flex items-center gap-2">
+                                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                                    ⚠️ Risultati NON conservativi (fill contro prezzi disponibili): non usarli per certificare un edge.
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -340,7 +371,16 @@ export default function BacktestAutomatico() {
                         resultsLoading ? (
                             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full bg-white/5" />)}</div>
                         ) : results ? (
-                            <BacktestResults rows={results} />
+                            <>
+                                {activeAvailPrices && (
+                                    <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-300 flex items-center gap-2">
+                                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                                        ⚠️ Risultati NON conservativi (fill contro prezzi disponibili): run eseguita
+                                        matchando liquidità che il matcher reale potrebbe non dare — edge gonfiato.
+                                    </p>
+                                )}
+                                <BacktestResults rows={results} />
+                            </>
                         ) : null
                     )}
                 </Card>
@@ -368,7 +408,7 @@ export default function BacktestAutomatico() {
                             <tbody>
                                 {runs.map(r => (
                                     <tr key={r.id}
-                                        onClick={() => r.status === 'DONE' && track(r.id, r.status)}
+                                        onClick={() => r.status === 'DONE' && track(r.id, r.status, r.params?.simulation_available_prices === true)}
                                         className={`border-b border-white/5 ${r.status === 'DONE' ? 'cursor-pointer hover:bg-white/[0.04]' : ''} ${activeId === r.id ? 'bg-white/[0.04]' : ''}`}>
                                         <td className="px-4 py-2.5 text-muted-foreground tabular-nums">{new Date(r.created_at).toLocaleString('it')}</td>
                                         <td className="px-3 py-2.5 text-white">{r.params?.mode === 'sandbox' ? 'Sandbox' : 'Motore Live'}</td>

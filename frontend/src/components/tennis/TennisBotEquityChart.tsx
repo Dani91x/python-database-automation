@@ -89,8 +89,8 @@ export function TennisBotEquityChart({ controls }: Props) {
                         <span className={cn('font-black', positive ? 'text-emerald-300' : 'text-red-300')}>
                             {eur(total)}
                         </span>
-                        <span className="text-white/40">
-                            bloccato <b className="text-white/70">{eur(locked)}</b>
+                        <span className="text-white/40" title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta">
+                            bloccato (lordo) <b className="text-white/70">{eur(locked)}</b>
                         </span>
                     </div>
                 )}

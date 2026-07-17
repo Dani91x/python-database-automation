@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     roundToTick, isValidTick, tickUp, tickDown, matchMarketable, simulateOrder,
+    QUEUE_TRADED_FACTOR,
     type BookSnapshot, type OrderRequest,
 } from './matching';
 
@@ -11,6 +12,15 @@ import {
 function snap(p: Partial<BookSnapshot> & { ts: number }): BookSnapshot {
     return { back: [], lay: [], ltp: null, tv: null, ...p };
 }
+
+describe('QUEUE_TRADED_FACTOR — convenzione flumine', () => {
+    it('è pinnato a 0.5 (flumine simulatedorder.py: traded_size / 2)', () => {
+        // Il motore certificato paper+backtest accredita alla coda maker solo
+        // METÀ del volume tradato (ogni scambio ha due controparti). Se questo
+        // test rompe, il Match Replay non è più fedele a flumine.
+        expect(QUEUE_TRADED_FACTOR).toBe(0.5);
+    });
+});
 
 describe('roundToTick / isValidTick', () => {
     it('arrotonda alle fasce Betfair', () => {
@@ -126,15 +136,15 @@ describe('simulateOrder — maker (resto a riposo) con trd per-prezzo', () => {
         expect(r.status).toBe('OPEN');
     });
 
-    it('fill incrementale al proprio prezzo limite man mano che si tratta', () => {
+    it('fill incrementale al proprio prezzo limite man mano che si tratta (traded/2 flumine)', () => {
         const r2 = simulateOrder(req, frames, 2000);
-        expect(r2.matched).toBe(40);            // 40 tradati a 3.00
+        expect(r2.matched).toBe(20);            // 40 tradati a 3.00 × 0.5 (QUEUE_TRADED_FACTOR)
         expect(r2.avgPrice).toBe(3.00);          // maker → prende il proprio prezzo
         expect(r2.fills.every(f => f.taker === false)).toBe(true);
 
         const r3 = simulateOrder(req, frames, 3000);
-        expect(r3.matched).toBe(90);            // +50 (cum 90 a 3.00)
-        expect(r3.remaining).toBe(10);
+        expect(r3.matched).toBe(45);            // +50×0.5 = +25 (cum 90 a 3.00, accreditati 45)
+        expect(r3.remaining).toBe(55);
         expect(r3.status).toBe('OPEN');
     });
 
@@ -150,32 +160,47 @@ describe('simulateOrder — maker (resto a riposo) con trd per-prezzo', () => {
 });
 
 describe('simulateOrder — maker con QUEUE position (trd)', () => {
-    it('smaltisce prima la coda davanti, poi riempie', () => {
+    it('smaltisce prima la coda davanti, poi riempie (con traded/2 flumine)', () => {
         const req: OrderRequest = { side: 'back', limitPrice: 3.00, stake: 100, placedTs: 1000, inPlay: false };
         const frames = [
             // 80 già in coda a 3.00 (available-to-lay) davanti a noi
             snap({ ts: 1000, back: [[2.82, 200]], lay: [[3.00, 80]], trd: [[2.90, 10]] }),
-            // tradati 100 a 3.00: 80 vanno alla coda, 20 a noi
+            // tradati 260 a 3.00 → accreditati 130 (×0.5, convenzione flumine
+            // traded/2): 80 smaltiscono la coda, 50 riempiono noi
+            snap({ ts: 2000, back: [[3.00, 50]], lay: [[3.05, 50]], trd: [[2.90, 10], [3.00, 260]] }),
+        ];
+        const r = simulateOrder(req, frames, 2000);
+        expect(r.matched).toBe(50);
+        expect(r.remaining).toBe(50);
+    });
+
+    it('il volume che basterebbe al 100% NON basta al 50%: la coda mangia tutto', () => {
+        const req: OrderRequest = { side: 'back', limitPrice: 3.00, stake: 100, placedTs: 1000, inPlay: false };
+        const frames = [
+            snap({ ts: 1000, back: [[2.82, 200]], lay: [[3.00, 80]], trd: [[2.90, 10]] }),
+            // tradati 100 a 3.00 → accreditati 50 (×0.5): tutti assorbiti dalla
+            // coda di 80 davanti a noi → ZERO fill (col vecchio 100% erano 20)
             snap({ ts: 2000, back: [[3.00, 50]], lay: [[3.05, 50]], trd: [[2.90, 10], [3.00, 100]] }),
         ];
         const r = simulateOrder(req, frames, 2000);
-        expect(r.matched).toBe(20);
-        expect(r.remaining).toBe(80);
+        expect(r.matched).toBe(0);
+        expect(r.remaining).toBe(100);
+        expect(r.status).toBe('OPEN');
     });
 });
 
 describe('simulateOrder — maker proxy ltp/Δtv (senza trd)', () => {
     const req: OrderRequest = { side: 'back', limitPrice: 3.00, stake: 100, placedTs: 1000, inPlay: false };
 
-    it('riempie solo quando ltp attraversa il limite, con cap su Δtv', () => {
+    it('riempie solo quando ltp attraversa il limite, con cap su Δtv/2 (flumine)', () => {
         const frames = [
             snap({ ts: 1000, back: [[2.82, 200]], lay: [[3.05, 50]], ltp: 2.90, tv: 1000 }),
             snap({ ts: 2000, back: [[2.95, 200]], lay: [[3.05, 50]], ltp: 3.05, tv: 1030 }), // Δtv=30, ltp≥3.00
             snap({ ts: 3000, back: [[3.00, 200]], lay: [[3.10, 50]], ltp: 3.10, tv: 1100 }), // Δtv=70
         ];
         expect(simulateOrder(req, frames, 1000).matched).toBe(0);
-        expect(simulateOrder(req, frames, 2000).matched).toBe(30); // cap su Δtv=30
-        expect(simulateOrder(req, frames, 3000).matched).toBe(100); // 30 + min(70, 70)
+        expect(simulateOrder(req, frames, 2000).matched).toBe(15); // Δtv=30 × 0.5 (QUEUE_TRADED_FACTOR)
+        expect(simulateOrder(req, frames, 3000).matched).toBe(50); // 15 + 70×0.5
     });
 
     it('NON riempie se l’ltp non raggiunge mai il limite (anche se cresce il volume)', () => {
@@ -196,9 +221,9 @@ describe('simulateOrder — cancel & lapse', () => {
     ];
 
     it('cancel rimuove il resto non abbinato', () => {
-        const req = { ...base, cancelledTs: 2500 }; // dopo il primo fill di 30, prima del resto
+        const req = { ...base, cancelledTs: 2500 }; // dopo il primo fill di 15 (Δtv=30 × 0.5), prima del resto
         const r = simulateOrder(req, frames, 3000);
-        expect(r.matched).toBe(30);
+        expect(r.matched).toBe(15);
         expect(r.remaining).toBe(0);
         expect(r.status).toBe('OPEN'); // parzialmente abbinato poi cancellato
     });

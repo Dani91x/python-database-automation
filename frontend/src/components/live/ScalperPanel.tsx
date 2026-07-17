@@ -526,7 +526,7 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                         </div>
                     )}
 
-                    {/* statistiche */}
+                    {/* statistiche — P&L LORDI: flumine non detrae la commissione 4,5-5% */}
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
                         {[
                             { l: ctrl.dry_run ? 'Ordini (sim)' : 'Ordini', v: num(stats?.orders_placed), i: Activity },
@@ -534,9 +534,18 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                             { l: 'Catture', v: num(stats?.scalps) + num(stats?.roundtrips), i: TrendingUp },
                             { l: 'Scratch', v: num(stats?.scratches), i: Activity },
                             { l: 'Stop', v: num(stats?.stops), i: Square },
-                            { l: 'P&L bloccato', v: `€${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp },
-                        ].map((s, i) => (
-                            <div key={i} className="rounded-lg bg-white/5 border border-white/10 p-2">
+                            {
+                                l: 'P&L bloccato (lordo)', v: `€${num(stats?.pnl_locked).toFixed(2)}`, i: TrendingUp,
+                                t: 'P&L LORDO: commissione Betfair (4,5-5%) NON detratta',
+                            },
+                            // P&L settlato (solo cicli regolati): serve per la validazione
+                            // paper n≥40 — visibile appena il bot lo espone
+                            ...(stats?.pnl_settled !== undefined ? [{
+                                l: 'P&L settlato (lordo)', v: `€${num(stats?.pnl_settled).toFixed(2)}`, i: TrendingUp,
+                                t: 'P&L LORDO dei soli cicli regolati: commissione NON detratta',
+                            }] : []),
+                        ].map((s: { l: string; v: string | number; t?: string }, i) => (
+                            <div key={i} title={s.t} className="rounded-lg bg-white/5 border border-white/10 p-2">
                                 <div className="text-[10px] uppercase text-white/40">{s.l}</div>
                                 <div className="text-sm font-black text-white">{s.v}</div>
                             </div>
@@ -586,9 +595,17 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                                 { l: 'Theta verdi', v: num(stats.theta_greens) },
                                 { l: 'Theta scratch', v: num(stats.theta_scratches) },
                                 { l: 'Theta dry-fire', v: num(stats.theta_dry_fires) },
-                                { l: 'P&L theta', v: `€${num(stats.theta_pnl_locked).toFixed(2)}` },
-                            ].map((s, i) => (
-                                <div key={i} className="rounded-lg bg-violet-500/5 border border-violet-400/20 p-2">
+                                {
+                                    l: 'P&L theta (lordo)', v: `€${num(stats.theta_pnl_locked).toFixed(2)}`,
+                                    t: 'P&L LORDO: commissione Betfair (4,5-5%) NON detratta',
+                                },
+                                // settlato theta (validazione paper n≥40), se il bot lo espone
+                                ...(stats.theta_pnl_settled !== undefined ? [{
+                                    l: 'Theta settl. (lordo)', v: `€${num(stats.theta_pnl_settled).toFixed(2)}`,
+                                    t: 'P&L LORDO dei soli colpi regolati: commissione NON detratta',
+                                }] : []),
+                            ].map((s: { l: string; v: string | number; t?: string }, i) => (
+                                <div key={i} title={s.t} className="rounded-lg bg-violet-500/5 border border-violet-400/20 p-2">
                                     <div className="text-[10px] uppercase text-violet-300/60">{s.l}</div>
                                     <div className="text-sm font-black text-white">{s.v}</div>
                                 </div>
@@ -634,7 +651,10 @@ export function ScalperPanel({ eventId, eventName, pollMs = 4000 }: Props) {
                     {ctrl.stats && (
                         <> — cicli {num(ctrl.stats.cycles) + num(ctrl.stats.flattens)},
                         catture {num(ctrl.stats.scalps) + num(ctrl.stats.roundtrips)},
-                        P&L bloccato €{num(ctrl.stats.pnl_locked).toFixed(2)}</>
+                        <span title="P&L LORDO: commissione Betfair (4,5-5%) NON detratta"> P&L bloccato (lordo) €{num(ctrl.stats.pnl_locked).toFixed(2)}</span>
+                        {ctrl.stats.pnl_settled !== undefined && (
+                            <span title="P&L LORDO dei soli cicli regolati: commissione NON detratta">, settlato (lordo) €{num(ctrl.stats.pnl_settled).toFixed(2)}</span>
+                        )}</>
                     )}
                     {ctrl.error && <span className="text-red-300"> — {ctrl.error}</span>}
                 </div>

@@ -24,7 +24,7 @@ import {
 import { toast } from 'sonner';
 import {
     Bot, Power, Square, Activity, Zap, ChevronDown, ChevronRight,
-    Loader2, AlertTriangle, ShieldAlert, RotateCcw, Info,
+    Loader2, AlertTriangle, ShieldAlert, RotateCcw, Info, Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -206,9 +206,18 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
             </div>
 
             {control?.error && (
-                <div className="flex items-center gap-1.5 rounded-md bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {control.error}
-                </div>
+                // "[ATTESA] ..." è un motivo d'attesa benigno (restart del framework
+                // rinviato da un altro bot non-flat), non un errore terminale: ambra
+                // informativa, non rosso. Contratto con tennis_db.WAIT_REASON_PREFIX.
+                control.error.startsWith('[ATTESA]') ? (
+                    <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                        <Clock className="h-3.5 w-3.5 shrink-0" /> {control.error.replace(/^\[ATTESA\]\s*/, '')}
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1.5 rounded-md bg-red-500/10 px-2 py-1 text-[11px] text-red-300">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {control.error}
+                    </div>
+                )
             )}
 
             {/* riga controlli: stake + solo-armato + toggle ARMA/DISARMA */}
@@ -368,7 +377,8 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                 </div>
             )}
 
-            {/* statistiche live (visibili quando c'è un control con stats) */}
+            {/* statistiche live (visibili quando c'è un control con stats).
+                P&L LORDI: flumine non detrae la commissione Betfair 4,5-5%. */}
             {active && (
                 <div className="grid grid-cols-3 gap-1.5 text-center">
                     {[
@@ -376,10 +386,19 @@ function TennisBotCard({ descriptor, control, busy, nowTs, orderMode, onArm, onD
                         { l: 'Scalp', v: num(stats?.scalps) + num(stats?.roundtrips) },
                         { l: 'Scratch', v: num(stats?.scratches) },
                         { l: 'Stop', v: num(stats?.stops) },
-                        { l: 'P&L bloccato €', v: num(stats?.pnl_locked).toFixed(2), accent: true },
+                        {
+                            l: 'P&L bloccato € (lordo)', v: num(stats?.pnl_locked).toFixed(2), accent: true,
+                            t: 'P&L LORDO: commissione Betfair (4,5-5%) NON detratta',
+                        },
+                        // settlato (soli cicli regolati): validazione paper n≥40,
+                        // visibile appena il bot lo espone
+                        ...(stats?.pnl_settled !== undefined ? [{
+                            l: 'P&L settl. € (lordo)', v: num(stats?.pnl_settled).toFixed(2), accent: true,
+                            t: 'P&L LORDO dei soli cicli regolati: commissione NON detratta',
+                        }] : []),
                         { l: 'P&L aperto €', v: num(stats?.pnl_open).toFixed(2) },
-                    ].map((s, i) => (
-                        <div key={i} className="rounded-md border border-white/10 bg-white/[0.03] px-1 py-1">
+                    ].map((s: { l: string; v: string | number; accent?: boolean; t?: string }, i) => (
+                        <div key={i} title={s.t} className="rounded-md border border-white/10 bg-white/[0.03] px-1 py-1">
                             <div className="text-[8px] uppercase tracking-wide text-white/35">{s.l}</div>
                             <div className={cn('text-xs font-black', s.accent ? accent.text : 'text-white')}>{s.v}</div>
                         </div>

@@ -341,16 +341,24 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                         {scalperCtl.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">PAPER</Badge>}
                         {/* numeri del theta: colpi/green/scratch + P&L bloccato.
                             In PAPER il bot NON simula i fill: annuncia le
-                            decisioni → il contatore che si muove e' SEGNALI */}
+                            decisioni → il contatore che si muove e' SEGNALI.
+                            ⚠️ P&L LORDO (flumine non detrae la commissione
+                            4,5-5%), a differenza delle gambe Omega (nette). */}
                         <span className="text-[11px] text-slate-400 tabular-nums">
                             {scalperCtl.dry_run && <>{toNum(thetaStats.theta_dry_fires)} segnali · </>}
                             {toNum(thetaStats.theta_shots)} colpi · {toNum(thetaStats.theta_greens)} green · {toNum(thetaStats.theta_scratches)} scratch
+                            {thetaStats.theta_pnl_settled !== undefined && (
+                                <span title="P&L LORDO dei soli colpi regolati: commissione NON detratta"> · settl. {fmtSignedEur(toNum(thetaStats.theta_pnl_settled))} lordo</span>
+                            )}
                         </span>
                         <span
                             className={`text-sm tabular-nums font-bold ${scalperCtl.dry_run ? 'text-slate-400' : (toNum(thetaStats.theta_pnl_locked) >= 0 ? 'text-emerald-400' : 'text-red-400')}`}
-                            title={scalperCtl.dry_run ? 'P&L simulato (paper): non conta nel target' : 'P&L bloccato dallo scalper'}
+                            title={scalperCtl.dry_run
+                                ? 'P&L simulato (paper), LORDO (commissione non detratta): non conta nel target'
+                                : 'P&L bloccato dallo scalper — LORDO: commissione Betfair (4,5-5%) NON detratta, a differenza delle gambe Omega (nette)'}
                         >
-                            {fmtSignedEur(toNum(thetaStats.theta_pnl_locked))}{scalperCtl.dry_run && <span className="text-[10px] font-normal"> sim</span>}
+                            {fmtSignedEur(toNum(thetaStats.theta_pnl_locked))}
+                            <span className="text-[10px] font-normal"> lordo{scalperCtl.dry_run && ' · sim'}</span>
                         </span>
                     </>
                 ) : (

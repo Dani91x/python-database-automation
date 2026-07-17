@@ -265,6 +265,11 @@ export interface BacktestRow {
     roi_low: number | null;
     roi_high: number | null;
     avg_odds: number | null;
+    // COPERTURA della registrazione (solo backtest flumine per-evento, campi
+    // nuovi lato backend): assenti nei risultati vecchi e nel backtest strategie
+    // → la UI non mostra nulla (difensivo).
+    coverage_pct?: number | null;      // 0-100
+    coverage_verdict?: string | null;  // COMPLETE | PARTIAL | ...
 }
 
 export interface Strategy {
@@ -423,6 +428,11 @@ export interface BacktestResultRow {
     max_drawdown: number;
     avg_odds: number;
     metrics: Record<string, unknown>;
+    // COPERTURA registrazione per evento (backend nuovo, 17/07): % di partita
+    // realmente coperta dalla registrazione e verdetto (COMPLETE/PARTIAL).
+    // Opzionali: i risultati vecchi non li hanno.
+    coverage_pct?: number | null;
+    coverage_verdict?: string | null;
 }
 
 // request_backtest(p_params jsonb) -> uuid (id richiesta)
@@ -470,6 +480,15 @@ function mapResultToBacktestRow(r: BacktestResultRow): BacktestRow {
         roi_low: null,
         roi_high: null,
         avg_odds: r.avg_odds ?? null,
+        // copertura registrazione: il backend la scrive dentro il jsonb `metrics`
+        // (contratto 17/07); accettiamo anche il livello riga per compatibilità.
+        // Difensivo: risultati vecchi → undefined → nessun badge in UI.
+        coverage_pct: typeof r.coverage_pct === 'number' ? r.coverage_pct
+            : typeof (r.metrics as Record<string, unknown> | null)?.coverage_pct === 'number'
+                ? (r.metrics as Record<string, unknown>).coverage_pct as number : undefined,
+        coverage_verdict: typeof r.coverage_verdict === 'string' ? r.coverage_verdict
+            : typeof (r.metrics as Record<string, unknown> | null)?.coverage_verdict === 'string'
+                ? (r.metrics as Record<string, unknown>).coverage_verdict as string : undefined,
     };
 }
 

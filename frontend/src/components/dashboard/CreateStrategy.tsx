@@ -31,6 +31,34 @@ const pctToFrac = (s: string): number | null => { const v = numOrNull(s); return
 const fracToPct = (v: number | null | undefined): string => (v == null ? '' : String(Math.round(v * 1000) / 10));
 
 // ---------------------------------------------------------------------------
+// Badge COPERTURA registrazione (solo backtest flumine per-evento): verde se la
+// registrazione è COMPLETE, giallo/rosso "PARZIALE x%" altrimenti. DIFENSIVO:
+// coverage_pct/coverage_verdict possono mancare (risultati vecchi, backtest
+// strategie) → non si mostra nulla.
+// ---------------------------------------------------------------------------
+function CoverageBadge({ pct, verdict }: { pct?: number | null; verdict?: string | null }) {
+    if (verdict == null || verdict === '') return null;
+    const complete = verdict.toUpperCase() === 'COMPLETE';
+    const p = typeof pct === 'number' && Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : null;
+    const cls = complete
+        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+        : p != null && p >= 50
+            ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+            : 'bg-red-500/15 text-red-300 border-red-500/40';
+    const tip = complete
+        ? `Registrazione completa${p != null ? ` (${p.toFixed(0)}%)` : ''}: il backtest copre l'intera partita.`
+        : `Il backtest gira su una registrazione MONCA: copre solo il ${p != null ? p.toFixed(0) : '?'}% della partita — gol e fasi mancanti possono falsare i risultati.`;
+    return (
+        <span
+            title={tip}
+            className={`ml-2 inline-block align-middle rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide cursor-help ${cls}`}
+        >
+            {complete ? 'Completa' : `Parziale ${p != null ? `${p.toFixed(0)}%` : ''}`.trim()}
+        </span>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Tabella risultati backtest (riusata anche dal monitor strategie in Decisioni)
 // ---------------------------------------------------------------------------
 export function BacktestResults({ rows }: { rows: BacktestRow[] }) {
@@ -72,7 +100,10 @@ export function BacktestResults({ rows }: { rows: BacktestRow[] }) {
                 <tbody>
                     {rows.map(r => (
                         <tr key={r.grp} className="border-b border-white/5 hover:bg-white/5">
-                            <td className="px-3 py-2.5 text-white">{r.grp}</td>
+                            <td className="px-3 py-2.5 text-white">
+                                {r.grp}
+                                <CoverageBadge pct={r.coverage_pct} verdict={r.coverage_verdict} />
+                            </td>
                             <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{r.n.toLocaleString('it')}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{r.n_settled.toLocaleString('it')}</td>
                             <td className="px-3 py-2.5 text-right tabular-nums font-medium">{pct(r.hit_rate)}</td>

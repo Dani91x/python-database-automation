@@ -523,7 +523,10 @@ export interface TennisBotStats {
     scratches?: number;
     stops?: number;
     flattens?: number;
+    /** ⚠️ P&L LORDO: flumine non detrae la commissione Betfair (4,5-5%) — etichettare "lordo" in UI. */
     pnl_locked?: number;
+    /** ⚠️ P&L LORDO dei soli cicli regolati (validazione paper n≥40); può mancare nei bot vecchi. */
+    pnl_settled?: number;
     pnl_open?: number;
     /** missione "1 tick per fase" (tennis_scalper): contatori/P&L per fase. */
     greens_prematch?: number;

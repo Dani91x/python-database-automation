@@ -33,14 +33,20 @@ export interface ScalperControl {
     stats: {
         orders_placed?: number; dry_quotes?: number; cycles?: number;
         scalps?: number; roundtrips?: number; scratches?: number;
-        stops?: number; flattens?: number; pnl_locked?: number;
+        stops?: number; flattens?: number;
+        // ⚠️ P&L LORDI: flumine NON detrae la commissione Betfair (4,5-5%).
+        // In UI etichettarli sempre "lordo"; NON confrontarli 1:1 col P&L
+        // NETTO delle gambe Omega. pnl_settled = solo cicli regolati (serve
+        // per la validazione paper n≥40); può mancare nei bot vecchi.
+        pnl_locked?: number; pnl_settled?: number;
         // missione "2 tick": contabilità per fase (presenti se il bot le espone)
         greens_prematch?: number; greens_inplay?: number;
         pnl_prematch?: number; pnl_inplay?: number;
         // THETA in-play: scalper_session riversa theta.stats nel control con
-        // prefisso theta_* (presenti SOLO se il theta è armato)
+        // prefisso theta_* (presenti SOLO se il theta è armato).
+        // Anche i P&L theta sono LORDI (vedi sopra).
         theta_shots?: number; theta_greens?: number; theta_scratches?: number;
-        theta_dry_fires?: number; theta_pnl_locked?: number;
+        theta_dry_fires?: number; theta_pnl_locked?: number; theta_pnl_settled?: number;
     } | null;
     error: string | null;
     requested_at: string;

@@ -23,8 +23,10 @@
 //   2. MAKER (resto a riposo): la parte non abbinata RIPOSA al prezzo limite e si
 //      abbina NEL TEMPO man mano che il mercato TRATTA. Modello con dati a snapshot:
 //        • QUEUE POSITION: si parte dietro la size già presente al proprio prezzo;
-//        • CAP sul volume realmente tradato: il fill incrementale ≤ Δtv (non si può
-//          abbinare più di quanto è davvero passato a mercato nell'intervallo);
+//        • CAP sul volume realmente tradato: alla coda si accredita solo il 50%
+//          del volume attraversato (QUEUE_TRADED_FACTOR, convenzione flumine
+//          traded/2) — non si può abbinare più di quanto è davvero passato al
+//          NOSTRO lato del book nell'intervallo;
 //        • TRIGGER: si conteggia solo il volume tradato "che attraversa" il limite
 //          (con `trd` per-prezzo se disponibile; altrimenti proxy via ltp/Δtv).
 //   Alla SOSPENSIONE/chiusura il resto LAPSE viene annullato (default in-play),
@@ -44,6 +46,14 @@ const SIZE_EPS = 1e-9;
 export const DEFAULT_DELAY_MS = 5000;
 // Stake minimo Betfair Exchange (GBP).
 export const MIN_STAKE_GBP = 2;
+// Frazione del volume tradato-attraverso ACCREDITATA alla nostra coda maker.
+// ALLINEATA A FLUMINE (motore certificato paper+backtest, simulatedorder.py:
+// `traded_size / 2`): ogni scambio ha due controparti, quindi del volume
+// tradato a un prezzo solo la METÀ è attribuibile al lato del book su cui
+// riposiamo. Consumare il 100% del tradedThrough (comportamento precedente)
+// regalava fill DOPPI rispetto al motore ufficiale → Match Replay più
+// generoso di flumine. Non cambiare senza ricertificare la fedeltà.
+export const QUEUE_TRADED_FACTOR = 0.5;
 
 // --------------------------------------------------------------- price ladder
 // Scala dei tick Betfair: incremento valido per fascia di quota.
@@ -351,8 +361,9 @@ export function simulateOrder(req: OrderRequest, frames: ReadonlyArray<BookSnaps
         }
 
         if (tradedThrough > SIZE_EPS) {
-            // prima si smaltisce la coda davanti a noi, poi si riempie il nostro ordine
-            let consume = tradedThrough;
+            // stile flumine (traded/2): al nostro lato arriva solo QUEUE_TRADED_FACTOR
+            // del volume tradato; prima si smaltisce la coda davanti, poi il nostro ordine
+            let consume = tradedThrough * QUEUE_TRADED_FACTOR;
             const fromQueue = Math.min(queueAhead, consume);
             queueAhead -= fromQueue;
             consume -= fromQueue;

@@ -76,7 +76,12 @@ export type MissionLegs = Partial<Record<MissionLegKey, MissionLeg | null>>;
 export interface MissionScalper {
     status: string;
     dry_run: boolean;
+    /** ⚠️ P&L LORDO (flumine non detrae la commissione 4,5-5%), a differenza
+     *  dei realized delle gambe Omega che sono NETTI: in UI va etichettato
+     *  "lordo" ovunque compaia. */
     pnl_locked: number | null;
+    /** ⚠️ P&L LORDO dei soli cicli regolati (validazione paper); opzionale. */
+    pnl_settled?: number | null;
 }
 
 export interface MissionRow {
@@ -209,6 +214,9 @@ export function missionLegsRealized(m: Pick<MissionRow, 'legs'>): number {
 // AUDIT H2 16/07: lo scalper in DRY-RUN produce P&L SIMULATO — non deve mai
 // ridurre il gap che l'utente copre a soldi veri, né gonfiare la barra di
 // giornata. Conta solo se dry_run === false.
+// ⚠️ 17/07: il contributo scalper è LORDO (flumine non detrae la commissione
+// 4,5-5%), i realized delle gambe sono NETTI → l'aggregato è leggermente
+// ottimista sulla parte scalper; la UI etichetta "lordo" dove lo mostra.
 export function scalperRealized(m: Pick<MissionRow, 'scalper'>): number {
     return m.scalper?.dry_run === false ? toNum(m.scalper.pnl_locked) : 0;
 }
