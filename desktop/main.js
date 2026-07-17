@@ -76,6 +76,65 @@ const MIME = {
     '.txt': 'text/plain; charset=utf-8',
 };
 
+// ------------------------------------------------- UI SEMPRE ULTIMA VERSIONE
+// REGOLA (17/07, richiesta esplicita): l'exe deve servire SEMPRE l'ultima
+// versione del codice. I processi python girano dal sorgente (sempre freschi);
+// la UI invece è una build statica (frontend/dist) che restava stantia — i
+// pulsanti nuovi "non esistevano" finché qualcuno non rifaceva `npm run build`
+// a mano. Qui, a ogni avvio: se un sorgente in frontend/ è più nuovo della
+// build → rebuild automatico PRIMA di servire. Build fallita → si serve la
+// build precedente (mai bloccare l'app) con un avviso esplicito.
+function newestMtimeUnder(dir) {
+    let newest = 0;
+    const stack = [dir];
+    while (stack.length) {
+        const d = stack.pop();
+        let entries;
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { continue; }
+        for (const e of entries) {
+            if (e.name === 'node_modules' || e.name === 'dist') continue;
+            const p = path.join(d, e.name);
+            if (e.isDirectory()) { stack.push(p); continue; }
+            try {
+                const m = fs.statSync(p).mtimeMs;
+                if (m > newest) newest = m;
+            } catch (_) { /* file sparito: ignora */ }
+        }
+    }
+    return newest;
+}
+
+function ensureFreshUi() {
+    const feDir = path.join(repoRoot, 'frontend');
+    let distM = 0;
+    try { distM = fs.statSync(path.join(feDir, 'dist', 'index.html')).mtimeMs; } catch (_) {}
+    const srcM = Math.max(
+        newestMtimeUnder(path.join(feDir, 'src')),
+        newestMtimeUnder(path.join(feDir, 'public')),
+        ...['index.html', 'vite.config.ts', 'package.json', 'tailwind.config.js']
+            .map((f) => { try { return fs.statSync(path.join(feDir, f)).mtimeMs; } catch (_) { return 0; } }),
+    );
+    if (distM > 0 && distM >= srcM) {
+        console.log('[desktop] UI già aggiornata (build più recente dei sorgenti).');
+        return;
+    }
+    console.log('[desktop] UI stantia: ricostruisco frontend/dist (npm run build)...');
+    const r = spawnSync('npm', ['run', 'build'], {
+        cwd: feDir, shell: true, windowsHide: true,
+        stdio: 'pipe', encoding: 'utf8', timeout: 10 * 60 * 1000,
+    });
+    if (r.status === 0) {
+        console.log('[desktop] build UI completata: si serve la versione aggiornata.');
+    } else {
+        dialog.showErrorBox(
+            'AlphaScore — build UI fallita',
+            'La ricostruzione automatica della UI è fallita: verrà servita la '
+            + 'versione PRECEDENTE (potrebbero mancare le funzioni più nuove).\n\n'
+            + 'Dettaglio:\n' + String(r.stderr || r.stdout || r.error || '').slice(-1200),
+        );
+    }
+}
+
 function startStaticServer() {
     return new Promise((resolve, reject) => {
         const server = http.createServer((req, res) => {
@@ -221,6 +280,7 @@ app.whenReady().then(async () => {
     DIST_DIR = path.join(repoRoot, 'frontend', 'dist');
     PYTHON = path.join(repoRoot, '.venv', 'Scripts', 'python.exe');
     console.log(`[desktop] repo: ${repoRoot}`);
+    ensureFreshUi();  // l'exe serve SEMPRE l'ultima versione della UI (17/07)
     try {
         await startStaticServer();
     } catch (err) {
