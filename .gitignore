@@ -53,3 +53,4 @@ expected_features_fixture_*.txt
 desktop/release/
 desktop/node_modules/
 frontend/dist/
+docs/REPORT_SESSIONE_*.md
