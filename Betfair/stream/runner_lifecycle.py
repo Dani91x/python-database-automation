@@ -94,6 +94,39 @@ def raw_stall_seconds(
     return None
 
 
+def effective_stall_seconds(
+    data_stall_s: Optional[float],
+    heartbeat_stall_s: Optional[float],
+    data_hard_cap_s: Optional[float] = None,
+) -> Optional[float]:
+    """Stallo EFFETTIVO della connessione (fix 17/07: stallo cieco agli heartbeat).
+
+    Betfair invia messaggi ``mcm`` con ``ct=HEARTBEAT`` ogni 0.5-5s quando NON
+    c'è traffico dati: heartbeat freschi + dati fermi = mercato legittimamente
+    QUIETO (metà tempo, pre-match lontano), NON uno stream morto. Il restart
+    per stallo deve scattare SOLO quando sia i dati sia gli heartbeat sono
+    vecchi (connessione morta davvero):
+
+    * ``data_stall_s is None`` → non determinabile → ``None`` (nessuna azione);
+    * ``heartbeat_stall_s is None`` (heartbeat mai osservati e età stream
+      ignota) → comportamento storico: conta solo il silenzio dati;
+    * altrimenti → ``min`` dei due: supera la soglia solo se ENTRAMBI vecchi.
+
+    ``data_hard_cap_s`` (review 17/07, seconda passata): l'heartbeat prova che
+    il SOCKET è vivo, NON che la subscription dati è sana — con una subscription
+    rotta a TCP vivo gli heartbeat "mentirebbero" per sempre. Oltre il cap di
+    silenzio dati puro il restart scatta COMUNQUE, heartbeat ignorati: è il
+    secondo cancello indipendente che preserva la garanzia anti-16/07.
+    """
+    if data_stall_s is None:
+        return None
+    if data_hard_cap_s is not None and data_stall_s >= data_hard_cap_s:
+        return data_stall_s
+    if heartbeat_stall_s is None:
+        return data_stall_s
+    return min(data_stall_s, heartbeat_stall_s)
+
+
 def stall_restart_due(
     stall_s: Optional[float],
     threshold_s: float,

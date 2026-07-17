@@ -115,10 +115,19 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Backtest multi-partita FLB (fill reali)")
     p.add_argument("--data", required=True, help="cartella con <event>/<event>.raw.jsonl")
     p.add_argument("--files", nargs="*", help="opzionale: lista esplicita di .raw.jsonl")
+    p.add_argument("--min-coverage", type=float, default=None,
+                   help="esclude i raw con copertura registrazione sotto soglia (%%)")
     args = p.parse_args(argv)
     files = args.files or find_matches(args.data)
     if not files:
         print(f"Nessun .raw.jsonl trovato in {args.data}"); return 1
+    # GUARDIA REGISTRAZIONI (fix 17/07): warning visibile per i raw non-COMPLETE;
+    # --min-coverage esclude sotto soglia.
+    from ..tools.validate_recordings import check_raw_paths_for_backtest
+
+    files = check_raw_paths_for_backtest(files, args.min_coverage)
+    if not files:
+        print("# Nessun raw utilizzabile dopo la validazione."); return 1
     run_suite(files)
     return 0
 

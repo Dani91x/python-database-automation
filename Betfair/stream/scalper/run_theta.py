@@ -179,10 +179,13 @@ def run_theta(
     # GUARDIA REGISTRAZIONI PARZIALI (fix 16/07, come run_backtest): default solo
     # WARNING per evento non-COMPLETE; con ``params['min_coverage']`` (percento)
     # gli eventi sotto soglia vengono ESCLUSI (ValueError se non resta nulla).
+    # Fix 17/07: l'esito del validatore finisce ANCHE nei risultati
+    # (metrics.coverage_pct / coverage_verdict) + alert WARN se non-COMPLETE.
+    coverage_reports: Dict[str, Any] = {}
     try:
-        from ..tools.validate_recordings import check_events_for_backtest
+        from ..tools.validate_recordings import check_events_with_reports
 
-        event_ids = check_events_for_backtest(
+        event_ids, coverage_reports = check_events_with_reports(
             event_ids, root, params.get("min_coverage"))
     except ValueError:
         raise  # filtro esplicito richiesto e nessun evento valido: deve fallire
@@ -203,7 +206,14 @@ def run_theta(
     tagged: List[Tuple[Any, str]] = []
     for event_id in event_ids:
         tagged.extend(_run_one_event(event_id, params, root, atlas))
-    return aggregate_results(tagged, commission_rate=commission_rate)
+    rows = aggregate_results(tagged, commission_rate=commission_rate)
+    if coverage_reports:
+        from ..backtest.run_backtest import (
+            attach_coverage, build_coverage_meta, emit_coverage_alerts)
+
+        attach_coverage(rows, build_coverage_meta(coverage_reports, event_ids))
+        emit_coverage_alerts(coverage_reports, event_ids, "theta")
+    return rows
 
 
 def main() -> None:

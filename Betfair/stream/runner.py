@@ -88,6 +88,7 @@ from .raw_listener import RawTeeMarketStream, close_raw, configure_raw
 from .recorder import MarketRecorderStrategy
 from .runner_lifecycle import (
     any_follow_alive,
+    effective_stall_seconds,
     raw_stall_seconds,
     stall_restart_due,
     uptime_exceeded,
@@ -173,6 +174,11 @@ class LiveSession:
         self._finalize_lock = threading.Lock()
         self.restart_requested = threading.Event()
         self.last_resubscribe_ts = 0.0
+        # PARITÀ CALCIO/TENNIS (fix 17/07): il restart F3 per nuovi follow è
+        # RINVIATO finché ci sono blocker (ordini vivi/regole armate). Qui il
+        # monotonic del PRIMO rinvio e dell'ultimo alert CRITICAL (anti-spam).
+        self.sub_restart_deferred_since: Optional[float] = None
+        self.sub_restart_defer_alert_ts = 0.0
         self.backoff = limits.Backoff(base_sec=BACKOFF_BASE_SEC, max_sec=BACKOFF_MAX_SEC)
 
     def score_file(self, event_id: str) -> Any:
@@ -717,19 +723,93 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         and f["event_id"] not in session.finished_events
     ]
     if not new_events:
+        session.sub_restart_deferred_since = None
         return
     # rispetta l'intervallo minimo tra ri-subscription (niente churn rapido)
     now = time.monotonic()
     if (now - session.last_resubscribe_ts) < MIN_RESUBSCRIBE_INTERVAL_SEC:
         return
+    # GUARDIA FLAT (fix 17/07, parità con il tennis di ieri): il rebuild
+    # ricostruisce flumine con un blotter VUOTO — forzarlo con ordini vivi o
+    # regole armate ORFANIZZEREBBE le posizioni live. Rinvia finché non si è
+    # flat; se il rinvio persiste, alert CRITICAL visibile (grazia, mai forzare).
+    blocker = _lifecycle_blockers(flumine)
+    if blocker is not None:
+        first = session.sub_restart_deferred_since
+        if first is None:
+            session.sub_restart_deferred_since = now
+            logger.warning(
+                "[sub-worker] %d nuove partite GIOCATA ma restart RINVIATO: %s.",
+                len(new_events), blocker)
+        elif (now - first) >= _SUB_RESTART_DEFER_ALERT_SEC and (
+                now - session.sub_restart_defer_alert_ts) >= _SUB_RESTART_DEFER_ALERT_SEC:
+            session.sub_restart_defer_alert_ts = now
+            logger.critical(
+                "[sub-worker] %d nuove partite in ATTESA da %.0f min: restart "
+                "RINVIATO (%s) — gestisci l'esposizione per sbloccare l'aggancio.",
+                len(new_events), (now - first) / 60.0, blocker)
+            try:
+                db.insert_alert(
+                    "CRITICAL", "NEW_MATCHES",
+                    f"{len(new_events)} nuove partite NON agganciate da "
+                    f"{(now - first) / 60.0:.0f} min: restart della subscription "
+                    f"RINVIATO ({blocker}). Chiudi/gestisci l'esposizione per "
+                    "sbloccare l'aggancio.")
+            except Exception as e:  # noqa: BLE001 - alert best-effort
+                logger.warning("[sub-worker] insert_alert KO (ignorato): %s", e)
+        return
+    prior_deferred_since = session.sub_restart_deferred_since
+    session.sub_restart_deferred_since = None
     logger.info("[sub-worker] %d nuove partite GIOCATA → ricostruzione subscription.", len(new_events))
     try:
         db.insert_alert("INFO", "NEW_MATCHES", f"{len(new_events)} nuove partite agganciate al live.")
     except Exception as e:  # noqa: BLE001 - un errore di alert NON deve bloccare la ri-subscription
         logger.warning("[sub-worker] insert_alert KO (ignorato): %s", e)
+    deferred = _request_soft_restart(
+        flumine, session, f"F3: {len(new_events)} nuove partite GIOCATA")
+    if deferred is not None:
+        # TOCTOU: un ordine è comparso tra il check sopra e lo stop → rinvio.
+        # La durata di rinvio GIÀ accumulata va preservata (review 17/07):
+        # azzerarla a `now` ritarderebbe l'alert CRITICAL di altri 5 minuti
+        # in un blocco persistente che ha solo "respirato" per un ciclo.
+        session.sub_restart_deferred_since = prior_deferred_since or now
+        logger.warning("[sub-worker] restart RINVIATO all'ultimo check: %s.", deferred)
+        return
     session.last_resubscribe_ts = now
+
+
+# throttle dell'alert CRITICAL quando il restart F3 resta rinviato (fix 17/07)
+_SUB_RESTART_DEFER_ALERT_SEC = float(
+    os.getenv("LIVE_SUB_RESTART_DEFER_ALERT_SEC", "300"))
+
+
+def _request_soft_restart(flumine: Flumine, session: LiveSession, reason: str) -> Optional[str]:
+    """Richiede un restart SOFT della subscription (rebuild del framework).
+
+    * RE-VERIFICA i blocker IMMEDIATAMENTE prima dello stop (fix TOCTOU 17/07):
+      tra il check del chiamante e ``_stop_framework`` il live_order_worker
+      (stesso processo, thread flumine) può piazzare un ordine. Il doppio check
+      riduce la finestra ai pochi ms tra quest'ultima verifica e l'accodamento
+      del TerminationEvent: un lock condiviso col percorso di piazzamento
+      richiederebbe di toccare live_order_worker (fuori perimetro) — finestra
+      residua DICHIARATA e accettata.
+    * Scrive il marker ``resubscribe`` nel sidecar .recmeta.jsonl (fix 17/07):
+      i restart soft ora lasciano traccia per la validazione delle registrazioni.
+
+    Ritorna il blocker (str) se il restart è stato RINVIATO, None se richiesto.
+    """
+    blocker = _lifecycle_blockers(flumine)
+    if blocker is not None:
+        return blocker
+    try:
+        from .raw_listener import RAW_STATE
+
+        RAW_STATE.mark_resubscribe(reason)
+    except Exception as e:  # noqa: BLE001 - il marker è best-effort
+        logger.debug("[runner] marker resubscribe KO (ignorato): %s", e)
     session.restart_requested.set()
     _stop_framework(flumine)
+    return None
 
 
 def _stop_framework(flumine: Flumine) -> None:
@@ -803,6 +883,11 @@ _RAW_STALL_RESTART_SEC = float(os.getenv("LIVE_RAW_STALL_RESTART_SEC", "600"))
 _RAW_STALL_RESTART_MIN_INTERVAL_SEC = float(
     os.getenv("LIVE_RAW_STALL_RESTART_MIN_INTERVAL_SEC", "900"))
 _RAW_STALL_LAST_RESTART = 0.0
+# hard-cap del silenzio dati PURO (review 17/07): oltre, il restart scatta
+# anche con heartbeat freschi (heartbeat = socket vivo, non subscription sana).
+# 30 min > qualunque quiete legittima (metà tempo ~15-20 min). 0 = disattivo.
+_RAW_STALL_HARD_CAP_SEC = float(
+    os.getenv("LIVE_RAW_STALL_HARD_CAP_SEC", "1800")) or None
 # keepAlive sessione Betfair ANCHE durante lo streaming (fix 16/07): prima era
 # rinnovata SOLO nel loop idle → dopo ore di stream una RICONNESSIONE (drop di
 # rete, restart F3) usava un token scaduto e lo stream restava muto per sempre.
@@ -845,10 +930,22 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
             last = max(h.get("last_write_ms", {}).values() or [0])
             now_ms = time.time() * 1000.0
             started = getattr(session, "stream_started_monotonic", None)
+            age_s = (now_mono - started) if started is not None else None
             # last==0 = MAI scritto in questa vita del processo (il caso 16/07:
             # stream mai connesso dopo il rebuild) → conta dall'avvio dello stream.
-            stall_s = raw_stall_seconds(
-                last, now_ms, (now_mono - started) if started is not None else None)
+            data_stall_s = raw_stall_seconds(last, now_ms, age_s)
+            # HEARTBEAT DI CONNESSIONE (fix 17/07): Betfair manda ct=HEARTBEAT
+            # ogni 0.5-5s quando non c'è traffico → heartbeat freschi + dati
+            # fermi = mercato QUIETO (metà tempo), NIENTE alert/restart. Lo
+            # stallo effettivo supera la soglia solo se ENTRAMBI sono vecchi
+            # (connessione morta davvero). Heartbeat mai visti (0) → età stream.
+            hb_stall_s = raw_stall_seconds(
+                float(h.get("last_heartbeat_ms") or 0), now_ms, age_s)
+            # Hard-cap indipendente (review 17/07): oltre questo silenzio dati
+            # puro si riparte COMUNQUE, anche con heartbeat freschi — gli
+            # heartbeat provano il socket, non la salute della subscription.
+            stall_s = effective_stall_seconds(
+                data_stall_s, hb_stall_s, _RAW_STALL_HARD_CAP_SEC)
             stalled = stall_s is not None and stall_s > 120.0
             if stalled and not _RAW_STALL_ALERTED:
                 _RAW_STALL_ALERTED = True
@@ -900,8 +997,24 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
                             "interrotta, ricostruisco la subscription (auto-recovery).")
                     except Exception:  # noqa: BLE001 - l'alert non blocca il recovery
                         pass
-                    session.restart_requested.set()
-                    _stop_framework(flumine)
+                    # fix TOCTOU 17/07: _request_soft_restart RI-VERIFICA i
+                    # blocker subito prima dello stop (l'insert_alert sopra può
+                    # durare centinaia di ms: tempo per un place concorrente) e
+                    # scrive il marker resubscribe nel .recmeta.jsonl.
+                    late_blocker = _request_soft_restart(
+                        flumine, session,
+                        f"stall-recovery: stream muto {stall_s:.0f}s")
+                    if late_blocker is not None:
+                        logger.critical(
+                            "[runner] recovery RINVIATO all'ultimo check: %s.",
+                            late_blocker)
+                        try:
+                            db.insert_alert(
+                                "CRITICAL", "RAW_RECORDER",
+                                f"recovery RINVIATO all'ultimo check ({late_blocker}): "
+                                "esposizione comparsa durante la verifica.")
+                        except Exception:  # noqa: BLE001
+                            pass
     except Exception:  # noqa: BLE001 - telemetria best-effort
         pass
 
@@ -951,6 +1064,16 @@ def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         db.insert_alert("INFO", "RUNNER_AUTO_STOP", f"Runner spento da solo: {reason}.")
     except Exception:  # noqa: BLE001 - l'alert è best-effort
         pass
+    # fix TOCTOU 17/07: tra il primo check e qui (log + insert_alert = anche
+    # centinaia di ms) il live_order_worker può aver piazzato un ordine →
+    # RI-VERIFICA subito prima dello stop. Finestra residua (pochi ms fino al
+    # TerminationEvent) dichiarata: un lock condiviso col percorso di
+    # piazzamento richiederebbe di toccare live_order_worker (altro cantiere).
+    blocker = _lifecycle_blockers(flumine)
+    if blocker is not None:
+        logger.warning(
+            "[lifecycle] spegnimento RINVIATO all'ultimo check (%s): %s.", reason, blocker)
+        return
     session.shutdown_requested.set()
     _stop_framework(flumine)
 

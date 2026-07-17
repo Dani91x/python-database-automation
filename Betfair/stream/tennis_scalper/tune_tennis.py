@@ -108,7 +108,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Grid-tuner tennis_scalper su registrazione")
     p.add_argument("--raw", required=True, help="Path al file .raw.jsonl")
     p.add_argument("--top", type=int, default=15, help="Quante config mostrare")
+    p.add_argument("--min-coverage", type=float, default=None,
+                   help="rifiuta la registrazione se la copertura e' sotto soglia (%%)")
     args = p.parse_args(argv)
+
+    # GUARDIA REGISTRAZIONE (fix 17/07 "tuning senza guardia"): un tuning su un
+    # raw monco MENTE. Default: warning visibile; --min-coverage rifiuta.
+    from ..tools.validate_recordings import check_raw_paths_for_backtest
+
+    try:
+        kept = check_raw_paths_for_backtest([args.raw], args.min_coverage)
+    except ValueError as exc:
+        print(f"# REGISTRAZIONE RIFIUTATA: {exc}")
+        return 2
+    if not kept:
+        print(f"# REGISTRAZIONE RIFIUTATA (copertura sotto soglia): {args.raw}")
+        return 2
 
     configs = _grid_configs()
     print(f"# Tuning su {args.raw}")

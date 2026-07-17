@@ -33,9 +33,20 @@ INPLAY_DELAY = 8.0
 # modello di fill: False = solo volume tradato (conservativo, giusto per maker puri);
 # True = riempie contro le quote disponibili (realistico per i TAKE a mercato di theta).
 AVAIL_PRICES = False
-COMPLETE = ["35674515", "35759636", "35760084", "35764745", "35765620",
-            "35768297", "35768365", "35772591", "35774000", "35777617",
-            "35780184", "35781607"]
+
+
+# Match COMPLETI a RUNTIME dal validatore registrazioni (fix 17/07: la lista
+# hardcoded era pre-validatore — cieco su raw nuovi, monchi o senza CLOSED).
+def complete_events(min_coverage=None):
+    from Betfair.stream.tools.validate_recordings import (
+        check_events_for_backtest, complete_event_ids)
+
+    ids = complete_event_ids(DATA)
+    if min_coverage is not None:
+        ids = check_events_for_backtest(ids, DATA, float(min_coverage))
+    return ids
+
+
 GOALS = {
     "35674515": "gol 13-19-28-31-40", "35759636": "20-53-62-84",
     "35760084": "7-27-45-62", "35764745": "38-73-85", "35765620": "12-54",
@@ -123,20 +134,37 @@ def main() -> None:
                   stop_ticks=3, entry_mode="maker", inplay_from_s=300.0,
                   inplay_to_s=2400.0, min_size=50.0)
     global AVAIL_PRICES
+    events_arg = None
+    min_coverage = None
     for a in sys.argv[1:]:
         if "=" in a:
             k, v = a.split("=", 1)
             if k == "avail":            # modello di fill (0/1), non e' un theta_param
                 AVAIL_PRICES = bool(int(v))
                 continue
+            if k == "events":           # lista esplicita (guardia del validatore)
+                events_arg = [e.strip() for e in v.split(",") if e.strip()]
+                continue
+            if k == "min_coverage":     # soglia %% di copertura registrazione
+                min_coverage = float(v)
+                continue
             params[k] = float(v) if v.replace(".", "").replace("-", "").isdigit() else v
+    if events_arg:
+        from Betfair.stream.tools.validate_recordings import check_events_for_backtest
+
+        events = check_events_for_backtest(events_arg, DATA, min_coverage)
+    else:
+        events = complete_events(min_coverage)
+    if not events:
+        print(f"# Nessuna registrazione COMPLETE in {DATA}")
+        return
     print(f"params: {params}\n")
     print(f"{'event':>10} {'NETmtm':>8} {'locked':>8} {'resid':>6} {'ent':>4} "
           f"{'grn':>4} {'stp':>4}  gol")
     print("-" * 70)
     tot = tot_lock = 0.0
     ngreen = 0
-    for ev in COMPLETE:
+    for ev in events:
         r = run_event(ev, dict(params))
         if "error" in r:
             print(f"{ev:>10}  ERR {r['error'][:40]}")
@@ -147,7 +175,7 @@ def main() -> None:
         if r["net"] > 0.01:
             ngreen += 1
     print("-" * 70)
-    print(f"{'TOTALE':>10} {tot:>8.2f} {tot_lock:>8.2f}   verde su {ngreen}/{len(COMPLETE)} match")
+    print(f"{'TOTALE':>10} {tot:>8.2f} {tot_lock:>8.2f}   verde su {ngreen}/{len(events)} match")
 
 
 if __name__ == "__main__":

@@ -113,6 +113,22 @@ def run_scalper(
     if not event_ids:
         raise ValueError("params['event_ids'] vuoto")
 
+    # GUARDIA REGISTRAZIONI PARZIALI (fix 17/07 "tuning senza guardia", come
+    # run_backtest/run_theta): default = solo WARNING visibile per evento
+    # non-COMPLETE; con ``params['min_coverage']`` (percento) gli eventi sotto
+    # soglia vengono ESCLUSI (ValueError se non resta nulla). L'esito finisce
+    # anche nei risultati (metrics.coverage_pct / coverage_verdict) + alert WARN.
+    coverage_reports: Dict[str, Any] = {}
+    try:
+        from ..tools.validate_recordings import check_events_with_reports
+
+        event_ids, coverage_reports = check_events_with_reports(
+            event_ids, root, params.get("min_coverage"))
+    except ValueError:
+        raise  # filtro esplicito richiesto e nessun evento valido: deve fallire
+    except Exception as e:  # noqa: BLE001 - la guardia non blocca il replay
+        logger.warning("[scalper] validazione registrazioni KO (ignorata): %s", e)
+
     try:
         commission_rate = float(params.get("commission_rate", 0.0) or 0.0)
     except (TypeError, ValueError):
@@ -121,4 +137,11 @@ def run_scalper(
     tagged: List[Tuple[Any, str]] = []
     for event_id in event_ids:
         tagged.extend(_run_one_event(event_id, params, root))
-    return aggregate_results(tagged, commission_rate=commission_rate)
+    rows = aggregate_results(tagged, commission_rate=commission_rate)
+    if coverage_reports:
+        from ..backtest.run_backtest import (
+            attach_coverage, build_coverage_meta, emit_coverage_alerts)
+
+        attach_coverage(rows, build_coverage_meta(coverage_reports, event_ids))
+        emit_coverage_alerts(coverage_reports, event_ids, "scalper")
+    return rows

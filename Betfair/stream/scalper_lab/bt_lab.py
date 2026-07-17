@@ -40,11 +40,25 @@ COMMISSION = 0.05
 INPLAY_DELAY = 8.0     # bet-delay Betfair in-play (richiesta utente)
 PREMATCH_DELAY = 0.0   # pre-match: nessun delay
 
-# I 12 match COMPLETI (CLOSED + in-play). 35784105 escluso (interrotto).
-COMPLETE = [
-    "35674515", "35759636", "35760084", "35764745", "35765620", "35768297",
-    "35768365", "35772591", "35774000", "35777617", "35780184", "35781607",
-]
+# Match COMPLETI: filtro a RUNTIME del validatore registrazioni (fix 17/07 —
+# la vecchia lista hardcoded era pre-validatore e non vedeva raw nuovi/monchi).
+def complete_events(min_coverage: Any = None) -> List[str]:
+    """Event id con registrazione COMPLETE in DATA_DIR secondo il validatore."""
+    from Betfair.stream.tools.validate_recordings import complete_event_ids
+
+    ids = complete_event_ids(DATA_DIR)
+    if min_coverage is not None:
+        from Betfair.stream.tools.validate_recordings import check_events_for_backtest
+
+        ids = check_events_for_backtest(ids, DATA_DIR, float(min_coverage))
+    return ids
+
+
+def __getattr__(name: str) -> Any:  # PEP 562: compat import `COMPLETE` (rdloop)
+    if name == "COMPLETE":
+        return complete_events()
+    raise AttributeError(name)
+
 
 _CFG_LOCK = threading.Lock()
 
@@ -227,9 +241,22 @@ def main() -> None:
     ap.add_argument("--stake", type=float, default=25.0)
     ap.add_argument("--params", default="{}", help="JSON override dei parametri")
     ap.add_argument("--label", default="baseline")
+    ap.add_argument("--min-coverage", type=float, default=None,
+                    help="esclude gli eventi con copertura registrazione sotto soglia (%%)")
     args = ap.parse_args()
 
-    events = [e.strip() for e in args.events.split(",") if e.strip()] or COMPLETE
+    events = [e.strip() for e in args.events.split(",") if e.strip()]
+    if events:
+        # eventi ESPLICITI: guardia del validatore (warning visibile di default,
+        # esclusione solo con --min-coverage) — fix 17/07 "tuning senza guardia".
+        from Betfair.stream.tools.validate_recordings import check_events_for_backtest
+
+        events = check_events_for_backtest(events, DATA_DIR, args.min_coverage)
+    else:
+        events = complete_events(args.min_coverage)
+        if not events:
+            print("# Nessuna registrazione COMPLETE in", DATA_DIR)
+            return
     params: Dict[str, Any] = {"stake": args.stake}
     params.update(json.loads(args.params))
 

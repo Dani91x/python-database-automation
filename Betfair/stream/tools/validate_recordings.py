@@ -25,6 +25,16 @@ Definizioni:
 Verdetti: COMPLETE (copertura >= soglia, default 90%), PARTIAL, EMPTY (file senza
 righe utili), NO_RAW (file assente), UNKNOWN (kickoff non determinabile).
 
+LIMITE NOTO (trade-off deliberato verso la prudenza, review 17/07): senza il
+CLOSED di un mercato PRINCIPALE nel raw la fine della partita non è confermata
+e il verdetto non può MAI essere COMPLETE — anche per registrazioni "buone" il
+cui unico difetto è un settlement lento (mercato principale rimasto SUSPENDED
+oltre la fine della registrazione). Falso negativo accettato: meglio declassare
+una registrazione buona che certificare COMPLETE una partita senza la fase
+finale/supplementari. Con il default warning-only l'impatto è solo informativo;
+diventa filtrante solo con ``min_coverage`` esplicito. Possibile evoluzione:
+CLOSED "implicito" da SUSPENDED ininterrotto + punteggio finale dal sidecar.
+
 Uso CLI:
     python -m Betfair.stream.tools.validate_recordings                # tutti gli eventi
     python -m Betfair.stream.tools.validate_recordings 35828026 ...   # solo alcuni
@@ -74,6 +84,10 @@ class RawScan:
     last_pt: Optional[int] = None
     kickoff_ms: Optional[int] = None
     closed_seen: bool = False
+    # pt dell'ULTIMA marketDefinition CLOSED dei mercati PRINCIPALI (full-match,
+    # non di primo tempo): quando presente la fine REALE della partita è nota
+    # (supplementari inclusi) — fix 17/07 "validatore cieco oltre KO+115'".
+    main_closed_pt: Optional[int] = None
     first_inplay_pt: Optional[int] = None
     gaps: List[Tuple[int, int]] = field(default_factory=list)  # [(pt_prima, pt_dopo)]
 
@@ -137,6 +151,19 @@ def _parse_start_ms(md: Dict[str, Any]) -> Optional[int]:
     return None
 
 
+def _is_main_market_type(market_type: Any) -> bool:
+    """True se il marketType è un mercato FULL-MATCH (il suo CLOSED = fine partita).
+
+    I mercati di primo tempo (HALF_TIME, FIRST_HALF_GOALS_*, HALF_TIME_SCORE,
+    HALF_WITH_MOST_GOALS, ...) chiudono all'intervallo: il loro CLOSED NON prova
+    la fine della partita. marketType assente → True (prudenza/retro-compat).
+    """
+    mt = str(market_type or "").upper()
+    if not mt:
+        return True
+    return "HALF" not in mt
+
+
 def scan_raw(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
     """Una passata sul raw nativo: pt primo/ultimo, gap, kickoff, CLOSED visti.
 
@@ -177,6 +204,8 @@ def scan_raw(path: str, gap_threshold_s: float = GAP_THRESHOLD_S) -> RawScan:
                     scan.first_inplay_pt = pt
                 if md.get("status") == "CLOSED":
                     scan.closed_seen = True
+                    if _is_main_market_type(md.get("marketType")) and isinstance(pt, int):
+                        scan.main_closed_pt = max(scan.main_closed_pt or 0, pt)
     return scan
 
 
@@ -208,6 +237,23 @@ def classify(
     win_b = int(kickoff + match_window_min * 60_000)
     reasons: List[str] = []
 
+    # FINE REALE (fix 17/07, "validatore cieco oltre KO+115'"):
+    #  * CLOSED di un mercato principale nel raw → la fine vera è NOTA e la
+    #    finestra attesa termina lì (partita chiusa prima dei 115' = COMPLETE
+    #    legittimo; supplementari registrati fino in fondo = finestra estesa);
+    #  * attività oltre KO+115' SENZA CLOSED (supplementari?) → la finestra si
+    #    estende all'ultima attività vista (mai dichiarare coperta una fase
+    #    che sappiamo esistere solo in parte).
+    end_confirmed = scan.main_closed_pt is not None and scan.main_closed_pt > win_a
+    if end_confirmed:
+        win_b = max(int(scan.main_closed_pt), win_a + 60_000)  # type: ignore[arg-type]
+    elif scan.last_pt > win_b:
+        reasons.append(
+            f"attività oltre ko+{match_window_min:.0f}m senza CLOSED "
+            f"(finestra estesa a ko+{(scan.last_pt - win_a) / 60_000.0:.0f}m)"
+        )
+        win_b = int(scan.last_pt)
+
     gaps_in_window = [
         (a, b) for a, b in scan.gaps if _overlap_ms(a, b, win_a, win_b) > 0
     ]
@@ -231,6 +277,18 @@ def classify(
         )
 
     verdict = VERDICT_COMPLETE if coverage >= min_coverage_pct else VERDICT_PARTIAL
+    # SENZA CLOSED dei mercati principali la fine vera è IGNOTA: una
+    # registrazione che termina dopo il 95' "sembra" completa ma la partita può
+    # essere andata oltre (recupero lungo, supplementari) con la fase decisiva
+    # ASSENTE → mai COMPLETE (fix 17/07), verdetto sospetto con motivo esplicito.
+    if not end_confirmed:
+        if end_offset_min >= TRUNCATED_BEFORE_MIN:
+            reasons.append(
+                "fine NON confermata: nessun mercato principale CLOSED nel raw "
+                "(possibile fase finale/supplementari mancante)"
+            )
+        if verdict == VERDICT_COMPLETE:
+            verdict = VERDICT_PARTIAL
     return verdict, round(coverage, 1), reasons, gaps_in_window
 
 
@@ -343,6 +401,75 @@ def validate_all(
     ]
 
 
+def _gate_report(rep: RecordingReport, label: str, min_coverage: Optional[float]) -> bool:
+    """Decisione condivisa della guardia backtest per UN report: True = tenere.
+
+    Non-COMPLETE → sempre WARNING visibile; con ``min_coverage`` la copertura
+    NOTA sotto soglia esclude (copertura ignota → incluso per prudenza).
+    """
+    if rep.verdict == VERDICT_COMPLETE:
+        return True
+    cov = "?" if rep.coverage_pct is None else f"{rep.coverage_pct:.0f}%"
+    detail = "; ".join(rep.reasons) or "n/d"
+    if min_coverage is None:
+        logger.warning(
+            "[recordings] %s: registrazione %s (copertura %s) — %s "
+            "(incluso: nessun min_coverage richiesto)", label, rep.verdict, cov, detail,
+        )
+        return True
+    if rep.coverage_pct is None:
+        logger.warning(
+            "[recordings] %s: copertura NON determinabile (%s) — %s "
+            "(incluso per prudenza)", label, rep.verdict, detail,
+        )
+        return True
+    if rep.coverage_pct >= float(min_coverage):
+        logger.warning(
+            "[recordings] %s: registrazione %s (copertura %s >= %.0f%% richiesto) — %s",
+            label, rep.verdict, cov, float(min_coverage), detail,
+        )
+        return True
+    logger.warning(
+        "[recordings] %s ESCLUSO dal backtest: registrazione %s "
+        "(copertura %s < %.0f%%) — %s", label, rep.verdict, cov, float(min_coverage), detail,
+    )
+    return False
+
+
+def _raise_if_all_filtered(requested: Sequence[Any], kept: Sequence[Any],
+                           min_coverage: Optional[float]) -> None:
+    if min_coverage is not None and requested and not kept:
+        raise ValueError(
+            f"nessun evento con copertura >= {float(min_coverage):.0f}% "
+            "(registrazioni parziali: vedi python -m Betfair.stream.tools.validate_recordings)"
+        )
+
+
+def check_events_with_reports(
+    event_ids: Sequence[str],
+    data_dir: str,
+    min_coverage: Optional[float] = None,
+) -> Tuple[List[str], Dict[str, RecordingReport]]:
+    """Come :func:`check_events_for_backtest` ma ritorna ANCHE i report per
+    evento (fix 17/07 "warning coverage invisibile": i backtest li scrivono nei
+    risultati letti dal frontend — ``coverage_pct``/``coverage_verdict``)."""
+    kept: List[str] = []
+    reports: Dict[str, RecordingReport] = {}
+    for ev in event_ids:
+        ev = str(ev)
+        try:
+            rep = validate_event(data_dir, ev)
+        except Exception as exc:  # noqa: BLE001 - la guardia non rompe il backtest
+            logger.warning("[recordings] validazione %s KO (incluso comunque): %s", ev, exc)
+            kept.append(ev)
+            continue
+        reports[ev] = rep
+        if _gate_report(rep, f"evento {ev}", min_coverage):
+            kept.append(ev)
+    _raise_if_all_filtered(event_ids, kept, min_coverage)
+    return kept, reports
+
+
 def check_events_for_backtest(
     event_ids: Sequence[str],
     data_dir: str,
@@ -357,48 +484,75 @@ def check_events_for_backtest(
       prudenza. Se il filtro svuota la lista → ValueError (il backtest non deve
       girare "verde" su zero eventi senza dirlo).
     """
-    kept: List[str] = []
-    for ev in event_ids:
-        ev = str(ev)
-        try:
-            rep = validate_event(data_dir, ev)
-        except Exception as exc:  # noqa: BLE001 - la guardia non rompe il backtest
-            logger.warning("[recordings] validazione %s KO (incluso comunque): %s", ev, exc)
-            kept.append(ev)
-            continue
-        if rep.verdict == VERDICT_COMPLETE:
-            kept.append(ev)
-            continue
-        cov = "?" if rep.coverage_pct is None else f"{rep.coverage_pct:.0f}%"
-        detail = "; ".join(rep.reasons) or "n/d"
-        if min_coverage is None:
-            logger.warning(
-                "[recordings] evento %s: registrazione %s (copertura %s) — %s "
-                "(incluso: nessun min_coverage richiesto)", ev, rep.verdict, cov, detail,
-            )
-            kept.append(ev)
-        elif rep.coverage_pct is None:
-            logger.warning(
-                "[recordings] evento %s: copertura NON determinabile (%s) — %s "
-                "(incluso per prudenza)", ev, rep.verdict, detail,
-            )
-            kept.append(ev)
-        elif rep.coverage_pct >= float(min_coverage):
-            logger.warning(
-                "[recordings] evento %s: registrazione %s (copertura %s >= %.0f%% richiesto) — %s",
-                ev, rep.verdict, cov, float(min_coverage), detail,
-            )
-            kept.append(ev)
-        else:
-            logger.warning(
-                "[recordings] evento %s ESCLUSO dal backtest: registrazione %s "
-                "(copertura %s < %.0f%%) — %s", ev, rep.verdict, cov, float(min_coverage), detail,
-            )
-    if min_coverage is not None and event_ids and not kept:
-        raise ValueError(
-            f"nessun evento con copertura >= {float(min_coverage):.0f}% "
-            "(registrazioni parziali: vedi python -m Betfair.stream.tools.validate_recordings)"
+    kept, _reports = check_events_with_reports(event_ids, data_dir, min_coverage)
+    return kept
+
+
+def complete_event_ids(
+    data_dir: str, *, min_coverage_pct: float = DEFAULT_MIN_COVERAGE_PCT
+) -> List[str]:
+    """Event id con registrazione COMPLETE in ``data_dir`` (filtro a RUNTIME del
+    validatore — fix 17/07: sostituisce le liste COMPLETE hardcoded nei lab)."""
+    return [
+        rep.event_id
+        for rep in validate_all(data_dir, min_coverage_pct=min_coverage_pct)
+        if rep.verdict == VERDICT_COMPLETE
+    ]
+
+
+def validate_raw_file(
+    raw_path: str, *, min_coverage_pct: float = DEFAULT_MIN_COVERAGE_PCT
+) -> RecordingReport:
+    """Valida UN file ``.raw.jsonl`` per PATH esplicito (layout dei lab tennis:
+    ``<dir>/<event>/<event>.raw.jsonl`` oppure file flat). Stessa pipeline di
+    :func:`validate_event`, senza sidecar scores/recmeta."""
+    name = os.path.basename(raw_path)
+    event_id = name[:-len(".raw.jsonl")] if name.endswith(".raw.jsonl") else name
+    if not os.path.isfile(raw_path):
+        return RecordingReport(
+            event_id=event_id, raw_path=raw_path, verdict=VERDICT_NO_RAW,
+            coverage_pct=0.0, reasons=["file raw mancante"],
         )
+    scan = scan_raw(raw_path)
+    verdict, coverage, reasons, gaps_in_window = classify(
+        scan, min_coverage_pct=min_coverage_pct
+    )
+    kickoff = scan.kickoff_ms if scan.kickoff_ms is not None else scan.first_inplay_pt
+    report = RecordingReport(
+        event_id=event_id, raw_path=raw_path, verdict=verdict,
+        coverage_pct=coverage, reasons=reasons, n_lines=scan.n_lines,
+        size_bytes=os.path.getsize(raw_path), first_pt=scan.first_pt,
+        last_pt=scan.last_pt, kickoff_ms=kickoff, closed_seen=scan.closed_seen,
+        gaps_in_window=gaps_in_window,
+        gap_in_window_min=round(sum((b - a) for a, b in gaps_in_window) / 60_000.0, 1),
+    )
+    if kickoff is not None and scan.first_pt is not None:
+        report.start_delay_min = round((scan.first_pt - kickoff) / 60_000.0, 1)
+    if kickoff is not None and scan.last_pt is not None:
+        report.end_offset_min = round((scan.last_pt - kickoff) / 60_000.0, 1)
+    return report
+
+
+def check_raw_paths_for_backtest(
+    raw_paths: Sequence[str],
+    min_coverage: Optional[float] = None,
+) -> List[str]:
+    """Guardia per i lab che lavorano su PATH raw espliciti (tennis tune/grid/
+    flb/validate — fix 17/07 "tuning senza guardia"). Semantica identica a
+    :func:`check_events_for_backtest`: default = solo WARNING visibile;
+    ``min_coverage`` esclude sotto soglia (ValueError se non resta nulla)."""
+    kept: List[str] = []
+    for path in raw_paths:
+        path = str(path)
+        try:
+            rep = validate_raw_file(path)
+        except Exception as exc:  # noqa: BLE001 - la guardia non rompe il backtest
+            logger.warning("[recordings] validazione %s KO (incluso comunque): %s", path, exc)
+            kept.append(path)
+            continue
+        if _gate_report(rep, f"raw {rep.event_id}", min_coverage):
+            kept.append(path)
+    _raise_if_all_filtered(raw_paths, kept, min_coverage)
     return kept
 
 

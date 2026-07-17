@@ -78,12 +78,18 @@ def _override_minmatched(grid, mm):
     return [(n, {**p, "min_matched": float(mm)}) for n, p in grid]
 
 
-def collect(data_dir: str, min_matched=None) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
+def collect(data_dir: str, min_matched=None,
+            min_coverage=None) -> Tuple[Dict[str, Dict[str, float]], List[str]]:
     """Ritorna (results[config][event]=pnl, lista match attivi).
 
     min_matched: override del gate liquidita' su TUTTE le config (bug #6: il gate
-    10k nasconde i match sottili; abbassalo per sbloccare il campione)."""
+    10k nasconde i match sottili; abbassalo per sbloccare il campione).
+    min_coverage: esclude i raw con copertura registrazione sotto soglia (fix
+    17/07 "tuning senza guardia"; None = solo warning visibile)."""
     files = [f for f in PG.find_matches(data_dir) if PG.is_settled(f)]
+    from ..tools.validate_recordings import check_raw_paths_for_backtest
+
+    files = check_raw_paths_for_backtest(files, min_coverage)
     price_grid = _override_minmatched(PG.build_grid(), min_matched)
     score_grid = _override_minmatched(SG.build_grid(), min_matched)
     events_all = [os.path.basename(os.path.dirname(f)) for f in files]
@@ -210,9 +216,12 @@ def main(argv=None) -> int:
     p.add_argument("--min-active", type=int, default=6)
     p.add_argument("--min-matched", type=float, default=None,
                    help="override gate liquidita' su tutte le config (bug #6)")
+    p.add_argument("--min-coverage", type=float, default=None,
+                   help="esclude i raw con copertura registrazione sotto soglia (%%)")
     args = p.parse_args(argv)
 
-    results, active = collect(args.data, min_matched=args.min_matched)
+    results, active = collect(args.data, min_matched=args.min_matched,
+                              min_coverage=args.min_coverage)
     summarize(results, active, args.min_active)
 
     out = os.path.join(args.data, "_validation.json")

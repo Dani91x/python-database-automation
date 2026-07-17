@@ -40,6 +40,11 @@ class _RawState:
         self.last_write_ms: Dict[str, int] = {}
         self.write_errors: int = 0
         self._err_logged: Dict[str, float] = {}
+        # HEARTBEAT DI CONNESSIONE (fix 17/07): Betfair manda mcm ct=HEARTBEAT
+        # ogni 0.5-5s quando non c'è traffico dati. Tracciarli SEPARATAMENTE
+        # distingue un mercato quieto (heartbeat freschi, dati fermi) da uno
+        # stream morto (nessun messaggio di alcun tipo). 0 = mai visto.
+        self.last_heartbeat_ms: int = 0
 
     def configure(self, data_dir: str, market_to_event: Dict[str, str], enabled: bool) -> None:
         self.dir = data_dir
@@ -50,6 +55,7 @@ class _RawState:
         # dopo un rebuild lo "stall" veniva misurato sui timestamp della vita
         # precedente e uno stream sano-ma-quieto rischiava un re-restart inutile.
         self.last_write_ms = {}
+        self.last_heartbeat_ms = 0
 
     def file_for(self, event_id: str) -> Any:
         fh = self._files.get(event_id)
@@ -93,6 +99,7 @@ class _RawState:
                 "enabled": self.enabled,
                 "bytes": dict(self.bytes_written),
                 "last_write_ms": dict(self.last_write_ms),
+                "last_heartbeat_ms": self.last_heartbeat_ms,
                 "write_errors": self.write_errors,
             }
 
@@ -104,6 +111,17 @@ class _RawState:
         except (ValueError, TypeError):
             return
         if msg.get("op") != "mcm":
+            return
+        # HEARTBEAT (fix 17/07, PRIMA dello scarto "senza mc"): i messaggi
+        # ct=HEARTBEAT non hanno market change e non vanno nel raw, ma provano
+        # che la CONNESSIONE è viva. Prima venivano scartati senza traccia →
+        # un mercato quieto (metà tempo) era indistinguibile da uno stream
+        # morto e il runner si auto-infliggeva restart inutili.
+        if str(msg.get("ct") or "").upper() == "HEARTBEAT":
+            pt = msg.get("pt")
+            hb_ms = int(pt) if isinstance(pt, (int, float)) else int(time.time() * 1000)
+            with self._lock:  # coerenza col resto della classe (review 17/07)
+                self.last_heartbeat_ms = hb_ms
             return
         mc = msg.get("mc")
         if not mc:
@@ -147,6 +165,27 @@ class _RawState:
                 self.bytes_written[ev] = self.bytes_written.get(ev, 0) + len(line)
                 pt = msg.get("pt")
                 self.last_write_ms[ev] = int(pt) if isinstance(pt, (int, float)) else 0
+
+    def mark_resubscribe(self, reason: str) -> None:
+        """Marker ``kind:"resubscribe"`` nel sidecar `.recmeta.jsonl` (fix 17/07).
+
+        I restart SOFT della subscription (stall-recovery, F3 nuove partite)
+        NON passano dal marker open/close di processo: senza traccia, un buco
+        di registrazione da resubscribe era indistinguibile da un buco di rete.
+        Scrive SOLO nel sidecar — il formato raw resta byte-identico. Best-effort.
+        """
+        if not self.enabled or not self.dir:
+            return
+        ts = int(time.time() * 1000)
+        with self._lock:
+            events = set(self._files.keys()) | set(self.market_to_event.values())
+            for ev in sorted(events):
+                self._write_meta(ev, {
+                    "kind": "resubscribe",
+                    "ts_ms": ts,
+                    "reason": str(reason)[:200],
+                    "last_pt_ms": self.last_write_ms.get(ev, 0),
+                })
 
     def close(self) -> None:
         with self._lock:

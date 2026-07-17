@@ -216,10 +216,17 @@ def main(argv=None) -> int:
     p.add_argument("--data", required=True)
     p.add_argument("--top", type=int, default=50)
     p.add_argument("--all", action="store_true")
+    p.add_argument("--min-coverage", type=float, default=None,
+                   help="esclude i raw con copertura registrazione sotto soglia (%%)")
     args = p.parse_args(argv)
 
     files = find_matches(args.data)
     usable = files if args.all else [f for f in files if is_settled(f)]
+    # GUARDIA REGISTRAZIONI (fix 17/07): warning visibile per i raw non-COMPLETE;
+    # --min-coverage esclude sotto soglia.
+    from ..tools.validate_recordings import check_raw_paths_for_backtest
+
+    usable = check_raw_paths_for_backtest(usable, args.min_coverage)
     grid = build_grid()
     print(f"# GRID score-cond: {len(grid)} config x {len(usable)} match "
           f"({'TUTTI' if args.all else 'settled'})")

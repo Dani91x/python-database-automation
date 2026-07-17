@@ -109,8 +109,9 @@ def test_late_start_is_partial(tmp_path):
     _write_raw(str(tmp_path), "101", _lines([(60, 118)], closed_at_end=True))
     rep = validate_event(str(tmp_path), "101")
     assert rep.verdict == VERDICT_PARTIAL
-    # copre solo [ko+60, ko+115] su 115' attesi → ~47.8%
-    assert rep.coverage_pct == pytest.approx(47.8, abs=1.0)
+    # fix 17/07: col CLOSED nel raw la finestra termina alla fine REALE (ko+118)
+    # → copre [ko+60, ko+118] su 118' attesi → ~49.2%
+    assert rep.coverage_pct == pytest.approx(49.2, abs=1.0)
     assert rep.start_delay_min == pytest.approx(60.0, abs=0.1)
     assert any("inizio tardivo" in r for r in rep.reasons)
 

@@ -29,6 +29,16 @@ from Betfair.stream.backtest.run_backtest import (
     run_backtest,
 )
 
+@pytest.fixture(autouse=True)
+def _no_db_alerts(monkeypatch):
+    """Fix 17/07: la guardia copertura scrive alert WARN best-effort per gli
+    eventi non-COMPLETE — nei test NIENTE DB reale (il raw sintetico qui sotto
+    è deliberatamente 'parziale' rispetto alla finestra partita)."""
+    import Betfair.stream.db as db_mod
+
+    monkeypatch.setattr(db_mod, "insert_alert", lambda *a, **k: None)
+
+
 EVENT_ID = "test_evt_1"
 MARKET_ID = "1.111"
 WINNER = 111

@@ -185,10 +185,17 @@ def main(argv=None) -> int:
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--top", type=int, default=40)
     p.add_argument("--all", action="store_true", help="usa anche i match NON conclusi")
+    p.add_argument("--min-coverage", type=float, default=None,
+                   help="esclude i raw con copertura registrazione sotto soglia (%%)")
     args = p.parse_args(argv)
 
     files = find_matches(args.data)
     settled = files if args.all else [f for f in files if is_settled(f)]
+    # GUARDIA REGISTRAZIONI (fix 17/07): warning visibile per i raw non-COMPLETE
+    # (buchi/inizio tardivo/fine non confermata); --min-coverage esclude.
+    from ..tools.validate_recordings import check_raw_paths_for_backtest
+
+    settled = check_raw_paths_for_backtest(settled, args.min_coverage)
     grid = build_grid(args.smoke)
     print(f"# GRID: {len(grid)} config x {len(settled)} match "
           f"({'TUTTI' if args.all else 'settled'} su {len(files)} registrati)")

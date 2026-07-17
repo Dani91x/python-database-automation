@@ -217,6 +217,94 @@ def aggregate_results(
 
 
 # ---------------------------------------------------------------------------
+# Copertura registrazioni NEI RISULTATI (fix 17/07 "warning coverage invisibile"):
+# l'esito del validatore era solo un WARNING nel terminale del worker. Ora viene
+# scritto nel payload dei risultati (colonna jsonb ``metrics``, quella che il
+# frontend già legge) e — quando non-COMPLETE — in un alert WARN nel pannello
+# Alert esistente. CONTRATTO col cantiere frontend: i nomi campo sono
+# ESATTAMENTE ``coverage_pct`` (float 0-100) e ``coverage_verdict`` (str) —
+# NON rinominarli.
+# ---------------------------------------------------------------------------
+_VERDICT_SEVERITY = {"COMPLETE": 0, "PARTIAL": 1, "UNKNOWN": 2, "EMPTY": 3, "NO_RAW": 4}
+
+
+def build_coverage_meta(
+    reports: Dict[str, Any], event_ids: List[str]
+) -> Dict[str, Any]:
+    """Meta di copertura per i risultati: aggregato worst-case + dettaglio evento.
+
+    :param reports: ``{event_id: RecordingReport}`` dal validatore.
+    :param event_ids: eventi effettivamente inclusi nel backtest.
+    :returns: ``{coverage_pct, coverage_verdict, coverage_events}`` (vuoto se
+        non c'è nulla da riportare). ``coverage_pct`` aggregato = MIN tra gli
+        eventi; ``coverage_verdict`` = verdetto PEGGIORE (severità crescente
+        COMPLETE→PARTIAL→UNKNOWN→EMPTY→NO_RAW).
+    """
+    per_event: Dict[str, Dict[str, Any]] = {}
+    worst_verdict = "COMPLETE"
+    worst_pct = 100.0
+    for ev in event_ids:
+        rep = reports.get(str(ev))
+        if rep is None:
+            entry = {"coverage_pct": 0.0, "coverage_verdict": "UNKNOWN"}
+        else:
+            entry = {
+                "coverage_pct": float(rep.coverage_pct) if rep.coverage_pct is not None else 0.0,
+                "coverage_verdict": str(rep.verdict),
+            }
+        per_event[str(ev)] = entry
+        if (_VERDICT_SEVERITY.get(entry["coverage_verdict"], 2)
+                > _VERDICT_SEVERITY.get(worst_verdict, 0)):
+            worst_verdict = entry["coverage_verdict"]
+        worst_pct = min(worst_pct, entry["coverage_pct"])
+    if not per_event:
+        return {}
+    return {
+        "coverage_pct": round(worst_pct, 1),
+        "coverage_verdict": worst_verdict,
+        "coverage_events": per_event,
+    }
+
+
+def attach_coverage(rows: List[Dict[str, Any]], coverage_meta: Dict[str, Any]) -> None:
+    """Innesta la meta di copertura nel ``metrics`` di OGNI riga risultato
+    (jsonb già letto dal frontend: nessuna colonna nuova sul DB)."""
+    if not coverage_meta:
+        return
+    for row in rows:
+        metrics = row.get("metrics")
+        if not isinstance(metrics, dict):
+            metrics = {}
+            row["metrics"] = metrics
+        metrics.update(coverage_meta)
+
+
+def emit_coverage_alerts(
+    reports: Dict[str, Any], event_ids: List[str], context: str
+) -> None:
+    """Alert WARN (pannello Alert esistente) per ogni evento non-COMPLETE.
+    Best-effort dichiarato: i lab girano anche offline, un DB assente non deve
+    mai far fallire il backtest."""
+    for ev in event_ids:
+        rep = reports.get(str(ev))
+        if rep is None or rep.verdict == "COMPLETE":
+            continue
+        cov = "?" if rep.coverage_pct is None else f"{rep.coverage_pct:.0f}%"
+        detail = "; ".join(rep.reasons) or "n/d"
+        try:
+            from .. import db
+
+            db.insert_alert(
+                "WARN", "BACKTEST_COVERAGE",
+                f"{context}: evento {ev} con registrazione {rep.verdict} "
+                f"(copertura {cov}) — risultati potenzialmente falsati: {detail}",
+                str(ev),
+            )
+        except Exception as exc:  # noqa: BLE001 - alert best-effort
+            logger.warning("[backtest] alert copertura %s KO (ignorato): %s", ev, exc)
+
+
+# ---------------------------------------------------------------------------
 # Caricamento dati sidecar (scores / catalogo nomi) — opzionali
 # ---------------------------------------------------------------------------
 def _load_scores(
@@ -359,10 +447,13 @@ def run_backtest(
     # backtest su un raw monco MENTE. Default: solo WARNING visibile per evento
     # (zero regressioni); con ``params['min_coverage']`` (percento, es. 90) gli
     # eventi sotto soglia vengono ESCLUSI (ValueError se non resta nulla).
+    # Fix 17/07: l'esito del validatore finisce ANCHE nei risultati
+    # (metrics.coverage_pct / coverage_verdict) + alert WARN se non-COMPLETE.
+    coverage_reports: Dict[str, Any] = {}
     try:
-        from ..tools.validate_recordings import check_events_for_backtest
+        from ..tools.validate_recordings import check_events_with_reports
 
-        event_ids = check_events_for_backtest(
+        event_ids, coverage_reports = check_events_with_reports(
             event_ids, root, params.get("min_coverage"))
     except ValueError:
         raise  # filtro esplicito richiesto e nessun evento valido: deve fallire
@@ -378,4 +469,8 @@ def run_backtest(
     for event_id in event_ids:
         tagged.extend(_run_one_event(event_id, params, root))
 
-    return aggregate_results(tagged, commission_rate=commission_rate)
+    rows = aggregate_results(tagged, commission_rate=commission_rate)
+    if coverage_reports:
+        attach_coverage(rows, build_coverage_meta(coverage_reports, event_ids))
+        emit_coverage_alerts(coverage_reports, event_ids, "backtest")
+    return rows
