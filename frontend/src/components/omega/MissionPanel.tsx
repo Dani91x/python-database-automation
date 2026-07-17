@@ -15,13 +15,13 @@ import { Badge } from '@/components/ui/badge';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy, BarChart3, TrendingUp } from 'lucide-react';
+import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy, BarChart3, TrendingUp, CircleDot } from 'lucide-react';
 import {
     requestManual, fetchOmegaEvents, fetchManualRequests,
     type OmegaEvent, type OmegaMode,
 } from '@/lib/omega';
 import {
-    fetchMissions, activateMission, followMission, subscribeOmegaMissions,
+    fetchMissions, activateMission, followMission, setFollowRecord, subscribeOmegaMissions,
     missionRealized, toNum, splitEventName,
     type MissionRow, type MissionsSummary, type MissionPhase,
 } from '@/lib/omegaMissions';
@@ -82,15 +82,25 @@ function Logo({ src, size = 18, alt = '' }: { src: string; size?: number; alt?: 
 // Pulsanti per-partita (richiesta 16/07): "Statistiche" apre la scheda dettagliata
 // della Dashboard per QUESTA partita (deep-link ?fixture=&from=omega, ritorno con
 // "Torna a Omega"); "Trading" registra il follow live (RPC omega_mission_follow,
-// idempotente) e apre /segui-live PRESELEZIONATO sull'evento (?event=&from=omega).
-function RowActions({ eventId, eventName, kickoff, fixtureId }: {
+// idempotente, SENZA registrazione: record=false) e apre /segui-live
+// PRESELEZIONATO sull'evento (?event=&from=omega); "Segui live" (opt-in 17/07)
+// attiva la REGISTRAZIONE per intero della partita (follow + set_follow_record):
+// solo le partite col REC acceso producono il raw e finiscono nel Match Replay.
+function RowActions({ eventId, eventName, kickoff, fixtureId, recording }: {
     eventId: string;
     eventName: string;
     kickoff: string | null;
     fixtureId: number | null;
+    // stato registrazione dal DB (get_omega_missions.recording); undefined =
+    // ignoto (evento senza missione) → si parte da spento.
+    recording?: boolean;
 }) {
     const navigate = useNavigate();
     const [busyTrade, setBusyTrade] = useState(false);
+    const [busyRec, setBusyRec] = useState(false);
+    // override locale ottimista dopo un toggle; null = fai fede al DB
+    const [recLocal, setRecLocal] = useState<boolean | null>(null);
+    const recActive = recLocal ?? Boolean(recording);
     const goTrading = async () => {
         if (busyTrade) return;
         setBusyTrade(true);
@@ -98,11 +108,37 @@ function RowActions({ eventId, eventName, kickoff, fixtureId }: {
             const { home, away } = splitEventName(eventName);
             // il follow richiede il kickoff (open_date NOT NULL nella RPC)
             if (!kickoff) throw new Error('orario di inizio mancante: impossibile seguire l\'evento');
+            // solo follow + navigazione: la registrazione NON si attiva da qui
             await followMission(eventId, home || eventName, away, kickoff);
             navigate(`/segui-live?event=${encodeURIComponent(eventId)}&from=omega`);
         } catch (err) {
             toast.error('Apertura trading fallita', { description: String((err as Error)?.message ?? err) });
         } finally { setBusyTrade(false); }
+    };
+    const toggleRec = async () => {
+        if (busyRec) return;
+        setBusyRec(true);
+        try {
+            if (!recActive) {
+                const { home, away } = splitEventName(eventName);
+                if (!kickoff) throw new Error('orario di inizio mancante: impossibile seguire l\'evento');
+                // il follow deve esistere prima del flag (idempotente se già presente)
+                await followMission(eventId, home || eventName, away, kickoff);
+                await setFollowRecord(eventId, true);
+                setRecLocal(true);
+                toast.success('Registrazione attivata', {
+                    description: 'La partita viene registrata per intero e a fine gara caricata nel Match Replay.',
+                });
+            } else {
+                await setFollowRecord(eventId, false);
+                setRecLocal(false);
+                toast('Registrazione disattivata', {
+                    description: 'Streaming e trading proseguono; niente raw né upload nel Replay.',
+                });
+            }
+        } catch (err) {
+            toast.error('Toggle registrazione fallito', { description: String((err as Error)?.message ?? err) });
+        } finally { setBusyRec(false); }
     };
     return (
         <span
@@ -131,6 +167,22 @@ function RowActions({ eventId, eventName, kickoff, fixtureId }: {
                     ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                     : <TrendingUp className="w-3.5 h-3.5 mr-1" />}
                 Trading
+            </Button>
+            <Button
+                size="sm" variant="ghost"
+                disabled={busyRec}
+                title={recActive
+                    ? 'Registrazione ATTIVA: la partita sarà caricata nel Match Replay — clic per spegnere'
+                    : 'Registra la partita per intero (raw + Match Replay a fine gara)'}
+                className={`h-7 px-2 text-[11px] ${recActive
+                    ? 'text-red-300 hover:text-red-200'
+                    : 'text-slate-300 hover:text-white'}`}
+                onClick={() => void toggleRec()}
+            >
+                {busyRec
+                    ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    : <CircleDot className={`w-3.5 h-3.5 mr-1 ${recActive ? 'text-red-400 animate-pulse' : ''}`} />}
+                {recActive ? 'REC' : 'Segui live'}
             </Button>
         </span>
     );
@@ -250,6 +302,9 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
 
     // ---- derivati (Number(...) con fallback: mai NaN in UI) -------------
     const eventById = useMemo(() => new Map(events.map(e => [e.event_id, e])), [events]);
+    // stato REC per evento (anche per missioni non visibili in lista): il
+    // pulsante "Segui live" delle righe-evento parte dallo stato DB se noto
+    const missionByEvent = useMemo(() => new Map(missions.map(m => [m.event_id, m])), [missions]);
     const activeMissions = useMemo(
         () => missions.filter(m => m.status === 'active')
             .sort((a, b) => String(a.kickoff ?? '').localeCompare(String(b.kickoff ?? ''))),
@@ -444,6 +499,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         eventName={m.event_name ?? m.event_id}
                         kickoff={m.kickoff}
                         fixtureId={fixtureId}
+                        recording={m.recording}
                     />
                     <span className="ml-auto flex items-center gap-3 min-w-[190px]">
                         {/* posizioni SEMPRE in vista, anche a scheda richiusa */}
@@ -510,6 +566,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                     eventName={ev.name ?? ev.event_id}
                     kickoff={ev.open_date}
                     fixtureId={ev.fixture_id ?? null}
+                    recording={missionByEvent.get(ev.event_id)?.recording}
                 />
                 <span className="w-24 text-right">
                     {state !== 'finita' && (
@@ -555,6 +612,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                             ?? m?.suggestion_ht?.advisor?.matched_fixture_id
                             ?? m?.suggestion_ft?.advisor?.matched_fixture_id
                             ?? null}
+                        recording={m?.recording}
                     />
                     {/* niente riattivazione per le missioni CHIUSE (conservativo) */}
                     {(!m || m.status === 'paused') && (

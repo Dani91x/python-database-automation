@@ -37,6 +37,35 @@ export async function fetchLiveFollows(): Promise<LiveFollow[]> {
     return raw?.rows ?? [];
 }
 
+// Sottoscrizione realtime alla riga `live_follow` di un evento (stato
+// PENDING→STREAMING→CLOSED/ERROR). Fix 17/07 "Trading = streaming immediato":
+// la pagina Segui Live reagisce al cambio di stato APPENA il runner aggancia,
+// invece di aspettare il poll di backup (15s). Pattern identico a
+// subscribeBacktestRequest (analytics.ts). NB: il realtime notifica solo i
+// CAMBI futuri → il chiamante DEVE fare anche un fetch immediato (follow già
+// STREAMING all'arrivo). Richiede la migrazione live_follow_realtime.sql
+// (policy SELECT authenticated + publication): senza, semplicemente non arriva
+// alcun evento e resta attivo il poll di backup (nessuna regressione).
+export function subscribeLiveFollowEvent(
+    eventId: string,
+    cb: (row: LiveFollow | null) => void,
+): () => void {
+    const channel = supabase
+        .channel(`live_follow:${eventId}:${Math.random().toString(36).slice(2, 10)}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'live_follow', filter: `event_id=eq.${eventId}` },
+            (payload) => {
+                const next = (payload.new && Object.keys(payload.new).length > 0
+                    ? payload.new
+                    : null) as LiveFollow | null;
+                cb(next);
+            },
+        )
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+}
+
 // ------------------------------------------------ live_now (realtime glance)
 // Snapshot live "leggero" letto direttamente dalla tabella: usato dal dettaglio
 // di Segui Live per mostrare le quote che si aggiornano in tempo reale.

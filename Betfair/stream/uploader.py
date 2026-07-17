@@ -185,11 +185,27 @@ def sweep_pending(min_idle_min: float = 30.0) -> List[Dict[str, Any]]:
     from db_client import get_supabase_client
 
     out: List[Dict[str, Any]] = []
-    rows = (
-        get_supabase_client().table("live_follow")
-        .select("event_id,status,open_date").neq("status", "UPLOADED")
-        .execute().data or []
-    )
+    # OPT-IN 17/07: si legge anche il flag ``record`` ("Segui live"). FALLBACK
+    # difensivo: colonna assente (migrazione live_follow_record.sql non
+    # applicata) → retry senza colonna e sweep STORICO su tutti i follow.
+    try:
+        rows = (
+            get_supabase_client().table("live_follow")
+            .select("event_id,status,open_date,record").neq("status", "UPLOADED")
+            .execute().data or []
+        )
+    except Exception as e:  # noqa: BLE001 - colonna record assente
+        logger.warning(
+            "[uploader] colonna live_follow.record non leggibile (migrazione "
+            "non applicata?): sweep storico su tutti i follow — %s", str(e)[:150])
+        rows = (
+            get_supabase_client().table("live_follow")
+            .select("event_id,status,open_date").neq("status", "UPLOADED")
+            .execute().data or []
+        )
+    # rilevamento colonna dai dati (non dal successo della SELECT: i client
+    # finti/mock accettano qualunque select → la chiave nelle righe fa fede)
+    has_record_col = any("record" in r for r in rows)
     now_dt = datetime.now(timezone.utc)
     now_ts = now_dt.timestamp()
     # GUARDIA (incidente 17/07): il solo "file fermo da N minuti" NON prova che
@@ -218,6 +234,19 @@ def sweep_pending(min_idle_min: float = 30.0) -> List[Dict[str, Any]]:
         idle_min = (now_ts - os.path.getmtime(raw)) / 60.0
         if idle_min < min_idle_min:
             continue  # partita (forse) ancora in corso: non toccare
+        if has_record_col and not r.get("record"):
+            # OPT-IN 17/07: partita seguita SENZA "Segui live" (record=false)
+            # → lo sweep NON la carica mai nel Replay. Ma un follow rimasto
+            # PENDING/STREAMING (crash del runner prima del finalize) non deve
+            # restare appeso: status terminale pulito CLOSED, senza upload.
+            if r.get("status") in ("PENDING", "STREAMING"):
+                try:
+                    db.set_follow_status(ev, "CLOSED")
+                    logger.info(
+                        "[uploader] SWEEP: %s chiuso SENZA upload (record=false).", ev)
+                except Exception as e:  # noqa: BLE001 - best-effort
+                    logger.warning("[uploader] SWEEP: chiusura %s KO: %s", ev, e)
+            continue
         try:
             summary = upload_event(ev)
             summary["recovered_from"] = r.get("status")

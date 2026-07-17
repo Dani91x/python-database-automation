@@ -61,6 +61,23 @@ def _exec_retry(builder: Any) -> Any:
 # ----------------------------------------------------------------------------
 # live_follow
 # ----------------------------------------------------------------------------
+# warning "colonna record assente" loggato UNA volta per processo (fallback
+# migrazione live_follow_record.sql non applicata: comportamento storico).
+_RECORD_COL_MISSING_WARNED = False
+
+
+def _warn_record_col_missing(where: str, exc: Exception) -> None:
+    global _RECORD_COL_MISSING_WARNED  # noqa: PLW0603 - flag di log una-tantum
+    if not _RECORD_COL_MISSING_WARNED:
+        _RECORD_COL_MISSING_WARNED = True
+        logger.warning(
+            "[db] colonna live_follow.record non disponibile (%s): migrazione "
+            "live_follow_record.sql non applicata? Comportamento STORICO "
+            "(registrazione di tutte le partite). Dettaglio: %s",
+            where, str(exc)[:150],
+        )
+
+
 def register_follow(
     event_id: str,
     home_name: str,
@@ -71,8 +88,44 @@ def register_follow(
     league_name: Optional[str] = None,
     league_id: Optional[int] = None,
     status: str = "PENDING",
+    record: Optional[bool] = None,
 ) -> None:
+    """Upsert di un follow. REGISTRAZIONE OPT-IN (17/07):
+
+    * ``record=None`` (default) + ``watchlist_id`` noto → il flag si deduce da
+      ``personal_watchlist.follow_live``: il pulsante storico "Segui live" È la
+      scelta dell'utente di registrare la partita per intero (raw + Replay).
+      Le GIOCATA senza "Segui live" NON registrano.
+    * la colonna ``record`` viene inclusa nell'upsert SOLO quando è True: mai
+      degradare a false un flag acceso da set_follow_record/altri flussi
+      (l'upsert riscriverebbe la scelta dell'utente a ogni ciclo del runner).
+    * FIX flip-flop (review 17/07, HIGH): il record DEDOTTO dalla watchlist
+      vale SOLO per i follow NUOVI — su una riga già esistente la deduzione
+      non viene mai riscritta: un REC spento a mano dall'utente (RPC
+      set_follow_record) restava spento per ~120s e poi il poll della
+      watchlist lo riaccendeva silenziosamente. La scelta manuale VINCE.
+    * FALLBACK: se la colonna non esiste (migrazione non applicata) l'upsert
+      viene ritentato senza ``record`` + warning — mai rompere il runner.
+    """
     sb = get_supabase_client()
+    if record is None and watchlist_id is not None:
+        try:
+            rows = (
+                sb.table("personal_watchlist").select("follow_live")
+                .eq("id", watchlist_id).limit(1).execute().data or []
+            )
+            deduced = bool(rows and rows[0].get("follow_live"))
+            if deduced:
+                # dedotto (non esplicito): applicalo SOLO se il follow non
+                # esiste ancora — mai sovrascrivere un OFF manuale.
+                existing = (
+                    sb.table("live_follow").select("event_id")
+                    .eq("event_id", event_id).limit(1).execute().data or []
+                )
+                record = deduced if not existing else None
+        except Exception as e:  # noqa: BLE001 - il flag non blocca mai il follow
+            logger.debug("[db] lookup follow_live KO per watchlist %s: %s", watchlist_id, e)
+            record = None
     row = {
         "event_id": event_id,
         "fixture_id": fixture_id,
@@ -85,7 +138,36 @@ def register_follow(
         "status": status,
         "updated_at": _now_iso(),
     }
-    sb.table("live_follow").upsert(row, on_conflict="event_id").execute()
+    if record:
+        row["record"] = True
+    try:
+        sb.table("live_follow").upsert(row, on_conflict="event_id").execute()
+    except Exception as e:  # noqa: BLE001 - fallback colonna record assente
+        if "record" not in row:
+            raise
+        _warn_record_col_missing("register_follow", e)
+        row.pop("record", None)
+        sb.table("live_follow").upsert(row, on_conflict="event_id").execute()
+
+
+def get_follow_record(event_id: str) -> Optional[bool]:
+    """Flag ``record`` di un follow: True/False se leggibile, None se ignoto.
+
+    None = colonna assente (migrazione live_follow_record.sql non applicata),
+    riga mancante o errore di rete → il chiamante applica il comportamento
+    STORICO (registra/carica): meglio un upload di troppo che perdere dati.
+    """
+    try:
+        rows = (
+            get_supabase_client().table("live_follow").select("record")
+            .eq("event_id", event_id).limit(1).execute().data or []
+        )
+    except Exception as e:  # noqa: BLE001 - colonna assente o rete KO
+        _warn_record_col_missing("get_follow_record", e)
+        return None
+    if not rows or "record" not in rows[0]:
+        return None
+    return bool(rows[0].get("record"))
 
 
 def set_follow_status(event_id: str, status: str, error_detail: Optional[str] = None) -> None:
@@ -97,15 +179,32 @@ def set_follow_status(event_id: str, status: str, error_detail: Optional[str] = 
     ).eq("event_id", event_id).execute()
 
 
+# Colonne realmente consumate dal runner (review 17/07, carico DB): col worker
+# di aggancio a 2s questa SELECT gira ~43k volte/giorno — payload minimo, non
+# `*`. Il fallback senza `record` serve finché live_follow_record.sql non è
+# applicata (select esplicita su colonna assente = errore PostgREST; la chiave
+# mancante nelle righe attiva il fallback storico del gating, come con `*`).
+_FOLLOW_COLS = "event_id,status,record,open_date,fixture_id"
+_FOLLOW_COLS_LEGACY = "event_id,status,open_date,fixture_id"
+
+
 def list_pending_follows() -> List[Dict[str, Any]]:
     """Partite da agganciare (PENDING o STREAMING non chiuse)."""
     sb = get_supabase_client()
-    resp = (
-        sb.table("live_follow")
-        .select("*")
-        .in_("status", ["PENDING", "STREAMING"])
-        .execute()
-    )
+    try:
+        resp = (
+            sb.table("live_follow")
+            .select(_FOLLOW_COLS)
+            .in_("status", ["PENDING", "STREAMING"])
+            .execute()
+        )
+    except Exception:  # noqa: BLE001 - colonna record assente (migrazione non applicata)
+        resp = (
+            sb.table("live_follow")
+            .select(_FOLLOW_COLS_LEGACY)
+            .in_("status", ["PENDING", "STREAMING"])
+            .execute()
+        )
     return getattr(resp, "data", None) or []
 
 

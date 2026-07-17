@@ -12,6 +12,7 @@ import { DepthPanel } from '@/components/live/DepthPanel';
 import { countdownToOff } from '@/lib/matchClock';
 import {
     followTennisEvent, fetchTennisFollows, fetchTennisNow, subscribeTennisNow,
+    setTennisFollowRecord,
     type TennisLiveNowRow,
 } from '@/lib/tennis';
 
@@ -44,6 +45,11 @@ export default function TennisTerminal() {
     const [now, setNow] = useState<TennisLiveNowRow | null>(null);
     const [openDate, setOpenDate] = useState<string | null>(null);
     const [nowTick, setNowTick] = useState(() => Date.now());
+    // Registrazione OPT-IN per-partita (tennis_live_follow.record): stato del
+    // toggle REC. null = sconosciuto (follow non ancora letto / migrazione assente).
+    const [rec, setRec] = useState<boolean | null>(null);
+    const [recBusy, setRecBusy] = useState(false);
+    const [recError, setRecError] = useState<string | null>(null);
     useEffect(() => {
         if (!eventId) return undefined;
         let alive = true;
@@ -54,10 +60,27 @@ export default function TennisTerminal() {
                 if (!alive) return;
                 const f = rows.find(r => r.event_id === eventId);
                 setOpenDate(f?.open_date ?? null);
+                setRec(typeof f?.record === 'boolean' ? f.record : null);
             })
             .catch(() => {});
         return () => { alive = false; unsub(); };
     }, [eventId]);
+
+    // Toggle REC: chiama la RPC owner-only e riflette lo stato server-side.
+    // Il runner rilegge il flag ogni ~5s: il toggle vale anche a metà partita.
+    const toggleRecord = async () => {
+        if (!eventId || recBusy) return;
+        setRecBusy(true);
+        setRecError(null);
+        try {
+            const res = await setTennisFollowRecord(eventId, !(rec ?? false));
+            setRec(Boolean(res?.record));
+        } catch (e) {
+            setRecError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setRecBusy(false);
+        }
+    };
     useEffect(() => {
         const t = setInterval(() => setNowTick(Date.now()), 1000);
         return () => clearInterval(t);
@@ -152,6 +175,34 @@ export default function TennisTerminal() {
                     >
                         {orderMode === 'LIVE' ? 'LIVE · REALE' : orderMode === 'PAPER' ? 'PAPER · SIMULATO' : 'ORDINI OFF'}
                     </span>
+                    {/* Registrazione OPT-IN per-partita: toggle REC (raw nativo su file,
+                        consumabile dai lab/backtest tennis). Stato dal DB, per-evento. */}
+                    <button
+                        type="button"
+                        onClick={toggleRecord}
+                        disabled={recBusy}
+                        aria-pressed={rec === true}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-black inline-flex items-center gap-1 transition-colors ${
+                            rec === true
+                                ? 'bg-red-600 text-white'
+                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        } ${recBusy ? 'opacity-60 cursor-wait' : ''}`}
+                        title={recError
+                            ? `Registrazione: errore — ${recError}`
+                            : rec === true
+                                ? 'Registrazione ATTIVA: il runner salva il raw nativo (.raw.jsonl + .score.jsonl) di questa partita. Clic per fermare.'
+                                : 'Registra questa partita: raw nativo su file per backtest/lab (scelta per-partita). Clic per avviare.'}
+                    >
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                            rec === true ? 'bg-white animate-pulse' : 'bg-red-500'
+                        }`} />
+                        {recBusy ? 'REC…' : rec === true ? 'REC ON' : 'REC'}
+                    </button>
+                    {recError && (
+                        <span className="text-[10px] text-red-400 font-mono" title={recError}>
+                            REC KO
+                        </span>
+                    )}
                     <span className="ml-auto text-[10px] text-muted-foreground font-mono">
                         event {eventId} · market {marketId}
                     </span>

@@ -359,6 +359,9 @@ def test_cross_mode_row_rejected_without_dispatch(monkeypatch):
 
 def test_same_mode_row_is_dispatched(monkeypatch):
     monkeypatch.setenv("TENNIS_LIVE_ORDER_MODE", "PAPER")
+    # split-throttle 17/07: la coda DB e' throttlata da un globale di
+    # modulo — azzerato qui, il test verifica il dispatch non il throttle
+    monkeypatch.setattr(tow, "_last_db_queue_poll", 0.0)
     done, dispatched = [], []
     monkeypatch.setattr(tow.tennis_db, "list_pending_tennis_orders", lambda limit=5: [
         {"id": 8, "payload": {"action": "place", "mode": "paper", "market_id": "1.1",
@@ -467,3 +470,28 @@ def test_capture_strategy_disables_hidden_flumine_caps():
     assert s.max_selection_exposure is None    # era 100
     assert s.max_live_trade_count >= 10**9     # era 1 (un ordine vivo per selezione)
     assert s.max_trade_count >= 10**9
+
+
+def test_instantiate_bot_carry_over_stats_dopo_restart():
+    """Fix 17/07 (incongruenza dal monitor): il restart del framework
+    re-istanzia i bot — le stats accumulate della PARTITA (dal control row)
+    vanno riprese, non azzerate. Solo le chiavi numeriche già note alla
+    strategia; il riarmo esplicito resetta comunque (arm scrive stats=NULL)."""
+    df = streaming_market_data_filter(fields=["EX_BEST_OFFERS"], ladder_levels=3)
+    prev = {"orders_placed": 7, "pnl_locked": -0.17, "roundtrips": 2,
+            "chiave_ignota": 99, "greens_inplay": "sporca"}
+    bot = tennis_runner._instantiate_bot(
+        "tennis_scalper", {"stake": 2.0, "params": {}, "stats": prev},
+        "1.100", {}, lambda *a, **k: None, df, "PAPER",
+    )
+    assert bot.stats["orders_placed"] == 7
+    assert bot.stats["pnl_locked"] == -0.17
+    assert bot.stats["roundtrips"] == 2
+    assert "chiave_ignota" not in bot.stats          # mai chiavi estranee
+    assert bot.stats["greens_inplay"] == 0           # valore sporco ignorato
+    # riarmo esplicito: stats NULL → si riparte puliti
+    bot2 = tennis_runner._instantiate_bot(
+        "tennis_scalper", {"stake": 2.0, "params": {}, "stats": None},
+        "1.100", {}, lambda *a, **k: None, df, "PAPER",
+    )
+    assert bot2.stats["orders_placed"] == 0

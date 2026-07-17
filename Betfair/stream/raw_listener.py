@@ -16,7 +16,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from betfairlightweight import StreamListener
 from flumine.streams.marketstream import MarketStream
@@ -31,6 +31,12 @@ class _RawState:
         self.dir: Optional[str] = None
         self.market_to_event: Dict[str, str] = {}
         self.enabled: bool = False
+        # REGISTRAZIONE OPT-IN (17/07, cantiere "Segui live"): set degli
+        # event_id con live_follow.record=true → SOLO questi finiscono nel tee
+        # raw. None = NESSUN gating (comportamento storico: registra tutto) —
+        # è il fallback quando la migrazione live_follow_record.sql non è
+        # applicata (colonna assente) e il default dei runner tennis.
+        self.record_events: Optional[Set[str]] = None
         self._files: Dict[str, Any] = {}
         self._lock = threading.Lock()
         # HEARTBEAT "recorder vivo" (fix 11/07, lezione 10/07: tee morto in
@@ -45,17 +51,53 @@ class _RawState:
         # distingue un mercato quieto (heartbeat freschi, dati fermi) da uno
         # stream morto (nessun messaggio di alcun tipo). 0 = mai visto.
         self.last_heartbeat_ms: int = 0
+        # BATTITO DATI (opt-in 17/07): pt dell'ultimo messaggio mcm CON market
+        # change visto, A PRESCINDERE dal gating record. Con la registrazione
+        # opt-in la maggior parte delle partite NON scrive raw: il rilevamento
+        # stallo del runner deve misurare la salute dello STREAM, non quante
+        # partite registriamo — altrimenti restart a raffica su stream sani.
+        self.last_data_ms: int = 0
 
-    def configure(self, data_dir: str, market_to_event: Dict[str, str], enabled: bool) -> None:
+    def configure(
+        self,
+        data_dir: str,
+        market_to_event: Dict[str, str],
+        enabled: bool,
+        record_events: Optional[Set[str]] = None,
+    ) -> None:
         self.dir = data_dir
         self.market_to_event = market_to_event  # riferimento vivo (aggiornato dal runner)
         self.enabled = enabled
+        # gating opt-in: copia difensiva; None = registra tutto (storico/tennis)
+        self.record_events = set(record_events) if record_events is not None else None
         # reset dei contatori di salute a ogni (ri)configurazione (review 16/07):
         # il singleton sopravvive ai restart della subscription — senza reset,
         # dopo un rebuild lo "stall" veniva misurato sui timestamp della vita
         # precedente e uno stream sano-ma-quieto rischiava un re-restart inutile.
         self.last_write_ms = {}
         self.last_heartbeat_ms = 0
+        self.last_data_ms = 0
+
+    def set_record_events(self, record_events: Optional[Set[str]]) -> None:
+        """Aggiorna il set degli eventi in REGISTRAZIONE (chiamato dal runner a
+        ogni risincronizzazione dei follow): un click su "Segui live" a partita
+        in corso fa entrare l'evento nel set → il tee inizia a scrivere da quel
+        momento. None = gating disattivato (colonna record assente).
+
+        MARKER FORENSE (review 17/07): ogni toggle ON/OFF lascia una riga
+        ``record_toggle`` nel sidecar .recmeta.jsonl — un buco nel raw causato
+        da uno spegni/riaccendi DELIBERATO è spiegato, non un mistero."""
+        with self._lock:
+            old = self.record_events
+            new = set(record_events) if record_events is not None else None
+            self.record_events = new
+        if old is None or new is None or old == new:
+            return
+        ts = int(time.time() * 1000)
+        for ev in new - old:
+            self._write_meta(ev, {"kind": "record_toggle", "on": True, "ts_ms": ts})
+        for ev in old - new:
+            self._write_meta(ev, {"kind": "record_toggle", "on": False, "ts_ms": ts})
 
     def file_for(self, event_id: str) -> Any:
         fh = self._files.get(event_id)
@@ -100,6 +142,7 @@ class _RawState:
                 "bytes": dict(self.bytes_written),
                 "last_write_ms": dict(self.last_write_ms),
                 "last_heartbeat_ms": self.last_heartbeat_ms,
+                "last_data_ms": self.last_data_ms,
                 "write_errors": self.write_errors,
             }
 
@@ -126,12 +169,29 @@ class _RawState:
         mc = msg.get("mc")
         if not mc:
             return
+        # BATTITO DATI + snapshot del gating (opt-in 17/07): il battito va
+        # aggiornato PRIMA dello scarto record — prova che lo stream è vivo
+        # anche quando nessuna partita è in registrazione.
+        pt_msg = msg.get("pt")
+        with self._lock:
+            self.last_data_ms = (
+                int(pt_msg) if isinstance(pt_msg, (int, float)) else int(time.time() * 1000)
+            )
+            rec = None if self.record_events is None else set(self.record_events)
         # raggruppa i market change per evento e scrive un messaggio mcm valido per file
         by_event: Dict[str, list] = {}
         for change in mc:
             mid = change.get("id")
             ev = self.market_to_event.get(mid, "_unrouted")
             by_event.setdefault(ev, []).append(change)
+        # REGISTRAZIONE OPT-IN: gli eventi SENZA "Segui live" (record=false)
+        # vengono scartati QUI, prima di aprire/scrivere qualunque file — per
+        # loro niente raw, niente directory, niente byte su disco. rec=None =
+        # gating disattivato (colonna assente/tennis) → si registra tutto.
+        if rec is not None:
+            by_event = {ev: changes for ev, changes in by_event.items() if ev in rec}
+            if not by_event:
+                return
         with self._lock:
             for ev, changes in by_event.items():
                 out = {k: msg[k] for k in ("op", "clk", "pt", "ct") if k in msg}
@@ -179,6 +239,11 @@ class _RawState:
         ts = int(time.time() * 1000)
         with self._lock:
             events = set(self._files.keys()) | set(self.market_to_event.values())
+            # opt-in 17/07: il marker riguarda solo gli eventi IN registrazione
+            # (o con un file già aperto) — mai creare sidecar/directory per
+            # partite che per scelta non vengono registrate.
+            if self.record_events is not None:
+                events = {e for e in events if e in self.record_events or e in self._files}
             for ev in sorted(events):
                 self._write_meta(ev, {
                     "kind": "resubscribe",
@@ -209,8 +274,13 @@ class _RawState:
 RAW_STATE = _RawState()
 
 
-def configure_raw(data_dir: str, market_to_event: Dict[str, str], enabled: bool) -> None:
-    RAW_STATE.configure(data_dir, market_to_event, enabled)
+def configure_raw(
+    data_dir: str,
+    market_to_event: Dict[str, str],
+    enabled: bool,
+    record_events: Optional[Set[str]] = None,
+) -> None:
+    RAW_STATE.configure(data_dir, market_to_event, enabled, record_events)
 
 
 def close_raw() -> None:

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronLeft, Radio, AlertTriangle, History, Banknote, Loader2, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, Radio, AlertTriangle, History, Banknote, Loader2, ShieldAlert, CircleDot } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -47,10 +47,12 @@ import {
     type WorkspaceLayout,
 } from '@/lib/workspace';
 import {
-    fetchLiveFollows, fetchLiveNow, subscribeLiveNow, fetchLiveLadder, subscribeLiveLadder,
+    fetchLiveFollows, fetchLiveNow, subscribeLiveNow, subscribeLiveFollowEvent,
+    fetchLiveLadder, subscribeLiveLadder,
     fetchLiveSignals, subscribeLiveSignals,
     type LiveFollow, type LiveNowRow, type LiveNowMarket, type LiveSignalsRow,
 } from '@/lib/live';
+import { setFollowRecord } from '@/lib/omegaMissions';
 
 // ---- CANALE LOCALE (app desktop, latenza ~0) ----
 // Wrapper dei DEFAULT calcio (le stesse funzioni di LadderView): quando il canale
@@ -843,6 +845,55 @@ function LiveTradingSection({ markets, orderMode, eventName, eventId, updatedAt,
     );
 }
 
+// ---- Progresso di AGGANCIO (fix 17/07 "Trading = streaming immediato") ----
+// Mostra lo stato REALE del percorso click→ladder (richiesta registrata →
+// aggancio stream → primo dato ladder): l'attesa — ora di pochi secondi — non
+// deve mai sembrare un sistema morto. stage = passo ATTIVO (i precedenti sono ✓).
+function AttachProgress({ stage, error }: { stage: 1 | 2 | 3; error?: string | null }) {
+    const steps = ['Richiesta registrata', 'Aggancio stream (runner)', 'Primo dato ladder'];
+    return (
+        <Card className="glass-card border-secondary/30 p-4 mb-4">
+            <div className="flex items-center gap-4 flex-wrap text-sm">
+                {steps.map((label, i) => {
+                    const idx = (i + 1) as 1 | 2 | 3;
+                    const done = idx < stage;
+                    const active = idx === stage;
+                    return (
+                        <span
+                            key={label}
+                            className={`flex items-center gap-1.5 font-medium ${
+                                done ? 'text-emerald-300' : active ? 'text-secondary' : 'text-muted-foreground/50'
+                            }`}
+                        >
+                            {done
+                                ? <CheckCircle2 className="w-4 h-4" />
+                                : active && !error
+                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                    : active
+                                        ? <AlertTriangle className="w-4 h-4 text-red-400" />
+                                        : <span className="w-4 h-4 inline-flex items-center justify-center rounded-full border border-white/15 text-[9px]">{idx}</span>}
+                            {label}
+                        </span>
+                    );
+                })}
+            </div>
+            {error ? (
+                <p className="text-xs text-red-400 mt-2">Errore dal runner: {error}</p>
+            ) : (
+                <p className="text-xs text-muted-foreground mt-2">
+                    Il ladder si aggancia da solo appena arriva il primo dato (di norma pochi secondi).
+                    Se resta fermo a lungo: verifica che il runner sia acceso (chip ♥ runner in top bar)
+                    {stage === 2 && <>
+                        {' '}oppure c'è un'<b>esposizione aperta su un'altra partita</b> (ordini vivi
+                        o regole di rischio armate): per sicurezza il runner NON riaggancia lo stream
+                        finché non è flat — controlla il pannello Alert (avviso NEW_MATCHES).
+                    </>}
+                </p>
+            )}
+        </Card>
+    );
+}
+
 export default function SeguiLive() {
     const [follows, setFollows] = useState<LiveFollow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -874,19 +925,60 @@ export default function SeguiLive() {
         }
     }, [follows]);
 
-    // --- lista: caricamento + refetch ogni 15s come backup al realtime ---
+    // --- lista: caricamento immediato + poll 15s come BACKUP (fix 17/07:
+    // l'aggancio vero è REALTIME — vedi effetto watchedEventId — il poll resta
+    // solo come rete di sicurezza, es. migrazione realtime non ancora applicata) ---
+    const aliveRef = useRef(true);
     useEffect(() => {
-        let alive = true;
-        const load = () => {
-            fetchLiveFollows()
-                .then(rows => { if (alive) { setFollows(rows); setError(null); } })
-                .catch(e => { if (alive) setError(e?.message ?? 'errore sconosciuto'); })
-                .finally(() => { if (alive) setLoading(false); });
-        };
-        load();
-        const id = setInterval(load, 15000);
-        return () => { alive = false; clearInterval(id); };
+        aliveRef.current = true;
+        return () => { aliveRef.current = false; };
     }, []);
+    const reloadFollows = useCallback(() => {
+        fetchLiveFollows()
+            .then(rows => { if (aliveRef.current) { setFollows(rows); setError(null); } })
+            .catch(e => { if (aliveRef.current) setError(e?.message ?? 'errore sconosciuto'); })
+            .finally(() => { if (aliveRef.current) setLoading(false); });
+    }, []);
+    useEffect(() => {
+        reloadFollows();
+        const id = setInterval(reloadFollows, 15000);
+        return () => clearInterval(id);
+    }, [reloadFollows]);
+
+    // ---- REGISTRAZIONE OPT-IN (17/07): il flusso storico "Segui live"
+    // (watchlist → runner) registra già di suo (record=true); questo toggle
+    // REC permette di accendere/spegnere la registrazione anche a partita in
+    // corso (es. partita arrivata dal deep-link Omega "Trading", record=false).
+    // Stato dal follow (get_live_follows espone 'record' dopo la migrazione
+    // live_follow_record.sql) + override locale ottimista dopo il toggle.
+    const [recBusy, setRecBusy] = useState(false);
+    const [recLocal, setRecLocal] = useState<boolean | null>(null);
+    useEffect(() => { setRecLocal(null); }, [selected?.event_id]);
+    const recActive = useMemo(() => {
+        if (recLocal !== null) return recLocal;
+        const row = follows.find(f => f.event_id === selected?.event_id) ?? selected;
+        return Boolean((row as (LiveFollow & { record?: boolean }) | null)?.record);
+    }, [recLocal, follows, selected]);
+    const toggleRec = async () => {
+        if (!selected || recBusy) return;
+        setRecBusy(true);
+        try {
+            const next = !recActive;
+            await setFollowRecord(selected.event_id, next);
+            setRecLocal(next);
+            if (next) {
+                toast.success('Registrazione attivata', {
+                    description: 'La partita viene registrata per intero e a fine gara caricata nel Match Replay.',
+                });
+            } else {
+                toast('Registrazione disattivata', {
+                    description: 'Streaming e trading proseguono; niente raw né upload nel Replay.',
+                });
+            }
+        } catch (e) {
+            toast.error('Toggle registrazione fallito', { description: String((e as Error)?.message ?? e) });
+        } finally { setRecBusy(false); }
+    };
 
     // --- dettaglio: snapshot iniziale + sottoscrizione realtime a live_now ---
     useEffect(() => {
@@ -930,6 +1022,51 @@ export default function SeguiLive() {
         });
         return unsub;
     }, [selected]);
+
+    // --- AGGANCIO REALTIME (fix 17/07 "Trading = streaming immediato") ---
+    // Finché l'evento richiesto/selezionato non ha ancora mercati in live_now,
+    // sottoscriviamo in realtime:
+    //   * live_follow (stato PENDING→STREAMING, come le richieste backtest):
+    //     ogni cambio → refetch IMMEDIATO della lista → auto-select/refresh;
+    //   * live_now dello stesso evento: il PRIMO stato scritto dal runner monta
+    //     subito il terminal (funziona anche prima della migrazione realtime di
+    //     live_follow, perché live_now è già nella publication).
+    // Il poll 15s resta come backup. Fetch immediato all'attivazione (pattern
+    // del fix BacktestAutomatico): il realtime notifica solo i CAMBI futuri —
+    // un follow già STREAMING all'arrivo va visto subito, senza attese.
+    const hasMarkets = (liveNow?.state?.markets?.length ?? 0) > 0;
+    const watchedEventId = pendingEvent ?? (selected && !hasMarkets ? selected.event_id : null);
+    const selectedIdRef = useRef<string | null>(null);
+    useEffect(() => { selectedIdRef.current = selected?.event_id ?? null; }, [selected]);
+    useEffect(() => {
+        if (!watchedEventId) return undefined;
+        reloadFollows();
+        const unsubFollow = subscribeLiveFollowEvent(watchedEventId, () => { reloadFollows(); });
+        // DEDUP canali (review 17/07): se l'evento osservato è GIÀ quello
+        // selezionato, il live_now è già sottoscritto dall'effetto del
+        // dettaglio — aprirne un secondo raddoppiava canali e fetch proprio
+        // nella finestra calda dell'aggancio. Qui si sottoscrive solo per il
+        // caso "pending senza selezione".
+        const needNowSub = selectedIdRef.current !== watchedEventId;
+        const unsubNow = needNowSub
+            ? subscribeLiveNow(watchedEventId, (row) => {
+                if (!row) return;
+                // merge in liveNow SOLO se l'evento osservato è quello selezionato
+                // (l'utente può aver aperto manualmente un'altra partita nel frattempo)
+                if (selectedIdRef.current === watchedEventId) {
+                    setLiveNow(prev => newerLiveNow(prev, row));
+                }
+                reloadFollows();
+            })
+            : null;
+        return () => { unsubFollow(); unsubNow?.(); };
+    }, [watchedEventId, reloadFollows]);
+
+    // stato FRESCO del follow selezionato (dalla lista, aggiornata via realtime/poll):
+    // `selected` è uno snapshot al click e non seguirebbe PENDING→STREAMING.
+    const selectedRow = selected
+        ? (follows.find(f => f.event_id === selected.event_id) ?? selected)
+        : null;
 
     return (
         <div className="min-h-screen bg-background relative pb-24">
@@ -997,6 +1134,23 @@ export default function SeguiLive() {
                             </Button>
                         )}
                         {selected && (
+                            <Button
+                                variant="outline" size="sm" disabled={recBusy}
+                                onClick={() => void toggleRec()}
+                                title={recActive
+                                    ? 'Registrazione ATTIVA: la partita sarà caricata nel Match Replay a fine gara — clic per spegnere'
+                                    : 'Registra la partita per intero (raw + Match Replay a fine gara)'}
+                                className={recActive
+                                    ? 'border-red-500/40 text-red-300 hover:bg-red-500/10'
+                                    : 'border-white/10 text-muted-foreground hover:text-white'}
+                            >
+                                {recBusy
+                                    ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                    : <CircleDot className={`w-4 h-4 mr-1 ${recActive ? 'text-red-400 animate-pulse' : ''}`} />}
+                                {recActive ? 'REC' : 'Registra'}
+                            </Button>
+                        )}
+                        {selected && (
                             <Button variant="outline" size="sm" onClick={() => setSelected(null)}
                                 className="border-white/10 text-muted-foreground hover:text-white">
                                 <ChevronLeft className="w-4 h-4 mr-1" /> Tutte le partite
@@ -1005,13 +1159,11 @@ export default function SeguiLive() {
                     </div>
                 </div>
 
-                {/* deep-link da Omega: il follow è appena stato registrato e lo stream
-                    parte in PENDING — avvisa finché l'evento non compare nella lista */}
+                {/* deep-link da Omega: il follow è appena stato registrato (PENDING) —
+                    progresso REALE finché l'evento non compare nella lista (realtime
+                    su live_follow + fetch immediato; il poll 15s è solo backup) */}
                 {pendingEvent && !selected && !loading && (
-                    <Card className="glass-card border-secondary/30 p-4 mb-4 flex items-center gap-2 text-sm text-secondary">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        In attesa dello stream per la partita richiesta da Omega… si aprirà da sola appena disponibile.
-                    </Card>
+                    <AttachProgress stage={1} />
                 )}
 
                 {error && (
@@ -1035,6 +1187,20 @@ export default function SeguiLive() {
                             </div>
                         ) : (
                             <>
+                                {/* progresso di aggancio (fix 17/07): partita selezionata ma
+                                    ladder non ancora vivo → mostra a che punto siamo davvero
+                                    (PENDING = runner deve agganciare; STREAMING = primo dato
+                                    in arrivo; ERROR = dettaglio errore). Sparisce da solo al
+                                    primo stato con mercati. */}
+                                {!hasMarkets && selectedRow
+                                    && ['PENDING', 'STREAMING', 'ERROR'].includes(selectedRow.status) && (
+                                    <AttachProgress
+                                        stage={selectedRow.status === 'STREAMING' ? 3 : 2}
+                                        error={selectedRow.status === 'ERROR'
+                                            ? (selectedRow.error_detail ?? 'errore sconosciuto')
+                                            : null}
+                                    />
+                                )}
                                 {/* ---- TRADING TERMINAL (stessa fonte: live_now) ---- */}
                                 {liveNow?.state?.markets && liveNow.state.markets.length > 0 && (
                                     <LiveTradingSection

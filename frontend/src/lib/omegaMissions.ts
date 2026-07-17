@@ -105,6 +105,11 @@ export interface MissionRow {
     legs: MissionLegs | null;
     scalper: MissionScalper | null;
     followed: boolean;
+    /** Registrazione OPT-IN (17/07): live_follow.record=true → il runner
+     *  registra il raw per intero e a fine partita carica il Replay.
+     *  Opzionale: assente finché la migrazione live_follow_record.sql
+     *  non è applicata (in quel caso la UI la tratta come false). */
+    recording?: boolean;
 }
 
 export interface MissionsSummary {
@@ -154,6 +159,18 @@ export async function followMission(
     if (error) throw new Error(error.message);
     const d = (data ?? {}) as Partial<{ followed: boolean; already: boolean }>;
     return { followed: d.followed === true, already: d.already === true };
+}
+
+// Registrazione OPT-IN (17/07): accende/spegne la registrazione raw + upload
+// Replay su un follow ESISTENTE (RPC set_follow_record, owner-only). Il runner
+// rilegge i follow periodicamente: un toggle a partita in corso fa partire la
+// registrazione da quel momento. Richiede la migrazione live_follow_record.sql.
+export async function setFollowRecord(eventId: string, record: boolean): Promise<void> {
+    const { error } = await supabase.rpc('set_follow_record', {
+        p_event_id: eventId,
+        p_record: record,
+    });
+    if (error) throw new Error(error.message);
 }
 
 export async function fetchMissions(): Promise<MissionsPayload> {

@@ -108,7 +108,23 @@ SIGNALS_KEEPALIVE_SEC: float = float(os.getenv("LIVE_SIGNALS_KEEPALIVE_SEC", "60
 # ----------------------------------------------------------------------------
 # Sottoscrizione automatica (F3)
 # ----------------------------------------------------------------------------
+# Cadenza della risoluzione watchlist→eventi Betfair (resolve_and_register:
+# REST listEvents + matcher — PESANTE). Dal fix 17/07 "Trading = streaming
+# immediato" NON è più l'intervallo del subscription_worker: è il throttle
+# interno della sola parte REST.
 WATCHLIST_POLL_SEC: float = float(os.getenv("LIVE_WATCHLIST_POLL_SEC", "120"))
+# Cadenza del subscription_worker per il CHECK dei nuovi follow (SELECT leggera
+# su live_follow, zero chiamate Betfair). Bassa = il click "Trading"/"Segui live"
+# viene visto entro ~2s invece che fino a 120s (fix 17/07: prima l'intervallo
+# del worker era WATCHLIST_POLL_SEC e dominava la latenza click→ladder).
+SUB_WORKER_POLL_SEC: float = float(os.getenv("LIVE_SUB_WORKER_POLL_SEC", "2.0"))
+# Minimo ASSOLUTO tra due rebuild della subscription, valido ANCHE per il bypass
+# primo-aggancio (anti-loop: mai rebuild back-to-back, qualunque sia il motivo).
+FIRST_ATTACH_MIN_INTERVAL_SEC: float = float(
+    os.getenv("LIVE_FIRST_ATTACH_MIN_INTERVAL_SEC", "8.0"))
+# Attesa del main loop in idle keep-alive (desktop) tra i check dei follow:
+# anche a runner "vuoto" il click Trading deve agganciare in ~2s (era 15s).
+IDLE_FOLLOW_POLL_SEC: float = float(os.getenv("LIVE_IDLE_FOLLOW_POLL_SEC", "2.0"))
 RESUBSCRIBE_DEBOUNCE_SEC: float = float(os.getenv("LIVE_RESUBSCRIBE_DEBOUNCE_SEC", "20"))
 MIN_RESUBSCRIBE_INTERVAL_SEC: float = float(os.getenv("LIVE_MIN_RESUBSCRIBE_INTERVAL_SEC", "60"))
 

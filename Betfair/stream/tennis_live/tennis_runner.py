@@ -59,6 +59,7 @@ from ..tennis_scalper.tennis_swing_bot import TennisSwingStrategy
 from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
+from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ LADDER_WOM_LEVELS = int(os.getenv("TENNIS_LADDER_WOM_LEVELS", "3"))
 LADDER_PUBLISH_SEC = float(os.getenv("TENNIS_LADDER_PUBLISH_SEC", "2.0"))
 SCORE_POLL_SEC = float(os.getenv("TENNIS_SCORE_POLL_SEC", "2.0"))
 BOT_CONTROL_POLL_SEC = float(os.getenv("TENNIS_BOT_CONTROL_POLL_SEC", "3.0"))
+RECORD_POLL_SEC = float(os.getenv("TENNIS_RECORD_POLL_SEC", "5.0"))
 FOLLOW_POLL_SEC = float(os.getenv("TENNIS_FOLLOW_POLL_SEC", "20.0"))
 ORDER_POLL_SEC = float(os.getenv("TENNIS_ORDER_POLL_SEC", "1.0"))
 STREAM_CONFLATE_MS = int(os.getenv("TENNIS_STREAM_CONFLATE_MS", "0"))
@@ -375,8 +377,17 @@ def _make_capture(market_id: str, event_id: str) -> Any:
     # STRATEGY_EXPOSURE, visto dal vivo su Fery v Zverev). Gli ordini MANUALI del
     # terminal si agganciano a QUESTA strategy → i default vanno disattivati; le
     # protezioni vere restano ai cap espliciti del build (max_stake) e ai limiti bot.
+    # REGISTRAZIONE OPT-IN (17/07): lo stream della capture usa il MarketStream
+    # tennis col tee del raw nativo (tennis_recorder). Il tee è NO-OP finché
+    # nessun evento ha record=true (fast-path nel listener): zero impatto sulle
+    # partite non registrate. STREAM UNICO preservato: la capture è aggiunta al
+    # framework PRIMA dei bot e flumine fonde i bot (stream_class di default
+    # MarketStream) nella stessa stream via isinstance(stream, strategy.
+    # stream_class) — TennisRecMarketStream È un MarketStream; la verifica
+    # stream_ids nel build lo certifica a ogni riavvio.
     return _Capture(
         market_filter=streaming_market_filter(market_ids=[market_id]),
+        stream_class=TennisRecMarketStream,
         max_order_exposure=None,
         max_selection_exposure=None,
         max_trade_count=int(1e9),
@@ -578,7 +589,21 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     }
     if needs_names:
         kwargs["name_to_sel"] = name_to_sel
-    return cls(**kwargs)
+    strat = cls(**kwargs)
+    # CARRY-OVER delle stats (fix 17/07, incongruenza trovata dal monitor):
+    # un restart del framework RE-ISTANZIA i bot e l'heartbeat sovrascriveva
+    # le stats del control con ZERI — il P&L già fatto nel match spariva dal
+    # pannello (restava solo nel log attività). Le stats accumulate della
+    # PARTITA si riprendono dal control row (stessa chiave = stessa metrica).
+    # Il RIARMO esplicito resetta comunque: la RPC arm scrive stats=NULL.
+    prev = control.get("stats")
+    st = getattr(strat, "stats", None)
+    if isinstance(prev, dict) and isinstance(st, dict):
+        for k, v in prev.items():
+            if (k in st and isinstance(v, (int, float))
+                    and isinstance(st.get(k), (int, float))):
+                st[k] = v
+    return strat
 
 
 def _disable_strategy(strat: Any) -> None:
@@ -975,6 +1000,14 @@ def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession
                 session.points_deque(event_id).append(evt)
         session.last_score[event_id] = ts
 
+        # REGISTRAZIONE OPT-IN: tee del punteggio sincronizzato (.score.jsonl,
+        # formato record_multi) SOLO se l'evento ha record=true. Best-effort e
+        # dedup sulla score key dentro al tee: mai rompere il worker.
+        try:
+            RAW_TEE.write_score(event_id, ts)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-rec] score tee KO %s: %s", event_id, e)
+
         state, inplay, status = _build_now_state(session, event_id)
         score_state = tennis_score_state(ts)
         points = list(session.points_deque(event_id))
@@ -1231,6 +1264,20 @@ def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) ->
     _stop_framework(flumine)
 
 
+def record_flag_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
+    """REGISTRAZIONE OPT-IN per-partita (17/07): rilegge periodicamente il flag
+    ``record`` da ``tennis_live_follow`` e allinea il tee raw (tennis_recorder).
+    Rilettura periodica = il toggle A META' PARTITA funziona senza riavviare lo
+    stream. Colonna assente (migrazione non applicata) → nessuna registrazione
+    + warning una tantum dentro ``sync_record_flags``; DB KO → no-op."""
+    try:
+        follows = tennis_db.list_pending_tennis_follows()
+    except Exception as e:  # noqa: BLE001 - il gating non rompe mai il runner
+        logger.debug("[tennis-rec] lettura follow KO (ignorata): %s", e)
+        return
+    sync_record_flags(follows, session.market_meta)
+
+
 def follow_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     try:
         follows = tennis_db.list_pending_tennis_follows()
@@ -1341,12 +1388,19 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 follows = [f for f in follows if f["event_id"] == only_event]
             if not follows:
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+                    # PARITÀ COL CALCIO (review 17/07, "Trading immediato"):
+                    # l'attesa idle era 15s fissi — un follow tennis nuovo
+                    # poteva aspettare fino a 15s prima dell'aggancio. Default
+                    # 2s (SELECT leggera), env per tarare.
+                    _idle_s = float(os.getenv("TENNIS_IDLE_FOLLOW_POLL_SEC", "2.0")) or 2.0
                     logger.info("[tennis-runner] nessun evento: attendo (keep-alive desktop).")
-                    time.sleep(15)
+                    time.sleep(_idle_s)
                     # sessione .it: keepAlive ogni ~8 min o scade per inattività
+                    # (soglia in CICLI derivata dallo sleep: ~480s reali).
+                    _ka_every = max(1, int(480.0 / _idle_s))
                     _ka = getattr(session, "_idle_ka_count", 0) + 1
                     session._idle_ka_count = _ka
-                    if _ka % 32 == 0:
+                    if _ka % _ka_every == 0:
                         try:
                             from ..auth import keep_alive as _bf_keep_alive
                             _bf_keep_alive(session.trading)
@@ -1426,6 +1480,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             framework.add_worker(BackgroundWorker(
                 framework, function=bot_control_worker, interval=BOT_CONTROL_POLL_SEC or 3.0,
                 func_kwargs={"session": session}, name="tennis_bot_control"))
+            # registrazione opt-in per-partita: allinea il tee raw al flag `record`
+            framework.add_worker(BackgroundWorker(
+                framework, function=record_flag_worker, interval=RECORD_POLL_SEC or 5.0,
+                func_kwargs={"session": session}, name="tennis_record"))
             if orders_enabled:
                 from .tennis_live_order_worker import (
                     positions_worker,
@@ -1473,6 +1531,10 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
                 continue
             break
     finally:
+        try:
+            RAW_TEE.close()  # chiusura pulita dei file di registrazione (best-effort)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[tennis-rec] close KO (ignorato): %s", e)
         safe_logout(trading)
     return sorted(session.market_meta.keys())
 

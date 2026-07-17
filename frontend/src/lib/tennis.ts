@@ -153,6 +153,9 @@ export interface TennisFollow {
     open_date: string;
     status: TennisFollowStatus;
     error_detail: string | null;
+    /** registrazione opt-in per-partita (migrations/tennis_follow_record.sql);
+     *  assente/null se la migrazione non è ancora applicata = non registra */
+    record?: boolean | null;
     inplay: boolean | null;
     /** stato punteggio serializzato (vedi TennisScoreState) */
     score: TennisScoreState | null;
@@ -180,6 +183,24 @@ export async function followTennisEvent(eventId: string, marketId: string): Prom
     });
     if (error) throw new Error(error.message);
     return data as unknown as TennisFollow;
+}
+
+/**
+ * Registrazione OPT-IN per-partita: accende/spegne la registrazione del raw
+ * nativo (.raw.jsonl + .score.jsonl, consumabile dai lab tennis) per un evento
+ * SEGUITO. Il runner rilegge il flag periodicamente: il toggle funziona anche a
+ * metà partita. tennis_set_follow_record(p_event_id, p_record) -> { record, ... }
+ */
+export async function setTennisFollowRecord(
+    eventId: string,
+    record: boolean,
+): Promise<{ event_id: string; record: boolean }> {
+    const { data, error } = await supabase.rpc('tennis_set_follow_record', {
+        p_event_id: eventId,
+        p_record: record,
+    });
+    if (error) throw new Error(error.message);
+    return data as unknown as { event_id: string; record: boolean };
 }
 
 // ---------------------------------------------------- tennis_live_now (realtime)

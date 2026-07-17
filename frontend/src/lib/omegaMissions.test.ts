@@ -188,6 +188,26 @@ const MISSION: MissionRow = {
     followed: true,
 };
 
+describe('setFollowRecord (registrazione opt-in 17/07)', () => {
+    beforeEach(() => { vi.clearAllMocks(); });
+
+    it('chiama la RPC set_follow_record con event_id e flag', async () => {
+        rpcMock.mockResolvedValue({ data: { event_id: 'E1', record: true }, error: null });
+        const { setFollowRecord } = await import('./omegaMissions');
+        await setFollowRecord('E1', true);
+        expect(rpcMock).toHaveBeenCalledWith('set_follow_record', {
+            p_event_id: 'E1',
+            p_record: true,
+        });
+    });
+
+    it('propaga gli errori RPC (es. migrazione non applicata / follow assente)', async () => {
+        rpcMock.mockResolvedValue({ data: null, error: { message: 'follow inesistente' } });
+        const { setFollowRecord } = await import('./omegaMissions');
+        await expect(setFollowRecord('E1', false)).rejects.toThrow('follow inesistente');
+    });
+});
+
 describe('MissionPanel (render minimo)', () => {
     beforeEach(() => {
         vi.clearAllMocks();

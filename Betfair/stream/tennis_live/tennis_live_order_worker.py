@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -1110,13 +1111,27 @@ def _process_local_requests(flumine: Any, session: Any, runner_mode_l: str) -> N
                 pass
 
 
+# SPLIT-THROTTLE (audit latenza 17/07, parità col calcio): il drain del canale
+# LOCALE (desktop, in-memory) gira a OGNI tick del worker — è lui che dà la
+# reattività al click (0.15s con l'env dell'exe); la lettura della coda su DB
+# (fallback browser esterni) resta throttlata a ~1s, così abbassare il tick
+# NON moltiplica le query Supabase. Stesso design di live_order_worker (calcio).
+_DB_QUEUE_MIN_INTERVAL_S = float(os.getenv("TENNIS_DB_QUEUE_POLL_SEC", "1.0"))
+_last_db_queue_poll = 0.0
+
+
 def tennis_live_order_worker(context: dict, flumine: Any, session: Any = None) -> None:  # noqa: ARG001
+    global _last_db_queue_poll
     runner_mode = _runner_mode()
     if runner_mode not in ("PAPER", "LIVE"):
         return  # OFF/ignoto: worker inerte (non dovrebbe nemmeno essere registrato)
     runner_mode_l = runner_mode.lower()
     # A7: drain dei comandi desktop PRIMA della coda DB (stesso path _dispatch)
     _process_local_requests(flumine, session, runner_mode_l)
+    now_m = time.monotonic()
+    if now_m - _last_db_queue_poll < _DB_QUEUE_MIN_INTERVAL_S:
+        return  # coda DB: al massimo ~1 lettura/s, qualunque sia il tick
+    _last_db_queue_poll = now_m
     try:
         rows = tennis_db.list_pending_tennis_orders(limit=5)
     except Exception as e:  # noqa: BLE001

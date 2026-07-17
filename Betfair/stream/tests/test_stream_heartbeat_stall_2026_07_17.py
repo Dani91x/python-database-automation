@@ -216,7 +216,7 @@ def test_stall_restart_toctou_recheck_blocks(monkeypatch):
         monkeypatch, live_orders=[], last_heartbeat_ms=1.0)
     calls = {"n": 0}
 
-    def _blockers_race(fl):
+    def _blockers_race(fl, **kw):  # fresh kwarg (fix 17/07)
         calls["n"] += 1
         # 1° check (pre-alert): pulito; 2° check (dentro _request_soft_restart):
         # un ordine è comparso nel frattempo (live_order_worker concorrente).
@@ -242,7 +242,7 @@ def test_lifecycle_worker_toctou_recheck_blocks(monkeypatch):
     monkeypatch.setattr(R, "_stop_framework", lambda fl: stopped.append(fl))
     calls = {"n": 0}
 
-    def _blockers_race(fl):
+    def _blockers_race(fl, **kw):  # fresh kwarg (fix 17/07)
         calls["n"] += 1
         return None if calls["n"] == 1 else "regole di rischio armate/innescate"
 

@@ -26,6 +26,7 @@ vi.mock('@/lib/omegaMissions', () => ({
     fetchMissions: vi.fn(),
     activateMission: vi.fn(),
     followMission: vi.fn(),
+    setFollowRecord: vi.fn(),
     stopMission: vi.fn(),
     subscribeOmegaMissions: vi.fn(() => () => {}),
     // helper PURI: stessa semantica del modulo reale (mock totale per non
@@ -49,11 +50,12 @@ vi.mock('@/lib/sportsLogos', () => ({
 
 import MissionPanel from './MissionPanel';
 import { fetchOmegaEvents } from '@/lib/omega';
-import { fetchMissions, followMission } from '@/lib/omegaMissions';
+import { fetchMissions, followMission, setFollowRecord } from '@/lib/omegaMissions';
 
 const mEvents = vi.mocked(fetchOmegaEvents);
 const mMissions = vi.mocked(fetchMissions);
 const mFollow = vi.mocked(followMission);
+const mSetRecord = vi.mocked(setFollowRecord);
 
 const EVENT = {
     event_id: '34009000',
@@ -141,6 +143,47 @@ describe('MissionPanel — pulsanti Statistiche / Trading', () => {
         await user.click(screen.getByRole('button', { name: /Trading/ }));
         await waitFor(() => expect(mFollow).toHaveBeenCalledTimes(1));
         expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('"Trading" NON attiva la registrazione (solo follow + navigazione)', async () => {
+        const user = userEvent.setup();
+        renderPanel();
+        await screen.findByText('Puskas Akademia');
+        await user.click(screen.getByRole('button', { name: /Trading/ }));
+        await waitFor(() => expect(mFollow).toHaveBeenCalledTimes(1));
+        expect(mSetRecord).not.toHaveBeenCalled();
+    });
+
+    it('"Segui live" attiva la registrazione: follow + set_follow_record(true) e badge REC', async () => {
+        const user = userEvent.setup();
+        renderPanel();
+        await screen.findByText('Puskas Akademia');
+        await user.click(screen.getByRole('button', { name: /Segui live/ }));
+        await waitFor(() => expect(mSetRecord).toHaveBeenCalledWith('34009000', true));
+        // il follow è prerequisito del flag (idempotente)
+        expect(mFollow).toHaveBeenCalledWith(
+            '34009000', 'Puskas Akademia', 'Basaksehir', '2026-07-16T18:00:00Z');
+        // stato attivo visibile: il pulsante diventa REC
+        await screen.findByRole('button', { name: /REC/ });
+        // niente navigazione: la registrazione non apre il trading
+        expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('REC attivo (recording=true dal DB): il click SPEGNE la registrazione', async () => {
+        mMissions.mockResolvedValue({
+            missions: [{ ...MISSION, followed: true, recording: true } as never],
+            summary: { missions_total: 1, missions_active: 1 },
+        });
+        mEvents.mockResolvedValue([]);
+        const user = userEvent.setup();
+        renderPanel();
+        await screen.findByTestId('mission-card-stub');
+        const row = screen.getByTestId('mission-card-stub').closest('div.rounded-lg')! as HTMLElement;
+        const rec = within(row).getAllByRole('button', { name: /REC/ })
+            .find(el => el.tagName === 'BUTTON')!;
+        await user.click(rec);
+        await waitFor(() => expect(mSetRecord).toHaveBeenCalledWith('34009000', false));
+        expect(mFollow).not.toHaveBeenCalled();   // spegnere non ricrea il follow
     });
 
     it('riga MISSIONE ATTIVA: i pulsanti ci sono e il click NON richiude la scheda', async () => {

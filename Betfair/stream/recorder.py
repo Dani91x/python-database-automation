@@ -121,6 +121,23 @@ class MarketRecorderStrategy(BaseStrategy):
     def event_markets(self) -> Dict[str, set]:
         return self.context.get("event_markets", {})
 
+    def _is_recording(self, event_id: str) -> bool:
+        """REGISTRAZIONE OPT-IN (fix CRITICAL review 17/07): il file curato
+        ``<event>.jsonl`` è il flusso PIÙ pesante (ladder full + traded
+        per-prezzo, conflate 0) ed è quello che l'uploader carica nel Replay —
+        va scritto SOLO per gli eventi scelti con "Segui live". Il getter nel
+        context è un riferimento VIVO aggiornato dal runner (toggle a partita
+        in corso). None = gating disattivato (migrazione non applicata):
+        comportamento storico, registra tutto."""
+        getter = self.context.get("record_events")
+        try:
+            rec = getter() if callable(getter) else getter
+        except Exception:  # noqa: BLE001 - mai rompere lo streaming per il gating
+            return True
+        if rec is None:
+            return True
+        return event_id in rec
+
     def drain_finished(self) -> List[str]:
         """Ritorna (e svuota) gli eventi finiti dall'ultima chiamata (F4)."""
         with self._lock:
@@ -163,12 +180,18 @@ class MarketRecorderStrategy(BaseStrategy):
             # mercato non atteso (subscription per eventId può portare extra): ignora
             return
         record = serialize_book(market_book, self.depth)
-        line = json.dumps(record, separators=(",", ":"), default=str)
+        recording = self._is_recording(event_id)
+        line = (json.dumps(record, separators=(",", ":"), default=str)
+                if recording else None)
         with self._lock:
+            # la cache in-memory alimenta live_now/ladder e resta SEMPRE
+            # aggiornata (streaming identico con o senza registrazione)
+            self._latest[market_book.market_id] = record
+            if not recording:
+                return  # opt-in: nessun file per gli eventi non scelti
             fh = self._file_for(event_id)
             fh.write(line + "\n")
             fh.flush()
-            self._latest[market_book.market_id] = record
             self._counts[event_id] = self._counts.get(event_id, 0) + 1
 
     def process_closed_market(self, market: Market, market_book: MarketBook) -> None:

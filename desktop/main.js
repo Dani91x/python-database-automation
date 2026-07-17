@@ -178,6 +178,13 @@ function spawnRunner(label, args) {
         LIVE_ORDER_QUEUE_POLL_SEC: '0.15',
         LIVE_LADDER_PUBLISH_SEC: '0.3',
         TENNIS_LADDER_PUBLISH_SEC: '0.3',
+        // AUDIT LATENZA 17/07: il worker ordini TENNIS girava al default 1.0s
+        // (click manuale 6.7x più lento del calcio, solo per env mancante);
+        // il drain locale ora è splittato dalla coda DB (throttle ~1s interno),
+        // quindi 0.15s NON moltiplica le query Supabase. Idem il risk engine:
+        // stop/bracket automatici devono reagire in ~150ms, non ~1s.
+        TENNIS_ORDER_POLL_SEC: '0.15',
+        LIVE_RISK_ENGINE_POLL_SEC: '0.15',
         // desktop: i runner NON escono quando non ci sono eventi seguiti — restano
         // in attesa (canale locale + board vivi) finché non clicchi "Segui live".
         LIVE_RUNNER_KEEP_ALIVE: '1',

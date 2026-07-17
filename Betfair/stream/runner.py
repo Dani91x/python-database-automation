@@ -45,6 +45,8 @@ from .config_stream import (
     FALLBACK_THRESHOLD,
     FINALIZE_POLL_SEC,
     FINALIZE_SPACING_SEC,
+    FIRST_ATTACH_MIN_INTERVAL_SEC,
+    IDLE_FOLLOW_POLL_SEC,
     HARD_MARKET_CAP,
     KELLY_FRACTION,
     LADDER_DEPTH,
@@ -72,6 +74,7 @@ from .config_stream import (
     SIGNALS_KEEPALIVE_SEC,
     STREAM_CONFLATE_MS,
     STREAM_FIELDS,
+    SUB_WORKER_POLL_SEC,
     WATCHLIST_POLL_SEC,
     XHEDGE_POLL_SEC,
 )
@@ -158,6 +161,12 @@ class LiveSession:
         self.event_markets: Dict[str, set] = {}               # event_id -> set(market_id)
         self.selection_names: Dict[str, Dict[str, str]] = {}  # market_id -> {sel: name}
         self.prematch_lambdas: Dict[str, tuple] = {}          # event_id -> (lh, la, league)
+        # REGISTRAZIONE OPT-IN (17/07): event_id con live_follow.record=true →
+        # solo questi passano dal tee raw e vengono caricati nel Replay.
+        # None = colonna assente (migrazione non applicata) → registra TUTTO
+        # (comportamento storico, mai rompere il runner).
+        self.record_events: Optional[set] = None
+        self._record_col_warned = False
         self.finished_events: set = set()                     # eventi finalizzati
         self.cataloged_events: set = set()                    # eventi con catalogo già scaricato
         self._score_files: Dict[str, Any] = {}
@@ -174,6 +183,16 @@ class LiveSession:
         self._finalize_lock = threading.Lock()
         self.restart_requested = threading.Event()
         self.last_resubscribe_ts = 0.0
+        # AGGANCIO RAPIDO (fix 17/07 "Trading = streaming immediato"):
+        #   * attach_attempted: eventi per cui un rebuild F3 è GIÀ stato richiesto
+        #     (il bypass primo-aggancio vale solo per eventi mai tentati);
+        #   * last_first_attach_bypass_ts: monotonic dell'ultimo rebuild ottenuto
+        #     COL bypass (una sola finestra "gratis" ogni MIN_RESUBSCRIBE_INTERVAL);
+        #   * last_resolve_ts: throttle interno di resolve_and_register (REST
+        #     pesante) ora che il worker gira a cadenza fitta per la SELECT leggera.
+        self.attach_attempted: set = set()
+        self.last_first_attach_bypass_ts = -1e9
+        self.last_resolve_ts = 0.0
         # PARITÀ CALCIO/TENNIS (fix 17/07): il restart F3 per nuovi follow è
         # RINVIATO finché ci sono blocker (ordini vivi/regole armate). Qui il
         # monotonic del PRIMO rinvio e dell'ultimo alert CRITICAL (anti-spam).
@@ -686,16 +705,33 @@ def _finalize_event(event_id: str, session: LiveSession) -> None:
         if event_id in session.finished_events:
             return
         session.finished_events.add(event_id)
+    # igiene (review 17/07, LOW): l'evento finito non serve più al bypass
+    # primo-aggancio — il set non cresce senza bound per tutta la vita.
+    getattr(session, "attach_attempted", set()).discard(event_id)
     _safe_set_status(event_id, "CLOSED")
-    try:
-        uploader.upload_event(event_id)
-        logger.info("[finalize] evento %s caricato e chiuso.", event_id)
-    except FileNotFoundError:
-        logger.warning("[finalize] nessun dato grezzo per %s", event_id)
-        _safe_set_status(event_id, "ERROR", "nessun file grezzo")
-    except Exception as e:  # noqa: BLE001
-        logger.exception("[finalize] upload KO %s: %s", event_id, e)
-        _safe_set_status(event_id, "ERROR", str(e)[:300])
+    # REGISTRAZIONE OPT-IN (17/07): l'upload nel Replay avviene SOLO se la
+    # partita era in registrazione ("Segui live", live_follow.record=true).
+    # La verita' si legge dal DB al momento del finalize (mai da set in memoria:
+    # un follow appena uscito da list_pending_follows non deve cambiare esito).
+    # None = colonna assente/rete KO → comportamento STORICO (upload): meglio
+    # un upload di troppo che perdere una registrazione voluta.
+    should_record = db.get_follow_record(event_id)
+    if should_record is False:
+        # CLOSED e' lo status terminale pulito senza upload (il frontend lo
+        # mostra come "Chiusa"; UPLOADED resta riservato ai Replay reali).
+        logger.info(
+            "[finalize] evento %s senza 'Segui live' (record=false): "
+            "chiuso SENZA upload nel Replay.", event_id)
+    else:
+        try:
+            uploader.upload_event(event_id)
+            logger.info("[finalize] evento %s caricato e chiuso.", event_id)
+        except FileNotFoundError:
+            logger.warning("[finalize] nessun dato grezzo per %s", event_id)
+            _safe_set_status(event_id, "ERROR", "nessun file grezzo")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("[finalize] upload KO %s: %s", event_id, e)
+            _safe_set_status(event_id, "ERROR", str(e)[:300])
     # smette di tracciare l'evento
     session.pollers.pop(event_id, None)
     fh = session._score_files.pop(event_id, None)
@@ -706,21 +742,69 @@ def _finalize_event(event_id: str, session: LiveSession) -> None:
             pass
 
 
+def _sync_record_events(session: Any, follows: List[Dict[str, Any]]) -> None:
+    """Risincronizza il set di eventi in REGISTRAZIONE opt-in (colonna
+    ``live_follow.record``) e lo propaga al tee raw (RAW_STATE).
+
+    Chiamato ovunque il runner rilegga i follow (main loop + sub-worker): un
+    click su "Segui live" A PARTITA IN CORSO entra nel set al giro successivo
+    e il tee inizia a scrivere da quel momento.
+
+    FALLBACK DIFENSIVO: se la colonna ``record`` non esiste ancora (migrazione
+    live_follow_record.sql non applicata) le righe non hanno la chiave →
+    gating DISATTIVATO (None = registra tutto, comportamento storico) con
+    warning UNA volta — mai rompere il runner.
+    """
+    from .raw_listener import RAW_STATE
+
+    if follows and not any("record" in f for f in follows):
+        if not getattr(session, "_record_col_warned", False):
+            session._record_col_warned = True
+            logger.warning(
+                "[runner] colonna live_follow.record ASSENTE (migrazione "
+                "live_follow_record.sql non applicata): registro TUTTE le "
+                "partite (comportamento storico).")
+        session.record_events = None
+        RAW_STATE.set_record_events(None)
+        return
+    rec = {str(f["event_id"]) for f in follows if f.get("record")}
+    session.record_events = rec
+    RAW_STATE.set_record_events(rec)
+
+
 # ----------------------------------------------------------------------------
 # Worker: auto-sottoscrizione nuove GIOCATA (F3)
 # ----------------------------------------------------------------------------
 def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
     rest: BetfairClient = context["rest"]
-    try:
-        resolve_and_register(rest)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[sub-worker] resolve_and_register KO: %s", e)
-        return
+    # AGGANCIO RAPIDO (fix 17/07): il worker gira a cadenza fitta
+    # (SUB_WORKER_POLL_SEC, ~2s) per il check dei nuovi follow — una SELECT
+    # leggera su live_follow, ZERO chiamate Betfair. La parte PESANTE
+    # (resolve_and_register: REST listEvents + matcher watchlist) resta alla
+    # cadenza storica WATCHLIST_POLL_SEC, throttled qui dentro. Un errore REST
+    # non blocca più il check follow (il click "Trading" scrive live_follow via
+    # RPC: l'aggancio non deve dipendere dalla risoluzione watchlist).
+    now = time.monotonic()
+    last_resolve = getattr(session, "last_resolve_ts", 0.0)
+    if last_resolve == 0.0 or (now - last_resolve) >= WATCHLIST_POLL_SEC:
+        # timestamp consumato ANCHE su errore: mai martellare un REST rotto a 2s
+        session.last_resolve_ts = now
+        try:
+            resolve_and_register(rest)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[sub-worker] resolve_and_register KO: %s", e)
     try:
         follows = db.list_pending_follows()
     except Exception as e:  # noqa: BLE001
         logger.warning("[sub-worker] list_pending_follows KO: %s", e)
         return
+    # opt-in 17/07: risincronizza QUI il set degli eventi in registrazione —
+    # e' il punto in cui il runner rilegge i follow periodicamente, quindi un
+    # toggle "Segui live" a partita in corso diventa efficace al giro dopo.
+    try:
+        _sync_record_events(session, follows)
+    except Exception as e:  # noqa: BLE001 - il gating non deve rompere il worker
+        logger.warning("[sub-worker] sync record opt-in KO (ignorato): %s", e)
     new_events = [
         f for f in follows
         if f["event_id"] not in session.cataloged_events
@@ -729,9 +813,30 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
     if not new_events:
         session.sub_restart_deferred_since = None
         return
-    # rispetta l'intervallo minimo tra ri-subscription (niente churn rapido)
+    # THROTTLE con BYPASS primo-aggancio (fix 17/07 "Trading = streaming
+    # immediato"): MIN_RESUBSCRIBE_INTERVAL_SEC protegge dal CHURN (rebuild
+    # ripetuti sugli stessi eventi), ma il PRIMO aggancio di un evento MAI
+    # sottoscritto non deve pagarlo — l'utente ha appena cliccato Trading e
+    # aspetta il ladder. Il bypass scatta SOLO se:
+    #   1. tra i new_events c'è almeno un evento mai tentato prima
+    #      (attach_attempted: un retry di un evento già tentato NON bypassa);
+    #   2. l'ultimo rebuild (di qualunque tipo) è più vecchio del minimo
+    #      ASSOLUTO FIRST_ATTACH_MIN_INTERVAL_SEC (anti-loop back-to-back);
+    #   3. l'ultimo rebuild ottenuto COL bypass è più vecchio di
+    #      MIN_RESUBSCRIBE_INTERVAL_SEC → UNA sola finestra "gratis" per
+    #      intervallo: 3 nuovi eventi in 30s = 1 rebuild aggiuntivo (il primo),
+    #      gli altri si accodano al giro normale del throttle.
     now = time.monotonic()
-    if (now - session.last_resubscribe_ts) < MIN_RESUBSCRIBE_INTERVAL_SEC:
+    gap = now - session.last_resubscribe_ts
+    attempted = getattr(session, "attach_attempted", set())
+    first_attach = any(f["event_id"] not in attempted for f in new_events)
+    bypass = (
+        first_attach
+        and gap >= FIRST_ATTACH_MIN_INTERVAL_SEC
+        and (now - getattr(session, "last_first_attach_bypass_ts", -1e9))
+        >= MIN_RESUBSCRIBE_INTERVAL_SEC
+    )
+    if gap < MIN_RESUBSCRIBE_INTERVAL_SEC and not bypass:
         return
     # GUARDIA FLAT (fix 17/07, parità con il tennis di ieri): il rebuild
     # ricostruisce flumine con un blotter VUOTO — forzarlo con ordini vivi o
@@ -789,6 +894,15 @@ def subscription_worker(context: dict, flumine: Flumine, session: LiveSession) -
         logger.warning("[sub-worker] restart RINVIATO all'ultimo check: %s.", deferred)
         return
     session.last_resubscribe_ts = now
+    # bookkeeping del bypass primo-aggancio (fix 17/07): gli eventi appena
+    # richiesti non sono più "mai visti" (un loro retry NON bypasserà più il
+    # throttle); se questo rebuild è passato GRAZIE al bypass (gap sotto il
+    # throttle standard), consuma la finestra "gratis" → il prossimo bypass
+    # potrà scattare solo dopo MIN_RESUBSCRIBE_INTERVAL_SEC (anti-churn).
+    if getattr(session, "attach_attempted", None) is not None:
+        session.attach_attempted.update(f["event_id"] for f in new_events)
+    if gap < MIN_RESUBSCRIBE_INTERVAL_SEC:
+        session.last_first_attach_bypass_ts = now
 
 
 # throttle dell'alert CRITICAL quando il restart F3 resta rinviato (fix 17/07)
@@ -811,7 +925,8 @@ def _request_soft_restart(flumine: Flumine, session: LiveSession, reason: str) -
 
     Ritorna il blocker (str) se il restart è stato RINVIATO, None se richiesto.
     """
-    blocker = _lifecycle_blockers(flumine)
+    # check FINALE pre-stop: SEMPRE fresco (mai fidarsi della cache qui)
+    blocker = _lifecycle_blockers(flumine, fresh=True)
     if blocker is not None:
         return blocker
     try:
@@ -859,11 +974,23 @@ _RUNNER_LOCK_PORT = int(os.getenv("LIVE_RUNNER_LOCK_PORT", "47311"))
 _INSTANCE_LOCK = None  # socket del lock di singola istanza (referenza viva, vedi _main)
 
 
-def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
+# Cache del verdetto "regole armate" (review 17/07, carico DB): col worker a 2s
+# la SELECT su betfair_live_risk_rules girava a ogni tick per TUTTA la durata di
+# un rinvio (che per design può durare ore). Si cachea SOLO l'esito BLOCCATO
+# (direzione sicura: lo sblocco può ritardare di ≤TTL, un blocco appena armato
+# non può MAI sfuggire perché l'esito "libero" viene SEMPRE ri-verificato).
+_RISK_RULES_BLOCKED_UNTIL = 0.0
+_RISK_RULES_CACHE_TTL_S = float(os.getenv("LIVE_RISK_RULES_CHECK_TTL_SEC", "15"))
+
+
+def _lifecycle_blockers(flumine: Flumine, fresh: bool = False) -> Optional[str]:
     """Motivo per cui NON è sicuro spegnersi (None = via libera). Il denaro viene PRIMA
     del comfort: ordini VIVI nel blotter o regole risk armate/innescate (stop, offset,
     chase, stop-entry) = il runner resta acceso — spegnerlo lascerebbe protezioni morte
-    e ordini non gestiti. In dubbio (blotter/DB illeggibili) si resta ACCESI."""
+    e ordini non gestiti. In dubbio (blotter/DB illeggibili) si resta ACCESI.
+
+    ``fresh=True`` (check finale pre-stop): ignora la cache del verdetto bloccato."""
+    global _RISK_RULES_BLOCKED_UNTIL
     try:
         for market in flumine.markets:
             blotter = getattr(market, "blotter", None)
@@ -873,6 +1000,8 @@ def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
     except Exception:  # noqa: BLE001
         return "blotter non leggibile (prudenza: resto acceso)"
     if LIVE_ORDER_MODE.strip().upper() in ("PAPER", "LIVE"):
+        if not fresh and time.monotonic() < _RISK_RULES_BLOCKED_UNTIL:
+            return "regole di rischio armate/innescate (verdetto in cache ≤15s)"
         try:
             from db_client import get_supabase_client
             rows = (get_supabase_client().table("betfair_live_risk_rules").select("id")
@@ -880,7 +1009,9 @@ def _lifecycle_blockers(flumine: Flumine) -> Optional[str]:
                     .eq("mode", LIVE_ORDER_MODE.strip().lower())
                     .limit(1).execute().data or [])
             if rows:
+                _RISK_RULES_BLOCKED_UNTIL = time.monotonic() + _RISK_RULES_CACHE_TTL_S
                 return "regole di rischio armate/innescate (stop/offset/chase/stop-entry)"
+            _RISK_RULES_BLOCKED_UNTIL = 0.0
         except Exception:  # noqa: BLE001
             return "regole di rischio non verificabili (prudenza: resto acceso)"
     return None
@@ -940,7 +1071,15 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
         global _RAW_STALL_ALERTED, _RAW_STALL_LAST_RESTART
         h = RAW_STATE.health()
         if h.get("enabled") and session.market_to_event:
-            last = max(h.get("last_write_ms", {}).values() or [0])
+            # OPT-IN 17/07: con la registrazione a scelta la maggior parte delle
+            # partite NON scrive raw → lo stallo si misura sull'ULTIMO DATO
+            # visto dallo stream (last_data_ms, aggiornato anche per gli eventi
+            # non registrati), oltre che sugli write raw effettivi. Senza
+            # questo, uno stream sano con zero partite in registrazione
+            # sembrerebbe muto e il runner si auto-infliggerebbe restart.
+            last_vals = list(h.get("last_write_ms", {}).values() or [])
+            last_vals.append(float(h.get("last_data_ms") or 0))
+            last = max(last_vals)
             now_ms = time.time() * 1000.0
             started = getattr(session, "stream_started_monotonic", None)
             age_s = (now_mono - started) if started is not None else None
@@ -960,6 +1099,26 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
             stall_s = effective_stall_seconds(
                 data_stall_s, hb_stall_s, _RAW_STALL_HARD_CAP_SEC)
             stalled = stall_s is not None and stall_s > 120.0
+            # TEE ROTTO SU EVENTO SCELTO (review 17/07, MEDIUM): col gating
+            # opt-in `last_data_ms` (globale) domina il max — se il tee
+            # dell'UNICO evento in registrazione si rompe mentre gli altri
+            # match streamano, lo stallo globale non scatta mai. Check
+            # dedicato: evento in record_events senza write da >120s con
+            # stream sano = il dato che l'utente ha SCELTO di conservare
+            # sta andando perso — alert esplicito.
+            rec_events = getattr(session, "record_events", None) or set()
+            rec_stalled = []
+            if rec_events and not stalled:
+                writes = h.get("last_write_ms", {}) or {}
+                for _ev in rec_events:
+                    w = float(writes.get(_ev) or 0)
+                    if w <= 0:
+                        continue  # mai scritto (toggle appena acceso): niente
+                        # falso allarme sull'età dello stream — si valuta dal
+                        # primo write in poi.
+                    w_stall = raw_stall_seconds(w, now_ms, age_s)
+                    if w_stall is not None and w_stall > 120.0:
+                        rec_stalled.append((_ev, w_stall))
             if stalled and not _RAW_STALL_ALERTED:
                 _RAW_STALL_ALERTED = True
                 db.insert_alert(
@@ -968,7 +1127,16 @@ def heartbeat_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
                     f"con stream attivo (write_errors={h.get('write_errors')}) "
                     "— i backtest/Atlante perderebbero questi dati",
                 )
-            elif not stalled:
+            elif rec_stalled and not _RAW_STALL_ALERTED:
+                _RAW_STALL_ALERTED = True
+                _ev, _st = rec_stalled[0]
+                db.insert_alert(
+                    "WARN", "RAW_RECORDER",
+                    f"REGISTRAZIONE FERMA sull'evento {_ev} da {_st:.0f}s "
+                    f"(stream generale SANO, write_errors={h.get('write_errors')}) "
+                    "— la partita scelta con Segui live sta perdendo dati",
+                )
+            elif not stalled and not rec_stalled:
                 _RAW_STALL_ALERTED = False
             # ESCALATION (fix 16/07): stallo PERSISTENTE → CRITICAL + ricostruzione
             # della subscription (throttled). L'alert WARN da solo non recupera
@@ -1359,29 +1527,54 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
             session.restart_requested.clear()
 
             if not only_event:
-                try:
-                    resolve_and_register(rest)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("[runner] resolve_and_register iniziale KO: %s", e)
+                # throttle ~15s (fix 17/07): il loop idle ora gira ogni
+                # IDLE_FOLLOW_POLL_SEC (~2s) per vedere SUBITO i follow creati
+                # via RPC (click Trading) — la risoluzione watchlist (REST
+                # listEvents + matcher) resta alla cadenza storica del vecchio
+                # sleep(15), mai martellata a 2s.
+                _now_mono = time.monotonic()
+                if (_now_mono - getattr(session, "_idle_resolve_ts", -1e9)) >= 15.0:
+                    session._idle_resolve_ts = _now_mono
+                    try:
+                        resolve_and_register(rest)
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("[runner] resolve_and_register iniziale KO: %s", e)
 
             follows = db.list_pending_follows()
             if only_event:
                 follows = [f for f in follows if f["event_id"] == only_event]
             follows = [f for f in follows if f["event_id"] not in session.finished_events]
+            # opt-in 17/07: set degli eventi con "Segui live" attivo (record=true)
+            # PRIMA di configure_raw — il tee parte gia' col gating giusto.
+            try:
+                _sync_record_events(session, follows)
+            except Exception as e:  # noqa: BLE001 - mai bloccare l'avvio per il gating
+                logger.warning("[runner] sync record opt-in KO (ignorato): %s", e)
             if not follows:
                 # DESKTOP (keep-alive): senza eventi il runner NON esce — resta in
                 # attesa (canale locale + board vivi) e ricontrolla ogni 15s: il
                 # click "Segui live" nell'app crea il follow e si parte subito.
                 # Senza il flag (uso storico da terminale/cron): esce come sempre.
                 if os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
-                    logger.info("[runner] nessun evento da streammare: attendo (keep-alive desktop).")
-                    time.sleep(15)
+                    # attesa di aggancio RIDOTTA (fix 17/07 "Trading = streaming
+                    # immediato"): il check dei follow è una SELECT leggera →
+                    # girare ogni ~2s invece di 15s toglie fino a 13s di latenza
+                    # click→ladder a runner idle. Log throttled (~30s): a 2s
+                    # spammerebbe. resolve/keepAlive restano alle cadenze storiche.
+                    _now_i = time.monotonic()
+                    if (_now_i - getattr(session, "_idle_log_ts", -1e9)) >= 30.0:
+                        session._idle_log_ts = _now_i
+                        logger.info("[runner] nessun evento da streammare: attendo (keep-alive desktop).")
+                    time.sleep(IDLE_FOLLOW_POLL_SEC)
                     # SESSIONE Betfair .it: scade dopo ~20 min di INATTIVITA' —
                     # senza keepAlive periodico il primo Segui live fallirebbe
-                    # con INVALID_SESSION. Ogni ~8 min (32 giri da 15s).
-                    _ka = getattr(session, "_idle_ka_count", 0) + 1
-                    session._idle_ka_count = _ka
-                    if _ka % 32 == 0:
+                    # con INVALID_SESSION. Ogni ~8 min (monotonic, indipendente
+                    # dalla cadenza del loop; prima erano 32 giri da 15s).
+                    _last_ka = getattr(session, "_idle_ka_ts", None)
+                    if _last_ka is None:
+                        session._idle_ka_ts = _now_i  # epoca del primo giro idle
+                    elif (_now_i - _last_ka) >= 480.0:
+                        session._idle_ka_ts = _now_i
                         try:
                             from .auth import keep_alive as _bf_keep_alive
                             _bf_keep_alive(api_client)
@@ -1416,10 +1609,18 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     "market_type_by_id": session.market_type_by_id,
                     "event_markets": session.event_markets,
                     "depth": LADDER_DEPTH,
+                    # OPT-IN (fix CRITICAL review 17/07): il file curato
+                    # <event>.jsonl (il più pesante, quello del Replay) si
+                    # scrive SOLO per gli eventi scelti. Getter VIVO: il
+                    # toggle a partita in corso è efficace subito.
+                    "record_events": lambda: session.record_events,
                 },
             )
             session.recorder = recorder
-            configure_raw(DATA_DIR, session.market_to_event, RAW_RECORDING)
+            # opt-in 17/07: il tee raw scrive SOLO gli eventi con record=true
+            # (None = colonna assente → registra tutto, comportamento storico).
+            configure_raw(DATA_DIR, session.market_to_event, RAW_RECORDING,
+                          session.record_events)
 
             # NB: NON usare market_recording_mode=True → sopprime process_market_book
             # (i book parsati servono a live_now + segnali). Il raw nativo è comunque
@@ -1519,8 +1720,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                 framework, function=lifecycle_worker, interval=60.0,
                 func_kwargs={"session": session}, name="lifecycle_worker"))
             if auto_subscribe and not only_event:
+                # interval BASSO (fix 17/07): il giro del worker è una SELECT
+                # leggera su live_follow — la parte REST (resolve watchlist) è
+                # throttled DENTRO il worker a WATCHLIST_POLL_SEC. Così un nuovo
+                # follow (click Trading) è visto entro ~SUB_WORKER_POLL_SEC.
                 framework.add_worker(BackgroundWorker(
-                    framework, function=subscription_worker, interval=WATCHLIST_POLL_SEC,
+                    framework, function=subscription_worker, interval=SUB_WORKER_POLL_SEC or 2.0,
                     func_kwargs={"session": session}, context={"rest": rest}, name="subscription_worker"))
 
             logger.info("[runner] stream avviato: %d eventi, %d mercati.",

@@ -15,9 +15,11 @@
 -- Convenzioni progetto (come personal_tracking.sql / security_lockdown.sql):
 --   schema public, snake_case, *_at TIMESTAMPTZ default now(), RLS ON,
 --   REVOKE ALL FROM anon, authenticated. Accesso dati SOLO via RPC SECURITY
---   DEFINER (vedi live_stream_rpc.sql) — ECCEZIONE: live_now ha una policy
+--   DEFINER (vedi live_stream_rpc.sql) — ECCEZIONI: live_now ha una policy
 --   SELECT per 'authenticated' perché Supabase Realtime richiede il privilegio
---   di lettura sul ruolo che sottoscrive (come fixture_predictions).
+--   di lettura sul ruolo che sottoscrive (come fixture_predictions); dal 17/07
+--   anche live_follow (migrations/live_follow_realtime.sql, stesso motivo:
+--   realtime dell'aggancio "Trading immediato" — colonne non sensibili).
 --   NON usiamo FORCE RLS → il backend (service_role) bypassa la RLS.
 --   Tutto IDEMPOTENTE: CREATE TABLE/INDEX IF NOT EXISTS.
 -- ============================================================================
