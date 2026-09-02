@@ -1,14 +1,14 @@
 // ============================================================================
 // SafeStrategy.tsx — pagina della sezione SAFE STRATEGY.
 //
-// Radar in sola lettura: mostra i SEGNALI delle 4 strategie sulle partite
-// SEGUITE dagli stream esistenti (calcio: Segui Live · tennis: sezione Tennis).
-// Layout pensato per la chiarezza con molti segnali contemporanei:
+// Radar in sola lettura alimentato dallo SCANNER AUTONOMO backend: monitora
+// TUTTI gli eventi calcio+tennis in-play del momento (nessuna iscrizione
+// manuale). Layout pensato per la chiarezza con molti segnali contemporanei:
+//   · barra di stato dello scanner SEMPRE visibile (attivo/spento, conteggi);
 //   · vista divisa per sport (Calcio / Tennis), mai mescolata;
 //   · segnali ATTIVI in alto, grandi, con colore fisso per strategia;
-//   · sotto, le partite monitorate con un chip per strategia (pallino verde =
-//     segnale, ambra = dato mancante, spento = condizioni non soddisfatte) e
-//     checklist espandibile condizione-per-condizione;
+//   · sotto, gli eventi monitorati con un chip per strategia e checklist
+//     espandibile condizione-per-condizione;
 //   · storico sessione in coda, attenuato.
 // L'ingresso a mercato è SEMPRE una decisione manuale dell'utente.
 // ============================================================================
@@ -23,22 +23,82 @@ import { MonitorCard } from '@/components/safestrategy/MonitorCard';
 import { ParamsSheet } from '@/components/safestrategy/ParamsSheet';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import type { ActiveSignal, Sport } from '@/lib/safeStrategy';
+import type { ScanStatusRow } from '@/lib/safeStrategyScan';
+
+/** heartbeat scanner più vecchio di così = scanner considerato NON attivo */
+const SCANNER_STALE_MS = 45_000;
 
 function footballLiveLine(m: FootballMonitor): string {
-    const { minute, scoreHome, scoreAway } = m.ctx;
+    const { minute, scoreHome, scoreAway, inplay } = m.ctx;
     const min = minute !== null ? `${minute}′` : '—′';
     const score = scoreHome !== null && scoreAway !== null ? `${scoreHome}-${scoreAway}` : '?-?';
-    return `${min} · ${score}${m.follow.league_name ? ` · ${m.follow.league_name}` : ''}`;
+    const comp = m.payload.competition ? ` · ${m.payload.competition}` : '';
+    return inplay ? `${min} · ${score}${comp}` : `pre-KO${comp}`;
 }
 
 function tennisLiveLine(m: TennisMonitor): string {
     const sets = m.ctx.sets ? `set ${m.ctx.sets.p1}-${m.ctx.sets.p2}` : 'set —';
     const games = m.ctx.games ? ` · game ${m.ctx.games.p1}-${m.ctx.games.p2}` : '';
-    const comp = m.follow.competition_name ? ` · ${m.follow.competition_name}` : '';
-    return `${sets}${games}${comp}`;
+    const comp = m.payload.competition ? ` · ${m.payload.competition}` : '';
+    return m.ctx.inplay ? `${sets}${games}${comp}` : `pre-match${comp}`;
 }
 
-/** intestazione di uno dei due blocchi sport, con conteggio segnali attivi. */
+/** barra di stato dello scanner: l'utente deve SEMPRE sapere se il radar è vivo. */
+function ScannerBar({ status, nowMs }: { status: ScanStatusRow | null; nowMs: number }) {
+    const updatedMs = status?.updated_at ? Date.parse(status.updated_at) : null;
+    const ageSec = updatedMs !== null ? Math.max(0, Math.round((nowMs - updatedMs) / 1000)) : null;
+    const alive = ageSec !== null && ageSec * 1000 <= SCANNER_STALE_MS;
+    const p = status?.payload ?? {};
+    return (
+        <div
+            className={[
+                'mb-6 glass-card rounded-xl border p-3 flex items-center gap-3 flex-wrap text-sm',
+                alive ? 'border-emerald-500/30' : 'border-red-500/40',
+            ].join(' ')}
+        >
+            <span
+                className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    alive ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'
+                }`}
+                aria-hidden
+            />
+            <span className="font-heading font-bold text-white uppercase tracking-wide text-xs">
+                Scanner {alive ? 'attivo' : 'non attivo'}
+            </span>
+            {alive ? (
+                <>
+                    <span className="font-mono tabular-nums text-muted-foreground text-xs">
+                        ultimo giro {ageSec}s fa
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                        ⚽ <b className="text-white font-mono tabular-nums">{p.calcio_inplay ?? 0}</b> in-play
+                        <span className="mx-2 text-white/20">·</span>
+                        🎾 <b className="text-white font-mono tabular-nums">{p.tennis_inplay ?? 0}</b> in-play
+                        <span className="mx-2 text-white/20">·</span>
+                        <b className="text-white font-mono tabular-nums">{p.monitored ?? 0}</b> monitorati
+                    </span>
+                    {p.dry && (
+                        <Badge variant="outline" className="bg-amber-500/15 text-amber-300 border-amber-500/40 text-[10px]">
+                            DRY
+                        </Badge>
+                    )}
+                    {p.last_error && (
+                        <span className="text-[11px] text-amber-300/90" title={p.last_error}>
+                            ⚠ ultimo errore: {p.last_error}
+                        </span>
+                    )}
+                </>
+            ) : (
+                <span className="text-xs text-muted-foreground">
+                    {status === null
+                        ? 'nessun heartbeat: servizio scanner mai visto (migrazione safe_strategy_scan.sql applicata? app riavviata dopo l’aggiornamento?)'
+                        : `ultimo heartbeat ${ageSec}s fa — il servizio scanner non sta girando: riavvia l’app desktop`}
+                </span>
+            )}
+        </div>
+    );
+}
+
 function SportHeader({ emoji, title, activeCount }: { emoji: string; title: string; activeCount: number }) {
     return (
         <div className="flex items-center gap-3 mb-4">
@@ -59,18 +119,12 @@ function SportHeader({ emoji, title, activeCount }: { emoji: string; title: stri
 }
 
 function EmptyMonitor({ sport }: { sport: Sport }) {
-    const isCalcio = sport === 'calcio';
     return (
         <div className="glass-card rounded-xl border border-dashed border-white/10 p-6 text-center">
             <p className="text-sm text-muted-foreground">
-                Nessun {isCalcio ? 'match di calcio' : 'match di tennis'} monitorato: Safe Strategy lavora sulle
-                partite <b className="text-white">seguite</b> dallo stream {isCalcio ? 'calcio' : 'tennis'}.
+                Nessun {sport === 'calcio' ? 'match di calcio' : 'match di tennis'} in-play in questo
+                momento: lo scanner aggiunge gli eventi da solo appena vanno live (o a ridosso del kickoff).
             </p>
-            <Link to={isCalcio ? '/segui-live' : '/tennis'}>
-                <Button variant="outline" size="sm" className="mt-3 border-white/10 text-muted-foreground hover:text-white">
-                    {isCalcio ? 'Vai a Segui Live' : 'Vai alla sezione Tennis'}
-                </Button>
-            </Link>
         </div>
     );
 }
@@ -86,12 +140,12 @@ function SignalGrid({ signals, nowMs }: { signals: ActiveSignal[]; nowMs: number
 }
 
 export default function SafeStrategy() {
-    const { football, tennis, signals } = useSafeStrategy();
+    const { football, tennis, signals, scanStatus } = useSafeStrategy();
 
-    // orologio a 15s per le etichette "N minuti fa" (nessun refetch: solo display)
+    // orologio a 10s: etichette "N s fa" + freschezza heartbeat scanner
     const [nowMs, setNowMs] = useState(() => Date.now());
     useEffect(() => {
-        const t = window.setInterval(() => setNowMs(Date.now()), 15_000);
+        const t = window.setInterval(() => setNowMs(Date.now()), 10_000);
         return () => window.clearInterval(t);
     }, []);
 
@@ -111,7 +165,7 @@ export default function SafeStrategy() {
         () =>
             [...football].sort((a, b) => {
                 if (a.ctx.inplay !== b.ctx.inplay) return a.ctx.inplay ? -1 : 1;
-                return a.follow.open_date.localeCompare(b.follow.open_date);
+                return (a.payload.open_date ?? '').localeCompare(b.payload.open_date ?? '');
             }),
         [football],
     );
@@ -119,7 +173,7 @@ export default function SafeStrategy() {
         () =>
             [...tennis].sort((a, b) => {
                 if (a.ctx.inplay !== b.ctx.inplay) return a.ctx.inplay ? -1 : 1;
-                return a.follow.open_date.localeCompare(b.follow.open_date);
+                return (a.payload.open_date ?? '').localeCompare(b.payload.open_date ?? '');
             }),
         [tennis],
     );
@@ -148,24 +202,20 @@ export default function SafeStrategy() {
                                 Programma
                             </Button>
                         </Link>
-                        <Link to="/segui-live">
-                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
-                                Segui Live
-                            </Button>
-                        </Link>
                     </div>
                 </div>
             </nav>
 
             <main className="container mx-auto px-4 lg:px-6 py-8 relative z-10 max-w-6xl">
-                <div className="mb-8 flex items-end justify-between flex-wrap gap-3">
+                <div className="mb-6 flex items-end justify-between flex-wrap gap-3">
                     <div>
                         <h1 className="font-display font-black text-2xl md:text-3xl tracking-tight">
                             Safe <span className="text-secondary">Strategy</span>
                         </h1>
                         <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
-                            Segnali automatici sulle condizioni oggettive (minuto, punteggio, quote) delle 4 strategie.
-                            Il controllo del gioco e l'ingresso a mercato restano una tua decisione.
+                            Scanner autonomo su TUTTI gli eventi in-play: segnali automatici sulle condizioni
+                            oggettive (minuto, punteggio, quote) delle 4 strategie. Il controllo del gioco e
+                            l'ingresso a mercato restano una tua decisione.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -176,6 +226,8 @@ export default function SafeStrategy() {
                         ))}
                     </div>
                 </div>
+
+                <ScannerBar status={scanStatus} nowMs={nowMs} />
 
                 {totalActive === 0 && (
                     <div className="mb-8 glass-card rounded-xl border border-white/10 p-4 text-center text-sm text-muted-foreground">
@@ -197,7 +249,7 @@ export default function SafeStrategy() {
                     )}
 
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-heading font-bold mb-2">
-                        Partite monitorate ({fbSorted.length})
+                        Eventi monitorati ({fbSorted.length})
                     </div>
                     {fbSorted.length === 0 ? (
                         <EmptyMonitor sport="calcio" />
@@ -205,16 +257,13 @@ export default function SafeStrategy() {
                         <div className="space-y-2">
                             {fbSorted.map((m) => (
                                 <MonitorCard
-                                    key={m.follow.event_id}
-                                    eventId={m.follow.event_id}
-                                    title={`${m.follow.home_name} – ${m.follow.away_name}`}
+                                    key={m.eventId}
+                                    eventId={m.eventId}
+                                    title={`${m.ctx.home} – ${m.ctx.away}`}
                                     liveLine={footballLiveLine(m)}
                                     inplay={m.ctx.inplay}
                                     evaluations={m.evaluations.map((evaluation) => ({ evaluation }))}
-                                    dataNote={[
-                                        m.ctx.oddsNameMismatch ? 'nomi selezioni non riconosciuti nel mercato — quote n/d' : null,
-                                        m.preMatchMissing ? 'riferimento pre-match non catturato prima del kickoff — condizioni pre-match n/d' : null,
-                                    ].filter(Boolean).join(' · ') || null}
+                                    dataNote={m.preMatchMissing ? 'riferimento pre-KO non catturato (scanner partito a match iniziato) — condizioni pre-match n/d' : null}
                                 />
                             ))}
                         </div>
@@ -251,13 +300,12 @@ export default function SafeStrategy() {
                         <div className="space-y-2">
                             {tnSorted.map((m) => (
                                 <MonitorCard
-                                    key={m.follow.event_id}
-                                    eventId={m.follow.event_id}
-                                    title={`${m.follow.player1_name} – ${m.follow.player2_name}`}
+                                    key={m.eventId}
+                                    eventId={m.eventId}
+                                    title={`${m.ctx.p1} – ${m.ctx.p2}`}
                                     liveLine={tennisLiveLine(m)}
                                     inplay={m.ctx.inplay}
                                     evaluations={[{ evaluation: m.evaluation }]}
-                                    dataNote={m.ctx.oddsNameMismatch ? 'nomi giocatori non riconosciuti nel mercato — quote n/d' : null}
                                 />
                             ))}
                         </div>
@@ -276,9 +324,10 @@ export default function SafeStrategy() {
                 </section>
 
                 <p className="mt-12 text-[11px] text-muted-foreground text-center max-w-3xl mx-auto">
-                    Fonti dati: stream Betfair già attivi (quote realtime, punteggi e minuto dai runner calcio/tennis) —
-                    nessun flusso aggiuntivo. Video e statistiche match si aprono sul sito Betfair con il tuo account.
-                    Nessun ordine viene mai piazzato automaticamente da questa sezione.
+                    Fonte dati: scanner autonomo Betfair (quote a lotti, punteggi in-play, riferimento
+                    pre-KO congelato al kickoff) — cadenze adattive nei limiti API. Video e statistiche si
+                    aprono sul popup ufficiale Betfair col tuo account. Nessun ordine viene mai piazzato
+                    automaticamente da questa sezione.
                 </p>
             </main>
         </div>

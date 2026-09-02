@@ -1,16 +1,20 @@
 // ============================================================================
 // SafeStrategyProvider.tsx — plumbing dati della sezione SAFE STRATEGY.
 //
-// Monta le sottoscrizioni ai flussi GIÀ ESISTENTI (nessuna fonte dati nuova):
-//   · calcio: get_live_follows (poll 20s) + realtime live_now (runner, ~5s)
-//             + get_betfair_odds (1X2 pre-match, una volta per evento)
-//   · tennis: get_tennis_follows (poll 20s) + realtime tennis_live_now (~2s)
-// e per ogni aggiornamento invoca il motore PURO lib/safeStrategy.ts.
+// FONTE UNICA: lo SCANNER AUTONOMO backend (Betfair/safe_strategy → tabella
+// safe_strategy_scan + heartbeat safe_strategy_status). Nessuna iscrizione
+// manuale: lo scanner monitora TUTTI gli eventi calcio+tennis in-play del
+// momento e questo provider li valuta col motore PURO certificato
+// (lib/safeStrategy.ts). Richiede migrations/safe_strategy_scan.sql.
 //
-// Montato globalmente (App.tsx, dentro BrowserRouter): i segnali scattano anche
-// quando l'utente è su un'altra schermata → toast cliccabile che porta a
-// /safe-strategy. Sulla pagina stessa il toast è soppresso (i segnali sono già
-// in vista). NESSUN ordine viene mai piazzato da qui: solo segnalazione.
+// Efficienza (uso a piena potenza, tante schede aperte):
+//   · UN solo canale realtime per la tabella scan (mai N canali per evento);
+//   · aggiornamenti COALIZZATI (flush ogni 400ms): decine di righe live non
+//     scatenano decine di re-render al secondo;
+//   · merge "più recente vince" su updated_at (fetch iniziale vs realtime).
+//
+// Montato globalmente (App.tsx): i segnali nuovi emettono un toast cliccabile
+// verso /safe-strategy da qualunque schermata. NESSUN ordine parte da qui.
 // ============================================================================
 import {
     createContext,
@@ -26,30 +30,24 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import {
-    fetchLiveFollows,
-    fetchLiveNow,
-    subscribeLiveNow,
-    type LiveFollow,
-    type LiveNowRow,
-} from '@/lib/live';
-import { fetchBetfairOdds } from '@/lib/betfair';
-import {
-    fetchTennisFollows,
-    fetchTennisNow,
-    subscribeTennisNow,
-    type TennisFollow,
-    type TennisLiveNowRow,
-} from '@/lib/tennis';
+    fetchScanRows,
+    fetchScanStatus,
+    subscribeScanRows,
+    subscribeScanStatus,
+    type CalcioScanPayload,
+    type ScanRow,
+    type ScanStatusRow,
+    type TennisScanPayload,
+} from '@/lib/safeStrategyScan';
 import {
     DEFAULT_PARAMS,
     mergeParams,
-    buildFootballCtx,
-    buildTennisCtx,
+    buildFootballCtxFromScan,
+    buildTennisCtxFromScan,
     evaluateFootballAll,
     evaluateTennis,
     footballCandidates,
     tennisCandidates,
-    parsePreMatch1x2,
     reconcileSignals,
     tennisScoreKey,
     trackScoreStability,
@@ -65,94 +63,23 @@ import {
 } from '@/lib/safeStrategy';
 
 const STORAGE_KEY = 'safe_strategy_params_v1';
-const FOLLOWS_POLL_MS = 20_000;
-/** stati follow per cui vale la pena monitorare (stessi del runner). */
-const MONITORED_STATUS = new Set(['PENDING', 'STREAMING']);
-
-// -------------------------- riferimento 1X2 pre-match CERTIFICATO (blindatura)
-// La tabella betfair_market_odds NON è congelata al kickoff (bat rilanciato o
-// refresh manuale in-play la sovrascrivono con quote live). Regola: il
-// riferimento si cattura SOLO mentre now < open_date (prima del KO qualunque
-// snapshot è pre-match per definizione), si ricattura ogni 5' fino al KO
-// (closing line) e si PERSISTE in localStorage: sopravvive a riavvii dell'app
-// a partita in corso. Se al KO non è mai stato catturato → resta n/d, mai
-// un riferimento contaminato.
-const PRE_SNAPSHOT_KEY = 'safe_strategy_prematch_v1';
-const PRE_REFRESH_MS = 5 * 60 * 1000;
-const PRE_RETRY_MS = 60 * 1000;
-const PRE_TTL_MS = 48 * 60 * 60 * 1000;
-
-interface PreMatchRef {
-    home: number;
-    draw: number;
-    away: number;
-    capturedAtMs: number;
-}
-
-function loadPreRefs(): Record<string, PreMatchRef> {
-    try {
-        const raw = localStorage.getItem(PRE_SNAPSHOT_KEY);
-        const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-        if (!obj || typeof obj !== 'object') return {};
-        const out: Record<string, PreMatchRef> = {};
-        const cutoff = Date.now() - PRE_TTL_MS;
-        for (const [k, v] of Object.entries(obj)) {
-            const r = v as Partial<PreMatchRef> | null;
-            if (
-                r &&
-                typeof r.home === 'number' &&
-                typeof r.draw === 'number' &&
-                typeof r.away === 'number' &&
-                typeof r.capturedAtMs === 'number' &&
-                r.capturedAtMs >= cutoff
-            ) {
-                out[k] = { home: r.home, draw: r.draw, away: r.away, capturedAtMs: r.capturedAtMs };
-            }
-        }
-        return out;
-    } catch {
-        return {};
-    }
-}
-function savePreRefs(refs: Record<string, PreMatchRef>): void {
-    try {
-        localStorage.setItem(PRE_SNAPSHOT_KEY, JSON.stringify(refs));
-    } catch {
-        /* storage non disponibile: il riferimento resta per la sessione */
-    }
-}
-
-/** merge "il più recente vince" (stesso pattern di SeguiLive): il fetch iniziale
- *  può risolversi DOPO un push realtime più fresco — mai regredire a uno
- *  snapshot più vecchio (falserebbe anche l'ancora post-gol della Punta). */
-function newerRow<T extends { updated_at: string | null }>(prev: T | null, next: T): T {
-    if (!prev?.updated_at || !next.updated_at) return next;
-    return Date.parse(next.updated_at) >= Date.parse(prev.updated_at) ? next : prev;
-}
-
-/** rimuove chiavi da una mappa di stato senza crearne una nuova se nulla cambia. */
-function dropKeys<T>(prev: Record<string, T>, keys: string[]): Record<string, T> {
-    let changed = false;
-    const next = { ...prev };
-    for (const k of keys) {
-        if (k in next) {
-            delete next[k];
-            changed = true;
-        }
-    }
-    return changed ? next : prev;
-}
+/** poll di backup (il realtime è la via primaria) */
+const BACKUP_POLL_MS = 30_000;
+/** flush coalizzato degli aggiornamenti realtime */
+const FLUSH_MS = 400;
 
 export interface FootballMonitor {
-    follow: LiveFollow;
+    eventId: string;
+    payload: CalcioScanPayload;
     ctx: FootballMatchCtx;
     evaluations: VariantEvaluation[];
-    /** true = partita in-play SENZA riferimento pre-match certificato (app
-     *  aperta dopo il kickoff): condizioni pre-match n/d per scelta, non per bug */
+    /** true = in-play SENZA riferimento pre-KO catturato dallo scanner
+     *  (scanner partito a match iniziato): condizioni pre-match n/d per scelta */
     preMatchMissing: boolean;
 }
 export interface TennisMonitor {
-    follow: TennisFollow;
+    eventId: string;
+    payload: TennisScanPayload;
     ctx: TennisMatchCtx;
     evaluation: VariantEvaluation;
 }
@@ -164,6 +91,8 @@ interface SafeStrategyValue {
     football: FootballMonitor[];
     tennis: TennisMonitor[];
     signals: ActiveSignal[];
+    /** heartbeat dello scanner backend (null = mai visto) */
+    scanStatus: ScanStatusRow | null;
 }
 
 const SafeStrategyContext = createContext<SafeStrategyValue | null>(null);
@@ -183,6 +112,11 @@ function loadParams(): SafeStrategyParams {
     }
 }
 
+function newerRow(prev: ScanRow | null, next: ScanRow): ScanRow {
+    if (!prev?.updated_at || !next.updated_at) return next;
+    return Date.parse(next.updated_at) >= Date.parse(prev.updated_at) ? next : prev;
+}
+
 export function SafeStrategyProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth();
     const userId = user?.id ?? null;
@@ -190,17 +124,12 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
     const location = useLocation();
 
     const [params, setParams] = useState<SafeStrategyParams>(loadParams);
-    const [follows, setFollows] = useState<LiveFollow[]>([]);
-    const [tnFollows, setTnFollows] = useState<TennisFollow[]>([]);
-    const [nowMap, setNowMap] = useState<Record<string, LiveNowRow | null>>({});
-    const [tnNowMap, setTnNowMap] = useState<Record<string, TennisLiveNowRow | null>>({});
-    const [preRefs, setPreRefs] = useState<Record<string, PreMatchRef>>(loadPreRefs);
+    const [rowsMap, setRowsMap] = useState<Record<string, ScanRow>>({});
+    const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
     const [stabMap, setStabMap] = useState<Record<string, ScoreStability>>({});
     const [tnStabMap, setTnStabMap] = useState<Record<string, TennisScoreStability>>({});
     const [signals, setSignals] = useState<ActiveSignal[]>([]);
 
-    // path corrente in ref: il toast decide al momento dello scatto, senza
-    // riagganciare gli effetti dati alla route.
     const pathRef = useRef(location.pathname);
     useEffect(() => {
         pathRef.current = location.pathname;
@@ -217,241 +146,181 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
     }, []);
     const resetParams = useCallback(() => saveParams(DEFAULT_PARAMS), [saveParams]);
 
-    // ------------------------------------------------------ poll liste follow
+    // -------------------------------------------- applicazione righe (coalizzata)
+    // ref con l'ultima riga ACCETTATA per evento (per il confronto updated_at
+    // fuori dai setState) + buffer degli eventi realtime in attesa di flush.
+    const rowsRef = useRef<Record<string, ScanRow>>({});
+    const pendingUpsertRef = useRef(new Map<string, ScanRow>());
+    const pendingDeleteRef = useRef(new Set<string>());
+    const flushTimerRef = useRef<number | null>(null);
+
+    const applyRows = useCallback((upserts: ScanRow[], deletes: string[]) => {
+        const accepted: ScanRow[] = [];
+        for (const row of upserts) {
+            const cur = rowsRef.current[row.event_id] ?? null;
+            const next = newerRow(cur, row);
+            if (next === cur) continue;
+            rowsRef.current[row.event_id] = next;
+            accepted.push(next);
+        }
+        for (const id of deletes) delete rowsRef.current[id];
+        if (accepted.length === 0 && deletes.length === 0) return;
+
+        // tracker stabilità punteggio (anti-blip): alimentati SOLO dalle righe accettate
+        const nowMs = Date.now();
+        setStabMap((prev) => {
+            let next = prev;
+            for (const row of accepted) {
+                if (row.sport !== 'calcio') continue;
+                const p = row.payload as CalcioScanPayload;
+                const cur = next[row.event_id] ?? null;
+                const upd = trackScoreStability(cur, p.minute, p.score_home, p.score_away, nowMs);
+                if (upd !== cur && upd !== null) next = { ...next, [row.event_id]: upd };
+            }
+            for (const id of deletes) {
+                if (id in next) {
+                    next = { ...next };
+                    delete next[id];
+                }
+            }
+            return next;
+        });
+        setTnStabMap((prev) => {
+            let next = prev;
+            for (const row of accepted) {
+                if (row.sport !== 'tennis') continue;
+                const p = row.payload as TennisScanPayload;
+                const cur = next[row.event_id] ?? null;
+                const upd = trackTennisScoreStability(cur, tennisScoreKey(p.sets, p.games), nowMs);
+                if (upd !== cur && upd !== null) next = { ...next, [row.event_id]: upd };
+            }
+            for (const id of deletes) {
+                if (id in next) {
+                    next = { ...next };
+                    delete next[id];
+                }
+            }
+            return next;
+        });
+        setRowsMap((prev) => {
+            const next = { ...prev };
+            for (const row of accepted) next[row.event_id] = row;
+            for (const id of deletes) delete next[id];
+            return next;
+        });
+    }, []);
+
+    const scheduleFlush = useCallback(() => {
+        if (flushTimerRef.current !== null) return;
+        flushTimerRef.current = window.setTimeout(() => {
+            flushTimerRef.current = null;
+            const upserts = [...pendingUpsertRef.current.values()];
+            const deletes = [...pendingDeleteRef.current];
+            pendingUpsertRef.current.clear();
+            pendingDeleteRef.current.clear();
+            applyRows(upserts, deletes);
+        }, FLUSH_MS);
+    }, [applyRows]);
+
+    // ------------------------------------------------ fetch iniziale + realtime
     useEffect(() => {
         if (!userId) {
-            setFollows([]);
-            setTnFollows([]);
+            rowsRef.current = {};
+            setRowsMap({});
+            setScanStatus(null);
             return;
         }
         let alive = true;
-        const load = async () => {
-            try {
-                const rows = await fetchLiveFollows();
-                if (alive) setFollows(rows);
-            } catch {
-                /* transitorio: si ritenta al prossimo giro */
-            }
-            try {
-                const rows = await fetchTennisFollows();
-                if (alive) setTnFollows(rows);
-            } catch {
-                /* idem */
-            }
-        };
-        void load();
-        const t = window.setInterval(load, FOLLOWS_POLL_MS);
-        return () => {
-            alive = false;
-            window.clearInterval(t);
-        };
-    }, [userId]);
-
-    // ------------------------------------------- snapshot live_now (calcio)
-    // ref con l'ultimo snapshot ACCETTATO per evento: consente il confronto
-    // updated_at fuori dai setState (unico writer: handleFootballNow).
-    const fbNowRef = useRef<Record<string, LiveNowRow>>({});
-    const handleFootballNow = useCallback((eventId: string, row: LiveNowRow | null) => {
-        if (!row) return; // payload vuoto: nessuna informazione nuova
-        const cur = fbNowRef.current[eventId] ?? null;
-        const next = newerRow(cur, row);
-        if (next === cur) return; // snapshot più vecchio di quello già mostrato
-        fbNowRef.current[eventId] = next;
-        setStabMap((prev) => {
-            const curStab = prev[eventId] ?? null;
-            const nextStab = trackScoreStability(curStab, next.minute, next.score_home, next.score_away, Date.now());
-            if (nextStab === curStab || nextStab === null) return prev;
-            return { ...prev, [eventId]: nextStab };
-        });
-        setNowMap((prev) => ({ ...prev, [eventId]: next }));
-    }, []);
-
-    const preBusyRef = useRef(new Set<string>());
-    const preLastTryRef = useRef(new Map<string, number>());
-    const fbSubsRef = useRef(new Map<string, () => void>());
-    useEffect(() => {
-        const wanted = new Set(
-            follows.filter((f) => MONITORED_STATUS.has(f.status)).map((f) => f.event_id),
-        );
-        const removed: string[] = [];
-        for (const [id, off] of fbSubsRef.current) {
-            if (!wanted.has(id)) {
-                off();
-                fbSubsRef.current.delete(id);
-                removed.push(id);
-            }
-        }
-        if (removed.length > 0) {
-            // pruning: gli eventi usciti dal monitoraggio non servono più in memoria
-            // (preRefs resta: è persistito con TTL 48h e serve se il follow riappare)
-            for (const id of removed) {
-                delete fbNowRef.current[id];
-                preLastTryRef.current.delete(id);
-            }
-            setNowMap((prev) => dropKeys(prev, removed));
-            setStabMap((prev) => dropKeys(prev, removed));
-        }
-        for (const id of wanted) {
-            if (fbSubsRef.current.has(id)) continue;
-            fbSubsRef.current.set(id, subscribeLiveNow(id, (row) => handleFootballNow(id, row)));
-            // il realtime notifica solo i CAMBI futuri → fetch immediato (pattern live.ts)
-            void fetchLiveNow(id)
-                .then((row) => handleFootballNow(id, row))
-                .catch(() => {});
-        }
-    }, [follows, handleFootballNow]);
-
-    // -------------------------------------- snapshot tennis_live_now (tennis)
-    const tnNowRef = useRef<Record<string, TennisLiveNowRow>>({});
-    const handleTennisNow = useCallback((eventId: string, row: TennisLiveNowRow | null) => {
-        if (!row) return; // payload vuoto: nessuna informazione nuova
-        const cur = tnNowRef.current[eventId] ?? null;
-        const next = newerRow(cur, row);
-        if (next === cur) return; // snapshot più vecchio di quello già mostrato
-        tnNowRef.current[eventId] = next;
-        setTnStabMap((prev) => {
-            const curStab = prev[eventId] ?? null;
-            const key = tennisScoreKey(next.score?.sets ?? null, next.score?.games ?? null);
-            const nextStab = trackTennisScoreStability(curStab, key, Date.now());
-            if (nextStab === curStab || nextStab === null) return prev;
-            return { ...prev, [eventId]: nextStab };
-        });
-        setTnNowMap((prev) => ({ ...prev, [eventId]: next }));
-    }, []);
-
-    const tnSubsRef = useRef(new Map<string, () => void>());
-    useEffect(() => {
-        const wanted = new Set(
-            tnFollows.filter((f) => MONITORED_STATUS.has(f.status)).map((f) => f.event_id),
-        );
-        const removed: string[] = [];
-        for (const [id, off] of tnSubsRef.current) {
-            if (!wanted.has(id)) {
-                off();
-                tnSubsRef.current.delete(id);
-                removed.push(id);
-            }
-        }
-        if (removed.length > 0) {
-            for (const id of removed) delete tnNowRef.current[id];
-            setTnNowMap((prev) => dropKeys(prev, removed));
-            setTnStabMap((prev) => dropKeys(prev, removed));
-        }
-        for (const id of wanted) {
-            if (tnSubsRef.current.has(id)) continue;
-            tnSubsRef.current.set(id, subscribeTennisNow(id, (row) => handleTennisNow(id, row)));
-            void fetchTennisNow(id)
-                .then((row) => handleTennisNow(id, row))
-                .catch(() => {});
-        }
-    }, [tnFollows, handleTennisNow]);
-
-    // cleanup totale a smontaggio
-    useEffect(
-        () => () => {
-            for (const off of fbSubsRef.current.values()) off();
-            fbSubsRef.current.clear();
-            for (const off of tnSubsRef.current.values()) off();
-            tnSubsRef.current.clear();
-        },
-        [],
-    );
-
-    // --------------------------- 1X2 pre-match (riferimento favorita, 1 fetch)
-    useEffect(() => {
-        const nowMs = Date.now();
-        for (const f of follows) {
-            if (f.fixture_id == null) continue;
-            if (!MONITORED_STATUS.has(f.status)) continue;
-            const ko = Date.parse(f.open_date);
-            // REGOLA DI CERTIFICAZIONE: cattura SOLO prima del kickoff — dopo,
-            // la tabella quote può essere stata sovrascritta con valori in-play.
-            if (!Number.isFinite(ko) || nowMs >= ko) continue;
-            const ref = preRefs[f.event_id];
-            if (ref && nowMs - ref.capturedAtMs < PRE_REFRESH_MS) continue; // ricattura ogni 5' → closing line
-            if (preBusyRef.current.has(f.event_id)) continue;
-            if (nowMs - (preLastTryRef.current.get(f.event_id) ?? 0) < PRE_RETRY_MS) continue;
-            preBusyRef.current.add(f.event_id);
-            preLastTryRef.current.set(f.event_id, nowMs);
-            fetchBetfairOdds(String(f.fixture_id))
-                .then((odds) => {
-                    const parsed = parsePreMatch1x2(odds);
-                    if (!parsed) return;
-                    // ricontrollo al ritorno: se nel frattempo è scattato il KO, scarta
-                    if (Date.now() >= ko) return;
-                    setPreRefs((prev) => {
-                        const next = { ...prev, [f.event_id]: { ...parsed, capturedAtMs: Date.now() } };
-                        savePreRefs(next);
-                        return next;
-                    });
+        const load = () => {
+            fetchScanRows()
+                .then((rows) => {
+                    if (!alive) return;
+                    // il fetch è lo stato COMPLETO: le righe assenti sono sparite
+                    const present = new Set(rows.map((r) => r.event_id));
+                    const gone = Object.keys(rowsRef.current).filter((id) => !present.has(id));
+                    applyRows(rows, gone);
                 })
                 .catch(() => {
-                    /* si ritenta non prima di PRE_RETRY_MS */
+                    /* migrazione non applicata o rete: si ritenta al prossimo giro */
+                });
+            fetchScanStatus()
+                .then((s) => {
+                    if (alive) setScanStatus(s);
                 })
-                .finally(() => preBusyRef.current.delete(f.event_id));
-        }
-    }, [follows, preRefs]);
+                .catch(() => {});
+        };
+        load();
+        const poll = window.setInterval(load, BACKUP_POLL_MS);
+        const offRows = subscribeScanRows((ev) => {
+            if (ev.type === 'upsert') {
+                pendingUpsertRef.current.set(ev.row.event_id, ev.row);
+                pendingDeleteRef.current.delete(ev.row.event_id);
+            } else {
+                pendingDeleteRef.current.add(ev.eventId);
+                pendingUpsertRef.current.delete(ev.eventId);
+            }
+            scheduleFlush();
+        });
+        const offStatus = subscribeScanStatus((row) => {
+            if (row) setScanStatus(row);
+        });
+        return () => {
+            alive = false;
+            window.clearInterval(poll);
+            offRows();
+            offStatus();
+            if (flushTimerRef.current !== null) {
+                window.clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+        };
+    }, [userId, applyRows, scheduleFlush]);
 
     // ------------------------------------------------- valutazione (motore puro)
     const derived = useMemo(() => {
         const nowMs = Date.now();
-        const football: FootballMonitor[] = follows
-            .filter((f) => MONITORED_STATUS.has(f.status))
-            .map((f) => {
-                const now = nowMap[f.event_id] ?? null;
-                const stab = stabMap[f.event_id] ?? null;
+        const football: FootballMonitor[] = [];
+        const tennis: TennisMonitor[] = [];
+        for (const row of Object.values(rowsMap)) {
+            if (row.sport === 'calcio') {
+                const p = row.payload as CalcioScanPayload;
+                const stab = stabMap[row.event_id] ?? null;
                 const stable =
-                    stab && now && `${now.score_home}-${now.score_away}` === stab.scoreKey
-                        ? stab
-                        : null;
-                const ref = preRefs[f.event_id] ?? null;
-                const ctx = buildFootballCtx(
-                    f,
-                    now,
-                    ref ? { home: ref.home, draw: ref.draw, away: ref.away } : null,
+                    stab && `${p.score_home}-${p.score_away}` === stab.scoreKey ? stab : null;
+                const ctx = buildFootballCtxFromScan(
+                    row.event_id,
+                    p,
                     stable?.sinceMinute ?? null,
                     stable ? (nowMs - stable.sinceMs) / 1000 : null,
                 );
-                return {
-                    follow: f,
+                football.push({
+                    eventId: row.event_id,
+                    payload: p,
                     ctx,
                     evaluations: evaluateFootballAll(ctx, params),
-                    preMatchMissing: ctx.inplay && ref === null,
-                };
-            });
-
-        const tennis: TennisMonitor[] = tnFollows
-            .filter((f) => MONITORED_STATUS.has(f.status))
-            .map((f) => {
-                // fallback: se tennis_live_now non è ancora arrivato, il punteggio
-                // della riga follow (stesso runner) evita un buco di dati.
-                const now =
-                    tnNowMap[f.event_id] ??
-                    (f.score
-                        ? ({
-                              event_id: f.event_id,
-                              inplay: f.inplay,
-                              status: f.live_status,
-                              state: null,
-                              score: f.score,
-                              points: null,
-                              updated_at: f.updated_at,
-                          } satisfies TennisLiveNowRow)
-                        : null);
-                const stab = tnStabMap[f.event_id] ?? null;
-                const key = tennisScoreKey(now?.score?.sets ?? null, now?.score?.games ?? null);
+                    preMatchMissing: ctx.inplay && ctx.preMatch === null,
+                });
+            } else {
+                const p = row.payload as TennisScanPayload;
+                const stab = tnStabMap[row.event_id] ?? null;
+                const key = tennisScoreKey(p.sets ?? null, p.games ?? null);
                 const observed =
                     stab && key && stab.scoreKey === key ? (nowMs - stab.sinceMs) / 1000 : null;
-                const ctx = buildTennisCtx(f, now, observed);
-                return { follow: f, ctx, evaluation: evaluateTennis(ctx, params.tennis) };
-            });
-
+                const ctx = buildTennisCtxFromScan(row.event_id, p, observed);
+                tennis.push({
+                    eventId: row.event_id,
+                    payload: p,
+                    ctx,
+                    evaluation: evaluateTennis(ctx, params.tennis),
+                });
+            }
+        }
         const candidates = [
             ...football.flatMap((m) => footballCandidates(m.ctx, m.evaluations)),
             ...tennis.flatMap((m) => tennisCandidates(m.ctx, m.evaluation)),
         ];
         return { football, tennis, candidates };
-    }, [follows, tnFollows, nowMap, tnNowMap, preRefs, stabMap, tnStabMap, params]);
+    }, [rowsMap, stabMap, tnStabMap, params]);
 
     // ------------------------------------------- riconciliazione segnali + toast
     const signalsRef = useRef<ActiveSignal[]>([]);
@@ -460,7 +329,6 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
         signalsRef.current = next;
         setSignals(next);
         if (fresh.length === 0) return;
-        // sulla pagina Safe Strategy i segnali sono già in vista: niente toast
         if (pathRef.current === '/safe-strategy') return;
         for (const s of fresh) {
             const meta = VARIANT_META[s.variant];
@@ -482,8 +350,9 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
             football: derived.football,
             tennis: derived.tennis,
             signals,
+            scanStatus,
         }),
-        [params, saveParams, resetParams, derived.football, derived.tennis, signals],
+        [params, saveParams, resetParams, derived.football, derived.tennis, signals, scanStatus],
     );
 
     return <SafeStrategyContext.Provider value={value}>{children}</SafeStrategyContext.Provider>;

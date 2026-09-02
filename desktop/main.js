@@ -230,6 +230,10 @@ function startRunners() {
     // avviare anche i .bat a mano: l'app avvia già tutto.
     spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service']);
     spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service']);
+    // SAFE STRATEGY: scanner AUTONOMO degli eventi in-play (calcio+tennis).
+    // REST leggero a cadenze adattive, scrive i fatti su safe_strategy_scan;
+    // single-instance lock su 127.0.0.1:47315. Nessun ordine, mai.
+    spawnRunner('safe-strategy-service', ['-m', 'Betfair.safe_strategy.service']);
     // OMEGA (Correct Score LAY): servizio leggero e ISOLATO. A riposo NON chiama
     // Betfair (idle = nessuna richiesta); agisce solo quando lo attivi/usi da /omega,
     // e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio

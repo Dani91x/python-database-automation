@@ -15,6 +15,8 @@ import {
     scoreInListAnyOrder,
     stateFromChecks,
     buildFootballCtx,
+    buildFootballCtxFromScan,
+    buildTennisCtxFromScan,
     parsePreMatch1x2,
     favoriteSide,
     evaluateBase,
@@ -454,6 +456,52 @@ describe('evaluateTennis', () => {
     });
     it('NO: mercato SOSPESO blocca il segnale', () => {
         expect(evaluateTennis(tennisCtx({ moStatus: 'SUSPENDED' }), DEFAULT_PARAMS.tennis).state).toBe('no');
+    });
+});
+
+// -------------------------------------------------- contesti dallo SCANNER
+describe('build*CtxFromScan', () => {
+    it('calcio: payload scanner completo → ctx equivalente e segnale Base', () => {
+        const ctx = buildFootballCtxFromScan('ev9', {
+            event_name: 'Nord FC v Sud FC', home: 'Nord FC', away: 'Sud FC',
+            competition: 'Serie A', open_date: '2026-09-02T16:00:00+00:00',
+            inplay: true, mo_market_id: '1.1', mo_status: 'OPEN',
+            odds: {
+                home: { back: 1.28, lay: 1.3 },
+                draw: { back: 5.0, lay: 5.2 },
+                away: { back: 8.0, lay: 8.4 },
+            },
+            minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
+            pre_ko: { home: 1.65, draw: 4.0, away: 5.5, captured_at: 'x' },
+            cs: { market_id: '1.2', status: 'OPEN', any_other_home: { back: 44, lay: 45 }, any_other_away: { back: 48, lay: 50 } },
+        }, 50, 60);
+        const ev = evaluateBase(ctx, DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.headline).toBe('BANCA Sud FC');
+        expect(ctx.red).toEqual({ home: 0, away: 0 });
+        expect(ctx.anyOther?.home?.lay).toBe(45);
+    });
+    it('calcio: mo_status null (mai interrogato) → mercato n/d, mai "aperto" per default', () => {
+        const ctx = buildFootballCtxFromScan('ev9', {
+            event_name: null, home: null, away: null, competition: null, open_date: null,
+            inplay: true, mo_market_id: null, mo_status: null, odds: null,
+            minute: null, score_home: null, score_away: null, red_home: null, red_away: null,
+            pre_ko: null, cs: null,
+        }, null, null);
+        expect(ctx.matchOddsOpen).toBeNull();
+        expect(ctx.correctScoreOpen).toBeNull();
+        expect(ctx.preMatch).toBeNull();
+    });
+    it('tennis: payload scanner → ctx con competizione e segnale', () => {
+        const ctx = buildTennisCtxFromScan('tv9', {
+            event_name: 'Rossi M. v Bianchi L.', p1: 'Rossi M.', p2: 'Bianchi L.',
+            competition: 'ATP Rome', open_date: null, inplay: true,
+            mo_market_id: '1.9', mo_status: 'OPEN',
+            odds: { p1: { back: 1.03, lay: 1.04 }, p2: { back: 14, lay: 15 } },
+            sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 0 },
+        }, 60);
+        expect(ctx.competition).toBe('ATP Rome');
+        expect(evaluateTennis(ctx, DEFAULT_PARAMS.tennis).state).toBe('signal');
     });
 });
 

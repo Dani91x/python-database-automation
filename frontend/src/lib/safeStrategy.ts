@@ -19,6 +19,7 @@
 import type { LiveNowRow, LiveNowSelection } from '@/lib/live';
 import type { BetfairOdds } from '@/lib/betfair';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
+import type { CalcioScanPayload, ScanOddsPair, TennisScanPayload } from '@/lib/safeStrategyScan';
 
 // ---------------------------------------------------------------- tipi base
 export type Sport = 'calcio' | 'tennis';
@@ -419,6 +420,89 @@ export function buildFootballCtx(
         scoreStableSinceMinute,
         scoreObservedSec,
         red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
+    };
+}
+
+// ---------------------------------------------- contesti dallo SCANNER autonomo
+function numOrNull(v: unknown): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+function scanPair(x: ScanOddsPair | null | undefined): OddsPair | null {
+    if (!x) return null;
+    return { back: numOrNull(x.back), lay: numOrNull(x.lay) };
+}
+/** stato mercato dallo scanner: null = non ancora interrogato (ignoto). */
+function scanMarketOpen(status: string | null | undefined): boolean | null {
+    return status == null ? null : status === 'OPEN';
+}
+
+/** Contesto calcio dalla riga dello scanner autonomo (payload JSONB difensivo). */
+export function buildFootballCtxFromScan(
+    eventId: string,
+    p: CalcioScanPayload,
+    scoreStableSinceMinute: number | null,
+    scoreObservedSec: number | null,
+): FootballMatchCtx {
+    const redH = numOrNull(p.red_home);
+    const redA = numOrNull(p.red_away);
+    return {
+        eventId,
+        home: p.home ?? p.event_name ?? '—',
+        away: p.away ?? '—',
+        inplay: p.inplay === true,
+        minute: numOrNull(p.minute),
+        scoreHome: numOrNull(p.score_home),
+        scoreAway: numOrNull(p.score_away),
+        odds: p.odds
+            ? { home: scanPair(p.odds.home), draw: scanPair(p.odds.draw), away: scanPair(p.odds.away) }
+            : null,
+        anyOther: p.cs
+            ? { home: scanPair(p.cs.any_other_home), away: scanPair(p.cs.any_other_away) }
+            : null,
+        preMatch:
+            p.pre_ko &&
+            numOrNull(p.pre_ko.home) !== null &&
+            numOrNull(p.pre_ko.draw) !== null &&
+            numOrNull(p.pre_ko.away) !== null
+                ? { home: p.pre_ko.home, draw: p.pre_ko.draw, away: p.pre_ko.away }
+                : null,
+        matchOddsMarketId: p.mo_market_id ?? null,
+        matchOddsOpen: scanMarketOpen(p.mo_status),
+        correctScoreOpen: p.cs ? scanMarketOpen(p.cs.status) : null,
+        oddsNameMismatch: false, // nomi e selezioni vengono dallo STESSO catalogo
+        red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
+        scoreStableSinceMinute,
+        scoreObservedSec,
+    };
+}
+
+/** Contesto tennis dalla riga dello scanner autonomo. */
+export function buildTennisCtxFromScan(
+    eventId: string,
+    p: TennisScanPayload,
+    scoreObservedSec: number | null,
+): TennisMatchCtx {
+    const sets =
+        p.sets && numOrNull(p.sets.p1) !== null && numOrNull(p.sets.p2) !== null
+            ? { p1: p.sets.p1, p2: p.sets.p2 }
+            : null;
+    const games =
+        p.games && numOrNull(p.games.p1) !== null && numOrNull(p.games.p2) !== null
+            ? { p1: p.games.p1, p2: p.games.p2 }
+            : null;
+    return {
+        eventId,
+        p1: p.p1 ?? p.event_name ?? '—',
+        p2: p.p2 ?? '—',
+        inplay: p.inplay === true,
+        sets,
+        games,
+        odds: p.odds ? { p1: scanPair(p.odds.p1), p2: scanPair(p.odds.p2) } : null,
+        matchOddsMarketId: p.mo_market_id ?? null,
+        matchOddsOpen: scanMarketOpen(p.mo_status),
+        oddsNameMismatch: false,
+        competition: p.competition?.trim() || null,
+        scoreObservedSec,
     };
 }
 
