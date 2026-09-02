@@ -224,7 +224,10 @@ export default function SafeStrategy() {
                                     liveLine={footballLiveLine(m)}
                                     inplay={m.ctx.inplay}
                                     evaluations={m.evaluations.map((evaluation) => ({ evaluation }))}
-                                    dataNote={m.ctx.oddsNameMismatch ? 'nomi selezioni non riconosciuti nel mercato — quote n/d' : null}
+                                    dataNote={[
+                                        m.ctx.oddsNameMismatch ? 'nomi selezioni non riconosciuti nel mercato — quote n/d' : null,
+                                        m.preMatchMissing ? 'riferimento pre-match non catturato prima del kickoff — condizioni pre-match n/d' : null,
+                                    ].filter(Boolean).join(' · ') || null}
                                 />
                             ))}
                         </div>

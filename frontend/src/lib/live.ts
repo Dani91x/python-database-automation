@@ -83,10 +83,22 @@ export interface LiveNowMarket {
     status?: string | null;   // OPEN | SUSPENDED | CLOSED (per il badge/banner)
     selections: LiveNowSelection[];
 }
+/** statistiche live scritte dal runner (score_worker: state["stats"] = snap.stats).
+ *  Presenti quando il provider punteggio le espone (Betfair in-play); possono
+ *  mancare del tutto col fallback — i consumer devono tollerarne l'assenza. */
+export interface LiveNowStats {
+    cards?: {
+        yellow_home?: number | null;
+        yellow_away?: number | null;
+        red_home?: number | null;
+        red_away?: number | null;
+    } | null;
+}
 export interface LiveNowState {
     markets: LiveNowMarket[];
     order_mode?: string;       // OFF | PAPER | LIVE — modalità ordini del runner (per il badge del pannello Live Trading)
     updated_ms?: number;
+    stats?: LiveNowStats | null;
 }
 export interface LiveNowRow {
     event_id: string;

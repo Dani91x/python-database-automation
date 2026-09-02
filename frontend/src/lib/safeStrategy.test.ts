@@ -15,6 +15,7 @@ import {
     scoreInListAnyOrder,
     stateFromChecks,
     buildFootballCtx,
+    parsePreMatch1x2,
     favoriteSide,
     evaluateBase,
     evaluateEsatto,
@@ -48,12 +49,15 @@ function liveNow(over: {
     withCs?: boolean;
     moStatus?: string | null;
     csStatus?: string | null;
+    redHome?: number;
+    redAway?: number;
 }): LiveNowRow {
     const {
         minute = 58, sh = 1, sa = 0, inplay = true,
         favBack = 1.28, favLay = 1.3, dogBack = 8.0, dogLay = 8.4,
         anyOtherHomeLay = 45, anyOtherAwayLay = 50, withCs = true,
         moStatus = 'OPEN', csStatus = 'OPEN',
+        redHome, redAway,
     } = over;
     const markets = [
         {
@@ -75,20 +79,28 @@ function liveNow(over: {
             ],
         });
     }
+    const stats = redHome !== undefined && redAway !== undefined
+        ? { cards: { yellow_home: 0, yellow_away: 0, red_home: redHome, red_away: redAway } }
+        : undefined;
     return {
         event_id: 'ev1', inplay, minute, score_home: sh, score_away: sa,
         status: 'SecondHalf', score_source: 'ips',
-        state: { markets },
+        state: { markets, ...(stats ? { stats } : {}) },
         updated_at: null,
     };
 }
 
-// Nord (home) favorita 1.65, Sud (away) sfavorita 5.5
-const PRE_MATCH = { '1x2': { H: 1.65, D: 4.0, A: 5.5 } };
+// Nord (home) favorita 1.65, Sud (away) sfavorita 5.5 — riferimento CERTIFICATO
+// pre-KO (il provider passa già il 1X2 parsato, mai il payload grezzo)
+const PRE_MATCH = { home: 1.65, draw: 4.0, away: 5.5 };
 
-function ctxOf(over: Parameters<typeof liveNow>[0] & { stableSince?: number | null; preMatch?: typeof PRE_MATCH | null } = {}): FootballMatchCtx {
-    const { stableSince = 50, preMatch = PRE_MATCH, ...rest } = over;
-    return buildFootballCtx(FOLLOW, liveNow(rest), preMatch, stableSince);
+function ctxOf(over: Parameters<typeof liveNow>[0] & {
+    stableSince?: number | null;
+    observedSec?: number | null;
+    preMatch?: { home: number; draw: number; away: number } | null;
+} = {}): FootballMatchCtx {
+    const { stableSince = 50, observedSec = 60, preMatch = PRE_MATCH, ...rest } = over;
+    return buildFootballCtx(FOLLOW, liveNow(rest), preMatch, stableSince, observedSec);
 }
 
 // ---------------------------------------------------------------- utilities
@@ -155,16 +167,20 @@ describe('buildFootballCtx', () => {
         expect(favoriteSide(ctx.preMatch)).toBe('home');
     });
     it('snapshot mancanti → campi null (mai inventati)', () => {
-        const ctx = buildFootballCtx(FOLLOW, null, null, null);
+        const ctx = buildFootballCtx(FOLLOW, null, null, null, null);
         expect(ctx.odds).toBeNull();
         expect(ctx.anyOther).toBeNull();
         expect(ctx.preMatch).toBeNull();
         expect(ctx.minute).toBeNull();
         expect(ctx.inplay).toBe(false);
+        expect(ctx.red).toBeNull();
     });
-    it('pre-match con chiave X al posto di D', () => {
-        const ctx = ctxOf({ preMatch: { '1x2': { H: 2.0, X: 3.3, A: 3.8 } } as never });
-        expect(ctx.preMatch?.draw).toBe(3.3);
+    it('parsePreMatch1x2: H/D/A, variante X, payload assente o incompleto', () => {
+        expect(parsePreMatch1x2({ '1x2': { H: 1.65, D: 4.0, A: 5.5 } })).toEqual({ home: 1.65, draw: 4.0, away: 5.5 });
+        expect(parsePreMatch1x2({ '1x2': { H: 2.0, X: 3.3, A: 3.8 } })).toEqual({ home: 2.0, draw: 3.3, away: 3.8 });
+        expect(parsePreMatch1x2({})).toBeNull();
+        expect(parsePreMatch1x2(null)).toBeNull();
+        expect(parsePreMatch1x2({ '1x2': { H: 2.0, A: 3.8 } })).toBeNull();
     });
     it('segnala il mismatch dei nomi selezione (quote n/d per naming, non per ritardo)', () => {
         const bad = buildFootballCtx(
@@ -196,7 +212,7 @@ describe('evaluateBase', () => {
         expect(evaluateBase(ctxOf({ favBack: 1.5 }), DEFAULT_PARAMS.base).state).toBe('no');
     });
     it('NO: favorita pre-match fuori range (1.15)', () => {
-        const ev = evaluateBase(ctxOf({ preMatch: { '1x2': { H: 1.15, D: 6.0, A: 12.0 } } }), DEFAULT_PARAMS.base);
+        const ev = evaluateBase(ctxOf({ preMatch: { home: 1.15, draw: 6.0, away: 12.0 } }), DEFAULT_PARAMS.base);
         expect(ev.state).toBe('no');
     });
     it('N/D: pre-match mancante → mai segnale, mai falso positivo', () => {
@@ -209,6 +225,39 @@ describe('evaluateBase', () => {
     });
     it('NO: mercato Match Odds SOSPESO (es. post-gol) blocca il segnale', () => {
         expect(evaluateBase(ctxOf({ moStatus: 'SUSPENDED' }), DEFAULT_PARAMS.base).state).toBe('no');
+    });
+    it('SEGNALE con favorita in TRASFERTA: 0-1 vale come "1-0" (punteggi orientati alla favorita)', () => {
+        const ev = evaluateBase(ctxOf({
+            sh: 0, sa: 1,
+            favBack: 8.0, favLay: 8.4,   // Nord (casa) = qui SFAVORITA
+            dogBack: 1.28, dogLay: 1.3,  // Sud (trasferta) = qui FAVORITA
+            preMatch: { home: 5.5, draw: 4.0, away: 1.65 },
+        }), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.headline).toBe('BANCA Nord FC'); // si banca la squadra di casa che perde
+        expect(ev.entryOdds).toBe(8.4);
+    });
+    it('N/D: stabilità punteggio non osservabile (anti-blip)', () => {
+        expect(evaluateBase(ctxOf({ observedSec: null }), DEFAULT_PARAMS.base).state).toBe('nd');
+    });
+    it('NO: punteggio osservato da soli 10s → blip non ancora confermato', () => {
+        expect(evaluateBase(ctxOf({ observedSec: 10 }), DEFAULT_PARAMS.base).state).toBe('no');
+    });
+    it('NO: rosso alla FAVORITA blocca il segnale', () => {
+        expect(evaluateBase(ctxOf({ redHome: 1, redAway: 0 }), DEFAULT_PARAMS.base).state).toBe('no');
+    });
+    it('rosso alla SFAVORITA: nessun blocco (neutro/positivo per la strategia)', () => {
+        expect(evaluateBase(ctxOf({ redHome: 0, redAway: 1 }), DEFAULT_PARAMS.base).state).toBe('signal');
+    });
+    it('dato cartellini non esposto dal provider → check saltato, segnale regolare', () => {
+        const ev = evaluateBase(ctxOf(), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.checks.some((c) => c.id === 'noRedFav')).toBe(false);
+    });
+    it('N/D: quota LAY della sfavorita mancante → niente da bancare', () => {
+        const ev = evaluateBase(ctxOf({ dogLay: null }), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('nd');
+        expect(ev.entryOdds).toBeNull();
     });
     it('status mercato assente (snapshot vecchi) = considerato aperto', () => {
         expect(evaluateBase(ctxOf({ moStatus: null }), DEFAULT_PARAMS.base).state).toBe('signal');
@@ -275,6 +324,15 @@ describe('evaluatePunta', () => {
     });
     it('NO: mercato SOSPESO blocca il segnale (scenario post-gol tipico)', () => {
         expect(evaluatePunta(ctxOf({ ...scenario, moStatus: 'SUSPENDED' }), DEFAULT_PARAMS.punta).state).toBe('no');
+    });
+    it('SEGNALE con favorita in TRASFERTA: 0-2 vale come "2-0"', () => {
+        const ev = evaluatePunta(ctxOf({
+            minute: 68, sh: 0, sa: 2, stableSince: 63,
+            dogBack: 1.06, // Sud (trasferta) = favorita in vantaggio
+            preMatch: { home: 5.5, draw: 4.0, away: 1.65 },
+        }), DEFAULT_PARAMS.punta);
+        expect(ev.state).toBe('signal');
+        expect(ev.headline).toBe('PUNTA Sud FC');
     });
 });
 
@@ -364,21 +422,21 @@ describe('evaluateTennis', () => {
 
 // ------------------------------------------------------- stabilità punteggio
 describe('trackScoreStability', () => {
-    it('primo avvistamento → parte dal minuto corrente', () => {
-        expect(trackScoreStability(null, 58, 1, 0)).toEqual({ scoreKey: '1-0', sinceMinute: 58 });
+    it('primo avvistamento → parte da minuto e timestamp correnti', () => {
+        expect(trackScoreStability(null, 58, 1, 0, 1000)).toEqual({ scoreKey: '1-0', sinceMinute: 58, sinceMs: 1000 });
     });
-    it('stesso punteggio → conserva la prima osservazione', () => {
-        const prev = { scoreKey: '1-0', sinceMinute: 58 };
-        expect(trackScoreStability(prev, 63, 1, 0)).toBe(prev);
+    it('stesso punteggio → conserva la prima osservazione (minuto e timestamp)', () => {
+        const prev = { scoreKey: '1-0', sinceMinute: 58, sinceMs: 1000 };
+        expect(trackScoreStability(prev, 63, 1, 0, 9000)).toBe(prev);
     });
-    it('gol → il timer riparte', () => {
-        const prev = { scoreKey: '1-0', sinceMinute: 58 };
-        expect(trackScoreStability(prev, 66, 2, 0)).toEqual({ scoreKey: '2-0', sinceMinute: 66 });
+    it('gol → il timer riparte (minuto e timestamp)', () => {
+        const prev = { scoreKey: '1-0', sinceMinute: 58, sinceMs: 1000 };
+        expect(trackScoreStability(prev, 66, 2, 0, 9000)).toEqual({ scoreKey: '2-0', sinceMinute: 66, sinceMs: 9000 });
     });
     it('dati mancanti → non tocca lo stato', () => {
-        const prev = { scoreKey: '1-0', sinceMinute: 58 };
-        expect(trackScoreStability(prev, null, 1, 0)).toBe(prev);
-        expect(trackScoreStability(prev, 60, null, 0)).toBe(prev);
+        const prev = { scoreKey: '1-0', sinceMinute: 58, sinceMs: 1000 };
+        expect(trackScoreStability(prev, null, 1, 0, 2000)).toBe(prev);
+        expect(trackScoreStability(prev, 60, null, 0, 2000)).toBe(prev);
     });
 });
 

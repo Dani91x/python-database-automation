@@ -74,6 +74,9 @@ export interface BaseParams {
     /** quota live (back) della favorita per l'ingresso */
     favLiveMin: number;
     favLiveMax: number;
+    /** anti-blip: il punteggio corrente deve essere osservato stabile da ≥N secondi
+     *  (l'in-play service Betfair occasionalmente manda punteggi errati) */
+    scoreConfirmSec: number;
 }
 export interface EsattoParams {
     minuteMin: number;
@@ -128,6 +131,7 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         dogPreMax: 8,
         favLiveMin: 1.2,
         favLiveMax: 1.34,
+        scoreConfirmSec: 30,
     },
     esatto: {
         minuteMin: 48,
@@ -197,6 +201,7 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             dogPreMax: num(b.dogPreMax, d.base.dogPreMax),
             favLiveMin: num(b.favLiveMin, d.base.favLiveMin),
             favLiveMax: num(b.favLiveMax, d.base.favLiveMax),
+            scoreConfirmSec: num(b.scoreConfirmSec, d.base.scoreConfirmSec),
         },
         esatto: {
             minuteMin: num(e.minuteMin, d.esatto.minuteMin),
@@ -299,6 +304,22 @@ export interface FootballMatchCtx {
      *  (per la regola "attendi N minuti dopo il gol" della Variante Punta);
      *  null = non ancora osservabile */
     scoreStableSinceMinute: number | null;
+    /** secondi da cui il punteggio CORRENTE è osservato ininterrottamente
+     *  (anti-blip: l'IPS Betfair occasionalmente manda punteggi errati) */
+    scoreObservedSec: number | null;
+    /** cartellini rossi live (da live_now.state.stats); null = dato non esposto
+     *  dal provider punteggio corrente — in tal caso il check viene SALTATO,
+     *  non bloccato (il dato manca per il provider, non per la partita) */
+    red: { home: number; away: number } | null;
+}
+
+/** Estrae il 1X2 pre-match dal payload di get_betfair_odds ({"1x2": {H,D,A|X}}). */
+export function parsePreMatch1x2(preMatch: BetfairOdds | null): { home: number; draw: number; away: number } | null {
+    const x2 = preMatch?.['1x2'] ?? null;
+    const pmH = x2 && typeof x2.H === 'number' ? x2.H : null;
+    const pmD = x2 && typeof x2.D === 'number' ? x2.D : x2 && typeof x2.X === 'number' ? x2.X : null;
+    const pmA = x2 && typeof x2.A === 'number' ? x2.A : null;
+    return pmH !== null && pmD !== null && pmA !== null ? { home: pmH, draw: pmD, away: pmA } : null;
 }
 
 function norm(s: string | null | undefined): string {
@@ -317,13 +338,15 @@ function marketOpen(status: string | null | undefined): boolean {
 
 /**
  * Costruisce il contesto calcio dagli snapshot del data-layer esistente.
- * `now` = riga live_now (runner, ~5s) · `preMatch` = get_betfair_odds (1x2 H/D/A).
+ * `now` = riga live_now (runner, ~5s) · `preMatch` = 1X2 CERTIFICATO pre-KO
+ * (il provider lo cattura solo prima del kickoff: mai quote contaminate in-play).
  */
 export function buildFootballCtx(
     follow: { event_id: string; home_name: string; away_name: string },
     now: LiveNowRow | null,
-    preMatch: BetfairOdds | null,
+    preMatch: { home: number; draw: number; away: number } | null,
     scoreStableSinceMinute: number | null,
+    scoreObservedSec: number | null,
 ): FootballMatchCtx {
     const markets = now?.state?.markets ?? [];
     const mo = markets.find((m) => m.market_type === 'MATCH_ODDS');
@@ -348,10 +371,10 @@ export function buildFootballCtx(
         anyOther = { home: pairOf(anyHome), away: pairOf(anyAway) };
     }
 
-    const x2 = preMatch?.['1x2'] ?? null;
-    const pmH = x2 && typeof x2.H === 'number' ? x2.H : null;
-    const pmD = x2 && typeof x2.D === 'number' ? x2.D : x2 && typeof x2.X === 'number' ? x2.X : null;
-    const pmA = x2 && typeof x2.A === 'number' ? x2.A : null;
+    // rossi live: presenti solo se il provider punteggio li espone
+    const cards = now?.state?.stats?.cards ?? null;
+    const redH = typeof cards?.red_home === 'number' ? cards.red_home : null;
+    const redA = typeof cards?.red_away === 'number' ? cards.red_away : null;
 
     return {
         eventId: follow.event_id,
@@ -363,12 +386,14 @@ export function buildFootballCtx(
         scoreAway: now?.score_away ?? null,
         odds,
         anyOther,
-        preMatch: pmH !== null && pmD !== null && pmA !== null ? { home: pmH, draw: pmD, away: pmA } : null,
+        preMatch,
         matchOddsMarketId: mo?.market_id ?? null,
         matchOddsOpen: mo ? marketOpen(mo.status) : null,
         correctScoreOpen: cs ? marketOpen(cs.status) : null,
         oddsNameMismatch,
         scoreStableSinceMinute,
+        scoreObservedSec,
+        red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
     };
 }
 
@@ -468,10 +493,41 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
         ok: favLive === null ? null : inRange(favLive, params.favLiveMin, params.favLiveMax),
     });
 
-    const state = stateFromChecks(checks);
+    // anti-blip: il punteggio deve essere osservato stabile da almeno N secondi
+    // (l'in-play service Betfair a volte manda punteggi errati per qualche tick)
+    checks.push({
+        id: 'scoreConfirmed',
+        label: `Punteggio stabile da ≥${params.scoreConfirmSec}s`,
+        value: ctx.scoreObservedSec === null ? 'n/d' : `${Math.floor(ctx.scoreObservedSec)}s`,
+        ok: ctx.scoreObservedSec === null ? null : ctx.scoreObservedSec >= params.scoreConfirmSec,
+    });
+
+    // rosso alla favorita = "mezzo gol subito" → niente ingresso. Il check è
+    // ENFORCED solo quando il dato cartellini c'è (provider Betfair in-play);
+    // se il provider non lo espone il check si SALTA: l'assenza del DATO non è
+    // l'assenza di rossi, e non blocchiamo la partita per un limite del fallback.
+    if (ctx.red !== null && fav !== null) {
+        const redFav = fav === 'home' ? ctx.red.home : ctx.red.away;
+        checks.push({
+            id: 'noRedFav',
+            label: 'Nessun rosso alla favorita',
+            value: redFav === 0 ? 'nessuno' : `${redFav} rosso/i`,
+            ok: redFav === 0,
+        });
+    }
+
     const dog: SideId | null = fav === null ? null : fav === 'home' ? 'away' : 'home';
     const dogName = dog === null ? null : dog === 'home' ? ctx.home : ctx.away;
     const dogLay = dog === null || ctx.odds === null ? null : (dog === 'home' ? ctx.odds.home : ctx.odds.away)?.lay ?? null;
+    // senza un prezzo LAY reale della sfavorita non c'è nulla da bancare
+    checks.push({
+        id: 'dogLay',
+        label: 'Quota banca sfavorita disponibile',
+        value: fmtOdds(dogLay),
+        ok: dogLay === null ? null : true,
+    });
+
+    const state = stateFromChecks(checks);
     return {
         variant: 'base',
         state,
@@ -770,26 +826,30 @@ export interface ScoreStability {
     scoreKey: string;
     /** minuto della PRIMA osservazione di questo punteggio */
     sinceMinute: number;
+    /** timestamp (ms) della PRIMA osservazione — per l'anti-blip in secondi */
+    sinceMs: number;
 }
 
 /**
  * Aggiorna il tracker di stabilità punteggio di un evento: al cambio punteggio
- * il timer riparte dal minuto corrente. Ritorna il record aggiornato (o null se
- * i dati non bastano). PURO: il chiamante conserva la mappa per-evento.
+ * il timer riparte (minuto corrente + timestamp corrente). Ritorna il record
+ * aggiornato (o null se i dati non bastano). PURO: il chiamante conserva la
+ * mappa per-evento e passa `nowMs` (testabilità).
  */
 export function trackScoreStability(
     prev: ScoreStability | null,
     minute: number | null,
     scoreHome: number | null,
     scoreAway: number | null,
+    nowMs: number,
 ): ScoreStability | null {
     if (minute === null || scoreHome === null || scoreAway === null) return prev;
     const key = `${scoreHome}-${scoreAway}`;
     if (prev !== null && prev.scoreKey === key) {
-        // stesso punteggio: il minuto di prima osservazione resta (mai in avanti)
-        return prev.sinceMinute <= minute ? prev : { scoreKey: key, sinceMinute: minute };
+        // stesso punteggio: la prima osservazione resta (mai in avanti)
+        return prev.sinceMinute <= minute ? prev : { ...prev, sinceMinute: minute };
     }
-    return { scoreKey: key, sinceMinute: minute };
+    return { scoreKey: key, sinceMinute: minute, sinceMs: nowMs };
 }
 
 // ---------------------------------------------------------- segnali attivi

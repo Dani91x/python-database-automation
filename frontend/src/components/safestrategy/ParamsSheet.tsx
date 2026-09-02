@@ -30,7 +30,7 @@ import { useSafeStrategy } from './SafeStrategyProvider';
 
 // ---- bozza testuale (permette digitazione libera, validata al salvataggio) ----
 interface Draft {
-    base: { minuteMin: string; minuteMax: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; favLiveMin: string; favLiveMax: string };
+    base: { minuteMin: string; minuteMax: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; favLiveMin: string; favLiveMax: string; scoreConfirmSec: string };
     esatto: { minuteMin: string; minuteMax: string; scores: string; maxGoalsLaySide: string; entryMin: string; entryMax: string };
     punta: { minuteMin: string; minuteMax: string; scores: string; entryMin: string; entryMax: string; minMinutesAfterGoal: string };
     tennis: { setsLeadMin: string; gamesLeadMin: string; backMax: string; layMin: string; layMax: string; excludeDoubles: boolean };
@@ -44,6 +44,7 @@ function toDraft(p: SafeStrategyParams): Draft {
             favPreMin: s(p.base.favPreMin), favPreMax: s(p.base.favPreMax),
             dogPreMin: s(p.base.dogPreMin), dogPreMax: s(p.base.dogPreMax),
             favLiveMin: s(p.base.favLiveMin), favLiveMax: s(p.base.favLiveMax),
+            scoreConfirmSec: s(p.base.scoreConfirmSec),
         },
         esatto: {
             minuteMin: s(p.esatto.minuteMin), minuteMax: s(p.esatto.minuteMax), scores: p.esatto.scores.join(', '),
@@ -93,6 +94,7 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             dogPreMax: parseNum('Base · sfavorita pre max', d.base.dogPreMax, errors),
             favLiveMin: parseNum('Base · quota live min', d.base.favLiveMin, errors),
             favLiveMax: parseNum('Base · quota live max', d.base.favLiveMax, errors),
+            scoreConfirmSec: parseNum('Base · conferma punteggio (s)', d.base.scoreConfirmSec, errors),
         },
         esatto: {
             minuteMin: parseNum('R.E. · minuto min', d.esatto.minuteMin, errors),
@@ -130,6 +132,9 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
     checkRange('Tennis · lay', params.tennis.layMin, params.tennis.layMax, errors);
     if (Number.isFinite(params.punta.minMinutesAfterGoal) && params.punta.minMinutesAfterGoal < 0) {
         errors.push('Punta · minuti post-gol: deve essere ≥ 0');
+    }
+    if (Number.isFinite(params.base.scoreConfirmSec) && params.base.scoreConfirmSec < 0) {
+        errors.push('Base · conferma punteggio: deve essere ≥ 0 secondi');
     }
     if (Number.isFinite(params.tennis.setsLeadMin) && params.tennis.setsLeadMin < 1) {
         errors.push('Tennis · set di vantaggio: deve essere ≥ 1');
@@ -227,6 +232,7 @@ export function ParamsSheet() {
                         <NumField label="Sfavorita pre-match max" value={draft.base.dogPreMax} onChange={(v) => set('base', { dogPreMax: v })} />
                         <NumField label="Quota live favorita min" value={draft.base.favLiveMin} onChange={(v) => set('base', { favLiveMin: v })} />
                         <NumField label="Quota live favorita max" value={draft.base.favLiveMax} onChange={(v) => set('base', { favLiveMax: v })} />
+                        <NumField label="Conferma punteggio (secondi)" value={draft.base.scoreConfirmSec} onChange={(v) => set('base', { scoreConfirmSec: v })} />
                     </Section>
 
                     <Section title="2 · Calcio — Risultato Esatto (banca “Altro risultato”)">
