@@ -12,8 +12,9 @@
 // ============================================================================
 'use strict';
 
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, session } = require('electron');
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { spawn, spawnSync } = require('child_process');
@@ -254,6 +255,171 @@ function killChildren() {
     children.length = 0;
 }
 
+// ------------------------------------------------------- SSO web Betfair
+// Le finestre "📺 Video" / "📊 Stats" aprono pagine betfair.it(.com) che
+// richiedono la sessione WEB dell'utente. Per non chiedere un login manuale,
+// all'avvio si fa lo STESSO certlogin del backend (credenziali+certificato dal
+// .env del repo, mai chieste all'utente) e si inietta il sessionToken come
+// cookie `ssoid` nella session di Electron: le finestre nascono già loggate.
+// Keep-alive ogni 15 minuti (la sessione web italiana scade con l'inattività);
+// se scade comunque → re-login automatico. QUALSIASI fallimento è soft: si
+// logga un avviso e la finestra Betfair mostrerà il suo login (una tantum).
+// Nessun ordine passa da qui: è solo navigazione (video + statistiche).
+const BETFAIR_KEEPALIVE_MS = 15 * 60 * 1000;
+
+function readEnvFile(file) {
+    const out = {};
+    try {
+        const txt = fs.readFileSync(file, 'utf8');
+        for (const raw of txt.split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line || line.startsWith('#')) continue;
+            const eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            const key = line.slice(0, eq).trim();
+            let val = line.slice(eq + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                val = val.slice(1, -1);
+            }
+            out[key] = val;
+        }
+    } catch (_) { /* .env assente/illeggibile: si andrà di login manuale */ }
+    return out;
+}
+
+// piccola utility https → JSON (mai throw: risolve null su qualunque errore).
+function httpsJson(options, body) {
+    return new Promise((resolve) => {
+        try {
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', (c) => { data += c; });
+                res.on('end', () => {
+                    try { resolve(JSON.parse(data)); } catch (_) { resolve(null); }
+                });
+            });
+            req.setTimeout(15000, () => { try { req.destroy(); } catch (_) {} resolve(null); });
+            req.on('error', () => resolve(null));
+            if (body) req.write(body);
+            req.end();
+        } catch (_) { resolve(null); }
+    });
+}
+
+function resolveMaybeRelative(p) {
+    if (!p) return null;
+    return path.isAbsolute(p) ? p : path.join(repoRoot, p);
+}
+
+// certlogin identico al backend (config.py: identitysso-cert.betfair.it).
+async function betfairCertLogin(env) {
+    const identityUrl = (env.BETFAIR_IDENTITY_URL || 'https://identitysso-cert.betfair.it/api/certlogin').trim();
+    const appKey = (env.BETFAIR_APP_KEY || '').trim();
+    const username = (env.BETFAIR_USERNAME || '').trim();
+    const password = (env.BETFAIR_PASSWORD || '').trim();
+    const certFile = resolveMaybeRelative((env.BETFAIR_CERT_FILE || '').trim());
+    const keyFile = resolveMaybeRelative((env.BETFAIR_KEY_FILE || '').trim());
+    if (!appKey || !username || !password || !certFile || !keyFile) return null;
+    let cert; let key;
+    try {
+        cert = fs.readFileSync(certFile);
+        key = fs.readFileSync(keyFile);
+    } catch (_) { return null; }
+    let u;
+    try { u = new URL(identityUrl); } catch (_) { return null; }
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const resp = await httpsJson({
+        hostname: u.hostname,
+        path: u.pathname,
+        method: 'POST',
+        cert,
+        key,
+        headers: {
+            'X-Application': appKey,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(body),
+            Accept: 'application/json',
+        },
+    }, body);
+    if (resp && resp.loginStatus === 'SUCCESS' && resp.sessionToken) return resp.sessionToken;
+    if (resp && resp.status === 'SUCCESS' && resp.token) return resp.token; // variante interactive
+    return null;
+}
+
+// host keep-alive: identitysso-cert.betfair.it → identitysso.betfair.it
+function keepAliveHost(env) {
+    const identityUrl = (env.BETFAIR_IDENTITY_URL || 'https://identitysso-cert.betfair.it/api/certlogin').trim();
+    try { return new URL(identityUrl).hostname.replace('identitysso-cert', 'identitysso'); } catch (_) {
+        return 'identitysso.betfair.it';
+    }
+}
+
+async function betfairKeepAlive(env, token) {
+    const resp = await httpsJson({
+        hostname: keepAliveHost(env),
+        path: '/api/keepAlive',
+        method: 'GET',
+        headers: {
+            'X-Application': (env.BETFAIR_APP_KEY || '').trim(),
+            'X-Authentication': token,
+            Accept: 'application/json',
+        },
+    });
+    return !!(resp && resp.status === 'SUCCESS');
+}
+
+// il cookie va su ENTRAMBI i domini: l'account è .it, ma i deep-link partono
+// da betfair.com (che poi redirige) — così si arriva loggati in ogni caso.
+async function setBetfairSsoCookie(token) {
+    const targets = [
+        { url: 'https://www.betfair.it/', domain: '.betfair.it' },
+        { url: 'https://www.betfair.com/', domain: '.betfair.com' },
+    ];
+    let ok = false;
+    for (const t of targets) {
+        try {
+            await session.defaultSession.cookies.set({
+                url: t.url,
+                name: 'ssoid',
+                value: token,
+                domain: t.domain,
+                path: '/',
+                secure: true,
+                sameSite: 'no_restriction',
+            });
+            ok = true;
+        } catch (err) {
+            console.warn(`[desktop] cookie ssoid non impostato su ${t.domain}: ${err && err.message}`);
+        }
+    }
+    return ok;
+}
+
+async function startBetfairWebSso() {
+    const env = readEnvFile(path.join(repoRoot, '.env'));
+    let token = null;
+    const doLogin = async () => {
+        const t = await betfairCertLogin(env);
+        if (!t) {
+            console.warn('[desktop] SSO web Betfair non riuscito: la finestra video/stats chiederà il login manuale (una tantum, i cookie poi restano).');
+            return null;
+        }
+        await setBetfairSsoCookie(t);
+        console.log('[desktop] SSO web Betfair OK: finestre video/statistiche già loggate.');
+        return t;
+    };
+    token = await doLogin();
+    setInterval(async () => {
+        if (!token) { token = await doLogin(); return; }
+        const alive = await betfairKeepAlive(env, token);
+        if (!alive) {
+            console.warn('[desktop] sessione web Betfair scaduta: re-login automatico…');
+            token = await doLogin();
+        }
+    }, BETFAIR_KEEPALIVE_MS);
+}
+
 // ---------------------------------------------------------------- finestra
 function createWindow() {
     const win = new BrowserWindow({
@@ -295,6 +461,9 @@ app.whenReady().then(async () => {
         console.warn(`[desktop] server statico non avviato (${err && err.message}): forse già attivo`);
     }
     startRunners();
+    // SSO web Betfair in background: NON blocca l'avvio (login ~1s; al primo
+    // click su 📺/📊 i cookie sono già pronti; in caso di errore → login manuale).
+    void startBetfairWebSso();
     createWindow();
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
