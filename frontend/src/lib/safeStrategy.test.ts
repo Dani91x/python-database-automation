@@ -296,6 +296,12 @@ describe('evaluateEsatto', () => {
     it('NO: mercato Correct Score SOSPESO blocca il segnale', () => {
         expect(evaluateEsatto(ctxOf({ minute: 49, csStatus: 'SUSPENDED' }), DEFAULT_PARAMS.esatto, 'home').state).toBe('no');
     });
+    it('NO: punteggio osservato da soli 10s → blip non confermato (anti-blip)', () => {
+        expect(evaluateEsatto(ctxOf({ minute: 49, observedSec: 10 }), DEFAULT_PARAMS.esatto, 'home').state).toBe('no');
+    });
+    it('N/D: stabilità punteggio non osservabile', () => {
+        expect(evaluateEsatto(ctxOf({ minute: 49, observedSec: null }), DEFAULT_PARAMS.esatto, 'home').state).toBe('nd');
+    });
 });
 
 // ------------------------------------------------------ 3 · Variante Punta
@@ -324,6 +330,17 @@ describe('evaluatePunta', () => {
     });
     it('NO: mercato SOSPESO blocca il segnale (scenario post-gol tipico)', () => {
         expect(evaluatePunta(ctxOf({ ...scenario, moStatus: 'SUSPENDED' }), DEFAULT_PARAMS.punta).state).toBe('no');
+    });
+    it('NO: rosso a CHI SI PUNTA blocca il segnale', () => {
+        expect(evaluatePunta(ctxOf({ ...scenario, redHome: 1, redAway: 0 }), DEFAULT_PARAMS.punta).state).toBe('no');
+    });
+    it('rosso a chi PERDE: nessun blocco', () => {
+        expect(evaluatePunta(ctxOf({ ...scenario, redHome: 0, redAway: 1 }), DEFAULT_PARAMS.punta).state).toBe('signal');
+    });
+    it('dato cartellini non esposto → check saltato, segnale regolare', () => {
+        const ev = evaluatePunta(ctxOf(scenario), DEFAULT_PARAMS.punta);
+        expect(ev.state).toBe('signal');
+        expect(ev.checks.some((c) => c.id === 'noRedLead')).toBe(false);
     });
     it('SEGNALE con favorita in TRASFERTA: 0-2 vale come "2-0"', () => {
         const ev = evaluatePunta(ctxOf({

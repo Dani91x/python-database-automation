@@ -31,7 +31,7 @@ import { useSafeStrategy } from './SafeStrategyProvider';
 // ---- bozza testuale (permette digitazione libera, validata al salvataggio) ----
 interface Draft {
     base: { minuteMin: string; minuteMax: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; favLiveMin: string; favLiveMax: string; scoreConfirmSec: string };
-    esatto: { minuteMin: string; minuteMax: string; scores: string; maxGoalsLaySide: string; entryMin: string; entryMax: string };
+    esatto: { minuteMin: string; minuteMax: string; scores: string; maxGoalsLaySide: string; entryMin: string; entryMax: string; scoreConfirmSec: string };
     punta: { minuteMin: string; minuteMax: string; scores: string; entryMin: string; entryMax: string; minMinutesAfterGoal: string };
     tennis: { setsLeadMin: string; gamesLeadMin: string; backMax: string; layMin: string; layMax: string; excludeDoubles: boolean };
 }
@@ -49,6 +49,7 @@ function toDraft(p: SafeStrategyParams): Draft {
         esatto: {
             minuteMin: s(p.esatto.minuteMin), minuteMax: s(p.esatto.minuteMax), scores: p.esatto.scores.join(', '),
             maxGoalsLaySide: s(p.esatto.maxGoalsLaySide), entryMin: s(p.esatto.entryMin), entryMax: s(p.esatto.entryMax),
+            scoreConfirmSec: s(p.esatto.scoreConfirmSec),
         },
         punta: {
             minuteMin: s(p.punta.minuteMin), minuteMax: s(p.punta.minuteMax), scores: p.punta.scores.join(', '),
@@ -103,6 +104,7 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             maxGoalsLaySide: parseNum('R.E. · max gol lato bancato', d.esatto.maxGoalsLaySide, errors),
             entryMin: parseNum('R.E. · quota min', d.esatto.entryMin, errors),
             entryMax: parseNum('R.E. · quota max', d.esatto.entryMax, errors),
+            scoreConfirmSec: parseNum('R.E. · conferma punteggio (s)', d.esatto.scoreConfirmSec, errors),
         },
         punta: {
             minuteMin: parseNum('Punta · minuto min', d.punta.minuteMin, errors),
@@ -135,6 +137,9 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
     }
     if (Number.isFinite(params.base.scoreConfirmSec) && params.base.scoreConfirmSec < 0) {
         errors.push('Base · conferma punteggio: deve essere ≥ 0 secondi');
+    }
+    if (Number.isFinite(params.esatto.scoreConfirmSec) && params.esatto.scoreConfirmSec < 0) {
+        errors.push('R.E. · conferma punteggio: deve essere ≥ 0 secondi');
     }
     if (Number.isFinite(params.tennis.setsLeadMin) && params.tennis.setsLeadMin < 1) {
         errors.push('Tennis · set di vantaggio: deve essere ≥ 1');
@@ -240,7 +245,7 @@ export function ParamsSheet() {
                         <NumField label="Minuto max" value={draft.esatto.minuteMax} onChange={(v) => set('esatto', { minuteMax: v })} />
                         <ScoresField label="Punteggi (qualsiasi ordine)" value={draft.esatto.scores} onChange={(v) => set('esatto', { scores: v })} />
                         <NumField label="Max gol lato bancato" value={draft.esatto.maxGoalsLaySide} onChange={(v) => set('esatto', { maxGoalsLaySide: v })} />
-                        <div />
+                        <NumField label="Conferma punteggio (secondi)" value={draft.esatto.scoreConfirmSec} onChange={(v) => set('esatto', { scoreConfirmSec: v })} />
                         <NumField label="Quota min" value={draft.esatto.entryMin} onChange={(v) => set('esatto', { entryMin: v })} />
                         <NumField label="Quota max" value={draft.esatto.entryMax} onChange={(v) => set('esatto', { entryMax: v })} />
                     </Section>

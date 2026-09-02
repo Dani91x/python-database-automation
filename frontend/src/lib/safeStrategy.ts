@@ -88,6 +88,9 @@ export interface EsattoParams {
     /** quota "Altro risultato Casa/Ospite" (Correct Score) per l'ingresso */
     entryMin: number;
     entryMax: number;
+    /** anti-blip: punteggio osservato stabile da ≥N secondi (finestra corta 48-50′:
+     *  un punteggio IPS errato per pochi secondi pesa di più) */
+    scoreConfirmSec: number;
 }
 export interface PuntaParams {
     minuteMin: number;
@@ -140,6 +143,7 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         maxGoalsLaySide: 1,
         entryMin: 30,
         entryMax: 70,
+        scoreConfirmSec: 30,
     },
     punta: {
         minuteMin: 66,
@@ -210,6 +214,7 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             maxGoalsLaySide: num(e.maxGoalsLaySide, d.esatto.maxGoalsLaySide),
             entryMin: num(e.entryMin, d.esatto.entryMin),
             entryMax: num(e.entryMax, d.esatto.entryMax),
+            scoreConfirmSec: num(e.scoreConfirmSec, d.esatto.scoreConfirmSec),
         },
         punta: {
             minuteMin: num(u.minuteMin, d.punta.minuteMin),
@@ -569,6 +574,15 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
         });
     }
 
+    // anti-blip: con una finestra di soli 3 minuti un punteggio IPS errato per
+    // pochi secondi può falsare l'ingresso — stessa guardia certificata della Base
+    checks.push({
+        id: 'scoreConfirmed',
+        label: `Punteggio stabile da ≥${params.scoreConfirmSec}s`,
+        value: ctx.scoreObservedSec === null ? 'n/d' : `${Math.floor(ctx.scoreObservedSec)}s`,
+        ok: ctx.scoreObservedSec === null ? null : ctx.scoreObservedSec >= params.scoreConfirmSec,
+    });
+
     // quota "Altro risultato" (Correct Score) — si BANCA: quota di riferimento =
     // SOLO il lay (mai il back come sostituto: su questi mercati lo spread è
     // ampio e un prezzo back non è ottenibile bancando)
@@ -635,6 +649,19 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams): Varia
             label: 'In vantaggio c’è la favorita',
             value: lead === 'home' ? ctx.home : ctx.away,
             ok: lead === fav,
+        });
+    }
+
+    // rosso a CHI SI PUNTA (la squadra in vantaggio): un back a quota 1.03-1.10
+    // con la squadra in 10 è il worst-case della strategia → niente ingresso.
+    // Come nella Base: enforced solo quando il dato cartellini è esposto.
+    if (ctx.red !== null && lead !== null) {
+        const redLead = lead === 'home' ? ctx.red.home : ctx.red.away;
+        checks.push({
+            id: 'noRedLead',
+            label: 'Nessun rosso a chi si punta',
+            value: redLead === 0 ? 'nessuno' : `${redLead} rosso/i`,
+            ok: redLead === 0,
         });
     }
 
