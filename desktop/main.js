@@ -359,6 +359,35 @@ function keepAliveHost(env) {
     }
 }
 
+// LOGIN INTERATTIVO (identitysso, senza certificato): produce un token di
+// sessione WEB a tutti gli effetti — il servizio VIDEO accetta solo questo
+// (il token del certlogin è pensato per le API: il sito lo tollera quasi
+// ovunque, ma il player video risponde "You need to be logged in"). È la via
+// dei tool concorrenti; il certlogin resta come fallback.
+async function betfairInteractiveLogin(env) {
+    const appKey = (env.BETFAIR_APP_KEY || '').trim();
+    const username = (env.BETFAIR_USERNAME || '').trim();
+    const password = (env.BETFAIR_PASSWORD || '').trim();
+    if (!appKey || !username || !password) return null;
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const resp = await httpsJson({
+        hostname: keepAliveHost(env),
+        path: '/api/login',
+        method: 'POST',
+        headers: {
+            'X-Application': appKey,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(body),
+            Accept: 'application/json',
+        },
+    }, body);
+    if (resp && resp.status === 'SUCCESS' && resp.token) return resp.token;
+    if (resp && resp.status) {
+        console.warn(`[desktop] login interattivo Betfair non riuscito (${resp.status}${resp.error ? ': ' + resp.error : ''}) — fallback al certlogin.`);
+    }
+    return null;
+}
+
 async function betfairKeepAlive(env, token) {
     const resp = await httpsJson({
         hostname: keepAliveHost(env),
@@ -404,13 +433,20 @@ async function startBetfairWebSso() {
     const env = readEnvFile(path.join(repoRoot, '.env'));
     let token = null;
     const doLogin = async () => {
-        const t = await betfairCertLogin(env);
+        // 1) login INTERATTIVO: token web pieno (video incluso);
+        // 2) fallback certlogin: copre sito/statistiche se l'interattivo fallisce.
+        let t = await betfairInteractiveLogin(env);
+        let kind = 'interattivo';
+        if (!t) {
+            t = await betfairCertLogin(env);
+            kind = 'certlogin (fallback: il video potrebbe richiedere login manuale)';
+        }
         if (!t) {
             console.warn('[desktop] SSO web Betfair non riuscito: la finestra video/stats chiederà il login manuale (una tantum, i cookie poi restano).');
             return null;
         }
         await setBetfairSsoCookie(t);
-        console.log('[desktop] SSO web Betfair OK: finestre video/statistiche già loggate.');
+        console.log(`[desktop] SSO web Betfair OK (${kind}): finestre video/statistiche già loggate.`);
         return t;
     };
     token = await doLogin();
