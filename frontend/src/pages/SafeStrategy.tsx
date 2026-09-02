@@ -77,6 +77,21 @@ function ScannerBar({ status, nowMs }: { status: ScanStatusRow | null; nowMs: nu
                         <span className="mx-2 text-white/20">·</span>
                         <b className="text-white font-mono tabular-nums">{p.monitored ?? 0}</b> monitorati
                     </span>
+                    {p.source && (
+                        <Badge
+                            variant="outline"
+                            className={
+                                p.source === 'stream'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 text-[10px]'
+                                    : 'bg-amber-500/15 text-amber-300 border-amber-500/40 text-[10px]'
+                            }
+                            title={p.source === 'stream'
+                                ? 'Quote in push dalla Exchange Stream API ufficiale (conflate 1s)'
+                                : 'Stream non in salute: quote via poll REST di fallback'}
+                        >
+                            {p.source === 'stream' ? '⚡ STREAM' : 'REST'}
+                        </Badge>
+                    )}
                     {p.dry && (
                         <Badge variant="outline" className="bg-amber-500/15 text-amber-300 border-amber-500/40 text-[10px]">
                             DRY

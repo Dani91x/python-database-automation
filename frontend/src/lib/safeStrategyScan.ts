@@ -64,6 +64,8 @@ export interface ScanStatusPayload {
     tennis_inplay?: number;
     monitored?: number;
     dry?: boolean;
+    /** 'stream' = Exchange Stream API ufficiale (push) · 'rest' = fallback poll */
+    source?: string;
     last_error?: string | null;
     started_at?: string;
 }
