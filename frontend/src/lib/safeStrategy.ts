@@ -108,13 +108,21 @@ export interface TennisParams {
     setsLeadMin: number;
     /** vantaggio minimo in game nel set corrente (default: 2) */
     gamesLeadMin: number;
-    /** quota massima per PUNTARE chi è avanti (default: ≈1.05) */
+    /** range quota BACK del LEADER per l'ingresso (fix certificazione: il lay
+     *  del perdente sta matematicamente a ~15-40 quando il leader quota
+     *  1.03-1.10 — un range sul lay del perdente era impossibile; la quota
+     *  d'ingresso della situazione è quella del leader, il lay del perdente
+     *  resta un'alternativa operativa al suo prezzo reale) */
+    backMin: number;
     backMax: number;
-    /** range quota per BANCARE chi è sotto (default: 1.18–1.34) */
-    layMin: number;
-    layMax: number;
     /** esclude i doppi (nomi con "/") */
     excludeDoubles: boolean;
+    /** parole chiave di competizioni da ESCLUDERE (match su competition_name,
+     *  case-insensitive; es. gli Slam maschili best-of-5). Vuoto = nessun filtro. */
+    excludeCompetitions: string[];
+    /** anti-blip: punteggio set/game osservato stabile da ≥N secondi
+     *  (il tennis si muove più veloce del calcio: default più corto) */
+    scoreConfirmSec: number;
 }
 export interface SafeStrategyParams {
     base: BaseParams;
@@ -156,10 +164,14 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
     tennis: {
         setsLeadMin: 1,
         gamesLeadMin: 2,
-        backMax: 1.05,
-        layMin: 1.18,
-        layMax: 1.34,
+        backMin: 1.01,
+        backMax: 1.1,
         excludeDoubles: true,
+        // vuoto di default: il filtro per nome torneo non distingue tabellone
+        // maschile/femminile (gli Slam femminili sono best-of-3 e NON da evitare)
+        // — la lista la compila l'utente secondo il suo criterio.
+        excludeCompetitions: [],
+        scoreConfirmSec: 15,
     },
 };
 
@@ -181,6 +193,13 @@ function scoreList(v: unknown, fallback: string[]): string[] {
     if (!Array.isArray(v)) return fallback;
     const out = v.filter((s): s is string => typeof s === 'string' && parseScoreline(s) !== null);
     return out.length > 0 ? out : fallback;
+}
+function keywordList(v: unknown, fallback: string[]): string[] {
+    if (!Array.isArray(v)) return fallback;
+    return v
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
 }
 
 /**
@@ -227,10 +246,11 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
         tennis: {
             setsLeadMin: num(t.setsLeadMin, d.tennis.setsLeadMin),
             gamesLeadMin: num(t.gamesLeadMin, d.tennis.gamesLeadMin),
+            backMin: num(t.backMin, d.tennis.backMin),
             backMax: num(t.backMax, d.tennis.backMax),
-            layMin: num(t.layMin, d.tennis.layMin),
-            layMax: num(t.layMax, d.tennis.layMax),
             excludeDoubles: bool(t.excludeDoubles, d.tennis.excludeDoubles),
+            excludeCompetitions: keywordList(t.excludeCompetitions, d.tennis.excludeCompetitions),
+            scoreConfirmSec: num(t.scoreConfirmSec, d.tennis.scoreConfirmSec),
         },
     };
 }
@@ -727,6 +747,35 @@ export interface TennisMatchCtx {
     matchOddsOpen: boolean | null;
     /** true se il MATCH_ODDS c'è ma i nomi giocatore non coincidono (naming). */
     oddsNameMismatch: boolean;
+    /** nome torneo/competizione (per il filtro esclusioni); null = ignoto */
+    competition: string | null;
+    /** secondi da cui set+game correnti sono osservati stabili (anti-blip) */
+    scoreObservedSec: number | null;
+}
+
+/** chiave compatta della situazione set+game (per il tracker di stabilità). */
+export function tennisScoreKey(
+    sets: { p1: number; p2: number } | null,
+    games: { p1: number; p2: number } | null,
+): string | null {
+    if (!sets || !games) return null;
+    return `s${sets.p1}-${sets.p2}·g${games.p1}-${games.p2}`;
+}
+
+export interface TennisScoreStability {
+    scoreKey: string;
+    sinceMs: number;
+}
+
+/** tracker di stabilità set+game: a ogni cambio la finestra riparte. PURO. */
+export function trackTennisScoreStability(
+    prev: TennisScoreStability | null,
+    key: string | null,
+    nowMs: number,
+): TennisScoreStability | null {
+    if (key === null) return prev;
+    if (prev !== null && prev.scoreKey === key) return prev;
+    return { scoreKey: key, sinceMs: nowMs };
 }
 
 /**
@@ -734,8 +783,9 @@ export interface TennisMatchCtx {
  * Mappatura repo: p1 = sortPriority 1 (home) · p2 = away.
  */
 export function buildTennisCtx(
-    follow: { event_id: string; player1_name: string; player2_name: string },
+    follow: { event_id: string; player1_name: string; player2_name: string; competition_name?: string | null },
     now: TennisLiveNowRow | null,
+    scoreObservedSec: number | null,
 ): TennisMatchCtx {
     const score: TennisScoreState | null = now?.score ?? null;
     const mo = now?.state?.markets?.find((m) => m.market_type === 'MATCH_ODDS');
@@ -758,6 +808,8 @@ export function buildTennisCtx(
         matchOddsMarketId: mo?.market_id ?? null,
         matchOddsOpen: mo ? marketOpen(mo.status) : null,
         oddsNameMismatch,
+        competition: follow.competition_name?.trim() || null,
+        scoreObservedSec,
     };
 }
 
@@ -770,6 +822,23 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
 
     if (params.excludeDoubles) {
         checks.push({ id: 'singles', label: 'Singolare (no doppio)', value: isDoubles ? 'doppio' : 'singolare', ok: !isDoubles });
+    }
+
+    // filtro competizioni escluse (es. Slam maschili best-of-5): enforced solo
+    // se la lista è compilata; senza nome torneo il check resta n/d
+    if (params.excludeCompetitions.length > 0) {
+        if (ctx.competition === null) {
+            checks.push({ id: 'competition', label: 'Competizione non esclusa', value: 'n/d', ok: null });
+        } else {
+            const compLower = ctx.competition.toLowerCase();
+            const hit = params.excludeCompetitions.find((k) => compLower.includes(k));
+            checks.push({
+                id: 'competition',
+                label: 'Competizione non esclusa',
+                value: hit ? `esclusa ("${hit}")` : ctx.competition,
+                ok: !hit,
+            });
+        }
     }
 
     // leader per SET
@@ -805,45 +874,41 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
         });
     }
 
-    // quote: PUNTA leader ≤ backMax, oppure BANCA chi è sotto in [layMin, layMax]
-    // — valide solo a mercato aperto
+    // anti-blip: set+game osservati stabili da ≥N secondi
+    checks.push({
+        id: 'scoreConfirmed',
+        label: `Punteggio stabile da ≥${params.scoreConfirmSec}s`,
+        value: ctx.scoreObservedSec === null ? 'n/d' : `${Math.floor(ctx.scoreObservedSec)}s`,
+        ok: ctx.scoreObservedSec === null ? null : ctx.scoreObservedSec >= params.scoreConfirmSec,
+    });
+
+    // quota d'ingresso = BACK del LEADER nel range (fix certificazione: quando
+    // il leader quota 1.03-1.10 il lay del perdente sta a ~15-40 — un range sul
+    // lay del perdente era matematicamente impossibile). Il lay del perdente al
+    // suo prezzo REALE resta l'alternativa operativa equivalente: lo mostriamo
+    // come informazione, la quota che decide è quella del leader.
     checks.push(marketOpenCheck('Mercato Match Odds aperto', ctx.matchOddsOpen));
     const leadPair = leader === null || ctx.odds === null ? null : leader === 1 ? ctx.odds.p1 : ctx.odds.p2;
     const trailPair = leader === null || ctx.odds === null ? null : leader === 1 ? ctx.odds.p2 : ctx.odds.p1;
-    const backOk = leadPair?.back != null ? leadPair.back <= params.backMax : null;
-    const layOk = trailPair?.lay != null ? inRange(trailPair.lay, params.layMin, params.layMax) : null;
-    const oddsValue = `back ${fmtOdds(leadPair?.back ?? null)} · lay ${fmtOdds(trailPair?.lay ?? null)}`;
-    // true se ALMENO una via è percorribile; false solo se ENTRAMBE sono note e
-    // fuori range; null se una delle due non è verificabile (mai indovinare).
-    let oddsOk: boolean | null;
-    if (backOk === true || layOk === true) oddsOk = true;
-    else if (backOk === null || layOk === null) oddsOk = null;
-    else oddsOk = false;
+    const leadBack = leadPair?.back ?? null;
+    const trailLay = trailPair?.lay ?? null;
     checks.push({
         id: 'odds',
-        label: `Punta ≤${params.backMax} oppure banca ${params.layMin}–${params.layMax}`,
-        value: oddsValue,
-        ok: oddsOk,
+        label: `Quota back leader ${params.backMin}–${params.backMax}`,
+        value: `back ${fmtOdds(leadBack)}${trailLay !== null ? ` · lay perdente ${fmtOdds(trailLay)}` : ''}`,
+        ok: leadBack === null ? null : inRange(leadBack, params.backMin, params.backMax),
     });
 
     const state = stateFromChecks(checks);
     const leadName = leader === null ? null : leader === 1 ? ctx.p1 : ctx.p2;
-    const trailName = leader === null ? null : leader === 1 ? ctx.p2 : ctx.p1;
-    // preferenza: back del leader se in range, altrimenti lay di chi è sotto
-    const useBack = backOk === true;
     return {
         variant: 'tennis',
         state,
         checks,
-        headline:
-            state === 'signal' && leadName && trailName
-                ? useBack
-                    ? `PUNTA ${leadName}`
-                    : `BANCA ${trailName}`
-                : null,
-        side: useBack ? 'BACK' : 'LAY',
-        selection: useBack ? leadName : trailName,
-        entryOdds: useBack ? leadPair?.back ?? null : trailPair?.lay ?? null,
+        headline: state === 'signal' && leadName ? `PUNTA ${leadName}` : null,
+        side: 'BACK',
+        selection: leadName,
+        entryOdds: leadBack,
     };
 }
 

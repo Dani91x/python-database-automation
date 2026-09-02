@@ -33,7 +33,7 @@ interface Draft {
     base: { minuteMin: string; minuteMax: string; scores: string; favPreMin: string; favPreMax: string; dogPreMin: string; dogPreMax: string; favLiveMin: string; favLiveMax: string; scoreConfirmSec: string };
     esatto: { minuteMin: string; minuteMax: string; scores: string; maxGoalsLaySide: string; entryMin: string; entryMax: string; scoreConfirmSec: string };
     punta: { minuteMin: string; minuteMax: string; scores: string; entryMin: string; entryMax: string; minMinutesAfterGoal: string };
-    tennis: { setsLeadMin: string; gamesLeadMin: string; backMax: string; layMin: string; layMax: string; excludeDoubles: boolean };
+    tennis: { setsLeadMin: string; gamesLeadMin: string; backMin: string; backMax: string; scoreConfirmSec: string; excludeCompetitions: string; excludeDoubles: boolean };
 }
 
 function toDraft(p: SafeStrategyParams): Draft {
@@ -57,7 +57,9 @@ function toDraft(p: SafeStrategyParams): Draft {
         },
         tennis: {
             setsLeadMin: s(p.tennis.setsLeadMin), gamesLeadMin: s(p.tennis.gamesLeadMin),
-            backMax: s(p.tennis.backMax), layMin: s(p.tennis.layMin), layMax: s(p.tennis.layMax),
+            backMin: s(p.tennis.backMin), backMax: s(p.tennis.backMax),
+            scoreConfirmSec: s(p.tennis.scoreConfirmSec),
+            excludeCompetitions: p.tennis.excludeCompetitions.join(', '),
             excludeDoubles: p.tennis.excludeDoubles,
         },
     };
@@ -117,9 +119,13 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
         tennis: {
             setsLeadMin: parseNum('Tennis · set di vantaggio', d.tennis.setsLeadMin, errors),
             gamesLeadMin: parseNum('Tennis · game di vantaggio', d.tennis.gamesLeadMin, errors),
-            backMax: parseNum('Tennis · back max', d.tennis.backMax, errors),
-            layMin: parseNum('Tennis · lay min', d.tennis.layMin, errors),
-            layMax: parseNum('Tennis · lay max', d.tennis.layMax, errors),
+            backMin: parseNum('Tennis · back leader min', d.tennis.backMin, errors),
+            backMax: parseNum('Tennis · back leader max', d.tennis.backMax, errors),
+            scoreConfirmSec: parseNum('Tennis · conferma punteggio (s)', d.tennis.scoreConfirmSec, errors),
+            excludeCompetitions: d.tennis.excludeCompetitions
+                .split(/[,;]+/)
+                .map((x) => x.trim().toLowerCase())
+                .filter(Boolean),
             excludeDoubles: d.tennis.excludeDoubles,
         },
     };
@@ -131,7 +137,10 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
     checkRange('R.E. · quota', params.esatto.entryMin, params.esatto.entryMax, errors);
     checkRange('Punta · minuto', params.punta.minuteMin, params.punta.minuteMax, errors);
     checkRange('Punta · quota', params.punta.entryMin, params.punta.entryMax, errors);
-    checkRange('Tennis · lay', params.tennis.layMin, params.tennis.layMax, errors);
+    checkRange('Tennis · back leader', params.tennis.backMin, params.tennis.backMax, errors);
+    if (Number.isFinite(params.tennis.scoreConfirmSec) && params.tennis.scoreConfirmSec < 0) {
+        errors.push('Tennis · conferma punteggio: deve essere ≥ 0 secondi');
+    }
     if (Number.isFinite(params.punta.minMinutesAfterGoal) && params.punta.minMinutesAfterGoal < 0) {
         errors.push('Punta · minuti post-gol: deve essere ≥ 0');
     }
@@ -259,13 +268,21 @@ export function ParamsSheet() {
                         <NumField label="Minuti dopo l'ultimo gol" value={draft.punta.minMinutesAfterGoal} onChange={(v) => set('punta', { minMinutesAfterGoal: v })} />
                     </Section>
 
-                    <Section title="4 · Tennis (punta chi è avanti / banca chi è sotto)">
+                    <Section title="4 · Tennis (punta chi è avanti)">
                         <NumField label="Set di vantaggio min" value={draft.tennis.setsLeadMin} onChange={(v) => set('tennis', { setsLeadMin: v })} />
                         <NumField label="Game di vantaggio min" value={draft.tennis.gamesLeadMin} onChange={(v) => set('tennis', { gamesLeadMin: v })} />
-                        <NumField label="Back max (chi è avanti)" value={draft.tennis.backMax} onChange={(v) => set('tennis', { backMax: v })} />
-                        <div />
-                        <NumField label="Lay min (chi è sotto)" value={draft.tennis.layMin} onChange={(v) => set('tennis', { layMin: v })} />
-                        <NumField label="Lay max (chi è sotto)" value={draft.tennis.layMax} onChange={(v) => set('tennis', { layMax: v })} />
+                        <NumField label="Back leader min" value={draft.tennis.backMin} onChange={(v) => set('tennis', { backMin: v })} />
+                        <NumField label="Back leader max" value={draft.tennis.backMax} onChange={(v) => set('tennis', { backMax: v })} />
+                        <NumField label="Conferma punteggio (secondi)" value={draft.tennis.scoreConfirmSec} onChange={(v) => set('tennis', { scoreConfirmSec: v })} />
+                        <div className="space-y-1 col-span-2">
+                            <Label className="text-[11px] text-muted-foreground">Competizioni escluse (parole chiave, separate da virgola)</Label>
+                            <Input
+                                value={draft.tennis.excludeCompetitions}
+                                onChange={(e) => set('tennis', { excludeCompetitions: e.target.value })}
+                                placeholder="es. australian open, roland garros, wimbledon, us open"
+                                className="h-8 bg-black/40 border-white/10"
+                            />
+                        </div>
                         <div className="col-span-2 flex items-center gap-2 pt-1">
                             <Checkbox
                                 id="ss-exclude-doubles"

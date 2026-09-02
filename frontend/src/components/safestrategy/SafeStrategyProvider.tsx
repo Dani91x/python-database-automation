@@ -51,12 +51,15 @@ import {
     tennisCandidates,
     parsePreMatch1x2,
     reconcileSignals,
+    tennisScoreKey,
     trackScoreStability,
+    trackTennisScoreStability,
     VARIANT_META,
     type ActiveSignal,
     type FootballMatchCtx,
     type SafeStrategyParams,
     type ScoreStability,
+    type TennisScoreStability,
     type TennisMatchCtx,
     type VariantEvaluation,
 } from '@/lib/safeStrategy';
@@ -193,6 +196,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
     const [tnNowMap, setTnNowMap] = useState<Record<string, TennisLiveNowRow | null>>({});
     const [preRefs, setPreRefs] = useState<Record<string, PreMatchRef>>(loadPreRefs);
     const [stabMap, setStabMap] = useState<Record<string, ScoreStability>>({});
+    const [tnStabMap, setTnStabMap] = useState<Record<string, TennisScoreStability>>({});
     const [signals, setSignals] = useState<ActiveSignal[]>([]);
 
     // path corrente in ref: il toast decide al momento dello scatto, senza
@@ -305,6 +309,13 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
         const next = newerRow(cur, row);
         if (next === cur) return; // snapshot più vecchio di quello già mostrato
         tnNowRef.current[eventId] = next;
+        setTnStabMap((prev) => {
+            const curStab = prev[eventId] ?? null;
+            const key = tennisScoreKey(next.score?.sets ?? null, next.score?.games ?? null);
+            const nextStab = trackTennisScoreStability(curStab, key, Date.now());
+            if (nextStab === curStab || nextStab === null) return prev;
+            return { ...prev, [eventId]: nextStab };
+        });
         setTnNowMap((prev) => ({ ...prev, [eventId]: next }));
     }, []);
 
@@ -324,6 +335,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
         if (removed.length > 0) {
             for (const id of removed) delete tnNowRef.current[id];
             setTnNowMap((prev) => dropKeys(prev, removed));
+            setTnStabMap((prev) => dropKeys(prev, removed));
         }
         for (const id of wanted) {
             if (tnSubsRef.current.has(id)) continue;
@@ -426,7 +438,11 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
                               updated_at: f.updated_at,
                           } satisfies TennisLiveNowRow)
                         : null);
-                const ctx = buildTennisCtx(f, now);
+                const stab = tnStabMap[f.event_id] ?? null;
+                const key = tennisScoreKey(now?.score?.sets ?? null, now?.score?.games ?? null);
+                const observed =
+                    stab && key && stab.scoreKey === key ? (nowMs - stab.sinceMs) / 1000 : null;
+                const ctx = buildTennisCtx(f, now, observed);
                 return { follow: f, ctx, evaluation: evaluateTennis(ctx, params.tennis) };
             });
 
@@ -435,7 +451,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
             ...tennis.flatMap((m) => tennisCandidates(m.ctx, m.evaluation)),
         ];
         return { football, tennis, candidates };
-    }, [follows, tnFollows, nowMap, tnNowMap, preRefs, stabMap, params]);
+    }, [follows, tnFollows, nowMap, tnNowMap, preRefs, stabMap, tnStabMap, params]);
 
     // ------------------------------------------- riconciliazione segnali + toast
     const signalsRef = useRef<ActiveSignal[]>([]);

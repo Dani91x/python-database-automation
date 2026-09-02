@@ -388,29 +388,48 @@ function tennisNow(over: {
     };
 }
 
-function tennisCtx(over: Parameters<typeof tennisNow>[0] = {}): TennisMatchCtx {
-    return buildTennisCtx(TENNIS_FOLLOW, tennisNow(over));
+function tennisCtx(over: Parameters<typeof tennisNow>[0] = {}, observedSec: number | null = 60): TennisMatchCtx {
+    return buildTennisCtx(TENNIS_FOLLOW, tennisNow(over), observedSec);
 }
 
 describe('evaluateTennis', () => {
-    it('SEGNALE back: set 1-0 + 3-0, back leader 1.03', () => {
+    it('SEGNALE: set 1-0 + 3-0, back leader 1.03 (range 1.01-1.10)', () => {
         const ev = evaluateTennis(tennisCtx(), DEFAULT_PARAMS.tennis);
         expect(ev.state).toBe('signal');
         expect(ev.headline).toBe('PUNTA Rossi M.');
+        expect(ev.side).toBe('BACK');
         expect(ev.entryOdds).toBe(1.03);
     });
-    it('SEGNALE lay: back leader fuori (1.10) ma lay di chi è sotto 1.22', () => {
-        const ev = evaluateTennis(tennisCtx({ p1Back: 1.1, p2Lay: 1.22 }), DEFAULT_PARAMS.tennis);
+    it('SEGNALE: back leader 1.08 — col vecchio range lay impossibile sarebbe stato bloccato', () => {
+        const ev = evaluateTennis(tennisCtx({ p1Back: 1.08 }), DEFAULT_PARAMS.tennis);
         expect(ev.state).toBe('signal');
-        expect(ev.headline).toBe('BANCA Bianchi L.');
-        expect(ev.side).toBe('LAY');
-        expect(ev.entryOdds).toBe(1.22);
+        expect(ev.entryOdds).toBe(1.08);
     });
-    it('NO: entrambe le quote note e fuori range', () => {
-        expect(evaluateTennis(tennisCtx({ p1Back: 1.1, p2Lay: 8 }), DEFAULT_PARAMS.tennis).state).toBe('no');
+    it('NO: back leader fuori range (1.15)', () => {
+        expect(evaluateTennis(tennisCtx({ p1Back: 1.15 }), DEFAULT_PARAMS.tennis).state).toBe('no');
     });
-    it('N/D: back fuori range e lay non disponibile → mai falso negativo certo', () => {
-        expect(evaluateTennis(tennisCtx({ p1Back: 1.1, p2Lay: null }), DEFAULT_PARAMS.tennis).state).toBe('nd');
+    it('N/D: back leader non disponibile', () => {
+        expect(evaluateTennis(tennisCtx({ p1Back: null }), DEFAULT_PARAMS.tennis).state).toBe('nd');
+    });
+    it('NO: punteggio osservato da soli 5s → blip non confermato (anti-blip)', () => {
+        expect(evaluateTennis(tennisCtx({}, 5), DEFAULT_PARAMS.tennis).state).toBe('no');
+    });
+    it('N/D: stabilità punteggio non osservabile', () => {
+        expect(evaluateTennis(tennisCtx({}, null), DEFAULT_PARAMS.tennis).state).toBe('nd');
+    });
+    it('filtro competizioni: esclusa → NO; altra → segnale; ignota → N/D', () => {
+        const params = { ...DEFAULT_PARAMS.tennis, excludeCompetitions: ['wimbledon'] };
+        const at = (comp: string | null) =>
+            evaluateTennis(
+                buildTennisCtx({ ...TENNIS_FOLLOW, competition_name: comp }, tennisNow({}), 60),
+                params,
+            ).state;
+        expect(at('ATP Wimbledon')).toBe('no');
+        expect(at('ATP Rome')).toBe('signal');
+        expect(at(null)).toBe('nd');
+        // lista vuota (default) → check assente, nessun blocco
+        const ev = evaluateTennis(tennisCtx(), DEFAULT_PARAMS.tennis);
+        expect(ev.checks.some((c) => c.id === 'competition')).toBe(false);
     });
     it('NO: solo 1 game di vantaggio nel set corrente', () => {
         expect(evaluateTennis(tennisCtx({ games: { p1: 2, p2: 1 } }), DEFAULT_PARAMS.tennis).state).toBe('no');
@@ -425,11 +444,12 @@ describe('evaluateTennis', () => {
         const ctx = buildTennisCtx(
             { event_id: 'tv1', player1_name: 'Rossi/Verdi', player2_name: 'Bianchi/Neri' },
             tennisNow({}),
+            60,
         );
         expect(evaluateTennis(ctx, DEFAULT_PARAMS.tennis).state).toBe('no');
     });
     it('N/D: punteggio non disponibile', () => {
-        const ctx = buildTennisCtx(TENNIS_FOLLOW, tennisNow({ sets: null, games: null }));
+        const ctx = buildTennisCtx(TENNIS_FOLLOW, tennisNow({ sets: null, games: null }), 60);
         expect(evaluateTennis(ctx, DEFAULT_PARAMS.tennis).state).toBe('nd');
     });
     it('NO: mercato SOSPESO blocca il segnale', () => {
