@@ -3,6 +3,7 @@ import gspread
 import os
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import tempfile
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -31,16 +32,24 @@ except ImportError:
     from money_management import SlotManager, _sheets_retry
 
 # Logging setup
+# RotatingFileHandler invece di FileHandler: senza rotazione questo file era
+# arrivato a ~2.9GB in due mesi e mezzo (mai troncato/ruotato).
 log_file = os.path.join(os.path.dirname(__file__), "betfair_matcher.log")
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_file, encoding='utf-8'),
+        RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=5, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Le librerie HTTP a DEBUG loggano anche gli header delle richieste (incluse
+# API key/Bearer token in chiaro): alziamo il loro livello per non finire più
+# a scrivere credenziali su disco.
+for _noisy_logger in ("httpx", "httpcore", "hpack", "urllib3", "h2"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 
 # Constants
 MAPPING_FILE = os.path.join(os.path.dirname(__file__), "betfair_name_map.json")
