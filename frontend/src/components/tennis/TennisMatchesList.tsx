@@ -496,13 +496,7 @@ export function TennisMatchesList() {
                                                                     mkt {m.market_id}
                                                                 </span>
                                                                 {/* video live + statistiche Betfair (sessione web utente) */}
-                                                                <BetfairMediaButtons
-                                                                    compact
-                                                                    eventId={m.event_id}
-                                                                    marketId={m.market_id}
-                                                                    sport="tennis"
-                                                                    className="ml-auto"
-                                                                />
+                                                                <BetfairMediaButtons compact eventId={m.event_id} className="ml-auto" />
                                                             </div>
                                                         </div>
                                                     );

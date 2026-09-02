@@ -211,12 +211,7 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                             </Link>
                         )}
                         {/* video live + statistiche Betfair (sessione web utente) */}
-                        <BetfairMediaButtons
-                            compact
-                            eventId={row.event_id}
-                            marketId={row.market_id}
-                            sport={sport === 'tennis' ? 'tennis' : 'calcio'}
-                        />
+                        <BetfairMediaButtons compact eventId={row.event_id} />
                     </div>
                 );
             })}

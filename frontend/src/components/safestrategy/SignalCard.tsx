@@ -26,13 +26,11 @@ function fmtAgo(ms: number, nowMs: number): string {
 
 interface Props {
     signal: ActiveSignal;
-    /** market_id del MATCH_ODDS per il deep-link (null = link exchange generico) */
-    marketId: string | null;
     /** timestamp corrente (dal chiamante, per re-render coerente della lista) */
     nowMs: number;
 }
 
-export function SignalCard({ signal, marketId, nowMs }: Props) {
+export function SignalCard({ signal, nowMs }: Props) {
     const style = VARIANT_STYLE[signal.variant];
     const active = signal.status === 'active';
     return (
@@ -76,7 +74,7 @@ export function SignalCard({ signal, marketId, nowMs }: Props) {
             </div>
 
             <div className="mt-3">
-                <BetfairMediaButtons eventId={signal.eventId} marketId={marketId} sport={signal.sport} />
+                <BetfairMediaButtons eventId={signal.eventId} />
             </div>
         </div>
     );

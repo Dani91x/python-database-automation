@@ -324,7 +324,7 @@ export default function MarketWatch() {
                                     Apri terminal
                                 </Link>
                                 {/* video live + statistiche Betfair (sessione web utente) */}
-                                <BetfairMediaButtons compact eventId={f.event_id} marketId={firstMarketId ?? null} />
+                                <BetfairMediaButtons compact eventId={f.event_id} />
                                 {rowMsg[f.event_id] && (
                                     <div className={`w-full text-[10px] ${rowMsg[f.event_id].startsWith('Errore') ? 'text-red-400' : 'text-emerald-400'}`}>
                                         {rowMsg[f.event_id]}
@@ -398,7 +398,7 @@ export default function MarketWatch() {
                                     </span>
                                 )}
                                 {/* video live + statistiche Betfair (sessione web utente) */}
-                                <BetfairMediaButtons compact eventId={f.event_id} marketId={mo?.market_id ?? null} sport="tennis" />
+                                <BetfairMediaButtons compact eventId={f.event_id} />
                             </Card>
                         );
                     })}

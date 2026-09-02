@@ -176,12 +176,7 @@ export default function MultiLadder() {
                                 </span>
                                 <span className="flex items-center gap-0.5">
                                     {/* video live + statistiche Betfair del match dello slot */}
-                                    <BetfairMediaButtons
-                                        compact
-                                        eventId={s.eventId}
-                                        marketId={s.marketId}
-                                        sport={s.sport === 'tennis' ? 'tennis' : 'calcio'}
-                                    />
+                                    <BetfairMediaButtons compact eventId={s.eventId} />
                                     <button
                                         type="button"
                                         onClick={() => apply(removeSlot(slots, s.id))}

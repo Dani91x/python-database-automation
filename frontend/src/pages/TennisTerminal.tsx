@@ -206,7 +206,7 @@ export default function TennisTerminal() {
                     )}
                     <span className="ml-auto flex items-center gap-2">
                         {/* video live + statistiche Betfair (sessione web utente) */}
-                        <BetfairMediaButtons compact eventId={eventId} marketId={marketId} sport="tennis" />
+                        <BetfairMediaButtons compact eventId={eventId} />
                         <span className="text-[10px] text-muted-foreground font-mono">
                             event {eventId} · market {marketId}
                         </span>

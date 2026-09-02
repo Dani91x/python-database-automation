@@ -1,33 +1,27 @@
 // ============================================================================
-// betfairMedia.ts — deep-link a video live e statistiche/mercato Betfair.
+// betfairMedia.ts — pop-out live ufficiale dell'Exchange Betfair.
 //
-// Video live e statistiche match (OPTA) NON hanno API pubblica: come fanno i
-// software di trading concorrenti, si aprono le pagine Betfair in una finestra
-// separata che usa la SESSIONE WEB dell'utente (login sul sito Betfair fatto
-// una volta nella finestra stessa; nell'app desktop i cookie persistono).
-// Nessun dato passa da qui: sono solo scorciatoie di navigazione, riusate da
-// tutte le sezioni (Safe Strategy, Omega, Segui Live, Tennis, ladder, board).
+// URL verificato dal vivo (es. Udinese–Venezia):
+//   https://www.betfair.it/exchange/plus/pop-out-live-stream/<eventId>?feedType=...
+// Il popout contiene GIÀ tutto quello che offre Betfair per l'evento:
+//   · feedType=dataVisualization → "Visualizzazione partita" (animazione) +
+//     "Statistiche partita" con tutte le sue tab interne;
+//   · feedType=video            → lo stream video vero (dove Betfair ha i diritti).
+// Serve la sessione web dell'utente: l'app desktop la inietta all'avvio via SSO
+// (desktop/main.js); nel browser il popout chiede il login una tantum.
+// Dominio .it: account su giurisdizione italiana (config.py → identitysso .it).
+// Nessun dato passa da qui: sono solo scorciatoie di navigazione.
 // ============================================================================
 
-/** Player video live Betfair per un evento (richiede login Betfair + evento con stream). */
-export function betfairVideoUrl(eventId: string): string {
-    return `https://videoplayer.betfair.com/GetPlayer.do?contentType=viewer&eID=${encodeURIComponent(eventId)}&allowPopup=true`;
+export type BetfairFeedType = 'video' | 'dataVisualization';
+
+/** Pop-out live dell'Exchange per un evento (video o animazione+statistiche). */
+export function betfairLivePopoutUrl(eventId: string, feed: BetfairFeedType): string {
+    return `https://www.betfair.it/exchange/plus/pop-out-live-stream/${encodeURIComponent(eventId)}?feedType=${feed}`;
 }
 
-/** Pagina Exchange del mercato (quote + widget statistiche/video per i loggati). */
-export function betfairMarketUrl(marketId: string | null | undefined): string {
-    return marketId
-        ? `https://www.betfair.com/exchange/plus/market/${encodeURIComponent(marketId)}`
-        : 'https://www.betfair.com/exchange/plus/';
-}
-
-/** Pagina Exchange dell'EVENTO (fallback quando il market_id non è noto). */
-export function betfairEventUrl(eventId: string, sport: 'calcio' | 'tennis' = 'calcio'): string {
-    const seg = sport === 'tennis' ? 'tennis' : 'football';
-    return `https://www.betfair.com/exchange/plus/${seg}/event/${encodeURIComponent(eventId)}`;
-}
-
-/** Apre in finestra separata (desktop: BrowserWindow Chromium; browser: popup). */
+/** Apre in finestra separata (desktop: BrowserWindow Chromium; browser: popup).
+ *  Dimensioni tarate sul popout Betfair (colonna singola, contenuto verticale). */
 export function openBetfairWindow(url: string): void {
-    window.open(url, '_blank', 'noopener,width=980,height=700');
+    window.open(url, '_blank', 'noopener,width=640,height=780');
 }

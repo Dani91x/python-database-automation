@@ -75,15 +75,11 @@ function EmptyMonitor({ sport }: { sport: Sport }) {
     );
 }
 
-function SignalGrid({ signals, marketIdByEvent, nowMs }: {
-    signals: ActiveSignal[];
-    marketIdByEvent: Map<string, string | null>;
-    nowMs: number;
-}) {
+function SignalGrid({ signals, nowMs }: { signals: ActiveSignal[]; nowMs: number }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {signals.map((s) => (
-                <SignalCard key={s.key} signal={s} marketId={marketIdByEvent.get(s.eventId) ?? null} nowMs={nowMs} />
+                <SignalCard key={s.key} signal={s} nowMs={nowMs} />
             ))}
         </div>
     );
@@ -98,13 +94,6 @@ export default function SafeStrategy() {
         const t = window.setInterval(() => setNowMs(Date.now()), 15_000);
         return () => window.clearInterval(t);
     }, []);
-
-    const marketIdByEvent = useMemo(() => {
-        const map = new Map<string, string | null>();
-        for (const m of football) map.set(m.follow.event_id, m.ctx.matchOddsMarketId);
-        for (const m of tennis) map.set(m.follow.event_id, m.ctx.matchOddsMarketId);
-        return map;
-    }, [football, tennis]);
 
     const bySport = useMemo(() => {
         const pick = (sport: Sport, status: ActiveSignal['status']) =>
@@ -203,7 +192,7 @@ export default function SafeStrategy() {
 
                     {bySport.calcioActive.length > 0 && (
                         <div className="mb-5">
-                            <SignalGrid signals={bySport.calcioActive} marketIdByEvent={marketIdByEvent} nowMs={nowMs} />
+                            <SignalGrid signals={bySport.calcioActive} nowMs={nowMs} />
                         </div>
                     )}
 
@@ -218,8 +207,6 @@ export default function SafeStrategy() {
                                 <MonitorCard
                                     key={m.follow.event_id}
                                     eventId={m.follow.event_id}
-                                    marketId={m.ctx.matchOddsMarketId}
-                                    sport="calcio"
                                     title={`${m.follow.home_name} – ${m.follow.away_name}`}
                                     liveLine={footballLiveLine(m)}
                                     inplay={m.ctx.inplay}
@@ -239,7 +226,7 @@ export default function SafeStrategy() {
                                 Storico sessione calcio ({bySport.calcioExpired.length})
                             </summary>
                             <div className="mt-2">
-                                <SignalGrid signals={bySport.calcioExpired} marketIdByEvent={marketIdByEvent} nowMs={nowMs} />
+                                <SignalGrid signals={bySport.calcioExpired} nowMs={nowMs} />
                             </div>
                         </details>
                     )}
@@ -251,7 +238,7 @@ export default function SafeStrategy() {
 
                     {bySport.tennisActive.length > 0 && (
                         <div className="mb-5">
-                            <SignalGrid signals={bySport.tennisActive} marketIdByEvent={marketIdByEvent} nowMs={nowMs} />
+                            <SignalGrid signals={bySport.tennisActive} nowMs={nowMs} />
                         </div>
                     )}
 
@@ -266,8 +253,6 @@ export default function SafeStrategy() {
                                 <MonitorCard
                                     key={m.follow.event_id}
                                     eventId={m.follow.event_id}
-                                    marketId={m.ctx.matchOddsMarketId}
-                                    sport="tennis"
                                     title={`${m.follow.player1_name} – ${m.follow.player2_name}`}
                                     liveLine={tennisLiveLine(m)}
                                     inplay={m.ctx.inplay}
@@ -284,7 +269,7 @@ export default function SafeStrategy() {
                                 Storico sessione tennis ({bySport.tennisExpired.length})
                             </summary>
                             <div className="mt-2">
-                                <SignalGrid signals={bySport.tennisExpired} marketIdByEvent={marketIdByEvent} nowMs={nowMs} />
+                                <SignalGrid signals={bySport.tennisExpired} nowMs={nowMs} />
                             </div>
                         </details>
                     )}

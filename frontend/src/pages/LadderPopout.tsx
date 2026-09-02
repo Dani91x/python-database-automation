@@ -41,12 +41,7 @@ export default function LadderPopout() {
                         <span className="text-[11px] text-muted-foreground truncate">
                             {slot.eventName || slot.marketName}
                         </span>
-                        <BetfairMediaButtons
-                            compact
-                            eventId={slot.eventId}
-                            marketId={slot.marketId}
-                            sport={slot.sport === 'tennis' ? 'tennis' : 'calcio'}
-                        />
+                        <BetfairMediaButtons compact eventId={slot.eventId} />
                     </div>
                     <StandaloneLadder slot={slot} />
                 </>

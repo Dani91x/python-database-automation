@@ -1184,10 +1184,7 @@ export default function SeguiLive() {
                         <LiveMatchCard follow={selected} selected onClick={() => { /* già aperto */ }} />
                         {/* video live + statistiche Betfair del match (sessione web utente) */}
                         <div className="flex justify-end -mt-2">
-                            <BetfairMediaButtons
-                                eventId={selected.event_id}
-                                marketId={liveNow?.state?.markets?.find((m) => m.market_type === 'MATCH_ODDS')?.market_id ?? null}
-                            />
+                            <BetfairMediaButtons eventId={selected.event_id} />
                         </div>
                         {detailLoading && !liveNow ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

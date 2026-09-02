@@ -16,8 +16,6 @@ import { VARIANT_STYLE, stateDotClass } from './variantStyles';
 
 interface Props {
     eventId: string;
-    marketId: string | null;
-    sport: 'calcio' | 'tennis';
     title: string;
     /** riga di contesto live (es. "58′ · 1-0 · in-play" / "set 1-0 · game 3-2") */
     liveLine: string;
@@ -33,7 +31,7 @@ function checkIcon(ok: boolean | null): { glyph: string; cls: string } {
     return { glyph: '—', cls: 'text-amber-300/80' };
 }
 
-export function MonitorCard({ eventId, marketId, sport, title, liveLine, inplay, evaluations, dataNote }: Props) {
+export function MonitorCard({ eventId, title, liveLine, inplay, evaluations, dataNote }: Props) {
     const [open, setOpen] = useState(false);
     return (
         <div className="glass-card rounded-xl border border-white/10 p-3">
@@ -109,7 +107,7 @@ export function MonitorCard({ eventId, marketId, sport, title, liveLine, inplay,
                         );
                     })}
                     <div className="lg:col-span-2 pt-1">
-                        <BetfairMediaButtons eventId={eventId} marketId={marketId} sport={sport} />
+                        <BetfairMediaButtons eventId={eventId} />
                     </div>
                 </div>
             )}
