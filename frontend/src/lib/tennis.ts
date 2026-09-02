@@ -231,9 +231,13 @@ export function subscribeTennisMarkets(cb: () => void): () => void {
     };
 }
 
+// NB: nome canale UNICO per sottoscrizione (suffisso random) — stesso fix
+// dell'audit #21 su subscribeLiveNow: due iscrizioni allo stesso evento (es.
+// Terminal tennis + radar Safe Strategy) con lo stesso topic si contendevano
+// il canale e una restava a secco. Il nome è solo un identificatore client-side.
 export function subscribeTennisNow(eventId: string, cb: (row: TennisLiveNowRow | null) => void): () => void {
     const channel = supabase
-        .channel(`tennis_live_now:${eventId}`)
+        .channel(`tennis_live_now:${eventId}:${Math.random().toString(36).slice(2, 10)}`)
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'tennis_live_now', filter: `event_id=eq.${eventId}` },

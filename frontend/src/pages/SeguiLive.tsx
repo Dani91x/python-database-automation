@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LiveMatchCard } from '@/components/live/LiveMatchCard';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { LiveMarketBoard } from '@/components/live/LiveMarketBoard';
 import { LiveSignalPanel } from '@/components/live/LiveSignalPanel';
 import { LiveAlertBanner } from '@/components/live/LiveAlertBanner';
@@ -1181,6 +1182,13 @@ export default function SeguiLive() {
                            tabellone completo + segnali sotto come overview ---- */
                     <div className="space-y-4">
                         <LiveMatchCard follow={selected} selected onClick={() => { /* già aperto */ }} />
+                        {/* video live + statistiche Betfair del match (sessione web utente) */}
+                        <div className="flex justify-end -mt-2">
+                            <BetfairMediaButtons
+                                eventId={selected.event_id}
+                                marketId={liveNow?.state?.markets?.find((m) => m.market_type === 'MATCH_ODDS')?.market_id ?? null}
+                            />
+                        </div>
                         {detailLoading && !liveNow ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 w-full bg-white/5" />)}

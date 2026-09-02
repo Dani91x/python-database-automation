@@ -18,6 +18,7 @@ import {
     type LiveFollow, type LiveNowMarket,
 } from '@/lib/live';
 import StandaloneLadder from '@/components/live/StandaloneLadder';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 
 export default function MultiLadder() {
     const [slots, setSlots] = useState<LadderSlot[]>(() => loadSlots());
@@ -173,14 +174,23 @@ export default function MultiLadder() {
                                 <span className="text-[11px] font-bold text-white/85 truncate" title={`${s.eventName} · ${s.marketName}`}>
                                     {s.sport === 'tennis' ? '🎾 ' : '⚽ '}{s.eventName || s.eventId}
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => apply(removeSlot(slots, s.id))}
-                                    title="Rimuovi dal workspace"
-                                    className="p-0.5 rounded text-white/40 hover:text-white hover:bg-white/10"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
+                                <span className="flex items-center gap-0.5">
+                                    {/* video live + statistiche Betfair del match dello slot */}
+                                    <BetfairMediaButtons
+                                        compact
+                                        eventId={s.eventId}
+                                        marketId={s.marketId}
+                                        sport={s.sport === 'tennis' ? 'tennis' : 'calcio'}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => apply(removeSlot(slots, s.id))}
+                                        title="Rimuovi dal workspace"
+                                        className="p-0.5 rounded text-white/40 hover:text-white hover:bg-white/10"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </span>
                             </div>
                             <StandaloneLadder slot={s} />
                         </div>

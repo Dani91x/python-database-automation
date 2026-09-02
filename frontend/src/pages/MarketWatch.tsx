@@ -24,6 +24,7 @@ import {
     type TennisFollow, type TennisLiveNowRow, type TennisLiveNowState,
 } from '@/lib/tennis';
 import { eventMtm, eventExposure } from '@/lib/eventPnl';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 
 // ---------------------------------------------------------------- helper puri UI
 // Mappa selection_id → best back/lay dai mercati pubblicati in *_live_now.state.
@@ -322,6 +323,8 @@ export default function MarketWatch() {
                                 <Link to="/segui-live" className="text-[11px] text-sky-300 hover:underline whitespace-nowrap">
                                     Apri terminal
                                 </Link>
+                                {/* video live + statistiche Betfair (sessione web utente) */}
+                                <BetfairMediaButtons compact eventId={f.event_id} marketId={firstMarketId ?? null} />
                                 {rowMsg[f.event_id] && (
                                     <div className={`w-full text-[10px] ${rowMsg[f.event_id].startsWith('Errore') ? 'text-red-400' : 'text-emerald-400'}`}>
                                         {rowMsg[f.event_id]}
@@ -394,6 +397,8 @@ export default function MarketWatch() {
                                         terminal n/d
                                     </span>
                                 )}
+                                {/* video live + statistiche Betfair (sessione web utente) */}
+                                <BetfairMediaButtons compact eventId={f.event_id} marketId={mo?.market_id ?? null} sport="tennis" />
                             </Card>
                         );
                     })}

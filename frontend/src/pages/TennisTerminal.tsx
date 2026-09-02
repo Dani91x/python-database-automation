@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { TennisNav } from '@/components/tennis/TennisNav';
 import { TennisBotPanel } from '@/components/tennis/TennisBotPanel';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import {
     TennisLadderColumn, TENNIS_LADDER_SOURCE,
 } from '@/components/tennis/TennisLadderColumn';
@@ -203,8 +204,12 @@ export default function TennisTerminal() {
                             REC KO
                         </span>
                     )}
-                    <span className="ml-auto text-[10px] text-muted-foreground font-mono">
-                        event {eventId} · market {marketId}
+                    <span className="ml-auto flex items-center gap-2">
+                        {/* video live + statistiche Betfair (sessione web utente) */}
+                        <BetfairMediaButtons compact eventId={eventId} marketId={marketId} sport="tennis" />
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                            event {eventId} · market {marketId}
+                        </span>
                     </span>
                 </div>
             </div>

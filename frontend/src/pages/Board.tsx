@@ -21,6 +21,7 @@ import { countdownToOff } from '@/lib/matchClock';
 import { followTennisEvent } from '@/lib/tennis';
 import { getLocalChannel, type LocalSport } from '@/lib/localChannel';
 import { useLocalStatus } from '@/lib/localTransport';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 
 // ---- shape del push 'board' (protocollo canale locale, identica per i due sport) ----
 interface BoardSelection {
@@ -209,6 +210,13 @@ function SportBoard({ sport }: { sport: LocalSport }) {
                                 Segui live →
                             </Link>
                         )}
+                        {/* video live + statistiche Betfair (sessione web utente) */}
+                        <BetfairMediaButtons
+                            compact
+                            eventId={row.event_id}
+                            marketId={row.market_id}
+                            sport={sport === 'tennis' ? 'tennis' : 'calcio'}
+                        />
                     </div>
                 );
             })}
@@ -237,6 +245,11 @@ export default function Board() {
                         </span>
                     </div>
                     <div className="flex items-center gap-3">
+                        <Link to="/safe-strategy">
+                            <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
+                                🛡️ Safe Strategy
+                            </Button>
+                        </Link>
                         <Link to="/segui-live">
                             <Button variant="outline" size="sm" className="border-white/10 text-muted-foreground hover:text-white">
                                 Segui Live

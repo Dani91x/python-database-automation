@@ -15,7 +15,7 @@ import { LogOut, ArrowRight } from 'lucide-react';
  */
 
 interface SportChoice {
-    key: 'football' | 'tennis' | 'omega';
+    key: 'football' | 'tennis' | 'omega' | 'safe';
     emoji: string;
     title: string;
     subtitle: string;
@@ -51,6 +51,15 @@ const CHOICES: SportChoice[] = [
         subtitle: 'Correct Score · obiettivo €/giorno · set-and-forget',
         to: '/omega',
         accent: 'primary',
+        available: true,
+    },
+    {
+        key: 'safe',
+        emoji: '🛡️',
+        title: 'Safe Strategy',
+        subtitle: 'Segnali live calcio + tennis · ingresso sempre manuale',
+        to: '/safe-strategy',
+        accent: 'secondary',
         available: true,
     },
 ];
@@ -110,7 +119,7 @@ export default function SelectSport() {
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 w-full max-w-5xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 md:gap-8 w-full max-w-7xl">
                     {CHOICES.map((c, i) => (
                         <motion.button
                             key={c.key}

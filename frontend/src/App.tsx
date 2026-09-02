@@ -22,6 +22,8 @@ import MultiLadder from "@/pages/MultiLadder";
 import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
 import Omega from "@/pages/Omega";
+import SafeStrategy from "@/pages/SafeStrategy";
+import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/NotFound";
@@ -35,6 +37,9 @@ function App() {
                 <TooltipProvider>
                     <Toaster />
                     <BrowserRouter>
+                        {/* Provider globale Safe Strategy: valuta i segnali anche quando
+                            l'utente è su un'altra schermata (toast → /safe-strategy). */}
+                        <SafeStrategyProvider>
                         <Routes>
                             {/* AUTH ATTIVA: la landing (con login/registrazione) è la root.
                                 La dashboard e analytics sono protette da ProtectedRoute. */}
@@ -170,8 +175,17 @@ function App() {
                                     </ProtectedRoute>
                                 }
                             />
+                            <Route
+                                path="/safe-strategy"
+                                element={
+                                    <ProtectedRoute>
+                                        <SafeStrategy />
+                                    </ProtectedRoute>
+                                }
+                            />
                             <Route path="*" element={<NotFound />} />
                         </Routes>
+                        </SafeStrategyProvider>
                     </BrowserRouter>
                 </TooltipProvider>
             </HelmetProvider>

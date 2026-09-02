@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -419,6 +420,8 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                     {mission.error && (
                         <span className="text-xs text-red-400 truncate" title={mission.error}>⚠ {mission.error}</span>
                     )}
+                    {/* video live + statistiche Betfair (sessione web utente) */}
+                    <BetfairMediaButtons compact eventId={mission.event_id} className="ml-auto" />
                 </div>
                 {allTrades.length > 0 && (
                     <div className="space-y-1">

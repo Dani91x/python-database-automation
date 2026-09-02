@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import StandaloneLadder from '@/components/live/StandaloneLadder';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 
 export default function LadderPopout() {
     const [params] = useSearchParams();
@@ -34,7 +35,21 @@ export default function LadderPopout() {
                     Parametri mancanti: servono <code>market</code> ed <code>event</code>.
                 </div>
             ) : (
-                <StandaloneLadder slot={slot} />
+                <>
+                    {/* barra minima: video live + statistiche Betfair del match */}
+                    <div className="flex items-center justify-between px-1 pb-1">
+                        <span className="text-[11px] text-muted-foreground truncate">
+                            {slot.eventName || slot.marketName}
+                        </span>
+                        <BetfairMediaButtons
+                            compact
+                            eventId={slot.eventId}
+                            marketId={slot.marketId}
+                            sport={slot.sport === 'tennis' ? 'tennis' : 'calcio'}
+                        />
+                    </div>
+                    <StandaloneLadder slot={slot} />
+                </>
             )}
         </div>
     );

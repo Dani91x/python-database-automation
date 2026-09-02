@@ -22,6 +22,7 @@ import {
     AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -494,6 +495,14 @@ export function TennisMatchesList() {
                                                                 <span className="text-[10px] font-mono text-muted-foreground">
                                                                     mkt {m.market_id}
                                                                 </span>
+                                                                {/* video live + statistiche Betfair (sessione web utente) */}
+                                                                <BetfairMediaButtons
+                                                                    compact
+                                                                    eventId={m.event_id}
+                                                                    marketId={m.market_id}
+                                                                    sport="tennis"
+                                                                    className="ml-auto"
+                                                                />
                                                             </div>
                                                         </div>
                                                     );
