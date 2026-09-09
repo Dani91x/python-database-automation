@@ -12,9 +12,22 @@ import { supabase } from '@/integrations/supabase/client';
 export interface ScanOddsPair {
     back: number | null;
     lay: number | null;
+    /** EUR disponibili al miglior prezzo back/lay = importo abbinabile SUBITO a
+     *  quella quota (best offers, livello 0 dello stream). Assenti nelle righe
+     *  scritte da scanner precedenti. */
+    back_size?: number | null;
+    lay_size?: number | null;
+}
+
+/** Disponibilità media Betfair per l'evento (IPS scoresAndBroadcast, lo stesso
+ *  dato che il sito usa per mostrare le icone): null = non ancora noto. */
+export interface ScanMediaFlags {
+    video: boolean | null;
+    viz: boolean | null;
 }
 
 export interface CalcioScanPayload {
+    media?: ScanMediaFlags | null;
     event_name: string | null;
     home: string | null;
     away: string | null;
@@ -39,6 +52,7 @@ export interface CalcioScanPayload {
 }
 
 export interface TennisScanPayload {
+    media?: ScanMediaFlags | null;
     event_name: string | null;
     p1: string | null;
     p2: string | null;
@@ -66,8 +80,11 @@ export interface ScanStatusPayload {
     dry?: boolean;
     /** 'stream' = Exchange Stream API ufficiale (push) · 'rest' = fallback poll */
     source?: string;
-    /** mercati coperti dallo stream (0 = REST puro); il resto dei rilevanti va in REST */
+    /** mercati coperti da connessioni stream VIVE (0 = REST puro); il resto dei rilevanti va in REST */
     stream_markets?: number;
+    /** connessioni stream attive / capacità totale del pool (connessioni × mercati per connessione) */
+    stream_connections?: number;
+    stream_capacity?: number;
     last_error?: string | null;
     started_at?: string;
 }

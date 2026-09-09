@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
+import { BetfairMediaButtons, type BetfairMediaAvailability } from '@/components/BetfairMediaButtons';
 import type { SideId, VariantEvaluation } from '@/lib/safeStrategy';
 import { VARIANT_STYLE, stateDotClass } from './variantStyles';
 
@@ -23,6 +23,8 @@ interface Props {
     evaluations: { evaluation: VariantEvaluation; subId?: SideId }[];
     /** nota diagnostica (es. mismatch nomi selezioni → quote n/d) */
     dataNote?: string | null;
+    /** disponibilità video/animazione Betfair per l'evento (dallo scanner) */
+    media?: BetfairMediaAvailability | null;
 }
 
 function checkIcon(ok: boolean | null): { glyph: string; cls: string } {
@@ -31,7 +33,7 @@ function checkIcon(ok: boolean | null): { glyph: string; cls: string } {
     return { glyph: '—', cls: 'text-amber-300/80' };
 }
 
-export function MonitorCard({ eventId, title, liveLine, inplay, evaluations, dataNote }: Props) {
+export function MonitorCard({ eventId, title, liveLine, inplay, evaluations, dataNote, media }: Props) {
     const [open, setOpen] = useState(false);
     return (
         <div className="glass-card rounded-xl border border-white/10 p-3">
@@ -107,7 +109,7 @@ export function MonitorCard({ eventId, title, liveLine, inplay, evaluations, dat
                         );
                     })}
                     <div className="lg:col-span-2 pt-1">
-                        <BetfairMediaButtons eventId={eventId} />
+                        <BetfairMediaButtons eventId={eventId} media={media} />
                     </div>
                 </div>
             )}

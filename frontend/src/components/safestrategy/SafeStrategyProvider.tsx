@@ -46,6 +46,7 @@ import {
     buildTennisCtxFromScan,
     evaluateFootballAll,
     evaluateTennis,
+    fmtEur,
     footballCandidates,
     tennisCandidates,
     reconcileSignals,
@@ -350,6 +351,8 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
             toast.warning(`🛡️ ${meta.short} — ${s.headline}`, {
                 description: `${s.matchLabel} · ${s.contextAtTrigger}${
                     s.entryOdds != null ? ` · @${s.entryOdds.toFixed(2)}` : ''
+                }${
+                    s.entrySize != null ? ` · abbinabili ${fmtEur(s.entrySize)}` : ''
                 }`,
                 duration: 20_000,
                 action: { label: 'Apri', onClick: () => navigate('/safe-strategy') },

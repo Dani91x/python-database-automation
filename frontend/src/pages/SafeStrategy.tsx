@@ -23,7 +23,7 @@ import { MonitorCard } from '@/components/safestrategy/MonitorCard';
 import { ParamsSheet } from '@/components/safestrategy/ParamsSheet';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import type { ActiveSignal, Sport } from '@/lib/safeStrategy';
-import type { ScanStatusRow } from '@/lib/safeStrategyScan';
+import type { ScanMediaFlags, ScanStatusRow } from '@/lib/safeStrategyScan';
 
 /** heartbeat scanner più vecchio di così = scanner considerato NON attivo */
 const SCANNER_STALE_MS = 45_000;
@@ -86,7 +86,7 @@ function ScannerBar({ status, nowMs }: { status: ScanStatusRow | null; nowMs: nu
                                     : 'bg-amber-500/15 text-amber-300 border-amber-500/40 text-[10px]'
                             }
                             title={p.source === 'stream'
-                                ? `Quote in push dalla Exchange Stream API ufficiale (conflate 1s) su ${p.stream_markets ?? 0} mercati; gli altri rilevanti in poll REST`
+                                ? `Quote in push dalla Exchange Stream API ufficiale (conflate 1s) su ${p.stream_markets ?? 0} mercati, ${p.stream_connections ?? 0} connessioni attive (capacità ${p.stream_capacity ?? 0}, max 200 mercati/connessione da limite Betfair); i rilevanti non coperti vanno in poll REST`
                                 : 'Stream non in salute: quote via poll REST di fallback'}
                         >
                             {p.source === 'stream' ? `⚡ STREAM${p.stream_markets ? ` ${p.stream_markets}` : ''}` : 'REST'}
@@ -144,11 +144,13 @@ function EmptyMonitor({ sport }: { sport: Sport }) {
     );
 }
 
-function SignalGrid({ signals, nowMs }: { signals: ActiveSignal[]; nowMs: number }) {
+type MediaByEvent = Record<string, ScanMediaFlags | null | undefined>;
+
+function SignalGrid({ signals, nowMs, media }: { signals: ActiveSignal[]; nowMs: number; media: MediaByEvent }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {signals.map((s) => (
-                <SignalCard key={s.key} signal={s} nowMs={nowMs} />
+                <SignalCard key={s.key} signal={s} nowMs={nowMs} media={media[s.eventId]} />
             ))}
         </div>
     );
@@ -194,6 +196,15 @@ export default function SafeStrategy() {
     );
 
     const totalActive = bySport.calcioActive.length + bySport.tennisActive.length;
+
+    // disponibilità video/animazione Betfair per evento (dallo scanner): le card
+    // segnale la ricevono per attenuare 📺/📊 esattamente come fa il sito
+    const mediaByEvent = useMemo<MediaByEvent>(() => {
+        const out: MediaByEvent = {};
+        for (const m of football) out[m.eventId] = m.payload.media;
+        for (const m of tennis) out[m.eventId] = m.payload.media;
+        return out;
+    }, [football, tennis]);
 
     return (
         <div className="min-h-screen bg-background relative pb-16">
@@ -259,7 +270,7 @@ export default function SafeStrategy() {
 
                     {bySport.calcioActive.length > 0 && (
                         <div className="mb-5">
-                            <SignalGrid signals={bySport.calcioActive} nowMs={nowMs} />
+                            <SignalGrid signals={bySport.calcioActive} nowMs={nowMs} media={mediaByEvent} />
                         </div>
                     )}
 
@@ -279,6 +290,7 @@ export default function SafeStrategy() {
                                     inplay={m.ctx.inplay}
                                     evaluations={m.evaluations.map((evaluation) => ({ evaluation }))}
                                     dataNote={m.preMatchMissing ? 'riferimento pre-KO non catturato (scanner partito a match iniziato) — condizioni pre-match n/d' : null}
+                                    media={m.payload.media}
                                 />
                             ))}
                         </div>
@@ -290,7 +302,7 @@ export default function SafeStrategy() {
                                 Storico sessione calcio ({bySport.calcioExpired.length})
                             </summary>
                             <div className="mt-2">
-                                <SignalGrid signals={bySport.calcioExpired} nowMs={nowMs} />
+                                <SignalGrid signals={bySport.calcioExpired} nowMs={nowMs} media={mediaByEvent} />
                             </div>
                         </details>
                     )}
@@ -302,7 +314,7 @@ export default function SafeStrategy() {
 
                     {bySport.tennisActive.length > 0 && (
                         <div className="mb-5">
-                            <SignalGrid signals={bySport.tennisActive} nowMs={nowMs} />
+                            <SignalGrid signals={bySport.tennisActive} nowMs={nowMs} media={mediaByEvent} />
                         </div>
                     )}
 
@@ -321,6 +333,7 @@ export default function SafeStrategy() {
                                     liveLine={tennisLiveLine(m)}
                                     inplay={m.ctx.inplay}
                                     evaluations={[{ evaluation: m.evaluation }]}
+                                    media={m.payload.media}
                                 />
                             ))}
                         </div>
@@ -332,7 +345,7 @@ export default function SafeStrategy() {
                                 Storico sessione tennis ({bySport.tennisExpired.length})
                             </summary>
                             <div className="mt-2">
-                                <SignalGrid signals={bySport.tennisExpired} nowMs={nowMs} />
+                                <SignalGrid signals={bySport.tennisExpired} nowMs={nowMs} media={mediaByEvent} />
                             </div>
                         </details>
                     )}

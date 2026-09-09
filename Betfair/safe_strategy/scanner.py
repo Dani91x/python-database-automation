@@ -51,6 +51,28 @@ def best_price(levels: Any) -> Optional[float]:
         return None
 
 
+def best_size(levels: Any) -> Optional[float]:
+    """Importo (EUR) disponibile al MIGLIOR prezzo: è quanto si può abbinare
+    SUBITO a quella quota (best offers, livello 0)."""
+    try:
+        return round(float(levels[0].size), 2) if levels else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def price_pair(ex: Any) -> Dict[str, Optional[float]]:
+    """Coppia back/lay al miglior prezzo con le size abbinabili, da un runner.ex
+    (poll REST o stream, stessa forma betfairlightweight)."""
+    atb = getattr(ex, "available_to_back", None) if ex else None
+    atl = getattr(ex, "available_to_lay", None) if ex else None
+    return {
+        "back": best_price(atb),
+        "lay": best_price(atl),
+        "back_size": best_size(atb),
+        "lay_size": best_size(atl),
+    }
+
+
 def selection_sides(runners: List[Dict[str, Any]]) -> Dict[str, Optional[int]]:
     """Mappa home/away/draw → selection_id dal catalogo MATCH_ODDS calcio.
 
@@ -197,6 +219,37 @@ def payload_signature(payload: Dict[str, Any]) -> str:
     return hashlib.md5(canon.encode("utf-8")).hexdigest()
 
 
+# campi "critici": un loro cambio va pubblicato SUBITO, saltando il throttle
+# per-evento pensato per le sole quote (gol, minuto, rossi, stato mercato,
+# in-play, set/game; per il CS lo stato del mercato). Le quote da sole aspettano.
+_CRITICAL_CALCIO = ("inplay", "mo_status", "minute", "score_home", "score_away", "red_home", "red_away")
+_CRITICAL_TENNIS = ("inplay", "mo_status", "sets", "games")
+
+
+def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
+    keys = _CRITICAL_CALCIO if sport == "calcio" else _CRITICAL_TENNIS
+    crit: Dict[str, Any] = {k: payload.get(k) for k in keys}
+    if sport == "calcio":
+        cs = payload.get("cs") or {}
+        crit["cs_status"] = cs.get("status") if isinstance(cs, dict) else None
+    return json.dumps(crit, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def media_flags(broadcasts: Optional[Dict[str, Any]]) -> Dict[str, Optional[bool]]:
+    """Disponibilità media Betfair per l'evento dal blocco `broadcasts` dell'IPS
+    scoresAndBroadcast (lo stesso che usa il sito per mostrare/nascondere le
+    icone): video live (`isLiveVideoAvailable`) e animazione+statistiche
+    (`isDataVisualizationAvailable`). None = dato non esposto, MAI inventato."""
+    if not isinstance(broadcasts, dict):
+        return {"video": None, "viz": None}
+
+    def flag(key: str) -> Optional[bool]:
+        v = broadcasts.get(key)
+        return v if isinstance(v, bool) else None
+
+    return {"video": flag("isLiveVideoAvailable"), "viz": flag("isDataVisualizationAvailable")}
+
+
 def build_cs_block(
     market_id: Optional[str],
     status: Optional[str],
@@ -208,7 +261,10 @@ def build_cs_block(
     any_home = any_away = None
     for s in selections:
         name = str(s.get("name") or "")
-        pair = {"back": s.get("back"), "lay": s.get("lay")}
+        pair = {
+            "back": s.get("back"), "lay": s.get("lay"),
+            "back_size": s.get("back_size"), "lay_size": s.get("lay_size"),
+        }
         if _ANY_OTHER_HOME.search(name):
             any_home = pair
         elif _ANY_OTHER_AWAY.search(name):

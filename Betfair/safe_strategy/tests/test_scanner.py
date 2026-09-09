@@ -1,7 +1,7 @@
 """Test della logica PURA dello scanner Safe Strategy (nessuna rete/DB)."""
 from datetime import datetime, timedelta, timezone
 
-from Betfair.safe_strategy import scanner
+from Betfair.safe_strategy import scanner, stream
 
 
 def test_selection_sides_da_sort_priority():
@@ -128,6 +128,99 @@ def test_build_cs_block_riconosce_any_other():
     ]
     blk = scanner.build_cs_block("1.23", "OPEN", sels)
     assert blk is not None
-    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0}
-    assert blk["any_other_away"] == {"back": 48.0, "lay": 50.0}
+    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": None, "lay_size": None}
+    assert blk["any_other_away"] == {"back": 48.0, "lay": 50.0, "back_size": None, "lay_size": None}
     assert scanner.build_cs_block(None, "OPEN", sels) is None
+
+
+class _Lvl:
+    def __init__(self, price, size):
+        self.price = price
+        self.size = size
+
+
+class _Ex:
+    def __init__(self, atb, atl):
+        self.available_to_back = atb
+        self.available_to_lay = atl
+
+
+def test_price_pair_con_size_abbinabili():
+    ex = _Ex([_Lvl(1.28, 152.4), _Lvl(1.27, 900.0)], [_Lvl(1.3, 41.257)])
+    assert scanner.price_pair(ex) == {"back": 1.28, "lay": 1.3, "back_size": 152.4, "lay_size": 41.26}
+    empty = {"back": None, "lay": None, "back_size": None, "lay_size": None}
+    assert scanner.price_pair(_Ex([], None)) == empty
+    assert scanner.price_pair(None) == empty
+
+
+def test_build_cs_block_porta_le_size():
+    sels = [{"name": "Any Other Home Win", "back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}]
+    blk = scanner.build_cs_block("1.23", "OPEN", sels)
+    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}
+
+
+def test_critical_signature_ignora_le_quote():
+    base = {"inplay": True, "mo_status": "OPEN", "minute": 50, "score_home": 1, "score_away": 0,
+            "red_home": 0, "red_away": 0, "odds": {"home": {"back": 1.3}}, "cs": {"status": "OPEN"}}
+    solo_quote = {**base, "odds": {"home": {"back": 1.35}}}
+    gol = {**base, "score_home": 2}
+    cs_sospeso = {**base, "cs": {"status": "SUSPENDED"}}
+    assert scanner.critical_signature("calcio", base) == scanner.critical_signature("calcio", solo_quote)
+    assert scanner.critical_signature("calcio", base) != scanner.critical_signature("calcio", gol)
+    assert scanner.critical_signature("calcio", base) != scanner.critical_signature("calcio", cs_sospeso)
+    t = {"inplay": True, "mo_status": "OPEN", "sets": {"p1": 1, "p2": 0}, "games": {"p1": 3, "p2": 1}, "odds": {}}
+    assert scanner.critical_signature("tennis", t) == scanner.critical_signature(
+        "tennis", {**t, "odds": {"p1": {"back": 1.05}}}
+    )
+    assert scanner.critical_signature("tennis", t) != scanner.critical_signature(
+        "tennis", {**t, "games": {"p1": 4, "p2": 1}}
+    )
+
+
+def test_media_flags_da_broadcasts_ips():
+    bc = {"tv": [], "isLiveVideoAvailable": False, "isDataVisualizationAvailable": True, "channel": "WEB"}
+    assert scanner.media_flags(bc) == {"video": False, "viz": True}
+    assert scanner.media_flags({"isLiveVideoAvailable": "yes"}) == {"video": None, "viz": None}  # mai inventare
+    assert scanner.media_flags(None) == {"video": None, "viz": None}
+    assert scanner.media_flags({}) == {"video": None, "viz": None}
+
+
+# ----------------------------------------------------------- sharding stream
+def test_shard_index_stabile_e_indipendente_dal_processo():
+    assert stream.shard_index("1.262210470", 4) == 262210470 % 4
+    assert stream.shard_index("1.262210470", 1) == 0
+    assert stream.shard_index("abc", 3) == 0  # nessuna cifra: shard 0, mai eccezione
+
+
+def test_plan_shards_rispetta_il_cap_per_connessione():
+    ids = [f"1.{100000 + i}" for i in range(500)]
+    plan = stream.plan_shards(ids, max_conns=4, per_conn=180)
+    assert len(plan) == 4
+    assert all(len(b) <= 180 for b in plan)
+    assert sum(len(b) for b in plan) == 500          # tutti coperti (capacità 720)
+    assert len({m for b in plan for m in b}) == 500  # nessun duplicato
+
+
+def test_plan_shards_pochi_mercati_una_sola_connessione():
+    ids = [f"1.{100000 + i}" for i in range(50)]
+    plan = stream.plan_shards(ids, max_conns=4, per_conn=180)
+    assert [len(b) for b in plan] == [50, 0, 0, 0]
+
+
+def test_plan_shards_oltre_capacita_tiene_le_priorita_alte():
+    # 1000 mercati, capacità 2×180=360: ogni shard tiene i suoi primi 180 per
+    # ordine di priorità (in-play prima); il resto va al fallback REST
+    ids = [f"1.{100000 + i}" for i in range(1000)]
+    plan = stream.plan_shards(ids, max_conns=2, per_conn=180)
+    assert [len(b) for b in plan] == [180, 180]
+    kept = {m for b in plan for m in b}
+    assert all(m in kept for m in ids[:100])  # priorità massima: tutti dentro
+
+
+def test_plan_shards_stabile_quando_si_aggiunge_un_mercato():
+    ids = [f"1.{100000 + i}" for i in range(300)]
+    before = stream.plan_shards(ids, max_conns=4, per_conn=180)
+    after = stream.plan_shards(ids + ["1.999999"], max_conns=4, per_conn=180)
+    # stesso numero di shard: nessun mercato cambia shard, UNO solo ricrea la subscription
+    changed = sum(1 for a, b in zip(before, after) if set(a) != set(b))
+    assert changed == 1

@@ -7,9 +7,34 @@
 // (video / mercato) e Segui Live — nessun ordine parte da qui.
 // ============================================================================
 import { Badge } from '@/components/ui/badge';
-import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
-import type { ActiveSignal } from '@/lib/safeStrategy';
+import { BetfairMediaButtons, type BetfairMediaAvailability } from '@/components/BetfairMediaButtons';
+import { fmtEur, type ActiveSignal } from '@/lib/safeStrategy';
 import { VARIANT_STYLE, sideBadgeClass } from './variantStyles';
+
+/** Riga "importo abbinabile SUBITO": la size al miglior prezzo sul lato da
+ *  operare, aggiornata live con la quota. Per il LAY l'importo è la puntata da
+ *  bancare (denaro in attesa) e si mostra anche la responsabilità = importo ×
+ *  (quota − 1); per il BACK è la puntata. Senza size (fonte legacy) → "n/d". */
+function MatchableLine({ signal }: { signal: ActiveSignal }) {
+    const eur = fmtEur(signal.entrySize);
+    if (eur === null) {
+        return <span className="text-muted-foreground">Abbinabile subito: n/d</span>;
+    }
+    const liability =
+        signal.side === 'LAY' && signal.entryOdds != null && signal.entrySize != null
+            ? fmtEur(Math.round(signal.entrySize * (signal.entryOdds - 1) * 100) / 100)
+            : null;
+    return (
+        <span>
+            <span className="text-muted-foreground">Abbinabile subito</span>{' '}
+            <span className="font-mono tabular-nums font-bold text-emerald-300">{eur}</span>
+            {signal.side === 'LAY' && (
+                <span className="text-muted-foreground"> da bancare{liability ? ` · responsabilità ${liability}` : ''}</span>
+            )}
+            {signal.side === 'BACK' && <span className="text-muted-foreground"> da puntare</span>}
+        </span>
+    );
+}
 
 function fmtClock(ms: number): string {
     const d = new Date(ms);
@@ -28,9 +53,11 @@ interface Props {
     signal: ActiveSignal;
     /** timestamp corrente (dal chiamante, per re-render coerente della lista) */
     nowMs: number;
+    /** disponibilità video/animazione Betfair per l'evento (dallo scanner) */
+    media?: BetfairMediaAvailability | null;
 }
 
-export function SignalCard({ signal, nowMs }: Props) {
+export function SignalCard({ signal, nowMs, media }: Props) {
     const style = VARIANT_STYLE[signal.variant];
     const active = signal.status === 'active';
     return (
@@ -62,6 +89,10 @@ export function SignalCard({ signal, nowMs }: Props) {
                 </span>
             </div>
 
+            <div className="mt-1 text-sm">
+                <MatchableLine signal={signal} />
+            </div>
+
             <div className="mt-1 text-sm text-muted-foreground">
                 {signal.matchLabel}
                 <span className="mx-2 text-white/20">·</span>
@@ -74,7 +105,7 @@ export function SignalCard({ signal, nowMs }: Props) {
             </div>
 
             <div className="mt-3">
-                <BetfairMediaButtons eventId={signal.eventId} />
+                <BetfairMediaButtons eventId={signal.eventId} media={media} />
             </div>
         </div>
     );

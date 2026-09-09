@@ -42,7 +42,7 @@ from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 
 from . import db as scan_db
 from . import scanner
-from .stream import MarketStreamWorker
+from .stream import MarketStreamPool
 
 logger = logging.getLogger("safe_strategy")
 
@@ -75,6 +75,10 @@ _CATALOGUE_PAST_H = 6
 _CATALOGUE_AHEAD_H = 14
 
 _SPORTS = {"calcio": "1", "tennis": "2"}
+# IPS Betfair (non ufficiale, lo stesso di betfairlightweight in_play_service e del
+# sito): punteggi + disponibilità video/animazione in una chiamata. Host .it come
+# il sito italiano (il .com risponde identico).
+_IPS_SB_URL = "https://ips.betfair.it/inplayservice/v1.1/scoresAndBroadcast"
 
 
 def _catalogue_window_iso() -> "tuple[str, str]":
@@ -99,15 +103,18 @@ class Scanner:
         self.sports = {name: SportState() for name in _SPORTS}
         # stato runtime per evento (inplay, quote, punteggio, pre_ko, cs, …)
         self.events: Dict[str, Dict[str, Any]] = {}
-        # QUOTE IN TEMPO REALE: Exchange Stream API ufficiale (push, conflate 1s);
-        # il poll REST resta come fallback quando lo stream non è in salute.
-        self.stream: Optional[MarketStreamWorker] = (
-            MarketStreamWorker(api_client) if use_stream else None
+        # QUOTE IN TEMPO REALE: Exchange Stream API ufficiale su un POOL di
+        # connessioni (sharding ≤180 mercati/connessione, vedi stream.py); il poll
+        # REST resta come fallback per i mercati che il pool non copre.
+        self.stream: Optional[MarketStreamPool] = (
+            MarketStreamPool(api_client) if use_stream else None
         )
         # indice market_id → (sport, meta) per applicare i book (stream E rest)
         self.market_meta: Dict[str, "tuple[str, Dict[str, Any]]"] = {}
-        # throttle di pubblicazione per-evento
+        # throttle di pubblicazione per-evento (solo cambi di QUOTE; i cambi
+        # critici — gol, set, stato mercato — passano subito: written_crit)
         self.last_pub_mono: Dict[str, float] = {}
+        self.written_crit: Dict[str, str] = {}
         self.scores_ts = 0.0
         self.cs_catalogue_ts = 0.0
         self.cs_books_ts = 0.0
@@ -227,14 +234,10 @@ class Scanner:
         sport, meta = found
         pairs: Dict[int, Dict[str, Optional[float]]] = {}
         for r in getattr(book, "runners", None) or []:
-            ex = getattr(r, "ex", None)
             sid = getattr(r, "selection_id", None)
             if sid is None:
                 continue
-            pairs[int(sid)] = {
-                "back": scanner.best_price(getattr(ex, "available_to_back", None)) if ex else None,
-                "lay": scanner.best_price(getattr(ex, "available_to_lay", None)) if ex else None,
-            }
+            pairs[int(sid)] = scanner.price_pair(getattr(r, "ex", None))
         sides = meta["sides"]
         odds = {
             side: pairs.get(sid) if sid is not None else None
@@ -268,6 +271,53 @@ class Scanner:
         st.books_ts = time.monotonic()
 
     # ------------------------------------------------------------- punteggi IPS
+    def _ips_headers(self) -> Dict[str, str]:
+        return {
+            "X-Application": str(getattr(self.client, "app_key", "") or ""),
+            "X-Authentication": str(getattr(self.client, "session_token", "") or ""),
+            "Accept": "application/json",
+        }
+
+    def _ips_batch(self, chunk: List[str]) -> List["tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]"]:
+        """Punteggi + disponibilità media in UNA chiamata IPS `scoresAndBroadcast`
+        (stesso servizio non ufficiale di get_scores, stesso endpoint che usa il
+        sito Betfair per icone video/animazione; verificato il 09/09 con la nostra
+        app key). Ritorna (event_id, state|None, broadcasts|None). Se fallisce,
+        fallback al get_scores già collaudato (senza media)."""
+        try:
+            resp = self.client.session.get(
+                _IPS_SB_URL,
+                params={
+                    "eventIds": ",".join(chunk), "alt": "json",
+                    "regionCode": "UK", "locale": "it", "channel": "WEB",
+                },
+                headers=self._ips_headers(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                out = []
+                for rec in data:
+                    if not isinstance(rec, dict) or rec.get("eventId") is None:
+                        continue
+                    state = rec.get("state")
+                    bc = rec.get("broadcasts")
+                    out.append((
+                        str(rec["eventId"]),
+                        state if isinstance(state, dict) else None,
+                        bc if isinstance(bc, dict) else None,
+                    ))
+                return out
+        except Exception as e:  # noqa: BLE001 - IPS non ufficiale: fallback
+            logger.warning("[safe-scan] scoresAndBroadcast KO (%s): fallback get_scores", str(e)[:100])
+        results = self.client.in_play_service.get_scores(event_ids=chunk, lightweight=True)
+        return [
+            (str(rec["eventId"]), rec, None)
+            for rec in results or []
+            if isinstance(rec, dict) and rec.get("eventId") is not None
+        ]
+
     def poll_scores(self) -> None:
         inplay_ids = [
             eid for eid, ev in self.events.items() if ev.get("inplay")
@@ -279,15 +329,18 @@ class Scanner:
         for i in range(0, len(inplay_ids), _SCORES_CHUNK):
             chunk = inplay_ids[i:i + _SCORES_CHUNK]
             try:
-                results = self.client.in_play_service.get_scores(
-                    event_ids=chunk, lightweight=True
-                )
+                batch = self._ips_batch(chunk)
             except Exception as e:  # noqa: BLE001 - IPS non ufficiale: best-effort
-                logger.warning("[safe-scan] get_scores KO: %s", str(e)[:120])
+                logger.warning("[safe-scan] punteggi IPS KO: %s", str(e)[:120])
                 continue
-            for rec in results or []:
-                if isinstance(rec, dict) and rec.get("eventId") is not None:
-                    raw_by_event[str(rec["eventId"])] = rec
+            for eid, state, broadcasts in batch:
+                ev = self.events.get(eid)
+                if ev is None:
+                    continue
+                if broadcasts is not None:
+                    ev["media"] = scanner.media_flags(broadcasts)
+                if state is not None:
+                    raw_by_event[eid] = state  # stato assente = punteggio precedente resta
             time.sleep(_REQ_DELAY)
         for eid, rec in raw_by_event.items():
             ev = self.events.get(eid)
@@ -377,14 +430,13 @@ class Scanner:
                 if eid is None:
                     continue
                 names = self.cs_markets[eid]["names"]
-                selections = []
-                for r in getattr(b, "runners", None) or []:
-                    ex = getattr(r, "ex", None)
-                    selections.append({
+                selections = [
+                    {
                         "name": names.get(getattr(r, "selection_id", None)),
-                        "back": scanner.best_price(getattr(ex, "available_to_back", None)) if ex else None,
-                        "lay": scanner.best_price(getattr(ex, "available_to_lay", None)) if ex else None,
-                    })
+                        **scanner.price_pair(getattr(r, "ex", None)),
+                    }
+                    for r in getattr(b, "runners", None) or []
+                ]
                 ev = self.events.get(eid)
                 if ev is not None:
                     ev["cs"] = scanner.build_cs_block(
@@ -425,6 +477,9 @@ class Scanner:
                         "red_away": ev.get("red_away"),
                         "pre_ko": ev.get("pre_ko"),
                         "cs": ev.get("cs"),
+                        # disponibilità video/animazione Betfair (IPS): i pulsanti
+                        # 📺/📊 della UI la mostrano come fa il sito
+                        "media": ev.get("media"),
                     }
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
@@ -440,18 +495,26 @@ class Scanner:
                         "odds": ev.get("odds"),
                         "sets": ev.get("sets"),
                         "games": ev.get("games"),
+                        "media": ev.get("media"),
                     }
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
                     continue  # write-on-change
-                # throttle per-evento: con lo stream le quote cambiano ogni secondo;
-                # la riga aspetta il prossimo giro (sig NON consumata) — mai perdere
-                # l'ultimo stato, mai inondare il DB
+                # throttle per-evento SOLO per le quote: con lo stream cambiano ogni
+                # secondo, la riga aspetta il prossimo giro (sig NON consumata) — mai
+                # perdere l'ultimo stato, mai inondare il DB. Un cambio CRITICO
+                # (gol, minuto, rosso, in-play, stato mercato, set/game) passa SUBITO:
+                # la realtà mostrata deve coincidere con quella di Betfair.
+                crit = scanner.critical_signature(sport, payload)
                 mono = time.monotonic()
-                if mono - self.last_pub_mono.get(eid, 0.0) < _PUBLISH_MIN_INTERVAL_SEC:
+                if (
+                    self.written_crit.get(eid) == crit
+                    and mono - self.last_pub_mono.get(eid, 0.0) < _PUBLISH_MIN_INTERVAL_SEC
+                ):
                     continue
                 self.last_pub_mono[eid] = mono
                 self.written_sig[eid] = sig
+                self.written_crit[eid] = crit
                 rows.append({
                     "event_id": eid,
                     "sport": sport,
@@ -471,6 +534,7 @@ class Scanner:
             scan_db.delete_scan_rows(stale)
             for eid in stale:
                 self.written_sig.pop(eid, None)
+                self.written_crit.pop(eid, None)
                 self.last_pub_mono.pop(eid, None)
         return len(rows), len(stale)
 
@@ -485,9 +549,12 @@ class Scanner:
             "monitored": monitored,
             "dry": self.dry,
             "source": getattr(self, "last_source", "rest"),
-            # mercati coperti dallo stream (0 = REST puro): utile nei weekend
-            # pieni per vedere se il cap 180 sta lasciando mercati al fallback
-            "stream_markets": len(self.stream.subscribed_ids()) if self.stream else 0,
+            # copertura stream (0 = REST puro): mercati serviti da connessioni vive,
+            # connessioni attive e capacità del pool — nei weekend pieni si vede
+            # subito se il pool basta o se una parte va al fallback REST
+            "stream_markets": len(self.stream.covered_ids()) if self.stream else 0,
+            "stream_connections": self.stream.active_connections() if self.stream else 0,
+            "stream_capacity": self.stream.capacity if self.stream else 0,
             "last_error": self.last_error,
             "started_at": self.started_at,
         }
@@ -534,7 +601,7 @@ class Scanner:
                     self._apply_market_book(b)
             stream_ok = self.stream is not None and self.stream.healthy()
             self.last_source = "stream" if stream_ok else "rest"
-            covered = self.stream.subscribed_ids() if stream_ok else set()
+            covered = self.stream.covered_ids() if self.stream is not None else set()
             any_inplay_c = any(
                 e.get("sport") == "calcio" and e.get("inplay") for e in self.events.values()
             )

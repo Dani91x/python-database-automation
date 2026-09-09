@@ -29,6 +29,10 @@ export type SideId = 'home' | 'away';
 export interface OddsPair {
     back: number | null;
     lay: number | null;
+    /** EUR abbinabili SUBITO al miglior prezzo back/lay (best offers dello
+     *  stream); assenti quando la fonte non li espone (snapshot legacy) */
+    backSize?: number | null;
+    laySize?: number | null;
 }
 
 /** Esito di una singola condizione. ok=null → dato non disponibile (mai inventato). */
@@ -58,6 +62,10 @@ export interface VariantEvaluation {
     selection: string | null;
     /** quota live della selezione da operare (se disponibile) */
     entryOdds: number | null;
+    /** EUR abbinabili SUBITO a entryOdds (size al miglior prezzo sul lato da
+     *  operare: lay → denaro in attesa da bancare, back → denaro da puntare);
+     *  null = la fonte non espone le size */
+    entrySize: number | null;
 }
 
 // ---------------------------------------------------------------- parametri
@@ -285,6 +293,22 @@ function fmtOdds(v: number | null | undefined): string {
     return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : 'n/d';
 }
 
+/** importo EUR abbinabile, compatto (es. "€152", "€41.26"); null → assente. */
+export function fmtEur(v: number | null | undefined): string | null {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+    return `€${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}`;
+}
+
+/** quota + size abbinabile per la checklist (es. "8.40 · €120 abbinabili"). */
+function fmtOddsWithSize(odds: number | null | undefined, size: number | null | undefined): string {
+    const eur = fmtEur(size);
+    return eur === null ? fmtOdds(odds) : `${fmtOdds(odds)} · ${eur} abbinabili`;
+}
+
+function sizeOrNull(v: number | null | undefined): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
 function fmtMinute(minute: number | null): string {
     return minute === null ? 'n/d' : `${minute}′`;
 }
@@ -426,7 +450,12 @@ function numOrNull(v: unknown): number | null {
 }
 function scanPair(x: ScanOddsPair | null | undefined): OddsPair | null {
     if (!x) return null;
-    return { back: numOrNull(x.back), lay: numOrNull(x.lay) };
+    return {
+        back: numOrNull(x.back),
+        lay: numOrNull(x.lay),
+        backSize: numOrNull(x.back_size),
+        laySize: numOrNull(x.lay_size),
+    };
 }
 /** stato mercato dallo scanner: null = non ancora interrogato (ignoto). */
 function scanMarketOpen(status: string | null | undefined): boolean | null {
@@ -627,12 +656,13 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
 
     const dog: SideId | null = fav === null ? null : fav === 'home' ? 'away' : 'home';
     const dogName = dog === null ? null : dog === 'home' ? ctx.home : ctx.away;
-    const dogLay = dog === null || ctx.odds === null ? null : (dog === 'home' ? ctx.odds.home : ctx.odds.away)?.lay ?? null;
+    const dogPair = dog === null || ctx.odds === null ? null : dog === 'home' ? ctx.odds.home : ctx.odds.away;
+    const dogLay = dogPair?.lay ?? null;
     // senza un prezzo LAY reale della sfavorita non c'è nulla da bancare
     checks.push({
         id: 'dogLay',
         label: 'Quota banca sfavorita disponibile',
-        value: fmtOdds(dogLay),
+        value: fmtOddsWithSize(dogLay, dogPair?.laySize),
         ok: dogLay === null ? null : true,
     });
 
@@ -645,6 +675,7 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
         side: 'LAY',
         selection: dogName,
         entryOdds: dogLay,
+        entrySize: dogLay === null ? null : sizeOrNull(dogPair?.laySize),
     };
 }
 
@@ -697,7 +728,7 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     checks.push({
         id: 'entry',
         label: `Quota "Altro risultato ${sideLabel}" ${params.entryMin}–${params.entryMax}`,
-        value: fmtOdds(entry),
+        value: fmtOddsWithSize(entry, pair?.laySize),
         ok: entry === null ? null : inRange(entry, params.entryMin, params.entryMax),
     });
 
@@ -711,6 +742,7 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
         side: 'LAY',
         selection: `Altro risultato ${sideLabel}`,
         entryOdds: entry,
+        entrySize: entry === null ? null : sizeOrNull(pair?.laySize),
     };
 }
 
@@ -772,11 +804,12 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams): Varia
 
     // quota live (back) della squadra in vantaggio — valida solo a mercato aperto
     checks.push(marketOpenCheck('Mercato Match Odds aperto', ctx.matchOddsOpen));
-    const leadBack = lead === null || ctx.odds === null ? null : (lead === 'home' ? ctx.odds.home : ctx.odds.away)?.back ?? null;
+    const leadPair = lead === null || ctx.odds === null ? null : lead === 'home' ? ctx.odds.home : ctx.odds.away;
+    const leadBack = leadPair?.back ?? null;
     checks.push({
         id: 'entry',
         label: `Quota live ${params.entryMin}–${params.entryMax}`,
-        value: fmtOdds(leadBack),
+        value: fmtOddsWithSize(leadBack, leadPair?.backSize),
         ok: leadBack === null ? null : inRange(leadBack, params.entryMin, params.entryMax),
     });
 
@@ -802,6 +835,7 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams): Varia
         side: 'BACK',
         selection: leadName,
         entryOdds: leadBack,
+        entrySize: leadBack === null ? null : sizeOrNull(leadPair?.backSize),
     };
 }
 
@@ -980,7 +1014,9 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
     checks.push({
         id: 'odds',
         label: `Quota back leader ${params.backMin}–${params.backMax}`,
-        value: `back ${fmtOdds(leadBack)}${trailLay !== null ? ` · lay perdente ${fmtOdds(trailLay)}` : ''}`,
+        value: `back ${fmtOddsWithSize(leadBack, leadPair?.backSize)}${
+            trailLay !== null ? ` · lay perdente ${fmtOddsWithSize(trailLay, trailPair?.laySize)}` : ''
+        }`,
         ok: leadBack === null ? null : inRange(leadBack, params.backMin, params.backMax),
     });
 
@@ -994,6 +1030,7 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
         side: 'BACK',
         selection: leadName,
         entryOdds: leadBack,
+        entrySize: leadBack === null ? null : sizeOrNull(leadPair?.backSize),
     };
 }
 
@@ -1040,6 +1077,8 @@ export interface ActiveSignal {
     headline: string;
     side: 'BACK' | 'LAY' | null;
     entryOdds: number | null;
+    /** EUR abbinabili SUBITO a entryOdds (aggiornati live come la quota) */
+    entrySize: number | null;
     /** contesto al momento dello scatto (es. "58′ · 1-0") */
     contextAtTrigger: string;
     triggeredAtMs: number;
@@ -1057,6 +1096,7 @@ export interface SignalCandidate {
     headline: string;
     side: 'BACK' | 'LAY' | null;
     entryOdds: number | null;
+    entrySize: number | null;
     contextAtTrigger: string;
 }
 
@@ -1092,10 +1132,16 @@ export function reconcileSignals(
     for (const c of candidates) {
         const existing = byKey.get(c.key);
         if (existing && existing.status === 'active') {
-            next.push({ ...existing, entryOdds: c.entryOdds, headline: c.headline });
+            next.push({ ...existing, entryOdds: c.entryOdds, entrySize: c.entrySize, headline: c.headline });
         } else if (existing && existing.status === 'expired') {
             // stessa situazione tornata valida: riattiva senza nuovo toast
-            next.push({ ...existing, status: 'active', expiredAtMs: null, entryOdds: c.entryOdds });
+            next.push({
+                ...existing,
+                status: 'active',
+                expiredAtMs: null,
+                entryOdds: c.entryOdds,
+                entrySize: c.entrySize,
+            });
         } else {
             const created: ActiveSignal = { ...c, triggeredAtMs: nowMs, status: 'active', expiredAtMs: null };
             next.push(created);
@@ -1131,6 +1177,7 @@ export function footballCandidates(
             headline: ev.headline,
             side: ev.side,
             entryOdds: ev.entryOdds,
+            entrySize: ev.entrySize,
             contextAtTrigger: `${fmtMinute(ctx.minute)} · ${situation}`,
         });
     }
@@ -1151,6 +1198,7 @@ export function tennisCandidates(ctx: TennisMatchCtx, ev: VariantEvaluation): Si
             headline: ev.headline,
             side: ev.side,
             entryOdds: ev.entryOdds,
+            entrySize: ev.entrySize,
             contextAtTrigger: `${situation}${ctx.games ? ` · game ${ctx.games.p1}-${ctx.games.p2}` : ''}`,
         },
     ];

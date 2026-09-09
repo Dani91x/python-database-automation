@@ -554,11 +554,11 @@ describe('trackScoreStability', () => {
 });
 
 // ------------------------------------------------------- riconciliazione segnali
-function candidate(key: string, odds = 8.4): SignalCandidate {
+function candidate(key: string, odds = 8.4, size: number | null = 120): SignalCandidate {
     return {
         key, sport: 'calcio', variant: 'base', eventId: 'ev1',
         matchLabel: 'Nord FC – Sud FC', headline: 'BANCA Sud FC', side: 'LAY',
-        entryOdds: odds, contextAtTrigger: '58′ · 1-0',
+        entryOdds: odds, entrySize: size, contextAtTrigger: '58′ · 1-0',
     };
 }
 
@@ -569,11 +569,12 @@ describe('reconcileSignals', () => {
         expect(next[0].status).toBe('active');
         expect(fresh).toHaveLength(1);
     });
-    it('candidato già attivo → aggiorna la quota, NESSUN nuovo toast', () => {
-        const first = reconcileSignals([], [candidate('k1', 8.4)], 1000).next;
-        const { next, fresh } = reconcileSignals(first, [candidate('k1', 8.8)], 2000);
+    it('candidato già attivo → aggiorna quota E importo abbinabile, NESSUN nuovo toast', () => {
+        const first = reconcileSignals([], [candidate('k1', 8.4, 120)], 1000).next;
+        const { next, fresh } = reconcileSignals(first, [candidate('k1', 8.8, 35.5)], 2000);
         expect(fresh).toHaveLength(0);
         expect(next[0].entryOdds).toBe(8.8);
+        expect(next[0].entrySize).toBe(35.5);
         expect(next[0].triggeredAtMs).toBe(1000);
     });
     it('candidato sparito → expired ma resta nello storico', () => {
@@ -616,5 +617,90 @@ describe('footballCandidates / tennisCandidates', () => {
         expect(cands).toHaveLength(1);
         expect(cands[0].key).toBe(signalKey('tv1', 'tennis', undefined, 'set 1-0'));
         expect(cands[0].contextAtTrigger).toBe('set 1-0 · game 3-0');
+    });
+});
+
+// ------------------------------------------- importo abbinabile SUBITO (size)
+describe('entrySize — importo abbinabile alla quota del segnale', () => {
+    const scanCalcio = (over: Partial<Parameters<typeof buildFootballCtxFromScan>[1]> = {}) =>
+        buildFootballCtxFromScan('ev9', {
+            event_name: 'Nord FC v Sud FC', home: 'Nord FC', away: 'Sud FC',
+            competition: 'Serie A', open_date: '2026-09-02T16:00:00+00:00',
+            inplay: true, mo_market_id: '1.1', mo_status: 'OPEN',
+            odds: {
+                home: { back: 1.28, lay: 1.3, back_size: 152.4, lay_size: 41.26 },
+                draw: { back: 5.0, lay: 5.2, back_size: 10, lay_size: 12 },
+                away: { back: 8.0, lay: 8.4, back_size: 7.5, lay_size: 120 },
+            },
+            minute: 58, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
+            pre_ko: { home: 1.65, draw: 4.0, away: 5.5 },
+            cs: {
+                market_id: '1.2', status: 'OPEN',
+                any_other_home: { back: 44, lay: 45, back_size: 3.5, lay_size: 2.25 },
+                any_other_away: { back: 48, lay: 50, back_size: 1, lay_size: 9 },
+            },
+            ...over,
+        }, 50, 60);
+
+    it('Base (LAY sfavorita): size = denaro in attesa al miglior lay della sfavorita', () => {
+        const ev = evaluateBase(scanCalcio(), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.entryOdds).toBe(8.4);
+        expect(ev.entrySize).toBe(120);
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8.40 · €120 abbinabili');
+    });
+    it('R.E. (LAY "Altro risultato"): size del lay al miglior prezzo, anche decimale', () => {
+        const ev = evaluateEsatto(scanCalcio(), DEFAULT_PARAMS.esatto, 'home');
+        expect(ev.state).toBe('signal');
+        expect(ev.entryOdds).toBe(45);
+        expect(ev.entrySize).toBe(2.25);
+        expect(ev.checks.find((c) => c.id === 'entry')?.value).toBe('45.00 · €2.25 abbinabili');
+    });
+    it('Punta (BACK chi vince di 2): size del back della squadra in vantaggio', () => {
+        const ev = evaluatePunta(scanCalcio({
+            minute: 68, score_home: 2, score_away: 0,
+            odds: {
+                home: { back: 1.06, lay: 1.07, back_size: 2500, lay_size: 300 },
+                draw: { back: 20, lay: 22, back_size: 5, lay_size: 5 },
+                away: { back: 60, lay: 70, back_size: 2, lay_size: 2 },
+            },
+        }), DEFAULT_PARAMS.punta);
+        // stableSince=50 → 18′ dopo l'ultimo gol osservato: assestato
+        expect(ev.state).toBe('signal');
+        expect(ev.entrySize).toBe(2500);
+    });
+    it('Tennis (BACK leader): size del back del leader; il lay del perdente resta informativo', () => {
+        const ctx = buildTennisCtxFromScan('tv9', {
+            event_name: 'Rossi v Bianchi', p1: 'Rossi', p2: 'Bianchi', competition: 'ATP Rome',
+            open_date: null, inplay: true, mo_market_id: '1.9', mo_status: 'OPEN',
+            odds: { p1: { back: 1.03, lay: 1.04, back_size: 812.5, lay_size: 90 }, p2: { back: 20, lay: 30, back_size: 4, lay_size: 6 } },
+            sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 0 },
+        }, 60);
+        const ev = evaluateTennis(ctx, DEFAULT_PARAMS.tennis);
+        expect(ev.state).toBe('signal');
+        expect(ev.entrySize).toBe(812.5);
+        expect(ev.checks.find((c) => c.id === 'odds')?.value).toBe('back 1.03 · €812.50 abbinabili · lay perdente 30.00 · €6 abbinabili');
+    });
+    it('fonte senza size (snapshot legacy / righe vecchie): entrySize null, checklist solo quota', () => {
+        const ev = evaluateBase(ctxOf(), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('signal');
+        expect(ev.entrySize).toBeNull();
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8.40');
+        const scan = evaluateBase(scanCalcio({
+            odds: { home: { back: 1.28, lay: 1.3 }, draw: { back: 5, lay: 5.2 }, away: { back: 8, lay: 8.4 } },
+        }), DEFAULT_PARAMS.base);
+        expect(scan.entrySize).toBeNull();
+    });
+    it('quota assente → anche la size è assente (mai una size senza prezzo)', () => {
+        const ev = evaluateBase(scanCalcio({
+            odds: { home: { back: 1.28, lay: 1.3 }, draw: null, away: { back: 8, lay: null, lay_size: 50 } },
+        }), DEFAULT_PARAMS.base);
+        expect(ev.entryOdds).toBeNull();
+        expect(ev.entrySize).toBeNull();
+    });
+    it('i candidati portano la size nel segnale', () => {
+        const ctx = scanCalcio();
+        const cands = footballCandidates(ctx, [evaluateBase(ctx, DEFAULT_PARAMS.base)]);
+        expect(cands[0].entrySize).toBe(120);
     });
 });
