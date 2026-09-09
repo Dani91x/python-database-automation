@@ -66,6 +66,8 @@ export interface ScanStatusPayload {
     dry?: boolean;
     /** 'stream' = Exchange Stream API ufficiale (push) · 'rest' = fallback poll */
     source?: string;
+    /** mercati coperti dallo stream (0 = REST puro); il resto dei rilevanti va in REST */
+    stream_markets?: number;
     last_error?: string | null;
     started_at?: string;
 }

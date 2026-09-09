@@ -37,13 +37,43 @@ def test_split_event_name():
     assert scanner.split_event_name(None) == (None, None)
 
 
-def test_is_cs_candidate_finestra_e_gol():
+def test_is_cs_candidate_soglia_aperta_e_gol():
+    # REGOLA 09/09: il minuto è una SOGLIA ("dal 40' in poi"), mai un tetto
     assert scanner.is_cs_candidate(49, 1, 0) is True
     assert scanner.is_cs_candidate(39, 1, 0) is False    # troppo presto
-    assert scanner.is_cs_candidate(61, 1, 0) is False    # troppo tardi
+    assert scanner.is_cs_candidate(61, 1, 0) is True     # nessun tetto di minuto
+    assert scanner.is_cs_candidate(89, 0, 0) is True
     assert scanner.is_cs_candidate(49, 3, 0) is False    # troppi gol per lato
     assert scanner.is_cs_candidate(None, 1, 0) is False  # dati mancanti
     assert scanner.is_cs_candidate(49, None, 0) is False
+
+
+def test_is_hot_minute_soglia_aperta():
+    assert scanner.is_hot_minute(39) is False
+    assert scanner.is_hot_minute(40) is True
+    assert scanner.is_hot_minute(78) is True
+    assert scanner.is_hot_minute(95) is True   # recupero: ancora caldo
+    assert scanner.is_hot_minute(None) is False
+
+
+def test_is_relevant_market_e_rank():
+    now = datetime.now(timezone.utc)
+    soon = (now + timedelta(minutes=10)).isoformat()
+    far = (now + timedelta(hours=3)).isoformat()
+    past = (now - timedelta(minutes=30)).isoformat()
+    # in-play: sempre rilevante (salvo CLOSED)
+    assert scanner.is_relevant_market(True, "OPEN", far, now) is True
+    assert scanner.is_relevant_market(True, "CLOSED", far, now) is False
+    # pre-KO entro 20': rilevante (cattura riferimento pre-KO); KO lontano: no
+    assert scanner.is_relevant_market(False, None, soon, now) is True
+    assert scanner.is_relevant_market(False, None, far, now) is False
+    # KO passato senza book ancora visto (inplay ignoto): rilevante
+    assert scanner.is_relevant_market(None, None, past, now) is True
+    # senza orario: rilevante solo finché lo stato è ignoto
+    assert scanner.is_relevant_market(None, None, None, now) is True
+    assert scanner.is_relevant_market(False, "OPEN", None, now) is False
+    assert scanner.rank_key(True, far) < scanner.rank_key(False, soon)
+    assert scanner.rank_key(False, soon) < scanner.rank_key(False, far)
 
 
 def test_pre_ko_window():

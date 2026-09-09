@@ -67,6 +67,11 @@ const STORAGE_KEY = 'safe_strategy_params_v1';
 const BACKUP_POLL_MS = 30_000;
 /** flush coalizzato degli aggiornamenti realtime */
 const FLUSH_MS = 400;
+/** ri-valutazione periodica del motore: i check basati sul TEMPO (anti-blip
+ *  "punteggio stabile da ≥N s") devono maturare anche quando lo scanner NON
+ *  riscrive la riga — write-on-change: a mercato fermo/sospeso non arriva alcun
+ *  update, e senza questo tick il contatore dei secondi restava congelato */
+const REEVAL_MS = 5_000;
 
 export interface FootballMonitor {
     eventId: string;
@@ -277,7 +282,17 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
     }, [userId, applyRows, scheduleFlush]);
 
     // ------------------------------------------------- valutazione (motore puro)
+    // tick di ri-valutazione: attivo solo quando c'è qualcosa da valutare
+    const hasRows = Object.keys(rowsMap).length > 0;
+    const [evalTick, setEvalTick] = useState(0);
+    useEffect(() => {
+        if (!hasRows) return;
+        const t = window.setInterval(() => setEvalTick((v) => v + 1), REEVAL_MS);
+        return () => window.clearInterval(t);
+    }, [hasRows]);
+
     const derived = useMemo(() => {
+        void evalTick; // dipendenza volontaria: forza il ricalcolo dei check temporali
         const nowMs = Date.now();
         const football: FootballMonitor[] = [];
         const tennis: TennisMonitor[] = [];
@@ -320,7 +335,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
             ...tennis.flatMap((m) => tennisCandidates(m.ctx, m.evaluation)),
         ];
         return { football, tennis, candidates };
-    }, [rowsMap, stabMap, tnStabMap, params]);
+    }, [rowsMap, stabMap, tnStabMap, params, evalTick]);
 
     // ------------------------------------------- riconciliazione segnali + toast
     const signalsRef = useRef<ActiveSignal[]>([]);

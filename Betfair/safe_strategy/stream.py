@@ -41,21 +41,39 @@ class MarketStreamWorker:
 
     # ------------------------------------------------------------- controllo
     def set_markets(self, market_ids: List[str]) -> None:
+        """Set desiderato (già ordinato per priorità: il cap taglia la coda).
+
+        Non ricrea la subscription qui: lo fa maybe_resubscribe() a ogni drain,
+        così un cambio arrivato mentre il throttle era attivo viene applicato
+        appena il throttle scade (prima restava in sospeso fino al set_markets
+        successivo — cioè al refresh catalogo, minuti dopo).
+        """
         ids = set(market_ids[:MAX_STREAM_MARKETS])
         with self._lock:
-            changed = ids != self._desired
             self._desired = ids
         if self._thread is None:
             self._thread = threading.Thread(
                 target=self._run, name="safe-scan-stream", daemon=True
             )
             self._thread.start()
-        elif (
-            changed
-            and ids != self._subscribed
+
+    def subscribed_ids(self) -> Set[str]:
+        """Copia dei market_id attualmente sottoscritti (per il fallback REST
+        sui mercati rilevanti che lo stream NON copre, es. oltre il cap)."""
+        return set(self._subscribed)
+
+    def maybe_resubscribe(self) -> None:
+        """Ricrea la subscription se il set desiderato è cambiato (throttle 60s)."""
+        with self._lock:
+            desired = set(self._desired)
+        if (
+            self._stream is not None
+            and desired
+            and desired != self._subscribed
             and time.monotonic() - self._last_resub > _RESUB_MIN_INTERVAL
         ):
             # stop del socket: il loop del thread ricrea la subscription col set nuovo
+            self._last_resub = time.monotonic()
             self._kick()
 
     def _kick(self) -> None:
@@ -78,7 +96,8 @@ class MarketStreamWorker:
         )
 
     def drain(self) -> List[Any]:
-        """Svuota la coda: lista piatta di MarketBook aggiornati."""
+        """Svuota la coda: lista piatta di MarketBook aggiornati.
+        Applica anche un eventuale cambio di subscription in sospeso."""
         out: List[Any] = []
         while True:
             try:
@@ -88,6 +107,7 @@ class MarketStreamWorker:
             if books:
                 out.extend(books)
                 self._last_msg_mono = time.monotonic()
+        self.maybe_resubscribe()
         return out
 
     # ------------------------------------------------------------- thread

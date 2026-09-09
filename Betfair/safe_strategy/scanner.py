@@ -13,15 +13,16 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-# finestre di interesse (minuti EFFETTIVI di gioco, come certificato):
-# le strategie calcio vivono tra il 48' e il 70' — fuori da lì lo scanner
-# rallenta per non sprecare peso API Betfair.
+# finestre di interesse (minuti EFFETTIVI di gioco, come certificato).
+# REGOLA (utente, 09/09): il minuto delle strategie calcio è una SOGLIA
+# ("dal 48' in poi"), NON un intervallo chiuso — il tetto lo mettono i range
+# quote. Quindi anche qui le finestre sono aperte verso la fine partita:
+# prima del 40' lo scanner rallenta per non sprecare peso API Betfair, dal 40'
+# in poi resta "caldo" fino al fischio finale.
 HOT_MINUTE_FROM = 40
-HOT_MINUTE_TO = 78
-# candidati Correct Score (strategia Risultato Esatto: finestra 48-50' +
-# margine per parametri utente e latenze)
+# candidati Correct Score (strategia Risultato Esatto: soglia default 48' con
+# margine per parametri utente e latenze; nessun tetto di minuto, solo di gol)
 CS_MINUTE_FROM = 40
-CS_MINUTE_TO = 60
 CS_MAX_GOALS_SIDE = 2
 # cattura pre-KO: da KO-15' fino al kickoff
 PRE_KO_WINDOW_SEC = 15 * 60
@@ -97,11 +98,17 @@ def split_event_name(event_name: Optional[str]) -> "tuple[Optional[str], Optiona
     return None, None
 
 
+def is_hot_minute(minute: Optional[int]) -> bool:
+    """Minuto 'caldo' per le strategie calcio: dalla soglia HOT_MINUTE_FROM in poi."""
+    return minute is not None and minute >= HOT_MINUTE_FROM
+
+
 def is_cs_candidate(minute: Optional[int], score_home: Optional[int], score_away: Optional[int]) -> bool:
-    """Evento per cui vale la pena interrogare il mercato Correct Score."""
+    """Evento per cui vale la pena interrogare il mercato Correct Score:
+    dal 40' in poi (soglia aperta, come la strategia) con max 2 gol per lato."""
     if minute is None or score_home is None or score_away is None:
         return False
-    if not (CS_MINUTE_FROM <= minute <= CS_MINUTE_TO):
+    if minute < CS_MINUTE_FROM:
         return False
     return score_home <= CS_MAX_GOALS_SIDE and score_away <= CS_MAX_GOALS_SIDE
 
@@ -117,6 +124,36 @@ def in_pre_ko_window(open_date: Optional[str], now: datetime) -> bool:
 def is_monitorable(inplay: bool, open_date: Optional[str], now: datetime) -> bool:
     """Riga da pubblicare: evento in-play oppure con KO entro la finestra pre-KO."""
     return inplay or in_pre_ko_window(open_date, now)
+
+
+# mercati per cui servono QUOTE (stream o REST): in-play, oppure KO entro
+# questa finestra (copre la cattura pre-KO da KO-15' con margine), oppure KO
+# già passato ma stato ancora ignoto (nessun book visto: probabilmente in-play).
+# Tutto il resto del catalogo (KO lontano) non ha bisogno di quote: così lo
+# stream (cap 180 mercati) e il poll REST servono solo ciò che conta.
+RELEVANT_PRE_KO_SEC = 20 * 60
+
+
+def is_relevant_market(
+    inplay: Optional[bool],
+    mo_status: Optional[str],
+    open_date: Optional[str],
+    now: datetime,
+) -> bool:
+    """True se il mercato va tenuto sotto quote adesso (vedi RELEVANT_PRE_KO_SEC)."""
+    if mo_status == "CLOSED":
+        return False
+    if inplay:
+        return True
+    ko = parse_iso(open_date)
+    if ko is None:
+        return inplay is None  # senza orario: solo finché non sappiamo nulla
+    return (ko - now).total_seconds() <= RELEVANT_PRE_KO_SEC
+
+
+def rank_key(inplay: Optional[bool], open_date: Optional[str]) -> "tuple[int, str]":
+    """Ordine di priorità per il cap dello stream: in-play prima, poi per KO."""
+    return (0 if inplay else 1, str(open_date or ""))
 
 
 def freeze_pre_ko(

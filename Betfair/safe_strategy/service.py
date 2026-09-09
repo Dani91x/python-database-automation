@@ -1,20 +1,26 @@
 """service.py — SCANNER AUTONOMO Safe Strategy (calcio + tennis in-play).
 
 Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
-  · catalogo MATCH_ODDS del giorno per sport (refresh 300s, peso ~0);
-  · quote MATCH_ODDS a lotti EX_BEST_OFFERS (peso 5/mercato, chunk 25 → <200),
-    cadenza ADATTIVA: 10s quando c'è una finestra utile (2°T calcio 40-78′ /
+  · catalogo MATCH_ODDS per sport su finestra MOBILE (KO da -6h a +14h,
+    refresh 300s, peso ~0, fino a 400 mercati/sport: mai tagliare le giornate
+    piene);
+  · quote MATCH_ODDS dei soli mercati RILEVANTI (in-play, o KO entro 20′):
+    Exchange Stream API ufficiale (push, conflate 1s, cap 180 mercati con
+    priorità in-play) + poll REST EX_BEST_OFFERS (chunk 25 → peso 125 < 200)
+    come FALLBACK per i mercati che lo stream non copre o quando lo stream
+    non è in salute — cadenza ADATTIVA 10s (2°T calcio dal 40′ in poi /
     tennis in-play), 20-60s altrimenti;
   · punteggi/minuti/rossi per TUTTI gli in-play in UNA chiamata IPS get_scores
-    (chunk 20 id) ogni 10s — stesso endpoint già usato dai runner;
-  · Correct Score SOLO per i candidati Risultato Esatto (minuto 40-60,
-    max 2 gol per lato): catalogo dedicato + book, ogni 15s;
+    (chunk 20 id) ogni 5s — stesso endpoint già usato dai runner;
+  · Correct Score SOLO per i candidati Risultato Esatto (dal 40′ in poi,
+    max 2 gol per lato — il minuto è una SOGLIA, come nella strategia):
+    catalogo dedicato appena compare un candidato nuovo + book ogni 15s;
   · riferimento 1X2 pre-KO: aggiornato da KO-15′ e CONGELATO al primo tick
     in-play (mai quote live nel riferimento — regola di certificazione).
 
 Scrive i FATTI su safe_strategy_scan (write-on-change) + heartbeat su
 safe_strategy_status. La VALUTAZIONE resta nel motore certificato frontend.
-Nessun ordine, nessuna subscription stream: solo REST leggero nei limiti.
+Nessun ordine, mai.
 
 Uso:  python -m Betfair.safe_strategy.service [--once] [--dry]
   --once  un ciclo completo e esce (collaudo)
@@ -42,7 +48,11 @@ logger = logging.getLogger("safe_strategy")
 
 _LOCK_PORT = int(os.getenv("SAFE_STRATEGY_LOCK_PORT", "47315"))
 _CATALOGUE_TTL_SEC = 300.0
-_CS_CATALOGUE_TTL_SEC = 600.0
+# catalogo Correct Score: la chiamata parte SOLO se c'è un candidato senza
+# mercato in cache (refresh_cs_catalogue esce subito altrimenti), quindi il
+# throttle può essere corto: un candidato nuovo al 48′ ha la quota entro ~20s
+# (prima il TTL era 600s → segnale R.E. in ritardo fino a 10 minuti)
+_CS_CATALOGUE_MIN_INTERVAL_SEC = 20.0
 _SCORES_PERIOD_SEC = 5.0    # IPS non ha stream: poll batch fitto (1-2 chiamate)
 _CS_BOOKS_PERIOD_SEC = 15.0
 # throttle di scrittura per-evento: con lo STREAM le quote cambiano ogni secondo
@@ -54,17 +64,23 @@ _KEEPALIVE_PERIOD_SEC = 900.0
 _BOOK_CHUNK = 25          # peso EX_BEST_OFFERS 5/mercato → 125 < 200
 _SCORES_CHUNK = 20
 _REQ_DELAY = 0.35         # respiro tra chiamate REST (anti-throttling)
-_MAX_MARKETS = 120        # cap difensivo catalogo per sport
+# cap catalogo per sport: le proiezioni usate pesano 0 (EVENT, COMPETITION,
+# MARKET_START_TIME, RUNNER_DESCRIPTION) → nessun vincolo di peso; 400 copre
+# anche il sabato pieno (col vecchio 120 + sort FIRST_TO_START gli eventi serali
+# restavano FUORI dal radar finché quelli del pomeriggio non chiudevano)
+_MAX_MARKETS = 400
+# finestra catalogo MOBILE: in-play iniziati fino a 6h fa + KO nelle prossime
+# 14h (la vecchia finestra "fino a mezzanotte UTC" perdeva i notturni)
+_CATALOGUE_PAST_H = 6
+_CATALOGUE_AHEAD_H = 14
 
 _SPORTS = {"calcio": "1", "tennis": "2"}
 
 
-def _today_window_iso() -> "tuple[str, str]":
+def _catalogue_window_iso() -> "tuple[str, str]":
     now = datetime.now(timezone.utc)
-    start = now - timedelta(hours=8)
-    end = now.replace(hour=23, minute=59, second=59)
-    if end <= start:
-        end = start + timedelta(hours=24)
+    start = now - timedelta(hours=_CATALOGUE_PAST_H)
+    end = now + timedelta(hours=_CATALOGUE_AHEAD_H)
     return start.isoformat(), end.isoformat()
 
 
@@ -108,7 +124,7 @@ class Scanner:
         from betfairlightweight import filters
 
         st = self.sports[sport]
-        frm, to = _today_window_iso()
+        frm, to = _catalogue_window_iso()
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
                 event_type_ids=[_SPORTS[sport]],
@@ -157,28 +173,51 @@ class Scanner:
         logger.info("[safe-scan] catalogo %s: %d eventi oggi", sport, len(metas))
 
     def _rebuild_market_index(self) -> None:
-        """Indice market_id → (sport, meta) + aggiornamento subscription stream.
-
-        NB: la subscription parte SOLO quando tutti gli sport hanno un catalogo
-        caricato (warm-up in main): senza questa guardia lo stream partiva col
-        solo calcio e il throttle anti-resubscribe teneva fuori il tennis per
-        minuti (visto in collaudo: tennis_inplay=0 con stream 'healthy' → il
-        fallback REST non scattava).
-        """
+        """Indice market_id → (sport, meta) su tutto il catalogo."""
         idx: Dict[str, "tuple[str, Dict[str, Any]]"] = {}
         for sport, st in self.sports.items():
             for meta in st.metas.values():
                 idx[meta["market_id"]] = (sport, meta)
         self.market_meta = idx
-        all_loaded = all(st.catalogue_ts > 0.0 for st in self.sports.values())
-        if self.stream is not None and idx and all_loaded:
-            # priorità (per il cap del worker): in-play prima, poi per orario KO
-            def rank(mid: str) -> "tuple[int, str]":
-                sport, meta = idx[mid]
-                ev = self.events.get(meta["event_id"]) or {}
-                return (0 if ev.get("inplay") else 1, str(meta.get("open_date") or ""))
 
-            self.stream.set_markets(sorted(idx.keys(), key=rank))
+    def relevant_market_ids(self, sport: str, now: datetime) -> List[str]:
+        """Mercati del sport che servono QUOTE adesso (scanner.is_relevant_market),
+        ordinati per priorità (in-play prima, poi per KO). Il resto del catalogo
+        (KO lontano) non consuma né stream né REST."""
+        out: List["tuple[tuple[int, str], str]"] = []
+        for eid, meta in self.sports[sport].metas.items():
+            ev = self.events.get(eid)
+            inplay: Optional[bool] = None if ev is None else bool(ev.get("inplay"))
+            status = None if ev is None else ev.get("mo_status")
+            if scanner.is_relevant_market(inplay, status, meta.get("open_date"), now):
+                out.append((scanner.rank_key(inplay, meta.get("open_date")), meta["market_id"]))
+        out.sort()
+        return [mid for _, mid in out]
+
+    def refresh_stream_set(self, now: datetime) -> None:
+        """Subscription stream = mercati rilevanti di TUTTI gli sport insieme.
+
+        Parte SOLO quando tutti gli sport hanno un catalogo caricato (warm-up in
+        main): senza questa guardia lo stream partiva col solo calcio e il
+        throttle anti-resubscribe teneva fuori il tennis per minuti (visto in
+        collaudo). Va chiamata a ogni tick: il set cambia quando un evento va
+        in-play, entra in finestra pre-KO o chiude — non solo al refresh catalogo.
+        """
+        if self.stream is None:
+            return
+        if not all(st.catalogue_ts > 0.0 for st in self.sports.values()):
+            return
+        ranked: List["tuple[tuple[int, str], str]"] = []
+        for sport in self.sports:
+            for mid in self.relevant_market_ids(sport, now):
+                _, meta = self.market_meta[mid]
+                ev = self.events.get(meta["event_id"])
+                inplay = None if ev is None else bool(ev.get("inplay"))
+                ranked.append((scanner.rank_key(inplay, meta.get("open_date")), mid))
+        ranked.sort()
+        ids = [mid for _, mid in ranked]
+        if ids:
+            self.stream.set_markets(ids)
 
     def _apply_market_book(self, book: Any) -> None:
         """Applica UN MarketBook (dal poll REST o dallo STREAM) allo stato evento."""
@@ -212,11 +251,11 @@ class Scanner:
         )
 
     # ------------------------------------------------------------- quote MO (REST)
-    def poll_books(self, sport: str) -> None:
+    def poll_books(self, sport: str, ids: List[str]) -> None:
+        """Poll REST EX_BEST_OFFERS dei mercati indicati (chunk 25, peso 125)."""
         from betfairlightweight import filters
 
         st = self.sports[sport]
-        ids = [m["market_id"] for m in st.metas.values()]
         for i in range(0, len(ids), _BOOK_CHUNK):
             chunk = ids[i:i + _BOOK_CHUNK]
             books = self.client.betting.list_market_book(
@@ -291,10 +330,12 @@ class Scanner:
     def refresh_cs_catalogue(self, candidates: List[str]) -> None:
         from betfairlightweight import filters
 
+        # cache solo per eventi ancora noti (memoria stabile nei run lunghi)
+        for eid in [e for e in self.cs_markets if e not in self.events]:
+            self.cs_markets.pop(eid, None)
         missing = [e for e in candidates if e not in self.cs_markets]
         if not missing:
-            self.cs_catalogue_ts = time.monotonic()
-            return
+            return  # nessuna chiamata: il throttle non parte
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
                 event_ids=missing, market_type_codes=["CORRECT_SCORE"],
@@ -444,6 +485,9 @@ class Scanner:
             "monitored": monitored,
             "dry": self.dry,
             "source": getattr(self, "last_source", "rest"),
+            # mercati coperti dallo stream (0 = REST puro): utile nei weekend
+            # pieni per vedere se il cap 180 sta lasciando mercati al fallback
+            "stream_markets": len(self.stream.subscribed_ids()) if self.stream else 0,
             "last_error": self.last_error,
             "started_at": self.started_at,
         }
@@ -455,13 +499,12 @@ class Scanner:
 
     # ------------------------------------------------------------- ciclo
     def any_hot_calcio(self) -> bool:
-        for ev in self.events.values():
-            if ev.get("sport") != "calcio" or not ev.get("inplay"):
-                continue
-            m = ev.get("minute")
-            if m is not None and scanner.HOT_MINUTE_FROM <= m <= scanner.HOT_MINUTE_TO:
-                return True
-        return False
+        return any(
+            ev.get("sport") == "calcio"
+            and ev.get("inplay")
+            and scanner.is_hot_minute(ev.get("minute"))
+            for ev in self.events.values()
+        )
 
     def tick(self) -> None:
         now_mono = time.monotonic()
@@ -482,32 +525,44 @@ class Scanner:
             for eid in [e for e in self.events if e not in known]:
                 self.events.pop(eid, None)
 
-            # QUOTE: stream ufficiale (push, conflate 1s) quando in salute;
-            # poll REST come FALLBACK — mai un buco dati.
+            # QUOTE: stream ufficiale (push, conflate 1s) sui mercati rilevanti;
+            # poll REST come FALLBACK per i mercati rilevanti che lo stream non
+            # copre (oltre il cap, o stream non in salute) — mai un buco dati.
+            self.refresh_stream_set(now)
             if self.stream is not None:
                 for b in self.stream.drain():
                     self._apply_market_book(b)
             stream_ok = self.stream is not None and self.stream.healthy()
             self.last_source = "stream" if stream_ok else "rest"
-            if not stream_ok:
-                any_inplay_c = any(
-                    e.get("sport") == "calcio" and e.get("inplay") for e in self.events.values()
-                )
-                any_inplay_t = any(
-                    e.get("sport") == "tennis" and e.get("inplay") for e in self.events.values()
-                )
-                per_c = scanner.books_period_calcio(any_inplay_c, self.any_hot_calcio())
-                per_t = scanner.books_period_tennis(any_inplay_t)
-                if now_mono - self.sports["calcio"].books_ts > per_c:
-                    self.poll_books("calcio")
-                if now_mono - self.sports["tennis"].books_ts > per_t:
-                    self.poll_books("tennis")
+            covered = self.stream.subscribed_ids() if stream_ok else set()
+            any_inplay_c = any(
+                e.get("sport") == "calcio" and e.get("inplay") for e in self.events.values()
+            )
+            any_inplay_t = any(
+                e.get("sport") == "tennis" and e.get("inplay") for e in self.events.values()
+            )
+            periods = {
+                "calcio": scanner.books_period_calcio(any_inplay_c, self.any_hot_calcio()),
+                "tennis": scanner.books_period_tennis(any_inplay_t),
+            }
+            for sport, period in periods.items():
+                st = self.sports[sport]
+                if now_mono - st.books_ts <= period:
+                    continue
+                uncovered = [
+                    mid for mid in self.relevant_market_ids(sport, now) if mid not in covered
+                ]
+                if uncovered:
+                    self.poll_books(sport, uncovered)
+                else:
+                    st.books_ts = now_mono
 
             if now_mono - self.scores_ts > _SCORES_PERIOD_SEC:
                 self.poll_scores()
 
             candidates = self.cs_candidates()
-            if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_TTL_SEC:
+            if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
+                self.cs_catalogue_ts = now_mono
                 self.refresh_cs_catalogue(candidates)
             if candidates and now_mono - self.cs_books_ts > _CS_BOOKS_PERIOD_SEC:
                 self.poll_cs_books(candidates)
@@ -547,11 +602,21 @@ def main() -> None:
         if args.once:
             # collaudo: un giro completo esplicito (senza il write-on-change del
             # tick, così le righe restano visibili nel log)
+            now = datetime.now(timezone.utc)
             for sport in scan.sports:
                 scan.refresh_catalogue(sport)
                 time.sleep(_REQ_DELAY)
-            scan.poll_books("calcio")
-            scan.poll_books("tennis")
+            for sport in scan.sports:
+                ids = scan.relevant_market_ids(sport, now)
+                logger.info(
+                    "[safe-scan] %s: %d mercati a catalogo, %d rilevanti (in-play / KO entro 20′)",
+                    sport, len(scan.sports[sport].metas), len(ids),
+                )
+                scan.poll_books(sport, ids)
+            # secondo passaggio: gli in-play appena scoperti sono ora rilevanti
+            for sport in scan.sports:
+                ids = scan.relevant_market_ids(sport, now)
+                scan.poll_books(sport, ids)
             scan.poll_scores()
             candidates = scan.cs_candidates()
             if candidates:

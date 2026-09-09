@@ -64,8 +64,10 @@ export interface VariantEvaluation {
 // Default operativi delle quattro strategie. Tutti modificabili dalla UI e
 // persistiti in localStorage (merge difensivo in mergeParams).
 export interface BaseParams {
+    /** SOGLIA minuto: la strategia è attivabile DAL minuto indicato IN POI
+     *  (minuto effettivo ≥ soglia). Nessun tetto: la finestra la chiudono i
+     *  range quote, non il cronometro (regola utente 09/09) */
     minuteMin: number;
-    minuteMax: number;
     /** punteggi ammessi, GOL FAVORITA per primi (es. "1-0","2-1","2-0") */
     scores: string[];
     favPreMin: number;
@@ -80,8 +82,8 @@ export interface BaseParams {
     scoreConfirmSec: number;
 }
 export interface EsattoParams {
+    /** soglia "dal minuto in poi" (vedi BaseParams.minuteMin) */
     minuteMin: number;
-    minuteMax: number;
     /** punteggi ammessi, in QUALSIASI orientamento (es. "1-0" vale anche 0-1) */
     scores: string[];
     /** la squadra bancata deve aver segnato al massimo N gol */
@@ -89,13 +91,14 @@ export interface EsattoParams {
     /** quota "Altro risultato Casa/Ospite" (Correct Score) per l'ingresso */
     entryMin: number;
     entryMax: number;
-    /** anti-blip: punteggio osservato stabile da ≥N secondi (finestra corta 48-50′:
-     *  un punteggio IPS errato per pochi secondi pesa di più) */
+    /** anti-blip: punteggio osservato stabile da ≥N secondi (l'ingresso scatta
+     *  appena superata la soglia minuto: un punteggio IPS errato per pochi
+     *  secondi pesa di più) */
     scoreConfirmSec: number;
 }
 export interface PuntaParams {
+    /** soglia "dal minuto in poi" (vedi BaseParams.minuteMin) */
     minuteMin: number;
-    minuteMax: number;
     /** punteggi ammessi, GOL SQUADRA IN VANTAGGIO per primi (margine 2 gol) */
     scores: string[];
     /** quota live (back) della squadra in vantaggio */
@@ -135,7 +138,6 @@ export interface SafeStrategyParams {
 export const DEFAULT_PARAMS: SafeStrategyParams = {
     base: {
         minuteMin: 55,
-        minuteMax: 62,
         scores: ['1-0', '2-1', '2-0'],
         favPreMin: 1.4,
         favPreMax: 1.8,
@@ -147,7 +149,6 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
     },
     esatto: {
         minuteMin: 48,
-        minuteMax: 50,
         scores: ['0-0', '1-0', '1-1', '2-1'],
         maxGoalsLaySide: 1,
         entryMin: 30,
@@ -156,7 +157,6 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
     },
     punta: {
         minuteMin: 66,
-        minuteMax: 70,
         scores: ['2-0', '3-1', '3-0'],
         entryMin: 1.03,
         entryMax: 1.1,
@@ -217,7 +217,6 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
     return {
         base: {
             minuteMin: num(b.minuteMin, d.base.minuteMin),
-            minuteMax: num(b.minuteMax, d.base.minuteMax),
             scores: scoreList(b.scores, d.base.scores),
             favPreMin: num(b.favPreMin, d.base.favPreMin),
             favPreMax: num(b.favPreMax, d.base.favPreMax),
@@ -229,7 +228,6 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
         },
         esatto: {
             minuteMin: num(e.minuteMin, d.esatto.minuteMin),
-            minuteMax: num(e.minuteMax, d.esatto.minuteMax),
             scores: scoreList(e.scores, d.esatto.scores),
             maxGoalsLaySide: num(e.maxGoalsLaySide, d.esatto.maxGoalsLaySide),
             entryMin: num(e.entryMin, d.esatto.entryMin),
@@ -238,7 +236,6 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
         },
         punta: {
             minuteMin: num(u.minuteMin, d.punta.minuteMin),
-            minuteMax: num(u.minuteMax, d.punta.minuteMax),
             scores: scoreList(u.scores, d.punta.scores),
             entryMin: num(u.entryMin, d.punta.entryMin),
             entryMax: num(u.entryMax, d.punta.entryMax),
@@ -519,12 +516,15 @@ function leaderSide(scoreHome: number, scoreAway: number): SideId | null {
 }
 
 // ------------------------------------------------- valutatori CALCIO
-function minuteCheck(id: string, minute: number | null, min: number, max: number): ConditionCheck {
+/** SOGLIA minuto: vera dal minuto indicato IN POI (minuto ≥ soglia), mai un
+ *  intervallo chiuso — con un range fisso (es. 48–50′) quasi nessun segnale
+ *  passerebbe; il tetto reale lo mettono i range quote delle strategie. */
+function minuteCheck(id: string, minute: number | null, fromMinute: number): ConditionCheck {
     return {
         id,
-        label: `Minuto ${min}–${max}′`,
+        label: `Dal minuto ${fromMinute}′ in poi`,
         value: fmtMinute(minute),
-        ok: minute === null ? null : inRange(minute, min, max),
+        ok: minute === null ? null : minute >= fromMinute,
     };
 }
 
@@ -548,7 +548,7 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
     const lead = sh !== null && sa !== null ? leaderSide(sh, sa) : null;
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin, params.minuteMax));
+    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
 
     // punteggio: la FAVORITA deve essere in vantaggio con uno dei punteggi ammessi
     if (sh === null || sa === null) {
@@ -657,7 +657,7 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
     const sideLabel = side === 'home' ? 'Casa' : 'Ospite';
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin, params.minuteMax));
+    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
 
     if (sh === null || sa === null) {
         checks.push({ id: 'score', label: `Punteggio ${params.scores.join(' · ')}`, value: 'n/d', ok: null });
@@ -678,8 +678,9 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
         });
     }
 
-    // anti-blip: con una finestra di soli 3 minuti un punteggio IPS errato per
-    // pochi secondi può falsare l'ingresso — stessa guardia certificata della Base
+    // anti-blip: l'ingresso scatta appena superata la soglia minuto, quindi un
+    // punteggio IPS errato per pochi secondi può falsare l'ingresso — stessa
+    // guardia certificata della Base
     checks.push({
         id: 'scoreConfirmed',
         label: `Punteggio stabile da ≥${params.scoreConfirmSec}s`,
@@ -722,7 +723,7 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams): Varia
     const fav = favoriteSide(ctx.preMatch);
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
-    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin, params.minuteMax));
+    checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
 
     if (sh === null || sa === null) {
         checks.push({ id: 'score', label: `In vantaggio ${params.scores.join(' · ')}`, value: 'n/d', ok: null });

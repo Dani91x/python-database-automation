@@ -12,7 +12,7 @@
 // ============================================================================
 'use strict';
 
-const { app, BrowserWindow, dialog, session } = require('electron');
+const { app, BrowserWindow, dialog, session, shell } = require('electron');
 const http = require('http');
 const https = require('https');
 const path = require('path');
@@ -266,10 +266,23 @@ function killChildren() {
 // .env del repo, mai chieste all'utente) e si inietta il sessionToken come
 // cookie `ssoid` nella session di Electron: le finestre nascono già loggate.
 // Keep-alive ogni 15 minuti (la sessione web italiana scade con l'inattività);
-// se scade comunque → re-login automatico. QUALSIASI fallimento è soft: si
+// se scade comunque → re-login automatico. Se il login all'avvio FALLISCE (rete
+// non ancora su, Betfair lento) si ritenta con backoff 30s→60s→120s→300s: prima
+// il tentativo successivo arrivava solo col keep-alive, cioè 15 minuti di
+// finestre video "You need to be logged in". QUALSIASI fallimento resta soft: si
 // logga un avviso e la finestra Betfair mostrerà il suo login (una tantum).
 // Nessun ordine passa da qui: è solo navigazione (video + statistiche).
 const BETFAIR_KEEPALIVE_MS = 15 * 60 * 1000;
+const BETFAIR_LOGIN_RETRY_MS = [30_000, 60_000, 120_000, 300_000];
+// le finestre Betfair aspettano l'esito del PRIMO login al massimo così: oltre,
+// si aprono comunque (login manuale nel popout) — mai un click che non fa nulla.
+const BETFAIR_SSO_WAIT_MS = 8_000;
+
+// promessa risolta (true/false) al primo esito del login SSO: le finestre
+// Betfair richieste PRIMA (click a 1s dall'avvio) aspettano qui, così nascono
+// già loggate invece di mostrare la pagina di login.
+let ssoReadyResolve = null;
+const ssoReady = new Promise((resolve) => { ssoReadyResolve = resolve; });
 
 function readEnvFile(file) {
     const out = {};
@@ -432,6 +445,8 @@ async function setBetfairSsoCookie(token) {
 async function startBetfairWebSso() {
     const env = readEnvFile(path.join(repoRoot, '.env'));
     let token = null;
+    let retryTimer = null;
+    let retryIdx = 0;
     const doLogin = async () => {
         // 1) login INTERATTIVO: token web pieno (video incluso);
         // 2) fallback certlogin: copre sito/statistiche se l'interattivo fallisce.
@@ -449,15 +464,104 @@ async function startBetfairWebSso() {
         console.log(`[desktop] SSO web Betfair OK (${kind}): finestre video/statistiche già loggate.`);
         return t;
     };
+    // retry con backoff finché non c'è un token (poi il keep-alive fa il resto)
+    const scheduleRetry = () => {
+        if (retryTimer !== null) return;
+        const delay = BETFAIR_LOGIN_RETRY_MS[Math.min(retryIdx, BETFAIR_LOGIN_RETRY_MS.length - 1)];
+        retryIdx += 1;
+        console.warn(`[desktop] SSO web Betfair: nuovo tentativo tra ${Math.round(delay / 1000)}s.`);
+        retryTimer = setTimeout(async () => {
+            retryTimer = null;
+            token = await doLogin();
+            if (!token) scheduleRetry(); else retryIdx = 0;
+        }, delay);
+    };
     token = await doLogin();
+    if (ssoReadyResolve) { ssoReadyResolve(!!token); ssoReadyResolve = null; }
+    if (!token) scheduleRetry();
     setInterval(async () => {
-        if (!token) { token = await doLogin(); return; }
+        if (!token) { if (retryTimer === null) scheduleRetry(); return; }
         const alive = await betfairKeepAlive(env, token);
         if (!alive) {
             console.warn('[desktop] sessione web Betfair scaduta: re-login automatico…');
             token = await doLogin();
+            if (!token) scheduleRetry();
         }
     }, BETFAIR_KEEPALIVE_MS);
+}
+
+// ------------------------------------------------ finestre Betfair (popout)
+// I pulsanti 📺 Video / 📊 Stats (frontend BetfairMediaButtons) fanno
+// window.open(url, nome, features). Senza un handler Electron creava una
+// finestra anonima per OGNI click (10 click = 10 finestre), con i webPreferences
+// ereditati dalla UI e — al primo click dopo l'avvio — prima che l'SSO avesse
+// impostato i cookie ("You need to be logged in"). Qui invece:
+//   · una finestra per NOME (evento+feed): il secondo click la riporta davanti;
+//   · si aspetta l'esito del primo login SSO (max BETFAIR_SSO_WAIT_MS);
+//   · dimensioni tarate sul popout (640x780) e finestra pulita (niente menu);
+//   · gli altri link esterni vanno al browser di sistema, le rotte della UI
+//     (es. ladder popout /ladder-popout) restano finestre Electron normali.
+const BETFAIR_HOST_RE = /^https:\/\/([a-z0-9-]+\.)*betfair\.(it|com)\//i;
+const betfairWindows = new Map(); // frameName → BrowserWindow
+
+function parseFeatureInt(features, key, fallback) {
+    const m = new RegExp(`(?:^|,)\\s*${key}=(\\d+)`, 'i').exec(features || '');
+    return m ? Number(m[1]) : fallback;
+}
+
+async function openBetfairWindow(url, frameName, features) {
+    const key = frameName && frameName !== '_blank' ? frameName : null;
+    const existing = key ? betfairWindows.get(key) : null;
+    if (existing && !existing.isDestroyed()) {
+        if (existing.webContents.getURL() !== url) existing.loadURL(url);
+        if (existing.isMinimized()) existing.restore();
+        existing.focus();
+        return;
+    }
+    // le finestre nascono loggate: si aspetta il primo esito SSO (con tetto)
+    await Promise.race([ssoReady, new Promise((r) => setTimeout(() => r(false), BETFAIR_SSO_WAIT_MS))]);
+    const win = new BrowserWindow({
+        width: parseFeatureInt(features, 'width', 640),
+        height: parseFeatureInt(features, 'height', 780),
+        autoHideMenuBar: true,
+        backgroundColor: '#000000',
+        title: 'Betfair',
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+        },
+    });
+    if (key) {
+        betfairWindows.set(key, win);
+        win.on('closed', () => { if (betfairWindows.get(key) === win) betfairWindows.delete(key); });
+    }
+    // link aperti DAL popout Betfair (termini, help): browser di sistema
+    win.webContents.setWindowOpenHandler(({ url: u }) => {
+        if (/^https?:/i.test(u)) shell.openExternal(u);
+        return { action: 'deny' };
+    });
+    await win.loadURL(url).catch((err) => {
+        console.warn(`[desktop] finestra Betfair non caricata (${err && err.message})`);
+    });
+}
+
+function attachWindowOpenHandler(win) {
+    win.webContents.setWindowOpenHandler(({ url, frameName, features }) => {
+        if (BETFAIR_HOST_RE.test(url)) {
+            void openBetfairWindow(url, frameName, features);
+            return { action: 'deny' };
+        }
+        if (url.startsWith(`http://127.0.0.1:${UI_PORT}/`)) {
+            // rotte della UI (ladder popout multi-monitor): finestra Electron normale
+            return { action: 'allow' };
+        }
+        if (/^https?:/i.test(url)) {
+            shell.openExternal(url);
+            return { action: 'deny' };
+        }
+        return { action: 'deny' };
+    });
 }
 
 // ---------------------------------------------------------------- finestra
@@ -473,6 +577,7 @@ function createWindow() {
             nodeIntegration: false,
         },
     });
+    attachWindowOpenHandler(win);
     win.loadURL(`http://127.0.0.1:${UI_PORT}/board`);
 }
 

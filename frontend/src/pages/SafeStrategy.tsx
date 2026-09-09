@@ -86,10 +86,10 @@ function ScannerBar({ status, nowMs }: { status: ScanStatusRow | null; nowMs: nu
                                     : 'bg-amber-500/15 text-amber-300 border-amber-500/40 text-[10px]'
                             }
                             title={p.source === 'stream'
-                                ? 'Quote in push dalla Exchange Stream API ufficiale (conflate 1s)'
+                                ? `Quote in push dalla Exchange Stream API ufficiale (conflate 1s) su ${p.stream_markets ?? 0} mercati; gli altri rilevanti in poll REST`
                                 : 'Stream non in salute: quote via poll REST di fallback'}
                         >
-                            {p.source === 'stream' ? '⚡ STREAM' : 'REST'}
+                            {p.source === 'stream' ? `⚡ STREAM${p.stream_markets ? ` ${p.stream_markets}` : ''}` : 'REST'}
                         </Badge>
                     )}
                     {p.dry && (
@@ -229,8 +229,8 @@ export default function SafeStrategy() {
                         </h1>
                         <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
                             Scanner autonomo su TUTTI gli eventi in-play: segnali automatici sulle condizioni
-                            oggettive (minuto, punteggio, quote) delle 4 strategie. Il controllo del gioco e
-                            l'ingresso a mercato restano una tua decisione.
+                            oggettive (dal minuto soglia in poi, punteggio, quote) delle 4 strategie. Il
+                            controllo del gioco e l'ingresso a mercato restano una tua decisione.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">

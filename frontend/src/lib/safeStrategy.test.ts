@@ -132,8 +132,14 @@ describe('mergeParams', () => {
     it('override parziale valido preserva il resto', () => {
         const p = mergeParams({ base: { minuteMin: 50 }, tennis: { gamesLeadMin: 3 } });
         expect(p.base.minuteMin).toBe(50);
-        expect(p.base.minuteMax).toBe(DEFAULT_PARAMS.base.minuteMax);
+        expect(p.base.scores).toEqual(DEFAULT_PARAMS.base.scores);
         expect(p.tennis.gamesLeadMin).toBe(3);
+        expect(p.esatto).toEqual(DEFAULT_PARAMS.esatto);
+    });
+    it('parametri legacy in localStorage (minuteMax, era un tetto): ignorati senza errori', () => {
+        const p = mergeParams({ base: { minuteMin: 55, minuteMax: 62 }, esatto: { minuteMax: 50 } });
+        expect(p.base.minuteMin).toBe(55);
+        expect('minuteMax' in p.base).toBe(false);
         expect(p.esatto).toEqual(DEFAULT_PARAMS.esatto);
     });
     it('scores: filtra i malformati, lista vuota → default', () => {
@@ -204,8 +210,17 @@ describe('evaluateBase', () => {
         expect(ev.side).toBe('LAY');
         expect(ev.entryOdds).toBe(8.4); // lay della sfavorita
     });
-    it('NO: minuto fuori finestra', () => {
-        expect(evaluateBase(ctxOf({ minute: 70 }), DEFAULT_PARAMS.base).state).toBe('no');
+    it('NO: minuto PRIMA della soglia (54′ con soglia 55′)', () => {
+        const ev = evaluateBase(ctxOf({ minute: 54 }), DEFAULT_PARAMS.base);
+        expect(ev.state).toBe('no');
+        expect(ev.checks.find((c) => c.id === 'minute')).toMatchObject({ label: 'Dal minuto 55′ in poi', ok: false });
+    });
+    it('SEGNALE dal minuto soglia IN POI: 55′, 70′ e 89′ passano (nessun tetto di minuto)', () => {
+        // REGOLA 09/09: il minuto è una soglia, non un intervallo — col vecchio
+        // range 55–62′ al 70′ nessun segnale sarebbe passato
+        for (const minute of [55, 70, 89]) {
+            expect(evaluateBase(ctxOf({ minute }), DEFAULT_PARAMS.base).state).toBe('signal');
+        }
     });
     it('NO: favorita NON in vantaggio (0-1)', () => {
         expect(evaluateBase(ctxOf({ sh: 0, sa: 1 }), DEFAULT_PARAMS.base).state).toBe('no');
@@ -274,6 +289,14 @@ describe('evaluateEsatto', () => {
         expect(ev.headline).toContain('Altro risultato Casa');
         expect(ev.entryOdds).toBe(45);
     });
+    it('soglia minuto 48′: 47′ → NO; 48′, 65′ e 80′ → SEGNALE (nessun tetto, decide la quota)', () => {
+        expect(evaluateEsatto(ctxOf({ minute: 47 }), DEFAULT_PARAMS.esatto, 'home').state).toBe('no');
+        for (const minute of [48, 65, 80]) {
+            expect(evaluateEsatto(ctxOf({ minute }), DEFAULT_PARAMS.esatto, 'home').state).toBe('signal');
+        }
+        // tetto reale = range quota: lay "Altro risultato" salito a 90 → NO anche in soglia
+        expect(evaluateEsatto(ctxOf({ minute: 80, anyOtherHomeLay: 90 }), DEFAULT_PARAMS.esatto, 'home').state).toBe('no');
+    });
     it('NO: lato con troppi gol (2-1, lato Casa ha 2 gol)', () => {
         const ev = evaluateEsatto(ctxOf({ minute: 49, sh: 2, sa: 1 }), DEFAULT_PARAMS.esatto, 'home');
         expect(ev.state).toBe('no');
@@ -315,6 +338,11 @@ describe('evaluatePunta', () => {
         expect(ev.headline).toBe('PUNTA Nord FC');
         expect(ev.side).toBe('BACK');
         expect(ev.entryOdds).toBe(1.06);
+    });
+    it('soglia minuto 66′: 65′ → NO; 66′ e 85′ → SEGNALE (nessun tetto di minuto)', () => {
+        expect(evaluatePunta(ctxOf({ ...scenario, minute: 65 }), DEFAULT_PARAMS.punta).state).toBe('no');
+        expect(evaluatePunta(ctxOf({ ...scenario, minute: 66 }), DEFAULT_PARAMS.punta).state).toBe('signal');
+        expect(evaluatePunta(ctxOf({ ...scenario, minute: 85 }), DEFAULT_PARAMS.punta).state).toBe('signal');
     });
     it('NO: gol troppo recente (osservato da 1′)', () => {
         expect(evaluatePunta(ctxOf({ ...scenario, stableSince: 67 }), DEFAULT_PARAMS.punta).state).toBe('no');
@@ -570,11 +598,17 @@ describe('footballCandidates / tennisCandidates', () => {
         const ctx = ctxOf();
         const evs = [
             evaluateBase(ctx, DEFAULT_PARAMS.base),                       // signal (58′ 1-0)
-            evaluateEsatto(ctx, DEFAULT_PARAMS.esatto, 'home'),           // no (minuto 58)
+            evaluatePunta(ctx, DEFAULT_PARAMS.punta),                     // no (margine 1 gol)
         ];
         const cands = footballCandidates(ctx, evs);
         expect(cands).toHaveLength(1);
         expect(cands[0].key).toBe(signalKey('ev1', 'base', undefined, '1-0'));
+        // al 58′ anche il R.E. è oltre la sua soglia (48′): entra come secondo candidato
+        const withEsatto = footballCandidates(ctx, [...evs, evaluateEsatto(ctx, DEFAULT_PARAMS.esatto, 'home')]);
+        expect(withEsatto.map((c) => c.key)).toEqual([
+            signalKey('ev1', 'base', undefined, '1-0'),
+            signalKey('ev1', 'esatto', 'home', '1-0'),
+        ]);
     });
     it('tennis: chiave con punteggio set (un segnale per set)', () => {
         const ctx = tennisCtx();
