@@ -111,7 +111,9 @@ class _HealthListener:
                 on_message()
                 return super().on_data(raw_data)
 
-        self.listener = _Listener(output_queue=output_queue)
+        # max_latency=None: con l'orologio locale sfasato (−2.8s misurati) il
+        # warning "Latency high" scattava a OGNI messaggio (rumore + CPU)
+        self.listener = _Listener(output_queue=output_queue, max_latency=None)
 
 
 class StreamShard:

@@ -9,6 +9,7 @@ import logging
 from typing import Optional
 
 import betfairlightweight
+import requests
 
 from config import (
     BETFAIR_APP_KEY,
@@ -47,12 +48,19 @@ def build_client(login: bool = True) -> betfairlightweight.APIClient:
             "Configurazione Betfair incompleta: " + ", ".join(missing)
         )
 
+    # SESSIONE HTTP RIUSATA (keep-alive): senza `session`, betfairlightweight usa
+    # il modulo `requests` nudo e apre una connessione TLS NUOVA a ogni chiamata
+    # (handshake + ricarica del bundle CA ≈ 0.3s CPU e ~0.5s di latenza per
+    # richiesta). Misurato il 09/09: 6 GET IPS = 6 handshake / 2.75s CPU contro
+    # 1 handshake / 0.41s con una Session. Vale per TUTTI i processi (runner,
+    # scalper, tennis, omega, scanner): list_market_book, get_scores, keep-alive.
     client = betfairlightweight.APIClient(
         username=BETFAIR_USERNAME,
         password=BETFAIR_PASSWORD,
         app_key=BETFAIR_APP_KEY,
         locale="italy",  # → identitysso-cert.betfair.it
         cert_files=(BETFAIR_CERT_FILE, BETFAIR_KEY_FILE),
+        session=requests.Session(),
     )
 
     if login:

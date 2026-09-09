@@ -302,3 +302,10 @@ class RawTeeMarketStream(MarketStream):
     """MarketStream che usa il listener con tee del raw (una sola subscription)."""
 
     LISTENER = RawTeeStreamListener
+    # LATENZA STREAM: betfairlightweight confronta l'orologio locale col
+    # publish-time Betfair e logga un WARNING per OGNI messaggio oltre 0.5s. Con
+    # l'orologio del PC sfasato (misurato 09/09: −2.8s via w32tm) è tutto rumore
+    # (3.918 righe "Latency high" nel log del runner) e CPU sprecata: la misura
+    # non guida nessuna decisione qui → disattivata. La latenza reale la si
+    # vede dal keep-alive/heartbeat e dai riavvii del watchdog.
+    MAX_LATENCY = None
