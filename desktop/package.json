@@ -1,12 +1,12 @@
 {
     "name": "alphascore-desktop",
     "productName": "AlphaScore Trading",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "App desktop AlphaScore Trading: UI locale (frontend/dist) + runner calcio/tennis con canale WS locale",
-    "main": "main.js",
+    "main": "bootstrap.js",
     "private": true,
     "scripts": {
-        "postinstall_NOTA": "1) installa: npm install · 2) avvia: npm start (richiede frontend/dist buildato: cd ../frontend && npm run build) · 3) exe: npm run dist",
+        "postinstall_NOTA": "1) installa: npm install · 2) avvia: npm start · 3) exe: npm run dist — l'exe è un avviatore (bootstrap.js) che carica SEMPRE desktop/main.js del repo: dopo il primo build non serve più ricompilarlo per aggiornare main.js",
         "start": "electron .",
         "dist": "electron-builder --win"
     },
@@ -21,6 +21,7 @@
             "output": "release"
         },
         "files": [
+            "bootstrap.js",
             "main.js",
             "preload.js"
         ],
