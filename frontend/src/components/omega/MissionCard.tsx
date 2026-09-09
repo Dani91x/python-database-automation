@@ -341,6 +341,11 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                                 <Badge variant="outline" className={tradeBadgeCls(t.status)}>{t.status.toUpperCase()}</Badge>
                                 <span className="font-medium">{t.runner_name ?? '—'}</span>
                                 <span className="tabular-nums">{String(t.side).toUpperCase()} @ {fmtQuote(t.price)} · €{toNum(t.size).toFixed(2)}</span>
+                                {t.minute_at_entry != null && (
+                                    <span className="text-[10px] text-slate-500 tabular-nums" title="minuto e punteggio all'ingresso">
+                                        ingr. {t.minute_at_entry}′{t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
+                                    </span>
+                                )}
                                 {t.mode === 'live' && <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">LIVE</Badge>}
                                 <span className={`ml-auto tabular-nums font-bold ${toNum(t.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(toNum(t.pnl)) : `liab. ${fmtEur(toNum(t.liability))}`}

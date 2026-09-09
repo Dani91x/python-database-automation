@@ -52,6 +52,16 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # riconcilia via REST (per bet_id) o revoca la richiesta mai presa in
     # carico — mai un pending live zombie.
     "live_fill_deadline_s": (20, int, 5, 300),
+    # ---- OMEGA v2 (09/09 sera): 2 gambe per partita, selezione per MODELLO ----
+    # 'legs' = HT-CS nel 1T + CS nel 2T sul risultato con probabilità di modello
+    # più bassa | 'single' = motore v1 (una gamba CS, quota più alta) kill-switch
+    "engine": ("legs", str, None, None),
+    "ht_entry_min": (20, int, 0, 45),      # finestra gamba 1T (minuto reale dal feed)
+    "ht_entry_max": (40, int, 0, 45),
+    "ft_entry_min": (50, int, 45, 130),    # finestra gamba 2T
+    "ft_entry_max": (80, int, 45, 130),
+    "model_p_max_pct": (2.0, float, 0.01, 50.0),   # P(modello) massima del risultato layato
+    "model_min_goal_distance": (2, int, 1, 5),     # gol AGGIUNTIVI minimi dal punteggio corrente
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}
@@ -69,6 +79,8 @@ def _coerce(key: str, raw: Any) -> Any:
     if key == "entry_window_source" and val not in ("score", "clock"):
         return default
     if key == "execution_mode" and val not in ("auto", "rest"):
+        return default
+    if key == "engine" and val not in ("legs", "single"):
         return default
     if lo is not None and isinstance(val, (int, float)) and val < lo:
         val = lo if cast is float else int(lo)
@@ -90,6 +102,9 @@ def resolve_params(raw: dict[str, Any] | None) -> dict[str, Any]:
                 out[k] = _coerce(k, v)
     if out["price_min"] > out["price_max"]:
         out["price_min"], out["price_max"] = out["price_max"], out["price_min"]
+    for lo_k, hi_k in (("ht_entry_min", "ht_entry_max"), ("ft_entry_min", "ft_entry_max")):
+        if out[lo_k] > out[hi_k]:
+            out[lo_k], out[hi_k] = out[hi_k], out[lo_k]
     if out["entry_minute_min"] > out["entry_minute_max"]:
         out["entry_minute_min"], out["entry_minute_max"] = (
             out["entry_minute_max"],

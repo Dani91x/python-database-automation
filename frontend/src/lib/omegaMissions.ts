@@ -61,6 +61,11 @@ export interface MissionTrade {
     status: string;
     pnl: number | null;
     mode: string;
+    /** dal 09/09 sera (migrazione omega_v2.sql): ingresso e origine del trade */
+    minute_at_entry?: number | null;
+    score_at_entry?: string | null;
+    placed_at?: string | null;
+    origin?: 'auto' | 'manual' | null;
 }
 
 export interface MissionLeg {

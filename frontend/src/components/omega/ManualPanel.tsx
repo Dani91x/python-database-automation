@@ -12,6 +12,7 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { RefreshCw, Download, Zap, Target, Loader2, ShieldAlert } from 'lucide-react';
+import { useScanLiveFeed, liveScoreLabel } from '@/lib/useScanLiveFeed';
 import {
     requestManual, fetchOmegaEvents, fetchOmegaMarket, fetchManualRequests,
     type OmegaEvent, type OmegaMarketSnapshot, type OmegaMarketRunner,
@@ -26,6 +27,8 @@ function fmtQuote(v: number | null): string {
 
 export default function ManualPanel() {
     const [events, setEvents] = useState<OmegaEvent[]>([]);
+    // minuto/punteggio LIVE dal feed dello scanner accanto a ogni evento in-play
+    const liveFeed = useScanLiveFeed(events.map((e) => e.event_id));
     const [eventId, setEventId] = useState('');
     const [marketId, setMarketId] = useState('');
     const [snapshot, setSnapshot] = useState<OmegaMarketSnapshot | null>(null);
@@ -187,7 +190,7 @@ export default function ManualPanel() {
                         <option value="">— scegli evento ({events.length}) —</option>
                         {events.map(ev => (
                             <option key={ev.event_id} value={ev.event_id}>
-                                {ev.name || ev.event_id}{ev.open_date ? ` · ${new Date(ev.open_date).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                {ev.name || ev.event_id}{ev.open_date ? ` · ${new Date(ev.open_date).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''}{liveScoreLabel(liveFeed[ev.event_id]) ? ` · LIVE ${liveScoreLabel(liveFeed[ev.event_id])}` : ''}
                             </option>
                         ))}
                     </select>

@@ -135,6 +135,11 @@ class FakeMarket:
 
 class FakeDB:
     def __init__(self, control):
+        # i test storici collaudano il motore v1 ('single'); il v2 ('legs', default
+        # di produzione) ha i suoi test in test_omega_v2_2026_09_09.py
+        params = dict((control or {}).get("params") or {})
+        params.setdefault("engine", "single")
+        control["params"] = params
         self.control = control
         self.trades = []
         self.activity = []
@@ -151,9 +156,11 @@ class FakeDB:
 
     def insert_trade(self, trade):
         origin = trade.get("origin", "auto")
-        # partial unique su (event_id) WHERE origin='auto' → I1 automatico
+        # partial unique su (event_id, coalesce(phase,'')) WHERE origin='auto' → I1
+        # automatico per GAMBA (v2: 2 gambe/evento; v1 senza gamba = una sola)
         if origin == "auto" and any(
             t["event_id"] == trade["event_id"] and t.get("origin", "auto") == "auto"
+            and (t.get("phase") or "") == (trade.get("phase") or "")
             for t in self.trades
         ):
             raise Exception("unique auto event_id")

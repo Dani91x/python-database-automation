@@ -258,3 +258,14 @@ def test_critical_signature_include_lo_stato_ips_grezzo():
     punto = {**base, "score_raw": {"score": {"home": {"score": "40"}}}}
     # un punto tennis (solo nel raw) è un cambio critico: pubblicazione immediata
     assert scanner.critical_signature("tennis", base) != scanner.critical_signature("tennis", punto)
+
+
+def test_ht_candidate_e_firma_critica_ht():
+    """Omega v2: HALF TIME SCORE sotto quote solo nel 1T (15'-44'); il suo stato
+    mercato è critico (pubblicazione immediata) come quello del CS."""
+    assert not scanner.is_ht_candidate(None) and not scanner.is_ht_candidate(14)
+    assert scanner.is_ht_candidate(15) and scanner.is_ht_candidate(44)
+    assert not scanner.is_ht_candidate(45) and not scanner.is_ht_candidate(60)
+    base = {"inplay": True, "minute": 30, "ht": {"status": "OPEN"}}
+    changed = {**base, "ht": {"status": "SUSPENDED"}}
+    assert scanner.critical_signature("calcio", base) != scanner.critical_signature("calcio", changed)

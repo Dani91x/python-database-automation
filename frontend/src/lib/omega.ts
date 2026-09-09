@@ -51,6 +51,8 @@ export interface OmegaTrade {
     side: string;
     mode: OmegaMode;
     origin?: 'auto' | 'manual';  // chi ha deciso il trade (badge in tabella)
+    /** gamba (v2): 1T = Half Time Score, 2T = Correct Score finale; null = trade v1/manuale senza fase */
+    phase?: 'ht_cs' | 'ft_cs' | 'scalp' | null;
     price: number | null;
     size: number | null;
     liability: number | null;
@@ -108,6 +110,17 @@ export interface OmegaParams {
     max_liability_per_match: number;
     daily_loss_cap: number;
     max_open_liability: number;
+    /** OMEGA v2: due gambe per partita (1T Half Time Score, 2T Correct Score), selezione per modello */
+    ht_entry_min: number;
+    ht_entry_max: number;
+    ft_entry_min: number;
+    ft_entry_max: number;
+    model_p_max_pct: number;
+}
+
+/** Etichetta della gamba di un trade (v2). */
+export function phaseLabel(phase: OmegaTrade['phase'] | undefined): string {
+    return phase === 'ht_cs' ? '1T' : phase === 'ft_cs' ? '2T' : phase === 'scalp' ? 'SCALP' : '—';
 }
 
 export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
@@ -126,6 +139,11 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     max_liability_per_match: 0,
     daily_loss_cap: 0,
     max_open_liability: 0,
+    ht_entry_min: 20,
+    ht_entry_max: 40,
+    ft_entry_min: 50,
+    ft_entry_max: 80,
+    model_p_max_pct: 2,
 };
 
 export type OmegaNumericParamKey = {
@@ -137,8 +155,13 @@ export const OMEGA_PARAM_FIELDS: {
 }[] = [
     { key: 'price_min', label: 'Quota lay MIN', step: 1, min: 1.01, max: 1000, hint: 'sotto: risultato troppo probabile' },
     { key: 'price_max', label: 'Quota lay MAX', step: 5, min: 1.01, max: 1000, hint: 'sopra: profit irrisorio / liability enorme (niente 600)' },
-    { key: 'entry_minute_min', label: 'Minuto ingresso MIN', step: 1, min: 0, max: 130, hint: 'piazza solo dopo questo minuto' },
-    { key: 'entry_minute_max', label: 'Minuto ingresso MAX', step: 1, min: 0, max: 130, hint: 'niente ingressi dopo questo minuto' },
+    { key: 'ht_entry_min', label: 'Gamba 1T: minuto MIN', step: 1, min: 0, max: 45, hint: 'Half Time Score: ingresso dal minuto reale (feed)' },
+    { key: 'ht_entry_max', label: 'Gamba 1T: minuto MAX', step: 1, min: 0, max: 45, hint: 'niente 1T dopo questo minuto' },
+    { key: 'ft_entry_min', label: 'Gamba 2T: minuto MIN', step: 1, min: 45, max: 130, hint: 'Correct Score finale: ingresso nel 2T' },
+    { key: 'ft_entry_max', label: 'Gamba 2T: minuto MAX', step: 1, min: 45, max: 130, hint: 'niente 2T dopo questo minuto' },
+    { key: 'model_p_max_pct', label: 'P(modello) MAX %', step: 0.5, min: 0.01, max: 50, hint: 'lay solo risultati che il modello dà sotto questa probabilità' },
+    { key: 'entry_minute_min', label: 'v1: minuto MIN', step: 1, min: 0, max: 130, hint: 'solo motore v1 (una gamba)' },
+    { key: 'entry_minute_max', label: 'v1: minuto MAX', step: 1, min: 0, max: 130, hint: 'solo motore v1 (una gamba)' },
     { key: 'max_events', label: 'Max eventi/giorno', step: 1, min: 0, max: 1000, hint: '0 = illimitato' },
     { key: 'commission_pct', label: 'Commissione %', step: 0.5, min: 0, max: 20, hint: 'aliquota Betfair (default 5%)' },
     { key: 'min_lay_liquidity', label: 'Liquidità lay MIN €', step: 1, min: 0, max: 100000, hint: 'size minima disponibile al best' },

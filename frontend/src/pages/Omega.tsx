@@ -20,12 +20,13 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ManualPanel from '@/components/omega/ManualPanel';
 import MissionPanel from '@/components/omega/MissionPanel';
+import { useScanLiveFeed, liveScoreLabel } from '@/lib/useScanLiveFeed';
 import {
     ArrowLeft, Play, Square, Settings, Target, TrendingUp, Zap, ShieldAlert, Activity,
 } from 'lucide-react';
 import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
-    subscribeOmega, buildEquitySeries, OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS,
+    subscribeOmega, buildEquitySeries, OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, phaseLabel,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
     type OmegaAggregates,
 } from '@/lib/omega';
@@ -133,6 +134,8 @@ export default function Omega() {
     const [control, setControl] = useState<OmegaControl | null>(null);
     const [aggregates, setAggregates] = useState<OmegaAggregates | null>(null);
     const [trades, setTrades] = useState<OmegaTrade[]>([]);
+    // minuto/punteggio LIVE dal feed dello scanner per ogni partita con un trade (v2)
+    const liveFeed = useScanLiveFeed(trades.map((t) => t.event_id));
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
 
@@ -390,16 +393,19 @@ export default function Omega() {
                                             <th className="text-right px-4 py-2">Quota</th>
                                             <th className="text-right px-4 py-2">Stake</th>
                                             <th className="text-right px-4 py-2">Liability</th>
-                                            <th className="text-center px-4 py-2">Min</th>
+                                            <th className="text-center px-4 py-2" title="gamba: 1T = Half Time Score, 2T = Correct Score finale">Gamba</th>
+                                            <th className="text-center px-4 py-2" title="minuto e punteggio all'ingresso">Ingresso</th>
+                                            <th className="text-center px-4 py-2" title="minuto e punteggio LIVE dal feed dello scanner">Live</th>
                                             <th className="text-center px-4 py-2">Stato</th>
                                             <th className="text-right px-4 py-2">P&L</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {trades.length === 0 ? (
-                                            <tr><td colSpan={9} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
+                                            <tr><td colSpan={11} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
                                         ) : trades.map(t => {
                                             const b = tradeBadge(t.status);
+                                            const live = ['pending', 'open'].includes(t.status) ? liveScoreLabel(liveFeed[t.event_id]) : null;
                                             return (
                                                 <tr key={t.id} className="border-t border-white/5 hover:bg-white/5">
                                                     <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
@@ -413,7 +419,18 @@ export default function Omega() {
                                                     <td className="px-4 py-2 text-right tabular-nums">{t.price?.toFixed(2) ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>
-                                                    <td className="px-4 py-2 text-center text-slate-400 tabular-nums">{t.minute_at_entry ?? '—'}'</td>
+                                                    <td className="px-4 py-2 text-center text-slate-300 font-semibold">{phaseLabel(t.phase)}</td>
+                                                    <td className="px-4 py-2 text-center text-slate-400 tabular-nums">
+                                                        {t.minute_at_entry != null ? `${t.minute_at_entry}′` : '—'}{t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center tabular-nums">
+                                                        {live ? (
+                                                            <span className="text-emerald-300">
+                                                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" aria-hidden />
+                                                                {live}
+                                                            </span>
+                                                        ) : <span className="text-slate-600">—</span>}
+                                                    </td>
                                                     <td className="px-4 py-2 text-center"><Badge variant="outline" className={b.cls}>{b.label}</Badge></td>
                                                     <td className={`px-4 py-2 text-right font-bold tabular-nums ${t.status === 'won' ? 'text-emerald-400' : t.status === 'lost' ? 'text-red-400' : 'text-slate-400'}`}>
                                                         {['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}

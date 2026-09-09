@@ -140,6 +140,7 @@ class Scanner:
         # thread punteggi (run persistente): None = poll dentro al tick
         self.score_worker: Optional["ScoreFeedWorker"] = None
         self.cs_catalogue_ts = 0.0
+        self.ht_catalogue_ts = 0.0
         self.status_ts = 0.0
         self.keepalive_ts = time.monotonic()
         self.written_sig: Dict[str, str] = {}
@@ -147,6 +148,8 @@ class Scanner:
         self.started_at = scanner.now_iso()
         # cache mercati Correct Score: event_id → {market_id, runners}
         self.cs_markets: Dict[str, Dict[str, Any]] = {}
+        # HALF TIME SCORE dei candidati 1T (Omega v2): stesso ciclo di vita del CS
+        self.ht_markets: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------- catalogo MO
     def refresh_catalogue(self, sport: str) -> None:
@@ -208,10 +211,11 @@ class Scanner:
         for sport, st in self.sports.items():
             for meta in st.metas.values():
                 idx[meta["market_id"]] = (sport, meta)
-        for eid, cs in self.cs_markets.items():
-            idx[cs["market_id"]] = ("calcio", {
-                "event_id": eid, "market_id": cs["market_id"], "kind": "cs", "names": cs["names"],
-            })
+        for kind, store in (("cs", self.cs_markets), ("ht", self.ht_markets)):
+            for eid, mk in store.items():
+                idx[mk["market_id"]] = ("calcio", {
+                    "event_id": eid, "market_id": mk["market_id"], "kind": kind, "names": mk["names"],
+                })
         self.market_meta = idx
 
     def relevant_market_ids(self, sport: str, now: datetime) -> List[str]:
@@ -230,6 +234,10 @@ class Scanner:
             if sport == "calcio" and inplay and eid in self.cs_markets and status != "CLOSED":
                 if scanner.is_cs_candidate(ev.get("minute"), ev.get("score_home"), ev.get("score_away")):
                     out.append((scanner.rank_key(True, meta.get("open_date")), self.cs_markets[eid]["market_id"]))
+            # HALF TIME SCORE dei candidati 1T (Omega v2): stessa priorità
+            if sport == "calcio" and inplay and eid in self.ht_markets and status != "CLOSED":
+                if scanner.is_ht_candidate(ev.get("minute")):
+                    out.append((scanner.rank_key(True, meta.get("open_date")), self.ht_markets[eid]["market_id"]))
         out.sort()
         return [mid for _, mid in out]
 
@@ -264,7 +272,7 @@ class Scanner:
         if not found:
             return
         sport, meta = found
-        if meta.get("kind") == "cs":
+        if meta.get("kind") in ("cs", "ht"):
             self._apply_cs_book(meta, book)
             return
         pairs: Dict[int, Dict[str, Any]] = {}
@@ -311,7 +319,7 @@ class Scanner:
             }
             for r in getattr(book, "runners", None) or []
         ]
-        ev["cs"] = scanner.build_cs_block(
+        ev[meta.get("kind") or "cs"] = scanner.build_cs_block(
             meta["market_id"], getattr(book, "status", None), selections,
             inplay=bool(getattr(book, "inplay", False)),
             total_matched=scanner.num_or_none(getattr(book, "total_matched", None)),
@@ -478,18 +486,34 @@ class Scanner:
                 out.append(eid)
         return out
 
+    def ht_candidates(self) -> List[str]:
+        return [eid for eid, ev in self.events.items()
+                if ev.get("sport") == "calcio" and ev.get("inplay") and scanner.is_ht_candidate(ev.get("minute"))]
+
     def refresh_cs_catalogue(self, candidates: List[str]) -> None:
+        self._refresh_score_catalogue(self.cs_markets, candidates, "CORRECT_SCORE")
+        self.cs_catalogue_ts = time.monotonic()
+
+    def refresh_ht_catalogue(self, candidates: List[str]) -> None:
+        self._refresh_score_catalogue(self.ht_markets, candidates, "HALF_TIME_SCORE")
+        self.ht_catalogue_ts = time.monotonic()
+
+    def _refresh_score_catalogue(self, store: Dict[str, Dict[str, Any]], candidates: List[str],
+                                 market_type: str) -> None:
+        """Catalogo (id + nomi runner) di un mercato "punteggio" per i candidati
+        mancanti; una sola chiamata per lotto. Le QUOTE arrivano poi dallo stream
+        (o dal poll REST di fallback) come per il MATCH_ODDS."""
         from betfairlightweight import filters
 
         # cache solo per eventi ancora noti (memoria stabile nei run lunghi)
-        for eid in [e for e in self.cs_markets if e not in self.events]:
-            self.cs_markets.pop(eid, None)
-        missing = [e for e in candidates if e not in self.cs_markets]
+        for eid in [e for e in store if e not in self.events]:
+            store.pop(eid, None)
+        missing = [e for e in candidates if e not in store]
         if not missing:
             return  # nessuna chiamata: il throttle non parte
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
-                event_ids=missing, market_type_codes=["CORRECT_SCORE"],
+                event_ids=missing, market_type_codes=[market_type],
             ),
             market_projection=["EVENT", "RUNNER_DESCRIPTION"],
             max_results=50,
@@ -499,17 +523,16 @@ class Scanner:
             market_id = getattr(c, "market_id", None)
             if not event_id or not market_id:
                 continue
-            self.cs_markets[str(event_id)] = {
+            store[str(event_id)] = {
                 "market_id": market_id,
                 "names": {
                     getattr(r, "selection_id", None): getattr(r, "runner_name", None)
                     for r in (getattr(c, "runners", None) or [])
                 },
             }
-        # i mercati CS entrano nell'indice → da qui in poi vanno sullo stream
+        # i mercati entrano nell'indice → da qui in poi vanno sullo stream
         # (refresh_stream_set) o nel poll REST di fallback come il MATCH_ODDS
         self._rebuild_market_index()
-        self.cs_catalogue_ts = time.monotonic()
 
 
     # ------------------------------------------------------------- pubblicazione
@@ -544,6 +567,7 @@ class Scanner:
                         "red_away": ev.get("red_away"),
                         "pre_ko": ev.get("pre_ko"),
                         "cs": ev.get("cs"),
+                        "ht": ev.get("ht"),      # HALF TIME SCORE completo (gamba 1T Omega v2)
                         # disponibilità video/animazione Betfair (IPS): i pulsanti
                         # 📺/📊 della UI la mostrano come fa il sito
                         "media": ev.get("media"),
@@ -732,6 +756,10 @@ class Scanner:
             if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.cs_catalogue_ts = now_mono
                 self.refresh_cs_catalogue(candidates)
+            ht_cands = self.ht_candidates()
+            if ht_cands and now_mono - self.ht_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
+                self.ht_catalogue_ts = now_mono
+                self.refresh_ht_catalogue(ht_cands)
 
             written, deleted = self.publish(now)
             if written or deleted:

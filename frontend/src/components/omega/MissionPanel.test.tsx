@@ -16,6 +16,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
     return { ...actual, useNavigate: () => mockNavigate };
 });
 
+vi.mock('@/lib/useScanLiveFeed', () => ({ useScanLiveFeed: () => ({}), liveScoreLabel: () => null }));
 vi.mock('@/lib/omega', () => ({
     requestManual: vi.fn(),
     fetchOmegaEvents: vi.fn(async () => []),

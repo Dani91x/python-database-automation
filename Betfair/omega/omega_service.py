@@ -12,10 +12,12 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
+from Betfair.omega import omega_model as M
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
 from Betfair.stream.scores import scan_feed as _scan_feed
@@ -169,6 +171,255 @@ def _feed_minute(market, event_id: str) -> Optional[int]:
         return None
     minute = payload.get("minute")
     return int(minute) if isinstance(minute, (int, float)) else None
+
+
+# ---------------------------------------------------------------------------
+# OMEGA v2 (09/09 sera): stato live, λ pre-match e selezione PER MODELLO.
+# Tutto legge dal feed unico dello scanner quando il market è quello reale;
+# con i fake dei test resta il percorso score_lookup/REST.
+# ---------------------------------------------------------------------------
+_LAMBDA_CACHE: dict[str, tuple] = {}     # event_id → (λh, λa, league_id, source): i λ pre-match non cambiano
+_LAMBDA_CACHE_MAX = 2000
+
+
+def _feed_state(market, event_id: str) -> Optional[dict]:
+    """Payload live del feed (None se market fake, evento assente o stantio)."""
+    if market is not _real_market:
+        return None
+    payload, _ = _feed_row(str(event_id))
+    return payload if isinstance(payload, dict) else None
+
+
+def _live_state_for(market, ev, score_lookup, now: datetime
+                    ) -> "tuple[Optional[M.LiveState], Optional[str], Optional[str]]":
+    """(stato live, matchStatus IPS, 'H-A'): dal feed (minuto, punteggio, rossi,
+    stato IPS) oppure, senza feed, dallo score_lookup se fresco. (None, None, None)
+    se il punteggio vero non c'è: senza punteggio non si entra mai (I6)."""
+    payload = _feed_state(market, ev.event_id)
+    if payload is not None and payload.get("minute") is not None \
+            and payload.get("score_home") is not None and payload.get("score_away") is not None:
+        raw = payload.get("score_raw")
+        status = raw.get("matchStatus") if isinstance(raw, dict) else None
+        st = M.LiveState(int(payload["minute"]), int(payload["score_home"]), int(payload["score_away"]),
+                         int(payload.get("red_home") or 0), int(payload.get("red_away") or 0))
+        return st, status, f"{st.score_home}-{st.score_away}"
+    if score_lookup is not None:
+        try:
+            ls = score_lookup(ev.event_id)
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[omega] score_lookup KO %s: %s", ev.event_id, str(ex)[:120])
+            ls = None
+        if ls is not None and ls.minute is not None and ls.score_home is not None \
+                and ls.score_away is not None and _is_fresh(ls.updated_at, now):
+            st = M.LiveState(int(ls.minute), int(ls.score_home), int(ls.score_away))
+            return st, None, f"{st.score_home}-{st.score_away}"
+    return None, None, None
+
+
+def _entry_marks(market, event_id: str, now: datetime) -> dict:
+    """minute_at_entry/score_at_entry dal feed per i trade MANUALI (vuoto se ignoti)."""
+    st, _, score_str = _live_state_for(market, SimpleNamespace(event_id=str(event_id)), None, now)
+    return {} if st is None else {"minute_at_entry": st.minute, "score_at_entry": score_str}
+
+
+def _prematch_lambdas(db, event_id: str, payload: Optional[dict]
+                      ) -> Optional["tuple[float, float, Optional[int], str]"]:
+    """(λ_casa, λ_trasferta, league_id, fonte). Catena: fixture abbinata del DB
+    (tactical_engine / Poisson xG-DC) → quote 1X2 pre-KO congelate dallo scanner.
+    None = nessun modello possibile (si salta: mai a occhi chiusi)."""
+    cached = _LAMBDA_CACHE.get(event_id)
+    if cached is not None:
+        return cached
+    league_id = None
+    out = None
+    row = None
+    try:
+        get_event = getattr(db, "get_event", None)
+        row = get_event(event_id) if callable(get_event) else None
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega] get_event KO %s: %s", event_id, str(ex)[:100])
+    if row:
+        league_id = row.get("league_id")
+        fid = row.get("fixture_id")
+        if fid is not None:
+            try:
+                from Betfair.stream.db import get_fixture_prematch_lambdas
+                lam = get_fixture_prematch_lambdas(int(fid))
+            except Exception as ex:  # noqa: BLE001
+                logger.debug("[omega] λ fixture KO %s: %s", event_id, str(ex)[:100])
+                lam = None
+            if lam and lam[0] and lam[1]:
+                out = (float(lam[0]), float(lam[1]),
+                       lam[2] if len(lam) > 2 and lam[2] is not None else league_id, "fixture")
+    if out is None and isinstance(payload, dict):
+        lam2 = M.lambdas_from_pre_ko(payload.get("pre_ko"))
+        if lam2:
+            out = (lam2[0], lam2[1], league_id, "pre_ko_odds")
+    if out is not None:
+        if len(_LAMBDA_CACHE) >= _LAMBDA_CACHE_MAX:
+            _LAMBDA_CACHE.clear()
+        _LAMBDA_CACHE[event_id] = out
+    return out
+
+
+def _rho_for(league_id: Optional[int]) -> float:
+    try:
+        from Betfair.stream.engine.live_engine_pro import rho_for_league
+        return float(rho_for_league(league_id))
+    except Exception:  # noqa: BLE001 - file di calibrazione assente → default del motore
+        return M.DEFAULT_RHO
+
+
+def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state: "M.LiveState",
+                  half: bool, params: dict, size_needed: float
+                  ) -> "tuple[Optional[M.ModelSelection], Optional[dict], Optional[str]]":
+    """(selezione del modello, blocco audit, motivo dello skip)."""
+    lam = _prematch_lambdas(db, event_id, payload)
+    if lam is None:
+        return None, None, "no_model_lambdas"
+    lh, la, league_id, source = lam
+    probs = M.score_probs(lh_pre=lh, la_pre=la, rho=_rho_for(league_id), state=state,
+                          league_id=league_id, half=half)
+    sel = M.select_by_model(
+        snapshot.runners, probs, state=state,
+        price_min=params["price_min"], price_max=params["price_max"],
+        min_liquidity=params["min_lay_liquidity"],
+        p_max=params["model_p_max_pct"] / 100.0, size_needed=size_needed,
+        min_goal_distance=params["model_min_goal_distance"],
+    )
+    if sel is None:
+        return None, None, "no_runner_by_model"
+    return sel, M.audit_block(sel, lh_pre=lh, la_pre=la, source=source, state=state, half=half), None
+
+
+def _leg_market(market, ev, market_type: str, payload: Optional[dict]):
+    """(mercato, snapshot) della gamba: blocco `cs`/`ht` del feed (stream) se c'è,
+    altrimenti catalogo+book REST. None se il mercato non esiste/è vuoto."""
+    if payload is not None:
+        block = payload.get("cs" if market_type == "CORRECT_SCORE" else "ht")
+        if block:
+            pair = cs_snapshot_from_payload(ev.event_id, {
+                "cs": block, "event_name": payload.get("event_name"), "open_date": payload.get("open_date")})
+            if pair is not None:
+                return pair
+    cs = market.get_event_market_by_type(ev.event_id, getattr(ev, "name", "") or "", market_type)
+    if cs is None:
+        return None
+    snap = market.read_market(cs)
+    return None if snap is None else (cs, snap)
+
+
+_LEGS = (  # gamba, mercato Betfair, orizzonte primo tempo, fase in cui si entra
+    ("ht_cs", "HALF_TIME_SCORE", True, "1t", "ht_entry_min", "ht_entry_max"),
+    ("ft_cs", "CORRECT_SCORE", False, "2t", "ft_entry_min", "ft_entry_max"),
+)
+
+
+def scan_and_place_legs(
+    *, control: dict[str, Any], params: dict[str, Any], events: list[Any],
+    traded_ids: set[str], traded_legs: "set[tuple[str, str]]", aggregates: dict[str, float],
+    market, db, now: datetime, score_lookup: Any = None,
+) -> int:
+    """OMEGA v2: per OGNI partita due gambe — 1T sul HALF TIME SCORE (si regola al
+    45′) e 2T sul CORRECT SCORE (al 90′) — sul risultato con la probabilità di
+    MODELLO più bassa (omega_model). Target per gamba = metà del target partita
+    (G−R)/M: una perdita alza R e si SPALMA sulle partite residue. Ritorna n. piazzati."""
+    goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
+    mode = control.get("mode", "paper")
+    realized = float(aggregates.get("realized_today", aggregates.get("realized_profit", 0.0)))
+    traded_count = int(aggregates.get("matches_traded_today", aggregates.get("matches_traded", 0)))
+    if params["stop_on_goal"] and realized >= goal:
+        return 0
+    if params["daily_loss_cap"] and params["daily_loss_cap"] > 0 and realized <= -params["daily_loss_cap"]:
+        db.log("loss_stop", {"realized": round(realized, 2), "cap": params["daily_loss_cap"]})
+        return 0
+    commission = params["commission_pct"] / 100.0
+    placed = 0
+    for ev in events:
+        if ev.event_id in traded_ids:
+            continue
+        if params["max_events"] and traded_count >= params["max_events"]:
+            break
+        if ev.open_date is not None:   # pre-filtro orologio, largo (recuperi/KO ritardati)
+            cm = E.minute_from_clock(ev.open_date, now)
+            if cm < params["ht_entry_min"] - 25 or cm > params["ft_entry_max"] + 25:
+                continue
+        state, status, score_str = _live_state_for(market, ev, score_lookup, now)
+        if state is None:
+            continue
+        phase = E.mission_phase(status=status, minute=state.minute, kickoff=ev.open_date, now=now)
+        payload = _feed_state(market, ev.event_id)
+        for leg, mtype, half, leg_phase, k_min, k_max in _LEGS:
+            if phase != leg_phase or (ev.event_id, leg) in traded_legs:
+                continue
+            if not (params[k_min] <= state.minute <= params[k_max]):
+                continue
+            pair = _leg_market(market, ev, mtype, payload)
+            if pair is None:
+                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": "no_market"})
+                continue
+            cs, snapshot = pair
+            if snapshot.closed or not snapshot.inplay:
+                continue
+            m_rem = matches_remaining(events, traded_ids, now=now, entry_minute_max=params["ft_entry_max"],
+                                      max_events=params["max_events"], traded_count=traded_count)
+            target = M.leg_target(E.dynamic_target(goal, realized, m_rem), leg,
+                                  ht_done=(ev.event_id, "ht_cs") in traded_legs)
+            if target <= 0:
+                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": "target_zero_goal_reached"})
+                continue
+            size_needed = E.lay_size_from_target(target, commission=commission, min_stake=params["min_stake"])
+            sel, audit, why = _model_select(db=db, event_id=ev.event_id, payload=payload, snapshot=snapshot,
+                                            state=state, half=half, params=params, size_needed=size_needed)
+            if sel is None:
+                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": why,
+                                "minute": state.minute, "score": score_str})
+                continue
+            did = _size_and_place(
+                ev=ev, cs=cs, sel=sel.as_selection(), snapshot=snapshot, target=target,
+                minute=state.minute, score_str=score_str, mode=mode, commission=commission,
+                params=params, aggregates=aggregates, market=market, db=db, now=now,
+                phase=leg, model=audit,
+            )
+            placed += did
+            if did:
+                other = "ft_cs" if leg == "ht_cs" else "ht_cs"
+                if (ev.event_id, other) not in traded_legs:
+                    traded_count += 1          # la partita conta una volta sola
+                traded_legs.add((ev.event_id, leg))
+    return placed
+
+
+def _size_and_place(*, ev, cs, sel, snapshot, target, minute, score_str, mode, commission,
+                    params, aggregates, market, db, now, phase=None, model=None) -> int:
+    """Sizing dal target (I2), cap liability/liquidità (mai fill parziali: meglio
+    un lay più piccolo ma COMPLETO), cap esposizione aperta, poi reserve-first. 0/1.
+    ``requested_size`` = size PRIMA del cap di liquidità (audit target vs effettivo, §6)."""
+    size = E.lay_size_from_target(target, commission=commission, min_stake=params["min_stake"])
+    size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
+    requested_size = size
+    if sel.lay_size_available and size > sel.lay_size_available:
+        size = round(sel.lay_size_available, 2)
+        db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
+                                "available": sel.lay_size_available, "size": size})
+    if size < params["min_stake"]:
+        db.log("skip", {"event_id": ev.event_id, "reason": "insufficient_liquidity",
+                        "avail": sel.lay_size_available})
+        return 0
+    liability = E.liability_from_lay(size, sel.price)
+    if params["max_open_liability"] and params["max_open_liability"] > 0:
+        if aggregates.get("open_liability", 0.0) + liability > params["max_open_liability"]:
+            db.log("skip", {"event_id": ev.event_id, "reason": "max_open_liability"})
+            return 0
+    did = _place_one(
+        ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size, price=sel.price,
+        target=target, minute=minute, score_str=score_str, mode=mode,
+        commission=commission, market=market, db=db, now=now,
+        requested_size=requested_size, params=params, phase=phase, model=model,
+    )
+    if did:   # liability aperta stimata per il cap nello stesso ciclo
+        aggregates["open_liability"] = aggregates.get("open_liability", 0.0) + liability
+    return did
 
 
 def estimate_minute(
@@ -346,52 +597,22 @@ def scan_and_place(
         if target <= 0:
             db.log("skip", {"event_id": ev.event_id, "reason": "target_zero_goal_reached"})
             continue
-        size = E.lay_size_from_target(
-            target, commission=commission, min_stake=params["min_stake"]
-        )
-        size = E.apply_liability_cap(size, sel.price, params["max_liability_per_match"])
-        # cap alla LIQUIDITÀ disponibile al best lay: evita fill parziali (che
-        # lascerebbero esposizione reale non tracciata / cap elusi). Meglio un lay
-        # più piccolo ma COMPLETO che uno parziale. §6: la riduzione va LOGGATA
-        # (requested_size = size PRIMA del taglio, per audit target vs effettivo).
-        requested_size = size
-        if sel.lay_size_available and size > sel.lay_size_available:
-            size = round(sel.lay_size_available, 2)
-            db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
-                                    "available": sel.lay_size_available, "size": size})
-        if size < params["min_stake"]:
-            db.log("skip", {"event_id": ev.event_id, "reason": "insufficient_liquidity",
-                            "avail": sel.lay_size_available})
-            continue
-        liability = E.liability_from_lay(size, sel.price)
-
-        # cap liability aperta totale (default OFF)
-        if params["max_open_liability"] and params["max_open_liability"] > 0:
-            if aggregates.get("open_liability", 0.0) + liability > params["max_open_liability"]:
-                db.log("skip", {"event_id": ev.event_id, "reason": "max_open_liability"})
-                continue
-
-        # FIX review: catturare l'esito DELLA SINGOLA chiamata (non il totale
-        # cumulato): altrimenti dopo il 1° piazzamento ogni evento successivo del
-        # ciclo verrebbe erroneamente contato come piazzato (traded_ids/liability).
-        did_place = _place_one(
-            ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size, price=sel.price,
-            target=target, minute=minute, score_str=score_str, mode=mode,
-            commission=commission, market=market, db=db, now=now,
-            requested_size=requested_size, params=params,
+        did_place = _size_and_place(
+            ev=ev, cs=cs, sel=sel, snapshot=snapshot, target=target, minute=minute,
+            score_str=score_str, mode=mode, commission=commission, params=params,
+            aggregates=aggregates, market=market, db=db, now=now,
         )
         placed += did_place
         if did_place:
             traded_ids.add(ev.event_id)
             traded_count += 1
-            # aggiorna liability aperta stimata per il cap nello stesso ciclo
-            aggregates["open_liability"] = aggregates.get("open_liability", 0.0) + liability
     return placed
 
 
 def _confirm_open_trade(
     db, trade_id: int, *, event_id: str, price: float, size: float,
     liability: float, bet_id: Optional[str], meta: dict, mode: str,
+    extra_meta: Optional[dict] = None,
 ) -> None:
     """Conferma la riga a 'open' in modo ROBUSTO (I3/I8). Se l'update DB fallisce
     DOPO un ordine reale già piazzato, l'ordine è LIVE ma la riga resterebbe
@@ -402,7 +623,8 @@ def _confirm_open_trade(
     for _ in range(3):
         try:
             db.update_trade(trade_id, status="open", price=price, size=size,
-                            liability=liability, bet_id=bet_id, meta=dict(meta or {}))
+                            liability=liability, bet_id=bet_id,
+                            meta={**(extra_meta or {}), **dict(meta or {})})
             return
         except Exception as ex:  # noqa: BLE001
             last_err = ex
@@ -426,9 +648,11 @@ def _confirm_open_trade(
 def _place_one(
     *, ev, cs, sel, snapshot, size, price, target, minute, score_str, mode,
     commission, market, db, now, requested_size: Optional[float] = None,
-    params: Optional[dict[str, Any]] = None,
+    params: Optional[dict[str, Any]] = None, phase: Optional[str] = None,
+    model: Optional[dict[str, Any]] = None,
 ) -> int:
     """Piazza il lay con pattern RESERVE-FIRST (I1/I3). 0/1 piazzati.
+    ``phase`` = gamba v2 ('ht_cs'|'ft_cs'), ``model`` = audit del modello (in meta).
 
     1) RISERVA una riga 'pending' → l'unique index su event_id fa da lock (impedisce
        il doppio lay reale anche cross-processo e oltre i 60s di de-dup Betfair).
@@ -463,6 +687,10 @@ def _place_one(
         "meta": {"phase": "reserved",
                  "requested_size": requested_size if requested_size is not None else size},
     }
+    if phase:
+        reserve["phase"] = phase
+    if model:
+        reserve["meta"]["model"] = model
 
     # 1) RISERVA (il conflitto su event_id = già riservato/piazzato → skip pulito, I1)
     try:
@@ -488,7 +716,7 @@ def _place_one(
                 db=db, trade_id=trade_id, event_id=ev.event_id,
                 market_id=cs.market_id, selection_id=sel.selection_id, side="lay",
                 price=price, size=size,
-                base_meta={"requested_size": req_size}, now=now)
+                base_meta={"requested_size": req_size, **({"model": model} if model else {})}, now=now)
             if rid:
                 return 1  # riserva in attesa del fill flumine (mai posizioni nude: poll di ciclo)
             gate_reason = "enqueue_failed"
@@ -546,8 +774,7 @@ def _place_one(
         bet_id = res.bet_id
 
     # 3) CONFERMA → 'open' (robusta: un ordine LIVE non deve mai restare non tracciato)
-    _confirm_open_trade(
-        db, trade_id, event_id=ev.event_id, price=final_price, size=final_size,
+    _confirm_open_trade(db, trade_id, extra_meta={"model": model} if model else None, event_id=ev.event_id, price=final_price, size=final_size,
         liability=E.liability_from_lay(final_size, final_price), bet_id=bet_id, meta=meta, mode=mode,
     )
     db.log("place", {
@@ -1612,6 +1839,7 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         "pnl": 0.0,
         "meta": {"phase": "reserved", "manual": True},
     }
+    reserve.update(_entry_marks(market, event_id, now))
     try:
         trade_id = db.insert_trade(reserve)
     except Exception as ex:  # noqa: BLE001
@@ -1757,17 +1985,41 @@ def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
     ``db`` (opzionale) abilita il blocco ``advisor`` (CONSULENTE DATI): segnali
     INFORMATIVI best-effort — Poisson interno, frequenza lega, H2H — che NON
     toccano mai id/prezzi e NON bloccano mai la proposta (errore -> None)."""
-    feed_cs = _cs_from_feed(market, str(mission["event_id"])) if market_type == "CORRECT_SCORE" else None
-    if feed_cs is not None:
-        cs, snap = feed_cs   # stream dello scanner: quote al secondo
-    else:
-        cs = market.get_event_market_by_type(
-            mission["event_id"], mission.get("event_name") or "", market_type)
-        if cs is None:
-            return None
-        snap = market.read_market(cs)
-    if snap is None or snap.closed:
+    event_id = str(mission["event_id"])
+    ev_stub = SimpleNamespace(event_id=event_id, name=mission.get("event_name") or "",
+                              open_date=_parse_iso_dt(mission.get("kickoff")))
+    payload = _feed_state(market, event_id)
+    pair = _leg_market(market, ev_stub, market_type, payload)   # feed (HT e FT) → REST
+    if pair is None:
         return None
+    cs, snap = pair
+    if snap.closed:
+        return None
+    # OMEGA v2: PRIMA il modello (probabilità condizionata allo stato live);
+    # il percorso "quota più alta" resta solo come fallback senza modello.
+    audit = None
+    state, _, _ = _live_state_for(market, ev_stub, None, now)
+    if state is None and min_score is not None and mission.get("minute") is not None:
+        state = M.LiveState(int(mission["minute"]), int(min_score[0]), int(min_score[1]))
+    if state is not None and db is not None:
+        msel, audit, _why = _model_select(db=db, event_id=event_id, payload=payload, snapshot=snap,
+                                          state=state, half=(market_type == "HALF_TIME_SCORE"),
+                                          params=params, size_needed=0.0)
+        if msel is not None:
+            return {
+                "market_id": cs.market_id,
+                "market_name": _MISSION_MARKET_LABEL.get(market_type, market_type),
+                "market_type": market_type,
+                "selection_id": msel.selection_id,
+                "runner_name": msel.name,
+                "lay_price": msel.price,
+                "lay_size": msel.lay_size_available,
+                "model": audit,
+                "advisor": omega_advisor.advisor_for_suggestion(
+                    mission=mission, market_type=market_type, runner_name=msel.name,
+                    db=db, now=now),
+                "updated_at": now.isoformat(),
+            }
     runners = snap.runners
     if min_score is not None:
         mh, ma = int(min_score[0]), int(min_score[1])
@@ -2103,11 +2355,22 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
                 "manual": n_manual, "missions": n_missions}
     traded_ids = traded_ids | mission_ids
 
-    # 3) scan + place
-    n_placed = scan_and_place(
-        control=control, params=params, events=events, traded_ids=traded_ids,
-        aggregates=agg, market=market, db=db, now=now, score_lookup=score_lookup,
-    )
+    # 3) scan + place — v2 "legs" (2 gambe/partita, selezione per modello) di
+    #    default; "single" = motore v1 (una gamba CS, quota più alta) come kill-switch
+    if str(params.get("engine", "legs")) == "legs":
+        legs_fn = getattr(db, "traded_legs", None)
+        traded_legs = set(legs_fn()) if callable(legs_fn) else {
+            (e, p) for e in db.traded_event_ids() for p in ("ht_cs", "ft_cs")}
+        n_placed = scan_and_place_legs(
+            control=control, params=params, events=events, traded_ids=set(mission_ids),
+            traded_legs=traded_legs, aggregates=agg, market=market, db=db, now=now,
+            score_lookup=score_lookup,
+        )
+    else:
+        n_placed = scan_and_place(
+            control=control, params=params, events=events, traded_ids=traded_ids,
+            aggregates=agg, market=market, db=db, now=now, score_lookup=score_lookup,
+        )
 
     # 4) heartbeat + stats per la dashboard (obiettivo/target = GIORNATA operativa;
     #    realized_profit resta il cumulato storico per trasparenza)
@@ -2117,7 +2380,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     traded_today = int(agg2.get("matches_traded_today", agg2.get("matches_traded", 0)))
     m_rem = matches_remaining(
         events, db.traded_event_ids(), now=now,
-        entry_minute_max=params["entry_minute_max"],
+        entry_minute_max=params["ft_entry_max"] if str(params.get("engine", "legs")) == "legs" else params["entry_minute_max"],
         max_events=params["max_events"], traded_count=traded_today,
     )
     stats = {

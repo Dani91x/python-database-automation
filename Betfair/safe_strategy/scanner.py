@@ -28,6 +28,9 @@ HOT_MINUTE_FROM = 40
 # selezioni): è il feed unico anche per Omega (audit 09/09 sera).
 CS_MINUTE_FROM = 30
 CS_MAX_GOALS_SIDE = 3
+# HALF TIME SCORE (Omega v2, gamba 1T): sotto quote dal 15' finché il 1T è in corso
+HT_MINUTE_FROM = 15
+HT_MINUTE_TO = 45
 # cattura pre-KO: da KO-15' fino al kickoff
 PRE_KO_WINDOW_SEC = 15 * 60
 
@@ -223,6 +226,12 @@ def payload_signature(payload: Dict[str, Any]) -> str:
     return hashlib.md5(canon.encode("utf-8")).hexdigest()
 
 
+def is_ht_candidate(minute: Optional[int]) -> bool:
+    """Evento per cui vale la pena tenere sotto quote il HALF TIME SCORE:
+    primo tempo in corso, dal 15' al 45' (poi il mercato si regola)."""
+    return minute is not None and HT_MINUTE_FROM <= minute < HT_MINUTE_TO
+
+
 # campi "critici": un loro cambio va pubblicato SUBITO, saltando il throttle
 # per-evento pensato per le sole quote (gol, minuto, rossi, stato mercato,
 # in-play, set/game; per il CS lo stato del mercato). Le quote da sole aspettano.
@@ -236,6 +245,8 @@ def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
     if sport == "calcio":
         cs = payload.get("cs") or {}
         crit["cs_status"] = cs.get("status") if isinstance(cs, dict) else None
+        ht = payload.get("ht") or {}
+        crit["ht_status"] = ht.get("status") if isinstance(ht, dict) else None
     # lo stato IPS grezzo è il feed dei runner (punti tennis, corner/cartellini
     # calcio): ogni suo cambio va pubblicato subito, come un gol
     crit["score_raw"] = payload.get("score_raw")

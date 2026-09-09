@@ -78,6 +78,24 @@ def traded_event_ids() -> set[str]:
     return {str(r["event_id"]) for r in (res.data or []) if r.get("event_id")}
 
 
+def traded_legs() -> set[tuple[str, str]]:
+    """(event_id, gamba) già riservati/piazzati (v2, idempotenza per gamba).
+    I trade senza gamba (motore v1, o manuali senza fase) valgono per ENTRAMBE:
+    mai una seconda esposizione automatica su un evento già in posizione."""
+    res = _sb().table("omega_trades").select("event_id,phase").neq("status", "error").execute()
+    out: set[tuple[str, str]] = set()
+    for r in res.data or []:
+        eid = str(r.get("event_id") or "")
+        if not eid:
+            continue
+        ph = r.get("phase")
+        if ph in ("ht_cs", "ft_cs"):
+            out.add((eid, ph))
+        elif ph is None:
+            out.update({(eid, "ht_cs"), (eid, "ft_cs")})
+    return out
+
+
 def open_trades() -> list[dict[str, Any]]:
     return list_trades(status="open")
 

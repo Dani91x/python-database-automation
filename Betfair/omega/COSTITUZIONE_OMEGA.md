@@ -455,3 +455,41 @@ Costituzione: nessuna versione di Omega può rimuoverla o mascherare il rischio.
 ---
 
 _«Omega piazza una scommessa e aspetta. La disciplina è nel non fare altro.»_
+
+## 11. OMEGA v2 — due gambe per partita, selezione PER MODELLO (2026-09-09 sera)
+
+**Decisione dell'utente.** Per OGNI partita in programma due operazioni: una nel
+primo tempo e una nel secondo, sul risultato esatto con la **probabilità più bassa
+di verificarsi secondo i nostri dati** — mai "la quota più alta", che da sola non
+vuol dire nulla. Il target per partita è minuscolo e cala al crescere delle partite;
+una perdita si **spalma** sulle partite residue (il target residuo sale).
+
+**Gambe.** `ht_cs` = HALF TIME SCORE, ingresso nel 1T tra `ht_entry_min` e
+`ht_entry_max` (default 20′–40′), si regola al 45′. `ft_cs` = CORRECT SCORE, ingresso
+nel 2T tra `ft_entry_min` e `ft_entry_max` (default 50′–80′), si regola al 90′.
+Fase e minuto vengono dal FEED unico dello scanner (stato IPS + minuto reale), mai
+dall'orologio. Target di gamba = metà di (G−R)/M; l'intero se la 1T è mancata
+(`omega_model.leg_target`). Idempotenza per gamba: unique `(event_id, phase)`
+sull'automatico (`migrations/omega_v2.sql`); i trade v1 senza gamba chiudono l'evento.
+
+**Modello (`omega_model.py`, puro).** λ pre-match per squadra dalla fixture abbinata
+(`fixture_predictions`, tactical_engine/Poisson xG-DC) o, in mancanza, dalle quote 1X2
+pre-KO congelate dallo scanner (devig + split). λ residui live da
+`live_engine.inplay_residual_rates` (CDF reale del tempo residuo per lega, stato di
+gioco, rossi). Griglia Poisson + Dixon-Coles (ρ per lega) sui gol residui traslata sul
+punteggio corrente; orizzonte 45′ per la gamba HT. Selezione: runner ACTIVE con lay in
+`[price_min, price_max]`, liquidità ≥ max(min, size necessaria), ≥ `model_min_goal_distance`
+gol dal punteggio corrente, `P_modello ≤ model_p_max_pct` e `P_modello < 1/quota`
+(il mercato lo sovraprezza): vince la P più bassa, poi il prezzo più basso. Senza λ
+non si entra mai ("no_model_lambdas"). Il blocco di audit (P modello, P implicita,
+λ, fonte, stato) è salvato in `trade.meta.model` e nelle suggestion delle missioni.
+
+**Motore.** `params.engine`: `legs` (default, v2) | `single` (v1, kill-switch).
+Missioni: stessa selezione per modello, HT e FT dal feed. UI: ogni trade mostra gamba,
+minuto/punteggio all'ingresso e minuto/punteggio LIVE dal feed.
+
+**Perché è solo migliorativo rispetto al v1.** Il v1 automatico non aveva né distanza
+minima dal punteggio né modello: il 09/09 ha layato il punteggio CORRENTE (0-3 @22 sul
+0-3, 1-0 @23 sull'1-0) — una perdita da 93,87 € su 16 trade. Il v2 esclude per
+costruzione punteggio corrente e adiacenti e chiede che il modello dia il risultato
+sotto la probabilità implicita.

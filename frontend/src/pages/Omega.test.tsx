@@ -16,6 +16,7 @@ vi.mock('@/components/omega/MissionPanel', () => ({
     default: () => <div data-testid="mission-panel-stub" />,
 }));
 
+vi.mock('@/lib/useScanLiveFeed', () => ({ useScanLiveFeed: () => ({}), liveScoreLabel: () => null }));
 vi.mock('@/lib/omega', () => ({
     fetchOmegaState: vi.fn(),
     fetchOmegaTrades: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('@/lib/omega', () => ({
     fetchOmegaMarket: vi.fn(async () => null),
     fetchManualRequests: vi.fn(async () => []),
     buildEquitySeries: () => [],
+    phaseLabel: (p: string | null | undefined) => (p === 'ht_cs' ? '1T' : p === 'ft_cs' ? '2T' : '—'),
     OMEGA_PARAM_DEFAULTS: {
         price_min: 20, price_max: 120, entry_minute_min: 30, entry_minute_max: 60,
         max_events: 0, commission_pct: 5, min_lay_liquidity: 5, min_stake: 0.5,
