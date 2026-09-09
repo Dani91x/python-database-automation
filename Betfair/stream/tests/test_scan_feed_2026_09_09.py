@@ -61,7 +61,8 @@ class _Fetch:
 
 def _provider(rows, clock=None):
     fetch = _Fetch(rows)
-    cache = sf.ScanRowCache(ttl_sec=1.0, fetch=fetch, clock=clock or (lambda: 0.0))
+    cache = sf.ScanRowCache(ttl_sec=1.0, fetch=fetch, clock=clock or (lambda: 0.0),
+                            fetch_status=lambda: None)
     direct = _Direct()
     return sf.ScanFeedScoreProvider(direct, cache=cache), direct, fetch
 
@@ -114,7 +115,7 @@ def test_una_select_per_ciclo_per_tutti_gli_eventi():
 def test_fetch_ko_non_solleva_e_usa_il_diretto():
     def boom(_ids):
         raise RuntimeError("db giù")
-    cache = sf.ScanRowCache(ttl_sec=1.0, fetch=boom, clock=lambda: 0.0)
+    cache = sf.ScanRowCache(ttl_sec=1.0, fetch=boom, clock=lambda: 0.0, fetch_status=lambda: None)
     direct = _Direct()
     prov = sf.ScanFeedScoreProvider(direct, cache=cache)
     assert prov.get_score("x").minute == 1
@@ -157,3 +158,20 @@ def test_board_payload_incompleto_va_al_fallback_rest():
     assert bw.row_from_scan_payload(_meta(), {"mo_market_id": "1.9", "odds": {"home": {"back": 1.5}}}) is None
     # senza odds
     assert bw.row_from_scan_payload(_meta(), {"mo_market_id": "1.9"}) is None
+
+
+def test_scanner_vivo_rende_valida_una_riga_non_riscritta():
+    """Write-on-change: con lo scanner VIVO una riga vecchia (0-0 fermo) è
+    l'ultimo stato, non un dato stantio; con lo scanner FERMO torna il fallback."""
+    old = {"event_id": "e1", "sport": "calcio", "updated_at": _iso(120), "payload": {"score_raw": _state(70, 0, 0)}}
+    assert sf.fresh_payload(old, 15.0) is None
+    assert sf.fresh_payload(old, 15.0, scanner_age_sec=8.0) == old["payload"]     # scanner vivo
+    assert sf.fresh_payload(old, 15.0, scanner_age_sec=90.0) is None              # scanner fermo
+    fetch = _Fetch([old])
+    alive = sf.ScanRowCache(ttl_sec=1.0, fetch=fetch, clock=lambda: 0.0,
+                            fetch_status=lambda: {"id": "scanner", "updated_at": _iso(5), "payload": {}})
+    dead = sf.ScanRowCache(ttl_sec=1.0, fetch=fetch, clock=lambda: 0.0,
+                           fetch_status=lambda: {"id": "scanner", "updated_at": _iso(600), "payload": {}})
+    assert alive.scanner_alive() is True and dead.scanner_alive() is False
+    assert sf.ScanFeedScoreProvider(_Direct(), cache=alive).get_score("e1").minute == 70
+    assert sf.ScanFeedScoreProvider(_Direct(), cache=dead).get_score("e1").minute == 1   # diretto

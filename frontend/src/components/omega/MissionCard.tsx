@@ -26,6 +26,7 @@ import {
     formatAdvisorParts, advisorTooltip,
     type MissionRow, type MissionLegKey, type MissionLeg, type MissionPhase,
 } from '@/lib/omegaMissions';
+import { csSelection, type CalcioScanPayload } from '@/lib/safeStrategyScan';
 
 // ------------------------------------------------------------------ helpers
 const PHASE_ORDER: MissionPhase[] = ['pre', '1t', 'ht', '2t', 'finita'];
@@ -58,8 +59,11 @@ function tradeBadgeCls(status: string): string {
     return TRADE_BADGE[status] ?? 'bg-orange-500/15 text-orange-300 border-orange-500/40';
 }
 
-// Bozza d'ordine: SNAPSHOT immutabile della suggestion al momento del click.
-// Il dialog conferma ESATTAMENTE questi id/prezzi (mai ricalcolati dopo).
+// Bozza d'ordine: SNAPSHOT immutabile di mercato/selezione/size al momento del
+// click. Il dialog conferma ESATTAMENTE questi id (mai rimappati). Il PREZZO
+// (09/09 sera) è quello LIVE del feed scanner al momento della CONFERMA quando
+// la selezione è nel feed (Correct Score in stream), altrimenti quello della
+// suggestion: mai un prezzo più vecchio di quello mostrato nel dialog.
 interface PlaceDraft {
     label: string;
     phase: 'ht_cs' | 'ft_cs' | 'scalp';
@@ -68,22 +72,25 @@ interface PlaceDraft {
     market_name: string | null;
     selection_id: number;
     runner_name: string | null;
+    /** prezzo della suggestion al click (riferimento se il feed non copre la selezione) */
     price: number;
     size: number;
 }
 
 // Rischio massimo dell'ordine: lay = size×(quota−1); back = size.
-function draftRisk(d: PlaceDraft): number {
-    return d.side === 'lay' ? d.size * Math.max(d.price - 1, 0) : d.size;
+function draftRisk(d: PlaceDraft, price: number): number {
+    return d.side === 'lay' ? d.size * Math.max(price - 1, 0) : d.size;
 }
 
 interface Props {
     mission: MissionRow;
     mode: OmegaMode;                 // dal toggle globale della pagina
     onChanged: () => void;           // ricarica dati dopo un'azione
+    /** payload live dello scanner per l'evento (punteggio 2s, CS in stream); null = assente */
+    live?: CalcioScanPayload | null;
 }
 
-export default function MissionCard({ mission, mode, onChanged }: Props) {
+export default function MissionCard({ mission, mode, onChanged, live = null }: Props) {
     const [busy, setBusy] = useState<string | null>(null);
     const [laySizeHt, setLaySizeHt] = useState(1);    // default €1 (editabile)
     const [laySizeFt, setLaySizeFt] = useState(1);
@@ -98,6 +105,21 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
     const phase = phaseIdx(mission.phase_now);
     const legs = mission.legs ?? {};
     const gap = missionGap(mission);
+
+    // QUOTA LIVE di una selezione lay dal feed scanner (solo mercato CORRECT_SCORE:
+    // è quello che lo scanner tiene in stream). null = feed assente per quella
+    // selezione → si usa il prezzo della suggestion.
+    const liveLay = (marketId: string | null | undefined, selectionId: number | null | undefined): { price: number; size: number } | null => {
+        if (!live?.cs || !marketId || selectionId == null) return null;
+        if (String(live.cs.market_id ?? '') !== String(marketId)) return null;
+        const sel = csSelection(live, Number(selectionId));
+        const price = toNum(sel?.lay);
+        if (!sel || !(price > 1)) return null;
+        return { price, size: toNum(sel.lay_size) };
+    };
+    // prezzo EFFETTIVO della bozza: live se disponibile, altrimenti quello al click
+    const draftPrice = (d: PlaceDraft): number =>
+        d.side === 'lay' ? (liveLay(d.market_id, d.selection_id)?.price ?? d.price) : d.price;
 
     // stato del BOT SCALPER (theta 1-tick) letto DIRETTO da scalper_control:
     // la RPC missioni espone solo pnl_locked del maker — qui servono i numeri
@@ -130,10 +152,15 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
         const price = draft.side === 'lay'
             ? toNum((current as { lay_price?: unknown } | null)?.lay_price)
             : toNum((current as { back_price?: unknown } | null)?.back_price);
+        // con il feed live la quota del dialog segue il mercato in tempo reale:
+        // un cambio della sola quota di suggestion NON invalida (sarebbe un
+        // dialog che si chiude da solo a ogni tick); mercato/selezione cambiati
+        // o suggestion sparita restano invalidanti
+        const hasLive = draft.side === 'lay' && liveLay(draft.market_id, draft.selection_id) !== null;
         const stale = !current
             || current.market_id !== draft.market_id
             || Number(current.selection_id) !== draft.selection_id
-            || price !== draft.price;
+            || (!hasLive && price !== draft.price);
         if (stale) {
             setDraft(null);
             toast.warning('Suggerimento aggiornato', {
@@ -148,6 +175,9 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
     // locale). Payload ESATTO dallo snapshot — money-critical.
     async function confirmPlace() {
         if (!draft) return;
+        // prezzo alla CONFERMA = quello mostrato nel dialog in quell'istante (live se
+        // il feed copre la selezione): mai un prezzo più vecchio di quello visto
+        const price = draftPrice(draft);
         setBusy('place');
         try {
             await requestManual('place', {
@@ -158,14 +188,14 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                 runner_name: draft.runner_name,
                 side: draft.side,
                 mode,
-                price: draft.price,
+                price,
                 size: draft.size,
                 phase: draft.phase,
             });
             // "richiesto": il servizio può ridurre la size alla liquidità reale
             // al momento dell'esecuzione — la size effettiva si vede sul trade.
             toast.success('Ordine RICHIESTO (in coda al servizio)', {
-                description: `${draft.side.toUpperCase()} ${draft.runner_name ?? '—'} @ ${draft.price.toFixed(2)} · €${draft.size.toFixed(2)} richiesti · ${mode.toUpperCase()} — la size effettiva può scendere alla liquidità disponibile`,
+                description: `${draft.side.toUpperCase()} ${draft.runner_name ?? '—'} @ ${price.toFixed(2)} · €${draft.size.toFixed(2)} richiesti · ${mode.toUpperCase()} — la size effettiva può scendere alla liquidità disponibile`,
             });
             setDraft(null);
             onChanged();
@@ -242,6 +272,9 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
         const leg = legs[legKey] ?? null;
         const price = toNum(sugg?.lay_price);
         const canPlace = !!sugg && price > 1 && size > 0;
+        // quota LIVE dal feed scanner (Correct Score in stream): quando c'è,
+        // è quella mostrata E quella che verrà confermata nel dialog
+        const lv = sugg ? liveLay(sugg.market_id, sugg.selection_id) : null;
         // CONSULENTE DATI: segnali informativi (Poisson/lega/H2H) del punteggio
         // proposto. SOLO display: mai usato nei payload degli ordini.
         const advisorParts = formatAdvisorParts(sugg?.advisor);
@@ -252,8 +285,11 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                     {sugg ? (
                         <>
                             <span className="text-sm font-bold text-rose-300">{sugg.runner_name ?? '—'}</span>
-                            <span className="text-sm tabular-nums">lay @ <b>{fmtQuote(sugg.lay_price)}</b></span>
-                            <span className="text-xs text-slate-400 tabular-nums">liq. €{toNum(sugg.lay_size).toFixed(0)}</span>
+                            <span className="text-sm tabular-nums" title={lv ? 'quota live dal feed scanner (stream Betfair)' : 'quota del ciclo del servizio'}>
+                                lay @ <b>{fmtQuote(lv ? lv.price : sugg.lay_price)}</b>
+                                {lv && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse align-middle" aria-hidden />}
+                            </span>
+                            <span className="text-xs text-slate-400 tabular-nums">liq. €{toNum(lv ? lv.size : sugg.lay_size).toFixed(0)}</span>
                             <span className="text-xs text-slate-500 truncate max-w-[180px]" title={sugg.market_name ?? ''}>{sugg.market_name ?? ''}</span>
                             <span className="ml-auto flex items-center gap-2">
                                 <input
@@ -458,10 +494,14 @@ export default function MissionCard({ mission, mode, onChanged }: Props) {
                                         {draft.market_name ? <> — {draft.market_name}</> : null}
                                     </span>
                                     <span className="block tabular-nums">
-                                        quota <b>{draft.price.toFixed(2)}</b> · importo <b>€{draft.size.toFixed(2)}</b>
+                                        quota <b>{draftPrice(draft).toFixed(2)}</b>
+                                        {draft.side === 'lay' && liveLay(draft.market_id, draft.selection_id) && (
+                                            <span className="text-emerald-300 text-xs"> (live)</span>
+                                        )}
+                                        {' '}· importo <b>€{draft.size.toFixed(2)}</b>
                                     </span>
                                     <span className={`block font-bold tabular-nums ${mode === 'live' ? 'text-red-300 text-xl' : 'text-orange-300'}`}>
-                                        Rischio massimo: €{draftRisk(draft).toFixed(2)}
+                                        Rischio massimo: €{draftRisk(draft, draftPrice(draft)).toFixed(2)}
                                     </span>
                                     {mode === 'live' && (
                                         <span className="block text-orange-300">Ordine REALE su Betfair: denaro vero.</span>

@@ -43,7 +43,7 @@ from typing import Any, Callable, List, Optional, Set
 logger = logging.getLogger("safe_strategy")
 
 _RECONNECT_BACKOFF = (2.0, 5.0, 10.0, 30.0)
-_RESUB_MIN_INTERVAL = 60.0
+_RESUB_MIN_INTERVAL = 30.0  # un CS nuovo (candidato) va sullo stream entro 30s
 _HEALTHY_MAX_AGE_SEC = 30.0
 _HEARTBEAT_MS = 5000
 _CONFLATE_MS = 1000

@@ -38,12 +38,14 @@ def test_split_event_name():
 
 
 def test_is_cs_candidate_soglia_aperta_e_gol():
-    # REGOLA 09/09: il minuto è una SOGLIA ("dal 40' in poi"), mai un tetto
+    # REGOLA 09/09: il minuto è una SOGLIA ("dal 30' in poi"), mai un tetto
     assert scanner.is_cs_candidate(49, 1, 0) is True
-    assert scanner.is_cs_candidate(39, 1, 0) is False    # troppo presto
+    assert scanner.is_cs_candidate(29, 1, 0) is False    # troppo presto
+    assert scanner.is_cs_candidate(30, 1, 0) is True     # Omega entra dal 30'
     assert scanner.is_cs_candidate(61, 1, 0) is True     # nessun tetto di minuto
     assert scanner.is_cs_candidate(89, 0, 0) is True
-    assert scanner.is_cs_candidate(49, 3, 0) is False    # troppi gol per lato
+    assert scanner.is_cs_candidate(49, 3, 0) is True     # 3-x è ancora una scoreline quotata
+    assert scanner.is_cs_candidate(49, 4, 0) is False    # troppi gol per lato
     assert scanner.is_cs_candidate(None, 1, 0) is False  # dati mancanti
     assert scanner.is_cs_candidate(49, None, 0) is False
 
@@ -130,7 +132,22 @@ def test_build_cs_block_riconosce_any_other():
     assert blk is not None
     assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": None, "lay_size": None}
     assert blk["any_other_away"] == {"back": 48.0, "lay": 50.0, "back_size": None, "lay_size": None}
+    assert blk["selections"] == []  # senza selection_id nessuna selezione completa
     assert scanner.build_cs_block(None, "OPEN", sels) is None
+
+
+def test_build_cs_block_completo_per_omega():
+    sels = [
+        {"selection_id": 1, "name": "0 - 0", "back": 3.0, "lay": 3.1, "back_size": 50.0, "lay_size": 20.0, "runner_status": "ACTIVE"},
+        {"selection_id": 2, "name": "3 - 0", "back": 90.0, "lay": 110.0, "back_size": 2.0, "lay_size": 7.5, "runner_status": "ACTIVE"},
+        {"selection_id": 3, "name": "Any Other Home Win", "back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0},
+    ]
+    blk = scanner.build_cs_block("1.23", "OPEN", sels, inplay=True, total_matched=1234.5)
+    assert blk["inplay"] is True and blk["total_matched"] == 1234.5
+    assert [s["selection_id"] for s in blk["selections"]] == [1, 2, 3]
+    assert blk["selections"][1] == {"selection_id": 2, "name": "3 - 0", "runner_status": "ACTIVE",
+                                    "back": 90.0, "lay": 110.0, "back_size": 2.0, "lay_size": 7.5}
+    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}
 
 
 class _Lvl:

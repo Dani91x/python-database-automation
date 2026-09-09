@@ -27,6 +27,57 @@ import {
 } from '@/lib/omegaMissions';
 import { leagueLogo, teamLogo } from '@/lib/sportsLogos';
 import MissionCard from '@/components/omega/MissionCard';
+import { fetchScanRows, subscribeScanRows, type CalcioScanPayload } from '@/lib/safeStrategyScan';
+
+/** Feed live dello scanner Safe Strategy per le partite in missione (09/09 sera):
+ *  punteggio/minuto (IPS 2s) e Correct Score completo (stream) arrivano via
+ *  Realtime, come nella sezione Safe Strategy — non più solo la fotografia
+ *  del ciclo del servizio (20s). Un canale, aggiornamenti coalizzati 400ms. */
+function useMissionLiveFeed(eventIds: string[]): Record<string, CalcioScanPayload> {
+    const [live, setLive] = useState<Record<string, CalcioScanPayload>>({});
+    const wanted = useRef<Set<string>>(new Set());
+    wanted.current = new Set(eventIds);
+    useEffect(() => {
+        let alive = true;
+        const pending = new Map<string, CalcioScanPayload | null>();
+        let timer: number | undefined;
+        const flush = () => {
+            timer = undefined;
+            if (!alive) return;
+            setLive((prev) => {
+                const next = { ...prev };
+                for (const [id, p] of pending) {
+                    if (p === null) delete next[id]; else next[id] = p;
+                }
+                pending.clear();
+                return next;
+            });
+        };
+        const schedule = () => { if (timer === undefined) timer = window.setTimeout(flush, 400); };
+        fetchScanRows()
+            .then((rows) => {
+                if (!alive) return;
+                const init: Record<string, CalcioScanPayload> = {};
+                for (const r of rows) {
+                    if (r.sport === 'calcio' && wanted.current.has(r.event_id)) init[r.event_id] = r.payload as CalcioScanPayload;
+                }
+                setLive(init);
+            })
+            .catch(() => { /* scanner/migrazione assenti: la scheda usa i dati del servizio */ });
+        const unsub = subscribeScanRows((ev) => {
+            if (ev.type === 'upsert') {
+                if (ev.row.sport !== 'calcio' || !wanted.current.has(ev.row.event_id)) return;
+                pending.set(ev.row.event_id, ev.row.payload as CalcioScanPayload);
+            } else {
+                pending.set(ev.eventId, null);
+            }
+            schedule();
+        });
+        return () => { alive = false; unsub(); if (timer !== undefined) clearTimeout(timer); };
+        // un solo canale per la vita del pannello: il set di eventi vive nella ref
+    }, []);
+    return live;
+}
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -442,10 +493,18 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         } finally { setBusy(null); }
     }
 
+    // ---- feed live (scanner) per le missioni attive -----------------------
+    const liveFeed = useMissionLiveFeed(missions.map((m) => m.event_id));
+
     // ---- righe lista -----------------------------------------------------
     function activeRow(m: MissionRow) {
         const phase = (m.phase_now ?? 'pre') as MissionPhase;
         const meta = PHASE_META[phase] ?? PHASE_META.pre;
+        // punteggio/minuto LIVE dal feed (2s) quando c'è, altrimenti quelli del servizio
+        const lp = liveFeed[m.event_id];
+        const liveMinute = lp?.minute ?? m.minute;
+        const liveHome = lp?.score_home ?? m.score_home;
+        const liveAway = lp?.score_away ?? m.score_away;
         const realized = missionRealized(m);
         const target = toNum(m.target);
         const pct = target > 0 ? Math.max(0, Math.min(100, (realized / target) * 100)) : 0;
@@ -487,13 +546,16 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">{dateLabel(m.kickoff)}</Badge>
                     )}
                     <Badge variant="outline" className={meta.cls}>{meta.label}</Badge>
-                    {phase !== 'pre' && phase !== 'finita' && m.minute != null && (
-                        <span className="text-xs text-slate-400 tabular-nums">{toNum(m.minute)}'</span>
+                    {phase !== 'pre' && phase !== 'finita' && liveMinute != null && (
+                        <span className="text-xs text-slate-400 tabular-nums">{toNum(liveMinute)}'</span>
                     )}
-                    {/* punteggio LIVE grande */}
-                    <span className="font-display font-black text-2xl tabular-nums tracking-tight">
-                        {phase === 'pre' ? timeLabel(m.kickoff) : `${toNum(m.score_home)} - ${toNum(m.score_away)}`}
+                    {/* punteggio LIVE grande (feed scanner se presente) */}
+                    <span className="font-display font-black text-2xl tabular-nums tracking-tight" title={lp ? 'punteggio dal feed live (2s)' : 'punteggio dal ciclo del servizio'}>
+                        {phase === 'pre' ? timeLabel(m.kickoff) : `${toNum(liveHome)} - ${toNum(liveAway)}`}
                     </span>
+                    {lp && phase !== 'pre' && phase !== 'finita' && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="feed live attivo" aria-hidden />
+                    )}
                     <RowActions
                         eventId={m.event_id}
                         eventName={m.event_name ?? m.event_id}
@@ -524,7 +586,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                 </div>
                 {expanded && (
                     <div className="px-3 pb-3">
-                        <MissionCard mission={m} mode={mode} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
+                        <MissionCard mission={m} mode={mode} live={lp ?? null} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
                     </div>
                 )}
             </div>

@@ -46,9 +46,27 @@ export interface CalcioScanPayload {
     cs: {
         market_id: string | null;
         status: string | null;
+        /** dal 09/09 sera: mercato CS COMPLETO (tutte le selezioni) per Omega */
+        inplay?: boolean | null;
+        total_matched?: number | null;
+        selections?: ScanCsSelection[];
         any_other_home: ScanOddsPair | null;
         any_other_away: ScanOddsPair | null;
     } | null;
+}
+
+/** Selezione del Correct Score nel feed (id/nome/prezzi/size/stato runner). */
+export interface ScanCsSelection extends ScanOddsPair {
+    selection_id: number;
+    name: string | null;
+    runner_status?: string | null;
+}
+
+/** Selezione CS live per selection_id dal payload (null se assente). */
+export function csSelection(p: CalcioScanPayload | null | undefined, selectionId: number): ScanCsSelection | null {
+    const sels = p?.cs?.selections;
+    if (!Array.isArray(sels)) return null;
+    return sels.find((s) => Number(s.selection_id) === Number(selectionId)) ?? null;
 }
 
 export interface TennisScanPayload {

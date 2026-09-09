@@ -180,10 +180,12 @@ def _collect_rows(api_client: Any) -> List[Dict[str, Any]]:
     metas = {m["market_id"]: m for m in _STATE["markets"]}
     # 1) prezzi dal feed dello scanner (una SELECT, cache condivisa del processo)
     by_event = {str(m["event_id"]): m for m in metas.values() if m.get("event_id") is not None}
-    scan_rows = shared_cache().rows_for(list(by_event.keys())) if by_event else {}
+    cache = shared_cache()
+    scan_rows = cache.rows_for(list(by_event.keys())) if by_event else {}
+    scanner_age = cache.scanner_age_sec() if scan_rows else None
     rows: Dict[str, Dict[str, Any]] = {}
     for eid, row in scan_rows.items():
-        payload = fresh_payload(row, _FEED_MAX_AGE_SEC)
+        payload = fresh_payload(row, _FEED_MAX_AGE_SEC, scanner_age_sec=scanner_age)
         meta = by_event.get(eid)
         if payload is None or meta is None:
             continue

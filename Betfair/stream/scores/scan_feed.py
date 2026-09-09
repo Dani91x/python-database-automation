@@ -32,6 +32,10 @@ from .betfair_inplay import BetfairInPlayProvider, parse_score_dict
 logger = logging.getLogger(__name__)
 
 SCAN_TABLE = "safe_strategy_scan"
+STATUS_TABLE = "safe_strategy_status"
+# heartbeat dello scanner più vecchio di così = scanner fermo: le righe non
+# sono più affidabili anche se presenti (write-on-change: nessuna riscrittura)
+SCANNER_ALIVE_MAX_AGE_SEC = 30.0
 # riga più vecchia di così = stantia (scanner fermo/lento): si torna alla chiamata
 # diretta. Lo scanner pubblica i cambi di punteggio SUBITO (fuori throttle) con
 # poll IPS a 3s: 15s è ampiamente sopra la cadenza normale.
@@ -70,15 +74,19 @@ class ScanRowCache:
         ttl_sec: float = DEFAULT_CACHE_TTL_SEC,
         fetch: Optional[Callable[[List[str]], List[Dict[str, Any]]]] = None,
         clock: Callable[[], float] = time.monotonic,
+        fetch_status: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
     ) -> None:
         self._ttl = max(0.0, float(ttl_sec))
         self._fetch = fetch or _fetch_rows
+        self._fetch_status_fn = fetch_status
         self._clock = clock
         self._lock = threading.Lock()
         self._rows: Dict[str, Dict[str, Any]] = {}
         self._wanted: Dict[str, float] = {}   # event_id → ultimo monotonic richiesto
         self._loaded_at = -1e9
         self._pending: Set[str] = set()       # richiesti dopo l'ultima SELECT
+        self._status_row: Optional[Dict[str, Any]] = None
+        self._status_loaded_at = -1e9
 
     def rows_for(self, event_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         now = self._clock()
@@ -107,6 +115,41 @@ class ScanRowCache:
                     logger.debug("[scan-feed] SELECT KO (fallback diretto): %s", str(e)[:120])
                     self._rows = {}
             return {str(e): self._rows[str(e)] for e in event_ids if str(e) in self._rows}
+
+    def scanner_age_sec(self) -> Optional[float]:
+        """Età del heartbeat dello scanner (None = mai visto / DB KO). Letto al
+        massimo ogni TTL: serve a dire se una riga NON riscritta di recente è
+        comunque valida (scanner vivo = write-on-change, la riga è l'ultimo stato)."""
+        now = self._clock()
+        with self._lock:
+            if now - self._status_loaded_at >= self._ttl:
+                self._status_loaded_at = now
+                try:
+                    self._status_row = (self._fetch_status_fn or _fetch_status)()
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("[scan-feed] status KO: %s", str(e)[:120])
+                    self._status_row = None
+            row = self._status_row
+        return row_age_sec(row) if row else None
+
+    def scanner_alive(self) -> bool:
+        age = self.scanner_age_sec()
+        return age is not None and age <= SCANNER_ALIVE_MAX_AGE_SEC
+
+    def payload_if_fresh(self, event_id: str, max_age_sec: float = DEFAULT_MAX_AGE_SEC) -> Optional[Dict[str, Any]]:
+        """Payload dell'evento se AFFIDABILE: riga riscritta entro max_age, oppure
+        scanner vivo (heartbeat fresco → la riga presente è l'ultimo stato)."""
+        row = self.rows_for([str(event_id)]).get(str(event_id))
+        return fresh_payload(row, max_age_sec, scanner_age_sec=self.scanner_age_sec())
+
+
+def _fetch_status() -> Optional[Dict[str, Any]]:
+    from db_client import get_supabase_client
+
+    sb = get_supabase_client()
+    res = sb.table(STATUS_TABLE).select("id,payload,updated_at").eq("id", "scanner").execute()
+    data = getattr(res, "data", None) or []
+    return data[0] if data else None
 
 
 def _fetch_rows(event_ids: List[str]) -> List[Dict[str, Any]]:
@@ -144,12 +187,21 @@ def row_age_sec(row: Dict[str, Any], now_epoch: Optional[float] = None) -> Optio
 
 def fresh_payload(
     row: Optional[Dict[str, Any]], max_age_sec: float, now_epoch: Optional[float] = None,
+    scanner_age_sec: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Payload della riga se FRESCA (età ≤ max_age), altrimenti None. PURA."""
+    """Payload della riga se AFFIDABILE, altrimenti None. PURA.
+
+    Affidabile = riga riscritta entro ``max_age_sec`` OPPURE scanner vivo
+    (``scanner_age_sec`` ≤ SCANNER_ALIVE_MAX_AGE_SEC): lo scanner scrive
+    write-on-change, quindi con lo scanner vivo una riga vecchia è semplicemente
+    un evento in cui nulla è cambiato (0-0 fermo), non un dato stantio."""
     if not row:
         return None
     age = row_age_sec(row, now_epoch)
-    if age is None or age > max_age_sec:
+    if age is None:
+        return None
+    alive = scanner_age_sec is not None and scanner_age_sec <= SCANNER_ALIVE_MAX_AGE_SEC
+    if age > max_age_sec and not alive:
         return None
     payload = row.get("payload")
     return payload if isinstance(payload, dict) else None
@@ -176,8 +228,7 @@ class ScanFeedScoreProvider:
 
     # ------------------------------------------------------------ lettura feed
     def fresh_payload(self, event_id: str) -> Optional[Dict[str, Any]]:
-        row = self._cache.rows_for([str(event_id)]).get(str(event_id))
-        return fresh_payload(row, self.max_age_sec)
+        return self._cache.payload_if_fresh(event_id, self.max_age_sec)
 
     def get_raw_state(self, event_id: str) -> Optional[Dict[str, Any]]:
         """``state`` IPS grezzo dell'evento dal feed (None = assente/stantio)."""

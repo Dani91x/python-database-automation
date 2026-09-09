@@ -20,10 +20,14 @@ from typing import Any, Dict, List, Optional
 # prima del 40' lo scanner rallenta per non sprecare peso API Betfair, dal 40'
 # in poi resta "caldo" fino al fischio finale.
 HOT_MINUTE_FROM = 40
-# candidati Correct Score (strategia Risultato Esatto: soglia default 48' con
-# margine per parametri utente e latenze; nessun tetto di minuto, solo di gol)
-CS_MINUTE_FROM = 40
-CS_MAX_GOALS_SIDE = 2
+# candidati Correct Score: dal 30' in poi (Omega entra dal 30', la Safe
+# Strategy R.E. dal 48') con al massimo 3 gol per lato (le scoreline esplicite
+# del mercato arrivano a 3-3: oltre, resta solo "Any Other" e nessuno lava).
+# Nessun tetto di minuto. Il CS dei candidati va sul POOL STREAM come il
+# MATCH_ODDS (quote al secondo) e viene pubblicato COMPLETO (tutte le
+# selezioni): è il feed unico anche per Omega (audit 09/09 sera).
+CS_MINUTE_FROM = 30
+CS_MAX_GOALS_SIDE = 3
 # cattura pre-KO: da KO-15' fino al kickoff
 PRE_KO_WINDOW_SEC = 15 * 60
 
@@ -126,8 +130,8 @@ def is_hot_minute(minute: Optional[int]) -> bool:
 
 
 def is_cs_candidate(minute: Optional[int], score_home: Optional[int], score_away: Optional[int]) -> bool:
-    """Evento per cui vale la pena interrogare il mercato Correct Score:
-    dal 40' in poi (soglia aperta, come la strategia) con max 2 gol per lato."""
+    """Evento per cui vale la pena tenere sotto quote il Correct Score:
+    dal 30' in poi (soglia aperta) con max 3 gol per lato."""
     if minute is None or score_home is None or score_away is None:
         return False
     if minute < CS_MINUTE_FROM:
@@ -275,11 +279,17 @@ def build_cs_block(
     market_id: Optional[str],
     status: Optional[str],
     selections: List[Dict[str, Any]],
+    inplay: Optional[bool] = None,
+    total_matched: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Blocco Correct Score del payload: solo le selezioni 'Any Other …'."""
+    """Blocco Correct Score del payload: le selezioni 'Any Other …' (Safe
+    Strategy R.E.) E l'elenco COMPLETO delle selezioni con selection_id, nome,
+    best back/lay + size e stato runner — è ciò su cui piazza Omega, che così
+    legge il book dal feed (stream) invece di rifare listMarketBook a ogni ciclo."""
     if market_id is None:
         return None
     any_home = any_away = None
+    full: List[Dict[str, Any]] = []
     for s in selections:
         name = str(s.get("name") or "")
         pair = {
@@ -290,9 +300,19 @@ def build_cs_block(
             any_home = pair
         elif _ANY_OTHER_AWAY.search(name):
             any_away = pair
+        if s.get("selection_id") is not None:
+            full.append({
+                "selection_id": int(s["selection_id"]),
+                "name": name,
+                "runner_status": s.get("runner_status"),
+                **pair,
+            })
     return {
         "market_id": market_id,
         "status": status,
+        "inplay": inplay,
+        "total_matched": total_matched,
         "any_other_home": any_home,
         "any_other_away": any_away,
+        "selections": full,
     }

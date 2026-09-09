@@ -17,9 +17,10 @@ Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
     di punteggi/timeline anche per i runner calcio e tennis (stato IPS grezzo
     `score_raw` nel payload → scores/scan_feed.py), che così non rifanno per
     ogni evento seguito le stesse chiamate;
-  · Correct Score SOLO per i candidati Risultato Esatto (dal 40′ in poi,
-    max 2 gol per lato — il minuto è una SOGLIA, come nella strategia):
-    catalogo dedicato appena compare un candidato nuovo + book ogni 15s;
+  · Correct Score dei candidati (calcio in-play dal 30′, ≤3 gol/lato):
+    catalogo appena compare un candidato nuovo, poi il mercato va sul POOL
+    STREAM (o nel REST di fallback) e viene pubblicato COMPLETO — tutte le
+    selezioni con id/nome/prezzi/size: è il feed anche per Omega;
   · riferimento 1X2 pre-KO: aggiornato da KO-15′ e CONGELATO al primo tick
     in-play (mai quote live nel riferimento — regola di certificazione).
 
@@ -70,7 +71,6 @@ _SCORES_PERIOD_SEC = 2.0
 _IPS_REQ_DELAY = 0.1
 # timeline calcio (gol/cartellini col minuto) in batch: cambia a eventi discreti
 _TIMELINE_PERIOD_SEC = 30.0
-_CS_BOOKS_PERIOD_SEC = 15.0
 # throttle di scrittura per-evento: con lo STREAM le quote cambiano ogni secondo
 # (conflate 1s) — mai inondare Supabase: max 1 riga/evento ogni 2.5s (e comunque
 # solo write-on-change).
@@ -140,7 +140,6 @@ class Scanner:
         # thread punteggi (run persistente): None = poll dentro al tick
         self.score_worker: Optional["ScoreFeedWorker"] = None
         self.cs_catalogue_ts = 0.0
-        self.cs_books_ts = 0.0
         self.status_ts = 0.0
         self.keepalive_ts = time.monotonic()
         self.written_sig: Dict[str, str] = {}
@@ -203,11 +202,16 @@ class Scanner:
         logger.info("[safe-scan] catalogo %s: %d eventi oggi", sport, len(metas))
 
     def _rebuild_market_index(self) -> None:
-        """Indice market_id → (sport, meta) su tutto il catalogo."""
+        """Indice market_id → (sport, meta) su tutto il catalogo MATCH_ODDS più i
+        mercati CORRECT_SCORE già risolti (meta con kind='cs')."""
         idx: Dict[str, "tuple[str, Dict[str, Any]]"] = {}
         for sport, st in self.sports.items():
             for meta in st.metas.values():
                 idx[meta["market_id"]] = (sport, meta)
+        for eid, cs in self.cs_markets.items():
+            idx[cs["market_id"]] = ("calcio", {
+                "event_id": eid, "market_id": cs["market_id"], "kind": "cs", "names": cs["names"],
+            })
         self.market_meta = idx
 
     def relevant_market_ids(self, sport: str, now: datetime) -> List[str]:
@@ -221,6 +225,11 @@ class Scanner:
             status = None if ev is None else ev.get("mo_status")
             if scanner.is_relevant_market(inplay, status, meta.get("open_date"), now):
                 out.append((scanner.rank_key(inplay, meta.get("open_date")), meta["market_id"]))
+            # CORRECT SCORE dei candidati (calcio in-play dal 30', ≤3 gol/lato):
+            # stessa priorità del suo MATCH_ODDS in-play → stream, REST se scoperto
+            if sport == "calcio" and inplay and eid in self.cs_markets and status != "CLOSED":
+                if scanner.is_cs_candidate(ev.get("minute"), ev.get("score_home"), ev.get("score_away")):
+                    out.append((scanner.rank_key(True, meta.get("open_date")), self.cs_markets[eid]["market_id"]))
         out.sort()
         return [mid for _, mid in out]
 
@@ -255,6 +264,9 @@ class Scanner:
         if not found:
             return
         sport, meta = found
+        if meta.get("kind") == "cs":
+            self._apply_cs_book(meta, book)
+            return
         pairs: Dict[int, Dict[str, Any]] = {}
         for r in getattr(book, "runners", None) or []:
             sid = getattr(r, "selection_id", None)
@@ -283,7 +295,29 @@ class Scanner:
             ev.get("pre_ko"), ev["inplay"], odds if sport == "calcio" else None,
         )
 
-    # ------------------------------------------------------------- quote MO (REST)
+    def _apply_cs_book(self, meta: Dict[str, Any], book: Any) -> None:
+        """MarketBook CORRECT_SCORE (stream o REST) → blocco `cs` COMPLETO
+        dell'evento (tutte le selezioni con id/nome/prezzi/size/stato runner)."""
+        ev = self.events.get(meta["event_id"])
+        if ev is None:
+            return
+        names = meta.get("names") or {}
+        selections = [
+            {
+                "selection_id": getattr(r, "selection_id", None),
+                "name": names.get(getattr(r, "selection_id", None)),
+                "runner_status": getattr(r, "status", None),
+                **scanner.price_pair(getattr(r, "ex", None)),
+            }
+            for r in getattr(book, "runners", None) or []
+        ]
+        ev["cs"] = scanner.build_cs_block(
+            meta["market_id"], getattr(book, "status", None), selections,
+            inplay=bool(getattr(book, "inplay", False)),
+            total_matched=scanner.num_or_none(getattr(book, "total_matched", None)),
+        )
+
+    # ------------------------------------------------------------- quote (REST)
     def poll_books(self, sport: str, ids: List[str]) -> None:
         """Poll REST EX_BEST_OFFERS dei mercati indicati (chunk 25, peso 125)."""
         from betfairlightweight import filters
@@ -472,42 +506,11 @@ class Scanner:
                     for r in (getattr(c, "runners", None) or [])
                 },
             }
+        # i mercati CS entrano nell'indice → da qui in poi vanno sullo stream
+        # (refresh_stream_set) o nel poll REST di fallback come il MATCH_ODDS
+        self._rebuild_market_index()
         self.cs_catalogue_ts = time.monotonic()
 
-    def poll_cs_books(self, candidates: List[str]) -> None:
-        from betfairlightweight import filters
-
-        wanted = {
-            self.cs_markets[e]["market_id"]: e
-            for e in candidates
-            if e in self.cs_markets
-        }
-        ids = list(wanted.keys())
-        for i in range(0, len(ids), _BOOK_CHUNK):
-            chunk = ids[i:i + _BOOK_CHUNK]
-            books = self.client.betting.list_market_book(
-                market_ids=chunk,
-                price_projection=filters.price_projection(price_data=["EX_BEST_OFFERS"]),
-            )
-            for b in books or []:
-                eid = wanted.get(getattr(b, "market_id", None))
-                if eid is None:
-                    continue
-                names = self.cs_markets[eid]["names"]
-                selections = [
-                    {
-                        "name": names.get(getattr(r, "selection_id", None)),
-                        **scanner.price_pair(getattr(r, "ex", None)),
-                    }
-                    for r in getattr(b, "runners", None) or []
-                ]
-                ev = self.events.get(eid)
-                if ev is not None:
-                    ev["cs"] = scanner.build_cs_block(
-                        getattr(b, "market_id", None), getattr(b, "status", None), selections,
-                    )
-            time.sleep(_REQ_DELAY)
-        self.cs_books_ts = time.monotonic()
 
     # ------------------------------------------------------------- pubblicazione
     def build_rows(self, now: datetime) -> "tuple[List[Dict[str, Any]], List[str]]":
@@ -722,12 +725,13 @@ class Scanner:
                 if now_mono - self.timelines_ts > _TIMELINE_PERIOD_SEC:
                     self.poll_timelines()
 
+            # Correct Score: catalogo appena compare un candidato nuovo; le QUOTE
+            # arrivano dallo stream (o dal poll REST di fallback) come per il
+            # MATCH_ODDS — nessun poll dedicato (audit 09/09 sera: prima 15s REST)
             candidates = self.cs_candidates()
             if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.cs_catalogue_ts = now_mono
                 self.refresh_cs_catalogue(candidates)
-            if candidates and now_mono - self.cs_books_ts > _CS_BOOKS_PERIOD_SEC:
-                self.poll_cs_books(candidates)
 
             written, deleted = self.publish(now)
             if written or deleted:
@@ -813,7 +817,7 @@ def main() -> None:
             candidates = scan.cs_candidates()
             if candidates:
                 scan.refresh_cs_catalogue(candidates)
-                scan.poll_cs_books(candidates)
+                scan.poll_books("calcio", [scan.cs_markets[e]["market_id"] for e in candidates if e in scan.cs_markets])
             rows, wanted = scan.build_rows(datetime.now(timezone.utc))
             logger.info(
                 "[safe-scan] COLLAUDO: %d eventi monitorabili, %d candidati CS, %d righe",

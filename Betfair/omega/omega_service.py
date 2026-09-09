@@ -18,6 +18,8 @@ from typing import Any, Optional
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
+from Betfair.stream.scores import scan_feed as _scan_feed
+from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
 
 logger = logging.getLogger("omega.service")
 
@@ -54,6 +56,105 @@ def _is_fresh(updated_at: Optional[str], now: datetime, max_age_s: int = SCORE_M
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     return (now - ts).total_seconds() <= max_age_s
+
+
+# ---------------------------------------------------------------------------
+# FEED UNICO (audit 09/09 sera): lo scanner Safe Strategy tiene sullo stream il
+# MATCH_ODDS e il CORRECT SCORE di ogni partita in-play e ne pubblica punteggio
+# (stato IPS grezzo), minuto, in-play e book CS COMPLETO su safe_strategy_scan.
+# Omega LEGGE da lì (una SELECT per ciclo, cache condivisa) e chiama Betfair
+# solo come fallback (scanner fermo, evento non coperto, mercato non candidato)
+# o per ciò che è davvero suo (settlement, HT/Over-Under, piazzamento).
+# Le funzioni qui sono PURE (payload → oggetti Omega) e testate; l'accesso al
+# feed è attivo SOLO col market/db REALI (i fake dei test restano sul REST).
+# ---------------------------------------------------------------------------
+FEED_MAX_AGE_S = 15.0   # età massima riga (o scanner vivo): mai quote vecchie
+
+
+def cs_snapshot_from_payload(
+    event_id: str, payload: Optional[dict],
+) -> Optional["tuple[Any, Any]"]:
+    """(CorrectScoreMarket, MarketSnapshot) dal blocco ``cs`` del feed, o None se
+    il mercato non è nel feed / non è aperto per il trading / non ha selezioni.
+    NON produce mai un settlement (closed/winner): quello resta REST (I3)."""
+    if not isinstance(payload, dict):
+        return None
+    cs = payload.get("cs")
+    if not isinstance(cs, dict) or not cs.get("market_id"):
+        return None
+    sels = cs.get("selections")
+    if not isinstance(sels, list) or not sels:
+        return None
+    status = str(cs.get("status") or "OPEN")
+    if status == "CLOSED":
+        return None  # regolazione = REST, mai dal feed
+    names: dict[int, str] = {}
+    runners: list[E.ScoreRunner] = []
+    for s in sels:
+        if not isinstance(s, dict) or s.get("selection_id") is None:
+            continue
+        if s.get("runner_status") not in (None, "ACTIVE"):
+            continue  # runner rimosso/vincitore: mai proporlo
+        sid = int(s["selection_id"])
+        name = str(s.get("name") or "?")
+        names[sid] = name
+        lay = s.get("lay")
+        lay_size = float(s.get("lay_size") or 0.0)
+        runners.append(E.ScoreRunner(
+            selection_id=sid, name=name,
+            lay_price=float(lay) if isinstance(lay, (int, float)) else None,
+            lay_size=lay_size,
+            back_price=float(s["back"]) if isinstance(s.get("back"), (int, float)) else None,
+            back_size=float(s.get("back_size") or 0.0),
+            lay_ladder=((float(lay), lay_size),) if isinstance(lay, (int, float)) else (),
+        ))
+    if not runners:
+        return None
+    market = _real_market.CorrectScoreMarket(
+        market_id=str(cs["market_id"]), event_id=str(event_id),
+        event_name=str(payload.get("event_name") or ""),
+        market_start_time=_parse_iso_dt(payload.get("open_date")),
+        runner_names=names,
+    )
+    snap = _real_market.MarketSnapshot(
+        status=status, inplay=bool(cs.get("inplay") if cs.get("inplay") is not None else payload.get("inplay")),
+        runners=runners, closed=False, winner_selection_id=None, voided=False,
+    )
+    return market, snap
+
+
+def score_from_payload(event_id: str, payload: Optional[dict], updated_at: Optional[str]) -> Optional["LiveScore"]:
+    """LiveScore (minuto/punteggio/in-play) dal payload del feed; None se manca."""
+    if not isinstance(payload, dict) or payload.get("minute") is None:
+        return None
+    return LiveScore(
+        minute=payload.get("minute"),
+        score_home=payload.get("score_home"),
+        score_away=payload.get("score_away"),
+        updated_at=updated_at,
+        inplay=payload.get("inplay"),
+    )
+
+
+def _feed_row(event_id: str) -> "tuple[Optional[dict], Optional[str]]":
+    """(payload affidabile, updated_at) dal feed condiviso; (None, None) se
+    assente/stantio/DB KO. Mai solleva."""
+    try:
+        cache = _scan_feed.shared_cache()
+        row = cache.rows_for([str(event_id)]).get(str(event_id))
+        payload = _scan_feed.fresh_payload(row, FEED_MAX_AGE_S, scanner_age_sec=cache.scanner_age_sec())
+        return payload, (row or {}).get("updated_at")
+    except Exception as ex:  # noqa: BLE001 - il feed non deve mai rompere il ciclo
+        logger.debug("[omega] feed KO per %s: %s", event_id, str(ex)[:120])
+        return None, None
+
+
+def _cs_from_feed(market, event_id: str) -> Optional["tuple[Any, Any]"]:
+    """Mercato+snapshot CS dal feed, SOLO col market reale (i fake dei test → REST)."""
+    if market is not _real_market:
+        return None
+    payload, _ = _feed_row(event_id)
+    return cs_snapshot_from_payload(event_id, payload)
 
 
 def estimate_minute(
@@ -158,21 +259,27 @@ def scan_and_place(
             if clock_minute < params["entry_minute_min"] - margin or clock_minute > params["entry_minute_max"] + margin:
                 continue
 
-        try:
-            cs = market.get_correct_score_market(ev)
-        except Exception as ex:  # noqa: BLE001
-            db.log("skip", {"event_id": ev.event_id, "reason": "catalogue_error", "err": str(ex)[:160]})
-            continue
-        if cs is None:
-            db.log("skip", {"event_id": ev.event_id, "reason": "no_correct_score_market"})
-            continue
+        # FEED UNICO: catalogo+book CS dallo scanner (stream, quote al secondo);
+        # REST solo se l'evento non è nel feed (scanner fermo, non candidato)
+        feed_cs = _cs_from_feed(market, ev.event_id)
+        if feed_cs is not None:
+            cs, snapshot = feed_cs
+        else:
+            try:
+                cs = market.get_correct_score_market(ev)
+            except Exception as ex:  # noqa: BLE001
+                db.log("skip", {"event_id": ev.event_id, "reason": "catalogue_error", "err": str(ex)[:160]})
+                continue
+            if cs is None:
+                db.log("skip", {"event_id": ev.event_id, "reason": "no_correct_score_market"})
+                continue
 
-        snapshot = None
-        try:
-            snapshot = market.read_market(cs)
-        except Exception as ex:  # noqa: BLE001
-            db.log("skip", {"event_id": ev.event_id, "reason": "book_error", "err": str(ex)[:160]})
-            continue
+            snapshot = None
+            try:
+                snapshot = market.read_market(cs)
+            except Exception as ex:  # noqa: BLE001
+                db.log("skip", {"event_id": ev.event_id, "reason": "book_error", "err": str(ex)[:160]})
+                continue
         if snapshot is None or snapshot.closed:
             continue
 
@@ -1630,11 +1737,15 @@ def _cs_suggestion(*, market, mission: dict, market_type: str, params: dict,
     ``db`` (opzionale) abilita il blocco ``advisor`` (CONSULENTE DATI): segnali
     INFORMATIVI best-effort — Poisson interno, frequenza lega, H2H — che NON
     toccano mai id/prezzi e NON bloccano mai la proposta (errore -> None)."""
-    cs = market.get_event_market_by_type(
-        mission["event_id"], mission.get("event_name") or "", market_type)
-    if cs is None:
-        return None
-    snap = market.read_market(cs)
+    feed_cs = _cs_from_feed(market, str(mission["event_id"])) if market_type == "CORRECT_SCORE" else None
+    if feed_cs is not None:
+        cs, snap = feed_cs   # stream dello scanner: quote al secondo
+    else:
+        cs = market.get_event_market_by_type(
+            mission["event_id"], mission.get("event_name") or "", market_type)
+        if cs is None:
+            return None
+        snap = market.read_market(cs)
     if snap is None or snap.closed:
         return None
     runners = snap.runners
@@ -1855,17 +1966,36 @@ def _event_really_over(m: dict, market) -> bool:
         return True
 
 
+def _mission_scores(market, event_ids: list[str], db) -> dict:
+    """{event_id: ScoreSnapshot}: dal FEED (stato IPS grezzo dello scanner,
+    stesso parser) per gli eventi coperti; IPS diretto SOLO per i mancanti."""
+    out: dict = {}
+    missing: list[str] = []
+    for eid in event_ids:
+        payload, _ = _feed_row(eid) if market is _real_market else (None, None)
+        raw = payload.get("score_raw") if isinstance(payload, dict) else None
+        if isinstance(raw, dict):
+            try:
+                out[eid] = _parse_score_dict(eid, raw)
+                continue
+            except Exception:  # noqa: BLE001 - riga malformata: fallback diretto
+                pass
+        missing.append(eid)
+    if missing:
+        try:
+            out.update(market.get_inplay_scores(missing))
+        except Exception as ex:  # noqa: BLE001 — senza punteggi si degrada (kickoff/prev)
+            db.log("mission_scores_error", {"err": str(ex)[:160]})
+    return out
+
+
 def process_missions(*, market, db, now: datetime) -> int:
     """Aggiorna punteggio/fase/suggerimenti di ogni missione attiva. Ritorna
     quante ne ha aggiornate. Un errore su una missione non ferma le altre (I6)."""
     missions = db.active_missions()
     if not missions:
         return 0
-    try:
-        scores = market.get_inplay_scores([m["event_id"] for m in missions])
-    except Exception as ex:  # noqa: BLE001 — senza punteggi si degrada (kickoff/prev)
-        db.log("mission_scores_error", {"err": str(ex)[:160]})
-        scores = {}
+    scores = _mission_scores(market, [str(m["event_id"]) for m in missions], db)
     control = db.read_control() or {}
     params = omega_config.resolve_params(control.get("params"))
     n = 0
@@ -2077,16 +2207,21 @@ def main() -> None:
 
 
 def _build_score_lookup(db=_real_db) -> Any:
-    """Lookup punteggio live CONDIVISO dal runner calcio via ``live_now`` (§5).
+    """Lookup punteggio live: FEED dello scanner (tutti gli in-play, 2s) e poi lo
+    specchio ``live_now`` del runner calcio (§5) per gli eventi seguiti.
 
-    Legge minuto+punteggio dalla tabella ``live_now`` (scritta dal runner ogni ~5s),
-    ESATTAMENTE come lo scalper: pura lettura Supabase, ZERO sessioni Betfair extra.
-    Copertura = solo eventi seguiti dal runner (``live_follow``); per gli altri
-    ritorna None e ``estimate_minute`` degrada al clock (I6). Il controllo di
-    freschezza (``updated_at``) è in ``estimate_minute``: mai dati congelati.
+    Pura lettura Supabase, ZERO sessioni Betfair extra. Se nessuna sorgente ha
+    l'evento ritorna None e ``estimate_minute`` degrada al clock (I6). Il
+    controllo di freschezza (``updated_at``) è in ``estimate_minute``.
     """
 
     def _lookup(event_id: str) -> Optional[LiveScore]:
+        # FEED UNICO (tutti gli in-play, 2s): prima dello specchio live_now
+        if db is _real_db:
+            payload, upd = _feed_row(event_id)
+            feed = score_from_payload(str(event_id), payload, upd)
+            if feed is not None:
+                return feed
         row = db.read_live_now(str(event_id))
         if not row:
             return None

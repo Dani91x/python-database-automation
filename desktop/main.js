@@ -249,7 +249,9 @@ function startRunners() {
     // keep-alive di sessione (1 chiamata ogni 10 min); agisce quando lo attivi/usi
     // da /omega, e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio
     // avvio se lanci anche avvia_omega_service.bat. Nessun impatto sugli altri runner.
-    spawnRunner('omega-service', ['-m', 'Betfair.omega.omega_service']);
+    // sotto WATCHDOG (09/09 sera): come scanner e runner, se cade riparte.
+    // Lock occupato (altra istanza) → esce 0 → il watchdog si ferma (corretto).
+    spawnRunner('omega-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.omega.omega_service']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
     // MAI due run sovrapposte (audit 09/09): una run lenta ancora viva NON viene
