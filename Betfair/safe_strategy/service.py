@@ -11,8 +11,9 @@ Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
     non è in salute — cadenza ADATTIVA 10s (2°T calcio dal 40′ in poi /
     tennis in-play), 20-60s altrimenti;
   · punteggi/minuti/rossi + disponibilità video/animazione per TUTTI gli
-    in-play in UNA chiamata IPS scoresAndBroadcast (chunk 20 id) ogni 3s
-    (fallback get_scores) + timeline calcio in batch ogni 30s: è il FEED UNICO
+    in-play in UNA chiamata IPS scoresAndBroadcast (chunk 50 id) ogni 2s in un
+    THREAD dedicato (ScoreFeedWorker: mai in coda alle quote) + timeline calcio
+    in batch ogni 30s (fallback get_scores): è il FEED UNICO
     di punteggi/timeline anche per i runner calcio e tennis (stato IPS grezzo
     `score_raw` nel payload → scores/scan_feed.py), che così non rifanno per
     ogni evento seguito le stesse chiamate;
@@ -35,6 +36,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -57,10 +59,15 @@ _CATALOGUE_TTL_SEC = 300.0
 # throttle può essere corto: un candidato nuovo al 48′ ha la quota entro ~20s
 # (prima il TTL era 600s → segnale R.E. in ritardo fino a 10 minuti)
 _CS_CATALOGUE_MIN_INTERVAL_SEC = 20.0
-# IPS non ha stream: poll batch (chunk 20). 3s perché questo è il FEED UNICO di
-# punteggi anche per i runner calcio/tennis (scores/scan_feed.py): il tennis
-# usava 2s per evento, qui 3s per TUTTI gli in-play con 1-3 chiamate.
-_SCORES_PERIOD_SEC = 3.0
+# IPS non ha stream: poll batch in un THREAD DEDICATO (ScoreFeedWorker), così
+# il giro punteggi non blocca mai la pubblicazione delle quote e viceversa
+# (misurato 09/09: un giro serializzato nel tick costava fino a ~3s in più).
+# 2s = la cadenza che il runner tennis usava PER EVENTO, qui per TUTTI gli
+# in-play con 1-3 chiamate (chunk 50, verificato: ~70ms a chiamata). È il FEED
+# UNICO di punteggi anche per i runner (scores/scan_feed.py).
+_SCORES_PERIOD_SEC = 2.0
+# respiro tra i lotti IPS (servizio separato da API-NG: niente peso 200)
+_IPS_REQ_DELAY = 0.1
 # timeline calcio (gol/cartellini col minuto) in batch: cambia a eventi discreti
 _TIMELINE_PERIOD_SEC = 30.0
 _CS_BOOKS_PERIOD_SEC = 15.0
@@ -72,7 +79,7 @@ _STATUS_PERIOD_SEC = 10.0
 _ORPHAN_PURGE_PERIOD_SEC = 300.0
 _KEEPALIVE_PERIOD_SEC = 900.0
 _BOOK_CHUNK = 25          # peso EX_BEST_OFFERS 5/mercato → 125 < 200
-_SCORES_CHUNK = 20
+_SCORES_CHUNK = 50        # eventId per chiamata IPS (verificato 09/09: 50 ok, ~70ms)
 _REQ_DELAY = 0.35         # respiro tra chiamate REST (anti-throttling)
 # cap catalogo per sport = massimo Betfair per listMarketCatalogue (1000): le
 # proiezioni usate pesano 0 (EVENT, COMPETITION, MARKET_START_TIME,
@@ -130,6 +137,8 @@ class Scanner:
         self.scores_ts = 0.0
         self.timelines_ts = 0.0
         self.orphan_purge_ts = -1e9  # prima pulizia subito al primo publish
+        # thread punteggi (run persistente): None = poll dentro al tick
+        self.score_worker: Optional["ScoreFeedWorker"] = None
         self.cs_catalogue_ts = 0.0
         self.cs_books_ts = 0.0
         self.status_ts = 0.0
@@ -362,7 +371,7 @@ class Scanner:
                     ev["media"] = scanner.media_flags(broadcasts)
                 if state is not None:
                     raw_by_event[eid] = state  # stato assente = punteggio precedente resta
-            time.sleep(_REQ_DELAY)
+            time.sleep(_IPS_REQ_DELAY)
         for eid, rec in raw_by_event.items():
             ev = self.events.get(eid)
             if ev is None:
@@ -370,27 +379,29 @@ class Scanner:
             # FEED UNICO (audit 09/09): lo stato IPS grezzo va nel payload, così i
             # runner calcio/tennis lo parsano coi loro parser di sempre invece di
             # rifare per ogni evento la stessa chiamata (scores/scan_feed.py).
-            ev["score_raw"] = scanner.strip_volatile_state(rec)
+            upd: Dict[str, Any] = {"score_raw": scanner.strip_volatile_state(rec)}
             if ev.get("sport") == "calcio":
                 snap = parse_score_dict(eid, rec)
-                ev["minute"] = snap.minute
-                ev["score_home"] = snap.score_home
-                ev["score_away"] = snap.score_away
-                ev["red_home"] = snap.red_home
-                ev["red_away"] = snap.red_away
+                upd.update(minute=snap.minute, score_home=snap.score_home,
+                           score_away=snap.score_away, red_home=snap.red_home,
+                           red_away=snap.red_away)
             else:
                 ts = parse_tennis_scores([rec], eid)
                 if ts is not None:
-                    ev["sets"] = (
+                    upd["sets"] = (
                         {"p1": ts.sets_home, "p2": ts.sets_away}
                         if ts.sets_home is not None and ts.sets_away is not None
                         else None
                     )
-                    ev["games"] = (
+                    upd["games"] = (
                         {"p1": ts.games_home, "p2": ts.games_away}
                         if ts.games_home is not None and ts.games_away is not None
                         else None
                     )
+            # UN solo update (atomico sotto il GIL): il tick, che pubblica da un
+            # altro thread, vede sempre punteggio e stato grezzo COERENTI, mai
+            # un gol a metà (score_home nuovo con score_away vecchio)
+            ev.update(upd)
         self.scores_ts = time.monotonic()
 
     # ------------------------------------------------------------- timeline IPS
@@ -418,7 +429,7 @@ class Scanner:
                 ev = self.events.get(str(rec["eventId"]))
                 if ev is not None:
                     ev["timeline"] = normalize_timeline(rec)
-            time.sleep(_REQ_DELAY)
+            time.sleep(_IPS_REQ_DELAY)
         self.timelines_ts = time.monotonic()
 
     # ------------------------------------------------------------- Correct Score
@@ -703,10 +714,13 @@ class Scanner:
                 else:
                     st.books_ts = now_mono
 
-            if now_mono - self.scores_ts > _SCORES_PERIOD_SEC:
-                self.poll_scores()
-            if now_mono - self.timelines_ts > _TIMELINE_PERIOD_SEC:
-                self.poll_timelines()
+            # punteggi/timeline: nel run persistente li fa ScoreFeedWorker (thread);
+            # qui SOLO se il thread non c'è (collaudo/test)
+            if self.score_worker is None:
+                if now_mono - self.scores_ts > _SCORES_PERIOD_SEC:
+                    self.poll_scores()
+                if now_mono - self.timelines_ts > _TIMELINE_PERIOD_SEC:
+                    self.poll_timelines()
 
             candidates = self.cs_candidates()
             if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
@@ -727,6 +741,36 @@ class Scanner:
         except Exception as e:  # noqa: BLE001 - lo scanner non muore mai per un giro storto
             self.last_error = f"{type(e).__name__}: {str(e)[:140]}"
             logger.warning("[safe-scan] ciclo KO: %s", self.last_error)
+
+
+class ScoreFeedWorker(threading.Thread):
+    """Thread dedicato ai PUNTEGGI (IPS scoresAndBroadcast ogni _SCORES_PERIOD_SEC,
+    timeline calcio ogni _TIMELINE_PERIOD_SEC). Separato dal tick per due motivi:
+      · latenza: il tick pubblica le righe ogni 0.5s e non deve mai aspettare la
+        rete dell'IPS; un punteggio nuovo è in tabella entro ~0.5s dal poll;
+      · quote: il drain dello stream non si ferma durante il giro punteggi.
+    Tocca SOLO gli stati-evento già esistenti (ev.update atomico); la creazione
+    degli eventi e il pruning restano nel tick. Errori: loggati, mai fatali."""
+
+    def __init__(self, scan: "Scanner") -> None:
+        super().__init__(name="safe-scan-scores", daemon=True)
+        self.scan = scan
+        self._stop = threading.Event()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def run(self) -> None:
+        while not self._stop.is_set():
+            started = time.monotonic()
+            try:
+                self.scan.poll_scores()
+                if time.monotonic() - self.scan.timelines_ts > _TIMELINE_PERIOD_SEC:
+                    self.scan.poll_timelines()
+            except Exception as e:  # noqa: BLE001 - il feed punteggi non muore mai
+                logger.warning("[safe-scan] giro punteggi KO: %s", str(e)[:140])
+            # cadenza fissa: attesa = periodo meno il tempo speso (mai negativa)
+            self._stop.wait(max(0.2, _SCORES_PERIOD_SEC - (time.monotonic() - started)))
 
 
 def main() -> None:
@@ -793,10 +837,14 @@ def main() -> None:
             except Exception as e:  # noqa: BLE001 - il tick riproverà
                 logger.warning("[safe-scan] warm-up catalogo %s KO: %s", sport, str(e)[:120])
             time.sleep(_REQ_DELAY)
+        scan.score_worker = ScoreFeedWorker(scan)
+        scan.score_worker.start()
         while True:
             scan.tick()
             time.sleep(0.5)
     finally:
+        if scan.score_worker is not None:
+            scan.score_worker.stop()
         if scan.stream is not None:
             scan.stream.stop()
         safe_logout(client)
