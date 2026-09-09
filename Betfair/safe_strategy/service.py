@@ -10,8 +10,9 @@ Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
     come FALLBACK per i mercati che lo stream non copre o quando lo stream
     non è in salute — cadenza ADATTIVA 10s (2°T calcio dal 40′ in poi /
     tennis in-play), 20-60s altrimenti;
-  · punteggi/minuti/rossi per TUTTI gli in-play in UNA chiamata IPS get_scores
-    (chunk 20 id) ogni 5s — stesso endpoint già usato dai runner;
+  · punteggi/minuti/rossi + disponibilità video/animazione per TUTTI gli
+    in-play in UNA chiamata IPS scoresAndBroadcast (chunk 20 id) ogni 5s —
+    stesso servizio non ufficiale già usato dai runner (fallback get_scores);
   · Correct Score SOLO per i candidati Risultato Esatto (dal 40′ in poi,
     max 2 gol per lato — il minuto è una SOGLIA, come nella strategia):
     catalogo dedicato appena compare un candidato nuovo + book ogni 15s;
