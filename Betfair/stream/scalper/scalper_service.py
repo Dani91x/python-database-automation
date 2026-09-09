@@ -119,7 +119,7 @@ def main() -> None:
                     from ..auth import build_client
                     trading = build_client(login=True)
                 from .habitat_scan import scan
-                rows = scan(hours=8.0, top=15)
+                rows = scan(hours=8.0, top=15, trading=trading)  # stessa sessione, mai re-login
                 db.sb.table("scalper_activity").insert({
                     "event_id": "habitat", "kind": "habitat_scan",
                     "payload": _json.loads(_json.dumps(

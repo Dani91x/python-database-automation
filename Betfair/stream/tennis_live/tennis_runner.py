@@ -57,6 +57,9 @@ from ..tennis_scalper.tennis_score import (
 )
 from ..tennis_scalper.tennis_swing_bot import TennisSwingStrategy
 from ..tennis_scalper.tennis_winprob import estimate_holds, p_match
+from ..runner_lifecycle import EXIT_PLANNED_RESTART
+from ..scores.betfair_inplay import BetfairInPlayProvider
+from ..scores.scan_feed import ScanFeedScoreProvider
 from . import tennis_db
 from .paper_execution import install_fresh_delay_execution
 from .tennis_recorder import RAW_TEE, TennisRecMarketStream, sync_record_flags
@@ -347,7 +350,7 @@ def point_event(prev: Optional[TennisScore], cur: Optional[TennisScore]) -> Opti
 # La classe flumine reale è costruita da ``_make_capture`` a runtime (così il modulo
 # resta importabile senza creare strategie né toccare la rete).
 # ---------------------------------------------------------------------------
-def _make_capture(market_id: str, event_id: str) -> Any:
+def _make_capture(market_id: str, event_id: str, market_ids: Optional[List[str]] = None) -> Any:
     """Istanzia una BaseStrategy flumine che cattura i book del market indicato."""
     from flumine import BaseStrategy
 
@@ -370,6 +373,13 @@ def _make_capture(market_id: str, event_id: str) -> Any:
             with self._lock:
                 return dict(self._latest)
 
+        def latest_for(self, market_id: str) -> Dict[str, Dict[str, Any]]:
+            """Solo il book di UN mercato (la capture è CONDIVISA fra gli eventi:
+            ogni consumer legge il proprio mercato, mai quelli degli altri)."""
+            with self._lock:
+                book = self._latest.get(market_id)
+                return {market_id: book} if book else {}
+
     # BUG FIX cert 10/07 (VISTO DAL VIVO — stesso CRITICAL-2 già fixato sul calcio):
     # BaseStrategy ha default NASCOSTI pensati per bot automatici — max_order_exposure=10
     # (€10 di rischio max per ordine!), max_selection_exposure=100, max_live_trade_count=1
@@ -385,8 +395,14 @@ def _make_capture(market_id: str, event_id: str) -> Any:
     # MarketStream) nella stessa stream via isinstance(stream, strategy.
     # stream_class) — TennisRecMarketStream È un MarketStream; la verifica
     # stream_ids nel build lo certifica a ogni riavvio.
+    # STREAM UNICO CROSS-EVENTO (audit 09/09): flumine riusa una MarketStream
+    # SOLO a filtro identico — con un filtro per evento il runner apriva UNA
+    # CONNESSIONE BETFAIR PER MATCH SEGUITO (5 match = 5 delle 10 connessioni
+    # concesse per app key). ``market_ids`` = TUTTI i mercati seguiti → una sola
+    # capture, una sola subscription; i bot ricevono lo stesso filtro
+    # (_instantiate_bot) e sono scopati sul PROPRIO mercato.
     return _Capture(
-        market_filter=streaming_market_filter(market_ids=[market_id]),
+        market_filter=streaming_market_filter(market_ids=list(market_ids or [market_id])),
         stream_class=TennisRecMarketStream,
         max_order_exposure=None,
         max_selection_exposure=None,
@@ -419,6 +435,8 @@ class TennisLiveSession:
         # auto-spegnimento (fix 2026-07-08: runner mai più attivi per giorni)
         self.shutdown_requested = threading.Event()
         self.started_monotonic = time.monotonic()
+        # ricambio pianificato (desktop, vita massima): exit EXIT_PLANNED_RESTART
+        self.planned_restart: bool = False
         # mode ordini CATTURATA al build del framework (fix audit #14): i worker
         # specchio (ordini bot / posizioni) usano QUESTA, mai una ri-lettura env a
         # metà processo (la mode dello specchio non può divergere dagli ordini).
@@ -526,7 +544,8 @@ def _make_sink(event_id: str, bot_key: str) -> Any:
 
 def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
                      name_to_sel: Dict[str, int], sink: Any,
-                     data_filter: Dict[str, Any], mode: str) -> Any:
+                     data_filter: Dict[str, Any], mode: str,
+                     market_ids: Optional[List[str]] = None) -> Any:
     """Istanzia un bot AGGANCIATO allo stream unico dell'evento.
 
     STREAM UNICO (#1): passa lo STESSO ``market_data_filter`` (``data_filter``) della
@@ -578,7 +597,9 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     stake = params["stake"]
     cap = stake * (float(params.get("price_max", 6.0)) + 2.0) * 3.0
     kwargs: Dict[str, Any] = {
-        "market_filter": streaming_market_filter(market_ids=[market_id]),
+        # stesso filtro della capture (tutti i mercati seguiti) → stream unico;
+        # il bot vede SOLO il suo mercato grazie allo scoping più sotto
+        "market_filter": streaming_market_filter(market_ids=list(market_ids or [market_id])),
         "market_data_filter": data_filter,
         params_kw: params,
         "event_sink": sink,
@@ -590,6 +611,7 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
     if needs_names:
         kwargs["name_to_sel"] = name_to_sel
     strat = cls(**kwargs)
+    _scope_to_market(strat, market_id)
     # CARRY-OVER delle stats (fix 17/07, incongruenza trovata dal monitor):
     # un restart del framework RE-ISTANZIA i bot e l'heartbeat sovrascriveva
     # le stats del control con ZERI — il P&L già fatto nel match spariva dal
@@ -604,6 +626,24 @@ def _instantiate_bot(bot_key: str, control: Dict[str, Any], market_id: str,
                     and isinstance(st.get(k), (int, float))):
                 st[k] = v
     return strat
+
+
+def _scope_to_market(strat: Any, market_id: str) -> None:
+    """MONEY-CRITICAL: su uno stream CONDIVISO fra eventi flumine consegna a OGNI
+    strategia i book di TUTTI i mercati sottoscritti, e i bot tennis accettano
+    qualunque book OPEN (``check_market_book`` non guarda il market_id). Qui il
+    gate viene shadowato per-istanza: un book di un altro mercato NON passa mai
+    (né process_market_book né la logica di trading). ``_disable_strategy``
+    sovrascrive lo stesso attributo con ``False`` costante: coerente."""
+    orig = strat.check_market_book
+
+    def _scoped(market: Any, market_book: Any, _orig: Any = orig, _mid: str = str(market_id)) -> bool:
+        if str(getattr(market_book, "market_id", "")) != _mid:
+            return False
+        return bool(_orig(market, market_book))
+
+    strat.check_market_book = _scoped  # type: ignore[assignment]
+    strat._tennis_scoped_market_id = str(market_id)
 
 
 def _disable_strategy(strat: Any) -> None:
@@ -883,7 +923,7 @@ def ladder_worker(context: dict, flumine: Any, session: TennisLiveSession) -> No
     for event_id, cap in list(session.capture.items()):
         meta = session.market_meta.get(event_id) or {}
         names = meta.get("selection_names", {})
-        for mid, book in cap.latest().items():
+        for mid, book in cap.latest_for(str(meta.get("market_id"))).items():
             if not book:
                 continue
             try:
@@ -944,7 +984,7 @@ def _now_selections(book: Dict[str, Any], names: Dict[str, str]) -> List[Dict[st
 def _build_now_state(session: TennisLiveSession, event_id: str) -> "tuple[Dict[str, Any], bool, str]":
     meta = session.market_meta.get(event_id) or {}
     cap = session.capture.get(event_id)
-    latest = cap.latest() if cap is not None else {}
+    latest = cap.latest_for(str(meta.get("market_id"))) if cap is not None else {}
     markets_out = []
     inplay = False
     status = "SUSPENDED"
@@ -966,19 +1006,55 @@ def _build_now_state(session: TennisLiveSession, event_id: str) -> "tuple[Dict[s
     return state, inplay, status
 
 
+_STREAM_KEEPALIVE_SEC = float(os.getenv("TENNIS_STREAM_KEEPALIVE_SEC", "480"))
+
+
+def _maybe_keepalive(session: TennisLiveSession) -> None:
+    """keepAlive della sessione Betfair MENTRE si streamma (audit 09/09: c'era
+    solo nel loop idle; col feed condiviso dei punteggi il runner può non fare
+    REST per ore → sessione .it scaduta → riconnessione stream/catalogo KO)."""
+    now_mono = time.monotonic()
+    last = getattr(session, "_stream_ka_ts", 0.0)
+    if _STREAM_KEEPALIVE_SEC <= 0 or now_mono - last < _STREAM_KEEPALIVE_SEC:
+        return
+    session._stream_ka_ts = now_mono
+    try:
+        from ..auth import keep_alive as _bf_keep_alive
+        _bf_keep_alive(session.trading)
+    except Exception as ex:  # noqa: BLE001 - best-effort
+        logger.warning("[tennis-runner] keepAlive (stream) KO: %s", str(ex)[:120])
+
+
+def _scan_feed(session: TennisLiveSession) -> ScanFeedScoreProvider:
+    feed = getattr(session, "_scan_feed", None)
+    if feed is None:
+        feed = ScanFeedScoreProvider(BetfairInPlayProvider(session.trading))
+        session._scan_feed = feed
+    return feed
+
+
 def score_and_now_worker(context: dict, flumine: Any, session: TennisLiveSession) -> None:  # noqa: ARG001
     trading = session.trading
+    _maybe_keepalive(session)
+    feed = _scan_feed(session)
     for event_id in list(session.market_meta.keys()):
-        # UNA poll IPS per evento (unico REST oltre allo stream)
+        # PUNTEGGIO dal FEED UNICO dello scanner Safe Strategy (stato IPS grezzo,
+        # stesso parser): prima UNA get_scores per evento ogni 2s. Riga assente o
+        # stantia → chiamata diretta come sempre (mai un buco, mai dati vecchi).
         ts: Optional[TennisScore] = None
         try:
-            raw = trading.in_play_service.get_scores(
-                event_ids=[int(event_id)] if str(event_id).isdigit() else [event_id],
-                lightweight=True,
-            )
+            raw_state = feed.get_raw_state(event_id)
+            if raw_state is not None:
+                raw: Any = [raw_state]
+            else:
+                feed.direct_calls += 1
+                raw = trading.in_play_service.get_scores(
+                    event_ids=[int(event_id)] if str(event_id).isdigit() else [event_id],
+                    lightweight=True,
+                )
             ts = parse_tennis_scores(raw, event_id)
         except Exception as e:  # noqa: BLE001 - il feed non deve mai rompere il worker
-            logger.debug("[tennis-score] get_scores KO %s: %s", event_id, e)
+            logger.debug("[tennis-score] punteggio KO %s: %s", event_id, e)
 
         # alimenta i bot ospitati per l'evento (riuso VERBATIM: usano .score/.point_pressure).
         # snapshot con list(...): bot_control_worker può mutare session.hosted da un altro thread.
@@ -1241,8 +1317,16 @@ def lifecycle_worker(context: dict, flumine: Any, session: TennisLiveSession) ->
     if session.shutdown_requested.is_set():
         return
     reason: Optional[str] = None
+    keep_alive_desktop = os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1"
     if uptime_exceeded(session.started_monotonic, time.monotonic(), _TENNIS_MAX_HOURS):
         reason = f"vita massima {_TENNIS_MAX_HOURS:.0f}h raggiunta"
+        # desktop: ricambio pianificato → exit code dedicato, il watchdog rilancia
+        session.planned_restart = keep_alive_desktop
+    elif keep_alive_desktop:
+        # PARITÀ COL CALCIO (audit 09/09): l'idle-exit spegneva il runner tennis
+        # appena nessun match era imminente → il watchdog si fermava per sempre
+        # (rc=0) e tennis_bot_service rifaceva login+N stream ogni ~90s.
+        pass
     elif _TENNIS_IDLE_EXIT_MIN > 0:
         try:
             follows = tennis_db.list_pending_tennis_follows()
@@ -1435,18 +1519,23 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
             framework = Flumine(client=client)
             _wire_paper_execution(framework, mode)
 
+            # UNA capture per TUTTI gli eventi (stream unico cross-evento, vedi
+            # _make_capture): mappata sotto ogni event_id per i consumer esistenti
+            # (ladder/now/ordini leggono il PROPRIO mercato via latest_for).
+            all_market_ids = [m["market_id"] for m in session.market_meta.values()]
+            shared_cap = _make_capture(all_market_ids[0], "*", market_ids=all_market_ids)
+            shared_cap.market_data_filter = data_filter
+            framework.add_strategy(shared_cap)
             for event_id, meta in session.market_meta.items():
-                cap = _make_capture(meta["market_id"], event_id)
-                cap.market_data_filter = data_filter
+                cap = shared_cap
                 session.capture[event_id] = cap
-                framework.add_strategy(cap)
                 for bot_key, ctrl in _desired_controls(event_id).items():
                     tennis_db.set_tennis_bot_status(event_id, bot_key, "arming")
                     sink = _make_sink(event_id, bot_key)
                     try:
                         bot = _instantiate_bot(
                             bot_key, ctrl, meta["market_id"], meta["name_to_sel"], sink,
-                            data_filter, mode,
+                            data_filter, mode, market_ids=all_market_ids,
                         )
                     except Exception as e:  # noqa: BLE001
                         logger.warning("[tennis-runner] arm KO %s/%s: %s", event_id, bot_key, e)
@@ -1509,8 +1598,9 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
 
             for event_id in session.market_meta:
                 tennis_db.set_tennis_follow_status(event_id, "STREAMING")
-            logger.info("[tennis-runner] stream avviato: %d eventi, %d bot ospitati.",
-                        len(session.market_meta), len(session.hosted))
+            logger.info("[tennis-runner] stream avviato: %d eventi, %d bot ospitati, "
+                        "1 connessione Betfair (%d mercati).",
+                        len(session.market_meta), len(session.hosted), len(all_market_ids))
             try:
                 framework.run()
             except KeyboardInterrupt:
@@ -1536,7 +1626,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_follow: bool = True) ->
         except Exception as e:  # noqa: BLE001
             logger.debug("[tennis-rec] close KO (ignorato): %s", e)
         safe_logout(trading)
+    global _PLANNED_RESTART  # noqa: PLW0603 - letto da _main per l'exit code
+    _PLANNED_RESTART = bool(getattr(session, "planned_restart", False))
     return sorted(session.market_meta.keys())
+
+
+_PLANNED_RESTART = False
 
 
 def _main() -> None:
@@ -1550,6 +1645,10 @@ def _main() -> None:
     _INSTANCE_LOCK = acquire_single_instance_lock(_TENNIS_LOCK_PORT, "tennis-runner")
     done = setup_and_run(only_event=args.event, auto_follow=not args.no_auto_follow)
     logger.info("[tennis-runner] terminato. Eventi: %s", done)
+    if _PLANNED_RESTART:
+        logger.info("[tennis-runner] ricambio pianificato (vita massima, desktop): exit %d.",
+                    EXIT_PLANNED_RESTART)
+        raise SystemExit(EXIT_PLANNED_RESTART)
 
 
 if __name__ == "__main__":

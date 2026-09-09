@@ -59,6 +59,7 @@ _STARTUP_DONE: dict[str, bool] = {}
 _MISSING_SEEN: dict[str, int] = {}
 # write-on-change del saldo / dei settled per mercato.
 _LAST_ACCOUNT_SIG: Optional[Tuple] = None
+_LAST_ACCOUNT_TS = 0.0  # monotonic dell'ultimo getAccountFunds (cadenza, vedi _process_once)
 _LAST_CLEARED_SIG: Dict[str, Tuple] = {}
 
 
@@ -412,7 +413,16 @@ def _process_once(sb: Any, session: Any, mode_l: str) -> None:
 
     # 1) saldo del conto (entrambe le mode: il conto è reale). Un KO qui NON
     # blocca la riconciliazione ordini (gestito dentro _sync_account).
-    _sync_account(session)
+    # CADENZA (audit 09/09): getAccountFunds girava a OGNI ciclo (5s dal .env =
+    # 12 chiamate REST/min) — in PAPER il saldo non cambia mai per effetto del
+    # bot, in LIVE cambia ai settlement. Saldo ogni 60s in PAPER, 20s in LIVE;
+    # la riconciliazione ordini LIVE (sotto) resta alla cadenza del worker.
+    global _LAST_ACCOUNT_TS
+    _account_every = 20.0 if mode_l == "live" else 60.0
+    _now_mono = time.monotonic()
+    if _now_mono - _LAST_ACCOUNT_TS >= _account_every:
+        _LAST_ACCOUNT_TS = _now_mono
+        _sync_account(session)
 
     if mode_l != "live":
         return  # in PAPER il conto non riflette gli ordini simulati: stop qui

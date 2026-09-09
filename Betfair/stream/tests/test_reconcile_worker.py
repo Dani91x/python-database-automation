@@ -235,12 +235,41 @@ def env(monkeypatch):
     monkeypatch.setattr(rw, "_STARTUP_DONE", {})
     monkeypatch.setattr(rw, "_MISSING_SEEN", {})
     monkeypatch.setattr(rw, "_LAST_ACCOUNT_SIG", None)
+    monkeypatch.setattr(rw, "_LAST_ACCOUNT_TS", 0.0)
     monkeypatch.setattr(rw, "_LAST_CLEARED_SIG", {})
     return state
 
 
-def _cycle(sb: Any, session: Any) -> None:
+def _cycle(sb: Any, session: Any, *, account_due: bool = True) -> None:
+    """Un giro del worker. ``account_due=True`` azzera la cadenza del saldo (audit
+    09/09: getAccountFunds ogni 60s PAPER / 20s LIVE) così i test storici sulla
+    write-on-change del saldo vedono una lettura a ogni giro, come prima."""
+    if account_due:
+        rw._LAST_ACCOUNT_TS = 0.0
     rw._process_once(sb, session, rw.low._live_order_mode().lower())
+
+
+def test_account_funds_cadence_paper_60s_live_20s(env, monkeypatch):
+    """Audit 09/09: il saldo NON si legge a ogni giro (5s) ma ogni 60s in PAPER e
+    ogni 20s in LIVE; entro la finestra il giro non chiama getAccountFunds."""
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(rw.time, "monotonic", lambda: clock["t"])
+    env["mode"] = "PAPER"
+    account = _FakeAccount(available=100.0, exposure=0.0)
+    session = _session(account)
+    sb = _FakeSb()
+    _cycle(sb, session)                       # prima lettura
+    _cycle(sb, session, account_due=False)    # +0s: niente
+    clock["t"] += 30.0
+    _cycle(sb, session, account_due=False)    # +30s: ancora niente in PAPER
+    assert account.calls == 1
+    clock["t"] += 31.0
+    _cycle(sb, session, account_due=False)    # +61s: seconda lettura
+    assert account.calls == 2
+    env["mode"] = "LIVE"
+    clock["t"] += 21.0
+    _cycle(sb, session, account_due=False)    # LIVE: 20s bastano
+    assert account.calls == 3
 
 
 def _warns(env) -> List[str]:

@@ -232,7 +232,28 @@ def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
     if sport == "calcio":
         cs = payload.get("cs") or {}
         crit["cs_status"] = cs.get("status") if isinstance(cs, dict) else None
+    # lo stato IPS grezzo è il feed dei runner (punti tennis, corner/cartellini
+    # calcio): ogni suo cambio va pubblicato subito, come un gol
+    crit["score_raw"] = payload.get("score_raw")
     return json.dumps(crit, sort_keys=True, separators=(",", ":"), default=str)
+
+
+# campi dello stato IPS che cambiano OGNI secondo senza informazione utile
+# (il minuto è già in `timeElapsed`): tolti dal payload per non riscrivere la
+# riga a ogni poll. I parser dei runner li usano solo come fallback.
+_VOLATILE_STATE_KEYS = ("timeElapsedSeconds",)
+
+
+def strip_volatile_state(state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Copia dello stato IPS senza i campi al secondo. None resta None."""
+    if not isinstance(state, dict):
+        return None
+    return {k: v for k, v in state.items() if k not in _VOLATILE_STATE_KEYS}
+
+
+def num_or_none(v: Any) -> Optional[float]:
+    """float da un valore numerico, None se assente/malformato."""
+    return float(v) if isinstance(v, (int, float)) else None
 
 
 def media_flags(broadcasts: Optional[Dict[str, Any]]) -> Dict[str, Optional[bool]]:

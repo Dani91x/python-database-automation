@@ -48,6 +48,7 @@ from .config_stream import (
     FIRST_ATTACH_MIN_INTERVAL_SEC,
     IDLE_FOLLOW_POLL_SEC,
     HARD_MARKET_CAP,
+    LIVE_MARKET_TYPES,
     KELLY_FRACTION,
     LADDER_DEPTH,
     LADDER_MAX_LEVELS,
@@ -95,11 +96,13 @@ from .runner_lifecycle import (
     raw_stall_seconds,
     stall_restart_due,
     uptime_exceeded,
+    EXIT_PLANNED_RESTART,
 )
 from .single_instance import acquire_single_instance_lock
 from .scores.api_football import ApiFootballProvider
 from .scores.betfair_inplay import BetfairInPlayProvider
 from .scores.poller import ScorePoller
+from .scores.scan_feed import ScanFeedScoreProvider
 from .watchlist import resolve_and_register
 
 logger = logging.getLogger(__name__)
@@ -119,6 +122,10 @@ def fetch_event_markets(rest: BetfairClient, event_id: str) -> List[Dict[str, An
     markets: List[Dict[str, Any]] = []
     for i, c in enumerate(catalogues):
         desc = c.get("description") or {}
+        # whitelist opzionale (LIVE_MARKET_TYPES): meno mercati per evento = più
+        # partite seguibili entro il limite Betfair di 200 mercati/connessione
+        if LIVE_MARKET_TYPES and str(desc.get("marketType") or "").upper() not in LIVE_MARKET_TYPES:
+            continue
         runners = [
             {
                 "selection_id": r.get("selectionId"),
@@ -203,6 +210,11 @@ class LiveSession:
         # si ripete a intervalli CRESCENTI (x2, cap 1h), non ogni 5 minuti.
         self.sub_restart_defer_alert_interval = 0.0
         self.backoff = limits.Backoff(base_sec=BACKOFF_BASE_SEC, max_sec=BACKOFF_MAX_SEC)
+        # ultima cattura timeline per evento (throttle, vedi _capture_timeline)
+        self._timeline_ts: Dict[str, float] = {}
+        # True se l'auto-spegnimento è un ricambio pianificato (desktop): il
+        # processo esce con EXIT_PLANNED_RESTART e il watchdog lo rilancia
+        self.planned_restart: bool = False
 
     def score_file(self, event_id: str) -> Any:
         fh = self._score_files.get(event_id)
@@ -356,6 +368,9 @@ def score_worker(context: dict, flumine: Flumine, session: LiveSession) -> None:
             _compute_and_write_signals(event_id, session, snap)
 
 
+_TIMELINE_MIN_INTERVAL_SEC = float(os.getenv("LIVE_TIMELINE_POLL_SEC", "30"))
+
+
 def _capture_timeline(event_id: str, session: LiveSession) -> None:
     """Cattura la cronologia eventi Betfair (gol/cartellini/...) e registra i nuovi.
 
@@ -364,8 +379,16 @@ def _capture_timeline(event_id: str, session: LiveSession) -> None:
     """
     poller = session.pollers.get(event_id)
     primary = getattr(poller, "primary", None) if poller else None
-    if not isinstance(primary, BetfairInPlayProvider):
+    if not isinstance(primary, (ScanFeedScoreProvider, BetfairInPlayProvider)):
         return
+    # THROTTLE (audit 09/09): la timeline cambia a eventi discreti (gol,
+    # cartellini) — prima era richiesta a OGNI giro del worker (5s) per evento.
+    # Col feed dello scanner è una lettura in cache; la chiamata diretta (fallback)
+    # non deve comunque superare una ogni _TIMELINE_MIN_INTERVAL_SEC.
+    now_mono = time.monotonic()
+    if now_mono - session._timeline_ts.get(event_id, 0.0) < _TIMELINE_MIN_INTERVAL_SEC:
+        return
+    session._timeline_ts[event_id] = now_mono
     try:
         events = primary.get_timeline(event_id)
     except Exception as e:  # noqa: BLE001
@@ -1212,15 +1235,20 @@ def lifecycle_worker(context: dict, flumine: Flumine, session: LiveSession) -> N
     if session.shutdown_requested.is_set():
         return
     reason: Optional[str] = None
+    keep_alive_desktop = os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1"
     if uptime_exceeded(session.started_monotonic, time.monotonic(), _RUNNER_MAX_HOURS):
         reason = f"vita massima {_RUNNER_MAX_HOURS:.0f}h raggiunta"
+        # app desktop: NON è una fine voluta ma un ricambio del processo → exit
+        # code dedicato (EXIT_PLANNED_RESTART) così il watchdog riavvia subito
+        # invece di fermarsi per sempre (audit 09/09: calcio morto dopo 18h).
+        session.planned_restart = keep_alive_desktop
     # BUG FIX cert 10/07 (VISTO DAL VIVO): con LIVE_RUNNER_KEEP_ALIVE=1 (app desktop)
     # il ramo IDLE non deve spegnere — il main loop è progettato per restare in
     # ATTESA senza eventi (canale locale + board vivi), ma il lifecycle spegneva
     # comunque alla fine dell'ultima partita e il watchdog (correttamente) non
     # riavvia su exit 0 → runner desktop MORTO dopo la prima partita. La vita
     # massima resta attiva anche col keep-alive (backstop anti-"giorni acceso").
-    elif os.getenv("LIVE_RUNNER_KEEP_ALIVE", "").strip() == "1":
+    elif keep_alive_desktop:
         pass  # idle-exit disattivato dal keep-alive desktop
     elif _RUNNER_IDLE_EXIT_MIN > 0:
         try:
@@ -1340,9 +1368,12 @@ def _catalog_events(rest: BetfairClient, session: LiveSession, follows: List[Dic
             session.market_type_by_id[mid] = m.get("market_type")
             session.event_markets[event_id].add(mid)
             session.selection_names[mid] = {str(s["selection_id"]): s.get("name") for s in m.get("selections", [])}
-        # poller per evento
+        # poller per evento — PRIMARIO = feed unico dello scanner Safe Strategy
+        # (scores/scan_feed.py: stesso stato IPS, già scaricato in batch per tutti
+        # gli in-play), con fallback INTERNO alla chiamata IPS diretta se la riga
+        # manca o è stantia; API-Football resta il fallback del circuit breaker.
         session.pollers[event_id] = ScorePoller(
-            BetfairInPlayProvider(session.context_api_client),  # type: ignore[attr-defined]
+            ScanFeedScoreProvider(BetfairInPlayProvider(session.context_api_client)),  # type: ignore[attr-defined]
             ApiFootballProvider(fixture_id=f.get("fixture_id")),
             threshold=FALLBACK_THRESHOLD, retry_primary_sec=FALLBACK_RETRY_PRIMARY_SEC,
         )
@@ -1578,7 +1609,8 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                         try:
                             from .auth import keep_alive as _bf_keep_alive
                             _bf_keep_alive(api_client)
-                            rest.login_cert()  # anche la sessione JSON-RPC del catalogo
+                            # la sessione JSON-RPC (rest) è tenuta viva dal
+                            # resolve_and_register ogni 15s: nessun re-login (audit 09/09)
                             logger.info("[runner] keepAlive sessione Betfair ok (idle).")
                         except Exception as _ex:  # noqa: BLE001
                             logger.warning("[runner] keepAlive sessione KO: %s", str(_ex)[:120])
@@ -1764,7 +1796,12 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
         close_raw()
         safe_logout(api_client)
 
+    global _PLANNED_RESTART  # noqa: PLW0603 - letto da _main per l'exit code
+    _PLANNED_RESTART = bool(getattr(session, "planned_restart", False))
     return sorted(session.finished_events)
+
+
+_PLANNED_RESTART = False
 
 
 def _main() -> None:
@@ -1782,6 +1819,10 @@ def _main() -> None:
     # server quote/ordini possono girare INSIEME senza contendersi la porta.
     done = setup_and_run(only_event=args.event, auto_subscribe=not args.no_auto_subscribe)
     logger.info("[runner] terminato. Eventi finalizzati: %s", done)
+    if _PLANNED_RESTART:
+        logger.info("[runner] ricambio pianificato (vita massima, desktop): exit %d, il watchdog rilancia.",
+                    EXIT_PLANNED_RESTART)
+        raise SystemExit(EXIT_PLANNED_RESTART)
 
 
 if __name__ == "__main__":

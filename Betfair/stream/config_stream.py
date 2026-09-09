@@ -139,13 +139,21 @@ FINALIZE_SPACING_SEC: float = float(os.getenv("LIVE_FINALIZE_SPACING_SEC", "8"))
 # Limiti Betfair / multi-match (F5) — NO BAN
 # ----------------------------------------------------------------------------
 # soglia mercati totali oltre cui AVVISARE (WARN), e tetto oltre cui RIFIUTARE.
-# SOGLIA DI ALLERTA (solo warning, il blocco resta HARD_MARKET_CAP): 200 è il
-# limite ufficiale Betfair di mercati per subscription stream (best practice
-# 16/07, docs/BETFAIR_BEST_PRACTICES_2026-07.md) — sopra i 200 l'alert avvisa
-# che serve segmentare su più subscription (lavoro del piano scala, non si
-# alza il cap).
-SAFE_MARKET_THRESHOLD: int = int(os.getenv("LIVE_SAFE_MARKET_THRESHOLD", "200"))
-HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "400"))
+# LIMITE BETFAIR (accertato 09/09 su docs + risposte BDP): 200 mercati per
+# subscription stream, oltre → SUBSCRIPTION_LIMIT_EXCEEDED e subscription
+# RIFIUTATA (non "rallentata"). Il runner sottoscrive TUTTI i mercati degli
+# eventi seguiti su UNA connessione → il tetto duro DEVE stare sotto 200: 180
+# (stesso margine del pool dello scanner Safe Strategy), allerta a 150. Il
+# vecchio 400 lasciava sottoscrivere il DOPPIO del consentito. Per seguire più
+# partite: LIVE_MARKET_TYPES (sotto) riduce i mercati per evento.
+SAFE_MARKET_THRESHOLD: int = int(os.getenv("LIVE_SAFE_MARKET_THRESHOLD", "150"))
+HARD_MARKET_CAP: int = int(os.getenv("LIVE_HARD_MARKET_CAP", "180"))
+# Whitelist OPZIONALE dei market type sottoscritti per evento (CSV, es.
+# "MATCH_ODDS,OVER_UNDER_25,CORRECT_SCORE"). Vuota = tutti i mercati dell'evento
+# (comportamento storico: registrazione completa per il Replay).
+LIVE_MARKET_TYPES: frozenset = frozenset(
+    t.strip().upper() for t in os.getenv("LIVE_MARKET_TYPES", "").split(",") if t.strip()
+)
 BACKOFF_BASE_SEC: float = float(os.getenv("LIVE_BACKOFF_BASE_SEC", "5"))
 BACKOFF_MAX_SEC: float = float(os.getenv("LIVE_BACKOFF_MAX_SEC", "300"))
 

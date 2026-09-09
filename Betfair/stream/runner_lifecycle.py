@@ -63,6 +63,14 @@ def any_follow_alive(
     return False
 
 
+# EXIT CODE "riavvio pianificato" (audit 09/09): con LIVE_RUNNER_KEEP_ALIVE=1 (app
+# desktop) la vita massima 18h NON è una fine voluta dall'utente ma un ricambio
+# igienico del processo. Prima usciva con rc=0 → il watchdog (correttamente)
+# non riavviava → runner MORTO in silenzio dopo 18h. Con questo codice il
+# watchdog riavvia subito, senza contarlo come crash.
+EXIT_PLANNED_RESTART = 75
+
+
 def uptime_exceeded(started_monotonic: float, now_monotonic: float, max_hours: float) -> bool:
     """True se la vita massima è superata (max_hours <= 0 → mai)."""
     if max_hours <= 0:

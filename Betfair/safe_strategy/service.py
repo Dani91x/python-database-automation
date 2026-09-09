@@ -11,8 +11,11 @@ Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
     non è in salute — cadenza ADATTIVA 10s (2°T calcio dal 40′ in poi /
     tennis in-play), 20-60s altrimenti;
   · punteggi/minuti/rossi + disponibilità video/animazione per TUTTI gli
-    in-play in UNA chiamata IPS scoresAndBroadcast (chunk 20 id) ogni 5s —
-    stesso servizio non ufficiale già usato dai runner (fallback get_scores);
+    in-play in UNA chiamata IPS scoresAndBroadcast (chunk 20 id) ogni 3s
+    (fallback get_scores) + timeline calcio in batch ogni 30s: è il FEED UNICO
+    di punteggi/timeline anche per i runner calcio e tennis (stato IPS grezzo
+    `score_raw` nel payload → scores/scan_feed.py), che così non rifanno per
+    ogni evento seguito le stesse chiamate;
   · Correct Score SOLO per i candidati Risultato Esatto (dal 40′ in poi,
     max 2 gol per lato — il minuto è una SOGLIA, come nella strategia):
     catalogo dedicato appena compare un candidato nuovo + book ogni 15s;
@@ -37,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from Betfair.stream.auth import build_client, keep_alive, safe_logout
-from Betfair.stream.scores.betfair_inplay import parse_score_dict
+from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
 from Betfair.stream.single_instance import acquire_single_instance_lock
 from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 
@@ -54,13 +57,19 @@ _CATALOGUE_TTL_SEC = 300.0
 # throttle può essere corto: un candidato nuovo al 48′ ha la quota entro ~20s
 # (prima il TTL era 600s → segnale R.E. in ritardo fino a 10 minuti)
 _CS_CATALOGUE_MIN_INTERVAL_SEC = 20.0
-_SCORES_PERIOD_SEC = 5.0    # IPS non ha stream: poll batch fitto (1-2 chiamate)
+# IPS non ha stream: poll batch (chunk 20). 3s perché questo è il FEED UNICO di
+# punteggi anche per i runner calcio/tennis (scores/scan_feed.py): il tennis
+# usava 2s per evento, qui 3s per TUTTI gli in-play con 1-3 chiamate.
+_SCORES_PERIOD_SEC = 3.0
+# timeline calcio (gol/cartellini col minuto) in batch: cambia a eventi discreti
+_TIMELINE_PERIOD_SEC = 30.0
 _CS_BOOKS_PERIOD_SEC = 15.0
 # throttle di scrittura per-evento: con lo STREAM le quote cambiano ogni secondo
 # (conflate 1s) — mai inondare Supabase: max 1 riga/evento ogni 2.5s (e comunque
 # solo write-on-change).
 _PUBLISH_MIN_INTERVAL_SEC = 2.5
 _STATUS_PERIOD_SEC = 10.0
+_ORPHAN_PURGE_PERIOD_SEC = 300.0
 _KEEPALIVE_PERIOD_SEC = 900.0
 _BOOK_CHUNK = 25          # peso EX_BEST_OFFERS 5/mercato → 125 < 200
 _SCORES_CHUNK = 20
@@ -119,6 +128,8 @@ class Scanner:
         self.last_pub_mono: Dict[str, float] = {}
         self.written_crit: Dict[str, str] = {}
         self.scores_ts = 0.0
+        self.timelines_ts = 0.0
+        self.orphan_purge_ts = -1e9  # prima pulizia subito al primo publish
         self.cs_catalogue_ts = 0.0
         self.cs_books_ts = 0.0
         self.status_ts = 0.0
@@ -235,12 +246,18 @@ class Scanner:
         if not found:
             return
         sport, meta = found
-        pairs: Dict[int, Dict[str, Optional[float]]] = {}
+        pairs: Dict[int, Dict[str, Any]] = {}
         for r in getattr(book, "runners", None) or []:
             sid = getattr(r, "selection_id", None)
             if sid is None:
                 continue
-            pairs[int(sid)] = scanner.price_pair(getattr(r, "ex", None))
+            # selection_id + LTP nel pair: la board del desktop (board_worker) li
+            # legge da QUI invece di rifare il listMarketBook via REST
+            pairs[int(sid)] = {
+                **scanner.price_pair(getattr(r, "ex", None)),
+                "selection_id": int(sid),
+                "ltp": scanner.num_or_none(getattr(r, "last_price_traded", None)),
+            }
         sides = meta["sides"]
         odds = {
             side: pairs.get(sid) if sid is not None else None
@@ -250,6 +267,7 @@ class Scanner:
         ev["sport"] = sport
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
+        ev["mo_total_matched"] = scanner.num_or_none(getattr(book, "total_matched", None))
         ev["odds"] = odds
         # riferimento pre-KO: aggiorna pre-KO, congela al primo in-play
         ev["pre_ko"] = scanner.freeze_pre_ko(
@@ -349,6 +367,10 @@ class Scanner:
             ev = self.events.get(eid)
             if ev is None:
                 continue
+            # FEED UNICO (audit 09/09): lo stato IPS grezzo va nel payload, così i
+            # runner calcio/tennis lo parsano coi loro parser di sempre invece di
+            # rifare per ogni evento la stessa chiamata (scores/scan_feed.py).
+            ev["score_raw"] = scanner.strip_volatile_state(rec)
             if ev.get("sport") == "calcio":
                 snap = parse_score_dict(eid, rec)
                 ev["minute"] = snap.minute
@@ -370,6 +392,34 @@ class Scanner:
                         else None
                     )
         self.scores_ts = time.monotonic()
+
+    # ------------------------------------------------------------- timeline IPS
+    def poll_timelines(self) -> None:
+        """Cronologia eventi (gol/cartellini/kickoff) di TUTTI gli in-play CALCIO
+        in batch (``eventTimelines``, chunk 20) ogni _TIMELINE_PERIOD_SEC: prima
+        ogni runner la chiedeva PER EVENTO ogni 5s. Il formato è quello di
+        ``normalize_timeline`` (identico al provider diretto del runner)."""
+        ids = [
+            eid for eid, ev in self.events.items()
+            if ev.get("sport") == "calcio" and ev.get("inplay")
+        ]
+        for i in range(0, len(ids), _SCORES_CHUNK):
+            chunk = ids[i:i + _SCORES_CHUNK]
+            try:
+                res = self.client.in_play_service.get_event_timelines(
+                    event_ids=[int(e) for e in chunk], lightweight=True
+                )
+            except Exception as e:  # noqa: BLE001 - endpoint non ufficiale: best-effort
+                logger.warning("[safe-scan] eventTimelines KO: %s", str(e)[:120])
+                continue
+            for rec in res or []:
+                if not isinstance(rec, dict) or rec.get("eventId") is None:
+                    continue
+                ev = self.events.get(str(rec["eventId"]))
+                if ev is not None:
+                    ev["timeline"] = normalize_timeline(rec)
+            time.sleep(_REQ_DELAY)
+        self.timelines_ts = time.monotonic()
 
     # ------------------------------------------------------------- Correct Score
     def cs_candidates(self) -> List[str]:
@@ -483,6 +533,11 @@ class Scanner:
                         # disponibilità video/animazione Betfair (IPS): i pulsanti
                         # 📺/📊 della UI la mostrano come fa il sito
                         "media": ev.get("media"),
+                        # FEED UNICO per i runner: stato IPS grezzo + timeline +
+                        # volume scambiato (board desktop)
+                        "score_raw": ev.get("score_raw"),
+                        "timeline": ev.get("timeline"),
+                        "mo_total_matched": ev.get("mo_total_matched"),
                     }
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
@@ -499,6 +554,8 @@ class Scanner:
                         "sets": ev.get("sets"),
                         "games": ev.get("games"),
                         "media": ev.get("media"),
+                        "score_raw": ev.get("score_raw"),
+                        "mo_total_matched": ev.get("mo_total_matched"),
                     }
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
@@ -526,11 +583,30 @@ class Scanner:
                 })
         return rows, wanted
 
+    def purge_orphans(self, wanted: List[str]) -> int:
+        """Righe in tabella che NON appartengono a questo giro (istanze
+        precedenti dello scanner, riavvii dell'app): vanno CANCELLATE, altrimenti
+        la UI mostra partite vecchie per sempre (visto dal vivo 09/09: 123 righe
+        in tabella con 25 eventi monitorati). All'avvio e poi ogni
+        _ORPHAN_PURGE_PERIOD_SEC."""
+        known = scan_db.list_scan_event_ids()
+        if known is None:
+            return 0
+        keep = set(wanted)
+        orphans = [eid for eid in known if eid not in keep]
+        if orphans:
+            scan_db.delete_scan_rows(orphans)
+            logger.info("[safe-scan] pulite %d righe orfane di istanze precedenti", len(orphans))
+        self.orphan_purge_ts = time.monotonic()
+        return len(orphans)
+
     def publish(self, now: datetime) -> "tuple[int, int]":
         rows, wanted = self.build_rows(now)
         stale = [eid for eid in self.written_sig if eid not in set(wanted)]
         if self.dry:
             return len(rows), len(stale)
+        if time.monotonic() - self.orphan_purge_ts > _ORPHAN_PURGE_PERIOD_SEC:
+            self.purge_orphans(wanted)
         if rows:
             scan_db.upsert_scan_rows(rows)
         if stale:
@@ -629,6 +705,8 @@ class Scanner:
 
             if now_mono - self.scores_ts > _SCORES_PERIOD_SEC:
                 self.poll_scores()
+            if now_mono - self.timelines_ts > _TIMELINE_PERIOD_SEC:
+                self.poll_timelines()
 
             candidates = self.cs_candidates()
             if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:

@@ -1028,22 +1028,42 @@ def _process_rule(sb: Any, flumine: Any, rule: Dict[str, Any], mode_l: str, stra
         _update_rule(sb, rule["id"], {"status": "error", "error": f"rule_type sconosciuto: {rt!r}"})
 
 
+# CARICO DB A VUOTO (audit 09/09): il worker gira a 0.15s (LIVE_RISK_ENGINE_POLL_SEC
+# dell'app desktop) e faceva 1 RPC settings + 3 SELECT per tick = ~96.000
+# richieste Supabase/ora per leggere quasi sempre ZERO regole. La reattività
+# degli stop viene dai book già in memoria, non dal DB: le letture "di
+# servizio" (settings, verifica triggered, cleanup cancelled) vanno a 1s come
+# l'order worker; l'esito "nessuna regola armata" resta valido 1s (una regola
+# appena armata dalla UI è vista entro 1s). Con regole armate la SELECT resta
+# per tick: una regola innescata non deve MAI essere rivalutata da una cache.
+_EMPTY_RULES_TTL_SEC = 1.0
+_EMPTY_RULES_UNTIL: Dict[str, float] = {}
+
+
 def _read_armed_rules(sb: Any, mode_l: str) -> list:
+    now = low._now_epoch()
+    if now < _EMPTY_RULES_UNTIL.get(mode_l, 0.0):
+        return []
     try:
-        return (
+        rules = (
             sb.table(_TABLE).select("*").eq("status", "armed").eq("mode", mode_l)
             .order("id").limit(_batch()).execute().data or []
         )
     except Exception as ex:  # noqa: BLE001
         logger.warning("[risk] lettura regole armate KO: %s", str(ex)[:160])
         return []
+    if not rules:
+        _EMPTY_RULES_UNTIL[mode_l] = now + _EMPTY_RULES_TTL_SEC
+    return rules
 
 
 def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
     mode = low._live_order_mode()
     if mode not in ("PAPER", "LIVE"):
         return 0
-    low._refresh_settings(sb)  # snapshot settings (kill-switch UI condiviso con l'order worker)
+    # snapshot settings (kill-switch UI condiviso con l'order worker): 1s come l'order worker
+    if not low._throttled("risk_settings_refresh", 1.0):
+        low._refresh_settings(sb)
     # #15 velocità runtime: rallenta la cadenza al target risk_poll_sec (se impostato), senza riavvio.
     if low._throttled("risk_cycle", low._risk_poll_target()):
         return 0
@@ -1062,9 +1082,11 @@ def _process_once(sb: Any, flumine: Any, strategy: Any = None) -> int:
         handled += 1
     # Fix HIGH-3: 'triggered' non è terminale di fiducia — verifica esito/fill delle chiusure
     # accodate, ritenta le fallite (bounded) ed escala con alert quelle irrecuperabili.
-    handled += _check_triggered_rules(sb, flumine, mode_l)
-    # BUG FIX #9 (cert 10/07): disarm manuale → ritira anche il TP resting della regola
-    handled += _cleanup_cancelled_offsets(sb, flumine, mode_l)
+    # BUG FIX #9 (cert 10/07): disarm manuale → ritira anche il TP resting della regola.
+    # Entrambi sono follow-through (non rilevano trigger): 1 lettura al secondo basta.
+    if not low._throttled("risk_followthrough", 1.0):
+        handled += _check_triggered_rules(sb, flumine, mode_l)
+        handled += _cleanup_cancelled_offsets(sb, flumine, mode_l)
     return handled
 
 

@@ -217,7 +217,12 @@ function spawnRunner(label, args) {
     child.on('exit', (code) => {
         // uscita immediata = probabilmente watchdog già attivo altrove (lock porta): ok.
         console.log(`[desktop] ${label} terminato (exit ${code})`);
+        // niente riferimenti morti: il registro dei figli resta = processi VIVI
+        // (prima cresceva di 1 a ogni job tennis-odds, 48/giorno)
+        const i = children.indexOf(child);
+        if (i >= 0) children.splice(i, 1);
     });
+    return child;
 }
 
 function startRunners() {
@@ -225,23 +230,38 @@ function startRunners() {
     // da solo se un'altra istanza è attiva.
     spawnRunner('runner-calcio', ['-m', 'Betfair.stream.watchdog']);
     spawnRunner('runner-tennis', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.stream.tennis_live.tennis_runner']);
-    // SERVIZI BOT: senza di loro i bot non si armano e le "Partite del Giorno"
-    // tennis restano vuote (tennis_bot_service popola tennis_markets). NON
-    // avviare anche i .bat a mano: l'app avvia già tutto.
+    // SERVIZI BOT: senza di loro i bot non si armano. NON avviare anche i .bat
+    // a mano: l'app avvia già tutto.
     spawnRunner('scalper-service', ['-m', 'Betfair.stream.scalper.scalper_service']);
-    spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service']);
+    // PONTE bot→follow tennis in sola modalità ponte (audit 09/09): l'hosting dei
+    // bot lo fa il runner tennis sotto watchdog (sopra). Senza --bridge-only i
+    // due processi si contendevano il lock 47312 e, a seconda di chi vinceva, il
+    // tennis restava senza sentinella o il ponte girava a vuoto. Le "Partite del
+    // Giorno" tennis (tennis_markets) le popola il job betfair_tennis_odds sotto.
+    spawnRunner('tennis-bot-service', ['-m', 'Betfair.stream.tennis_live.tennis_bot_service', '--bridge-only']);
     // SAFE STRATEGY: scanner AUTONOMO degli eventi in-play (calcio+tennis).
     // REST leggero a cadenze adattive, scrive i fatti su safe_strategy_scan;
     // single-instance lock su 127.0.0.1:47315. Nessun ordine, mai.
-    spawnRunner('safe-strategy-service', ['-m', 'Betfair.safe_strategy.service']);
-    // OMEGA (Correct Score LAY): servizio leggero e ISOLATO. A riposo NON chiama
-    // Betfair (idle = nessuna richiesta); agisce solo quando lo attivi/usi da /omega,
-    // e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio
+    // sotto WATCHDOG (audit 09/09): è il FEED UNICO di quote/punteggi per tutti
+    // gli altri processi — se cade va rilanciato (crash → backoff), come i runner.
+    spawnRunner('safe-strategy-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.safe_strategy.service']);
+    // OMEGA (Correct Score LAY): servizio leggero e ISOLATO. A riposo fa solo il
+    // keep-alive di sessione (1 chiamata ogni 10 min); agisce quando lo attivi/usi
+    // da /omega, e di default in PAPER. Single-instance lock su 127.0.0.1:47313 → niente doppio
     // avvio se lanci anche avvia_omega_service.bat. Nessun impatto sugli altri runner.
     spawnRunner('omega-service', ['-m', 'Betfair.omega.omega_service']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
-    const runTennisOdds = () => spawnRunner('tennis-odds', ['betfair_tennis_odds.py']);
+    // MAI due run sovrapposte (audit 09/09): una run lenta ancora viva NON viene
+    // raddoppiata (il job ha anche un lock di singola istanza sulla porta 47316).
+    let tennisOddsChild = null;
+    const runTennisOdds = () => {
+        if (tennisOddsChild && tennisOddsChild.exitCode === null) {
+            console.log('[desktop] tennis-odds ancora in corso: salto questo giro.');
+            return;
+        }
+        tennisOddsChild = spawnRunner('tennis-odds', ['betfair_tennis_odds.py']) || null;
+    };
     runTennisOdds();
     setInterval(runTennisOdds, 30 * 60 * 1000);
 }

@@ -75,13 +75,18 @@ def _book_snapshot(trading: Any, market_ids: List[str]) -> Dict[str, Any]:
 
 
 def scan(hours: float = 6.0, top: int = 15, samples: int = 3,
-         sample_gap_s: float = 20.0) -> List[Dict[str, Any]]:
+         sample_gap_s: float = 20.0, trading: Any = None) -> List[Dict[str, Any]]:
+    """``trading``: client betfairlightweight già loggato (il supervisore passa il
+    suo, audit 09/09: prima ogni scan faceva un LOGIN NUOVO ogni 30 minuti — 48
+    sessioni/giorno — mentre la sessione del supervisore restava inutilizzata).
+    None = login proprio (uso da terminale)."""
     from betfairlightweight import filters
 
-    sys.path.insert(0, __file__.rsplit("Betfair", 1)[0])
-    from Betfair.stream.auth import build_client
+    if trading is None:
+        sys.path.insert(0, __file__.rsplit("Betfair", 1)[0])
+        from Betfair.stream.auth import build_client
 
-    trading = build_client(login=True)
+        trading = build_client(login=True)
     cat = trading.betting.list_market_catalogue(
         filter=filters.market_filter(
             event_type_ids=["1"], market_type_codes=["MATCH_ODDS"],

@@ -147,10 +147,26 @@ def _main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description="Supervisore bot tennis (follow + hosting)")
     ap.add_argument("--once", action="store_true", help="solo ensure-follows, poi esci")
+    ap.add_argument("--bridge-only", action="store_true",
+                    help="solo il ponte follow in loop (nessun hosting: il runner sotto watchdog ospita i bot)")
     args = ap.parse_args()
     if args.once:
         created = ensure_follows_for_bots()
         logger.info("[tennis-bot-svc] follow creati: %s", created)
+        return
+    if args.bridge_only:
+        # MODALITÀ APP DESKTOP (audit 09/09): l'app avvia GIÀ il runner tennis
+        # sotto watchdog. Questo processo faceva la CORSA al lock 47312: se
+        # vinceva, il figlio del watchdog usciva per lock e il watchdog si
+        # fermava PER SEMPRE (tennis senza sentinella); se perdeva, girava a
+        # vuoto. Qui solo il ponte follow, nessun hosting, nessun login Betfair.
+        logger.info("[tennis-bot-svc] modalità ponte: ensure-follows ogni %.0fs, nessun hosting.",
+                    ENSURE_POLL_SEC)
+        stop = threading.Event()
+        try:
+            _ensure_loop(stop)
+        except KeyboardInterrupt:
+            stop.set()
         return
     while True:
         try:

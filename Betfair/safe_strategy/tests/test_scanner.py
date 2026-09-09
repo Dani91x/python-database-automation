@@ -224,3 +224,20 @@ def test_plan_shards_stabile_quando_si_aggiunge_un_mercato():
     # stesso numero di shard: nessun mercato cambia shard, UNO solo ricrea la subscription
     changed = sum(1 for a, b in zip(before, after) if set(a) != set(b))
     assert changed == 1
+
+
+def test_strip_volatile_state_e_num_or_none():
+    st = {"timeElapsed": 58, "timeElapsedSeconds": 3491, "score": {"home": {"score": "1"}}}
+    out = scanner.strip_volatile_state(st)
+    assert out == {"timeElapsed": 58, "score": {"home": {"score": "1"}}}
+    assert st["timeElapsedSeconds"] == 3491  # copia, mai mutazione
+    assert scanner.strip_volatile_state(None) is None
+    assert scanner.num_or_none(3) == 3.0 and scanner.num_or_none("3") is None and scanner.num_or_none(None) is None
+
+
+def test_critical_signature_include_lo_stato_ips_grezzo():
+    base = {"inplay": True, "mo_status": "OPEN", "sets": {"p1": 1, "p2": 0}, "games": {"p1": 3, "p2": 1},
+            "score_raw": {"score": {"home": {"score": "30"}}}}
+    punto = {**base, "score_raw": {"score": {"home": {"score": "40"}}}}
+    # un punto tennis (solo nel raw) è un cambio critico: pubblicazione immediata
+    assert scanner.critical_signature("tennis", base) != scanner.critical_signature("tennis", punto)

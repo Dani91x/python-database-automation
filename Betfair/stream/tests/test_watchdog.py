@@ -129,6 +129,29 @@ class TestClassifyExit:
         assert wd.classify_exit(1, 8.0, lock_grace_sec=10.0) == "lock"
         assert wd.classify_exit(1, 12.0, lock_grace_sec=10.0) == "crash"
 
+    def test_planned_restart_exit_code(self):
+        """Audit 09/09: vita massima in modalità desktop = ricambio PIANIFICATO
+        (exit 75): mai 'clean' (che fermerebbe il watchdog), mai 'crash'."""
+        assert wd.classify_exit(wd.EXIT_PLANNED_RESTART, 18 * 3_600.0) == "planned"
+        assert wd.classify_exit(wd.EXIT_PLANNED_RESTART, 1.0) == "planned"  # anche sotto grace
+
+
+def test_planned_restart_riavvia_subito_senza_backoff(monkeypatch):
+    """Figlio esce con EXIT_PLANNED_RESTART dopo 18h → rilancio IMMEDIATO (nessuno
+    sleep di backoff, nessun CRITICAL/telegram); poi un'uscita pulita ferma tutto."""
+    rc, alerts, telegrams, _hb, popen, clock = _run(
+        monkeypatch,
+        spawns=[[None, wd.EXIT_PLANNED_RESTART], [None, 0]],
+        hb_sec=18 * 3_600.0,
+    )
+    assert rc == 0
+    assert len(popen.calls) == 2
+    assert telegrams == []
+    assert [lv for lv, _ in alerts] == ["INFO", "INFO"]
+    assert "pianificato" in alerts[0][1]
+    # nessun backoff: gli sleep sono solo gli heartbeat
+    assert all(s == 18 * 3_600.0 for s in clock.sleeps)
+
 
 # ---------------------------------------------------------------------------
 # 2) next_backoff — 1-BASED (dichiarato nel docstring): 1° crash → base

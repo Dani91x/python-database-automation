@@ -19,6 +19,7 @@ Uso:
 import argparse
 import datetime as dt
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -294,7 +295,14 @@ def main() -> None:
 
     from db_client import get_supabase_client
     from Betfair.client import BetfairClient
+    from Betfair.stream.single_instance import acquire_single_instance_lock
 
+    # SINGOLA ISTANZA (audit 09/09): l'app desktop lancia questo job ogni 30 min
+    # senza sapere se il precedente è finito; una run lenta (giornata piena,
+    # retry limite) sovrapposta a quella nuova faceva delete(run_date=oggi) mentre
+    # l'altra scriveva → buco in tennis_markets. Porta occupata = esco subito.
+    _lock = acquire_single_instance_lock(  # noqa: F841 - vita = processo
+        int(os.getenv("TENNIS_ODDS_LOCK_PORT", "47316")), "tennis-odds")
     sb = get_supabase_client()
     c = BetfairClient()
     c.login_cert()

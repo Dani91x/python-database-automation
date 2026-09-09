@@ -50,6 +50,8 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional
 
+from .runner_lifecycle import EXIT_PLANNED_RESTART
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TARGET = "Betfair.stream.runner"
@@ -61,7 +63,7 @@ _WINDOW_SEC = 3_600.0  # finestra scorrevole del tetto riavvii: 1 ora
 # Funzioni PURE di decisione (nessun I/O)
 # ---------------------------------------------------------------------------
 def classify_exit(returncode: int, uptime_sec: float, lock_grace_sec: float = 5.0) -> str:
-    """Classifica l'uscita del figlio: ``'clean'`` | ``'lock'`` | ``'crash'``.
+    """Classifica l'uscita del figlio: ``'clean'`` | ``'planned'`` | ``'lock'`` | ``'crash'``.
 
     * rc == 0 → ``'clean'`` sempre (anche dopo ore: auto-spegnimento voluto).
     * rc != 0 con uptime SOTTO ``lock_grace_sec`` → ``'lock'``: il lock di
@@ -71,6 +73,10 @@ def classify_exit(returncode: int, uptime_sec: float, lock_grace_sec: float = 5.
     """
     if returncode == 0:
         return "clean"
+    if returncode == EXIT_PLANNED_RESTART:
+        # ricambio igienico del runner (vita massima in modalità desktop
+        # keep-alive): riavvio IMMEDIATO, nessun alert critico, non è un crash.
+        return "planned"
     if uptime_sec < lock_grace_sec:
         return "lock"
     return "crash"
@@ -245,6 +251,15 @@ def run_watchdog(
                   f"Runner terminato in modo pulito (uptime {uptime:.0f}s) — "
                   "il watchdog si ferma.", what="alert")
             return 0
+
+        if esito == "planned":
+            # ricambio igienico (vita massima in modalità desktop): riavvio subito,
+            # il contatore crash resta a zero e non consuma il tetto orario.
+            consecutive_crashes = 0
+            _safe(alert, "INFO",
+                  f"Runner riavviato per ricambio pianificato (uptime {uptime:.0f}s).",
+                  what="alert")
+            continue
 
         if esito == "lock":
             # single_instance: un runner è GIÀ attivo — mai martellare il lock.

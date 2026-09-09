@@ -126,6 +126,31 @@ def parse_score_dict(event_id: str, raw: Dict[str, Any]) -> ScoreSnapshot:
     )
 
 
+def normalize_timeline(res: Any) -> list[Dict[str, Any]]:
+    """Timeline IPS (``eventTimeline``/``eventTimelines``: dict con ``updateDetails``)
+    → lista di eventi normalizzati. PURA: usata dal provider diretto e dallo
+    scanner Safe Strategy (che la scarica in batch per tutti gli in-play), così
+    il formato letto dal runner è IDENTICO qualunque sia la sorgente."""
+    if not isinstance(res, dict):
+        return []
+    out: list[Dict[str, Any]] = []
+    for u in res.get("updateDetails") or []:
+        if not isinstance(u, dict):
+            continue
+        out.append(
+            {
+                "update_id": u.get("updateId"),
+                "type": u.get("updateType") or u.get("type"),
+                "team": u.get("team"),
+                "team_name": u.get("teamName"),
+                "minute": _to_int(u.get("matchTime")),
+                "elapsed_regular": _to_int(u.get("elapsedRegularTime")),
+                "elapsed_added": _to_int(u.get("elapsedAddedTime")),
+            }
+        )
+    return out
+
+
 class BetfairInPlayProvider:
     """Implementa ScoreProvider via betfairlightweight in_play_service."""
 
@@ -165,22 +190,7 @@ class BetfairInPlayProvider:
         except Exception as e:  # noqa: BLE001 - endpoint non ufficiale
             logger.debug("[inplay-betfair] get_event_timeline KO %s: %s", event_id, e)
             return []
-        if not isinstance(res, dict):
-            return []
-        out: list[Dict[str, Any]] = []
-        for u in res.get("updateDetails") or []:
-            out.append(
-                {
-                    "update_id": u.get("updateId"),
-                    "type": u.get("updateType") or u.get("type"),
-                    "team": u.get("team"),
-                    "team_name": u.get("teamName"),
-                    "minute": _to_int(u.get("matchTime")),
-                    "elapsed_regular": _to_int(u.get("elapsedRegularTime")),
-                    "elapsed_added": _to_int(u.get("elapsedAddedTime")),
-                }
-            )
-        return out
+        return normalize_timeline(res)
 
     def healthcheck(self) -> bool:
         # un client loggato è condizione sufficiente; la salute reale si misura
