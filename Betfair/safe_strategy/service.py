@@ -2,8 +2,8 @@
 
 Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
   · catalogo MATCH_ODDS per sport su finestra MOBILE (KO da -6h a +14h,
-    refresh 300s, peso ~0, fino a 400 mercati/sport: mai tagliare le giornate
-    piene);
+    refresh 300s, peso ~0, fino a 1000 mercati/sport = massimo Betfair: mai
+    tagliare le giornate piene);
   · quote MATCH_ODDS dei soli mercati RILEVANTI (in-play, o KO entro 20′):
     Exchange Stream API ufficiale (push, conflate 1s, cap 180 mercati con
     priorità in-play) + poll REST EX_BEST_OFFERS (chunk 25 → peso 125 < 200)
@@ -64,11 +64,13 @@ _KEEPALIVE_PERIOD_SEC = 900.0
 _BOOK_CHUNK = 25          # peso EX_BEST_OFFERS 5/mercato → 125 < 200
 _SCORES_CHUNK = 20
 _REQ_DELAY = 0.35         # respiro tra chiamate REST (anti-throttling)
-# cap catalogo per sport: le proiezioni usate pesano 0 (EVENT, COMPETITION,
-# MARKET_START_TIME, RUNNER_DESCRIPTION) → nessun vincolo di peso; 400 copre
-# anche il sabato pieno (col vecchio 120 + sort FIRST_TO_START gli eventi serali
-# restavano FUORI dal radar finché quelli del pomeriggio non chiudevano)
-_MAX_MARKETS = 400
+# cap catalogo per sport = massimo Betfair per listMarketCatalogue (1000): le
+# proiezioni usate pesano 0 (EVENT, COMPETITION, MARKET_START_TIME,
+# RUNNER_DESCRIPTION) → nessun vincolo di peso, una chiamata ogni 5' per sport.
+# Col vecchio 120 + sort FIRST_TO_START gli eventi serali del sabato restavano
+# FUORI dal radar finché quelli del pomeriggio non chiudevano; con 1000 nessuna
+# giornata reale (calcio ~300-500 match/20h) tocca il tetto.
+_MAX_MARKETS = 1000
 # finestra catalogo MOBILE: in-play iniziati fino a 6h fa + KO nelle prossime
 # 14h (la vecchia finestra "fino a mezzanotte UTC" perdeva i notturni)
 _CATALOGUE_PAST_H = 6
