@@ -157,6 +157,20 @@ def _cs_from_feed(market, event_id: str) -> Optional["tuple[Any, Any]"]:
     return cs_snapshot_from_payload(event_id, payload)
 
 
+def _feed_minute(market, event_id: str) -> Optional[int]:
+    """Minuto LIVE dal feed (None se l'evento non è nel feed o non è in-play).
+    Serve al pre-filtro dell'automatico: un evento in-play fuori finestra secondo
+    il feed non merita catalogo+book REST (collaudo 09/09: 3 eventi al 12-14′
+    costavano 2 chiamate REST ciascuno a ogni ciclo)."""
+    if market is not _real_market:
+        return None
+    payload, _ = _feed_row(event_id)
+    if not isinstance(payload, dict) or not payload.get("inplay"):
+        return None
+    minute = payload.get("minute")
+    return int(minute) if isinstance(minute, (int, float)) else None
+
+
 def estimate_minute(
     *,
     market_start: Optional[datetime],
@@ -258,6 +272,12 @@ def scan_and_place(
             clock_minute = E.minute_from_clock(ev.open_date, now)
             if clock_minute < params["entry_minute_min"] - margin or clock_minute > params["entry_minute_max"] + margin:
                 continue
+
+        # pre-filtro dal FEED (minuto vero, 2s): in-play ma fuori finestra → niente
+        # REST; il feed non ha ancora il CS sotto i 30′ e lo sarebbe comunque inutile
+        feed_min = _feed_minute(market, ev.event_id)
+        if feed_min is not None and (feed_min < params["entry_minute_min"] or feed_min > params["entry_minute_max"]):
+            continue
 
         # FEED UNICO: catalogo+book CS dallo scanner (stream, quote al secondo);
         # REST solo se l'evento non è nel feed (scanner fermo, non candidato)

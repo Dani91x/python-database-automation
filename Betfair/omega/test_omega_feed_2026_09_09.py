@@ -92,3 +92,13 @@ def test_mission_scores_fallback_diretto_con_fake():
 
     out = S._mission_scores(_Market(), ["a", "b"], _Db())
     assert set(out) == {"a", "b"} and calls == [["a", "b"]]
+
+
+def test_feed_minute_solo_con_market_reale(monkeypatch):
+    assert S._feed_minute(SimpleNamespace(), "ev1") is None
+    monkeypatch.setattr(S, "_feed_row", lambda eid: ({"inplay": True, "minute": 14}, "t"))
+    assert S._feed_minute(S._real_market, "ev1") == 14
+    monkeypatch.setattr(S, "_feed_row", lambda eid: ({"inplay": False, "minute": None}, "t"))
+    assert S._feed_minute(S._real_market, "ev1") is None
+    monkeypatch.setattr(S, "_feed_row", lambda eid: (None, None))
+    assert S._feed_minute(S._real_market, "ev1") is None
