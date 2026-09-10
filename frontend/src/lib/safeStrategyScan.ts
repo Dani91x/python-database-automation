@@ -10,6 +10,11 @@
 import { supabase } from '@/integrations/supabase/client';
 
 export interface ScanOddsPair {
+    /** id Betfair del runner a cui si riferisce la coppia (pubblicato dallo
+     *  scanner per ogni lato del Match Odds: e' l'id con cui si piazza). */
+    selection_id?: number | null;
+    /** ultimo prezzo tradato sul runner (informativo) */
+    ltp?: number | null;
     back: number | null;
     lay: number | null;
     /** EUR disponibili al miglior prezzo back/lay = importo abbinabile SUBITO a
@@ -37,6 +42,10 @@ export interface CalcioScanPayload {
     mo_market_id: string | null;
     mo_status: string | null;
     odds: { home: ScanOddsPair | null; draw: ScanOddsPair | null; away: ScanOddsPair | null } | null;
+    /** OPZIONALE: elenco esplicito dei runner del Match Odds. Il feed odierno
+     *  NON lo pubblica — gli id stanno in `odds.<lato>.selection_id` — resta
+     *  come override se una versione futura dello scanner lo aggiunge. */
+    mo_selections?: ScanCsSelection[];
     minute: number | null;
     score_home: number | null;
     score_away: number | null;
@@ -52,6 +61,16 @@ export interface CalcioScanPayload {
         selections?: ScanCsSelection[];
         any_other_home: ScanOddsPair | null;
         any_other_away: ScanOddsPair | null;
+    } | null;
+    /** Half Time Score COMPLETO (stessa forma di `cs`): serve alla gamba 1T di
+     *  Omega per il cash out live. Assente nelle righe scritte da scanner
+     *  precedenti → i consumatori devono trattarlo come opzionale. */
+    ht?: {
+        market_id: string | null;
+        status: string | null;
+        inplay?: boolean | null;
+        total_matched?: number | null;
+        selections?: ScanCsSelection[];
     } | null;
 }
 
@@ -69,6 +88,13 @@ export function csSelection(p: CalcioScanPayload | null | undefined, selectionId
     return sels.find((s) => Number(s.selection_id) === Number(selectionId)) ?? null;
 }
 
+/** Selezione Half Time Score live per selection_id (null se il feed non la espone). */
+export function htSelection(p: CalcioScanPayload | null | undefined, selectionId: number): ScanCsSelection | null {
+    const sels = p?.ht?.selections;
+    if (!Array.isArray(sels)) return null;
+    return sels.find((s) => Number(s.selection_id) === Number(selectionId)) ?? null;
+}
+
 export interface TennisScanPayload {
     media?: ScanMediaFlags | null;
     event_name: string | null;
@@ -80,6 +106,8 @@ export interface TennisScanPayload {
     mo_market_id: string | null;
     mo_status: string | null;
     odds: { p1: ScanOddsPair | null; p2: ScanOddsPair | null } | null;
+    /** OPZIONALE, come per il calcio: gli id stanno in `odds.p1|p2.selection_id` */
+    mo_selections?: ScanCsSelection[];
     sets: { p1: number; p2: number } | null;
     games: { p1: number; p2: number } | null;
 }

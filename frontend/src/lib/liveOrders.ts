@@ -169,12 +169,19 @@ export async function sendLiveOrderCommand(cmd: LiveOrderCommand): Promise<LiveO
 //   omettendo params, il worker farebbe un green-up TOTALE inatteso).
 //   target_price malformato = errore del chiamante, MAI inviato (il worker chiuderebbe
 //   al best: prezzo diverso da quello cliccato → ordine inatteso).
+//   amount (stake ASSOLUTO in EUR, decimale libero) VINCE su fraction: quando c'e' l'importo
+//   la frazione NON viene inviata (il server cappa comunque l'importo al green totale, quindi
+//   chiedere piu' del necessario chiude la posizione senza mai invertirla).
 export function buildGreenupParams(
     fraction?: number,
     targetPrice?: number,
     cancelUnmatched?: boolean,
+    amount?: number,
 ): Record<string, number | boolean> {
     if (fraction != null && fraction <= 0) throw new Error('greenup: fraction deve essere > 0');
+    if (amount != null && !(Number.isFinite(amount) && amount > 0)) {
+        throw new Error('greenup: amount deve essere un importo > 0');
+    }
     if (targetPrice != null && !(Number.isFinite(targetPrice) && targetPrice > 1 && targetPrice <= 1000)) {
         throw new Error('greenup: targetPrice deve essere un prezzo in (1, 1000]');
     }
@@ -185,7 +192,8 @@ export function buildGreenupParams(
         throw new Error('greenup: cancelUnmatched non è compatibile con targetPrice');
     }
     const params: Record<string, number | boolean> = {};
-    if (fraction != null && fraction > 0 && fraction < 1) params.fraction = Math.round(fraction * 1000) / 1000;
+    if (amount != null) params.amount = Math.round(amount * 100) / 100;
+    else if (fraction != null && fraction > 0 && fraction < 1) params.fraction = Math.round(fraction * 1000) / 1000;
     if (targetPrice != null) params.target_price = targetPrice;
     if (cancelUnmatched) params.cancel_unmatched = true;
     return params;
@@ -199,8 +207,9 @@ export async function sendGreenup(args: {
     fraction?: number;             // (0,1] — default 1.0 (green-up totale)
     targetPrice?: number;          // "greening column": chiudi A QUEL prezzo (resting), non al best
     cancelUnmatched?: boolean;     // A3: cash-out COMPLETO — annulla i resting della selezione prima dell'hedge
+    amount?: number;               // stake ASSOLUTO in EUR da coprire (vince su fraction, cappato al green totale)
 }): Promise<LiveOrderResult> {
-    const params = buildGreenupParams(args.fraction, args.targetPrice, args.cancelUnmatched);
+    const params = buildGreenupParams(args.fraction, args.targetPrice, args.cancelUnmatched, args.amount);
     return sendLiveOrderCommand({
         action: 'greenup',
         mode: args.mode,
@@ -278,15 +287,18 @@ export async function sendCashoutAll(args: {
     marketId: string;
     mode: LiveOrderMode;
     fraction?: number;             // (0,1] — default 1.0 (cash-out totale)
+    equal?: boolean;               // true = cash-out PAREGGIATO (P&L uguale su OGNI esito, come il "Cash Out" Betfair)
 }): Promise<LiveOrderResult> {
     const f = args.fraction;
     if (f != null && f <= 0) throw new Error('sendCashoutAll: fraction deve essere > 0');
-    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    const params: Record<string, number | boolean> = {};
+    if (f != null && f > 0 && f < 1) params.fraction = Math.round(f * 1000) / 1000;
+    if (args.equal) params.equal = true;
     return sendLiveOrderCommand({
         action: 'cashout_all',
         mode: args.mode,
         market_id: args.marketId,
-        ...(params ? { params } : {}),
+        ...(Object.keys(params).length ? { params } : {}),
     });
 }
 
@@ -298,15 +310,18 @@ export async function sendCashoutEvent(args: {
     marketId: string;
     mode: LiveOrderMode;
     fraction?: number;             // (0,1] — default 1.0 (cash-out totale dell'evento)
+    equal?: boolean;               // true = cash-out PAREGGIATO su OGNI mercato dell'evento
 }): Promise<LiveOrderResult> {
     const f = args.fraction;
     if (f != null && f <= 0) throw new Error('sendCashoutEvent: fraction deve essere > 0');
-    const params = f != null && f > 0 && f < 1 ? { fraction: Math.round(f * 1000) / 1000 } : undefined;
+    const params: Record<string, number | boolean> = {};
+    if (f != null && f > 0 && f < 1) params.fraction = Math.round(f * 1000) / 1000;
+    if (args.equal) params.equal = true;
     return sendLiveOrderCommand({
         action: 'cashout_event',
         mode: args.mode,
         market_id: args.marketId,
-        ...(params ? { params } : {}),
+        ...(Object.keys(params).length ? { params } : {}),
     });
 }
 

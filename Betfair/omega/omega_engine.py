@@ -301,6 +301,16 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     traded_today = 0
     for r in rows:
         st = r.get("status")
+        if r.get("closes_trade_id"):
+            # gamba di CHIUSURA (cash out, 10/09): il rischio vivo della coppia è già
+            # contato dall'originale 'hedged' (stima prudente: liability piena fino al
+            # settlement); il suo pnl entra nel realizzato solo quando regolata.
+            if st in ("won", "lost", "void"):
+                pnl = float(r.get("pnl") or 0.0)
+                realized += pnl
+                if _ts_on_or_after(r.get("settled_at"), day_start):
+                    realized_today += pnl
+            continue
         if st in ("won", "lost", "void"):
             pnl = float(r.get("pnl") or 0.0)
             realized += pnl
@@ -310,7 +320,7 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
                 realized_today += pnl
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 traded_today += 1
-        elif st == "open" or (st == "pending" and (
+        elif st in ("open", "hedged") or (st == "pending" and (
                 r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref"))):
             open_liab += float(r.get("liability") or 0.0)
             open_n += 1

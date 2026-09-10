@@ -21,6 +21,14 @@ Monitora TUTTI gli eventi live del momento (nessuna iscrizione manuale):
     catalogo appena compare un candidato nuovo, poi il mercato va sul POOL
     STREAM (o nel REST di fallback) e viene pubblicato COMPLETO — tutte le
     selezioni con id/nome/prezzi/size: è il feed anche per Omega;
+  · MERCATI A GOL dei candidati opportunità (calcio in-play dal 1′, al massimo
+    scanner.OPP_MAX_EVENTS eventi, solo le linee ancora INDECISE): Over/Under
+    0.5-7.5, Gol/NoGol, 1X2 primo tempo. Stesso ciclo di vita del Correct Score
+    (catalogo per i candidati nuovi, quote dal pool stream con priorità SEMPRE
+    inferiore ai mercati core, REST come fallback) → blocchi `ou`/`btts`/
+    `ht_result` del payload. La VALUTAZIONE (opportunity.py) NON gira qui: la fa
+    bot_service.py sulla tabella safe_strategy_opportunities. Solo per collaudo
+    si può accendere in linea con SAFE_SCAN_OPPORTUNITIES=1;
   · riferimento 1X2 pre-KO: aggiornato da KO-15′ e CONGELATO al primo tick
     in-play (mai quote live nel riferimento — regola di certificazione).
 
@@ -37,6 +45,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -100,6 +109,37 @@ _SPORTS = {"calcio": "1", "tennis": "2"}
 _IPS_SB_URL = "https://ips.betfair.it/inplayservice/v1.1/scoresAndBroadcast"
 
 
+# OPPORTUNITA' dentro il feed: SPENTE di default. Il calcolo vive in
+# bot_service.py (ogni ~10s per riga in-play, risultati su safe_strategy_opportunities,
+# che e' cio' che legge la UI): rifarlo qui duplicherebbe la CPU dentro il processo
+# critico del feed. Il flag serve solo per collaudo/diagnostica; a 0 la chiave
+# `opportunities` NON compare proprio nel payload.
+_OPPORTUNITIES_ENV = "SAFE_SCAN_OPPORTUNITIES"
+
+
+def _opportunities_enabled() -> bool:
+    """Flag da env. Variabile VUOTA = default (spento): mai trattarla come "settata"."""
+    raw = (os.getenv(_OPPORTUNITIES_ENV) or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _market_type_from_name(market_name: Optional[str]) -> Optional[str]:
+    """Fallback: tipo di mercato dal NOME quando la MARKET_DESCRIPTION manca.
+    'Over/Under 2.5 Goals' → OVER_UNDER_25, 'Both teams to score?' → BTTS,
+    'Half Time' → HALF_TIME."""
+    n = (market_name or "").strip().lower()
+    if not n:
+        return None
+    if "both teams" in n:
+        return scanner.BTTS_MARKET_TYPE
+    if n.startswith("half time") and "score" not in n:
+        return scanner.HT_RESULT_MARKET_TYPE
+    m = re.search(r"(\d+)\.(\d)", n)
+    if m and "over" in n and "under" in n:
+        return f"OVER_UNDER_{m.group(1)}{m.group(2)}"
+    return None
+
+
 def _catalogue_window_iso() -> "tuple[str, str]":
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=_CATALOGUE_PAST_H)
@@ -150,6 +190,13 @@ class Scanner:
         self.cs_markets: Dict[str, Dict[str, Any]] = {}
         # HALF TIME SCORE dei candidati 1T (Omega v2): stesso ciclo di vita del CS
         self.ht_markets: Dict[str, Dict[str, Any]] = {}
+        # mercati a gol del motore OPPORTUNITA' (Over/Under, Gol/NoGol, 1X2 1T):
+        # event_id → {market_id: {market_id, market_type, line, names}}
+        self.opp_markets: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.opp_catalogue_ts = 0.0
+        # modello opportunità (puro): atlante hazard caricato una volta sola
+        self._opp_model: Optional[Any] = None
+        self._opp_atlas_loaded = False
 
     # ------------------------------------------------------------- catalogo MO
     def refresh_catalogue(self, sport: str) -> None:
@@ -216,6 +263,13 @@ class Scanner:
                 idx[mk["market_id"]] = ("calcio", {
                     "event_id": eid, "market_id": mk["market_id"], "kind": kind, "names": mk["names"],
                 })
+        for eid, markets in self.opp_markets.items():
+            for mid, mk in markets.items():
+                idx[mid] = ("calcio", {
+                    "event_id": eid, "market_id": mid, "kind": "opp",
+                    "market_type": mk.get("market_type"), "line": mk.get("line"),
+                    "names": mk.get("names") or {},
+                })
         self.market_meta = idx
 
     def relevant_market_ids(self, sport: str, now: datetime) -> List[str]:
@@ -238,8 +292,32 @@ class Scanner:
             if sport == "calcio" and inplay and eid in self.ht_markets and status != "CLOSED":
                 if scanner.is_ht_candidate(ev.get("minute")):
                     out.append((scanner.rank_key(True, meta.get("open_date")), self.ht_markets[eid]["market_id"]))
+        if sport == "calcio":
+            out.extend(self._opp_ranked_market_ids())
         out.sort()
         return [mid for _, mid in out]
+
+    def _opp_ranked_market_ids(self) -> List["tuple[tuple, str]"]:
+        """Mercati a gol del motore opportunità da tenere sotto quote ADESSO.
+
+        Priorità SEMPRE dopo i mercati core (``scanner.opp_rank_key`` tier 2, con
+        i minuti più avanzati per primi): se il pool stream è pieno restano fuori
+        loro, mai un MATCH_ODDS o un Correct Score. Solo le linee ancora indecise.
+        """
+        out: List["tuple[tuple, str]"] = []
+        for eid in self.opp_candidates():
+            ev = self.events.get(eid) or {}
+            if ev.get("mo_status") == "CLOSED":
+                continue
+            meta = self.sports["calcio"].metas.get(eid) or {}
+            key = scanner.opp_rank_key(ev.get("minute"), meta.get("open_date"))
+            for mid, mk in (self.opp_markets.get(eid) or {}).items():
+                if scanner.is_opp_market_live(
+                    mk.get("market_type"), mk.get("line"), ev.get("minute"),
+                    ev.get("score_home"), ev.get("score_away"),
+                ):
+                    out.append((key, mid))
+        return out
 
     def refresh_stream_set(self, now: datetime) -> None:
         """Subscription stream = mercati rilevanti di TUTTI gli sport insieme.
@@ -260,7 +338,12 @@ class Scanner:
                 _, meta = self.market_meta[mid]
                 ev = self.events.get(meta["event_id"])
                 inplay = None if ev is None else bool(ev.get("inplay"))
-                ranked.append((scanner.rank_key(inplay, meta.get("open_date")), mid))
+                if meta.get("kind") == "opp":
+                    # mai davanti ai mercati core: tier 2 (vedi _opp_ranked_market_ids)
+                    ranked.append((scanner.opp_rank_key(
+                        None if ev is None else ev.get("minute"), None), mid))
+                else:
+                    ranked.append((scanner.rank_key(inplay, meta.get("open_date")), mid))
         ranked.sort()
         ids = [mid for _, mid in ranked]
         if ids:
@@ -274,6 +357,9 @@ class Scanner:
         sport, meta = found
         if meta.get("kind") in ("cs", "ht"):
             self._apply_cs_book(meta, book)
+            return
+        if meta.get("kind") == "opp":
+            self._apply_opp_book(meta, book)
             return
         pairs: Dict[int, Dict[str, Any]] = {}
         for r in getattr(book, "runners", None) or []:
@@ -297,6 +383,10 @@ class Scanner:
         ev["inplay"] = bool(getattr(book, "inplay", False))
         ev["mo_status"] = getattr(book, "status", None)
         ev["mo_total_matched"] = scanner.num_or_none(getattr(book, "total_matched", None))
+        # ts dell'ULTIMO CAMBIO delle quote 1X2 (non dell'ultimo poll): il motore
+        # opportunità penalizza i prezzi fermi, il write-on-change resta pulito
+        if ev.get("odds") != odds:
+            ev["odds_ts_ms"] = int(time.time() * 1000)
         ev["odds"] = odds
         # riferimento pre-KO: aggiorna pre-KO, congela al primo in-play
         ev["pre_ko"] = scanner.freeze_pre_ko(
@@ -324,6 +414,45 @@ class Scanner:
             inplay=bool(getattr(book, "inplay", False)),
             total_matched=scanner.num_or_none(getattr(book, "total_matched", None)),
         )
+
+    def _apply_opp_book(self, meta: Dict[str, Any], book: Any) -> None:
+        """MarketBook di un mercato a gol (Over/Under, Gol/NoGol, 1X2 1T) → blocco
+        generico nel dizionario `opp` dell'evento (poi diviso in ou/btts/ht_result).
+
+        Il ``ts_ms`` del blocco è il momento dell'ULTIMO CAMBIO reale, non
+        dell'ultimo poll: il motore opportunità lo usa per penalizzare i prezzi
+        fermi, e il write-on-change non deve riscrivere la riga per un timestamp.
+        """
+        ev = self.events.get(meta["event_id"])
+        if ev is None:
+            return
+        names = meta.get("names") or {}
+        selections = [
+            {
+                "selection_id": getattr(r, "selection_id", None),
+                "name": names.get(getattr(r, "selection_id", None)),
+                "runner_status": getattr(r, "status", None),
+                **scanner.price_pair(getattr(r, "ex", None)),
+            }
+            for r in getattr(book, "runners", None) or []
+        ]
+        blk = scanner.build_market_block(
+            meta["market_id"], getattr(book, "status", None), selections,
+            inplay=bool(getattr(book, "inplay", False)),
+            total_matched=scanner.num_or_none(getattr(book, "total_matched", None)),
+            market_type=meta.get("market_type"), line=meta.get("line"),
+        )
+        if blk is None:
+            return
+        store = ev.setdefault("opp", {})
+        prev = store.get(meta["market_id"])
+        prev_ts = prev.get("ts_ms") if isinstance(prev, dict) else None
+        unchanged = (
+            isinstance(prev, dict) and prev_ts is not None
+            and {k: v for k, v in prev.items() if k != "ts_ms"} == blk
+        )
+        blk["ts_ms"] = int(prev_ts) if unchanged else int(time.time() * 1000)
+        store[meta["market_id"]] = blk
 
     # ------------------------------------------------------------- quote (REST)
     def poll_books(self, sport: str, ids: List[str]) -> None:
@@ -490,6 +619,62 @@ class Scanner:
         return [eid for eid, ev in self.events.items()
                 if ev.get("sport") == "calcio" and ev.get("inplay") and scanner.is_ht_candidate(ev.get("minute"))]
 
+    def opp_candidates(self) -> List[str]:
+        """Eventi calcio in-play (dal 1') per cui tenere sotto quote i mercati a
+        gol del motore opportunità, al massimo ``scanner.OPP_MAX_EVENTS``: i posti
+        vanno ai minuti più avanzati (probabilità estreme = opportunità vere)."""
+        cands = [
+            (-(ev.get("minute") or 0), eid)
+            for eid, ev in self.events.items()
+            if ev.get("sport") == "calcio"
+            and ev.get("mo_status") != "CLOSED"
+            and scanner.is_opp_candidate(ev.get("inplay"), ev.get("minute"))
+        ]
+        cands.sort()
+        return [eid for _, eid in cands[: scanner.OPP_MAX_EVENTS]]
+
+    def refresh_opp_catalogue(self, candidates: List[str]) -> None:
+        """Catalogo (id + linea + nomi runner) dei mercati a gol per i candidati
+        che non ce l'hanno ancora. UNA chiamata per lotto; le QUOTE arrivano poi
+        dallo stream (o dal poll REST di fallback) come per il MATCH_ODDS."""
+        from betfairlightweight import filters
+
+        for eid in [e for e in self.opp_markets if e not in self.events]:
+            self.opp_markets.pop(eid, None)
+        missing = [e for e in candidates if e not in self.opp_markets]
+        if not missing:
+            return  # nessuna chiamata: il throttle non parte
+        cats = self.client.betting.list_market_catalogue(
+            filter=filters.market_filter(
+                event_ids=missing, market_type_codes=list(scanner.OPP_MARKET_TYPES),
+            ),
+            market_projection=["EVENT", "MARKET_DESCRIPTION", "RUNNER_DESCRIPTION"],
+            max_results=len(missing) * len(scanner.OPP_MARKET_TYPES),
+        )
+        found = {e: {} for e in missing}
+        for c in cats or []:
+            event_id = getattr(getattr(c, "event", None), "id", None)
+            market_id = getattr(c, "market_id", None)
+            if not event_id or not market_id or str(event_id) not in found:
+                continue
+            mtype = getattr(getattr(c, "description", None), "market_type", None)
+            if mtype is None:  # proiezione assente: risalgo dal nome del mercato
+                mtype = _market_type_from_name(getattr(c, "market_name", None))
+            if mtype not in scanner.OPP_MARKET_TYPES:
+                continue
+            found[str(event_id)][market_id] = {
+                "market_id": market_id,
+                "market_type": mtype,
+                "line": scanner.ou_line_from_market_type(mtype),
+                "names": {
+                    getattr(r, "selection_id", None): getattr(r, "runner_name", None)
+                    for r in (getattr(c, "runners", None) or [])
+                },
+            }
+        # anche l'evento senza mercati resta in cache: niente richieste a raffica
+        self.opp_markets.update(found)
+        self._rebuild_market_index()
+
     def refresh_cs_catalogue(self, candidates: List[str]) -> None:
         self._refresh_score_catalogue(self.cs_markets, candidates, "CORRECT_SCORE")
         self.cs_catalogue_ts = time.monotonic()
@@ -535,6 +720,72 @@ class Scanner:
         self._rebuild_market_index()
 
 
+    # ------------------------------------------------------------ opportunità
+    def _prune_opp_blocks(self, ev: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Blocchi opportunità ancora VIVI per lo stato corrente: un mercato la
+        cui linea è ormai decisa (o il 1T finito) esce dallo stream e i suoi
+        prezzi si fermano — pubblicarlo sarebbe pubblicare un prezzo morto."""
+        blocks = ev.get("opp")
+        if not isinstance(blocks, dict):
+            return {}
+        live = {
+            mid: blk for mid, blk in blocks.items()
+            if scanner.is_opp_market_live(
+                blk.get("market_type"), blk.get("line"), ev.get("minute"),
+                ev.get("score_home"), ev.get("score_away"),
+            )
+        }
+        if len(live) != len(blocks):
+            ev["opp"] = live
+        return live
+
+    def opp_model(self) -> Optional[Any]:
+        """Modello opportunità (puro) con l'Atlante Hazard caricato UNA volta.
+        None se il modulo/atlante non sono disponibili: lo scanner non deve mai
+        morire per il motore di analisi."""
+        if self._opp_model is not None or self._opp_atlas_loaded:
+            return self._opp_model
+        self._opp_atlas_loaded = True
+        try:
+            from Betfair.stream.scalper.theta_bot import load_hazard_atlas
+
+            from .opportunity import OpportunityModel
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[safe-scan] motore opportunita non disponibile: %s", str(e)[:120])
+            return None
+        try:
+            atlas = load_hazard_atlas()
+        except Exception as e:  # noqa: BLE001 - senza atlante il controincrocio salta
+            logger.warning("[safe-scan] atlante hazard non caricato: %s", str(e)[:120])
+            atlas = None
+        self._opp_model = OpportunityModel(atlas=atlas)
+        return self._opp_model
+
+    def opportunities(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Opportunità REALI dell'evento (probabilità × prezzo × liquidità).
+
+        λ dalle quote 1X2 pre-KO congelate nel payload (lo scanner non ha il
+        fixture_id: chi ha il DB può rifare il calcolo con λ migliori usando
+        ``opportunity.resolve_lambdas(payload, fixture=…)``). [] su qualsiasi
+        problema: un'analisi non deve mai fermare la pubblicazione dei FATTI.
+        """
+        model = self.opp_model()
+        if model is None:
+            return []
+        try:
+            from .opportunity import resolve_lambdas
+
+            lam = resolve_lambdas(payload, fixture=None)
+            if lam is None:
+                return []
+            return model.evaluate(
+                payload, sport="calcio", lambdas=(lam[0], lam[1]),
+                league_id=lam[2], now_ts=time.time(),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[safe-scan] opportunita KO: %s", str(e)[:140])
+            return []
+
     # ------------------------------------------------------------- pubblicazione
     def build_rows(self, now: datetime) -> "tuple[List[Dict[str, Any]], List[str]]":
         rows: List[Dict[str, Any]] = []
@@ -576,6 +827,11 @@ class Scanner:
                         "score_raw": ev.get("score_raw"),
                         "timeline": ev.get("timeline"),
                         "mo_total_matched": ev.get("mo_total_matched"),
+                        # ts dell'ultimo CAMBIO delle quote 1X2 (freschezza prezzo)
+                        "odds_ts_ms": ev.get("odds_ts_ms"),
+                        # MERCATI A GOL del motore opportunità (chiavi ADDITIVE):
+                        # ou = [{line, market_id, status, selections…}], btts, ht_result
+                        **scanner.split_opportunity_blocks(self._prune_opp_blocks(ev)),
                     }
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
@@ -613,6 +869,14 @@ class Scanner:
                 self.last_pub_mono[eid] = mono
                 self.written_sig[eid] = sig
                 self.written_crit[eid] = crit
+                # le OPPORTUNITA' sono un DERIVATO dei fatti e vivono in
+                # bot_service.py (tabella safe_strategy_opportunities): qui restano
+                # SPENTE salvo SAFE_SCAN_OPPORTUNITIES=1. Quando accese si calcolano
+                # DOPO la firma (la confidenza dipende anche dall'orologio: dentro
+                # la firma riscriverebbe la riga a ogni tick) e solo per le righe
+                # che vengono davvero pubblicate.
+                if sport == "calcio" and _opportunities_enabled():
+                    payload["opportunities"] = self.opportunities(payload)
                 rows.append({
                     "event_id": eid,
                     "sport": sport,
@@ -672,6 +936,9 @@ class Scanner:
             "stream_markets": len(self.stream.covered_ids()) if self.stream else 0,
             "stream_connections": self.stream.active_connections() if self.stream else 0,
             "stream_capacity": self.stream.capacity if self.stream else 0,
+            # mercati a gol sotto quote per il motore opportunità (peso sul pool)
+            "opp_events": len(self.opp_markets),
+            "opp_markets": sum(len(m) for m in self.opp_markets.values()),
             "last_error": self.last_error,
             "started_at": self.started_at,
         }
@@ -760,6 +1027,12 @@ class Scanner:
             if ht_cands and now_mono - self.ht_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.ht_catalogue_ts = now_mono
                 self.refresh_ht_catalogue(ht_cands)
+            # mercati a gol del motore opportunità: stesso schema (catalogo solo
+            # per i candidati nuovi, quote dallo stream / REST di fallback)
+            opp_cands = self.opp_candidates()
+            if opp_cands and now_mono - self.opp_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
+                self.opp_catalogue_ts = now_mono
+                self.refresh_opp_catalogue(opp_cands)
 
             written, deleted = self.publish(now)
             if written or deleted:

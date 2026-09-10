@@ -436,3 +436,56 @@ describe('buildGreenupParams (A3)', () => {
         expect(buildGreenupParams(1)).toEqual({});
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// CASH OUT PROFESSIONALE (10/09): amount (stake assoluto) + equal (P&L pareggiato)
+// ---------------------------------------------------------------------------
+import { sendGreenup } from './liveOrders';
+
+describe('buildGreenupParams — amount (stake assoluto)', () => {
+    it('amount <= 0 o non finito → errore (mai un green TOTALE inatteso)', () => {
+        expect(() => buildGreenupParams(undefined, undefined, undefined, 0)).toThrow(/amount/);
+        expect(() => buildGreenupParams(undefined, undefined, undefined, -2)).toThrow(/amount/);
+        expect(() => buildGreenupParams(undefined, undefined, undefined, NaN)).toThrow(/amount/);
+    });
+    it('amount decimale → params.amount arrotondato al centesimo', () => {
+        expect(buildGreenupParams(undefined, undefined, undefined, 4.567)).toEqual({ amount: 4.57 });
+    });
+    it('amount VINCE su fraction (la frazione non viene inviata)', () => {
+        expect(buildGreenupParams(0.5, undefined, undefined, 3)).toEqual({ amount: 3 });
+    });
+    it('amount + targetPrice convivono (chiudi X euro a QUEL prezzo)', () => {
+        expect(buildGreenupParams(undefined, 2.5, undefined, 3)).toEqual({ amount: 3, target_price: 2.5 });
+    });
+});
+
+describe('sendGreenup / sendCashoutAll / sendCashoutEvent — nuovi params', () => {
+    it('sendGreenup inoltra params.amount', async () => {
+        mockEnqueueDone(11);
+        await sendGreenup({ marketId: '1.1', selectionId: 5, mode: 'live', amount: 2.5 });
+        const p = firstEnqueueP();
+        expect(p.action).toBe('greenup');
+        expect(p.params).toEqual({ amount: 2.5 });
+    });
+    it('sendCashoutAll con equal → params.equal true', async () => {
+        mockEnqueueDone(12);
+        await sendCashoutAll({ marketId: '1.1', mode: 'live', equal: true });
+        expect(firstEnqueueP().params).toEqual({ equal: true });
+    });
+    it('sendCashoutAll equal + fraction parziale → entrambi', async () => {
+        mockEnqueueDone(13);
+        await sendCashoutAll({ marketId: '1.1', mode: 'paper', fraction: 0.5, equal: true });
+        expect(firstEnqueueP().params).toEqual({ fraction: 0.5, equal: true });
+    });
+    it('sendCashoutAll senza equal → nessun params (comportamento storico)', async () => {
+        mockEnqueueDone(14);
+        await sendCashoutAll({ marketId: '1.1', mode: 'paper' });
+        expect(firstEnqueueP().params).toBeUndefined();
+    });
+    it('sendCashoutEvent con equal → params.equal true', async () => {
+        mockEnqueueDone(15);
+        await sendCashoutEvent({ marketId: '1.1', mode: 'live', equal: true });
+        expect(firstEnqueueP().params).toEqual({ equal: true });
+    });
+});

@@ -100,6 +100,32 @@ def open_trades() -> list[dict[str, Any]]:
     return list_trades(status="open")
 
 
+def get_trade(trade_id: int) -> Optional[dict[str, Any]]:
+    """Una singola riga per id (cash-out: serve il trade da chiudere)."""
+    rows = (
+        _sb().table("omega_trades").select("*")
+        .eq("id", int(trade_id)).limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def hedged_trades() -> list[dict[str, Any]]:
+    """Gambe CHIUSE a mercato (cash-out/green-up, migrations/omega_cashout.sql):
+    il P&L è bloccato ma NON ancora realizzato — si regolano insieme alla loro
+    gamba di chiusura quando il mercato si chiude."""
+    return list_trades(status="hedged")
+
+
+def closing_trades_for(trade_ids: list[int]) -> list[dict[str, Any]]:
+    """Righe di CHIUSURA (``closes_trade_id``) delle aperture indicate."""
+    if not trade_ids:
+        return []
+    return (
+        _sb().table("omega_trades").select("*")
+        .in_("closes_trade_id", [int(i) for i in trade_ids]).execute().data or []
+    )
+
+
 # ---------------------------------------------------------------------------
 # MANUALE: coda richieste, cache eventi, snapshot mercato
 # ---------------------------------------------------------------------------

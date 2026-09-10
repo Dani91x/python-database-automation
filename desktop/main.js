@@ -252,6 +252,12 @@ function startRunners() {
     // sotto WATCHDOG (09/09 sera): come scanner e runner, se cade riparte.
     // Lock occupato (altra istanza) → esce 0 → il watchdog si ferma (corretto).
     spawnRunner('omega-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.omega.omega_service']);
+    // SAFE STRATEGY BOT (10/09): esecuzione AUTOMATICA dei segnali Safe (paper di
+    // default, live solo su scelta esplicita da /safe-strategy), resoconto trade in
+    // tempo reale, cash out, opportunità modello. Legge SOLO il feed unico dello
+    // scanner (nessuna chiamata Betfair duplicata). A riposo (bot fermo) processa
+    // solo le richieste manuali e i settlement. Lock single-instance 127.0.0.1:47318.
+    spawnRunner('safe-strategy-bot', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.safe_strategy.bot_service']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
     // MAI due run sovrapposte (audit 09/09): una run lenta ancora viva NON viene

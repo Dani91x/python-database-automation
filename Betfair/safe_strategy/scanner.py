@@ -31,6 +31,27 @@ CS_MAX_GOALS_SIDE = 3
 # HALF TIME SCORE (Omega v2, gamba 1T): sotto quote dal 15' finché il 1T è in corso
 HT_MINUTE_FROM = 15
 HT_MINUTE_TO = 45
+
+# ---------------------------------------------------------------- OPPORTUNITA'
+# Mercati "a gol" tenuti sotto quote per il motore opportunità
+# (opportunity.py): Over/Under di tutte le linee quotate da Betfair, Gol/NoGol e
+# 1X2 del primo tempo. Servono SOLO in-play (prima del kickoff il modello non ha
+# nulla da dire su tempo/punteggio) e SOLO per le linee ancora INDECISE: una
+# linea già superata non è un'opportunità, è aritmetica.
+OU_MARKET_TYPES = (
+    "OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35",
+    "OVER_UNDER_45", "OVER_UNDER_55", "OVER_UNDER_65", "OVER_UNDER_75",
+)
+BTTS_MARKET_TYPE = "BOTH_TEAMS_TO_SCORE"
+HT_RESULT_MARKET_TYPE = "HALF_TIME"          # 1X2 all'intervallo
+OPP_MARKET_TYPES = OU_MARKET_TYPES + (BTTS_MARKET_TYPE, HT_RESULT_MARKET_TYPE)
+OPP_MINUTE_FROM = 1
+# tetto di eventi con i mercati opportunità sotto quote: 10 mercati per evento
+# pesano sul pool stream (180/connessione) e sul poll REST di fallback. I posti
+# vanno ai minuti più avanzati (dove le probabilità sono davvero estreme).
+OPP_MAX_EVENTS = 20
+
+_OU_LINE_RE = re.compile(r"OVER_UNDER_(\d)(\d)$", re.IGNORECASE)
 # cattura pre-KO: da KO-15' fino al kickoff
 PRE_KO_WINDOW_SEC = 15 * 60
 
@@ -239,6 +260,16 @@ _CRITICAL_CALCIO = ("inplay", "mo_status", "minute", "score_home", "score_away",
 _CRITICAL_TENNIS = ("inplay", "mo_status", "sets", "games")
 
 
+def _opp_blocks(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """I blocchi opportunità del payload (ou + btts + ht_result), in ordine stabile."""
+    out: List[Dict[str, Any]] = [b for b in (payload.get("ou") or []) if isinstance(b, dict)]
+    for key in ("btts", "ht_result"):
+        b = payload.get(key)
+        if isinstance(b, dict):
+            out.append(b)
+    return out
+
+
 def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
     keys = _CRITICAL_CALCIO if sport == "calcio" else _CRITICAL_TENNIS
     crit: Dict[str, Any] = {k: payload.get(k) for k in keys}
@@ -247,6 +278,12 @@ def critical_signature(sport: str, payload: Dict[str, Any]) -> str:
         crit["cs_status"] = cs.get("status") if isinstance(cs, dict) else None
         ht = payload.get("ht") or {}
         crit["ht_status"] = ht.get("status") if isinstance(ht, dict) else None
+        # mercati opportunità: un cambio di STATO (sospensione, chiusura) va
+        # pubblicato subito come per CS/HT — le quote da sole aspettano il throttle
+        crit["opp_status"] = [
+            [b.get("market_id"), b.get("status")]
+            for b in _opp_blocks(payload)
+        ]
     # lo stato IPS grezzo è il feed dei runner (punti tennis, corner/cartellini
     # calcio): ogni suo cambio va pubblicato subito, come un gol
     crit["score_raw"] = payload.get("score_raw")
@@ -286,6 +323,54 @@ def media_flags(broadcasts: Optional[Dict[str, Any]]) -> Dict[str, Optional[bool
     return {"video": flag("isLiveVideoAvailable"), "viz": flag("isDataVisualizationAvailable")}
 
 
+def build_market_block(
+    market_id: Optional[str],
+    status: Optional[str],
+    selections: List[Dict[str, Any]],
+    inplay: Optional[bool] = None,
+    total_matched: Optional[float] = None,
+    *,
+    market_type: Optional[str] = None,
+    line: Optional[float] = None,
+    ts_ms: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Blocco GENERICO di un mercato nel payload: stato + elenco COMPLETO delle
+    selezioni (selection_id, nome, best back/lay con le size abbinabili, stato
+    runner). È la forma unica usata da Correct Score (Omega) e dai mercati a gol
+    del motore opportunità: un solo builder, un solo formato da leggere.
+
+    ``market_type``/``line``/``ts_ms`` finiscono nel blocco SOLO se valorizzati,
+    così il blocco `cs` storico resta byte-identico a prima.
+    """
+    if market_id is None:
+        return None
+    full: List[Dict[str, Any]] = []
+    for s in selections:
+        if s.get("selection_id") is None:
+            continue
+        full.append({
+            "selection_id": int(s["selection_id"]),
+            "name": str(s.get("name") or ""),
+            "runner_status": s.get("runner_status"),
+            "back": s.get("back"), "lay": s.get("lay"),
+            "back_size": s.get("back_size"), "lay_size": s.get("lay_size"),
+        })
+    blk: Dict[str, Any] = {
+        "market_id": market_id,
+        "status": status,
+        "inplay": inplay,
+        "total_matched": total_matched,
+        "selections": full,
+    }
+    if market_type is not None:
+        blk["market_type"] = market_type
+    if line is not None:
+        blk["line"] = float(line)
+    if ts_ms is not None:
+        blk["ts_ms"] = int(ts_ms)
+    return blk
+
+
 def build_cs_block(
     market_id: Optional[str],
     status: Optional[str],
@@ -297,10 +382,10 @@ def build_cs_block(
     Strategy R.E.) E l'elenco COMPLETO delle selezioni con selection_id, nome,
     best back/lay + size e stato runner — è ciò su cui piazza Omega, che così
     legge il book dal feed (stream) invece di rifare listMarketBook a ogni ciclo."""
-    if market_id is None:
+    blk = build_market_block(market_id, status, selections, inplay, total_matched)
+    if blk is None:
         return None
     any_home = any_away = None
-    full: List[Dict[str, Any]] = []
     for s in selections:
         name = str(s.get("name") or "")
         pair = {
@@ -311,19 +396,85 @@ def build_cs_block(
             any_home = pair
         elif _ANY_OTHER_AWAY.search(name):
             any_away = pair
-        if s.get("selection_id") is not None:
-            full.append({
-                "selection_id": int(s["selection_id"]),
-                "name": name,
-                "runner_status": s.get("runner_status"),
-                **pair,
-            })
-    return {
-        "market_id": market_id,
-        "status": status,
-        "inplay": inplay,
-        "total_matched": total_matched,
-        "any_other_home": any_home,
-        "any_other_away": any_away,
-        "selections": full,
-    }
+    blk["any_other_home"] = any_home
+    blk["any_other_away"] = any_away
+    return blk
+
+
+# ------------------------------------------------------- mercati opportunità
+def ou_line_from_market_type(market_type: Optional[str]) -> Optional[float]:
+    """'OVER_UNDER_25' → 2.5, 'OVER_UNDER_05' → 0.5. None se non è un O/U."""
+    if not market_type:
+        return None
+    m = _OU_LINE_RE.match(str(market_type).strip())
+    return float(f"{m.group(1)}.{m.group(2)}") if m else None
+
+
+def is_opp_candidate(inplay: Optional[bool], minute: Optional[int]) -> bool:
+    """Evento per cui tenere sotto quote i mercati a gol del motore opportunità:
+    partita IN CORSO dal 1' (prima non c'è nessuno stato live da valutare)."""
+    return bool(inplay) and minute is not None and minute >= OPP_MINUTE_FROM
+
+
+def is_ht_result_candidate(minute: Optional[int]) -> bool:
+    """1X2 primo tempo (HALF_TIME): utile solo finché il 1T è in corso."""
+    return minute is not None and OPP_MINUTE_FROM <= minute < HT_MINUTE_TO
+
+
+def is_live_ou_line(line: Optional[float], score_home: Optional[int], score_away: Optional[int]) -> bool:
+    """Linea Over/Under ancora INDECISA: i gol già segnati non l'hanno superata.
+    Superata = esito certo (Over vinto, Under perso): nessuna opportunità."""
+    if line is None or score_home is None or score_away is None:
+        return False
+    return float(line) > int(score_home) + int(score_away)
+
+
+def is_live_btts(score_home: Optional[int], score_away: Optional[int]) -> bool:
+    """Gol/NoGol ancora indeciso: appena segnano entrambe l'esito è certo."""
+    if score_home is None or score_away is None:
+        return False
+    return not (int(score_home) >= 1 and int(score_away) >= 1)
+
+
+def opp_rank_key(minute: Optional[int], open_date: Optional[str]) -> "tuple[int, int, str]":
+    """Priorità dei mercati opportunità nel pool stream: SEMPRE dopo i mercati
+    core (rank_key restituisce tier 0/1, qui il tier è 2) e, tra loro, prima i
+    minuti più avanzati — è lì che le probabilità diventano estreme."""
+    return (2, -(minute or 0), str(open_date or ""))
+
+
+def is_opp_market_live(
+    market_type: Optional[str],
+    line: Optional[float],
+    minute: Optional[int],
+    score_home: Optional[int],
+    score_away: Optional[int],
+) -> bool:
+    """Il mercato opportunità serve ADESSO? (linea indecisa / 1T in corso)."""
+    mt = (market_type or "").upper()
+    if mt.startswith("OVER_UNDER"):
+        return is_live_ou_line(line, score_home, score_away)
+    if mt == BTTS_MARKET_TYPE:
+        return is_live_btts(score_home, score_away)
+    if mt == HT_RESULT_MARKET_TYPE:
+        return is_ht_result_candidate(minute)
+    return False
+
+
+def split_opportunity_blocks(blocks: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Any]:
+    """{market_id: blocco} → {'ou': [...ordinati per linea], 'btts': …, 'ht_result': …}
+    (le tre chiavi ADDITIVE del payload calcio). Valori None se il mercato non c'è."""
+    ou: List[Dict[str, Any]] = []
+    btts = ht_result = None
+    for blk in (blocks or {}).values():
+        if not isinstance(blk, dict):
+            continue
+        mt = str(blk.get("market_type") or "").upper()
+        if mt.startswith("OVER_UNDER"):
+            ou.append(blk)
+        elif mt == BTTS_MARKET_TYPE:
+            btts = blk
+        elif mt == HT_RESULT_MARKET_TYPE:
+            ht_result = blk
+    ou.sort(key=lambda b: b.get("line") or 0.0)
+    return {"ou": ou or None, "btts": btts, "ht_result": ht_result}

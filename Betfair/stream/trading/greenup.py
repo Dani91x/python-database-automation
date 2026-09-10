@@ -16,6 +16,14 @@ Matematica dell'hedge (standard di settore — Bet Angel / Geeks Toy / Betfair C
     diff < 0  → si BACKa @ p_back (best disponibile al BACK), size = f * (-diff) / p
     |diff| ~ 0 → niente da fare (posizione già piatta)
 
+STAKE ASSOLUTO (``amount``, standard Bet Angel "cash out for X"): invece della frazione si
+può chiedere di coprire un IMPORTO in € qualunque (decimale, arrotondato al centesimo). Il
+LATO resta quello determinato da W/L (mai invertire la posizione) e la size è CAPPATA allo
+stake del green TOTALE a quel prezzo: chiedere più del necessario chiude e basta, non apre
+una posizione opposta (il cap è annotato nella ``note``). ``amount`` ha la PRECEDENZA su
+``fraction`` (mutuamente esclusivi). Le esposizioni attese sono esatte anche per la
+copertura PARZIALE (si applicano sempre alla size effettivamente piazzata).
+
 Per il green-up TOTALE (f = 1) il nuovo profit-se-vince e profit-se-perde coincidono
 (profitto BLOCCATO identico su ogni esito):
     locked = L + (W - L) / p_lay        (ramo lay)
@@ -90,6 +98,23 @@ def _clamp_fraction(fraction: Optional[float]) -> float:
     return max(0.0, min(1.0, float(fraction)))
 
 
+def _hedge_size(
+    diff_abs: float, price: float, fraction: float, amount: Optional[float]
+) -> "tuple[float, str]":
+    """Size dell'hedge (arrotondata al centesimo) + suffisso di tracciabilità.
+
+    ``amount`` (se dato) VINCE sulla frazione: size = min(amount, stake del green TOTALE),
+    così una richiesta più grande del necessario CHIUDE la posizione senza mai invertirla.
+    """
+    full = round(diff_abs / price, 2)          # stake che azzera W−L a questo prezzo
+    if amount is None:
+        return round(fraction * diff_abs / price, 2), f"f={fraction:.2f}"
+    asked = round(float(amount), 2)
+    if asked > full:
+        return full, f"amount €{asked:.2f} CAPPATO al green totale €{full:.2f}"
+    return asked, f"amount €{asked:.2f}"
+
+
 def compute_greenup(
     *,
     matched_if_win: float,
@@ -99,6 +124,7 @@ def compute_greenup(
     fraction: float = 1.0,
     place_at_ticks: int = 0,
     target_price: Optional[float] = None,
+    amount: Optional[float] = None,
 ) -> GreenupPlan:
     """Calcola l'UNICO ordine di green-up/cash-out per una selezione.
 
@@ -107,6 +133,9 @@ def compute_greenup(
       best_back_price: miglior prezzo disponibile al BACK (per l'hedge BACK quando L > W).
       best_lay_price:  miglior prezzo disponibile al LAY  (per l'hedge LAY  quando W > L).
       fraction: quota di chiusura ∈ (0,1] (1 = totale; 0.5 = metà). Clampata in [0,1].
+      amount: stake ASSOLUTO in € (decimale libero, arrotondato al centesimo) da coprire.
+        Se dato IGNORA ``fraction`` ed è CAPPATO allo stake del green totale (mai un ordine
+        che inverte la posizione); ≤ 0 o non finito = richiesta priva di senso → nessun ordine.
       target_price: prezzo ASSOLUTO di chiusura ("greening column" dei tool pro: click sul
         P&L di un livello = chiudi A QUEL prezzo). Se dato, l'hedge è prezzato al tick più
         vicino a target_price invece che al best opposto: l'ordine può RESTARE sul book
@@ -117,6 +146,21 @@ def compute_greenup(
     (posizione piatta, frazione nulla, prezzo lato richiesto assente o size→0).
     """
     f = _clamp_fraction(fraction)
+    # amount (stake assoluto) — mutuamente esclusivo con fraction, e VINCE su di essa.
+    # Un importo ≤ 0 / non finito è una richiesta priva di senso: MAI ripiegare in silenzio
+    # sul green totale (sarebbe un ordine molto più grande di quello chiesto).
+    amt: Optional[float] = None
+    if amount is not None:
+        amt = float(amount)
+        if not math.isfinite(amt) or amt <= 0.0:
+            return GreenupPlan(
+                side=None, price=None, size=None,
+                expected_if_win=round(float(matched_if_win), 2)
+                if math.isfinite(float(matched_if_win)) else 0.0,
+                expected_if_lose=round(float(matched_if_lose), 2)
+                if math.isfinite(float(matched_if_lose)) else 0.0,
+                note=f"amount non valido ({amount!r}): nessun ordine",
+            )
     # target_price esplicito: dev'essere un prezzo Betfair sensato, altrimenti è un
     # errore di richiesta (mai ripiegare in silenzio sul best: l'utente ha cliccato
     # UN livello preciso — chiudere a un prezzo diverso sarebbe un ordine inatteso).
@@ -142,7 +186,7 @@ def compute_greenup(
         )
     diff = w - l
 
-    if f <= 0.0 or abs(diff) < FLAT_EPS:
+    if (f <= 0.0 and amt is None) or abs(diff) < FLAT_EPS:
         return GreenupPlan(
             side=None, price=None, size=None,
             expected_if_win=round(w, 2), expected_if_lose=round(l, 2),
@@ -162,7 +206,7 @@ def compute_greenup(
                     "prezzo LAY non disponibile per il green-up",
                 )
             p = _place_through("lay", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
-        size = round(f * diff / p, 2)
+        size, size_note = _hedge_size(diff, p, f, amt)
         if size <= 0.0:
             return GreenupPlan(
                 None, None, None, round(w, 2), round(l, 2),
@@ -174,7 +218,7 @@ def compute_greenup(
         return GreenupPlan(
             side="lay", price=p, size=size,
             expected_if_win=round(w2, 2), expected_if_lose=round(l2, 2),
-            note=f"LAY {size:.2f}@{p} (f={f:.2f})",
+            note=f"LAY {size:.2f}@{p} ({size_note})",
         )
 
     # diff < 0 → profitto sbilanciato sul PERDE → BACKa per spostare denaro sul VINCE.
@@ -189,7 +233,7 @@ def compute_greenup(
                 "prezzo BACK non disponibile per il green-up",
             )
         p = _place_through("back", p, place_at_ticks)  # stop a 2 parametri: fill più sicuro
-    size = round(f * (-diff) / p, 2)
+    size, size_note = _hedge_size(-diff, p, f, amt)
     if size <= 0.0:
         return GreenupPlan(
             None, None, None, round(w, 2), round(l, 2),
@@ -201,5 +245,5 @@ def compute_greenup(
     return GreenupPlan(
         side="back", price=p, size=size,
         expected_if_win=round(w2, 2), expected_if_lose=round(l2, 2),
-        note=f"BACK {size:.2f}@{p} (f={f:.2f})",
+        note=f"BACK {size:.2f}@{p} ({size_note})",
     )

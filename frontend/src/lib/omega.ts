@@ -10,7 +10,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 export type OmegaStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type OmegaMode = 'paper' | 'live';
-export type OmegaTradeStatus = 'pending' | 'open' | 'won' | 'lost' | 'void' | 'error';
+/** 'hedged' = posizione chiusa a mercato (cash out / green-up): il P&L e' bloccato. */
+export type OmegaTradeStatus = 'pending' | 'open' | 'hedged' | 'won' | 'lost' | 'void' | 'error';
 
 export interface OmegaStats {
     events_total?: number;
@@ -65,6 +66,8 @@ export interface OmegaTrade {
     bet_id: string | null;
     placed_at: string;
     settled_at: string | null;
+    /** id del trade CHIUSO da questa riga (gamba di copertura del cash out) */
+    closes_trade_id?: number | null;
     meta: Record<string, unknown>;
 }
 
@@ -274,7 +277,7 @@ export interface OmegaMarketSnapshot {
 }
 export interface OmegaManualRequest {
     id: number;
-    kind: 'refresh_events' | 'load_markets' | 'load_book' | 'place';
+    kind: 'refresh_events' | 'load_markets' | 'load_book' | 'place' | 'cashout';
     payload: Record<string, unknown>;
     status: 'pending' | 'processing' | 'done' | 'error';
     result: Record<string, unknown> | null;

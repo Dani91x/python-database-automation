@@ -985,14 +985,21 @@ def _flumine_enqueue_cancel(tr: dict[str, Any], *, db, bet_id: str,
                             meta: dict[str, Any], now: datetime) -> bool:
     """Accoda il cancel del residuo non matchato (TTL quasi-FOK scaduto) e passa
     la riserva a meta.phase='flumine_cancel'. False su qualunque errore (ritenta)."""
+    # ref PARAMETRICO sul bot (stessa regola del place, execution.enqueue_place):
+    # il cancel eredita il prefisso del ref di place (omega-t<id> / safe-t<id>).
+    # Con un prefisso fisso "omega-" un trade Safe e uno Omega con lo stesso id
+    # collidirebbero sulla UNIQUE(client_ref) della coda (RPC idempotente →
+    # il secondo cancel non verrebbe mai accodato).
+    base_ref = str(meta.get("flumine_client_ref") or f"omega-t{tr['id']}")
+    source = base_ref.split("-", 1)[0] if base_ref.split("-", 1)[0] in ("omega", "safe") else "omega"
     try:
         crid = db.enqueue_live_order({
-            "client_ref": f"omega-t{tr['id']}-cancel",  # idempotente
+            "client_ref": f"{base_ref}-cancel",  # idempotente
             "action": "cancel",
             "mode": "paper",
             "bet_id": str(bet_id),
             "market_id": tr.get("market_id"),
-            "params": {"source": "omega", "trade_id": int(tr["id"])},
+            "params": {"source": source, "trade_id": int(tr["id"])},
         })
         if not crid:
             return False
@@ -1506,6 +1513,13 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     settled = 0
     fallback_commission = params["commission_pct"] / 100.0
     for tr in db.open_trades():
+        # gamba di CHIUSURA di un cash-out: si regola INSIEME alla sua apertura
+        # 'hedged' (nettizzazione a due gambe) — mai da sola, o la commissione
+        # verrebbe applicata due volte e il P&L sarebbe sbagliato. Stessa cosa
+        # per un'apertura ancora 'open' CON chiusure (parziale / in sospeso):
+        # la regola _settle_hedged in coppia, mai qui da sola.
+        if tr.get("closes_trade_id") or _has_closing_marker(tr):
+            continue
         # FIX review: l'INTERO corpo per-trade è protetto → una riga malformata
         # (chiave mancante/tipo errato) NON blocca il settlement di tutti gli altri.
         try:
@@ -1548,7 +1562,104 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
         except Exception as ex:  # noqa: BLE001
             db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
             continue
-    return settled
+    return settled + _settle_hedged(params=params, market=market, db=db, now=now)
+
+
+def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime) -> int:
+    """Regola le posizioni CHIUSE A MERCATO ('hedged') insieme alle loro gambe di
+    chiusura: Betfair applica la commissione sulle VINCITE NETTE del mercato,
+    quindi le due gambe si nettano PRIMA (execution.settle_pair/settle_group).
+
+    Best-effort e retro-compatibile: se il db iniettato non espone
+    ``hedged_trades`` (fake dei test storici / migrazione omega_cashout.sql non
+    applicata) non fa nulla. Una chiusura ancora 'pending' (fill flumine in
+    arrivo) rinvia il settlement al ciclo successivo: mai un P&L su una gamba
+    che potrebbe non essersi abbinata.
+    """
+    fn = getattr(db, "hedged_trades", None)
+    if not callable(fn):
+        return 0
+    try:
+        rows = list(fn() or [])
+        # anche le aperture ancora 'open' CON chiusure (cash-out parziale, fill
+        # in sospeso): settle_open le salta apposta, si regolano qui in coppia.
+        # E le gambe di chiusura vive (per l'eventuale caso ORFANO).
+        open_rows = list(db.open_trades() or [])
+    except Exception as ex:  # noqa: BLE001
+        db.log("settle_error", {"reason": "hedged_read_failed", "err": str(ex)[:160]})
+        return 0
+    rows += [t for t in open_rows if not t.get("closes_trade_id") and _has_closing_marker(t)]
+    closing_rows = [t for t in open_rows if t.get("closes_trade_id")]
+    if not rows and not closing_rows:
+        return 0
+    closings: dict[int, list[dict]] = {}
+    closings_fn = getattr(db, "closing_trades_for", None)
+    if rows and callable(closings_fn):
+        try:
+            for c in closings_fn([int(r["id"]) for r in rows]) or []:
+                closings.setdefault(int(c.get("closes_trade_id") or 0), []).append(c)
+        except Exception as ex:  # noqa: BLE001 — senza le chiusure NON si regola
+            db.log("settle_error", {"reason": "closings_read_failed", "err": str(ex)[:160]})
+            return 0
+
+    from Betfair.safe_strategy import execution as X
+
+    fallback_commission = params["commission_pct"] / 100.0
+    n = 0
+    parent_ids = {int(r["id"]) for r in rows}
+    for tr in rows:
+        try:
+            # fill delle chiusure confermato dal poll/reconcile → hedged_size,
+            # residuo, 'hedged' a residuo nullo (idempotente).
+            if str(tr.get("status")) == "open":
+                X.apply_hedge_state(db, tr, closings.get(int(tr["id"]), []), now)
+            cs = _real_market.CorrectScoreMarket(
+                market_id=tr["market_id"], event_id=tr["event_id"],
+                event_name=tr.get("event_name") or "", market_start_time=None,
+                runner_names={},
+            )
+            snap = market.read_market(cs)
+            if snap is None or not snap.closed:
+                continue
+            comm = tr.get("commission")
+            comm = float(comm) if comm is not None else fallback_commission
+            # chiusure PRIMA, apertura per ultima (ripresa sicura al ciclo dopo)
+            if X.settle_position(db=db, trade=tr, closings=closings.get(int(tr["id"]), []),
+                                 snap=snap, commission=comm, now=now):
+                db.log("settle_hedged", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
+                                         "status": tr.get("status"), "pnl": tr.get("pnl"),
+                                         "legs": len(closings.get(int(tr["id"]), [])),
+                                         "runner": tr.get("runner_name")})
+                n += 1
+        except Exception as ex:  # noqa: BLE001
+            db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
+            continue
+    # gambe di chiusura ORFANE (apertura già regolata da un ciclo interrotto):
+    # mai lasciarle aperte — esito dedotto dall'apertura.
+    getter = getattr(db, "get_trade", None)
+    for c in closing_rows:
+        pid = int(c.get("closes_trade_id") or 0)
+        if pid in parent_ids or not callable(getter):
+            continue
+        try:
+            parent = getter(pid)
+            if not parent or str(parent.get("status")) not in ("won", "lost", "void"):
+                continue
+            comm = c.get("commission")
+            comm = float(comm) if comm is not None else fallback_commission
+            if X.settle_orphan_closing(db=db, closing=c, parent=parent,
+                                       commission=comm, now=now):
+                n += 1
+        except Exception as ex:  # noqa: BLE001
+            db.log("settle_error", {"trade_id": c.get("id"), "err": str(ex)[:160]})
+    return n
+
+
+def _has_closing_marker(tr: dict[str, Any]) -> bool:
+    """L'apertura ha (o attende) gambe di chiusura → settlement in coppia."""
+    meta = tr.get("meta") or {}
+    return bool(meta.get("closing_trade_id") or meta.get("hedge_pending_ids")
+                or meta.get("closing_ids"))
 
 
 # ---------------------------------------------------------------------------
@@ -1654,6 +1765,8 @@ def process_manual(*, market, db, now: datetime) -> int:
                                         event_id=str(payload.get("event_id") or ""))
             elif kind == "place":
                 res = _manual_place(market=market, db=db, payload=payload, now=now)
+            elif kind == "cashout":
+                res = _manual_cashout(market=market, db=db, payload=payload, now=now)
             else:
                 res = {"error": f"kind_sconosciuto:{kind}"}
             db.set_manual_status(r["id"], "error" if res.get("error") else "done", res)
@@ -1702,6 +1815,17 @@ def _manual_load_book(*, market, db, market_id: str, event_id: str) -> dict:
 def _back_liability(size: float, side: str, price: float) -> float:
     """Rischio massimo: LAY = size·(price−1); BACK = stake (size)."""
     return E.liability_from_lay(size, price) if side == "lay" else round(float(size), 2)
+
+
+def _event_name_fallback(db, event_id: str) -> Optional[str]:
+    """Nome evento dal catalogo omega_events quando la richiesta manuale non lo porta
+    (10/09: trade manuale senza nome in tabella). Best-effort, mai un'eccezione."""
+    try:
+        get_event = getattr(db, "get_event", None)
+        row = get_event(str(event_id)) if callable(get_event) else None
+        return (row or {}).get("event_name") or None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
@@ -1822,7 +1946,8 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
 
     reserve = {
         "event_id": event_id,
-        "event_name": (snap or {}).get("event_name") or payload.get("event_name"),
+        "event_name": (snap or {}).get("event_name") or payload.get("event_name")
+                      or _event_name_fallback(db, event_id),
         "market_id": market_id,
         "selection_id": selection_id,
         "runner_name": runner_name or (runner or {}).get("name"),
@@ -1931,6 +2056,103 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     db.log("manual_place", {"trade_id": trade_id, "event_id": event_id, "side": side,
                             "price": price, "size": size, "mode": mode})
     return {"ok": True, "trade_id": trade_id}
+
+
+# ---------------------------------------------------------------------------
+# CASH-OUT / GREEN-UP di una gamba aperta (migrations/omega_cashout.sql).
+# La matematica e la sequenza di scritture stanno nello strato CONDIVISO
+# Betfair/safe_strategy/execution.py (stesso codice del bot Safe Strategy):
+# qui si risolvono solo il trade e i PREZZI della sua selezione.
+# ---------------------------------------------------------------------------
+def _cashout_prices(market, tr: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Best back/lay + size della selezione del trade: prima dal FEED UNICO
+    (stesso mercato CS), poi REST (read_book). None se il mercato non è
+    leggibile o non è OPEN — mai chiudere a prezzi inventati."""
+    event_id = str(tr.get("event_id") or "")
+    market_id = str(tr.get("market_id") or "")
+    sid = int(tr.get("selection_id") or 0)
+    feed = _cs_from_feed(market, event_id)
+    if feed is not None:
+        cs_market, snap = feed
+        if str(cs_market.market_id) == market_id:
+            r = next((x for x in snap.runners if int(x.selection_id) == sid), None)
+            if r is not None and (r.back_price or r.lay_price):
+                return {"back": r.back_price, "back_size": getattr(r, "back_size", None),
+                        "lay": r.lay_price, "lay_size": r.lay_size,
+                        "lay_ladder": r.lay_ladder}
+    try:
+        book = market.read_book(market_id, {})
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] cashout read_book KO %s: %s", market_id, str(ex)[:160])
+        return None
+    if not book or str(book.get("status") or "OPEN").upper() != "OPEN":
+        return None
+    for r in book.get("runners") or []:
+        if int(r.get("selection_id") or -1) == sid:
+            return {"back": r.get("back_price"), "back_size": r.get("back_size"),
+                    "lay": r.get("lay_price"), "lay_size": r.get("lay_size"),
+                    "lay_ladder": r.get("lay_ladder") or ()}
+    return None
+
+
+def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
+    """Chiude a mercato (green-up totale o cash-out parziale) UNA gamba aperta.
+
+    payload: {trade_id, amount?} oppure {trade_id, fraction?} (fraction default 1.0
+    = green-up totale). La gamba di chiusura è una riga NUOVA in omega_trades col
+    lato opposto e ``closes_trade_id``; l'originale passa a 'hedged' con
+    ``meta.locked_pnl``. Il settlement nettizza poi le due gambe insieme.
+    """
+    tid = payload.get("trade_id")
+    if tid is None:
+        return {"error": "trade_id_mancante"}
+    try:
+        tid = int(tid)
+    except (TypeError, ValueError):
+        return {"error": "trade_id_non_valido"}
+    getter = getattr(db, "get_trade", None)
+    tr = None
+    if callable(getter):
+        try:
+            tr = getter(tid)
+        except Exception as ex:  # noqa: BLE001
+            return {"error": "lettura_trade_fallita", "detail": str(ex)[:160]}
+    if tr is None:
+        tr = next((t for t in db.list_trades("open") if int(t.get("id") or 0) == tid), None)
+    if tr is None:
+        return {"error": "trade_inesistente"}
+    if str(tr.get("status")) != "open":
+        return {"error": f"trade_non_aperto:{tr.get('status')}"}
+
+    prices = _cashout_prices(market, tr)
+    if not prices:
+        return {"error": "prezzi_non_disponibili"}
+
+    control = db.read_control() or {}
+    params = omega_config.resolve_params(control.get("params"))
+    amount = payload.get("amount")
+    fraction = payload.get("fraction", 1.0)
+    try:
+        amount = float(amount) if amount not in (None, "") else None
+        fraction = float(fraction) if fraction not in (None, "") else 1.0
+    except (TypeError, ValueError):
+        return {"error": "amount/fraction non numerici"}
+    if amount is not None and amount <= 0:
+        return {"error": "amount deve essere > 0"}
+    if not (0.0 < fraction <= 1.0):
+        return {"error": "fraction deve essere in (0,1]"}
+
+    # import PIGRO: evita il ciclo omega_service ↔ execution
+    from Betfair.safe_strategy import execution as X
+
+    extra = {"runner_name": tr.get("runner_name"), "kickoff": tr.get("kickoff")}
+    if tr.get("phase"):
+        extra["phase"] = tr.get("phase")
+    return X.close_trade(
+        db=db, market=market, trade=tr, prices=prices, amount=amount,
+        fraction=fraction, mode=str(tr.get("mode") or "paper"), now=now,
+        params=params, origin="manual", table_prefix="omega", extra_row=extra,
+    )
 
 
 def now_iso() -> str:

@@ -77,6 +77,8 @@ const REEVAL_MS = 5_000;
 export interface FootballMonitor {
     eventId: string;
     payload: CalcioScanPayload;
+    /** updated_at della riga del feed (freschezza delle quote) */
+    updatedAt: string | null;
     ctx: FootballMatchCtx;
     evaluations: VariantEvaluation[];
     /** true = in-play SENZA riferimento pre-KO catturato dallo scanner
@@ -86,6 +88,8 @@ export interface FootballMonitor {
 export interface TennisMonitor {
     eventId: string;
     payload: TennisScanPayload;
+    /** updated_at della riga del feed (freschezza delle quote) */
+    updatedAt: string | null;
     ctx: TennisMatchCtx;
     evaluation: VariantEvaluation;
 }
@@ -312,6 +316,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
                 football.push({
                     eventId: row.event_id,
                     payload: p,
+                    updatedAt: row.updated_at ?? null,
                     ctx,
                     evaluations: evaluateFootballAll(ctx, params),
                     preMatchMissing: ctx.inplay && ctx.preMatch === null,
@@ -326,6 +331,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
                 tennis.push({
                     eventId: row.event_id,
                     payload: p,
+                    updatedAt: row.updated_at ?? null,
                     ctx,
                     evaluation: evaluateTennis(ctx, params.tennis),
                 });

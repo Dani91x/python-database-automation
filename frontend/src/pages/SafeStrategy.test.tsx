@@ -1,0 +1,490 @@
+// Test COMPONENTE della pagina Safe Strategy (radar + bot).
+// Provider del radar e data-layer del bot mockati: nessuna rete.
+// Copre header/stato bot, KPI, tabella trade con cash out e il flusso
+// "Investi" da un segnale (richiesta 'place' accodata con gli id giusti),
+// piu' le regressioni money-critical: modalita' del TRADE nel cash out,
+// feed stantio, tennis col book, sync parametri senza loop, LIVE ereditato.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
+import { DEFAULT_PARAMS } from '@/lib/safeStrategy';
+
+vi.mock('sonner', () => ({
+    toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
+}));
+
+vi.mock('@/lib/safeBot', async (orig) => {
+    const actual = await orig<typeof import('@/lib/safeBot')>();
+    return {
+        ...actual,
+        fetchSafeState: vi.fn(),
+        fetchSafeTrades: vi.fn(async () => []),
+        fetchSafeRequests: vi.fn(async () => []),
+        fetchOpportunities: vi.fn(async () => []),
+        subscribeSafeBot: vi.fn(() => () => {}),
+        subscribeOpportunities: vi.fn(() => () => {}),
+        requestSafe: vi.fn(async () => 123),
+        activateSafe: vi.fn(async () => ({})),
+        stopSafe: vi.fn(),
+        updateSafeParams: vi.fn(),
+    };
+});
+
+const scanState = vi.hoisted(() => ({
+    football: [] as unknown[],
+    tennis: [] as unknown[],
+    signals: [] as unknown[],
+    scanStatus: null as unknown,
+    saveParams: vi.fn(),
+}));
+vi.mock('@/components/safestrategy/SafeStrategyProvider', () => ({
+    useSafeStrategy: () => ({
+        football: scanState.football,
+        tennis: scanState.tennis,
+        signals: scanState.signals,
+        scanStatus: scanState.scanStatus,
+        params: DEFAULT_PARAMS,
+        saveParams: scanState.saveParams,
+        resetParams: vi.fn(),
+    }),
+}));
+
+import SafeStrategy from './SafeStrategy';
+import { fetchSafeState, fetchOpportunities, fetchSafeRequests, requestSafe } from '@/lib/safeBot';
+
+const mState = vi.mocked(fetchSafeState);
+const mOpps = vi.mocked(fetchOpportunities);
+const mRequests = vi.mocked(fetchSafeRequests);
+const mRequest = vi.mocked(requestSafe);
+
+const CONTROL = {
+    id: 1, status: 'running', mode: 'paper',
+    params: { stake: { laySize: 6, backSize: 4 }, commission_pct: 5 },
+    stats: { realized_today: 12.5, realized_total: 40, open_liability: 30, trades_open: 1 },
+    error: null, started_at: null, stopped_at: null, heartbeat_at: null,
+};
+
+const OPEN_TRADE = {
+    id: 9, event_id: 'e1', event_name: 'Roma vs Lazio', sport: 'calcio', strategy: 'esatto',
+    market_id: '1.5', market_type: 'CORRECT_SCORE', selection_id: 77, selection_name: 'Any Other Home Win',
+    side: 'lay', mode: 'paper', price: 40, size: 5, liability: 195, commission: 0.05,
+    minute_at_entry: 50, score_at_entry: '1-0', status: 'open', pnl: 0, bet_id: null,
+    placed_at: '2026-09-10T10:00:00Z', settled_at: null, origin: 'auto',
+    closes_trade_id: null, signal_key: 'e1:esatto:home:1-0', meta: null,
+};
+
+const secondsAgo = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+
+// una partita monitorata col Match Odds risolvibile (id dentro odds.<lato>)
+const FOOTBALL_MONITOR = {
+    eventId: 'e1',
+    updatedAt: secondsAgo(2),
+    payload: {
+        media: null, event_name: 'Roma vs Lazio', home: 'Roma', away: 'Lazio',
+        competition: 'Serie A', open_date: null, inplay: true,
+        mo_market_id: '1.1', mo_status: 'OPEN',
+        odds: {
+            home: { selection_id: 11, ltp: 1.31, back: 1.3, lay: 1.32, back_size: 250, lay_size: 180 },
+            draw: null,
+            away: { selection_id: 12, back: 9, lay: 9.4 },
+        },
+        minute: 60, score_home: 1, score_away: 0, red_home: 0, red_away: 0, pre_ko: null,
+        cs: {
+            market_id: '1.5', status: 'OPEN',
+            selections: [{ selection_id: 77, name: 'Any Other Home Win', back: 38, lay: 42, back_size: 90 }],
+            any_other_home: null, any_other_away: null,
+        },
+    },
+    ctx: { home: 'Roma', away: 'Lazio', inplay: true, minute: 60, scoreHome: 1, scoreAway: 0 },
+    evaluations: [],
+    preMatchMissing: false,
+};
+
+const TENNIS_MONITOR = {
+    eventId: 't1',
+    updatedAt: secondsAgo(2),
+    payload: {
+        media: null, event_name: 'Sinner v Alcaraz', p1: 'Sinner', p2: 'Alcaraz',
+        competition: 'ATP', open_date: null, inplay: true,
+        mo_market_id: '2.1', mo_status: 'OPEN',
+        odds: {
+            p1: { selection_id: 501, back: 1.5, lay: 1.52, back_size: 300, lay_size: 200 },
+            p2: { selection_id: 502, back: 2.9, lay: 3.0 },
+        },
+        sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 2 },
+    },
+    ctx: { p1: 'Sinner', p2: 'Alcaraz', inplay: true, sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 2 } },
+    evaluation: { variant: 'tennis', conditions: [], allMet: false },
+};
+
+const TENNIS_TRADE = {
+    ...OPEN_TRADE, id: 21, event_id: 't1', event_name: 'Sinner v Alcaraz', sport: 'tennis', strategy: 'tennis',
+    market_id: '2.1', market_type: 'MATCH_ODDS', selection_id: 502, selection_name: 'Alcaraz',
+    side: 'lay', price: 3, size: 10, liability: 20, signal_key: null,
+};
+
+const SIGNAL = {
+    key: 'e1:base:1-0', sport: 'calcio', variant: 'base', eventId: 'e1',
+    matchLabel: 'Roma – Lazio', headline: 'BANCA il pareggio', side: 'BACK',
+    selection: 'Roma', entryOdds: 1.3, entrySize: 250,
+    contextAtTrigger: '60′ · 1-0', triggeredAtMs: Date.now(), status: 'active', expiredAtMs: null,
+};
+
+const OPP_ROW = {
+    event_id: 'e1', sport: 'calcio', updated_at: secondsAgo(3),
+    payload: {
+        minute: 60, score_home: 1, score_away: 0, event_name: 'Roma vs Lazio',
+        opps: [{
+            market_type: 'OVER_UNDER_25', market_name: 'Over/Under 2.5', line: 2.5,
+            market_id: '1.9', selection_id: 1, selection_name: 'Over 2.5', side: 'back',
+            price: 2.1, size_available: 50, p_model: 0.55, p_implied: 0.48, edge: 0.07,
+            ev: 0.15, confidence: 0.6, rationale: null,
+        }],
+    },
+};
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    scanState.football = [FOOTBALL_MONITOR];
+    scanState.tennis = [];
+    scanState.signals = [SIGNAL];
+    scanState.scanStatus = { id: 'scanner', payload: { calcio_inplay: 1 }, updated_at: secondsAgo(2) };
+    mState.mockResolvedValue({
+        control: CONTROL as never,
+        trades: [OPEN_TRADE] as never,
+        aggregates: {
+            realized_today: 12.5, realized_total: 40, open_liability: 30,
+            open_count: 1, won: 2, lost: 1,
+        },
+    });
+    mOpps.mockResolvedValue([]);
+    mRequests.mockResolvedValue([]);
+    mRequest.mockResolvedValue(123);
+});
+
+function renderPage() {
+    return render(
+        <HelmetProvider>
+            <MemoryRouter>
+                <SafeStrategy />
+            </MemoryRouter>
+        </HelmetProvider>,
+    );
+}
+
+async function openTradesTab(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByTestId('bot-status');
+    await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+    return (await screen.findAllByTestId('safe-trade-row'))[0];
+}
+
+describe('pagina Safe Strategy', () => {
+    it('mostra intestazione, stato bot e modalita PAPER', async () => {
+        renderPage();
+        expect(await screen.findByText(/SAFE STRATEGY/)).toBeInTheDocument();
+        expect(await screen.findByTestId('bot-status')).toHaveTextContent('BOT IN CORSA');
+        expect(await screen.findByTestId('mode-banner')).toHaveTextContent(/PAPER/);
+    });
+
+    it('non promette piu che nessun ordine venga piazzato', async () => {
+        renderPage();
+        await screen.findByTestId('bot-status');
+        expect(screen.queryByText(/Nessun ordine viene mai piazzato/)).toBeNull();
+    });
+
+    it('KPI: segnali attivi, trade aperti e P&L', async () => {
+        renderPage();
+        expect(await screen.findByText('Segnali attivi')).toBeInTheDocument();
+        expect(await screen.findByText('Trade aperti')).toBeInTheDocument();
+        expect(await screen.findByText('+€12.50')).toBeInTheDocument();
+        expect(await screen.findByText('+€40.00')).toBeInTheDocument();
+    });
+
+    it('LOW: "Trade aperti" conta solo gli open, i pending a parte', async () => {
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [OPEN_TRADE, { ...OPEN_TRADE, id: 11, status: 'pending', signal_key: null }] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const label = await screen.findByText('Trade aperti');
+        const tile = label.closest('.glass-card') as HTMLElement;
+        expect(within(tile).getByText('1')).toBeInTheDocument();
+        expect(within(tile).getByText('1 in corso · 2 totali')).toBeInTheDocument();
+    });
+
+    it('la tab Trade elenca il trade aperto col cash out', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        const row = await openTradesTab(user);
+        expect(within(row).getByText('Roma vs Lazio')).toBeInTheDocument();
+        expect(within(row).getByText('LAY')).toBeInTheDocument();
+        expect(within(row).getByText('APERTO')).toBeInTheDocument();
+        // lay 5 @40 -> vince -195 / perde +5 ; back @38: locked = 5 - 200/38 = -0.26
+        expect(within(row).getByTestId('cashout-trigger')).toBeEnabled();
+    });
+
+    it('dal segnale si accoda una richiesta place con gli id risolti dal feed', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        const btn = await screen.findByTestId('invest-place');
+        expect(btn).toHaveTextContent('Piazza (PAPER)');
+        await user.click(btn);
+        expect(mRequest).toHaveBeenCalledTimes(1);
+        const [kind, payload] = mRequest.mock.calls[0];
+        expect(kind).toBe('place');
+        expect(payload).toMatchObject({
+            event_id: 'e1',
+            sport: 'calcio',
+            mode: 'paper',
+            market_id: '1.1',
+            market_type: 'MATCH_ODDS',
+            selection_id: 11,
+            selection_name: 'Roma',
+            side: 'back',
+            price: 1.3,
+            strategy: 'base',
+            signal_key: 'e1:base:1-0',
+        });
+        // stake precompilato dai parametri del bot (stake.backSize = 4)
+        expect(payload).toMatchObject({ size: 4 });
+    });
+
+    it('la gamba di chiusura tagliata dalla liquidita e marcata parziale', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [
+                { ...OPEN_TRADE, status: 'hedged', pnl: 1.2, settled_at: '2026-09-10T10:30:00Z', meta: { locked_pnl: 1.2 } },
+                {
+                    ...OPEN_TRADE, id: 10, side: 'back', price: 38, size: 3, status: 'open',
+                    closes_trade_id: 9, signal_key: null, meta: { size_capped_from: 5.13 },
+                },
+            ] as never,
+            aggregates: null,
+        });
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        expect(await screen.findByTestId('cashout-capped')).toHaveTextContent('parziale');
+    });
+
+    it('senza id di selezione nel feed l azione resta non disponibile', async () => {
+        scanState.football = [{
+            ...FOOTBALL_MONITOR,
+            payload: {
+                ...FOOTBALL_MONITOR.payload,
+                odds: { home: { back: 1.3, lay: 1.32 }, draw: null, away: null },
+            },
+        }];
+        renderPage();
+        expect(await screen.findByTestId('signal-no-placement')).toBeInTheDocument();
+        expect(screen.queryByTestId('invest-place')).toBeNull();
+    });
+
+    it('se esiste gia un trade per il segnale mostra il suo stato al posto dell azione', async () => {
+        scanState.signals = [{ ...SIGNAL, key: 'e1:esatto:home:1-0' }];
+        renderPage();
+        expect(await screen.findByTestId('signal-trade')).toHaveTextContent('OPEN');
+        expect(screen.queryByTestId('invest-place')).toBeNull();
+    });
+});
+
+describe('Safe Strategy — cash out con la modalita del TRADE (CRITICAL-2)', () => {
+    it('pagina LIVE ma trade paper: nessuna doppia conferma "soldi veri"', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: { ...CONTROL, mode: 'live' } as never,
+            trades: [OPEN_TRADE] as never,
+            aggregates: null,
+        });
+        renderPage();
+        expect(await screen.findByTestId('mode-banner')).toHaveTextContent(/LIVE/);
+        const row = await openTradesTab(user);
+        await user.click(within(row).getByTestId('cashout-trigger'));
+        await screen.findByTestId('cashout-confirm');
+        expect(screen.queryByText(/Modalità LIVE: soldi veri/)).toBeNull();
+        await user.click(screen.getByTestId('cashout-confirm'));
+        expect(mRequest).toHaveBeenCalledWith('cashout', { trade_id: 9, fraction: 1 });
+    });
+
+    it('pagina PAPER ma trade live: doppia conferma e avviso soldi veri', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [{ ...OPEN_TRADE, mode: 'live' }] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const row = await openTradesTab(user);
+        await user.click(within(row).getByTestId('cashout-trigger'));
+        expect(await screen.findByText(/Modalità LIVE: soldi veri/)).toBeInTheDocument();
+        await user.click(screen.getByTestId('cashout-confirm'));
+        expect(screen.getByTestId('cashout-confirm')).toHaveTextContent(/Confermi/);
+        expect(mRequest).not.toHaveBeenCalled();
+    });
+
+    it('anche nella card del segnale il cash out usa la modalita del trade', async () => {
+        const user = userEvent.setup();
+        scanState.signals = [{ ...SIGNAL, key: 'e1:esatto:home:1-0' }];
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [{ ...OPEN_TRADE, mode: 'live' }] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const card = await screen.findByTestId('signal-trade');
+        await user.click(within(card).getByTestId('cashout-trigger'));
+        expect(await screen.findByText(/Modalità LIVE: soldi veri/)).toBeInTheDocument();
+    });
+});
+
+describe('Safe Strategy — un solo cash out per trade (HIGH-1)', () => {
+    it('gamba di chiusura gia in coda: bottone spento', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [
+                OPEN_TRADE,
+                { ...OPEN_TRADE, id: 10, side: 'back', price: 38, size: 5.13, status: 'pending', closes_trade_id: 9, signal_key: null },
+            ] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const row = await openTradesTab(user);
+        expect(within(row).getByTestId('cashout-trigger')).toBeDisabled();
+    });
+
+    it('richiesta cashout pending sul DB: bottone spento', async () => {
+        const user = userEvent.setup();
+        mRequests.mockResolvedValue([
+            { id: 5, kind: 'cashout', payload: { trade_id: 9, fraction: 1 }, status: 'pending', result: null, created_at: secondsAgo(1), updated_at: null },
+        ]);
+        renderPage();
+        const row = await openTradesTab(user);
+        expect(within(row).getByTestId('cashout-trigger')).toBeDisabled();
+    });
+});
+
+describe('Safe Strategy — feed stantio (HIGH-2)', () => {
+    it('riga vecchia E scanner morto: cash out e Investi spenti con motivo', async () => {
+        const user = userEvent.setup();
+        scanState.football = [{ ...FOOTBALL_MONITOR, updatedAt: secondsAgo(30) }];
+        scanState.scanStatus = { id: 'scanner', payload: {}, updated_at: secondsAgo(90) };
+        renderPage();
+        const invest = await screen.findByTestId('invest-place');
+        expect(invest).toBeDisabled();
+        expect(screen.getByTestId('invest-disabled-reason')).toHaveTextContent('quote non aggiornate (30s)');
+        const row = await openTradesTab(user);
+        expect(within(row).getByTestId('cashout-trigger')).toBeDisabled();
+        expect(within(row).getByTestId('feed-age')).toHaveTextContent('30s');
+    });
+
+    it('riga vecchia ma scanner vivo (write-on-change): badge eta, bottoni attivi', async () => {
+        const user = userEvent.setup();
+        scanState.football = [{ ...FOOTBALL_MONITOR, updatedAt: secondsAgo(30) }];
+        scanState.scanStatus = { id: 'scanner', payload: {}, updated_at: secondsAgo(2) };
+        renderPage();
+        expect(await screen.findByTestId('invest-place')).toBeEnabled();
+        expect(screen.getByTestId('feed-age')).toHaveTextContent('feed 30s');
+        const row = await openTradesTab(user);
+        expect(within(row).getByTestId('cashout-trigger')).toBeEnabled();
+        expect(within(row).getByTestId('feed-age')).toHaveTextContent('30s');
+    });
+});
+
+describe('Safe Strategy — tennis (HIGH-3)', () => {
+    it('un trade tennis riceve il book dal feed tennis: cash out attivo e live "set/game"', async () => {
+        const user = userEvent.setup();
+        scanState.tennis = [TENNIS_MONITOR];
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [TENNIS_TRADE] as never,
+            aggregates: null,
+        });
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /Tennis/ }));
+        await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        const row = await screen.findByTestId('safe-trade-row');
+        expect(within(row).getByText('Sinner v Alcaraz')).toBeInTheDocument();
+        expect(within(row).getByText('set 1-0 · game 3-2')).toBeInTheDocument();
+        // lay 10 @3 (vince -20 / perde +10) coperto back @2.9: locked = 10 - 30/2.9 = -0.34
+        const trigger = within(row).getByTestId('cashout-trigger');
+        expect(trigger).toBeEnabled();
+        expect(trigger).toHaveTextContent('0.34');
+    });
+});
+
+describe('Safe Strategy — sync parametri (HIGH-4)', () => {
+    it('payload server con chiave ignota: nessun salvataggio (niente loop)', async () => {
+        mState.mockResolvedValue({
+            control: {
+                ...CONTROL,
+                params: { ...CONTROL.params, base: { ...DEFAULT_PARAMS.base, unknown_key: 1, legacy: null } },
+            } as never,
+            trades: [] as never,
+            aggregates: null,
+        });
+        renderPage();
+        await screen.findByTestId('bot-status');
+        // qualche render in piu' (tab) per dare al loop l'occasione di scattare
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('tab', { name: /Monitor/ }));
+        expect(scanState.saveParams).not.toHaveBeenCalled();
+    });
+
+    it('condizione davvero diversa sul server: UN solo salvataggio normalizzato', async () => {
+        mState.mockResolvedValue({
+            control: {
+                ...CONTROL,
+                params: { ...CONTROL.params, base: { ...DEFAULT_PARAMS.base, minuteMin: 70, unknown_key: 1 } },
+            } as never,
+            trades: [] as never,
+            aggregates: null,
+        });
+        renderPage();
+        await screen.findByTestId('bot-status');
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('tab', { name: /Monitor/ }));
+        expect(scanState.saveParams).toHaveBeenCalledTimes(1);
+        const saved = scanState.saveParams.mock.calls[0][0];
+        expect(saved.base.minuteMin).toBe(70);
+        expect('unknown_key' in saved.base).toBe(false);
+    });
+});
+
+describe('Safe Strategy — LIVE ereditato dal control (MEDIUM-4)', () => {
+    it('banner LIVE ma nessun piazzamento senza conferma in questa sessione', async () => {
+        const user = userEvent.setup();
+        mState.mockResolvedValue({
+            control: { ...CONTROL, mode: 'live' } as never,
+            trades: [] as never,
+            aggregates: null,
+        });
+        renderPage();
+        expect(await screen.findByTestId('mode-banner')).toHaveTextContent(/MODALITÀ LIVE/);
+        const btn = await screen.findByTestId('invest-place');
+        expect(btn).toHaveTextContent('Piazza (LIVE)');
+        await user.click(btn); // arma
+        await user.click(btn); // confermerebbe: invece chiede la conferma LIVE di sessione
+        expect(mRequest).not.toHaveBeenCalled();
+        expect(await screen.findByText(/Passare a LIVE \(soldi veri\)\?/)).toBeInTheDocument();
+    });
+});
+
+describe('Safe Strategy — opportunita filtrate (MEDIUM-5)', () => {
+    it('filtri che escludono tutto: stato vuoto esplicativo', async () => {
+        const user = userEvent.setup();
+        mOpps.mockResolvedValue([OPP_ROW as never]);
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /Opportunità modello/ }));
+        expect(await screen.findByTestId('opp-group')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: '85%' }));
+        expect(await screen.findByTestId('opp-filtered-empty')).toHaveTextContent(/confidenza ≥ 85%/);
+        expect(screen.queryByTestId('opp-group')).toBeNull();
+    });
+});

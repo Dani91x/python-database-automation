@@ -39,6 +39,7 @@ Testabile a unità: framework, Market, blotter e coda sono mockabili; nessuna re
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -125,6 +126,67 @@ def _max_stake() -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return val if val > 0 else None
+
+
+def _min_stake() -> float:
+    """Stake MINIMO dell'exchange (env ``BETFAIR_MIN_STAKE``, default 2.0 EUR — .it).
+
+    Sotto questa soglia un ordine LIVE non e' piazzabile direttamente: si usa la sequenza
+    place-and-trim (``trading/submin.py``, meccanismo documentato Betfair usato da Bet Angel).
+    Ri-letto ad ogni chiamata (modificabile senza riavvio, come gli altri limiti).
+    """
+    val = _cfg_attr("BETFAIR_MIN_STAKE")
+    if val is None:
+        val = os.getenv("BETFAIR_MIN_STAKE", "").strip() or None
+    try:
+        f = float(val) if val is not None else 2.0
+    except (TypeError, ValueError):
+        return 2.0
+    return f if f > 0 else 2.0
+
+
+def _sub_minimum_floor(side: str) -> float:
+    """Size sotto la quale un ordine NON e' piazzabile DIRETTAMENTE (serve il place-and-trim).
+
+    E' il minimo di PIAZZAMENTO per giurisdizione e per LATO (.it: BACK 2,00 / LAY 0,50 —
+    ``trading.submin.place_min_size``, la stessa soglia che la macchina a stati usa per il
+    "park"); se la giurisdizione non e' nota si ricade sull'env ``BETFAIR_MIN_STAKE``.
+    """
+    try:
+        from .trading.submin import place_min_size
+        return float(place_min_size(_jurisdiction(), str(side).lower()))
+    except Exception:  # noqa: BLE001 - giurisdizione/lato ignoti: fallback all'env
+        return _min_stake()
+
+
+def _submin_timeout_sec() -> float:
+    """Secondi massimi di attesa della sequenza submin SINCRONA (env ``BETFAIR_SUBMIN_TIMEOUT_SEC``).
+
+    Oltre il timeout il residuo viene RITIRATO e l'errore e' esplicito: mai lasciare un
+    ordine 'parcheggiato' alla quota non abbinabile senza dirlo.
+    """
+    raw = os.getenv("BETFAIR_SUBMIN_TIMEOUT_SEC", "").strip()
+    try:
+        f = float(raw) if raw else 20.0
+    except (TypeError, ValueError):
+        return 20.0
+    return f if f > 0 else 20.0
+
+
+def _is_live_mode(mode: Any) -> bool:
+    """True solo in LIVE reale. In PAPER l'esecuzione e' simulata (flumine SimulatedExecution):
+    il minimo di giurisdizione non esiste e il place diretto e' sempre corretto."""
+    return str(mode or "").strip().lower() == "live"
+
+
+def _param_bool(params: Any, key: str, default: bool) -> bool:
+    """Legge un flag booleano da ``params`` con default esplicito (assente -> default)."""
+    if not isinstance(params, dict) or params.get(key) is None:
+        return default
+    val = params.get(key)
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _kill_switch() -> bool:
@@ -827,6 +889,122 @@ def _replace_or_raise(market: Any, order: Any, new_price: float, what: str) -> N
 
 
 # ---------------------------------------------------------------------------
+# SOTTO-MINIMO (place-and-trim) SINCRONO — meccanismo documentato Betfair (Bet Angel)
+# ---------------------------------------------------------------------------
+# Betfair non accetta un ordine sotto il minimo di giurisdizione, ma accetta di RIDURRE un
+# ordine gia' a mercato sotto quel minimo. Quindi (vedi trading/submin.py):
+#   1) place del MINIMO a una quota NON abbinabile (BACK 1000 / LAY 1.01), persistenza LAPSE;
+#   2) cancel PARZIALE con size_reduction = minimo - size  -> resta la size sotto-minima;
+#   3) replace alla quota target reale.
+# Qui la macchina a stati verificata (advance_submin) e' guidata in modo SINCRONO, con un
+# timeout: e' la stessa macchina della coda 'place_submin', quindi conserva la GUARDIA
+# money-critical del 10/07 (mai un replace se il trim non e' stato OSSERVATO: altrimenti la
+# size PIENA finirebbe alla quota reale). Se un passo fallisce -> ritiro del residuo + errore
+# esplicito. In PAPER non si usa mai (esecuzione simulata: nessun minimo da aggirare).
+_SUBMIN_POLL_SEC = 0.25
+
+
+def _place_sub_minimum(
+    flumine: Any,
+    market: Any,
+    *,
+    market_id: Optional[str],
+    strategy: Any,
+    selection_id: int,
+    handicap: float,
+    side: str,
+    price: float,
+    size: float,
+    cust_ref: str,
+    what: str,
+    max_stake: Optional[float] = None,
+    ops: Any = None,
+    find_order: Any = None,
+    sleep: Any = None,
+    timeout_sec: Optional[float] = None,
+) -> "tuple[Any, Any]":
+    """Piazza una size SOTTO il minimo con la sequenza place-and-trim. Ritorna (stato, ordine).
+
+    Solleva ``ValueError`` con il motivo esplicito se la sequenza non arriva a DONE (ritiro
+    del residuo best-effort prima di propagare: mai un resting non tracciato sul conto).
+    ``ops``/``find_order``/``sleep`` sono iniettabili per i test (nessuna rete).
+    """
+    from .trading.submin import (
+        FlumineSubminOps,
+        SubminStep,
+        advance_submin,
+        start_submin,
+    )
+
+    juris = _jurisdiction()
+    state = start_submin(
+        side=str(side), target_price=float(price), target_size=float(size),
+        jurisdiction=juris, note=f"{what}: sotto-minimo (place-and-trim)",
+    )
+    if ops is None:
+        ops = _RecordingFlumineOps(
+            FlumineSubminOps(
+                selection_id=int(selection_id),
+                handicap=float(handicap or 0.0),
+                jurisdiction=juris,
+                strategy=strategy,
+                max_stake=max_stake,
+                customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+            )
+        )
+    if find_order is None:
+        def find_order(order_id: Any, bet_id: Any) -> Any:  # noqa: D401 - closure di default
+            return _find_submin_order(flumine, market_id, order_id, bet_id, cust_ref=cust_ref)
+    if sleep is None:
+        sleep = time.sleep
+    deadline = time.monotonic() + float(
+        timeout_sec if timeout_sec is not None else _submin_timeout_sec()
+    )
+
+    # step1: place del minimo alla quota non abbinabile (l'UNICO place della sequenza).
+    state = advance_submin(
+        market, state, order=None, jurisdiction=juris,
+        customer_order_ref=cust_ref, ops=ops,
+    )
+    order = getattr(ops, "last_order", None)
+    order_id = _val(order, "id")
+    logger.info("[live-order] submin %s step=%s: %s", what, state.step.value, state.note)
+
+    while state.step not in (SubminStep.DONE, SubminStep.ABORTED):
+        if time.monotonic() >= deadline:
+            state = None  # timeout: gestito sotto (ritiro + errore)
+            break
+        sleep(_SUBMIN_POLL_SEC)
+        fresh = find_order(order_id, state.bet_id)
+        if fresh is not None:
+            order = fresh
+            order_id = _val(order, "id") or order_id
+        prev = (state.step, state.note)
+        state = advance_submin(
+            market, state, order=order, jurisdiction=juris,
+            customer_order_ref=cust_ref, ops=ops, allow_place=False,
+        )
+        if (state.step, state.note) != prev:
+            logger.info("[live-order] submin %s step=%s: %s", what, state.step.value, state.note)
+
+    if state is not None and state.step == SubminStep.DONE:
+        logger.info("[live-order] submin %s COMPLETATO: %.2f@%s", what,
+                    state.target_size, state.target_price)
+        return state, order
+    # fallimento (abort della macchina o timeout): ritiro del residuo, poi errore esplicito.
+    why = state.note if state is not None else "timeout della sequenza place-and-trim"
+    if order is not None:
+        try:
+            market.cancel_order(order)
+        except Exception:  # noqa: BLE001 - il ritiro di emergenza e' best-effort
+            logger.exception("[live-order] submin %s: cancel di emergenza fallito", what)
+    raise ValueError(
+        f"{what}: sotto-minimo NON piazzato ({size:.2f} < minimo "
+        f"{_sub_minimum_floor(side):.2f}) - {why}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Azioni place / cancel / replace
 # ---------------------------------------------------------------------------
 def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
@@ -835,6 +1013,17 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
     rid = request_row["id"]
     cust_ref = _cust_ref(rid)
     market = _resolve_market(flumine, request_row.get("market_id"))
+    params = request_row.get("params") or {}
+    # ALIGN-7 (review 10/09): il place SEMPLICE non ammette ``params.allow_sub_minimum``
+    # — la RPC ``request_betfair_live_order`` lo RIFIUTA (migrazione betfair_live_cashout_v3):
+    # un'APERTURA sotto-minimo passa SOLO dall'azione dedicata ``place_submin`` (macchina a
+    # stati con le sue guardie). Qui il flag viene IGNORATO con log e vale il min-stake
+    # normale di build_order: nessuna via laterale verso il place-and-trim.
+    if isinstance(params, dict) and params.get("allow_sub_minimum") is not None:
+        logger.warning(
+            "[live-order] place (req %s): params.allow_sub_minimum IGNORATO — le aperture "
+            "sotto-minimo usano l'azione place_submin; vale il minimo di giurisdizione", rid,
+        )
     built = build_order(
         market,
         strategy=strategy,
@@ -1177,25 +1366,58 @@ def _ft_leg_key(leg: Dict[str, Any]) -> str:
     return f"{leg.get('market_id')}:{leg.get('selection_id')}"
 
 
+def _ft_is_equal_cashout(row: Dict[str, Any]) -> bool:
+    """True se la riga madre e' un cash-out PAREGGIATO (cashout_all/cashout_event con
+    ``params.equal``): il suo follow-through e' per MERCATO, non per selezione."""
+    return (
+        str(row.get("action") or "") in ("cashout_all", "cashout_event")
+        and _param_bool(row.get("params"), "equal", False)
+    )
+
+
 def _ft_enqueue_rehedge(
     sb: Any, row: Dict[str, Any], leg: Dict[str, Any], retry_n: int, fraction: float
 ) -> Optional[int]:
-    """Accoda il re-hedge (NUOVO greenup) per la gamba. client_ref DETERMINISTICO
-    ``ft<rid>s<sel>r<n>`` → il vincolo UNIQUE della coda garantisce UN SOLO
-    re-hedge anche se lo sweep rivaluta la riga più volte."""
-    payload = {
-        "client_ref": f"ft{row.get('id')}s{leg.get('selection_id')}r{retry_n}",
-        "action": "greenup",
-        "mode": str(row.get("mode") or ""),
-        "market_id": leg.get("market_id"),
-        "selection_id": leg.get("selection_id"),
-        "handicap": leg.get("handicap") or 0,
-        "params": {
-            "fraction": fraction,
-            "ft_parent": row.get("id"),
-            "ft_retry": retry_n,
-        },
-    }
+    """Accoda il re-hedge per la gamba. client_ref DETERMINISTICO → il vincolo UNIQUE
+    della coda garantisce UN SOLO re-hedge anche se lo sweep rivaluta la riga più volte.
+
+    * riga madre greenup / cash-out indipendente: NUOVO ``greenup`` per la selezione,
+      ref ``ft<rid>s<sel>r<n>``;
+    * riga madre cash-out PAREGGIATO (HIGH-3 review 10/09): un greenup per selezione
+      ROMPEREBBE il pareggio (le gambe sono UN sistema sull'intero mercato) → si ri-accoda
+      un NUOVO ``cashout_all``/``cashout_event`` per quel MERCATO con gli stessi parametri
+      (equal, fraction, amount), ref ``ft<rid>m<market>r<n>`` (una volta per mercato).
+    """
+    params_src = row.get("params") if isinstance(row.get("params"), dict) else {}
+    if _ft_is_equal_cashout(row):
+        eq_params: Dict[str, Any] = {"equal": True, "fraction": fraction}
+        if params_src.get("amount") is not None:
+            eq_params["amount"] = params_src.get("amount")
+        eq_params["ft_parent"] = row.get("id")
+        eq_params["ft_retry"] = retry_n
+        payload = {
+            "client_ref": f"ft{row.get('id')}m{leg.get('market_id')}r{retry_n}",
+            "action": str(row.get("action")),
+            "mode": str(row.get("mode") or ""),
+            "market_id": leg.get("market_id"),
+            "selection_id": None,
+            "handicap": 0,
+            "params": eq_params,
+        }
+    else:
+        payload = {
+            "client_ref": f"ft{row.get('id')}s{leg.get('selection_id')}r{retry_n}",
+            "action": "greenup",
+            "mode": str(row.get("mode") or ""),
+            "market_id": leg.get("market_id"),
+            "selection_id": leg.get("selection_id"),
+            "handicap": leg.get("handicap") or 0,
+            "params": {
+                "fraction": fraction,
+                "ft_parent": row.get("id"),
+                "ft_retry": retry_n,
+            },
+        }
     try:
         res = sb.rpc("request_betfair_live_order", {"p": payload}).execute()
         data = getattr(res, "data", None)
@@ -1280,10 +1502,23 @@ def _check_manual_followthrough(sb: Any, flumine: Any, mode_l: str) -> int:
         # (un cash-out parziale resta parziale), mai chiudere più del richiesto.
         fraction = _f(params.get("fraction")) or 1.0
         retry_base = _int(params.get("ft_retry")) or 0
+        # HIGH-3: cash-out PAREGGIATO → il re-hedge e' UN nuovo cashout per MERCATO.
+        # Memo market_id → req accodata in questo sweep: le altre gambe dello stesso
+        # mercato vengono consegnate alla STESSA richiesta (mai due re-cashout).
+        equal_ft = _ft_is_equal_cashout(row)
+        market_req: Dict[str, int] = {}
 
         for leg in legs:
             key = _ft_leg_key(leg)
             st = dict(leg_state.get(key) or {})
+            if equal_ft and str(leg.get("market_id")) in market_req and not st.get("handed_off"):
+                # il re-cashout del mercato e' gia' accodato in questo giro (cancel-first
+                # incluso: annulla TUTTI gli unmatched del mercato, anche questo hedge).
+                st["handed_off"] = True
+                st["retry_req"] = market_req[str(leg.get("market_id"))]
+                leg_state[key] = st
+                changed = True
+                continue
             if st.get("ok") or st.get("handed_off") or st.get("alerted"):
                 if not (st.get("ok") or st.get("handed_off")):
                     all_ok = False
@@ -1341,6 +1576,8 @@ def _check_manual_followthrough(sb: Any, flumine: Any, mode_l: str) -> int:
             new_req = _ft_enqueue_rehedge(sb, row, leg, total_retry, fraction)
             if new_req is None:
                 continue  # enqueue KO: riprova senza consumare il tentativo
+            if equal_ft:
+                market_req[str(leg.get("market_id"))] = new_req
             st["handed_off"] = True
             st["retry_req"] = new_req
             leg_state[key] = st
@@ -1411,6 +1648,65 @@ def _cancel_unmatched(
     return cancelled, failed
 
 
+def _place_closing_leg(
+    flumine: Any,
+    market: Any,
+    *,
+    order: Any,
+    strategy: Any,
+    market_id: Optional[str],
+    selection_id: int,
+    handicap: float,
+    side: str,
+    price: float,
+    size: float,
+    cust_ref: str,
+    what: str,
+    mode: str,
+    params: Any,
+    max_stake: Optional[float] = None,
+) -> Optional[Any]:
+    """Piazza una gamba di CHIUSURA (greenup / cash-out). Ritorna lo SubminState se si e'
+    dovuti passare dal place-and-trim, altrimenti None.
+
+    Percorso normale: place DIRETTO — Betfair consente la size sotto-minima quando l'ordine
+    RIDUCE la liability (``reduces_liability=True`` in build_order), quindi nel caso tipico
+    nessun trucco serve. Se pero' il place viene RIFIUTATO in modo PROVABILE (i trading
+    control tornano False: ordine MAI inviato) e la size e' sotto il minimo di exchange, si
+    ripiega sulla sequenza place-and-trim: una VIA D'USCITA non deve restare bloccata da un
+    minimo. Opt-in ``params.allow_sub_minimum``, default TRUE per le chiusure.
+    Un'eccezione sollevata DENTRO place_order (RuntimeError ``post_place:``) NON e' un
+    rifiuto provabile e viene ri-propagata: l'ordine potrebbe essere gia' in volo.
+    """
+    try:
+        _place_or_raise(market, order, what)
+        return None
+    except ValueError as ex:
+        if not (
+            _param_bool(params, "allow_sub_minimum", True)
+            and _is_live_mode(mode)
+            and size is not None
+            and float(size) < _sub_minimum_floor(side) - 1e-9
+        ):
+            raise
+        logger.warning(
+            "[live-order] %s: place diretto RIFIUTATO (%s) - ripiego sul place-and-trim "
+            "(size %.2f < minimo %.2f)", what, str(ex)[:160], float(size),
+            _sub_minimum_floor(side),
+        )
+        # MEDIUM-6 (review 10/09): la sequenza park/trim/replace e' un place REALE: la
+        # capacita' rate va verificata PRIMA di toccare il mercato (come per place_submin),
+        # mai scoprire il rate-limit con un ordine parcheggiato alla quota non abbinabile.
+        _rate_guard()
+        state, _order = _place_sub_minimum(
+            flumine, market, market_id=market_id, strategy=strategy,
+            selection_id=int(selection_id), handicap=float(handicap or 0.0), side=str(side),
+            price=float(price), size=float(size), cust_ref=cust_ref, what=what,
+            max_stake=max_stake,
+        )
+        return state
+
+
 def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
     """Green-up / cash-out: chiude (totale o frazione) l'esposizione MATCHED di una selezione.
 
@@ -1437,6 +1733,17 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
     fraction = _f(params.get("fraction")) if isinstance(params, dict) else None
     if fraction is None:
         fraction = 1.0
+    # amount: stake ASSOLUTO in EUR (decimale libero) da coprire — VINCE su fraction ed e'
+    # cappato al green totale (mai un ordine che inverte la posizione). Un valore malformato
+    # e' un ERRORE di richiesta: mai ripiegare in silenzio sul green TOTALE (ordine molto
+    # piu' grande di quello chiesto).
+    amount = _f(params.get("amount")) if isinstance(params, dict) else None
+    if isinstance(params, dict) and params.get("amount") is not None:
+        if amount is None or not math.isfinite(amount) or not (amount > 0):
+            raise ValueError(
+                f"greenup: params.amount non valido ({params.get('amount')!r}): "
+                "atteso un importo finito > 0"
+            )
     # place_at_ticks (stop a 2 parametri): chiude N tick più a fondo nel book per fill sicuro.
     place_at = _int(params.get("place_at_ticks")) if isinstance(params, dict) else None
     # persistence dell'ordine di hedge (fix audit #25: le regole risk la passano dal form).
@@ -1497,6 +1804,7 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
         place_at_ticks=place_at or 0,
         target_price=target_price,
+        amount=amount,
     )
 
     if not plan.actionable:
@@ -1542,7 +1850,16 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         customer_order_ref=cust_ref,
         reduces_liability=True,         # green-up: sotto-minimo .it consentito
     )
-    _place_or_raise(market, built.order, "greenup")
+    submin_state = _place_closing_leg(
+        flumine, market, order=built.order, strategy=strategy,
+        market_id=request_row.get("market_id"), selection_id=selection_id, handicap=handicap,
+        side=str(plan.side), price=float(built.price), size=float(built.size),
+        cust_ref=cust_ref, what="greenup", mode=mode, params=params,
+        max_stake=_effective_cap(request_row),
+    )
+    # Se si e' passati dal place-and-trim l'ordine EFFETTIVO non e' ``built.order`` (che i
+    # control avevano rifiutato): niente snapshot da un ordine VIOLATION nello specchio.
+    sub_note = "" if submin_state is None else "; via place-and-trim (sotto-minimo)"
     if cancel_failed:
         # hedge PIAZZATO ma resting non annullati: esito INCOMPLETO esplicito
         # (mai un done bugiardo — stessa semantica di _flatten_market).
@@ -1553,10 +1870,11 @@ def _do_greenup(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, s
         )
     result = _result(
         ok=True, action="greenup", mode=mode, request_row=request_row,
-        cust_ref=cust_ref, order=built.order, price=built.price, size=built.size,
-        side=plan.side,
+        cust_ref=cust_ref, order=(built.order if submin_state is None else None),
+        price=built.price, size=built.size, side=plan.side,
+        submin_step=(submin_state.step.value if submin_state is not None else None),
         detail=f"{plan.note}; atteso vince={plan.expected_if_win} "
-               f"perde={plan.expected_if_lose}{cancel_note}",
+               f"perde={plan.expected_if_lose}{cancel_note}{sub_note}",
     )
     _write_done(sb, rid, result)
 
@@ -1721,8 +2039,105 @@ def _do_dutch(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
 # cashout — flatten di TUTTE le selezioni di un MERCATO (cashout_all) o dell'INTERO
 # EVENTO / tutti i mercati (cashout_event). Distinzione netta (#8).
 # ---------------------------------------------------------------------------
+def _flatten_entries(
+    flumine: Any, market: Any, strategy: Any, runners: Any, fraction: float,
+    *, equal: bool = False, amount: Optional[float] = None,
+) -> "tuple[list, list]":
+    """Gambe da piazzare per il flatten del mercato + fallimenti. Ritorna [(sel, hcap, plan)].
+
+    ``equal=False`` (default, comportamento storico): un green-up INDIPENDENTE per selezione
+    (W_i = L_i su ogni selezione presa da sola).
+    ``equal=True``: UN SOLO sistema sull'intero mercato (``hedging.plan_equalize``) che rende
+    il P&L FINALE UGUALE su OGNI esito — la semantica del pulsante "Cash Out" di Betfair.
+    Richiede TUTTI i runner (il payoff di un esito dipende dal matched_if_lose degli altri):
+    se un prezzo necessario manca, NESSUNA gamba viene piazzata e il mercato risulta fallito
+    (un pareggio a meta' sarebbe peggio del nulla).
+    """
+    from .trading.greenup import FLAT_EPS, compute_greenup
+    from .trading.hedging import PositionInput, market_payoffs, plan_equalize
+
+    market_id = _val(market, "market_id")
+    positions: List[Any] = []
+    for r in runners:
+        sel = _int(_val(r, "selection_id"))
+        if sel is None:
+            continue
+        hcap = _f(_val(r, "handicap")) or 0.0
+        w, l = _read_matched_exposures(flumine, market, strategy, sel, hcap)
+        best_back, best_lay = _best_prices(market, sel, hcap)
+        positions.append(
+            PositionInput(str(market_id or ""), sel, hcap, w, l, best_back, best_lay)
+        )
+
+    entries: list = []
+    failed: list = []
+    if equal:
+        plan = plan_equalize(positions, fraction=fraction, amount=amount)
+        if not plan.actionable:
+            payoffs = market_payoffs(positions)
+            spread = (max(payoffs) - min(payoffs)) if payoffs else 0.0
+            # Payoff gia' identici su ogni esito = mercato GIA' pareggiato (nulla da fare).
+            # Altrimenti il pareggio era dovuto ma non calcolabile: FALLIMENTO esplicito.
+            if spread >= FLAT_EPS:
+                failed.append({
+                    "market_id": market_id, "selection_id": None,
+                    "error": f"cash-out pareggiato non eseguibile (sbilancio {spread:.2f}): {plan.note}",
+                })
+            return entries, failed
+        # CRITICAL-1 (review 10/09): una gamba e' di CHIUSURA solo se la selezione ha
+        # esposizione pregressa NON piatta; sul runner piatto e' un'APERTURA a tutti gli
+        # effetti (min-stake normale, guardie rate/esposizione, mai il ripiego sotto-minimo).
+        flat_by_sel = {
+            p.selection_id: abs(p.matched_if_win - p.matched_if_lose) < FLAT_EPS
+            for p in positions
+        }
+        for leg in plan.legs:
+            if leg.plan.actionable:
+                closing = not flat_by_sel.get(leg.selection_id, True)
+                entries.append((leg.selection_id, leg.handicap, leg.plan, closing))
+        return entries, failed
+
+    # Flatten indipendente. HIGH-2 (review 10/09): ``amount`` e' un BUDGET TOTALE (somma
+    # degli stake) del mercato, ripartito PROPORZIONALMENTE al green totale di ogni
+    # selezione; VINCE su fraction ed e' cappato al green totale (come nel greenup singolo).
+    base_fraction = 1.0 if amount is not None else fraction
+    plans: list = []
+    for pos in positions:
+        plans.append(compute_greenup(
+            matched_if_win=pos.matched_if_win, matched_if_lose=pos.matched_if_lose,
+            best_back_price=pos.best_back_price, best_lay_price=pos.best_lay_price,
+            fraction=base_fraction,
+        ))
+    if amount is not None:
+        total = sum(float(p.size) for p in plans if p.actionable)
+        if total > 0.0 and float(amount) < total:
+            scale = float(amount) / total
+            plans = [
+                compute_greenup(
+                    matched_if_win=pos.matched_if_win, matched_if_lose=pos.matched_if_lose,
+                    best_back_price=pos.best_back_price, best_lay_price=pos.best_lay_price,
+                    amount=max(0.01, round(float(p.size) * scale, 2)),
+                ) if p.actionable else p
+                for pos, p in zip(positions, plans)
+            ]
+    for pos, plan in zip(positions, plans):
+        if not plan.actionable:
+            # Fix cert PAPER 2026-07-02: esposizione APERTA ma piano non eseguibile
+            # (prezzo assente) = gamba FALLITA, mai saltata in silenzio — altrimenti il
+            # cash-out riporta "done, 0 chiuse" con le posizioni ancora a mercato.
+            if abs(pos.matched_if_win - pos.matched_if_lose) >= FLAT_EPS:
+                failed.append({"market_id": market_id, "selection_id": pos.selection_id,
+                               "error": f"non eseguibile (W={pos.matched_if_win:.2f} "
+                                        f"L={pos.matched_if_lose:.2f}): {plan.note}"})
+            continue
+        entries.append((pos.selection_id, pos.handicap, plan, True))
+    return entries, failed
+
+
 def _flatten_market(
-    flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int
+    flumine: Any, market: Any, strategy: Any, fraction: float, rid: int, idx0: int,
+    equal: bool = False, params: Any = None, mode: str = "paper",
+    amount: Optional[float] = None, skipped: Optional[list] = None,
 ) -> "tuple[list, int, list, int]":
     """Flatten (green-up) di ogni selezione del mercato con esposizione ≠ 0. Ritorna
     (gambe_chiuse, prossimo_indice, gambe_rifiutate, unmatched_annullati). Ogni gamba ha
@@ -1739,9 +2154,18 @@ def _flatten_market(
     (in emergenza chiudere le altre selezioni vale più di fermarsi): la gamba finisce in
     ``failed`` e il CHIAMANTE deve alzare l'errore (il greenup è idempotente: un retry chiude
     solo ciò che è rimasto aperto).
+   
+    ``equal=True`` (params.equal): invece del green-up indipendente per selezione si risolve
+    UN sistema sull'intero mercato (``hedging.plan_equalize``) che rende il P&L finale UGUALE
+    su OGNI esito — la semantica nativa del "Cash Out" di Betfair. Default invariato.
+
+    CRITICAL-1 (review 10/09): nel pareggio, la gamba su un runner SENZA esposizione e' una
+    APERTURA, non una chiusura: ``reduces_liability=False`` (min-stake normale), guardie
+    rate/esposizione PRIMA del place, MAI il ripiego place-and-trim. Se la sua size e' sotto
+    il minimo di exchange la gamba viene SALTATA (append a ``skipped`` con nota esplicita) e
+    il chiamante marca il piano PARZIALE/non pareggiato. ``amount`` = budget per mercato.
     """
     from .live_order_build import build_order
-    from .trading.greenup import FLAT_EPS as GREENUP_FLAT_EPS, compute_greenup
 
     mb = _val(market, "market_book")
     runners = (_val(mb, "runners") or []) if mb is not None else []
@@ -1755,40 +2179,71 @@ def _flatten_market(
     for cf in cancel_failed:
         failed.append({"market_id": market_id, "selection_id": cf.get("selection_id"),
                        "error": cf.get("error")})
-    for r in runners:
-        sel = _int(_val(r, "selection_id"))
-        if sel is None:
-            continue
-        hcap = _f(_val(r, "handicap")) or 0.0
-        w, l = _read_matched_exposures(flumine, market, strategy, sel, hcap)
-        best_back, best_lay = _best_prices(market, sel, hcap)
-        plan = compute_greenup(matched_if_win=w, matched_if_lose=l,
-                               best_back_price=best_back, best_lay_price=best_lay, fraction=fraction)
-        if not plan.actionable:
-            # Fix cert PAPER 2026-07-02: esposizione APERTA ma piano non eseguibile
-            # (prezzo assente) = gamba FALLITA, mai saltata in silenzio — altrimenti il
-            # cash-out riporta "done, 0 chiuse" con le posizioni ancora a mercato.
-            if abs(w - l) >= GREENUP_FLAT_EPS:
-                failed.append({"market_id": market_id, "selection_id": sel,
-                               "error": f"non eseguibile (W={w:.2f} L={l:.2f}): {plan.note}"})
-            continue
+    entries, entry_failed = _flatten_entries(
+        flumine, market, strategy, runners, fraction, equal=equal, amount=amount,
+    )
+    failed.extend(entry_failed)
+    for sel, hcap, plan, closing in entries:
+        side = str(plan.side)
+        ref = _leg_ref(rid, f"x{idx}")
+        leg_submin = None
         try:
-            built = build_order(
-                market, strategy=strategy, selection_id=sel, handicap=hcap,
-                side=str(plan.side), order_type="LIMIT", price=plan.price, size=plan.size,
-                liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
-                jurisdiction=_jurisdiction(), max_stake=None,
-                customer_order_ref=_leg_ref(rid, f"x{idx}"), reduces_liability=True,
-            )
-            _place_or_raise(market, built.order, f"cashout sel {sel}")
+            if closing:
+                built = build_order(
+                    market, strategy=strategy, selection_id=sel, handicap=hcap,
+                    side=side, order_type="LIMIT", price=plan.price, size=plan.size,
+                    liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
+                    jurisdiction=_jurisdiction(), max_stake=None,
+                    customer_order_ref=ref, reduces_liability=True,
+                )
+                leg_submin = _place_closing_leg(
+                    flumine, market, order=built.order, strategy=strategy, market_id=market_id,
+                    selection_id=sel, handicap=hcap, side=side, price=float(built.price),
+                    size=float(built.size), cust_ref=ref,
+                    what=f"cashout sel {sel}", mode=mode, params=params,
+                )
+            else:
+                # APERTURA (runner piatto nel pareggio): niente sotto-minimo, niente
+                # place-and-trim. Sotto il minimo di exchange -> gamba SALTATA con nota.
+                floor = _sub_minimum_floor(side)
+                if float(plan.size) < floor - 1e-9:
+                    note = (
+                        f"apertura {side.upper()} {float(plan.size):.2f}@{plan.price} sotto il "
+                        f"minimo di exchange ({floor:.2f}): gamba SALTATA, pareggio PARZIALE"
+                    )
+                    logger.warning("[live-order] cashout sel %s: %s", sel, note)
+                    if skipped is not None:
+                        skipped.append({"market_id": market_id, "selection_id": sel,
+                                        "handicap": hcap, "side": plan.side,
+                                        "price": plan.price, "size": plan.size, "note": note})
+                    idx += 1
+                    continue
+                risk = float(plan.size) if side == "back" else round(
+                    float(plan.size) * (float(plan.price) - 1.0), 2
+                )
+                _rate_guard()
+                _check_exposure_guard(market, strategy, int(sel), float(hcap), float(risk))
+                built = build_order(
+                    market, strategy=strategy, selection_id=sel, handicap=hcap,
+                    side=side, order_type="LIMIT", price=plan.price, size=plan.size,
+                    liability=None, persistence="LAPSE", time_in_force=None, min_fill_size=None,
+                    jurisdiction=_jurisdiction(),
+                    max_stake=_effective_cap({"params": params}),
+                    customer_order_ref=ref, reduces_liability=False,
+                )
+                _place_or_raise(market, built.order, f"cashout apertura sel {sel}")
         except Exception as ex:  # noqa: BLE001 - continua a chiudere le ALTRE selezioni
-            logger.exception("[live-order] cashout: chiusura selezione %s rifiutata", sel)
+            logger.exception("[live-order] cashout: gamba selezione %s rifiutata", sel)
             failed.append({"market_id": market_id, "selection_id": sel, "error": str(ex)[:160]})
             idx += 1
             continue
-        closed.append({"market_id": market_id, "selection_id": sel, "handicap": hcap,
-                       "side": plan.side, "price": built.price, "size": built.size,
-                       "ref": _leg_ref(rid, f"x{idx}")})
+        leg = {"market_id": market_id, "selection_id": sel, "handicap": hcap,
+               "side": plan.side, "price": built.price, "size": built.size, "ref": ref}
+        if leg_submin is not None:
+            leg["submin"] = True        # gamba passata dal place-and-trim (sotto-minimo)
+        if not closing:
+            leg["opening"] = True       # gamba di APERTURA del pareggio (runner piatto)
+        closed.append(leg)
         idx += 1
     return closed, idx, failed, cancelled
 
@@ -1799,6 +2254,44 @@ def _cashout_fraction(request_row: Dict[str, Any]) -> float:
     return f if f is not None else 1.0
 
 
+def _cashout_amount(request_row: Dict[str, Any]) -> Optional[float]:
+    """``params.amount`` del cash-out (HIGH-2 review 10/09): budget TOTALE di stake in EUR
+    per MERCATO (pareggiato: ``plan_equalize(amount=)``; indipendente: ripartito in
+    proporzione al green totale di ogni selezione). Vince su ``fraction``. Un valore
+    malformato / non finito / <= 0 e' un ERRORE di richiesta, come nel greenup: mai
+    ripiegare in silenzio sul cash-out TOTALE. Assente -> None (comportamento storico)."""
+    params = request_row.get("params") or {}
+    if not isinstance(params, dict) or params.get("amount") is None:
+        return None
+    amount = _f(params.get("amount"))
+    if amount is None or not math.isfinite(amount) or not (amount > 0):
+        raise ValueError(
+            f"cash-out: params.amount non valido ({params.get('amount')!r}): "
+            "atteso un importo finito > 0"
+        )
+    return amount
+
+
+def _cashout_detail_suffix(
+    fraction: float, amount: Optional[float], equal: bool, skipped: list
+) -> str:
+    """Coda del ``detail`` del cash-out: frazione/budget, PAREGGIATO o PARZIALE."""
+    out = f"budget {amount:.2f}" if amount is not None else f"frazione {fraction:.2f}"
+    if skipped:
+        out += (f", PARZIALE: {len(skipped)} gambe di apertura sotto il minimo saltate "
+                f"(P&L NON pareggiato)")
+    elif equal:
+        out += ", PAREGGIATO"
+    return out
+
+
+def _cashout_equal(request_row: Dict[str, Any]) -> bool:
+    """``params.equal`` — cash-out PAREGGIATO (P&L finale uguale su ogni esito, semantica
+    "Cash Out" di Betfair) invece del flatten indipendente per selezione. Default False:
+    il comportamento storico non cambia se il flag non viene passato."""
+    return _param_bool(request_row.get("params") or {}, "equal", False)
+
+
 def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, strategy: Any) -> None:
     """Cash-out di UN SOLO MERCATO (cashout_all): flatten di ogni selezione del mercato indicato.
     ``params.fraction`` ∈ (0,1] per un cash-out parziale."""
@@ -1807,7 +2300,13 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
     rid = request_row["id"]
     market = _resolve_market(flumine, request_row.get("market_id"))
     fraction = _cashout_fraction(request_row)
-    closed, _, failed, cancelled = _flatten_market(flumine, market, strategy, fraction, rid, 0)
+    equal = _cashout_equal(request_row)
+    amount = _cashout_amount(request_row)
+    skipped: list = []
+    closed, _, failed, cancelled = _flatten_market(
+        flumine, market, strategy, fraction, rid, 0, equal=equal,
+        params=request_row.get("params"), mode=mode, amount=amount, skipped=skipped,
+    )
     if failed:
         # MAI un 'done ok=True' con selezioni rimaste aperte: errore ESPLICITO (il greenup è
         # idempotente: un nuovo cash-out chiude solo ciò che è ancora sbilanciato).
@@ -1819,11 +2318,15 @@ def _do_cashout_all(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: st
         ok=True, action="cashout_all", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
         detail=f"cash-out MERCATO {_val(market, 'market_id')}: {cancelled} unmatched "
-               f"annullati, {len(closed)} selezioni chiuse (frazione {fraction:.2f})",
+               f"annullati, {len(closed)} selezioni chiuse "
+               f"({_cashout_detail_suffix(fraction, amount, equal, skipped)})",
     )
     result["legs"] = closed
     result["cancelled"] = cancelled
     result["scope"] = "market"
+    result["equal"] = bool(equal and not skipped)
+    result["partial"] = bool(skipped)
+    result["skipped"] = skipped
     _write_done(sb, rid, result)
 
 
@@ -1833,12 +2336,16 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
     da ``params.event_id`` o, in fallback, dal ``market.event_id`` del market_id passato.
 
     OGNI mercato è chiuso PER CONTO SUO (flatten indipendente): nessun netting cross-market
-    (che richiederebbe un modello di correlazione — vedi trading/hedging per l'hedge dedicato)."""
+    (che richiederebbe un modello di correlazione — vedi trading/hedging per l'hedge dedicato).
+    Per lo stesso motivo ``params.amount`` vale PER MERCATO (budget di ogni singolo mercato)."""
     if strategy is None:
         raise ValueError("cashout_event richiede la strategy registrata (LiveTradingStrategy)")
     rid = request_row["id"]
     params = request_row.get("params") or {}
     fraction = _cashout_fraction(request_row)
+    equal = _cashout_equal(request_row)
+    amount = _cashout_amount(request_row)
+    skipped: list = []
     ref_market = _resolve_market(flumine, request_row.get("market_id"))
     event_id = (params.get("event_id") if isinstance(params, dict) else None) or _val(ref_market, "event_id")
     if not event_id:
@@ -1852,7 +2359,10 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
     for m in flumine.markets:
         if _val(m, "event_id") != event_id:
             continue
-        legs, idx, failed, cancelled = _flatten_market(flumine, m, strategy, fraction, rid, idx)
+        legs, idx, failed, cancelled = _flatten_market(
+            flumine, m, strategy, fraction, rid, idx, equal=equal, params=params, mode=mode,
+            amount=amount, skipped=skipped,
+        )
         closed.extend(legs)
         failed_all.extend(failed)
         cancelled_all += cancelled
@@ -1867,11 +2377,15 @@ def _do_cashout_event(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: 
         ok=True, action="cashout_event", mode=mode, request_row=request_row,
         cust_ref=_cust_ref(rid),
         detail=f"cash-out EVENTO {event_id}: {cancelled_all} unmatched annullati, "
-               f"{len(closed)} selezioni su {markets_done} mercati (frazione {fraction:.2f})",
+               f"{len(closed)} selezioni su {markets_done} mercati "
+               f"({_cashout_detail_suffix(fraction, amount, equal, skipped)})",
     )
     result["legs"] = closed
     result["cancelled"] = cancelled_all
     result["scope"] = "event"
+    result["equal"] = bool(equal and not skipped)
+    result["partial"] = bool(skipped)
+    result["skipped"] = skipped
     result["event_id"] = event_id
     result["markets"] = markets_done
     _write_done(sb, rid, result)

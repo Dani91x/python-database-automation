@@ -16,7 +16,9 @@ vi.mock('@/components/omega/MissionPanel', () => ({
     default: () => <div data-testid="mission-panel-stub" />,
 }));
 
-vi.mock('@/lib/useScanLiveFeed', () => ({ useScanLiveFeed: () => ({}), liveScoreLabel: () => null }));
+// feed live mutabile per i test del cash out (book della selezione laid)
+const liveState = vi.hoisted(() => ({ feed: {} as Record<string, unknown> }));
+vi.mock('@/lib/useScanLiveFeed', () => ({ useScanLiveFeed: () => liveState.feed, liveScoreLabel: () => null }));
 vi.mock('@/lib/omega', () => ({
     fetchOmegaState: vi.fn(),
     fetchOmegaTrades: vi.fn(),
@@ -64,8 +66,17 @@ const TRADES = [
     },
 ];
 
+// book live della selezione laid (3-2 @110): back 100 / lay 120
+const FEED_WITH_BOOK = {
+    e1: {
+        minute: 60, score_home: 0, score_away: 0,
+        cs: { market_id: '1.1', status: 'OPEN', selections: [{ selection_id: 4, name: '3 - 2', back: 100, lay: 120 }] },
+    },
+};
+
 beforeEach(() => {
     vi.clearAllMocks();
+    liveState.feed = {};
     mState.mockResolvedValue({ control: CONTROL as never, aggregates: null, activity: [] });
     mTrades.mockResolvedValue(TRADES as never);
 });
@@ -128,5 +139,54 @@ describe('Omega dashboard', () => {
     it('mostra il pulsante Ferma quando è in corsa', async () => {
         renderPage();
         expect(await screen.findByText('Ferma')).toBeInTheDocument();
+    });
+});
+
+describe('Omega — cash out', () => {
+    it('CRITICAL-2: la conferma usa la modalità del TRADE, non quella della pagina', async () => {
+        liveState.feed = FEED_WITH_BOOK;
+        // pagina in PAPER (control.mode) ma trade piazzato in LIVE
+        mTrades.mockResolvedValue([{ ...TRADES[0], mode: 'live' }] as never);
+        renderPage();
+        await gotoAutoTab();
+        const user = userEvent.setup();
+        const trigger = await screen.findByTestId('cashout-trigger');
+        expect(trigger).toBeEnabled();
+        await user.click(trigger);
+        expect(await screen.findByText(/Modalità LIVE: soldi veri/)).toBeInTheDocument();
+        // doppia conferma richiesta (soldi veri) anche se la pagina è in paper
+        await user.click(screen.getByTestId('cashout-confirm'));
+        expect(screen.getByTestId('cashout-confirm')).toHaveTextContent(/Confermi/);
+    });
+
+    it('CRITICAL-2 (inverso): pagina LIVE ma trade paper -> nessuna doppia conferma', async () => {
+        liveState.feed = FEED_WITH_BOOK;
+        mState.mockResolvedValue({ control: { ...CONTROL, mode: 'live' } as never, aggregates: null, activity: [] });
+        renderPage();
+        await gotoAutoTab();
+        const user = userEvent.setup();
+        await user.click(await screen.findByTestId('cashout-trigger'));
+        await screen.findByTestId('cashout-confirm');
+        expect(screen.queryByText(/Modalità LIVE: soldi veri/)).toBeNull();
+    });
+
+    it('HIGH-1: gamba di chiusura già scritta -> cash out spento (nessuna seconda copertura)', async () => {
+        liveState.feed = FEED_WITH_BOOK;
+        mTrades.mockResolvedValue([
+            TRADES[0],
+            { ...TRADES[0], id: 2, side: 'back', price: 100, size: 5.79, status: 'pending', closes_trade_id: 1, runner_name: '3 - 2' },
+        ] as never);
+        renderPage();
+        await gotoAutoTab();
+        expect(await screen.findByTestId('cashout-trigger')).toBeDisabled();
+        expect(screen.getByText(/chiude #1/)).toBeInTheDocument();
+    });
+
+    it('HIGH-1: meta.hedging alzato dal servizio -> cash out spento', async () => {
+        liveState.feed = FEED_WITH_BOOK;
+        mTrades.mockResolvedValue([{ ...TRADES[0], meta: { hedging: true } }] as never);
+        renderPage();
+        await gotoAutoTab();
+        expect(await screen.findByTestId('cashout-trigger')).toBeDisabled();
     });
 });

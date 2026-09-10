@@ -21,6 +21,7 @@ Best-effort: ogni errore va in ``error`` e NON fa cadere il runner. Testabile a 
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -566,7 +567,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
     price opposto dal book già in memoria → UNICO ordine di hedge calcolato dalla
     matematica condivisa ``trading.greenup.compute_greenup`` (stessa formula del
     display lockedPnl del ladder). Onora ``params``: fraction, target_price
-    (greening column), place_at_ticks, cancel_unmatched. L'hedge è self-bounded
+    (greening column), place_at_ticks, cancel_unmatched, amount (stake assoluto). L'hedge è self-bounded
     (liability < |W−L|) → ``min_stake_rules(..., reduces_liability=True)`` consente
     il sotto-minimo .it. Gating di modalità identico a ``_do_place`` (cross-mode
     rifiutato a monte dal worker; OFF non registra il worker).
@@ -599,6 +600,17 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
     if fraction is None:
         fraction = 1.0
     place_at = _int(params.get("place_at_ticks")) or 0
+    # amount: stake ASSOLUTO in EUR da coprire (mirror calcio) — VINCE su fraction ed e'
+    # cappato al green totale (mai un ordine che inverte la posizione). Malformato =
+    # ERRORE di richiesta: mai ripiegare in silenzio sul green TOTALE.
+    amount = _f(params.get("amount"))
+    if params.get("amount") is not None and (
+        amount is None or not math.isfinite(amount) or not (amount > 0)
+    ):
+        raise ValueError(
+            f"greenup: params.amount non valido ({params.get('amount')!r}): "
+            "atteso un importo finito > 0"
+        )
     # target_price ("greening column"): chiudi A QUEL prezzo assoluto. Un target
     # malformato è un ERRORE di richiesta: mai ripiegare in silenzio sul best.
     target_price = _f(params.get("target_price"))
@@ -630,7 +642,7 @@ def _do_greenup(flumine: Any, session: Any, cmd: Dict[str, Any], cust_ref: str) 
     plan = compute_greenup(
         matched_if_win=w, matched_if_lose=l,
         best_back_price=best_back, best_lay_price=best_lay, fraction=fraction,
-        place_at_ticks=place_at, target_price=target_price,
+        place_at_ticks=place_at, target_price=target_price, amount=amount,
     )
 
     if not plan.actionable:

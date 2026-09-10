@@ -22,11 +22,19 @@ import ManualPanel from '@/components/omega/ManualPanel';
 import MissionPanel from '@/components/omega/MissionPanel';
 import { useScanLiveFeed, liveScoreLabel } from '@/lib/useScanLiveFeed';
 import {
+    csSelection, htSelection, type CalcioScanPayload, type ScanCsSelection,
+} from '@/lib/safeStrategyScan';
+import { CashOutButton } from '@/components/trading/CashOutButton';
+import { TradingHistory } from '@/components/trading/TradingHistory';
+import { cappedFrom, tradeExposure } from '@/lib/safeBot';
+import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
+import {
     ArrowLeft, Play, Square, Settings, Target, TrendingUp, Zap, ShieldAlert, Activity,
 } from 'lucide-react';
 import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
-    subscribeOmega, buildEquitySeries, OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, phaseLabel,
+    subscribeOmega, buildEquitySeries, requestManual,
+    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, phaseLabel,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
     type OmegaAggregates,
 } from '@/lib/omega';
@@ -122,11 +130,26 @@ function tradeBadge(status: OmegaTrade['status']): { label: string; cls: string 
     switch (status) {
         case 'pending': return { label: 'IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' };
         case 'open': return { label: 'APERTO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' };
+        case 'hedged': return { label: 'CHIUSO', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' };
         case 'won': return { label: 'VINTO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' };
         case 'lost': return { label: 'PERSO', cls: 'bg-red-500/15 text-red-300 border-red-500/40' };
         case 'void': return { label: 'VOID', cls: 'bg-slate-500/15 text-slate-300 border-slate-500/40' };
         default: return { label: 'ERRORE', cls: 'bg-orange-500/15 text-orange-300 border-orange-500/40' };
     }
+}
+
+/** Book LIVE della selezione del trade: Half Time Score per la gamba 1T,
+ *  Correct Score finale per tutte le altre. null = feed non ancora disponibile. */
+function bookForTrade(t: OmegaTrade, live: CalcioScanPayload | undefined): ScanCsSelection | null {
+    if (t.selection_id == null) return null;
+    const p = live ?? null;
+    return t.phase === 'ht_cs' ? htSelection(p, t.selection_id) : csSelection(p, t.selection_id);
+}
+
+/** P&L bloccato di un trade gia chiuso a mercato (scritto dal servizio in meta). */
+function lockedPnlOf(t: OmegaTrade): number | null {
+    const v = Number((t.meta as Record<string, unknown> | null)?.locked_pnl);
+    return Number.isFinite(v) ? v : null;
 }
 
 // =============================================================== main page
@@ -143,6 +166,8 @@ export default function Omega() {
     const [goalInput, setGoalInput] = useState(250);
     const [params, setParams] = useState<OmegaParams>(OMEGA_PARAM_DEFAULTS);
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
+    // tab attivo (controllato: dallo Storico si torna all'Automatico sul trade vivo)
+    const [tab, setTab] = useState<string>('mission');
 
     const seenSettled = useRef<Set<number>>(new Set());
     const initialized = useRef(false);
@@ -232,6 +257,38 @@ export default function Omega() {
         } finally { setBusy(false); }
     }
 
+    // Cash out di una gamba aperta: accoda la richiesta al servizio Omega
+    // (kind 'cashout'), che piazza l'ordine di copertura e scrive il trade
+    // 'hedged' + la riga di chiusura con closes_trade_id.
+    // Un secondo cash out sullo stesso trade raddoppierebbe la copertura: si
+    // tiene traccia delle richieste in volo per trade_id (ref = guardia
+    // sincrona anti doppio click, stato = bottone spento al render).
+    const cashoutInFlightRef = useRef<Set<number>>(new Set());
+    const [cashoutPending, setCashoutPending] = useState<Set<number>>(() => new Set());
+    function isCashOutPending(t: OmegaTrade): boolean {
+        if (cashoutPending.has(t.id) || cashoutInFlightRef.current.has(t.id)) return true;
+        if (Boolean((t.meta as Record<string, unknown> | null)?.hedging)) return true;
+        // gamba di chiusura gia' scritta (non in errore) = copertura in corso o fatta
+        return trades.some((x) => x.closes_trade_id === t.id && x.status !== 'error');
+    }
+    async function handleCashOut(t: OmegaTrade, args: { amount?: number; fraction?: number }) {
+        if (isCashOutPending(t)) return;
+        cashoutInFlightRef.current.add(t.id);
+        setCashoutPending((prev) => new Set(prev).add(t.id));
+        try {
+            await requestManual('cashout', { trade_id: t.id, ...args });
+            toast.success('Cash out inviato', {
+                description: `${t.event_name ?? t.event_id} · ${t.runner_name ?? ''}`.trim(),
+            });
+            await reload();
+        } catch (e) {
+            toast.error('Cash out fallito', { description: String((e as Error)?.message ?? e) });
+        } finally {
+            cashoutInFlightRef.current.delete(t.id);
+            setCashoutPending((prev) => { const n = new Set(prev); n.delete(t.id); return n; });
+        }
+    }
+
     async function handleSaveParams() {
         setBusy(true);
         try {
@@ -271,6 +328,11 @@ export default function Omega() {
     const realized = Number(aggregates?.realized_today ?? stats.realized_today ?? realizedTotal);
     const goal = Number(control?.daily_goal ?? stats.goal ?? goalInput ?? 250);
     const goalPct = goal > 0 ? Math.max(0, Math.min(100, (realized / goal) * 100)) : 0;
+    // missione GIORNALIERA: quanto manca all'obiettivo nella giornata operativa
+    // corrente (Europe/Rome). realized = realized_today dell'RPC, che riparte
+    // da 0 a ogni cambio di giornata operativa.
+    const remaining = Math.max(0, goal - realized);
+    const operatingDay = romeDay();
     const openLiability = Number(aggregates?.open_liability ?? stats.open_liability ?? 0);
     const matchesTraded = Number(aggregates?.matches_traded ?? stats.matches_traded ?? trades.length);
     const equity = useMemo(() => buildEquitySeries(trades), [trades]);
@@ -328,29 +390,47 @@ export default function Omega() {
                         <Activity className="w-6 h-6 animate-spin mx-auto mb-3 text-primary" />caricamento Omega…
                     </div>
                 ) : (
-                    <Tabs defaultValue="mission" className="w-full">
+                    <Tabs value={tab} onValueChange={setTab} className="w-full">
                         <TabsList className="mb-4">
                             <TabsTrigger value="mission">🎯 Missione</TabsTrigger>
                             <TabsTrigger value="auto">⚙️ Automatico</TabsTrigger>
                             <TabsTrigger value="manual">✋ Manuale</TabsTrigger>
+                            <TabsTrigger value="storico">📅 Storico</TabsTrigger>
                         </TabsList>
                         <TabsContent value="mission">
                             {/* mode paper/live dal toggle globale in alto (control.mode) */}
                             <MissionPanel mode={mode} dailyGoal={goal} />
                         </TabsContent>
                         <TabsContent value="auto" className="space-y-6">
-                        {/* barra obiettivo */}
-                        <Card className="glass-card border-white/10 p-5">
-                            <div className="flex items-end justify-between mb-2">
-                                <div className="flex items-center gap-2 text-sm text-slate-300">
-                                    <Target className="w-4 h-4 text-secondary" /> Obiettivo giornaliero
+                        {/* missione giornaliera: ogni giornata operativa riparte da 0 */}
+                        <Card className="glass-card border-white/10 p-5" data-testid="omega-daily-mission">
+                            <div className="flex items-end justify-between mb-2 gap-3 flex-wrap">
+                                <div>
+                                    <div className="flex items-center gap-2 text-sm text-slate-300">
+                                        <Target className="w-4 h-4 text-secondary" /> Obiettivo giornaliero
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                        giornata operativa <b className="text-slate-300 capitalize" data-testid="omega-operating-day">{dayLabel(operatingDay, { weekday: true })}</b>
+                                        {' '}(Europe/Rome) — il realizzato riparte da €0 a ogni nuova giornata
+                                    </div>
                                 </div>
                                 <div className="font-display font-black text-2xl tabular-nums">
                                     <span className={realized >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(realized)}</span>
-                                    <span className="text-slate-500 text-lg"> / {fmtEur(goal)}</span>
+                                    <span className="text-slate-500 text-lg"> · {goalPct.toFixed(1)}%</span>
                                 </div>
                             </div>
-                            <div className="relative h-5 rounded-full bg-black/50 border border-white/10 overflow-hidden">
+                            <div className="mb-2 text-sm text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums" data-testid="omega-mission-line">
+                                <span>Obiettivo di oggi <b className="text-secondary">{fmtEur(goal)}</b></span>
+                                <span className="text-slate-600" aria-hidden>·</span>
+                                <span>realizzato oggi <b className={realized >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(realized)}</b></span>
+                                <span className="text-slate-600" aria-hidden>·</span>
+                                {remaining > 0 ? (
+                                    <span>resta <b className="text-amber-300" data-testid="omega-remaining">{fmtEur(remaining)}</b></span>
+                                ) : (
+                                    <span>obiettivo <b className="text-emerald-400" data-testid="omega-goal-hit">CENTRATO</b>{goal > 0 && realized > goal ? ` (+${fmtEur(realized - goal)} oltre)` : ''}</span>
+                                )}
+                            </div>
+                            <div className="relative h-5 rounded-full bg-black/50 border border-white/10 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(goalPct)} aria-label="Avanzamento obiettivo di oggi">
                                 <div
                                     className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-secondary transition-all duration-700"
                                     style={{ width: `${goalPct}%` }}
@@ -398,14 +478,18 @@ export default function Omega() {
                                             <th className="text-center px-4 py-2" title="minuto e punteggio LIVE dal feed dello scanner">Live</th>
                                             <th className="text-center px-4 py-2">Stato</th>
                                             <th className="text-right px-4 py-2">P&L</th>
+                                            <th className="text-center px-4 py-2" title="chiudi la posizione a mercato bloccando il P&L">Cash out</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {trades.length === 0 ? (
-                                            <tr><td colSpan={11} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
+                                            <tr><td colSpan={12} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
                                         ) : trades.map(t => {
                                             const b = tradeBadge(t.status);
                                             const live = ['pending', 'open'].includes(t.status) ? liveScoreLabel(liveFeed[t.event_id]) : null;
+                                            const book = bookForTrade(t, liveFeed[t.event_id]);
+                                            const exp = tradeExposure(t);
+                                            const locked = lockedPnlOf(t);
                                             return (
                                                 <tr key={t.id} className="border-t border-white/5 hover:bg-white/5">
                                                     <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
@@ -433,7 +517,41 @@ export default function Omega() {
                                                     </td>
                                                     <td className="px-4 py-2 text-center"><Badge variant="outline" className={b.cls}>{b.label}</Badge></td>
                                                     <td className={`px-4 py-2 text-right font-bold tabular-nums ${t.status === 'won' ? 'text-emerald-400' : t.status === 'lost' ? 'text-red-400' : 'text-slate-400'}`}>
-                                                        {['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}
+                                                        {['won', 'lost', 'void', 'hedged'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        {t.closes_trade_id ? (
+                                                            <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">
+                                                                chiude #{t.closes_trade_id}
+                                                                {cappedFrom({ meta: t.meta ?? null }) != null && (
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40"
+                                                                        title="liquidità insufficiente: chiusura PARZIALE rispetto allo stake richiesto"
+                                                                    >
+                                                                        parziale
+                                                                    </Badge>
+                                                                )}
+                                                            </span>
+                                                        ) : t.status === 'open' && t.side === 'lay' && t.selection_id != null ? (
+                                                            <CashOutButton
+                                                                compact
+                                                                // modalita' del TRADE: il servizio chiude con quella,
+                                                                // non con il toggle corrente della pagina
+                                                                mode={t.mode}
+                                                                win={exp.win}
+                                                                lose={exp.lose}
+                                                                bestBack={book?.back ?? null}
+                                                                bestLay={book?.lay ?? null}
+                                                                commission={params.commission_pct}
+                                                                pending={isCashOutPending(t)}
+                                                                onCashOut={(a) => handleCashOut(t, a)}
+                                                            />
+                                                        ) : t.status === 'hedged' ? (
+                                                            <span className="text-[11px] text-teal-300 tabular-nums" title="posizione chiusa a mercato: P&L bloccato">
+                                                                bloccato {locked != null ? fmtSignedEur(locked) : fmtSignedEur(Number(t.pnl))}
+                                                            </span>
+                                                        ) : <span className="text-slate-600">—</span>}
                                                     </td>
                                                 </tr>
                                             );
@@ -445,6 +563,14 @@ export default function Omega() {
                         </TabsContent>
                         <TabsContent value="manual">
                             <ManualPanel />
+                        </TabsContent>
+                        <TabsContent value="storico">
+                            <TradingHistory
+                                variant="omega"
+                                fetchDaily={fetchOmegaDaily}
+                                fetchDayTrades={fetchOmegaDayTrades}
+                                onGoLive={() => setTab('auto')}
+                            />
                         </TabsContent>
                     </Tabs>
                 )}

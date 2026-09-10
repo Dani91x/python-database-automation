@@ -1076,6 +1076,8 @@ export interface ActiveSignal {
     matchLabel: string;
     headline: string;
     side: 'BACK' | 'LAY' | null;
+    /** nome della selezione su cui operare (serve a risolvere l'id di mercato) */
+    selection?: string | null;
     entryOdds: number | null;
     /** EUR abbinabili SUBITO a entryOdds (aggiornati live come la quota) */
     entrySize: number | null;
@@ -1095,6 +1097,8 @@ export interface SignalCandidate {
     matchLabel: string;
     headline: string;
     side: 'BACK' | 'LAY' | null;
+    /** nome della selezione su cui operare (serve a risolvere l'id di mercato) */
+    selection?: string | null;
     entryOdds: number | null;
     entrySize: number | null;
     contextAtTrigger: string;
@@ -1176,6 +1180,7 @@ export function footballCandidates(
             matchLabel: `${ctx.home} – ${ctx.away}`,
             headline: ev.headline,
             side: ev.side,
+            selection: ev.selection ?? null,
             entryOdds: ev.entryOdds,
             entrySize: ev.entrySize,
             contextAtTrigger: `${fmtMinute(ctx.minute)} · ${situation}`,
@@ -1197,6 +1202,7 @@ export function tennisCandidates(ctx: TennisMatchCtx, ev: VariantEvaluation): Si
             matchLabel: `${ctx.p1} – ${ctx.p2}`,
             headline: ev.headline,
             side: ev.side,
+            selection: ev.selection ?? null,
             entryOdds: ev.entryOdds,
             entrySize: ev.entrySize,
             contextAtTrigger: `${situation}${ctx.games ? ` · game ${ctx.games.p1}-${ctx.games.p2}` : ''}`,
