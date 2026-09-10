@@ -119,6 +119,89 @@ export interface OmegaParams {
     ft_entry_min: number;
     ft_entry_max: number;
     model_p_max_pct: number;
+    // ---- GREEN-UP automatico: chiude la gamba a mercato appena il risultato
+    // layato diventa raggiungibile (distanza gol / crollo della quota).
+    greenup_enabled: boolean;
+    /** 'auto' = il servizio decide (hold/exit per P(perdita) ed EV) · 'off' = mai */
+    greenup_mode: 'auto' | 'off';
+    /** distanza in gol dal risultato layato che fa scattare il green-up */
+    greenup_trigger_distance: number;
+    /** scatta anche se la quota lay scende sotto questa frazione dell'ingresso */
+    greenup_price_trigger_ratio: number;
+    /** attesa di conferma del punteggio prima di agire (s) */
+    greenup_settle_delay_s: number;
+    /** tiene la posizione se P(perdita) ≤ (0-1) */
+    greenup_hold_max_risk: number;
+    /** chiude comunque se P(perdita) ≥ (0-1) */
+    greenup_risk_cap: number;
+    /** margine di EV richiesto per tenere (0-1) */
+    greenup_ev_margin: number;
+    /** incassa a questa frazione del profitto massimo (0-1) */
+    greenup_take_profit_frac: number;
+    /** dal minuto: incassa comunque se in profitto */
+    greenup_take_profit_minute: number;
+    /** residuo non abbinato: attesa fra i tentativi (s) */
+    greenup_retry_s: number;
+    /** residuo non abbinato: tentativi max */
+    greenup_max_attempts: number;
+    /** calibrazione della P(modello): 'auto' applica la curva per famiglia, 'off' usa la grezza */
+    model_calibration: 'auto' | 'off';
+}
+
+/** P del modello di un trade Omega (meta.model.{p_model_raw,calibrated}) */
+export interface OmegaTradeModel {
+    raw: number | null;
+    calibrated: number | null;
+    /** true = calibrazione applicata (calibrated ≠ raw o flag esplicito) */
+    applied: boolean;
+}
+export function tradeModelOf(t: { meta: Record<string, unknown> | null | undefined }): OmegaTradeModel | null {
+    const m = (t.meta ?? {})['model'];
+    if (!m || typeof m !== 'object') return null;
+    const r = m as Record<string, unknown>;
+    const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const raw = n(r.p_model_raw) ?? n(r.raw);
+    const calibrated = n(r.calibrated) ?? n(r.p_model);
+    if (raw == null && calibrated == null) return null;
+    const applied = r.applied === true || (raw != null && calibrated != null && Math.abs(raw - calibrated) > 1e-9);
+    return { raw, calibrated, applied };
+}
+
+/** attività Omega leggibile in italiano (kind → etichetta + stile) */
+export const OMEGA_ACTIVITY_META: Record<string, { label: string; cls: string }> = {
+    greenup: { label: 'GREEN-UP', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
+    greenup_hold: { label: 'GREEN-UP · attesa', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
+    greenup_wait: { label: 'GREEN-UP · conferma', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    greenup_retry: { label: 'GREEN-UP · ritento', cls: 'bg-orange-500/15 text-orange-300 border-orange-500/40' },
+    place: { label: 'PIAZZATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
+    settle: { label: 'REGOLATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
+    cashout: { label: 'CASH OUT', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+    error: { label: 'ERRORE', cls: 'bg-red-500/15 text-red-300 border-red-500/40' },
+};
+export function activityMeta(kind: string): { label: string; cls: string } {
+    return OMEGA_ACTIVITY_META[kind] ?? { label: kind.toUpperCase(), cls: 'bg-white/5 text-slate-300 border-white/10' };
+}
+
+/** riga di attività → testo leggibile (evento, risultato, P(perdita), motivo) */
+export function activityLine(row: OmegaActivityRow): string {
+    const p = row.payload ?? {};
+    const parts: string[] = [];
+    const ev = p.event_name ?? p.event ?? null;
+    if (ev) parts.push(String(ev));
+    const runner = p.runner_name ?? p.selection ?? p.score ?? null;
+    if (runner) parts.push(`lay ${String(runner)}`);
+    const live = p.live_score ?? p.current_score ?? null;
+    const minute = p.minute ?? null;
+    if (live != null || minute != null) parts.push(`${minute != null ? `${minute}′` : ''}${live != null ? `${minute != null ? ' · ' : ''}${String(live)}` : ''}`);
+    const pl = Number(p.p_lose);
+    if (Number.isFinite(pl)) parts.push(`P(perdita) ${(pl * 100).toFixed(1).replace('.', ',')}%`);
+    const locked = Number(p.locked ?? p.locked_pnl ?? p.pnl);
+    if (Number.isFinite(locked)) parts.push(`${locked < 0 ? '−' : '+'}€${Math.abs(locked).toFixed(2)}`);
+    const reason = p.reason ?? p.exit_reason ?? p.message ?? null;
+    if (reason) parts.push(String(reason));
+    const attempt = p.attempt ?? null;
+    if (attempt != null) parts.push(`tentativo ${String(attempt)}${p.max_attempts != null ? `/${String(p.max_attempts)}` : ''}`);
+    return parts.join(' · ');
 }
 
 /** Etichetta della gamba di un trade (v2). */
@@ -147,7 +230,36 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     ft_entry_min: 50,
     ft_entry_max: 80,
     model_p_max_pct: 2,
+    greenup_enabled: true,
+    greenup_mode: 'auto',
+    greenup_trigger_distance: 1,
+    greenup_price_trigger_ratio: 0.5,
+    greenup_settle_delay_s: 30,
+    greenup_hold_max_risk: 0.02,
+    greenup_risk_cap: 0.10,
+    greenup_ev_margin: 0.10,
+    greenup_take_profit_frac: 0.9,
+    greenup_take_profit_minute: 80,
+    greenup_retry_s: 20,
+    greenup_max_attempts: 15,
+    model_calibration: 'auto',
 };
+
+/** campi numerici della sezione "Green-up automatico" (ordine di lettura) */
+export const OMEGA_GREENUP_FIELDS: {
+    key: OmegaNumericParamKey; label: string; step: number; min: number; max: number; hint: string;
+}[] = [
+    { key: 'greenup_trigger_distance', label: 'Scatta a distanza (gol)', step: 1, min: 0, max: 5, hint: '1 = appena manca UN gol al risultato layato (es. lay 2-1 e si va sul 2-0) si chiude a mercato' },
+    { key: 'greenup_price_trigger_ratio', label: 'Scatta se la quota scende sotto (frazione)', step: 0.05, min: 0.05, max: 1, hint: '0.5 = quota lay dimezzata rispetto all’ingresso: il mercato sta convergendo sul risultato, meglio uscire' },
+    { key: 'greenup_settle_delay_s', label: 'Attesa conferma punteggio (s)', step: 5, min: 0, max: 300, hint: 'VAR e correzioni: aspetta che il punteggio sia stabile prima di chiudere' },
+    { key: 'greenup_hold_max_risk', label: 'Tieni se P(perdita) ≤ (0-1)', step: 0.005, min: 0, max: 1, hint: 'sotto questa probabilità di perdita il servizio TIENE (attività "GREEN-UP · attesa")' },
+    { key: 'greenup_risk_cap', label: 'Chiudi comunque se P(perdita) ≥ (0-1)', step: 0.01, min: 0, max: 1, hint: 'oltre questa soglia si chiude anche con EV a favore' },
+    { key: 'greenup_ev_margin', label: 'Margine EV per tenere (0-1)', step: 0.01, min: 0, max: 1, hint: 'tenere deve valere almeno questo margine rispetto al green-up immediato' },
+    { key: 'greenup_take_profit_frac', label: 'Incassa a frazione del max (0-1)', step: 0.05, min: 0, max: 1, hint: '0.9 = chiude quando ha in mano il 90% del profitto massimo' },
+    { key: 'greenup_take_profit_minute', label: 'Incassa comunque dal minuto', step: 1, min: 0, max: 130, hint: 'in profitto e oltre questo minuto: si chiude senza aspettare' },
+    { key: 'greenup_retry_s', label: 'Residuo · attesa fra tentativi (s)', step: 5, min: 1, max: 600, hint: 'chiusura parziale (liquidità): riprova ogni tot secondi (attività "ritento")' },
+    { key: 'greenup_max_attempts', label: 'Residuo · tentativi max', step: 1, min: 1, max: 100, hint: 'poi il residuo si chiude al prezzo disponibile' },
+];
 
 export type OmegaNumericParamKey = {
     [K in keyof OmegaParams]: OmegaParams[K] extends number ? K : never;

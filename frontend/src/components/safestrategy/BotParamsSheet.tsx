@@ -38,7 +38,6 @@ const OPPS_FIELDS: NumField[] = [
     { path: 'opps_interval_s', label: 'Cadenza opportunità (s)', step: 5 },
     { path: 'opps_min_confidence', label: 'Confidenza minima (0-1)', step: 0.05 },
     { path: 'opps_min_edge', label: 'Edge minimo (0-1)', step: 0.01 },
-    { path: 'opps_stake', label: 'Stake opportunità €', step: 0.5 },
 ];
 
 const STRATEGY_FIELDS: NumField[] = [
@@ -81,6 +80,23 @@ export interface ExitsParams {
     tennis_exit_on_lost_game: boolean;
     /** tentativi massimi di chiusura prima dell'uscita obbligatoria a mercato */
     exit_max_retries: number;
+    // ---- uscite dei trade di MODELLO (modello / anomalia / combo / tennis)
+    /** tiene la posizione se P(perdita) è sotto questa soglia (0-1) */
+    hold_max_risk: number;
+    /** oltre questa P(perdita) chiude comunque (0-1) */
+    risk_cap: number;
+    /** margine di EV richiesto per tenere invece di chiudere (0-1) */
+    ev_margin: number;
+    /** residuo non abbinato: attesa fra un tentativo e l'altro (s) */
+    residual_retry_s: number;
+    /** residuo non abbinato: tentativi massimi */
+    residual_max_attempts: number;
+    /** modello: uscita in perdita quando P(perdita) supera (0-1) */
+    model_exit_p_lose: number;
+    /** modello: incassa quando il profitto raggiunge questa frazione del massimo (0-1) */
+    model_take_profit_frac: number;
+    /** modello: cash out "gratis" sotto questa P(perdita) (0-1) */
+    model_free_cashout_p_lose: number;
 }
 
 export const EXITS_DEFAULTS: ExitsParams = {
@@ -93,6 +109,14 @@ export const EXITS_DEFAULTS: ExitsParams = {
     tennis_take_profit_next_game: true,
     tennis_exit_on_lost_game: true,
     exit_max_retries: 3,
+    hold_max_risk: 0.02,
+    risk_cap: 0.10,
+    ev_margin: 0.10,
+    residual_retry_s: 20,
+    residual_max_attempts: 15,
+    model_exit_p_lose: 0.10,
+    model_take_profit_frac: 0.8,
+    model_free_cashout_p_lose: 0.005,
 };
 
 /** merge DIFENSIVO di params.exits: valori mancanti/malformati → default. */
@@ -110,10 +134,53 @@ export function mergeExits(raw: unknown): ExitsParams {
         tennis_take_profit_next_game: b(r.tennis_take_profit_next_game, EXITS_DEFAULTS.tennis_take_profit_next_game),
         tennis_exit_on_lost_game: b(r.tennis_exit_on_lost_game, EXITS_DEFAULTS.tennis_exit_on_lost_game),
         exit_max_retries: n(r.exit_max_retries, EXITS_DEFAULTS.exit_max_retries),
+        hold_max_risk: n(r.hold_max_risk, EXITS_DEFAULTS.hold_max_risk),
+        risk_cap: n(r.risk_cap, EXITS_DEFAULTS.risk_cap),
+        ev_margin: n(r.ev_margin, EXITS_DEFAULTS.ev_margin),
+        residual_retry_s: n(r.residual_retry_s, EXITS_DEFAULTS.residual_retry_s),
+        residual_max_attempts: n(r.residual_max_attempts, EXITS_DEFAULTS.residual_max_attempts),
+        model_exit_p_lose: n(r.model_exit_p_lose, EXITS_DEFAULTS.model_exit_p_lose),
+        model_take_profit_frac: n(r.model_take_profit_frac, EXITS_DEFAULTS.model_take_profit_frac),
+        model_free_cashout_p_lose: n(r.model_free_cashout_p_lose, EXITS_DEFAULTS.model_free_cashout_p_lose),
     };
 }
 
 type ExitNumKey = 'base_exit_minute' | 'esatto_exit_minute' | 'punta_exit_minute' | 'loss_settle_delay_s' | 'exit_max_retries';
+
+type ModelExitKey =
+    | 'hold_max_risk' | 'risk_cap' | 'ev_margin' | 'residual_retry_s' | 'residual_max_attempts'
+    | 'model_exit_p_lose' | 'model_take_profit_frac' | 'model_free_cashout_p_lose';
+const MODEL_EXIT_FIELDS: { key: ModelExitKey; label: string; step: number; hint: string }[] = [
+    { key: 'hold_max_risk', label: 'Tieni se P(perdita) ≤ (0-1)', step: 0.005, hint: 'sotto questa probabilità di perdita il servizio TIENE la posizione ("In attesa" in tabella) invece di chiudere' },
+    { key: 'risk_cap', label: 'Chiudi comunque se P(perdita) ≥ (0-1)', step: 0.01, hint: 'oltre questa soglia si chiude a mercato anche con EV a favore' },
+    { key: 'ev_margin', label: 'Margine EV per tenere (0-1)', step: 0.01, hint: 'tenere deve valere almeno questo margine rispetto al cash out immediato' },
+    { key: 'model_exit_p_lose', label: 'Modello · esci in perdita da P(perdita) (0-1)', step: 0.01, hint: 'il modello ricalcola P(perdita) a ogni ciclo: sopra questa soglia esce in perdita controllata' },
+    { key: 'model_take_profit_frac', label: 'Modello · incassa a frazione del max (0-1)', step: 0.05, hint: '0.8 = chiude quando ha in mano l’80% del profitto massimo possibile' },
+    { key: 'model_free_cashout_p_lose', label: 'Modello · cash out gratis sotto P(perdita) (0-1)', step: 0.001, hint: 'rischio ormai trascurabile: incassa e libera la liability' },
+    { key: 'residual_retry_s', label: 'Residuo · attesa fra tentativi (s)', step: 5, hint: 'chiusura parziale (liquidità): riprova a chiudere il resto ogni tot secondi' },
+    { key: 'residual_max_attempts', label: 'Residuo · tentativi max', step: 1, hint: 'dopo questi tentativi il residuo si chiude al prezzo disponibile' },
+];
+
+const RISK_FIELDS: NumField[] = [
+    { path: 'risk.daily_liability_cap', label: 'Cap liability giornaliera €', step: 50, hint: 'raggiunto il cap nessun nuovo ingresso automatico fino a domani' },
+    { path: 'risk.per_event_liability_cap', label: 'Cap liability per evento €', step: 10, hint: 'somma delle liability aperte sulla stessa partita' },
+    { path: 'risk.per_event_max_trades', label: 'Trade max per evento', step: 1, hint: 'mai più di tanti trade sulla stessa partita' },
+    { path: 'risk.correlated_cap', label: 'Correlazione max (0-1)', step: 0.05, hint: 'posizioni sullo stesso esito (es. Under 2.5 + Under 3.5): oltre questa correlazione la seconda non entra' },
+    { path: 'risk.daily_loss_stop', label: 'Stop perdita giornaliera €', step: 5, hint: 'valore NEGATIVO: sotto questo P&L di giornata il bot smette di entrare (badge rosso nel pannello Rischio)' },
+    { path: 'risk.model_daily_liability_cap', label: 'Cap liability giornaliera trade di modello €', step: 25, hint: 'quota del cap riservata a modello/anomalie/combinazioni/tennis' },
+];
+
+const MODEL_STAKE_FIELDS: NumField[] = [
+    { path: 'risk.model_stake', label: 'Stake auto-trade modello / anomalie / tennis €', step: 0.5, hint: 'stake di ogni trade automatico di questi tipi (le combinazioni lo usano come stake TOTALE)' },
+    { path: 'opps_stake', label: 'Stake proposto sulle card €', step: 0.5, hint: 'precompilato nel campo Stake delle opportunità (manuale)' },
+];
+
+const AUTO_TRADE_TOGGLES: { key: 'auto_trade_opportunities' | 'auto_trade_anomalies' | 'auto_trade_combos' | 'auto_trade_tennis'; label: string; note: string }[] = [
+    { key: 'auto_trade_opportunities', label: 'Trada le opportunità di MODELLO in automatico', note: 'rischio: il modello può essere calibrato male sulle leghe minori — stake piccolo, cap giornaliero attivo' },
+    { key: 'auto_trade_anomalies', label: 'Trada le ANOMALIE di prezzo in automatico', note: 'rischio: una quota "sbagliata" può essere un punteggio in ritardo sul feed — attesa conferma consigliata' },
+    { key: 'auto_trade_combos', label: 'Trada le COMBINAZIONI in automatico', note: 'rischio: se una gamba non si abbina il profitto bloccato salta e resta una posizione scoperta' },
+    { key: 'auto_trade_tennis', label: 'Trada le opportunità TENNIS in automatico', note: 'rischio: ritiri e cali di momentum improvvisi — il rischio ritiro è mostrato sulla card' },
+];
 const EXIT_NUM_FIELDS: { key: ExitNumKey; label: string; step: number; hint: string }[] = [
     { key: 'base_exit_minute', label: 'BASE · uscita a tempo dal minuto', step: 1, hint: 'chiude a mercato (green/red) se il match arriva a questo minuto con la posizione ancora aperta' },
     { key: 'esatto_exit_minute', label: 'R. ESATTO · uscita a tempo dal minuto', step: 1, hint: 'lay sul risultato esatto: incassa il calo della quota prima del finale' },
@@ -229,18 +296,75 @@ export function BotParamsSheet({ params, rawParams = null, busy = false, onSave 
                         ))}
                     </div>
 
+                    <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2" data-testid="risk-section">
+                        Rischio
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        Limiti del servizio su TUTTI i trade automatici. Lo stato corrente (liability
+                        impegnata, stop perdita) è nel pannello <b>Rischio giornaliero</b> in alto.
+                    </p>
+                    <FieldList fields={RISK_FIELDS} draft={draft} setDraft={setDraft} />
+
+                    <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2" data-testid="autotrade-section">
+                        Auto-trade
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        Ogni tipo di opportunità si accende da solo. Spento = le card restano manuali
+                        (bottone "Piazza"). Ogni riga dice qual è il suo rischio specifico.
+                    </p>
+                    {AUTO_TRADE_TOGGLES.map((t) => (
+                        <label key={t.key} className="flex items-start gap-2 text-sm">
+                            <Checkbox
+                                checked={draft[t.key]}
+                                onCheckedChange={(c) => setDraft({ ...draft, [t.key]: c === true })}
+                                aria-label={t.label}
+                                className="mt-0.5"
+                            />
+                            <span>
+                                {t.label}
+                                <span className="block text-[11px] text-amber-300/80">{t.note}</span>
+                            </span>
+                        </label>
+                    ))}
+
                     <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2">
                         Opportunità di modello
                     </div>
-                    <label className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                            checked={draft.auto_trade_opportunities}
-                            onCheckedChange={(c) => setDraft({ ...draft, auto_trade_opportunities: c === true })}
-                            aria-label="Trada le opportunità in automatico"
-                        />
-                        Trada le opportunità in automatico
-                    </label>
                     <FieldList fields={OPPS_FIELDS} draft={draft} setDraft={setDraft} />
+
+                    <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2" data-testid="model-stake-section">
+                        Tennis / Anomalie
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        Stake dei trade di modello, anomalia, combinazione e tennis. Tennis e anomalie
+                        entrano con lo stesso stake del modello; la liability giornaliera dedicata è nel
+                        blocco Rischio.
+                    </p>
+                    <FieldList fields={MODEL_STAKE_FIELDS} draft={draft} setDraft={setDraft} />
+
+                    <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2" data-testid="model-exits-section">
+                        Uscite modello
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        Per i trade di modello/anomalia/combinazione/tennis il servizio ricalcola a ogni
+                        ciclo la <b>P(perdita)</b>: se è bassa e l'EV del tenere supera il margine, la
+                        posizione resta aperta ("In attesa" in tabella); altrimenti chiude. Un residuo
+                        non abbinato viene ritentato a intervalli.
+                    </p>
+                    {MODEL_EXIT_FIELDS.map((f) => (
+                        <label key={f.key} className="block">
+                            <span className="text-xs text-slate-400">{f.label}</span>
+                            <input
+                                type="number"
+                                step={f.step}
+                                aria-label={f.label}
+                                value={exits[f.key]}
+                                onChange={(e) => setExits({ ...exits, [f.key]: Number(e.target.value) })}
+                                className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
+                            />
+                            <span className="text-[11px] text-slate-500">{f.hint}</span>
+                        </label>
+                    ))}
 
                     <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2">
                         Condizioni delle strategie

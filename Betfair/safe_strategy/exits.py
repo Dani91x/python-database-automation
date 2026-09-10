@@ -34,6 +34,18 @@ Regole del manuale operativo (una per strategia):
                  in parità (es. 3-3) — senza eccezioni; il cambio set azzera il
                  conteggio dei game
 
+  MODEL  (trade di modello/anomalia/combo/tennis-modello, strategia 'model')
+         EVENTO AVVERSO  calcio: un gol o un rosso dopo l'ingresso porta la
+                 P(perdita) ricalcolata dal modello sopra ``model_exit_p_lose``
+                 (0.10) e sopra quella d'ingresso → uscita (dopo il ritardo di
+                 assestamento); la linea tradata DECISA contro (O/U, BTTS, CS)
+                 → uscita immediata. Tennis: il giocatore puntato perde DUE game
+                 di fila o un SET → uscita.
+         TAKE-PROFIT  P&L bloccato ≥ ``model_take_profit_frac`` (0.8) × profitto
+                 massimo, oppure P(perdita) ≤ ``model_free_cashout_p_lose``
+                 (0.005) con P&L bloccato ≥ 0 (cash-out quasi gratis) → uscita;
+                 altrimenti si tiene fino al settlement.
+
 Il ritardo di assestamento vale per OGNI uscita innescata da un evento
 (gol o rosso): dopo un gol il mercato è sospeso e le quote si riallineano in
 qualche decina di secondi — inviare subito la chiusura fallirebbe (live) o
@@ -46,8 +58,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
-# strategie con regole di uscita automatica (model/manual: mai toccate)
+# strategie con regole di uscita automatica del manuale (manual: mai toccata)
 EXIT_STRATEGIES = ("base", "esatto", "punta", "tennis")
+# strategie di MODELLO (regole a modello: decide_model); il tipo è in meta.kind
+MODEL_STRATEGIES = ("model",)
 
 # parametri di default della sezione ``exits`` del control (fusi con l'utente)
 DEFAULT_EXIT_PARAMS: dict[str, Any] = {
@@ -74,6 +88,12 @@ DEFAULT_EXIT_PARAMS: dict[str, Any] = {
     "hold_max_risk": 0.02,
     "risk_cap": 0.10,
     "ev_margin": 0.10,
+    # TRADE DI MODELLO (decide_model): evento avverso se P(perdita) > model_exit_p_lose;
+    # take-profit a model_take_profit_frac del profitto massimo; cash-out quasi
+    # gratis quando P(perdita) <= model_free_cashout_p_lose e P&L bloccato >= 0
+    "model_exit_p_lose": 0.10,
+    "model_take_profit_frac": 0.8,
+    "model_free_cashout_p_lose": 0.005,
 }
 
 # tipi di uscita soggetti alla decisione a modello (mai le uscite in perdita)
@@ -92,6 +112,13 @@ _REASON_TEXT = {
     "leader_vince_il_game": "Il leader ha vinto il game: take profit",
     "leader_perde_il_game": "Il leader ha perso il game: uscita",
     "due_game_persi_di_fila_e_parita": "Due game persi di fila e parità nel set: uscita obbligatoria",
+    "linea_decisa_contro": "La linea tradata è decisa contro: chiusura in perdita",
+    "gol_avverso": "Gol avverso: la probabilità di perdere è salita oltre la soglia, uscita",
+    "rosso_avverso": "Cartellino rosso avverso: la probabilità di perdere è salita oltre la soglia, uscita",
+    "due_game_persi_di_fila": "Il giocatore puntato ha perso due game di fila: uscita",
+    "set_perso": "Il giocatore puntato ha perso un set: uscita",
+    "take_profit_modello": "Take profit del modello: profitto bloccato",
+    "cashout_quasi_gratis": "Posizione ormai vinta: cash-out quasi gratis, liability liberata",
 }
 _MINUTE_REASON_RE = re.compile(r"^minuto_(\d+)")
 
@@ -142,6 +169,9 @@ def merge_exit_params(raw: Any) -> dict[str, Any]:
     out["hold_max_risk"] = float(min(1.0, max(0.0, _f(out.get("hold_max_risk"), 0.02))))
     out["risk_cap"] = float(min(1.0, max(0.0, _f(out.get("risk_cap"), 0.10))))
     out["ev_margin"] = float(max(0.0, _f(out.get("ev_margin"), 0.10)))
+    out["model_exit_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_exit_p_lose"), 0.10))))
+    out["model_take_profit_frac"] = float(min(1.0, max(0.0, _f(out.get("model_take_profit_frac"), 0.8))))
+    out["model_free_cashout_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_free_cashout_p_lose"), 0.005))))
     for k in ("enabled", "red_card_fav_exit", "tennis_take_profit_next_game",
               "tennis_exit_on_lost_game"):
         out[k] = _bool(out.get(k), DEFAULT_EXIT_PARAMS[k])
@@ -340,6 +370,16 @@ def _side_by_selection(odds: Any, selection_id: Any, keys: tuple[str, ...]) -> O
     return None
 
 
+def _opposite_player(side: Optional[str]) -> Optional[str]:
+    return {"p1": "p2", "p2": "p1"}.get(str(side or ""))
+
+
+def is_tennis(trade: dict[str, Any]) -> bool:
+    """Trade di tennis: strategia 'tennis' o sport 'tennis' (trade di modello)."""
+    return str(trade.get("strategy") or "") == "tennis" or \
+        str(trade.get("sport") or "") == "tennis"
+
+
 def _opposite(side: Optional[str]) -> Optional[str]:
     if side == "home":
         return "away"
@@ -359,6 +399,13 @@ def position_side(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> O
     strategy = str(trade.get("strategy") or "")
     payload = payload if isinstance(payload, dict) else {}
     sid = trade.get("selection_id")
+    if strategy in MODEL_STRATEGIES and is_tennis(trade):
+        # tennis a modello: il lato è "chi deve vincere" per la posizione: il
+        # giocatore della selezione (back) o l'avversario (lay)
+        s = _side_by_selection(payload.get("odds"), sid, ("p1", "p2"))
+        if s and str(trade.get("side") or "").lower() == "lay":
+            return _opposite_player(s)
+        return s
     if strategy == "tennis":
         s = _side_by_selection(payload.get("odds"), sid, ("p1", "p2"))
         if s:
@@ -413,7 +460,7 @@ def track(trade: dict[str, Any], payload: Optional[dict[str, Any]], now_ts: floa
     strategy = str(trade.get("strategy") or "")
     if not tr.get("side"):
         tr["side"] = position_side(trade, payload)
-    if strategy == "tennis":
+    if is_tennis(trade):
         _track_tennis(tr, trade, payload, now_ts)
     else:
         _track_calcio(tr, trade, payload, now_ts)
@@ -615,12 +662,146 @@ def _decide_tennis(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitD
 
 
 # ---------------------------------------------------------------------------
+# TRADE DI MODELLO: situazione (pura) + decisione a numeri (pura)
+# ---------------------------------------------------------------------------
+_OU_LINE_RE = re.compile(r"(\d+)[._](\d)")
+_OVER_RE = re.compile(r"\bover\b", re.IGNORECASE)
+_UNDER_RE = re.compile(r"\bunder\b", re.IGNORECASE)
+_YES_RE = re.compile(r"^\s*(yes|s[iì])\s*$", re.IGNORECASE)
+_NO_RE = re.compile(r"^\s*no\s*$", re.IGNORECASE)
+_ANY_OTHER_RE = re.compile(r"any\s*other|altro", re.IGNORECASE)
+
+
+def ou_line(trade: dict[str, Any]) -> Optional[float]:
+    """Linea O/U del trade: meta.line, poi il market_type (OVER_UNDER_25 → 2.5),
+    poi il nome della selezione ('Over 2.5 Goals')."""
+    meta = trade.get("meta") or {}
+    ln = meta.get("line")
+    if isinstance(ln, (int, float)) and not isinstance(ln, bool):
+        return float(ln)
+    for src in (str(trade.get("market_type") or ""), str(trade.get("selection_name") or "")):
+        m = _OU_LINE_RE.search(src.replace(" ", ""))
+        if m:
+            return float(f"{m.group(1)}.{m.group(2)}")
+    return None
+
+
+def line_decided_against(trade: dict[str, Any], sh: Optional[int], sa: Optional[int]) -> bool:
+    """True se, col punteggio corrente, la linea tradata è GIÀ decisa contro la
+    posizione (nessuna probabilità residua): O/U oltre la linea, BTTS con
+    entrambe a segno, CS puntato superato. Mai True per il Match Odds
+    (si decide solo al fischio finale)."""
+    if sh is None or sa is None:
+        return False
+    mt = str(trade.get("market_type") or "").upper()
+    side = str(trade.get("side") or "").lower()
+    name = str(trade.get("selection_name") or "")
+    total = int(sh) + int(sa)
+    if mt.startswith("OVER_UNDER"):
+        line = ou_line(trade)
+        if line is None or total <= line:
+            return False          # linea ancora viva (o non nota)
+        is_under = bool(_UNDER_RE.search(name))
+        is_over = bool(_OVER_RE.search(name)) and not is_under
+        if not (is_over or is_under):
+            return False
+        # total > line: vince l'Over → perde chi è sull'Under (back Under / lay Over)
+        pos_on_over = (is_over and side == "back") or (is_under and side == "lay")
+        return not pos_on_over
+    if mt == "BOTH_TEAMS_TO_SCORE":
+        if int(sh) >= 1 and int(sa) >= 1:
+            pos_on_yes = (bool(_YES_RE.match(name)) and side == "back") or \
+                (bool(_NO_RE.match(name)) and side == "lay")
+            return not pos_on_yes
+        return False
+    if mt == "CORRECT_SCORE" and side == "back" and not _ANY_OTHER_RE.search(name):
+        cs = parse_calcio_score(name)
+        if cs is not None:
+            return int(sh) > cs[0] or int(sa) > cs[1]
+    return False
+
+
+def model_situation(trade: dict[str, Any], meta: dict[str, Any], payload: Optional[dict[str, Any]],
+                    params: dict[str, Any]) -> dict[str, Any]:
+    """Fatti del tracciamento utili alla decisione a modello (PURA):
+      adverse_event    'gol' | 'rosso' (calcio, dopo l'ingresso) |
+                       'due_game_persi_di_fila' | 'set_perso' (tennis) | None
+      not_before_ts    evento + ritardo di assestamento (calcio), 0 altrimenti
+      decided_against  linea già decisa contro (calcio)"""
+    tr = (meta or {}).get(TRACK_KEY)
+    tr = tr if isinstance(tr, dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    out: dict[str, Any] = {"adverse_event": None, "not_before_ts": 0.0, "decided_against": False}
+    if is_tennis(trade):
+        if "entry_sets" not in tr or tr.get("last_sets") is None:
+            return out
+        side = tr.get("side")
+        oi = 1 if side == "p1" else 0
+        last_sets, entry_sets = list(tr.get("last_sets") or []), list(tr.get("entry_sets") or [])
+        if side in ("p1", "p2") and len(last_sets) == 2 and len(entry_sets) == 2 \
+                and int(last_sets[oi]) > int(entry_sets[oi]):
+            out["adverse_event"] = "set_perso"
+        elif int(tr.get("consecutive_lost") or 0) >= 2:
+            out["adverse_event"] = "due_game_persi_di_fila"
+        return out
+    sh, sa = _int(payload.get("score_home")), _int(payload.get("score_away"))
+    out["decided_against"] = line_decided_against(trade, sh, sa)
+    if out["decided_against"]:
+        out["not_before_ts"] = _after(tr, "last_goal_ts", params)
+    goals = int(tr.get("goals_since_entry_home") or 0) + int(tr.get("goals_since_entry_away") or 0)
+    red = _red_to(tr, "home") or _red_to(tr, "away")
+    if goals > 0:
+        out["adverse_event"] = "gol"
+        out["not_before_ts"] = max(out["not_before_ts"], _after(tr, "last_goal_ts", params))
+    elif red:
+        out["adverse_event"] = "rosso"
+        out["not_before_ts"] = max(out["not_before_ts"], _after(tr, "last_red_ts", params))
+    return out
+
+
+def decide_model(*, p_lose: Optional[float], p_lose_entry: Optional[float],
+                 locked: Optional[float], max_profit: Optional[float],
+                 situation: dict[str, Any], params: dict[str, Any]) -> Optional[ExitDecision]:
+    """Decisione a modello per un trade di strategia 'model' (PURA):
+
+      1. linea decisa contro                          → 'loss'  linea_decisa_contro
+      2. tennis: due game persi di fila / set perso   → 'loss'  (incondizionata)
+      3. calcio: gol/rosso dopo l'ingresso E p_lose > model_exit_p_lose E
+         p_lose > p_lose_entry (l'evento è AVVERSO)   → 'loss' | 'red_card'
+      4. locked ≥ model_take_profit_frac × max_profit → 'profit' take_profit_modello
+      5. p_lose ≤ model_free_cashout_p_lose, locked ≥ 0 → 'profit' cashout_quasi_gratis
+      altrimenti None (si tiene fino al settlement)."""
+    sit = situation or {}
+    nb = float(sit.get("not_before_ts") or 0.0)
+    if sit.get("decided_against"):
+        return ExitDecision("loss", "linea_decisa_contro", nb)
+    ev = sit.get("adverse_event")
+    if ev in ("due_game_persi_di_fila", "set_perso"):
+        return ExitDecision("loss", str(ev), 0.0)
+    if ev in ("gol", "rosso") and p_lose is not None:
+        p = float(p_lose)
+        thr = float(params.get("model_exit_p_lose") or 0.0)
+        worse = p_lose_entry is None or p > float(p_lose_entry) + 1e-9
+        if p > thr and worse:
+            kind = "red_card" if ev == "rosso" else "loss"
+            return ExitDecision(kind, f"{ev}_avverso", nb)
+    if locked is not None and max_profit is not None and float(max_profit) > 0:
+        frac = float(params.get("model_take_profit_frac") or 0.0)
+        if frac > 0 and float(locked) >= frac * float(max_profit) - 1e-9:
+            return ExitDecision("profit", "take_profit_modello", 0.0)
+    if p_lose is not None and locked is not None and float(locked) >= 0.0 and \
+            float(p_lose) <= float(params.get("model_free_cashout_p_lose") or 0.0):
+        return ExitDecision("profit", "cashout_quasi_gratis", 0.0)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # contesto per il log
 # ---------------------------------------------------------------------------
 def situation(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> dict[str, Any]:
     """{'minute','score'} correnti dal feed, per l'activity log."""
     payload = payload if isinstance(payload, dict) else {}
-    if str(trade.get("strategy") or "") == "tennis":
+    if is_tennis(trade):
         sets = _pair(payload.get("sets"), "p1", "p2")
         games = _pair(payload.get("games"), "p1", "p2")
         score = None

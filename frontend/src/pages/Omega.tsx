@@ -4,7 +4,7 @@
 // Fonte di verità: Betfair/omega/COSTITUZIONE_OMEGA.md
 // Realtime via Supabase (omega_control + omega_trades) + polling di sicurezza.
 // ============================================================================
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { toast } from 'sonner';
@@ -25,19 +25,28 @@ import {
     csSelection, htSelection, type CalcioScanPayload, type ScanCsSelection,
 } from '@/lib/safeStrategyScan';
 import { CashOutButton } from '@/components/trading/CashOutButton';
+import { ExitBadge } from '@/components/trading/ExitBadge';
 import { TradingHistory } from '@/components/trading/TradingHistory';
-import { cappedFrom, tradeExposure } from '@/lib/safeBot';
-import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
+import { cappedFrom, tradeExposure, groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip } from '@/lib/safeBot';
+import { sideBadgeClass } from '@/components/safestrategy/variantStyles';
+import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel, tradeExit } from '@/lib/dailyHistory';
 import {
     ArrowLeft, Play, Square, Settings, Target, TrendingUp, Zap, ShieldAlert, Activity,
 } from 'lucide-react';
 import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
     subscribeOmega, buildEquitySeries, requestManual,
-    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, phaseLabel,
+    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, OMEGA_GREENUP_FIELDS, phaseLabel,
+    tradeModelOf, activityMeta, activityLine,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
-    type OmegaAggregates,
+    type OmegaAggregates, type OmegaActivityRow,
 } from '@/lib/omega';
+
+/** "1,8%" — percentuale in formato italiano */
+function pctIt(v: number | null, digits = 1): string {
+    if (v == null || !Number.isFinite(v)) return '—';
+    return `${(v * 100).toFixed(digits).replace('.', ',')}%`;
+}
 
 // ------------------------------------------------------------------ helpers
 function fmtEur(v: number | null | undefined): string {
@@ -157,6 +166,8 @@ export default function Omega() {
     const [control, setControl] = useState<OmegaControl | null>(null);
     const [aggregates, setAggregates] = useState<OmegaAggregates | null>(null);
     const [trades, setTrades] = useState<OmegaTrade[]>([]);
+    // attività del servizio (green-up, attese, ritenti…) dall'RPC di stato
+    const [activity, setActivity] = useState<OmegaActivityRow[]>([]);
     // minuto/punteggio LIVE dal feed dello scanner per ogni partita con un trade (v2)
     const liveFeed = useScanLiveFeed(trades.map((t) => t.event_id));
     const [loading, setLoading] = useState(true);
@@ -182,6 +193,7 @@ export default function Omega() {
         setControl(st.control);
         setAggregates(st.aggregates);
         setTrades(tr);
+        setActivity(Array.isArray(st.activity) ? st.activity : []);
         if (st.control && firstLoad) {
             // sincronizza i form solo al primo caricamento (non sovrascrivere l'editing)
             setGoalInput(Number(st.control.daily_goal) || 250);
@@ -469,13 +481,15 @@ export default function Omega() {
                                         <tr>
                                             <th className="text-left px-4 py-2">Ora</th>
                                             <th className="text-left px-4 py-2">Match</th>
-                                            <th className="text-center px-4 py-2">Lay</th>
+                                            <th className="text-center px-4 py-2" title="risultato (Correct Score / Half Time Score) su cui si opera">Selezione</th>
+                                            <th className="text-center px-4 py-2" title="LAY = banca il risultato · BACK = gamba di copertura (green-up / cash out)">Lato</th>
                                             <th className="text-right px-4 py-2">Quota</th>
                                             <th className="text-right px-4 py-2">Stake</th>
                                             <th className="text-right px-4 py-2">Liability</th>
                                             <th className="text-center px-4 py-2" title="gamba: 1T = Half Time Score, 2T = Correct Score finale">Gamba</th>
                                             <th className="text-center px-4 py-2" title="minuto e punteggio all'ingresso">Ingresso</th>
                                             <th className="text-center px-4 py-2" title="minuto e punteggio LIVE dal feed dello scanner">Live</th>
+                                            <th className="text-center px-4 py-2" title="audit: P(modello) del risultato layato — calibrata vs grezza">Modello</th>
                                             <th className="text-center px-4 py-2">Stato</th>
                                             <th className="text-right px-4 py-2">P&L</th>
                                             <th className="text-center px-4 py-2" title="chiudi la posizione a mercato bloccando il P&L">Cash out</th>
@@ -483,15 +497,25 @@ export default function Omega() {
                                     </thead>
                                     <tbody>
                                         {trades.length === 0 ? (
-                                            <tr><td colSpan={12} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
-                                        ) : trades.map(t => {
-                                            const b = tradeBadge(t.status);
-                                            const live = ['pending', 'open'].includes(t.status) ? liveScoreLabel(liveFeed[t.event_id]) : null;
+                                            <tr><td colSpan={14} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
+                                        ) : groupClosingLegs(trades).map(({ trade: t, closes }) => {
+                                            const closing = closes[0] ?? null;
+                                            const exit = tradeExit({ meta: t.meta ?? null, closes: closes.map((c) => ({ meta: c.meta ?? null })) as never });
+                                            const isGreenup = exit?.kind === 'greenup';
+                                            const hedged = t.status === 'hedged';
+                                            const b = hedged && isGreenup
+                                                ? { label: 'CHIUSO IN GREEN-UP', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50' }
+                                                : tradeBadge(t.status);
+                                            // il punteggio live resta visibile anche sull'apertura gia' coperta
+                                            const live = ['pending', 'open', 'hedged'].includes(t.status) ? liveScoreLabel(liveFeed[t.event_id]) : null;
                                             const book = bookForTrade(t, liveFeed[t.event_id]);
                                             const exp = tradeExposure(t);
                                             const locked = lockedPnlOf(t);
+                                            const model = tradeModelOf(t);
+                                            const orphanClosing = t.closes_trade_id != null;
                                             return (
-                                                <tr key={t.id} className="border-t border-white/5 hover:bg-white/5">
+                                                <Fragment key={t.id}>
+                                                <tr className="border-t border-white/5 hover:bg-white/5" data-testid="omega-trade-row">
                                                     <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
                                                     <td className="px-4 py-2 max-w-[240px] truncate" title={t.event_name ?? t.event_id}>
                                                         {t.origin === 'manual' && (
@@ -499,7 +523,12 @@ export default function Omega() {
                                                         )}
                                                         {t.event_name ?? t.event_id}
                                                     </td>
-                                                    <td className={`px-4 py-2 text-center font-bold ${t.side === 'back' ? 'text-sky-300' : 'text-rose-300'}`}>{t.runner_name ?? '—'}</td>
+                                                    <td className="px-4 py-2 text-center font-bold text-white">{t.runner_name ?? '—'}</td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        <Badge variant="outline" data-testid="omega-side" className={`px-1.5 py-0 text-[10px] font-heading font-bold ${sideBadgeClass(t.side === 'back' ? 'BACK' : 'LAY')}`}>
+                                                            {t.side.toUpperCase()}
+                                                        </Badge>
+                                                    </td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{t.price?.toFixed(2) ?? '—'}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
                                                     <td className="px-4 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>
@@ -515,24 +544,42 @@ export default function Omega() {
                                                             </span>
                                                         ) : <span className="text-slate-600">—</span>}
                                                     </td>
-                                                    <td className="px-4 py-2 text-center"><Badge variant="outline" className={b.cls}>{b.label}</Badge></td>
-                                                    <td className={`px-4 py-2 text-right font-bold tabular-nums ${t.status === 'won' ? 'text-emerald-400' : t.status === 'lost' ? 'text-red-400' : 'text-slate-400'}`}>
-                                                        {['won', 'lost', 'void', 'hedged'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        {t.closes_trade_id ? (
-                                                            <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">
-                                                                chiude #{t.closes_trade_id}
-                                                                {cappedFrom({ meta: t.meta ?? null }) != null && (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40"
-                                                                        title="liquidità insufficiente: chiusura PARZIALE rispetto allo stake richiesto"
-                                                                    >
-                                                                        parziale
-                                                                    </Badge>
+                                                    <td className="px-4 py-2 text-center tabular-nums text-[11px]">
+                                                        {model ? (
+                                                            <span data-testid="omega-model-p" title={model.applied ? `P(modello) calibrata ${pctIt(model.calibrated)} · grezza ${pctIt(model.raw)}` : 'P(modello) grezza (nessuna calibrazione)'}>
+                                                                <b className="text-white">{pctIt(model.applied ? model.calibrated : (model.calibrated ?? model.raw))}</b>
+                                                                {model.applied && (
+                                                                    <span className="block text-[10px] text-slate-500">grezza {pctIt(model.raw)}</span>
                                                                 )}
                                                             </span>
+                                                        ) : <span className="text-slate-600">—</span>}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        <Badge
+                                                            variant="outline"
+                                                            data-testid="omega-status"
+                                                            className={`whitespace-nowrap ${b.cls}`}
+                                                            title={hedged ? hedgeTooltip(t, closing) : undefined}
+                                                        >
+                                                            {b.label}
+                                                        </Badge>
+                                                        {!(hedged && isGreenup) && <ExitBadge meta={t.meta ?? null} className="ml-1" />}
+                                                        {exit?.reason && (
+                                                            <div className="mt-0.5 text-[10px] text-slate-400 whitespace-nowrap" data-testid="omega-exit-reason" title="motivo dell'uscita scritto dal servizio">
+                                                                {exit.reason}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className={`px-4 py-2 text-right font-bold tabular-nums ${t.status === 'won' || (hedged && Number(locked ?? t.pnl) >= 0) ? 'text-emerald-400' : t.status === 'lost' || (hedged && Number(locked ?? t.pnl) < 0) ? 'text-red-400' : 'text-slate-400'}`}>
+                                                        {hedged ? (
+                                                            <span data-testid="omega-locked-pnl" title={hedgeTooltip(t, closing)}>
+                                                                {fmtEurIt(locked ?? Number(t.pnl), true)} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
+                                                            </span>
+                                                        ) : ['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-center">
+                                                        {orphanClosing ? (
+                                                            <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">chiude #{t.closes_trade_id}</span>
                                                         ) : t.status === 'open' && t.side === 'lay' && t.selection_id != null ? (
                                                             <CashOutButton
                                                                 compact
@@ -547,18 +594,82 @@ export default function Omega() {
                                                                 pending={isCashOutPending(t)}
                                                                 onCashOut={(a) => handleCashOut(t, a)}
                                                             />
-                                                        ) : t.status === 'hedged' ? (
-                                                            <span className="text-[11px] text-teal-300 tabular-nums" title="posizione chiusa a mercato: P&L bloccato">
-                                                                bloccato {locked != null ? fmtSignedEur(locked) : fmtSignedEur(Number(t.pnl))}
-                                                            </span>
+                                                        ) : hedged ? (
+                                                            <span className="text-[11px] text-teal-300" title="posizione chiusa a mercato: P&L bloccato">coperto</span>
                                                         ) : <span className="text-slate-600">—</span>}
                                                     </td>
                                                 </tr>
+                                                {closes.map((c) => {
+                                                    const cb = tradeBadge(c.status);
+                                                    const capped = cappedFrom({ meta: c.meta ?? null });
+                                                    return (
+                                                        <tr key={c.id} className="bg-white/[0.03] border-t border-dashed border-white/5" data-testid="omega-closing-row" data-closes={t.id}>
+                                                            <td className="px-4 py-1 text-slate-500 tabular-nums text-[11px]">{timeLabel(c.placed_at)}</td>
+                                                            <td colSpan={8} className="pl-8 pr-4 py-1 text-[11px] text-slate-300" title={hedgeTooltip(t, c)}>
+                                                                <span className="text-teal-300" aria-hidden>↳ </span>
+                                                                <b className="text-teal-200">{isGreenup ? 'Green-up' : exit?.kind === 'manual' ? 'Cash out' : 'Chiusura'} di #{t.id}</b>
+                                                                {' · '}
+                                                                <Badge variant="outline" className={`px-1 py-0 text-[10px] font-heading font-bold mr-1 ${sideBadgeClass(c.side === 'back' ? 'BACK' : 'LAY')}`}>{c.side.toUpperCase()}</Badge>{' '}
+                                                                <span className="tabular-nums">{fmtEurIt(c.size)} @{fmtOddsIt(c.price)}</span>
+                                                                {c.runner_name && c.runner_name !== t.runner_name && <span className="text-slate-500"> · {c.runner_name}</span>}
+                                                            </td>
+                                                            <td className="px-4 py-1 text-center text-slate-600">—</td>
+                                                            <td className="px-4 py-1 text-center text-slate-600">—</td>
+                                                            <td className="px-4 py-1 text-center">
+                                                                <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${cb.cls}`}>{cb.label}</Badge>
+                                                                <ExitBadge meta={c.meta ?? null} className="ml-1" />
+                                                            </td>
+                                                            <td className="px-4 py-1 text-right text-[11px] text-slate-500 tabular-nums">
+                                                                {['won', 'lost', 'void', 'hedged'].includes(c.status) ? fmtSignedEur(Number(c.pnl)) : '—'}
+                                                            </td>
+                                                            <td className="px-4 py-1 text-center">
+                                                                <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">
+                                                                    chiude #{t.id}
+                                                                    {capped != null && (
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40"
+                                                                            title="liquidità insufficiente: chiusura PARZIALE rispetto allo stake richiesto"
+                                                                        >
+                                                                            parziale
+                                                                        </Badge>
+                                                                    )}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                                </Fragment>
                                             );
                                         })}
                                     </tbody>
                                 </table>
                             </div>
+                        </Card>
+
+                        {/* attività del servizio: green-up, attese, conferme, ritenti */}
+                        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="omega-activity">
+                            <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300">
+                                <Zap className="w-4 h-4 text-primary" /> Attività del servizio ({activity.length})
+                                <span className="ml-auto text-[11px] text-slate-500">green-up automatico: chiusura a mercato appena il risultato layato diventa raggiungibile</span>
+                            </div>
+                            {activity.length === 0 ? (
+                                <div className="px-5 py-6 text-center text-sm text-muted-foreground">nessuna attività registrata ancora</div>
+                            ) : (
+                                <ul className="divide-y divide-white/5 max-h-72 overflow-y-auto">
+                                    {activity.map((a) => {
+                                        const m = activityMeta(String(a.kind));
+                                        const line = activityLine(a);
+                                        return (
+                                            <li key={a.id} className="px-5 py-1.5 flex items-center gap-2 text-[12px]" data-testid="omega-activity-row" data-kind={a.kind}>
+                                                <span className="text-slate-500 tabular-nums w-12 shrink-0">{a.ts ? timeLabel(a.ts) : '—'}</span>
+                                                <Badge variant="outline" className={`px-1.5 py-0 text-[10px] whitespace-nowrap ${m.cls}`}>{m.label}</Badge>
+                                                <span className="text-slate-200 truncate" title={line}>{line || '—'}</span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
                         </Card>
                         </TabsContent>
                         <TabsContent value="manual">
@@ -657,6 +768,61 @@ function ParamsSheet({ params, setParams, goal, setGoal, onSave, busy }: {
                         <input type="checkbox" checked={params.stop_on_goal}
                             onChange={e => setParams({ ...params, stop_on_goal: e.target.checked })} />
                         Stop nuovi ingressi a obiettivo raggiunto
+                    </label>
+
+                    <div className="text-[11px] uppercase tracking-wide text-secondary font-heading font-bold pt-2" data-testid="greenup-section">
+                        Green-up automatico
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                        Il servizio chiude la gamba <b>a mercato</b> appena il risultato layato diventa
+                        raggiungibile (distanza in gol, o quota che crolla) — sempre e comunque, senza
+                        aspettare il fischio finale. Con modalità <b>auto</b> decide anche di TENERE
+                        se la P(perdita) è bassa e l'EV lo giustifica; il residuo non abbinato viene
+                        ritentato. Ogni passo compare in "Attività del servizio" e come badge sul trade.
+                    </p>
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={params.greenup_enabled}
+                            aria-label="Green-up automatico attivo"
+                            onChange={e => setParams({ ...params, greenup_enabled: e.target.checked })} />
+                        Green-up automatico attivo
+                    </label>
+                    <label className="block">
+                        <span className="text-xs text-slate-400">Modalità green-up</span>
+                        <select
+                            value={params.greenup_mode}
+                            aria-label="Modalità green-up"
+                            onChange={e => setParams({ ...params, greenup_mode: e.target.value as 'auto' | 'off' })}
+                            className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm"
+                        >
+                            <option value="auto">auto (tiene/chiude per P(perdita) ed EV)</option>
+                            <option value="off">off (nessun green-up)</option>
+                        </select>
+                    </label>
+                    {OMEGA_GREENUP_FIELDS.map(f => (
+                        <label key={f.key} className="block">
+                            <span className="text-xs text-slate-400">{f.label}</span>
+                            <input
+                                type="number" step={f.step} min={f.min} max={f.max}
+                                aria-label={f.label}
+                                value={Number((params as unknown as Record<string, number>)[f.key])}
+                                onChange={e => setParams({ ...params, [f.key]: Number(e.target.value) })}
+                                className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
+                            />
+                            <span className="text-[11px] text-slate-500">{f.hint}</span>
+                        </label>
+                    ))}
+                    <label className="block">
+                        <span className="text-xs text-slate-400">Calibrazione P(modello)</span>
+                        <select
+                            value={params.model_calibration}
+                            aria-label="Calibrazione P(modello)"
+                            onChange={e => setParams({ ...params, model_calibration: e.target.value as 'auto' | 'off' })}
+                            className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm"
+                        >
+                            <option value="auto">auto (curva per famiglia di risultati)</option>
+                            <option value="off">off (probabilità grezza del modello)</option>
+                        </select>
+                        <span className="text-[11px] text-slate-500">la colonna "Modello" della tabella mostra calibrata e grezza quando la calibrazione è applicata</span>
                     </label>
 
                     <Button onClick={onSave} disabled={busy} className="w-full bg-primary text-black hover:bg-primary/90">

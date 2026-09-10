@@ -280,12 +280,18 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
     lh, la, league_id, source = lam
     probs = M.score_probs(lh_pre=lh, la_pre=la, rho=_rho_for(league_id), state=state,
                           league_id=league_id, half=half)
+    # calibratore condiviso (agent W-A), SOLO se il parametro lo chiede: import
+    # guardato in omega_model → assente/rotto = P grezza, mai un crash
+    calibrator = (M.load_calibrator(params.get("model_calibration_path") or None)
+                  if str(params.get("model_calibration", "auto")) == "auto" else None)
     sel = M.select_by_model(
         snapshot.runners, probs, state=state,
         price_min=params["price_min"], price_max=params["price_max"],
         min_liquidity=params["min_lay_liquidity"],
         p_max=params["model_p_max_pct"] / 100.0, size_needed=size_needed,
         min_goal_distance=params["model_min_goal_distance"],
+        calibrator=calibrator,
+        family=M.CALIBRATION_FAMILY_HT if half else M.CALIBRATION_FAMILY_FT,
     )
     if sel is None:
         return None, None, "no_runner_by_model"
@@ -2155,6 +2161,476 @@ def _manual_cashout(*, market, db, payload: dict, now: datetime) -> dict:
     )
 
 
+# ---------------------------------------------------------------------------
+# GREEN-UP AUTOMATICO (COSTITUZIONE §12, 2026-09-10): Omega non è più una
+# scommessa "set-and-forget" ma un TRADE. Ogni gamba lay aperta (automatica o
+# manuale) viene CHIUSA A MERCATO — gamba back opposta via
+# ``safe_strategy.execution.close_trade`` (stesso strato del cash-out manuale)
+# — quando:
+#   (a) GOL: il risultato bancato diventa raggiungibile con ≤ ``greenup_trigger_distance``
+#       gol (default 1);
+#   (b) QUOTA: il lay della selezione è sceso sotto ``greenup_price_trigger_ratio``
+#       × prezzo d'ingresso (il mercato la crede molto più probabile);
+#   (c) TAKE-PROFIT: dal minuto ``greenup_take_profit_minute`` se il cash-out
+#       blocca ≥ ``greenup_take_profit_frac`` dello stake → si incassa e si
+#       libera la liability per la gamba successiva.
+# UNA decisione per tutti i trigger (``_greenup_decide``): bancato = punteggio
+# corrente → ESCO; bloccato ≥ 0 → ESCO; P(perdita) ≥ ``greenup_risk_cap`` → ESCO;
+# bloccato ≥ EV(tengo) − ``greenup_ev_margin`` → ESCO; altrimenti TENGO e
+# rivaluto a ogni ciclo. Riserva senza modello = P implicita del feed.
+# Dopo un gol si aspetta ``greenup_settle_delay_s`` (mercato sospeso, quote che
+# si riallineano). Stato live e prezzi dal FEED UNICO (mai quote vecchie:
+# ``_feed_state`` scarta le righe stantie); fill cappato dalla liquidità →
+# RESIDUO ritentato con cooldown ``greenup_retry_s`` e cap ``greenup_max_attempts``;
+# mai un secondo invio con una chiusura 'pending'. Gira SEMPRE (anche a bot
+# fermo), paper e live allo stesso modo (il mode è quello del trade).
+# ---------------------------------------------------------------------------
+GREENUP_KEY = "greenup"            # meta.greenup: richiesta di uscita (trigger, tentativi, esito)
+GREENUP_HOLD_KEY = "greenup_hold"  # meta.greenup_hold: decisione "tengo" per la UI
+_GREENUP_HOLD_REWRITE_S = 30.0
+_GREENUP_REASON = {   # exit_reason per la UI (badge ExitBadge: exit_kind profit|loss)
+    "goal": "Risultato bancato a un passo: chiusura a mercato",
+    "price": "Quota del risultato bancato crollata: chiusura a mercato",
+    "take_profit": "Profitto quasi pieno bloccato: green-up",
+}
+
+
+def _fnum(v: Any) -> Optional[float]:
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _greenup_active(params: dict[str, Any]) -> bool:
+    return bool(params.get("greenup_enabled", True)) and str(params.get("greenup_mode", "auto")) == "auto"
+
+
+def _greenup_residual(meta: dict[str, Any]) -> Optional[float]:
+    """Residuo ancora aperto (stake d'apertura) dal sync dell'hedge; None = ignoto."""
+    if meta.get("hedge_pending_ids"):
+        return None
+    return _fnum(meta.get("residual_size"))
+
+
+def _greenup_candidates(db) -> list[dict[str, Any]]:
+    """Aperture lay 'open' (mai gambe di chiusura) senza chiusura in volo e:
+    uscita non ancora inviata, OPPURE inviata ma con RESIDUO (fill cappato)."""
+    from Betfair.safe_strategy import execution as X
+
+    out: list[dict[str, Any]] = []
+    for t in db.open_trades() or []:
+        if str(t.get("status")) != "open" or t.get("closes_trade_id"):
+            continue
+        if str(t.get("side") or "lay").lower() != "lay":
+            continue
+        meta = t.get("meta") or {}
+        if meta.get("hedge_pending_ids"):
+            continue          # chiusura in volo: residuo non conoscibile → mai un secondo invio
+        req = meta.get(GREENUP_KEY)
+        if isinstance(req, dict):
+            if req.get("failed"):
+                continue
+            if req.get("sent"):
+                res = _greenup_residual(meta)
+                if res is None or res < X.HEDGE_EPS:
+                    continue
+        out.append(t)
+    return out
+
+
+def _greenup_block(tr: dict[str, Any], payload: dict) -> "tuple[Optional[dict], bool]":
+    """(blocco cs/ht del feed con il market_id del trade, orizzonte primo tempo).
+    Senza blocco col market_id giusto → (None, gamba): prezzi via REST."""
+    mid = str(tr.get("market_id") or "")
+    for key, half in (("cs", False), ("ht", True)):
+        blk = payload.get(key)
+        if isinstance(blk, dict) and mid and str(blk.get("market_id") or "") == mid:
+            return blk, half
+    return None, str(tr.get("phase") or "") == "ht_cs"
+
+
+def _greenup_prices_from_block(blk: dict, sid: int) -> "tuple[Optional[dict], Optional[str]]":
+    """(prezzi della selezione, motivo di attesa). Mercato non OPEN → si aspetta."""
+    if str(blk.get("status") or "OPEN").upper() != "OPEN":
+        return None, "mercato_sospeso"
+    for s in blk.get("selections") or []:
+        if not isinstance(s, dict) or s.get("selection_id") is None or int(s["selection_id"]) != sid:
+            continue
+        if s.get("runner_status") not in (None, "ACTIVE"):
+            return None, "selezione_non_attiva"
+        lay = s.get("lay")
+        lay_size = float(s.get("lay_size") or 0.0)
+        return {"back": s.get("back"), "back_size": s.get("back_size"),
+                "lay": lay, "lay_size": lay_size,
+                "lay_ladder": ((float(lay), lay_size),) if isinstance(lay, (int, float)) else ()}, None
+    return None, "selezione_non_nel_feed"
+
+
+def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, int]",
+                    state: "M.LiveState", half: bool, prices: dict) -> "tuple[Optional[float], str]":
+    """(P che il risultato bancato sia quello FINALE da qui, fonte): lo STESSO
+    modello della selezione (λ pre-match → residui live → griglia, orizzonte 45′
+    per la gamba HT); riserva = P implicita dal back del feed (lato conservativo)."""
+    lam = _prematch_lambdas(db, str(tr.get("event_id") or ""), payload)
+    if lam is not None:
+        lh, la, league_id, _src = lam
+        try:
+            probs = M.score_probs(lh_pre=lh, la_pre=la, rho=_rho_for(league_id), state=state,
+                                  league_id=league_id, half=half)
+            p = probs.get(laid)
+        except Exception as ex:  # noqa: BLE001 — modello KO: riserva di mercato
+            logger.warning("[omega] greenup modello KO (trade %s): %s", tr.get("id"), str(ex)[:120])
+            p = None
+        if p is not None:
+            return round(min(1.0, max(0.0, float(p))), 4), "model"
+    back = _fnum(prices.get("back")) or 0.0
+    if back > 1.0:
+        return round(1.0 / back, 4), "market"
+    return None, "none"
+
+
+def _greenup_decide(trigger: str, p_lose: Optional[float], locked: Optional[float],
+                    hold_profit: float, loss_if_lose: float, stake: Any,
+                    params: dict[str, Any], distance: Optional[int]) -> "tuple[str, str]":
+    """('exit'|'hold', motivo). UNA decisione per tutti i trigger (caso vivo del
+    10/09, trade 70: p 0.12, bloccato −22.1, EV(tengo) −12.1 → uscire buttava
+    10 € di valore atteso):
+      • distanza 0 (il bancato È il punteggio corrente: il lay sta perdendo dal
+        vivo) → EXIT incondizionato;
+      • bloccato ≥ 0 → EXIT (profitto);
+      • P(perdita) ≥ greenup_risk_cap → EXIT;
+      • bloccato ≥ EV(tengo) − greenup_ev_margin → EXIT (il mercato offre almeno
+        il valore atteso del tenere);
+      • altrimenti HOLD, rivalutato a ogni ciclo (ogni gol / mossa di prezzo lo
+        rilancia). Regole di exits.decide_time_exit, riusate tali e quali."""
+    from Betfair.safe_strategy import exits as XE
+
+    if distance is not None and int(distance) == 0:
+        p_txt = "non stimabile" if p_lose is None else f"{p_lose * 100:.1f}%"
+        return "exit", f"il bancato è il punteggio corrente (P(perdita)={p_txt}): esco"
+    gp = {"hold_max_risk": float(params["greenup_hold_max_risk"]),
+          "risk_cap": float(params["greenup_risk_cap"]),
+          "ev_margin": float(params["greenup_ev_margin"])}
+    return XE.decide_time_exit(p_lose, locked, hold_profit, stake, gp, loss_if_lose=loss_if_lose)
+
+
+def _greenup_write_key(db, tr: dict[str, Any], meta: dict[str, Any], key: str, value: Any) -> None:
+    """Scrive (o rimuove, value=None) una chiave del meta della riga."""
+    new_meta = {k: v for k, v in meta.items() if k != key}
+    if value is not None:
+        new_meta[key] = value
+    try:
+        db.update_trade(int(tr["id"]), meta=new_meta)
+        tr["meta"] = new_meta
+        meta.clear()
+        meta.update(new_meta)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] greenup meta.%s KO (trade %s): %s", key, tr.get("id"), str(ex)[:120])
+
+
+def _greenup_wait(db, tr: dict[str, Any], meta: dict[str, Any], trigger: str, why: str) -> None:
+    """Log 'greenup_wait' solo al CAMBIO di motivo (niente rumore a ogni ciclo)."""
+    from Betfair.safe_strategy import exits as XE
+
+    track = meta.get(XE.TRACK_KEY) or {}
+    if track.get("wait_reason") == why:
+        return
+    _greenup_write_key(db, tr, meta, XE.TRACK_KEY, {**track, "wait_reason": why})
+    db.log("greenup_wait", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                            "trigger": trigger, "wait": why})
+
+
+def _greenup_hold(db, tr: dict[str, Any], meta: dict[str, Any], trigger: str, info: dict,
+                  minute: int, score: str, laid: str, prices: dict, now: datetime) -> None:
+    """HOLD → ``meta.greenup_hold`` per la UI (riscritto al cambio motivo o ogni
+    30 s) + log 'greenup_hold' UNA volta per motivo."""
+    from Betfair.safe_strategy import exits as XE
+
+    prev = meta.get(GREENUP_HOLD_KEY) if isinstance(meta.get(GREENUP_HOLD_KEY), dict) else None
+    hold = {"trigger": trigger, "reason": info.get("why"), "p_lose": info.get("p_lose"),
+            "p_source": info.get("p_source"), "locked_pnl": info.get("locked_pnl"),
+            "ev_hold": info.get("ev_hold"),
+            "minute": minute, "score": score, "laid_score": laid, "ts": now.isoformat()}
+    changed = prev is None or prev.get("reason") != hold["reason"] or prev.get("trigger") != trigger
+    last_ts = XE.parse_ts((prev or {}).get("ts"))
+    if changed or last_ts is None or now.timestamp() - last_ts >= _GREENUP_HOLD_REWRITE_S:
+        _greenup_write_key(db, tr, meta, GREENUP_HOLD_KEY, hold)
+    if changed:
+        db.log("greenup_hold", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                                "trigger": trigger, "minute": minute, "score": score,
+                                "laid_score": laid, "msg": info.get("why"),
+                                **{k: info.get(k) for k in ("p_lose", "p_source", "locked_pnl", "ev_hold",
+                                                            "decision", "hold_profit", "loss_if_lose")},
+                                "back_price": prices.get("back"), "lay_price": prices.get("lay")})
+
+
+def _greenup_persist(db, tr: dict[str, Any], req: dict[str, Any],
+                     extra: Optional[dict[str, Any]] = None) -> None:
+    """Riscrive ``meta.greenup`` (+ extra: exit_kind/exit_reason) sul meta
+    CORRENTE della riga (close_trade l'ha già aggiornata: cashout_at, hedge…)."""
+    try:
+        getter = getattr(db, "get_trade", None)
+        cur = (getter(int(tr["id"])) if callable(getter) else None) or tr
+    except Exception:  # noqa: BLE001
+        cur = tr
+    meta = {**(cur.get("meta") or {}), GREENUP_KEY: req, **(extra or {})}
+    if req.get("sent"):
+        meta.pop(GREENUP_HOLD_KEY, None)
+    try:
+        db.update_trade(int(tr["id"]), meta=meta)
+        tr["meta"] = meta
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] persistenza meta.greenup KO (trade %s): %s", tr.get("id"), str(ex)[:120])
+
+
+def _greenup_stamp_closing(db, closing_id: Any, kind: str, reason: str) -> None:
+    """exit_kind/exit_reason anche sulla gamba di chiusura (contratto UI ExitBadge)."""
+    if closing_id is None:
+        return
+    try:
+        getter = getattr(db, "get_trade", None)
+        leg = getter(int(closing_id)) if callable(getter) else None
+        base = dict((leg or {}).get("meta") or {}) if leg else {"cashout": True}
+        db.update_trade(int(closing_id), meta={**base, "exit_kind": kind, "exit_reason": reason})
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] exit_kind sulla chiusura %s KO: %s", closing_id, str(ex)[:120])
+
+
+def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigger: str,
+                  info: dict[str, Any], prices: dict[str, Any], params: dict[str, Any],
+                  now: datetime, minute: int, score: str, laid: str,
+                  residual: Optional[float], distance: Optional[int]) -> bool:
+    """Invia la chiusura integrale (o del residuo). Marker ``meta.greenup``
+    PRIMA dell'ordine; cooldown/cap sui tentativi; exit_kind/exit_reason su
+    apertura E chiusura; log 'greenup' con tutti i numeri della decisione."""
+    from Betfair.safe_strategy import execution as X
+    from Betfair.safe_strategy import exits as XE
+
+    prev = meta.get(GREENUP_KEY) if isinstance(meta.get(GREENUP_KEY), dict) else {}
+    attempts = int(prev.get("attempts") or 0)
+    max_attempts = int(params["greenup_max_attempts"])
+    if attempts >= max_attempts:
+        if not prev.get("failed"):
+            _greenup_write_key(db, tr, meta, GREENUP_KEY, {**prev, "failed": True})
+            db.log("error", {"reason": "greenup_attempts_exhausted", "trade_id": tr.get("id"),
+                             "event_id": tr.get("event_id"), "attempts": attempts,
+                             "residual": residual})
+        return False
+    last = XE.parse_ts(prev.get("last_attempt_ts"))
+    if last is not None and now.timestamp() - last < float(params["greenup_retry_s"]):
+        return False   # cooldown fra un tentativo e il successivo
+    locked = info.get("locked_pnl")
+    kind = "profit" if (locked is not None and float(locked) >= 0.0) else "loss"
+    if prev.get("sent") and prev.get("kind"):
+        kind = str(prev["kind"])   # residuo: stesso badge della prima chiusura
+    attempts += 1
+    req = {**prev, "trigger": trigger, "kind": kind, "ts": prev.get("ts") or now.isoformat(),
+           "minute": minute, "score": score, "laid_score": laid,
+           "p_lose": info.get("p_lose"), "p_source": info.get("p_source"),
+           "locked_pnl": locked, "why": info.get("why"),
+           "attempts": attempts, "last_attempt_ts": now.isoformat(),
+           "sent": bool(prev.get("sent")), "failed": False}
+    # marker PRIMA dell'ordine: un crash tra ordine e conferma non deve mai
+    # produrre una seconda chiusura (close_trade blocca comunque con una
+    # chiusura 'pending' della stessa apertura)
+    new_meta = {k: v for k, v in meta.items() if k != GREENUP_HOLD_KEY}
+    new_meta[GREENUP_KEY] = req
+    db.update_trade(int(tr["id"]), meta=new_meta)
+    tr["meta"] = new_meta
+    extra = {"runner_name": tr.get("runner_name"), "kickoff": tr.get("kickoff")}
+    if tr.get("phase"):
+        extra["phase"] = tr.get("phase")
+    try:
+        res = X.close_trade(db=db, market=market, trade=tr, prices=prices, amount=None,
+                            fraction=1.0, mode=str(tr.get("mode") or "paper"), now=now,
+                            params=params, origin="auto", table_prefix="omega", extra_row=extra)
+    except Exception as ex:  # noqa: BLE001
+        res = {"error": "exception", "detail": str(ex)[:160]}
+    err = res.get("error")
+    if err == "chiusura_in_corso":
+        req["attempts"] = attempts - 1     # non è un fallimento: si riguarda al ciclo dopo
+        _greenup_persist(db, tr, req)
+        return False
+    if err in ("posizione_gia_chiusa", "niente_da_chiudere") or \
+            (isinstance(err, str) and err.startswith("trade_non_aperto")):
+        req.update({"sent": True, "note": err})
+        _greenup_persist(db, tr, req)
+        return False
+    if err:
+        req.update({"last_error": err, "detail": res.get("detail")})
+        failed = attempts >= max_attempts
+        req["failed"] = failed
+        _greenup_persist(db, tr, req)
+        db.log("error" if failed else "greenup_retry",
+               {"reason": "greenup_failed" if failed else err, "trade_id": tr.get("id"),
+                "event_id": tr.get("event_id"), "trigger": trigger, "attempts": attempts,
+                "err": err, "detail": res.get("detail"), "residual": residual})
+        return False
+    residual_after = res.get("residual_size")
+    req.update({"sent": True, "closing_trade_id": res.get("closing_trade_id"),
+                "price": res.get("price"), "size": res.get("size"),
+                "pending_fill": bool(res.get("pending_fill")), "residual_after": residual_after})
+    req.pop("last_error", None)
+    req.pop("detail", None)
+    ui_reason = _GREENUP_REASON.get(trigger, trigger)
+    _greenup_persist(db, tr, req, extra={"exit_kind": kind, "exit_reason": ui_reason})
+    _greenup_stamp_closing(db, res.get("closing_trade_id"), kind, ui_reason)
+    db.log("greenup", {
+        "trade_id": tr.get("id"), "event_id": tr.get("event_id"), "trigger": trigger,
+        "minute": minute, "score": score, "laid_score": laid, "distance": distance,
+        "p_lose": info.get("p_lose"), "p_source": info.get("p_source"),
+        "locked_pnl": res.get("locked_pnl") if res.get("locked_pnl") is not None else locked,
+        "ev_hold": info.get("ev_hold"), "decision": "exit",
+        "back_price": prices.get("back"), "lay_price": prices.get("lay"),
+        "entry_price": tr.get("price"), "side": res.get("side"), "price": res.get("price"),
+        "size": res.get("size"), "closing_trade_id": res.get("closing_trade_id"),
+        "exit_kind": kind, "exit_reason": ui_reason, "why": info.get("why"),
+        "pending_fill": bool(res.get("pending_fill")), "attempt": attempts,
+        "residual_before": residual, "residual_after": residual_after,
+        "hedged_size": res.get("hedged_size"), "mode": tr.get("mode"),
+    })
+    return True
+
+
+def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
+                 now: datetime, payload: Optional[dict]) -> bool:
+    """Una posizione: tracciamento, trigger, prezzi, decisione, invio. True = inviata."""
+    from Betfair.safe_strategy import execution as X
+    from Betfair.safe_strategy import exits as XE
+
+    if not isinstance(payload, dict):
+        return False                                   # evento non nel feed: ci pensa il settlement
+    laid = E.parse_scoreline(str(tr.get("runner_name") or ""))
+    if laid is None:
+        return False                                   # aggregati: nessun punteggio da inseguire
+    sh, sa, minute = payload.get("score_home"), payload.get("score_away"), payload.get("minute")
+    if sh is None or sa is None or minute is None:
+        return False
+    sh, sa, minute = int(sh), int(sa), int(minute)
+    now_ts = now.timestamp()
+    # tracciamento (riuso exits.track): punteggio d'ingresso, ultimo gol OSSERVATO
+    old_meta = dict(tr.get("meta") or {})
+    meta = XE.track(tr, payload, now_ts)
+    if meta.get(XE.TRACK_KEY) != old_meta.get(XE.TRACK_KEY):
+        db.update_trade(int(tr["id"]), meta=meta)
+        tr["meta"] = meta
+    block, half = _greenup_block(tr, payload)
+    if half and minute > 45:
+        return False                                   # HALF TIME SCORE: si regola all'intervallo
+    sid = int(tr.get("selection_id") or 0)
+    h_laid, a_laid = laid
+    reachable = h_laid >= sh and a_laid >= sa
+    distance = (h_laid - sh) + (a_laid - sa) if reachable else None
+    score, laid_str = f"{sh}-{sa}", f"{h_laid}-{a_laid}"
+    req = meta.get(GREENUP_KEY) if isinstance(meta.get(GREENUP_KEY), dict) else None
+    residual: Optional[float] = None
+    trigger: Optional[str] = None
+    if req and req.get("sent"):
+        # RESIDUO di un'uscita già decisa (fill cappato): niente nuova decisione
+        residual = _greenup_residual(meta)
+        if residual is None or residual < X.HEDGE_EPS:
+            return False
+        trigger = str(req.get("trigger") or "goal")
+    else:
+        if not reachable:
+            return False                               # il lay non può più perdere: nulla da proteggere
+        if distance <= int(params["greenup_trigger_distance"]):
+            trigger = "goal"
+    # prezzi della selezione: feed (stesso mercato, solo se OPEN); REST SOLO se
+    # il rischio è già reale (gol / residuo) — mai una lettura Betfair per ciclo
+    # e per trade quando il feed non copre il mercato (regola del feed unico)
+    if block is not None:
+        prices, wait = _greenup_prices_from_block(block, sid)
+    elif trigger is not None:
+        prices, wait = _cashout_prices(market, tr), "prezzi_non_disponibili"
+    else:
+        return False
+    if not prices or not (prices.get("back") or prices.get("lay")):
+        if trigger is not None:
+            _greenup_wait(db, tr, meta, trigger, wait or "prezzi_non_disponibili")
+        return False
+    entry_price = float(tr.get("price") or 0.0)
+    lay_now = _fnum(prices.get("lay"))
+    if trigger is None and lay_now and entry_price > 1.0 \
+            and lay_now <= float(params["greenup_price_trigger_ratio"]) * entry_price:
+        trigger = "price"
+    # assestamento dopo un gol (gol e crollo di quota; mai per il residuo)
+    last_goal = XE.parse_ts((meta.get(XE.TRACK_KEY) or {}).get("last_goal_ts"))
+    if residual is None and trigger in ("goal", "price") and last_goal is not None \
+            and now_ts - last_goal < float(params["greenup_settle_delay_s"]):
+        return False
+    # piano di chiusura ai prezzi correnti, al netto delle gambe già fillate
+    legs = X.known_closings(db, tr)
+    if legs is None:
+        return False                                   # lettura chiusure KO: fail-closed
+    locked: Optional[float] = None
+    try:
+        plan = X.close_plan(tr, best_back=_fnum(prices.get("back")), best_lay=lay_now,
+                            fraction=1.0, closings=legs)
+        if plan.actionable:
+            locked = X.locked_pnl(tr, plan)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] greenup close_plan KO (trade %s): %s", tr.get("id"), str(ex)[:120])
+    exp_win, exp_lose = X.net_exposures(tr, legs)
+    hold_profit = float(exp_lose)                      # lay: profitto se il bancato NON esce
+    loss_if_lose = max(0.0, -float(exp_win))           # lay: liability residua
+    if trigger is None and minute >= int(params["greenup_take_profit_minute"]) \
+            and locked is not None and hold_profit > 0 \
+            and locked >= float(params["greenup_take_profit_frac"]) * hold_profit:
+        trigger = "take_profit"
+    if trigger is None:
+        return False
+    if residual is not None:
+        p_lose, p_source = _fnum(req.get("p_lose")), str(req.get("p_source") or "none")
+        action, why = "exit", "residuo di una chiusura già decisa"
+    else:
+        state = M.LiveState(minute, sh, sa, int(payload.get("red_home") or 0),
+                            int(payload.get("red_away") or 0))
+        p_lose, p_source = _greenup_p_lose(db=db, tr=tr, payload=payload, laid=laid,
+                                           state=state, half=half, prices=prices)
+        action, why = _greenup_decide(trigger, p_lose, locked, hold_profit, loss_if_lose,
+                                      tr.get("size"), params, distance)
+    ev_hold = None if p_lose is None else XE.ev_hold(p_lose, hold_profit, loss_if_lose)
+    info = {"p_lose": p_lose, "p_source": p_source, "locked_pnl": locked, "ev_hold": ev_hold,
+            "decision": action, "hold_profit": round(hold_profit, 2),
+            "loss_if_lose": round(loss_if_lose, 2), "why": why}
+    if action == "hold":
+        _greenup_hold(db, tr, meta, trigger, info, minute, score, laid_str, prices, now)
+        return False
+    return _greenup_send(db=db, market=market, tr=tr, meta=meta, trigger=trigger, info=info,
+                         prices=prices, params=params, now=now, minute=minute, score=score,
+                         laid=laid_str, residual=residual, distance=distance)
+
+
+def process_auto_greenup(*, params: dict[str, Any], market, db, now: datetime,
+                         feed: Any = None) -> int:
+    """Fase GREEN-UP del ciclo: per ogni gamba lay aperta legge il feed e chiude
+    a mercato quando scatta un trigger (§12). Ritorna il n. di chiusure inviate.
+    ``feed``: event_id → payload live (default: feed unico, solo col market reale)."""
+    if not _greenup_active(params):
+        return 0
+    try:
+        candidates = _greenup_candidates(db)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "greenup_candidates_failed", "err": str(ex)[:160]})
+        return 0
+    if not candidates:
+        return 0
+    if feed is None:
+        feed = lambda eid: _feed_state(market, eid)  # noqa: E731
+    sent = 0
+    for tr in candidates:
+        try:
+            payload = feed(str(tr.get("event_id") or ""))
+            if _greenup_one(tr=tr, params=params, market=market, db=db, now=now, payload=payload):
+                sent += 1
+        except Exception as ex:  # noqa: BLE001 — una posizione rotta non blocca le altre
+            db.log("error", {"reason": "greenup_failed", "trade_id": tr.get("id"),
+                             "err": str(ex)[:160]})
+    return sent
+
+
 def now_iso() -> str:
     return _now().isoformat()
 
@@ -2506,7 +2982,7 @@ def process_missions(*, market, db, now: datetime) -> int:
 # UN ciclo completo (testabile con fake market/db)
 # ---------------------------------------------------------------------------
 def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None,
-             score_lookup: Any = None) -> dict[str, Any]:
+             score_lookup: Any = None, greenup_feed: Any = None) -> dict[str, Any]:
     now = now or _now()
     control = db.read_control()
     if control is None:
@@ -2533,6 +3009,16 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     #    blocca i NUOVI ingressi, non la regolazione dei lay già piazzati (I3).
     n_settled = settle_open(params=params, market=market, db=db, now=now)
 
+    # 1-bis) GREEN-UP AUTOMATICO (§12) — SEMPRE, anche a bot fermo, paper e live:
+    #    una gamba aperta va gestita fino alla fine (uscita a mercato sul gol /
+    #    crollo di quota / take-profit), fermare il bot blocca solo i nuovi ingressi.
+    try:
+        n_greenup = process_auto_greenup(params=params, market=market, db=db, now=now,
+                                         feed=greenup_feed)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "greenup_phase_failed", "err": str(ex)[:160]})
+        n_greenup = 0
+
     # 2) MODALITÀ MANUALE — SEMPRE (indipendente dallo stato dell'automatico):
     #    esegue le richieste della UI (refresh eventi, carica mercati/quote, piazza).
     try:
@@ -2551,9 +3037,10 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     if status == "stopping":
         db.set_control(status="stopped", stopped_at=now.isoformat())
         db.log("stop", {})
-        return {"stopped": True, "settled": n_settled, "manual": n_manual}
+        return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup}
     if status != "running":
-        return {"idle": True, "status": status, "settled": n_settled, "manual": n_manual}
+        return {"idle": True, "status": status, "settled": n_settled, "manual": n_manual,
+                "greenup": n_greenup}
 
     # 2) universo eventi del giorno + aggregati freschi
     try:
@@ -2621,7 +3108,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     }
     db.set_control(stats=stats, heartbeat_at=now.isoformat())
     return {"placed": n_placed, "settled": n_settled, "events": len(events),
-            "missions": n_missions, "stats": stats}
+            "missions": n_missions, "greenup": n_greenup, "stats": stats}
 
 
 # ---------------------------------------------------------------------------

@@ -11,9 +11,17 @@ Un unico processo locale (lock 127.0.0.1:47318) che, come ``omega_service``:
      strategie, chiudendoli a mercato con ``execution.close_trade``;
   d) se ``status='running'``, valuta i segnali del motore Safe Strategy sul FEED
      UNICO (``safe_strategy_scan``) e piazza con pattern RESERVE-FIRST;
-  e) calcola le OPPORTUNITÀ di modello per la UI (throttled) e, solo se
-     esplicitamente abilitato, le tratta;
+  e) calcola le OPPORTUNITÀ di modello per la UI (throttled) — fuse con le
+     ANOMALIE (``anomaly``), le COMBO (``combos``) e le opportunità TENNIS
+     (``tennis_opportunity``), moduli opzionali importati in modo guardato — e,
+     solo se esplicitamente abilitato per tipo, le tratta; le anomalie sono
+     valutate a OGNI ciclo (cecchino) sulle righe con quote cambiate;
   f) scrive stats + heartbeat.
+
+RISCHIO: ogni piazzamento (segnali, modello, anomalie, combo, tennis) passa da
+``risk.check`` PRIMA della riserva (loss stop giornaliero, cap per evento e
+giornata, posizioni per evento); le richieste manuali della UI hanno il solo
+controllo "morbido" dei cap. Un blocco produce il log 'risk_block' (deduplicato).
 
 MODALITÀ: il ``mode`` viene SEMPRE dal control (toggle PAPER/LIVE + conferma
 della UI, come Omega). Nessun percorso qui promuove un paper a live.
@@ -38,6 +46,7 @@ from Betfair.omega import omega_market as _real_market
 from Betfair.safe_strategy import bot_db as _real_db
 from Betfair.safe_strategy import execution as X
 from Betfair.safe_strategy import exits as XE
+from Betfair.safe_strategy import risk as RK
 
 logger = logging.getLogger("safe.bot")
 
@@ -56,6 +65,10 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "min_size_available_factor": 1.0,
     "opps_interval_s": 10,
     "auto_trade_opportunities": False,
+    # tipi aggiuntivi di opportunità (moduli opzionali): tutti SPENTI per default
+    "auto_trade_anomalies": False,
+    "auto_trade_combos": False,
+    "auto_trade_tennis": False,
     "opps_min_confidence": 0.7,
     "opps_min_edge": 0.03,
     "opps_stake": 5,
@@ -67,6 +80,8 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "max_spread_ratio": 1.6,
     # regole di uscita automatica (sezione fusa in profondità: exits.merge_exit_params)
     "exits": dict(XE.DEFAULT_EXIT_PARAMS),
+    # motore di rischio di tutti i piazzamenti (sezione fusa: risk.merge_risk_params)
+    "risk": dict(RK.DEFAULT_RISK_PARAMS),
 }
 
 
@@ -95,6 +110,35 @@ def _import_opportunity_module() -> Any:
         logger.warning("[safe.bot] modulo opportunita' NON disponibile (%s): "
                        "sezione opportunita' disattivata.", str(ex)[:160])
         return None
+
+
+_OPTIONAL_MODS: dict[str, Any] = {}
+OPTIONAL_MODULES = ("anomaly", "combos", "tennis_opportunity")
+
+
+def _import_optional(name: str) -> Any:
+    """Modulo opzionale ``Betfair.safe_strategy.<name>`` (anomaly / combos /
+    tennis_opportunity): None se assente — il bot lavora senza (log una volta)."""
+    if name in _OPTIONAL_MODS:
+        return _OPTIONAL_MODS[name]
+    try:
+        import importlib
+
+        mod = importlib.import_module(f"Betfair.safe_strategy.{name}")
+    except Exception as ex:  # noqa: BLE001 — assente o rotto: si va avanti senza
+        logger.info("[safe.bot] modulo opzionale '%s' non disponibile: %s", name, str(ex)[:120])
+        mod = None
+    _OPTIONAL_MODS[name] = mod
+    return mod
+
+
+def _extra_mods(extra: Optional[dict]) -> dict[str, Any]:
+    """{'anomaly','combos','tennis'}: iniettati (test) o importati in modo guardato."""
+    if isinstance(extra, dict):
+        return {"anomaly": extra.get("anomaly"), "combos": extra.get("combos"),
+                "tennis": extra.get("tennis")}
+    return {"anomaly": _import_optional("anomaly"), "combos": _import_optional("combos"),
+            "tennis": _import_optional("tennis_opportunity")}
 
 
 def _omega_service() -> Any:
@@ -152,6 +196,10 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
         out["variants"] = list(DEFAULT_PARAMS["variants"])
     # ``exits`` parziale dell'utente → sezione completa (default + override + clamp)
     out["exits"] = XE.merge_exit_params(raw.get("exits"))
+    out["risk"] = RK.merge_risk_params(raw.get("risk"))
+    for k in ("auto_trade_opportunities", "auto_trade_anomalies", "auto_trade_combos",
+              "auto_trade_tennis"):
+        out[k] = bool(out.get(k))
     return out
 
 
@@ -483,7 +531,8 @@ def _read_market(market, tr: dict[str, Any]):
 # (c) richieste della UI — SEMPRE, anche a bot fermo
 # ---------------------------------------------------------------------------
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
-                     params: dict[str, Any], now: datetime) -> int:
+                     params: dict[str, Any], now: datetime,
+                     risk_ctx: Optional[dict] = None) -> int:
     stale = getattr(db, "fail_stale_processing", None)
     if callable(stale):
         try:
@@ -506,7 +555,8 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
         try:
             if kind == "place":
                 res = _request_place(db=db, market=market, rows_by_event=rows_by_event,
-                                     payload=payload, params=params, now=now)
+                                     payload=payload, params=params, now=now,
+                                     risk_ctx=risk_ctx)
             elif kind == "cashout":
                 res = _request_cashout(db=db, market=market, rows_by_event=rows_by_event,
                                        payload=payload, params=params, now=now)
@@ -525,8 +575,9 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
 
 
 def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
-                   now: datetime) -> dict:
-    """Piazzamento MANUALE dalla UI: reserve-first, stesse barriere dell'automatico."""
+                   now: datetime, risk_ctx: Optional[dict] = None) -> dict:
+    """Piazzamento MANUALE dalla UI: reserve-first, stesse barriere dell'automatico
+    più il controllo MORBIDO del rischio (solo i cap di esposizione)."""
     event_id = str(payload.get("event_id") or "")
     market_id = str(payload.get("market_id") or "")
     market_type = str(payload.get("market_type") or "").upper()
@@ -565,6 +616,13 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     cap = float(params.get("max_liability_per_trade") or 0.0)
     if cap > 0 and liability > cap:
         return {"error": "max_liability_per_trade_superato", "liability": liability}
+    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params)
+    blocked = _risk_gate(db, now, params, risk_ctx,
+                         {"event_id": event_id, "market_type": market_type,
+                          "liability": liability, "strategy": "manual"},
+                         soft=True, signal_key=f"manual:{market_id}:{selection_id}:{side}")
+    if blocked:
+        return {"error": "risk_block", "reason": blocked, "liability": liability}
 
     meta: dict[str, Any] = {"manual": True}
     if idem:
@@ -585,6 +643,7 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"error": "riserva_fallita", "detail": str(ex)[:160]}
     if not trade_id:
         return {"error": "riserva_senza_id"}
+    _risk_commit(risk_ctx, {**row, "id": trade_id})
     out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
                    now=now, best_size=best_size,
                    ladder=(prices or {}).get("lay_ladder") or ())
@@ -706,7 +765,7 @@ def _exit_candidates(db) -> list[dict[str, Any]]:
             continue
         if str(t.get("origin") or "") != "auto":
             continue
-        if str(t.get("strategy") or "") not in XE.EXIT_STRATEGIES:
+        if str(t.get("strategy") or "") not in XE.EXIT_STRATEGIES + XE.MODEL_STRATEGIES:
             continue
         req = (t.get("meta") or {}).get(XE.REQUEST_KEY)
         if isinstance(req, dict):
@@ -783,6 +842,7 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
         trade["meta"] = meta
     req = meta.get(XE.REQUEST_KEY) if isinstance(meta.get(XE.REQUEST_KEY), dict) else None
     residual: Optional[float] = None
+    is_model = str(trade.get("strategy") or "") in XE.MODEL_STRATEGIES
     if req and req.get("sent"):
         # RESIDUO di un'uscita già decisa e inviata (fill cappato): la regola è
         # già stata applicata, si chiude il residuo con cooldown e cap propri
@@ -802,6 +862,8 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
             return False   # cooldown fra un tentativo sul residuo e il successivo
         decision = XE.ExitDecision(str(req.get("kind") or "time"),
                                    str(req.get("reason") or "residuo"), 0.0)
+    elif is_model:
+        decision = None   # trade di MODELLO: si decide sui prezzi (dopo le guardie)
     else:
         decision = XE.decide(trade, payload, meta, now_ts, xp)
         if decision is None:
@@ -809,22 +871,35 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
         if now_ts < float(decision.not_before_ts or 0.0):
             return False   # assestamento post-evento: si aspetta
     if not XE.feed_is_fresh(row, now_ts, scanner_ts):
-        _exit_wait(db, trade, meta, decision, "feed_non_fresco")
+        if decision is not None:
+            _exit_wait(db, trade, meta, decision, "feed_non_fresco")
         return False
     if XE.market_open(trade, payload) is False:
-        _exit_wait(db, trade, meta, decision, "mercato_sospeso")
+        if decision is not None:
+            _exit_wait(db, trade, meta, decision, "mercato_sospeso")
         return False
     prices = prices_from_row(row, market_type=str(trade.get("market_type") or ""),
                              selection_id=int(trade.get("selection_id") or 0),
                              market_id=trade.get("market_id"))
     if not prices or not (prices.get("back") or prices.get("lay")):
-        _exit_wait(db, trade, meta, decision, "prezzi_non_nel_feed")
+        if decision is not None:
+            _exit_wait(db, trade, meta, decision, "prezzi_non_nel_feed")
         return False
-    hold, info = _model_gate(db=db, trade=trade, meta=meta, decision=decision,
-                             prices=prices, payload=payload, params=params, xp=xp,
-                             now=now, opp_mod=opp_mod, opps_state=opps_state)
-    if hold:
-        return False   # uscita in profitto che bloccherebbe una perdita: si tiene
+    if decision is None:
+        decision, info = _decide_model_exit(db=db, trade=trade, meta=meta, prices=prices,
+                                            payload=payload, params=params, xp=xp, now=now,
+                                            opp_mod=opp_mod, opps_state=opps_state)
+        if decision is None:
+            return False
+        if now_ts < float(decision.not_before_ts or 0.0):
+            _exit_wait(db, trade, meta, decision, "assestamento_post_evento")
+            return False
+    else:
+        hold, info = _model_gate(db=db, trade=trade, meta=meta, decision=decision,
+                                 prices=prices, payload=payload, params=params, xp=xp,
+                                 now=now, opp_mod=opp_mod, opps_state=opps_state)
+        if hold:
+            return False   # uscita in profitto che bloccherebbe una perdita: si tiene
     return _send_exit(db=db, market=market, trade=trade, meta=meta, decision=decision,
                       prices=prices, payload=payload, params=params, xp=xp, now=now,
                       residual=residual, model_info=info)
@@ -874,11 +949,10 @@ def _p_selection_wins(*, db, trade: dict[str, Any], payload: dict[str, Any],
     tennis → ``tennis_winprob.p_match`` dal punteggio (hold stimati, servizio
     ignoto → media dei due casi). Riserva: probabilità implicita del feed
     ('market'). None se nemmeno quella è calcolabile."""
-    strategy = str(trade.get("strategy") or "")
     tr = meta.get(XE.TRACK_KEY) or {}
     side = tr.get("side") or XE.position_side(trade, payload)
     try:
-        if strategy == "tennis":
+        if XE.is_tennis(trade):
             p = _p_tennis(payload, side)
             if p is not None:
                 return p, "model"
@@ -900,19 +974,7 @@ def _p_calcio(*, db, trade: dict[str, Any], payload: dict[str, Any], side: Optio
     model = _exit_model(opp_mod, params)
     if model is None or payload.get("score_home") is None or payload.get("score_away") is None:
         return None
-    mt = str(trade.get("market_type") or "").upper()
-    strategy = str(trade.get("strategy") or "")
-    if mt == "MATCH_ODDS":
-        # la selezione della posizione: base = sfavorita (lay), punta = favorita (back)
-        sel_side = XE._side_by_selection(payload.get("odds"), trade.get("selection_id"),
-                                         ("home", "draw", "away"))
-        if sel_side is None and side in ("home", "away"):
-            sel_side = ("away" if side == "home" else "home") if strategy == "base" else side
-        key = sel_side
-    elif mt == "CORRECT_SCORE" and side in ("home", "away"):
-        key = f"cs_any_other_{side}"
-    else:
-        return None
+    key = _prob_key_for_trade(trade, payload, side)
     if not key:
         return None
     state = opps_state if opps_state is not None else _OPPS_STATE
@@ -923,6 +985,122 @@ def _p_calcio(*, db, trade: dict[str, Any], payload: dict[str, Any], side: Optio
                       ht_ratio=lam.get("ht_ratio"))
     p = book.get(key)
     return round(min(1.0, max(0.0, float(p))), 4) if p is not None else None
+
+
+_HOME_KEY_RE = re.compile(r"casa|home", re.IGNORECASE)
+_AWAY_KEY_RE = re.compile(r"ospite|away", re.IGNORECASE)
+_DRAW_KEY_RE = re.compile(r"draw|pareggio", re.IGNORECASE)
+_ANY_OTHER_KEY_RE = re.compile(r"any\s*other|altro", re.IGNORECASE)
+_ANY_UNQ_KEY_RE = re.compile(r"any\s*(other|unquoted)", re.IGNORECASE)
+
+
+def _prob_key_for_trade(trade: dict[str, Any], payload: dict[str, Any],
+                        side: Optional[str]) -> Optional[str]:
+    """Chiave del ``book`` (P che la SELEZIONE della posizione vinca) dal
+    mercato/selezione del trade: Match Odds → home|draw|away; CS → cs_H_A /
+    cs_any_other_*; O/U → over_X_Y|under_X_Y; BTTS → btts_yes|no; HT 1X2 →
+    ht_*; HT score → hts_*. None se non mappabile (→ riserva di mercato)."""
+    mt = str(trade.get("market_type") or "").upper()
+    strategy = str(trade.get("strategy") or "")
+    name = str(trade.get("selection_name") or "")
+    if mt == "MATCH_ODDS":
+        # la selezione della posizione: base = sfavorita (lay), punta = favorita (back)
+        sel_side = XE._side_by_selection(payload.get("odds"), trade.get("selection_id"),
+                                         ("home", "draw", "away"))
+        if sel_side is None and side in ("home", "away"):
+            sel_side = ("away" if side == "home" else "home") if strategy == "base" else side
+        return sel_side
+    if mt in ("CORRECT_SCORE", "HALF_TIME_SCORE"):
+        prefix = "cs_" if mt == "CORRECT_SCORE" else "hts_"
+        if strategy == "esatto" and side in ("home", "away"):
+            return f"cs_any_other_{side}"
+        sc = XE.parse_calcio_score(name)
+        if sc is not None and not _ANY_OTHER_KEY_RE.search(name):
+            return f"{prefix}{sc[0]}_{sc[1]}"
+        if prefix == "hts_" and _ANY_UNQ_KEY_RE.search(name):
+            return "hts_any_unquoted"
+        if _ANY_OTHER_KEY_RE.search(name):
+            if _HOME_KEY_RE.search(name):
+                return "cs_any_other_home"
+            if _AWAY_KEY_RE.search(name):
+                return "cs_any_other_away"
+            if _DRAW_KEY_RE.search(name):
+                return "cs_any_other_draw"
+        return None
+    if mt.startswith("OVER_UNDER"):
+        line = XE.ou_line(trade)
+        if line is None:
+            return None
+        k = str(float(line)).replace(".", "_")
+        if XE._UNDER_RE.search(name):
+            return f"under_{k}"
+        if XE._OVER_RE.search(name):
+            return f"over_{k}"
+        return None
+    if mt == "BOTH_TEAMS_TO_SCORE":
+        if XE._YES_RE.match(name):
+            return "btts_yes"
+        if XE._NO_RE.match(name):
+            return "btts_no"
+        return None
+    if mt == "HALF_TIME":
+        if _DRAW_KEY_RE.search(name):
+            return "ht_draw"
+        home, away = _event_teams(payload)
+        low = name.strip().lower()
+        if home and low == str(home).strip().lower():
+            return "ht_home"
+        if away and low == str(away).strip().lower():
+            return "ht_away"
+        if _HOME_KEY_RE.search(name):
+            return "ht_home"
+        if _AWAY_KEY_RE.search(name):
+            return "ht_away"
+        return None
+    return None
+
+
+def _decide_model_exit(*, db, trade: dict[str, Any], meta: dict[str, Any],
+                       prices: dict[str, Any], payload: dict[str, Any],
+                       params: dict[str, Any], xp: dict[str, Any], now: datetime,
+                       opp_mod: Any, opps_state: Optional[dict]
+                       ) -> "tuple[Optional[XE.ExitDecision], dict[str, Any]]":
+    """Decisione per un trade di MODELLO (strategia 'model': modello, anomalia,
+    combo, tennis): P(perdita) ricalcolata (modello → riserva di mercato), P&L
+    bloccato e profitto massimo al netto delle gambe già fillate, poi la regola
+    pura ``exits.decide_model``. Ritorna (decisione | None, numeri)."""
+    locked: Optional[float] = None
+    legs = X.known_closings(db, trade) or []
+    try:
+        plan = X.close_plan(trade, best_back=_f(prices.get("back"), 0.0) or None,
+                            best_lay=_f(prices.get("lay"), 0.0) or None,
+                            fraction=1.0, closings=legs)
+        if plan.actionable:
+            locked = X.locked_pnl(trade, plan)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] close_plan KO (trade %s): %s", trade.get("id"), str(ex)[:120])
+    exp_win, exp_lose = X.net_exposures(trade, legs)
+    is_lay = str(trade.get("side") or "").lower() == "lay"
+    max_profit = float(exp_lose if is_lay else exp_win)
+    loss_if_lose = max(0.0, -float(exp_win if is_lay else exp_lose))
+    p_sel, source = _p_selection_wins(db=db, trade=trade, payload=payload, prices=prices,
+                                      meta=meta, params=params, now=now, opp_mod=opp_mod,
+                                      opps_state=opps_state)
+    p_lose = None if p_sel is None else round(p_sel if is_lay else 1.0 - p_sel, 4)
+    p_entry = meta.get("p_lose_entry")
+    p_entry = float(p_entry) if isinstance(p_entry, (int, float)) else None
+    sit = XE.model_situation(trade, meta, payload, xp)
+    decision = XE.decide_model(p_lose=p_lose, p_lose_entry=p_entry, locked=locked,
+                               max_profit=max_profit, situation=sit, params=xp)
+    info = {"p_lose": p_lose, "source": source, "locked": locked,
+            "ev_hold": None if p_lose is None else XE.ev_hold(p_lose, max_profit, loss_if_lose),
+            "hold_profit": round(max_profit, 2), "loss_if_lose": round(loss_if_lose, 2),
+            "p_lose_entry": p_entry, "adverse_event": sit.get("adverse_event"),
+            "decided_against": sit.get("decided_against"),
+            "decision": "exit" if decision else "hold",
+            "why": (f"{decision.kind}:{decision.reason}" if decision
+                    else "modello: nessuna regola attiva, tengo")}
+    return decision, info
 
 
 def _p_tennis(payload: dict[str, Any], side: Optional[str]) -> Optional[float]:
@@ -1279,12 +1457,14 @@ _SKIP_LOG_STATE: dict[tuple[str, str], dict[str, Any]] = {}
 _SKIP_LOG_PRUNE_S = 600.0
 
 
-def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any]) -> bool:
-    """Log 'skip' deduplicato per (event_id, signal_key): si scrive alla prima
-    occorrenza, al CAMBIO di motivo, o dopo ``skip_log_interval_s`` con lo
-    stesso motivo. Le chiavi non viste da 10 min vengono eliminate.
-    Ritorna True se il log è stato scritto."""
-    key = (str(payload.get("event_id") or ""), str(payload.get("signal_key") or ""))
+def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any],
+              kind: str = "skip") -> bool:
+    """Log 'skip' (o ``kind``, es. 'risk_block') deduplicato per (kind, event_id,
+    signal_key): si scrive alla prima occorrenza, al CAMBIO di motivo, o dopo
+    ``skip_log_interval_s`` con lo stesso motivo. Le chiavi non viste da 10 min
+    vengono eliminate. Ritorna True se il log è stato scritto."""
+    key = (str(payload.get("event_id") or ""),
+           str(payload.get("signal_key") or "") + ("" if kind == "skip" else f"|{kind}"))
     reason = str(payload.get("reason") or "")
     now_ts = now.timestamp()
     every = float(params.get("skip_log_interval_s") or 0.0)
@@ -1296,17 +1476,77 @@ def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any]
              or now_ts - float(prev.get("logged_ts") or 0.0) >= every)
     if write:
         st[key] = {"reason": reason, "logged_ts": now_ts, "seen_ts": now_ts}
-        _log(db, "skip", payload)
+        _log(db, kind, payload)
     else:
         prev["seen_ts"] = now_ts
     return write
 
 
+# ---------------------------------------------------------------------------
+# RISCHIO: contesto di ciclo + gate prima di ogni riserva
+# ---------------------------------------------------------------------------
+def build_risk_ctx(db, now: datetime, params: dict[str, Any]) -> dict[str, Any]:
+    """{open: posizioni vive (no gambe di chiusura), realized_today, day_liability,
+    day_liability_model, agg}: UNA lettura per ciclo, aggiornata in memoria a
+    ogni riserva riuscita (``_risk_commit``). Letture KO → fail-closed: contesto
+    'bloccante' (loss stop finto) per non piazzare al buio."""
+    try:
+        open_ = [t for t in db.open_trades() or [] if not t.get("closes_trade_id")]
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "error", {"reason": "open_count_failed", "err": str(ex)[:160]})
+        return {"open": [], "realized_today": 0.0, "day_liability": 0.0,
+                "day_liability_model": 0.0, "agg": {}, "unavailable": True}
+    try:
+        agg = dict(db.aggregates() or {})
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] aggregates KO: %s", str(ex)[:160])
+        agg = {}
+    return {"open": open_, "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
+            "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
+            "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
+            "agg": agg}
+
+
+def _risk_gate(db, now: datetime, params: dict[str, Any], ctx: dict[str, Any],
+               candidate: dict[str, Any], *, soft: bool = False,
+               signal_key: str = "") -> Optional[str]:
+    """None se il piazzamento passa, altrimenti il motivo (loggato 'risk_block'
+    deduplicato per segnale e motivo)."""
+    if ctx.get("unavailable"):
+        reason: Optional[str] = "stato_rischio_non_leggibile"
+    else:
+        ok, reason = RK.check(ctx.get("open") or [], candidate, ctx.get("realized_today"),
+                              params, day_liability=ctx.get("day_liability"),
+                              day_liability_model=ctx.get("day_liability_model"), soft=soft)
+        if ok:
+            return None
+    _log_skip(db, now, params, {"event_id": str(candidate.get("event_id") or ""),
+                                "signal_key": signal_key, "reason": reason,
+                                "strategy": candidate.get("strategy"),
+                                "market_type": candidate.get("market_type"),
+                                "liability": candidate.get("liability"),
+                                "realized_today": ctx.get("realized_today"),
+                                "day_liability": ctx.get("day_liability"),
+                                "soft": soft}, kind="risk_block")
+    return reason
+
+
+def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
+    """Riserva riuscita: la posizione conta SUBITO nel contesto del ciclo."""
+    if not isinstance(ctx, dict):
+        return
+    ctx.setdefault("open", []).append(row)
+    liab = max(0.0, _f(row.get("liability"), 0.0))
+    ctx["day_liability"] = float(ctx.get("day_liability") or 0.0) + liab
+    if str(row.get("strategy") or "") in RK.MODEL_STRATEGIES:
+        ctx["day_liability_model"] = float(ctx.get("day_liability_model") or 0.0) + liab
+
+
 def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
-                   mode: str, now: datetime) -> "tuple[int, int]":
+                   mode: str, now: datetime, risk_ctx: Optional[dict] = None) -> "tuple[int, int]":
     """(piazzati, segnali_attivi). Un segnale già tradato non si ripiazza (I1
     per (event_id, signal_key)); le barriere di rischio sono le stesse del
-    manuale."""
+    manuale più il motore ``risk`` (gate prima della riserva)."""
     if engine is None:
         return 0, 0
     try:
@@ -1321,11 +1561,11 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     except Exception as ex:  # noqa: BLE001 — FAIL-CLOSED: senza idempotenza NON si piazza
         _log(db, "error", {"reason": "traded_keys_failed", "err": str(ex)[:160]})
         return 0, len(signals)
-    try:
-        open_n = len([t for t in db.open_trades() or [] if not t.get("closes_trade_id")])
-    except Exception as ex:  # noqa: BLE001
-        _log(db, "error", {"reason": "open_count_failed", "err": str(ex)[:160]})
+    if risk_ctx is None:
+        risk_ctx = build_risk_ctx(db, now, params)
+    if risk_ctx.get("unavailable"):
         return 0, len(signals)
+    open_n = len(risk_ctx.get("open") or [])
 
     variants = {str(v) for v in (params.get("variants") or [])}
     max_open = int(params.get("max_open_trades") or 0)
@@ -1401,6 +1641,11 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                        "reason": "max_liability_per_trade", "liability": liability})
             continue
+        if _risk_gate(db, now, params, risk_ctx,
+                      {"event_id": str(event_id), "market_type": _sig(s, "market_type"),
+                       "liability": liability, "strategy": variant},
+                      signal_key=str(key)):
+            continue
         row = _reserve_row(
             event_id=str(event_id), event_name=_sig(s, "event_name"),
             sport=str(_sig(s, "sport") or "calcio"),
@@ -1425,6 +1670,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         if not trade_id:
             continue
         traded.add((str(event_id), str(key)))
+        _risk_commit(risk_ctx, {**row, "id": trade_id})
         out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
                        now=now, best_size=avail, ladder=())
         if out.status != "error":
@@ -1652,33 +1898,125 @@ def _hash(obj: Any) -> str:
     return hashlib.sha1(blob.encode("utf-8", "replace")).hexdigest()
 
 
+def _ev_conf(o: Any) -> float:
+    try:
+        return float(o.get("ev") or 0.0) * float(o.get("confidence") or 0.0)
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
+
+
+def _tag(opps: Any, kind: str) -> list[dict]:
+    """Lista di dict con ``kind`` valorizzato (gli elementi non-dict si scartano)."""
+    out: list[dict] = []
+    for o in opps or []:
+        if isinstance(o, dict):
+            o = dict(o)
+            o.setdefault("kind", kind)
+            out.append(o)
+    return out
+
+
+def _tennis_model(mod: Any, params: dict[str, Any], st: dict[str, Any]) -> Any:
+    """TennisOpportunityModel(params) condiviso nello stato (uno per processo)."""
+    if mod is None:
+        return None
+    cached = st.get("tennis_model")
+    if cached is not None and st.get("tennis_mod") is mod:
+        return cached
+    try:
+        m = mod.TennisOpportunityModel(params)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.bot] TennisOpportunityModel KO: %s", str(ex)[:120])
+        return None
+    st["tennis_model"], st["tennis_mod"] = m, mod
+    return m
+
+
+def _book_for(db, model: Any, opp_mod: Any, event_id: str, payload: dict, now: datetime,
+              st: dict[str, Any]) -> "tuple[Optional[dict], dict]":
+    """(book del modello sullo stato live, λ risolte); book None se KO."""
+    try:
+        lam = resolve_event_lambdas(db=db, event_id=event_id, payload=payload,
+                                    opp_mod=opp_mod, now=now, state=st)
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[safe.bot] resolve_event_lambdas KO %s: %s", event_id, str(ex)[:120])
+        lam = {"lambdas": DEFAULT_LAMBDAS, "league_id": None, "source": "default",
+               "ht_ratio": None}
+    try:
+        book = model.book(payload, lambdas=lam["lambdas"], league_id=lam.get("league_id"),
+                          ht_ratio=lam.get("ht_ratio"))
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[safe.bot] book KO %s: %s", event_id, str(ex)[:120])
+        book = None
+    return (book if isinstance(book, dict) else None), lam
+
+
 def process_opportunities(*, db, market, rows: list[dict], params: dict, model: Any,
                           opp_mod: Any, mode: str, now: datetime,
                           state: Optional[dict] = None,
                           auto_trade: bool = False,
-                          rows_by_event: Optional[dict] = None) -> dict[str, int]:
-    """Calcola le opportunità sugli in-play calcio e le pubblica (write-on-change).
-    Ritorna {'events': n, 'written': n, 'traded': n}."""
+                          rows_by_event: Optional[dict] = None,
+                          extra: Optional[dict] = None,
+                          auto_trade_kinds: Optional[dict] = None,
+                          risk_ctx: Optional[dict] = None) -> dict[str, int]:
+    """Calcola le opportunità sugli in-play (calcio: modello + combo + anomalie
+    dell'ultimo cecchino; tennis: modello tennis) e le pubblica (write-on-change),
+    ogni ``opps_interval_s``. ``opps`` di ogni evento = tutti i tipi fusi e
+    ordinati per ev·confidenza, ciascuno con ``kind`` (model|anomaly|combo|tennis).
+    Auto-trading per tipo (``auto_trade_kinds``): model (=``auto_trade``), combo
+    (tutte le gambe o nessuna), tennis. Ritorna {'events': n, 'written': n,
+    'traded': n}; i conteggi per tipo restano in ``state['counts']``."""
     out = {"events": 0, "written": 0, "traded": 0}
-    if model is None or opp_mod is None:
-        return out
     st = state if state is not None else _OPPS_STATE
+    mods = _extra_mods(extra)
+    kinds = dict(auto_trade_kinds or {})
+    kinds.setdefault("model", auto_trade)
+    tennis_model = _tennis_model(mods.get("tennis"), params, st)
+    if model is None or opp_mod is None:
+        if tennis_model is None:
+            return out
     every = float(params.get("opps_interval_s") or 10.0)
     now_ts = now.timestamp()
     if now_ts - float(st.get("last_ts") or 0.0) < every:
         return out
     st["last_ts"] = now_ts
     hashes = st.setdefault("hashes", {})
+    counts = {"model": 0, "anomaly": 0, "combo": 0, "tennis": 0}
     to_write: list[dict] = []
     seen: set[str] = set()
     for row in rows:
-        if str(row.get("sport") or "") != "calcio":
-            continue
+        sport = str(row.get("sport") or "")
         payload = row.get("payload")
         if not isinstance(payload, dict) or not payload.get("inplay"):
             continue
         event_id = str(row.get("event_id") or "")
         if not event_id:
+            continue
+        if sport == "tennis":
+            if tennis_model is None:
+                continue
+            try:
+                t_opps = _tag(tennis_model.evaluate(payload, now_ts), "tennis")
+            except Exception as ex:  # noqa: BLE001
+                _log(db, "error", {"reason": "tennis_opportunity_failed", "event_id": event_id,
+                                   "err": str(ex)[:160]})
+                continue
+            out["events"] += 1
+            counts["tennis"] += len(t_opps)
+            body = {"event_name": payload.get("event_name"), "sets": payload.get("sets"),
+                    "games": payload.get("games"), "opportunities": t_opps}
+            h = _hash(body)
+            if hashes.get(event_id) != h:
+                hashes[event_id] = h
+                to_write.append({"event_id": event_id, "sport": "tennis",
+                                 "payload": body, "updated_at": now.isoformat()})
+            if kinds.get("tennis") and t_opps:
+                out["traded"] += _auto_trade_opps(
+                    db=db, market=market, payload=payload, event_id=event_id, opps=t_opps,
+                    params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
+                    sport="tennis", kind="tennis", risk_ctx=risk_ctx)
+            continue
+        if sport != "calcio" or model is None or opp_mod is None:
             continue
         out["events"] += 1
         seen.add(event_id)
@@ -1699,6 +2037,21 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             _log(db, "error", {"reason": "opportunity_failed", "event_id": event_id,
                                "err": str(ex)[:160]})
             continue
+        opps = _tag(opps, "model")
+        counts["model"] += len(opps)
+        combos: list[dict] = []
+        if mods.get("combos") is not None:
+            book, _lam = _book_for(db, model, opp_mod, event_id, payload, now, st)
+            if book is not None:
+                try:
+                    combos = _tag(mods["combos"].find_combos(payload, book, params=params), "combo")
+                except Exception as ex:  # noqa: BLE001
+                    _log(db, "error", {"reason": "combos_failed", "event_id": event_id,
+                                       "err": str(ex)[:160]})
+        anomalies = _tag((st.get("anomalies") or {}).get(event_id), "anomaly")
+        counts["combo"] += len(combos)
+        counts["anomaly"] += len(anomalies)
+        merged = sorted(opps + anomalies + combos, key=_ev_conf, reverse=True)
         body = {"event_name": payload.get("event_name"),
                 "minute": payload.get("minute"),
                 "score_home": payload.get("score_home"),
@@ -1706,17 +2059,25 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 "league_id": league_id,
                 "source": source,
                 "lambdas": [lambdas[0], lambdas[1]],
-                "opportunities": opps}
+                "opportunities": merged,
+                "kinds": {"model": len(opps), "anomaly": len(anomalies),
+                          "combo": len(combos)}}
         h = _hash(body)
         if hashes.get(event_id) != h:
             hashes[event_id] = h
             to_write.append({"event_id": event_id, "sport": "calcio",
                              "payload": body, "updated_at": now.isoformat()})
-        if auto_trade and opps:
+        if kinds.get("model") and opps:
             out["traded"] += _auto_trade_opps(
                 db=db, market=market, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
-                rows_by_event=rows_by_event or {})
+                rows_by_event=rows_by_event or {}, risk_ctx=risk_ctx)
+        if kinds.get("combo") and combos:
+            out["traded"] += _auto_trade_combos(
+                db=db, market=market, payload=payload, event_id=event_id, combos=combos,
+                params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
+                risk_ctx=risk_ctx)
+    st["counts"] = counts
     if to_write:
         try:
             db.upsert_opportunities(to_write)
@@ -1733,14 +2094,49 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     return out
 
 
+def _p_lose_entry(o: dict, side: str) -> Optional[float]:
+    """P(perdita) all'ingresso dal p_model dell'opportunità (riferimento della
+    regola 'evento avverso' delle uscite a modello)."""
+    p = o.get("p_model")
+    if not isinstance(p, (int, float)) or isinstance(p, bool):
+        return None
+    p = min(1.0, max(0.0, float(p)))
+    return round(p if side == "lay" else 1.0 - p, 4)
+
+
+def _model_meta(o: dict, kind: str, side: str) -> dict[str, Any]:
+    return {"kind": kind, "p_model": o.get("p_model"), "p_implied": o.get("p_implied"),
+            "edge": o.get("edge"), "ev": o.get("ev"), "confidence": o.get("confidence"),
+            "rationale": o.get("rationale"), "line": o.get("line"),
+            "p_lose_entry": _p_lose_entry(o, side)}
+
+
+def _score_of(payload: dict, sport: str) -> Optional[str]:
+    if sport == "tennis":
+        sets, games = payload.get("sets") or {}, payload.get("games") or {}
+        if isinstance(sets, dict) and sets.get("p1") is not None:
+            s = f"set {sets.get('p1')}-{sets.get('p2')}"
+            if isinstance(games, dict) and games.get("p1") is not None:
+                s += f" · game {games.get('p1')}-{games.get('p2')}"
+            return s
+        return None
+    if payload.get("score_home") is None:
+        return None
+    return f"{payload.get('score_home')}-{payload.get('score_away')}"
+
+
 def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
                      params: dict, mode: str, now: datetime,
-                     rows_by_event: dict) -> int:
+                     rows_by_event: dict, sport: str = "calcio", kind: str = "model",
+                     risk_ctx: Optional[dict] = None) -> int:
     """Tratta le opportunità che superano confidenza+edge minimi (strategia
-    'model'). DISATTIVO per default: si accende solo da parametri."""
+    'model', tipo in ``meta.kind``; tennis: stake ``risk.model_stake``).
+    DISATTIVO per default: si accende solo da parametri. Gate ``risk`` prima
+    della riserva."""
     min_conf = float(params.get("opps_min_confidence") or 0.0)
     min_edge = float(params.get("opps_min_edge") or 0.0)
-    stake = float(params.get("opps_stake") or 0.0)
+    stake = float(params.get("opps_stake") or 0.0) if kind == "model" \
+        else float(RK.risk_params(params).get("model_stake") or 0.0)
     cap = float(params.get("max_liability_per_trade") or 0.0)
     commission = float(params.get("commission_pct", 5.0)) / 100.0
     if stake <= 0:
@@ -1749,6 +2145,8 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         traded = set(db.traded_signal_keys() or set())
     except Exception:  # noqa: BLE001 — FAIL-CLOSED
         return 0
+    if risk_ctx is None:
+        risk_ctx = build_risk_ctx(db, now, params)
     n = 0
     for o in opps:
         if not isinstance(o, dict):
@@ -1766,7 +2164,7 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         if side not in ("back", "lay") or price <= 1.0:
             continue
         market_type = str(o.get("market_type") or "")
-        key = f"model:{market_type}:{selection_id}:{side}"
+        key = f"{kind}:{market_type}:{selection_id}:{side}"
         if (event_id, key) in traded:
             continue
         if not o.get("market_id"):
@@ -1777,17 +2175,18 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         liability = X.liability_of(side, stake, price)
         if cap > 0 and liability > cap:
             continue
+        if _risk_gate(db, now, params, risk_ctx,
+                      {"event_id": event_id, "market_type": market_type,
+                       "liability": liability, "strategy": "model"}, signal_key=key):
+            continue
         row = _reserve_row(
-            event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
+            event_id=event_id, event_name=payload.get("event_name"), sport=sport,
             strategy="model", market_id=o.get("market_id"), market_type=market_type,
             selection_id=selection_id, selection_name=o.get("selection_name"),
             side=side, mode=mode, price=price, size=stake, liability=liability,
             commission=commission, minute=payload.get("minute"),
-            score=f"{payload.get('score_home')}-{payload.get('score_away')}",
-            origin="auto", signal_key=key,
-            meta={"p_model": o.get("p_model"), "p_implied": o.get("p_implied"),
-                  "edge": o.get("edge"), "ev": o.get("ev"),
-                  "confidence": o.get("confidence"), "rationale": o.get("rationale")},
+            score=_score_of(payload, sport),
+            origin="auto", signal_key=key, meta=_model_meta(o, kind, side),
         )
         try:
             trade_id = db.insert_trade(row)
@@ -1797,6 +2196,7 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         if not trade_id:
             continue
         traded.add((event_id, key))
+        _risk_commit(risk_ctx, {**row, "id": trade_id})
         out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
                        now=now, best_size=avail, ladder=())
         if out.status != "error":
@@ -1805,12 +2205,299 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
 
 
 # ---------------------------------------------------------------------------
+# COMBO: tutte le gambe o nessuna
+# ---------------------------------------------------------------------------
+def _leg_matchable(leg: dict, stake: float, rows_by_event: dict, event_id: str) -> bool:
+    """Gamba abbinabile in paper: prezzo > 1 e liquidità (size_available
+    dell'opportunità o del feed) ≥ stake."""
+    try:
+        price = float(leg.get("price"))
+    except (TypeError, ValueError):
+        return False
+    if price <= 1.0:
+        return False
+    side = str(leg.get("side") or "").lower()
+    avail = leg.get("size_available")
+    if avail is None:
+        try:
+            p = prices_from_row(rows_by_event.get(str(event_id)),
+                                market_type=str(leg.get("market_type") or ""),
+                                selection_id=int(leg.get("selection_id")),
+                                market_id=leg.get("market_id"))
+        except (TypeError, ValueError):
+            p = None
+        avail = (p or {}).get(f"{side}_size")
+    try:
+        return float(avail) >= stake
+    except (TypeError, ValueError):
+        return False
+
+
+def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list,
+                       params: dict, mode: str, now: datetime, rows_by_event: dict,
+                       risk_ctx: Optional[dict] = None) -> int:
+    """Piazza ogni combo con TUTTE le gambe o NESSUNA: soglie su confidenza/edge
+    della combo, gate ``risk`` sulla liability complessiva, riserva di tutte le
+    gambe (una qualunque fallita → le riserve fatte si liberano), in paper una
+    gamba non abbinabile → combo saltata. STAKE: ``risk.model_stake`` per gamba
+    in media, ripartito secondo le proporzioni di dutching della combo
+    (``stake_ratio``: gamba = model_stake × n_gambe × ratio; senza ratio, uguale
+    per tutte). Ritorna il numero di combo piazzate."""
+    min_conf = float(params.get("opps_min_confidence") or 0.0)
+    min_edge = float(params.get("opps_min_edge") or 0.0)
+    stake = float(RK.risk_params(params).get("model_stake") or 0.0)
+    cap = float(params.get("max_liability_per_trade") or 0.0)
+    commission = float(params.get("commission_pct", 5.0)) / 100.0
+    if stake <= 0:
+        return 0
+    try:
+        traded = set(db.traded_signal_keys() or set())
+    except Exception:  # noqa: BLE001
+        return 0
+    if risk_ctx is None:
+        risk_ctx = build_risk_ctx(db, now, params)
+    n = 0
+    for c in combos:
+        if not isinstance(c, dict):
+            continue
+        legs = [l for l in (c.get("legs") or []) if isinstance(l, dict)]
+        if len(legs) < 2:
+            continue
+        try:
+            if float(c.get("confidence") or 0.0) < min_conf or float(c.get("edge") or 0.0) < min_edge:
+                continue
+        except (TypeError, ValueError):
+            continue
+        cid = str(c.get("id") or _hash([(l.get("market_id"), l.get("selection_id"), l.get("side"))
+                                        for l in legs])[:12])
+        keys = [f"combo:{cid}:{i}" for i in range(len(legs))]
+        if any((event_id, k) in traded for k in keys):
+            continue
+        rows: list[dict] = []
+        total_liab = 0.0
+        ok = True
+        ratios = [_f(l.get("stake_ratio"), 0.0) for l in legs]
+        if any(r <= 0 for r in ratios) or abs(sum(ratios) - 1.0) > 0.05:
+            ratios = [1.0 / len(legs)] * len(legs)
+        for leg, key, ratio in zip(legs, keys, ratios):
+            side = str(leg.get("side") or "").lower()
+            leg_stake = round(stake * len(legs) * ratio, 2)
+            try:
+                price = float(leg.get("price"))
+                sid = int(leg.get("selection_id"))
+            except (TypeError, ValueError):
+                ok = False
+                break
+            if side not in ("back", "lay") or price <= 1.0 or not leg.get("market_id")                     or leg_stake <= 0:
+                ok = False
+                break
+            if mode == "paper" and not _leg_matchable(leg, leg_stake, rows_by_event, event_id):
+                _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
+                                           "reason": "combo_gamba_non_abbinabile"})
+                ok = False
+                break
+            liab = X.liability_of(side, leg_stake, price)
+            if cap > 0 and liab > cap:
+                ok = False
+                break
+            total_liab += liab
+            rows.append(_reserve_row(
+                event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
+                strategy="model", market_id=leg.get("market_id"),
+                market_type=str(leg.get("market_type") or ""), selection_id=sid,
+                selection_name=leg.get("selection_name"), side=side, mode=mode, price=price,
+                size=leg_stake, liability=liab, commission=commission, minute=payload.get("minute"),
+                score=_score_of(payload, "calcio"), origin="auto", signal_key=key,
+                meta={**_model_meta(leg, "combo", side), "combo_id": cid,
+                      "combo_legs": len(legs), "combo_rationale": c.get("rationale")}))
+        if not ok:
+            continue
+        if _risk_gate(db, now, params, risk_ctx,
+                      {"event_id": event_id, "market_type": "COMBO",
+                       "liability": round(total_liab, 2), "strategy": "model"},
+                      signal_key=f"combo:{cid}"):
+            continue
+        ids: list[int] = []
+        for row in rows:
+            try:
+                tid = db.insert_trade(row)
+            except Exception:  # noqa: BLE001
+                tid = None
+            if not tid:
+                break
+            ids.append(int(tid))
+        if len(ids) != len(rows):
+            for tid in ids:   # tutte o nessuna: si liberano le riserve fatte
+                try:
+                    db.delete_trade(tid)
+                except Exception:  # noqa: BLE001
+                    pass
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": f"combo:{cid}",
+                                       "reason": "combo_riserva_incompleta"})
+            for k in keys:
+                traded.add((event_id, k))
+            continue
+        for k in keys:
+            traded.add((event_id, k))
+        placed_legs = 0
+        for row, tid in zip(rows, ids):
+            _risk_commit(risk_ctx, {**row, "id": tid})
+            out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
+                           now=now, best_size=row.get("size"), ladder=())
+            if out.status != "error":
+                placed_legs += 1
+        if placed_legs == len(rows):
+            n += 1
+        elif placed_legs:
+            _log(db, "error", {"reason": "combo_parziale", "event_id": event_id,
+                               "combo_id": cid, "placed": placed_legs, "legs": len(rows)})
+    return n
+
+
+# ---------------------------------------------------------------------------
+# ANOMALIE: cecchino a OGNI ciclo (righe con quote cambiate), FOK, dedupe 120 s
+# ---------------------------------------------------------------------------
+ANOMALY_DEDUPE_S = 120.0
+
+
+def _anomaly_recent(traded: set, event_id: str, prefix: str, now_ts: float) -> bool:
+    """Chiave 'anomaly:...:<epoch>' già tradata negli ultimi ANOMALY_DEDUPE_S
+    (regge anche al riavvio: il dedupe in memoria si perde, il DB no)."""
+    for eid, k in traded:
+        if eid != event_id or not str(k).startswith(prefix):
+            continue
+        try:
+            ts = float(str(k)[len(prefix):])
+        except ValueError:
+            continue
+        if now_ts - ts < ANOMALY_DEDUPE_S:
+            return True
+    return False
+
+
+def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
+                      opp_mod: Any, anomaly_mod: Any, mode: str, now: datetime,
+                      state: Optional[dict] = None, auto_trade: bool = False,
+                      rows_by_event: Optional[dict] = None,
+                      risk_ctx: Optional[dict] = None) -> dict[str, int]:
+    """Valuta ``anomaly.detect(payload, book, params=)`` per ogni in-play calcio
+    il cui ``odds_ts_ms`` è cambiato dall'ultima valutazione (ogni ciclo, non
+    sulla cadenza delle opportunità); l'ultimo esito per evento resta in
+    ``state['anomalies']`` (la UI lo vede fuso nelle opportunità). Con
+    ``auto_trade``: piazzamento IMMEDIATO come cecchino (FOK di execution.place),
+    stake ``risk.model_stake``, dedupe per (evento, mercato, selezione, lato)
+    per 120 s. Ritorna {'events','found','traded'}."""
+    out = {"events": 0, "found": 0, "traded": 0}
+    if anomaly_mod is None or model is None or opp_mod is None:
+        return out
+    st = state if state is not None else _OPPS_STATE
+    seen_ts = st.setdefault("anomaly_ts", {})
+    found_by_event = st.setdefault("anomalies", {})
+    dedupe = st.setdefault("anomaly_dedupe", {})
+    now_ts = now.timestamp()
+    for k in [k for k, v in dedupe.items() if now_ts - float(v) >= ANOMALY_DEDUPE_S]:
+        dedupe.pop(k, None)
+    stake = float(RK.risk_params(params).get("model_stake") or 0.0)
+    cap = float(params.get("max_liability_per_trade") or 0.0)
+    commission = float(params.get("commission_pct", 5.0)) / 100.0
+    traded: Optional[set] = None
+    live_ids: set[str] = set()
+    for row in rows:
+        if str(row.get("sport") or "") != "calcio":
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict) or not payload.get("inplay"):
+            continue
+        event_id = str(row.get("event_id") or "")
+        if not event_id:
+            continue
+        live_ids.add(event_id)
+        ts = payload.get("odds_ts_ms")
+        if ts is not None and seen_ts.get(event_id) == ts:
+            continue
+        seen_ts[event_id] = ts
+        out["events"] += 1
+        book, _lam = _book_for(db, model, opp_mod, event_id, payload, now, st)
+        if book is None:
+            continue
+        try:
+            found = _tag(anomaly_mod.detect(payload, book, params=params), "anomaly")
+        except Exception as ex:  # noqa: BLE001
+            _log(db, "error", {"reason": "anomaly_failed", "event_id": event_id,
+                               "err": str(ex)[:160]})
+            continue
+        found_by_event[event_id] = found
+        out["found"] += len(found)
+        if not auto_trade or not found or stake <= 0:
+            continue
+        if traded is None:
+            try:
+                traded = set(db.traded_signal_keys() or set())
+            except Exception:  # noqa: BLE001 — FAIL-CLOSED
+                return out
+        if risk_ctx is None:
+            risk_ctx = build_risk_ctx(db, now, params)
+        for o in found:
+            try:
+                price = float(o.get("price"))
+                sid = int(o.get("selection_id"))
+            except (TypeError, ValueError):
+                continue
+            side = str(o.get("side") or "").lower()
+            mt = str(o.get("market_type") or "")
+            mid = o.get("market_id")
+            if side not in ("back", "lay") or price <= 1.0 or not mid:
+                continue
+            dkey = (event_id, str(mid), sid, side)
+            prefix = f"anomaly:{mt}:{sid}:{side}:"
+            if dkey in dedupe or _anomaly_recent(traded, event_id, prefix, now_ts):
+                continue
+            liability = X.liability_of(side, stake, price)
+            if cap > 0 and liability > cap:
+                continue
+            key = f"{prefix}{int(now_ts)}"
+            if _risk_gate(db, now, params, risk_ctx,
+                          {"event_id": event_id, "market_type": mt,
+                           "liability": liability, "strategy": "model"}, signal_key=key):
+                continue
+            row = _reserve_row(
+                event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
+                strategy="model", market_id=mid, market_type=mt, selection_id=sid,
+                selection_name=o.get("selection_name"), side=side, mode=mode, price=price,
+                size=stake, liability=liability, commission=commission,
+                minute=payload.get("minute"), score=_score_of(payload, "calcio"),
+                origin="auto", signal_key=key,
+                meta={**_model_meta(o, "anomaly", side), "sniper": True,
+                      "anomaly_type": o.get("anomaly_type") or o.get("type")})
+            try:
+                trade_id = db.insert_trade(row)
+            except Exception:  # noqa: BLE001
+                dedupe[dkey] = now_ts
+                continue
+            if not trade_id:
+                continue
+            dedupe[dkey] = now_ts
+            traded.add((event_id, key))
+            _risk_commit(risk_ctx, {**row, "id": trade_id})
+            res = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
+                           now=now, best_size=o.get("size_available"), ladder=())
+            if res.status != "error":
+                out["traded"] += 1
+    if rows:
+        for eid in [k for k in list(found_by_event) if k not in live_ids]:
+            found_by_event.pop(eid, None)
+            seen_ts.pop(eid, None)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # CICLO
 # ---------------------------------------------------------------------------
 def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
              opp_mod: Any = None, engine_mod: Any = None,
              now: Optional[datetime] = None,
-             opps_state: Optional[dict] = None) -> dict[str, Any]:
+             opps_state: Optional[dict] = None,
+             extra_mods: Optional[dict] = None) -> dict[str, Any]:
     now = now or _now()
     try:
         control = db.read_control()
@@ -1840,9 +2527,12 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         rows = []
     rows_by_event = {str(r.get("event_id")): r for r in rows if r.get("event_id")}
 
+    # contesto di RISCHIO del ciclo (una lettura: posizioni vive + aggregati)
+    risk_ctx = build_risk_ctx(db, now, params)
+
     # (c) richieste della UI — SEMPRE
     n_requests = process_requests(db=db, market=market, rows_by_event=rows_by_event,
-                                  params=params, now=now)
+                                  params=params, now=now, risk_ctx=risk_ctx)
 
     # (c-bis) uscite automatiche — SEMPRE (posizioni già aperte), prima dei nuovi ingressi
     n_exits = process_exits(db=db, market=market, rows_by_event=rows_by_event,
@@ -1862,22 +2552,42 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     if status == "running":
         n_placed, n_signals = scan_and_place(db=db, market=market, engine=engine,
                                              rows=rows, params=params, mode=mode,
-                                             now=now)
+                                             now=now, risk_ctx=risk_ctx)
 
-    # (e) opportunità di modello (informative; auto-trading solo se acceso)
+    running = status == "running"
+    mods = _extra_mods(extra_mods)
+    # (d-bis) ANOMALIE: cecchino a ogni ciclo sulle righe con quote cambiate
+    anomalies = process_anomalies(
+        db=db, market=market, rows=rows, params=params, model=opp_model, opp_mod=opp_mod,
+        anomaly_mod=mods.get("anomaly"), mode=mode, now=now, state=opps_state,
+        auto_trade=bool(params.get("auto_trade_anomalies")) and running,
+        rows_by_event=rows_by_event, risk_ctx=risk_ctx)
+
+    # (e) opportunità (modello + combo + anomalie + tennis; auto-trading per tipo)
     opps = process_opportunities(
         db=db, market=market, rows=rows, params=params, model=opp_model,
         opp_mod=opp_mod, mode=mode, now=now, state=opps_state,
-        auto_trade=bool(params.get("auto_trade_opportunities")) and status == "running",
-        rows_by_event=rows_by_event,
+        auto_trade=bool(params.get("auto_trade_opportunities")) and running,
+        rows_by_event=rows_by_event, extra=mods,
+        auto_trade_kinds={"combo": bool(params.get("auto_trade_combos")) and running,
+                          "tennis": bool(params.get("auto_trade_tennis")) and running},
+        risk_ctx=risk_ctx,
     )
 
-    # (f) stats + heartbeat
-    try:
-        agg = db.aggregates()
-    except Exception as ex:  # noqa: BLE001
-        logger.warning("[safe.bot] aggregates KO: %s", str(ex)[:160])
-        agg = {}
+    # (f) stats + heartbeat (gli aggregati del contesto di rischio si riusano se
+    # dopo la loro lettura non è cambiato nulla: una sola SELECT per ciclo)
+    changed = bool(n_requests or n_exits or n_placed or opps.get("traded")
+                   or anomalies.get("traded") or risk_ctx.get("unavailable"))
+    if not changed and risk_ctx.get("agg"):
+        agg = risk_ctx["agg"]
+    else:
+        try:
+            agg = db.aggregates()
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[safe.bot] aggregates KO: %s", str(ex)[:160])
+            agg = {}
+    rp = RK.risk_params(params)
+    counts = dict((opps_state if opps_state is not None else _OPPS_STATE).get("counts") or {})
     stats = {
         "events_total": len(rows),
         "signals_active": n_signals,
@@ -1886,6 +2596,12 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         "realized_today": round(float(agg.get("realized_today", 0.0)), 2),
         "realized_total": round(float(agg.get("realized_total", 0.0)), 2),
         "last_cycle": now.isoformat(),
+        "risk": {"daily_liability": round(float(agg.get("day_liability", 0.0) or 0.0), 2),
+                 "daily_cap": float(rp.get("daily_liability_cap") or 0.0),
+                 "loss_stop_active": RK.loss_stop_active(agg.get("realized_today", 0.0), params),
+                 "daily_loss_stop": float(rp.get("daily_loss_stop") or 0.0)},
+        "opps": {"model": int(counts.get("model", 0)), "anomaly": int(counts.get("anomaly", 0)),
+                 "combo": int(counts.get("combo", 0)), "tennis": int(counts.get("tennis", 0))},
     }
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())
@@ -1894,7 +2610,7 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     return {"status": status, "placed": n_placed, "settled": n_settled,
             "requests": n_requests, "polled": n_polled, "reconciled": n_reconciled,
             "exits": n_exits, "signals": n_signals, "opportunities": opps,
-            "stats": stats}
+            "anomalies": anomalies, "stats": stats}
 
 
 def _log(db, kind: str, payload: dict[str, Any]) -> None:

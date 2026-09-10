@@ -563,7 +563,7 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
 }
 
 // ----------------------------------------------------------- uscite auto
-export type ExitKind = 'profit' | 'loss' | 'time' | 'red_card' | 'forced' | 'manual' | 'other';
+export type ExitKind = 'profit' | 'loss' | 'time' | 'red_card' | 'forced' | 'manual' | 'greenup' | 'other';
 
 export interface ExitInfo {
     kind: ExitKind;
@@ -576,7 +576,8 @@ export interface ExitInfo {
 }
 
 const EXIT_KIND_ALIASES: Record<string, ExitKind> = {
-    profit: 'profit', take_profit: 'profit', tp: 'profit', profitto: 'profit', green: 'profit', greenup: 'profit',
+    profit: 'profit', take_profit: 'profit', tp: 'profit', profitto: 'profit', green: 'profit',
+    greenup: 'greenup', green_up: 'greenup', 'green-up': 'greenup', greenup_auto: 'greenup', greenup_forced: 'greenup',
     loss: 'loss', stop_loss: 'loss', sl: 'loss', perdita: 'loss', red: 'loss',
     time: 'time', timeout: 'time', minute: 'time', clock: 'time', tempo: 'time', minuto: 'time',
     red_card: 'red_card', redcard: 'red_card', rosso: 'red_card', card: 'red_card',
@@ -592,6 +593,7 @@ export const EXIT_KIND_LABEL: Record<ExitKind, string> = {
     red_card: 'Uscita: rosso',
     forced: 'Uscita: obbligatoria',
     manual: 'Cash out manuale',
+    greenup: 'Green-up',
     other: 'Uscita',
 };
 

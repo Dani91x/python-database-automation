@@ -1450,7 +1450,7 @@ def test_exit_disabilitata_dai_parametri():
     assert "exit" not in db.kinds()
 
 
-def test_exit_non_tocca_trade_manuali_di_modello_o_hedged():
+def test_exit_non_tocca_trade_manuali_o_hedged_e_traccia_il_modello():
     db = FakeDB(status="running")
     t_manual = _auto_trade(db, "manual", origin="manual", signal_key=None)
     t_model = _auto_trade(db, "model", signal_key="model:x")
@@ -1458,9 +1458,13 @@ def test_exit_non_tocca_trade_manuali_di_modello_o_hedged():
     _cycle(db, _exit_feed_row(60, 1, 0))
     r = _cycle(db, _exit_feed_row(85, 1, 1))
     assert r["exits"] == 0
-    for tid in (t_manual, t_model, t_hedged):
+    for tid in (t_manual, t_hedged):
         assert _closings(db, tid) == []
         assert "exit_track" not in (db.get_trade(tid)["meta"] or {})
+    # il trade di MODELLO viene tracciato (regole a modello) ma, senza regola
+    # attiva (lay dell'ospite: P(ospite vince) all'85' resta sotto soglia), si tiene
+    assert _closings(db, t_model) == []
+    assert "exit_track" in db.get_trade(t_model)["meta"]
 
 
 def test_exit_con_feed_non_fresco_aspetta_poi_chiude():
@@ -1912,7 +1916,9 @@ def test_parametri_decisione_a_modello_e_chiavi_della_scheda():
              "punta_exit_minute": 84, "loss_settle_delay_s": 25, "red_card_fav_exit": False,
              "tennis_take_profit_next_game": False, "tennis_exit_on_lost_game": True,
              "exit_max_retries": 5, "hold_max_risk": 0.05, "risk_cap": 0.2,
-             "ev_margin": 0.5, "residual_retry_s": 30, "residual_max_attempts": 4}
+             "ev_margin": 0.5, "residual_retry_s": 30, "residual_max_attempts": 4,
+             "model_exit_p_lose": 0.2, "model_take_profit_frac": 0.7,
+             "model_free_cashout_p_lose": 0.01}
     m = S.resolve_params({"exits": sheet})["exits"]
     for k, v in sheet.items():
         assert m[k] == v, k
@@ -1976,3 +1982,464 @@ def test_spread_gate_senza_back_nel_feed_scarta():
     # Match Odds con spread normale (3.0/3.1): entra
     db = FakeDB(status="running")
     assert _run(db, engine=FakeEngine([_signal()]))["placed"] == 1
+
+
+# ---------------------------------------------------------------------------
+# RISCHIO (risk.py) cablato prima di ogni riserva
+# ---------------------------------------------------------------------------
+from Betfair.safe_strategy import risk as RK  # noqa: E402
+
+
+def _blocks(db, reason=None):
+    return [p for k, p in db.activity if k == "risk_block" and (reason is None or p["reason"] == reason)]
+
+
+def _lost_today(db, pnl=-60.0):
+    return db.insert_trade({"event_id": "0.1", "status": "lost", "pnl": pnl, "liability": 10.0,
+                            "side": "back", "market_id": "m0", "selection_id": 1, "size": 10.0,
+                            "price": 2.0, "mode": "paper", "settled_at": NOW.isoformat(),
+                            "strategy": "base", "origin": "auto", "signal_key": "0.1:old"})
+
+
+def test_parametri_di_rischio_e_flag_auto_trade_per_default():
+    p = S.resolve_params(None)
+    assert p["risk"] == RK.merge_risk_params(None)
+    assert p["risk"]["daily_liability_cap"] == 500 and p["risk"]["daily_loss_stop"] == -50
+    assert p["auto_trade_anomalies"] is False and p["auto_trade_combos"] is False
+    assert p["auto_trade_tennis"] is False and p["auto_trade_opportunities"] is False
+    q = S.resolve_params({"risk": {"per_event_liability_cap": 20}, "auto_trade_combos": 1})
+    assert q["risk"]["per_event_liability_cap"] == 20 and q["risk"]["model_stake"] == 5
+    assert q["auto_trade_combos"] is True
+
+
+def test_loss_stop_giornaliero_blocca_i_segnali_con_log_deduplicato():
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running")
+    _lost_today(db, -60.0)
+    res = _run(db, engine=FakeEngine([_signal()]))
+    assert res["placed"] == 0
+    assert [t for t in db.trades if t.get("signal_key") == "k1"] == []
+    b = _blocks(db, "daily_loss_stop")
+    assert len(b) == 1 and b[0]["signal_key"] == "k1" and b[0]["realized_today"] == -60.0
+    assert res["stats"]["risk"]["loss_stop_active"] is True
+    _run(db, engine=FakeEngine([_signal()]))
+    assert len(_blocks(db, "daily_loss_stop")) == 1, "dedupe del log per segnale e motivo"
+    # sotto la soglia si piazza
+    db2 = FakeDB(status="running")
+    _lost_today(db2, -20.0)
+    assert _run(db2, engine=FakeEngine([_signal()]))["placed"] == 1
+    assert db2.control["stats"]["risk"]["loss_stop_active"] is False
+
+
+def test_cap_per_evento_correlato_sui_segnali():
+    S._SKIP_LOG_STATE.clear()
+    # aperto 60 di liability sul CS dell'evento: il lay CS 2@60 (118) -> 178 > 170
+    db = FakeDB(status="running", params={"risk": {"per_event_liability_cap": 170}})
+    _auto_trade(db, "esatto", market_type="CORRECT_SCORE", liability=60.0, signal_key="1.1:esatto:x")
+    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    res = _run(db, engine=FakeEngine([_cs_signal()]))
+    assert res["placed"] == 0 and _blocks(db, "per_event_liability_cap")
+    # stesso aperto ma su un altro mercato (Match Odds): pesa 0.7 -> 42 + 118 = 160 <= 170
+    db = FakeDB(status="running", params={"risk": {"per_event_liability_cap": 170}})
+    _auto_trade(db, "base", market_type="MATCH_ODDS", liability=60.0, signal_key="1.1:base:x")
+    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    assert _run(db, engine=FakeEngine([_cs_signal()]))["placed"] == 1
+
+
+def test_posizioni_per_evento_e_cap_giornaliero_contano_anche_nel_ciclo():
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"risk": {"per_event_max_trades": 2}})
+    sig = [_signal(key=f"k{i}", size=5.0) for i in range(4)]
+    res = _run(db, engine=FakeEngine(sig))
+    assert res["placed"] == 2, "la terza posizione sullo stesso evento e' bloccata nello stesso ciclo"
+    assert _blocks(db, "per_event_max_trades")
+    # cap giornaliero: 3 segnali da 200 con cap 500 -> il terzo e' bloccato
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"max_liability_per_trade": 300,
+                                          "risk": {"per_event_liability_cap": 0}})
+    sig = [_signal(key=f"k{i}", event_id=f"1.{i}", size=200.0, size_available=500.0) for i in range(3)]
+    db.scan_rows = [_feed_row(f"1.{i}") for i in range(3)]
+    res = _run(db, engine=FakeEngine(sig))
+    assert res["placed"] == 2 and _blocks(db, "daily_liability_cap")
+    assert res["stats"]["risk"]["daily_liability"] == 400.0 and res["stats"]["risk"]["daily_cap"] == 500.0
+
+
+def test_manuale_controllo_morbido_solo_cap():
+    # loss stop attivo: il manuale passa lo stesso
+    db = FakeDB(status="stopped")
+    _lost_today(db, -60.0)
+    db.scan_rows = [_feed_row()]
+    db.requests.append({"id": 1, "kind": "place", "status": "pending", "payload": _place_payload()})
+    _run(db)
+    assert db.requests[0]["status"] == "done"
+    # cap giornaliero superato: il manuale e' bloccato con motivo
+    db = FakeDB(status="stopped", params={"risk": {"daily_liability_cap": 100}})
+    _auto_trade(db, "base", liability=98.0)
+    db.scan_rows = [_feed_row()]
+    db.requests.append({"id": 1, "kind": "place", "status": "pending", "payload": _place_payload()})
+    _run(db)
+    assert db.requests[0]["status"] == "error"
+    assert db.requests[0]["result"] == {"error": "risk_block", "reason": "daily_liability_cap",
+                                        "liability": 5.0}
+    assert _blocks(db, "daily_liability_cap")[0]["soft"] is True
+
+
+def test_aggregati_giornalieri_per_il_rischio():
+    from Betfair.safe_strategy import bot_db
+
+    day = RK.operating_day_start(NOW)
+    rows = [
+        {"id": 1, "status": "open", "liability": 10.0, "placed_at": NOW.isoformat(), "strategy": "model"},
+        {"id": 2, "status": "lost", "liability": 7.0, "pnl": -7.0, "placed_at": NOW.isoformat(),
+         "settled_at": NOW.isoformat(), "strategy": "base"},
+        {"id": 3, "status": "void", "liability": 5.0, "placed_at": NOW.isoformat()},
+        {"id": 4, "status": "pending", "liability": 4.0, "placed_at": NOW.isoformat(), "meta": {}},
+        {"id": 5, "status": "hedged", "liability": 3.0, "placed_at": "2026-09-01T10:00:00+00:00"},
+        {"id": 6, "status": "open", "liability": 2.0, "placed_at": NOW.isoformat(), "closes_trade_id": 1},
+    ]
+    agg = bot_db.aggregate_rows(rows, day_start=day)
+    assert agg["day_liability"] == 17.0 and agg["day_liability_model"] == 10.0
+    assert agg["day_trades"] == 2 and agg["realized_today"] == -7.0
+    assert bot_db.aggregate_rows(rows)["day_liability"] == 20.0, "senza giornata: tutto"
+
+
+# ---------------------------------------------------------------------------
+# USCITE dei trade di MODELLO
+# ---------------------------------------------------------------------------
+def _model_trade(db, **kw):
+    row = dict(strategy="model", signal_key="model:MATCH_ODDS:8:lay", selection_name="Away",
+               meta={"kind": "model", "p_lose_entry": 0.05})
+    row.update(kw)
+    return _auto_trade(db, **row)
+
+
+def test_uscita_modello_gol_avverso_dopo_l_assestamento(monkeypatch):
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.2, "test"))
+    db = FakeDB(status="running")
+    tid = _model_trade(db)   # lay ospite 10@8.5 sull'1-0
+    r = _cycle(db, _exit_feed_row(60, 1, 0))
+    assert r["exits"] == 0 and db.get_trade(tid)["status"] == "open"
+    t_goal = NOW + timedelta(seconds=2)
+    r = _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t_goal), at=t_goal)
+    assert r["exits"] == 0, "ritardo di assestamento"
+    assert db.get_trade(tid)["meta"]["exit_track"]["wait_reason"] == "assestamento_post_evento"
+    t_ok = t_goal + timedelta(seconds=31)
+    r = _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t_ok), at=t_ok)
+    assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
+    meta = db.get_trade(tid)["meta"]
+    assert meta["exit_kind"] == "loss" and meta["exit_reason"].startswith("Gol avverso")
+    ex = [p for k, p in db.activity if k == "exit"][0]
+    assert ex["strategy"] == "model" and ex["p_lose"] == 0.2 and ex["model_why"] == "loss:gol_avverso"
+    # mai due volte
+    r = _cycle(db, _exit_feed_row(70, 1, 1, updated_at=t_ok), at=t_ok + timedelta(seconds=5))
+    assert r["exits"] == 0 and len(_closings(db, tid)) == 1
+
+
+def test_uscita_modello_gol_non_avverso_o_sotto_soglia_tiene(monkeypatch):
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.08, "test"))
+    db = FakeDB(status="running")
+    tid = _model_trade(db)
+    _cycle(db, _exit_feed_row(60, 1, 0))
+    t = NOW + timedelta(seconds=40)
+    r = _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t), at=t)
+    assert r["exits"] == 0 and _closings(db, tid) == []
+    # p_lose alta ma SCESA rispetto all'ingresso: il gol ha aiutato
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.3, "test"))
+    db = FakeDB(status="running")
+    tid = _model_trade(db, meta={"kind": "model", "p_lose_entry": 0.45})
+    _cycle(db, _exit_feed_row(60, 1, 0))
+    r = _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t), at=t)
+    assert r["exits"] == 0 and _closings(db, tid) == []
+
+
+def test_uscita_modello_take_profit(monkeypatch):
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.9, "test"))
+    db = FakeDB(status="running")
+    # back casa 10@3.0 (profitto massimo 20): la casa scende a 1.10 -> chiusura blocca ~17 >= 16
+    tid = _model_trade(db, side="back", selection_id=7, price=3.0, selection_name="Home",
+                       signal_key="model:MATCH_ODDS:7:back", meta={"kind": "model", "p_lose_entry": 0.6})
+    row = _exit_feed_row(75, 2, 0)
+    row["payload"]["odds"]["home"].update({"back": 1.09, "lay": 1.1})
+    r = _cycle(db, row)
+    assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
+    meta = db.get_trade(tid)["meta"]
+    assert meta["exit_kind"] == "profit" and meta["exit_reason"] == "Take profit del modello: profitto bloccato"
+    ex = [p for k, p in db.activity if k == "exit"][0]
+    assert ex["locked_pnl"] >= 16.0
+    # a 1.3 blocca solo ~13 (< 16): si tiene
+    db = FakeDB(status="running")
+    tid = _model_trade(db, side="back", selection_id=7, price=3.0, selection_name="Home",
+                       signal_key="model:MATCH_ODDS:7:back")
+    row = _exit_feed_row(75, 2, 0)
+    row["payload"]["odds"]["home"].update({"back": 1.29, "lay": 1.3})
+    assert _cycle(db, row)["exits"] == 0 and _closings(db, tid) == []
+
+
+def test_uscita_modello_cashout_quasi_gratis(monkeypatch):
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.001, "test"))
+    db = FakeDB(status="running")
+    # lay ospite 10@8.5: ospite a 30 -> chiusura in profitto con P(perdita) 0.1%
+    tid = _model_trade(db)
+    row = _exit_feed_row(80, 3, 0)
+    row["payload"]["odds"]["away"].update({"back": 30.0, "lay": 34.0})
+    r = _cycle(db, row)
+    assert r["exits"] == 1
+    assert db.get_trade(tid)["meta"]["exit_reason"].startswith("Posizione ormai vinta")
+
+
+def test_uscita_modello_linea_decisa_contro():
+    db = FakeDB(status="running")
+    row = _feed_row_goal_markets()
+    row["payload"].update({"score_home": 1, "score_away": 0, "minute": 30,
+                           "red_home": 0, "red_away": 0, "mo_status": "OPEN"})
+    tid = _auto_trade(db, "model", market_id="ou25", market_type="OVER_UNDER_25", selection_id=47973,
+                      selection_name="Under 2.5 Goals", side="back", price=1.8, size=10.0,
+                      score_at_entry="1-0", signal_key="model:OVER_UNDER_25:47973:back",
+                      meta={"kind": "model", "line": 2.5, "p_lose_entry": 0.45})
+    assert _cycle(db, row)["exits"] == 0
+    row2 = _feed_row_goal_markets()
+    row2["payload"].update({"score_home": 2, "score_away": 1, "minute": 70,
+                            "red_home": 0, "red_away": 0, "mo_status": "OPEN"})
+    t = NOW + timedelta(seconds=2)
+    row2["updated_at"] = t.isoformat()
+    assert _cycle(db, row2, at=t)["exits"] == 0, "assestamento post-gol"
+    t2 = t + timedelta(seconds=31)
+    row2["updated_at"] = t2.isoformat()
+    assert _cycle(db, row2, at=t2)["exits"] == 1
+    meta = db.get_trade(tid)["meta"]
+    assert meta["exit_kind"] == "loss" and meta["exit_reason"].startswith("La linea tradata")
+    assert _closings(db, tid)[0]["side"] == "lay" and _closings(db, tid)[0]["price"] == 1.82
+
+
+def test_uscita_modello_tennis_due_game_persi_di_fila():
+    db = FakeDB(status="running")
+    tid = _auto_trade(db, "model", sport="tennis", event_id="2.1", market_id="mt",
+                      market_type="MATCH_ODDS", selection_id=11, selection_name="P1", side="back",
+                      price=1.3, size=10.0, score_at_entry="set 1-0 . game 4-2",
+                      signal_key="tennis:MATCH_ODDS:11:back", meta={"kind": "tennis"})
+    assert _cycle(db, _tennis_feed_row((1, 0), (4, 2)))["exits"] == 0
+    assert db.get_trade(tid)["meta"]["exit_track"]["side"] == "p1"
+    t1 = NOW + timedelta(seconds=2)
+    assert _cycle(db, _tennis_feed_row((1, 0), (4, 3), updated_at=t1), at=t1)["exits"] == 0
+    t2 = t1 + timedelta(seconds=2)
+    r = _cycle(db, _tennis_feed_row((1, 0), (4, 4), updated_at=t2), at=t2)
+    assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
+    meta = db.get_trade(tid)["meta"]
+    assert meta["exit_kind"] == "loss" and "due game" in meta["exit_reason"]
+
+
+# ---------------------------------------------------------------------------
+# ANOMALIE (cecchino), COMBO (tutte o nessuna), TENNIS: moduli opzionali
+# ---------------------------------------------------------------------------
+class FakeBookModel(FakeModel):
+    def book(self, payload, *, lambdas, league_id, ht_ratio=None):
+        return {"over_2_5": 0.55, "btts_yes": 0.5}
+
+
+def _anomaly(**kw):
+    a = _opp(kind="anomaly", rule="ou_ladder", price=2.4, size_available=100.0)
+    a.update(kw)
+    return a
+
+
+class FakeAnomaly:
+    def __init__(self, found=None):
+        self.found = list(found or [])
+        self.calls = 0
+
+    def detect(self, payload, book, *, params=None):
+        self.calls += 1
+        assert "over_2_5" in book
+        return list(self.found)
+
+
+def _feed_odds_row(ts=1, event_id="1.1"):
+    row = _feed_row_goal_markets()
+    row["event_id"] = event_id
+    row["payload"].update({"score_home": 1, "score_away": 0, "odds_ts_ms": ts})
+    return row
+
+
+def test_anomalie_valutate_a_ogni_ciclo_solo_se_le_quote_cambiano_e_fuse_nelle_opportunita():
+    db = FakeDB(status="running")
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    an = FakeAnomaly([_anomaly()])
+    st = {"last_ts": 0.0, "hashes": {}}
+    r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
+             opps_state=st, extra_mods={"anomaly": an})
+    assert r["anomalies"] == {"events": 1, "found": 1, "traded": 0} and an.calls == 1
+    body = db.opportunities[-1][0]["payload"]
+    kinds = [o["kind"] for o in body["opportunities"]]
+    assert sorted(kinds) == ["anomaly", "model"] and body["kinds"] == {"model": 1, "anomaly": 1, "combo": 0}
+    assert r["stats"]["opps"] == {"model": 1, "anomaly": 1, "combo": 0, "tennis": 0}
+    # stesso odds_ts_ms: nessuna rivalutazione; cambia -> rivalutata
+    r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
+             opps_state=st, extra_mods={"anomaly": an})
+    assert r["anomalies"]["events"] == 0 and an.calls == 1
+    db.scan_rows = [_feed_odds_row(ts=2)]
+    r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
+             opps_state=st, extra_mods={"anomaly": an})
+    assert r["anomalies"]["events"] == 1 and an.calls == 2
+    assert db.trades == [], "auto_trade_anomalies spento per default"
+
+
+def test_anomalie_piazzate_subito_come_cecchino_con_dedupe_120s():
+    db = FakeDB(status="running", params={"auto_trade_anomalies": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    an = FakeAnomaly([_anomaly()])
+    st = {"last_ts": NOW.timestamp(), "hashes": {}}   # opportunita' throttlate: il cecchino no
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state=st, extra_mods={"anomaly": an})
+    assert r["anomalies"]["traded"] == 1 and len(db.trades) == 1
+    t = db.trades[0]
+    assert t["strategy"] == "model" and t["size"] == 5 and t["status"] == "open"
+    assert t["meta"]["kind"] == "anomaly" and t["meta"]["sniper"] is True
+    assert t["signal_key"].startswith("anomaly:OVER_UNDER_25:47972:back:")
+    assert t["meta"]["p_lose_entry"] == 0.45
+    # quote cambiate entro 120 s: stessa (evento, mercato, selezione, lato) -> dedupe
+    db.scan_rows = [_feed_odds_row(ts=2)]
+    at = NOW + timedelta(seconds=60)
+    r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
+                   opp_mod=FAKE_OPP_MOD, opps_state=st, extra_mods={"anomaly": an}, now=at)
+    assert r["anomalies"]["traded"] == 0 and len(db.trades) == 1
+    # dopo 120 s: si puo' rientrare (anche con lo stato in memoria perso)
+    db.scan_rows = [_feed_odds_row(ts=3)]
+    at = NOW + timedelta(seconds=121)
+    st2 = {"last_ts": at.timestamp(), "hashes": {}}
+    r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
+                   opp_mod=FAKE_OPP_MOD, opps_state=st2, extra_mods={"anomaly": an}, now=at)
+    assert r["anomalies"]["traded"] == 1 and len(db.trades) == 2
+    # a bot fermo mai
+    db = FakeDB(status="stopped", params={"auto_trade_anomalies": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"anomaly": FakeAnomaly([_anomaly()])})
+    assert r["anomalies"]["found"] == 1 and db.trades == []
+
+
+def test_anomalie_rispettano_il_rischio_e_lo_stake_di_modello():
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"auto_trade_anomalies": True,
+                                          "risk": {"model_stake": 8, "model_daily_liability_cap": 10}})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    st = {"last_ts": NOW.timestamp(), "hashes": {}}
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD, opps_state=st,
+             extra_mods={"anomaly": FakeAnomaly([_anomaly(), _anomaly(selection_id=47973,
+                                                                       selection_name="Under 2.5 Goals")])})
+    assert r["anomalies"]["traded"] == 1 and db.trades[0]["size"] == 8
+    assert _blocks(db, "model_daily_liability_cap")
+
+
+def _combo(legs=None, **kw):
+    legs = legs or [
+        {"market_type": "OVER_UNDER_25", "market_id": "ou25", "selection_id": 47972,
+         "selection_name": "Over 2.5 Goals", "side": "back", "price": 2.2,
+         "size_available": 300.0, "stake_ratio": 0.5},
+        {"market_type": "BOTH_TEAMS_TO_SCORE", "market_id": "btts1", "selection_id": 30246,
+         "selection_name": "Yes", "side": "back", "price": 1.9, "size_available": 10.0,
+         "stake_ratio": 0.5},
+    ]
+    c = _opp(kind="combo", id="c1", legs=legs, rationale="dutching")
+    c.update(kw)
+    return c
+
+
+class FakeCombos:
+    def __init__(self, combos=None):
+        self.combos = list(combos or [])
+
+    def find_combos(self, payload, book, *, params=None):
+        return list(self.combos)
+
+
+def test_combo_tutte_le_gambe_o_nessuna():
+    db = FakeDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    st = {"last_ts": 0.0, "hashes": {}}
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD, opps_state=st,
+             extra_mods={"combos": FakeCombos([_combo()])})
+    assert r["opportunities"]["traded"] == 1 and len(db.trades) == 2
+    assert {t["meta"]["combo_id"] for t in db.trades} == {"c1"}
+    assert [t["signal_key"] for t in db.trades] == ["combo:c1:0", "combo:c1:1"]
+    assert all(t["strategy"] == "model" and t["meta"]["kind"] == "combo" and t["size"] == 5.0
+               and t["status"] == "open" for t in db.trades)
+    assert db.opportunities[-1][0]["payload"]["kinds"]["combo"] == 1
+    # una gamba non abbinabile in paper (liquidita' 1 < stake): nessuna gamba piazzata
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    legs = _combo()["legs"]
+    legs[1]["size_available"] = 1.0
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}},
+             extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
+    assert r["opportunities"]["traded"] == 0 and db.trades == []
+    assert _skips(db, "combo_gamba_non_abbinabile")
+    # proporzioni di dutching rispettate: 0.7/0.3 su 2 gambe da 5 medi -> 7 e 3
+    db = FakeDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    legs = _combo()["legs"]
+    legs[0]["stake_ratio"], legs[1]["stake_ratio"] = 0.7, 0.3
+    _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+         opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
+    assert [t["size"] for t in db.trades] == [7.0, 3.0]
+
+
+def test_combo_riserva_incompleta_libera_le_riserve():
+    class HalfDB(FakeDB):
+        def insert_trade(self, trade):
+            if str(trade.get("signal_key") or "").endswith(":1"):
+                raise Exception("unique")
+            return super().insert_trade(trade)
+
+    S._SKIP_LOG_STATE.clear()
+    db = HalfDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}}, extra_mods={"combos": FakeCombos([_combo()])})
+    assert r["opportunities"]["traded"] == 0
+    assert db.trades == [], "la riserva della prima gamba e' stata liberata"
+    assert _skips(db, "combo_riserva_incompleta")
+
+
+class FakeTennisModel:
+    def __init__(self, params):
+        self.params = params
+
+    def evaluate(self, payload, now_ts):
+        return [_opp(kind="tennis", market_type="MATCH_ODDS", market_id="mt", selection_id=11,
+                     selection_name="P1", price=1.3, size_available=500.0, p_model=0.85)]
+
+
+def test_opportunita_tennis_pubblicate_e_tradate_solo_se_abilitate():
+    db = FakeDB(status="running")
+    db.scan_rows = [_tennis_feed_row()]
+    tennis = SimpleNamespace(TennisOpportunityModel=FakeTennisModel)
+    st = {"last_ts": 0.0, "hashes": {}}
+    r = _run(db, engine=None, opp_model=None, opp_mod=None, opps_state=st,
+             extra_mods={"tennis": tennis})
+    assert r["opportunities"] == {"events": 1, "written": 1, "traded": 0}
+    w = db.opportunities[-1][0]
+    assert w["sport"] == "tennis" and w["payload"]["opportunities"][0]["kind"] == "tennis"
+    assert r["stats"]["opps"]["tennis"] == 1 and db.trades == []
+    db = FakeDB(status="running", params={"auto_trade_tennis": True})
+    db.scan_rows = [_tennis_feed_row()]
+    r = _run(db, engine=None, opp_model=None, opp_mod=None, opps_state={"last_ts": 0.0, "hashes": {}},
+             extra_mods={"tennis": tennis})
+    assert r["opportunities"]["traded"] == 1
+    t = db.trades[0]
+    assert t["sport"] == "tennis" and t["strategy"] == "model" and t["meta"]["kind"] == "tennis"
+    assert t["signal_key"] == "tennis:MATCH_ODDS:11:back" and t["size"] == 5
+    assert t["score_at_entry"] == "set 1-0 \u00b7 game 4-2" and t["meta"]["p_lose_entry"] == 0.15
+
+
+def test_moduli_opzionali_assenti_non_rompono_il_ciclo():
+    db = FakeDB(status="running", params={"auto_trade_anomalies": True, "auto_trade_combos": True,
+                                          "auto_trade_tennis": True})
+    db.scan_rows = [_feed_odds_row(ts=1), _tennis_feed_row()]
+    r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}},
+             extra_mods={"anomaly": None, "combos": None, "tennis": None})
+    assert r["anomalies"] == {"events": 0, "found": 0, "traded": 0}
+    assert r["opportunities"]["events"] == 1 and "risk" in r["stats"] and "opps" in r["stats"]
+    assert S._import_optional("modulo_che_non_esiste") is None

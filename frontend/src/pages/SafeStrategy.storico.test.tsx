@@ -105,13 +105,18 @@ describe('Safe Strategy — giornata operativa e uscite', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        // la gamba di chiusura e' una SUB-RIGA attaccata all'apertura, mai un trade a se'
         const rows = await screen.findAllByTestId('safe-trade-row');
-        expect(rows).toHaveLength(2);
+        expect(rows).toHaveLength(1);
+        const closing = screen.getAllByTestId('safe-closing-row');
+        expect(closing).toHaveLength(1);
+        expect(closing[0]).toHaveAttribute('data-closes', '9');
         const badges = screen.getAllByTestId('exit-badge');
         expect(badges).toHaveLength(2);
         expect(badges[0]).toHaveTextContent('Uscita: profitto');
         expect(badges[0]).toHaveAttribute('title', 'quota 1.05 raggiunta');
-        expect(within(rows[1]).getByText(/chiude #9/)).toBeInTheDocument();
+        expect(within(closing[0]).getByText(/chiude #9/)).toBeInTheDocument();
+        expect(within(closing[0]).getByText(/Chiusura di #9/)).toBeInTheDocument();
     });
 
     it('pannello parametri: sezione Uscite automatiche legge params.exits e li preserva al salvataggio', async () => {
@@ -176,6 +181,7 @@ describe('Safe Strategy — tab Storico', () => {
         await user.click(within(row).getByTestId('day-trade-live'));
         expect(await screen.findByRole('tab', { name: /Calcio/ })).toHaveAttribute('data-state', 'active');
         expect(screen.getByRole('tab', { name: /^Trade/ })).toHaveAttribute('data-state', 'active');
-        expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(2);
+        expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(1);
+        expect(screen.getAllByTestId('safe-closing-row')).toHaveLength(1);
     });
 });

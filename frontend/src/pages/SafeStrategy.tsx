@@ -36,7 +36,8 @@ import { SignalCard } from '@/components/safestrategy/SignalCard';
 import { MonitorCard } from '@/components/safestrategy/MonitorCard';
 import { ParamsSheet } from '@/components/safestrategy/ParamsSheet';
 import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
-import { OpportunityGroup, filterOpps } from '@/components/safestrategy/OpportunityGroup';
+import { OpportunityGroup, filterOpps, OPP_KIND_META, type OppKindFilter } from '@/components/safestrategy/OpportunityGroup';
+import { RiskPanel } from '@/components/safestrategy/RiskPanel';
 import { SafeTradesTable } from '@/components/safestrategy/SafeTradesTable';
 import { useSafeBot } from '@/components/safestrategy/useSafeBot';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
@@ -46,8 +47,9 @@ import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel, type SafeSportFi
 import {
     buildEquitySeries, resolveSignalPlacement, safeTradeBook, feedFreshness,
     sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS,
-    type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeTrade,
-    type SignalPlacement,
+    oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
+    type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
+    type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
 import type { ActiveSignal, Sport } from '@/lib/safeStrategy';
 import type { CalcioScanPayload, ScanMediaFlags, ScanStatusRow, TennisScanPayload } from '@/lib/safeStrategyScan';
@@ -182,6 +184,7 @@ export default function SafeStrategy() {
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
     const [oppMinConfidence, setOppMinConfidence] = useState(0);
     const [oppSide, setOppSide] = useState<'all' | 'back' | 'lay'>('all');
+    const [oppKindFilter, setOppKindFilter] = useState<OppKindFilter>('all');
     const notifiedRef = useRef<Set<number>>(new Set());
     // altezza REALE dell'header sticky (su mobile va a capo): offset della TabsList
     const navRef = useRef<HTMLElement | null>(null);
@@ -319,10 +322,16 @@ export default function SafeStrategy() {
 
     const calcioTrades = useMemo(() => bot.trades.filter((t) => t.sport === 'calcio'), [bot.trades]);
     const tennisTrades = useMemo(() => bot.trades.filter((t) => t.sport === 'tennis'), [bot.trades]);
+    // righe opportunità per sport: 'calcio' (default per righe senza sport) e 'tennis'
     const oppRows = useMemo(
-        () => bot.opportunities.filter((r) => r.sport === 'calcio'),
+        () => bot.opportunities.filter((r) => r.sport !== 'tennis'),
         [bot.opportunities],
     );
+    const tennisOppRows = useMemo(
+        () => bot.opportunities.filter((r) => r.sport === 'tennis'),
+        [bot.opportunities],
+    );
+    const oppCountsAll = useMemo(() => oppKindCounts(bot.opportunities), [bot.opportunities]);
 
     const stats = bot.control?.stats ?? {};
     const agg = bot.aggregates;
@@ -330,8 +339,12 @@ export default function SafeStrategy() {
     const openTrades = bot.trades.filter((t) => t.status === 'open');
     const pendingTrades = bot.trades.filter((t) => t.status === 'pending');
     const visibleOppRows = useMemo(
-        () => oppRows.filter((r) => filterOpps(r, oppMinConfidence, oppSide).length > 0),
-        [oppRows, oppMinConfidence, oppSide],
+        () => oppRows.filter((r) => filterOpps(r, oppMinConfidence, oppSide, oppKindFilter).length > 0),
+        [oppRows, oppMinConfidence, oppSide, oppKindFilter],
+    );
+    const visibleTennisOppRows = useMemo(
+        () => tennisOppRows.filter((r) => filterOpps(r, oppMinConfidence, oppSide, oppKindFilter).length > 0),
+        [tennisOppRows, oppMinConfidence, oppSide, oppKindFilter],
     );
     const realizedToday = Number(agg?.realized_today ?? stats.realized_today ?? 0);
     const realizedTotal = Number(agg?.realized_total ?? stats.realized_total ?? 0);
@@ -383,12 +396,55 @@ export default function SafeStrategy() {
         return id;
     }
 
-    async function placeFromOpportunity(eventId: string, eventName: string | null, o: SafeOpportunity, size: number) {
+    /** Opportunità → coda 'place'. Modello / anomalia / tennis: una richiesta.
+     *  COMBINAZIONE: una richiesta PER GAMBA (stake scalato allo stake totale
+     *  scelto) con lo stesso prefisso di idempotenza e la stessa modalità, così
+     *  il servizio le riconosce come un'unica operazione. */
+    async function placeFromOpportunity(
+        eventId: string, eventName: string | null, sport: SafeSport, o: SafeOpportunity, size: number,
+    ) {
         if (liveNotConfirmed()) return null;
+        const kind = oppKind(o);
+        if (kind === 'combo') {
+            const legs = comboLegStakes(o, size);
+            if (legs.length === 0) { toast.error('Combinazione senza gambe'); return null; }
+            const prefix = comboIdempotencyPrefix(eventId, o);
+            let first: number | null = null;
+            for (let i = 0; i < legs.length; i++) {
+                const leg = legs[i];
+                const id = await bot.place({
+                    event_id: eventId,
+                    event_name: eventName,
+                    sport,
+                    mode,
+                    market_id: leg.market_id,
+                    market_type: leg.market_type,
+                    selection_id: leg.selection_id,
+                    selection_name: leg.selection_name,
+                    side: leg.side,
+                    price: leg.price,
+                    size: leg.stake,
+                    strategy: 'model',
+                    kind: 'combo',
+                    combo: o.combo ?? null,
+                    idempotency_key: `${prefix}:${i + 1}/${legs.length}`,
+                    combo_leg: i + 1,
+                    combo_legs: legs.length,
+                    combo_total_stake: size,
+                });
+                if (id == null) {
+                    toast.error('Combinazione interrotta', { description: `gamba ${i + 1}/${legs.length} non accodata — controlla i trade` });
+                    return first;
+                }
+                if (first == null) first = id;
+            }
+            toast.success('Combinazione in coda', { description: `${eventName ?? eventId} · ${legs.length} gambe · ${fmtEurPlain(size)} totali` });
+            return first;
+        }
         const id = await bot.place({
             event_id: eventId,
             event_name: eventName,
-            sport: 'calcio',
+            sport,
             mode,
             market_id: o.market_id,
             market_type: o.market_type,
@@ -398,6 +454,8 @@ export default function SafeStrategy() {
             price: o.price,
             size,
             strategy: 'model',
+            kind,
+            ...(kind === 'anomaly' ? { rule: o.rule ?? null } : {}),
         });
         if (id != null) toast.success('Ordine in coda', { description: `${eventName ?? eventId} · ${fmtEurPlain(size)}` });
         return id;
@@ -445,6 +503,95 @@ export default function SafeStrategy() {
                     );
                 })}
             </div>
+        );
+    }
+
+    /** filtri + card delle opportunità di uno sport (stessi filtri per calcio e tennis) */
+    function renderOpportunities(rows: SafeOpportunityRow[], visible: SafeOpportunityRow[], sport: SafeSport) {
+        const counts = oppKindCounts(rows);
+        const total = rows.reduce((n, r) => n + (r.payload?.opps?.length ?? 0), 0);
+        return (
+            <>
+                <div className="flex items-center gap-2 flex-wrap text-[11px]" data-testid="opp-kind-filter">
+                    <span className="text-muted-foreground uppercase tracking-wide">Tipo</span>
+                    <button
+                        type="button"
+                        onClick={() => setOppKindFilter('all')}
+                        aria-pressed={oppKindFilter === 'all'}
+                        className={`px-2 py-0.5 rounded-full border tabular-nums ${oppKindFilter === 'all' ? 'bg-white/15 text-white border-white/30' : 'border-white/10 text-muted-foreground hover:text-white'}`}
+                    >
+                        tutte {total}
+                    </button>
+                    {SAFE_OPP_KINDS.map((k) => (
+                        <button
+                            key={k}
+                            type="button"
+                            onClick={() => setOppKindFilter(k)}
+                            aria-pressed={oppKindFilter === k}
+                            title={OPP_KIND_META[k].title}
+                            className={`px-2 py-0.5 rounded-full border tabular-nums font-heading ${oppKindFilter === k ? OPP_KIND_META[k].badge : 'border-white/10 text-muted-foreground hover:text-white'}`}
+                        >
+                            {OPP_KIND_META[k].label.charAt(0) + OPP_KIND_META[k].label.slice(1).toLowerCase()} {counts[k]}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                    <span className="text-muted-foreground uppercase tracking-wide">Confidenza minima</span>
+                    {[0, 0.5, 0.7, 0.85].map((c) => (
+                        <button
+                            key={c}
+                            onClick={() => setOppMinConfidence(c)}
+                            className={`px-2 py-0.5 rounded-full border tabular-nums ${oppMinConfidence === c ? 'bg-secondary/20 text-secondary border-secondary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
+                        >
+                            {c === 0 ? 'tutte' : `${Math.round(c * 100)}%`}
+                        </button>
+                    ))}
+                    <span className="ml-3 text-muted-foreground uppercase tracking-wide">Lato</span>
+                    {(['all', 'back', 'lay'] as const).map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => setOppSide(s)}
+                            className={`px-2 py-0.5 rounded-full border uppercase ${oppSide === s ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
+                        >
+                            {s === 'all' ? 'tutti' : s}
+                        </button>
+                    ))}
+                </div>
+                {rows.length === 0 ? (
+                    <EmptyBox>
+                        {sport === 'tennis'
+                            ? 'Nessuna opportunità tennis calcolata: il servizio le scrive quando il modello a punti ha un match in corso affidabile.'
+                            : 'Nessuna opportunità calcolata: il servizio le scrive quando ha λ affidabili sul match in corso.'}
+                    </EmptyBox>
+                ) : visible.length === 0 ? (
+                    <EmptyBox>
+                        <span data-testid="opp-filtered-empty">
+                            Nessuna opportunità supera i filtri
+                            {oppMinConfidence > 0 ? ` (confidenza ≥ ${Math.round(oppMinConfidence * 100)}%` : ' ('}
+                            {oppSide !== 'all' ? `${oppMinConfidence > 0 ? ', ' : ''}lato ${oppSide.toUpperCase()}` : ''}
+                            {oppKindFilter !== 'all' ? `${oppMinConfidence > 0 || oppSide !== 'all' ? ', ' : ''}tipo ${OPP_KIND_META[oppKindFilter].label}` : ''}
+                            ): allarga tipo, confidenza o lato per vederne {total}.
+                        </span>
+                    </EmptyBox>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {visible.map((r) => (
+                            <OpportunityGroup
+                                key={r.event_id}
+                                row={r}
+                                mode={mode}
+                                stake={bot.params.opps_stake}
+                                requests={bot.requests}
+                                minConfidence={oppMinConfidence}
+                                sideFilter={oppSide}
+                                kindFilter={oppKindFilter}
+                                nowMs={nowMs}
+                                onPlace={(o, size) => placeFromOpportunity(r.event_id, r.payload?.event_name ?? null, sport, o, size)}
+                            />
+                        ))}
+                    </div>
+                )}
+            </>
         );
     }
 
@@ -550,6 +697,13 @@ export default function SafeStrategy() {
                         <StatTile label="P&L totale" value={fmtSignedEur(realizedTotal)} tone={realizedTotal >= 0 ? 'pos' : 'neg'} />
                         <StatTile label="Liability aperta" value={fmtEurPlain(openLiability)} tone="danger" icon={<ShieldAlert className="w-3.5 h-3.5" />} />
                         <StatTile label="Partite monitorate" value={String(football.length + tennis.length)} icon={<Layers className="w-3.5 h-3.5" />} sub={`⚽ ${football.length} · 🎾 ${tennis.length}`} />
+                        <RiskPanel
+                            risk={stats.risk}
+                            opps={stats.opps}
+                            fallbackCounts={oppCountsAll}
+                            paramDailyCap={bot.params.risk.daily_liability_cap}
+                            paramLossStop={bot.params.risk.daily_loss_stop}
+                        />
                     </div>
                 )}
 
@@ -588,59 +742,7 @@ export default function SafeStrategy() {
                             </TabsContent>
 
                             <TabsContent value="opportunita" className="space-y-3">
-                                <div className="flex items-center gap-2 flex-wrap text-[11px]">
-                                    <span className="text-muted-foreground uppercase tracking-wide">Confidenza minima</span>
-                                    {[0, 0.5, 0.7, 0.85].map((c) => (
-                                        <button
-                                            key={c}
-                                            onClick={() => setOppMinConfidence(c)}
-                                            className={`px-2 py-0.5 rounded-full border tabular-nums ${oppMinConfidence === c ? 'bg-secondary/20 text-secondary border-secondary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
-                                        >
-                                            {c === 0 ? 'tutte' : `${Math.round(c * 100)}%`}
-                                        </button>
-                                    ))}
-                                    <span className="ml-3 text-muted-foreground uppercase tracking-wide">Lato</span>
-                                    {(['all', 'back', 'lay'] as const).map((s) => (
-                                        <button
-                                            key={s}
-                                            onClick={() => setOppSide(s)}
-                                            className={`px-2 py-0.5 rounded-full border uppercase ${oppSide === s ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
-                                        >
-                                            {s === 'all' ? 'tutti' : s}
-                                        </button>
-                                    ))}
-                                </div>
-                                {oppRows.length === 0 ? (
-                                    <EmptyBox>
-                                        Nessuna opportunità di modello calcolata: il servizio le scrive quando ha
-                                        λ affidabili sul match in corso.
-                                    </EmptyBox>
-                                ) : visibleOppRows.length === 0 ? (
-                                    <EmptyBox>
-                                        <span data-testid="opp-filtered-empty">
-                                            Nessuna opportunità supera i filtri
-                                            {oppMinConfidence > 0 ? ` (confidenza ≥ ${Math.round(oppMinConfidence * 100)}%` : ' ('}
-                                            {oppSide !== 'all' ? `${oppMinConfidence > 0 ? ', ' : ''}lato ${oppSide.toUpperCase()}` : ''}
-                                            ): allarga confidenza o lato per vederne {oppRows.reduce((n, r) => n + (r.payload?.opps?.length ?? 0), 0)}.
-                                        </span>
-                                    </EmptyBox>
-                                ) : (
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                                        {visibleOppRows.map((r) => (
-                                            <OpportunityGroup
-                                                key={r.event_id}
-                                                row={r}
-                                                mode={mode}
-                                                stake={bot.params.opps_stake}
-                                                requests={bot.requests}
-                                                minConfidence={oppMinConfidence}
-                                                sideFilter={oppSide}
-                                                nowMs={nowMs}
-                                                onPlace={(o, size) => placeFromOpportunity(r.event_id, r.payload?.event_name ?? null, o, size)}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
+                                {renderOpportunities(oppRows, visibleOppRows, 'calcio')}
                             </TabsContent>
 
                             <TabsContent value="monitor">
@@ -675,9 +777,14 @@ export default function SafeStrategy() {
                         <Tabs value={tennisTab} onValueChange={setTennisTab} className="w-full">
                             <TabsList className="mb-3">
                                 <TabsTrigger value="segnali">Segnali ({bySport.tennisActive.length})</TabsTrigger>
+                                <TabsTrigger value="opportunita">Opportunità tennis ({tennisOppRows.length})</TabsTrigger>
                                 <TabsTrigger value="monitor">Monitor ({tnSorted.length})</TabsTrigger>
                                 <TabsTrigger value="trade">Trade ({tennisTrades.length})</TabsTrigger>
                             </TabsList>
+
+                            <TabsContent value="opportunita" className="space-y-3">
+                                {renderOpportunities(tennisOppRows, visibleTennisOppRows, 'tennis')}
+                            </TabsContent>
 
                             <TabsContent value="segnali" className="space-y-4">
                                 {renderSignals(bySport.tennisActive)}

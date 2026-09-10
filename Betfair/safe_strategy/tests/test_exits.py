@@ -362,3 +362,145 @@ def test_testi_ui_e_mappa_kind():
     assert XE.spread_ratio({"back": 20.0, "lay": 60.0}) == 3.0
     assert XE.spread_ratio({"back": None, "lay": 60.0}) is None
     assert XE.spread_ratio({"back": 1.0, "lay": 1.01}) is None
+
+
+# ---------------------------------------------------------------------------
+# TRADE DI MODELLO: parametri, linea decisa, situazione, decide_model
+# ---------------------------------------------------------------------------
+def _model(market_type="OVER_UNDER_25", selection_name="Under 2.5 Goals", side="back",
+           sport="calcio", **kw):
+    kw.setdefault("selection_id", 47973)
+    return _trade(strategy="model", side=side, market_type=market_type,
+                  selection_name=selection_name, sport=sport, **kw)
+
+
+def test_parametri_modello_default_e_clamp():
+    assert P["model_exit_p_lose"] == 0.10 and P["model_take_profit_frac"] == 0.8
+    assert P["model_free_cashout_p_lose"] == 0.005
+    m = XE.merge_exit_params({"model_exit_p_lose": 5, "model_take_profit_frac": -1,
+                              "model_free_cashout_p_lose": 0.02})
+    assert m["model_exit_p_lose"] == 1.0 and m["model_take_profit_frac"] == 0.0
+    assert m["model_free_cashout_p_lose"] == 0.02
+    assert XE.MODEL_STRATEGIES == ("model",) and "model" not in XE.EXIT_STRATEGIES
+
+
+def test_linea_decisa_contro():
+    under = _model()
+    assert XE.line_decided_against(under, 2, 1) is True
+    assert XE.line_decided_against(under, 1, 1) is False
+    assert XE.line_decided_against(under, None, 1) is False
+    over = _model(selection_name="Over 2.5 Goals")
+    assert XE.line_decided_against(over, 2, 1) is False          # decisa A FAVORE
+    assert XE.line_decided_against(_model(selection_name="Over 2.5 Goals", side="lay"), 2, 1) is True
+    assert XE.line_decided_against(_model(selection_name="Under 2.5 Goals", side="lay"), 2, 1) is False
+    # linea da meta.line (market_type generico 'OVER_UNDER')
+    t = _model(market_type="OVER_UNDER", selection_name="Under", meta={"line": 1.5})
+    assert XE.ou_line(t) == 1.5 and XE.line_decided_against(t, 1, 1) is True
+    assert XE.ou_line(_model(market_type="OVER_UNDER", selection_name="Under 3.5 Goals")) == 3.5
+    assert XE.line_decided_against(_model(market_type="OVER_UNDER", selection_name="Under"), 5, 5) is False
+    # BTTS
+    assert XE.line_decided_against(_model("BOTH_TEAMS_TO_SCORE", "No"), 1, 1) is True
+    assert XE.line_decided_against(_model("BOTH_TEAMS_TO_SCORE", "Yes"), 1, 1) is False
+    assert XE.line_decided_against(_model("BOTH_TEAMS_TO_SCORE", "Yes", side="lay"), 1, 1) is True
+    assert XE.line_decided_against(_model("BOTH_TEAMS_TO_SCORE", "No"), 1, 0) is False
+    # Correct Score puntato superato; il lay e "altro risultato" mai
+    assert XE.line_decided_against(_model("CORRECT_SCORE", "1 - 0"), 2, 0) is True
+    assert XE.line_decided_against(_model("CORRECT_SCORE", "1 - 0"), 1, 0) is False
+    assert XE.line_decided_against(_model("CORRECT_SCORE", "1 - 0", side="lay"), 2, 0) is False
+    assert XE.line_decided_against(_model("CORRECT_SCORE", "Any Other Home Win"), 5, 0) is False
+    # Match Odds: mai prima del fischio finale
+    assert XE.line_decided_against(_model("MATCH_ODDS", "Home"), 0, 5) is False
+
+
+def test_situazione_modello_calcio_gol_e_rosso():
+    t = _model("MATCH_ODDS", "Away", side="lay", selection_id=8, score="1-0")
+    meta, _ = _step(t, [_calcio(60, 1, 0)])
+    sit = XE.model_situation(t, meta, _calcio(60, 1, 0), P)
+    assert sit == {"adverse_event": None, "not_before_ts": 0.0, "decided_against": False}
+    meta, _ = _step(t, [_calcio(60, 1, 0), _calcio(66, 1, 1)])
+    sit = XE.model_situation(t, meta, _calcio(66, 1, 1), P)
+    assert sit["adverse_event"] == "gol" and sit["not_before_ts"] == T0 + 2.0 + 30.0
+    meta, _ = _step(t, [_calcio(60, 1, 0), _calcio(66, 1, 0, red_home=1)])
+    sit = XE.model_situation(t, meta, _calcio(66, 1, 0, red_home=1), P)
+    assert sit["adverse_event"] == "rosso" and sit["not_before_ts"] == T0 + 32.0
+    # linea decisa: anche senza gol "dopo l'ingresso" nel tracciamento
+    u = _model(score="2-1")
+    meta, _ = _step(u, [_calcio(70, 2, 1)])
+    assert XE.model_situation(u, meta, _calcio(70, 2, 1), P)["decided_against"] is True
+
+
+def test_situazione_modello_tennis_due_game_o_set():
+    # back del giocatore 1 (sel 11): tracciato per SPORT (strategia 'model')
+    t = _model("MATCH_ODDS", "P1", sport="tennis", score="set 1-0 . game 4-2")
+    t["selection_id"] = 11
+    meta, _ = _step(t, [_tennis((1, 0), (4, 2)), _tennis((1, 0), (4, 3)), _tennis((1, 0), (4, 4))])
+    assert meta["exit_track"]["side"] == "p1" and meta["exit_track"]["consecutive_lost"] == 2
+    assert XE.model_situation(t, meta, _tennis((1, 0), (4, 4)), P)["adverse_event"] == "due_game_persi_di_fila"
+    meta, _ = _step(t, [_tennis((1, 0), (4, 2)), _tennis((1, 1), (0, 0))])
+    assert XE.model_situation(t, meta, _tennis((1, 1), (0, 0)), P)["adverse_event"] == "set_perso"
+    # lay dell'avversario (sel 12) = stessa posizione "p1 deve vincere"
+    lay = _model("MATCH_ODDS", "P2", side="lay", sport="tennis", score="set 1-0 . game 4-2")
+    lay["selection_id"] = 12
+    meta, _ = _step(lay, [_tennis((1, 0), (4, 2))])
+    assert meta["exit_track"]["side"] == "p1"
+    # game vinto: nessun evento avverso
+    meta, _ = _step(t, [_tennis((1, 0), (4, 2)), _tennis((1, 0), (5, 2))])
+    assert XE.model_situation(t, meta, _tennis((1, 0), (5, 2)), P)["adverse_event"] is None
+    assert XE.situation(t, _tennis((1, 0), (5, 2)))["score"] == "set 1-0 \u00b7 game 5-2"
+
+
+def _sit(adverse=None, nb=0.0, decided=False):
+    return {"adverse_event": adverse, "not_before_ts": nb, "decided_against": decided}
+
+
+def test_decide_model_evento_avverso():
+    d = XE.decide_model(p_lose=0.2, p_lose_entry=0.05, locked=-1.0, max_profit=10.0,
+                        situation=_sit("gol", 123.0), params=P)
+    assert d == XE.ExitDecision("loss", "gol_avverso", 123.0)
+    # sotto soglia: si tiene
+    assert XE.decide_model(p_lose=0.08, p_lose_entry=0.05, locked=-1.0, max_profit=10.0,
+                           situation=_sit("gol"), params=P) is None
+    # il gol ha AIUTATO (p_lose scesa rispetto all'ingresso): si tiene
+    assert XE.decide_model(p_lose=0.3, p_lose_entry=0.45, locked=-1.0, max_profit=10.0,
+                           situation=_sit("gol"), params=P) is None
+    # ingresso ignoto: basta la soglia
+    assert XE.decide_model(p_lose=0.3, p_lose_entry=None, locked=-1.0, max_profit=10.0,
+                           situation=_sit("gol"), params=P).reason == "gol_avverso"
+    # rosso -> kind red_card; p_lose ignota -> nessuna uscita per evento
+    assert XE.decide_model(p_lose=0.5, p_lose_entry=0.1, locked=-1.0, max_profit=10.0,
+                           situation=_sit("rosso", 9.0), params=P) == XE.ExitDecision("red_card", "rosso_avverso", 9.0)
+    assert XE.decide_model(p_lose=None, p_lose_entry=0.1, locked=-1.0, max_profit=10.0,
+                           situation=_sit("gol"), params=P) is None
+    # linea decisa contro: prima di tutto, anche se il P&L bloccato fosse buono
+    assert XE.decide_model(p_lose=1.0, p_lose_entry=0.1, locked=9.0, max_profit=10.0,
+                           situation=_sit(decided=True, nb=5.0), params=P) == XE.ExitDecision("loss", "linea_decisa_contro", 5.0)
+    # tennis: incondizionata e immediata
+    assert XE.decide_model(p_lose=0.01, p_lose_entry=0.2, locked=-1.0, max_profit=10.0,
+                           situation=_sit("due_game_persi_di_fila"), params=P) == XE.ExitDecision("loss", "due_game_persi_di_fila", 0.0)
+    assert XE.decide_model(p_lose=None, p_lose_entry=None, locked=None, max_profit=None,
+                           situation=_sit("set_perso"), params=P).reason == "set_perso"
+
+
+def test_decide_model_take_profit_e_cashout_quasi_gratis():
+    tp = XE.decide_model(p_lose=0.1, p_lose_entry=0.1, locked=8.0, max_profit=10.0,
+                         situation=_sit(), params=P)
+    assert tp == XE.ExitDecision("profit", "take_profit_modello", 0.0)
+    assert XE.decide_model(p_lose=0.1, p_lose_entry=0.1, locked=7.9, max_profit=10.0,
+                           situation=_sit(), params=P) is None
+    # cash-out quasi gratis: P(perdita) <= 0.5% e bloccato >= 0
+    fc = XE.decide_model(p_lose=0.004, p_lose_entry=0.1, locked=0.1, max_profit=10.0,
+                         situation=_sit(), params=P)
+    assert fc == XE.ExitDecision("profit", "cashout_quasi_gratis", 0.0)
+    assert XE.decide_model(p_lose=0.004, p_lose_entry=0.1, locked=-0.1, max_profit=10.0,
+                           situation=_sit(), params=P) is None
+    assert XE.decide_model(p_lose=0.006, p_lose_entry=0.1, locked=0.1, max_profit=10.0,
+                           situation=_sit(), params=P) is None
+    # senza numeri: si tiene; frazione 0 = take profit disattivo
+    assert XE.decide_model(p_lose=None, p_lose_entry=None, locked=None, max_profit=None,
+                           situation=_sit(), params=P) is None
+    assert XE.decide_model(p_lose=0.1, p_lose_entry=0.1, locked=10.0, max_profit=10.0,
+                           situation=_sit(), params=XE.merge_exit_params({"model_take_profit_frac": 0})) is None
+    # testi UI
+    assert XE.reason_text("loss", "gol_avverso").startswith("Gol avverso")
+    assert XE.reason_text("profit", "take_profit_modello") == "Take profit del modello: profitto bloccato"
+    assert XE.reason_text("loss", "linea_decisa_contro").startswith("La linea tradata")

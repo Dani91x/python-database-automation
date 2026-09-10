@@ -53,8 +53,13 @@ class ModelSelection:
     name: str
     price: float                 # tick Betfair valido
     lay_size_available: float
-    p_model: float               # probabilità del modello che il risultato esca
+    p_model: float               # probabilità del modello che il risultato esca (CALIBRATA se c'è il calibratore)
     p_implied: float             # 1/quota (probabilità implicita del mercato)
+    p_model_raw: Optional[float] = None   # P grezza del modello (audit); None = uguale a p_model
+
+    @property
+    def raw(self) -> float:
+        return self.p_model if self.p_model_raw is None else self.p_model_raw
 
     @property
     def edge(self) -> float:
@@ -156,6 +161,59 @@ def score_probs(*, lh_pre: float, la_pre: float, rho: float, state: LiveState,
     return {(state.score_home + h, state.score_away + a): p for (h, a), p in grid.items()}
 
 
+# ---------------------------------------------------------------------------
+# CALIBRAZIONE (10/09): la P del modello passa dal calibratore condiviso di
+# Betfair/safe_strategy/calibration.py (``Calibrator.load(path)`` /
+# ``.apply(p, family, minute)``, famiglie 'cs' = Correct Score, 'hts' = Half
+# Time Score) SE il modulo esiste. Import GUARDATO: modulo assente/rotto → P
+# grezza, mai un crash della selezione. Cache per processo con TTL breve.
+# ---------------------------------------------------------------------------
+CALIBRATION_FAMILY_FT = "cs"
+CALIBRATION_FAMILY_HT = "hts"
+_CALIBRATION_TTL_S = 600.0
+_CALIBRATOR_CACHE: Dict[str, Tuple[float, Any]] = {}   # path → (ts caricamento, calibratore|None)
+
+
+def reset_calibration_cache() -> None:
+    _CALIBRATOR_CACHE.clear()
+
+
+def load_calibrator(path: Optional[str] = None, *, now_ts: Optional[float] = None) -> Optional[Any]:
+    """Calibratore condiviso, o None (modulo assente, load fallito). Mai solleva."""
+    import time as _time
+    key = str(path or "")
+    ts = float(now_ts) if now_ts is not None else _time.time()
+    cached = _CALIBRATOR_CACHE.get(key)
+    if cached is not None and ts - cached[0] < _CALIBRATION_TTL_S:
+        return cached[1]
+    cal = None
+    try:
+        from Betfair.safe_strategy import calibration as _cal_mod   # agent W-A
+        klass = getattr(_cal_mod, "Calibrator", None)
+        loader = getattr(klass, "load", None)
+        if callable(loader):
+            cal = loader(key) if key else loader()
+            if not callable(getattr(cal, "apply", None)):
+                cal = None
+    except Exception:  # noqa: BLE001 - modulo assente o rotto: selezione grezza
+        cal = None
+    _CALIBRATOR_CACHE[key] = (ts, cal)
+    return cal
+
+
+def apply_calibration(p: float, family: str, minute: int, calibrator: Any) -> float:
+    """P calibrata; la grezza se il calibratore manca, esplode o dà un valore assurdo."""
+    if calibrator is None:
+        return float(p)
+    try:
+        q = float(calibrator.apply(float(p), str(family), int(minute)))
+    except Exception:  # noqa: BLE001
+        return float(p)
+    if not math.isfinite(q) or q < 0.0 or q > 1.0:
+        return float(p)
+    return q
+
+
 def select_by_model(
     runners: list,
     probs: Dict[Tuple[int, int], float],
@@ -167,9 +225,13 @@ def select_by_model(
     p_max: float,
     size_needed: float = 0.0,
     min_goal_distance: int = 2,
+    calibrator: Any = None,
+    family: str = CALIBRATION_FAMILY_FT,
 ) -> Optional[ModelSelection]:
     """Runner con la probabilità di modello PIÙ BASSA che rispetti tutti i vincoli.
-    ``runners``: ``omega_engine.ScoreRunner`` (lay_price/lay_size). None se nessuno."""
+    ``runners``: ``omega_engine.ScoreRunner`` (lay_price/lay_size). None se nessuno.
+    Con ``calibrator`` i vincoli e l'ordinamento usano la P CALIBRATA
+    (``p_model``); la grezza resta in ``p_model_raw`` per l'audit."""
     need = max(float(min_liquidity), float(size_needed))
     best: Optional[ModelSelection] = None
     for r in runners:
@@ -186,9 +248,10 @@ def select_by_model(
             continue                      # irraggiungibile
         if (h - state.score_home) + (a - state.score_away) < min_goal_distance:
             continue                      # troppo vicino al punteggio corrente
-        p_model = probs.get((h, a))
-        if p_model is None:
+        p_raw = probs.get((h, a))
+        if p_raw is None:
             continue                      # fuori griglia: non stimabile → mai a occhi chiusi
+        p_model = apply_calibration(p_raw, family, state.minute, calibrator)
         p_implied = 1.0 / float(price)
         if p_model > p_max or p_model >= p_implied:
             continue                      # più probabile del consentito, o del mercato
@@ -197,6 +260,7 @@ def select_by_model(
             price=E.round_to_tick(float(price)),
             lay_size_available=float(r.lay_size or 0.0),
             p_model=float(p_model), p_implied=float(p_implied),
+            p_model_raw=float(p_raw),
         )
         if best is None or (cand.p_model, cand.price, -cand.lay_size_available) < (best.p_model, best.price, -best.lay_size_available):
             best = cand
@@ -217,6 +281,8 @@ def audit_block(sel: ModelSelection, *, lh_pre: float, la_pre: float, source: st
     """Blocco di audit per trade.meta / suggestion (numeri, mai decisioni)."""
     return {
         "p_model": round(sel.p_model, 6),
+        "p_model_raw": round(sel.raw, 6),
+        "calibrated": sel.p_model_raw is not None and abs(sel.p_model - sel.p_model_raw) > 1e-12,
         "p_implied": round(sel.p_implied, 6),
         "edge": round(sel.edge, 6),
         "lambda_pre": [round(lh_pre, 3), round(la_pre, 3)],

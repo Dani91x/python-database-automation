@@ -32,6 +32,8 @@ export interface InvestActionProps {
     requests: SafeRequest[];
     /** ritorna l'id della richiesta accodata (null = fallita) */
     onPlace: (size: number) => Promise<number | null>;
+    /** notifica lo stake corrente (es. combinazioni: scala le gambe) */
+    onStakeChange?: (stake: number) => void;
 }
 
 /** la conferma LIVE armata decade da sola dopo questo tempo */
@@ -39,6 +41,7 @@ export const LIVE_ARM_TIMEOUT_MS = 10_000;
 
 export function InvestAction({
     mode, side, price, sizeAvailable, defaultStake, disabled = false, disabledReason, requests, onPlace,
+    onStakeChange,
 }: InvestActionProps) {
     const [stakeStr, setStakeStr] = useState(() => String(defaultStake ?? 5));
     // lo stake segue i parametri del bot finche' l'utente non lo tocca: al primo
@@ -68,6 +71,9 @@ export function InvestAction({
 
     // la conferma LIVE armata decade se cambiano stake/prezzo/abbinabile…
     useEffect(() => { setArmed(false); }, [stake, price, sizeAvailable]);
+    const onStakeRef = useRef(onStakeChange);
+    onStakeRef.current = onStakeChange;
+    useEffect(() => { onStakeRef.current?.(stake); }, [stake]);
     // …e comunque dopo LIVE_ARM_TIMEOUT_MS
     useEffect(() => {
         if (!armed) return;

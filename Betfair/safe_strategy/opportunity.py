@@ -51,15 +51,23 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from Betfair.omega import omega_model as M
+from Betfair.safe_strategy.calibration import (
+    DEFAULT_CALIBRATION_PATH, Calibrator, family_of_market,
+)
+
+try:  # hook PRESSIONE (tiri/corner live -> moltiplicatori dei lambda residui)
+    from Betfair.safe_strategy.pressure import pressure_from_payload as _pressure_from_payload
+except Exception:  # noqa: BLE001 - modulo assente: pressione neutra (1.0, 1.0)
+    _pressure_from_payload = None
 
 # ---------------------------------------------------------------------------
 # Parametri (tutti sovrascrivibili dal chiamante)
 # ---------------------------------------------------------------------------
 DEFAULT_OPP_PARAMS: Dict[str, Any] = {
     # soglie di segnalazione
-    "min_edge": 0.02,          # edge minimo (p_model - 1/quota) per segnalare
-    "min_prob_back": 0.85,     # back solo su esiti quasi certi
-    "max_prob_lay": 0.15,      # lay solo su esiti quasi impossibili
+    "min_edge": 0.03,          # edge minimo (p_model - 1/quota) per segnalare
+    "min_prob_back": 0.95,     # back solo su esiti quasi certi
+    "max_prob_lay": 0.0,  # backtest 10/09 (38 eventi): i LAY del modello perdono (ROI -15..-66%) -> spenti di default; 0.0 = solo esiti gia decisi,      # lay solo su esiti quasi impossibili
     "max_lay_price": 5.0,      # oltre: liability sproporzionata, mai lay
     "min_size": 20.0,          # EUR abbinabili SUBITO al best price
     # economia
@@ -115,6 +123,8 @@ class Opportunity:
     rationale: str
     minute: Optional[int]
     score: str
+    p_model_raw: float = 0.0            # P del modello PRIMA della calibrazione
+    calibration: Optional[dict] = None  # {applied, family, n}
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +225,67 @@ class OpportunityModel:
         *,
         atlas: Optional[dict] = None,
         clock: Callable[[], float] = time.time,
+        calibration: Any = "auto",
+        pressure: bool = True,
     ) -> None:
         self.params: Dict[str, Any] = {**DEFAULT_OPP_PARAMS, **(params or {})}
         self.atlas = atlas
         self.clock = clock
+        # CALIBRAZIONE sui nostri dati: 'auto' = data/opp_calibration.json se
+        # esiste, 'off' = probabilita' grezze, path/Calibrator espliciti
+        self.calibrator: Optional[Calibrator] = self._resolve_calibration(calibration)
+        # PRESSIONE live: hook opzionale (pressure.py); senza modulo = neutra
+        self.pressure_enabled = bool(pressure) and _pressure_from_payload is not None
         # cache del book per (stato live + λ): il tick dello scanner ricalcola
         # la stessa griglia decine di volte al minuto per lo stesso evento
         self._book_cache: Dict[Tuple[Any, ...], Dict[str, float]] = {}
+
+    @staticmethod
+    def _resolve_calibration(spec: Any) -> Optional[Calibrator]:
+        if spec is None or spec == "off" or spec is False:
+            return None
+        if isinstance(spec, Calibrator):
+            return None if spec.empty else spec
+        path = DEFAULT_CALIBRATION_PATH if spec in ("auto", True) else str(spec)
+        try:
+            import os
+            if not os.path.isfile(path):
+                return None
+            cal = Calibrator.load(path)
+        except Exception:  # noqa: BLE001 - mai fermare lo scanner per una tabella
+            return None
+        return None if cal.empty else cal
+
+    def calibration_info(self) -> Dict[str, Any]:
+        """Stato della calibrazione (per log/UI)."""
+        if self.calibrator is None:
+            return {"loaded": False, "tables_applied": 0}
+        return self.calibrator.info()
+
+    def _pressure(self, payload: dict) -> Tuple[float, float]:
+        """Moltiplicatori di pressione (casa, trasferta); (1.0, 1.0) = neutro."""
+        if not self.pressure_enabled or _pressure_from_payload is None:
+            return 1.0, 1.0
+        try:
+            ph, pa = _pressure_from_payload(payload)
+            ph, pa = float(ph), float(pa)
+        except Exception:  # noqa: BLE001 - un hook rotto non deve toccare il modello
+            return 1.0, 1.0
+        if not (math.isfinite(ph) and math.isfinite(pa)) or ph <= 0 or pa <= 0:
+            return 1.0, 1.0
+        return ph, pa
+
+    def calibrate(self, p: float, market_type: Optional[str], prob_key: Optional[str],
+                  minute: Optional[int]) -> Tuple[float, Dict[str, Any]]:
+        """(p calibrata, {applied, family, n}) - p invariata senza tabella."""
+        family = family_of_market(market_type, prob_key)
+        if self.calibrator is None or family is None:
+            return float(p), {"applied": False, "family": family, "n": 0}
+        applied, n = self.calibrator.lookup(family, minute)
+        if not applied:
+            return float(p), {"applied": False, "family": family, "n": n}
+        return (float(self.calibrator.apply(float(p), family, minute)),
+                {"applied": True, "family": family, "n": n})
 
     # ------------------------------------------------------------------ book
     def book(
@@ -247,9 +311,11 @@ class OpportunityModel:
         rh = int(payload.get("red_home") or 0)
         ra = int(payload.get("red_away") or 0)
         lh_pre, la_pre = float(lambdas[0]), float(lambdas[1])
+        press_h, press_a = self._pressure(payload)
 
         key = (m, sh, sa, rh, ra, round(lh_pre, 4), round(la_pre, 4), league_id,
-               None if ht_ratio is None else (round(ht_ratio[0], 4), round(ht_ratio[1], 4)))
+               None if ht_ratio is None else (round(ht_ratio[0], 4), round(ht_ratio[1], 4)),
+               round(press_h, 4), round(press_a, 4))
         cached = self._book_cache.get(key)
         if cached is not None:
             return cached
@@ -261,6 +327,7 @@ class OpportunityModel:
 
         lam_h, lam_a = inplay_residual_rates(
             lh_pre, la_pre, m, sh, sa, red_home=rh, red_away=ra, league_id=league_id,
+            pressure_home=press_h, pressure_away=press_a,
         )
         rho = rho_for_league(league_id)
         max_goals = int(p["max_goals_grid"])
@@ -661,11 +728,15 @@ class OpportunityModel:
         age = self._price_age(spec.get("ts_ms"), now_ts)
         out: List[Opportunity] = []
         for r in runners:
-            pm = float(probs[r["prob_key"]])
+            p_raw = float(probs[r["prob_key"]])
+            # gate/edge/EV sulla P CALIBRATA (sui nostri dati); la grezza resta
+            # nel dict per confronto e per la ricalibrazione futura
+            pm, cal = self.calibrate(p_raw, spec.get("market_type"), r.get("prob_key"), minute)
             p_imp = implied.get(id(r), None)
             for side in ("back", "lay"):
                 opp = self._try_side(
                     side, r, pm, p_imp, spec, payload, hazard, age, minute, sh, sa,
+                    p_raw=p_raw, calibration=cal,
                 )
                 if opp is not None:
                     out.append(opp)
@@ -707,8 +778,12 @@ class OpportunityModel:
         self, side: str, runner: dict, p_model: float, p_implied: Optional[float],
         spec: Dict[str, Any], payload: dict, hazard: Dict[str, Any],
         age: Optional[float], minute: int, sh: int, sa: int,
+        p_raw: Optional[float] = None, calibration: Optional[Dict[str, Any]] = None,
     ) -> Optional[Opportunity]:
         p = self.params
+        if p_raw is None:
+            p_raw = p_model
+        calibration = calibration or {"applied": False, "family": None, "n": 0}
         price = runner.get("back") if side == "back" else runner.get("lay")
         size = runner.get("back_size") if side == "back" else runner.get("lay_size")
         if not isinstance(price, (int, float)) or price <= 1.0:
@@ -768,9 +843,12 @@ class OpportunityModel:
             ev=round(ev, 6),
             confidence=round(conf, 4),
             rationale=self._rationale(side, spec, name, price, size_f, p_model, edge,
-                                      minute, sh, sa, hazard),
+                                      minute, sh, sa, hazard, p_raw=p_raw,
+                                      calibration=calibration),
             minute=minute,
             score=f"{sh}-{sa}",
+            p_model_raw=round(float(p_raw), 6),
+            calibration=dict(calibration),
         )
 
     # ------------------------------------------------------------- rationale
@@ -806,13 +884,18 @@ class OpportunityModel:
     def _rationale(
         self, side: str, spec: Dict[str, Any], name: str, price: float, size: float,
         p_model: float, edge: float, minute: int, sh: int, sa: int,
-        hazard: Dict[str, Any],
+        hazard: Dict[str, Any], p_raw: Optional[float] = None,
+        calibration: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Frase corta in italiano, SOLO ASCII (console Windows cp1252)."""
         head = f"{name} @{price:.2f}" if side == "back" else f"LAY {name} @{price:.2f}"
+        cal = ""
+        if calibration and calibration.get("applied") and p_raw is not None:
+            cal = (f" [calibrata: modello grezzo {self._pct(float(p_raw))}%, "
+                   f"n={int(calibration.get('n') or 0)}]")
         return (
             f"{head} sul {sh}-{sa} al {minute}': "
-            f"{self._prob_label(spec, name)}={self._pct(p_model)}%, "
+            f"{self._prob_label(spec, name)}={self._pct(p_model)}%{cal}, "
             f"edge {self._pct(edge)}%, {size:.0f} EUR abbinabili, "
             f"{hazard.get('note')}"
         )

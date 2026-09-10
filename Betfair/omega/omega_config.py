@@ -62,6 +62,23 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     "ft_entry_max": (80, int, 45, 130),
     "model_p_max_pct": (2.0, float, 0.01, 50.0),   # P(modello) massima del risultato layato
     "model_min_goal_distance": (2, int, 1, 5),     # gol AGGIUNTIVI minimi dal punteggio corrente
+    # P di modello CALIBRATA nella selezione (Betfair/safe_strategy/calibration.py,
+    # import guardato): 'auto' = usa il calibratore se c'è | 'off' = P grezza.
+    "model_calibration": ("auto", str, None, None),
+    "model_calibration_path": ("", str, None, None),   # vuoto = default del calibratore
+    # ---- GREEN-UP AUTOMATICO (10/09, §12): la scommessa diventa un trade ----
+    "greenup_enabled": (True, bool, None, None),
+    "greenup_mode": ("auto", str, None, None),          # 'auto' | 'off'
+    "greenup_trigger_distance": (1, int, 0, 3),         # bancato raggiungibile con ≤ N gol → uscita
+    "greenup_price_trigger_ratio": (0.5, float, 0.05, 1.0),  # lay ≤ ratio × ingresso → valutazione
+    "greenup_settle_delay_s": (30, int, 0, 600),        # assestamento del mercato dopo un gol
+    "greenup_hold_max_risk": (0.02, float, 0.0, 1.0),   # P(perdita) ≤ → si tiene
+    "greenup_risk_cap": (0.15, float, 0.0, 1.0),        # P(perdita) ≥ → si esce (caso vivo 10/09: 0.12 → tengo)
+    "greenup_ev_margin": (0.10, float, 0.0, 1000.0),    # EUR: bloccato ≥ EV(tengo) − margine → esce
+    "greenup_take_profit_frac": (0.9, float, 0.1, 1.0), # cash-out blocca ≥ frac dello stake…
+    "greenup_take_profit_minute": (80, int, 0, 130),    # …dal minuto → take-profit
+    "greenup_retry_s": (20, int, 2, 600),               # cooldown fra tentativi (residuo/errore)
+    "greenup_max_attempts": (15, int, 0, 100),          # cap tentativi per posizione
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}
@@ -82,6 +99,10 @@ def _coerce(key: str, raw: Any) -> Any:
         return default
     if key == "engine" and val not in ("legs", "single"):
         return default
+    if key in ("greenup_mode", "model_calibration") and val not in ("auto", "off"):
+        return default
+    if key == "model_calibration_path":
+        return str(val).strip()
     if lo is not None and isinstance(val, (int, float)) and val < lo:
         val = lo if cast is float else int(lo)
     if hi is not None and isinstance(val, (int, float)) and val > hi:
@@ -110,4 +131,7 @@ def resolve_params(raw: dict[str, Any] | None) -> dict[str, Any]:
             out["entry_minute_max"],
             out["entry_minute_min"],
         )
+    # green-up: la soglia di "margine ampio" non può superare il cap di rischio
+    if out["greenup_hold_max_risk"] > out["greenup_risk_cap"]:
+        out["greenup_hold_max_risk"] = out["greenup_risk_cap"]
     return out

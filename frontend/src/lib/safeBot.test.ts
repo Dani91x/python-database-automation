@@ -18,6 +18,9 @@ import {
     subscribeOpportunities, buildEquitySeries, detectSettlements, tradeExposure,
     mergeBotParams, oppScore, SAFE_BOT_DEFAULTS, safeTradeBook, resolveSignalPlacement, cappedFrom,
     cashoutInFlight, feedFreshness, staleReason, sameStrategyParams, strategyParamsOf,
+    oppKind, oppKindCounts, comboLegStakes, comboLock, anomalyRefLabel, comboIdempotencyPrefix,
+    tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind, SAFE_RISK_DEFAULTS,
+    groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
     type SafeTrade,
 } from './safeBot';
 import { DEFAULT_PARAMS } from './safeStrategy';
@@ -474,5 +477,112 @@ describe('strategyParamsOf / sameStrategyParams', () => {
     it('le chiavi del bot non di strategia (stake, variants…) sono ignorate', () => {
         expect(strategyParamsOf(SAFE_BOT_DEFAULTS)).toEqual(DEFAULT_PARAMS);
         expect(sameStrategyParams(SAFE_BOT_DEFAULTS, DEFAULT_PARAMS)).toBe(true);
+    });
+});
+
+describe('opportunita per tipo (kind) e combinazioni', () => {
+    const combo = {
+        kind: 'combo', combo: 'dutch', market_type: 'MATCH_ODDS', market_name: null, line: null, market_id: '1.1',
+        selection_id: 1, selection_name: 'x', side: 'back', price: 2, size_available: 10, p_model: 0.5, p_implied: 0.5,
+        edge: 0, ev: 0.05, confidence: 0.8, rationale: null, total_stake: 10,
+        locked_profit_per_eur: 0.04, best_case_per_eur: 0.2,
+        legs: [
+            { market_type: 'MATCH_ODDS', market_id: '1.1', selection_id: 1, selection_name: 'Roma', side: 'back', price: 3, size_available: 50, stake_ratio: null, stake: 4 },
+            { market_type: 'MATCH_ODDS', market_id: '1.1', selection_id: 2, selection_name: 'Draw', side: 'back', price: 2, size_available: 50, stake_ratio: null, stake: 6 },
+        ],
+    } as const;
+
+    it('oppKind: assente o ignoto = model', () => {
+        expect(oppKind({})).toBe('model');
+        expect(oppKind({ kind: 'boh' })).toBe('model');
+        expect(oppKind({ kind: 'tennis' })).toBe('tennis');
+    });
+
+    it('oppKindCounts somma i tipi su tutte le righe', () => {
+        const rows = [
+            { payload: { opps: [{ kind: 'anomaly' }, {}, { kind: 'combo' }] } },
+            { payload: { opps: [{ kind: 'tennis' }] } },
+            { payload: null },
+        ] as never;
+        expect(oppKindCounts(rows)).toEqual({ model: 1, anomaly: 1, combo: 1, tennis: 1 });
+    });
+
+    it('comboLegStakes: ratio dallo stake/total del servizio, scalato allo stake scelto', () => {
+        const legs = comboLegStakes(combo as never, 20);
+        expect(legs.map((l) => l.stake)).toEqual([8, 12]);
+        expect(comboLegStakes({ ...combo, legs: [] } as never, 20)).toEqual([]);
+        // senza ratio ne' stake: parti uguali
+        const eq = comboLegStakes({ ...combo, total_stake: null, legs: combo.legs.map((l) => ({ ...l, stake: null })) } as never, 9);
+        expect(eq.map((l) => l.stake)).toEqual([4.5, 4.5]);
+    });
+
+    it('comboLock: per € e in € sullo stake totale', () => {
+        expect(comboLock(combo as never, 25)).toEqual({ worstPerEur: 0.04, bestPerEur: 0.2, worstEur: 1, bestEur: 5 });
+        expect(comboLock({ ...combo, locked_profit_per_eur: null } as never, 25).worstEur).toBeNull();
+    });
+
+    it('anomalyRefLabel: "sorella @q → anomala @q" da oggetto o stringa', () => {
+        const a = { selection_name: 'Under 7.5', selection_id: 3, price: 1.1, ref: { selection_name: 'Under 6.5', price: 1.01 } };
+        expect(anomalyRefLabel(a as never)).toBe('Under 6.5 @1.01 → Under 7.5 @1.10');
+        expect(anomalyRefLabel({ ...a, ref: 'Under 6.5 @1.01' } as never)).toBe('Under 6.5 @1.01 → Under 7.5 @1.10');
+        expect(anomalyRefLabel({ ...a, ref: null } as never)).toBeNull();
+    });
+
+    it('comboIdempotencyPrefix: stesso prefisso per tutte le gambe, evento e tipo dentro', () => {
+        const p = comboIdempotencyPrefix('e1', combo as never, 1000);
+        expect(p.startsWith('combo:e1:dutch:rs:')).toBe(true);
+        expect(comboIdempotencyPrefix('e1', combo as never, 1000)).not.toBe(p);   // suffisso casuale
+    });
+});
+
+describe('parametri bot — rischio e auto-trade', () => {
+    it('mergeBotParams: toggles e risk con default', () => {
+        const p = mergeBotParams({ auto_trade_combos: true, risk: { daily_loss_stop: -20, correlated_cap: 'x' } });
+        expect(p.auto_trade_combos).toBe(true);
+        expect(p.auto_trade_anomalies).toBe(false);
+        expect(p.auto_trade_tennis).toBe(false);
+        expect(p.risk).toEqual({ ...SAFE_RISK_DEFAULTS, daily_loss_stop: -20 });
+        expect(mergeBotParams(null).risk).toEqual(SAFE_RISK_DEFAULTS);
+    });
+});
+
+describe('gambe di chiusura — raggruppamento e formati', () => {
+    it('groupClosingLegs attacca le chiusure all apertura, orfane in coda', () => {
+        const g = groupClosingLegs([
+            { id: 70, closes_trade_id: null }, { id: 71, closes_trade_id: 70 }, { id: 72, closes_trade_id: 70 },
+            { id: 80, closes_trade_id: null }, { id: 99, closes_trade_id: 5 },
+        ]);
+        expect(g.map((x) => [x.trade.id, x.closes.map((c) => c.id)])).toEqual([[70, [71, 72]], [80, []], [99, []]]);
+    });
+
+    it('fmtEurIt / fmtOddsIt / hedgeTooltip in formato italiano', () => {
+        expect(fmtEurIt(-22.1, true)).toBe('−22,10 €');
+        expect(fmtEurIt(24.24)).toBe('24,24 €');
+        expect(fmtEurIt(3, true)).toBe('+3,00 €');
+        expect(fmtOddsIt(4.9)).toBe('4,90');
+        expect(fmtOddsIt(null)).toBe('—');
+        expect(hedgeTooltip({ side: 'lay', price: 55 }, { side: 'back', price: 4.9 }))
+            .toBe('il lay a 55,00 è stato coperto con un back a 4,90 sulla stessa selezione: esito identico su ogni risultato');
+        expect(hedgeTooltip({ side: 'lay', price: 55 }, null)).toMatch(/un back a mercato/);
+    });
+});
+
+describe('trade di modello — meta', () => {
+    it('tradeHold legge meta.exit_hold; assente o malformato = null', () => {
+        expect(tradeHold({ meta: null })).toBeNull();
+        expect(tradeHold({ meta: { exit_hold: 'x' } })).toBeNull();
+        expect(tradeHold({ meta: { exit_hold: { reason: 'wide_margin', p_lose: 0.004, source: 'model', locked: 1, ev_hold: 2, ts: 't' } } }))
+            .toEqual({ reason: 'wide_margin', pLose: 0.004, source: 'model', locked: 1, evHold: 2, ts: 't' });
+        expect(holdReasonLabel('wide_margin')).toBe('margine ampio');
+        expect(holdReasonLabel('altro')).toBe('altro');
+        expect(holdReasonLabel(null)).toBe('in attesa');
+    });
+
+    it('pLoseEntry e tradeOppKind', () => {
+        expect(pLoseEntry({ meta: { p_lose_entry: 0.03 } })).toBe(0.03);
+        expect(pLoseEntry({ meta: {} })).toBeNull();
+        expect(tradeOppKind({ strategy: 'model', meta: { kind: 'combo' } })).toBe('combo');
+        expect(tradeOppKind({ strategy: 'model', meta: null })).toBe('model');
+        expect(tradeOppKind({ strategy: 'base', meta: { kind: 'combo' } })).toBeNull();
     });
 });

@@ -5,7 +5,7 @@
 // piu' le regressioni money-critical: modalita' del TRADE nel cash out,
 // feed stantio, tennis col book, sync parametri senza loop, LIVE ereditato.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -472,6 +472,114 @@ describe('Safe Strategy — LIVE ereditato dal control (MEDIUM-4)', () => {
         await user.click(btn); // confermerebbe: invece chiede la conferma LIVE di sessione
         expect(mRequest).not.toHaveBeenCalled();
         expect(await screen.findByText(/Passare a LIVE \(soldi veri\)\?/)).toBeInTheDocument();
+    });
+});
+
+const COMBO_ROW = {
+    event_id: 'e1', sport: 'calcio', updated_at: secondsAgo(3),
+    payload: {
+        minute: 60, score_home: 1, score_away: 0, event_name: 'Roma vs Lazio',
+        kinds: { model: 1, combo: 1 },
+        opps: [
+            OPP_ROW.payload.opps[0],
+            {
+                kind: 'combo', combo: 'under_stack', market_type: 'OVER_UNDER_25', market_name: 'Under stack', line: null,
+                market_id: '1.25', selection_id: 10, selection_name: 'Under 2.5 + Under 3.5', side: 'back',
+                price: 1.5, size_available: 40, p_model: 0.7, p_implied: 0.66, edge: 0.04, ev: 0.06, confidence: 0.9,
+                rationale: null, total_stake: 10, locked_profit_per_eur: 0.03, best_case_per_eur: 0.25,
+                legs: [
+                    { market_type: 'OVER_UNDER_25', market_id: '1.25', selection_id: 10, selection_name: 'Under 2.5', side: 'back', price: 1.9, size_available: 40, stake_ratio: 0.6, stake: 6 },
+                    { market_type: 'OVER_UNDER_35', market_id: '1.35', selection_id: 11, selection_name: 'Under 3.5', side: 'lay', price: 1.3, size_available: 25, stake_ratio: 0.4, stake: 4 },
+                ],
+            },
+        ],
+    },
+};
+const TENNIS_OPP_ROW = {
+    event_id: 't1', sport: 'tennis', updated_at: secondsAgo(3),
+    payload: {
+        minute: null, score_home: null, score_away: null, event_name: 'Sinner v Alcaraz',
+        sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 2 },
+        opps: [{
+            kind: 'tennis', market_type: 'MATCH_ODDS', market_name: 'Match Odds', line: null,
+            market_id: '2.1', selection_id: 501, selection_name: 'Sinner', side: 'back',
+            price: 1.4, size_available: 300, p_model: 0.8, p_implied: 0.71, edge: 0.09, ev: 0.12, confidence: 0.75,
+            rationale: null, extra: { retire_risk: 0.02, best_of: 3, server: 'Alcaraz', momentum_against: false },
+        }],
+    },
+};
+
+describe('Safe Strategy — opportunita per tipo, combinazioni e tennis', () => {
+    it('chip per tipo con conteggi; il filtro tipo isola la combinazione', async () => {
+        const user = userEvent.setup();
+        mOpps.mockResolvedValue([COMBO_ROW as never]);
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /Opportunità modello/ }));
+        const chips = await screen.findByTestId('opp-kind-filter');
+        expect(within(chips).getByRole('button', { name: 'tutte 2' })).toBeInTheDocument();
+        expect(within(chips).getByRole('button', { name: 'Modello 1' })).toBeInTheDocument();
+        expect(within(chips).getByRole('button', { name: 'Combinazione 1' })).toBeInTheDocument();
+        expect(within(chips).getByRole('button', { name: 'Anomalia 0' })).toBeInTheDocument();
+        expect(screen.getAllByTestId('opp-row')).toHaveLength(2);
+        await user.click(within(chips).getByRole('button', { name: 'Anomalia 0' }));
+        expect(await screen.findByTestId('opp-filtered-empty')).toHaveTextContent(/tipo ANOMALIA/);
+        await user.click(within(chips).getByRole('button', { name: 'Combinazione 1' }));
+        expect(await screen.findAllByTestId('opp-row')).toHaveLength(1);
+        expect(screen.getByTestId('opp-row')).toHaveAttribute('data-kind', 'combo');
+    });
+
+    it('combinazione: "Piazza" accoda UNA richiesta per gamba, stake scalato, stesso prefisso di idempotenza e modalita', async () => {
+        const user = userEvent.setup();
+        mOpps.mockResolvedValue([COMBO_ROW as never]);
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /Opportunità modello/ }));
+        await user.click(screen.getByTestId('opp-kind-filter').querySelector('button[title*="gambe"]') as HTMLElement);
+        const combo = (await screen.findAllByTestId('opp-row')).find((r) => r.getAttribute('data-kind') === 'combo') as HTMLElement;
+        await user.click(within(combo).getByTestId('invest-place'));
+        await waitFor(() => expect(mRequest).toHaveBeenCalledTimes(2));
+        const calls = mRequest.mock.calls.map((c) => c[1] as Record<string, unknown>);
+        expect(mRequest.mock.calls.every((c) => c[0] === 'place')).toBe(true);
+        // stake totale = opps_stake di default (5) → 60/40
+        expect(calls[0]).toMatchObject({ event_id: 'e1', sport: 'calcio', mode: 'paper', market_id: '1.25', selection_id: 10, side: 'back', price: 1.9, size: 3, strategy: 'model', kind: 'combo', combo: 'under_stack', combo_leg: 1, combo_legs: 2, combo_total_stake: 5 });
+        expect(calls[1]).toMatchObject({ market_id: '1.35', selection_id: 11, side: 'lay', price: 1.3, size: 2, combo_leg: 2 });
+        const k0 = String(calls[0].idempotency_key);
+        const k1 = String(calls[1].idempotency_key);
+        expect(k0).toMatch(/^combo:e1:under_stack:/);
+        expect(k0.replace(/:\d+\/\d+$/, '')).toBe(k1.replace(/:\d+\/\d+$/, ''));
+        expect(k0.endsWith(':1/2')).toBe(true);
+        expect(k1.endsWith(':2/2')).toBe(true);
+    });
+
+    it('tennis: tab Opportunità tennis con la card e piazzamento con sport tennis e kind', async () => {
+        const user = userEvent.setup();
+        mOpps.mockResolvedValue([TENNIS_OPP_ROW as never]);
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /🎾 Tennis/ }));
+        await user.click(await screen.findByRole('tab', { name: /Opportunità tennis \(1\)/ }));
+        expect(await screen.findByTestId('opp-group')).toHaveTextContent('Sinner v Alcaraz');
+        expect(screen.getByTestId('opp-kind')).toHaveTextContent('TENNIS');
+        expect(screen.getByTestId('tennis-extra')).toHaveTextContent('set 1-0 · game 3-2');
+        await user.click(screen.getByTestId('invest-place'));
+        await waitFor(() => expect(mRequest).toHaveBeenCalledTimes(1));
+        expect(mRequest.mock.calls[0][1]).toMatchObject({ event_id: 't1', sport: 'tennis', kind: 'tennis', strategy: 'model', selection_id: 501, mode: 'paper' });
+    });
+
+    it('pannello Rischio nei KPI: liability vs cap e stop perdita dal control.stats', async () => {
+        mState.mockResolvedValue({
+            control: { ...CONTROL, stats: { ...CONTROL.stats, risk: { daily_liability: 240, daily_cap: 500, loss_stop_active: true, daily_loss_stop: -50 }, opps: { model: 2, anomaly: 1, combo: 0, tennis: 3 } } } as never,
+            trades: [OPEN_TRADE] as never,
+            aggregates: null,
+        });
+        renderPage();
+        const panel = await screen.findByTestId('risk-panel');
+        expect(panel).toHaveAttribute('data-loss-stop', 'active');
+        expect(within(panel).getByTestId('risk-liability')).toHaveTextContent('€240.00');
+        expect(within(panel).getByText('/ cap €500.00')).toBeInTheDocument();
+        expect(within(panel).getByTestId('loss-stop')).toHaveTextContent('STOP PERDITA');
+        expect(within(panel).getByTestId('risk-opp-counts')).toHaveTextContent('TENNIS 3');
     });
 });
 

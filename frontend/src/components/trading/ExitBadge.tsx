@@ -14,6 +14,7 @@ const EXIT_CLS: Record<ExitKind, string> = {
     red_card: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
     forced: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
     manual: 'bg-violet-500/15 text-violet-300 border-violet-500/40',
+    greenup: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50',
     other: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
 };
 

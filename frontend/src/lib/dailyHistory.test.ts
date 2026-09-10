@@ -326,6 +326,10 @@ describe('exitInfo / tradeExit', () => {
         expect(exitInfo({ exit_kind: 'RED_CARD' })?.label).toBe('Uscita: rosso');
         expect(exitInfo({ exit_kind: 'forced' })?.label).toBe('Uscita: obbligatoria');
         expect(exitInfo({ exit_kind: 'manual' })?.label).toBe('Cash out manuale');
+        // green-up Omega: kind dedicato (non piu' un alias di profit)
+        expect(exitInfo({ exit_kind: 'greenup', exit_reason: 'distanza 1 gol' })).toMatchObject({ kind: 'greenup', label: 'Green-up', reason: 'distanza 1 gol' });
+        expect(exitInfo({ exit_kind: 'green_up' })?.kind).toBe('greenup');
+        expect(exitInfo({ exit_kind: 'green' })?.kind).toBe('profit');
     });
     it('kind sconosciuto → etichetta grezza; solo reason → kind other', () => {
         expect(exitInfo({ exit_kind: 'boh' })).toMatchObject({ kind: 'other', label: 'Uscita: boh', raw: 'boh' });

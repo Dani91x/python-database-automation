@@ -554,3 +554,122 @@ def test_validate_main_su_registrazione_sintetica(tmp_path, capsys):
     assert out.isascii() and "Brier medio" in out
     assert csv.read_text(encoding="utf-8").startswith("mercato,fascia,n,")
     assert V.main(["--data-dir", str(tmp_path / "vuoto")]) == 1
+
+
+# ---------------------------------------------------------------------------
+# CALIBRAZIONE + PRESSIONE nel modello (10/09/2026)
+# ---------------------------------------------------------------------------
+from Betfair.safe_strategy import calibration as CAL  # noqa: E402
+from Betfair.safe_strategy import opportunity as OPP  # noqa: E402
+
+
+def _cal_pessimista(family: str = "ou_line", bucket_minute: int = 65) -> CAL.Calibrator:
+    """Tabella che ABBASSA le probabilita' alte (modello ottimista) nella
+    fascia del payload di test (60-75)."""
+    tables = {f"{family}|{CAL.bucket_of(bucket_minute)}": {
+        "n": 500, "applied": True, "bins": [],
+        "knots": [[0.10, 0.08], [0.50, 0.42], [0.90, 0.80], [0.98, 0.93]],
+    }}
+    return CAL.Calibrator({"version": 1, "tables": tables, "meta": {"n_samples": 500}})
+
+
+def test_evaluate_riporta_p_grezza_e_calibrata():
+    raw = OpportunityModel(calibration="off").evaluate(
+        payload_1_1_65(), sport="calcio", lambdas=(1.3, 1.1), league_id=None, now_ts=1_000_000_000.0)
+    assert raw
+    under = next(o for o in raw if o["selection_name"] == "Under 7.5" and o["side"] == "back")
+    assert under["p_model_raw"] == under["p_model"]
+    assert under["calibration"] == {"applied": False, "family": "ou_line", "n": 0}
+    assert "calibrata" not in under["rationale"]
+
+    cal = OpportunityModel(calibration=_cal_pessimista()).evaluate(
+        payload_1_1_65(), sport="calcio", lambdas=(1.3, 1.1), league_id=None, now_ts=1_000_000_000.0)
+    u2 = next(o for o in cal if o["selection_name"] == "Under 7.5" and o["side"] == "back")
+    assert u2["p_model_raw"] == under["p_model_raw"]
+    assert u2["p_model"] < u2["p_model_raw"]           # calibrata piu' bassa
+    assert u2["calibration"] == {"applied": True, "family": "ou_line", "n": 500}
+    assert u2["edge"] < under["edge"] and u2["ev"] < under["ev"]   # gate/edge sulla calibrata
+    assert "[calibrata: modello grezzo" in u2["rationale"] and "n=500" in u2["rationale"]
+    assert u2["rationale"].isascii()
+
+
+def test_calibrazione_puo_scartare_un_segnale_al_limite():
+    # tabella che schiaccia la P sotto la soglia di back (0.85): il segnale sparisce
+    tables = {f"ou_line|{CAL.bucket_of(65)}": {
+        "n": 500, "applied": True, "bins": [], "knots": [[0.5, 0.3], [0.9999, 0.80]]}}
+    cal = CAL.Calibrator({"version": 1, "tables": tables, "meta": {}})
+    out = OpportunityModel(calibration=cal).evaluate(
+        payload_1_1_65(), sport="calcio", lambdas=(1.3, 1.1), league_id=None, now_ts=1_000_000_000.0)
+    assert not [o for o in out if o["selection_name"] == "Under 7.5" and o["side"] == "back"]
+
+
+def test_calibration_param_auto_off_path_e_info(tmp_path):
+    assert OpportunityModel(calibration="off").calibrator is None
+    assert OpportunityModel(calibration=str(tmp_path / "manca.json")).calibrator is None
+    # tabella vuota = nessun calibratore (identita' esplicita)
+    assert OpportunityModel(calibration=CAL.Calibrator.identity()).calibrator is None
+    path = tmp_path / "cal.json"
+    _cal_pessimista().save(str(path))
+    m = OpportunityModel(calibration=str(path))
+    assert m.calibrator is not None and m.calibrator.path == str(path)
+    info = m.calibration_info()
+    assert info["loaded"] and info["tables_applied"] == 1
+    assert OpportunityModel(calibration="off").calibration_info() == {"loaded": False, "tables_applied": 0}
+    # 'auto': carica il file di default SE esiste, altrimenti nessuna tabella
+    auto = OpportunityModel(calibration="auto")
+    import os
+    assert (auto.calibrator is not None) == os.path.isfile(CAL.DEFAULT_CALIBRATION_PATH) or auto.calibrator is None
+
+
+def test_pressure_hook_modifica_il_book_e_la_cache(monkeypatch):
+    payload = payload_1_1_65()
+    base = OpportunityModel(calibration="off", pressure=False).book(payload, lambdas=(1.3, 1.1), league_id=None)
+    # hook assente: neutro
+    monkeypatch.setattr(OPP, "_pressure_from_payload", None)
+    m = OpportunityModel(calibration="off", pressure=True)
+    assert m.pressure_enabled is False
+    assert m.book(payload, lambdas=(1.3, 1.1), league_id=None) == base
+    # hook presente: pressione casa x2 -> piu' gol residui attesi
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: (2.0, 1.0))
+    m2 = OpportunityModel(calibration="off", pressure=True)
+    assert m2.pressure_enabled
+    pressed = m2.book(payload, lambdas=(1.3, 1.1), league_id=None)
+    assert pressed["over_2_5"] > base["over_2_5"] and pressed["home"] > base["home"]
+    # la cache del book distingue le pressioni (stesso stato, hook diverso)
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: (1.0, 1.0))
+    assert m2.book(payload, lambdas=(1.3, 1.1), league_id=None) == base
+    # hook rotto o valori assurdi: neutro, mai eccezioni
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: 1 / 0)
+    assert m2.book(payload, lambdas=(1.3, 1.1), league_id=None) == base
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: (-1.0, float("nan")))
+    assert m2.book(payload, lambdas=(1.3, 1.1), league_id=None) == base
+    # pressure=False ignora l'hook anche se presente
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: (3.0, 3.0))
+    assert OpportunityModel(calibration="off", pressure=False).book(
+        payload, lambdas=(1.3, 1.1), league_id=None) == base
+
+
+# ---------------------------------------------------------------------------
+# Soglie di PRODUZIONE (backtest 10/09 su 38 registrazioni: i lay del modello
+# perdono, i back sugli Under alti sono in pari): lay spenti, back >=95%, edge 3%.
+# I test di meccanica sopra usano le soglie storiche via fixture autouse.
+# ---------------------------------------------------------------------------
+import pytest as _pytest
+from Betfair.safe_strategy import opportunity as _opp_mod
+
+_LEGACY = {"min_edge": 0.02, "min_prob_back": 0.85, "max_prob_lay": 0.15}
+
+
+@_pytest.fixture(autouse=True)
+def _legacy_thresholds(request, monkeypatch):
+    if request.node.name == "test_default_produzione_lay_spenti_back_severi":
+        return
+    for k, v in _LEGACY.items():
+        monkeypatch.setitem(_opp_mod.DEFAULT_OPP_PARAMS, k, v)
+
+
+def test_default_produzione_lay_spenti_back_severi():
+    d = _opp_mod.DEFAULT_OPP_PARAMS
+    assert d["max_prob_lay"] == 0.0 and d["min_prob_back"] == 0.95 and d["min_edge"] == 0.03
+    m = OpportunityModel()
+    assert m.params["max_prob_lay"] == 0.0 and m.params["min_prob_back"] == 0.95

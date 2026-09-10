@@ -493,3 +493,60 @@ minima dal punteggio né modello: il 09/09 ha layato il punteggio CORRENTE (0-3 
 0-3, 1-0 @23 sull'1-0) — una perdita da 93,87 € su 16 trade. Il v2 esclude per
 costruzione punteggio corrente e adiacenti e chiede che il modello dia il risultato
 sotto la probabilità implicita.
+
+## 12. GREEN-UP AUTOMATICO — la scommessa diventa un trade (2026-09-10)
+
+**Decisione dell'utente (09/09 sera).** Omega non lascia MAI una gamba "a sé stessa":
+ogni lay aperto (automatico o manuale, paper o live allo stesso modo) viene **chiuso a
+mercato** — gamba back opposta sulla stessa selezione via lo strato condiviso
+`safe_strategy.execution.close_trade` (lo stesso del cash-out manuale: riga di chiusura
+con `closes_trade_id`, apertura `hedged` a residuo nullo, settlement nettizzato in
+coppia) — appena il rischio diventa reale. Vince spesso poco, **perde poco** invece
+dell'intera liability: la coda pesante (§9) si taglia.
+
+**Trigger (`omega_service.process_auto_greenup`, ogni ciclo, ANCHE a bot fermo).**
+1. **GOL** — il risultato bancato è raggiungibile con ≤ `greenup_trigger_distance` gol
+   (default 1, su entrambi gli assi: 1-1 con bancato 1-2).
+2. **QUOTA** — il lay della selezione è sceso sotto `greenup_price_trigger_ratio` (0.5) ×
+   prezzo d'ingresso: il mercato la crede molto più probabile.
+3. **TAKE-PROFIT** — dal minuto `greenup_take_profit_minute` (80) se il cash-out blocca
+   ≥ `greenup_take_profit_frac` (0.9) dello stake → si incassa (kind `profit`) e si libera
+   la liability per la gamba successiva.
+
+**UNA decisione per tutti i trigger (`_greenup_decide`, regole di `exits.decide_time_exit`).**
+ESCO se: il bancato È il punteggio corrente (distanza 0: il lay sta perdendo dal vivo —
+incondizionato); oppure P&L bloccato ≥ 0; oppure `P(perdita) ≥ greenup_risk_cap` (0.15);
+oppure bloccato ≥ EV(tengo) − `greenup_ev_margin` (0.10 €), con
+EV(tengo) = (1−p)·stake − p·liability. Altrimenti TENGO (`greenup_hold`) e rivaluto a ogni
+ciclo: ogni nuovo gol o mossa di prezzo rilancia la decisione. Caso vivo del 10/09 (trade 70:
+lay 1-2 @55, stake 2.16, liability 116.64; 1-1 al 28′, p 0.12, back 4.90 → bloccato −22.1,
+EV(tengo) −12.1): la vecchia regola "gol = esco" buttava 10 € di valore atteso → ora TENGO;
+a p 0.16 o sull'1-2 reale → ESCO. Senza modello, riserva = P implicita dal back del feed.
+
+**P(perdita)** = probabilità che il risultato bancato sia quello FINALE da qui: lo STESSO
+modello della selezione (`omega_model.score_probs`, λ pre-match → residui live → griglia,
+orizzonte 45′ per la gamba HT). Bancato ormai irraggiungibile → nessuna azione (il lay non
+può più perdere). Gamba HT oltre il 45′ → la regola il settlement.
+
+**Esecuzione.** Dopo un gol si aspetta `greenup_settle_delay_s` (30 s: mercato sospeso,
+quote che si riallineano). Stato e prezzi dal FEED UNICO (mai righe stantie; mercato non
+OPEN → `greenup_wait`); REST solo a rischio già reale. Fill cappato dalla liquidità →
+RESIDUO ritentato con cooldown `greenup_retry_s` (20 s) fino a `greenup_max_attempts` (15),
+poi `failed` + log `error`. Mai un secondo invio con una chiusura `pending` (marker
+`meta.greenup` scritto PRIMA dell'ordine; `hedge_pending_ids` blocca). Contratto UI:
+`meta.exit_kind` (`profit`|`loss`) ed `exit_reason` su apertura E chiusura; log `greenup`
+con trigger, minuto, punteggio, bancato, P(perdita) e fonte, P&L bloccato, back, size.
+
+**Parametri (§7, whitelist `omega_config`).** `greenup_enabled` (True), `greenup_mode`
+(`auto`|`off`), `greenup_trigger_distance` 1, `greenup_price_trigger_ratio` 0.5,
+`greenup_settle_delay_s` 30, `greenup_hold_max_risk` 0.02, `greenup_risk_cap` 0.15,
+`greenup_ev_margin` 0.10, `greenup_take_profit_frac` 0.9, `greenup_take_profit_minute` 80,
+`greenup_retry_s` 20, `greenup_max_attempts` 15. **Calibrazione della selezione**:
+`model_calibration` (`auto`|`off`) e `model_calibration_path`: se esiste
+`safe_strategy/calibration.py` (`Calibrator.load(path)` / `.apply(p, family, minute)`,
+famiglie `cs`/`hts`) la selezione usa la P CALIBRATA; import guardato, `p_model_raw` e
+`p_model` entrambi nel blocco di audit.
+
+**Perché.** Il 09/09 il v1 ha perso 93,87 € perché ogni gamba andava al settlement con
+tutta la liability. Con l'uscita a mercato la perdita massima di una gamba è il costo del
+green-up al prezzo corrente (tipicamente una frazione dello stake), non la liability.

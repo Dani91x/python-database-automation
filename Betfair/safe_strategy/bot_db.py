@@ -17,6 +17,8 @@ from typing import Any, Optional
 
 from db_client import get_supabase_client
 
+from Betfair.safe_strategy import risk as _risk
+
 logger = logging.getLogger("safe.bot.db")
 
 CONTROL_ID = 1
@@ -158,14 +160,16 @@ def traded_signal_keys() -> set[tuple[str, str]]:
     return out
 
 
-def aggregates() -> dict[str, float]:
-    """Realizzato / esposizione aperta (le 'hedged' contano ancora come aperte)."""
+def aggregates(now: Optional[datetime] = None) -> dict[str, float]:
+    """Realizzato / esposizione aperta (le 'hedged' contano ancora come aperte),
+    con la GIORNATA OPERATIVA Europe/Rome (``risk.operating_day_start``) per
+    realized_today e per la liability giornaliera del motore di rischio."""
     rows = _fetch_all(lambda: (
         _sb().table("safe_strategy_trades")
-        .select("status,pnl,liability,settled_at,bet_id,meta,closes_trade_id")
+        .select("status,pnl,liability,settled_at,placed_at,strategy,bet_id,meta,closes_trade_id")
         .order("id", desc=False)
     ))
-    return aggregate_rows(rows)
+    return aggregate_rows(rows, day_start=_risk.operating_day_start(now))
 
 
 def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = None) -> dict[str, float]:
@@ -176,13 +180,28 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
     (liability piena, stima prudente) — il loro pnl entra nel realizzato solo
     quando regolate. Stessa regola di ``get_safe_state`` (migrazione) e di
     ``omega_engine.aggregate_trades``; senza, stats.trades_open contava anche
-    le chiusure (6 per 4 originali, E2E live 10/09)."""
+    le chiusure (6 per 4 originali, E2E live 10/09).
+
+    ``day_liability`` / ``day_liability_model`` / ``day_trades``: liability
+    IMPEGNATA nella giornata (righe piazzate da ``day_start``: aperte, in
+    riconciliazione o già regolate won/lost; le void non hanno impegnato nulla),
+    totale e dei soli trade di modello — base dei cap giornalieri di ``risk``."""
     realized = realized_today = open_liab = 0.0
-    open_n = 0
+    day_liab = day_liab_model = 0.0
+    open_n = day_n = 0
     for r in rows:
         status = str(r.get("status") or "")
         pnl = float(r.get("pnl") or 0.0)
         liab = float(r.get("liability") or 0.0)
+        if not r.get("closes_trade_id") and status != "void" and \
+                (day_start is None or _on_or_after(r.get("placed_at"), day_start)) and (
+                status in ("open", "hedged", "won", "lost")
+                or (status == "pending" and (r.get("bet_id")
+                                             or (r.get("meta") or {}).get("flumine_client_ref")))):
+            day_liab += liab
+            day_n += 1
+            if str(r.get("strategy") or "") in _risk.MODEL_STRATEGIES:
+                day_liab_model += liab
         if r.get("closes_trade_id"):
             if status in ("won", "lost", "void"):
                 realized += pnl
@@ -207,6 +226,9 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
         "realized_today": round(realized_today, 2),
         "open_liability": round(open_liab, 2),
         "open_count": open_n,
+        "day_liability": round(day_liab, 2),
+        "day_liability_model": round(day_liab_model, 2),
+        "day_trades": day_n,
     }
 
 
