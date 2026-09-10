@@ -550,3 +550,77 @@ famiglie `cs`/`hts`) la selezione usa la P CALIBRATA; import guardato, `p_model_
 **Perché.** Il 09/09 il v1 ha perso 93,87 € perché ogni gamba andava al settlement con
 tutta la liability. Con l'uscita a mercato la perdita massima di una gamba è il costo del
 green-up al prezzo corrente (tipicamente una frazione dello stake), non la liability.
+
+## 13. GIORNATA 10/09/2026 — cash out, calibrazione, green-up, storico: stato e spunti
+
+Riferimento incrociato: `Betfair/safe_strategy/COSTITUZIONE_SAFE_STRATEGY.md` (layer
+condiviso `execution.py`, cash out, calibrazione, uscite a modello, dashboard).
+
+### 13.1 Cosa è stato fatto oggi su Omega
+- **Certificazione liquidità (mattina, richiesta del 09/09)**: lato LAY ok su evidenza
+  (37/37 trade del 09/09 senza riduzioni; best-lay ≥23 € su 19 selezioni in fascia 20–120);
+  lato BACK (green-up) NON certificabile senza dati; tutti i fill paper del 09/09 erano
+  istantanei (`paper_fill_fallback: follow_assente`, niente bet delay). La sonda
+  `liquidity_probe.py` è SOLO report (il registratore è stato rimosso su ordine dell'utente:
+  mai processi/registratori nuovi senza permesso; i dati vengono dalle registrazioni REC).
+- **Cash out** (`omega_manual_requests` kind `cashout`, `omega_cashout.sql`): gamba di
+  chiusura con `closes_trade_id`, status `hedged`, parziali ripetibili, settlement a coppia
+  con commissione sul netto (`execution.settle_group`); indici univoci esclusi per le
+  chiusure; aggregati (`get_omega_state`, `aggregate_trades`) senza le gambe di chiusura.
+  Verificato dal vivo in paper: lay 2@6,6 → parziale 1 € (−6,6 peggiore) → totale (−0,35
+  bloccato) → settlement −11,20 +4,60 +6,25 = −0,35.
+- **Green-up automatico** (§12): trigger gol (distanza ≤1), prezzo (lay ≤ 50% dell'entrata),
+  take-profit (≥90% del massimo dall'80'); decisione UNICA a valore atteso
+  (`exits.decide_time_exit`): locked ≥ 0 → esci; p_lose ≥ 15% → esci; locked ≥ EV(hold) −
+  0,10 → esci; altrimenti TIENI e rivaluta; distanza 0 → esci sempre. Caso vivo trade 70:
+  lay 1-2 1T @55 (stake 2,16, liability 116,64), 1-1 al 28', p_lose 12%, back 4,90 →
+  chiuso a −22,10 con la regola vecchia (rischio > 10%); con la regola nuova → HOLD
+  (EV hold −12,10 > −22,10). Questo è il costo strutturale di Omega: uscire da un lay a 55
+  costa dieci vincite.
+- **Selezione calibrata**: `select_by_model` usa la probabilità calibrata
+  (`safe_strategy/calibration.py`, famiglie cs/hts) quando `model_calibration='auto'`;
+  audit con `p_model_raw` e `calibrated`.
+- **Storico per giorno** (`daily_history.sql`, tab "Storico" con calendario, statistiche,
+  dettaglio giornata; missione giornaliera esplicita "obiettivo di oggi / realizzato / resta"
+  che riparte da 0 ogni giorno operativo Europe/Rome). Nota: `goal` storico = daily_goal
+  corrente (manca lo snapshot per giorno).
+- **Tabella trade**: colonna Selezione + Lato LAY/BACK, gambe di chiusura attaccate
+  all'apertura ("↳ Green-up di #70 · BACK 24,24 € @4,90"), stato "CHIUSO IN GREEN-UP",
+  P&L bloccato, motivo, tooltip. Non verificata a occhio (browser agente bloccato su
+  127.0.0.1): l'utente la giudica ancora illeggibile → da rifare (vedi Safe §6).
+- Settlement di ieri: 11 trade regolati all'avvio (tutti vinti, +53,44), P&L realizzato
+  oggi contabilizzato per giorno di settlement (§2).
+
+### 13.2 Parametri aggiunti (omega_config)
+`greenup_enabled` (true), `greenup_mode` (auto|off), `greenup_trigger_distance` (1),
+`greenup_price_trigger_ratio` (0,5), `greenup_settle_delay_s` (30), `greenup_hold_max_risk`
+(0,02), `greenup_risk_cap` (0,15), `greenup_ev_margin` (0,10), `greenup_take_profit_frac`
+(0,9), `greenup_take_profit_minute` (80), `greenup_retry_s` (20), `greenup_max_attempts`
+(15), `model_calibration` (auto|off), `model_calibration_path`.
+
+### 13.3 Verità sul rischio (aggiornata)
+- Bancare a 20–120 per target di 2–8 € significa che OGNI uscita di protezione costa
+  5–20 vincite. Il green-up limita la coda (mai più −116) ma sposta il problema: il
+  P&L medio per partita resta ≈ 0 al lordo, negativo con le uscite.
+- Il backtest del modello in-play (Safe §5.1) mostra che i LAY su esiti "impossibili"
+  sono la famiglia peggiore (ottimismo del modello dal 60' in poi). Omega è esattamente
+  quella famiglia: la probabilità calibrata è ora usata nella selezione, ma va validata.
+
+### 13.4 Spunti per il livello successivo (domani)
+1. **Uscite**: rivedere loss/profit strategia per strategia (Safe §3) e per Omega decidere se
+   il green-up a distanza 1 va sempre valutato a EV (oggi sì) o se l'utente preferisce la
+   protezione dura; uscita a scala su libri sottili; attesa post-gol adattiva.
+2. **Ingresso**: pesare il costo atteso del green-up già alla selezione (prezzo del back
+   del risultato bancato e liquidità sul lato back) — scegliere il risultato "meno probabile
+   E più economico da coprire", non solo il meno probabile.
+3. **Fedeltà paper**: bet delay 5 s e ricontrollo size; follow automatico degli eventi
+   tradati per passare dalla coda flumine (fill simulati sul book vero).
+4. **Dashboard**: una riga per posizione con timeline (ingresso → gol → green-up → esito),
+   linguaggio del manuale, spiegazione a un click di ogni decisione automatica.
+5. **Storico**: snapshot giornaliero dell'obiettivo; confronto obiettivo/realizzato per
+   settimana; per-fase (1T/2T) e per lega.
+6. **Certificazione liquidità lato back**: dalle registrazioni REC (report della sonda).
+7. **Live**: mai prima di giorni di paper con green-up e settlement verificati.
+
+Commit del 10/09: 99fbff8, 5fd3fae (master). Migrazioni applicate: betfair_live_cashout_v3,
+omega_cashout, safe_strategy_bot, daily_history.
