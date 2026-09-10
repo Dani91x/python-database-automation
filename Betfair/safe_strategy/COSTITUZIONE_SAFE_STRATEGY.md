@@ -266,3 +266,93 @@ cd frontend && npx vitest run && npx tsc --noEmit && npm run build
 Riavvio del solo bot: terminare il figlio python `safe_strategy.bot_service` (il watchdog
 lo rilancia in 10 s). Parametri: tabella `safe_strategy_control.params` (Sheet Parametri).
 Commit del 10/09: 99fbff8, 5fd3fae (master).
+
+---
+
+## 11. PIANO «250 AL GIORNO» — panoramica completa del progetto e sei edge strutturali (10/09 sera)
+
+Inventario completo in sola lettura (tre esplorazioni) di TUTTO il repo: bot esistenti,
+motori e dati, terminal/runner/UI. Da qui si riparte domani: validare ogni strumento e
+iniziare.
+
+### 11.1 Cosa esiste davvero (con i verdetti dei dossier)
+- **`Betfair/stream/scalper/theta_bot.py` ("cecchino")** = lo scalp Under a decadimento
+  esiste già: coppia back+lay di uscita precalcolata (`theta_pair`, "mai gamba senza
+  uscita"), semaforo hazard dall'atlante, `scalper_service`/`scalper_session` = slot per
+  partita con heartbeat e kill-switch, `risk_semaphore` (gol = sospensione = stop
+  ingressi), `tools/atlas_v0.py` simulatore di coda (PIQ, sospensione uccide l'ordine),
+  `run_theta.py` backtest con bet delay reale. Verdetto luglio: EV− in tutte le 18 varianti
+  a prezzi medi 1,2–2,0 (migliore −22,07); positiva solo la cella post-gol (+2,12, n=15).
+  **Fascia 1,02–1,06 mai testata.** `MISSIONE_250_ROADMAP.md` §1.3 ha la formula del segno:
+  hazard/min × durata vs guadagno del tick (hazard 2,6%/min hold 90 s = −0,28; 1,5%/min
+  hold 60 s = +0,36).
+- **`sniper_bot`** (+0,99 netto/14 eventi, fragile OOS), **`scalper_bot`** (maker pre-match
+  edge stretto +0,77, in-play perde per il bet delay), `habitat_scan` (selezione partite
+  GO≥60), `bias_resolver`, `tools/mcm.py` (scala tick Betfair).
+- **`SCALPING_DEFINITIVO_2026-07-16.md`**: averaging-down, martingala, post-goal fade,
+  1-tick in-play = NO-GO; **EV+ solo "cavallo del kickoff"** (back Under pre-KO, chiuso a
+  KO+5': +0,79 €/strumento, peggiore −2,25, positivo in tutte le 11 varianti) e 1-tick
+  pre-match (calcio 5/6, tennis 2/2). MAI messo in produzione.
+- **Tennis** (`tennis_scalper`, `tennis_live`): ~1100 combinazioni su 26 match → nessun edge
+  meccanico; FLB +1,84 con n=2. Nessuna serie storica di prezzi in-play nel repo (solo
+  192 righe pre-match): non backtestabile oggi.
+- **Trading math** (`Betfair/stream/trading/`): greenup, hedging, dutching, xhedge,
+  risk_engine (offset/bracket/trailing), daily_pnl, controls (esposizione per
+  selezione/evento/lega + rate), submin. Tutto puro e testato.
+- **Runner/worker**: `live_order_worker` (coda persistente, claim atomico, client_ref
+  univoco; azioni place/cancel/replace/place_submin/greenup/dutch/cashout_all/
+  cashout_event), `risk_engine_worker` (offset, bracket con trailing, stop/take-profit,
+  stop_entry, chase, auto_hedge), `daily_stop_worker`, `LiveEventExposureControl`.
+  **Il "lay di uscita in coda a prezzo fisso" esiste già**: greenup con `params.target_price`
+  (greening column). Nessuna migrazione serve per usarlo. Polling coda 0,15 s dal desktop
+  (audit 17/07: a 1 s i bot non piazzavano).
+- **Dati**: atlante hazard v2 (54.009 partite, 148.001 gol: P(gol nei 2'/3') per
+  minuto×gol, lega/squadra/h2h), `match_events` 9,8 M (2,69 M gol con minuto), `matches`
+  1,47 M, curva tempi gol (120.542 gol), intensità per lega (206.261 fixture), rho per lega,
+  `dynamic_cal`, calibrazione in-play di oggi. **40 registrazioni complete con tutte e 9 le
+  linee Under** + FH 0.5/1.5/2.5, MO, HT, HTS, HT/FT, BTTS, CS, DC minuto per minuto con
+  profondità; `live_market_snapshots` 1,07 M righe (26 eventi).
+- **Manca**: curva di deriva del prezzo per minuto per (linea, minuto, punteggio) e
+  liquidità per tick a 1,01–1,06 (i dati ci sono, il calcolo no; `theta_decay/ht_decay.py`
+  ha misurato solo l'intervallo); prezzi tennis in-play; archivio Betfair Historical.
+- **Motori pre-match/ML/value**: matematica certificata, edge zero o negativo (ROI −2,5%/−9%,
+  optimizer's curse): prior, non segnali. `money_management.py` (slot paralleli + Kelly
+  frazionario) riusabile per la matematica.
+- **Altri progetti** (fuori scopo): KDP, Polymarket suite, MT5 EA, PMI Boost, JobSpy;
+  `BOT PRONTI BF USATI SU SERVER` contiene un vecchio `Scalp UNDER_2_5`.
+
+### 11.2 I sei edge strutturali (proposta, ordine di esecuzione)
+1. **Kickoff carry** — back Under pre-partita, chiusura KO+5'. EV+ dimostrato (+0,79 €/
+   strumento, 11/11 varianti), zero bet delay. Su 30 partite/giorno con stake 200 €:
+   40–80 €/giorno. Da produzionizzare: `scalper_lab` config + coda ordini + slot.
+2. **Uscita PRIMA del gol** — ogni lay Omega (e Safe) entra con il suo back a riposo già nel
+   libro a prezzo fisso con persistenza PERSIST (sopravvive alla sospensione, primo in coda
+   alla riapertura). Sul trade 70 di oggi: costo del green-up da −22 a ≈ −8. Strumento:
+   greenup `target_price` + persistenza nel worker; regola OCO con `bracket`.
+3. **Arbitraggio delle equivalenze** — Under 0.5 ≡ CS 0-0; Under 1.5 ≡ 0-0+1-0+0-1;
+   BTTS No ≡ unione porte inviolate; Over 0.5 1T ≡ 1 − HTS 0-0; ecc. Tutti in stream nel
+   feed. Divergenza oltre commissione+spread → compra il lato economico, vendi il caro:
+   profitto bloccato. Estendere `combos.py` alla tabella completa delle equivalenze.
+4. **Finestra di riapertura post-gol** — 10–30 s dopo un gol i mercati riprezzano a velocità
+   diverse (scalette Under impossibili, CS in ritardo). Puntare `anomaly.py` su quella
+   finestra con esecuzione immediata (`process_anomalies` ogni ciclo) e persistenza.
+5. **Scalp Under di coda** — back 1,02–1,06 con P calibrata ≥99%, lay a 1,01 subito in coda,
+   ingresso solo con P(gol nei 3') dall'atlante < 4%, slot per partita, stop al gol in
+   green-up (costo 1–3 tick). Motore di volume. Prima: curve deriva/liquidità dalle 40
+   registrazioni (retarget di `atlas_v0.py`), poi `theta_bot` in quella fascia, paper con
+   bet delay reale (`tennis_live/paper_execution.py` come modello).
+6. **Intervallo a rischio zero** — 45'→46' hazard = 0 per 15 minuti: uscite a tempo e carry
+   si chiudono lì dentro, mai a ridosso del fischio.
+
+### 11.3 Aritmetica dell'obiettivo
+Edge per scalp 1–2% netto → 250 €/giorno = 12.500 € abbinati/giorno = 50 scalp da 250 €
+su 10–15 slot con 3–4.000 € di capitale rotante sui campionati liquidi; sui minori la
+liquidità a 1,01 è 50–900 € per linea. Stima onesta: 100–180 €/giorno con 3–4.000 €;
+250 con capitale doppio o campionati maggiori. Nessuna tecnologia manca: mancano le
+due curve (deriva, liquidità per tick), la validazione di ogni strumento e il capitale.
+
+### 11.4 Domani: validazione strumento per strumento, poi si parte
+Per ciascuno: cosa fa, test verdi, backtest sulle registrazioni con bet delay reale,
+paper dal vivo, verdetto GO/NO-GO scritto qui. Ordine: 1 (kickoff carry), 2 (uscita a
+riposo), 3+4 (equivalenze, riapertura), 5 (coda Under: prima le curve), 6 (regola).
+Poi le correzioni già in lista (§3 uscite, §6 visualizzazione).
