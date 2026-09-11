@@ -17,7 +17,7 @@ import { fmtEurIt, fmtOddsIt } from '@/lib/safeBot';
 import { countdownToOff, formatMinute } from '@/lib/matchClock';
 import {
     activeLegs, cashoutPct, investedOf, legSelectionLabel, phaseMeta, roleLabel,
-    MIKE_TERMINAL_STATES, type MikeEvent, type MikeParams, type MikeRequestKind,
+    MIKE_TERMINAL_STATES, type MikeCashoutSmart, type MikeEvent, type MikeParams, type MikeRequestKind,
 } from '@/lib/mike';
 
 export interface MikeMatchCardProps {
@@ -40,6 +40,18 @@ function num(v: number | null | undefined, digits = 2): string {
     if (v == null || !Number.isFinite(Number(v))) return '—';
     return Number(v).toFixed(digits).replace('.', ',');
 }
+/** Riga "cash-out intelligente": cosa sta valutando il bot adesso. */
+export function smartLabel(smart: MikeCashoutSmart | null | undefined, threshold: number, base: number | null): string | null {
+    if (!smart || !smart.enabled) return null;
+    const parts: string[] = [];
+    if (smart.floor != null && base && base > 0) parts.push(`min ${fmtEurIt(smart.floor)} (${((smart.floor / base) * 100).toFixed(1).replace('.', ',')}%)`);
+    if (smart.near) parts.push(`a un passo dal ${threshold}%`);
+    if (smart.hot) parts.push('fase calda');
+    if (smart.ev_hold != null) parts.push(`aspettare vale ${fmtEurIt(smart.ev_hold, true)}`);
+    if (smart.trigger) parts.push(`→ chiude (${smart.trigger})`);
+    return parts.length ? `intelligente: ${parts.join(' · ')}` : null;
+}
+
 function pnlClass(v: number | null | undefined): string {
     if (v == null) return 'text-slate-400';
     return v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-300';
@@ -65,6 +77,9 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
         || (isRequestPending?.(ev.event_id, 'cashout') ?? false);
     const b35 = live.books?.['OU35|UNDER'];
     const b45 = live.books?.['OU45|OVER'];
+    const hasScore = inplay && live.score_home != null && live.score_away != null;
+    const smart = cashout?.smart ?? null;
+    const smartHint = smartLabel(smart, threshold, cashout?.base ?? null);
 
     return (
         <Card
@@ -83,6 +98,16 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
                             : countdown ? <> · KO fra <span className="text-white/90 tabular-nums">{countdown}</span></> : ' · pre-KO'}
                     </div>
                 </div>
+                {hasScore && (
+                    <div className="flex items-center gap-2" data-testid="mike-score">
+                        <span className="rounded-md bg-black/40 border border-white/10 px-2 py-0.5 font-heading font-bold text-base tabular-nums text-white">
+                            {live.score_home}–{live.score_away}
+                        </span>
+                        {((live.red_home ?? 0) > 0 || (live.red_away ?? 0) > 0) && (
+                            <span className="text-[10px] text-rose-300" title="espulsioni casa / trasferta">🟥 {live.red_home ?? 0}/{live.red_away ?? 0}</span>
+                        )}
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <Badge variant="outline" className={`text-[10px] font-heading ${meta.cls}`} data-testid="mike-phase">
                         {meta.label}
@@ -106,8 +131,12 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
                     <div className="tabular-nums text-white/90">{inplay ? pct(live.hazard ?? null) : '—'}</div>
                 </div>
                 <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5">
-                    <div className="text-slate-500 uppercase tracking-wide text-[9px]">λ casa / trasferta</div>
-                    <div className="tabular-nums text-white/90">{num(dossier.lambda_home ?? null)} / {num(dossier.lambda_away ?? null)}</div>
+                    <div className="text-slate-500 uppercase tracking-wide text-[9px]">{inplay ? 'Pressione' : 'λ casa / trasferta'}</div>
+                    <div className="tabular-nums text-white/90" data-testid="mike-pressure">
+                        {inplay
+                            ? (live.pressure != null ? `×${num(live.pressure)}${(live.pressure ?? 1) >= Number(params.cashout_smart_pressure_hot ?? 1.15) ? ' 🔥' : ''}` : '—')
+                            : <>{num(dossier.lambda_home ?? null)} / {num(dossier.lambda_away ?? null)}</>}
+                    </div>
                 </div>
             </div>
 
@@ -172,6 +201,7 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
                                 {fmtEurIt(cashout.net, true)} {coPct != null && <span className="text-slate-400 font-normal">({coPct}% · soglia {threshold}%)</span>}
                             </span>
                             : <span className="text-slate-500">{hasPosition ? 'prezzi incompleti' : 'nessuna posizione'}</span>}
+                        {smartHint && <div className="text-[10px] text-slate-400 mt-0.5" data-testid="mike-cashout-smart">{smartHint}</div>}
                     </div>
                     <div className="flex items-center gap-1">
                         {hasPosition && (

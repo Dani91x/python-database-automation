@@ -29,7 +29,7 @@ def book(bb, bs=100.0, bl=None, ls=100.0, status="OPEN", inplay=False):
 
 def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=None,
          ht_active=False, feed_fresh=True, hazard=None, p4_market=None,
-         last_goal_ts=None, market_status="OPEN", final_total=None):
+         last_goal_ts=None, market_status="OPEN", final_total=None, pressure=1.0, model_probs=None):
     books = {}
     if u35 is not None:
         books[(E.MARKET_OU35, E.SEL_UNDER)] = u35
@@ -40,7 +40,8 @@ def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=
     return E.Snapshot(now=now, ko_at=KO, books=books, inplay=inplay, minute=minute,
                       goals=goals, ht_active=ht_active, feed_fresh=feed_fresh,
                       hazard=hazard, p4_market=p4_market, last_goal_ts=last_goal_ts,
-                      market_status=market_status, final_total=final_total)
+                      market_status=market_status, final_total=final_total,
+                      pressure=pressure, model_probs=model_probs)
 
 
 def fill(leg, size=None, price=None):
@@ -743,3 +744,103 @@ def test_partial_close_settles_on_matched_sizes():
     assert r.net == pytest.approx((5.0 - 1.5) * 0.95, abs=0.01)
     r4 = E.settle_legs(legs, 4, 0.05)         # Under perde: -10 + 5 (lay vinta) → -5
     assert r4.net == pytest.approx(-5.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Cash-out INTELLIGENTE (chiude prima della soglia quando tenere non vale il rischio)
+# ---------------------------------------------------------------------------
+# Posizione di riferimento (_live_covered): Under 3.5 20 @ 1.50 + Over 4.5 4 @ 8.0, base 24.
+# Book "quasi in soglia": Under lay 1.33 -> locked -20 + 30/1.33 = 2.556*0.95 = 2.43 ;
+# Over lay 12.5 -> -1.44 ; netto ~ 0.99 = 4.1% (soglia 5% = 1.20, min 2% = 0.48, tolleranza 2% -> vicino da 0.72)
+_NEAR = dict(u35=book(1.32, bl=1.33, inplay=True), o45=book(12.0, bl=12.5, inplay=True))
+# Book "sopra il minimo ma lontano": Under lay 1.40 -> (-20+30/1.40)*0.95 = 1.357 ; Over -1.44 -> netto -0.08 -> sotto il minimo
+_LOW = dict(u35=book(1.39, bl=1.40, inplay=True), o45=book(12.0, bl=12.5, inplay=True))
+
+
+def _model_probs(u35_now, u35_goal, u35_later, o45_now, o45_goal, o45_later):
+    return {"u35_now": u35_now, "u35_goal": u35_goal, "u35_later": u35_later,
+            "o45_now": o45_now, "o45_goal": o45_goal, "o45_later": o45_later,
+            "u45_now": 1 - o45_now, "u45_goal": 1 - o45_goal, "u45_later": 1 - o45_later}
+
+
+def test_smart_cashout_near_threshold_and_hot_phase_closes():
+    ctx, p = _live_covered()
+    s = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=0, hazard=0.12)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_CLOSING" and d.reason.startswith("profit smart")
+    assert d.telemetry["cashout"]["smart"]["trigger"] == "hot_near"
+    assert d.updates["close_reason"] == "profit"          # re-ingresso permesso come un profit pieno
+    assert sorted(a.role for a in d.actions) == ["over_close", "under_close"]
+    # stessa cosa con la PRESSIONE (corner/cartellini) anche se l'hazard e' basso
+    s2 = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=0, hazard=0.04, pressure=1.2)
+    assert E.decide(ctx, s2, p).telemetry["cashout"]["smart"]["trigger"] == "hot_near"
+
+
+def test_smart_cashout_holds_when_calm_without_model():
+    ctx, p = _live_covered()
+    s = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=0, hazard=0.04)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_COVERED" and d.actions == []
+    st = d.telemetry["cashout"]["smart"]
+    assert st["near"] is True and st["hot"] is False and "trigger" not in st
+
+
+def test_smart_cashout_never_below_min_profit():
+    ctx, p = _live_covered()
+    # fase caldissima e 3 gol, ma il valore e' sotto il profitto minimo: si tiene
+    # (al 30': la regola 2T di perdita tollerata non e' ancora attiva)
+    s = snap(KO + 30 * 60, **_LOW, inplay=True, minute=30, goals=3, hazard=0.3, pressure=1.25)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_COVERED" and d.actions == []
+
+
+def test_smart_cashout_hot_score_closes_at_min_profit():
+    ctx, p = _live_covered()
+    # 3 gol: il prossimo e' il 4o -> chiude appena sopra il minimo anche lontano dalla soglia
+    # Under lay 1.42 -> (-20+30/1.42)*0.95 = 1.07 ; Over lay 9.0 -> -4 + 32/9 = -0.44 -> netto 0.63 = 2.6%
+    # (sopra il minimo 2%, sotto la zona "vicino" 3%): chiude SOLO per il punteggio caldo
+    s = snap(KO + 30 * 60, u35=book(1.41, bl=1.42, inplay=True), o45=book(8.8, bl=9.0, inplay=True),
+             inplay=True, minute=30, goals=3, hazard=0.02)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_CLOSING" and d.telemetry["cashout"]["smart"]["trigger"] == "goals_hot"
+
+
+def test_smart_cashout_expected_value_of_waiting():
+    ctx, p = _live_covered()
+    # modello: un gol dimezza P(Under 3.5) e raddoppia P(Over 4.5); aspettare 5' senza gol migliora poco
+    mp = _model_probs(0.80, 0.40, 0.86, 0.06, 0.13, 0.05)
+    # hazard alto ma sotto la soglia "calda" (0.10): decide il valore atteso
+    s = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=0, hazard=0.09, model_probs=mp)
+    d = E.decide(ctx, s, p)
+    st = d.telemetry["cashout"]["smart"]
+    assert st["cv_goal"] < 0 < st["cv_later"]
+    assert st["ev_hold"] < d.telemetry["cashout"]["net"]
+    assert d.state == "LIVE_CLOSING" and st["trigger"] == "ev_near"
+    # partita tranquilla (hazard 1%): aspettare vale di piu' -> si tiene
+    s2 = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=0, hazard=0.01, model_probs=mp)
+    d2 = E.decide(ctx, s2, p)
+    assert d2.state == "LIVE_COVERED" and d2.telemetry["cashout"]["smart"]["ev_hold"] > d2.telemetry["cashout"]["net"]
+
+
+def test_smart_cashout_disabled_keeps_plain_rule():
+    ctx, p = _live_covered()
+    p["cashout_smart_enabled"] = False
+    s = snap(KO + 30 * 60, **_NEAR, inplay=True, minute=30, goals=3, hazard=0.5, pressure=1.25)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_COVERED" and d.actions == []
+    assert d.telemetry["cashout"]["smart"] == {"enabled": False}
+
+
+def test_projected_books_scale_market_prices_by_model_ratio():
+    books = {(E.MARKET_OU35, E.SEL_UNDER): book(1.30, bl=1.32), (E.MARKET_OU45, E.SEL_OVER): book(10.0, bl=11.0)}
+    mp = _model_probs(0.80, 0.40, 0.82, 0.06, 0.12, 0.05)
+    g = E.projected_books(books, mp, "goal")
+    assert g[(E.MARKET_OU35, E.SEL_UNDER)].best_lay == pytest.approx(1.32 * 2.0)
+    assert g[(E.MARKET_OU45, E.SEL_OVER)].best_lay == pytest.approx(11.0 * 0.5)
+    lt = E.projected_books(books, mp, "later")
+    assert lt[(E.MARKET_OU35, E.SEL_UNDER)].best_lay == pytest.approx(1.32 * 0.80 / 0.82)
+    # selezione morta -> quota 1000 ; dato mancante -> None
+    dead = dict(mp, u35_goal=0.0)
+    assert E.projected_books(books, dead, "goal")[(E.MARKET_OU35, E.SEL_UNDER)].best_lay == 1000.0
+    assert E.projected_books(books, {"u35_now": 0.8}, "goal") is None
+    assert E.projected_books(books, None, "goal") is None

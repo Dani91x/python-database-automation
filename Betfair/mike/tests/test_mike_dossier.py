@@ -41,3 +41,31 @@ def test_live_frame_with_lambdas_gives_model_hazard_and_gain():
     # con l'Atlante piu' prudente del modello, vince l'Atlante
     out2 = D.live_frame(dossier, minute=5, score_home=0, score_away=0, atlas={"global": {}}, wait_step_min=5)
     assert out2["hazard"] is not None
+
+
+def test_model_probs_three_scenarios_are_coherent():
+    dossier = {"lambda_home": 1.4, "lambda_away": 1.1, "rho": -0.13, "league_id": None}
+    out = D.live_frame(dossier, minute=30, score_home=0, score_away=0, atlas=None, wait_step_min=5)
+    mp = out["model_probs"]
+    assert mp is not None
+    for k in ("u35", "o45", "u45"):
+        for sc in ("now", "goal", "later"):
+            assert 0.0 <= mp[f"{k}_{sc}"] <= 1.0
+        assert mp[f"u45_{sc}"] == pytest.approx(1 - mp[f"o45_{sc}"], abs=1e-4)
+    # un gol adesso abbassa l'Under 3.5 e alza l'Over 4.5; 5' senza gol fanno il contrario
+    assert mp["u35_goal"] < mp["u35_now"] < mp["u35_later"]
+    assert mp["o45_goal"] > mp["o45_now"] > mp["o45_later"]
+
+
+def test_model_probs_from_grids_weights_home_and_away_goal():
+    now = {(0, 0): 1.0}
+    later = {(0, 0): 1.0}
+    gh = {(4, 0): 1.0}      # gol casa -> 4 gol totali: Under 3.5 morto
+    ga = {(1, 0): 1.0}      # gol trasferta -> 1 gol
+    mp = D.model_probs_from_grids(now, later, gh, ga, w_home=0.25)
+    assert mp["u35_now"] == 1.0 and mp["u35_goal"] == pytest.approx(0.75)
+    assert mp["o45_goal"] == 0.0 and mp["u45_goal"] == 1.0
+
+
+def test_live_frame_without_lambdas_has_no_model_probs():
+    assert D.live_frame({}, minute=10, score_home=0, score_away=0, atlas=None)["model_probs"] is None

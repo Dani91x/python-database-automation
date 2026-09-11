@@ -125,6 +125,16 @@ PARAM_SPEC: dict[str, Spec] = {
     "cashout_profit_pct": (5.0, float, 0.5, 50.0, None),
     "cashout_base": ("total", str, None, None, ("total", "under")),
     "cashout_place_at_ticks": (0, int, 0, 3, None),
+    # cash-out INTELLIGENTE (engine.smart_cashout): chiude prima della soglia quando tenere
+    # non vale il rischio (punteggio caldo, hazard/pressione alti vicino alla soglia,
+    # valore atteso dell'attesa < valore attuale). MAI sotto cashout_smart_min_pct.
+    "cashout_smart_enabled": (True, bool, None, None, None),
+    "cashout_smart_min_pct": (2.0, float, 0.0, 50.0, None),
+    "cashout_smart_tolerance_pct": (2.0, float, 0.0, 50.0, None),
+    "cashout_smart_hazard_hot": (0.10, float, 0.0, 1.0, None),
+    "cashout_smart_pressure_hot": (1.15, float, 1.0, 1.25, None),
+    "cashout_smart_goals_hot": (3, int, 0, 8, None),
+    "cashout_smart_ev_margin_pct": (1.0, float, 0.0, 50.0, None),
     "close_retry_s": (10, int, 1, 600, None),
     "close_max_attempts": (20, int, 1, 100, None),
     # ---- uscite HT / 2T con perdita tollerata ----

@@ -77,17 +77,41 @@ export interface MikeBook {
     bet_delay: number;
 }
 
+export interface MikeCashoutSmart {
+    enabled: boolean;
+    floor?: number;
+    near?: boolean;
+    hot?: boolean;
+    hazard?: number | null;
+    pressure?: number;
+    cv_goal?: number;
+    cv_later?: number;
+    h_step?: number;
+    ev_hold?: number;
+    trigger?: string;
+}
+
 export interface MikeCashout {
     net: number;
     gross: number;
     base: number;
     complete: boolean;
     pct: number | null;
+    smart?: MikeCashoutSmart | null;
 }
 
 export interface MikeLive {
     minute: number | null;
     goals: number | null;
+    score_home?: number | null;
+    score_away?: number | null;
+    red_home?: number;
+    red_away?: number;
+    pressure?: number | null;
+    hazard_atlas?: number | null;
+    hazard_model?: number | null;
+    cover_gain_pct?: number | null;
+    model_probs?: Record<string, number> | null;
     inplay: boolean;
     ht: boolean;
     hazard: number | null;
@@ -235,6 +259,13 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cashout_profit_pct', label: 'Chiudi tutto a profitto ≥ %', kind: 'number', step: 0.5, min: 0.5, max: 50, hint: 'somma dei P&L bloccabili di Under 3.5 + Over 4.5', group: 'cashout' },
     { key: 'cashout_base', label: 'Base della %', kind: 'choice', choices: ['total', 'under'], hint: 'total = stake Under + copertura; under = solo stake Under', group: 'cashout' },
     { key: 'cashout_place_at_ticks', label: 'Chiusura N tick oltre il best', kind: 'number', step: 1, min: 0, max: 3, hint: 'fill più sicuro, P&L leggermente peggiore', group: 'cashout' },
+    { key: 'cashout_smart_enabled', label: 'Cash-out intelligente', kind: 'bool', hint: 'chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)', group: 'cashout' },
+    { key: 'cashout_smart_min_pct', label: 'Profitto minimo per chiudere prima (%)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'mai sotto questo profitto, qualunque sia il rischio', group: 'cashout' },
+    { key: 'cashout_smart_tolerance_pct', label: '"A un passo" dalla soglia = entro (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda', group: 'cashout' },
+    { key: 'cashout_smart_hazard_hot', label: 'Fase calda: hazard gol 3′ ≥', kind: 'number', step: 0.01, min: 0, max: 1, hint: 'Atlante + modello + pressione', group: 'cashout' },
+    { key: 'cashout_smart_pressure_hot', label: 'Fase calda: pressione ≥', kind: 'number', step: 0.05, min: 1, max: 1.25, hint: 'corner e cartellini dal feed (1,00 = neutra, max 1,25)', group: 'cashout' },
+    { key: 'cashout_smart_goals_hot', label: 'Punteggio caldo: gol ≥', kind: 'number', step: 1, min: 0, max: 8, hint: 'con 3 gol il prossimo è il 4°: chiude appena sopra il profitto minimo', group: 'cashout' },
+    { key: 'cashout_smart_ev_margin_pct', label: 'Chiudi se aspettare vale meno di (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'valore atteso dell\'attesa (modello) sotto il valore attuale di questo margine', group: 'cashout' },
     { key: 'close_retry_s', label: 'Riprezzo chiusura ogni (s)', kind: 'number', step: 5, min: 1, max: 600, hint: 'residuo non abbinato', group: 'cashout' },
     { key: 'close_max_attempts', label: 'Tentativi max chiusura', kind: 'number', step: 1, min: 1, max: 100, hint: 'poi resta in attesa (chiusura manuale)', group: 'cashout' },
     { key: 'ht_loss_exit_enabled', label: 'Uscita HT attiva', kind: 'bool', hint: 'a fine 1T con 2-4 gol', group: 'uscite' },
@@ -273,6 +304,8 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
     cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, close_retry_s: 10, close_max_attempts: 20,
+    cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
+    cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
     ht_loss_exit_enabled: true, ht_loss_pct: 25, ht_loss_goals_min: 2, ht_loss_goals_max: 4,
     h2_loss_exit_enabled: true, h2_loss_pct: 25, h2_loss_from_min: 46, h2_loss_to_min: 85,
     reentry_enabled: true, reentry_green_ticks: 2, reentry_max_goals: 1, reentry_until_min: 45,

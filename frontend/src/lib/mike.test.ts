@@ -36,6 +36,9 @@ describe('mike params', () => {
         expect(MIKE_PARAM_DEFAULTS.pre_exit_mode).toBe('resting');
         expect(MIKE_PARAM_DEFAULTS.pre_max_spread_ticks).toBe(6);
         expect(MIKE_PARAM_DEFAULTS.exact_sizes).toBe(true);
+        expect(MIKE_PARAM_DEFAULTS.cashout_smart_enabled).toBe(true);
+        expect(MIKE_PARAM_DEFAULTS.cashout_smart_min_pct).toBe(2);
+        expect(MIKE_PARAM_DEFAULTS.cashout_smart_goals_hot).toBe(3);
     });
     it('number defaults are inside their bounds', () => {
         for (const f of MIKE_PARAM_FIELDS) {

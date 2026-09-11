@@ -20,7 +20,7 @@ Under 4.5 = UNDER per il re-ingresso). Esiti per gol totali T:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 from Betfair.stream.live_order_build import round_to_tick, ticks_away
@@ -141,6 +141,12 @@ class Snapshot:
     final_total: Optional[int] = None
     # risparmio atteso (%) sulla copertura se si aspetta cover_wait_step_min senza gol
     cover_gain_pct: Optional[float] = None
+    # pressione (corner/cartellini dal feed): moltiplicatore >= 1.0, 1.0 = neutra
+    pressure: float = 1.0
+    # probabilita' di MODELLO per le selezioni (u35/o45/u45) in tre scenari:
+    # "_now" (adesso), "_goal" (subito dopo un gol), "_later" (fra cover_wait_step_min
+    # minuti senza gol). Servono al cash-out intelligente (valore atteso dell'attesa).
+    model_probs: Optional[Dict[str, float]] = None
 
     def book(self, market: str, selection: str) -> Optional[Book]:
         return self.books.get((market, selection))
@@ -400,6 +406,93 @@ def loss_exit_ok(value_net: float, base: float, pct: float, *, goals: Optional[i
     if goals is None or base <= 0 or goals < gmin or goals > gmax:
         return False
     return value_net >= -base * float(pct) / 100.0 - _EPS
+
+
+_PROB_KEY = {(MARKET_OU35, SEL_UNDER): "u35", (MARKET_OU45, SEL_OVER): "o45", (MARKET_OU45, SEL_UNDER): "u45"}
+_DEAD_PRICE = 1000.0
+
+
+def projected_books(books: Dict[Tuple[str, str], Book], model_probs: Optional[Dict[str, float]],
+                    scenario: str) -> Optional[Dict[Tuple[str, str], Book]]:
+    """Book PROIETTATI nello scenario ``goal`` | ``later``.
+
+    La quota equa e' proporzionale a 1/P: la quota di MERCATO viene scalata per
+    P_now/P_scenario, cosi' si conserva il margine reale del book. P_scenario ~ 0
+    (selezione morta, es. Under 3.5 dopo il 4o gol) -> quota 1000. None se manca un dato.
+    """
+    if not model_probs:
+        return None
+    out: Dict[Tuple[str, str], Book] = {}
+    for key, bk in books.items():
+        k = _PROB_KEY.get(key)
+        if k is None:
+            continue
+        p_now, p_new = model_probs.get(f"{k}_now"), model_probs.get(f"{k}_{scenario}")
+        if p_now is None or p_new is None or float(p_now) <= 0:
+            return None
+        ratio = _DEAD_PRICE if float(p_new) <= 1e-6 else float(p_now) / float(p_new)
+
+        def _sc(x: Optional[float]) -> Optional[float]:
+            return None if x is None else max(1.01, min(_DEAD_PRICE, float(x) * ratio))
+
+        out[key] = replace(bk, best_back=_sc(bk.best_back), best_lay=_sc(bk.best_lay))
+    return out
+
+
+def smart_cashout(*, cv_net: float, base: float, legs: List[Leg], books: Dict[Tuple[str, str], Book],
+                  commission: float, params: Dict[str, Any], hazard: Optional[float], pressure: float,
+                  goals: Optional[int], model_probs: Optional[Dict[str, float]],
+                  place_at_ticks: int = 0) -> Tuple[bool, str, Dict[str, Any]]:
+    """Cash-out INTELLIGENTE: chiude prima della soglia quando tenere la posizione
+    non vale il rischio. Mai sotto ``cashout_smart_min_pct`` della base (profitto
+    minimo garantito). Ordine dei criteri:
+      1. punteggio caldo: gol >= cashout_smart_goals_hot (il prossimo gol e' il 4o);
+      2. vicino alla soglia (entro cashout_smart_tolerance_pct) E fase calda
+         (hazard 3' >= cashout_smart_hazard_hot O pressione >= cashout_smart_pressure_hot);
+      3. valore atteso dell'attesa (modello): EV_hold = h*V_gol + (1-h)*V_dopo con
+         h = P(gol entro cover_wait_step_min) dall'hazard 3'. Vicino alla soglia
+         basta EV_hold < V_ora; lontano serve EV_hold < V_ora - cashout_smart_ev_margin_pct.
+    Ritorna (chiudi, motivo, telemetria)."""
+    tele: Dict[str, Any] = {"enabled": bool(params.get("cashout_smart_enabled", False))}
+    if not tele["enabled"] or base <= 0:
+        return False, "", tele
+    target = base * float(params["cashout_profit_pct"]) / 100.0
+    floor = base * float(params["cashout_smart_min_pct"]) / 100.0
+    tol = base * float(params["cashout_smart_tolerance_pct"]) / 100.0
+    near = cv_net >= target - tol - _EPS
+    tele.update({"floor": round(floor, 2), "near": near, "hazard": hazard, "pressure": round(float(pressure), 3)})
+    if cv_net < floor - _EPS:
+        return False, "", tele
+    g = int(goals or 0)
+    if g >= int(params["cashout_smart_goals_hot"]):
+        tele["trigger"] = "goals_hot"
+        return True, f"punteggio caldo ({g} gol) sopra il profitto minimo", tele
+    hot = (hazard is not None and float(hazard) >= float(params["cashout_smart_hazard_hot"])) or \
+        float(pressure) >= float(params["cashout_smart_pressure_hot"])
+    tele["hot"] = hot
+    if near and hot:
+        tele["trigger"] = "hot_near"
+        return True, "fase calda (hazard/pressione) a un passo dalla soglia", tele
+    if model_probs and hazard is not None:
+        bg = projected_books(books, model_probs, "goal")
+        bl = projected_books(books, model_probs, "later")
+        if bg and bl:
+            cv_goal = cashout_value(legs, bg, commission, place_at_ticks)
+            cv_later = cashout_value(legs, bl, commission, place_at_ticks)
+            if cv_goal.complete and cv_later.complete:
+                step = max(1.0, float(params.get("cover_wait_step_min", 5)))
+                h_step = 1.0 - (1.0 - min(1.0, max(0.0, float(hazard)))) ** (step / 3.0)
+                ev_hold = h_step * cv_goal.net + (1.0 - h_step) * cv_later.net
+                tele.update({"cv_goal": cv_goal.net, "cv_later": cv_later.net,
+                             "h_step": round(h_step, 4), "ev_hold": round(ev_hold, 2)})
+                margin = base * float(params["cashout_smart_ev_margin_pct"]) / 100.0
+                if near and ev_hold < cv_net - _EPS:
+                    tele["trigger"] = "ev_near"
+                    return True, f"aspettare vale {ev_hold:.2f} < {cv_net:.2f} a un passo dalla soglia", tele
+                if ev_hold < cv_net - margin - _EPS:
+                    tele["trigger"] = "ev_margin"
+                    return True, f"attesa a valore atteso {ev_hold:.2f} << {cv_net:.2f}", tele
+    return False, "", tele
 
 
 def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optional[float],
@@ -929,6 +1022,15 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
     if should_cashout(cv.net, base, float(params["cashout_profit_pct"])):
         return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                         f"profit: {cv.net:.2f} >= {params['cashout_profit_pct']}% di {base:.2f}",
+                        updates={"close_reason": "profit", "attempts": 0}, telemetry=tele)
+    smart, why, stele = smart_cashout(
+        cv_net=cv.net, base=base, legs=ctx.legs, books=snap.books, commission=c, params=params,
+        hazard=snap.hazard, pressure=float(snap.pressure or 1.0), goals=snap.goals,
+        model_probs=snap.model_probs, place_at_ticks=int(params["cashout_place_at_ticks"]))
+    tele["cashout"]["smart"] = stele
+    if smart:
+        return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
+                        f"profit smart: {cv.net:.2f} ({why})",
                         updates={"close_reason": "profit", "attempts": 0}, telemetry=tele)
     rule = _loss_rule(snap, params)
     if rule is not None:

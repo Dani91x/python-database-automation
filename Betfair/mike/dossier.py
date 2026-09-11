@@ -98,6 +98,34 @@ def cover_gain_pct(p_over_now: Optional[float], p_over_later: Optional[float]) -
     return round(max(0.0, (1.0 - x_later / x_now) * 100.0), 2)
 
 
+def _p_le(grid: Dict[tuple, float], total: int) -> float:
+    return sum(p for (h, a), p in grid.items() if h + a <= total)
+
+
+def model_probs_from_grids(grid_now: Dict[tuple, float], grid_later: Dict[tuple, float],
+                           grid_goal_home: Dict[tuple, float], grid_goal_away: Dict[tuple, float],
+                           w_home: float) -> Dict[str, float]:
+    """P(Under 3.5) / P(Over 4.5) / P(Under 4.5) di modello in tre scenari:
+    ``_now`` adesso, ``_later`` fra N minuti senza gol, ``_goal`` subito dopo un gol
+    (media pesata gol casa/trasferta). Chiavi: u35_*, o45_*, u45_*."""
+    w = min(1.0, max(0.0, float(w_home)))
+
+    def trio(g: Dict[tuple, float]) -> tuple:
+        u35 = _p_le(g, 3)
+        u45 = _p_le(g, 4)
+        return u35, 1.0 - u45, u45
+
+    n, l = trio(grid_now), trio(grid_later)
+    gh, ga = trio(grid_goal_home), trio(grid_goal_away)
+    g = tuple(w * x + (1.0 - w) * y for x, y in zip(gh, ga))
+    out: Dict[str, float] = {}
+    for name, (u35, o45, u45) in (("now", n), ("later", l), ("goal", g)):
+        out[f"u35_{name}"] = round(u35, 5)
+        out[f"o45_{name}"] = round(o45, 5)
+        out[f"u45_{name}"] = round(u45, 5)
+    return out
+
+
 def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Optional[int],
                score_away: Optional[int], red_home: int = 0, red_away: int = 0,
                atlas: Optional[Dict[str, Any]] = None, home: Optional[str] = None,
@@ -112,7 +140,7 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     """
     out: Dict[str, Any] = {"hazard": None, "hazard_atlas": None, "hazard_model": None,
                            "hazard_source": "none", "pressure": 1.0, "p4_model": None,
-                           "p_over45_model": None, "cover_gain_pct": None}
+                           "p_over45_model": None, "cover_gain_pct": None, "model_probs": None}
     if minute is None or score_home is None or score_away is None:
         return out
     goals = int(score_home) + int(score_away)
@@ -163,6 +191,17 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
                                  league_id=dossier.get("league_id"), half=False)
             p_over_later = round(sum(p for (h, a), p in grid_l.items() if h + a >= 5), 4)
             out["cover_gain_pct"] = cover_gain_pct(p_over_now, p_over_later)
+            # scenario "gol adesso": media pesata (quota λ) fra gol casa e gol trasferta
+            wh = float(lh) / (float(lh) + float(la))
+            gh = LiveState(minute=int(minute), score_home=int(score_home) + 1, score_away=int(score_away),
+                           red_home=int(red_home or 0), red_away=int(red_away or 0))
+            ga = LiveState(minute=int(minute), score_home=int(score_home), score_away=int(score_away) + 1,
+                           red_home=int(red_home or 0), red_away=int(red_away or 0))
+            grid_gh = score_probs(lh_pre=float(lh), la_pre=float(la), rho=rho, state=gh,
+                                  league_id=dossier.get("league_id"), half=False)
+            grid_ga = score_probs(lh_pre=float(lh), la_pre=float(la), rho=rho, state=ga,
+                                  league_id=dossier.get("league_id"), half=False)
+            out["model_probs"] = model_probs_from_grids(grid, grid_l, grid_gh, grid_ga, wh)
         except Exception as ex:  # noqa: BLE001
             logger.debug("[mike.dossier] p4_model KO: %s", str(ex)[:120])
     out["hazard"] = combine_hazard(out["hazard_atlas"], out["hazard_model"], out["pressure"])

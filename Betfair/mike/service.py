@@ -576,7 +576,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     snap = F.snapshot_from_row(row, info, now=now_ts, params=params, scanner_age_s=scanner_age,
                                hazard=live.get("hazard"), p4_model=live.get("p4_model"),
                                last_goal_ts=extra.get("last_goal_ts"),
-                               cover_gain_pct=live.get("cover_gain_pct"))
+                               cover_gain_pct=live.get("cover_gain_pct"),
+                               pressure=float(live.get("pressure") or 1.0),
+                               model_probs=live.get("model_probs"))
     if snap is None:
         return (0, 0)
 
@@ -702,6 +704,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
 
     # -- persistenza (write-on-change) --------------------------------------------
     ev["live"] = {"minute": snap.minute, "goals": snap.goals, "inplay": snap.inplay, "ht": snap.ht_active,
+                  "score_home": payload.get("score_home"), "score_away": payload.get("score_away"),
+                  "red_home": payload.get("red_home") or 0, "red_away": payload.get("red_away") or 0,
+                  "model_probs": live.get("model_probs"),
                   "hazard": snap.hazard, "hazard_atlas": live.get("hazard_atlas"),
                   "hazard_model": live.get("hazard_model"), "pressure": live.get("pressure"),
                   "cover_gain_pct": live.get("cover_gain_pct"), "p_over45_model": live.get("p_over45_model"),
