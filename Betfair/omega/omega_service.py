@@ -201,8 +201,10 @@ def _live_state_for(market, ev, score_lookup, now: datetime
             and payload.get("score_home") is not None and payload.get("score_away") is not None:
         raw = payload.get("score_raw")
         status = raw.get("matchStatus") if isinstance(raw, dict) else None
+        yh, ya = M.yellow_cards(payload)          # §15: gialli (moltiplicatori calibrati per lega)
         st = M.LiveState(int(payload["minute"]), int(payload["score_home"]), int(payload["score_away"]),
-                         int(payload.get("red_home") or 0), int(payload.get("red_away") or 0))
+                         int(payload.get("red_home") or 0), int(payload.get("red_away") or 0),
+                         yellow_home=yh, yellow_away=ya)
         return st, status, f"{st.score_home}-{st.score_away}"
     if score_lookup is not None:
         try:
@@ -298,6 +300,21 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
             out = (saved[0], saved[1], league_id, saved[2])
             persist = True
     if out is None and state is not None and isinstance(payload, dict) \
+            and bool((params or {}).get("lambda_market_grid", True)):
+        # §15: λ impliciti nell'INTERO mercato (scala CS + linee O/U)
+        try:
+            grid_fit = M.lambdas_from_market_grid(payload, state, league_id, rho=_rho_for(league_id))
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[omega] market grid KO %s: %s", event_id, str(ex)[:100])
+            grid_fit = None
+        if grid_fit is not None:
+            out = (grid_fit[0], grid_fit[1], league_id, "market_grid")
+            persist = True
+            db.log("model_lambda_market", {"event_id": event_id, "minute": state.minute,
+                                           "score": f"{state.score_home}-{state.score_away}",
+                                           "lambda_pre": [round(grid_fit[0], 3), round(grid_fit[1], 3)],
+                                           **grid_fit[2]})
+    if out is None and state is not None and isinstance(payload, dict) \
             and bool((params or {}).get("lambda_live_fallback", True)):
         live = M.lambdas_from_live_ou(payload, state, league_id)
         if live is not None:
@@ -327,6 +344,37 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
 # lega per processo, tollerante alla migrazione assente (tabella vuota = off).
 # ---------------------------------------------------------------------------
 _EMPIRICAL_CACHE: dict[Any, Any] = {}
+
+
+_MINUTE_CACHE: dict[Any, Any] = {}
+
+
+def _minute_table(db, league_id: Optional[int], minute: int, half: bool, params: dict):
+    """``omega_empirical.MinuteTable`` per (lega, bucket, target) — §15. None se
+    il veto è spento, la RPC manca o la tabella è vuota (errori NON in cache)."""
+    if str(params.get("model_empirical", "veto")) != "veto":
+        return None
+    fn = getattr(db, "minute_transitions", None)
+    if not callable(fn):
+        return None
+    from Betfair.omega import omega_empirical as EMP
+    bucket = EMP.minute_bucket(minute, half=half)
+    target = "ht" if half else "ft"
+    key = (int(league_id) if league_id is not None else 0, bucket, target)
+    if key in _MINUTE_CACHE:
+        return _MINUTE_CACHE[key]
+    try:
+        rows = fn(league_id, bucket, target)
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega] minute_transitions KO %s: %s", key, str(ex)[:100])
+        return None
+    table = EMP.MinuteTable(rows or [])
+    if table.empty:
+        table = None
+    if len(_MINUTE_CACHE) >= 2000:
+        _MINUTE_CACHE.clear()
+    _MINUTE_CACHE[key] = table
+    return table
 
 
 def _empirical_table(db, league_id: Optional[int], params: dict):
@@ -378,22 +426,28 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
     # guardato in omega_model → assente/rotto = P grezza, mai un crash
     calibrator = (M.load_calibrator(params.get("model_calibration_path") or None)
                   if str(params.get("model_calibration", "auto")) == "auto" else None)
+    from Betfair.omega import omega_empirical as EMP
     p_data = None
     ht_score = None
     emp_table = None
     emp_in_window = False
-    if not half:
-        from Betfair.omega import omega_empirical as EMP
+    current = (state.score_home, state.score_away)
+    # §15: tabella PER MINUTO (gol con minuto, nessuna ipotesi di Poisson) — vale a
+    # ogni minuto e per ENTRAMBE le gambe; se assente, veto HT→FT (§14) sulla 2T
+    minute_tbl = _minute_table(db, league_id, state.minute, half, params)
+    if minute_tbl is not None:
+        p_data = EMP.minute_lookup(minute_tbl, minute=state.minute, current=current,
+                                   half=half, league_id=league_id)
+    elif not half:
         ht_score = M.half_time_score(payload)
-        # la tabella HT→FT copre TUTTO il 2° tempo: confrontabile con p_max e con la
-        # P implicita solo a inizio ripresa (review 11/09 HIGH-3) — oltre la
+        # la tabella HT→FT copre TUTTO il 2° tempo: il confronto con p_max e con la
+        # P implicita è onesto solo a inizio ripresa (review 11/09 HIGH-3) — oltre la
         # finestra il veto non si applica (audit: 'fuori_finestra')
         emp_in_window = int(state.minute) <= int(params.get("model_empirical_max_minute",
                                                            int(params["ft_entry_min"]) + 10))
         if emp_in_window:
             emp_table = _empirical_table(db, league_id, params)
-            p_data = EMP.empirical_lookup(emp_table, ht=ht_score,
-                                          current=(state.score_home, state.score_away),
+            p_data = EMP.empirical_lookup(emp_table, ht=ht_score, current=current,
                                           league_id=league_id)
     sel = M.select_by_model(
         snapshot.runners, probs, state=state,
@@ -404,20 +458,38 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
         calibrator=calibrator,
         family=M.CALIBRATION_FAMILY_HT if half else M.CALIBRATION_FAMILY_FT,
         p_data=p_data,
+        cost_aware=bool(params.get("select_cost_aware", True)),
+        band_ratio=float(params.get("select_p_band_ratio", 2.0)),
+        tail_factor=float(params.get("model_tail_factor", 1.0)),
     )
     if sel is None:
         return None, None, "no_runner_by_model"
     audit = M.audit_block(sel, lh_pre=lh, la_pre=la, source=source, state=state, half=half)
-    if not half:
-        from Betfair.omega import omega_empirical as EMP
-        parsed = E.parse_scoreline(sel.name)
+    audit["cover_cost"] = M.cover_cost(size_needed, sel.price, sel.back_price)
+    audit["tail_factor"] = float(params.get("model_tail_factor", 1.0))
+    audit["cost_aware"] = bool(params.get("select_cost_aware", True))
+    audit["yellow"] = [state.yellow_home, state.yellow_away]
+    parsed = E.parse_scoreline(sel.name)
+    if minute_tbl is not None and parsed is not None:
+        audit.update(EMP.audit_minute(minute_tbl, minute=state.minute, current=current,
+                                      half=half, league_id=league_id, result=parsed))
+    elif not half:
         if not emp_in_window:
             audit.update({"empirical": None, "empirical_note": "fuori_finestra",
                           "ht_score": None if ht_score is None else f"{ht_score[0]}-{ht_score[1]}"})
         elif parsed is not None:
-            audit.update(EMP.audit_empirical(emp_table, ht=ht_score,
-                                             current=(state.score_home, state.score_away),
+            audit.update(EMP.audit_empirical(emp_table, ht=ht_score, current=current,
                                              league_id=league_id, ft=parsed))
+    # §15: cross-check col mercato intero (solo audit, mai decisione) quando la λ
+    # usata NON viene già dal mercato
+    if source not in ("market_grid", "live_ou") and bool(params.get("lambda_market_grid", True)):
+        try:
+            mk = M.lambdas_from_market_grid(payload, state, league_id, rho=_rho_for(league_id))
+        except Exception:  # noqa: BLE001
+            mk = None
+        if mk is not None:
+            audit["lambda_market"] = [round(mk[0], 3), round(mk[1], 3)]
+            audit["market_fit_loss"] = mk[2].get("loss")
     return sel, audit, None
 
 

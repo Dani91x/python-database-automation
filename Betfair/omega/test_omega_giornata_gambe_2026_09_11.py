@@ -344,8 +344,11 @@ def _books(event_id):
 
 
 def _params(**over):
+    # P GREZZE del modello (niente calibratore, niente fattore di coda): questi test
+    # verificano l'aritmetica di selezione/target, non la calibrazione (§15)
     base = {"engine": "legs", "price_min": 20, "price_max": 120, "min_lay_liquidity": 5,
-            "model_p_max_pct": 3.0, "execution_mode": "rest", "commission_pct": 5}
+            "model_p_max_pct": 3.0, "execution_mode": "rest", "commission_pct": 5,
+            "model_calibration": "off", "model_tail_factor": 1.0}
     base.update(over)
     return omega_config.resolve_params(base)
 

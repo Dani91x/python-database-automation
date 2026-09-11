@@ -112,6 +112,17 @@ function LegCell<T extends MatchTradeLike>({ leg, kind, group, live, commission,
     const exit = tradeExit({ meta: t.meta ?? null, closes: leg.closes.map((c) => ({ meta: c.meta ?? null })) as never });
     const b = statusBadge(t.status, exit?.kind);
     const model = tradeModelOf({ meta: t.meta ?? null });
+    // §15: fonte dei λ e costo di copertura immediata (audit del modello)
+    const mm = ((t.meta ?? {}) as Record<string, unknown>)['model'] as Record<string, unknown> | undefined;
+    const lambdaSrc = typeof mm?.lambda_source === 'string' ? String(mm.lambda_source) : null;
+    const coverCost = typeof mm?.cover_cost === 'number' ? Number(mm.cover_cost) : null;
+    const empSrc = typeof mm?.empirical_source === 'string' ? String(mm.empirical_source) : null;
+    const modelTitle = [
+        model?.applied ? `P(modello) calibrata ${pctIt(model.calibrated)} · grezza ${pctIt(model.raw)}` : 'P(modello) che il risultato bancato esca',
+        lambdaSrc ? `λ da ${lambdaSrc === 'market_grid' ? 'mercato intero (CS + O/U)' : lambdaSrc === 'live_ou' ? 'Over/Under live' : lambdaSrc === 'pre_ko_odds' ? 'quote pre-partita' : lambdaSrc}` : null,
+        empSrc ? `dati storici: ${empSrc === 'minute' ? 'tabella per minuto' : '45′→finale'}` : null,
+        coverCost != null ? `copertura immediata ≈ ${fmtEurIt(coverCost)}` : null,
+    ].filter(Boolean).join(' · ');
     const exp = tradeExposure({ side: t.side, price: t.price ?? null, size: t.size ?? null });
     const book = bookFor(t, kind, live);
     const side = t.side === 'back' ? 'BACK' : 'LAY';
@@ -137,7 +148,7 @@ function LegCell<T extends MatchTradeLike>({ leg, kind, group, live, commission,
                         <span title="minuto e punteggio al momento dell'ingresso">ingresso <b className="text-slate-200">{t.minute_at_entry != null ? `${t.minute_at_entry}′` : ''}{t.score_at_entry ? ` ${t.score_at_entry}` : ''}</b></span>
                     )}
                     {model && (
-                        <span data-testid="omega-model-p" title={model.applied ? `P(modello) calibrata ${pctIt(model.calibrated)} · grezza ${pctIt(model.raw)}` : 'P(modello) che il risultato bancato esca'}>
+                        <span data-testid="omega-model-p" title={modelTitle}>
                             P <b className="text-slate-200">{pctIt(model.applied ? model.calibrated : (model.calibrated ?? model.raw))}</b>
                         </span>
                     )}

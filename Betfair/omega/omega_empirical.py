@@ -115,3 +115,96 @@ def audit_empirical(table: Optional[EmpiricalTable], *, ht: Optional[Tuple[int, 
     out["empirical"] = round(got[0], 6)
     out["empirical_n"] = int(got[1])
     return out
+
+
+# ---------------------------------------------------------------------------
+# §15 — TABELLA PER MINUTO: "punteggio al minuto m → risultato (finale o al 45′)"
+# ricostruita dai gol con minuto (match_events, ~2,7 M gol) — nessuna ipotesi
+# di Poisson, valida a OGNI minuto e per ENTRAMBE le gambe. Tabella
+# ``omega_minute_transitions`` (migrazione omega_models_v3.sql), righe
+# ``{league_id, bucket, score, target, result, n}`` con league_id 0 = globale.
+# Stessa shrinkage per lega della tabella HT→FT.
+# ---------------------------------------------------------------------------
+BUCKET_STEP = 5
+BUCKET_MAX_FT = 85
+BUCKET_MAX_HT = 40
+
+
+def minute_bucket(minute: int, *, half: bool) -> int:
+    """Bucket di 5′ dello stato: min(85, ⌊m/5⌋·5) per il finale, min(40, …) per il 45′."""
+    b = (max(0, int(minute)) // BUCKET_STEP) * BUCKET_STEP
+    return min(b, BUCKET_MAX_HT if half else BUCKET_MAX_FT)
+
+
+class MinuteTable:
+    """Conteggi (lega → bucket → score → target → result → n)."""
+
+    def __init__(self, rows: Iterable[dict]) -> None:
+        self._n: Dict[Tuple[int, int, str, str], Dict[str, int]] = {}
+        self._tot: Dict[Tuple[int, int, str, str], int] = {}
+        for r in rows or ():
+            try:
+                lg = int(r.get("league_id") if r.get("league_id") is not None else GLOBAL_LEAGUE)
+                key = (lg, int(r["bucket"]), str(r["score"]), str(r["target"]))
+                res, n = str(r["result"]), int(r.get("n") or 0)
+            except (TypeError, ValueError, KeyError):
+                continue
+            if n <= 0:
+                continue
+            bucket = self._n.setdefault(key, {})
+            bucket[res] = bucket.get(res, 0) + n
+            self._tot[key] = self._tot.get(key, 0) + n
+
+    @property
+    def empty(self) -> bool:
+        return not any(k[0] == GLOBAL_LEAGUE for k in self._tot)
+
+    def p_result(self, *, minute: int, score: Tuple[int, int], result: Tuple[int, int],
+                 half: bool, league_id: Optional[int] = None) -> Optional[Tuple[float, int]]:
+        """(P che dal punteggio ``score`` al minuto ``minute`` si arrivi a ``result``
+        — finale, o al 45′ se ``half`` —, n casi globali dello stato). None se lo
+        stato è troppo raro (``MIN_GLOBAL_N``)."""
+        target = "ht" if half else "ft"
+        b = minute_bucket(minute, half=half)
+        gkey = (GLOBAL_LEAGUE, b, score_key(*score), target)
+        g_tot = self._tot.get(gkey, 0)
+        if g_tot < MIN_GLOBAL_N:
+            return None
+        rk = score_key(*result)
+        p_global = self._n.get(gkey, {}).get(rk, 0) / g_tot
+        if league_id is None or int(league_id) == GLOBAL_LEAGUE:
+            return p_global, g_tot
+        lkey = (int(league_id), b, score_key(*score), target)
+        l_tot = self._tot.get(lkey, 0)
+        if l_tot <= 0:
+            return p_global, g_tot
+        p = (self._n.get(lkey, {}).get(rk, 0) + SHRINK_K * p_global) / (l_tot + SHRINK_K)
+        return p, g_tot
+
+
+def minute_lookup(table: Optional[MinuteTable], *, minute: int, current: Tuple[int, int],
+                  half: bool, league_id: Optional[int]):
+    """Funzione ``p_data(h, a) → P | None`` per ``select_by_model`` dalla tabella per
+    minuto; None se la tabella manca/è vuota."""
+    if table is None or table.empty:
+        return None
+
+    def _p(h: int, a: int) -> Optional[float]:
+        got = table.p_result(minute=minute, score=current, result=(h, a), half=half, league_id=league_id)
+        return None if got is None else float(got[0])
+
+    return _p
+
+
+def audit_minute(table: Optional[MinuteTable], *, minute: int, current: Tuple[int, int],
+                 half: bool, league_id: Optional[int], result: Tuple[int, int]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"empirical_source": "minute", "empirical_bucket": minute_bucket(minute, half=half)}
+    if table is None or table.empty:
+        out.update({"empirical": None, "empirical_note": "tabella_minuto_assente"})
+        return out
+    got = table.p_result(minute=minute, score=current, result=result, half=half, league_id=league_id)
+    if got is None:
+        out.update({"empirical": None, "empirical_note": "stato_raro"})
+        return out
+    out.update({"empirical": round(got[0], 6), "empirical_n": int(got[1])})
+    return out

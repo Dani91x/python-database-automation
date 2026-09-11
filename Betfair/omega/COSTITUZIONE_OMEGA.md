@@ -729,3 +729,70 @@ regolazione, obiettivo corrente). Parametri nuovi in `omega_config`: `model_empi
 ### 14.5 Ancora aperto
 Fedeltà paper (bet delay 5 s), certificazione liquidità lato back dalle registrazioni REC,
 uscite loss/profit strategia per strategia (Safe §3), i sei edge del piano 250 (Safe §11).
+
+## 15. MODELLO DEFINITIVO — mercato intero, dati per minuto, validazione, costo di copertura (11/09/2026 pomeriggio)
+
+Richiesta dell'utente: "è la soluzione migliore? hai considerato altri modelli, che siamo
+in live, ogni cosa che migliora il sistema?" → tutti e cinque i punti implementati.
+
+### 15.1 λ impliciti nell'INTERO mercato (`omega_model.lambdas_from_market_grid`)
+Dalla scala completa del Correct Score (probabilità de-viggate mid back/lay,
+normalizzate su tutte le selezioni, aggregati inclusi) e da tutte le linee Over/Under
+aperte si cercano i λ residui (casa, trasferta) la cui griglia di Poisson riproduce
+meglio il mercato (griglia log-spaziata 28×28 + raffinamento locale; ~0,2 s, una volta
+per evento). Riportati a "pre-match equivalenti" coi moltiplicatori live del modello.
+Catena λ ora: fixture → λ persistiti → pre-KO → hint dal trade 1T → **mercato intero**
+(`market_grid`, log `model_lambda_market`) → singola linea O/U (`live_ou`). Quando la λ
+usata non viene dal mercato, il fit di mercato è comunque scritto nell'audit
+(`lambda_market`, `market_fit_loss`) come cross-check.
+
+### 15.2 Tabella PER MINUTO dai gol con minuto (`omega_empirical.MinuteTable`)
+Migrazione `omega_models_v3.sql`: tabella `omega_minute_transitions` (lega/globale ×
+bucket 5′ × punteggio × target ft|ht × risultato × n) costruita da `matches` +
+`match_events` (solo partite i cui gol ricostruiti coincidono col finale; autogol alla
+squadra che ne beneficia; gol al 90′+recupero solo nel finale). Costruzione = passo
+separato `SELECT public.omega_build_minute_transitions();`. A runtime: RPC
+`get_omega_minute_ft(lega, bucket, target)` (poche centinaia di righe, PK), cache per
+processo. Nella selezione ha la precedenza sul veto HT→FT (§14) e vale per ENTRAMBE le
+gambe: `p_selected = max(P modello, P empirica per minuto)`. Audit `empirical_source`
+(`minute`), `empirical_bucket`.
+
+### 15.3 Banco di validazione (`omega_validate.py`, `tools/omega_validate_models.py`)
+Metriche pure: log-loss/Brier, tabella di affidabilità per fascia di P, log-loss
+multiclasse sui risultati esatti e **calibrazione della coda** (risultati con P ≤ 2 %:
+usciti/previsti — il numero che decide se il lay è a valore atteso ≥ 0). Lo strumento
+confronta sullo storico (campione con gol a minuto, training/test separati) Poisson con λ
+di lega, Poisson+calibratore, Poisson+fattore di coda, tabella per minuto e miscele.
+Rapporto `Betfair/omega/reports/validazione_modelli_2026-09-11.md`.
+**Risultati 11/09**: la coda del Poisson è SOTTOSTIMATA (usciti/previsti 1,5 al 25′ sul
+45′; 1,1–1,2 al 60′/70′ sul finale su 627 partite di test; 1,7–1,8 sul campione da 267).
+La miscela modello+dati ha sempre log-loss migliore e coda più calibrata.
+**Bug trovato dal banco**: le famiglie del calibratore condiviso erano `cs`/`hts` (nomi
+inesistenti) → la calibrazione della selezione era un no-op silenzioso; ora `cs_cell`/
+`hts_cell` (tabelle reali dai 60.911 campioni registrati: nella fascia bassa il CS esce
+1,7–2,2× la P dichiarata, l'HT ≈ 1×). Sullo storico il calibratore rende la coda del
+finale PRUDENTE (usciti/previsti 0,6) e non basta al 45′ (1,6); il fattore di coda
+`model_tail_factor` (1,3) dà 0,94–1,02. Regola live: P usata = **max**(calibrata, grezza ×
+fattore) — un lay solo se il risultato è raro secondo entrambe (le perdite valgono
+20–50 vincite: la prudenza sulla coda costa poche occasioni, l'ottimismo costa giorni).
+
+### 15.4 Selezione con COSTO DI COPERTURA (`omega_model.rank_by_cover_cost`)
+A quote fair l'EV della scommessa è ≈ 0: decide quanto costa uscire. Fra i candidati a
+P equivalente (entro `select_p_band_ratio` = 2 × la più bassa) vince quello coprbile e
+più economico da coprire subito (`cover_cost` = size·(lay/back − 1), liquidità back
+sufficiente), poi liquidità back, poi liability minore. Audit `cover_cost`, `back_price`,
+`back_size`, `cost_aware`. Param `select_cost_aware` (true).
+
+### 15.5 Segnali live
+Cartellini gialli dal feed IPS nello stato live (`LiveState.yellow_*`) → moltiplicatori
+già calibrati per lega di `live_engine` (prima mai passati). Corner/pressione: il
+moltiplicatore resta 1 — non esistono dati storici di corner per minuto per calibrarlo e
+le 26–40 registrazioni sono troppo poche; si accende solo dopo una calibrazione
+sulle registrazioni REC (banco di validazione riusabile), mai a occhio.
+
+### 15.6 Migrazione e passi
+`migrations/omega_models_v3.sql` (dopo omega_daily_v2) + `SELECT
+public.omega_build_minute_transitions();` una volta. Senza: tabella per minuto off → veto
+HT→FT e modello. Parametri nuovi: `lambda_market_grid`, `select_cost_aware`,
+`select_p_band_ratio`, `model_use_yellow_cards`, `model_tail_factor`. Test:
+`test_omega_modello_definitivo_2026_09_11.py`.

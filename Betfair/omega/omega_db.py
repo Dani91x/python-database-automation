@@ -530,3 +530,19 @@ def ht_ft_transitions(league_id: Optional[int]) -> list[dict[str, Any]]:
     except Exception as ex:  # noqa: BLE001
         logger.debug("[omega.db] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:120])
         return []
+
+
+def minute_transitions(league_id: Optional[int], bucket: int, target: str) -> list[dict[str, Any]]:
+    """Righe ``{league_id, bucket, score, target, result, n}`` della tabella PER
+    MINUTO (globale + lega, un bucket, un target) via RPC ``get_omega_minute_ft``
+    (migrazione omega_models_v3.sql). [] se assente."""
+    try:
+        res = _sb().rpc("get_omega_minute_ft", {
+            "p_league_id": int(league_id) if league_id is not None else None,
+            "p_bucket": int(bucket), "p_target": str(target),
+        }).execute()
+        data = getattr(res, "data", None)
+        return list(data) if isinstance(data, list) else []
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega.db] minute_transitions KO (%s,%s,%s): %s", league_id, bucket, target, str(ex)[:120])
+        return []

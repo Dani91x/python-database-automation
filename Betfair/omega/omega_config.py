@@ -70,9 +70,24 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # 'veto' = per la gamba 2T la P usata è max(P modello, P empirica HT→FT dai
     # dati storici, se il punteggio è ancora quello del 45′) | 'off' = solo modello
     "model_empirical": ("veto", str, None, None),
-    # minuto massimo d'ingresso 2T entro cui il veto empirico si applica (la
-    # tabella HT→FT copre tutto il 2° tempo: oltre sovrastimerebbe la P)
+    # minuto massimo d'ingresso 2T entro cui il veto HT→FT si applica (la
+    # tabella HT→FT copre tutto il 2° tempo: oltre sovrastimerebbe la P);
+    # con la tabella PER MINUTO (§15) il veto vale a ogni minuto, per entrambe le gambe
     "model_empirical_max_minute": (60, int, 45, 90),
+    # ---- §15: modello definitivo ----
+    # λ impliciti nell'INTERO mercato (scala CS + linee O/U) quando fixture, λ
+    # salvati e pre-KO mancano; sempre calcolati per l'audit (cross-check)
+    "lambda_market_grid": (True, bool, None, None),
+    # selezione con COSTO DI COPERTURA: fra i risultati a P equivalente (entro
+    # band_ratio × la più bassa) vince il più economico da coprire subito
+    "select_cost_aware": (True, bool, None, None),
+    "select_p_band_ratio": (2.0, float, 1.0, 10.0),
+    # cartellini gialli dal feed nei tassi residui (moltiplicatori calibrati per lega)
+    "model_use_yellow_cards": (True, bool, None, None),
+    # fattore di coda (§15): P del modello ≤ 5 % moltiplicata per questo valore
+    # (banco di validazione 11/09: 1,1–1,8 secondo minuto e campione → 1,3; usato SOLO
+    # se il calibratore condiviso non ha una tabella per la famiglia; 1 = nessuna correzione)
+    "model_tail_factor": (1.3, float, 0.5, 5.0),
     # λ dal mercato Over/Under live quando mancano fixture e quote pre-KO
     # (scanner riavviato a partita in corso, lega senza fixture): True = mai
     # una gamba saltata per "no_model_lambdas" se il mercato a gol è in stream
