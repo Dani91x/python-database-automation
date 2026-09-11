@@ -20,11 +20,27 @@ non è condizionabile e resta solo il modello. Tutto puro: nessun I/O.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 GLOBAL_LEAGUE = 0
-SHRINK_K = 200.0          # peso del prior globale (in "partite equivalenti")
-MIN_GLOBAL_N = 30         # sotto: il risultato del 1T è troppo raro per dire qualcosa
+SHRINK_K = 500.0          # peso del prior globale (review: l'effetto lega è piccolo → 500-2000)
+MIN_GLOBAL_N = 200        # sotto: lo stato è troppo raro per un veto di coda (review F13)
+Z_UPPER = 1.64            # limite superiore one-sided (~95 %) — stimatore PRUDENTE della coda
+
+
+def p_upper(k: float, n: float, z: float = Z_UPPER) -> float:
+    """Limite superiore (Wilson, one-sided) della frequenza k/n: per k = 0 dà
+    ≈ z²/(n+z²) ("regola del tre"), mai 0 — un veto di coda con lo stimatore a
+    conteggio-zero non protegge da nulla (review F13)."""
+    n = float(n)
+    if n <= 0:
+        return 1.0
+    z2 = z * z
+    p = float(k) / n
+    centre = (p + z2 / (2.0 * n)) / (1.0 + z2 / n)
+    half = z * math.sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n)) / (1.0 + z2 / n)
+    return min(1.0, centre + half)
 
 
 def score_key(h: int, a: int) -> str:
@@ -69,15 +85,18 @@ class EmpiricalTable:
         if g_tot < MIN_GLOBAL_N:
             return None
         key = score_key(*ft)
-        p_global = g_counts.get(key, 0) / g_tot
+        k_g = g_counts.get(key, 0)
         if league_id is None or int(league_id) == GLOBAL_LEAGUE:
-            return p_global, g_tot
+            return p_upper(k_g, g_tot), g_tot
         l_counts, l_tot = self.counts(league_id, ht)
         if l_tot <= 0:
-            return p_global, g_tot
-        # shrinkage: (n_lega_ft + K·p_globale) / (n_lega_ht + K)
-        p = (l_counts.get(key, 0) + SHRINK_K * p_global) / (l_tot + SHRINK_K)
-        return p, g_tot
+            return p_upper(k_g, g_tot), g_tot
+        # shrinkage sui CONTEGGI verso il globale, poi limite superiore:
+        # k_eff = n_lega_ft + K·p_globale, n_eff = n_lega_ht + K
+        p_global = k_g / g_tot
+        k_eff = l_counts.get(key, 0) + SHRINK_K * p_global
+        n_eff = l_tot + SHRINK_K
+        return p_upper(k_eff, n_eff), g_tot
 
 
 def empirical_lookup(table: Optional[EmpiricalTable], *, ht: Optional[Tuple[int, int]],
@@ -171,15 +190,16 @@ class MinuteTable:
         if g_tot < MIN_GLOBAL_N:
             return None
         rk = score_key(*result)
-        p_global = self._n.get(gkey, {}).get(rk, 0) / g_tot
+        k_g = self._n.get(gkey, {}).get(rk, 0)
         if league_id is None or int(league_id) == GLOBAL_LEAGUE:
-            return p_global, g_tot
+            return p_upper(k_g, g_tot), g_tot
         lkey = (int(league_id), b, score_key(*score), target)
         l_tot = self._tot.get(lkey, 0)
         if l_tot <= 0:
-            return p_global, g_tot
-        p = (self._n.get(lkey, {}).get(rk, 0) + SHRINK_K * p_global) / (l_tot + SHRINK_K)
-        return p, g_tot
+            return p_upper(k_g, g_tot), g_tot
+        p_global = k_g / g_tot
+        k_eff = self._n.get(lkey, {}).get(rk, 0) + SHRINK_K * p_global
+        return p_upper(k_eff, l_tot + SHRINK_K), g_tot
 
 
 def minute_lookup(table: Optional[MinuteTable], *, minute: int, current: Tuple[int, int],

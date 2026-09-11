@@ -89,14 +89,24 @@ def _intensity_params(league_id: Optional[int], section: str) -> dict:
     return node if isinstance(node, dict) else {}
 
 
+INJURY_TIME_MIN = 5.0     # durata attesa del recupero del 2° tempo (minuti)
+
+
 def residual_time_weight(minute: Optional[int], league_id: Optional[int] = None) -> float:
     """Frazione ATTESA dei gol di partita ancora da segnare dopo ``minute``,
     dalla CDF gol empirica REALE (non lineare). Fallback lineare se la CDF manca."""
     if minute is None:
         return 1.0
-    if _goal_remaining_frac is not None:
-        return float(_goal_remaining_frac(float(minute), 90.0))
     m = max(0.0, float(minute))
+    if _goal_remaining_frac is not None:
+        if m >= 90.0:
+            # RECUPERO (Omega §16 / review F2): i gol al 90'+ sono ~8 % dei gol di
+            # partita (cdf[89] -> cdf[90]); la CDF li accorpa al minuto 90 e prima
+            # dava 0 -> "partita finita" con il rischio ancora vivo. Decadimento
+            # lineare della massa residua dopo l'89' su INJURY_TIME_MIN minuti.
+            base = float(_goal_remaining_frac(89.0, 90.0))
+            return max(0.0, base * (INJURY_TIME_MIN - (m - 90.0)) / INJURY_TIME_MIN)
+        return float(_goal_remaining_frac(m, 90.0))
     return max(0.0, min(1.0, (90.0 - m) / 90.0))
 
 

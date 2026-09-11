@@ -117,11 +117,11 @@ def test_catena_lambda_mercato_intero_prima_della_singola_ou(monkeypatch):
 # --------------------------------------------------------- tabella per minuto
 def _minute_rows():
     rows = []
-    for ft, n in (("1-0", 500), ("2-0", 200), ("1-1", 150), ("2-1", 80), ("3-0", 40), ("1-2", 20), ("1-3", 6), ("4-1", 4)):
+    for ft, n in (("1-0", 5000), ("2-0", 2000), ("1-1", 1500), ("2-1", 800), ("3-0", 400), ("1-2", 200), ("1-3", 60), ("4-1", 40)):
         rows.append({"league_id": 0, "bucket": 60, "score": "1-0", "target": "ft", "result": ft, "n": n})
     for ft, n in (("1-0", 60), ("2-0", 20), ("1-3", 5)):
         rows.append({"league_id": 135, "bucket": 60, "score": "1-0", "target": "ft", "result": ft, "n": n})
-    for ht, n in (("0-0", 700), ("1-0", 200), ("0-1", 90), ("0-2", 10)):
+    for ht, n in (("0-0", 7000), ("1-0", 2000), ("0-1", 900), ("0-2", 100)):
         rows.append({"league_id": 0, "bucket": 20, "score": "0-0", "target": "ht", "result": ht, "n": n})
     return rows
 
@@ -132,17 +132,17 @@ def test_minute_bucket_e_tabella():
     t = EMP.MinuteTable(_minute_rows())
     assert not t.empty
     p, n = t.p_result(minute=62, score=(1, 0), result=(1, 3), half=False)
-    assert n == 1000 and p == pytest.approx(0.006)
+    assert n == 10000 and p == pytest.approx(EMP.p_upper(60, 10000)) and p > 0.006
     p_lega, _ = t.p_result(minute=62, score=(1, 0), result=(1, 3), half=False, league_id=135)
-    assert p_lega == pytest.approx((5 + 200 * 0.006) / 285)
+    assert p_lega == pytest.approx(EMP.p_upper(5 + 500 * 0.006, 85 + 500))
     assert t.p_result(minute=62, score=(3, 3), result=(3, 4), half=False) is None
     p_ht, n_ht = t.p_result(minute=22, score=(0, 0), result=(0, 2), half=True)
-    assert n_ht == 1000 and p_ht == pytest.approx(0.01)
+    assert n_ht == 10000 and p_ht == pytest.approx(EMP.p_upper(100, 10000))
     fn = EMP.minute_lookup(t, minute=61, current=(1, 0), half=False, league_id=None)
-    assert fn(4, 1) == pytest.approx(0.004) and fn(9, 9) == 0.0
+    assert fn(4, 1) == pytest.approx(EMP.p_upper(40, 10000)) and fn(9, 9) == pytest.approx(EMP.p_upper(0, 10000))
     assert EMP.minute_lookup(EMP.MinuteTable([]), minute=61, current=(1, 0), half=False, league_id=None) is None
     aud = EMP.audit_minute(t, minute=61, current=(1, 0), half=False, league_id=None, result=(1, 3))
-    assert aud["empirical_source"] == "minute" and aud["empirical_bucket"] == 60 and aud["empirical_n"] == 1000
+    assert aud["empirical_source"] == "minute" and aud["empirical_bucket"] == 60 and aud["empirical_n"] == 10000
 
 
 @pytest.fixture(autouse=True)
@@ -180,13 +180,14 @@ def test_servizio_usa_la_tabella_per_minuto_su_entrambe_le_gambe(monkeypatch):
     payload = {"minute": 62, "score_home": 1, "score_away": 0, "inplay": True,
                "score_raw": {"matchStatus": "SecondHalf", "score": {"home": {"numberOfYellowCards": "1"}, "away": {}}}}
     monkeypatch.setattr(S, "_feed_state", lambda market_, eid: payload)
-    # p_max 0,5 %: i dati dicono 1-3 = 0,6 % (veto) → resta il 4-1 (0,4 %)
-    assert _run(db, _Market(_books("e20")), ev, _params(model_p_max_pct=0.5), minute=62, sh=1, sa=0) == 1, db.activity
+    # p_max 2 %: i dati (limite superiore, lega shrinkata) dicono 1-3 ≈ 2,4 % (veto) → resta il 4-1 (≈ 0,8 %)
+    assert _run(db, _Market(_books("e20")), ev, _params(), minute=62, sh=1, sa=0) == 1, db.activity
     t = db.trades[0]
     m = t["meta"]["model"]
     assert t["runner_name"] == "4 - 1"
-    # P della lega 135 SHRINKATA verso il globale: (0 + 200·0,004)/(85 + 200)
-    assert m["empirical_source"] == "minute" and m["empirical_bucket"] == 60 and m["p_data"] == pytest.approx(200 * 0.004 / 285, abs=1e-6)
+    # P della lega 135: conteggi shrinkati verso il globale (k_eff = 0 + 500·0,004, n_eff = 85 + 500), limite superiore
+    assert m["empirical_source"] == "minute" and m["empirical_bucket"] == 60
+    assert m["p_data"] == pytest.approx(EMP.p_upper(500 * 0.004, 585), abs=1e-6)
     assert m["yellow"] == [1, 0] and m["cost_aware"] is True and "cover_cost" in m
     assert db.minute_calls == [(135, 60, "ft")]
     # gamba 1T: tabella 'ht' interrogata al bucket 20
@@ -251,15 +252,20 @@ def test_metriche_di_validazione():
 
 
 def test_fattore_di_coda_e_calibratore_il_piu_prudente():
-    assert M.apply_tail_factor(0.01, 1.7) == pytest.approx(0.017)
-    assert M.apply_tail_factor(0.20, 1.7) == 0.20            # fuori coda: invariata
-    assert M.apply_tail_factor(0.9, 5.0) == 0.9 and M.apply_tail_factor(0.01, 0) == 0.01
+    # fattore CONTINUO (review F12): f0 per p→0, (1+f0)/2 a p = 5 %, →1 oltre; p·f(p) crescente
+    assert M.apply_tail_factor(0.0001, 1.7) == pytest.approx(0.0001 * 1.7, rel=0.01)
+    assert M.apply_tail_factor(0.05, 1.7) == pytest.approx(0.05 * 1.35)
+    assert M.apply_tail_factor(0.20, 1.7) < 0.20 * 1.15 and M.apply_tail_factor(0.20, 1.7) > 0.20
+    ps = [i / 1000 for i in range(1, 300)]
+    out = [M.apply_tail_factor(p, 1.7) for p in ps]
+    assert all(b > a for a, b in zip(out, out[1:]))            # monotono
+    assert M.apply_tail_factor(0.9, 5.0) <= 1.0 and M.apply_tail_factor(0.01, 0) == 0.01 and M.apply_tail_factor(0.01, 1.0) == 0.01
     st = M.LiveState(minute=60, score_home=0, score_away=0)
     probs = {(3, 1): 0.010}
     runners = [_r(1, "3 - 1", 40.0, 50)]         # P implicita 2,5 %: sopra la P corretta (mercato la sovraprezza)
-    # senza calibratore: fattore applicato → 1,7 % (audit p_model), grezza 1,0 %
+    # senza calibratore: fattore applicato (continuo) → ≈1,58 % (audit p_model), grezza 1,0 %
     sel = M.select_by_model(runners, probs, state=st, price_min=20, price_max=120, min_liquidity=5, p_max=0.05, tail_factor=1.7)
-    assert sel.p_model == pytest.approx(0.017) and sel.raw == pytest.approx(0.010)
+    assert sel.p_model == pytest.approx(M.apply_tail_factor(0.010, 1.7)) and sel.raw == pytest.approx(0.010)
     # con un calibratore che agisce: vince la correzione PIÙ PRUDENTE (max), mai la somma
     class _Cal:
         def apply(self, p, family, minute):

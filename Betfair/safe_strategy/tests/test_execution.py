@@ -614,8 +614,11 @@ def test_close_trade_parziale_resta_open_con_residuo_e_poi_chiude_il_resto():
     assert apri["status"] == "open"
     assert apri["meta"]["hedged_size"] == pytest.approx(5.0, abs=0.01)   # 6*5/6
     assert apri["meta"]["residual_size"] == pytest.approx(5.0, abs=0.01)
-    # locked_pnl dal FILL: win -50+24=-26, lose +10-6=+4 -> min = -26
-    assert apri["meta"]["locked_pnl"] == pytest.approx(-26.0, abs=0.01)
+    # hedge PARZIALE: nessun P&L "bloccato" (review MED-4) — caso peggiore/migliore espliciti:
+    # win -50+24=-26, lose +10-6=+4
+    assert apri["meta"]["locked_pnl"] is None
+    assert apri["meta"]["worst_case"] == pytest.approx(-26.0, abs=0.01)
+    assert apri["meta"]["best_case"] == pytest.approx(4.0, abs=0.01)
     r2 = X.close_trade(db=db, market=mk, trade=db.get_trade(tid), prices=_prices(),
                        fraction=1.0, now=NOW, params={}, table_prefix="safe")
     assert r2["ok"] and r2["hedged"] is True
@@ -717,7 +720,8 @@ def test_omega_settle_gamba_orfana_con_apertura_gia_regolata():
     n = OS.settle_open(params={"commission_pct": 5.0}, market=mk, db=db, now=NOW)
     assert n == 1
     chiudi = db.get_trade(cid)
-    assert chiudi["status"] == "lost" and chiudi["pnl"] == pytest.approx(-12.0, abs=0.01)
+    # netting col padre già regolato (review HIGH-3): −2 totale − 9,5 già sul padre = −11,5
+    assert chiudi["status"] == "lost" and chiudi["pnl"] == pytest.approx(-11.5, abs=0.01)
     assert chiudi["settled_at"] == NOW.isoformat()
 
 

@@ -157,7 +157,8 @@ def place(
     # --- percorso legacy (fallback SEMPRE disponibile) ---
     if mode == "paper":
         try:
-            fill = E.paper_fill(size, best_price=price, lay_ladder=_ladder_tuple(ladder))
+            fill = E.paper_fill(size, best_price=price, lay_ladder=_ladder_tuple(ladder),
+                                limit_price=price, side=side)
         except Exception as ex:  # noqa: BLE001 — stessa semantica del live
             return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
         if fill is None or fill.matched_size <= 0:
@@ -419,7 +420,11 @@ def hedge_state(trade: dict[str, Any],
         "residual_size": residual,
         "if_win": round(win, 2),
         "if_lose": round(lose, 2),
-        "locked_pnl": round(min(win, lose), 2) if filled else None,
+        # P&L BLOCCATO solo a copertura COMPLETA (review MED-4): su un hedge
+        # parziale min(W,L) è il caso peggiore, non un valore bloccato
+        "locked_pnl": round(min(win, lose), 2) if (filled and residual < HEDGE_EPS) else None,
+        "worst_case": round(min(win, lose), 2) if filled else None,
+        "best_case": round(max(win, lose), 2) if filled else None,
         "filled_ids": [c.get("id") for c in filled],
         "pending_ids": [c.get("id") for c in pending],
         "blocked": bool(pending),
@@ -439,6 +444,10 @@ def apply_hedge_state(db, trade: dict[str, Any], closings: list[dict[str, Any]],
         "hedged_size": st["hedged_size"],
         "residual_size": st["residual_size"],
         "locked_pnl": st["locked_pnl"],
+        "worst_case": st["worst_case"],
+        "best_case": st["best_case"],
+        "if_win": st["if_win"],
+        "if_lose": st["if_lose"],
         "hedge_pending_ids": list(st["pending_ids"]),
         "closing_ids": list(st["filled_ids"]),
         "closing_trade_id": last_id,
@@ -626,7 +635,8 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
             db.update_trade(closing_id, status="open", price=out.price, size=out.size,
                             liability=liability_of(side, out.size, out.price or 0.0),
                             bet_id=out.bet_id,
-                            meta={"cashout": True, "closes_trade_id": trade.get("id"),
+                            meta={**(reserve.get("meta") or {}), "cashout": True,
+                                  "closes_trade_id": trade.get("id"),
                                   "fill": out.fill_note, "plan_note": plan.note})
         except Exception as ex:  # noqa: BLE001 — ordine eseguito, riga non confermata
             logger.critical("[safe.exec] conferma chiusura FALLITA (trade %s, mode %s): %s",
@@ -801,12 +811,16 @@ def settle_orphan_closing(*, db, closing: dict[str, Any], parent: dict[str, Any]
     won = runner_won_from_parent(parent)
     if won is None:
         return False
-    g = gross_pnl(closing, won)
     try:
         c = max(0.0, float(commission))
     except (TypeError, ValueError):
         c = 0.0
-    pnl = round(g * (1.0 - c), 2) if g > 0 else round(g, 2)
+    # commissione sul NETTO di mercato della coppia, non sulla gamba sola (review
+    # HIGH-3): totale = netto − commissione se positivo; la chiusura prende la
+    # differenza rispetto al P&L GIÀ scritto sul padre → padre + chiusura = totale
+    net = gross_pnl(parent, won) + gross_pnl(closing, won)
+    total = round(net - (net * c if net > 0 else 0.0), 2)
+    pnl = round(total - float(parent.get("pnl") or 0.0), 2)
     settle_row(db, closing, "won" if pnl >= 0 else "lost", pnl, now)
     _log(db, "settle_orphan_closing", {"trade_id": closing.get("id"),
                                        "parent_id": parent.get("id"), "pnl": pnl})

@@ -30,8 +30,14 @@ def test_round_to_tick(raw, expected):
 
 
 def test_round_to_tick_non_scavalca_banda():
-    # 29.6 non deve diventare 30.0 (banda successiva ha tick 2.0)
-    assert E.round_to_tick(29.6) == 29.0
+    # tick PIÙ VICINO: 29.6 → 30.0 (30 è un tick valido: inizio della banda 30-50),
+    # 29.4 → 29.0; i bordi di banda arrotondano al bordo (review 11/09 HIGH-2:
+    # prima 49.9 → 48 e 99 → 95, un tick sotto)
+    assert E.round_to_tick(29.6) == 30.0 and E.round_to_tick(29.4) == 29.0
+    assert E.round_to_tick(49.9) == 50.0 and E.round_to_tick(99.0) == 100.0
+    assert E.round_to_tick(3.99) == 4.0 and E.round_to_tick(19.9) == 20.0 and E.round_to_tick(2.99) == 3.0
+    assert E.round_to_tick(50.0) == 50.0 and E.round_to_tick(2.0) == 2.0 and E.round_to_tick(1.005) == 1.01
+    assert E.tick_up(49.1) == 50.0 and E.tick_down(49.9) == 48.0 and E.tick_up(48.0) == 48.0
 
 
 # ---------------------------------------------------------------------------

@@ -835,9 +835,19 @@ def test_loss_di_ieri_non_fa_scattare_il_cap_oggi():
 
 
 def test_expected_customer_ref_auto_vs_manuale():
-    assert E.expected_customer_ref({"origin": "auto", "id": 7, "event_id": "1.100"}) == "omega-1.100"
-    assert E.expected_customer_ref({"event_id": "1.100"}) == "omega-1.100"  # default auto
-    assert E.expected_customer_ref({"origin": "manual", "id": 7, "event_id": "1.100"}) == "omega-m7"
+    # §16: ref PER GAMBA omega-t<id> (nuovo) + ref STORICI come candidati (compatibilità)
+    assert E.expected_customer_ref({"origin": "auto", "id": 7, "event_id": "1.100"}) == "omega-t7"
+    assert E.candidate_customer_refs({"origin": "auto", "id": 7, "event_id": "1.100"}) == ["omega-t7", "omega-1.100"]
+    assert E.expected_customer_ref({"event_id": "1.100"}) == "omega-1.100"  # senza id: solo legacy
+    assert E.candidate_customer_refs({"origin": "manual", "id": 7, "event_id": "1.100"}) == ["omega-t7", "omega-m7"]
+    # una gamba di CHIUSURA non deve MAI matchare il ref dell'apertura (review CRIT-1)
+    assert E.candidate_customer_refs({"origin": "auto", "id": 9, "event_id": "1.100", "closes_trade_id": 7}) == ["omega-t9"]
+    orders = [{"customer_order_ref": "omega-1.100", "market_id": "m", "selection_id": 4, "side": "LAY",
+               "size_matched": 2.16, "size_remaining": 0.0, "avg_price_matched": 55.0, "bet_id": "111"}]
+    closing = {"origin": "auto", "id": 9, "event_id": "1.100", "closes_trade_id": 7, "market_id": "m",
+               "selection_id": 4, "side": "back", "placed_at": "2026-09-11T10:00:00+00:00"}
+    d = E.reconcile_decision(closing, orders, [], "2026-09-11T10:00:30+00:00")
+    assert d["action"] == "keep"                       # non trovata, dentro il grace: aspetta
 
 
 def test_manuale_live_passa_ref_per_gamba():
@@ -850,8 +860,8 @@ def test_manuale_live_passa_ref_per_gamba():
     S.run_once(market=market, db=db, now=NOW)
     assert len(market.placed) == 1
     ref = market.placed[0].get("customer_ref")
-    assert ref is not None and ref.startswith("omega-m")
-    assert ref == f"omega-m{db.trades[0]['id']}"
+    assert ref is not None and ref.startswith("omega-t")
+    assert ref == f"omega-t{db.trades[0]['id']}"
 
 
 def test_reconcile_due_manuali_stesso_evento_non_si_confondono():
@@ -894,6 +904,7 @@ def test_place_order_live_usa_fill_or_kill(monkeypatch):
         return fn(C())
 
     monkeypatch.setattr(M, "call", fake_call)
+    monkeypatch.setattr(M, "call_mutating", fake_call)   # §16: il place non usa il retry generico
     res = M.place_order_live(market_id="m1", selection_id=4, price=110, size=2,
                              event_id="1.100", side="lay")
     assert res.ok

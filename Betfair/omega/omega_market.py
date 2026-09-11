@@ -27,7 +27,8 @@ def get_client() -> Any:
 
 
 def call(fn: Callable[[Any], Any]) -> Any:
-    """Esegue ``fn(client)`` con un re-login+retry singolo su errore di sessione."""
+    """Esegue ``fn(client)`` con un re-login+retry singolo su errore — SOLO per
+    le LETTURE (idempotenti)."""
     from Betfair.odds_refresh import get_shared_client, reset_shared_client
 
     try:
@@ -36,6 +37,31 @@ def call(fn: Callable[[Any], Any]) -> Any:
         logger.warning("[omega] chiamata Betfair fallita, re-login e retry: %s", str(ex)[:160])
         reset_shared_client()
         return fn(get_shared_client())
+
+
+_SESSION_ERRORS = ("INVALID_SESSION_INFORMATION", "NO_SESSION", "NO_APP_KEY", "INVALID_APP_KEY")
+
+
+def _is_session_error(ex: Exception) -> bool:
+    s = str(ex).upper()
+    return any(k in s for k in _SESSION_ERRORS)
+
+
+def call_mutating(fn: Callable[[Any], Any]) -> Any:
+    """Esegue una chiamata che CAMBIA STATO (place/cancel): MAI ritentata su un
+    errore generico (un timeout può nascondere un ordine già accettato → doppio
+    ordine reale, review H1). Re-login+retry solo se l'exchange dice
+    esplicitamente che la sessione non è valida (l'ordine non è stato ricevuto)."""
+    from Betfair.odds_refresh import get_shared_client, reset_shared_client
+
+    try:
+        return fn(get_shared_client())
+    except Exception as ex:  # noqa: BLE001
+        if _is_session_error(ex):
+            logger.warning("[omega] sessione non valida su chiamata mutante, re-login: %s", str(ex)[:160])
+            reset_shared_client()
+            return fn(get_shared_client())
+        raise
 
 
 def keep_alive() -> None:
@@ -208,7 +234,10 @@ def read_market(market: CorrectScoreMarket) -> Optional[MarketSnapshot]:
     books = call(lambda c: c.list_market_book([market.market_id])) or []
     if not books:
         return None
-    b = books[0]
+    return _snapshot_from_book(market, books[0])
+
+
+def _snapshot_from_book(market: CorrectScoreMarket, b: dict) -> MarketSnapshot:
     status = b.get("status", "OPEN")
     inplay = bool(b.get("inplay", False))
     closed = status == "CLOSED"
@@ -250,6 +279,34 @@ def read_market(market: CorrectScoreMarket) -> Optional[MarketSnapshot]:
         winner_selection_id=winner,
         voided=voided,
     )
+
+
+def read_markets(markets: list) -> dict:
+    """{market_id: MarketSnapshot | None} per una LISTA di mercati in una sola
+    ``listMarketBook`` per blocco di 40 (review M6: prima una chiamata REST per
+    trade aperto per ciclo). Un mercato assente dalla risposta → None."""
+    out: dict = {}
+    by_id = {m.market_id: m for m in markets}
+    ids = list(by_id)
+    for i in range(0, len(ids), 40):
+        chunk = ids[i:i + 40]
+        try:
+            books = call(lambda c, ch=chunk: c.list_market_book(ch)) or []
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[omega] listMarketBook batch KO: %s", str(ex)[:120])
+            for mid in chunk:
+                out[mid] = None
+            continue
+        seen = set()
+        for b in books:
+            mid = str(b.get("marketId") or "")
+            if mid in by_id:
+                out[mid] = _snapshot_from_book(by_id[mid], b)
+                seen.add(mid)
+        for mid in chunk:
+            if mid not in seen:
+                out[mid] = None
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +499,7 @@ def place_order_live(
             "timeInForce": "FILL_OR_KILL",
         },
     }
-    report = call(
+    report = call_mutating(
         lambda c: c.place_orders(
             market_id,
             [instruction],
@@ -465,12 +522,15 @@ def place_order_live(
 
 
 def place_lay_live(
-    *, market_id: str, selection_id: int, price: float, size: float, event_id: str
+    *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
+    customer_ref: Optional[str] = None,
 ) -> PlaceResult:
-    """Wrapper storico: LAY reale (usato dal loop automatico)."""
+    """Wrapper storico: LAY reale (usato dal loop automatico). ``customer_ref``
+    PER GAMBA (omega-t<id>, §16): con due gambe per partita il ref per evento
+    faceva rifiutare il secondo ordine (DUPLICATE_CUSTOMER_ORDER_REF)."""
     return place_order_live(
         market_id=market_id, selection_id=selection_id, price=price,
-        size=size, event_id=event_id, side="lay",
+        size=size, event_id=event_id, side="lay", customer_ref=customer_ref,
     )
 
 

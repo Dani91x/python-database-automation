@@ -128,6 +128,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", default="Betfair/omega/reports")
     ap.add_argument("--tail-factor", dest="tail_factor", type=float, default=M.DEFAULT_TAIL_FACTOR)
+    ap.add_argument("--cv", type=float, default=M.DEFAULT_LAMBDA_CV,
+                    help="coefficiente di variazione della mistura lognormale sui λ (§16)")
     args = ap.parse_args()
     sample = load_sample(args.n, args.seed)
     if len(sample) < 100:
@@ -139,7 +141,8 @@ def main() -> None:
     results = {}
     for minute, half in MINUTES:
         cases: Dict[str, List[Tuple[Dict[Score, float], Score]]] = {
-            "poisson": [], "poisson_cal": [], "poisson_tail": [], "empirical": [], "blend": [], "blend_tail": []}
+            "poisson": [], "poisson_cal": [], "poisson_tail": [], "poisson_cv": [], "poisson_cv_tail": [],
+            "empirical": [], "blend": [], "blend_tail": []}
         cal = M.load_calibrator(None)
         fam = M.CALIBRATION_FAMILY_HT if half else M.CALIBRATION_FAMILY_FT
         for r in test:
@@ -154,26 +157,39 @@ def main() -> None:
             cases["poisson_cal"].append((p_cal, actual))
             p_tail = {k: M.apply_tail_factor(v, args.tail_factor) for k, v in p_pois.items()}
             cases["poisson_tail"].append((p_tail, actual))
+            p_cv = M.score_probs(lh_pre=lh, la_pre=la, rho=M.DEFAULT_RHO, state=st, league_id=r.get("league_id"),
+                                 half=half, cv=args.cv)
+            cases["poisson_cv"].append((p_cv, actual))
+            cases["poisson_cv_tail"].append(({k: M.apply_tail_factor(v, args.tail_factor) for k, v in p_cv.items()}, actual))
             if p_emp:
                 cases["empirical"].append((p_emp, actual))
                 bl = V.blend_probs([p_pois, p_emp])
                 cases["blend"].append((bl, actual))
                 cases["blend_tail"].append(({k: M.apply_tail_factor(v, args.tail_factor) for k, v in bl.items()}, actual))
-        results[f"{minute}'{' (45)' if half else ' (finale)'}"] = V.compare_models(cases, p_max=0.02)
+        # coda: P ≤ 3 % (model_p_max_pct); bancabile: P ≥ 1/120 (price_max) — come il servizio
+        results[f"{minute}'{' (45)' if half else ' (finale)'}"] = V.compare_models(cases, p_max=0.03, p_min=1.0 / 120.0)
     os.makedirs(args.out, exist_ok=True)
     day = dt.date.today().isoformat()
     path = os.path.join(args.out, f"validazione_modelli_{day}.md")
     lines = [f"# Validazione modelli Omega — {day}", "",
              f"Campione: {len(sample)} partite FT con gol a minuto coerenti (training {len(train)}, test {len(test)}).",
-             "Coda = risultati con P ≤ 2 % (quelli che Omega banca): `ratio` = usciti / previsti dal modello",
+             "Coda = risultati con P ≤ 3 % (model_p_max_pct): `ratio` = usciti / previsti dal modello",
              "(1 = calibrato; > 1 = il modello SOTTOSTIMA la coda → i lay perdono più del previsto).",
              f"Modelli: poisson (λ di lega + residui live), poisson_cal (calibratore condiviso, famiglie cs_cell/hts_cell), "
-             f"poisson_tail (fattore di coda ×{args.tail_factor}), empirical (tabella per minuto dal training), blend, blend_tail.", ""]
+             f"poisson_tail (fattore di coda ×{args.tail_factor}), poisson_cv (mistura lognormale sui λ, cv {args.cv}), "
+             f"poisson_cv_tail, empirical (tabella per minuto dal training), blend, blend_tail.",
+             "`IC` = intervallo 90 % bootstrap per partita. `lay` = la SOLA selezione che Omega farebbe",
+             "(il risultato meno probabile con 1/120 ≤ P ≤ 3 %, cioè quotato a mercato): usciti / previsti, con IC.", ""]
     for k, res in results.items():
-        lines += [f"## Minuto {k}", "", "| modello | n | log-loss | coda n | previsti | usciti | ratio |", "|---|---:|---:|---:|---:|---:|---:|"]
+        lines += [f"## Minuto {k}", "",
+                  "| modello | n | log-loss | coda n | previsti | usciti | ratio | IC 90 % | lay n | lay prev. | lay usciti | lay ratio | lay IC |",
+                  "|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|"]
         for name, m in res.items():
             t = m["tail"]
-            lines.append(f"| {name} | {m['n']} | {m['log_loss']} | {t['n']} | {t['expected_hits']} | {t['hits']} | {t['ratio']} |")
+            ci = t.get("ratio_ci"); lci = t.get("lay_ratio_ci")
+            lines.append(f"| {name} | {m['n']} | {m['log_loss']} | {t['n']} | {t['expected_hits']} | {t['hits']} | {t['ratio']} | "
+                         f"{'–' if not ci else f'{ci[0]}–{ci[1]}'} | {t['lay_n']} | {t['lay_expected']} | {t['lay_hits']} | {t['lay_ratio']} | "
+                         f"{'–' if not lci else f'{lci[0]}–{lci[1]}'} |")
         lines.append("")
     open(path, "w", encoding="utf-8").write("\n".join(lines))
     print(json.dumps(results, indent=1, ensure_ascii=False))

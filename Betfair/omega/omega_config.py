@@ -92,6 +92,15 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # (scanner riavviato a partita in corso, lega senza fixture): True = mai
     # una gamba saltata per "no_model_lambdas" se il mercato a gol è in stream
     "lambda_live_fallback": (True, bool, None, None),
+    # §16 — incertezza sui λ (coefficiente di variazione della mistura lognormale:
+    # 0 = Poisson puro; 0,30 ≈ coda binomiale negativa osservata sui dati)
+    "model_lambda_cv": (0.30, float, 0.0, 1.0),
+    # §16 — selezione conservativa: P = centro log-pool (modello ∥ mercato) + k·SE;
+    # 0 = solo il centro (raccomandato finché il banco non misura la SE)
+    "select_k_se": (0.0, float, 0.0, 3.0),
+    # §16 — ranking EV: P di dover coprire (costo del green-up) e peso del costo
+    "select_p_hedge": (0.5, float, 0.0, 1.0),
+    "select_ev_kappa": (1.0, float, 0.0, 5.0),
     # ---- GREEN-UP AUTOMATICO (10/09, §12): la scommessa diventa un trade ----
     "greenup_enabled": (True, bool, None, None),
     "greenup_mode": ("auto", str, None, None),          # 'auto' | 'off'

@@ -799,3 +799,144 @@ public.omega_build_minute_transitions_run(90);` finché `done = true`; progresso
 modello. Parametri nuovi: `lambda_market_grid`, `select_cost_aware`,
 `select_p_band_ratio`, `model_use_yellow_cards`, `model_tail_factor`. Test:
 `test_omega_modello_definitivo_2026_09_11.py`.
+
+## 16. CERTIFICAZIONE CAPILLARE — matematica, logica, dati, motore (11/09/2026 sera)
+
+Richiesta dell'utente: "rianalizza a fondo ogni riga di codice di Omega, certificazione
+capillare della matematica e della logica, stato dell'arte, se manca qualcosa implementalo".
+Metodo: quattro revisioni indipendenti per area (logica del servizio, matematica del
+modello, SQL/dati, motore dei soldi) su OGNI riga, poi una seconda passata di test mentali
+sul codice corretto. Ogni correzione ha un test (`test_omega_certificazione_2026_09_11.py`
++ aggiornamenti dei test storici). Suite: 808 verdi (omega + safe_strategy).
+
+### 16.1 Difetti trovati e corretti (per gravità)
+
+**CRITICI (avrebbero fatto perdere soldi in live)**
+- C1 `customerOrderRef` PER EVENTO (`omega-<event_id>`): con due gambe per partita Betfair
+  rifiuta il secondo ordine (DUPLICATE_CUSTOMER_ORDER_REF) e la riconciliazione del pending
+  poteva agganciare l'ordine della gamba sbagliata. Ora ref PER GAMBA `omega-t<id>`
+  (`omega_engine.customer_ref_for`), riconciliazione con lista di candidati (nuovo + storici
+  per compatibilità; una gamba di CHIUSURA non matcha mai il ref dell'apertura).
+- C3 letture PostgREST troncate a 1000 righe in silenzio (`traded_legs`, `traded_event_ids`,
+  `closing_trades_for`): dopo ~10 giorni l'idempotenza per gamba si sarebbe rotta. Ora
+  `_select_all` paginato per id.
+- HIGH-3 settlement: chi ha chiusure lo diceva solo il marker nel meta; un crash fra invio
+  del back e scrittura del meta regolava l'apertura da sola e la chiusura orfana con
+  commissione DOPPIA. Ora le chiusure si leggono dal DB (`_ids_with_closings`) e la chiusura
+  orfana si netta col padre (`settle_orphan_closing`).
+- H1 `place_order_live` passava dal retry generico: un timeout dopo un ordine accettato
+  → secondo ordine. Ora `call_mutating` (nessun retry, salvo errore di sessione PRIMA
+  dell'invio).
+- H2 eventi con trade MANUALI non erano più esclusi dall'automatico (v2 aveva perso il
+  filtro §8): `manual_event_ids()` + esclusione in `run_once`; se la lettura fallisce,
+  nessun ingresso.
+
+**ALTI**
+- HIGH-1 `legs_remaining` usava l'orologio (kickoff+minuti) senza intervallo: al 60′ di
+  orologio la partita è al 45′ → gambe residue sbagliate → target per gamba sbagliato. Ora
+  minuto REALE dal feed quando c'è (`minute_of`), altrimenti orologio corretto di 15′;
+  0 gambe = 0 (nessun floor a 1 che nascondeva un obiettivo irraggiungibile).
+- HIGH-2 `round_to_tick` arrotondava SEMPRE verso il basso: 49,9 → 48, 99 → 95 (un tick
+  peggiore per il lay). Ora tick più vicino; `tick_up`/`tick_down` espliciti.
+- HIGH-4 `apply_liability_cap` con `round` poteva superare il cap di un centesimo → `floor`.
+- H4/M9 freschezza: la selezione accettava punteggi vecchi fino a 180 s e un book "fermo"
+  bypassato dallo scanner vivo. Ora per DECIDERE: riga del feed ≤ 25 s (`DECISION_MAX_AGE_S`),
+  punteggio ≤ 30 s (`SELECT_SCORE_MAX_AGE_S`); per statistiche/stime resta 180 s.
+- H5/F16 fit del mercato intero ricalcolato per ogni candidato a ogni ciclo (~0,2 s l'uno):
+  cache per (evento, 5′, punteggio) `_market_fit_cached`.
+- H6 green-up `failed` era TERMINALE: una posizione con liability viva restava scoperta per
+  sempre. Ora cooldown 5′ (`GREENUP_FAILED_COOLDOWN_S`), `logger.critical`, nuovo giro.
+- H7 posizione viva senza feed: silenzio. Ora `greenup_blind` (log + CRITICAL) al 3° ciclo.
+- F1/F2 il green-up decideva con la P GREZZA del modello mentre l'ingresso usa quella
+  calibrata/con fattore di coda; e nel recupero (≥ 88′, ≥ 43′ per HT) il modello può dire
+  0,1 % dove il mercato dice 67 %: ora `model_p` + tetto alla P implicita del back.
+- F3 Poisson puro sottostima la coda (validazione: usciti/previsti 1,1–1,8): mistura
+  lognormale sui λ (cv = `model_lambda_cv` 0,30, 5 nodi di Gauss-Hermite, θ comune) ≈ coda
+  binomiale negativa; cv = 0 ridà il Poisson esatto.
+- F4 fattore di coda a gradino (×1,3 sotto il 5 %, ×1 sopra: discontinuità e ranking
+  distorto) → continuo `f = 1 + (f0−1)·p_max/(p_max+p)`.
+- F5 gate di valore ignorava la commissione: ora `p < (1−c)/(L−c)` (≡ Kelly φ* > 0) e
+  ranking per EV atteso con costo di copertura (`rank_by_ev`, `select_p_hedge`,
+  `select_ev_kappa`).
+- F7 λ pre-KO dall'1X2 con split fisso → bisezione esatta (`split_lambdas_1x2`).
+- F8 dati empirici: shrinkage K 200 → 500 e limite superiore di Wilson (`p_upper`, z 1,64)
+  al posto della stima puntuale: un lay solo se il risultato è raro anche nel caso
+  sfavorevole dei dati; `MIN_GLOBAL_N` 200.
+- F9/F10 recupero: `live_engine` ora ha 5′ di recupero (`INJURY_TIME_MIN`) e 3′ per il 1T.
+- F11 fit del mercato: bracket [1/lay, 1/back] (χ² per bracket, microprice), aggregati
+  casa/trasferta/pareggio nel fit, `None` sul bordo della griglia (fit non identificato).
+- F12 O/U live: clamp nello spazio dei residui (0,005–3,5), non su λ pre-match.
+- F13/F14 calibratore: famiglie `cs_cell`/`hts_cell` e caricamento dal path di default.
+
+**MEDI**
+- M1 `max_events` contava le GAMBE (due per partita): ora `events_today` (partite).
+- M2 lettori DB: `None` su errore (mai `[]` in cache come "tabella vuota").
+- M3 cache λ senza TTL: fonti di ripiego scadono dopo 15′ (una fixture abbinata dopo, un
+  mercato più informativo); la fixture resta per processo.
+- M4 il green-up chiamava la catena λ senza stato/parametri (niente O/U, niente mercato).
+- M5 reconcile sovrascriveva il meta (`{"reconciled": …}`): perso il blocco modello e i
+  runner → fuso.
+- M6/M7 settlement: una `listMarketBook` per posizione → batch di 40 (`read_markets`);
+  mercato sparito su posizione con chiusure → stessa macchina delle aperture nude.
+- MED-3 EV del tenere al LORDO della commissione: bias verso HOLD esattamente pari a
+  `greenup_ev_margin` → netto.
+- MED-4 `locked_pnl` su hedge PARZIALE era il caso peggiore spacciato per bloccato → `None`
+  + `worst_case`/`best_case` espliciti; UI "0 bloccato" solo a copertura completa.
+- MED-5 `residual_liability` (meta `if_win`) nella liability aperta degli aggregati.
+- MED-9 fill paper camminava la scala oltre il prezzo limite → `limit_price`.
+- M10 `reconcile_pending`/`settle_open` non protetti in `run_once`: un DB KO spegneva
+  anche il green-up → try/except per fase.
+- M11 residuo di un'uscita: se il bancato è diventato irraggiungibile non si copre più.
+- M12 log skip ripetuti (746 righe identiche il 10/09) → una riga per chiave ogni 10′.
+- L1 backoff (0/0,5/2 s) nella conferma DB; L5 senza accessor delle chiusure non si regola.
+- VOID: `results_from_payload` non deduce mai un finale da partite sospese/abbandonate.
+- Gambe in `error` contano come trattate (`traded_legs`): allineato all'unique del DB —
+  prima il servizio ci riprovava ogni 5 s e il DB rifiutava l'insert.
+
+### 16.2 Decisioni prese e motivate (NON sono difetti)
+- L'unique `uq_omega_trades_auto_leg` NON esclude lo stato `error`: una gamba automatica
+  andata in errore (ordine reale a esito ignoto) non deve MAI essere ripiazzata. È la rete
+  di sicurezza del live.
+- Uscite (back di green-up) in FILL_OR_KILL con `minFillSize`: non verificato su Betfair
+  reale (certificazione liquidità §13 ancora parziale) → resta FOK semplice; il residuo si
+  ritenta con cooldown.
+- `get_omega_aggregates` calcola "oggi" in SQL (Europe/Rome) come `day_start_utc` del
+  servizio: identici salvo il secondo esatto di mezzanotte, non vale un parametro in più.
+- Corner/pressione restano a moltiplicatore 1 (nessun dato per calibrare, §15.5).
+
+### 16.3 Parametri nuovi (`omega_config`)
+`model_lambda_cv` (0,30; 0 = Poisson puro), `select_k_se` (0: centro del log-pool
+modello∥mercato; > 0 = P conservativa + k·SE), `select_p_hedge` (0,5), `select_ev_kappa`
+(1,0). Tutti clampati.
+
+### 16.4 Migrazione `omega_models_v4.sql` (da applicare, idempotente)
+Grant espliciti a `service_role`; indici parziali su `omega_trades` (posizioni aperte,
+regolate, manuali, gambe); lookup empirici come due range sulla PK (UNION ALL);
+`get_omega_daily` set-based; costruzione per minuto con `FOR UPDATE NOWAIT` (un passo
+manuale risponde `busy` invece di restare appeso dietro a pg_cron), tabelle temporanee
+`pg_temp.*`, `max_id` aggiornato a ogni passo. Nessuna ricostruzione necessaria: la tabella
+per minuto (939.506 partite, 1.072.786 righe) resta valida.
+
+### 16.5 Banco di validazione aggiornato
+`tools/omega_validate_models.py`: modello `poisson_cv` (mistura), IC 90 % bootstrap per
+PARTITA sul rapporto usciti/previsti, e metrica `lay` = la SOLA selezione che Omega farebbe
+(risultato meno probabile con 1/120 ≤ P ≤ 3 %). Rapporto in `Betfair/omega/reports/`.
+Esito (1.184 partite, test 474): sulla selezione che Omega farebbe, il Poisson puro esce
+1,12× al 25′, 1,83× al 60′, 0,94× al 70′ il previsto (IC 90 % larghi: 5–9 uscite); il
+modello di produzione (mistura cv 0,30 + fattore di coda 1,3) sta a 0,64 / 0,71 / 0,72:
+PRUDENTE, com'è giusto per un lay (una perdita vale 20–50 vincite). Il calibratore
+condiviso da solo (0,0 al 60′: nessuna uscita su 4,4 previste) è ancora più prudente ma
+troppo poco campionato per fidarsi. Da ripetere a ogni settimana di paper con le partite
+REALI tradate (banco riusabile), non solo sullo storico.
+
+### 16.6 Cosa resta fuori (con motivo) — stato dell'arte non ancora implementato
+- Catena di Markov con hazard per minuto (atlante `hazard_atlas_v2.json`): stessa
+  informazione del Poisson non omogeneo già usato (`goal_timing`), guadagno atteso sulla
+  coda < 5 % relativo, costo alto → dopo che il banco misura un beneficio.
+- Aggiornamento bayesiano dei λ in gara (prior fixture ∥ mercato): parzialmente coperto
+  da `probs_alt` + `select_k_se` (k = 0 finché il banco non stima la SE).
+- Kelly frazionario sul bankroll: il sizing è per OBIETTIVO (§3); il gate di valore è già
+  Kelly > 0; un cap Kelly diventa utile solo con bankroll dichiarato in UI.
+- Calibrazione isotonica per famiglia: servono più campioni in coda (oggi 1.566 partite).
+- Live: BLOCCATO finché la certificazione della liquidità (§13) non è completa e il paper
+  non ha almeno alcuni giorni con le correzioni di oggi.

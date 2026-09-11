@@ -83,34 +83,88 @@ def multiclass_log_loss(cases: Iterable[Tuple[Dict[Score, float], Score]]) -> Op
     return round(tot / n, 6) if n else None
 
 
+def _bootstrap_ratio(per_case: Sequence[Tuple[float, int]], *, b: int = 300, seed: int = 11
+                     ) -> Optional[Tuple[float, float]]:
+    """IC 90 % (bootstrap per PARTITA) del rapporto usciti/previsti: i risultati
+    della stessa partita sono dipendenti, quindi si ricampionano le partite."""
+    if len(per_case) < 20:
+        return None
+    import random
+    rng = random.Random(seed)
+    m = len(per_case)
+    ratios = []
+    for _ in range(b):
+        e = 0.0
+        h = 0
+        for _ in range(m):
+            ei, hi = per_case[rng.randrange(m)]
+            e += ei
+            h += hi
+        if e > 0:
+            ratios.append(h / e)
+    if len(ratios) < 10:
+        return None
+    ratios.sort()
+    return round(ratios[int(0.05 * len(ratios))], 4), round(ratios[min(len(ratios) - 1, int(0.95 * len(ratios)))], 4)
+
+
 def tail_calibration(cases: Iterable[Tuple[Dict[Score, float], Score]], *, p_max: float = 0.02,
-                     reachable_only: bool = True) -> Dict[str, Any]:
+                     p_min: float = 1.0 / 120.0, reachable_only: bool = True) -> Dict[str, Any]:
     """Sulla CODA: per ogni caso, tutti i risultati con P ≤ p_max sono "lay
     candidati"; conta quanti ne sono usciti e quanti il modello prevedeva
     (somma delle P). ``ratio`` = usciti / previsti: 1 = calibrato, > 1 = il
-    modello sottostima la coda (i lay perdono più del previsto)."""
+    modello sottostima la coda (i lay perdono più del previsto).
+    ``ratio_ci`` = IC 90 % bootstrap per partita. ``lay_*`` = la SOLA selezione
+    che Omega farebbe: il risultato meno probabile fra quelli BANCABILI, cioè con
+    P fra ``p_min`` (≈ 1/price_max: sotto, la quota non esiste a mercato) e
+    ``p_max`` — è il numero che conta per il P&L, non la media della coda (§16 F17)."""
     n = 0
     expected = 0.0
     hits = 0
+    per_case: List[Tuple[float, int]] = []
+    lay_expected = 0.0
+    lay_hits = 0
+    lay_n = 0
+    lay_per_case: List[Tuple[float, int]] = []
     for probs, actual in cases:
+        e_i = 0.0
+        h_i = 0
+        best = None
         for score, p in probs.items():
             if p <= p_max and p > 0:
                 n += 1
-                expected += p
+                e_i += p
                 if tuple(score) == tuple(actual):
-                    hits += 1
+                    h_i += 1
+                if p >= p_min and (best is None or p < best[1]):
+                    best = (score, p)
+        expected += e_i
+        hits += h_i
+        if e_i > 0:
+            per_case.append((e_i, h_i))
+        if best is not None:
+            lay_n += 1
+            lay_expected += best[1]
+            lh = 1 if tuple(best[0]) == tuple(actual) else 0
+            lay_hits += lh
+            lay_per_case.append((best[1], lh))
     ratio = (hits / expected) if expected > 0 else None
+    lay_ratio = (lay_hits / lay_expected) if lay_expected > 0 else None
     return {"n": n, "expected_hits": round(expected, 4), "hits": hits,
-            "ratio": round(ratio, 4) if ratio is not None else None, "p_max": p_max}
+            "ratio": round(ratio, 4) if ratio is not None else None, "p_max": p_max, "p_min": p_min,
+            "ratio_ci": _bootstrap_ratio(per_case),
+            "lay_n": lay_n, "lay_expected": round(lay_expected, 4), "lay_hits": lay_hits,
+            "lay_ratio": round(lay_ratio, 4) if lay_ratio is not None else None,
+            "lay_ratio_ci": _bootstrap_ratio(lay_per_case)}
 
 
 def compare_models(named_cases: Dict[str, List[Tuple[Dict[Score, float], Score]]], *,
-                   p_max: float = 0.02) -> Dict[str, Dict[str, Any]]:
+                   p_max: float = 0.02, p_min: float = 1.0 / 120.0) -> Dict[str, Dict[str, Any]]:
     """Per ogni modello: log-loss multiclasse + calibrazione della coda."""
     out: Dict[str, Dict[str, Any]] = {}
     for name, cases in named_cases.items():
         out[name] = {"n": len(cases), "log_loss": multiclass_log_loss(cases),
-                     "tail": tail_calibration(cases, p_max=p_max)}
+                     "tail": tail_calibration(cases, p_max=p_max, p_min=p_min)}
     return out
 
 

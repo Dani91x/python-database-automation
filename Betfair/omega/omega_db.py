@@ -72,19 +72,50 @@ def list_trades(status: Optional[str] = None) -> list[dict[str, Any]]:
     return q.order("placed_at", desc=False).execute().data or []
 
 
+def _select_all(table: str, columns: str, build=None, page: int = 1000) -> list[dict[str, Any]]:
+    """Lettura PAGINATA per id (PostgREST tronca a max-rows=1000 in silenzio —
+    review C3: dopo ~10 giorni il set di idempotenza delle gambe si troncava)."""
+    out: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        q = _sb().table(table).select(columns)
+        if build is not None:
+            q = build(q)
+        chunk = q.order("id").range(start, start + page - 1).execute().data or []
+        out.extend(chunk)
+        if len(chunk) < page:
+            return out
+        start += page
+
+
 def traded_event_ids() -> set[str]:
     """event_id già piazzati (idempotenza I1)."""
-    res = _sb().table("omega_trades").select("event_id").execute()
-    return {str(r["event_id"]) for r in (res.data or []) if r.get("event_id")}
+    rows = _select_all("omega_trades", "id,event_id")
+    return {str(r["event_id"]) for r in rows if r.get("event_id")}
+
+
+def manual_event_ids() -> set[str]:
+    """event_id con almeno un trade MANUALE vivo o regolato (non 'error'): l'evento
+    è territorio dell'utente, l'automatico non aggiunge esposizione (§8, review H2)."""
+    rows = _select_all("omega_trades", "id,event_id",
+                       build=lambda q: q.eq("origin", "manual").neq("status", "error"))
+    return {str(r["event_id"]) for r in rows if r.get("event_id")}
 
 
 def traded_legs() -> set[tuple[str, str]]:
     """(event_id, gamba) già riservati/piazzati (v2, idempotenza per gamba).
     I trade senza gamba (motore v1, o manuali senza fase) valgono per ENTRAMBE:
     mai una seconda esposizione automatica su un evento già in posizione."""
-    res = _sb().table("omega_trades").select("event_id,phase").neq("status", "error").execute()
+    # ANCHE le righe in 'error' contano (§16): l'unique del DB uq_omega_trades_auto_leg
+    # non le esclude — una gamba automatica andata in errore (ordine reale a esito
+    # ignoto, o paper senza fill) NON si ripiazza sullo stesso evento; prima il
+    # servizio ci riprovava a ogni ciclo e il DB rifiutava l'insert (un errore
+    # loggato ogni 5 s per tutta la partita).
+    rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id")
     out: set[tuple[str, str]] = set()
-    for r in res.data or []:
+    for r in rows or []:
+        if r.get("closes_trade_id"):
+            continue
         eid = str(r.get("event_id") or "")
         if not eid:
             continue
@@ -120,10 +151,12 @@ def closing_trades_for(trade_ids: list[int]) -> list[dict[str, Any]]:
     """Righe di CHIUSURA (``closes_trade_id``) delle aperture indicate."""
     if not trade_ids:
         return []
-    return (
-        _sb().table("omega_trades").select("*")
-        .in_("closes_trade_id", [int(i) for i in trade_ids]).execute().data or []
-    )
+    out: list[dict[str, Any]] = []
+    ids = [int(i) for i in trade_ids]
+    for i in range(0, len(ids), 200):          # URL corta e nessun troncamento (review M13)
+        chunk = ids[i:i + 200]
+        out.extend(_select_all("omega_trades", "*", build=lambda q, ch=chunk: q.in_("closes_trade_id", ch)))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -500,7 +533,7 @@ def positions_for_results(since_iso: str) -> list[dict[str, Any]]:
             _sb().table("omega_trades")
             .select("id,event_id,phase,status,placed_at,meta,closes_trade_id")
             .is_("closes_trade_id", "null").neq("status", "error")
-            .gte("placed_at", since_iso).limit(500).execute().data or []
+            .gte("placed_at", since_iso).order("placed_at", desc=True).limit(500).execute().data or []
         )
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega.db] positions_for_results KO: %s", str(ex)[:120])
@@ -520,22 +553,23 @@ def upsert_daily_goal(day: str, goal: float) -> bool:
         return False
 
 
-def ht_ft_transitions(league_id: Optional[int]) -> list[dict[str, Any]]:
+def ht_ft_transitions(league_id: Optional[int]) -> Optional[list[dict[str, Any]]]:
     """Righe ``{league_id, ht, ft, n}`` della tabella HT→FT (globale + lega) via
-    RPC ``get_omega_ht_ft``. [] se la migrazione non è applicata."""
+    RPC ``get_omega_ht_ft``. [] = tabella vuota; None = ERRORE (timeout/RPC assente):
+    il chiamante non deve mettere in cache un errore (review M2)."""
     try:
         res = _sb().rpc("get_omega_ht_ft", {"p_league_id": int(league_id) if league_id is not None else None}).execute()
         data = getattr(res, "data", None)
         return list(data) if isinstance(data, list) else []
     except Exception as ex:  # noqa: BLE001
-        logger.debug("[omega.db] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:120])
-        return []
+        logger.warning("[omega.db] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:120])
+        return None
 
 
-def minute_transitions(league_id: Optional[int], bucket: int, target: str) -> list[dict[str, Any]]:
+def minute_transitions(league_id: Optional[int], bucket: int, target: str) -> Optional[list[dict[str, Any]]]:
     """Righe ``{league_id, bucket, score, target, result, n}`` della tabella PER
     MINUTO (globale + lega, un bucket, un target) via RPC ``get_omega_minute_ft``
-    (migrazione omega_models_v3.sql). [] se assente."""
+    (migrazione omega_models_v3.sql). [] = vuota; None = ERRORE (mai in cache)."""
     try:
         res = _sb().rpc("get_omega_minute_ft", {
             "p_league_id": int(league_id) if league_id is not None else None,
@@ -544,5 +578,5 @@ def minute_transitions(league_id: Optional[int], bucket: int, target: str) -> li
         data = getattr(res, "data", None)
         return list(data) if isinstance(data, list) else []
     except Exception as ex:  # noqa: BLE001
-        logger.debug("[omega.db] minute_transitions KO (%s,%s,%s): %s", league_id, bucket, target, str(ex)[:120])
-        return []
+        logger.warning("[omega.db] minute_transitions KO (%s,%s,%s): %s", league_id, bucket, target, str(ex)[:120])
+        return None

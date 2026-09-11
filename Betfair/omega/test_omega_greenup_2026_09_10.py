@@ -70,7 +70,10 @@ class _DB(FakeDB):
 
 
 def _params(**over):
-    base = {"execution_mode": "rest", "commission_pct": 5, "greenup_settle_delay_s": 30}
+    # P "grezza" del modello (fattore di coda 1, calibratore spento, λ certi): i numeri
+    # dei test storici restano quelli; il green-up con la P CALIBRATA è testato a parte
+    base = {"execution_mode": "rest", "commission_pct": 5, "greenup_settle_delay_s": 30,
+            "model_tail_factor": 1.0, "model_calibration": "off", "model_lambda_cv": 0.0}
     base.update(over)
     return omega_config.resolve_params(base)
 
@@ -186,7 +189,8 @@ def test_trigger_gol_tiene_se_p_lose_bassa_poi_esce_oltre_il_cap(monkeypatch, la
     assert _run(db, goal, p, now=NOW + timedelta(seconds=20)) == 0
     holds = _logs(db, "greenup_hold")
     assert len(holds) == 1 and holds[0]["p_lose"] == 0.01 and holds[0]["trigger"] == "goal"
-    assert holds[0]["decision"] == "hold" and holds[0]["ev_hold"] == pytest.approx(0.99 * 5 - 0.01 * 270, abs=0.01)
+    # profitto del tenere al NETTO della commissione 5 % (§16 review MED-3): 5 → 4,75
+    assert holds[0]["decision"] == "hold" and holds[0]["ev_hold"] == pytest.approx(0.99 * 4.75 - 0.01 * 270, abs=0.01)
     assert db.get_trade(tr["id"])["meta"]["greenup_hold"]["p_lose"] == 0.01
     assert _closings(db, tr["id"]) == []
     # p 0.05: EV(tengo) = 0.95·5 − 0.05·270 = −8.75 > bloccato −42.4 → ancora tengo
@@ -213,8 +217,9 @@ def test_caso_vivo_trade_70_tiene_a_p_012_esce_a_016_e_a_distanza_zero(monkeypat
     h = _logs(db, "greenup_hold")[0]
     assert h["decision"] == "hold" and h["p_lose"] == 0.12
     assert h["locked_pnl"] == pytest.approx(-22.08, abs=0.05)
-    assert h["ev_hold"] == pytest.approx(-12.10, abs=0.02)
-    assert h["loss_if_lose"] == pytest.approx(116.64, abs=0.01) and h["hold_profit"] == 2.16
+    # hold_profit al NETTO della commissione (§16 MED-3): 2,16·0,95 = 2,052 → EV −12,19
+    assert h["ev_hold"] == pytest.approx(-12.19, abs=0.02)
+    assert h["loss_if_lose"] == pytest.approx(116.64, abs=0.01) and h["hold_profit"] == pytest.approx(2.05, abs=0.01)
     assert _closings(db, tr["id"]) == []
     # stessa situazione, p 0.16 ≥ cap 0.15 → esco
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 2): 0.16})

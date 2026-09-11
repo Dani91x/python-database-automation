@@ -311,8 +311,8 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
     if locked is not None and locked >= ev_hold - float(params.get("ev_margin") or 0.0):
         return "exit", (f"tenere non rende: EV(tengo)={ev_hold:+.2f} EUR vs bloccato "
                         f"{locked:+.2f} EUR, P(perdita)={p * 100:.1f}%, esco")
-    return "hold", (f"EV(tengo)={ev_hold:+.2f} EUR > bloccato "
-                    f"{locked if locked is None else round(locked, 2):+.2f} EUR, "
+    lk = "n/d" if locked is None else f"{round(locked, 2):+.2f} EUR"   # review HIGH-4: mai TypeError
+    return "hold", (f"EV(tengo)={ev_hold:+.2f} EUR > bloccato {lk}, "
                     f"P(perdita)={p * 100:.1f}%: tengo")
 
 

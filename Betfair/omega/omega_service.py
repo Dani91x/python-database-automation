@@ -72,6 +72,11 @@ def _is_fresh(updated_at: Optional[str], now: datetime, max_age_s: int = SCORE_M
 # feed è attivo SOLO col market/db REALI (i fake dei test restano sul REST).
 # ---------------------------------------------------------------------------
 FEED_MAX_AGE_S = 15.0   # età massima riga (o scanner vivo): mai quote vecchie
+# per le DECISIONI (selezione, sizing, green-up) l'età della riga ha un tetto duro,
+# indipendente dall'heartbeat dello scanner (review M9/H4): un book fermo da 25 s
+# non è un book, e un punteggio di 3 minuti fa è la perdita del 09/09
+DECISION_MAX_AGE_S = 25.0
+SELECT_SCORE_MAX_AGE_S = 30
 
 
 def cs_snapshot_from_payload(
@@ -139,13 +144,18 @@ def score_from_payload(event_id: str, payload: Optional[dict], updated_at: Optio
     )
 
 
-def _feed_row(event_id: str) -> "tuple[Optional[dict], Optional[str]]":
+def _feed_row(event_id: str, hard_max_age: Optional[float] = None) -> "tuple[Optional[dict], Optional[str]]":
     """(payload affidabile, updated_at) dal feed condiviso; (None, None) se
-    assente/stantio/DB KO. Mai solleva."""
+    assente/stantio/DB KO. Mai solleva. ``hard_max_age``: tetto duro sull'età
+    della riga, senza il bypass "scanner vivo" (decisioni money-critical)."""
     try:
         cache = _scan_feed.shared_cache()
         row = cache.rows_for([str(event_id)]).get(str(event_id))
         payload = _scan_feed.fresh_payload(row, FEED_MAX_AGE_S, scanner_age_sec=cache.scanner_age_sec())
+        if payload is not None and hard_max_age is not None:
+            age = _scan_feed.row_age_sec(row)
+            if age is None or age > float(hard_max_age):
+                return None, (row or {}).get("updated_at")
         return payload, (row or {}).get("updated_at")
     except Exception as ex:  # noqa: BLE001 - il feed non deve mai rompere il ciclo
         logger.debug("[omega] feed KO per %s: %s", event_id, str(ex)[:120])
@@ -179,8 +189,10 @@ def _feed_minute(market, event_id: str) -> Optional[int]:
 # Tutto legge dal feed unico dello scanner quando il market è quello reale;
 # con i fake dei test resta il percorso score_lookup/REST.
 # ---------------------------------------------------------------------------
-_LAMBDA_CACHE: dict[str, tuple] = {}     # event_id → (λh, λa, league_id, source): i λ pre-match non cambiano
+_LAMBDA_CACHE: dict[str, tuple] = {}     # event_id → ((λh, λa, league_id, source), ts)
 _LAMBDA_CACHE_MAX = 2000
+LAMBDA_CACHE_TTL_S = 900.0               # TTL delle fonti di ripiego (fixture: per processo)
+_MARKET_FIT_CACHE: dict[Any, Any] = {}   # (event, minuto//5, punteggio) → fit di mercato (audit)
 
 
 def _feed_state(market, event_id: str) -> Optional[dict]:
@@ -191,12 +203,24 @@ def _feed_state(market, event_id: str) -> Optional[dict]:
     return payload if isinstance(payload, dict) else None
 
 
-def _live_state_for(market, ev, score_lookup, now: datetime
+def _feed_fresh_for_decision(market, event_id: str) -> bool:
+    """La riga del feed è abbastanza fresca per DECIDERE (tetto duro, senza il
+    bypass "scanner vivo")? Con un market fake (test) il feed non esiste: True."""
+    if market is not _real_market:
+        return True
+    payload, _ = _feed_row(str(event_id), hard_max_age=DECISION_MAX_AGE_S)
+    return isinstance(payload, dict)
+
+
+def _live_state_for(market, ev, score_lookup, now: datetime, *, decision: bool = False
                     ) -> "tuple[Optional[M.LiveState], Optional[str], Optional[str]]":
     """(stato live, matchStatus IPS, 'H-A'): dal feed (minuto, punteggio, rossi,
     stato IPS) oppure, senza feed, dallo score_lookup se fresco. (None, None, None)
-    se il punteggio vero non c'è: senza punteggio non si entra mai (I6)."""
+    se il punteggio vero non c'è: senza punteggio non si entra mai (I6).
+    ``decision=True`` (selezione/sizing): tetti di freschezza DURI."""
     payload = _feed_state(market, ev.event_id)
+    if decision and payload is not None and not _feed_fresh_for_decision(market, ev.event_id):
+        payload = None                       # riga ferma da > DECISION_MAX_AGE_S: non si decide
     if payload is not None and payload.get("minute") is not None \
             and payload.get("score_home") is not None and payload.get("score_away") is not None:
         raw = payload.get("score_raw")
@@ -213,7 +237,8 @@ def _live_state_for(market, ev, score_lookup, now: datetime
             logger.warning("[omega] score_lookup KO %s: %s", ev.event_id, str(ex)[:120])
             ls = None
         if ls is not None and ls.minute is not None and ls.score_home is not None \
-                and ls.score_away is not None and _is_fresh(ls.updated_at, now):
+                and ls.score_away is not None and ls.updated_at \
+                and _is_fresh(ls.updated_at, now, SELECT_SCORE_MAX_AGE_S if decision else SCORE_MAX_AGE_S):
             st = M.LiveState(int(ls.minute), int(ls.score_home), int(ls.score_away))
             return st, None, f"{st.score_home}-{st.score_away}"
     return None, None, None
@@ -256,7 +281,9 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
     trovato (non da fixture) viene persistito sull'evento, best-effort."""
     cached = _LAMBDA_CACHE.get(event_id)
     if cached is not None:
-        return cached
+        val, ts = cached if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[0], tuple) else (cached, None)
+        if val[3] == "fixture" or ts is None or (time.time() - ts) < LAMBDA_CACHE_TTL_S:
+            return val
     league_id = None
     out = None
     row = None
@@ -327,7 +354,9 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
     if out is not None:
         if len(_LAMBDA_CACHE) >= _LAMBDA_CACHE_MAX:
             _LAMBDA_CACHE.clear()
-        _LAMBDA_CACHE[event_id] = out
+        # le fonti di ripiego (mercato, pre-KO, hint) scadono: una fixture abbinata
+        # più tardi o un mercato più informativo devono poter rimpiazzarle (review M3)
+        _LAMBDA_CACHE[event_id] = (out, time.time())
         if persist:
             save_fn = getattr(db, "save_event_model", None)
             if callable(save_fn):
@@ -368,6 +397,8 @@ def _minute_table(db, league_id: Optional[int], minute: int, half: bool, params:
     except Exception as ex:  # noqa: BLE001
         logger.debug("[omega] minute_transitions KO %s: %s", key, str(ex)[:100])
         return None
+    if rows is None:
+        return None                      # errore transitorio: NON in cache (review M2)
     table = EMP.MinuteTable(rows or [])
     if table.empty:
         table = None
@@ -392,6 +423,8 @@ def _empirical_table(db, league_id: Optional[int], params: dict):
         rows = fn(league_id)
     except Exception as ex:  # noqa: BLE001 — errore transitorio: NON in cache (review LOW-4)
         logger.debug("[omega] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:100])
+        return None
+    if rows is None:
         return None
     table = EMP.EmpiricalTable(rows or [])
     if table.empty:
@@ -420,8 +453,18 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
     if lam is None:
         return None, None, "no_model_lambdas"
     lh, la, league_id, source = lam
+    cv = float(params.get("model_lambda_cv", M.DEFAULT_LAMBDA_CV))
     probs = M.score_probs(lh_pre=lh, la_pre=la, rho=_rho_for(league_id), state=state,
-                          league_id=league_id, half=half)
+                          league_id=league_id, half=half, cv=cv)
+    # §16 I3: seconda stima della stessa cella dal λ IMPLICITO NEL MERCATO (cache per
+    # evento/5′/punteggio: review H5 — prima ricalcolato a ogni candidato per ciclo)
+    mk = None
+    if bool(params.get("lambda_market_grid", True)):
+        mk = _market_fit_cached(event_id, payload, state, league_id)
+    probs_alt = None
+    if mk is not None and source not in ("market_grid", "live_ou"):
+        probs_alt = [M.score_probs(lh_pre=mk[0], la_pre=mk[1], rho=_rho_for(league_id), state=state,
+                                   league_id=league_id, half=half, cv=cv)]
     # calibratore condiviso (agent W-A), SOLO se il parametro lo chiede: import
     # guardato in omega_model → assente/rotto = P grezza, mai un crash
     calibrator = (M.load_calibrator(params.get("model_calibration_path") or None)
@@ -461,6 +504,11 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
         cost_aware=bool(params.get("select_cost_aware", True)),
         band_ratio=float(params.get("select_p_band_ratio", 2.0)),
         tail_factor=float(params.get("model_tail_factor", 1.0)),
+        commission=float(params.get("commission_pct", 0.0)) / 100.0,
+        probs_alt=probs_alt,
+        k_se=float(params.get("select_k_se", 0.0)),
+        p_hedge=float(params.get("select_p_hedge", 0.5)),
+        ev_kappa=float(params.get("select_ev_kappa", 1.0)),
     )
     if sel is None:
         return None, None, "no_runner_by_model"
@@ -480,17 +528,29 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
         elif parsed is not None:
             audit.update(EMP.audit_empirical(emp_table, ht=ht_score, current=current,
                                              league_id=league_id, ft=parsed))
-    # §15: cross-check col mercato intero (solo audit, mai decisione) quando la λ
-    # usata NON viene già dal mercato
-    if source not in ("market_grid", "live_ou") and bool(params.get("lambda_market_grid", True)):
-        try:
-            mk = M.lambdas_from_market_grid(payload, state, league_id, rho=_rho_for(league_id))
-        except Exception:  # noqa: BLE001
-            mk = None
-        if mk is not None:
-            audit["lambda_market"] = [round(mk[0], 3), round(mk[1], 3)]
-            audit["market_fit_loss"] = mk[2].get("loss")
+    audit["lambda_cv"] = cv
+    audit["k_se"] = float(params.get("select_k_se", 0.0))
+    if mk is not None:
+        audit["lambda_market"] = [round(mk[0], 3), round(mk[1], 3)]
+        audit["market_fit_loss"] = mk[2].get("loss")
     return sel, audit, None
+
+
+def _market_fit_cached(event_id: str, payload: Optional[dict], state: "M.LiveState",
+                       league_id: Optional[int]):
+    """Fit di mercato per (evento, 5′, punteggio) — una volta, poi cache (review H5)."""
+    key = (str(event_id), int(state.minute) // 5, state.score_home, state.score_away)
+    if key in _MARKET_FIT_CACHE:
+        return _MARKET_FIT_CACHE[key]
+    try:
+        mk = M.lambdas_from_market_grid(payload, state, league_id, rho=_rho_for(league_id))
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega] market fit KO %s: %s", event_id, str(ex)[:100])
+        mk = None
+    if len(_MARKET_FIT_CACHE) >= 4000:
+        _MARKET_FIT_CACHE.clear()
+    _MARKET_FIT_CACHE[key] = mk
+    return mk
 
 
 def _leg_market(market, ev, market_type: str, payload: Optional[dict]):
@@ -508,6 +568,23 @@ def _leg_market(market, ev, market_type: str, payload: Optional[dict]):
         return None
     snap = market.read_market(cs)
     return None if snap is None else (cs, snap)
+
+
+_SKIP_SEEN: dict[Any, float] = {}
+SKIP_LOG_EVERY_S = 600.0
+
+
+def _log_dedup(db, key: Any, kind: str, payload: dict) -> None:
+    """Log ripetitivi (skip per gamba per ciclo): una riga per (chiave) ogni
+    SKIP_LOG_EVERY_S — il 10/09 erano 746 righe identiche in un giorno (review M12)."""
+    now_ts = time.time()
+    last = _SKIP_SEEN.get(key)
+    if last is not None and now_ts - last < SKIP_LOG_EVERY_S:
+        return
+    if len(_SKIP_SEEN) >= 5000:
+        _SKIP_SEEN.clear()
+    _SKIP_SEEN[key] = now_ts
+    db.log(kind, payload)
 
 
 _LEGS = (  # gamba, mercato Betfair, orizzonte primo tempo, fase in cui si entra
@@ -528,14 +605,16 @@ def scan_and_place_legs(
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
     mode = control.get("mode", "paper")
     realized = float(aggregates.get("realized_today", aggregates.get("realized_profit", 0.0)))
-    traded_count = int(aggregates.get("matches_traded_today", aggregates.get("matches_traded", 0)))
+    # cap max_events = PARTITE distinte, non gambe (review M1)
+    traded_count = int(aggregates.get("events_today", aggregates.get("matches_traded_today", aggregates.get("matches_traded", 0))))
     if params["stop_on_goal"] and realized >= goal:
         return 0
     if params["daily_loss_cap"] and params["daily_loss_cap"] > 0 and realized <= -params["daily_loss_cap"]:
-        db.log("loss_stop", {"realized": round(realized, 2), "cap": params["daily_loss_cap"]})
+        _log_dedup(db, ("loss_stop",), "loss_stop", {"realized": round(realized, 2), "cap": params["daily_loss_cap"]})
         return 0
     commission = params["commission_pct"] / 100.0
     placed = 0
+    minutes_seen: dict[str, int] = {}          # minuto REALE per evento (per legs_remaining)
     for ev in events:
         if ev.event_id in traded_ids:
             continue
@@ -546,9 +625,10 @@ def scan_and_place_legs(
             cm = E.minute_from_clock(ev.open_date, now)
             if cm < params["ht_entry_min"] - 25 or cm > params["ft_entry_max"] + 25:
                 continue
-        state, status, score_str = _live_state_for(market, ev, score_lookup, now)
+        state, status, score_str = _live_state_for(market, ev, score_lookup, now, decision=True)
         if state is None:
             continue
+        minutes_seen[str(ev.event_id)] = int(state.minute)
         phase = E.mission_phase(status=status, minute=state.minute, kickoff=ev.open_date, now=now)
         payload = _feed_state(market, ev.event_id)
         for leg, mtype, half, leg_phase, k_min, k_max in _LEGS:
@@ -558,7 +638,8 @@ def scan_and_place_legs(
                 continue
             pair = _leg_market(market, ev, mtype, payload)
             if pair is None:
-                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": "no_market"})
+                _log_dedup(db, (ev.event_id, leg, "no_market"), "skip",
+                           {"event_id": ev.event_id, "leg": leg, "reason": "no_market"})
                 continue
             cs, snapshot = pair
             if snapshot.closed or not snapshot.inplay:
@@ -569,17 +650,24 @@ def scan_and_place_legs(
             legs_left, _ = E.legs_remaining(
                 events, traded_legs, now=now, ht_entry_max=params["ht_entry_max"],
                 ft_entry_max=params["ft_entry_max"], max_events=params["max_events"],
-                traded_count=traded_count, excluded_ids=traded_ids)
+                traded_count=traded_count, excluded_ids=traded_ids,
+                minute_of=minutes_seen.get)
+            if legs_left <= 0:
+                _log_dedup(db, (ev.event_id, leg, "no_legs_remaining"), "skip",
+                           {"event_id": ev.event_id, "leg": leg, "reason": "no_legs_remaining"})
+                continue
             target = E.dynamic_target(goal, realized, legs_left)
             if target <= 0:
-                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": "target_zero_goal_reached"})
+                _log_dedup(db, (ev.event_id, leg, "target_zero"), "skip",
+                           {"event_id": ev.event_id, "leg": leg, "reason": "target_zero_goal_reached"})
                 continue
             size_needed = E.lay_size_from_target(target, commission=commission, min_stake=params["min_stake"])
             sel, audit, why = _model_select(db=db, event_id=ev.event_id, payload=payload, snapshot=snapshot,
                                             state=state, half=half, params=params, size_needed=size_needed)
             if sel is None:
-                db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": why,
-                                "minute": state.minute, "score": score_str})
+                _log_dedup(db, (ev.event_id, leg, why), "skip",
+                           {"event_id": ev.event_id, "leg": leg, "reason": why,
+                            "minute": state.minute, "score": score_str})
                 continue
             did = _size_and_place(
                 ev=ev, cs=cs, sel=sel.as_selection(), snapshot=snapshot, target=target,
@@ -826,7 +914,9 @@ def _confirm_open_trade(
     bet_id (recuperabile a video) + traccia in omega_activity per riconciliazione.
     """
     last_err: Optional[Exception] = None
-    for _ in range(3):
+    for attempt, pause in enumerate((0.0, 0.5, 2.0)):
+        if pause:
+            time.sleep(pause)            # backoff: un blip di rete non deve bruciare i 3 tentativi
         try:
             db.update_trade(trade_id, status="open", price=price, size=size,
                             liability=liability, bet_id=bet_id,
@@ -934,7 +1024,7 @@ def _place_one(
         if str((params or {}).get("execution_mode", "auto")) == "auto":
             db.log("paper_fill_fallback", {"event_id": ev.event_id,
                                            "trade_id": trade_id, "reason": gate_reason})
-        fill = E.paper_fill(size, best_price=price, lay_ladder=ladder)
+        fill = E.paper_fill(size, best_price=price, lay_ladder=ladder, limit_price=price, side="lay")
         if fill is None or fill.matched_size <= 0:
             db.update_trade(trade_id, status="error", meta={"reason": "paper_no_fill"})
             db.log("skip", {"event_id": ev.event_id, "reason": "paper_no_fill"})
@@ -964,9 +1054,12 @@ def _place_one(
             db.log("live_fok_fallback", {"event_id": ev.event_id,
                                          "trade_id": trade_id, "reason": gate_reason})
         try:
+            # §16 (review C1): customerOrderRef PER GAMBA (omega-t<id>), mai per evento —
+            # con due gambe per partita il secondo ordine veniva rifiutato
             res = market.place_lay_live(
                 market_id=cs.market_id, selection_id=sel.selection_id,
                 price=price, size=size, event_id=ev.event_id,
+                customer_ref=E.customer_ref_for(trade_id),
             )
         except Exception as ex:  # noqa: BLE001 — ordine reale ESITO IGNOTO: marca error, NON ripiazza
             db.update_trade(trade_id, status="error", meta={"reason": "place_exception", "err": str(ex)[:160]})
@@ -1632,7 +1725,7 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
         _confirm_open_trade(
             db, tr["id"], event_id=tr["event_id"], price=price, size=size,
             liability=float(tr.get("liability") or _back_liability(size, tr.get("side", "lay"), price)),
-            bet_id=None, meta={"reconciled": "paper"}, mode="paper",
+            bet_id=None, meta={**(tr.get("meta") or {}), "reconciled": "paper"}, mode="paper",
         )
         n += 1
     if not live:
@@ -1653,7 +1746,7 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 _confirm_open_trade(
                     db, tr["id"], event_id=tr["event_id"], price=price, size=size,
                     liability=_back_liability(size, tr.get("side", "lay"), price),
-                    bet_id=d.get("bet_id"), meta={"reconciled": "live"}, mode="live",
+                    bet_id=d.get("bet_id"), meta={**(tr.get("meta") or {}), "reconciled": "live"}, mode="live",
                 )
                 db.log("reconciled_open", {"trade_id": tr["id"], "event_id": tr["event_id"], "bet_id": d.get("bet_id")})
                 n += 1
@@ -1723,22 +1816,32 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
     """Per ogni trade aperto legge il mercato; se CLOSED calcola P&L. Ritorna n. settled."""
     settled = 0
     fallback_commission = params["commission_pct"] / 100.0
-    for tr in db.open_trades():
+    open_rows = list(db.open_trades() or [])
+    # chi ha chiusure lo dice il DB, non il meta (review HIGH-3: un crash fra ordine
+    # e marker regolava l'apertura da sola e la chiusura orfana con commissione doppia)
+    with_closings = _ids_with_closings(db, open_rows)
+    snapshots = _read_markets_batch(market, [t for t in open_rows
+                                            if not t.get("closes_trade_id")
+                                            and not _has_closing_marker(t)
+                                            and int(t.get("id") or 0) not in with_closings])
+    for tr in open_rows:
         # gamba di CHIUSURA di un cash-out: si regola INSIEME alla sua apertura
         # 'hedged' (nettizzazione a due gambe) — mai da sola, o la commissione
         # verrebbe applicata due volte e il P&L sarebbe sbagliato. Stessa cosa
         # per un'apertura ancora 'open' CON chiusure (parziale / in sospeso):
         # la regola _settle_hedged in coppia, mai qui da sola.
-        if tr.get("closes_trade_id") or _has_closing_marker(tr):
+        if tr.get("closes_trade_id") or _has_closing_marker(tr) or int(tr.get("id") or 0) in with_closings:
             continue
         # FIX review: l'INTERO corpo per-trade è protetto → una riga malformata
         # (chiave mancante/tipo errato) NON blocca il settlement di tutti gli altri.
         try:
-            cs = _real_market.CorrectScoreMarket(
-                market_id=tr["market_id"], event_id=tr["event_id"],
-                event_name=tr.get("event_name") or "", market_start_time=None, runner_names={},
-            )
-            snap = market.read_market(cs)
+            snap = snapshots.get(str(tr.get("market_id")), _MISSING)
+            if snap is _MISSING:
+                cs = _real_market.CorrectScoreMarket(
+                    market_id=tr["market_id"], event_id=tr["event_id"],
+                    event_name=tr.get("event_name") or "", market_start_time=None, runner_names={},
+                )
+                snap = market.read_market(cs)
             if snap is None:
                 # mercato sparito da Betfair (evento rimosso/void)
                 if _maybe_void_orphan(tr, db=db, now=now):
@@ -1775,10 +1878,49 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
         except Exception as ex:  # noqa: BLE001
             db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
             continue
-    return settled + _settle_hedged(params=params, market=market, db=db, now=now)
+    return settled + _settle_hedged(params=params, market=market, db=db, now=now,
+                                    open_rows=open_rows, with_closings=with_closings)
 
 
-def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime) -> int:
+_MISSING = object()
+
+
+def _ids_with_closings(db, open_rows: list) -> set:
+    """id delle aperture che hanno almeno una chiusura NEL DB (non 'error')."""
+    fn = getattr(db, "closing_trades_for", None)
+    ids = [int(t["id"]) for t in open_rows if not t.get("closes_trade_id") and t.get("id") is not None]
+    if not callable(fn) or not ids:
+        return set()
+    try:
+        return {int(c.get("closes_trade_id") or 0) for c in fn(ids) or []
+                if str(c.get("status")) != "error"}
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] lettura chiusure KO: %s", str(ex)[:120])
+        return set()
+
+
+def _read_markets_batch(market, trades: list) -> dict:
+    """{market_id: snapshot} con UNA listMarketBook per blocco di 40 (review M6);
+    con un market senza ``read_markets`` (fake dei test) il chiamante legge uno a uno."""
+    fn = getattr(market, "read_markets", None)
+    if not callable(fn) or not trades:
+        return {}
+    mkts = {}
+    for tr in trades:
+        mid = str(tr.get("market_id") or "")
+        if mid and mid not in mkts:
+            mkts[mid] = _real_market.CorrectScoreMarket(
+                market_id=mid, event_id=str(tr.get("event_id") or ""),
+                event_name=tr.get("event_name") or "", market_start_time=None, runner_names={})
+    try:
+        return dict(fn(list(mkts.values())) or {})
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega] listMarketBook batch KO: %s", str(ex)[:120])
+        return {}
+
+
+def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime,
+                   open_rows: Optional[list] = None, with_closings: Optional[set] = None) -> int:
     """Regola le posizioni CHIUSE A MERCATO ('hedged') insieme alle loro gambe di
     chiusura: Betfair applica la commissione sulle VINCITE NETTE del mercato,
     quindi le due gambe si nettano PRIMA (execution.settle_pair/settle_group).
@@ -1797,16 +1939,21 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime) -> int:
         # anche le aperture ancora 'open' CON chiusure (cash-out parziale, fill
         # in sospeso): settle_open le salta apposta, si regolano qui in coppia.
         # E le gambe di chiusura vive (per l'eventuale caso ORFANO).
-        open_rows = list(db.open_trades() or [])
+        if open_rows is None:
+            open_rows = list(db.open_trades() or [])
     except Exception as ex:  # noqa: BLE001
         db.log("settle_error", {"reason": "hedged_read_failed", "err": str(ex)[:160]})
         return 0
-    rows += [t for t in open_rows if not t.get("closes_trade_id") and _has_closing_marker(t)]
+    wc = with_closings if with_closings is not None else set()
+    rows += [t for t in open_rows if not t.get("closes_trade_id")
+             and (_has_closing_marker(t) or int(t.get("id") or 0) in wc)]
     closing_rows = [t for t in open_rows if t.get("closes_trade_id")]
     if not rows and not closing_rows:
         return 0
     closings: dict[int, list[dict]] = {}
     closings_fn = getattr(db, "closing_trades_for", None)
+    if rows and not callable(closings_fn):
+        return 0                          # review L5: senza accessor MAI regolare come nuda
     if rows and callable(closings_fn):
         try:
             for c in closings_fn([int(r["id"]) for r in rows]) or []:
@@ -1832,7 +1979,12 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime) -> int:
                 runner_names={},
             )
             snap = market.read_market(cs)
-            if snap is None or not snap.closed:
+            if snap is None:
+                # mercato sparito (review M7): stessa macchina delle aperture nude
+                if _maybe_void_orphan(tr, db=db, now=now):
+                    n += 1
+                continue
+            if not snap.closed:
                 continue
             comm = tr.get("commission")
             comm = float(comm) if comm is not None else fallback_commission
@@ -2524,6 +2676,32 @@ def _greenup_residual(meta: dict[str, Any]) -> Optional[float]:
     return _fnum(meta.get("residual_size"))
 
 
+GREENUP_FAILED_COOLDOWN_S = 300.0
+BLIND_ALERT_CYCLES = 3
+_BLIND_CYCLES: dict[int, int] = {}
+
+
+def _parse_ts_any(v: Any) -> Optional[float]:
+    try:
+        from Betfair.safe_strategy import exits as XE
+        return XE.parse_ts(v)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _greenup_blind(db, tr: dict[str, Any]) -> None:
+    """Posizione lay VIVA senza feed per BLIND_ALERT_CYCLES cicli: la protezione
+    non può vedere nulla → allarme CRITICAL una volta (review H7)."""
+    tid = int(tr.get("id") or 0)
+    n = _BLIND_CYCLES.get(tid, 0) + 1
+    _BLIND_CYCLES[tid] = n
+    if n == BLIND_ALERT_CYCLES:
+        logger.critical("[omega] GREEN-UP CIECO: trade %s (evento %s, liability %s) senza feed da %d cicli",
+                        tid, tr.get("event_id"), tr.get("liability"), n)
+        db.log("greenup_blind", {"trade_id": tid, "event_id": tr.get("event_id"),
+                                 "liability": tr.get("liability"), "cycles": n, "critical": True})
+
+
 def _greenup_candidates(db) -> list[dict[str, Any]]:
     """Aperture lay 'open' (mai gambe di chiusura) senza chiusura in volo e:
     uscita non ancora inviata, OPPURE inviata ma con RESIDUO (fill cappato)."""
@@ -2541,7 +2719,11 @@ def _greenup_candidates(db) -> list[dict[str, Any]]:
         req = meta.get(GREENUP_KEY)
         if isinstance(req, dict):
             if req.get("failed"):
-                continue
+                # NON terminale (review H6): dopo il cooldown si riprova — una
+                # posizione con liability viva non resta mai scoperta per sempre
+                failed_ts = _parse_ts_any(req.get("failed_ts"))
+                if failed_ts is None or time.time() - failed_ts < GREENUP_FAILED_COOLDOWN_S:
+                    continue
             if req.get("sent"):
                 res = _greenup_residual(meta)
                 if res is None or res < X.HEDGE_EPS:
@@ -2579,25 +2761,41 @@ def _greenup_prices_from_block(blk: dict, sid: int) -> "tuple[Optional[dict], Op
 
 
 def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, int]",
-                    state: "M.LiveState", half: bool, prices: dict) -> "tuple[Optional[float], str]":
-    """(P che il risultato bancato sia quello FINALE da qui, fonte): lo STESSO
-    modello della selezione (λ pre-match → residui live → griglia, orizzonte 45′
-    per la gamba HT); riserva = P implicita dal back del feed (lato conservativo)."""
-    lam = _prematch_lambdas(db, str(tr.get("event_id") or ""), payload)
+                    state: "M.LiveState", half: bool, prices: dict,
+                    params: Optional[dict[str, Any]] = None) -> "tuple[Optional[float], str]":
+    """(P che il risultato bancato sia quello FINALE da qui, fonte): LA STESSA P del
+    modello usata all'ingresso — calibrata/fattore di coda (review F1: prima il
+    green-up decideva con la grezza), stessa catena λ (review M4). Tetto di fine
+    gara (review F2): dall'88′ (43′ per la gamba HT) mai sotto la P implicita del
+    back: nel recupero il modello non può azzerare il rischio."""
+    params = params or {}
+    back = _fnum(prices.get("back")) or 0.0
+    p_mkt = (1.0 / back) if back > 1.0 else None
+    lam = _prematch_lambdas(db, str(tr.get("event_id") or ""), payload, state=state, params=params)
+    p: Optional[float] = None
     if lam is not None:
         lh, la, league_id, _src = lam
         try:
+            cv = float(params.get("model_lambda_cv", M.DEFAULT_LAMBDA_CV))
             probs = M.score_probs(lh_pre=lh, la_pre=la, rho=_rho_for(league_id), state=state,
-                                  league_id=league_id, half=half)
-            p = probs.get(laid)
+                                  league_id=league_id, half=half, cv=cv)
+            p_raw = probs.get(laid)
+            if p_raw is not None:
+                calibrator = (M.load_calibrator(params.get("model_calibration_path") or None)
+                              if str(params.get("model_calibration", "auto")) == "auto" else None)
+                fam = M.CALIBRATION_FAMILY_HT if half else M.CALIBRATION_FAMILY_FT
+                p = M.model_p(float(p_raw), fam, int(state.minute), calibrator,
+                              float(params.get("model_tail_factor", 1.0)))
         except Exception as ex:  # noqa: BLE001 — modello KO: riserva di mercato
             logger.warning("[omega] greenup modello KO (trade %s): %s", tr.get("id"), str(ex)[:120])
             p = None
-        if p is not None:
-            return round(min(1.0, max(0.0, float(p))), 4), "model"
-    back = _fnum(prices.get("back")) or 0.0
-    if back > 1.0:
-        return round(1.0 / back, 4), "market"
+    end_game = (half and state.minute >= 43) or (not half and state.minute >= 88)
+    if p is not None:
+        if end_game and p_mkt is not None:
+            return round(min(1.0, max(float(p), p_mkt)), 4), "model_floor_market"
+        return round(min(1.0, max(0.0, float(p))), 4), "model"
+    if p_mkt is not None:
+        return round(p_mkt, 4), "market"
     return None, "none"
 
 
@@ -2722,12 +2920,22 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     attempts = int(prev.get("attempts") or 0)
     max_attempts = int(params["greenup_max_attempts"])
     if attempts >= max_attempts:
-        if not prev.get("failed"):
-            _greenup_write_key(db, tr, meta, GREENUP_KEY, {**prev, "failed": True})
-            db.log("error", {"reason": "greenup_attempts_exhausted", "trade_id": tr.get("id"),
-                             "event_id": tr.get("event_id"), "attempts": attempts,
-                             "residual": residual})
-        return False
+        failed_ts = _parse_ts_any(prev.get("failed_ts"))
+        if prev.get("failed") and failed_ts is not None and now.timestamp() - failed_ts >= GREENUP_FAILED_COOLDOWN_S:
+            attempts = 0                          # cooldown scaduto: nuovo giro di tentativi (H6)
+            prev = {**prev, "failed": False, "attempts": 0, "rounds": int(prev.get("rounds") or 0) + 1}
+        else:
+            if not prev.get("failed"):
+                _greenup_write_key(db, tr, meta, GREENUP_KEY,
+                                   {**prev, "failed": True, "failed_ts": now.isoformat()})
+                logger.critical("[omega] GREEN-UP FALLITO %d volte su trade %s (liability %s): posizione "
+                                "SCOPERTA, riprovo fra %ds", attempts, tr.get("id"), tr.get("liability"),
+                                int(GREENUP_FAILED_COOLDOWN_S))
+                db.log("error", {"reason": "greenup_attempts_exhausted", "trade_id": tr.get("id"),
+                                 "event_id": tr.get("event_id"), "attempts": attempts,
+                                 "residual": residual, "critical": True,
+                                 "retry_in_s": int(GREENUP_FAILED_COOLDOWN_S)})
+            return False
     last = XE.parse_ts(prev.get("last_attempt_ts"))
     if last is not None and now.timestamp() - last < float(params["greenup_retry_s"]):
         return False   # cooldown fra un tentativo e il successivo
@@ -2811,7 +3019,9 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
     from Betfair.safe_strategy import exits as XE
 
     if not isinstance(payload, dict):
-        return False                                   # evento non nel feed: ci pensa il settlement
+        _greenup_blind(db, tr)                         # review H7: mai in silenzio
+        return False
+    _BLIND_CYCLES.pop(int(tr.get("id") or 0), None)
     laid = E.parse_scoreline(str(tr.get("runner_name") or ""))
     if laid is None:
         return False                                   # aggregati: nessun punteggio da inseguire
@@ -2841,6 +3051,13 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         # RESIDUO di un'uscita già decisa (fill cappato): niente nuova decisione
         residual = _greenup_residual(meta)
         if residual is None or residual < X.HEDGE_EPS:
+            return False
+        if not reachable:
+            # il bancato è diventato irraggiungibile: il lay non può più perdere,
+            # coprire il residuo sarebbe solo un costo (review M11)
+            if not req.get("residual_dropped"):
+                _greenup_write_key(db, tr, meta, GREENUP_KEY, {**req, "residual_dropped": True,
+                                                               "note": "bancato irraggiungibile"})
             return False
         trigger = str(req.get("trigger") or "goal")
     else:
@@ -2884,7 +3101,11 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega] greenup close_plan KO (trade %s): %s", tr.get("id"), str(ex)[:120])
     exp_win, exp_lose = X.net_exposures(tr, legs)
-    hold_profit = float(exp_lose)                      # lay: profitto se il bancato NON esce
+    # profitto del tenere al NETTO della commissione (review MED-3: al lordo il bias
+    # verso HOLD valeva esattamente greenup_ev_margin)
+    comm_tr = tr.get("commission")
+    comm_tr = float(comm_tr) if comm_tr is not None else float(params.get("commission_pct", 5.0)) / 100.0
+    hold_profit = float(exp_lose) * (1.0 - comm_tr) if float(exp_lose) > 0 else float(exp_lose)
     loss_if_lose = max(0.0, -float(exp_win))           # lay: liability residua
     if trigger is None and minute >= int(params["greenup_take_profit_minute"]) \
             and locked is not None and hold_profit > 0 \
@@ -2899,7 +3120,7 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         state = M.LiveState(minute, sh, sa, int(payload.get("red_home") or 0),
                             int(payload.get("red_away") or 0))
         p_lose, p_source = _greenup_p_lose(db=db, tr=tr, payload=payload, laid=laid,
-                                           state=state, half=half, prices=prices)
+                                           state=state, half=half, prices=prices, params=params)
         action, why = _greenup_decide(trigger, p_lose, locked, hold_profit, loss_if_lose,
                                       tr.get("size"), params, distance)
     ev_hold = None if p_lose is None else XE.ev_hold(p_lose, hold_profit, loss_if_lose)
@@ -3305,7 +3526,11 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     # 0) RICONCILIAZIONE dei 'pending' orfani con la realtà Betfair (I3) — SEMPRE e
     #    per prima: un ordine reale non deve mai restare non tracciato (kill a metà
     #    piazzamento / conferma DB fallita). Toglie il gate LIVE.
-    n_reconciled = reconcile_pending(market=market, db=db, now=now)
+    try:
+        n_reconciled = reconcile_pending(market=market, db=db, now=now)
+    except Exception as ex:  # noqa: BLE001 — review M10: un DB/Betfair KO qui non deve spegnere il green-up
+        db.log("error", {"reason": "reconcile_phase_failed", "err": str(ex)[:160]})
+        n_reconciled = 0
 
     # 0-bis) coda flumine (PAPER e LIVE) — SEMPRE, anche a bot fermo/stopping:
     #    risolve i trade in attesa dell'esito dalla coda del runner (conferma
@@ -3318,7 +3543,11 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     # 1) settlement dei trade aperti — SEMPRE, anche a bot fermo: fermare il bot
     #    blocca i NUOVI ingressi, non la regolazione dei lay già piazzati (I3).
-    n_settled = settle_open(params=params, market=market, db=db, now=now)
+    try:
+        n_settled = settle_open(params=params, market=market, db=db, now=now)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "settle_phase_failed", "err": str(ex)[:160]})
+        n_settled = 0
 
     # 1-bis) GREEN-UP AUTOMATICO (§12) — SEMPRE, anche a bot fermo, paper e live:
     #    una gamba aperta va gestita fino alla fine (uscita a mercato sul gol /
@@ -3369,6 +3598,15 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     traded_ids = db.traded_event_ids()
     day_start = E.day_start_utc(now)  # §2: giornata operativa Europe/Rome
     agg = db.aggregates(day_start)
+    # eventi con trade MANUALI: territorio dell'utente, l'automatico non aggiunge
+    # esposizione (§8, review H2 — in v2 il filtro era andato perso)
+    manual_fn = getattr(db, "manual_event_ids", None)
+    try:
+        manual_ids = set(manual_fn()) if callable(manual_fn) else set()
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "manual_ids_failed", "err": str(ex)[:160]})
+        return {"skipped": "manual_ids_failed", "settled": n_settled, "manual": n_manual,
+                "missions": n_missions}
 
     # GUARDIA MISSIONI: gli eventi con missione ATTIVA sono territorio
     # dell'utente — l'automatico NON deve mai aggiungere esposizione lì.
@@ -3389,7 +3627,7 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         traded_legs = set(legs_fn()) if callable(legs_fn) else {
             (e, p) for e in db.traded_event_ids() for p in ("ht_cs", "ft_cs")}
         n_placed = scan_and_place_legs(
-            control=control, params=params, events=events, traded_ids=set(mission_ids),
+            control=control, params=params, events=events, traded_ids=set(mission_ids) | manual_ids,
             traded_legs=traded_legs, aggregates=agg, market=market, db=db, now=now,
             score_lookup=score_lookup,
         )
@@ -3413,8 +3651,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         legs_left, m_rem = E.legs_remaining(
             events, legs_done, now=now, ht_entry_max=params["ht_entry_max"],
             ft_entry_max=params["ft_entry_max"], max_events=params["max_events"],
-            traded_count=traded_today, excluded_ids=mission_ids)
-        target_leg = round(E.dynamic_target(goal, realized_today, legs_left), 2)
+            traded_count=int(agg2.get("events_today", traded_today)), excluded_ids=mission_ids | manual_ids)
+        target_leg = round(E.dynamic_target(goal, realized_today, legs_left), 2) if legs_left > 0 else 0.0
         target_match = round(target_leg * 2, 2)
     else:
         m_rem = matches_remaining(

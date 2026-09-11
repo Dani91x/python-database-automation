@@ -69,16 +69,24 @@ def _ev(eid, minutes_ago):
 def test_legs_remaining_conta_le_gambe_piazzabili():
     events = [_ev("a", -60), _ev("b", 30), _ev("c", 60), _ev("d", 95), _ev("e", 30)]
     legs, matches = E.legs_remaining(events, {("e", "ht_cs")}, now=NOW, ht_entry_max=40, ft_entry_max=80)
-    # a: 2 (non iniziata) · b: 2 · c: solo 2T · d: finita → 0 · e: 1T fatta → solo 2T
-    assert (legs, matches) == (6, 4)
+    # orologio corretto dell'intervallo (review HIGH-1): a: 2 (non iniziata) · b: 2 ·
+    # c (60′ orologio = 45′ reali): solo 2T · d (95′ orologio = 80′ reali): 2T ancora
+    # in finestra · e: 1T fatta → solo 2T
+    assert (legs, matches) == (7, 5)
     legs, matches = E.legs_remaining(events, {("e", "ht_cs"), ("e", "ft_cs")}, now=NOW,
                                      ht_entry_max=40, ft_entry_max=80, excluded_ids={"a"})
-    assert (legs, matches) == (3, 2)
+    assert (legs, matches) == (4, 3)
+    # minuto REALE dal feed quando c'è: c al 66′ → solo 2T; d all'88′ → fuori finestra
+    legs, matches = E.legs_remaining(events, set(), now=NOW, ht_entry_max=40, ft_entry_max=80,
+                                     minute_of=lambda e: {"c": 66, "d": 88}.get(e))
+    assert (legs, matches) == (7, 4)
+    # nessun floor silenzioso: 0 gambe = 0
+    assert E.legs_remaining([_ev("z", 95)], set(), now=NOW, ht_entry_max=40, ft_entry_max=70) == (0, 0)
     # cap max_events: 1 partita ancora ammessa → al più 2 gambe
     legs, matches = E.legs_remaining(events, set(), now=NOW, ht_entry_max=40, ft_entry_max=80,
                                      max_events=3, traded_count=2)
     assert (legs, matches) == (2, 1)
-    assert E.legs_remaining([], set(), now=NOW, ht_entry_max=40, ft_entry_max=80) == (1, 1)
+    assert E.legs_remaining([], set(), now=NOW, ht_entry_max=40, ft_entry_max=80) == (0, 0)
 
 
 # -------------------------------------------------------------- risultati reali
@@ -159,18 +167,22 @@ def _rows():
 def test_empirical_table_shrinkage_e_lookup():
     t = EMP.EmpiricalTable(_rows())
     assert not t.empty
+    # stimatore PRUDENTE (limite superiore one-sided, review F13): mai la frequenza nuda
     p_glob, n = t.p_ft_given_ht((0, 0), (1, 3))
-    assert n == 1000 and p_glob == pytest.approx(0.003)
-    # lega: 3-1 uscito 5/100 contro 0,2% globale → la P sale ma resta shrinkata
+    assert n == 1000 and p_glob == pytest.approx(EMP.p_upper(3, 1000)) and p_glob > 0.003
+    # lega: 3-1 uscito 5/100 contro 0,2% globale → conteggi shrinkati verso il globale (K=500)
     p_lega, _ = t.p_ft_given_ht((0, 0), (3, 1), league_id=135)
-    assert 0.002 < p_lega < 0.05 and p_lega == pytest.approx((5 + 200 * 0.002) / 300)
-    # 1-3 mai in lega: si abbassa verso zero ma non azzera
+    assert p_lega == pytest.approx(EMP.p_upper(5 + 500 * 0.002, 100 + 500))
+    assert p_lega > p_glob                                          # la lega alza la P del 3-1
+    # 1-3 mai in lega: si abbassa ma non azzera
     p13, _ = t.p_ft_given_ht((0, 0), (1, 3), league_id=135)
-    assert 0 < p13 < 0.003
+    assert 0 < p13 < 0.02          # limite superiore: con meno casi in lega la banda e' piu' larga, mai zero
     assert t.p_ft_given_ht((2, 2), (2, 2)) is None                 # 1T mai visto → nessuna opinione
+    # regola del tre: un risultato MAI uscito su 1000 casi vale comunque ~0,27 %
+    assert EMP.p_upper(0, 1000) == pytest.approx(1.64 ** 2 / (1000 + 1.64 ** 2), rel=0.05)
     # lookup: solo se il punteggio corrente È ancora quello del 45′
     fn = EMP.empirical_lookup(t, ht=(0, 0), current=(0, 0), league_id=None)
-    assert fn is not None and fn(1, 3) == pytest.approx(0.003) and fn(5, 5) == 0.0
+    assert fn is not None and fn(1, 3) == pytest.approx(p_glob) and fn(5, 5) == pytest.approx(EMP.p_upper(0, 1000))
     assert EMP.empirical_lookup(t, ht=(0, 0), current=(1, 0), league_id=None) is None
     assert EMP.empirical_lookup(t, ht=None, current=(0, 0), league_id=None) is None
     assert EMP.empirical_lookup(EMP.EmpiricalTable([]), ht=(0, 0), current=(0, 0), league_id=None) is None
@@ -436,7 +448,7 @@ def test_target_per_gamba_spalmato_sulle_gambe_residue(monkeypatch):
 def test_veto_empirico_sulla_gamba_2t(monkeypatch):
     ev = SimpleNamespace(event_id="e8", name="A v B", open_date=NOW - timedelta(minutes=70))
     rows = [{"league_id": 0, "ht": "1-0", "ft": ft, "n": n} for ft, n in
-            (("1-0", 400), ("2-0", 250), ("1-1", 200), ("2-1", 100), ("3-0", 30), ("1-3", 15), ("4-1", 5))]
+            (("1-0", 4000), ("2-0", 2500), ("1-1", 2000), ("2-1", 1000), ("3-0", 300), ("1-3", 150), ("4-1", 20))]
     db = _DB({"daily_goal": 10.0, "mode": "paper"},
              events={"e8": {"league_id": 135, "model": {"lambda_pre": [1.5, 1.0], "lambda_source": "saved"}}},
              transitions=rows)
@@ -447,9 +459,9 @@ def test_veto_empirico_sulla_gamba_2t(monkeypatch):
     monkeypatch.setattr(S, "_feed_state", lambda market_, eid: payload)
     assert _run(db, market, ev, _params(model_p_max_pct=1.0), minute=60, sh=1, sa=0) == 1, db.activity
     m = db.trades[0]["meta"]["model"]
-    # i dati: 1-3 = 1,5 % (> 1 % → veto), 4-1 = 0,5 % → resta il 4-1
+    # i dati (limite superiore): 1-3 ≈ 1,7 % (> 1 % → veto), 4-1 ≈ 0,35 % → resta il 4-1
     assert db.trades[0]["runner_name"] == "4 - 1"
-    assert m["ht_score"] == "1-0" and m["empirical"] == pytest.approx(0.005) and m["p_selected"] >= m["p_model"]
+    assert m["ht_score"] == "1-0" and m["empirical"] == pytest.approx(EMP.p_upper(20, 9970), abs=1e-6) and m["p_selected"] >= m["p_model"]
     # con model_empirical='off' i dati non contano
     db2 = _DB({"daily_goal": 10.0, "mode": "paper"}, events=db.events, transitions=rows)
     S._LAMBDA_CACHE.clear()
@@ -474,9 +486,11 @@ def test_track_event_results_e_stamp_al_settlement(monkeypatch):
     assert S.track_event_results(db=db, market=None, now=NOW, feed=feed.get) == 0   # idempotente
     # settlement del CS: il WINNER (2-0) È il risultato finale, scritto su meta
     market = _Market({}, closed={"m-e9-CORRECT_SCORE": 12})
-    # 2 regolati: l'apertura (lay 1-3 vinto) + la chiusura orfana con l'esito dedotto
-    assert S.settle_open(params=_params(), market=market, db=db, now=NOW) == 2
+    # UNA posizione regolata IN COPPIA (§16 review HIGH-3: la chiusura la dice il DB,
+    # non il marker nel meta): apertura lay 1-3 vinta + chiusura nettizzata insieme
+    assert S.settle_open(params=_params(), market=market, db=db, now=NOW) == 1
     assert db.trades[1]["status"] == "won" and db.trades[1]["meta"]["result_ft"] == "2-0"
+    assert db.trades[2]["status"] == "won" and db.trades[1]["pnl"] == pytest.approx(1.9, abs=0.01)
     assert db.trades[1]["meta"]["result_ht"] == "1-0"
     # dal feed a partita finita si completa anche l'altra gamba, senza sovrascrivere
     feed["e9"] = {"minute": 90, "score_home": 2, "score_away": 0, "score_raw": {"matchStatus": "Finished", "score": {}}}
@@ -535,7 +549,7 @@ def test_veto_empirico_solo_a_inizio_ripresa(monkeypatch):
     """HIGH-3: la tabella copre tutto il 2T → oltre la finestra il veto non si applica."""
     ev = SimpleNamespace(event_id="e12", name="A v B", open_date=NOW - timedelta(minutes=85))
     rows = [{"league_id": 0, "ht": "1-0", "ft": ft, "n": n} for ft, n in
-            (("1-0", 400), ("2-0", 250), ("1-1", 200), ("2-1", 100), ("3-0", 30), ("1-3", 15), ("4-1", 5))]
+            (("1-0", 4000), ("2-0", 2500), ("1-1", 2000), ("2-1", 1000), ("3-0", 300), ("1-3", 150), ("4-1", 20))]
     db = _DB({"daily_goal": 10.0, "mode": "paper"},
              events={"e12": {"league_id": 135, "model": {"lambda_pre": [1.5, 1.0], "lambda_source": "saved"}}},
              transitions=rows)

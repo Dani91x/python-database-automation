@@ -105,15 +105,55 @@ def devig_1x2(back_home: float, back_draw: float, back_away: float) -> Optional[
     return inv[0] / s, inv[1] / s, inv[2] / s
 
 
-def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOTAL_GOALS) -> Optional[Tuple[float, float]]:
-    """(λ_casa, λ_trasferta) dalle quote 1X2 pre-KO congelate dallo scanner."""
+def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOTAL_GOALS,
+                        rho: float = DEFAULT_RHO) -> Optional[Tuple[float, float]]:
+    """(λ_casa, λ_trasferta) dalle quote 1X2 pre-KO congelate dallo scanner, con
+    lo split casa/trasferta RISOLTO sulla griglia (review F4: la ripartizione
+    proporzionale alle P sottostimava λ_trasferta fino a 3× col favorito netto)."""
     if not isinstance(pre_ko, dict):
         return None
     probs = devig_1x2(pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"))
     if probs is None:
         return None
-    from Betfair.stream.engine.live_engine import estimate_prematch_lambdas
-    return estimate_prematch_lambdas(probs[0], probs[2], expected_total_goals=total_goals)
+    return split_lambdas_1x2(probs[0], probs[2], total_goals, rho)
+
+
+def _full_match_1x2(lh: float, la: float, rho: float) -> Tuple[float, float, float]:
+    g = residual_grid(lh, la, rho, MAX_GOALS_GRID, dixon_coles=True)
+    ph = sum(p for (h, a), p in g.items() if h > a)
+    pa = sum(p for (h, a), p in g.items() if a > h)
+    return ph, 1.0 - ph - pa, pa
+
+
+def split_lambdas_1x2(p_home: float, p_away: float, total_goals: float,
+                      rho: float = DEFAULT_RHO) -> Tuple[float, float]:
+    """(λ_casa, λ_trasferta) con λ_casa + λ_trasferta = ``total_goals`` tali che la
+    griglia Poisson-DC riproduce il rapporto P(casa)/P(trasferta) del mercato.
+    Bisezione sul log del rapporto λ_casa/λ_trasferta (monotono)."""
+    total = max(0.4, float(total_goals))
+    target = math.log(max(1e-6, float(p_home)) / max(1e-6, float(p_away)))
+    lo, hi = -3.0, 3.0
+
+    def f(r: float) -> float:
+        share = 1.0 / (1.0 + math.exp(-r))
+        ph, _, pa = _full_match_1x2(total * share, total * (1.0 - share), rho)
+        return math.log(max(1e-9, ph) / max(1e-9, pa)) - target
+
+    if f(lo) > 0:
+        r = lo
+    elif f(hi) < 0:
+        r = hi
+    else:
+        r = 0.0
+        for _ in range(40):
+            r = 0.5 * (lo + hi)
+            if f(r) > 0:
+                hi = r
+            else:
+                lo = r
+        r = 0.5 * (lo + hi)
+    share = 1.0 / (1.0 + math.exp(-r))
+    return max(0.2, total * share), max(0.2, total * (1.0 - share))
 
 
 def residual_lambdas(lh_pre: float, la_pre: float, state: LiveState,
@@ -127,32 +167,57 @@ def residual_lambdas(lh_pre: float, la_pre: float, state: LiveState,
         league_id=league_id,
     )
     if half:
-        # frazione del residuo che cade nel primo tempo, ridotta dall'intensità 1T
-        left_ht = max(0.0, 45.0 - float(state.minute))
-        left_ft = max(1.0, 90.0 - float(state.minute))
-        k = min(1.0, left_ht / left_ft) * FIRST_HALF_INTENSITY
+        k = ht_residual_share(state.minute)
         lh, la = lh * k, la * k
     return max(0.001, lh), max(0.001, la)
 
 
+HT_INJURY_MIN = 3.0   # recupero atteso del 1° tempo
+
+
+def ht_residual_share(minute: int) -> float:
+    """Quota del λ RESIDUO di partita (fino al 90′) che cade da ``minute`` alla
+    fine del 1° tempo — dalla CDF empirica dei minuti dei gol (review 11/09 F3:
+    la vecchia formula lineare sottostimava il λ del 1T del 20 % al 40′ e fino a
+    3× al 44′, in direzione anti-conservativa). Recupero del 1T: massa dopo il 44′
+    decadente su HT_INJURY_MIN minuti. Fallback lineare se la CDF manca."""
+    try:
+        from value_engine.goal_timing import first_half_share, remaining_frac
+    except Exception:  # noqa: BLE001
+        left_ht = max(0.0, 45.0 - float(minute))
+        left_ft = max(1.0, 90.0 - float(minute))
+        return min(1.0, left_ht / left_ft) * FIRST_HALF_INTENSITY
+    m = max(0.0, float(minute))
+    rem_ft = max(1e-6, float(remaining_frac(m, 90.0)))
+    if m < 45.0:
+        rem_ht = float(remaining_frac(m, 45.0))
+    else:
+        rem_ht = float(remaining_frac(44.0, 45.0)) * max(0.0, (HT_INJURY_MIN - (m - 45.0)) / HT_INJURY_MIN)
+    return max(0.0, min(1.0, rem_ht * float(first_half_share()) / rem_ft))
+
+
 def _dc_tau(h: int, a: int, lh: float, la: float, rho: float) -> float:
+    """Correzione Dixon-Coles sulle celle basse, SEMPRE ≥ 0 (review F14)."""
     if h == 0 and a == 0:
-        return 1.0 - lh * la * rho
+        return max(0.0, 1.0 - lh * la * rho)
     if h == 1 and a == 0:
         return max(0.0, 1.0 + la * rho)
     if h == 0 and a == 1:
         return max(0.0, 1.0 + lh * rho)
     if h == 1 and a == 1:
-        return 1.0 - rho
+        return max(0.0, 1.0 - rho)
     return 1.0
 
 
-def residual_grid(lh: float, la: float, rho: float, max_goals: int, *, dixon_coles: bool) -> Dict[Tuple[int, int], float]:
-    """Distribuzione dei GOL RESIDUI (h, a), normalizzata sulla griglia troncata.
-    La correzione Dixon-Coles ha senso solo sulle celle basse di una partita che
-    parte da 0-0: applicata solo se ``dixon_coles`` (punteggio corrente 0-0)."""
+# Gauss-Hermite a 5 nodi (∫ e^{-x²} f(x) dx): per E[f(Z)], Z ~ N(0,1) usare x·√2 e w/√π
+_GH5 = ((0.0, 0.9453087204829419), (0.9585724646138185, 0.3936193231522412),
+        (-0.9585724646138185, 0.3936193231522412), (2.0201828704560856, 0.019953242059045913),
+        (-2.0201828704560856, 0.019953242059045913))
+DEFAULT_LAMBDA_CV = 0.30   # incertezza relativa su λ (review I2: riproduce la coda 1,1–1,8× misurata)
+
+
+def _poisson_grid(lh: float, la: float, rho: float, max_goals: int, dixon_coles: bool) -> Dict[Tuple[int, int], float]:
     grid: Dict[Tuple[int, int], float] = {}
-    total = 0.0
     for h in range(max_goals + 1):
         ph = math.exp(-lh) * lh ** h / math.factorial(h)
         for a in range(max_goals + 1):
@@ -160,19 +225,42 @@ def residual_grid(lh: float, la: float, rho: float, max_goals: int, *, dixon_col
             if dixon_coles and h <= 1 and a <= 1:
                 p *= _dc_tau(h, a, lh, la, rho)
             grid[(h, a)] = p
-            total += p
-    if total <= 0:
+    return grid
+
+
+def residual_grid(lh: float, la: float, rho: float, max_goals: int, *, dixon_coles: bool,
+                  cv: float = 0.0) -> Dict[Tuple[int, int], float]:
+    """Distribuzione dei GOL RESIDUI (h, a), normalizzata sulla griglia troncata.
+    La correzione Dixon-Coles ha senso solo sulle celle basse di una partita che
+    parte da 0-0: applicata solo se ``dixon_coles`` (punteggio corrente 0-0).
+    ``cv`` > 0 = INCERTEZZA su λ (review I2): λ·θ con θ log-normale di media 1 e
+    coefficiente di variazione ``cv``, θ COMUNE ai due lati (quadratura di
+    Gauss-Hermite a 5 nodi). La coda risultante è quella di una binomiale
+    negativa: più grassa, in modo dipendente dalla cella, senza fattori inventati."""
+    if cv and cv > 0:
+        sigma = math.sqrt(math.log(1.0 + float(cv) ** 2))
+        grid: Dict[Tuple[int, int], float] = {}
+        for x, w in _GH5:
+            theta = math.exp(sigma * math.sqrt(2.0) * x - 0.5 * sigma * sigma)
+            g = _poisson_grid(lh * theta, la * theta, rho, max_goals, dixon_coles)
+            wk = w / math.sqrt(math.pi)
+            for k, v in g.items():
+                grid[k] = grid.get(k, 0.0) + wk * v
+    else:
+        grid = _poisson_grid(lh, la, rho, max_goals, dixon_coles)
+    total = sum(grid.values())
+    if total <= 0 or min(grid.values()) < 0:
         return {}
     return {k: v / total for k, v in grid.items()}
 
 
 def score_probs(*, lh_pre: float, la_pre: float, rho: float, state: LiveState,
-                league_id: Optional[int], half: bool) -> Dict[Tuple[int, int], float]:
+                league_id: Optional[int], half: bool, cv: float = 0.0) -> Dict[Tuple[int, int], float]:
     """P(risultato FINALE = (H, A)) per il mercato scelto (FT, o HT se ``half``),
-    condizionata a minuto/punteggio/rossi correnti."""
+    condizionata a minuto/punteggio/rossi/gialli correnti; ``cv`` = incertezza su λ."""
     lh, la = residual_lambdas(lh_pre, la_pre, state, league_id, half=half)
     grid = residual_grid(lh, la, rho, MAX_GOALS_GRID_HT if half else MAX_GOALS_GRID,
-                         dixon_coles=(state.score_home == 0 and state.score_away == 0))
+                         dixon_coles=(state.score_home == 0 and state.score_away == 0), cv=cv)
     return {(state.score_home + h, state.score_away + a): p for (h, a), p in grid.items()}
 
 
@@ -230,15 +318,44 @@ def load_calibrator(path: Optional[str] = None, *, now_ts: Optional[float] = Non
 
 
 def apply_tail_factor(p: float, factor: float, p_max: float = TAIL_P_MAX) -> float:
-    """P del modello nella coda (p ≤ p_max) moltiplicata per il fattore di coda
-    (cap a 1); fuori dalla coda invariata; fattore ≤ 0 o non finito → invariata."""
+    """P del modello con fattore di coda CONTINUO e monotono (review F12):
+    f(p) = 1 + (f0 − 1)·p_max/(p_max + p) → f0 per p → 0, (1+f0)/2 a p = p_max,
+    → 1 per p ≫ p_max; p·f(p) è crescente. Fattore ≤ 0/non finito → invariata."""
     try:
-        f = float(factor)
+        f0 = float(factor)
     except (TypeError, ValueError):
         return float(p)
-    if not math.isfinite(f) or f <= 0 or p > p_max:
+    if not math.isfinite(f0) or f0 <= 0 or f0 == 1.0:
         return float(p)
-    return min(1.0, float(p) * f)
+    q = max(0.0, float(p))
+    f = 1.0 + (f0 - 1.0) * float(p_max) / (float(p_max) + q)
+    return min(1.0, q * f)
+
+
+def model_p(p_raw: float, family: str, minute: int, calibrator: Any, tail_factor: float = 1.0) -> float:
+    """LA probabilità del modello usata OVUNQUE (selezione, green-up, sizing —
+    review F1: prima il green-up usava la grezza e la selezione la prudente):
+    la più prudente fra P calibrata (tabelle sui nostri stati registrati) e
+    grezza × fattore di coda. Mai la somma delle due correzioni."""
+    return max(apply_calibration(p_raw, family, minute, calibrator),
+               apply_tail_factor(p_raw, tail_factor))
+
+
+def uncertainty_p(ps: "list[float]", *, k_se: float, cv_min: float = 0.10) -> Tuple[float, float]:
+    """(P centrale, P prudente) da più stime della stessa cella (fonti λ /
+    modelli diversi — review I3): centro = pool logaritmico; prudente =
+    centro + k·SE con SE = max(dev. std. delle stime, centro·cv_min)."""
+    vals = [max(1e-9, float(p)) for p in ps if p is not None and math.isfinite(float(p))]
+    if not vals:
+        return 0.0, 0.0
+    centre = math.exp(sum(math.log(v) for v in vals) / len(vals))
+    if len(vals) > 1:
+        mean = sum(vals) / len(vals)
+        sd = math.sqrt(sum((v - mean) ** 2 for v in vals) / (len(vals) - 1))
+    else:
+        sd = 0.0
+    se = max(sd, centre * float(cv_min))
+    return centre, min(1.0, centre + float(k_se) * se)
 
 
 def apply_calibration(p: float, family: str, minute: int, calibrator: Any) -> float:
@@ -271,6 +388,11 @@ def select_by_model(
     cost_aware: bool = False,
     band_ratio: float = 2.0,
     tail_factor: float = 1.0,
+    commission: float = 0.0,
+    probs_alt: Optional["list[Dict[Tuple[int, int], float]]"] = None,
+    k_se: float = 0.0,
+    p_hedge: float = 0.5,
+    ev_kappa: float = 1.0,
 ) -> Optional[ModelSelection]:
     """Runner con la probabilità PIÙ BASSA che rispetti tutti i vincoli.
     ``runners``: ``omega_engine.ScoreRunner`` (lay_price/lay_size). None se nessuno.
@@ -299,12 +421,20 @@ def select_by_model(
         p_raw = probs.get((h, a))
         if p_raw is None:
             continue                      # fuori griglia: non stimabile → mai a occhi chiusi
-        # coda: la PIÙ PRUDENTE fra calibratore condiviso (tabelle sui nostri stati
-        # registrati) e fattore di coda del banco di validazione — un lay solo se il
-        # risultato è raro secondo ENTRAMBE le correzioni (perdite 20-50× le vincite)
-        p_model = max(apply_calibration(p_raw, family, state.minute, calibrator),
-                      apply_tail_factor(p_raw, tail_factor))
-        p_implied = 1.0 / float(price)
+        # I3: più stime della stessa cella (modelli/fonti λ diverse) → centro (pool
+        # log) e P PRUDENTE (centro + k·SE); con una sola stima resta la grezza
+        if probs_alt:
+            alts = [p_raw] + [d.get((h, a)) for d in probs_alt if isinstance(d, dict)]
+            alts = [v for v in alts if v is not None]
+            centre, prudent = uncertainty_p(alts, k_se=k_se) if k_se > 0 else (p_raw, p_raw)
+            p_raw_used = centre if k_se > 0 else p_raw
+            p_model = max(model_p(p_raw_used, family, state.minute, calibrator, tail_factor), prudent)
+        else:
+            p_model = model_p(p_raw, family, state.minute, calibrator, tail_factor)
+        # soglia di valore CON commissione (F11 = gate di Kelly φ* > 0):
+        # un lay a L vale solo se p < (1−c)/(L−c)
+        c = max(0.0, min(0.5, float(commission)))
+        p_implied = (1.0 - c) / (float(price) - c)
         p_emp: Optional[float] = None
         if p_data is not None:
             try:
@@ -328,8 +458,10 @@ def select_by_model(
         if best is None or (cand.p_selected, cand.price, -cand.lay_size_available) < (best.p_selected, best.price, -best.lay_size_available):
             best = cand
     if best is not None and cost_aware and size_needed > 0:
-        # §15: fra i candidati a P equivalente vince il più economico da coprire
-        return rank_by_cover_cost(cands, size=float(size_needed), band_ratio=band_ratio)
+        # §15/F5: si massimizza il VALORE ATTESO (vincita netta, perdita, costo
+        # atteso della copertura) — non una banda di P con il costo per primo
+        return rank_by_ev(cands, size=float(size_needed), commission=commission,
+                          p_hedge=p_hedge, kappa=ev_kappa)
     return best
 
 
@@ -454,20 +586,34 @@ def lambdas_from_live_ou(payload: Optional[dict], state: LiveState,
     if est is None:
         return None
     lam_res, line, p_over = est
+    if not (RESIDUAL_MIN <= lam_res <= RESIDUAL_MAX):
+        return None                     # F8: mai clampare in silenzio un λ fuori scala
+    mult = _live_multipliers(state, league_id)
+    if mult is None:
+        return None
+    mh, ma = mult
+    lh = LIVE_OU_HOME_SHARE * lam_res / mh
+    la = (1.0 - LIVE_OU_HOME_SHARE) * lam_res / ma
+    return lh, la, {"line": line, "p_over": round(p_over, 4), "lambda_residual": round(lam_res, 4)}
+
+
+RESIDUAL_MIN, RESIDUAL_MAX = 0.005, 3.5      # λ residui plausibili (F8: clamp in spazio residuo)
+
+
+def _live_multipliers(state: LiveState, league_id: Optional[int]) -> Optional[Tuple[float, float]]:
+    """(m_casa, m_trasferta): moltiplicatori live del modello (tempo, stato,
+    rossi, gialli) — quelli con cui λ_pre → λ_res. Usati per invertire."""
     try:
         from Betfair.stream.engine.live_engine import inplay_residual_rates
         mh, ma = inplay_residual_rates(1.0, 1.0, state.minute, state.score_home, state.score_away,
                                        red_home=state.red_home, red_away=state.red_away,
+                                       yellow_home=state.yellow_home, yellow_away=state.yellow_away,
                                        league_id=league_id)
     except Exception:  # noqa: BLE001
         return None
     if mh <= 0 or ma <= 0:
         return None
-    lh = LIVE_OU_HOME_SHARE * lam_res / mh
-    la = (1.0 - LIVE_OU_HOME_SHARE) * lam_res / ma
-    clamp = lambda v: min(LAMBDA_PRE_MAX, max(LAMBDA_PRE_MIN, float(v)))  # noqa: E731
-    return clamp(lh), clamp(la), {"line": line, "p_over": round(p_over, 4),
-                                  "lambda_residual": round(lam_res, 4)}
+    return mh, ma
 
 
 def half_time_score(payload: Optional[dict]) -> Optional[Tuple[int, int]]:
@@ -568,27 +714,102 @@ def market_ou_probs(payload: Optional[dict], state: LiveState) -> Dict[int, floa
     return out
 
 
-def _grid_loss(lh: float, la: float, cs_target: Dict[Tuple[int, int], float],
-               ou_target: Dict[int, float], state: LiveState, rho: float) -> float:
+def market_cs_brackets(payload: Optional[dict], state: LiveState
+                       ) -> Tuple[Dict[Tuple[int, int], Tuple[float, float, float]], "list[Tuple[str, float, float]]"]:
+    """(celle: (H,A) → (p_mid, p_lo=1/lay, p_hi=1/back) NORMALIZZATE; aggregati:
+    [(kind, p_lo, p_hi)] con kind ∈ home|away|draw = "Any Other …"). Review F9/F10:
+    la forchetta [1/lay, 1/back] è l'informazione VERA del book (sulle longshot
+    vale 2:1) e gli aggregati sono la massa di coda quotata dal mercato."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("cs"), dict):
+        return {}, []
+    cs = payload["cs"]
+    if str(cs.get("status") or "OPEN").upper() != "OPEN":
+        return {}, []
+    cells: Dict[Tuple[int, int], Tuple[float, float, float]] = {}
+    aggs: "list[Tuple[str, float, float]]" = []
+    total = 0.0
+    for s_ in cs.get("selections") or []:
+        if not isinstance(s_, dict) or s_.get("runner_status") not in (None, "ACTIVE"):
+            continue
+        back, lay = s_.get("back"), s_.get("lay")
+        pb = 1.0 / float(back) if isinstance(back, (int, float)) and back > 1.0 else None
+        pl = 1.0 / float(lay) if isinstance(lay, (int, float)) and lay > 1.0 else None
+        if pb is None and pl is None:
+            continue
+        # microprice pesato per size quando ci sono entrambi i lati
+        qb, ql = float(s_.get("back_size") or 0.0), float(s_.get("lay_size") or 0.0)
+        if pb is not None and pl is not None:
+            mid = (ql * pb + qb * pl) / (qb + ql) if (qb + ql) > 0 else 0.5 * (pb + pl)
+        else:
+            mid = pb if pb is not None else pl
+        lo, hi = (pl if pl is not None else mid), (pb if pb is not None else mid)
+        total += mid
+        name = str(s_.get("name") or "")
+        parsed = E.parse_scoreline(name)
+        if parsed is None:
+            n = name.lower()
+            kind = "home" if "home" in n else "away" if "away" in n else "draw" if "draw" in n else None
+            if kind:
+                aggs.append((kind, lo, hi))
+            continue
+        h, a = parsed
+        if h < state.score_home or a < state.score_away:
+            continue
+        cells[(h, a)] = (mid, lo, hi)
+    if total <= 0 or len(cells) < MARKET_GRID_MIN_CS:
+        return {}, []
+    cells = {k: (v[0] / total, v[1] / total, v[2] / total) for k, v in cells.items()}
+    aggs = [(k, lo / total, hi / total) for k, lo, hi in aggs]
+    return cells, aggs
+
+
+def _bracket_loss(p_mod: float, lo: float, hi: float, mid: float) -> float:
+    """χ² a forchetta: zero dentro [lo, hi], pesato 1/p per contare la coda."""
+    lo, hi = min(lo, hi), max(lo, hi)
+    d = (lo - p_mod) if p_mod < lo else (p_mod - hi) if p_mod > hi else 0.0
+    return d * d / max(float(mid), 1e-4)
+
+
+def _grid_loss(lh: float, la: float, cs_target: Dict[Tuple[int, int], Any],
+               ou_target: Dict[int, float], state: LiveState, rho: float,
+               aggs: Optional["list[Tuple[str, float, float]]"] = None) -> float:
     grid = residual_grid(lh, la, rho, MAX_GOALS_GRID,
                          dixon_coles=(state.score_home == 0 and state.score_away == 0))
     loss = 0.0
-    for (h, a), p_mkt in cs_target.items():
+    listed = set()
+    for cell, tgt in cs_target.items():
+        h, a = cell
+        listed.add(cell)
         p_mod = grid.get((h - state.score_home, a - state.score_away), 0.0)
-        loss += (p_mod - p_mkt) ** 2
+        if isinstance(tgt, tuple):
+            loss += _bracket_loss(p_mod, tgt[1], tgt[2], tgt[0])
+        else:
+            loss += (p_mod - float(tgt)) ** 2 / max(float(tgt), 1e-4)
+    for kind, lo, hi in aggs or []:
+        # massa delle celle NON quotate col segno dell'aggregato
+        p_agg = 0.0
+        for (h, a), p in grid.items():
+            H, A = h + state.score_home, a + state.score_away
+            if (H, A) in listed:
+                continue
+            if (kind == "home" and H > A) or (kind == "away" and A > H) or (kind == "draw" and H == A):
+                p_agg += p
+        loss += _bracket_loss(p_agg, lo, hi, 0.5 * (lo + hi))
     if ou_target:
-        # P(residuo ≥ k+1) dal modello; peso complessivo pari al blocco CS
         w = max(1.0, float(len(cs_target))) / len(ou_target)
         for k, p_over in ou_target.items():
             p_mod = sum(p for (h, a), p in grid.items() if h + a >= k + 1)
-            loss += w * (p_mod - p_over) ** 2
+            loss += w * (p_mod - p_over) ** 2 / max(p_over, 1e-4)
     return loss
 
 
-def fit_residual_lambdas_to_market(cs_target: Dict[Tuple[int, int], float],
+def fit_residual_lambdas_to_market(cs_target: Dict[Tuple[int, int], Any],
                                    ou_target: Dict[int, float], state: LiveState,
-                                   rho: float = DEFAULT_RHO) -> Optional[Tuple[float, float, float]]:
-    """(λ_res casa, λ_res trasferta, loss) che meglio riproduce il mercato. PURA."""
+                                   rho: float = DEFAULT_RHO,
+                                   aggs: Optional["list[Tuple[str, float, float]]"] = None
+                                   ) -> Optional[Tuple[float, float, float]]:
+    """(λ_res casa, λ_res trasferta, loss) che meglio riproduce il mercato. PURA.
+    ``cs_target``: cella → P (float) oppure (mid, lo, hi) (forchetta)."""
     if not cs_target and not ou_target:
         return None
     lo, hi = math.log(MARKET_GRID_LAMBDA_MIN), math.log(MARKET_GRID_LAMBDA_MAX)
@@ -596,7 +817,7 @@ def fit_residual_lambdas_to_market(cs_target: Dict[Tuple[int, int], float],
     best: Optional[Tuple[float, float, float]] = None
     for lh in axis:
         for la in axis:
-            loss = _grid_loss(lh, la, cs_target, ou_target, state, rho)
+            loss = _grid_loss(lh, la, cs_target, ou_target, state, rho, aggs)
             if best is None or loss < best[2]:
                 best = (lh, la, loss)
     if best is None:
@@ -614,7 +835,7 @@ def fit_residual_lambdas_to_market(cs_target: Dict[Tuple[int, int], float],
             improved = False
             for dh, da in ((step, 0.0), (-step, 0.0), (0.0, step), (0.0, -step)):
                 cand = (clamp(math.exp(math.log(lh) + dh)), clamp(math.exp(math.log(la) + da)))
-                cl = _grid_loss(cand[0], cand[1], cs_target, ou_target, state, rho)
+                cl = _grid_loss(cand[0], cand[1], cs_target, ou_target, state, rho, aggs)
                 if cl < loss - 1e-12:
                     lh, la, loss = cand[0], cand[1], cl
                     improved = True
@@ -627,31 +848,25 @@ def lambdas_from_market_grid(payload: Optional[dict], state: LiveState, league_i
     (scala CS + linee O/U). None se la scala CS non è utilizzabile (servono almeno
     ``MARKET_GRID_MIN_CS`` risultati prezzati: con la sola O/U si usa
     ``lambdas_from_live_ou``)."""
-    cs_target = market_cs_probs(payload, state)
-    if not cs_target:
+    cells, aggs = market_cs_brackets(payload, state)
+    if not cells:
         return None
     ou_target = market_ou_probs(payload, state)
-    fit = fit_residual_lambdas_to_market(cs_target, ou_target, state, rho)
+    fit = fit_residual_lambdas_to_market(cells, ou_target, state, rho, aggs=aggs)
     if fit is None:
         return None
     lh_res, la_res, loss = fit
-    try:
-        from Betfair.stream.engine.live_engine import inplay_residual_rates
-        mh, ma = inplay_residual_rates(1.0, 1.0, state.minute, state.score_home, state.score_away,
-                                       red_home=state.red_home, red_away=state.red_away,
-                                       yellow_home=state.yellow_home, yellow_away=state.yellow_away,
-                                       league_id=league_id)
-    except Exception:  # noqa: BLE001
+    # F8: un fit sul bordo della griglia non è un λ, è un fallimento → None
+    edge = MARKET_GRID_LAMBDA_MIN * 1.05
+    if lh_res <= edge or la_res <= edge or lh_res >= MARKET_GRID_LAMBDA_MAX * 0.95 or la_res >= MARKET_GRID_LAMBDA_MAX * 0.95:
         return None
-    if mh <= 0 or ma <= 0:
+    mult = _live_multipliers(state, league_id)
+    if mult is None:
         return None
-
-    def clamp(v: float) -> float:
-        return min(LAMBDA_PRE_MAX, max(LAMBDA_PRE_MIN, float(v)))
-
-    return clamp(lh_res / mh), clamp(la_res / ma), {
+    mh, ma = mult
+    return lh_res / mh, la_res / ma, {
         "lambda_residual": [round(lh_res, 4), round(la_res, 4)], "loss": round(loss, 6),
-        "n_cs": len(cs_target), "n_ou": len(ou_target),
+        "n_cs": len(cells), "n_ou": len(ou_target), "n_agg": len(aggs),
     }
 
 
@@ -687,6 +902,35 @@ def cover_cost(size: float, lay_price: float, back_price: Optional[float]) -> Op
     if back_price is None or back_price <= 1.0 or lay_price <= 1.0 or size <= 0:
         return None
     return round(float(size) * (float(lay_price) / float(back_price) - 1.0), 2)
+
+
+def expected_value(p: float, price: float, size: float, commission: float,
+                   cover: Optional[float], p_hedge: float, kappa: float) -> float:
+    """EV (€) di un lay di ``size`` a ``price`` con P ``p`` che il risultato esca:
+    (1−p)·size·(1−c) − p·size·(L−1) − κ·p_hedge·costo_copertura (review F5)."""
+    c = max(0.0, min(0.5, float(commission)))
+    ev = (1.0 - p) * size * (1.0 - c) - p * size * (float(price) - 1.0)
+    if cover is not None:
+        ev -= float(kappa) * float(p_hedge) * float(cover)
+    return ev
+
+
+def rank_by_ev(cands: list, *, size: float, commission: float, p_hedge: float, kappa: float) -> Optional[Any]:
+    """Fra le ``ModelSelection`` sceglie quella col VALORE ATTESO massimo,
+    contando anche il costo atteso della copertura; copertura impossibile
+    (liquidità back insufficiente) penalizzata."""
+    if not cands:
+        return None
+
+    def key(c):
+        cost = cover_cost(size, c.price, c.back_price)
+        need = float(size) * float(c.price) / float(c.back_price) if c.back_price and c.back_price > 1 else None
+        liquid = c.back_size is None or c.back_size <= 0 or need is None or c.back_size >= need
+        coverable = 1 if (cost is not None and liquid) else 0
+        ev = expected_value(c.p_selected, c.price, size, commission, cost, p_hedge, kappa)
+        return (coverable, ev, -c.p_selected)
+
+    return max(cands, key=key)
 
 
 def rank_by_cover_cost(cands: list, *, size: float, band_ratio: float) -> Optional[Any]:

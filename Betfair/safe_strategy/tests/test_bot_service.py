@@ -907,7 +907,9 @@ def test_settlement_gamba_orfana_con_apertura_gia_regolata():
     res = _run(db, market=mk)
     assert res["settled"] == 1
     c = db.get_trade(cid)
-    assert c["status"] == "lost" and c["pnl"] == pytest.approx(-12.0, abs=0.01)
+    # netting col padre già regolato (review HIGH-3): netto di mercato 10 − 12 = −2 → nessuna
+    # commissione; la chiusura prende −2 − 9,5 = −11,5 (padre + chiusura = −2 esatto)
+    assert c["status"] == "lost" and c["pnl"] == pytest.approx(-11.5, abs=0.01)
     assert "settle_orphan_closing" in db.kinds()
 
 

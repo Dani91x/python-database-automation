@@ -10,10 +10,11 @@ Riferimento: COSTITUZIONE_OMEGA.md §2 (matematica), §3 (selezione),
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
 # ---------------------------------------------------------------------------
@@ -41,20 +42,40 @@ MAX_PRICE = 1000.0
 _SCORELINE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 
 
-def round_to_tick(price: float) -> float:
-    """Arrotonda un prezzo al tick Betfair valido più vicino (clamp ai limiti)."""
+def _tick_bounds(price: float) -> tuple[float, float]:
+    """(tick valido ≤ price, tick valido ≥ price) sulla scala Betfair. Il bordo
+    superiore di una banda È un tick valido (è l'inizio della banda dopo)."""
     if price <= MIN_PRICE:
-        return MIN_PRICE
+        return MIN_PRICE, MIN_PRICE
     if price >= MAX_PRICE:
-        return MAX_PRICE
+        return MAX_PRICE, MAX_PRICE
     for lo, hi, step in _LADDER:
         if lo <= price < hi:
-            steps = round((price - lo) / step)
-            snapped = lo + steps * step
-            # evita di scivolare nella banda successiva per arrotondamento
-            snapped = min(snapped, hi - step) if snapped >= hi else snapped
-            return round(snapped, 2)
-    return round(price, 2)
+            n = int((price - lo) / step + 1e-9)
+            low = round(lo + n * step, 2)
+            high = round(min(low + step, hi), 2)
+            if abs(low - price) < 1e-9:
+                high = low
+            return low, high
+    return round(price, 2), round(price, 2)
+
+
+def round_to_tick(price: float) -> float:
+    """Tick Betfair valido PIÙ VICINO (review 11/09 HIGH-2: la vecchia versione
+    scendeva di un tick intero quando il tick giusto era il bordo della banda:
+    49,9 → 48 invece di 50; 99 → 95 invece di 100)."""
+    low, high = _tick_bounds(float(price))
+    return low if (price - low) <= (high - price) else high
+
+
+def tick_up(price: float) -> float:
+    """Primo tick valido ≥ price (per un LAY taker: accettare un prezzo ≥ per matchare)."""
+    return _tick_bounds(float(price))[1]
+
+
+def tick_down(price: float) -> float:
+    """Ultimo tick valido ≤ price (per un BACK taker)."""
+    return _tick_bounds(float(price))[0]
 
 
 def is_scoreline(name: Optional[str]) -> bool:
@@ -199,10 +220,10 @@ def lay_size_from_target(
     c = float(commission)
     denom = max(1.0 - c, 1e-6)
     s = target / denom
-    if s < min_stake:
-        s = min_stake
     if rounding and rounding > 0:
         s = round(round(s / rounding) * rounding, 2)
+    if s < min_stake:
+        s = float(min_stake)          # minimo DOPO l'arrotondamento (review LOW)
     return max(s, 0.0)
 
 
@@ -217,7 +238,7 @@ def apply_liability_cap(size: float, price: float, cap: float) -> float:
         return size
     if price <= 1.0:
         return size
-    max_size = cap / (price - 1.0)
+    max_size = math.floor(cap / (price - 1.0) * 100.0) / 100.0   # mai sopra il cap (review MED-11)
     if size > max_size:
         return round(max_size, 2)
     return size
@@ -242,6 +263,8 @@ def paper_fill(
     target_size: float,
     best_price: float,
     lay_ladder: tuple[tuple[float, float], ...] = (),
+    limit_price: Optional[float] = None,
+    side: str = "lay",
 ) -> Optional[PaperFill]:
     """Simula il match di un lay per ``target_size``.
 
@@ -257,6 +280,12 @@ def paper_fill(
     filled = 0.0
     for price, avail in levels:
         if remaining <= 0:
+            break
+        # review MED-9: un ordine LIMITE non cammina oltre il proprio prezzo
+        # (lay: mai a prezzi PIÙ ALTI del limite; back: mai più bassi)
+        if limit_price is not None and (
+                (side == "lay" and price > float(limit_price) + 1e-9)
+                or (side == "back" and price < float(limit_price) - 1e-9)):
             break
         take = min(remaining, avail)
         if take <= 0:
@@ -304,6 +333,8 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     open_n = 0
     realized_today = 0.0
     traded_today = 0
+    events_all: set = set()
+    events_today: set = set()
     placed_by_id = {r.get("id"): r.get("placed_at") for r in rows if r.get("id") is not None}
     for r in rows:
         st = r.get("status")
@@ -324,16 +355,20 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
             realized += pnl
             settled += 1
             traded += 1
+            events_all.add(str(r.get("event_id")))
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 realized_today += pnl
                 traded_today += 1
+                events_today.add(str(r.get("event_id")))
         elif st in ("open", "hedged") or (st == "pending" and (
                 r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref"))):
-            open_liab += float(r.get("liability") or 0.0)
+            open_liab += residual_liability(r)
             open_n += 1
             traded += 1
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 traded_today += 1
+                events_today.add(str(r.get("event_id")))
+            events_all.add(str(r.get("event_id")))
     return {
         "realized_profit": round(realized, 2),
         "open_liability": round(open_liab, 2),
@@ -343,7 +378,24 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
         "total_count": len(rows),
         "realized_today": round(realized_today if day_start else realized, 2),
         "matches_traded_today": traded_today if day_start else traded,
+        # §16: partite DISTINTE (il cap max_events è per partita, non per gamba)
+        "events_traded": len(events_all),
+        "events_today": len(events_today) if day_start else len(events_all),
     }
+
+
+def residual_liability(r: dict) -> float:
+    """Rischio ancora VIVO di una posizione: la liability piena se nuda; per una
+    posizione coperta (anche in parte) il residuo `max(0, −if_win)` scritto
+    dallo strato di esecuzione (review MED-5: un trade chiuso a −22 contava
+    ancora 116 € di rischio)."""
+    meta = r.get("meta") or {}
+    if meta.get("hedged_size") is not None and meta.get("if_win") is not None:
+        try:
+            return round(max(0.0, -float(meta["if_win"])), 2)
+        except (TypeError, ValueError):
+            pass
+    return float(r.get("liability") or 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -359,24 +411,42 @@ def _order_matches(o: dict, ref: Optional[str], market_id, selection_id, side: s
     """
     o_ref = o.get("customer_order_ref")
     if o_ref:
-        return bool(ref) and o_ref == ref
+        refs = list(ref) if isinstance(ref, (list, tuple, set)) else ([ref] if ref else [])
+        return o_ref in refs
     if o.get("market_id") != market_id or o.get("selection_id") != selection_id:
         return False
     o_side = o.get("side")
     return (not o_side) or (o_side == side)
 
 
-def expected_customer_ref(trade: dict) -> str:
-    """customerOrderRef atteso per un trade (stesso troncamento del place).
+def customer_ref_for(trade_id: Any) -> str:
+    """customerOrderRef PER GAMBA (§16): ``omega-t<trade_id>`` — lo stesso della
+    coda flumine e delle chiusure, unico per riga. Con due gambe per partita
+    il vecchio ref per-evento faceva rifiutare il secondo ordine e confondeva
+    la riconciliazione (review C1)."""
+    return f"omega-t{int(trade_id)}"[:32]
 
-    AUTO: ``omega-<event_id>`` (unico: I1 = un solo lay auto per evento).
-    MANUALE: ``omega-m<trade_id>`` — per-GAMBA, derivabile dalla riga stessa:
-    due lay manuali sullo stesso evento NON devono mai condividere il ref,
-    altrimenti la riconciliazione confonderebbe due ordini reali distinti.
-    """
+
+def candidate_customer_refs(trade: dict) -> list[str]:
+    """Ref con cui un pending può essere riconosciuto su Betfair, in ordine:
+    per-gamba (nuovo, ``omega-t<id>``), poi i ref STORICI (``omega-m<id>``
+    manuale, ``omega-<event_id>`` auto) — MAI per le gambe di chiusura, che
+    altrimenti verrebbero confermate con l'ordine dell'APERTURA (review CRIT-1)."""
+    refs: list[str] = []
+    if trade.get("id") is not None:
+        refs.append(customer_ref_for(trade["id"]))
+    if trade.get("closes_trade_id") is not None:
+        return refs
     if str(trade.get("origin") or "auto") == "manual" and trade.get("id") is not None:
-        return f"omega-m{trade['id']}"[:32]
-    return f"omega-{trade.get('event_id')}"[:32]
+        refs.append(f"omega-m{trade['id']}"[:32])
+    else:
+        refs.append(f"omega-{trade.get('event_id')}"[:32])
+    return refs
+
+
+def expected_customer_ref(trade: dict) -> str:
+    """Ref principale atteso (compatibilità): il primo dei candidati."""
+    return candidate_customer_refs(trade)[0]
 
 
 # GRACE PERIOD: sotto questa età un pending non trovato su Betfair NON viene
@@ -410,11 +480,15 @@ def reconcile_decision(
     - non trovato da nessuna parte e recente (<24h) → 'free' (mai piazzato → libera)
     - non trovato e vecchio → 'error' (non rischiare: mai un doppio ordine)
     """
-    ref = expected_customer_ref(trade)
+    ref = candidate_customer_refs(trade)
     mid = trade.get("market_id")
     sid = trade.get("selection_id")
     sid = int(sid) if sid is not None else None
     side = str(trade.get("side", "lay")).lower()
+    if trade.get("closes_trade_id") is not None:
+        # una gamba di CHIUSURA condivide mercato+selezione con l'apertura: mai il
+        # fallback senza ref (confermerebbe la chiusura con l'ordine del lay)
+        mid, sid = None, None
 
     for o in current_orders:
         if _order_matches(o, ref, mid, sid, side):
@@ -508,6 +582,9 @@ def settle_pnl(
 # si regolano al settlement (void) del mercato.
 _PHASE_FINISHED = ("finished", "matchended", "fulltime", "ended",
                    "secondhalfend", "abandoned", "postponed", "cancelled")
+# stati che chiudono la partita SENZA un risultato valido (mercato VOID): la
+# missione si chiude ('finita') ma nessun risultato reale va dedotto (review MED-8)
+_PHASE_VOID = ("abandoned", "postponed", "cancelled", "interrupted", "suspended")
 # supplementari/rigori PRIMA dell'intervallo: "ExtraTimeHalfTime" contiene
 # anche "halftime" e senza precedenza verrebbe classificato 'ht' (review 15/07)
 _PHASE_ET = ("extratime", "penalt")
@@ -629,6 +706,7 @@ def is_eligible(
 # OMEGA v2 — DUE GAMBE PER PARTITA (§14, 11/09): gambe residue e target
 # ---------------------------------------------------------------------------
 LEG_PHASES: tuple[str, ...] = ("ht_cs", "ft_cs")
+HT_BREAK_MIN = 15     # intervallo: l'orologio dal kickoff corre anche durante la pausa
 
 
 def legs_remaining(
@@ -641,6 +719,7 @@ def legs_remaining(
     max_events: int = 0,
     traded_count: int = 0,
     excluded_ids: "set[str] | frozenset[str] | None" = None,
+    minute_of: Optional[Callable[[str], Optional[int]]] = None,
 ) -> tuple[int, int]:
     """(gambe ancora piazzabili, partite con almeno una gamba piazzabile).
 
@@ -663,8 +742,14 @@ def legs_remaining(
         eid = str(getattr(ev, "event_id", ""))
         if not eid or eid in excluded:
             continue
-        open_date = getattr(ev, "open_date", None)
-        minute = minute_from_clock(open_date, now) if open_date is not None else 0
+        # minuto REALE dal feed quando c'è (review HIGH-1: l'orologio include
+        # l'intervallo → a 66′ reali diceva 81′ → 1 sola gamba → target ×10);
+        # fallback orologio corretto dell'intervallo (prudente: sovrastima le gambe)
+        minute = minute_of(eid) if minute_of is not None else None
+        if minute is None:
+            open_date = getattr(ev, "open_date", None)
+            clock = minute_from_clock(open_date, now) if open_date is not None else 0
+            minute = clock if clock <= 45 else max(45, clock - HT_BREAK_MIN)
         ht_done = (eid, "ht_cs") in traded_legs
         ft_done = (eid, "ft_cs") in traded_legs
         n = 0
@@ -687,7 +772,9 @@ def legs_remaining(
             new_matches = allowed
     legs = pending_legs + new_legs
     matches = pending_matches + new_matches
-    return max(legs, 1), max(matches, 1)
+    # nessun floor silenzioso (review HIGH-1): 0 gambe = niente da piazzare, non
+    # "tutto l'obiettivo su questa gamba"
+    return max(legs, 0), max(matches, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -730,9 +817,10 @@ def results_from_payload(payload: Optional[dict], *, now: Optional[datetime] = N
                               now=now or datetime.now(timezone.utc), prev="pre")
         if phase == "ht" and ht is None:
             ht = current
-        # a partita finita il corrente È il finale SOLO senza supplementari/rigori:
-        # il Correct Score si regola sui 90′ (review 11/09 LOW-3)
-        if phase == "finita" and ft is None and not any(k in norm for k in _PHASE_ET):
+        # a partita finita il corrente È il finale SOLO senza supplementari/rigori
+        # (il Correct Score si regola sui 90′) e MAI per sospesa/rinviata/annullata
+        if phase == "finita" and ft is None and not any(k in norm for k in _PHASE_ET) \
+                and not any(k in norm for k in _PHASE_VOID):
             ft = current
     return ht, ft
 

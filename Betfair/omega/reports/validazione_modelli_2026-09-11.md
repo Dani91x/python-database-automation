@@ -1,39 +1,47 @@
 # Validazione modelli Omega — 2026-09-11
 
-Campione: 1566 partite FT con gol a minuto coerenti (training 939, test 627).
-Coda = risultati con P ≤ 2 % (quelli che Omega banca): `ratio` = usciti / previsti dal modello
+Campione: 1184 partite FT con gol a minuto coerenti (training 710, test 474).
+Coda = risultati con P ≤ 3 % (model_p_max_pct): `ratio` = usciti / previsti dal modello
 (1 = calibrato; > 1 = il modello SOTTOSTIMA la coda → i lay perdono più del previsto).
-Modelli: poisson (λ di lega + residui live), poisson_cal (calibratore condiviso, famiglie cs_cell/hts_cell), poisson_tail (fattore di coda ×1.3), empirical (tabella per minuto dal training), blend, blend_tail.
+Modelli: poisson (λ di lega + residui live), poisson_cal (calibratore condiviso, famiglie cs_cell/hts_cell), poisson_tail (fattore di coda ×1.3), poisson_cv (mistura lognormale sui λ, cv 0.3), poisson_cv_tail, empirical (tabella per minuto dal training), blend, blend_tail.
+`IC` = intervallo 90 % bootstrap per partita. `lay` = la SOLA selezione che Omega farebbe
+(il risultato meno probabile con 1/120 ≤ P ≤ 3 %, cioè quotato a mercato): usciti / previsti, con IC.
 
 ## Minuto 25' (45)
 
-| modello | n | log-loss | coda n | previsti | usciti | ratio |
-|---|---:|---:|---:|---:|---:|---:|
-| poisson | 627 | 1.252631 | 27516 | 20.5826 | 31 | 1.5061 |
-| poisson_cal | 627 | 1.255184 | 27926 | 24.6472 | 39 | 1.5823 |
-| poisson_tail | 627 | 1.222921 | 26969 | 14.6813 | 15 | 1.0217 |
-| empirical | 603 | 1.347503 | 3224 | 24.7178 | 30 | 1.2137 |
-| blend | 603 | 1.221336 | 26410 | 19.8817 | 28 | 1.4083 |
-| blend_tail | 603 | 1.195665 | 25918 | 14.2414 | 16 | 1.1235 |
+| modello | n | log-loss | coda n | previsti | usciti | ratio | IC 90 % | lay n | lay prev. | lay usciti | lay ratio | lay IC |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|
+| poisson | 474 | 1.217878 | 21310 | 28.0031 | 31 | 1.107 | 0.7537–1.434 | 474 | 8.0374 | 9 | 1.1198 | 0.6214–1.8691 |
+| poisson_cal | 474 | 1.215489 | 21311 | 23.1356 | 31 | 1.3399 | 0.9105–1.7389 | 474 | 6.6985 | 9 | 1.3436 | 0.7462–2.2397 |
+| poisson_tail | 474 | 1.166265 | 21180 | 30.3728 | 27 | 0.889 | 0.6014–1.1804 | 474 | 9.5225 | 9 | 0.9451 | 0.5247–1.5832 |
+| poisson_cv | 474 | 1.217264 | 21310 | 29.4481 | 31 | 1.0527 | 0.7164–1.3639 | 474 | 7.9729 | 9 | 1.1288 | 0.6257–1.8794 |
+| poisson_cv_tail | 474 | 1.165364 | 21187 | 32.4172 | 27 | 0.8329 | 0.5627–1.1075 | 474 | 7.8323 | 5 | 0.6384 | 0.2543–1.15 |
+| empirical | 289 | 1.057413 | 2023 | 26.3341 | 16 | 0.6076 | 0.3797–0.8354 | 289 | 6.0771 | 7 | 1.1519 | 0.4937–1.9746 |
+| blend | 289 | 1.011526 | 13005 | 17.6298 | 14 | 0.7941 | 0.4562–1.1412 | 289 | 6.032 | 3 | 0.4974 | 0.1638–0.9899 |
+| blend_tail | 289 | 0.966547 | 12977 | 20.7292 | 12 | 0.5789 | 0.3381–0.8739 | 289 | 7.1894 | 3 | 0.4173 | 0.1369–0.829 |
 
 ## Minuto 60' (finale)
 
-| modello | n | log-loss | coda n | previsti | usciti | ratio |
-|---|---:|---:|---:|---:|---:|---:|
-| poisson | 627 | 1.840194 | 71124 | 29.3087 | 32 | 1.0918 |
-| poisson_cal | 627 | 1.824087 | 70628 | 39.973 | 25 | 0.6254 |
-| poisson_tail | 627 | 1.805463 | 70804 | 29.9613 | 29 | 0.9679 |
-| empirical | 546 | 2.321105 | 2142 | 24.3932 | 34 | 1.3938 |
-| blend | 546 | 1.74066 | 62203 | 25.9053 | 29 | 1.1195 |
-| blend_tail | 546 | 1.705582 | 61899 | 26.9651 | 21 | 0.7788 |
+| modello | n | log-loss | coda n | previsti | usciti | ratio | IC 90 % | lay n | lay prev. | lay usciti | lay ratio | lay IC |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|
+| poisson | 474 | 1.795922 | 54442 | 38.8393 | 39 | 1.0041 | 0.7435–1.2594 | 474 | 4.9296 | 9 | 1.8257 | 0.8144–2.869 |
+| poisson_cal | 474 | 1.780845 | 53543 | 34.1587 | 22 | 0.6441 | 0.4352–0.9045 | 474 | 4.4385 | 0 | 0.0 | 0.0–0.0 |
+| poisson_tail | 474 | 1.723739 | 54218 | 40.7669 | 29 | 0.7114 | 0.5142–0.927 | 474 | 5.4625 | 6 | 1.0984 | 0.3717–1.8289 |
+| poisson_cv | 474 | 1.785871 | 54442 | 42.4173 | 39 | 0.9194 | 0.6812–1.1535 | 474 | 5.0551 | 9 | 1.7804 | 0.7932–2.8028 |
+| poisson_cv_tail | 474 | 1.713394 | 54013 | 38.8412 | 27 | 0.6951 | 0.4897–0.926 | 474 | 4.25 | 3 | 0.7059 | 0.2345–1.6453 |
+| empirical | 178 | 1.278491 | 890 | 13.9752 | 12 | 0.8587 | 0.5009–1.288 | 178 | 2.2066 | 1 | 0.4532 | 0.0–1.3596 |
+| blend | 178 | 1.030978 | 20648 | 12.7969 | 7 | 0.547 | 0.2348–0.9381 | 178 | 2.5618 | 0 | 0.0 | 0.0–0.0 |
+| blend_tail | 178 | 0.986789 | 20642 | 15.6406 | 7 | 0.4476 | 0.1918–0.7675 | 178 | 1.5945 | 2 | 1.2543 | 0.0–3.1017 |
 
 ## Minuto 70' (finale)
 
-| modello | n | log-loss | coda n | previsti | usciti | ratio |
-|---|---:|---:|---:|---:|---:|---:|
-| poisson | 627 | 1.519942 | 72055 | 24.7667 | 29 | 1.1709 |
-| poisson_cal | 627 | 1.535782 | 71118 | 24.7738 | 14 | 0.5651 |
-| poisson_tail | 627 | 1.491069 | 72002 | 30.9918 | 29 | 0.9357 |
-| empirical | 534 | 1.769284 | 1753 | 15.938 | 16 | 1.0039 |
-| blend | 534 | 1.417683 | 61537 | 21.719 | 22 | 1.0129 |
-| blend_tail | 534 | 1.39066 | 61101 | 17.967 | 19 | 1.0575 |
+| modello | n | log-loss | coda n | previsti | usciti | ratio | IC 90 % | lay n | lay prev. | lay usciti | lay ratio | lay IC |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|
+| poisson | 474 | 1.472956 | 54904 | 30.5572 | 32 | 1.0472 | 0.7474–1.3344 | 474 | 5.3109 | 5 | 0.9415 | 0.3744–1.8719 |
+| poisson_cal | 474 | 1.501869 | 54442 | 35.2846 | 22 | 0.6235 | 0.3964–0.8476 | 474 | 4.8611 | 5 | 1.0286 | 0.4096–1.857 |
+| poisson_tail | 474 | 1.412897 | 54502 | 24.7082 | 22 | 0.8904 | 0.5704–1.2241 | 474 | 6.582 | 5 | 0.7596 | 0.3018–1.5123 |
+| poisson_cv | 474 | 1.466524 | 54953 | 34.2931 | 36 | 1.0498 | 0.7572–1.3145 | 474 | 5.7221 | 5 | 0.8738 | 0.3476–1.737 |
+| poisson_cv_tail | 474 | 1.406238 | 54497 | 27.6818 | 22 | 0.7947 | 0.5085–1.0935 | 474 | 6.9542 | 5 | 0.719 | 0.2863–1.4313 |
+| empirical | 167 | 1.016473 | 835 | 6.1567 | 7 | 1.137 | 0.4873–1.7867 | 167 | 1.5392 | 0 | 0.0 | 0.0–0.0 |
+| blend | 167 | 0.806961 | 19536 | 11.1937 | 7 | 0.6253 | 0.2683–1.0666 | 167 | 1.8126 | 0 | 0.0 | 0.0–0.0 |
+| blend_tail | 167 | 0.769408 | 19374 | 8.8032 | 4 | 0.4544 | 0.1135–0.7952 | 167 | 1.5922 | 0 | 0.0 | 0.0–0.0 |
