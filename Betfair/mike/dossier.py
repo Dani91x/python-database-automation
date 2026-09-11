@@ -76,12 +76,43 @@ def build_prematch(event_id: str, db: Any) -> Dict[str, Any]:
     return out
 
 
+def combine_hazard(atlas_p: Optional[float], model_p: Optional[float], pressure_mult: float = 1.0) -> Optional[float]:
+    """Hazard 3' PRUDENTE: il MASSIMO fra Atlante empirico e modello λ-residue,
+    quest'ultimo amplificato dalla pressione (corner/cartellini, ≤ ×1.25).
+    None solo se entrambe le fonti mancano (→ l'engine copre subito)."""
+    vals = []
+    if atlas_p is not None:
+        vals.append(float(atlas_p))
+    if model_p is not None:
+        vals.append(min(1.0, float(model_p) * max(1.0, float(pressure_mult))))
+    return round(max(vals), 4) if vals else None
+
+
+def cover_gain_pct(p_over_now: Optional[float], p_over_later: Optional[float]) -> Optional[float]:
+    """Risparmio atteso (%) sulla size di copertura se si aspetta senza gol:
+    X ∝ 1/(quota−1) con quota equa = 1/P(Over 4.5) → X_later/X_now = (1/p_now−1)/(1/p_later−1)."""
+    if not p_over_now or not p_over_later or p_over_now >= 1 or p_over_later >= 1:
+        return None
+    x_now = 1.0 / (1.0 / p_over_now - 1.0)
+    x_later = 1.0 / (1.0 / p_over_later - 1.0)
+    return round(max(0.0, (1.0 - x_later / x_now) * 100.0), 2)
+
+
 def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Optional[int],
                score_away: Optional[int], red_home: int = 0, red_away: int = 0,
                atlas: Optional[Dict[str, Any]] = None, home: Optional[str] = None,
-               away: Optional[str] = None) -> Dict[str, Any]:
-    """{hazard, hazard_source, p4_model} per lo stato live corrente (None se ignoto)."""
-    out: Dict[str, Any] = {"hazard": None, "hazard_source": "none", "p4_model": None}
+               away: Optional[str] = None, payload: Optional[Dict[str, Any]] = None,
+               wait_step_min: int = 5) -> Dict[str, Any]:
+    """{hazard, hazard_atlas, hazard_model, hazard_source, pressure, p4_model,
+    p_over45_model, cover_gain_pct} per lo stato live corrente (None se ignoto).
+
+    hazard = max(Atlante empirico, modello λ-residue × pressione): la fonte piu'
+    prudente comanda. cover_gain_pct = quanto costerebbe di meno la copertura fra
+    ``wait_step_min`` minuti senza gol (modello): sotto soglia, l'engine copre subito.
+    """
+    out: Dict[str, Any] = {"hazard": None, "hazard_atlas": None, "hazard_model": None,
+                           "hazard_source": "none", "pressure": 1.0, "p4_model": None,
+                           "p_over45_model": None, "cover_gain_pct": None}
     if minute is None or score_home is None or score_away is None:
         return out
     goals = int(score_home) + int(score_away)
@@ -90,20 +121,49 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
             from Betfair.stream.scalper.theta_bot import hazard_lookup
 
             p, src = hazard_lookup(atlas, float(minute), goals, dossier.get("league_id"), home, away)
-            out["hazard"] = round(float(p), 4) if p is not None else None
+            out["hazard_atlas"] = round(float(p), 4) if p is not None else None
             out["hazard_source"] = src
     except Exception as ex:  # noqa: BLE001
-        logger.debug("[mike.dossier] hazard KO: %s", str(ex)[:120])
+        logger.debug("[mike.dossier] hazard atlante KO: %s", str(ex)[:120])
     try:
-        lh, la = dossier.get("lambda_home"), dossier.get("lambda_away")
-        if lh and la:
+        if payload:
+            from Betfair.safe_strategy.pressure import pressure_from_payload
+
+            mh, ma = pressure_from_payload(payload)
+            out["pressure"] = round(max(float(mh), float(ma)), 3)
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike.dossier] pressione KO: %s", str(ex)[:120])
+    lh, la = dossier.get("lambda_home"), dossier.get("lambda_away")
+    if lh and la:
+        try:
+            from Betfair.stream.engine.live_engine_pro import event_goal_hazard
+
+            hz = event_goal_hazard(score_home=int(score_home), score_away=int(score_away), minute=int(minute),
+                                   prematch_lambda_home=float(lh), prematch_lambda_away=float(la),
+                                   league_id=dossier.get("league_id"), red_home=int(red_home or 0),
+                                   red_away=int(red_away or 0), horizon_min=3.0)
+            if hz and hz.get("p_next") is not None:
+                out["hazard_model"] = round(float(hz["p_next"]), 4)
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[mike.dossier] hazard modello KO: %s", str(ex)[:120])
+        try:
             from Betfair.omega.omega_model import LiveState, score_probs
 
+            rho = float(dossier.get("rho") or DEFAULT_RHO)
             state = LiveState(minute=int(minute), score_home=int(score_home), score_away=int(score_away),
                               red_home=int(red_home or 0), red_away=int(red_away or 0))
-            grid = score_probs(lh_pre=float(lh), la_pre=float(la), rho=float(dossier.get("rho") or DEFAULT_RHO),
-                               state=state, league_id=dossier.get("league_id"), half=False)
+            grid = score_probs(lh_pre=float(lh), la_pre=float(la), rho=rho, state=state,
+                               league_id=dossier.get("league_id"), half=False)
             out["p4_model"] = _p_total(grid, 4)
-    except Exception as ex:  # noqa: BLE001
-        logger.debug("[mike.dossier] p4_model KO: %s", str(ex)[:120])
+            p_over_now = round(sum(p for (h, a), p in grid.items() if h + a >= 5), 4)
+            out["p_over45_model"] = p_over_now
+            later = LiveState(minute=min(90, int(minute) + int(wait_step_min)), score_home=int(score_home),
+                              score_away=int(score_away), red_home=int(red_home or 0), red_away=int(red_away or 0))
+            grid_l = score_probs(lh_pre=float(lh), la_pre=float(la), rho=rho, state=later,
+                                 league_id=dossier.get("league_id"), half=False)
+            p_over_later = round(sum(p for (h, a), p in grid_l.items() if h + a >= 5), 4)
+            out["cover_gain_pct"] = cover_gain_pct(p_over_now, p_over_later)
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[mike.dossier] p4_model KO: %s", str(ex)[:120])
+    out["hazard"] = combine_hazard(out["hazard_atlas"], out["hazard_model"], out["pressure"])
     return out

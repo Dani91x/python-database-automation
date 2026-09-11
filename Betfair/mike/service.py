@@ -571,10 +571,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     if bool(payload.get("inplay")):
         live = D.live_frame(dossier, minute=payload.get("minute"), score_home=payload.get("score_home"),
                             score_away=payload.get("score_away"), red_home=payload.get("red_home") or 0,
-                            red_away=payload.get("red_away") or 0, atlas=atlas, home=info.home, away=info.away)
+                            red_away=payload.get("red_away") or 0, atlas=atlas, home=info.home, away=info.away,
+                            payload=payload, wait_step_min=int(params.get("cover_wait_step_min", 5)))
     snap = F.snapshot_from_row(row, info, now=now_ts, params=params, scanner_age_s=scanner_age,
                                hazard=live.get("hazard"), p4_model=live.get("p4_model"),
-                               last_goal_ts=extra.get("last_goal_ts"))
+                               last_goal_ts=extra.get("last_goal_ts"),
+                               cover_gain_pct=live.get("cover_gain_pct"))
     if snap is None:
         return (0, 0)
 
@@ -700,7 +702,10 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
 
     # -- persistenza (write-on-change) --------------------------------------------
     ev["live"] = {"minute": snap.minute, "goals": snap.goals, "inplay": snap.inplay, "ht": snap.ht_active,
-                  "hazard": snap.hazard, "p4_market": snap.p4_market, "p4_model": snap.p4_model,
+                  "hazard": snap.hazard, "hazard_atlas": live.get("hazard_atlas"),
+                  "hazard_model": live.get("hazard_model"), "pressure": live.get("pressure"),
+                  "cover_gain_pct": live.get("cover_gain_pct"), "p_over45_model": live.get("p_over45_model"),
+                  "p4_market": snap.p4_market, "p4_model": snap.p4_model,
                   "cashout": extra.get("last_cashout"), "cover_wait": extra.get("last_cover_wait"),
                   "pnl_by_total": E.net_pnl_by_total(ctx.legs, C.commission_rate(params)),
                   "books": {f"{m}|{s}": dataclasses.asdict(b) for (m, s), b in snap.books.items()},

@@ -160,8 +160,15 @@ def test_cover_timing_policy():
                           last_goal_ts=KO + 1700, now=KO + 1800) == "cover"
     assert E.cover_timing(params=p, goals=3, minute=60, hazard=0.05, p4_market=0.1,
                           last_goal_ts=None, now=KO + 3600) == "skip"
-    assert E.cover_timing(params=params(cover_policy="wait"), **{**kw, "minute": 10}) == "wait"
-    assert E.cover_timing(params=params(cover_policy="wait"), **{**kw, "minute": 15}) == "cover"
+    assert E.cover_timing(params=params(cover_policy="wait"), **{**kw, "minute": 8}) == "wait"
+    assert E.cover_timing(params=params(cover_policy="wait"), **{**kw, "minute": 10}) == "cover"
+    # "intelligente ma non lenta": quota gia' buona → copri; risparmio atteso basso → copri
+    assert E.cover_timing(params=p, price_over=7.0, **kw) == "cover"
+    assert E.cover_timing(params=p, price_over=6.0, **kw) == "wait"
+    assert E.cover_timing(params=p, price_over=6.0, cover_gain_pct=5.0, **kw) == "cover"
+    assert E.cover_timing(params=p, price_over=6.0, cover_gain_pct=12.0, **kw) == "wait"
+    # hazard 6.5% (> 6%) → copri: la fonte piu' prudente comanda
+    assert E.cover_timing(params=p, **{**kw, "hazard": 0.065}) == "cover"
 
 
 def test_settle_legs():
@@ -367,11 +374,15 @@ def _live_uncovered():
 
 def test_live_cover_wait_then_cover():
     ctx, p = _live_uncovered()
-    s = snap(KO + 300, u35=book(1.45, inplay=True), o45=book(8.0, bs=50, inplay=True),
+    s = snap(KO + 300, u35=book(1.45, inplay=True), o45=book(6.0, bs=50, inplay=True),
              inplay=True, minute=5, goals=0, hazard=0.05, p4_market=0.12)
     d = E.decide(ctx, s, p)
     assert d.state == "LIVE_UNCOVERED" and d.actions == []
-    assert d.telemetry["cover_wait"]["x_now"] == pytest.approx(E.cover_size(20, 8.0, 0.05, 1.2), abs=1e-6)
+    assert d.telemetry["cover_wait"]["x_now"] == pytest.approx(E.cover_size(20, 6.0, 0.05, 1.2), abs=1e-6)
+    # quota Over gia' buona (>= 7): si copre subito anche con hazard basso
+    s_good = snap(KO + 300, u35=book(1.45, inplay=True), o45=book(8.0, bs=50, inplay=True),
+                  inplay=True, minute=5, goals=0, hazard=0.05, p4_market=0.12)
+    assert E.decide(ctx, s_good, p).state == "LIVE_COVER_PENDING"
     s2 = snap(KO + 20 * 60, u35=book(1.35, inplay=True), o45=book(9.0, bs=50, inplay=True),
               inplay=True, minute=20, goals=0, hazard=0.05, p4_market=0.12)
     d2 = E.decide(ctx, s2, p)

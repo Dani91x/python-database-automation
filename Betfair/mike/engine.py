@@ -139,6 +139,8 @@ class Snapshot:
     last_goal_ts: Optional[float] = None
     market_status: str = "OPEN"
     final_total: Optional[int] = None
+    # risparmio atteso (%) sulla copertura se si aspetta cover_wait_step_min senza gol
+    cover_gain_pct: Optional[float] = None
 
     def book(self, market: str, selection: str) -> Optional[Book]:
         return self.books.get((market, selection))
@@ -402,8 +404,17 @@ def loss_exit_ok(value_net: float, base: float, pct: float, *, goals: Optional[i
 
 def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optional[float],
                  p4_market: Optional[float], last_goal_ts: Optional[float], now: float,
-                 params: Dict[str, Any]) -> str:
-    """'cover' | 'wait' | 'skip' per la copertura sull'Over 4.5."""
+                 params: Dict[str, Any], price_over: Optional[float] = None,
+                 cover_gain_pct: Optional[float] = None) -> str:
+    """'cover' | 'wait' | 'skip' per la copertura sull'Over 4.5.
+
+    Regola "intelligente ma non lenta": si ASPETTA solo se TUTTE valgono:
+      0 gol · minuto < cover_wait_max_min · hazard 3' ≤ cover_wait_hazard_max ·
+      P(4) mercato ≤ cover_wait_p4_max · quota Over < cover_good_price ·
+      risparmio atteso ≥ cover_wait_min_gain_pct (se stimabile).
+    Ogni dato mancante = si copre (mai attesa al buio). Dopo un gol: attesa del
+    solo riprezzo (cover_postgoal_delay_s), poi copertura.
+    """
     g = int(goals or 0)
     if g > int(params["cover_max_goals"]):
         return "skip"
@@ -422,10 +433,15 @@ def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optiona
         return "wait"
     if hazard is None or p4_market is None:
         return "cover"
-    if float(hazard) <= float(params["cover_wait_hazard_max"]) and \
-            float(p4_market) <= float(params["cover_wait_p4_max"]):
-        return "wait"
-    return "cover"
+    if float(hazard) > float(params["cover_wait_hazard_max"]):
+        return "cover"
+    if float(p4_market) > float(params["cover_wait_p4_max"]):
+        return "cover"
+    if price_over is not None and float(price_over) >= float(params.get("cover_good_price", 7.0)):
+        return "cover"          # la quota e' gia' buona: aspettare non paga il rischio
+    if cover_gain_pct is not None and float(cover_gain_pct) < float(params.get("cover_wait_min_gain_pct", 8.0)):
+        return "cover"          # il risparmio atteso non vale il rischio di un gol
+    return "wait"
 
 
 def settle_legs(legs: List[Leg], total_goals: int, commission: float) -> SettleResult:
@@ -816,10 +832,12 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     acts = _late_persist_cancel(ctx, snap, params)
     if not params["cover_enabled"]:
         return Decision("LIVE_COVERED", acts, "copertura disabilitata", updates={"cover_skipped": True})
+    bk = snap.book(MARKET_OU45, SEL_OVER)
     timing = cover_timing(goals=snap.goals, minute=snap.minute, hazard=snap.hazard,
                           p4_market=snap.p4_market, last_goal_ts=snap.last_goal_ts,
-                          now=snap.now, params=params)
-    bk = snap.book(MARKET_OU45, SEL_OVER)
+                          now=snap.now, params=params,
+                          price_over=bk.best_back if bk else None,
+                          cover_gain_pct=snap.cover_gain_pct)
     x_now = None
     if bk is not None and bk.best_back is not None and bk.best_back > 1.0:
         x_now = cover_size(S, bk.best_back, c, float(params["cover_profit_factor"]))

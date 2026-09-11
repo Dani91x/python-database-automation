@@ -174,7 +174,8 @@ def feed_fresh(row: Dict[str, Any], now: float, max_age_s: float, scanner_age_s:
 def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, params: Dict[str, Any],
                       scanner_age_s: Optional[float], hazard: Optional[float] = None,
                       p4_model: Optional[float] = None, last_goal_ts: Optional[float] = None,
-                      market_status_override: Optional[str] = None) -> Optional[E.Snapshot]:
+                      market_status_override: Optional[str] = None,
+                      cover_gain_pct: Optional[float] = None) -> Optional[E.Snapshot]:
     payload = row.get("payload") if isinstance(row, dict) else None
     if not isinstance(payload, dict) or info.ko_at is None:
         return None
@@ -195,6 +196,7 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         feed_fresh=feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s),
         hazard=hazard, p4_market=implied_p4(blocks, info), p4_model=p4_model,
         last_goal_ts=last_goal_ts, market_status=status, final_total=None,
+        cover_gain_pct=cover_gain_pct,
     )
 
 

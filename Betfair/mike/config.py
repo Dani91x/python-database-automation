@@ -104,9 +104,16 @@ PARAM_SPEC: dict[str, Spec] = {
     "cover_enabled": (True, bool, None, None, None),
     "cover_profit_factor": (1.2, float, 1.0, 3.0, None),
     "cover_policy": ("auto", str, None, None, ("auto", "immediate", "wait")),
-    "cover_wait_hazard_max": (0.08, float, 0.0, 1.0, None),
-    "cover_wait_max_min": (15, int, 0, 45, None),
+    # attesa "intelligente ma non lenta": si aspetta SOLO se l'hazard di gol nei 3'
+    # (max fra Atlante empirico e modello λ-residue con pressione) e' basso, la P(4)
+    # di mercato e' bassa, la quota Over NON e' gia' buona e il risparmio atteso
+    # sulla copertura nei prossimi cover_wait_step_min vale almeno cover_wait_min_gain_pct
+    "cover_wait_hazard_max": (0.06, float, 0.0, 1.0, None),
+    "cover_wait_max_min": (10, int, 0, 45, None),
     "cover_wait_p4_max": (0.16, float, 0.0, 1.0, None),
+    "cover_good_price": (7.0, float, 1.01, 50.0, None),
+    "cover_wait_min_gain_pct": (8.0, float, 0.0, 100.0, None),
+    "cover_wait_step_min": (5, int, 1, 20, None),
     "cover_postgoal_delay_s": (45, int, 0, 300, None),
     "cover_max_goals": (2, int, 0, 4, None),
     "cover_rounding": ("ceil", str, None, None, ("ceil", "floor", "nearest")),
