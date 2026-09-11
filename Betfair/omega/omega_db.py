@@ -418,7 +418,19 @@ def aggregates(day_start=None) -> dict[str, float]:
     # §14 (11/09): ``id`` + ``closes_trade_id`` servono per (a) escludere le gambe
     # di chiusura dai conteggi partita/liability e (b) attribuire il loro P&L al
     # GIORNO dell'apertura che chiudono (giornata = partite di quel giorno).
-    # PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa farebbe
+    # VELOCE (§14): i numeri li calcola il DB in UNA query (RPC get_omega_aggregates,
+    # migrazione omega_daily_v2) — nessuna lettura di tutta la tabella ogni ciclo.
+    # Fallback al percorso legacy solo se la RPC non esiste ancora.
+    if day_start is not None:
+        try:
+            res = _sb().rpc("get_omega_aggregates", {}).execute()
+            data = getattr(res, "data", None)
+            if isinstance(data, dict) and "realized_today" in data:
+                return {k: (float(v) if k in ("realized_profit", "realized_today", "open_liability")
+                            else int(v)) for k, v in data.items() if v is not None}
+        except Exception as ex:  # noqa: BLE001 - RPC assente (migrazione) o DB KO → legacy
+            logger.debug("[omega.db] get_omega_aggregates KO → legacy: %s", str(ex)[:120])
+    # LEGACY, PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa farebbe
     # attribuire il P&L delle chiusure al giorno sbagliato (review 11/09 MED-2)
     rows: list[dict[str, Any]] = []
     page = 1000

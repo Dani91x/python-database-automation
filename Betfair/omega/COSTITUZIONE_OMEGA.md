@@ -713,6 +713,19 @@ regolazione, obiettivo corrente). Parametri nuovi in `omega_config`: `model_empi
 (`veto`), `lambda_live_fallback` (true). Test: `test_omega_giornata_gambe_2026_09_11.py`
 (15), `lib/omegaMatches.test.ts` (9), pagina/DayDetail aggiornati.
 
+### 14.4-bis Costo a runtime (verificato 11/09)
+- Nulla di pesante gira nel ciclo: gli aggregati li calcola il DB in UNA query
+  (`get_omega_aggregates` → `omega_aggregates_sql`, tabella `omega_trades` ~100
+  righe/giorno, join su PK, indici `placed`/`status`/`event_id`); il servizio non legge
+  più tutta la tabella a pagine (fallback legacy solo senza migrazione).
+- La tabella HT→FT si costruisce UNA volta (`omega_build_ht_ft_transitions`: una sola
+  passata su `matches`, 4 colonne intere, GROUPING SETS, timeout locale 15 min) e a
+  runtime si legge per chiave primaria (poche centinaia di righe per lega, cache per
+  processo). Il servizio non tocca mai `matches`.
+- Letture del feed: invariate (una SELECT per ciclo sul feed unico); risultati reali:
+  una SELECT per ciclo sulle posizioni delle ultime 36 h (indice `placed_at`), scritture
+  solo quando un risultato è nuovo.
+
 ### 14.5 Ancora aperto
 Fedeltà paper (bet delay 5 s), certificazione liquidità lato back dalle registrazioni REC,
 uscite loss/profit strategia per strategia (Safe §3), i sei edge del piano 250 (Safe §11).

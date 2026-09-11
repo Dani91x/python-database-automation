@@ -128,6 +128,65 @@ ON CONFLICT (day) DO NOTHING;
 -- ----------------------------------------------------------------------------
 -- 2. get_omega_state — realizzato di OGGI = posizioni PIAZZATE oggi
 -- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.omega_aggregates_sql()
+RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+    -- UNA sola scansione di omega_trades (tabella piccola: ~100 righe/giorno);
+    -- giorno della posizione = placed_at dell'apertura (join su PK).
+    -- Usata da get_omega_state (UI) e da get_omega_aggregates (servizio, ogni
+    -- ciclo): il servizio non legge piu' tutta la tabella a pagine.
+    WITH d AS (
+        SELECT (date_trunc('day', now() AT TIME ZONE 'Europe/Rome') AT TIME ZONE 'Europe/Rome') AS v_day
+    ), t AS (
+        SELECT o.status, o.pnl, o.liability, o.placed_at, o.event_id, o.closes_trade_id,
+               (o.bet_id IS NOT NULL OR (o.meta->>'flumine_client_ref') IS NOT NULL) AS is_placed,
+               coalesce(p.placed_at, o.placed_at) AS pos_placed_at
+          FROM public.omega_trades o
+          LEFT JOIN public.omega_trades p ON p.id = o.closes_trade_id
+    )
+    SELECT jsonb_build_object(
+        'realized_profit', coalesce(sum(t.pnl) FILTER (WHERE t.status IN ('won','lost','void')), 0),
+        'realized_today',  coalesce(sum(t.pnl) FILTER (WHERE t.status IN ('won','lost','void') AND t.pos_placed_at >= d.v_day), 0),
+        'open_liability',  coalesce(sum(t.liability) FILTER (WHERE t.closes_trade_id IS NULL
+                               AND (t.status IN ('open','hedged') OR (t.status = 'pending' AND t.is_placed))), 0),
+        'matches_traded',  count(*) FILTER (WHERE t.closes_trade_id IS NULL
+                               AND (t.status IN ('open','hedged','won','lost','void') OR (t.status = 'pending' AND t.is_placed))),
+        'matches_traded_today', count(*) FILTER (WHERE t.closes_trade_id IS NULL
+                               AND (t.status IN ('open','hedged','won','lost','void') OR (t.status = 'pending' AND t.is_placed))
+                               AND t.placed_at >= d.v_day),
+        'legs_today',      count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status <> 'error'
+                               AND (t.status <> 'pending' OR t.is_placed) AND t.placed_at >= d.v_day),
+        'events_today',    count(DISTINCT t.event_id) FILTER (WHERE t.closes_trade_id IS NULL AND t.status <> 'error'
+                               AND (t.status <> 'pending' OR t.is_placed) AND t.placed_at >= d.v_day),
+        'matches_open',    count(*) FILTER (WHERE t.closes_trade_id IS NULL
+                               AND (t.status IN ('open','hedged') OR (t.status = 'pending' AND t.is_placed))),
+        'matches_won',     count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'won'),
+        'matches_lost',    count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'lost'),
+        'won_today',       count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'won' AND t.placed_at >= d.v_day),
+        'lost_today',      count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'lost' AND t.placed_at >= d.v_day)
+    )
+      FROM d LEFT JOIN t ON true
+     GROUP BY d.v_day;
+$$;
+REVOKE ALL ON FUNCTION public.omega_aggregates_sql() FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.omega_aggregates_sql() TO service_role;
+
+-- per il SERVIZIO (service_role): gli stessi numeri in una chiamata leggera
+CREATE OR REPLACE FUNCTION public.get_omega_aggregates()
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF NOT public.betfair_live_is_owner() THEN
+        RAISE EXCEPTION 'non autorizzato (owner-only)';
+    END IF;
+    RETURN coalesce(public.omega_aggregates_sql(), '{}'::jsonb);
+END;
+$$;
+REVOKE ALL    ON FUNCTION public.get_omega_aggregates() FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.get_omega_aggregates() TO authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.get_omega_state(
     p_activity_limit integer DEFAULT 50
 ) RETURNS jsonb
@@ -138,40 +197,12 @@ DECLARE
     v_act  jsonb;
     v_agg  jsonb;
     v_goal jsonb;
-    v_day  timestamptz := (date_trunc('day', now() AT TIME ZONE 'Europe/Rome') AT TIME ZONE 'Europe/Rome');
 BEGIN
     IF NOT public.betfair_live_is_owner() THEN
         RAISE EXCEPTION 'non autorizzato (owner-only)';
     END IF;
     SELECT to_jsonb(c.*) INTO v_ctrl FROM public.omega_control c WHERE c.id = 1;
-
-    SELECT jsonb_build_object(
-        'realized_profit', coalesce(sum(t.pnl) FILTER (WHERE t.status IN ('won','lost','void')), 0),
-        -- §14: giornata di una posizione = giorno di piazzamento dell'APERTURA
-        'realized_today',  coalesce(sum(t.pnl) FILTER (WHERE t.status IN ('won','lost','void') AND t.pos_placed_at >= v_day), 0),
-        'open_liability',  coalesce(sum(t.liability) FILTER (WHERE t.closes_trade_id IS NULL
-                               AND (t.status IN ('open','hedged') OR (t.status = 'pending' AND t.is_placed))), 0),
-        'matches_traded',  count(*) FILTER (WHERE t.closes_trade_id IS NULL
-                               AND (t.status IN ('open','hedged','won','lost','void') OR (t.status = 'pending' AND t.is_placed))),
-        'matches_traded_today', count(*) FILTER (WHERE t.closes_trade_id IS NULL
-                               AND (t.status IN ('open','hedged','won','lost','void') OR (t.status = 'pending' AND t.is_placed))
-                               AND t.placed_at >= v_day),
-        'legs_today',      count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status <> 'error'
-                               AND (t.status <> 'pending' OR t.is_placed) AND t.placed_at >= v_day),
-        'events_today',    count(DISTINCT t.event_id) FILTER (WHERE t.closes_trade_id IS NULL AND t.status <> 'error'
-                               AND (t.status <> 'pending' OR t.is_placed) AND t.placed_at >= v_day),
-        'matches_open',    count(*) FILTER (WHERE t.closes_trade_id IS NULL
-                               AND (t.status IN ('open','hedged') OR (t.status = 'pending' AND t.is_placed))),
-        'matches_won',     count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'won'),
-        'matches_lost',    count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'lost'),
-        'won_today',       count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'won' AND t.placed_at >= v_day),
-        'lost_today',      count(*) FILTER (WHERE t.closes_trade_id IS NULL AND t.status = 'lost' AND t.placed_at >= v_day)
-    ) INTO v_agg
-      FROM (SELECT o.*,
-                   (o.bet_id IS NOT NULL OR (o.meta->>'flumine_client_ref') IS NOT NULL) AS is_placed,
-                   coalesce(p.placed_at, o.placed_at) AS pos_placed_at
-              FROM public.omega_trades o
-              LEFT JOIN public.omega_trades p ON p.id = o.closes_trade_id) t;
+    v_agg := coalesce(public.omega_aggregates_sql(), '{}'::jsonb);
 
     SELECT coalesce(jsonb_agg(to_jsonb(a.*) ORDER BY a.ts DESC), '[]'::jsonb)
       INTO v_act
@@ -186,7 +217,6 @@ BEGIN
                               'goal_today', v_goal);
 END;
 $$;
-REVOKE ALL    ON FUNCTION public.get_omega_state(integer) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.get_omega_state(integer) TO authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
@@ -559,6 +589,7 @@ GRANT EXECUTE ON FUNCTION public.get_safe_day_trades(date,text) TO authenticated
 -- 4. λ persistiti per evento
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.omega_events ADD COLUMN IF NOT EXISTS model JSONB;
+CREATE INDEX IF NOT EXISTS idx_omega_trades_event ON public.omega_trades (event_id);
 
 -- ----------------------------------------------------------------------------
 -- 5. Dati storici: punteggio al 45′ → risultato finale (per lega + globale)
@@ -583,28 +614,25 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
 DECLARE v_n integer;
 BEGIN
+    -- UNA sola passata sequenziale su matches (GROUPING SETS: per lega + globale
+    -- insieme), 4 colonne intere, nessun JSON letto. Timeout locale ampio: e'
+    -- un lavoro una tantum, mai eseguito a runtime dal servizio.
+    PERFORM set_config('statement_timeout', '900000', true);
     DELETE FROM public.omega_ht_ft_transitions;
     INSERT INTO public.omega_ht_ft_transitions (league_id, ht, ft, n)
-    SELECT s.league_id, s.ht, s.ft, count(*)::integer
+    SELECT coalesce(s.league_id, 0)::bigint,
+           s.ht, s.ft, count(*)::integer
       FROM (
-        SELECT m.league_id::bigint AS league_id,
+        SELECT m.league_id,
                m.halftime_home::text || '-' || m.halftime_away::text AS ht,
                m.fulltime_home::text || '-' || m.fulltime_away::text AS ft
-          FROM public.matches m
-         WHERE m.status_short = 'FT'
-           AND m.league_id IS NOT NULL
-           AND m.halftime_home IS NOT NULL AND m.halftime_away IS NOT NULL
-           AND m.fulltime_home IS NOT NULL AND m.fulltime_away IS NOT NULL
-        UNION ALL
-        SELECT 0::bigint,
-               m.halftime_home::text || '-' || m.halftime_away::text,
-               m.fulltime_home::text || '-' || m.fulltime_away::text
           FROM public.matches m
          WHERE m.status_short = 'FT'
            AND m.halftime_home IS NOT NULL AND m.halftime_away IS NOT NULL
            AND m.fulltime_home IS NOT NULL AND m.fulltime_away IS NOT NULL
       ) s
-     GROUP BY s.league_id, s.ht, s.ft;
+     GROUP BY GROUPING SETS ((s.league_id, s.ht, s.ft), (s.ht, s.ft))
+    HAVING s.league_id IS NOT NULL OR GROUPING(s.league_id) = 1;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RETURN v_n;
 END;
