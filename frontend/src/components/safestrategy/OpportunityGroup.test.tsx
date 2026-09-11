@@ -151,6 +151,21 @@ describe('OpportunityGroup — tipi di opportunita', () => {
         expect(screen.getByTestId('tennis-momentum')).toHaveTextContent('momentum contro');
     });
 
+    it('anomalia "decided": nessuno "scarto" (gap non e uno scarto relativo, review L4)', () => {
+        const decided = { ...(ANOMALY as Record<string, unknown>), rule: 'decided', gap: 0.5 };
+        renderGroup(row({ payload: { ...row().payload, opps: [decided as never] } }));
+        expect(screen.getByTestId('anomaly-rule')).not.toHaveTextContent('scarto');
+    });
+
+    it('tennis: chi serve mostrato col NOME del giocatore (review L5)', () => {
+        renderGroup(row({
+            sport: 'tennis', event_id: 't1',
+            payload: { minute: null, score_home: null, score_away: null, event_name: 'Sinner v Alcaraz', sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 2 },
+                       opps: [{ ...(TENNIS as Record<string, unknown>), extra: { ...((TENNIS as { extra: Record<string, unknown> }).extra), server: 'p2' } } as never] },
+        }), { players: { p1: 'Sinner', p2: 'Alcaraz' } } as never);
+        expect(screen.getByTestId('tennis-extra')).toHaveTextContent('serve: Alcaraz');
+    });
+
     it('filtro per tipo: mostra solo il tipo scelto', () => {
         const r = row({ payload: { ...row().payload, opps: [ANOMALY as never, COMBO as never, ...row().payload.opps] } });
         expect(filterOpps(r, 0, 'all', 'anomaly').map((o) => o.kind)).toEqual(['anomaly']);

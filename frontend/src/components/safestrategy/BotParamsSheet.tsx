@@ -107,7 +107,7 @@ export const EXITS_DEFAULTS: ExitsParams = {
     loss_settle_delay_s: 30,
     red_card_fav_exit: true,
     tennis_take_profit_next_game: true,
-    tennis_exit_on_lost_game: true,
+    tennis_exit_on_lost_game: false,     // = exits.DEFAULT_EXIT_PARAMS del servizio (review M1)
     exit_max_retries: 3,
     hold_max_risk: 0.02,
     risk_cap: 0.10,

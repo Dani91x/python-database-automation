@@ -395,18 +395,21 @@ export const SAFE_RISK_DEFAULTS: SafeRiskParams = {
     model_daily_liability_cap: 150,
 };
 
+// STESSI default del servizio (Betfair/safe_strategy/bot_service.DEFAULT_PARAMS):
+// una chiave assente sul DB deve mostrare il valore con cui il bot gira davvero,
+// e "Salva" non deve cambiarne il comportamento in silenzio (review 11/09 M1)
 export const SAFE_BOT_DEFAULTS: SafeBotParams = {
     ...DEFAULT_PARAMS,
-    poll_interval_s: 20,
+    poll_interval_s: 2,
     commission_pct: 5,
     variants: ['base', 'esatto', 'punta', 'tennis'],
-    max_open_trades: 5,
-    max_liability_per_trade: 50,
+    max_open_trades: 20,
+    max_liability_per_trade: 300,
     min_size_available_factor: 1,
-    opps_interval_s: 30,
+    opps_interval_s: 10,
     auto_trade_opportunities: false,
-    opps_min_confidence: 0.6,
-    opps_min_edge: 0.02,
+    opps_min_confidence: 0.7,
+    opps_min_edge: 0.03,
     opps_stake: 5,
     auto_trade_anomalies: false,
     auto_trade_combos: false,
@@ -499,7 +502,14 @@ export function cashoutInFlight(
     }
     for (const t of trades) {
         if (t.closes_trade_id === tradeId && t.status !== 'error') return true;
-        if (t.id === tradeId && Boolean((t.meta ?? {})['hedging'])) return true;
+        if (t.id === tradeId) {
+            const m = t.meta ?? {};
+            // marker scritti DAVVERO dal servizio (execution.apply_hedge_state):
+            // chiusure in volo → hedge_pending_ids / closing_status 'pending'
+            if (Boolean(m['hedging'])) return true;
+            if (Array.isArray(m['hedge_pending_ids']) && (m['hedge_pending_ids'] as unknown[]).length > 0) return true;
+            if (m['closing_status'] === 'pending') return true;
+        }
     }
     return false;
 }
@@ -756,6 +766,11 @@ export function holdReasonLabel(reason: string | null): string {
     if (!reason) return 'in attesa';
     return HOLD_REASON_IT[reason.trim().toLowerCase()] ?? reason;
 }
+/** true se il motivo è una frase libera del servizio che già contiene la P(perdita):
+ *  la tabella non deve accodarla una seconda volta. */
+export function holdReasonHasP(reason: string | null): boolean {
+    return !!reason && /p\(perdita\)/i.test(reason);
+}
 
 /** P(perdita) all'ingresso di un trade di modello (meta.p_lose_entry) */
 export function pLoseEntry(trade: { meta: Record<string, unknown> | null }): number | null {
@@ -832,6 +847,20 @@ export function hedgeTooltip(
 export function cappedFrom(trade: { meta: Record<string, unknown> | null }): number | null {
     const v = Number((trade.meta ?? {})['size_capped_from']);
     return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/** Copertura PARZIALE letta dall'APERTURA (meta.hedged_size / residual_size, che il
+ *  servizio aggiorna SEMPRE, anche nel percorso REST/paper dove size_capped_from
+ *  non arriva sulla chiusura — review 11/09 M4). null = copertura completa o
+ *  nessuna copertura; altrimenti {hedged, residual, size}. */
+export function partialHedge(opening: { size: number | null; meta: Record<string, unknown> | null }): { hedged: number; residual: number; size: number } | null {
+    const m = opening.meta ?? {};
+    const hedged = Number(m['hedged_size']);
+    const residual = Number(m['residual_size']);
+    const size = Number(opening.size ?? 0);
+    if (!Number.isFinite(hedged) || hedged <= 0) return null;
+    if (!Number.isFinite(residual) || residual <= 0.01) return null;
+    return { hedged, residual, size };
 }
 
 // ------------------------------------------------------------ book LIVE

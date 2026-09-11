@@ -890,7 +890,13 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
                                             payload=payload, params=params, xp=xp, now=now,
                                             opp_mod=opp_mod, opps_state=opps_state)
         if decision is None:
+            # HOLD di un trade di MODELLO: meta.exit_hold per la UI ("In attesa" con
+            # P(perdita) corrente), write-on-change come _model_gate (review 11/09 M3:
+            # prima la scheda parametri lo prometteva ma non veniva mai scritto)
+            _write_model_hold(db, trade, meta, info, now)
             return False
+        if isinstance(meta.get(HOLD_KEY), dict):
+            _write_meta_key(db, trade, meta, HOLD_KEY, None)   # si esce: niente più attesa
         if now_ts < float(decision.not_before_ts or 0.0):
             _exit_wait(db, trade, meta, decision, "assestamento_post_evento")
             return False
@@ -1185,6 +1191,28 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
                                                "hold_profit", "loss_if_lose")},
                                "back": prices.get("back"), "lay": prices.get("lay")})
     return True, info
+
+
+def _write_model_hold(db, trade: dict[str, Any], meta: dict[str, Any],
+                      info: dict[str, Any], now: datetime) -> None:
+    """meta.exit_hold di un trade di MODELLO tenuto aperto (stesso contratto del
+    gate delle 4 strategie: reason, kind, p_lose, source, locked, ev_hold, ts).
+    Riscritto solo al cambio di motivo o ogni _HOLD_REWRITE_S; log 'exit_hold'
+    una volta per motivo."""
+    why = str(info.get("why") or "modello: tengo")
+    prev = meta.get(HOLD_KEY) if isinstance(meta.get(HOLD_KEY), dict) else None
+    hold = {"reason": why, "kind": "model", "p_lose": info.get("p_lose"),
+            "source": info.get("source"), "locked": info.get("locked"),
+            "ev_hold": info.get("ev_hold"), "ts": now.isoformat()}
+    changed = prev is None or prev.get("reason") != why
+    last_ts = XE.parse_ts((prev or {}).get("ts"))
+    if changed or last_ts is None or now.timestamp() - last_ts >= _HOLD_REWRITE_S:
+        _write_meta_key(db, trade, meta, HOLD_KEY, hold)
+    if changed:
+        _log(db, "exit_hold", {"trade_id": trade.get("id"), "event_id": trade.get("event_id"),
+                               "kind": "model", "reason": why, "msg": why,
+                               **{k: info.get(k) for k in ("p_lose", "source", "locked", "ev_hold",
+                                                           "hold_profit", "loss_if_lose")}})
 
 
 def _write_meta_key(db, trade: dict[str, Any], meta: dict[str, Any], key: str,

@@ -632,5 +632,12 @@ export function tradeExit(trade: { meta: Record<string, unknown> | null; closes?
         const e = exitInfo(c.meta);
         if (e) return e;
     }
+    // cash out MANUALE: il servizio marca la chiusura con meta.cashout=true senza
+    // exit_kind (review 11/09 L3) → "Cash out manuale", non una generica "Chiusura"
+    for (const c of trade.closes ?? []) {
+        if ((c.meta ?? {})['cashout'] === true && !(c.meta ?? {})['exit_kind']) {
+            return { kind: 'manual', label: EXIT_KIND_LABEL.manual, reason: null, raw: 'cashout' };
+        }
+    }
     return null;
 }

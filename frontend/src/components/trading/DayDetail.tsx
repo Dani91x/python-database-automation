@@ -218,7 +218,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                         <tfoot className="text-[11px] text-slate-400 bg-black/30">
                             <tr>
                                 <td className="px-3 py-2" colSpan={8}>
-                                    {settled.length} regolati · {openCount} vivi · {list.filter((t) => t.status === 'won').length}V {list.filter((t) => t.status === 'lost').length}P
+                                    {settled.length} regolati · {openCount} vivi · {settled.filter((t) => Number(t.total_pnl ?? t.pnl) > 0).length}V {settled.filter((t) => Number(t.total_pnl ?? t.pnl) < 0).length}P
                                 </td>
                                 <td className="px-3 py-2 text-right" colSpan={3}>
                                     totale realizzato <b className={totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(totalPnl)}</b>

@@ -114,6 +114,8 @@ export interface OpportunityGroupProps {
     nowMs?: number;
     /** size = stake della gamba (modello/anomalia/tennis) o stake TOTALE (combo) */
     onPlace: (opp: SafeOpportunity, size: number) => Promise<number | null>;
+    /** tennis: nomi dei giocatori dal feed (la riga opportunità porta solo 'p1'/'p2') */
+    players?: { p1?: string | null; p2?: string | null } | null;
 }
 
 function KindBadge({ kind }: { kind: SafeOppKind }) {
@@ -224,7 +226,7 @@ function ComboBody({ o, stake, mode, requests, disabled, disabledReason, onPlace
 }
 
 export function OpportunityGroup({
-    row, mode, stake, requests, minConfidence, sideFilter, kindFilter = 'all', nowMs, onPlace,
+    row, mode, stake, requests, minConfidence, sideFilter, kindFilter = 'all', nowMs, onPlace, players,
 }: OpportunityGroupProps) {
     const p = row.payload ?? { opps: [] };
     const opps = filterOpps(row, minConfidence, sideFilter, kindFilter);
@@ -311,7 +313,9 @@ export function OpportunityGroup({
                                 <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px]" data-testid="anomaly-rule">
                                     <span className="uppercase tracking-wide text-[10px] text-amber-300/90">Regola</span>{' '}
                                     <span className="text-white font-semibold">{anomalyRuleLabel(o.rule)}</span>
-                                    {o.gap != null && Number.isFinite(Number(o.gap)) && (
+                                    {o.gap != null && Number.isFinite(Number(o.gap)) && (o.rule === 'ou_ladder' || o.rule === 'mo_cs') && (
+                                        // solo per le regole in cui gap È uno scarto relativo dalla quota
+                                        // di riferimento (per 'decided' il servizio scrive back−1 / 1/lay)
                                         <span className="ml-2 text-amber-200 tabular-nums" title="distanza dalla quota di riferimento">
                                             scarto {signedPct(o.gap)}
                                         </span>
@@ -334,7 +338,7 @@ export function OpportunityGroup({
                                         <span className="text-slate-400">al meglio di {extra.best_of}</span>
                                     )}
                                     {extra?.server && (
-                                        <span className="text-slate-400" title="chi è al servizio">serve: <b className="text-slate-200">{extra.server}</b></span>
+                                        <span className="text-slate-400" title="chi è al servizio">serve: <b className="text-slate-200">{(extra.server === 'p1' ? players?.p1 : extra.server === 'p2' ? players?.p2 : null) ?? extra.server}</b></span>
                                     )}
                                     {Number.isFinite(retire) && (
                                         <Badge

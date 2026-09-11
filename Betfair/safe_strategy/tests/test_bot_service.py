@@ -2137,6 +2137,30 @@ def test_uscita_modello_gol_avverso_dopo_l_assestamento(monkeypatch):
     assert r["exits"] == 0 and len(_closings(db, tid)) == 1
 
 
+def test_trade_di_modello_tenuto_scrive_exit_hold_per_la_ui(monkeypatch):
+    """HOLD di un trade di MODELLO: meta.exit_hold (reason, kind 'model', p_lose,
+    source, ts) per la riga "In attesa" della tabella; log 'exit_hold' UNA volta;
+    rimosso quando si esce (review 11/09 M3)."""
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.03, "test"))
+    db = FakeDB(status="running")
+    tid = _model_trade(db)   # lay ospite 10@8.5 sull'1-0, P(perdita) 3 % → nessuna regola → tengo
+    r = _cycle(db, _exit_feed_row(60, 1, 0))
+    assert r["exits"] == 0
+    hold = db.get_trade(tid)["meta"]["exit_hold"]
+    assert hold["kind"] == "model" and hold["p_lose"] == 0.03 and hold["source"] == "test"
+    assert hold["reason"].endswith("tengo") and hold["ts"]
+    assert len(_holds(db)) == 1
+    _cycle(db, _exit_feed_row(61, 1, 0))
+    assert len(_holds(db)) == 1, "stesso motivo: nessun secondo log"
+    # gol avverso → si esce (dopo l'assestamento): l'attesa sparisce dal meta
+    monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.2, "test"))
+    t_goal = NOW + timedelta(seconds=2)
+    _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t_goal), at=t_goal)
+    t_ok = t_goal + timedelta(seconds=31)
+    r = _cycle(db, _exit_feed_row(66, 1, 1, updated_at=t_ok), at=t_ok)
+    assert r["exits"] == 1 and "exit_hold" not in db.get_trade(tid)["meta"]
+
+
 def test_uscita_modello_gol_non_avverso_o_sotto_soglia_tiene(monkeypatch):
     monkeypatch.setattr(S, "_p_selection_wins", lambda **kw: (0.08, "test"))
     db = FakeDB(status="running")

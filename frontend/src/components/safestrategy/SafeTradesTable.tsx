@@ -17,8 +17,8 @@ import { tradeExit } from '@/lib/dailyHistory';
 import type { CalcioScanPayload, TennisScanPayload } from '@/lib/safeStrategyScan';
 import {
     cappedFrom, safeTradeBook, tradeExposure, staleReason, FEED_ROW_STALE_MS,
-    tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind,
-    groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
+    tradeHold, holdReasonLabel, holdReasonHasP, pLoseEntry, tradeOppKind,
+    groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip, partialHedge,
     type FeedFreshness, type SafeTrade, type SafeTradeStatus,
 } from '@/lib/safeBot';
 import { OPP_KIND_META } from './OpportunityGroup';
@@ -123,7 +123,10 @@ export function SafeTradesTable({
                         const closing = closes[0] ?? null;
                         const exit = tradeExit({ meta: t.meta, closes: closes.map((c) => ({ meta: c.meta })) as never });
                         const isGreenup = exit?.kind === 'greenup';
+                        // cash out MANUALE: il servizio marca solo meta.cashout=true (nessun exit_kind)
+                        const isManualCashout = !exit && closes.some((c) => c.origin === 'manual' || (c.meta ?? {})['cashout'] === true);
                         const hedged = t.status === 'hedged';
+                        const partial = partialHedge(t);
                         const b = hedged && isGreenup
                             ? { label: 'CHIUSO IN GREEN-UP', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50' }
                             : tradeBadge(t.status);
@@ -230,7 +233,7 @@ export function SafeTradesTable({
                                             ].filter(Boolean).join(' · ')}
                                         >
                                             In attesa: {holdReasonLabel(hold.reason)}
-                                            {hold.pLose != null ? `, P(perdita) ${pctIt(hold.pLose)}` : ''}
+                                            {hold.pLose != null && !holdReasonHasP(hold.reason) ? `, P(perdita) ${pctIt(hold.pLose)}` : ''}
                                         </div>
                                     )}
                                 </td>
@@ -265,15 +268,16 @@ export function SafeTradesTable({
                                     ) : <span className="text-slate-600">—</span>}
                                 </td>
                             </tr>
-                            {closes.map((c) => {
+                            {closes.map((c, ci) => {
                                 const cb = tradeBadge(c.status);
-                                const capped = cappedFrom(c);
+                                // "parziale": dalla chiusura (size_capped_from) o dall'apertura (residuo > 0)
+                                const capped = cappedFrom(c) ?? (partial && ci === closes.length - 1 ? partial.hedged + partial.residual : null);
                                 return (
                                     <tr key={c.id} className="bg-white/[0.03] border-t border-dashed border-white/5" data-testid="safe-closing-row" data-closes={t.id}>
                                         <td className="px-3 py-1 text-slate-500 tabular-nums text-[11px]">{timeLabel(c.placed_at)}</td>
                                         <td colSpan={8} className="pl-8 pr-3 py-1 text-[11px] text-slate-300" title={hedgeTooltip(t, c)}>
                                             <span className="text-teal-300" aria-hidden>↳ </span>
-                                            <b className="text-teal-200">{isGreenup ? 'Green-up' : exit?.kind === 'manual' ? 'Cash out' : 'Chiusura'} di #{t.id}</b>
+                                            <b className="text-teal-200">{isGreenup ? 'Green-up' : (exit?.kind === 'manual' || isManualCashout) ? 'Cash out' : 'Chiusura'} di #{t.id}</b>
                                             {' · '}
                                             <Badge variant="outline" className={`px-1 py-0 text-[10px] font-heading font-bold mr-1 ${sideBadgeClass(c.side === 'back' ? 'BACK' : 'LAY')}`}>{c.side.toUpperCase()}</Badge>{' '}
                                             <span className="tabular-nums">{fmtEurIt(c.size)} @{fmtOddsIt(c.price)}</span>
@@ -295,7 +299,9 @@ export function SafeTradesTable({
                                                         variant="outline"
                                                         data-testid="cashout-capped"
                                                         className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40"
-                                                        title={`liquidità insufficiente: richiesti €${capped.toFixed(2)}, abbinati €${Number(c.size ?? 0).toFixed(2)} — chiusura PARZIALE`}
+                                                        title={cappedFrom(c) != null
+                                                            ? `liquidità insufficiente: richiesti €${capped.toFixed(2)}, abbinati €${Number(c.size ?? 0).toFixed(2)} — chiusura PARZIALE`
+                                                            : `copertura PARZIALE: coperti €${partial?.hedged.toFixed(2)} di €${partial?.size.toFixed(2)} di stake, residuo €${partial?.residual.toFixed(2)} ancora vivo`}
                                                     >
                                                         parziale
                                                     </Badge>

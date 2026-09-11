@@ -13,6 +13,8 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 import { supabase } from '@/integrations/supabase/client';
 import {
+    holdReasonHasP,
+    partialHedge,
     normalizeOppRow,
     activateSafe, stopSafe, updateSafeParams, fetchSafeState, fetchSafeTrades,
     requestSafe, fetchSafeRequests, fetchOpportunities, subscribeSafeBot,
@@ -458,6 +460,36 @@ describe('cashoutInFlight', () => {
 });
 
 // ----------------------------------------------------- freschezza feed (HIGH-2)
+describe('review 11/09 — contratti servizio ↔ UI', () => {
+    it('cashoutInFlight: hedge_pending_ids / closing_status pending sull APERTURA (marker reali del servizio)', () => {
+        const base = { id: 9, closes_trade_id: null, status: 'open' };
+        expect(cashoutInFlight(9, [], [{ ...base, meta: { hedge_pending_ids: [10] } }])).toBe(true);
+        expect(cashoutInFlight(9, [], [{ ...base, meta: { closing_status: 'pending' } }])).toBe(true);
+        expect(cashoutInFlight(9, [], [{ ...base, meta: { hedge_pending_ids: [], closing_status: 'done' } }])).toBe(false);
+        expect(cashoutInFlight(9, [], [{ ...base, meta: null }])).toBe(false);
+    });
+
+    it('partialHedge: dall apertura (hedged_size/residual_size), mai dalla chiusura', () => {
+        expect(partialHedge({ size: 10, meta: { hedged_size: 6, residual_size: 4 } })).toEqual({ hedged: 6, residual: 4, size: 10 });
+        expect(partialHedge({ size: 10, meta: { hedged_size: 10, residual_size: 0 } })).toBeNull();
+        expect(partialHedge({ size: 10, meta: { hedged_size: 9.995, residual_size: 0.01 } })).toBeNull();
+        expect(partialHedge({ size: 10, meta: null })).toBeNull();
+    });
+
+    it('holdReasonHasP: la frase libera del servizio contiene gia la P(perdita)', () => {
+        expect(holdReasonHasP('margine ampio: P(perdita)=1,2%, tengo fino al settlement')).toBe(true);
+        expect(holdReasonHasP('modello: nessuna regola attiva, tengo')).toBe(false);
+        expect(holdReasonHasP(null)).toBe(false);
+    });
+
+    it('SAFE_BOT_DEFAULTS = default del servizio (bot_service.DEFAULT_PARAMS)', () => {
+        expect(SAFE_BOT_DEFAULTS).toMatchObject({
+            poll_interval_s: 2, max_open_trades: 20, max_liability_per_trade: 300,
+            opps_interval_s: 10, opps_min_confidence: 0.7, opps_min_edge: 0.03, opps_stake: 5,
+        });
+    });
+});
+
 describe('feedFreshness', () => {
     const now = Date.parse('2026-09-10T12:00:00Z');
     const ago = (s: number) => new Date(now - s * 1000).toISOString();

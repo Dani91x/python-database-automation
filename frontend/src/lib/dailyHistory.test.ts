@@ -338,6 +338,11 @@ describe('exitInfo / tradeExit', () => {
     it('forma annidata meta.exit.{kind,reason}', () => {
         expect(exitInfo({ exit: { kind: 'time', reason: "80'" } })).toMatchObject({ kind: 'time', reason: "80'" });
     });
+    it('tradeExit: cash out MANUALE (meta.cashout sulla chiusura, nessun exit_kind) = Cash out manuale', () => {
+        expect(tradeExit({ meta: {}, closes: [{ meta: { cashout: true } } as never] })).toMatchObject({ kind: 'manual', label: 'Cash out manuale' });
+        // un exit_kind esplicito ha la precedenza
+        expect(tradeExit({ meta: {}, closes: [{ meta: { cashout: true, exit_kind: 'greenup' } } as never] })?.kind).toBe('greenup');
+    });
     it('tradeExit: prima l apertura, poi le chiusure', () => {
         expect(tradeExit({ meta: null, closes: [] })).toBeNull();
         expect(tradeExit({ meta: { exit_kind: 'profit' }, closes: [{ meta: { exit_kind: 'loss' } } as never] })?.kind).toBe('profit');

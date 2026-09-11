@@ -286,12 +286,27 @@ export default function SafeStrategy() {
     const tradeBySignal = useMemo(() => {
         const out: Record<string, SafeTrade> = {};
         for (const t of bot.trades) {
-            if (!t.signal_key) continue;
-            const prev = out[t.signal_key];
-            if (!prev || t.id > prev.id) out[t.signal_key] = t;
+            // AUTO: signal_key in colonna. MANUALE da SignalCard: il servizio non salva
+            // signal_key ma dedupa e conserva meta.idempotency_key = "sig:<chiave>"
+            // (review 11/09 H1: prima la card perdeva il trade e un secondo click
+            // creava un secondo trade)
+            const idem = String((t.meta ?? {})['idempotency_key'] ?? '');
+            const key = t.signal_key ?? (idem.startsWith('sig:') ? idem.slice(4) : null);
+            if (!key) continue;
+            const prev = out[key];
+            if (!prev || t.id > prev.id) out[key] = t;
         }
         return out;
     }, [bot.trades]);
+
+    /** minuto/punteggio correnti di un evento dal feed (contesto d'ingresso dei manuali, L1) */
+    function entryContext(eventId: string): { minute?: number | null; score?: string | null } {
+        const p = payloadByEvent[eventId];
+        if (!p || 'sets' in p) return {};
+        const c = p as CalcioScanPayload;
+        const score = c.score_home != null && c.score_away != null ? `${c.score_home}-${c.score_away}` : null;
+        return { minute: c.minute ?? null, score };
+    }
 
     const mediaByEvent = useMemo<Record<string, ScanMediaFlags | null | undefined>>(() => {
         const out: Record<string, ScanMediaFlags | null | undefined> = {};
@@ -406,6 +421,9 @@ export default function SafeStrategy() {
             size,
             strategy: signal.variant,
             signal_key: signal.key,
+            // un solo trade per segnale anche dopo remount/doppio click (dedupe del servizio)
+            idempotency_key: `sig:${signal.key}`,
+            ...entryContext(signal.eventId),
         });
         if (id != null) toast.success('Ordine in coda', { description: `${signal.matchLabel} · ${fmtEurPlain(size)}` });
         return id;
@@ -471,6 +489,9 @@ export default function SafeStrategy() {
             strategy: 'model',
             kind,
             ...(kind === 'anomaly' ? { rule: o.rule ?? null } : {}),
+            // stessa opportunità (mercato, selezione, lato) = un solo trade
+            idempotency_key: `opp:${eventId}:${o.market_id}:${o.selection_id}:${o.side}`,
+            ...entryContext(eventId),
         });
         if (id != null) toast.success('Ordine in coda', { description: `${eventName ?? eventId} · ${fmtEurPlain(size)}` });
         return id;
@@ -601,6 +622,9 @@ export default function SafeStrategy() {
                                 sideFilter={oppSide}
                                 kindFilter={oppKindFilter}
                                 nowMs={nowMs}
+                                players={sport === 'tennis' && payloadByEvent[r.event_id] && 'sets' in payloadByEvent[r.event_id]
+                                    ? { p1: (payloadByEvent[r.event_id] as TennisScanPayload).p1, p2: (payloadByEvent[r.event_id] as TennisScanPayload).p2 }
+                                    : null}
                                 onPlace={(o, size) => placeFromOpportunity(r.event_id, r.payload?.event_name ?? null, sport, o, size)}
                             />
                         ))}

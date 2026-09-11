@@ -247,9 +247,28 @@ describe('pagina Safe Strategy', () => {
             price: 1.3,
             strategy: 'base',
             signal_key: 'e1:base:1-0',
+            // review 11/09 H1/L1: un solo trade per segnale (dedupe del servizio) e
+            // contesto d'ingresso (minuto/punteggio) dal feed
+            idempotency_key: 'sig:e1:base:1-0',
+            minute: 60,
+            score: '1-0',
         });
         // stake precompilato dai parametri del bot (stake.backSize = 4)
         expect(payload).toMatchObject({ size: 4 });
+    });
+
+    it('trade MANUALE piazzato da un segnale: agganciato alla card tramite meta.idempotency_key (H1)', async () => {
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [{ ...OPEN_TRADE, id: 12, origin: 'manual', strategy: 'manual', signal_key: null,
+                       meta: { manual: true, idempotency_key: 'sig:e1:base:1-0' } }] as never,
+            aggregates: { realized_today: 0, realized_total: 0, open_liability: 0, open_count: 1, won: 0, lost: 0 },
+        });
+        renderPage();
+        await screen.findByTestId('bot-status');
+        // la card mostra lo stato del trade, NON il bottone "Piazza" (niente secondo trade)
+        expect(await screen.findByTestId('signal-trade')).toBeInTheDocument();
+        expect(screen.queryByTestId('invest-place')).toBeNull();
     });
 
     it('la gamba di chiusura tagliata dalla liquidita e marcata parziale', async () => {
