@@ -13,6 +13,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 import { supabase } from '@/integrations/supabase/client';
 import {
+    normalizeOppRow,
     activateSafe, stopSafe, updateSafeParams, fetchSafeState, fetchSafeTrades,
     requestSafe, fetchSafeRequests, fetchOpportunities, subscribeSafeBot,
     subscribeOpportunities, buildEquitySeries, detectSettlements, tradeExposure,
@@ -150,9 +151,42 @@ describe('safeBot realtime', () => {
         handler!({ eventType: 'INSERT', new: { event_id: 'e1', sport: 'calcio', payload: { opps: [] } } });
         handler!({ eventType: 'DELETE', old: { event_id: 'e1' } });
         expect(seen).toEqual([
-            { type: 'upsert', row: { event_id: 'e1', sport: 'calcio', payload: { opps: [] } } },
+            { type: 'upsert', row: { event_id: 'e1', sport: 'calcio', payload: { opps: [], lambdas: null } } },
             { type: 'delete', eventId: 'e1' },
         ]);
+    });
+
+    it('normalizeOppRow: il payload del SERVIZIO (opportunities + lambdas lista) diventa quello della UI', () => {
+        // riga REALE del 11/09: il servizio scrive "opportunities", non "opps"
+        const svc = {
+            event_id: '36054179', sport: 'calcio',
+            payload: {
+                event_name: 'A v B', minute: 27, score_home: 0, score_away: 0, league_id: 5, source: 'fixture',
+                lambdas: [1.31, 0.92], kinds: { model: 1, anomaly: 0, combo: 0 },
+                opportunities: [{ kind: 'model', market_type: 'OVER_UNDER', side: 'back', price: 1.1, confidence: 0.77 }],
+            },
+        } as never;
+        const row = normalizeOppRow<{ payload: Record<string, unknown> }>(svc);
+        const p = row.payload as { opps: unknown[]; lambdas: { home: number; away: number }; kinds: unknown };
+        expect(p.opps).toHaveLength(1);
+        expect(p.lambdas).toEqual({ home: 1.31, away: 0.92 });
+        expect(p.kinds).toEqual({ model: 1, anomaly: 0, combo: 0 });
+        // idempotente e tollerante: già normalizzata / senza opportunità / payload nullo
+        expect(normalizeOppRow(row)).toEqual(row);
+        expect((normalizeOppRow({ payload: { minute: 3 } }).payload as { opps: unknown[] }).opps).toEqual([]);
+        expect((normalizeOppRow({ payload: null }).payload as { opps: unknown[] }).opps).toEqual([]);
+    });
+
+    it('fetchOpportunities normalizza le righe lette dalla tabella', async () => {
+        from.mockReturnValue({
+            select: vi.fn(async () => ({
+                data: [{ event_id: 'e9', sport: 'tennis', payload: { sets: { p1: 1, p2: 0 }, opportunities: [{ kind: 'tennis' }] } }],
+                error: null,
+            })),
+        } as never);
+        const rows = await fetchOpportunities();
+        expect(rows[0].payload?.opps).toEqual([{ kind: 'tennis' }]);
+        expect(oppKindCounts(rows)).toEqual({ model: 0, anomaly: 0, combo: 0, tennis: 1 });
     });
 });
 

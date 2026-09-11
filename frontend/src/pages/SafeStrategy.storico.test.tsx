@@ -147,6 +147,54 @@ describe('Safe Strategy — giornata operativa e uscite', () => {
     });
 });
 
+describe('Safe Strategy — tab Trade: solo la giornata operativa (come Omega)', () => {
+    it('una posizione di ieri già regolata compare solo con "mostra tutte"; una di ieri ancora viva resta visibile', async () => {
+        const OLD_WON = { ...TRADE, id: 30, event_id: 'old1', event_name: 'Vecchia vs Regolata', signal_key: null,
+            placed_at: '2026-09-09T18:00:00Z', settled_at: '2026-09-09T20:00:00Z', meta: null };
+        const OLD_LIVE = { ...TRADE, id: 31, event_id: 'old2', event_name: 'Vecchia vs Viva', signal_key: null,
+            status: 'open', pnl: 0, placed_at: '2026-09-09T18:00:00Z', settled_at: null, meta: null };
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [TRADE, CLOSE, OLD_WON, OLD_LIVE] as never,
+            aggregates: { realized_today: 2.85, realized_total: 40, open_liability: 10, open_count: 1, won: 2, lost: 0 },
+        });
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        // oggi (10/09 mockato): la vinta di oggi + la viva di ieri; la regolata di ieri NO
+        const rows = await screen.findAllByTestId('safe-trade-row');
+        expect(rows).toHaveLength(2);
+        expect(screen.getByText('Roma vs Lazio')).toBeInTheDocument();
+        expect(screen.getByText('Vecchia vs Viva')).toBeInTheDocument();
+        expect(screen.queryByText('Vecchia vs Regolata')).toBeNull();
+        expect(screen.getByTestId('safe-trades-card')).toHaveTextContent('Operazioni di oggi (2)');
+        expect(screen.getByTestId('safe-trades-summary')).toHaveTextContent('2 posizioni oggi · 1V 0P · 1 vive');
+        expect(screen.getByRole('tab', { name: /^Trade/ })).toHaveTextContent('Trade (2)');
+        // mostra tutte → anche la regolata di ieri
+        await user.click(screen.getByTestId('safe-trades-toggle'));
+        expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(3);
+        expect(screen.getByText('Vecchia vs Regolata')).toBeInTheDocument();
+        expect(screen.getByTestId('safe-trades-card')).toHaveTextContent('Tutte le operazioni (3)');
+        await user.click(screen.getByTestId('safe-trades-toggle'));
+        expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(2);
+    });
+
+    it('nessuna operazione oggi: stato vuoto che rimanda allo Storico', async () => {
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [{ ...TRADE, placed_at: '2026-09-09T18:00:00Z', settled_at: '2026-09-09T20:00:00Z' }] as never,
+            aggregates: { realized_today: 0, realized_total: 40, open_liability: 0, open_count: 0, won: 0, lost: 0 },
+        });
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        expect(await screen.findByTestId('safe-trades-empty')).toHaveTextContent(/nessuna operazione oggi/);
+        expect(screen.getByTestId('safe-trades-empty')).toHaveTextContent(/Storico/);
+    });
+});
+
 describe('Safe Strategy — tab Storico', () => {
     it('monta lo storico con i fetcher Safe; il filtro sport ricarica con lo sport', async () => {
         const user = userEvent.setup();

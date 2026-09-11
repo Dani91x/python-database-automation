@@ -44,9 +44,12 @@ import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import { EquityCurve } from '@/components/trading/EquityCurve';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel, type SafeSportFilter } from '@/lib/dailyHistory';
+// stesse funzioni PURE (testate) della scheda Omega: gruppo per evento, P&L per
+// posizione (apertura + chiusure), filtro GIORNATA operativa (Europe/Rome)
+import { groupTradesByMatch, filterMatchesForDay, summarizeMatches } from '@/lib/omegaMatches';
 import {
     buildEquitySeries, resolveSignalPlacement, safeTradeBook, feedFreshness,
-    sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS,
+    sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, fmtEurIt, groupClosingLegs,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
@@ -182,6 +185,9 @@ export default function SafeStrategy() {
 
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
+    // tab Trade: di default SOLO la giornata operativa (+ posizioni vive di giorni
+    // precedenti); "mostra tutte" = tutto il caricato (lo storico completo e' nel tab Storico)
+    const [showAllTrades, setShowAllTrades] = useState(false);
     const [oppMinConfidence, setOppMinConfidence] = useState(0);
     const [oppSide, setOppSide] = useState<'all' | 'back' | 'lay'>('all');
     const [oppKindFilter, setOppKindFilter] = useState<OppKindFilter>('all');
@@ -322,6 +328,15 @@ export default function SafeStrategy() {
 
     const calcioTrades = useMemo(() => bot.trades.filter((t) => t.sport === 'calcio'), [bot.trades]);
     const tennisTrades = useMemo(() => bot.trades.filter((t) => t.sport === 'tennis'), [bot.trades]);
+    // GIORNATA OPERATIVA (come Omega): posizioni piazzate oggi (Europe/Rome) + vive di
+    // giorni precedenti; gli eventi con almeno una di queste restano visibili per intero
+    const tradeGroups = useMemo(() => groupTradesByMatch(bot.trades), [bot.trades]);
+    const todayGroups = useMemo(() => filterMatchesForDay(tradeGroups, operatingDay), [tradeGroups, operatingDay]);
+    const todayEventIds = useMemo(() => new Set(todayGroups.map((g) => g.event_id)), [todayGroups]);
+    const todayTradesCalcio = useMemo(() => calcioTrades.filter((t) => todayEventIds.has(t.event_id)), [calcioTrades, todayEventIds]);
+    const todayTradesTennis = useMemo(() => tennisTrades.filter((t) => todayEventIds.has(t.event_id)), [tennisTrades, todayEventIds]);
+    const todaySummaryCalcio = useMemo(() => summarizeMatches(todayGroups.filter((g) => g.legs[0]?.trade.sport === 'calcio')), [todayGroups]);
+    const todaySummaryTennis = useMemo(() => summarizeMatches(todayGroups.filter((g) => g.legs[0]?.trade.sport === 'tennis')), [todayGroups]);
     // righe opportunità per sport: 'calcio' (default per righe senza sport) e 'tennis'
     const oppRows = useMemo(
         () => bot.opportunities.filter((r) => r.sport !== 'tennis'),
@@ -595,26 +610,43 @@ export default function SafeStrategy() {
         );
     }
 
-    function renderTrades(list: SafeTrade[]) {
+    function renderTrades(list: SafeTrade[], today: SafeTrade[], summary: ReturnType<typeof summarizeMatches>) {
+        const shown = showAllTrades ? list : today;
+        const positions = groupClosingLegs(shown).length;   // posizioni (le chiusure stanno sotto l'apertura)
         return (
             <div className="space-y-4">
                 <Card className="glass-card border-white/10 p-4">
                     <div className="flex items-center gap-2 text-sm text-slate-300 mb-2">
                         <TrendingUp className="w-4 h-4 text-primary" /> Equity curve · P&L cumulato regolato
+                        <span className="text-[11px] text-slate-500">{showAllTrades ? `· ultime ${list.length} operazioni caricate` : `· giornata ${dayLabel(operatingDay, { year: false })}`}</span>
                     </div>
-                    <EquityCurve series={buildEquitySeries(list)} />
+                    <EquityCurve series={buildEquitySeries(shown)} />
                 </Card>
-                <Card className="glass-card border-white/10 p-0 overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300">
-                        <Activity className="w-4 h-4 text-primary" /> Trade ({list.length})
+                <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="safe-trades-card">
+                    <div className="px-4 py-2.5 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300 flex-wrap">
+                        <Activity className="w-4 h-4 text-primary" />
+                        {showAllTrades ? 'Tutte le operazioni' : 'Operazioni di oggi'} ({positions})
+                        <span className="text-[11px] text-slate-500 tabular-nums" data-testid="safe-trades-summary">
+                            · {summary.legs} posizioni oggi · {summary.won}V {summary.lost}P
+                            {summary.live > 0 && ` · ${summary.live} vive`}
+                            {summary.pnl_locked != null && ` · bloccato ${fmtEurIt(summary.pnl_locked, true)}`}
+                            {summary.open_liability > 0 && ` · a rischio ${fmtEurIt(summary.open_liability)}`}
+                        </span>
+                        <span className="ml-auto text-[11px] text-slate-500">giornata operativa {dayLabel(operatingDay, { year: false })} · le giornate passate sono nello Storico</span>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAllTrades((v) => !v)} data-testid="safe-trades-toggle">
+                            {showAllTrades ? 'solo oggi' : 'mostra tutte'}
+                        </Button>
                     </div>
                     <SafeTradesTable
-                        trades={list}
+                        trades={shown}
                         commissionPct={bot.params.commission_pct}
                         liveFeed={payloadByEvent}
                         isCashOutPending={bot.isCashOutPending}
                         freshnessOf={freshnessOf}
                         onCashOut={cashOut}
+                        emptyText={showAllTrades
+                            ? "nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot"
+                            : "nessuna operazione oggi — piazza da un segnale o da un'opportunità, oppure avvia il bot (le giornate passate sono nello Storico)"}
                     />
                 </Card>
             </div>
@@ -722,7 +754,7 @@ export default function SafeStrategy() {
                                 <TabsTrigger value="segnali">Segnali ({bySport.calcioActive.length})</TabsTrigger>
                                 <TabsTrigger value="opportunita">Opportunità modello ({oppRows.length})</TabsTrigger>
                                 <TabsTrigger value="monitor">Monitor ({fbSorted.length})</TabsTrigger>
-                                <TabsTrigger value="trade">Trade ({calcioTrades.length})</TabsTrigger>
+                                <TabsTrigger value="trade">Trade ({groupClosingLegs(showAllTrades ? calcioTrades : todayTradesCalcio).length})</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="segnali" className="space-y-4">
@@ -768,7 +800,7 @@ export default function SafeStrategy() {
                                 )}
                             </TabsContent>
 
-                            <TabsContent value="trade">{renderTrades(calcioTrades)}</TabsContent>
+                            <TabsContent value="trade">{renderTrades(calcioTrades, todayTradesCalcio, todaySummaryCalcio)}</TabsContent>
                         </Tabs>
                     </TabsContent>
 
@@ -779,7 +811,7 @@ export default function SafeStrategy() {
                                 <TabsTrigger value="segnali">Segnali ({bySport.tennisActive.length})</TabsTrigger>
                                 <TabsTrigger value="opportunita">Opportunità tennis ({tennisOppRows.length})</TabsTrigger>
                                 <TabsTrigger value="monitor">Monitor ({tnSorted.length})</TabsTrigger>
-                                <TabsTrigger value="trade">Trade ({tennisTrades.length})</TabsTrigger>
+                                <TabsTrigger value="trade">Trade ({groupClosingLegs(showAllTrades ? tennisTrades : todayTradesTennis).length})</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="opportunita" className="space-y-3">
@@ -824,7 +856,7 @@ export default function SafeStrategy() {
                                 )}
                             </TabsContent>
 
-                            <TabsContent value="trade">{renderTrades(tennisTrades)}</TabsContent>
+                            <TabsContent value="trade">{renderTrades(tennisTrades, todayTradesTennis, todaySummaryTennis)}</TabsContent>
                         </Tabs>
                     </TabsContent>
 

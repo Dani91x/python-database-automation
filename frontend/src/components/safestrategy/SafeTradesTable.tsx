@@ -85,10 +85,12 @@ export interface SafeTradesTableProps {
     /** freschezza della riga del feed per evento (quote stantie → spento) */
     freshnessOf?: (eventId: string) => FeedFreshness | null;
     onCashOut: (trade: SafeTrade, args: { amount?: number; fraction?: number }) => Promise<void> | void;
+    /** testo dello stato vuoto (la pagina distingue "oggi" da "tutte") */
+    emptyText?: string;
 }
 
 export function SafeTradesTable({
-    trades, commissionPct, liveFeed, isCashOutPending, freshnessOf, onCashOut,
+    trades, commissionPct, liveFeed, isCashOutPending, freshnessOf, onCashOut, emptyText,
 }: SafeTradesTableProps) {
     return (
         <div className="overflow-x-auto">
@@ -113,8 +115,8 @@ export function SafeTradesTable({
                 <tbody>
                     {trades.length === 0 ? (
                         <tr>
-                            <td colSpan={13} className="text-center text-muted-foreground py-10">
-                                nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot
+                            <td colSpan={13} className="text-center text-muted-foreground py-10" data-testid="safe-trades-empty">
+                                {emptyText ?? "nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot"}
                             </td>
                         </tr>
                     ) : groupClosingLegs(trades).map(({ trade: t, closes }) => {

@@ -610,10 +610,28 @@ export function subscribeSafeBot(onChange: () => void): () => void {
     return () => { void supabase.removeChannel(channel); };
 }
 
+/** Riga di safe_strategy_opportunities nel CONTRATTO della UI.
+ *  Il servizio (bot_service.py) scrive ``payload.opportunities`` e ``lambdas``
+ *  come lista ``[casa, trasferta]``; la UI legge ``payload.opps`` e
+ *  ``lambdas.{home,away}``. Senza questa normalizzazione il dettaglio delle
+ *  opportunità restava VUOTO mentre il pannello rischio (stats del servizio)
+ *  le contava (11/09/2026). Idempotente: una riga già normalizzata resta uguale. */
+export function normalizeOppRow<T extends { payload: unknown }>(row: T): T {
+    const raw = (row.payload ?? {}) as Record<string, unknown>;
+    const opps = Array.isArray(raw.opps) ? raw.opps
+        : Array.isArray(raw.opportunities) ? raw.opportunities : [];
+    let lambdas: unknown = raw.lambdas ?? null;
+    if (Array.isArray(lambdas)) {
+        const [home, away] = lambdas as unknown[];
+        lambdas = { home: Number(home), away: Number(away) };
+    }
+    return { ...row, payload: { ...raw, opps, lambdas } };
+}
+
 export async function fetchOpportunities(): Promise<SafeOpportunityRow[]> {
     const { data, error } = await supabase.from('safe_strategy_opportunities').select('*');
     if (error) throw new Error(error.message);
-    return (data ?? []) as unknown as SafeOpportunityRow[];
+    return ((data ?? []) as unknown as SafeOpportunityRow[]).map(normalizeOppRow);
 }
 
 export type SafeOppEvent =
@@ -633,7 +651,7 @@ export function subscribeOpportunities(cb: (ev: SafeOppEvent) => void): () => vo
                     return;
                 }
                 const next = payload.new as SafeOpportunityRow | null;
-                if (next && next.event_id) cb({ type: 'upsert', row: next });
+                if (next && next.event_id) cb({ type: 'upsert', row: normalizeOppRow(next) });
             },
         )
         .subscribe();
