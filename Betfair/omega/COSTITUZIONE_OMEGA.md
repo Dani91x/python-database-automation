@@ -791,8 +791,11 @@ le 26–40 registrazioni sono troppo poche; si accende solo dopo una calibrazion
 sulle registrazioni REC (banco di validazione riusabile), mai a occhio.
 
 ### 15.6 Migrazione e passi
-`migrations/omega_models_v3.sql` (dopo omega_daily_v2) + `SELECT
-public.omega_build_minute_transitions();` una volta. Senza: tabella per minuto off → veto
-HT→FT e modello. Parametri nuovi: `lambda_market_grid`, `select_cost_aware`,
+`migrations/omega_models_v3.sql` (dopo omega_daily_v2). Costruzione INCREMENTALE (l'SQL
+editor ha un timeout del gateway di ~2 min): `SELECT public.omega_build_minute_transitions_schedule();`
+(pg_cron: un passo al minuto, si ferma da solo) oppure a mano `SELECT
+public.omega_build_minute_transitions_run(90);` finché `done = true`; progresso in
+`omega_build_jobs`; da capo con `_reset()`. Senza: tabella per minuto off → veto HT→FT e
+modello. Parametri nuovi: `lambda_market_grid`, `select_cost_aware`,
 `select_p_band_ratio`, `model_use_yellow_cards`, `model_tail_factor`. Test:
 `test_omega_modello_definitivo_2026_09_11.py`.
