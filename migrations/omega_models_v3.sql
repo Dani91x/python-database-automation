@@ -40,6 +40,12 @@ REVOKE ALL ON TABLE public.omega_minute_transitions FROM anon, authenticated;
 -- Al termine le leghe con meno di p_min_league_matches partite valide vengono
 -- tolte (resta il globale). Da capo: SELECT public.omega_build_minute_transitions_reset();
 -- ----------------------------------------------------------------------------
+-- INDICE sui gol per partita (usato da ogni passo; senza, il join su match_events
+-- scandisce 9,8 M righe). Se il file va in timeout su questa riga, lanciarla da sola
+-- (o con CONCURRENTLY) prima di tutto il resto.
+CREATE INDEX IF NOT EXISTS idx_match_events_goal_fixture
+    ON public.match_events (fixture_id) WHERE event_type = 'Goal';
+
 CREATE TABLE IF NOT EXISTS public.omega_build_jobs (
     job          TEXT PRIMARY KEY,
     last_id      BIGINT  NOT NULL DEFAULT 0,
@@ -71,9 +77,9 @@ $$;
 REVOKE ALL ON FUNCTION public.omega_build_minute_transitions_reset() FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.omega_build_minute_transitions_reset() TO service_role;
 
--- UN passo: lotto di p_batch id di matches (pochi secondi per 20.000)
+-- UN passo: lotto di p_batch id di matches (~1-2 s per 5.000 con l'indice)
 CREATE OR REPLACE FUNCTION public.omega_build_minute_transitions_step(
-    p_batch integer DEFAULT 20000,
+    p_batch integer DEFAULT 5000,
     p_min_league_matches integer DEFAULT 1000
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
@@ -113,6 +119,8 @@ BEGIN
        AND m.halftime_home IS NOT NULL AND m.halftime_away IS NOT NULL
        AND m.fulltime_home IS NOT NULL AND m.fulltime_away IS NOT NULL;
     GET DIAGNOSTICS v_scan = ROW_COUNT;
+    CREATE INDEX ON tmp_fx (fixture_id);
+    ANALYZE tmp_fx;
 
     -- gol con minuto (autogol alla squadra che ne beneficia; 90'+recupero = 90)
     CREATE TEMP TABLE tmp_goals AS
@@ -124,11 +132,17 @@ BEGIN
      WHERE e.event_type = 'Goal'
        AND coalesce(e.detail, '') <> 'Missed Penalty'
        AND e.minute IS NOT NULL AND e.minute BETWEEN 0 AND 90;
+    CREATE INDEX ON tmp_goals (fixture_id);
+    ANALYZE tmp_goals;
 
-    -- solo partite COERENTI (gol ricostruiti = finale)
+    -- solo partite COERENTI (gol ricostruiti = finale): join aggregato, una passata
     DELETE FROM tmp_fx f
-     WHERE (SELECT coalesce(sum(g.h), 0) FROM tmp_goals g WHERE g.fixture_id = f.fixture_id) <> f.fulltime_home
-        OR (SELECT coalesce(sum(g.a), 0) FROM tmp_goals g WHERE g.fixture_id = f.fixture_id) <> f.fulltime_away;
+     USING (SELECT x.fixture_id, coalesce(g.gh, 0) AS gh, coalesce(g.ga, 0) AS ga
+              FROM tmp_fx x
+              LEFT JOIN (SELECT fixture_id, sum(h) AS gh, sum(a) AS ga FROM tmp_goals GROUP BY fixture_id) g
+                ON g.fixture_id = x.fixture_id) t
+     WHERE t.fixture_id = f.fixture_id
+       AND (t.gh <> f.fulltime_home OR t.ga <> f.fulltime_away);
     SELECT count(*) INTO v_valid FROM tmp_fx;
 
     IF v_valid > 0 THEN
@@ -194,7 +208,7 @@ GRANT EXECUTE ON FUNCTION public.omega_build_minute_transitions_step(integer,int
 -- piu' passi entro un budget di tempo (default 90 s: sotto il timeout del gateway)
 CREATE OR REPLACE FUNCTION public.omega_build_minute_transitions_run(
     p_seconds integer DEFAULT 90,
-    p_batch integer DEFAULT 20000
+    p_batch integer DEFAULT 5000
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
 AS $$
