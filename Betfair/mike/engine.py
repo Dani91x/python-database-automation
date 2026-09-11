@@ -221,6 +221,18 @@ def cover_size(stake_under: float, price_over: float, commission: float, factor:
     return float(factor) * float(stake_under) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
 
 
+def cover_size_residual(stake_under: float, price_over: float, commission: float, factor: float, *,
+                        matched: float, matched_price: float) -> float:
+    """Stake RESIDUO sull'Over 4.5 dopo un fill parziale ``matched`` @ ``matched_price``:
+    la parte abbinata rende gia' m·(p_old−1)·(1−c); il resto porta il netto a (factor-1)·S."""
+    if price_over is None or price_over <= 1.0:
+        raise ValueError(f"price_over non valido: {price_over!r}")
+    target = float(factor) * float(stake_under)
+    already = float(matched) * (float(matched_price) - 1.0) * (1.0 - float(commission))
+    residual = (target - already) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
+    return max(0.0, residual)
+
+
 def legalize_back_size(size: float, rounding: str = "ceil",
                        min_stake: float = IT_BACK_MIN, step: float = IT_BACK_STEP) -> Tuple[float, float]:
     """Size BACK legale .it (min 2.00, passo 0.50) + overshoot % rispetto alla size chiesta."""
@@ -653,40 +665,44 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
         if S <= 0:
             return Decision("WATCH", _cancel_live(ctx), "posizione assente")
         green = _last(ctx, "under_green")
+        # ESPOSIZIONE NETTA della selezione (ingresso + eventuali fill PARZIALI della
+        # green): e' l'unica base coerente per size di chiusura e P&L bloccato
+        w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+        flat = abs(w - l) < _FLAT_EPS
         # ultimo ingresso: KO - pre_last_entry_min
         if snap.now >= last_entry_at:
             acts = _cancel_live(ctx, ("under_green",))
+            if flat:
+                return _cycle_done(ctx, snap, S, Pe, green, w)
             if bk is None or bk.best_lay is None:
                 return Decision("HOLD", acts, "ultimo ingresso: prezzo lay assente, tengo")
-            locked = locked_pnl_back(S, Pe, bk.best_lay)
-            if locked > _FLAT_EPS:
-                w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
-                plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
-                                       best_lay_price=bk.best_lay, fraction=1.0)
-                if plan.actionable:
-                    acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
-                                       plan.size, final=True, note="ultimo ingresso: chiusura in profitto"))
-                    return Decision("PRE_GREEN_PENDING", acts, f"ultimo ingresso: locked {locked:.2f} > 0",
-                                    telemetry={"last_entry_locked": round(locked, 2)})
+            plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
+                                   best_lay_price=bk.best_lay, fraction=1.0)
+            locked = min(plan.expected_if_win, plan.expected_if_lose) if plan.actionable else 0.0
+            if plan.actionable and locked > _FLAT_EPS:
+                acts.append(_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price,
+                                   plan.size, final=True, note="ultimo ingresso: chiusura in profitto"))
+                return Decision("PRE_GREEN_PENDING", acts, f"ultimo ingresso: locked {locked:.2f} > 0",
+                                telemetry={"last_entry_locked": round(locked, 2)})
             return Decision("HOLD", acts, f"ultimo ingresso: locked {locked:.2f} <= 0, tengo")
-        # green resting abbinata -> ciclo chiuso
-        if green is not None and green.filled and not green.is_live:
-            return _cycle_done(ctx, snap, S, Pe, green)
+        # esposizione piatta (green abbinata per intero) -> ciclo chiuso
+        if flat and (green is None or not green.is_live):
+            return _cycle_done(ctx, snap, S, Pe, green, w)
         if params["pre_exit_mode"] == "resting":
-            if green is None or (not green.is_live and not green.filled):
+            # nessuna green viva sul book (mai appoggiata, ritirata, o abbinata SOLO in
+            # parte e ritirata): si (ri)appoggia una lay per il RESIDUO al target
+            if green is None or not green.is_live:
                 target = green_target(Pe, int(params["pre_green_ticks"]))
-                w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
                 plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
                                        best_lay_price=None, fraction=1.0, target_price=target)
                 if plan.actionable:
                     return Decision("PRE_OPEN",
                                     [_place("under_green", MARKET_OU35, SEL_UNDER, "lay", plan.price, plan.size)],
-                                    "green resting appoggiata")
+                                    "green resting appoggiata (residuo)" if green is not None else "green resting appoggiata")
             return Decision("PRE_OPEN", [], "posizione aperta, green resting sul book")
         # taker
         target = green_target(Pe, int(params["pre_green_ticks"]))
         if bk is not None and bk.best_lay is not None and bk.best_lay <= target + _EPS:
-            w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
@@ -704,9 +720,15 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             # (finale = KO imminente: HOLD, entrera' in live scoperta)
             return Decision("HOLD" if green.final else "PRE_OPEN", [], "green non abbinata")
         if green.filled and not green.is_live:
+            w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+            if abs(w - l) >= _FLAT_EPS:
+                # chiusura taker abbinata SOLO in parte: residuo ancora scoperto →
+                # si torna a gestirlo (PRE_OPEN riappoggia/chiude il residuo); la
+                # finale (KO imminente) va in HOLD col residuo
+                return Decision("HOLD" if green.final else "PRE_OPEN", [], "green parziale: residuo aperto")
             if green.final:
                 return _after_final_green(ctx, snap, params, bk, stake)
-            return _cycle_done(ctx, snap, S, Pe, green)
+            return _cycle_done(ctx, snap, S, Pe, green, w)
         if green.is_live and snap.now - green.placed_at >= float(params["close_retry_s"]) and \
                 ctx.attempts < int(params["close_max_attempts"]):
             if bk is not None and bk.best_lay is not None:
@@ -745,9 +767,15 @@ def _after_entry_fill(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], leg
     return Decision("PRE_OPEN", acts, "ingresso abbinato", updates=upd)
 
 
-def _cycle_done(ctx: MatchCtx, snap: Snapshot, S: float, Pe: Optional[float], green: Leg) -> Decision:
-    locked = locked_pnl_back(S, Pe, green.fill_price) if Pe else 0.0
-    tele = {"pre_cycle": {"cycle": ctx.cycle_no, "entry": Pe, "exit": green.fill_price,
+def _cycle_done(ctx: MatchCtx, snap: Snapshot, S: float, Pe: Optional[float], green: Optional[Leg],
+                locked_w: Optional[float] = None) -> Decision:
+    # P&L bloccato = esposizione netta reale (W ≈ L a green completa), coerente
+    # anche con fill parziali; il calcolo "S·(Pe/p−1)" resta solo come fallback
+    if locked_w is not None:
+        locked = float(locked_w)
+    else:
+        locked = locked_pnl_back(S, Pe, green.fill_price) if (Pe and green is not None) else 0.0
+    tele = {"pre_cycle": {"cycle": ctx.cycle_no, "entry": Pe, "exit": green.fill_price if green else None,
                           "stake": S, "locked": round(locked, 2),
                           "closed_at": snap.now}}
     return Decision("WATCH", [], f"ciclo {ctx.cycle_no} chiuso: +{locked:.2f}",
@@ -845,7 +873,10 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
         bk = snap.book(MARKET_OU45, SEL_OVER)
         if bk is not None and bk.best_back is not None and leg.remaining > 0:
             S, _ = _under_position(ctx)
-            x = cover_size(S, bk.best_back, c, float(params["cover_profit_factor"])) - leg.matched
+            # RESIDUO ESATTO: la parte gia' abbinata (m @ p_old) contribuisce
+            # m·(p_old−1)·(1−c); il resto va dimensionato al prezzo NUOVO
+            x = cover_size_residual(S, bk.best_back, c, float(params["cover_profit_factor"]),
+                                    matched=leg.matched, matched_price=leg.fill_price)
             if x <= 0:
                 return Decision("LIVE_COVERED", [Action(kind="cancel", ref=leg.ref, role=leg.role)],
                                 "copertura sufficiente", updates={"attempts": 0})
@@ -992,8 +1023,8 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
     if abs(w - l) < _FLAT_EPS:
         return Decision("FLAT", _cancel_live(ctx, ("reentry_green",)), "re-ingresso chiuso",
                         updates={"reentry_done": True})
-    if green is not None and green.filled and not green.is_live:
-        return Decision("FLAT", [], "re-ingresso chiuso", updates={"reentry_done": True})
+    # (green abbinata SOLO in parte e non piu' viva → esposizione non piatta → si
+    #  riappoggia una lay per il residuo, sotto)
     bk = snap.book(MARKET_OU45, SEL_UNDER)
     if snap.minute is not None and int(snap.minute) >= int(params["reentry_exit_until_min"]):
         if params["reentry_hold_if_loss"]:
@@ -1006,7 +1037,7 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
                 acts.append(_place("reentry_green", MARKET_OU45, SEL_UNDER, plan.side, plan.price, plan.size))
                 return Decision("REENTRY_GREEN_PENDING", acts, "re-ingresso: chiusura a mercato")
         return Decision("REENTRY_OPEN", acts, "re-ingresso: prezzo assente")
-    if green is None or (not green.is_live and not green.filled):
+    if green is None or not green.is_live:
         S, Pe = position(ctx.legs, MARKET_OU45, SEL_UNDER, ("reentry",))
         if Pe:
             target = green_target(Pe, int(params["reentry_green_ticks"]))

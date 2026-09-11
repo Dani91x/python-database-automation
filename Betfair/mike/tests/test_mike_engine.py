@@ -648,3 +648,87 @@ def test_closing_attempts_exhausted_is_reported():
                            o45=book(12.0, bl=12.5, inplay=True), inplay=True, minute=31, goals=0), p)
     assert d.state == "LIVE_CLOSING" and d.actions == []
     assert d.telemetry.get("close_retries_exhausted") is True
+
+
+# ---------------------------------------------------------------------------
+# CERTIFICAZIONE FILL PARZIALI: il lato opposto e' sempre dimensionato sull'esposizione REALE
+# ---------------------------------------------------------------------------
+def test_partial_entry_fill_sizes_green_on_matched_only():
+    p = params(pre_exit_mode="resting", stake=10.0)
+    ctx = E.MatchCtx()
+    s0 = snap(KO - 2 * H, u35=book(1.50))
+    E.apply_decision(ctx, E.decide(ctx, s0, p), s0.now)
+    fill(ctx.legs[0], size=6.0)                       # 6 su 10 abbinati, residuo ritirato
+    d = E.decide(ctx, snap(KO - 2 * H + 5, u35=book(1.50)), p)
+    g = d.actions[0]
+    assert g.role == "under_green" and g.price == pytest.approx(1.48)
+    assert g.size == pytest.approx(round(6 * 1.5 / 1.48, 2), abs=0.01)     # 6.08, NON 10.14
+    E.apply_decision(ctx, d, s0.now + 5)
+    fill(ctx.legs[-1])
+    w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
+    assert abs(w - l) < 0.011 and w == pytest.approx(E.locked_pnl_back(6, 1.5, 1.48), abs=0.011)
+
+
+def test_partial_resting_green_never_closes_cycle_and_reposts_residual():
+    ctx, p = _open_prematch("resting")
+    green = ctx.legs[1]
+    # 4 € su 10.14 abbinati, poi ordine ritirato (es. dall'utente): NON e' un ciclo chiuso
+    green.matched = 4.0; green.avg_price = 1.48; green.status = "open"
+    s = snap(KO - 1.5 * H, u35=book(1.50))
+    d = E.decide(ctx, s, p)
+    assert d.state == "PRE_OPEN"
+    assert d.actions and d.actions[0].role == "under_green" and d.actions[0].side == "lay"
+    w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
+    assert d.actions[0].size == pytest.approx(round((w - l) / 1.48, 2), abs=0.01)   # solo il residuo
+    assert d.actions[0].size == pytest.approx(20.27 - 4.0, abs=0.02)     # stake 20: green 20.27
+    E.apply_decision(ctx, d, s.now)
+    assert not any(l.archived for l in ctx.legs)       # nulla archiviato con esposizione aperta
+    fill(ctx.legs[-1])
+    d2 = E.decide(ctx, snap(s.now + 2, u35=book(1.50)), p)
+    assert d2.state == "WATCH"                          # ora e' piatta: ciclo chiuso
+    assert d2.telemetry["pre_cycle"]["locked"] == pytest.approx(E.locked_pnl_back(20, 1.5, 1.48), abs=0.03)
+
+
+def test_last_entry_with_partial_green_uses_net_exposure():
+    ctx, p = _open_prematch("resting")
+    green = ctx.legs[1]
+    green.matched = 5.0; green.avg_price = 1.48; green.status = "pending"    # meta' abbinata, ancora viva
+    s = snap(KO - 9 * 60, u35=book(1.44, bl=1.45))
+    d = E.decide(ctx, s, p)
+    assert d.state == "PRE_GREEN_PENDING"
+    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    w, l = E.exposure(ctx.legs, E.MARKET_OU35, E.SEL_UNDER)
+    assert d.actions[1].size == pytest.approx(round((w - l) / 1.45, 2), abs=0.01)
+    assert d.actions[1].size < 20.0                     # solo il residuo (stake 20, 5 gia' coperti)
+
+
+def test_partial_cover_reprice_uses_exact_residual():
+    ctx, p = _live_uncovered()
+    s = snap(KO + 20 * 60, u35=book(1.35, inplay=True), o45=book(8.0, bs=50, inplay=True),
+             inplay=True, minute=20, goals=0, hazard=0.05, p4_market=0.12)
+    E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
+    cover = ctx.legs[-1]
+    x_full = E.cover_size(20, 8.0, 0.05, 1.2)
+    assert cover.size == pytest.approx(round(x_full, 2))
+    cover.matched = 1.0; cover.avg_price = 8.0          # 1 € abbinato a 8.0, resto sul book
+    s2 = snap(s.now + 11, u35=book(1.35, inplay=True), o45=book(6.0, bs=50, inplay=True),
+              inplay=True, minute=21, goals=0)
+    d = E.decide(ctx, s2, p)
+    assert [a.kind for a in d.actions] == ["cancel", "place"]
+    resid = E.cover_size_residual(20, 6.0, 0.05, 1.2, matched=1.0, matched_price=8.0)
+    assert d.actions[1].size == pytest.approx(round(resid, 2))
+    # verifica del target: con 5+ gol il netto e' esattamente +20% dello stake Under
+    net_if_over = 1.0 * 7 * 0.95 + resid * 5 * 0.95 - 20
+    assert net_if_over == pytest.approx(4.0, abs=1e-6)
+
+
+def test_partial_close_settles_on_matched_sizes():
+    legs = [
+        fill(E.Leg(role="under_last", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back", price=1.5, size=10.0)),
+        E.Leg(role="under_close", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay", price=1.3, size=11.54,
+              matched=5.0, avg_price=1.3, status="open"),
+    ]
+    r = E.settle_legs(legs, 2, 0.05)          # Under vince: back +5, lay parziale -1.5 → netto (5-1.5)*0.95
+    assert r.net == pytest.approx((5.0 - 1.5) * 0.95, abs=0.01)
+    r4 = E.settle_legs(legs, 4, 0.05)         # Under perde: -10 + 5 (lay vinta) → -5
+    assert r4.net == pytest.approx(-5.0, abs=0.01)
