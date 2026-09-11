@@ -719,7 +719,7 @@ regolazione, obiettivo corrente). Parametri nuovi in `omega_config`: `model_empi
   righe/giorno, join su PK, indici `placed`/`status`/`event_id`); il servizio non legge
   più tutta la tabella a pagine (fallback legacy solo senza migrazione).
 - La tabella HT→FT si costruisce UNA volta (`omega_build_ht_ft_transitions`: una sola
-  passata su `matches`, 4 colonne intere, GROUPING SETS, timeout locale 15 min) e a
+  passata su `matches`, 4 colonne intere, GROUPING SETS; il `set_config` del timeout dentro la funzione NON agisce sullo statement in corso: lanciarla con `SET statement_timeout = '15min';` nello stesso script) e a
   runtime si legge per chiave primaria (poche centinaia di righe per lega, cache per
   processo). Il servizio non tocca mai `matches`.
 - Letture del feed: invariate (una SELECT per ciclo sul feed unico); risultati reali:
@@ -751,7 +751,7 @@ Migrazione `omega_models_v3.sql`: tabella `omega_minute_transitions` (lega/globa
 bucket 5′ × punteggio × target ft|ht × risultato × n) costruita da `matches` +
 `match_events` (solo partite i cui gol ricostruiti coincidono col finale; autogol alla
 squadra che ne beneficia; gol al 90′+recupero solo nel finale). Costruzione = passo
-separato `SELECT public.omega_build_minute_transitions();`. A runtime: RPC
+separato (incrementale, §15.6: `_schedule()` con pg_cron o `_run(90)` a mano). A runtime: RPC
 `get_omega_minute_ft(lega, bucket, target)` (poche centinaia di righe, PK), cache per
 processo. Nella selezione ha la precedenza sul veto HT→FT (§14) e vale per ENTRAMBE le
 gambe: `p_selected = max(P modello, P empirica per minuto)`. Audit `empirical_source`
@@ -791,7 +791,7 @@ le 26–40 registrazioni sono troppo poche; si accende solo dopo una calibrazion
 sulle registrazioni REC (banco di validazione riusabile), mai a occhio.
 
 ### 15.6 Migrazione e passi
-`migrations/omega_models_v3.sql` (dopo omega_daily_v2). Costruzione INCREMENTALE (l'SQL
+`migrations/omega_models_v3.sql` (dopo omega_daily_v2), poi `omega_models_v4.sql` (§16.4: un passo manuale risponde `busy` se pg_cron sta lavorando). Costruzione INCREMENTALE (l'SQL
 editor ha un timeout del gateway di ~2 min): `SELECT public.omega_build_minute_transitions_schedule();`
 (pg_cron: un passo al minuto, si ferma da solo) oppure a mano `SELECT
 public.omega_build_minute_transitions_run(90);` finché `done = true`; progresso in
@@ -807,7 +807,7 @@ capillare della matematica e della logica, stato dell'arte, se manca qualcosa im
 Metodo: quattro revisioni indipendenti per area (logica del servizio, matematica del
 modello, SQL/dati, motore dei soldi) su OGNI riga, poi una seconda passata di test mentali
 sul codice corretto. Ogni correzione ha un test (`test_omega_certificazione_2026_09_11.py`
-+ aggiornamenti dei test storici). Suite: 808 verdi (omega + safe_strategy).
++ aggiornamenti dei test storici). Suite: 823 verdi (omega + safe_strategy).
 
 ### 16.1 Difetti trovati e corretti (per gravità)
 
@@ -912,7 +912,7 @@ modello∥mercato; > 0 = P conservativa + k·SE), `select_p_hedge` (0,5), `selec
 ### 16.4 Migrazione `omega_models_v4.sql` (da applicare, idempotente)
 Grant espliciti a `service_role`; indici parziali su `omega_trades` (posizioni aperte,
 regolate, manuali, gambe); lookup empirici come due range sulla PK (UNION ALL);
-`get_omega_daily` set-based; costruzione per minuto con `FOR UPDATE NOWAIT` (un passo
+`get_omega_daily` set-based; liability aperta residua e vinte/perse per segno negli aggregati e nello storico (§16.7); costruzione per minuto con `FOR UPDATE NOWAIT` (un passo
 manuale risponde `busy` invece di restare appeso dietro a pg_cron), tabelle temporanee
 `pg_temp.*`, `max_id` aggiornato a ogni passo. Nessuna ricostruzione necessaria: la tabella
 per minuto (939.506 partite, 1.072.786 righe) resta valida.
@@ -940,3 +940,79 @@ REALI tradate (banco riusabile), non solo sullo storico.
 - Calibrazione isotonica per famiglia: servono più campioni in coda (oggi 1.566 partite).
 - Live: BLOCCATO finché la certificazione della liquidità (§13) non è completa e il paper
   non ha almeno alcuni giorni con le correzioni di oggi.
+
+### 16.7 SECONDA PASSATA — test mentali sul codice corretto (11/09 sera, tardi)
+Richiesta: "seconda passata di approfondimento su tutte le logiche, test mentali e di
+ragionamento, certifica ogni funzionalità". Quattro nuove review sul codice GIÀ corretto
+(ingresso, uscita/regolazione, matematica, dati/UI/operatività). Suite: 823 verdi.
+
+**Trovato e corretto**
+- 2P-F1 (CRITICO) place LIVE con eccezione DOPO l'invio → riga `error` mai più guardata: un
+  lay reale vivo e invisibile (no settlement, no green-up, liability cieca). Ora la riserva
+  resta `pending` con `place_exception_reconciling` (+ CRITICAL) e `reconcile_pending` la
+  risolve contro Betfair per `omega-t<id>`; conta come gamba occupata finché non è libera.
+- 2P-F1-bis (ALTO) `placeOrders` con `status TIMEOUT` (o nessun report) = esito IGNOTO per
+  Betfair, trattato come rifiuto → un secondo back di green-up 20 s dopo → posizione
+  invertita. Ora `place_order_live` SOLLEVA → riga pending in riconciliazione.
+- 2P-F3 (ALTO) esito CERTO negativo (FOK ucciso, `MARKET_SUSPENDED`, paper senza fill)
+  bruciava la gamba per tutta la partita (riga `error` nell'unique). Ora la riserva si
+  CANCELLA e la gamba si ritenta: max 3 volte, ≥ 30 s di distanza (`_leg_retry_allowed`,
+  budget in memoria per evento/gamba, in `_place_one` per entrambi i motori).
+- 2P-F2 (ALTO) mercato `SUSPENDED` nel feed (gol appena visto, quote congelate) non fermava
+  l'ingresso automatico: paper "a risultato noto", live rifiuto certo. Ora skip
+  `market_suspended`.
+- 2P-F2-uscita (ALTO) `complete` con `<` HEDGE_EPS: un residuo di 0,01 € da arrotondamento
+  (5 % dei fill integrali) lasciava l'apertura `open` per sempre, con tentativi a vuoto
+  ogni 20 s e CRITICAL falsi. Ora `<=` o esposizioni uguali (< 5 cent); un residuo non
+  copribile (sotto la size minima) viene chiuso (`residual_dropped`), mai ritentato.
+- 2P-F3-uscita (ALTO) `niente_da_chiudere` (manca il back al momento dell'uscita) era
+  TERMINALE (`sent`): posizione esclusa per sempre dal green-up con liability piena. Ora
+  senza prezzo opposto si ASPETTA (`prezzo_opposto_non_disponibile`) e `niente_da_chiudere`
+  non consuma tentativi.
+- 2P-F4-uscita (MEDIO) il green-up leggeva il feed senza tetto d'età (riga ferma + scanner
+  vivo = "affidabile"): ora `GREENUP_MAX_AGE_S` 90 s, oltre = cieco (allarme).
+- 2P-F5-uscita (MEDIO) chiusura orfana con una sorella già regolata: netto senza la sorella
+  (±0,6–0,8 €). Ora `settle_orphan_closing(siblings=…)`.
+- 2P-F6 (BASSO) ordine `cleared` con `size_settled` 0 confermava la riserva con la size
+  riservata → `free`. 2P-F7 (BASSO) errore REST su un blocco di `listMarketBook` era "mercato
+  sparito" → il blocco resta fuori dalla risposta.
+- 2P-F4 (MEDIO) filtro di liquidità e ranking EV con la size DA TARGET invece di quella
+  CAPPATA dalla liability (skip falsi `no_runner_by_model` dopo una perdita): ora
+  `liability_cap` in `select_by_model`/`rank_by_ev`.
+- 2P-F5 (MEDIO) un evento rotto (REST KO, payload malformato) fermava lo scan di tutti:
+  ora `_scan_event_legs` per evento con `try/except` e log `scan_event_failed`.
+- 2P-F6/F8 (BASSI) stesso tetto 25 s per riga del feed e punteggio; book del feed usato
+  solo se fresco; log dedup per `insufficient_liquidity`/`max_open_liability`/
+  `no_live_state`/`goal_stop`; cache empiriche con TTL 6 h.
+- 2P-F-01 (ALTO, matematica) shrinkage→Wilson con i K=500 pseudo-conteggi come osservazioni
+  certe: lega con 10 casi e 0 uscite dava 0,52 % contro 1,33 % del globale (anti-
+  conservativo proprio sulle leghe minori). Ora `shrunk_upper`: K limitato a n_globale,
+  larghezza di Wilson sulla varianza della media pesata → 1,26 %.
+- 2P-F-02 (MEDIO, matematica) λ pre-KO con T fisso 2,6: il pareggio dell'1X2 identifica T
+  (1,5/4,2/6,5 → 3,05; 1,05/15/40 → 4,5), la coda era sottostimata fino a 2,7×. Ora
+  `total_goals_from_1x2` (bisezione annidata sul pareggio).
+- 2P-F-03 (MEDIO) il calibratore condiviso è addestrato sulla P del modello opportunità
+  della Safe Strategy, non su Omega: `model_calibration` OFF di default (la coda è corretta
+  dal fattore continuo validato); famiglia dedicata quando ci saranno stati Omega.
+- 2P-HIGH-1 (dati) `open_liability` della RPC sommava la liability PIENA anche dopo la
+  copertura (cap `max_open_liability` che scattava presto, KPI diverso dalla tabella):
+  ora residua (`if_win`) come `omega_engine.residual_liability`. 2P-MEDIUM-1: vinte/perse
+  per SEGNO del P&L totale della posizione (apertura +2 con chiusura −24 era "vinta") in
+  `omega_aggregates_sql` e `trading_daily_history` (vale anche per la Safe Strategy).
+- 2P-MEDIUM-2 letture del servizio finestrate a 3 giorni e riusate fra scan e stats
+  (prima 4 scansioni intere di `omega_trades` per ciclo, illimitate nel tempo).
+- 2P-MEDIUM-3 (UI) copertura PARZIALE invisibile: ora stato `partial` con caso peggiore/
+  migliore, stake coperto e rischio residuo (`if_win`). 2P-MEDIUM-4 heartbeat anche a bot
+  fermo. LOW: aggregati ("Any Other…") senza "bancato non uscito", contratto `calibrated`
+  booleano, 2000 trade in "mostra tutte", `updated_at` nello snapshot obiettivo.
+
+**Lasciato (con motivo)**
+- `max_liability_per_match` è PER GAMBA (1T e 2T possono sommarsi): semantica documentata,
+  il cap giornaliero `max_open_liability` copre il totale.
+- Fit di mercato e inversione O/U con Poisson puro mentre la griglia usa cv 0,30: la media
+  è conservata, la coda risulta un po' più prudente (direzione giusta), rifinitura futura.
+- `lambdas_from_market_grid` senza soglia sulla loss: incide solo con `select_k_se` > 0
+  (default 0); soglia da tarare sui fit reali prima di attivarlo.
+- Convenzione del minuto (cdf[m] vs cdf[m−1], ~0,5 % dei gol): da verificare sul feed IPS.
+- Card "partite/operazioni" vs riepilogo tabella con una posizione di ieri viva: due
+  definizioni diverse e volute (piazzate oggi vs mostrate).

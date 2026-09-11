@@ -171,10 +171,12 @@ export function tradeModelOf(t: { meta: Record<string, unknown> | null | undefin
     if (!m || typeof m !== 'object') return null;
     const r = m as Record<string, unknown>;
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    // contratto del servizio (omega_model.audit_block): p_model_raw, p_model (P usata),
+    // calibrated = BOOLEANO "calibratore applicato" (review LOW-5)
     const raw = n(r.p_model_raw) ?? n(r.raw);
-    const calibrated = n(r.calibrated) ?? n(r.p_model);
+    const calibrated = n(r.p_model) ?? n(r.calibrated);
     if (raw == null && calibrated == null) return null;
-    const applied = r.applied === true || (raw != null && calibrated != null && Math.abs(raw - calibrated) > 1e-9);
+    const applied = r.calibrated === true || r.applied === true || (raw != null && calibrated != null && Math.abs(raw - calibrated) > 1e-9);
     return { raw, calibrated, applied };
 }
 
@@ -340,7 +342,7 @@ export async function fetchOmegaState(activityLimit = 50): Promise<OmegaState> {
     };
 }
 
-export async function fetchOmegaTrades(limit = 500): Promise<OmegaTrade[]> {
+export async function fetchOmegaTrades(limit = 2000): Promise<OmegaTrade[]> {
     const { data, error } = await supabase.rpc('get_omega_trades', { p_limit: limit });
     if (error) throw new Error(error.message);
     return (data ?? []) as unknown as OmegaTrade[];

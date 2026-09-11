@@ -134,7 +134,7 @@ def test_minute_bucket_e_tabella():
     p, n = t.p_result(minute=62, score=(1, 0), result=(1, 3), half=False)
     assert n == 10000 and p == pytest.approx(EMP.p_upper(60, 10000)) and p > 0.006
     p_lega, _ = t.p_result(minute=62, score=(1, 0), result=(1, 3), half=False, league_id=135)
-    assert p_lega == pytest.approx(EMP.p_upper(5 + 500 * 0.006, 85 + 500))
+    assert p_lega == pytest.approx(EMP.shrunk_upper(5, 85, 60, 10000))
     assert t.p_result(minute=62, score=(3, 3), result=(3, 4), half=False) is None
     p_ht, n_ht = t.p_result(minute=22, score=(0, 0), result=(0, 2), half=True)
     assert n_ht == 10000 and p_ht == pytest.approx(EMP.p_upper(100, 10000))
@@ -187,7 +187,7 @@ def test_servizio_usa_la_tabella_per_minuto_su_entrambe_le_gambe(monkeypatch):
     assert t["runner_name"] == "4 - 1"
     # P della lega 135: conteggi shrinkati verso il globale (k_eff = 0 + 500·0,004, n_eff = 85 + 500), limite superiore
     assert m["empirical_source"] == "minute" and m["empirical_bucket"] == 60
-    assert m["p_data"] == pytest.approx(EMP.p_upper(500 * 0.004, 585), abs=1e-6)
+    assert m["p_data"] == pytest.approx(EMP.shrunk_upper(0, 85, 40, 10000), abs=1e-6)
     assert m["yellow"] == [1, 0] and m["cost_aware"] is True and "cover_cost" in m
     assert db.minute_calls == [(135, 60, "ft")]
     # gamba 1T: tabella 'ht' interrogata al bucket 20

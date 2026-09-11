@@ -504,9 +504,14 @@ def reconcile_decision(
             return {"action": "keep"}
     for o in cleared_orders:
         if _order_matches(o, ref, mid, sid, side):
+            settled = float(o.get("size_settled") or 0.0)
+            if settled <= 0:
+                # F6: ordine chiuso SENZA size (lapsed/cancellato/void): nessuna
+                # esposizione — mai confermare con la size della riserva
+                return {"action": "free"}
             return {"action": "confirm",
                     "price": float(o.get("price") or trade.get("price") or 0.0),
-                    "size": float(o.get("size_settled") or trade.get("size") or 0.0),
+                    "size": settled,
                     "bet_id": o.get("bet_id")}
     # non trovato in nessuna lista: decidi con GRACE PERIOD (mai 'free' su un ordine
     # appena piazzato ma non ancora visibile via API → eviterebbe un doppio).

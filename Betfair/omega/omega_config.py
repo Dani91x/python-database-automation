@@ -64,7 +64,12 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     "model_min_goal_distance": (2, int, 1, 5),     # gol AGGIUNTIVI minimi dal punteggio corrente
     # P di modello CALIBRATA nella selezione (Betfair/safe_strategy/calibration.py,
     # import guardato): 'auto' = usa il calibratore se c'è | 'off' = P grezza.
-    "model_calibration": ("auto", str, None, None),
+    # §16 seconda passata F-03: il calibratore condiviso (famiglie cs_cell/hts_cell) è
+    # addestrato sulla P del modello "opportunità" della Safe Strategy, non su quella
+    # di Omega: applicarlo qui non è una calibrazione. OFF finché non esiste una
+    # famiglia alimentata dagli stati REC/paper di Omega; la coda è corretta dal
+    # fattore continuo `model_tail_factor` (validato sullo storico).
+    "model_calibration": ("off", str, None, None),
     "model_calibration_path": ("", str, None, None),   # vuoto = default del calibratore
     # ---- §14 (11/09): seconda gamba SEMPRE coperta, dati capillari ----
     # 'veto' = per la gamba 2T la P usata è max(P modello, P empirica HT→FT dai

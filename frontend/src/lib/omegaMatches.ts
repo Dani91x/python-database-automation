@@ -13,7 +13,7 @@
 // ============================================================================
 
 export type LegKind = 'ht' | 'ft' | 'other';
-export type PnlState = 'settled' | 'locked' | 'open' | 'none';
+export type PnlState = 'settled' | 'locked' | 'partial' | 'open' | 'none';
 
 /** campi minimi che una riga deve avere (OmegaTrade e DayTradeLeg li hanno) */
 export interface MatchTradeLike {
@@ -43,6 +43,9 @@ export interface LegPnl {
     state: PnlState;
     /** P&L regolato (apertura + chiusure regolate) oppure bloccato dalla copertura */
     value: number | null;
+    /** copertura parziale: caso migliore e stake già coperto */
+    best?: number | null;
+    hedged_size?: number | null;
 }
 
 export interface MatchLeg<T extends MatchTradeLike> {
@@ -127,6 +130,13 @@ export function legPnl<T extends MatchTradeLike>(trade: T, closes: T[]): LegPnl 
     if (trade.status === 'hedged' || (locked != null && closes.some((c) => c.status !== 'error' && c.status !== 'pending'))) {
         return { state: 'locked', value: locked ?? 0 };
     }
+    // copertura PARZIALE (review MEDIUM-3): niente "bloccato", ma il caso peggiore è
+    // già noto (meta.worst_case/best_case dal servizio) e il rischio vivo è if_win
+    const m = metaOf(trade);
+    const hedgedSize = num(m['hedged_size']);
+    if (LIVE.has(trade.status) && hedgedSize != null && hedgedSize > 0 && locked == null) {
+        return { state: 'partial', value: num(m['worst_case']), best: num(m['best_case']), hedged_size: hedgedSize };
+    }
     if (LIVE.has(trade.status)) return { state: 'open', value: null };
     return { state: 'none', value: null };
 }
@@ -187,6 +197,7 @@ export function groupTradesByMatch<T extends MatchTradeLike>(trades: T[]): Match
             if (leg.pnl.state === 'settled') { pnl_settled += leg.pnl.value ?? 0; n_decided += 1; }
             else if (leg.pnl.state === 'locked') { pnl_locked = (pnl_locked ?? 0) + (leg.pnl.value ?? 0); n_decided += 1; }
             else if (leg.live && leg.trade.closes_trade_id != null) { /* chiusura orfana: rischio già nell'apertura */ }
+            else if (leg.live && leg.pnl.state === 'partial') { const w = num(metaOf(leg.trade)['if_win']); open_liability += w != null ? Math.max(0, -w) : (Number(leg.trade.liability) || 0); }
             else if (leg.live && leg.trade.side !== 'back') { open_liability += Number(leg.trade.liability) || 0; }
             else if (leg.live) { open_liability += Number(leg.trade.size) || 0; }
             if (ts(leg.trade.placed_at) < ts(placed_at)) placed_at = leg.trade.placed_at;

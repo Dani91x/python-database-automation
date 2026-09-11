@@ -76,7 +76,12 @@ FEED_MAX_AGE_S = 15.0   # età massima riga (o scanner vivo): mai quote vecchie
 # indipendente dall'heartbeat dello scanner (review M9/H4): un book fermo da 25 s
 # non è un book, e un punteggio di 3 minuti fa è la perdita del 09/09
 DECISION_MAX_AGE_S = 25.0
-SELECT_SCORE_MAX_AGE_S = 30
+SELECT_SCORE_MAX_AGE_S = 25          # = DECISION_MAX_AGE_S (seconda passata F6: stesso tetto)
+GREENUP_MAX_AGE_S = 90.0             # green-up: riga del feed più vecchia = cieco (F4)
+LEG_RETRY_MAX = 3                    # esiti CERTI negativi (FOK ucciso, rifiuto): ritentabili
+LEG_RETRY_MIN_S = 30.0
+_LEG_RETRY: dict[tuple[str, str], tuple[int, float]] = {}
+EMPIRICAL_CACHE_TTL_S = 6 * 3600.0   # tabelle empiriche ricostruite dal job: rilette ogni 6 h
 
 
 def cs_snapshot_from_payload(
@@ -200,6 +205,15 @@ def _feed_state(market, event_id: str) -> Optional[dict]:
     if market is not _real_market:
         return None
     payload, _ = _feed_row(str(event_id))
+    return payload if isinstance(payload, dict) else None
+
+
+def _feed_state_bounded(market, event_id: str, max_age: float) -> Optional[dict]:
+    """Payload del feed con TETTO DURO sull'età (green-up, F4): una riga ferma da
+    più di ``max_age`` s = cieco (allarme), mai una decisione su dati vecchi."""
+    if market is not _real_market:
+        return None
+    payload, _ = _feed_row(str(event_id), hard_max_age=max_age)
     return payload if isinstance(payload, dict) else None
 
 
@@ -390,8 +404,9 @@ def _minute_table(db, league_id: Optional[int], minute: int, half: bool, params:
     bucket = EMP.minute_bucket(minute, half=half)
     target = "ht" if half else "ft"
     key = (int(league_id) if league_id is not None else 0, bucket, target)
-    if key in _MINUTE_CACHE:
-        return _MINUTE_CACHE[key]
+    hit = _MINUTE_CACHE.get(key)
+    if hit is not None and time.time() - hit[1] < EMPIRICAL_CACHE_TTL_S:
+        return hit[0]
     try:
         rows = fn(league_id, bucket, target)
     except Exception as ex:  # noqa: BLE001
@@ -404,7 +419,7 @@ def _minute_table(db, league_id: Optional[int], minute: int, half: bool, params:
         table = None
     if len(_MINUTE_CACHE) >= 2000:
         _MINUTE_CACHE.clear()
-    _MINUTE_CACHE[key] = table
+    _MINUTE_CACHE[key] = (table, time.time())
     return table
 
 
@@ -416,8 +431,9 @@ def _empirical_table(db, league_id: Optional[int], params: dict):
     if not callable(fn):
         return None
     key = int(league_id) if league_id is not None else 0
-    if key in _EMPIRICAL_CACHE:
-        return _EMPIRICAL_CACHE[key]
+    hit = _EMPIRICAL_CACHE.get(key)
+    if hit is not None and time.time() - hit[1] < EMPIRICAL_CACHE_TTL_S:
+        return hit[0]
     from Betfair.omega import omega_empirical as EMP
     try:
         rows = fn(league_id)
@@ -431,7 +447,7 @@ def _empirical_table(db, league_id: Optional[int], params: dict):
         table = None
     if len(_EMPIRICAL_CACHE) >= 500:
         _EMPIRICAL_CACHE.clear()
-    _EMPIRICAL_CACHE[key] = table
+    _EMPIRICAL_CACHE[key] = (table, time.time())
     return table
 
 
@@ -505,6 +521,7 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
         band_ratio=float(params.get("select_p_band_ratio", 2.0)),
         tail_factor=float(params.get("model_tail_factor", 1.0)),
         commission=float(params.get("commission_pct", 0.0)) / 100.0,
+        liability_cap=float(params.get("max_liability_per_match", 0.0) or 0.0),
         probs_alt=probs_alt,
         k_se=float(params.get("select_k_se", 0.0)),
         p_hedge=float(params.get("select_p_hedge", 0.5)),
@@ -608,6 +625,7 @@ def scan_and_place_legs(
     # cap max_events = PARTITE distinte, non gambe (review M1)
     traded_count = int(aggregates.get("events_today", aggregates.get("matches_traded_today", aggregates.get("matches_traded", 0))))
     if params["stop_on_goal"] and realized >= goal:
+        _log_dedup(db, ("goal_stop",), "goal_stop", {"realized": round(realized, 2), "goal": goal})
         return 0
     if params["daily_loss_cap"] and params["daily_loss_cap"] > 0 and realized <= -params["daily_loss_cap"]:
         _log_dedup(db, ("loss_stop",), "loss_stop", {"realized": round(realized, 2), "cap": params["daily_loss_cap"]})
@@ -618,23 +636,48 @@ def scan_and_place_legs(
     for ev in events:
         if ev.event_id in traded_ids:
             continue
+        try:
+            did_n, traded_count = _scan_event_legs(
+                ev=ev, events=events, control=control, params=params, traded_ids=traded_ids,
+                traded_legs=traded_legs, aggregates=aggregates, market=market, db=db, now=now,
+                score_lookup=score_lookup, goal=goal, realized=realized, mode=mode,
+                commission=commission, traded_count=traded_count, minutes_seen=minutes_seen)
+            placed += did_n
+        except Exception as ex:  # noqa: BLE001 — seconda passata F5: un evento rotto non ferma gli altri
+            _log_dedup(db, (ev.event_id, "event_error"), "error",
+                       {"event_id": ev.event_id, "reason": "scan_event_failed", "err": str(ex)[:160]})
+    return placed
+
+
+def _scan_event_legs(*, ev, events, control, params, traded_ids, traded_legs, aggregates, market, db,
+                     now, score_lookup, goal, realized, mode, commission, traded_count,
+                     minutes_seen) -> "tuple[int, int]":
+    """Le gambe di UN evento (estratto da scan_and_place_legs per isolare gli errori
+    per evento). Ritorna (gambe piazzate, traded_count aggiornato)."""
+    placed = 0
+    if True:
         if params["max_events"] and traded_count >= params["max_events"] \
                 and not any((ev.event_id, leg) in traded_legs for leg in E.LEG_PHASES):
-            continue   # cap raggiunto: niente partite NUOVE, ma la 2ª gamba si fa sempre
+            return 0, traded_count   # cap raggiunto: niente partite NUOVE, ma la 2ª gamba si fa sempre
         if ev.open_date is not None:   # pre-filtro orologio, largo (recuperi/KO ritardati)
             cm = E.minute_from_clock(ev.open_date, now)
             if cm < params["ht_entry_min"] - 25 or cm > params["ft_entry_max"] + 25:
-                continue
+                return 0, traded_count
         state, status, score_str = _live_state_for(market, ev, score_lookup, now, decision=True)
         if state is None:
-            continue
+            _log_dedup(db, (ev.event_id, "no_live_state"), "skip",
+                       {"event_id": ev.event_id, "reason": "no_live_state"})
+            return 0, traded_count
         minutes_seen[str(ev.event_id)] = int(state.minute)
         phase = E.mission_phase(status=status, minute=state.minute, kickoff=ev.open_date, now=now)
-        payload = _feed_state(market, ev.event_id)
+        # book del feed SOLO se fresco per decidere (F6): altrimenti REST fresco
+        payload = _feed_state(market, ev.event_id) if _feed_fresh_for_decision(market, ev.event_id) else None
         for leg, mtype, half, leg_phase, k_min, k_max in _LEGS:
             if phase != leg_phase or (ev.event_id, leg) in traded_legs:
                 continue
             if not (params[k_min] <= state.minute <= params[k_max]):
+                continue
+            if not _leg_retry_allowed(ev.event_id, leg, now):
                 continue
             pair = _leg_market(market, ev, mtype, payload)
             if pair is None:
@@ -643,6 +686,13 @@ def scan_and_place_legs(
                 continue
             cs, snapshot = pair
             if snapshot.closed or not snapshot.inplay:
+                continue
+            if str(getattr(snapshot, "status", "OPEN") or "OPEN").upper() != "OPEN":
+                # seconda passata F2: mercato SOSPESO (gol appena visto, quote congelate):
+                # piazzare qui = "a risultato noto" in paper, rifiuto certo in live
+                _log_dedup(db, (ev.event_id, leg, "market_not_open"), "skip",
+                           {"event_id": ev.event_id, "leg": leg,
+                            "reason": f"market_{str(snapshot.status).lower()}"})
                 continue
             # §14: target di GAMBA = (G − R) / gambe ancora piazzabili oggi (questa
             # inclusa): l'obiettivo si spalma su tutte le operazioni residue, la
@@ -681,7 +731,35 @@ def scan_and_place_legs(
                 if (ev.event_id, other) not in traded_legs:
                     traded_count += 1          # la partita conta una volta sola
                 traded_legs.add((ev.event_id, leg))
-    return placed
+    return placed, traded_count
+
+
+def _leg_retry_allowed(event_id: str, leg: str, now: datetime) -> bool:
+    """Una gamba con esito CERTO negativo (FOK ucciso, rifiuto, paper senza fill)
+    si ritenta al massimo LEG_RETRY_MAX volte, a ≥ LEG_RETRY_MIN_S di distanza
+    (seconda passata F3: prima una riga 'error' bruciava la gamba per la partita)."""
+    n, ts = _LEG_RETRY.get((str(event_id), str(leg)), (0, 0.0))
+    if n >= LEG_RETRY_MAX:
+        return False
+    return n == 0 or (now.timestamp() - ts) >= LEG_RETRY_MIN_S
+
+
+def _leg_certain_failure(db, trade_id: int, event_id: str, leg: Optional[str], now: datetime,
+                         reason: str, extra: Optional[dict] = None) -> None:
+    """Esito CERTO negativo: la riserva si CANCELLA (guardata su 'pending') e la gamba
+    torna tentabile col budget di _leg_retry_allowed. Un esito IGNOTO non passa mai
+    di qui (resta pending → reconcile_pending)."""
+    key = (str(event_id), str(leg or ""))
+    n, _ = _LEG_RETRY.get(key, (0, 0.0))
+    _LEG_RETRY[key] = (n + 1, now.timestamp())
+    if len(_LEG_RETRY) > 5000:
+        _LEG_RETRY.clear()
+    try:
+        db.delete_trade(trade_id)
+    except Exception as ex:  # noqa: BLE001 — se non si cancella resta 'pending': lo libera reconcile
+        logger.warning("[omega] delete riserva %s KO: %s", trade_id, str(ex)[:120])
+    db.log("skip", {"event_id": event_id, "trade_id": trade_id, "reason": reason,
+                    "attempt": n + 1, "max": LEG_RETRY_MAX, **(extra or {})})
 
 
 def _size_and_place(*, ev, cs, sel, snapshot, target, minute, score_str, mode, commission,
@@ -697,13 +775,15 @@ def _size_and_place(*, ev, cs, sel, snapshot, target, minute, score_str, mode, c
         db.log("size_reduced", {"event_id": ev.event_id, "requested": requested_size,
                                 "available": sel.lay_size_available, "size": size})
     if size < params["min_stake"]:
-        db.log("skip", {"event_id": ev.event_id, "reason": "insufficient_liquidity",
-                        "avail": sel.lay_size_available})
+        _log_dedup(db, (ev.event_id, phase, "insufficient_liquidity"), "skip",
+                   {"event_id": ev.event_id, "leg": phase, "reason": "insufficient_liquidity",
+                    "avail": sel.lay_size_available})
         return 0
     liability = E.liability_from_lay(size, sel.price)
     if params["max_open_liability"] and params["max_open_liability"] > 0:
         if aggregates.get("open_liability", 0.0) + liability > params["max_open_liability"]:
-            db.log("skip", {"event_id": ev.event_id, "reason": "max_open_liability"})
+            _log_dedup(db, (ev.event_id, phase, "max_open_liability"), "skip",
+                       {"event_id": ev.event_id, "leg": phase, "reason": "max_open_liability"})
             return 0
     did = _place_one(
         ev=ev, cs=cs, sel=sel, snapshot=snapshot, size=size, price=sel.price,
@@ -993,6 +1073,9 @@ def _place_one(
         reserve["meta"]["model"] = model
     keep_meta: dict[str, Any] = {"runners": runners_map, **({"model": model} if model else {})}
 
+    # budget dei tentativi dopo esiti CERTI negativi (vale per entrambi i motori)
+    if not _leg_retry_allowed(ev.event_id, phase or "", now):
+        return 0
     # 1) RISERVA (il conflitto su event_id = già riservato/piazzato → skip pulito, I1)
     try:
         trade_id = db.insert_trade(reserve)
@@ -1026,8 +1109,7 @@ def _place_one(
                                            "trade_id": trade_id, "reason": gate_reason})
         fill = E.paper_fill(size, best_price=price, lay_ladder=ladder, limit_price=price, side="lay")
         if fill is None or fill.matched_size <= 0:
-            db.update_trade(trade_id, status="error", meta={"reason": "paper_no_fill"})
-            db.log("skip", {"event_id": ev.event_id, "reason": "paper_no_fill"})
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "paper_no_fill")
             return 0
         final_price, final_size = fill.avg_price, fill.matched_size
         meta = {"fully_matched": fill.fully_matched,
@@ -1061,15 +1143,25 @@ def _place_one(
                 price=price, size=size, event_id=ev.event_id,
                 customer_ref=E.customer_ref_for(trade_id),
             )
-        except Exception as ex:  # noqa: BLE001 — ordine reale ESITO IGNOTO: marca error, NON ripiazza
-            db.update_trade(trade_id, status="error", meta={"reason": "place_exception", "err": str(ex)[:160]})
-            db.log("error", {"event_id": ev.event_id, "trade_id": trade_id, "reason": "place_exception"})
-            return 0
+        except Exception as ex:  # noqa: BLE001 — ordine reale ESITO IGNOTO (seconda passata F1)
+            # l'eccezione può arrivare DOPO che Betfair ha accettato l'ordine: la riserva
+            # resta 'pending' e reconcile_pending la risolve contro Betfair (match forte
+            # su customerOrderRef omega-t<id>) o la libera dopo il grace. Prima: riga
+            # 'error' mai più guardata → un lay reale vivo e invisibile (no settlement,
+            # no green-up, liability cieca).
+            db.update_trade(trade_id, meta={**keep_meta, "phase": "reserved",
+                                            "reason": "place_exception_reconciling",
+                                            "err": str(ex)[:160]})
+            logger.critical("[omega] place LIVE a esito IGNOTO (trade %s, evento %s): in riconciliazione",
+                            trade_id, ev.event_id)
+            db.log("error", {"event_id": ev.event_id, "trade_id": trade_id,
+                             "reason": "place_exception_reconciling", "critical": True,
+                             "err": str(ex)[:160]})
+            return 1   # prudente: gamba occupata finché la riconciliazione non libera la riga
         if not res.ok or res.size_matched <= 0:
-            db.update_trade(trade_id, status="error",
-                            meta={"reason": "live_not_matched", "order_status": res.order_status})
-            db.log("skip", {"event_id": ev.event_id, "reason": "live_not_matched",
-                            "order_status": res.order_status})
+            # esito CERTO (report Betfair): nessun ordine vivo → riserva via, gamba ritentabile
+            _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "live_not_matched",
+                                 {"order_status": res.order_status})
             return 0
         final_price = float(res.avg_price_matched or price)
         final_size = res.size_matched
@@ -2013,8 +2105,10 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime,
                 continue
             comm = c.get("commission")
             comm = float(comm) if comm is not None else fallback_commission
+            siblings = [s for s in (closings_fn([pid]) or []) if callable(closings_fn)
+                        and int(s.get("id") or 0) != int(c.get("id") or 0)] if callable(closings_fn) else []
             if X.settle_orphan_closing(db=db, closing=c, parent=parent,
-                                       commission=comm, now=now):
+                                       commission=comm, now=now, siblings=siblings):
                 n += 1
         except Exception as ex:  # noqa: BLE001
             db.log("settle_error", {"trade_id": c.get("id"), "err": str(ex)[:160]})
@@ -2726,7 +2820,7 @@ def _greenup_candidates(db) -> list[dict[str, Any]]:
                     continue
             if req.get("sent"):
                 res = _greenup_residual(meta)
-                if res is None or res < X.HEDGE_EPS:
+                if res is None or res <= X.HEDGE_EPS:
                     continue
         out.append(t)
     return out
@@ -2967,11 +3061,13 @@ def _greenup_send(*, db, market, tr: dict[str, Any], meta: dict[str, Any], trigg
     except Exception as ex:  # noqa: BLE001
         res = {"error": "exception", "detail": str(ex)[:160]}
     err = res.get("error")
-    if err == "chiusura_in_corso":
-        req["attempts"] = attempts - 1     # non è un fallimento: si riguarda al ciclo dopo
+    if err in ("chiusura_in_corso", "niente_da_chiudere"):
+        # non è un fallimento: si riguarda al ciclo dopo (F3: 'niente_da_chiudere' era
+        # terminale → posizione esclusa PER SEMPRE dal green-up con liability piena)
+        req["attempts"] = attempts - 1
         _greenup_persist(db, tr, req)
         return False
-    if err in ("posizione_gia_chiusa", "niente_da_chiudere") or \
+    if err == "posizione_gia_chiusa" or \
             (isinstance(err, str) and err.startswith("trade_non_aperto")):
         req.update({"sent": True, "note": err})
         _greenup_persist(db, tr, req)
@@ -3050,7 +3146,7 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
     if req and req.get("sent"):
         # RESIDUO di un'uscita già decisa (fill cappato): niente nuova decisione
         residual = _greenup_residual(meta)
-        if residual is None or residual < X.HEDGE_EPS:
+        if residual is None or residual <= X.HEDGE_EPS:
             return False
         if not reachable:
             # il bancato è diventato irraggiungibile: il lay non può più perdere,
@@ -3093,6 +3189,7 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
     if legs is None:
         return False                                   # lettura chiusure KO: fail-closed
     locked: Optional[float] = None
+    plan = None
     try:
         plan = X.close_plan(tr, best_back=_fnum(prices.get("back")), best_lay=lay_now,
                             fraction=1.0, closings=legs)
@@ -3100,6 +3197,18 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
             locked = X.locked_pnl(tr, plan)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[omega] greenup close_plan KO (trade %s): %s", tr.get("id"), str(ex)[:120])
+    actionable = bool(plan is not None and plan.actionable)
+    if residual is not None and not actionable:
+        # seconda passata F2: residuo sotto la size minima (o senza prezzo opposto):
+        # coprirlo è impossibile — chiuso, niente tentativi a vuoto ogni 20 s
+        _greenup_write_key(db, tr, meta, GREENUP_KEY, {**(req or {}), "residual_dropped": True,
+                                                       "note": "residuo non copribile"})
+        return False
+    if residual is None and trigger is not None and not actionable:
+        # seconda passata F3: manca il prezzo opposto (mercato appena riaperto): si
+        # ASPETTA, non si "invia" un'uscita che close_trade non può eseguire
+        _greenup_wait(db, tr, meta, trigger, "prezzo_opposto_non_disponibile")
+        return False
     exp_win, exp_lose = X.net_exposures(tr, legs)
     # profitto del tenere al NETTO della commissione (review MED-3: al lordo il bias
     # verso HOLD valeva esattamente greenup_ev_margin)
@@ -3150,7 +3259,7 @@ def process_auto_greenup(*, params: dict[str, Any], market, db, now: datetime,
     if not candidates:
         return 0
     if feed is None:
-        feed = lambda eid: _feed_state(market, eid)  # noqa: E731
+        feed = lambda eid: _feed_state_bounded(market, eid, GREENUP_MAX_AGE_S)  # noqa: E731
     sent = 0
     for tr in candidates:
         try:
@@ -3586,6 +3695,12 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("stop", {})
         return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup}
     if status != "running":
+        # heartbeat ANCHE a bot fermo (seconda passata MEDIUM-4): settlement, green-up e
+        # risultati girano comunque — la UI deve sapere che il servizio è vivo
+        try:
+            db.set_control(heartbeat_at=now.isoformat())
+        except Exception:  # noqa: BLE001
+            pass
         return {"idle": True, "status": status, "settled": n_settled, "manual": n_manual,
                 "greenup": n_greenup}
 
@@ -3595,14 +3710,18 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "list_events_failed", "err": str(ex)[:160]})
         events = []
-    traded_ids = db.traded_event_ids()
+    legs_engine = str(params.get("engine", "legs")) == "legs"
+    # finestra delle letture (seconda passata MEDIUM-2): le gambe si decidono in
+    # giornata; oltre 3 giorni l'unique del DB resta la rete. Niente scansioni intere.
+    since_iso = (now - timedelta(days=3)).isoformat()
+    traded_ids = set() if legs_engine else db.traded_event_ids()
     day_start = E.day_start_utc(now)  # §2: giornata operativa Europe/Rome
     agg = db.aggregates(day_start)
     # eventi con trade MANUALI: territorio dell'utente, l'automatico non aggiunge
     # esposizione (§8, review H2 — in v2 il filtro era andato perso)
     manual_fn = getattr(db, "manual_event_ids", None)
     try:
-        manual_ids = set(manual_fn()) if callable(manual_fn) else set()
+        manual_ids = set(_call_windowed(manual_fn, since_iso)) if callable(manual_fn) else set()
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "manual_ids_failed", "err": str(ex)[:160]})
         return {"skipped": "manual_ids_failed", "settled": n_settled, "manual": n_manual,
@@ -3622,9 +3741,10 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     # 3) scan + place — v2 "legs" (2 gambe/partita, selezione per modello) di
     #    default; "single" = motore v1 (una gamba CS, quota più alta) come kill-switch
-    if str(params.get("engine", "legs")) == "legs":
+    traded_legs: set = set()
+    if legs_engine:
         legs_fn = getattr(db, "traded_legs", None)
-        traded_legs = set(legs_fn()) if callable(legs_fn) else {
+        traded_legs = set(_call_windowed(legs_fn, since_iso)) if callable(legs_fn) else {
             (e, p) for e in db.traded_event_ids() for p in ("ht_cs", "ft_cs")}
         n_placed = scan_and_place_legs(
             control=control, params=params, events=events, traded_ids=set(mission_ids) | manual_ids,
@@ -3644,10 +3764,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     agg2 = db.aggregates(day_start)
     realized_today = float(agg2.get("realized_today", agg2.get("realized_profit", 0.0)))
     traded_today = int(agg2.get("matches_traded_today", agg2.get("matches_traded", 0)))
-    if str(params.get("engine", "legs")) == "legs":
-        legs_fn = getattr(db, "traded_legs", None)
-        legs_done = set(legs_fn()) if callable(legs_fn) else {
-            (e, p) for e in db.traded_event_ids() for p in E.LEG_PHASES}
+    if legs_engine:
+        legs_done = traded_legs        # già aggiornata dallo scan: nessuna seconda lettura
         legs_left, m_rem = E.legs_remaining(
             events, legs_done, now=now, ht_entry_max=params["ht_entry_max"],
             ft_entry_max=params["ft_entry_max"], max_events=params["max_events"],
@@ -3693,6 +3811,15 @@ _SINGLE_INSTANCE_PORT = 47313  # lock single-instance (come tennis 47312)
 # non è idempotente oltre i 60s di de-dup Betfair, quindi il loop non deve MAI
 # arrivare a un place con la sessione scaduta contando sul retry.
 KEEPALIVE_EVERY_S = 600.0
+
+
+def _call_windowed(fn, since_iso: str):
+    """Chiama un lettore DB con la finestra temporale se la accetta (DB reale),
+    altrimenti senza (fake dei test / lettori storici)."""
+    try:
+        return fn(since_iso=since_iso)
+    except TypeError:
+        return fn()
 
 
 def _maybe_keepalive(market, last_ts: float, *, now_ts: float) -> float:

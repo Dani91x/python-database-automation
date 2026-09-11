@@ -115,7 +115,8 @@ def lambdas_from_pre_ko(pre_ko: Optional[dict], total_goals: float = DEFAULT_TOT
     probs = devig_1x2(pre_ko.get("home"), pre_ko.get("draw"), pre_ko.get("away"))
     if probs is None:
         return None
-    return split_lambdas_1x2(probs[0], probs[2], total_goals, rho)
+    total = total_goals_from_1x2(probs[0], probs[2], rho, fallback=total_goals)
+    return split_lambdas_1x2(probs[0], probs[2], total, rho)
 
 
 def _full_match_1x2(lh: float, la: float, rho: float) -> Tuple[float, float, float]:
@@ -123,6 +124,39 @@ def _full_match_1x2(lh: float, la: float, rho: float) -> Tuple[float, float, flo
     ph = sum(p for (h, a), p in g.items() if h > a)
     pa = sum(p for (h, a), p in g.items() if a > h)
     return ph, 1.0 - ph - pa, pa
+
+
+def total_goals_from_1x2(p_home: float, p_away: float, rho: float = DEFAULT_RHO,
+                         fallback: float = DEFAULT_TOTAL_GOALS) -> float:
+    """Gol totali attesi T impliciti nel PAREGGIO dell'1X2 (seconda passata F-02): a
+    rapporto casa/trasferta fisso, P(X) decresce in T (più gol = meno pareggi);
+    bisezione su T in [1,2; 5,5]. Il sistema {ph, pd, pa} è esattamente identificato
+    da (λh, λa): fissare T = 2,6 buttava via il pareggio e sottostimava la coda
+    fino a 2,7× nelle partite da molti gol."""
+    try:
+        pd = 1.0 - float(p_home) - float(p_away)
+    except (TypeError, ValueError):
+        return fallback
+    if not (0.02 < pd < 0.6):
+        return fallback
+
+    def draw_at(t: float) -> float:
+        lh, la = split_lambdas_1x2(p_home, p_away, t, rho)
+        _, d, _ = _full_match_1x2(lh, la, rho)
+        return d
+
+    lo, hi = 1.2, 5.5
+    if draw_at(lo) < pd:
+        return lo
+    if draw_at(hi) > pd:
+        return hi
+    for _ in range(30):
+        mid = 0.5 * (lo + hi)
+        if draw_at(mid) > pd:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
 
 
 def split_lambdas_1x2(p_home: float, p_away: float, total_goals: float,
@@ -278,9 +312,9 @@ CALIBRATION_FAMILY_FT = "cs_cell"
 CALIBRATION_FAMILY_HT = "hts_cell"
 # §15: FATTORE DI CODA stimato dal banco di validazione (tools/omega_validate_models):
 # i risultati che il modello dà a ≤ TAIL_P_MAX escono ~1,7× più spesso del
-# previsto (rapporti 11/09: 1,1–1,8 secondo minuto e campione). Applicato alla P
-# del modello nella coda SOLO quando il calibratore condiviso non copre la
-# famiglia (mai entrambi). Parametro `model_tail_factor`.
+# previsto (rapporti 11/09: 1,1–1,8 secondo minuto e campione). P usata =
+# max(P calibrata, P grezza × fattore continuo) — vedi model_p. Parametro
+# `model_tail_factor`.
 TAIL_P_MAX = 0.05
 DEFAULT_TAIL_FACTOR = 1.3
 _CALIBRATION_TTL_S = 600.0
@@ -393,6 +427,7 @@ def select_by_model(
     k_se: float = 0.0,
     p_hedge: float = 0.5,
     ev_kappa: float = 1.0,
+    liability_cap: float = 0.0,
 ) -> Optional[ModelSelection]:
     """Runner con la probabilità PIÙ BASSA che rispetti tutti i vincoli.
     ``runners``: ``omega_engine.ScoreRunner`` (lay_price/lay_size). None se nessuno.
@@ -401,13 +436,16 @@ def select_by_model(
     Con ``p_data`` (§14: P empirica HT→FT dai dati storici, ``omega_empirical``)
     la P di filtro/ordinamento è max(P modello, P dati): mai bancare un
     risultato che i dati dicono meno raro di quanto creda il modello."""
-    need = max(float(min_liquidity), float(size_needed))
     best: Optional[ModelSelection] = None
     cands: list = []
     for r in runners:
         price = getattr(r, "lay_price", None)
         if price is None or price < price_min or price > price_max:
             continue
+        # liquidità richiesta = size CAPPATA a questo prezzo (seconda passata F4: con
+        # un cap di liability la size piazzata è molto più piccola di quella "da
+        # target" → skip falsi per liquidità)
+        need = max(float(min_liquidity), E.apply_liability_cap(float(size_needed), float(price), liability_cap))
         if float(getattr(r, "lay_size", 0.0) or 0.0) < need:
             continue
         parsed = E.parse_scoreline(getattr(r, "name", "") or "")
@@ -461,7 +499,7 @@ def select_by_model(
         # §15/F5: si massimizza il VALORE ATTESO (vincita netta, perdita, costo
         # atteso della copertura) — non una banda di P con il costo per primo
         return rank_by_ev(cands, size=float(size_needed), commission=commission,
-                          p_hedge=p_hedge, kappa=ev_kappa)
+                          p_hedge=p_hedge, kappa=ev_kappa, liability_cap=liability_cap)
     return best
 
 
@@ -915,19 +953,24 @@ def expected_value(p: float, price: float, size: float, commission: float,
     return ev
 
 
-def rank_by_ev(cands: list, *, size: float, commission: float, p_hedge: float, kappa: float) -> Optional[Any]:
+def rank_by_ev(cands: list, *, size: float, commission: float, p_hedge: float, kappa: float,
+               liability_cap: float = 0.0) -> Optional[Any]:
     """Fra le ``ModelSelection`` sceglie quella col VALORE ATTESO massimo,
     contando anche il costo atteso della copertura; copertura impossibile
-    (liquidità back insufficiente) penalizzata."""
+    (liquidità back insufficiente) penalizzata. La size è quella che verrebbe
+    DAVVERO piazzata a quel prezzo (cap di liability, liquidità lay)."""
     if not cands:
         return None
 
     def key(c):
-        cost = cover_cost(size, c.price, c.back_price)
-        need = float(size) * float(c.price) / float(c.back_price) if c.back_price and c.back_price > 1 else None
+        s = E.apply_liability_cap(float(size), float(c.price), liability_cap)
+        if c.lay_size_available and s > c.lay_size_available:
+            s = float(c.lay_size_available)
+        cost = cover_cost(s, c.price, c.back_price)
+        need = float(s) * float(c.price) / float(c.back_price) if c.back_price and c.back_price > 1 else None
         liquid = c.back_size is None or c.back_size <= 0 or need is None or c.back_size >= need
         coverable = 1 if (cost is not None and liquid) else 0
-        ev = expected_value(c.p_selected, c.price, size, commission, cost, p_hedge, kappa)
+        ev = expected_value(c.p_selected, c.price, s, commission, cost, p_hedge, kappa)
         return (coverable, ev, -c.p_selected)
 
     return max(cands, key=key)

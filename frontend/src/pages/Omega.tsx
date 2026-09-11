@@ -155,7 +155,7 @@ export default function Omega() {
 
     async function reload() {
         const firstLoad = !initialized.current;
-        const [st, tr] = await Promise.all([fetchOmegaState(60), fetchOmegaTrades(500)]);
+        const [st, tr] = await Promise.all([fetchOmegaState(60), fetchOmegaTrades(2000)]);
         setControl(st.control);
         setAggregates(st.aggregates);
         setTrades(tr);

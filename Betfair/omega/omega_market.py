@@ -292,10 +292,9 @@ def read_markets(markets: list) -> dict:
         chunk = ids[i:i + 40]
         try:
             books = call(lambda c, ch=chunk: c.list_market_book(ch)) or []
-        except Exception as ex:  # noqa: BLE001
+        except Exception as ex:  # noqa: BLE001 — F7: errore ≠ mercato sparito: il blocco
+            # resta FUORI dalla risposta (il chiamante rilegge uno a uno o salta il ciclo)
             logger.warning("[omega] listMarketBook batch KO: %s", str(ex)[:120])
-            for mid in chunk:
-                out[mid] = None
             continue
         seen = set()
         for b in books:
@@ -509,6 +508,12 @@ def place_order_live(
     ) or {}
     reports = report.get("instructionReports") or []
     ir = reports[0] if reports else {}
+    # seconda passata F1: 'TIMEOUT' (o nessun report) = esito IGNOTO per la doc
+    # Betfair — l'ordine può essere vivo. NON è un rifiuto: si solleva, così la
+    # riserva resta 'pending' e la riconciliazione decide contro Betfair.
+    if not report or report.get("status") == "TIMEOUT" or ir.get("status") == "TIMEOUT":
+        raise RuntimeError(f"placeOrders esito IGNOTO ({report.get('status') if report else 'no_report'}) "
+                           f"ref={customer_ref}")
     order_status = ir.get("orderStatus")
     ok = report.get("status") == "SUCCESS" and ir.get("status") == "SUCCESS"
     return PlaceResult(

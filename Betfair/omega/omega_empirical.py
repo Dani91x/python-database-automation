@@ -29,6 +29,27 @@ MIN_GLOBAL_N = 200        # sotto: lo stato è troppo raro per un veto di coda (
 Z_UPPER = 1.64            # limite superiore one-sided (~95 %) — stimatore PRUDENTE della coda
 
 
+def shrunk_upper(k_l: float, n_l: float, k_g: float, g_tot: float, k_shrink: float = SHRINK_K,
+                 z: float = Z_UPPER) -> float:
+    """Limite superiore della P di lega con shrinkage verso il globale (seconda
+    passata F-01). Centro = (k_l + K·p_g)/(n_l + K) con K = min(K, n_globale): i
+    pseudo-conteggi del prior non possono valere più delle osservazioni che li
+    generano. Larghezza di Wilson su n_eff = 1/(w_l²/n_l + w_g²/n_g) (varianza della
+    media pesata di due stime binomiali), non su n_l + K come se il prior fosse
+    certo: con 10 casi di lega e 200 globali → 1,26 % (≈ globale 1,33 %), non 0,52 %."""
+    n_l = float(n_l)
+    g_tot = float(g_tot)
+    if n_l <= 0:
+        return p_upper(k_g, g_tot, z)
+    k_eff = min(float(k_shrink), g_tot)
+    p_g = float(k_g) / g_tot
+    w_l = n_l / (n_l + k_eff)
+    w_g = k_eff / (n_l + k_eff)
+    p_hat = (float(k_l) + k_eff * p_g) / (n_l + k_eff)
+    n_eff = 1.0 / (w_l * w_l / n_l + w_g * w_g / g_tot)
+    return p_upper(p_hat * n_eff, n_eff, z)
+
+
 def p_upper(k: float, n: float, z: float = Z_UPPER) -> float:
     """Limite superiore (Wilson, one-sided) della frequenza k/n: per k = 0 dà
     ≈ z²/(n+z²) ("regola del tre"), mai 0 — un veto di coda con lo stimatore a
@@ -91,12 +112,7 @@ class EmpiricalTable:
         l_counts, l_tot = self.counts(league_id, ht)
         if l_tot <= 0:
             return p_upper(k_g, g_tot), g_tot
-        # shrinkage sui CONTEGGI verso il globale, poi limite superiore:
-        # k_eff = n_lega_ft + K·p_globale, n_eff = n_lega_ht + K
-        p_global = k_g / g_tot
-        k_eff = l_counts.get(key, 0) + SHRINK_K * p_global
-        n_eff = l_tot + SHRINK_K
-        return p_upper(k_eff, n_eff), g_tot
+        return shrunk_upper(l_counts.get(key, 0), l_tot, k_g, g_tot), g_tot
 
 
 def empirical_lookup(table: Optional[EmpiricalTable], *, ht: Optional[Tuple[int, int]],
@@ -197,9 +213,7 @@ class MinuteTable:
         l_tot = self._tot.get(lkey, 0)
         if l_tot <= 0:
             return p_upper(k_g, g_tot), g_tot
-        p_global = k_g / g_tot
-        k_eff = self._n.get(lkey, {}).get(rk, 0) + SHRINK_K * p_global
-        return p_upper(k_eff, l_tot + SHRINK_K), g_tot
+        return shrunk_upper(self._n.get(lkey, {}).get(rk, 0), l_tot, k_g, g_tot), g_tot
 
 
 def minute_lookup(table: Optional[MinuteTable], *, minute: int, current: Tuple[int, int],

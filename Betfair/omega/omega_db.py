@@ -94,15 +94,18 @@ def traded_event_ids() -> set[str]:
     return {str(r["event_id"]) for r in rows if r.get("event_id")}
 
 
-def manual_event_ids() -> set[str]:
+def manual_event_ids(since_iso: Optional[str] = None) -> set[str]:
     """event_id con almeno un trade MANUALE vivo o regolato (non 'error'): l'evento
-    è territorio dell'utente, l'automatico non aggiunge esposizione (§8, review H2)."""
-    rows = _select_all("omega_trades", "id,event_id",
-                       build=lambda q: q.eq("origin", "manual").neq("status", "error"))
+    è territorio dell'utente, l'automatico non aggiunge esposizione (§8, review H2).
+    ``since_iso``: solo righe piazzate da allora (finestra operativa, MEDIUM-2)."""
+    def build(q):
+        q = q.eq("origin", "manual").neq("status", "error")
+        return q.gte("placed_at", since_iso) if since_iso else q
+    rows = _select_all("omega_trades", "id,event_id", build=build)
     return {str(r["event_id"]) for r in rows if r.get("event_id")}
 
 
-def traded_legs() -> set[tuple[str, str]]:
+def traded_legs(since_iso: Optional[str] = None) -> set[tuple[str, str]]:
     """(event_id, gamba) già riservati/piazzati (v2, idempotenza per gamba).
     I trade senza gamba (motore v1, o manuali senza fase) valgono per ENTRAMBE:
     mai una seconda esposizione automatica su un evento già in posizione."""
@@ -111,7 +114,8 @@ def traded_legs() -> set[tuple[str, str]]:
     # ignoto, o paper senza fill) NON si ripiazza sullo stesso evento; prima il
     # servizio ci riprovava a ogni ciclo e il DB rifiutava l'insert (un errore
     # loggato ogni 5 s per tutta la partita).
-    rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id")
+    rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id",
+                       build=(lambda q: q.gte("placed_at", since_iso)) if since_iso else None)
     out: set[tuple[str, str]] = set()
     for r in rows or []:
         if r.get("closes_trade_id"):
@@ -545,7 +549,8 @@ def upsert_daily_goal(day: str, goal: float) -> bool:
     lo storico mostra l'obiettivo che valeva quel giorno, non quello corrente."""
     try:
         _sb().table("omega_daily_goal").upsert(
-            {"day": str(day), "goal": float(goal)}, on_conflict="day"
+            {"day": str(day), "goal": float(goal),
+             "updated_at": datetime.now(timezone.utc).isoformat()}, on_conflict="day"
         ).execute()
         return True
     except Exception as ex:  # noqa: BLE001 - tabella assente (migrazione) o DB KO

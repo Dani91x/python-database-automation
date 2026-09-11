@@ -49,7 +49,13 @@ def test_lambda_da_quote_pre_ko_e_devig():
     probs = M.devig_1x2(2.0, 3.5, 4.0)
     assert probs is not None and abs(sum(probs) - 1.0) < 1e-9 and probs[0] > probs[2]
     lam = M.lambdas_from_pre_ko({"home": 2.0, "draw": 3.5, "away": 4.0})
-    assert lam is not None and lam[0] > lam[1] and abs(sum(lam) - M.DEFAULT_TOTAL_GOALS) < 1e-6
+    # §16 F-02: i gol totali T vengono dal PAREGGIO (sistema 1X2 esattamente identificato), non da un fisso 2,6
+    assert lam is not None and lam[0] > lam[1]
+    t_impl = M.total_goals_from_1x2(probs[0], probs[2])
+    assert 1.2 <= t_impl <= 5.5 and abs(sum(lam) - t_impl) < 1e-6
+    # più pareggio → meno gol: 1X2 1,5/4,2/6,5 ha T > di 2,0/3,5/4,0? no: pareggio 24 % vs 28 % → T maggiore
+    p2 = M.devig_1x2(1.5, 4.2, 6.5)
+    assert M.total_goals_from_1x2(p2[0], p2[2]) > t_impl
     assert M.lambdas_from_pre_ko(None) is None and M.lambdas_from_pre_ko({"home": 0}) is None
 
 

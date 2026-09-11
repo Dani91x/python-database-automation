@@ -91,7 +91,7 @@ def test_h4_punteggio_vecchio_ok_per_le_stime_ma_non_per_decidere():
                                     updated_at=(NOW - timedelta(seconds=10)).isoformat())
     st, _, _ = S._live_state_for(None, ev, fresh, NOW, decision=True)
     assert st is not None
-    assert S.DECISION_MAX_AGE_S == 25.0 and S.SELECT_SCORE_MAX_AGE_S == 30
+    assert S.DECISION_MAX_AGE_S == 25.0 and S.SELECT_SCORE_MAX_AGE_S == 25   # stesso tetto (F6)
 
 
 # ---------------------------------------------------------------- H5 cache fit di mercato
@@ -304,3 +304,223 @@ def test_c3_gambe_gia_trattate_oltre_le_1000_righe(monkeypatch):
     assert omega_db.manual_event_ids() == {"e2500"}
     assert len(omega_db.traded_event_ids()) == 2500
     assert omega_db.minute_transitions(1, 0, "x") is None            # errore (RPC assente) → None, mai []
+
+
+# =====================================================================================
+# SECONDA PASSATA (test mentali sul codice corretto) — un test per ogni correzione
+# =====================================================================================
+class _MarketRaises(FakeMarket):
+    """Il place LIVE solleva DOPO l'invio (timeout di rete): esito IGNOTO."""
+    def place_lay_live(self, **kw):
+        self.placed.append(kw)
+        raise RuntimeError("read timeout dopo placeOrders")
+
+
+class _MarketKilled(FakeMarket):
+    """FOK ucciso da Betfair: esito CERTO negativo (nessun ordine vivo)."""
+    def place_lay_live(self, **kw):
+        self.placed.append(kw)
+        from Betfair.omega import omega_market as OM
+        return OM.PlaceResult(ok=True, order_status="EXPIRED", bet_id="bx", size_matched=0.0, avg_price_matched=None)
+
+
+def test_2p_f1_place_live_a_esito_ignoto_resta_pending_in_riconciliazione():
+    S._LEG_RETRY.clear()
+    db = FakeDB(_control(mode="live"))
+    market = _MarketRaises([_event()], _cs(), _open_snapshot())
+    res = S.run_once(market=market, db=db, now=NOW)
+    assert res["placed"] == 1                                   # gamba OCCUPATA, non ripiazzabile
+    t = db.trades[0]
+    assert t["status"] == "pending" and t["meta"]["reason"] == "place_exception_reconciling"
+    assert t["meta"]["runners"]                                 # il meta della riserva sopravvive
+    errs = [p for k, p in db.activity if k == "error" and p.get("reason") == "place_exception_reconciling"]
+    assert len(errs) == 1 and errs[0]["critical"] is True
+    # ciclo dopo: NESSUN secondo ordine (la riga pending è ancora lì)
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=5))
+    assert len(market.placed) == 1
+
+
+def test_2p_f3_esito_certo_negativo_libera_la_gamba_con_budget_di_tentativi():
+    S._LEG_RETRY.clear()
+    db = FakeDB(_control(mode="live"))
+    market = _MarketKilled([_event()], _cs(), _open_snapshot())
+    assert S.run_once(market=market, db=db, now=NOW)["placed"] == 0
+    assert db.trades == []                                      # riserva cancellata, niente 'error'
+    assert len(market.placed) == 1
+    # entro 30 s: niente; dopo: nuovo tentativo; al 3° esaurito
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=10))
+    assert len(market.placed) == 1
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=31))
+    assert len(market.placed) == 2
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=62))
+    assert len(market.placed) == 3
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=93))
+    assert len(market.placed) == 3                              # budget esaurito per la partita
+    skips = [p for k, p in db.activity if k == "skip" and p.get("reason") == "live_not_matched"]
+    assert [s["attempt"] for s in skips] == [1, 2, 3]
+
+
+def test_2p_f2_mercato_sospeso_non_si_entra():
+    ev = SimpleNamespace(event_id="e1", name="A v B", open_date=NOW - timedelta(minutes=30))
+    db = _DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
+        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}})
+
+    class _Susp(_Market):
+        def read_market(self, cs):
+            snap = super().read_market(cs)
+            snap.status = "SUSPENDED"
+            return snap
+    n = S.scan_and_place_legs(control={"daily_goal": 10.0, "mode": "paper"}, params=_params(), events=[ev],
+                              traded_ids=set(), traded_legs=set(),
+                              aggregates={"realized_today": 0.0, "events_today": 0, "open_liability": 0.0},
+                              market=_Susp(_books("e1")), db=db, now=NOW,
+                              score_lookup=lambda eid: S.LiveScore(minute=30, score_home=0, score_away=0, updated_at=NOW.isoformat()))
+    assert n == 0 and db.trades == []
+    assert any(k == "skip" and p.get("reason") == "market_suspended" for k, p in db.activity)
+
+
+def test_2p_f5_un_evento_rotto_non_ferma_gli_altri(monkeypatch):
+    ev1 = SimpleNamespace(event_id="bad", name="X v Y", open_date=NOW - timedelta(minutes=30))
+    ev2 = SimpleNamespace(event_id="e1", name="A v B", open_date=NOW - timedelta(minutes=30))
+    db = _DB({"daily_goal": 10.0, "mode": "paper"}, events={"e1": {"league_id": 135, "model": {
+        "lambda_pre": [1.4, 1.1], "lambda_source": "pre_ko_odds"}}})
+    real = S._leg_market
+
+    def boom(market, ev, mtype, payload):
+        if ev.event_id == "bad":
+            raise RuntimeError("REST KO")
+        return real(market, ev, mtype, payload)
+    monkeypatch.setattr(S, "_leg_market", boom)
+    n = S.scan_and_place_legs(control={"daily_goal": 10.0, "mode": "paper"}, params=_params(), events=[ev1, ev2],
+                              traded_ids=set(), traded_legs=set(),
+                              aggregates={"realized_today": 0.0, "events_today": 0, "open_liability": 0.0},
+                              market=_Market(_books("e1")), db=db, now=NOW,
+                              score_lookup=lambda eid: S.LiveScore(minute=30, score_home=0, score_away=0, updated_at=NOW.isoformat()))
+    assert n == 1 and db.trades[0]["event_id"] == "e1"
+    assert any(k == "error" and p.get("reason") == "scan_event_failed" and p["event_id"] == "bad" for k, p in db.activity)
+
+
+def test_2p_f2_uscita_copertura_completa_con_residuo_di_arrotondamento():
+    from Betfair.safe_strategy import execution as X
+    tr = {"side": "lay", "price": 55.0, "size": 2.16, "commission": 0.05}
+    # back 24,10 @ 4,90 copre 24,10·4,90/55 = 2,147 → 2,15 di stake: residuo 0,01 da arrotondamento
+    closing = {"side": "back", "price": 4.90, "size": 24.10, "status": "open"}
+    st = X.hedge_state(tr, [closing])
+    assert st["hedged_size"] == 2.15 and st["residual_size"] == 0.01
+    assert st["complete"] is True and st["locked_pnl"] is not None        # prima: 'open' per sempre
+    # esposizioni già (quasi) uguali su ogni esito: hedge di fatto completo
+    closing2 = {"side": "back", "price": 4.90, "size": 24.24, "status": "open"}
+    st2 = X.hedge_state(tr, [closing2])
+    assert st2["complete"] is True and abs(st2["if_win"] - st2["if_lose"]) < 0.05
+
+
+def test_2p_f3_niente_da_chiudere_non_e_terminale(monkeypatch, lambdas):
+    db = G._db_with_model()
+    tr = G._trade(db, score="1-0", minute=60)
+    from Betfair.safe_strategy import execution as X
+    monkeypatch.setattr(X, "close_trade", lambda **kw: {"error": "niente_da_chiudere"})
+    # distanza 0 (bancato = punteggio corrente) → exit incondizionato → close_trade "niente"
+    pay = G._payload(70, 1, 3, cs=[G._sel(14, "1 - 3", 1.8, 1.7)])
+    assert G._run(db, pay, G._params(greenup_settle_delay_s=0)) == 0
+    g = db.get_trade(tr["id"])["meta"]["greenup"]
+    assert g.get("sent") is not True and g["attempts"] == 0          # si riprova al ciclo dopo
+    assert tr["id"] in [t["id"] for t in S._greenup_candidates(db)]  # ancora candidato
+
+
+def test_2p_f3_senza_prezzo_opposto_si_aspetta(lambdas):
+    db = G._db_with_model()
+    tr = G._trade(db, score="1-0", minute=60)
+    pay = G._payload(70, 1, 3, cs=[{"selection_id": 14, "name": "1 - 3", "lay": 1.8, "lay_size": 40.0,
+                                    "back": None, "back_size": 0.0, "runner_status": "ACTIVE"}])
+    assert G._run(db, pay, G._params(greenup_settle_delay_s=0)) == 0
+    waits = G._logs(db, "greenup_wait")
+    assert waits and waits[-1]["wait"] == "prezzo_opposto_non_disponibile"
+    assert "greenup" not in db.get_trade(tr["id"])["meta"]           # nessuna "uscita inviata" fittizia
+
+
+def test_2p_f5_chiusura_orfana_con_sorella_gia_regolata():
+    from Betfair.safe_strategy import execution as X
+    parent = {"id": 1, "side": "lay", "price": 55.0, "size": 2.16, "status": "lost", "pnl": -63.80, "commission": 0.05}
+    sib = {"id": 2, "closes_trade_id": 1, "side": "back", "price": 4.90, "size": 12.12, "status": "won", "pnl": 46.5}
+    orphan = {"id": 3, "closes_trade_id": 1, "side": "back", "price": 4.90, "size": 12.12, "status": "open"}
+    db = FakeDB(_control())
+    db.trades += [parent, sib, orphan]
+    assert X.settle_orphan_closing(db=db, closing=orphan, parent=parent, commission=0.05, now=NOW, siblings=[sib])
+    # netto di mercato con TUTTE le gambe: −116,64 + 47,27 + 47,27 = −22,1 → nessuna commissione
+    net = -116.64 + 2 * 12.12 * 3.90
+    assert parent["pnl"] + sib["pnl"] + orphan["pnl"] == pytest.approx(round(net, 2), abs=0.02)
+
+
+def test_2p_f6_ordine_chiuso_senza_size_libera_la_riserva():
+    tr = {"origin": "auto", "id": 7, "event_id": "1.100", "market_id": "m", "selection_id": 4, "side": "lay",
+          "size": 2.0, "price": 50.0, "placed_at": "2026-09-11T10:00:00+00:00"}
+    cleared = [{"customer_order_ref": "omega-t7", "market_id": "m", "selection_id": 4, "side": "LAY",
+                "size_settled": 0.0, "price": 50.0, "bet_id": "b9"}]
+    d = E.reconcile_decision(tr, [], cleared, "2026-09-11T10:05:00+00:00")
+    assert d["action"] == "free"
+
+
+def test_2p_f1_report_timeout_e_esito_ignoto(monkeypatch):
+    from Betfair.omega import omega_market as OM
+    monkeypatch.setattr(OM, "call_mutating", lambda fn: {"status": "TIMEOUT", "instructionReports": []})
+    with pytest.raises(RuntimeError):
+        OM.place_order_live(market_id="m", selection_id=4, price=50, size=2, event_id="1.1", side="lay",
+                            customer_ref="omega-t7")
+    monkeypatch.setattr(OM, "call_mutating", lambda fn: {"status": "FAILURE", "errorCode": "PROCESSED_WITH_ERRORS",
+                                                         "instructionReports": [{"status": "FAILURE", "errorCode": "MARKET_SUSPENDED"}]})
+    r = OM.place_order_live(market_id="m", selection_id=4, price=50, size=2, event_id="1.1", side="lay")
+    assert r.ok is False and r.size_matched == 0.0                    # rifiuto CERTO, non eccezione
+
+
+def test_2p_f7_batch_book_in_errore_non_e_mercato_sparito(monkeypatch):
+    from Betfair.omega import omega_market as OM
+
+    def _raise(fn):
+        raise RuntimeError("5xx")
+    monkeypatch.setattr(OM, "call", _raise)
+    mk = OM.CorrectScoreMarket(market_id="m1", event_id="e", event_name="", market_start_time=None, runner_names={})
+    assert OM.read_markets([mk]) == {}                                # assente ≠ None
+
+
+def test_2p_f01_shrinkage_con_prior_limitato_e_wilson_sulla_media_pesata():
+    from Betfair.omega import omega_empirical as EMP
+    # 10 casi di lega senza uscite contro un globale piccolo (200, 0 uscite): ≈ globale, non 2,5× più basso
+    assert EMP.shrunk_upper(0, 10, 0, 200) == pytest.approx(0.0126, abs=5e-4)
+    assert EMP.p_upper(0, 200) == pytest.approx(0.0133, abs=5e-4)
+    # lega grandissima (3000 casi, 0 uscite) contro globale 1 %: la lega parla davvero
+    assert EMP.shrunk_upper(0, 3000, 100, 10000) < 0.004
+    # con n_lega = 0 → globale puro
+    assert EMP.shrunk_upper(0, 0, 3, 1000) == EMP.p_upper(3, 1000)
+
+
+def test_2p_f02_gol_totali_dal_pareggio():
+    p = M.devig_1x2(1.5, 4.2, 6.5)
+    t = M.total_goals_from_1x2(p[0], p[2])
+    assert 2.8 < t < 3.4                                                 # ≈ 3,05 (review)
+    lh, la = M.split_lambdas_1x2(p[0], p[2], t)
+    ph, pd, pa = M._full_match_1x2(lh, la, M.DEFAULT_RHO)
+    assert abs(pd - p[1]) < 0.01 and abs(ph - p[0]) < 0.01
+    # partita chiusa (tanti pareggi) → pochi gol
+    q = M.devig_1x2(2.7, 2.9, 3.1)
+    assert M.total_goals_from_1x2(q[0], q[2]) < t
+
+
+def test_2p_f4_filtro_di_liquidita_con_la_size_cappata():
+    st = M.LiveState(minute=60, score_home=0, score_away=0)
+    probs = {(3, 1): 0.004, (1, 3): 0.005}
+    runners = [E.ScoreRunner(1, "3 - 1", lay_price=80.0, lay_size=6.0, lay_ladder=((80.0, 6.0),)),
+               E.ScoreRunner(2, "1 - 3", lay_price=90.0, lay_size=6.0, lay_ladder=((90.0, 6.0),))]
+    # size "da target" 158 € ma cap di liability 100 € → a 80 la size vera è 1,26 €: 6 € al best bastano
+    sel = M.select_by_model(runners, probs, state=st, price_min=20, price_max=120, min_liquidity=1,
+                            p_max=0.02, size_needed=158.0)
+    assert sel is None
+    sel = M.select_by_model(runners, probs, state=st, price_min=20, price_max=120, min_liquidity=1,
+                            p_max=0.02, size_needed=158.0, liability_cap=100.0)
+    assert sel is not None and sel.name == "3 - 1"
+
+
+def test_2p_m4_heartbeat_anche_a_bot_fermo():
+    db = FakeDB(_control(status="stopped"))
+    db.control.pop("heartbeat_at", None)
+    S.run_once(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW)
+    assert db.control.get("heartbeat_at") == NOW.isoformat()

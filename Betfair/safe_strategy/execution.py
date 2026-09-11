@@ -415,6 +415,10 @@ def hedge_state(trade: dict[str, Any],
     hedged = round(hedged, 2)
     residual = round(max(size - hedged, 0.0), 2)
     win, lose = net_exposures(trade, filled)
+    # COMPLETA se il residuo è ≤ HEDGE_EPS (seconda passata F2: con '<' un residuo di
+    # 0,01 € da arrotondamento — 5 % dei fill integrali — lasciava la posizione
+    # 'open' per sempre) o se l'esposizione è già la stessa su ogni esito (< 5 cent)
+    complete = bool(filled) and (residual <= HEDGE_EPS or abs(win - lose) < 0.05)
     return {
         "hedged_size": hedged,
         "residual_size": residual,
@@ -422,13 +426,13 @@ def hedge_state(trade: dict[str, Any],
         "if_lose": round(lose, 2),
         # P&L BLOCCATO solo a copertura COMPLETA (review MED-4): su un hedge
         # parziale min(W,L) è il caso peggiore, non un valore bloccato
-        "locked_pnl": round(min(win, lose), 2) if (filled and residual < HEDGE_EPS) else None,
+        "locked_pnl": round(min(win, lose), 2) if complete else None,
         "worst_case": round(min(win, lose), 2) if filled else None,
         "best_case": round(max(win, lose), 2) if filled else None,
         "filled_ids": [c.get("id") for c in filled],
         "pending_ids": [c.get("id") for c in pending],
         "blocked": bool(pending),
-        "complete": bool(filled) and residual < HEDGE_EPS,
+        "complete": complete,
     }
 
 
@@ -800,7 +804,8 @@ def runner_won_from_parent(parent: dict[str, Any]) -> Optional[bool]:
 
 
 def settle_orphan_closing(*, db, closing: dict[str, Any], parent: dict[str, Any],
-                          commission: float, now: datetime) -> bool:
+                          commission: float, now: datetime,
+                          siblings: Optional[list[dict[str, Any]]] = None) -> bool:
     """Gamba di chiusura rimasta viva con l'apertura GIÀ regolata (ciclo
     interrotto tra le due scritture, o dati storici): si regola con l'esito
     della selezione dedotto dall'apertura — mai lasciarla orfana."""
@@ -818,9 +823,13 @@ def settle_orphan_closing(*, db, closing: dict[str, Any], parent: dict[str, Any]
     # commissione sul NETTO di mercato della coppia, non sulla gamba sola (review
     # HIGH-3): totale = netto − commissione se positivo; la chiusura prende la
     # differenza rispetto al P&L GIÀ scritto sul padre → padre + chiusura = totale
-    net = gross_pnl(parent, won) + gross_pnl(closing, won)
+    # le SORELLE già regolate (chiusura parziale + residuo, crash fra le due
+    # scritture) entrano nel netto e nel già-scritto (seconda passata F5)
+    done = [s for s in (siblings or []) if str(s.get("status")) in ("won", "lost")]
+    net = gross_pnl(parent, won) + gross_pnl(closing, won) + sum(gross_pnl(s, won) for s in done)
     total = round(net - (net * c if net > 0 else 0.0), 2)
-    pnl = round(total - float(parent.get("pnl") or 0.0), 2)
+    already = float(parent.get("pnl") or 0.0) + sum(float(s.get("pnl") or 0.0) for s in done)
+    pnl = round(total - already, 2)
     settle_row(db, closing, "won" if pnl >= 0 else "lost", pnl, now)
     _log(db, "settle_orphan_closing", {"trade_id": closing.get("id"),
                                        "parent_id": parent.get("id"), "pnl": pnl})

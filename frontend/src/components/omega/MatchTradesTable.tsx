@@ -166,6 +166,11 @@ function LegCell<T extends MatchTradeLike>({ leg, kind, group, live, commission,
                             {fmtSigned(pnl.value ?? 0)} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
                         </span>
                     )}
+                    {pnl.state === 'partial' && (
+                        <span className="text-[11px] text-amber-300 tabular-nums" data-testid="omega-leg-partial" title="copertura PARZIALE: la parte coperta è neutra, il resto vive; caso peggiore / migliore ai prezzi dei fill">
+                            parziale {pnl.hedged_size != null ? `${pnl.hedged_size.toFixed(2)}/${Number(t.size ?? 0).toFixed(2)}` : ''} · <span className={pnlClass(pnl.value)}>{fmtSigned(pnl.value ?? 0)}</span>{pnl.best != null ? <> / <span className={pnlClass(pnl.best)}>{fmtSigned(pnl.best)}</span></> : null}
+                        </span>
+                    )}
                     {pnl.state === 'open' && (
                         <span className="text-[11px] text-sky-300" data-testid="omega-leg-open" title="posizione viva: esito al fischio finale o alla chiusura a mercato">in corso</span>
                     )}
@@ -224,14 +229,18 @@ function LegCell<T extends MatchTradeLike>({ leg, kind, group, live, commission,
 
 // ------------------------------------------------------------ cella risultato
 function ResultCell({ score, leg, label }: { score: string | null; leg: MatchLeg<MatchTradeLike> | null; label: 'ht' | 'ft' }) {
-    const laid = leg?.trade.runner_name ? leg.trade.runner_name.replace(/\s+/g, '') : null;
+    // solo una scoreline parsabile ("1 - 3"): per gli aggregati ("Any Other Home Win")
+    // non si può dire se il bancato è uscito (review LOW-4) → nessuna riga
+    const raw = leg?.trade.runner_name ?? null;
+    const mm = raw ? /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(raw) : null;
+    const laid = mm ? `${mm[1]}-${mm[2]}` : null;
     const hit = score != null && laid != null && score === laid;   // il risultato bancato È uscito
     return (
         <td className="px-3 py-2 align-top text-center" data-testid={`omega-result-${label}`}>
             {score ? (
                 <div>
                     <div className={`font-display font-black text-lg tabular-nums ${hit ? 'text-red-400' : 'text-white'}`} title={label === 'ht' ? 'risultato reale al 45′' : 'risultato reale finale'}>{score}</div>
-                    {leg && leg.trade.side === 'lay' && (
+                    {leg && leg.trade.side === 'lay' && laid != null && (
                         <div className={`text-[10px] ${hit ? 'text-red-300' : 'text-emerald-300'}`}>{hit ? 'bancato USCITO' : 'bancato non uscito'}</div>
                     )}
                 </div>

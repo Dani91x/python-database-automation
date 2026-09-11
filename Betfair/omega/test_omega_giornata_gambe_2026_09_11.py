@@ -172,7 +172,9 @@ def test_empirical_table_shrinkage_e_lookup():
     assert n == 1000 and p_glob == pytest.approx(EMP.p_upper(3, 1000)) and p_glob > 0.003
     # lega: 3-1 uscito 5/100 contro 0,2% globale → conteggi shrinkati verso il globale (K=500)
     p_lega, _ = t.p_ft_given_ht((0, 0), (3, 1), league_id=135)
-    assert p_lega == pytest.approx(EMP.p_upper(5 + 500 * 0.002, 100 + 500))
+    # §16 seconda passata F-01: shrinkage col prior LIMITATO alle osservazioni globali e
+    # larghezza di Wilson sulla varianza della media pesata (non su n+K come se il prior fosse certo)
+    assert p_lega == pytest.approx(EMP.shrunk_upper(5, 100, 2, 1000))
     assert p_lega > p_glob                                          # la lega alza la P del 3-1
     # 1-3 mai in lega: si abbassa ma non azzera
     p13, _ = t.p_ft_given_ht((0, 0), (1, 3), league_id=135)

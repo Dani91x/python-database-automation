@@ -466,12 +466,12 @@ def test_parametri_greenup_default_e_clamp():
     assert p["greenup_hold_max_risk"] == 0.02 and p["greenup_risk_cap"] == 0.15 and p["greenup_ev_margin"] == 0.10
     assert p["greenup_take_profit_frac"] == 0.9 and p["greenup_take_profit_minute"] == 80
     assert p["greenup_retry_s"] == 20 and p["greenup_max_attempts"] == 15
-    assert p["model_calibration"] == "auto" and p["model_calibration_path"] == ""
+    assert p["model_calibration"] == "off" and p["model_calibration_path"] == ""   # §16 F-03: off di default
     p = omega_config.resolve_params({"greenup_mode": "boh", "greenup_price_trigger_ratio": 5,
                                      "greenup_hold_max_risk": 0.5, "greenup_risk_cap": 0.1,
                                      "greenup_trigger_distance": 9, "model_calibration": "x",
                                      "greenup_take_profit_frac": 0})
     assert p["greenup_mode"] == "auto" and p["greenup_price_trigger_ratio"] == 1.0
     assert p["greenup_hold_max_risk"] == 0.1 and p["greenup_trigger_distance"] == 3
-    assert p["model_calibration"] == "auto" and p["greenup_take_profit_frac"] == 0.1
+    assert p["model_calibration"] == "off" and p["greenup_take_profit_frac"] == 0.1   # valore ignoto → default (off)
     assert omega_config.resolve_params({"greenup_mode": "off"})["greenup_mode"] == "off"
