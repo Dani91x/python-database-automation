@@ -736,6 +736,10 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
               "PRE_LAST_ENTRY_PENDING"):
         return _decide_prematch(ctx, snap, params, c)
     if st == "IDLE_LIVE":
+        if not ctx.legs:
+            # mai operata (KO arrivato senza ingresso, o armata a partita gia' iniziata):
+            # nulla potra' piu' succedere → chiusa subito, senza P&L
+            return Decision("SETTLED", [], "nessuna operazione", updates={"settled_pnl": 0.0})
         return Decision(st, [], "nessuna posizione")
     if st == "LIVE_UNCOVERED":
         return _decide_uncovered(ctx, snap, params, c)
@@ -1083,6 +1087,7 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
     cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]))
     base = _cashout_base(ctx, params)
     tele = {"cashout": {"net": cv.net, "gross": cv.gross, "base": base, "complete": cv.complete,
+                        "per": {f"{m}|{s}": v for (m, s), v in cv.per_selection.items()},
                         "pct": round(100.0 * cv.net / base, 2) if base > 0 else None}}
     if not cv.complete:
         return Decision("LIVE_COVERED", acts, "prezzi incompleti", telemetry=tele)

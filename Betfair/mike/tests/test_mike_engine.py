@@ -946,3 +946,16 @@ def test_loss_exit_model_cap_and_fixed_mode_and_fallback():
               inplay=True, minute=60, goals=3, p_total_emp=_HT21)
     d4 = E.decide(ctx, s4, p)
     assert d4.state == "LIVE_CLOSING" and d4.telemetry["loss_exit"]["sources"] == ["emp"]
+
+
+def test_idle_live_without_any_leg_settles_immediately():
+    ctx = E.MatchCtx(state="IDLE_LIVE")
+    d = E.decide(ctx, snap(KO + 60, u35=book(1.5, inplay=True), inplay=True, minute=1, goals=0), params())
+    assert d.state == "SETTLED" and d.updates["settled_pnl"] == 0.0
+    # con gambe (anche solo archiviate) resta in attesa del regolamento
+    ctx2 = E.MatchCtx(state="IDLE_LIVE")
+    ctx2.legs.append(fill(E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                                side="back", price=1.5, size=10.0)))
+    ctx2.legs[0].archived = True
+    d2 = E.decide(ctx2, snap(KO + 60, u35=book(1.5, inplay=True), inplay=True, minute=1, goals=0), params())
+    assert d2.state == "IDLE_LIVE"

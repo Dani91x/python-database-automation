@@ -1,6 +1,6 @@
 // Test COMPONENTE (smoke) per la pagina /mike: data-layer e sonner mockati.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -112,6 +112,19 @@ describe('Mike page', () => {
         expect(screen.getByTestId('mike-loss-exit')).toHaveTextContent('uscita 2t a modello: tenere vale −0,79 € · P(4) 22% · premio 2,64 € · → chiude');
         // poi la partita pre-match con posizione: cella "4" in evidenza, nessun punteggio
         expect(cards[1]).toHaveTextContent('Roma v Lazio');
+        // posizione: ingresso 1,50 vs quota live 1,47/1,48 -> chiudo @1,48 = 2 tick a favore, +0,13 EUR netti
+        const rowsRoma = within(cards[1]).getAllByTestId('mike-pos-row');
+        expect(rowsRoma).toHaveLength(1);
+        expect(rowsRoma[0]).toHaveTextContent('BACK');
+        expect(rowsRoma[0]).toHaveTextContent('Under 3.5 · 10,00 €');
+        expect(rowsRoma[0]).toHaveTextContent('1,50');
+        expect(rowsRoma[0]).toHaveTextContent('▼ 2 tick');
+        expect(within(rowsRoma[0]).getByTestId('mike-pos-locked')).toHaveTextContent('+0,13 €');
+        // live: Under 1,50 -> lay 1,72 = 8 tick contro (rosso) ; Over 6,60 -> lay 4,40 = a sfavore
+        const rowsNapoli = within(cards[0]).getAllByTestId('mike-pos-row');
+        expect(rowsNapoli).toHaveLength(2);
+        expect(rowsNapoli[0]).toHaveTextContent('▲');
+        expect(within(rowsNapoli[0]).getByTestId('mike-pos-locked')).toHaveTextContent('−1,28 €');
         expect(screen.getAllByTestId('mike-score')).toHaveLength(1);
         expect(screen.getAllByTestId('pnl-total-4')[1]).toHaveTextContent('−10,00 €');
         expect(screen.getAllByTestId('mike-cashout-value')[1]).toHaveTextContent('+0,35 €');

@@ -40,6 +40,9 @@ _PENDING_STALE_S = 120.0          # gamba pending senza esito da troppo → canc
 _SETTLE_RETRY_S = 30.0            # fra due letture REST di regolamento (mercato gia' chiuso)
 _SETTLE_MAX_WAIT_S = 2 * 3600.0   # oltre: fallback sull'ultimo punteggio noto o ERROR
 _DAILY_STOP_LOGGED: Dict[str, str] = {}   # {"day": iso} → lo stop giornaliero si logga una volta al giorno
+_ROW_MISSING_GRACE_S = 600.0      # riga assente dal feed per meno di cosi' = transitoria (es. passaggio pre-KO → in-play)
+_MATCH_OVER_S = 3 * 3600.0        # oltre 3h dal KO la partita e' finita comunque
+_MATCH_LIKELY_OVER_S = 100 * 60.0 # vista in-play e KO + 100': la riga sparita = partita finita (regolamento subito)
 _STRATEGY_REF = C.CUSTOMER_STRATEGY_REF
 
 ACTIVE_STATES = tuple(s for s in E.STATES if s not in E.TERMINAL_STATES)
@@ -440,7 +443,10 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # nuove candidate (solo a bot in esecuzione, sotto il tetto partite)
     n_new = 0
     if running and not daily_stop:
-        active = sum(1 for e in tracked.values() if e.get("state") not in E.TERMINAL_STATES)
+        # tetto = partite con POSIZIONE (o ordini): quelle solo osservate (WATCH) o
+        # in-play senza posizione (IDLE_LIVE) non bloccano le nuove candidate
+        active = sum(1 for e in tracked.values()
+                     if e.get("state") not in E.TERMINAL_STATES and e.get("state") not in ("WATCH", "IDLE_LIVE"))
         for eid, row in rows_by_event.items():
             if eid in tracked or active >= int(params["max_open_matches"]):
                 continue
@@ -521,12 +527,45 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     settled = 0
 
     # -- riga sparita dal feed o mercato chiuso: settlement via REST -------------
-    closed = row is None or str((F.ou_blocks(payload).get(E.MARKET_OU35) or {}).get("status") or
-                                payload.get("mo_status") or "").upper() == "CLOSED"
+    # Una riga ASSENTE e' "chiusa" solo se manca da >= _ROW_MISSING_GRACE_S o se
+    # la partita e' comunque finita (KO + 3h): al calcio d'inizio il feed passa dal
+    # blocco pre-KO a quello in-play e la riga puo' sparire per qualche minuto
+    # (refresh catalogo 300 s) — prima veniva scambiata per un regolamento.
+    ko_ts = float(F.parse_iso_epoch(ev.get("ko_at")) or 0.0)
+    status_closed = row is not None and str((F.ou_blocks(payload).get(E.MARKET_OU35) or {}).get("status") or
+                                            payload.get("mo_status") or "").upper() == "CLOSED"
+    if row is None:
+        extra["row_missing_since"] = float(extra.get("row_missing_since") or now_ts)
+        missing_for = now_ts - float(extra["row_missing_since"])
+        absent_closed = missing_for >= _ROW_MISSING_GRACE_S or (ko_ts > 0 and (
+            now_ts - ko_ts > _MATCH_OVER_S
+            or (bool(extra.get("seen_inplay")) and now_ts - ko_ts >= _MATCH_LIKELY_OVER_S)))
+    else:
+        extra.pop("row_missing_since", None)
+        absent_closed = False
+    closed = status_closed or absent_closed
+    if row is None and not closed and ctx.state not in E.TERMINAL_STATES:
+        ev.update(_row_from_ctx(ev, ctx, extra))          # memorizza da quando manca
+        _persist(db, ev, before_sig)
+        return (0, 0)
+    # falso regolamento gia' scattato (riga tornata, mercato aperto, partita in corso):
+    # si torna nello stato coerente con le posizioni aperte
+    if ctx.state == "SETTLING" and not closed and row is not None and (ko_ts <= 0 or now_ts - ko_ts < _MATCH_OVER_S):
+        opens = E.open_selections(ctx.legs)
+        inplay = bool(payload.get("inplay"))
+        if (E.MARKET_OU45, E.SEL_OVER) in opens:
+            back_to = "LIVE_COVERED"
+        elif (E.MARKET_OU45, E.SEL_UNDER) in opens:
+            back_to = "REENTRY_OPEN"
+        elif (E.MARKET_OU35, E.SEL_UNDER) in opens:
+            back_to = "LIVE_UNCOVERED" if inplay else "PRE_OPEN"
+        else:
+            back_to = "IDLE_LIVE" if inplay else "WATCH"
+        extra.pop("settle_first_ts", None)
+        extra.pop("settle_next_ts", None)
+        db.log("settling_reverted", {"to": back_to, "reason": "riga tornata nel feed, mercato aperto"}, ev["event_id"])
+        E.apply_decision(ctx, E.Decision(state=back_to, actions=[], reason="falso regolamento annullato"), now_ts)
     if closed and ctx.state not in E.TERMINAL_STATES:
-        if row is None and not extra.get("seen_inplay") and (F.parse_iso_epoch(ev.get("ko_at")) or 0) > now_ts:
-            # non ancora iniziata e uscita dal feed (fuori finestra?) → attendo
-            return (0, 0)
         # throttle delle letture REST di regolamento (review F1 #3): mai un poll
         # stretto su un mercato chiuso; dopo troppo tempo si ripiega sull'ultimo
         # punteggio noto o si va in ERROR (mai SETTLING per sempre)

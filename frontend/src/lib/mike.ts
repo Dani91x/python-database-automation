@@ -98,6 +98,8 @@ export interface MikeCashout {
     base: number;
     complete: boolean;
     pct: number | null;
+    /** P&L bloccabile per selezione ("OU35|UNDER" → €), dal servizio */
+    per?: Record<string, number> | null;
     smart?: MikeCashoutSmart | null;
 }
 
@@ -437,6 +439,72 @@ export const MIKE_ROLE_LABEL: Record<string, string> = {
 
 export function roleLabel(role: string | null | undefined): string {
     return (role && MIKE_ROLE_LABEL[role]) || role || '—';
+}
+
+/** Esposizione netta di una selezione dalle gambe abbinate (stessa matematica di engine.exposure):
+ *  W = P&L se la selezione vince, L = P&L se perde. */
+export function selectionExposure(legs: readonly MikeLeg[], market: string, selection: string): { w: number; l: number } {
+    let w = 0; let l = 0;
+    for (const leg of legs) {
+        if (leg.archived || leg.market !== market || leg.selection !== selection || !(leg.matched > 0)) continue;
+        const p = Number(leg.avg_price ?? leg.price);
+        const m = Number(leg.matched);
+        if (leg.side === 'back') { w += m * (p - 1); l -= m; } else { w -= m * (p - 1); l += m; }
+    }
+    return { w: Math.round(w * 100) / 100, l: Math.round(l * 100) / 100 };
+}
+
+/** P&L LORDO bloccato chiudendo ORA la selezione con un full green (stessa formula di compute_greenup:
+ *  posizione netta back → LAY al best lay: L + (W−L)/lay; netta lay → BACK al best back: W + (L−W)/back). */
+export function lockedIfClosed(w: number, l: number, bestBack: number | null | undefined, bestLay: number | null | undefined): number | null {
+    if (Math.abs(w - l) < 0.005) return Math.round(Math.min(w, l) * 100) / 100;
+    if (w > l) {
+        if (!bestLay || bestLay <= 1) return null;
+        return Math.round((l + (w - l) / bestLay) * 100) / 100;
+    }
+    if (!bestBack || bestBack <= 1) return null;
+    return Math.round((w + (l - w) / bestBack) * 100) / 100;
+}
+
+export interface PositionRow {
+    key: string;              // "OU35|UNDER"
+    market: string;
+    selection: string;
+    label: string;            // "Under 3.5"
+    selectionId: number | null;
+    netSide: 'BACK' | 'LAY';
+    /** prezzo medio d'ingresso della posizione netta */
+    entryPrice: number | null;
+    /** euro abbinati sul lato netto */
+    matched: number;
+    w: number;
+    l: number;
+    roles: string[];
+}
+
+/** Posizioni aperte per selezione (gambe abbinate non archiviate), con prezzo medio d'ingresso. */
+export function positionRows(ev: MikeEvent): PositionRow[] {
+    const legs = activeLegs(ev).filter((l) => l.matched > 0);
+    const keys = Array.from(new Set(legs.map((l) => `${l.market}|${l.selection}`)));
+    const sels = ((ev.ctx as { selections?: Record<string, number> } | null)?.selections) ?? {};
+    const out: PositionRow[] = [];
+    for (const key of keys) {
+        const [market, selection] = key.split('|');
+        const mine = legs.filter((l) => l.market === market && l.selection === selection);
+        const { w, l } = selectionExposure(mine, market, selection);
+        if (Math.abs(w - l) < 0.005) continue;             // gia' piatta (green completato)
+        const netSide: 'BACK' | 'LAY' = w > l ? 'BACK' : 'LAY';
+        const side = netSide === 'BACK' ? 'back' : 'lay';
+        const sameSide = mine.filter((x) => x.side === side);
+        const matched = sameSide.reduce((s, x) => s + Number(x.matched), 0);
+        const wsum = sameSide.reduce((s, x) => s + Number(x.matched) * Number(x.avg_price ?? x.price), 0);
+        out.push({
+            key, market, selection, label: `${selection === 'UNDER' ? 'Under' : 'Over'} ${market === 'OU35' ? '3.5' : '4.5'}`,
+            selectionId: sels[key] ?? null, netSide, entryPrice: matched > 0 ? Math.round((wsum / matched) * 100) / 100 : null,
+            matched: Math.round(matched * 100) / 100, w, l, roles: Array.from(new Set(mine.map((x) => x.role))),
+        });
+    }
+    return out;
 }
 
 export function legSelectionLabel(l: MikeLeg): string {

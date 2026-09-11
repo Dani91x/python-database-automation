@@ -67,6 +67,11 @@ export function nearestTick(price: number): number {
 
 // Prezzo spostato di `n` tick da `price` (n>0 = SALE, n<0 = SCENDE). `price` viene
 // prima snappato al tick valido. Clampa agli estremi del ladder.
+/** tick da `from` a `to` sulla scala Betfair (negativo = `to` più basso). */
+export function ticksBetween(from: number, to: number): number {
+    return nearestTickIndex(to) - nearestTickIndex(from);
+}
+
 export function ticksAway(price: number, n: number): number {
     const idx = nearestTickIndex(price);
     const target = Math.min(PRICES.length - 1, Math.max(0, idx + Math.trunc(n)));

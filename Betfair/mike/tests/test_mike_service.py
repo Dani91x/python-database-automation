@@ -372,3 +372,53 @@ def test_daily_loss_stop_blocks_new_entries_but_not_closures():
     db2.trades.append(dict(db.trades[0]))
     res2 = run(db2, FakeMarket(), NOW, [row(payload())])
     assert res2["new"] == 1 and res2["stats"]["daily_stop"] is False
+
+
+def test_row_missing_at_kickoff_is_not_a_settlement():
+    """Al KO la riga del feed sparisce per qualche minuto (pre-KO → in-play): NON e' un regolamento."""
+    db = FakeDB(params={"stake": 10})
+    mk = FakeMarket()
+    run(db, mk, NOW, [row(payload())])
+    assert state(db) == "PRE_ENTRY_PENDING"
+    run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
+    st_before = state(db)
+    # riga assente per 2 minuti dopo il KO: nessun cambio di stato
+    ko = NOW + timedelta(hours=2)
+    for s in (5, 60, 120):
+        run(db, mk, ko + timedelta(seconds=s), [])
+        assert state(db) == st_before, s
+    assert "settling_reverted" not in db.kinds()
+    # oltre la grazia (10') la riga assente vale come mercato chiuso → SETTLING/settlement
+    run(db, mk, ko + timedelta(seconds=700), [])
+    assert state(db) in ("SETTLING", "SETTLED")
+
+
+def test_false_settling_is_reverted_when_row_comes_back():
+    db = FakeDB(params={"stake": 10})
+    mk = FakeMarket()
+    run(db, mk, NOW, [row(payload())])
+    ev = list(db.events.values())[0]
+    ev["state"] = "SETTLING"                       # come da vecchio bug (riga sparita al KO)
+    ctx = dict(ev.get("ctx") or {})
+    ctx["settle_first_ts"] = NOW.timestamp()
+    ev["ctx"] = ctx
+    p = payload(); p["inplay"] = True; p["minute"] = 5; p["score_home"] = 0; p["score_away"] = 0
+    for blk in p["ou"]:
+        blk["inplay"] = True
+    run(db, mk, NOW + timedelta(seconds=5), [row(p)])
+    assert "settling_reverted" in db.kinds()
+    assert state(db) in ("IDLE_LIVE", "SETTLED", "LIVE_UNCOVERED", "LIVE_COVERED", "LIVE_COVER_PENDING")
+
+
+def test_idle_live_matches_do_not_count_toward_max_open_matches():
+    db = FakeDB(params={"stake": 10, "max_open_matches": 1})
+    mk = FakeMarket()
+    p_live = payload(); p_live["inplay"] = True; p_live["minute"] = 30; p_live["score_home"] = 0; p_live["score_away"] = 0
+    for blk in p_live["ou"]:
+        blk["inplay"] = True
+    r_live = row(p_live); r_live["event_id"] = "LIVE1"
+    res = run(db, mk, NOW, [r_live])
+    assert res["new"] == 1
+    # la partita live senza posizione non deve bloccare la candidata pre-match
+    res2 = run(db, mk, NOW + timedelta(seconds=2), [r_live, row(payload())])
+    assert res2["new"] == 1

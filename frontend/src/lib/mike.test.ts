@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     MIKE_PARAM_FIELDS, MIKE_PARAM_DEFAULTS, MIKE_STATES, MIKE_PHASE_META, mergeMikeParams,
     phaseMeta, sortEvents, cashoutPct, activeLegs, investedOf, requestInFlight, detectSettledEvents,
+    selectionExposure, lockedIfClosed, positionRows,
     type MikeEvent, type MikeLeg,
 } from './mike';
 
@@ -106,5 +107,38 @@ describe('mike helpers', () => {
         const list = [ev({ event_id: 'a', state: 'SETTLED' }), ev({ event_id: 'b', state: 'WATCH' })];
         expect(detectSettledEvents(list, seen, true)).toEqual([]);
         expect(detectSettledEvents([...list, ev({ event_id: 'c', state: 'SETTLED' })], seen, false).map((e) => e.event_id)).toEqual(['c']);
+    });
+});
+
+describe('mike positions (ingresso vs quota live)', () => {
+    it('selectionExposure + lockedIfClosed replicate engine.exposure / compute_greenup', () => {
+        // Under 3.5 back 20 @ 1.50: W=10, L=-20 ; lay 1.31 -> locked = -20 + 30/1.31 = 2.90 (test Python)
+        const legs = [leg({ size: 20, matched: 20, avg_price: 1.5 })];
+        expect(selectionExposure(legs, 'OU35', 'UNDER')).toEqual({ w: 10, l: -20 });
+        expect(lockedIfClosed(10, -20, 1.30, 1.31)).toBeCloseTo(2.90, 2);
+        // green parziale: back 20 @1.50 + lay 10 @1.48 -> W = 10 - 4.8 = 5.2, L = -20 + 10 = -10
+        const legs2 = [...legs, leg({ role: 'under_green', side: 'lay', price: 1.48, size: 20.27, matched: 10, avg_price: 1.48, ref: 'r2' })];
+        expect(selectionExposure(legs2, 'OU35', 'UNDER')).toEqual({ w: 5.2, l: -10 });
+        // posizione piatta -> min(W, L) ; prezzo mancante -> null ; gambe archiviate ignorate
+        expect(lockedIfClosed(3, 3, null, null)).toBe(3);
+        expect(lockedIfClosed(10, -20, 1.3, null)).toBeNull();
+        expect(selectionExposure([leg({ archived: true })], 'OU35', 'UNDER')).toEqual({ w: 0, l: 0 });
+    });
+    it('positionRows: una riga per selezione con lato netto, prezzo medio e selection_id certificato', () => {
+        const e = ev({
+            ctx: { selections: { 'OU35|UNDER': 1222344, 'OU45|OVER': 1222346 } },
+            positions: [
+                leg({ size: 10, matched: 10, avg_price: 1.5 }),
+                leg({ role: 'under_last', price: 1.6, size: 10, matched: 10, avg_price: 1.6, ref: 'r3', persistence: 'PERSIST' }),
+                leg({ role: 'over_cover', market: 'OU45', selection: 'OVER', price: 8, size: 4, matched: 4, avg_price: 8, ref: 'r4' }),
+                leg({ role: 'under_green', side: 'lay', price: 1.48, size: 10, matched: 0, status: 'pending', ref: 'r5' }),
+                leg({ role: 'under_entry', size: 10, matched: 10, avg_price: 1.4, ref: 'old', archived: true }),
+            ],
+        });
+        const rows = positionRows(e);
+        expect(rows.map((r) => r.key)).toEqual(['OU35|UNDER', 'OU45|OVER']);
+        expect(rows[0]).toMatchObject({ label: 'Under 3.5', netSide: 'BACK', matched: 20, entryPrice: 1.55, selectionId: 1222344 });
+        expect(rows[0].roles).toEqual(['under_entry', 'under_last']);
+        expect(rows[1]).toMatchObject({ label: 'Over 4.5', netSide: 'BACK', matched: 4, entryPrice: 8, selectionId: 1222346, w: 28, l: -4 });
     });
 });
