@@ -34,6 +34,7 @@ export interface MikeStats {
     last_cycle: string;
     dry: boolean;
     mode: string;
+    daily_stop?: boolean;
 }
 
 export interface MikeControl {

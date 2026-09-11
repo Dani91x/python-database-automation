@@ -355,3 +355,20 @@ def test_dry_mode_logs_would_place_without_trades():
     assert state(db) == "PRE_ENTRY_PENDING"
     S.run_once(db=db, market=mk, now=NOW + timedelta(seconds=2), rows=[row(payload())], atlas=None, dry=True)
     assert state(db) == "WATCH"          # gamba cancellata -> si riparte
+
+
+def test_daily_loss_stop_blocks_new_entries_but_not_closures():
+    db = FakeDB(params={"stake": 10, "daily_loss_stop": 5.0})
+    # una perdita gia' realizzata oggi di -6 (trade won/lost contano nel realizzato)
+    db.trades.append({"id": 1, "event_id": "OLD", "status": "lost", "pnl": -6.0, "liability": 10.0,
+                      "placed_at": NOW.isoformat(), "settled_at": NOW.isoformat(), "meta": {}, "strategy": "mike"})
+    mk = FakeMarket()
+    res = run(db, mk, NOW, [row(payload())])
+    assert res["new"] == 0 and len(db.events) == 0             # nessuna partita nuova
+    assert res["stats"]["daily_stop"] is True
+    assert "daily_stop" in db.kinds()
+    # senza stop (0 = spento) la stessa situazione arma la partita
+    db2 = FakeDB(params={"stake": 10, "daily_loss_stop": 0})
+    db2.trades.append(dict(db.trades[0]))
+    res2 = run(db2, FakeMarket(), NOW, [row(payload())])
+    assert res2["new"] == 1 and res2["stats"]["daily_stop"] is False

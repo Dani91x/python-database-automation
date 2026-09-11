@@ -39,6 +39,7 @@ _SCANNER_ALIVE_MAX_S = 30.0
 _PENDING_STALE_S = 120.0          # gamba pending senza esito da troppo → cancellata (mai zombie)
 _SETTLE_RETRY_S = 30.0            # fra due letture REST di regolamento (mercato gia' chiuso)
 _SETTLE_MAX_WAIT_S = 2 * 3600.0   # oltre: fallback sull'ultimo punteggio noto o ERROR
+_DAILY_STOP_LOGGED: Dict[str, str] = {}   # {"day": iso} → lo stop giornaliero si logga una volta al giorno
 _STRATEGY_REF = C.CUSTOMER_STRATEGY_REF
 
 ACTIVE_STATES = tuple(s for s in E.STATES if s not in E.TERMINAL_STATES)
@@ -398,6 +399,24 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     running = status == "running"
     eff = _params_for(params, running, mode)
 
+    # STOP giornaliero: P&L realizzato della giornata operativa <= -daily_loss_stop
+    # → nessuna partita nuova, nessun ingresso pre-match ne' re-ingresso; le
+    # chiusure (cash-out, uscite, regolamento, richieste UI) restano attive.
+    try:
+        agg = db.aggregates(now)
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
+        agg = {}
+    stop = float(params.get("daily_loss_stop") or 0.0)
+    daily_stop = stop > 0 and float(agg.get("realized_today", 0.0)) <= -stop
+    if daily_stop:
+        eff = dict(eff, pre_enabled=False, reentry_enabled=False)
+        day_key = now.date().isoformat()
+        if _DAILY_STOP_LOGGED.get("day") != day_key:
+            _DAILY_STOP_LOGGED["day"] = day_key
+            logger.warning("[mike] STOP giornaliero: P&L oggi %.2f <= -%.2f", float(agg.get("realized_today", 0.0)), stop)
+            db.log("daily_stop", {"realized_today": round(float(agg.get("realized_today", 0.0)), 2), "stop": stop})
+
     # feed unico: UNA lettura per ciclo
     if rows is None:
         rows = list(db.fetch_scan_rows() or [])
@@ -420,7 +439,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
 
     # nuove candidate (solo a bot in esecuzione, sotto il tetto partite)
     n_new = 0
-    if running:
+    if running and not daily_stop:
         active = sum(1 for e in tracked.values() if e.get("state") not in E.TERMINAL_STATES)
         for eid, row in rows_by_event.items():
             if eid in tracked or active >= int(params["max_open_matches"]):
@@ -462,11 +481,11 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
             pass
         status = "stopped"
 
-    try:
-        agg = db.aggregates(now)
-    except Exception as ex:  # noqa: BLE001
-        logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
-        agg = {}
+    if n_actions or n_settled or n_requests:
+        try:
+            agg = db.aggregates(now)          # aggiornati dopo le azioni del ciclo
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
     by_state: Dict[str, int] = {}
     for e in tracked.values():
         by_state[str(e.get("state"))] = by_state.get(str(e.get("state")), 0) + 1
@@ -476,7 +495,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         "realized_today": round(float(agg.get("realized_today", 0.0)), 2),
         "realized_total": round(float(agg.get("realized_total", 0.0)), 2),
         "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
-        "last_cycle": now.isoformat(), "dry": bool(dry), "mode": mode,
+        "last_cycle": now.isoformat(), "dry": bool(dry), "mode": mode, "daily_stop": bool(daily_stop),
     }
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())

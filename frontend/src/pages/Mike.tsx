@@ -259,7 +259,7 @@ export default function Mike() {
                         <StatTile label="Trade aperti" value={String(bot.aggregates?.open_count ?? stats?.trades_open ?? 0)} icon={<Activity className="w-3.5 h-3.5" />} sub={`${bot.trades.length} righe totali`} />
                         <StatTile label="P&L oggi" value={fmtEurIt(realizedToday, true)} tone={realizedToday >= 0 ? 'pos' : 'neg'} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={<span>giornata operativa {dayLabel(operatingDay, { year: false })} · Europe/Rome</span>} />
                         <StatTile label="P&L totale" value={fmtEurIt(realizedTotal, true)} tone={realizedTotal >= 0 ? 'pos' : 'neg'} />
-                        <StatTile label="Capitale a rischio" value={fmtEurIt(openLiability)} tone="danger" icon={<ShieldAlert className="w-3.5 h-3.5" />} sub={`stop giornaliero ${fmtEurIt(Number(bot.params.daily_loss_stop ?? 0))}`} />
+                        <StatTile label="Capitale a rischio" value={fmtEurIt(openLiability)} tone="danger" icon={<ShieldAlert className="w-3.5 h-3.5" />} sub={stats?.daily_stop ? <span className="text-rose-300 font-semibold" data-testid="mike-daily-stop">STOP giornaliero ATTIVO · solo chiusure</span> : `stop giornaliero ${fmtEurIt(Number(bot.params.daily_loss_stop ?? 0))}`} />
                         <StatTile label="Ultimo ciclo" value={timeLabel(stats?.last_cycle)} sub={stats?.scanner_age_s != null ? `feed ${stats.scanner_age_s}s` : undefined} />
                     </div>
                 )}
