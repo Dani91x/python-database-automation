@@ -86,9 +86,13 @@ PARAM_SPEC: dict[str, Spec] = {
     "pre_entry_price_min": (1.30, float, 1.01, 20.0, None),
     "pre_entry_price_max": (3.00, float, 1.01, 20.0, None),
     "pre_min_back_size_factor": (1.0, float, 0.5, 5.0, None),
-    "pre_max_spread_ticks": (3, int, 1, 10, None),
+    # ore prima del KO i book sono larghi: spread ampio ammesso (l'uscita non
+    # attraversa lo spread: la lay viene APPOGGIATA e aspetta che il mercato scenda)
+    "pre_max_spread_ticks": (6, int, 1, 20, None),
     "pre_green_ticks": (2, int, 1, 10, None),
-    "pre_exit_mode": ("taker", str, None, None, ("resting", "taker")),
+    # resting = lay a +N tick appoggiata SUBITO dopo il fill dell'ingresso (profitto
+    # spalmato, nessuno spread pagato); taker = chiude al best quando i tick ci sono
+    "pre_exit_mode": ("resting", str, None, None, ("resting", "taker")),
     "pre_entry_ttl_s": (60, int, 5, 3600, None),
     "pre_max_cycles": (10, int, 0, 100, None),
     "pre_reentry_cooldown_s": (60, int, 0, 3600, None),

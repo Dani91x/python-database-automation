@@ -29,7 +29,8 @@ def test_defaults_match_plan():
     assert d["cashout_profit_pct"] == 5.0
     assert d["ht_loss_pct"] == 25.0
     assert d["h2_loss_pct"] == 25.0
-    assert d["pre_exit_mode"] == "taker"
+    assert d["pre_exit_mode"] == "resting"
+    assert d["pre_max_spread_ticks"] == 6
     assert d["exact_sizes"] is True
     assert d["cover_policy"] == "auto"
     assert d["max_matches"] == 40
@@ -56,7 +57,7 @@ def test_merge_drops_unknown_and_mode_is_never_a_param():
 
 def test_merge_invalid_choice_falls_back_to_default():
     p = C.merge_params({"pre_exit_mode": "banana", "cover_rounding": "up"})
-    assert p["pre_exit_mode"] == "taker"
+    assert p["pre_exit_mode"] == "resting"
     assert p["cover_rounding"] == "ceil"
 
 

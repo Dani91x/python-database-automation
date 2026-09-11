@@ -111,9 +111,11 @@ def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -
     out["entry_price_initial"] = ctx.entry_price_initial
     out["positions"] = [dataclasses.asdict(l) for l in ctx.legs]
     out["settled_pnl"] = ctx.settled_pnl
-    keep = {k: getattr(ctx, k) for k in ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
-                                          "reentry_done", "close_reason", "cover_skipped", "seq")}
-    keep.update(extra)
+    # i campi dell'engine VINCONO sui valori stantii di extra (bug: last_green_at
+    # sovrascritto dal ctx precedente → cooldown ignorato)
+    keep = dict(extra)
+    keep.update({k: getattr(ctx, k) for k in ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
+                                               "reentry_done", "close_reason", "cover_skipped", "seq")})
     out["ctx"] = keep
     return out
 
@@ -266,15 +268,34 @@ def _scanner_age(db: Any, now: float) -> Optional[float]:
     return None if ts is None else max(0.0, now - ts)
 
 
-def _params_for(params: Dict[str, Any], running: bool) -> Dict[str, Any]:
-    """A bot fermo: NESSUN nuovo ingresso, protezioni e uscite sempre attive."""
-    if running:
-        return params
+def _params_for(params: Dict[str, Any], running: bool, mode: str = "paper") -> Dict[str, Any]:
+    """A bot fermo: NESSUN nuovo ingresso, protezioni e uscite sempre attive.
+    In LIVE senza coda flumine la lay appoggiata (resting) non e' ancora cablata
+    (REST senza FOK + polling: F6) → si ripiega sulla chiusura taker."""
     p = dict(params)
+    if mode == "live" and p.get("pre_exit_mode") == "resting" and not C.env_bool("MIKE_USE_FLUMINE_QUEUE", False):
+        p["pre_exit_mode"] = "taker"
+    if running:
+        return p
     p["pre_enabled"] = False
     p["reentry_enabled"] = False
     p["last_entry_persist"] = False
     return p
+
+
+def _is_resting_leg(leg: E.Leg, params: Dict[str, Any]) -> bool:
+    """Lay di green-up appoggiata sul book (take-profit): NON e' un ordine taker."""
+    return (leg.side == "lay" and leg.role in ("under_green", "reentry_green")
+            and str(params.get("pre_exit_mode")) == "resting" and not leg.final)
+
+
+def _resting_filled(leg: E.Leg, book: Optional[E.Book]) -> bool:
+    """Simulazione CONSERVATIVA della lay appoggiata a ``leg.price``: si considera
+    abbinata SOLO quando il mercato ha scambiato SOTTO il suo prezzo (best back
+    strettamente minore), mai perche' qualcuno laya allo stesso livello."""
+    if book is None or book.status != "OPEN" or book.best_back is None:
+        return False
+    return float(book.best_back) < float(leg.price) - 1e-9
 
 
 def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
@@ -375,7 +396,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         mode = "paper"
     params = C.merge_params(control.get("params"))
     running = status == "running"
-    eff = _params_for(params, running)
+    eff = _params_for(params, running, mode)
 
     # feed unico: UNA lettura per ciclo
     if rows is None:
@@ -564,7 +585,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     # va in ERROR (nessun nuovo ordine) e si riconcilia a mano — finche' non esiste
     # un reconcile_pending come quello del Safe bot (F6).
     for leg in ctx.legs:
-        if leg.is_live and now_ts - leg.placed_at > _PENDING_STALE_S:
+        if leg.is_live and now_ts - leg.placed_at > _PENDING_STALE_S and not _is_resting_leg(leg, params):
+            # (la lay APPOGGIATA resta legittimamente sul book per ore: esclusa)
             if _trade_unknown_outcome(db, ev["event_id"], leg):
                 logger.critical("[mike] %s: gamba %s con esito REST IGNOTO → ERROR, riconciliare a mano",
                                 ev["event_id"], leg.ref)
@@ -578,8 +600,27 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             leg.status = "open" if leg.matched > 0 else "cancelled"
             _mark_trade_cancelled(db, ev["event_id"], leg, "pending_stale")
 
-    # -- azioni differite (paper + in-play: betDelay) -------------------------------
+    # -- lay APPOGGIATE (resting): fill simulato solo se il mercato scambia sotto ----
     n_actions = 0
+    for leg in ctx.legs:
+        if leg.is_live and _is_resting_leg(leg, params):
+            book = snap.book(leg.market, leg.selection)
+            if _resting_filled(leg, book):
+                leg.matched = float(leg.size)
+                leg.avg_price = float(leg.price)
+                leg.status = "open"
+                r = _trade_row_for_leg(db, ev["event_id"], leg)
+                if r is not None:
+                    try:
+                        db.update_trade(int(r["id"]), status="open", price=leg.price, size=leg.size,
+                                        meta={**(r.get("meta") or {}), "phase": "open", "fill": "paper_resting"})
+                    except Exception as ex:  # noqa: BLE001
+                        logger.warning("[mike] conferma resting %s KO: %s", leg.ref, str(ex)[:120])
+                db.log("fill_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price, "size": leg.size,
+                                        "best_back": book.best_back if book else None}, ev["event_id"])
+                n_actions += 1
+
+    # -- azioni differite (paper + in-play: betDelay) -------------------------------
     deferred: List[Dict[str, Any]] = list(extra.get("deferred") or [])
     still: List[Dict[str, Any]] = []
     for item in deferred:
@@ -617,6 +658,24 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     for leg in new_legs:
         book = snap.book(leg.market, leg.selection)
         delay = int(book.bet_delay) if (book and snap.inplay) else 0
+        if _is_resting_leg(leg, params):
+            # lay appoggiata: resta 'pending' sul book (riga riservata in mike_trades)
+            # finche' il mercato non scambia sotto il suo prezzo (vedi _resting_filled)
+            if dry:
+                leg.status = "cancelled"
+                db.log("would_place", {"leg": leg.ref, "role": leg.role, "side": "lay", "price": leg.price,
+                                       "size": leg.size, "resting": True}, ev["event_id"])
+            else:
+                try:
+                    db.insert_trade(_trade_row(info, leg, mode, params, snap.minute,
+                                               f"{payload.get('score_home')}-{payload.get('score_away')}"))
+                    db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
+                                             "size": leg.size}, ev["event_id"])
+                except Exception as ex:  # noqa: BLE001 — riserva fallita: nessun ordine
+                    leg.status = "cancelled"
+                    db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, ev["event_id"])
+            n_actions += 1
+            continue
         if mode == "paper" and delay > 0:
             extra["deferred"].append({"ref": leg.ref, "earliest_at": now_ts + delay})
             db.log("place_deferred", {"leg": leg.ref, "role": leg.role, "bet_delay": delay,

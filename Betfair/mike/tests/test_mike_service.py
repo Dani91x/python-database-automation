@@ -135,8 +135,46 @@ def legs(db):
 
 
 # ---------------------------------------------------------------------------
-def test_prematch_cycle_entry_and_green_taker():
+def test_prematch_cycle_entry_and_green_resting():
+    """Default: lay a 2 tick APPOGGIATA subito dopo il fill; si abbina solo se il
+    mercato scambia SOTTO il suo prezzo (best back < 1.48), mai prima."""
     db = FakeDB(params={"stake": 10})
+    mk = FakeMarket()
+    run(db, mk, NOW, [row(payload())])
+    assert state(db) == "PRE_ENTRY_PENDING" and legs(db)[0]["status"] == "open"
+    run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
+    assert state(db) == "PRE_OPEN"
+    green = [l for l in legs(db) if l["role"] == "under_green"][0]
+    assert green["status"] == "pending" and green["price"] == 1.48 and "place_resting" in db.kinds()
+    assert db.trades[-1]["strategy"] == "under_green" and db.trades[-1]["status"] == "pending"
+    # best back 1.48 (allo stesso livello): NON abbinata
+    run(db, mk, NOW + timedelta(seconds=4), [row(payload(u35=(1.48, 1.50, 30.0, 25.0)))])
+    assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
+    # best back 1.47 (scambiato sotto): abbinata al suo prezzo 1.48
+    run(db, mk, NOW + timedelta(seconds=6), [row(payload(u35=(1.47, 1.49, 30.0, 25.0)))])
+    green = [l for l in legs(db) if l["role"] == "under_green"][0]
+    assert green["status"] == "open" and green["avg_price"] == 1.48 and "fill_resting" in db.kinds()
+    assert db.trades[-1]["status"] == "open"
+    run(db, mk, NOW + timedelta(seconds=8), [row(payload(u35=(1.47, 1.49, 30.0, 25.0)))])
+    assert state(db) == "WATCH" and db.events["E1"]["cycle_no"] == 1
+
+
+def test_last_entry_cancels_resting_green_in_loss():
+    db = FakeDB(params={"stake": 10})
+    mk = FakeMarket()
+    run(db, mk, NOW, [row(payload())])
+    run(db, mk, NOW + timedelta(seconds=2), [row(payload())])
+    assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "pending"
+    # 9 minuti al KO, posizione in perdita (lay 1.55): la resting viene ritirata, si tiene
+    ko = NOW + timedelta(hours=2)
+    run(db, mk, ko - timedelta(minutes=9), [row(payload(u35=(1.54, 1.55, 30.0, 25.0)))])
+    assert state(db) == "HOLD"
+    assert [l for l in legs(db) if l["role"] == "under_green"][0]["status"] == "cancelled"
+    assert db.trades[-1]["status"] == "error" and "cancel" in db.kinds()
+
+
+def test_prematch_cycle_entry_and_green_taker():
+    db = FakeDB(params={"stake": 10, "pre_exit_mode": "taker"})
     mk = FakeMarket()
     res = run(db, mk, NOW, [row(payload())])
     assert res["new"] == 1 and "armed" in db.kinds()

@@ -33,7 +33,8 @@ describe('mike params', () => {
         expect(MIKE_PARAM_DEFAULTS.entry_hours_before_ko).toBe(3);
         expect(MIKE_PARAM_DEFAULTS.cashout_profit_pct).toBe(5);
         expect(MIKE_PARAM_DEFAULTS.ht_loss_pct).toBe(25);
-        expect(MIKE_PARAM_DEFAULTS.pre_exit_mode).toBe('taker');
+        expect(MIKE_PARAM_DEFAULTS.pre_exit_mode).toBe('resting');
+        expect(MIKE_PARAM_DEFAULTS.pre_max_spread_ticks).toBe(6);
         expect(MIKE_PARAM_DEFAULTS.exact_sizes).toBe(true);
     });
     it('number defaults are inside their bounds', () => {
