@@ -569,16 +569,25 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     extra["selections"] = {f"{m}|{s}": sid for (m, s), sid in info.selections.items()}
     live = {}
     if bool(payload.get("inplay")):
+        # punteggio dell'intervallo: fissato la prima volta che il feed dice "half time"
+        if F.ht_active_from_payload(payload) and extra.get("ht_score") is None \
+                and payload.get("score_home") is not None and payload.get("score_away") is not None:
+            extra["ht_score"] = [int(payload["score_home"]), int(payload["score_away"])]
+        ht_score = tuple(extra["ht_score"]) if extra.get("ht_score") else None
+        empirical = D.get_empirical(dossier.get("league_id"), db, now_ts) if ht_score is not None else None
         live = D.live_frame(dossier, minute=payload.get("minute"), score_home=payload.get("score_home"),
                             score_away=payload.get("score_away"), red_home=payload.get("red_home") or 0,
                             red_away=payload.get("red_away") or 0, atlas=atlas, home=info.home, away=info.away,
-                            payload=payload, wait_step_min=int(params.get("cover_wait_step_min", 5)))
+                            payload=payload, wait_step_min=int(params.get("cover_wait_step_min", 5)),
+                            ht_score=ht_score, empirical=empirical,
+                            emp_min_n=int(params.get("loss_exit_emp_min_n", 200)))
     snap = F.snapshot_from_row(row, info, now=now_ts, params=params, scanner_age_s=scanner_age,
                                hazard=live.get("hazard"), p4_model=live.get("p4_model"),
                                last_goal_ts=extra.get("last_goal_ts"),
                                cover_gain_pct=live.get("cover_gain_pct"),
                                pressure=float(live.get("pressure") or 1.0),
-                               model_probs=live.get("model_probs"))
+                               model_probs=live.get("model_probs"),
+                               p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"))
     if snap is None:
         return (0, 0)
 
@@ -691,11 +700,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         n_actions += 1
     if d.telemetry:
         for k, v in d.telemetry.items():
-            if k in ("pre_cycle", "cover", "settle", "cover_wait", "cashout", "close_retries_exhausted"):
+            if k in ("pre_cycle", "cover", "settle", "cover_wait", "cashout", "close_retries_exhausted", "loss_exit"):
                 if k == "cashout":
                     extra["last_cashout"] = v
                 elif k == "cover_wait":
                     extra["last_cover_wait"] = v
+                elif k == "loss_exit":
+                    extra["last_loss_exit"] = v
                 else:
                     db.log(k, v if isinstance(v, dict) else {"value": v}, ev["event_id"])
     if d.state != ev.get("state") or d.reason != extra.get("last_reason"):
@@ -706,7 +717,9 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     ev["live"] = {"minute": snap.minute, "goals": snap.goals, "inplay": snap.inplay, "ht": snap.ht_active,
                   "score_home": payload.get("score_home"), "score_away": payload.get("score_away"),
                   "red_home": payload.get("red_home") or 0, "red_away": payload.get("red_away") or 0,
-                  "model_probs": live.get("model_probs"),
+                  "model_probs": live.get("model_probs"), "ht_score": extra.get("ht_score"),
+                  "p_total_model": live.get("p_total_model"), "p_total_emp": live.get("p_total_emp"),
+                  "loss_exit": extra.get("last_loss_exit"),
                   "hazard": snap.hazard, "hazard_atlas": live.get("hazard_atlas"),
                   "hazard_model": live.get("hazard_model"), "pressure": live.get("pressure"),
                   "cover_gain_pct": live.get("cover_gain_pct"), "p_over45_model": live.get("p_over45_model"),

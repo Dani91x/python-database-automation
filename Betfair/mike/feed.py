@@ -176,7 +176,9 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
                       p4_model: Optional[float] = None, last_goal_ts: Optional[float] = None,
                       market_status_override: Optional[str] = None,
                       cover_gain_pct: Optional[float] = None, pressure: float = 1.0,
-                      model_probs: Optional[Dict[str, float]] = None) -> Optional[E.Snapshot]:
+                      model_probs: Optional[Dict[str, float]] = None,
+                      p_total_model: Optional[Dict[int, float]] = None,
+                      p_total_emp: Optional[Dict[int, float]] = None) -> Optional[E.Snapshot]:
     payload = row.get("payload") if isinstance(row, dict) else None
     if not isinstance(payload, dict) or info.ko_at is None:
         return None
@@ -198,6 +200,7 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         hazard=hazard, p4_market=implied_p4(blocks, info), p4_model=p4_model,
         last_goal_ts=last_goal_ts, market_status=status, final_total=None,
         cover_gain_pct=cover_gain_pct, pressure=float(pressure or 1.0), model_probs=model_probs,
+        p_total_model=p_total_model, p_total_emp=p_total_emp,
     )
 
 

@@ -147,6 +147,11 @@ class Snapshot:
     # "_now" (adesso), "_goal" (subito dopo un gol), "_later" (fra cover_wait_step_min
     # minuti senza gol). Servono al cash-out intelligente (valore atteso dell'attesa).
     model_probs: Optional[Dict[str, float]] = None
+    # distribuzione dei GOL TOTALI a fine gara {0..8, 8 = 8+}: dal modello (griglia
+    # residua Omega) e dalla tabella empirica HT->FT (solo finche' il punteggio e'
+    # quello dell'intervallo). Servono all'uscita in perdita "a modello".
+    p_total_model: Optional[Dict[int, float]] = None
+    p_total_emp: Optional[Dict[int, float]] = None
 
     def book(self, market: str, selection: str) -> Optional[Book]:
         return self.books.get((market, selection))
@@ -493,6 +498,68 @@ def smart_cashout(*, cv_net: float, base: float, legs: List[Leg], books: Dict[Tu
                     tele["trigger"] = "ev_margin"
                     return True, f"attesa a valore atteso {ev_hold:.2f} << {cv_net:.2f}", tele
     return False, "", tele
+
+
+def blend_totals(*dists: Optional[Dict[int, float]]) -> Optional[Dict[int, float]]:
+    """Media delle distribuzioni disponibili dei gol totali (None ignorati), normalizzata."""
+    ok = [d for d in dists if d]
+    if not ok:
+        return None
+    keys = sorted({int(k) for d in ok for k in d})
+    out = {k: sum(float(d.get(k, 0.0)) for d in ok) / len(ok) for k in keys}
+    tot = sum(out.values())
+    return {k: v / tot for k, v in out.items()} if tot > 0 else None
+
+
+def hold_expectation(pnl_by_total: Dict[int, float], p_total: Dict[int, float],
+                     p4_floor: Optional[float] = None) -> Tuple[float, float]:
+    """(EV a fine gara tenendo tutto, P(4) usata). Con ``p4_floor`` la P(4) viene
+    alzata (mai abbassata) e il resto della distribuzione riscalato: e' la scelta
+    PRUDENTE (fra modello, empirico e mercato comanda il piu' pessimista sui 4 gol)."""
+    dist = {int(k): float(v) for k, v in p_total.items()}
+    p4 = dist.get(4, 0.0)
+    if p4_floor is not None and float(p4_floor) > p4:
+        rest = 1.0 - p4
+        scale = (1.0 - float(p4_floor)) / rest if rest > 0 else 0.0
+        dist = {k: (float(p4_floor) if k == 4 else v * scale) for k, v in dist.items()}
+        p4 = float(p4_floor)
+    max_t = max(pnl_by_total) if pnl_by_total else 8
+    ev = 0.0
+    for t, p in dist.items():
+        ev += p * float(pnl_by_total.get(min(t, max_t), 0.0))
+    return round(ev, 4), round(p4, 4)
+
+
+def loss_exit_model(*, cv_net: float, base: float, pnl_by_total: Dict[int, float],
+                    p_total_model: Optional[Dict[int, float]], p_total_emp: Optional[Dict[int, float]],
+                    p4_market: Optional[float], params: Dict[str, Any]) -> Tuple[Optional[bool], str, Dict[str, Any]]:
+    """Uscita in perdita A MODELLO: confronta il valore CERTO di chiudere ora (cv_net)
+    con il valore ATTESO di tenere fino alla fine (EV = sum P(tot) * P&L(tot)), meno un
+    premio al rischio proporzionale alla P(4 gol): premio = risk_premium% * P(4) * base.
+    Chiude se cv_net >= EV - premio. P(4) prudente = max(modello/empirico, mercato).
+    Ritorna (None, ...) quando i dati mancano (il chiamante usa la regola fissa)."""
+    tele: Dict[str, Any] = {"mode": "model"}
+    dist = blend_totals(p_total_model, p_total_emp)
+    if dist is None or base <= 0 or not pnl_by_total:
+        tele["missing"] = True
+        return None, "", tele
+    p4_floor = None
+    if params.get("loss_exit_p4_prudent", True) and p4_market is not None:
+        p4_floor = float(p4_market)
+    ev_hold, p4 = hold_expectation(pnl_by_total, dist, p4_floor)
+    premium = base * float(params["loss_exit_risk_premium_pct"]) / 100.0 * p4
+    threshold = ev_hold - premium
+    tele.update({"ev_hold": round(ev_hold, 2), "p4": p4, "p4_model": (p_total_model or {}).get(4),
+                 "p4_emp": (p_total_emp or {}).get(4), "p4_market": p4_market,
+                 "premium": round(premium, 2), "threshold": round(threshold, 2),
+                 "sources": [n for n, d in (("model", p_total_model), ("emp", p_total_emp)) if d]})
+    cap = float(params.get("loss_exit_max_pct") or 0.0)
+    if cap > 0 and cv_net < -base * cap / 100.0 - _EPS:
+        tele["beyond_cap"] = True
+        return False, f"perdita {cv_net:.2f} oltre il tetto {cap}%: si tiene", tele
+    if cv_net >= threshold - _EPS:
+        return True, f"chiudere ({cv_net:.2f}) vale piu' di tenere ({ev_hold:.2f} - premio {premium:.2f}, P4 {p4:.0%})", tele
+    return False, f"tenere vale {ev_hold:.2f} - premio {premium:.2f} > {cv_net:.2f}", tele
 
 
 def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optional[float],
@@ -1035,8 +1102,22 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
     rule = _loss_rule(snap, params)
     if rule is not None:
         pct, label = rule
-        if loss_exit_ok(cv.net, base, pct, goals=snap.goals,
-                        gmin=int(params["ht_loss_goals_min"]), gmax=int(params["ht_loss_goals_max"])):
+        gmin, gmax = int(params["ht_loss_goals_min"]), int(params["ht_loss_goals_max"])
+        in_goals = snap.goals is not None and gmin <= int(snap.goals) <= gmax
+        decided = None
+        if in_goals and params.get("loss_exit_mode", "model") == "model":
+            decided, why, ltele = loss_exit_model(
+                cv_net=cv.net, base=base, pnl_by_total=net_pnl_by_total(ctx.legs, c),
+                p_total_model=snap.p_total_model, p_total_emp=snap.p_total_emp,
+                p4_market=snap.p4_market, params=params)
+            ltele["window"] = label
+            tele["loss_exit"] = ltele
+            if decided:
+                return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
+                                f"uscita a modello ({label}): {why}",
+                                updates={"close_reason": f"loss_{label}", "attempts": 0}, telemetry=tele)
+        if decided is None and loss_exit_ok(cv.net, base, pct, goals=snap.goals, gmin=gmin, gmax=gmax):
+            tele.setdefault("loss_exit", {"mode": "fixed", "window": label, "pct": pct})
             return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                             f"loss tollerata ({label}): {cv.net:.2f} entro {pct}% di {base:.2f}",
                             updates={"close_reason": f"loss_{label}", "attempts": 0}, telemetry=tele)

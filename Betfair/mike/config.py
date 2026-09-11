@@ -138,6 +138,14 @@ PARAM_SPEC: dict[str, Spec] = {
     "close_retry_s": (10, int, 1, 600, None),
     "close_max_attempts": (20, int, 1, 100, None),
     # ---- uscite HT / 2T con perdita tollerata ----
+    # mode "model": chiude se il valore certo di oggi >= EV a fine gara - premio al rischio
+    # (risk_premium% x P(4 gol) x capitale), P(4) prudente = max(modello/empirico, mercato);
+    # senza dati di modello ricade sulla regola fissa "perdita <= ht_loss_pct". "fixed" = solo la regola fissa.
+    "loss_exit_mode": ("model", str, None, None, ("model", "fixed")),
+    "loss_exit_risk_premium_pct": (50.0, float, 0.0, 300.0, None),
+    "loss_exit_p4_prudent": (True, bool, None, None, None),
+    "loss_exit_max_pct": (0.0, float, 0.0, 100.0, None),
+    "loss_exit_emp_min_n": (200, int, 20, 5000, None),
     "ht_loss_exit_enabled": (True, bool, None, None, None),
     "ht_loss_pct": (25.0, float, 0.0, 100.0, None),
     "ht_loss_goals_min": (2, int, 0, 8, None),

@@ -98,6 +98,77 @@ def cover_gain_pct(p_over_now: Optional[float], p_over_later: Optional[float]) -
     return round(max(0.0, (1.0 - x_later / x_now) * 100.0), 2)
 
 
+_EMPIRICAL_CACHE: Dict[Optional[int], Any] = {}
+_EMPIRICAL_FAILED: Dict[Optional[int], float] = {}
+_EMPIRICAL_RETRY_S = 600.0
+
+
+def get_empirical(league_id: Optional[int], db: Any, now_ts: Optional[float] = None) -> Optional[Any]:
+    """Tabella empirica HT->FT (globale + lega) via ``db.ht_ft_rows`` (RPC Omega), in cache
+    per processo. Errore RPC → None e nuovo tentativo dopo ``_EMPIRICAL_RETRY_S``."""
+    import time as _t
+
+    key = int(league_id) if league_id is not None else None
+    if key in _EMPIRICAL_CACHE:
+        return _EMPIRICAL_CACHE[key]
+    now_ts = now_ts if now_ts is not None else _t.time()
+    if now_ts - _EMPIRICAL_FAILED.get(key, -1e12) < _EMPIRICAL_RETRY_S:
+        return None
+    try:
+        from Betfair.omega.omega_empirical import EmpiricalTable
+
+        rows = db.ht_ft_rows(key) if hasattr(db, "ht_ft_rows") else None
+        if rows is None:
+            _EMPIRICAL_FAILED[key] = now_ts
+            return None
+        table = EmpiricalTable(rows)
+        _EMPIRICAL_CACHE[key] = None if table.empty else table
+        return _EMPIRICAL_CACHE[key]
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike.dossier] tabella empirica %s KO: %s", key, str(ex)[:120])
+        _EMPIRICAL_FAILED[key] = now_ts
+        return None
+
+
+def p_total_from_grid(grid: Dict[tuple, float], max_total: int = MAX_GOALS) -> Dict[int, float]:
+    """{0..max_total} con l'ultimo bucket = max_total o piu'. Normalizzata."""
+    out = {t: 0.0 for t in range(0, max_total + 1)}
+    for (h, a), p in grid.items():
+        out[min(int(h) + int(a), max_total)] += float(p)
+    tot = sum(out.values())
+    return {t: round(v / tot, 5) for t, v in out.items()} if tot > 0 else out
+
+
+def p_total_empirical(table: Any, ht: tuple, league_id: Optional[int], *, min_n: int = 200,
+                      shrink_k: float = 50.0, max_total: int = MAX_GOALS) -> Optional[Dict[int, float]]:
+    """Distribuzione EMPIRICA dei gol totali a fine gara dato il punteggio del 1T:
+    lega e globale fuse con shrinkage w = n_lega / (n_lega + shrink_k).
+    None se il 1T e' troppo raro (n globale < min_n) o la tabella manca."""
+    if table is None:
+        return None
+    try:
+        g_counts, g_tot = table.counts(None, (int(ht[0]), int(ht[1])))
+        if g_tot < int(min_n):
+            return None
+        l_counts, l_tot = table.counts(league_id, (int(ht[0]), int(ht[1]))) if league_id is not None else ({}, 0)
+
+        def totals(counts: Dict[str, int], n: int) -> Dict[int, float]:
+            out = {t: 0.0 for t in range(0, max_total + 1)}
+            if n <= 0:
+                return out
+            for key, k in counts.items():
+                h, a = key.split("-")
+                out[min(int(h) + int(a), max_total)] += float(k) / n
+            return out
+
+        g, l = totals(g_counts, g_tot), totals(l_counts, l_tot)
+        w = l_tot / (l_tot + float(shrink_k)) if l_tot > 0 else 0.0
+        return {t: round(w * l[t] + (1.0 - w) * g[t], 5) for t in range(0, max_total + 1)}
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike.dossier] p_total_empirical KO: %s", str(ex)[:120])
+        return None
+
+
 def _p_le(grid: Dict[tuple, float], total: int) -> float:
     return sum(p for (h, a), p in grid.items() if h + a <= total)
 
@@ -130,7 +201,8 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
                score_away: Optional[int], red_home: int = 0, red_away: int = 0,
                atlas: Optional[Dict[str, Any]] = None, home: Optional[str] = None,
                away: Optional[str] = None, payload: Optional[Dict[str, Any]] = None,
-               wait_step_min: int = 5) -> Dict[str, Any]:
+               wait_step_min: int = 5, ht_score: Optional[tuple] = None, empirical: Any = None,
+               emp_min_n: int = 200) -> Dict[str, Any]:
     """{hazard, hazard_atlas, hazard_model, hazard_source, pressure, p4_model,
     p_over45_model, cover_gain_pct} per lo stato live corrente (None se ignoto).
 
@@ -140,9 +212,14 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     """
     out: Dict[str, Any] = {"hazard": None, "hazard_atlas": None, "hazard_model": None,
                            "hazard_source": "none", "pressure": 1.0, "p4_model": None,
-                           "p_over45_model": None, "cover_gain_pct": None, "model_probs": None}
+                           "p_over45_model": None, "cover_gain_pct": None, "model_probs": None,
+                           "p_total_model": None, "p_total_emp": None}
     if minute is None or score_home is None or score_away is None:
         return out
+    # empirico HT->FT: parla SOLO finche' il punteggio e' quello dell'intervallo
+    if empirical is not None and ht_score is not None and \
+            (int(ht_score[0]), int(ht_score[1])) == (int(score_home), int(score_away)):
+        out["p_total_emp"] = p_total_empirical(empirical, ht_score, dossier.get("league_id"), min_n=int(emp_min_n))
     goals = int(score_home) + int(score_away)
     try:
         if atlas is not None:
@@ -183,6 +260,7 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
             grid = score_probs(lh_pre=float(lh), la_pre=float(la), rho=rho, state=state,
                                league_id=dossier.get("league_id"), half=False)
             out["p4_model"] = _p_total(grid, 4)
+            out["p_total_model"] = p_total_from_grid(grid)
             p_over_now = round(sum(p for (h, a), p in grid.items() if h + a >= 5), 4)
             out["p_over45_model"] = p_over_now
             later = LiveState(minute=min(90, int(minute) + int(wait_step_min)), score_home=int(score_home),

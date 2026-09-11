@@ -17,7 +17,7 @@ import { fmtEurIt, fmtOddsIt } from '@/lib/safeBot';
 import { countdownToOff, formatMinute } from '@/lib/matchClock';
 import {
     activeLegs, cashoutPct, investedOf, legSelectionLabel, phaseMeta, roleLabel,
-    MIKE_TERMINAL_STATES, type MikeCashoutSmart, type MikeEvent, type MikeParams, type MikeRequestKind,
+    MIKE_TERMINAL_STATES, type MikeCashoutSmart, type MikeEvent, type MikeLossExit, type MikeParams, type MikeRequestKind,
 } from '@/lib/mike';
 
 export interface MikeMatchCardProps {
@@ -52,6 +52,20 @@ export function smartLabel(smart: MikeCashoutSmart | null | undefined, threshold
     return parts.length ? `intelligente: ${parts.join(' · ')}` : null;
 }
 
+/** Riga "uscita in perdita a modello": tenere vs chiudere. */
+export function lossExitLabel(le: MikeLossExit | null | undefined, cashoutNet: number | null): string | null {
+    if (!le) return null;
+    if (le.mode === 'fixed') return `uscita ${le.window ?? ''}: regola fissa (perdita ≤ ${le.pct ?? '—'}%)`;
+    if (le.missing) return `uscita ${le.window ?? ''}: modello senza dati → regola fissa`;
+    const parts: string[] = [];
+    if (le.ev_hold != null) parts.push(`tenere vale ${fmtEurIt(le.ev_hold, true)}`);
+    if (le.p4 != null) parts.push(`P(4) ${(le.p4 * 100).toFixed(0)}%`);
+    if (le.premium != null) parts.push(`premio ${fmtEurIt(le.premium)}`);
+    if (le.threshold != null && cashoutNet != null) parts.push(cashoutNet >= le.threshold ? '→ chiude' : '→ tiene');
+    if (le.beyond_cap) parts.push('(oltre il tetto: tiene)');
+    return `uscita ${le.window ?? ''} a modello: ${parts.join(' · ')}`;
+}
+
 function pnlClass(v: number | null | undefined): string {
     if (v == null) return 'text-slate-400';
     return v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-300';
@@ -80,6 +94,7 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
     const hasScore = inplay && live.score_home != null && live.score_away != null;
     const smart = cashout?.smart ?? null;
     const smartHint = smartLabel(smart, threshold, cashout?.base ?? null);
+    const lossHint = lossExitLabel(live.loss_exit ?? null, cashout?.net ?? null);
 
     return (
         <Card
@@ -202,6 +217,7 @@ export function MikeMatchCard({ ev, params, nowMs, busy, stale, staleReason, onR
                             </span>
                             : <span className="text-slate-500">{hasPosition ? 'prezzi incompleti' : 'nessuna posizione'}</span>}
                         {smartHint && <div className="text-[10px] text-slate-400 mt-0.5" data-testid="mike-cashout-smart">{smartHint}</div>}
+                        {lossHint && <div className="text-[10px] text-amber-200/80 mt-0.5" data-testid="mike-loss-exit">{lossHint}</div>}
                     </div>
                     <div className="flex items-center gap-1">
                         {hasPosition && (

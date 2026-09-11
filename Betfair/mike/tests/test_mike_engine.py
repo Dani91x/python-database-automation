@@ -29,7 +29,8 @@ def book(bb, bs=100.0, bl=None, ls=100.0, status="OPEN", inplay=False):
 
 def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=None,
          ht_active=False, feed_fresh=True, hazard=None, p4_market=None,
-         last_goal_ts=None, market_status="OPEN", final_total=None, pressure=1.0, model_probs=None):
+         last_goal_ts=None, market_status="OPEN", final_total=None, pressure=1.0, model_probs=None,
+         p_total_model=None, p_total_emp=None):
     books = {}
     if u35 is not None:
         books[(E.MARKET_OU35, E.SEL_UNDER)] = u35
@@ -41,7 +42,8 @@ def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=
                       goals=goals, ht_active=ht_active, feed_fresh=feed_fresh,
                       hazard=hazard, p4_market=p4_market, last_goal_ts=last_goal_ts,
                       market_status=market_status, final_total=final_total,
-                      pressure=pressure, model_probs=model_probs)
+                      pressure=pressure, model_probs=model_probs,
+                      p_total_model=p_total_model, p_total_emp=p_total_emp)
 
 
 def fill(leg, size=None, price=None):
@@ -844,3 +846,100 @@ def test_projected_books_scale_market_prices_by_model_ratio():
     assert E.projected_books(books, dead, "goal")[(E.MARKET_OU35, E.SEL_UNDER)].best_lay == 1000.0
     assert E.projected_books(books, {"u35_now": 0.8}, "goal") is None
     assert E.projected_books(books, None, "goal") is None
+
+
+# ---------------------------------------------------------------------------
+# Uscita in perdita A MODELLO (HT / 2T): valore certo vs valore atteso - premio al rischio
+# ---------------------------------------------------------------------------
+# Posizione _live_covered: Under 20 @ 1.50 + Over 4.5 4 @ 8.0 (base 24)
+# P&L netto a fine gara: 0-3 gol = +5.50 ; 4 gol = -24.00 ; 5+ gol = +6.60
+_HT11 = {0: 0.0, 1: 0.0, 2: 0.30, 3: 0.30, 4: 0.22, 5: 0.10, 6: 0.05, 7: 0.02, 8: 0.01}
+_HT21 = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.45, 4: 0.30, 5: 0.15, 6: 0.07, 7: 0.02, 8: 0.01}
+
+
+def test_hold_expectation_and_prudent_p4():
+    pnl = {t: 5.5 for t in range(0, 4)}
+    pnl[4] = -24.0
+    pnl.update({t: 6.6 for t in range(5, 9)})
+    ev, p4 = E.hold_expectation(pnl, _HT11)
+    assert p4 == pytest.approx(0.22)
+    assert ev == pytest.approx(0.6 * 5.5 + 0.22 * -24 + 0.18 * 6.6, abs=1e-3)
+    # P(4) prudente dal mercato (0.30): il resto viene riscalato, l'EV peggiora
+    ev2, p4b = E.hold_expectation(pnl, _HT11, p4_floor=0.30)
+    assert p4b == pytest.approx(0.30) and ev2 < ev
+    # il floor non abbassa mai la P(4)
+    assert E.hold_expectation(pnl, _HT11, p4_floor=0.10)[1] == pytest.approx(0.22)
+    # blend: media normalizzata delle distribuzioni disponibili
+    b = E.blend_totals(_HT11, None, _HT21)
+    assert sum(b.values()) == pytest.approx(1.0) and b[4] == pytest.approx(0.26)
+    assert E.blend_totals(None, None) is None
+
+
+def test_loss_exit_model_holds_when_holding_is_worth_more():
+    ctx, p = _live_covered()
+    # HT 1-1: chiudere ora = -5.51 (23% -> la regola FISSA chiuderebbe), ma tenere vale -0.79
+    # e il premio al rischio e' 24*50%*0.22 = 2.64 -> soglia -3.43 -> si TIENE
+    s = snap(KO + 46 * 60, u35=book(2.20, bl=2.24, inplay=True), o45=book(6.0, bl=6.2, inplay=True),
+             inplay=True, minute=45, goals=2, ht_active=True, p_total_model=_HT11)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_COVERED" and d.actions == []
+    le = d.telemetry["loss_exit"]
+    assert le["mode"] == "model" and le["window"] == "ht" and le["sources"] == ["model"]
+    assert le["ev_hold"] == pytest.approx(-0.79, abs=0.05)
+    assert le["premium"] == pytest.approx(2.64, abs=0.02)
+    assert d.telemetry["cashout"]["net"] < le["threshold"]
+
+
+def test_loss_exit_model_closes_when_certain_value_beats_expectation():
+    ctx, p = _live_covered()
+    # HT 2-1: chiudere ora = -3.54 ; tenere vale -3.08 - premio 3.60 = -6.68 -> CHIUDE
+    s = snap(KO + 46 * 60, u35=book(3.4, bl=3.5, inplay=True), o45=book(2.5, bl=2.6, inplay=True),
+             inplay=True, minute=45, goals=3, ht_active=True, p_total_model=_HT21)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_CLOSING" and d.reason.startswith("uscita a modello (ht)")
+    assert d.updates["close_reason"] == "loss_ht"
+    assert sorted(a.role for a in d.actions) == ["over_close", "under_close"]
+    # stesso caso con perdita del 27% (oltre il 25% della regola fissa): il modello chiude lo stesso
+    s2 = snap(KO + 46 * 60, u35=book(4.1, bl=4.2, inplay=True), o45=book(2.9, bl=3.0, inplay=True),
+              inplay=True, minute=45, goals=3, ht_active=True, p_total_model=_HT21)
+    d2 = E.decide(ctx, s2, p)
+    assert d2.telemetry["cashout"]["net"] == pytest.approx(-6.53, abs=0.05)
+    assert d2.state == "LIVE_CLOSING"
+
+
+def test_loss_exit_model_uses_market_p4_when_more_pessimistic():
+    ctx, p = _live_covered()
+    # HT 1-1 come sopra (tiene con P4 0.22) ma il mercato prezza P(4) al 45%: premio 5.4,
+    # EV con P4 0.45 = 0.4231*5.5 -10.8 + 0.1269*6.6 = -7.63 -> soglia -13 -> ... chiudere -5.51 >= -13 -> CHIUDE
+    s = snap(KO + 46 * 60, u35=book(2.20, bl=2.24, inplay=True), o45=book(6.0, bl=6.2, inplay=True),
+             inplay=True, minute=45, goals=2, ht_active=True, p_total_model=_HT11, p4_market=0.45)
+    d = E.decide(ctx, s, p)
+    assert d.state == "LIVE_CLOSING" and d.telemetry["loss_exit"]["p4"] == pytest.approx(0.45)
+    # con la prudenza spenta torna a tenere
+    p2 = dict(p, loss_exit_p4_prudent=False)
+    assert E.decide(ctx, s, p2).state == "LIVE_COVERED"
+
+
+def test_loss_exit_model_cap_and_fixed_mode_and_fallback():
+    ctx, p = _live_covered()
+    s = snap(KO + 46 * 60, u35=book(4.1, bl=4.2, inplay=True), o45=book(2.9, bl=3.0, inplay=True),
+             inplay=True, minute=45, goals=3, ht_active=True, p_total_model=_HT21)
+    # tetto: non cristallizzare oltre il 20% -> -6.53 e' il 27% -> tiene (e lo dice)
+    p_cap = dict(p, loss_exit_max_pct=20.0)
+    d = E.decide(ctx, s, p_cap)
+    assert d.state == "LIVE_COVERED" and d.telemetry["loss_exit"]["beyond_cap"] is True
+    # modalita' fissa: 27% > 25% -> tiene, nessuna telemetria di modello
+    p_fix = dict(p, loss_exit_mode="fixed")
+    d2 = E.decide(ctx, s, p_fix)
+    assert d2.state == "LIVE_COVERED" and "loss_exit" not in d2.telemetry
+    # senza dati di modello -> regola fissa (23% -> chiude) con telemetria "missing"
+    s3 = snap(KO + 46 * 60, u35=book(2.20, bl=2.24, inplay=True), o45=book(6.0, bl=6.2, inplay=True),
+              inplay=True, minute=45, goals=2, ht_active=True)
+    d3 = E.decide(ctx, s3, p)
+    assert d3.state == "LIVE_CLOSING" and d3.reason.startswith("loss tollerata")
+    assert d3.telemetry["loss_exit"]["missing"] is True
+    # 2T: stessa decisione a modello con l'empirico da solo
+    s4 = snap(KO + 60 * 60, u35=book(3.4, bl=3.5, inplay=True), o45=book(2.5, bl=2.6, inplay=True),
+              inplay=True, minute=60, goals=3, p_total_emp=_HT21)
+    d4 = E.decide(ctx, s4, p)
+    assert d4.state == "LIVE_CLOSING" and d4.telemetry["loss_exit"]["sources"] == ["emp"]

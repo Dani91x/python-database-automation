@@ -100,9 +100,29 @@ export interface MikeCashout {
     smart?: MikeCashoutSmart | null;
 }
 
+export interface MikeLossExit {
+    mode: 'model' | 'fixed';
+    window?: string;
+    ev_hold?: number;
+    p4?: number;
+    p4_model?: number | null;
+    p4_emp?: number | null;
+    p4_market?: number | null;
+    premium?: number;
+    threshold?: number;
+    sources?: string[];
+    missing?: boolean;
+    beyond_cap?: boolean;
+    pct?: number;
+}
+
 export interface MikeLive {
     minute: number | null;
     goals: number | null;
+    ht_score?: [number, number] | null;
+    p_total_model?: Record<string, number> | null;
+    p_total_emp?: Record<string, number> | null;
+    loss_exit?: MikeLossExit | null;
     score_home?: number | null;
     score_away?: number | null;
     red_home?: number;
@@ -270,6 +290,11 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'close_max_attempts', label: 'Tentativi max chiusura', kind: 'number', step: 1, min: 1, max: 100, hint: 'poi resta in attesa (chiusura manuale)', group: 'cashout' },
     { key: 'ht_loss_exit_enabled', label: 'Uscita HT attiva', kind: 'bool', hint: 'a fine 1T con 2-4 gol', group: 'uscite' },
     { key: 'ht_loss_pct', label: 'HT: perdita tollerata %', kind: 'number', step: 1, min: 0, max: 100, hint: 'chiude comunque se la perdita è entro questa % del capitale', group: 'uscite' },
+    { key: 'loss_exit_mode', label: 'Decisione di uscita', kind: 'choice', choices: ['model', 'fixed'], hint: 'model = chiudi se il valore certo batte il valore atteso a fine gara meno il premio al rischio sui 4 gol; fixed = solo la regola "perdita ≤ %"', group: 'uscite' },
+    { key: 'loss_exit_risk_premium_pct', label: 'Premio al rischio (% capitale × P(4))', kind: 'number', step: 5, min: 0, max: 300, hint: 'più alto = esce prima quando i 4 gol sono probabili', group: 'uscite' },
+    { key: 'loss_exit_p4_prudent', label: 'P(4) prudente (max modello/mercato)', kind: 'bool', hint: 'usa la stima più pessimista fra modello, tabella HT→FT e mercato', group: 'uscite' },
+    { key: 'loss_exit_max_pct', label: 'Non cristallizzare oltre (%)', kind: 'number', step: 5, min: 0, max: 100, hint: '0 = spento: decide solo il modello', group: 'uscite' },
+    { key: 'loss_exit_emp_min_n', label: 'Casi minimi tabella HT→FT', kind: 'number', step: 10, min: 20, max: 5000, hint: 'sotto, l\'empirico non parla', group: 'uscite' },
     { key: 'ht_loss_goals_min', label: 'HT: gol min', kind: 'number', step: 1, min: 0, max: 8, hint: '', group: 'uscite' },
     { key: 'ht_loss_goals_max', label: 'HT: gol max', kind: 'number', step: 1, min: 0, max: 8, hint: '', group: 'uscite' },
     { key: 'h2_loss_exit_enabled', label: 'Uscita 2T attiva', kind: 'bool', hint: 'stessa regola nel secondo tempo', group: 'uscite' },
@@ -306,6 +331,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, close_retry_s: 10, close_max_attempts: 20,
     cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
     cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
+    loss_exit_mode: 'model', loss_exit_risk_premium_pct: 50, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,
     ht_loss_exit_enabled: true, ht_loss_pct: 25, ht_loss_goals_min: 2, ht_loss_goals_max: 4,
     h2_loss_exit_enabled: true, h2_loss_pct: 25, h2_loss_from_min: 46, h2_loss_to_min: 85,
     reentry_enabled: true, reentry_green_ticks: 2, reentry_max_goals: 1, reentry_until_min: 45,

@@ -59,6 +59,8 @@ const EVENTS = [
                 cashout: { net: 0.5, gross: 0.55, base: 12.26, complete: true, pct: 4.1,
                            smart: { enabled: true, floor: 0.25, near: true, hot: true, ev_hold: 0.31, trigger: 'hot_near' } },
                 cover_wait: null, pnl_by_total: { '0': 4.75, '4': -12.26, '5': 2 },
+                ht_score: [1, 0],
+                loss_exit: { mode: 'model', window: '2t', ev_hold: -0.79, p4: 0.22, premium: 2.64, threshold: -3.43, sources: ['model', 'emp'] },
                 books: { 'OU35|UNDER': { best_back: 1.7, back_size: 30, best_lay: 1.72, lay_size: 20, status: 'OPEN', inplay: true, bet_delay: 5 },
                          'OU45|OVER': { best_back: 4.2, back_size: 30, best_lay: 4.4, lay_size: 20, status: 'OPEN', inplay: true, bet_delay: 5 } },
                 feed_fresh: true },
@@ -107,6 +109,7 @@ describe('Mike page', () => {
         expect(screen.getByTestId('mike-cashout-smart')).toHaveTextContent('a un passo dal 5%');
         expect(screen.getByTestId('mike-cashout-smart')).toHaveTextContent('fase calda');
         expect(screen.getByTestId('mike-cashout-smart')).toHaveTextContent('chiude (hot_near)');
+        expect(screen.getByTestId('mike-loss-exit')).toHaveTextContent('uscita 2t a modello: tenere vale −0,79 € · P(4) 22% · premio 2,64 € · → chiude');
         // poi la partita pre-match con posizione: cella "4" in evidenza, nessun punteggio
         expect(cards[1]).toHaveTextContent('Roma v Lazio');
         expect(screen.getAllByTestId('mike-score')).toHaveLength(1);

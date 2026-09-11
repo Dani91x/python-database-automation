@@ -39,6 +39,8 @@ describe('mike params', () => {
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_enabled).toBe(true);
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_min_pct).toBe(2);
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_goals_hot).toBe(3);
+        expect(MIKE_PARAM_DEFAULTS.loss_exit_mode).toBe('model');
+        expect(MIKE_PARAM_DEFAULTS.loss_exit_risk_premium_pct).toBe(50);
     });
     it('number defaults are inside their bounds', () => {
         for (const f of MIKE_PARAM_FIELDS) {
