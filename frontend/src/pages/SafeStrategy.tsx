@@ -49,7 +49,7 @@ import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel, type SafeSportFi
 import { groupTradesByMatch, filterMatchesForDay, summarizeMatches } from '@/lib/omegaMatches';
 import {
     buildEquitySeries, resolveSignalPlacement, safeTradeBook, feedFreshness,
-    sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, fmtEurIt, groupClosingLegs,
+    sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, fmtEurIt, groupClosingLegs, isCurrentOppRow,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
@@ -352,16 +352,16 @@ export default function SafeStrategy() {
     const todayTradesTennis = useMemo(() => tennisTrades.filter((t) => todayEventIds.has(t.event_id)), [tennisTrades, todayEventIds]);
     const todaySummaryCalcio = useMemo(() => summarizeMatches(todayGroups.filter((g) => g.legs[0]?.trade.sport === 'calcio')), [todayGroups]);
     const todaySummaryTennis = useMemo(() => summarizeMatches(todayGroups.filter((g) => g.legs[0]?.trade.sport === 'tennis')), [todayGroups]);
-    // righe opportunità per sport: 'calcio' (default per righe senza sport) e 'tennis'
-    const oppRows = useMemo(
-        () => bot.opportunities.filter((r) => r.sport !== 'tennis'),
-        [bot.opportunities],
+    // SOLO le opportunità di OGGI e recenti (partite in corso): il servizio non
+    // cancella le righe delle partite finite in tempo reale e i giorni passati stanno
+    // nello Storico. Poi per sport: 'calcio' (default per righe senza sport) e 'tennis'
+    const currentOpps = useMemo(
+        () => bot.opportunities.filter((r) => isCurrentOppRow(r, nowMs, operatingDay)),
+        [bot.opportunities, nowMs, operatingDay],
     );
-    const tennisOppRows = useMemo(
-        () => bot.opportunities.filter((r) => r.sport === 'tennis'),
-        [bot.opportunities],
-    );
-    const oppCountsAll = useMemo(() => oppKindCounts(bot.opportunities), [bot.opportunities]);
+    const oppRows = useMemo(() => currentOpps.filter((r) => r.sport !== 'tennis'), [currentOpps]);
+    const tennisOppRows = useMemo(() => currentOpps.filter((r) => r.sport === 'tennis'), [currentOpps]);
+    const oppCountsAll = useMemo(() => oppKindCounts(currentOpps), [currentOpps]);
 
     const stats = bot.control?.stats ?? {};
     const agg = bot.aggregates;
@@ -748,7 +748,7 @@ export default function SafeStrategy() {
                 ) : (
                     <div className="flex flex-wrap gap-3">
                         <StatTile label="Segnali attivi" value={String(totalActive)} tone="gold" icon={<SignalIcon className="w-3.5 h-3.5" />} sub={`${bySport.calcioActive.length} calcio · ${bySport.tennisActive.length} tennis`} />
-                        <StatTile label="Trade aperti" value={String(openTrades.length)} icon={<Activity className="w-3.5 h-3.5" />} sub={`${pendingTrades.length} in corso · ${bot.trades.length} totali`} />
+                        <StatTile label="Trade aperti" value={String(openTrades.length)} icon={<Activity className="w-3.5 h-3.5" />} sub={`${pendingTrades.length} in corso · ${groupClosingLegs([...todayTradesCalcio, ...todayTradesTennis]).length} oggi`} />
                         <StatTile label="P&L oggi" value={fmtSignedEur(realizedToday)} tone={realizedToday >= 0 ? 'pos' : 'neg'} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={<span data-testid="safe-operating-day">giornata operativa {dayLabel(operatingDay, { year: false })} · Europe/Rome</span>} />
                         <StatTile label="P&L totale" value={fmtSignedEur(realizedTotal)} tone={realizedTotal >= 0 ? 'pos' : 'neg'} />
                         <StatTile label="Liability aperta" value={fmtEurPlain(openLiability)} tone="danger" icon={<ShieldAlert className="w-3.5 h-3.5" />} />

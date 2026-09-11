@@ -120,6 +120,9 @@ class FakeDB:
     def upsert_opportunities(self, rows):
         self.opportunities.append(rows)
 
+    def purge_opportunities(self, older_than_iso):
+        self.purged = getattr(self, "purged", []) + [older_than_iso]
+
     # --- coda flumine (contratto del gate) ---
     def live_follow_status(self, event_id):
         return self.follow
@@ -2135,6 +2138,25 @@ def test_uscita_modello_gol_avverso_dopo_l_assestamento(monkeypatch):
     # mai due volte
     r = _cycle(db, _exit_feed_row(70, 1, 1, updated_at=t_ok), at=t_ok + timedelta(seconds=5))
     assert r["exits"] == 0 and len(_closings(db, tid)) == 1
+
+
+def test_opportunita_vecchie_purgate_una_volta_ogni_5_minuti():
+    # righe non riscritte da 2 h (partite finite) cancellate; pulizia al massimo ogni
+    # 5 minuti (11/09: 89 righe di ieri mostrate come attuali)
+    db = FakeDB(status="stopped")
+    db.scan_rows = [_feed_row()]
+    model = FakeModel([_opp()])
+    state = {"last_ts": 0.0, "hashes": {}}
+    _run(db, engine=None, opp_model=model, opp_mod=FAKE_OPP_MOD, opps_state=state)
+    assert db.purged == [(NOW - timedelta(seconds=S.OPPS_ROW_TTL_S)).isoformat()]
+    state["last_ts"] = 0.0
+    S.run_once(db=db, market=FakeMarket(), engine=None, now=NOW + timedelta(seconds=60),
+               opp_model=model, opp_mod=FAKE_OPP_MOD, opps_state=state)
+    assert len(db.purged) == 1, "entro i 5 minuti: nessuna seconda pulizia"
+    state["last_ts"] = 0.0
+    S.run_once(db=db, market=FakeMarket(), engine=None, now=NOW + timedelta(seconds=301),
+               opp_model=model, opp_mod=FAKE_OPP_MOD, opps_state=state)
+    assert len(db.purged) == 2
 
 
 def test_trade_di_modello_tenuto_scrive_exit_hold_per_la_ui(monkeypatch):

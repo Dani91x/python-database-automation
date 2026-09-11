@@ -290,6 +290,19 @@ def upsert_opportunities(rows: list[dict[str, Any]]) -> None:
         logger.warning("[safe.db] upsert opportunità KO: %s", str(ex)[:160])
 
 
+def purge_opportunities(older_than_iso: str) -> None:
+    """Cancella le righe di opportunità non aggiornate da prima di ``older_than_iso``:
+    una partita finita non è più un'opportunità (11/09: 89 righe, metà del giorno
+    prima, restavano in tabella per sempre e la UI le mostrava come attuali)."""
+    try:
+        (
+            _sb().table("safe_strategy_opportunities").delete()
+            .lt("updated_at", str(older_than_iso)).execute()
+        )
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.db] purge opportunità KO: %s", str(ex)[:160])
+
+
 def delete_opportunities(event_ids: list[str]) -> None:
     if not event_ids:
         return

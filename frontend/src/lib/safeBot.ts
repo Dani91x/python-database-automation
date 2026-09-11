@@ -638,6 +638,22 @@ export function normalizeOppRow<T extends { payload: unknown }>(row: T): T {
     return { ...row, payload: { ...raw, opps, lambdas } };
 }
 
+/** Una riga di opportunità è ATTUALE se riscritta oggi (giornata operativa
+ *  Europe/Rome) e da non più di OPP_ROW_MAX_AGE_MS: le partite finite (righe mai
+ *  più riscritte) e i giorni passati NON sono opportunità — il passato sta nello
+ *  Storico. Senza timestamp valido → non attuale. */
+export const OPP_ROW_MAX_AGE_MS = 30 * 60_000;
+export function isCurrentOppRow(row: { updated_at?: string | null }, nowMs: number, today: string): boolean {
+    const iso = row.updated_at ?? null;
+    if (!iso) return false;
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return false;
+    if (nowMs - t > OPP_ROW_MAX_AGE_MS) return false;
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t));
+    const get = (k: string) => parts.find((p) => p.type === k)?.value ?? '';
+    return `${get('year')}-${get('month')}-${get('day')}` === today;
+}
+
 export async function fetchOpportunities(): Promise<SafeOpportunityRow[]> {
     const { data, error } = await supabase.from('safe_strategy_opportunities').select('*');
     if (error) throw new Error(error.message);

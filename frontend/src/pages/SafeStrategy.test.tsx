@@ -212,7 +212,7 @@ describe('pagina Safe Strategy', () => {
         const label = await screen.findByText('Trade aperti');
         const tile = label.closest('.glass-card') as HTMLElement;
         expect(within(tile).getByText('1')).toBeInTheDocument();
-        expect(within(tile).getByText('1 in corso · 2 totali')).toBeInTheDocument();
+        expect(within(tile).getByText('1 in corso · 2 oggi')).toBeInTheDocument();
     });
 
     it('la tab Trade elenca il trade aperto col cash out', async () => {

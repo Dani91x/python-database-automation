@@ -914,6 +914,8 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
 # ---------------------------------------------------------------------------
 # decisione a MODELLO per le uscite in profitto (a tempo / take-profit)
 # ---------------------------------------------------------------------------
+OPPS_ROW_TTL_S = 2 * 3600.0       # riga opportunità non riscritta da 2 h = partita finita
+OPPS_PURGE_EVERY_S = 300.0         # pulizia al massimo ogni 5 minuti
 HOLD_KEY = "exit_hold"            # meta.exit_hold = {reason, p_lose, source, locked, ev_hold, ts}
 _HOLD_REWRITE_S = 30.0            # riscrittura di meta.exit_hold a motivo invariato
 _EXIT_MODEL: dict[str, Any] = {"model": None, "mod": None}
@@ -2112,6 +2114,16 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             out["written"] = len(to_write)
         except Exception as ex:  # noqa: BLE001
             _log(db, "error", {"reason": "opps_write_failed", "err": str(ex)[:160]})
+    # righe di partite FINITE (non riscritte da OPPS_ROW_TTL_S): via dalla tabella,
+    # al massimo una volta ogni OPPS_PURGE_EVERY_S — il passato non è un'opportunità
+    purge_fn = getattr(db, "purge_opportunities", None)
+    last_purge = float(st.get("last_purge_ts") or 0.0)
+    if callable(purge_fn) and now.timestamp() - last_purge >= OPPS_PURGE_EVERY_S:
+        st["last_purge_ts"] = now.timestamp()
+        try:
+            purge_fn((now - timedelta(seconds=OPPS_ROW_TTL_S)).isoformat())
+        except Exception as ex:  # noqa: BLE001
+            _log(db, "error", {"reason": "opps_purge_failed", "err": str(ex)[:160]})
     # la cache λ vive quanto la partita: via gli eventi usciti dal feed
     # (solo se il feed ha risposto: un feed vuoto per errore non svuota la cache)
     if rows:

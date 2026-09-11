@@ -23,7 +23,7 @@ import MissionPanel from '@/components/omega/MissionPanel';
 import { useScanLiveFeed } from '@/lib/useScanLiveFeed';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
-import { groupTradesByMatch, filterMatchesForDay, summarizeMatches } from '@/lib/omegaMatches';
+import { groupTradesByMatch, filterMatchesForDay, summarizeMatches, romeDayOf } from '@/lib/omegaMatches';
 import { fmtEurIt } from '@/lib/safeBot';
 import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
@@ -315,7 +315,8 @@ export default function Omega() {
     const operatingDay = romeDay();
     const openLiability = Number(aggregates?.open_liability ?? stats.open_liability ?? 0);
     const matchesTraded = Number(aggregates?.matches_traded ?? stats.matches_traded ?? trades.length);
-    const equity = useMemo(() => buildEquitySeries(trades), [trades]);
+    // attività del servizio: SOLO la giornata operativa (il passato sta nello Storico)
+    const todayActivity = useMemo(() => activity.filter((a) => a.ts && romeDayOf(a.ts) === operatingDay), [activity, operatingDay]);
     const running = status === 'running' || status === 'stopping';
     // §14: partite (una riga = una partita) della giornata + vive di giorni precedenti
     const allMatches = useMemo(() => groupTradesByMatch(trades), [trades]);
@@ -327,6 +328,8 @@ export default function Omega() {
         const ids = new Set(shownMatches.map((g) => g.event_id));
         return trades.filter((t) => ids.has(t.event_id));
     }, [trades, shownMatches, showAllMatches]);
+    // equity della VISTA: la giornata (default) o tutto il caricato con "mostra tutte"
+    const equity = useMemo(() => buildEquitySeries(shownTrades), [shownTrades]);
 
     return (
         <div className="min-h-screen bg-background text-foreground relative">
@@ -446,6 +449,7 @@ export default function Omega() {
                         <Card className="glass-card border-white/10 p-5">
                             <div className="flex items-center gap-2 text-sm text-slate-300 mb-3">
                                 <TrendingUp className="w-4 h-4 text-primary" /> Equity curve · P&L cumulato regolato
+                                <span className="text-[11px] text-slate-500">{showAllMatches ? '· tutte le partite caricate' : `· giornata ${dayLabel(operatingDay, { year: false })}`}</span>
                             </div>
                             <EquityCurve series={equity} />
                         </Card>
@@ -479,14 +483,14 @@ export default function Omega() {
                         {/* attività del servizio: green-up, attese, conferme, ritenti */}
                         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="omega-activity">
                             <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300">
-                                <Zap className="w-4 h-4 text-primary" /> Attività del servizio ({activity.length})
+                                <Zap className="w-4 h-4 text-primary" /> Attività del servizio di oggi ({todayActivity.length})
                                 <span className="ml-auto text-[11px] text-slate-500">green-up automatico: chiusura a mercato appena il risultato layato diventa raggiungibile</span>
                             </div>
-                            {activity.length === 0 ? (
-                                <div className="px-5 py-6 text-center text-sm text-muted-foreground">nessuna attività registrata ancora</div>
+                            {todayActivity.length === 0 ? (
+                                <div className="px-5 py-6 text-center text-sm text-muted-foreground">nessuna attività oggi</div>
                             ) : (
                                 <ul className="divide-y divide-white/5 max-h-72 overflow-y-auto">
-                                    {activity.map((a) => {
+                                    {todayActivity.map((a) => {
                                         const m = activityMeta(String(a.kind));
                                         const line = activityLine(a);
                                         return (

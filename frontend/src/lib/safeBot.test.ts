@@ -13,6 +13,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 import { supabase } from '@/integrations/supabase/client';
 import {
+    isCurrentOppRow,
     holdReasonHasP,
     partialHedge,
     normalizeOppRow,
@@ -487,6 +488,21 @@ describe('review 11/09 — contratti servizio ↔ UI', () => {
             poll_interval_s: 2, max_open_trades: 20, max_liability_per_trade: 300,
             opps_interval_s: 10, opps_min_confidence: 0.7, opps_min_edge: 0.03, opps_stake: 5,
         });
+    });
+});
+
+describe('isCurrentOppRow — solo opportunità di OGGI e recenti', () => {
+    const now = Date.parse('2026-09-11T14:00:00Z');   // 16:00 a Roma
+    it('riga di oggi e recente → attuale; di ieri → no; di oggi ma vecchia (partita finita) → no', () => {
+        expect(isCurrentOppRow({ updated_at: '2026-09-11T13:50:00Z' }, now, '2026-09-11')).toBe(true);
+        expect(isCurrentOppRow({ updated_at: '2026-09-10T13:50:00Z' }, now, '2026-09-11')).toBe(false);
+        expect(isCurrentOppRow({ updated_at: '2026-09-11T11:00:00Z' }, now, '2026-09-11')).toBe(false);
+        expect(isCurrentOppRow({ updated_at: null }, now, '2026-09-11')).toBe(false);
+        expect(isCurrentOppRow({ updated_at: 'boh' }, now, '2026-09-11')).toBe(false);
+    });
+    it('giornata Europe/Rome: le 22:00 UTC del 10 sono già l 11 a Roma', () => {
+        const midnight = Date.parse('2026-09-10T22:10:00Z');   // 00:10 dell 11 a Roma
+        expect(isCurrentOppRow({ updated_at: '2026-09-10T22:00:00Z' }, midnight, '2026-09-11')).toBe(true);
     });
 });
 

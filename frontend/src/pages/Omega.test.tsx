@@ -370,15 +370,18 @@ describe('Omega — green-up automatico', () => {
         mState.mockResolvedValue({
             control: CONTROL as never, aggregates: null,
             activity: [
-                { id: 3, ts: '2026-09-10T10:20:00Z', kind: 'greenup', payload: { event_name: 'Roma vs Lazio', runner_name: '3 - 2', minute: 71, live_score: '2-1', locked: 4.2, reason: 'a distanza 1 gol' } },
-                { id: 2, ts: '2026-09-10T10:15:00Z', kind: 'greenup_hold', payload: { event_name: 'Roma vs Lazio', p_lose: 0.004, reason: 'margine ampio' } },
-                { id: 1, ts: '2026-09-10T10:10:00Z', kind: 'greenup_retry', payload: { event_name: 'Roma vs Lazio', attempt: 2, max_attempts: 15 } },
+                { id: 3, ts: new Date().toISOString(), kind: 'greenup', payload: { event_name: 'Roma vs Lazio', runner_name: '3 - 2', minute: 71, live_score: '2-1', locked: 4.2, reason: 'a distanza 1 gol' } },
+                { id: 2, ts: new Date().toISOString(), kind: 'greenup_hold', payload: { event_name: 'Roma vs Lazio', p_lose: 0.004, reason: 'margine ampio' } },
+                { id: 1, ts: new Date().toISOString(), kind: 'greenup_retry', payload: { event_name: 'Roma vs Lazio', attempt: 2, max_attempts: 15 } },
+                // di un giorno PASSATO: non compare (il passato sta nello Storico)
+                { id: 0, ts: '2026-01-05T10:00:00Z', kind: 'settle', payload: { event_name: 'Vecchia vs Regolata', pnl: 2.5 } },
             ],
         });
         renderPage();
         await gotoAutoTab();
         const feed = await screen.findByTestId('omega-activity');
-        expect(feed).toHaveTextContent('Attività del servizio (3)');
+        expect(feed).toHaveTextContent('Attività del servizio di oggi (3)');
+        expect(feed).not.toHaveTextContent('Vecchia vs Regolata');
         const rows = within(feed).getAllByTestId('omega-activity-row');
         expect(rows[0]).toHaveTextContent('GREEN-UP');
         expect(rows[0]).toHaveTextContent('Roma vs Lazio · lay 3 - 2 · 71′ · 2-1 · +€4.20 · a distanza 1 gol');
