@@ -159,7 +159,8 @@ PARAM_SPEC: dict[str, Spec] = {
     "reentry_green_ticks": (2, int, 1, 10, None),
     "reentry_max_goals": (1, int, 0, 1, None),
     "reentry_until_min": (45, int, 0, 100, None),
-    "reentry_exit_until_min": (80, int, 0, 100, None),
+    # 0 = NESSUNA chiusura forzata: la lay a +N tick resta sul book fino a fine gara (specifica utente)
+    "reentry_exit_until_min": (0, int, 0, 100, None),
     "reentry_price_min_over_entry": (True, bool, None, None, None),
     "reentry_hold_if_loss": (False, bool, None, None, None),
     "stream_extra_lines": (False, bool, None, None, None),
@@ -205,7 +206,6 @@ _ORDERED_PAIRS = (
     ("pre_entry_price_min", "pre_entry_price_max"),
     ("ht_loss_goals_min", "ht_loss_goals_max"),
     ("h2_loss_from_min", "h2_loss_to_min"),
-    ("reentry_until_min", "reentry_exit_until_min"),
 )
 
 

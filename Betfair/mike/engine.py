@@ -1227,7 +1227,8 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
     # (green abbinata SOLO in parte e non piu' viva → esposizione non piatta → si
     #  riappoggia una lay per il residuo, sotto)
     bk = snap.book(MARKET_OU45, SEL_UNDER)
-    if snap.minute is not None and int(snap.minute) >= int(params["reentry_exit_until_min"]):
+    exit_min = int(params.get("reentry_exit_until_min") or 0)      # 0 = mai (si va a fine gara)
+    if exit_min > 0 and snap.minute is not None and int(snap.minute) >= exit_min:
         if params["reentry_hold_if_loss"]:
             return Decision("REENTRY_OPEN", [], "oltre il limite: tengo (hold_if_loss)")
         acts = _cancel_live(ctx, ("reentry_green",))

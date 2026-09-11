@@ -536,7 +536,7 @@ def test_reentry_guards():
 
 
 def test_reentry_open_closes_at_market_after_limit_minute():
-    p = params()
+    p = params(reentry_exit_until_min=80)     # opzionale: di default (0) nessuna chiusura forzata
     ctx = E.MatchCtx(state="REENTRY_OPEN", entry_price_initial=1.50, reentry_allowed=True)
     ctx.legs.append(fill(E.Leg(role="reentry", market=E.MARKET_OU45, selection=E.SEL_UNDER,
                                side="back", price=1.60, size=10.0)))
@@ -547,6 +547,9 @@ def test_reentry_open_closes_at_market_after_limit_minute():
     assert d.state == "REENTRY_GREEN_PENDING"
     assert [a.kind for a in d.actions] == ["cancel", "place"]
     assert d.actions[1].price == 1.72
+    # default: la lay a +2 tick resta sul book fino a fine gara, nessuna chiusura all'80'
+    d0 = E.decide(ctx, s, params())
+    assert d0.state == "REENTRY_OPEN" and d0.actions == []
 
 
 # ---------------------------------------------------------------------------
