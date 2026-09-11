@@ -483,6 +483,13 @@ def test_omega_db_aggregates_select_include_meta_e_mode(monkeypatch):
             captured[self._table] = cols
             return self
 
+        # §14 (11/09): la lettura è PAGINATA (order + range) — stessa catena
+        def order(self, *a, **k):
+            return self
+
+        def range(self, *a, **k):
+            return self
+
         def execute(self):
             class _Res:
                 data: list = []
@@ -497,6 +504,8 @@ def test_omega_db_aggregates_select_include_meta_e_mode(monkeypatch):
     cols = [c.strip() for c in captured["omega_trades"].split(",")]
     assert "meta" in cols
     assert "mode" in cols
+    # §14: id + closes_trade_id servono all'attribuzione per giornata delle chiusure
+    assert "id" in cols and "closes_trade_id" in cols
     assert agg["matches_traded"] == 0                   # nessuna riga: aggregato vuoto
 
 

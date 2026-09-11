@@ -63,7 +63,8 @@ describe('TradingHistory', () => {
         const user = userEvent.setup();
         const onGoLive = vi.fn();
         render(<TradingHistory variant="omega" fetchDaily={async () => []} fetchDayTrades={async () => [TRADE]} today="2026-09-10" onGoLive={onGoLive} />);
-        const row = await screen.findByTestId('day-trade-row');
+        // Omega §14: dettaglio giorno = una riga per PARTITA, link live dentro la gamba
+        const row = await screen.findByTestId('omega-match-row');
         await user.click(within(row).getByTestId('day-trade-live'));
         expect(onGoLive).toHaveBeenCalledWith(TRADE);
     });

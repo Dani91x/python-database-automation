@@ -288,9 +288,14 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     TTL. 'pending' senza bet_id/marker ed 'error' NON contano come piazzati.
 
     Con ``day_start`` (mezzanotte operativa, vedi ``day_start_utc``) calcola ANCHE
-    i valori della GIORNATA (§2: R = P&L dei trade regolati OGGI; match/giorno =
-    piazzati OGGI). liability aperta resta SEMPRE totale: il rischio vivo non ha
-    giorno. Senza ``day_start`` i campi _today coincidono col cumulato (fallback).
+    i valori della GIORNATA (§2/§14). GIORNATA DI UNA POSIZIONE = giorno in cui
+    la sua APERTURA è stata piazzata (``placed_at``): le gambe di chiusura
+    ereditano il giorno dell'apertura che chiudono. Così R di oggi è il P&L
+    delle PARTITE DI OGGI, e una gamba di ieri regolata dopo mezzanotte non
+    sposta la barra di oggi (decisione utente 11/09: "ogni giorno il P&L parte
+    da 0 in base alle partite di quella giornata"). liability aperta resta
+    SEMPRE totale: il rischio vivo non ha giorno. Senza ``day_start`` i campi
+    _today coincidono col cumulato (fallback).
     """
     realized = 0.0
     open_liab = 0.0
@@ -299,16 +304,19 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     open_n = 0
     realized_today = 0.0
     traded_today = 0
+    placed_by_id = {r.get("id"): r.get("placed_at") for r in rows if r.get("id") is not None}
     for r in rows:
         st = r.get("status")
         if r.get("closes_trade_id"):
             # gamba di CHIUSURA (cash out, 10/09): il rischio vivo della coppia è già
             # contato dall'originale 'hedged' (stima prudente: liability piena fino al
-            # settlement); il suo pnl entra nel realizzato solo quando regolata.
+            # settlement); il suo pnl entra nel realizzato solo quando regolata, nel
+            # GIORNO dell'apertura che chiude (fallback: il proprio placed_at).
             if st in ("won", "lost", "void"):
                 pnl = float(r.get("pnl") or 0.0)
                 realized += pnl
-                if _ts_on_or_after(r.get("settled_at"), day_start):
+                day_ts = placed_by_id.get(r.get("closes_trade_id")) or r.get("placed_at")
+                if _ts_on_or_after(day_ts, day_start):
                     realized_today += pnl
             continue
         if st in ("won", "lost", "void"):
@@ -316,9 +324,8 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
             realized += pnl
             settled += 1
             traded += 1
-            if _ts_on_or_after(r.get("settled_at"), day_start):
-                realized_today += pnl
             if _ts_on_or_after(r.get("placed_at"), day_start):
+                realized_today += pnl
                 traded_today += 1
         elif st in ("open", "hedged") or (st == "pending" and (
                 r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref"))):
@@ -616,3 +623,150 @@ def is_eligible(
     if stop_on_goal and goal_reached:
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# OMEGA v2 — DUE GAMBE PER PARTITA (§14, 11/09): gambe residue e target
+# ---------------------------------------------------------------------------
+LEG_PHASES: tuple[str, ...] = ("ht_cs", "ft_cs")
+
+
+def legs_remaining(
+    events: list,
+    traded_legs: "set[tuple[str, str]]",
+    *,
+    now: datetime,
+    ht_entry_max: int,
+    ft_entry_max: int,
+    max_events: int = 0,
+    traded_count: int = 0,
+    excluded_ids: "set[str] | frozenset[str] | None" = None,
+) -> tuple[int, int]:
+    """(gambe ancora piazzabili, partite con almeno una gamba piazzabile).
+
+    Per OGNI partita del giorno Omega piazza DUE gambe (1T sul Half Time Score,
+    2T sul Correct Score): una gamba resta piazzabile finché la sua finestra
+    (minuto dall'orologio del kickoff, largo) non è passata e non è già stata
+    riservata/piazzata. Il target di gamba è (G − R) / gambe residue: così
+    l'obiettivo si spalma su tutte le operazioni che restano nella giornata
+    (non solo sulle partite intere) e una partita "presa in corsa" nel 2T pesa
+    per la sola gamba che può ancora fare. Con ``max_events`` > 0 le partite
+    residue sono cappate a quelle ancora ammesse. Mai sotto (1, 1).
+    """
+    excluded = set(excluded_ids or ())
+    # partite NON ancora toccate (soggette al cap max_events) e partite già in
+    # posizione con una gamba ancora da fare (hanno già consumato il cap: la
+    # loro seconda gamba si fa SEMPRE — review 11/09 HIGH-2)
+    new_legs = new_matches = 0
+    pending_legs = pending_matches = 0
+    for ev in events:
+        eid = str(getattr(ev, "event_id", ""))
+        if not eid or eid in excluded:
+            continue
+        open_date = getattr(ev, "open_date", None)
+        minute = minute_from_clock(open_date, now) if open_date is not None else 0
+        ht_done = (eid, "ht_cs") in traded_legs
+        ft_done = (eid, "ft_cs") in traded_legs
+        n = 0
+        if not ht_done and minute <= int(ht_entry_max):
+            n += 1
+        if not ft_done and minute <= int(ft_entry_max):
+            n += 1
+        if not n:
+            continue
+        if ht_done or ft_done:
+            pending_legs += n
+            pending_matches += 1
+        else:
+            new_legs += n
+            new_matches += 1
+    if max_events and int(max_events) > 0:
+        allowed = max(int(max_events) - int(traded_count), 0)
+        if new_matches > allowed:
+            new_legs = min(new_legs, 2 * allowed)
+            new_matches = allowed
+    legs = pending_legs + new_legs
+    matches = pending_matches + new_matches
+    return max(legs, 1), max(matches, 1)
+
+
+# ---------------------------------------------------------------------------
+# RISULTATI REALI di fine 1T / fine 2T (§14): dal feed IPS e dal settlement
+# ---------------------------------------------------------------------------
+def _score_str(h: object, a: object) -> Optional[str]:
+    """'H-A' da due valori numerici (anche stringhe '2'); None se uno manca/è vuoto."""
+    try:
+        if h is None or a is None or str(h).strip() == "" or str(a).strip() == "":
+            return None
+        return f"{int(str(h).strip())}-{int(str(a).strip())}"
+    except (TypeError, ValueError):
+        return None
+
+
+def results_from_payload(payload: Optional[dict], *, now: Optional[datetime] = None) -> tuple[Optional[str], Optional[str]]:
+    """(risultato al 45′, risultato finale) dal payload del feed unico. PURA.
+
+    Fonti, in ordine: il blocco IPS grezzo ``score_raw.score.{home,away}``
+    (``halfTimeScore`` / ``fullTimeScore`` — vuoti finché il tempo non è finito);
+    poi la FASE della partita: all'intervallo il punteggio corrente È il
+    risultato del 1T, a partita finita è il finale. Mai un risultato dedotto
+    a partita in corso: None finché non è certo.
+    """
+    if not isinstance(payload, dict):
+        return None, None
+    ht = ft = None
+    raw = payload.get("score_raw")
+    score = raw.get("score") if isinstance(raw, dict) else None
+    if isinstance(score, dict):
+        home = score.get("home") if isinstance(score.get("home"), dict) else {}
+        away = score.get("away") if isinstance(score.get("away"), dict) else {}
+        ht = _score_str(home.get("halfTimeScore"), away.get("halfTimeScore"))
+        ft = _score_str(home.get("fullTimeScore"), away.get("fullTimeScore"))
+    status = raw.get("matchStatus") if isinstance(raw, dict) else None
+    current = _score_str(payload.get("score_home"), payload.get("score_away"))
+    if current is not None and status:
+        norm = re.sub(r"[^a-z]", "", str(status).lower())
+        phase = mission_phase(status=str(status), minute=None, kickoff=None,
+                              now=now or datetime.now(timezone.utc), prev="pre")
+        if phase == "ht" and ht is None:
+            ht = current
+        # a partita finita il corrente È il finale SOLO senza supplementari/rigori:
+        # il Correct Score si regola sui 90′ (review 11/09 LOW-3)
+        if phase == "finita" and ft is None and not any(k in norm for k in _PHASE_ET):
+            ft = current
+    return ht, ft
+
+
+def scoreline_names(runners: list) -> dict[str, str]:
+    """{selection_id: 'H - A'} dei soli runner a punteggio esatto (per il
+    settlement: dal WINNER si ricava il risultato reale del mercato)."""
+    out: dict[str, str] = {}
+    for r in runners or []:
+        name = str(getattr(r, "name", "") or "")
+        if is_scoreline(name):
+            out[str(getattr(r, "selection_id"))] = name
+    return out
+
+
+def winner_scoreline(meta: Optional[dict], winner_selection_id: Optional[int]) -> Optional[str]:
+    """'H-A' del runner vincitore dal dizionario ``meta.runners`` salvato al
+    piazzamento; None se ignoto o non a punteggio esatto."""
+    if winner_selection_id is None or not isinstance(meta, dict):
+        return None
+    names = meta.get("runners")
+    if not isinstance(names, dict):
+        return None
+    parsed = parse_scoreline(str(names.get(str(int(winner_selection_id))) or ""))
+    return None if parsed is None else f"{parsed[0]}-{parsed[1]}"
+
+
+def result_key_for_trade(trade: dict) -> Optional[str]:
+    """Chiave di ``meta`` su cui scrivere il risultato del mercato regolato:
+    'result_ht' per la gamba Half Time Score, 'result_ft' per il Correct Score
+    (gamba 2T, motore v1 senza gamba, manuale CS). None per gli altri mercati."""
+    phase = trade.get("phase")
+    if phase == "ht_cs":
+        return "result_ht"
+    if phase in ("ft_cs", None):
+        return "result_ft"
+    return None

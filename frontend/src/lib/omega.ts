@@ -22,7 +22,10 @@ export interface OmegaStats {
     realized_today?: number;   // §2: P&L regolato nella GIORNATA operativa (Europe/Rome)
     open_liability?: number;
     matches_remaining?: number;
+    /** §14: gambe (1T/2T) ancora piazzabili oggi e target per gamba */
+    legs_remaining?: number;
     target_match?: number;
+    target_leg?: number;
     goal?: number;
     goal_pct?: number;
     last_cycle?: string;
@@ -73,10 +76,16 @@ export interface OmegaTrade {
 
 export interface OmegaAggregates {
     realized_profit: number;
-    realized_today?: number;        // giornata operativa Europe/Rome (RPC aggiornata)
+    /** §14: P&L delle POSIZIONI PIAZZATE nella giornata operativa (Europe/Rome) */
+    realized_today?: number;
     open_liability: number;
     matches_traded: number;
     matches_traded_today?: number;
+    /** §14: gambe piazzate oggi / partite distinte di oggi / esiti di oggi */
+    legs_today?: number;
+    events_today?: number;
+    won_today?: number;
+    lost_today?: number;
     matches_open: number;
     matches_won: number;
     matches_lost: number;
@@ -93,6 +102,8 @@ export interface OmegaState {
     control: OmegaControl | null;
     aggregates: OmegaAggregates | null;
     activity: OmegaActivityRow[];
+    /** §14: obiettivo storicizzato per OGGI (null = migrazione non applicata) */
+    goal_today?: number | null;
 }
 
 // ------------------------------------------------------- parametri (whitelist)
@@ -320,10 +331,12 @@ export async function fetchOmegaState(activityLimit = 50): Promise<OmegaState> {
     const { data, error } = await supabase.rpc('get_omega_state', { p_activity_limit: activityLimit });
     if (error) throw new Error(error.message);
     const d = (data ?? {}) as Partial<OmegaState>;
+    const g = Number(d.goal_today);
     return {
         control: d.control ?? null,
         aggregates: d.aggregates ?? null,
         activity: d.activity ?? [],
+        goal_today: Number.isFinite(g) && d.goal_today != null ? g : null,
     };
 }
 

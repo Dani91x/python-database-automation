@@ -78,12 +78,29 @@ describe('DayDetail', () => {
         expect(within(hedged).queryByTestId('day-trade-live')).toBeNull();
     });
 
-    it('Omega: colonna Gamba con la fase e selezione dal runner', () => {
-        const t: DayTrade = { ...OPEN, strategy: undefined, selection_name: undefined, runner_name: '3 - 2', phase: 'ft_cs', side: 'lay' };
-        render(<DayDetail day="2026-09-10" trades={[t]} variant="omega" />);
-        const row = screen.getByTestId('day-trade-row');
-        expect(within(row).getByText('2T')).toBeInTheDocument();
-        expect(within(row).getByText('3 - 2')).toBeInTheDocument();
+    it('Omega: una riga per PARTITA con gamba 2T, risultati reali e P&L (chiusure attaccate)', () => {
+        const ft: DayTrade = {
+            ...OPEN, strategy: undefined, selection_name: undefined, runner_name: '3 - 2', phase: 'ft_cs', side: 'lay',
+            status: 'won', pnl: 2.16, total_pnl: -22.08, meta: { result_ht: '1-0', result_ft: '2-1', exit_kind: 'greenup', locked_pnl: -22.1 },
+            closes: [{
+                id: 9, event_id: 'e1', event_name: 'Roma vs Lazio', side: 'back', mode: 'paper', price: 4.9, size: 24.24, liability: 24.24,
+                status: 'lost', pnl: -24.24, placed_at: '2026-09-10T18:30:00Z', settled_at: '2026-09-10T20:00:00Z',
+                closes_trade_id: 1, meta: { exit_kind: 'greenup' },
+            }],
+        };
+        render(<DayDetail day="2026-09-10" trades={[ft]} variant="omega" />);
+        const row = screen.getByTestId('omega-match-row');
+        expect(within(row).getByTestId('omega-leg-ht')).toHaveAttribute('data-empty', '1');
+        const leg = within(row).getByTestId('omega-leg-ft');
+        expect(within(leg).getByText('3 - 2')).toBeInTheDocument();
+        expect(within(leg).getByTestId('omega-side')).toHaveTextContent('LAY');
+        expect(within(leg).getByTestId('omega-leg-pnl')).toHaveTextContent('−22,08 €');
+        expect(within(leg).getByTestId('omega-closing-line')).toHaveAttribute('data-closes', '1');
+        expect(within(row).getByTestId('omega-result-ht')).toHaveTextContent('1-0');
+        expect(within(row).getByTestId('omega-result-ft')).toHaveTextContent('2-1');
+        expect(within(row).getByTestId('omega-match-pnl')).toHaveTextContent('−22,08 €');
+        expect(within(row).getByTestId('omega-match-pnl').className).toMatch(/text-red-400/);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−€22.08');
     });
 
     it('nessun trade / errore / caricamento', () => {

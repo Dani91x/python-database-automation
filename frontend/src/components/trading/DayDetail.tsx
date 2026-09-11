@@ -10,6 +10,7 @@ import { Activity, ExternalLink } from 'lucide-react';
 import { ExitBadge } from '@/components/trading/ExitBadge';
 import { cappedFrom } from '@/lib/safeBot';
 import { dayLabel, tradeExit, type DayTrade, type DayTradeLeg, type HistoryVariant } from '@/lib/dailyHistory';
+import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
 
 function fmtEur(v: number | null | undefined): string {
     const n = Number(v ?? 0);
@@ -102,6 +103,15 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                 <div className="text-sm text-muted-foreground py-8 text-center">caricamento…</div>
             ) : list.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-8 text-center" data-testid="day-detail-none">nessun trade in questa giornata</div>
+            ) : variant === 'omega' ? (
+                // Omega §14: UNA riga per PARTITA (gamba 1T + gamba 2T con le chiusure
+                // attaccate, risultati reali, P&L della partita) — stessa tabella del live
+                <MatchTradesTable
+                    trades={list.flatMap((t) => [t, ...t.closes])}
+                    onGoLive={onGoLive ? (t) => onGoLive(t as DayTrade) : undefined}
+                    day={day}
+                    emptyText="nessun trade in questa giornata"
+                />
             ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -109,7 +119,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                             <tr>
                                 <th className="text-left px-3 py-2">Ora</th>
                                 <th className="text-left px-3 py-2">Match</th>
-                                <th className="text-center px-3 py-2">{variant === 'omega' ? 'Gamba' : 'Strategia'}</th>
+                                <th className="text-center px-3 py-2">Strategia</th>
                                 <th className="text-left px-3 py-2">Selezione</th>
                                 <th className="text-center px-3 py-2">Lato</th>
                                 <th className="text-right px-3 py-2">Quota</th>

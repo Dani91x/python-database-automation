@@ -4,7 +4,7 @@
 // Fonte di verità: Betfair/omega/COSTITUZIONE_OMEGA.md
 // Realtime via Supabase (omega_control + omega_trades) + polling di sicurezza.
 // ============================================================================
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { toast } from 'sonner';
@@ -20,33 +20,23 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ManualPanel from '@/components/omega/ManualPanel';
 import MissionPanel from '@/components/omega/MissionPanel';
-import { useScanLiveFeed, liveScoreLabel } from '@/lib/useScanLiveFeed';
-import {
-    csSelection, htSelection, type CalcioScanPayload, type ScanCsSelection,
-} from '@/lib/safeStrategyScan';
-import { CashOutButton } from '@/components/trading/CashOutButton';
-import { ExitBadge } from '@/components/trading/ExitBadge';
+import { useScanLiveFeed } from '@/lib/useScanLiveFeed';
 import { TradingHistory } from '@/components/trading/TradingHistory';
-import { cappedFrom, tradeExposure, groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip } from '@/lib/safeBot';
-import { sideBadgeClass } from '@/components/safestrategy/variantStyles';
-import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel, tradeExit } from '@/lib/dailyHistory';
+import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
+import { groupTradesByMatch, filterMatchesForDay, summarizeMatches } from '@/lib/omegaMatches';
+import { fmtEurIt } from '@/lib/safeBot';
+import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
     ArrowLeft, Play, Square, Settings, Target, TrendingUp, Zap, ShieldAlert, Activity,
 } from 'lucide-react';
 import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
     subscribeOmega, buildEquitySeries, requestManual,
-    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, OMEGA_GREENUP_FIELDS, phaseLabel,
-    tradeModelOf, activityMeta, activityLine,
+    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_FIELDS, OMEGA_GREENUP_FIELDS,
+    activityMeta, activityLine,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
     type OmegaAggregates, type OmegaActivityRow,
 } from '@/lib/omega';
-
-/** "1,8%" — percentuale in formato italiano */
-function pctIt(v: number | null, digits = 1): string {
-    if (v == null || !Number.isFinite(v)) return '—';
-    return `${(v * 100).toFixed(digits).replace('.', ',')}%`;
-}
 
 // ------------------------------------------------------------------ helpers
 function fmtEur(v: number | null | undefined): string {
@@ -134,33 +124,6 @@ function EquityCurve({ series }: { series: { t: number; v: number; iso: string }
     );
 }
 
-// -------------------------------------------------------------- trade badge
-function tradeBadge(status: OmegaTrade['status']): { label: string; cls: string } {
-    switch (status) {
-        case 'pending': return { label: 'IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' };
-        case 'open': return { label: 'APERTO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' };
-        case 'hedged': return { label: 'CHIUSO', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' };
-        case 'won': return { label: 'VINTO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' };
-        case 'lost': return { label: 'PERSO', cls: 'bg-red-500/15 text-red-300 border-red-500/40' };
-        case 'void': return { label: 'VOID', cls: 'bg-slate-500/15 text-slate-300 border-slate-500/40' };
-        default: return { label: 'ERRORE', cls: 'bg-orange-500/15 text-orange-300 border-orange-500/40' };
-    }
-}
-
-/** Book LIVE della selezione del trade: Half Time Score per la gamba 1T,
- *  Correct Score finale per tutte le altre. null = feed non ancora disponibile. */
-function bookForTrade(t: OmegaTrade, live: CalcioScanPayload | undefined): ScanCsSelection | null {
-    if (t.selection_id == null) return null;
-    const p = live ?? null;
-    return t.phase === 'ht_cs' ? htSelection(p, t.selection_id) : csSelection(p, t.selection_id);
-}
-
-/** P&L bloccato di un trade gia chiuso a mercato (scritto dal servizio in meta). */
-function lockedPnlOf(t: OmegaTrade): number | null {
-    const v = Number((t.meta as Record<string, unknown> | null)?.locked_pnl);
-    return Number.isFinite(v) ? v : null;
-}
-
 // =============================================================== main page
 export default function Omega() {
     const [control, setControl] = useState<OmegaControl | null>(null);
@@ -168,6 +131,9 @@ export default function Omega() {
     const [trades, setTrades] = useState<OmegaTrade[]>([]);
     // attività del servizio (green-up, attese, ritenti…) dall'RPC di stato
     const [activity, setActivity] = useState<OmegaActivityRow[]>([]);
+    // §14: obiettivo storicizzato di OGGI (RPC) e filtro della tabella partite
+    const [goalToday, setGoalToday] = useState<number | null>(null);
+    const [showAllMatches, setShowAllMatches] = useState(false);
     // minuto/punteggio LIVE dal feed dello scanner per ogni partita con un trade (v2)
     const liveFeed = useScanLiveFeed(trades.map((t) => t.event_id));
     const [loading, setLoading] = useState(true);
@@ -194,6 +160,7 @@ export default function Omega() {
         setAggregates(st.aggregates);
         setTrades(tr);
         setActivity(Array.isArray(st.activity) ? st.activity : []);
+        setGoalToday(st.goal_today ?? null);
         if (st.control && firstLoad) {
             // sincronizza i form solo al primo caricamento (non sovrascrivere l'editing)
             setGoalInput(Number(st.control.daily_goal) || 250);
@@ -338,7 +305,8 @@ export default function Omega() {
     // cumulato storico resta visibile come sottotitolo del KPI.
     const realizedTotal = Number(aggregates?.realized_profit ?? stats.realized_profit ?? 0);
     const realized = Number(aggregates?.realized_today ?? stats.realized_today ?? realizedTotal);
-    const goal = Number(control?.daily_goal ?? stats.goal ?? goalInput ?? 250);
+    // obiettivo di OGGI: snapshot storicizzato se c'è, altrimenti quello corrente
+    const goal = Number(goalToday ?? control?.daily_goal ?? stats.goal ?? goalInput ?? 250);
     const goalPct = goal > 0 ? Math.max(0, Math.min(100, (realized / goal) * 100)) : 0;
     // missione GIORNALIERA: quanto manca all'obiettivo nella giornata operativa
     // corrente (Europe/Rome). realized = realized_today dell'RPC, che riparte
@@ -349,6 +317,16 @@ export default function Omega() {
     const matchesTraded = Number(aggregates?.matches_traded ?? stats.matches_traded ?? trades.length);
     const equity = useMemo(() => buildEquitySeries(trades), [trades]);
     const running = status === 'running' || status === 'stopping';
+    // §14: partite (una riga = una partita) della giornata + vive di giorni precedenti
+    const allMatches = useMemo(() => groupTradesByMatch(trades), [trades]);
+    const todayMatches = useMemo(() => filterMatchesForDay(allMatches, operatingDay), [allMatches, operatingDay]);
+    const shownMatches = showAllMatches ? allMatches : todayMatches;
+    const todaySummary = useMemo(() => summarizeMatches(todayMatches), [todayMatches]);
+    const shownTrades = useMemo(() => {
+        if (showAllMatches) return trades;
+        const ids = new Set(shownMatches.map((g) => g.event_id));
+        return trades.filter((t) => ids.has(t.event_id));
+    }, [trades, shownMatches, showAllMatches]);
 
     return (
         <div className="min-h-screen bg-background text-foreground relative">
@@ -423,7 +401,7 @@ export default function Omega() {
                                     </div>
                                     <div className="text-[11px] text-slate-500 mt-0.5">
                                         giornata operativa <b className="text-slate-300 capitalize" data-testid="omega-operating-day">{dayLabel(operatingDay, { weekday: true })}</b>
-                                        {' '}(Europe/Rome) — il realizzato riparte da €0 a ogni nuova giornata
+                                        {' '}(Europe/Rome) — il realizzato riparte da €0 a ogni nuova giornata e conta SOLO le partite piazzate oggi
                                     </div>
                                 </div>
                                 <div className="font-display font-black text-2xl tabular-nums">
@@ -433,6 +411,8 @@ export default function Omega() {
                             </div>
                             <div className="mb-2 text-sm text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums" data-testid="omega-mission-line">
                                 <span>Obiettivo di oggi <b className="text-secondary">{fmtEur(goal)}</b></span>
+                                <span className="text-slate-600" aria-hidden>·</span>
+                                <span data-testid="omega-today-legs">partite <b className="text-slate-100">{aggregates?.events_today ?? todaySummary.matches}</b> · operazioni <b className="text-slate-100">{aggregates?.legs_today ?? todaySummary.legs}</b></span>
                                 <span className="text-slate-600" aria-hidden>·</span>
                                 <span>realizzato oggi <b className={realized >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(realized)}</b></span>
                                 <span className="text-slate-600" aria-hidden>·</span>
@@ -456,9 +436,9 @@ export default function Omega() {
                         {/* KPI */}
                         <div className="flex flex-wrap gap-3">
                             <StatTile label="P&L oggi" value={fmtSignedEur(realized)} tone={realized >= 0 ? 'pos' : 'neg'} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={`totale storico ${fmtSignedEur(realizedTotal)}`} />
-                            <StatTile label="Target / match" value={fmtEur(stats.target_match)} tone="gold" icon={<Zap className="w-3.5 h-3.5" />} sub={`${stats.matches_remaining ?? '—'} match rimasti`} />
+                            <StatTile label="Target / operazione" value={fmtEur(stats.target_leg ?? stats.target_match)} tone="gold" icon={<Zap className="w-3.5 h-3.5" />} sub={`${stats.legs_remaining ?? '—'} operazioni · ${stats.matches_remaining ?? '—'} partite rimaste · ${fmtEur(stats.target_match)}/partita`} />
                             <StatTile label="Eventi oggi" value={String(stats.events_total ?? '—')} icon={<Activity className="w-3.5 h-3.5" />} />
-                            <StatTile label="Match piazzati" value={String(matchesTraded)} sub={`${trades.filter(t => t.status === 'won').length}V · ${trades.filter(t => t.status === 'lost').length}P · ${aggregates?.matches_open ?? stats.matches_open ?? 0} aperti`} />
+                            <StatTile label="Operazioni oggi" value={String(aggregates?.legs_today ?? todaySummary.legs)} sub={`${todaySummary.won}V · ${todaySummary.lost}P · ${todaySummary.live} partite vive · storico ${matchesTraded}`} />
                             <StatTile label="Liability aperta" value={fmtEur(openLiability)} tone="danger" icon={<ShieldAlert className="w-3.5 h-3.5" />} sub="esposizione a coda" />
                         </div>
 
@@ -470,181 +450,30 @@ export default function Omega() {
                             <EquityCurve series={equity} />
                         </Card>
 
-                        {/* lista trade live */}
-                        <Card className="glass-card border-white/10 p-0 overflow-hidden">
-                            <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300">
-                                <Activity className="w-4 h-4 text-primary" /> Trade piazzati ({trades.length})
+                        {/* partite: UNA riga per partita (1T + 2T, risultati reali, P&L) */}
+                        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="omega-matches-card">
+                            <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2 text-sm text-slate-300 flex-wrap">
+                                <Activity className="w-4 h-4 text-primary" />
+                                {showAllMatches ? 'Tutte le partite' : 'Partite di oggi'} ({shownMatches.length})
+                                <span className="text-[11px] text-slate-500 tabular-nums" data-testid="omega-matches-summary">
+                                    · {todaySummary.legs} operazioni oggi · {todaySummary.won}V {todaySummary.lost}P
+                                    {todaySummary.pnl_locked != null && ` · bloccato ${fmtEurIt(todaySummary.pnl_locked, true)}`}
+                                    {todaySummary.open_liability > 0 && ` · a rischio ${fmtEurIt(todaySummary.open_liability)}`}
+                                </span>
+                                <span className="ml-auto text-[11px] text-slate-500">ogni riga: gamba 1° tempo + gamba 2° tempo, risultati reali, P&L della partita</span>
+                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAllMatches((v) => !v)} data-testid="omega-matches-toggle">
+                                    {showAllMatches ? 'solo oggi' : 'mostra tutte'}
+                                </Button>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="text-[11px] uppercase text-slate-500 bg-black/30">
-                                        <tr>
-                                            <th className="text-left px-4 py-2">Ora</th>
-                                            <th className="text-left px-4 py-2">Match</th>
-                                            <th className="text-center px-4 py-2" title="risultato (Correct Score / Half Time Score) su cui si opera">Selezione</th>
-                                            <th className="text-center px-4 py-2" title="LAY = banca il risultato · BACK = gamba di copertura (green-up / cash out)">Lato</th>
-                                            <th className="text-right px-4 py-2">Quota</th>
-                                            <th className="text-right px-4 py-2">Stake</th>
-                                            <th className="text-right px-4 py-2">Liability</th>
-                                            <th className="text-center px-4 py-2" title="gamba: 1T = Half Time Score, 2T = Correct Score finale">Gamba</th>
-                                            <th className="text-center px-4 py-2" title="minuto e punteggio all'ingresso">Ingresso</th>
-                                            <th className="text-center px-4 py-2" title="minuto e punteggio LIVE dal feed dello scanner">Live</th>
-                                            <th className="text-center px-4 py-2" title="audit: P(modello) del risultato layato — calibrata vs grezza">Modello</th>
-                                            <th className="text-center px-4 py-2">Stato</th>
-                                            <th className="text-right px-4 py-2">P&L</th>
-                                            <th className="text-center px-4 py-2" title="chiudi la posizione a mercato bloccando il P&L">Cash out</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {trades.length === 0 ? (
-                                            <tr><td colSpan={14} className="text-center text-muted-foreground py-10">nessun trade ancora — avvia il bot e attendi la finestra dei match</td></tr>
-                                        ) : groupClosingLegs(trades).map(({ trade: t, closes }) => {
-                                            const closing = closes[0] ?? null;
-                                            const exit = tradeExit({ meta: t.meta ?? null, closes: closes.map((c) => ({ meta: c.meta ?? null })) as never });
-                                            const isGreenup = exit?.kind === 'greenup';
-                                            const hedged = t.status === 'hedged';
-                                            const b = hedged && isGreenup
-                                                ? { label: 'CHIUSO IN GREEN-UP', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50' }
-                                                : tradeBadge(t.status);
-                                            // il punteggio live resta visibile anche sull'apertura gia' coperta
-                                            const live = ['pending', 'open', 'hedged'].includes(t.status) ? liveScoreLabel(liveFeed[t.event_id]) : null;
-                                            const book = bookForTrade(t, liveFeed[t.event_id]);
-                                            const exp = tradeExposure(t);
-                                            const locked = lockedPnlOf(t);
-                                            const model = tradeModelOf(t);
-                                            const orphanClosing = t.closes_trade_id != null;
-                                            return (
-                                                <Fragment key={t.id}>
-                                                <tr className="border-t border-white/5 hover:bg-white/5" data-testid="omega-trade-row">
-                                                    <td className="px-4 py-2 text-slate-400 tabular-nums">{timeLabel(t.placed_at)}</td>
-                                                    <td className="px-4 py-2 max-w-[240px] truncate" title={t.event_name ?? t.event_id}>
-                                                        {t.origin === 'manual' && (
-                                                            <Badge variant="outline" className="mr-1.5 px-1 py-0 text-[10px] bg-violet-500/15 text-violet-300 border-violet-500/40" title="trade piazzato manualmente">✋</Badge>
-                                                        )}
-                                                        {t.event_name ?? t.event_id}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center font-bold text-white">{t.runner_name ?? '—'}</td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        <Badge variant="outline" data-testid="omega-side" className={`px-1.5 py-0 text-[10px] font-heading font-bold ${sideBadgeClass(t.side === 'back' ? 'BACK' : 'LAY')}`}>
-                                                            {t.side.toUpperCase()}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right tabular-nums">{t.price?.toFixed(2) ?? '—'}</td>
-                                                    <td className="px-4 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
-                                                    <td className="px-4 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>
-                                                    <td className="px-4 py-2 text-center text-slate-300 font-semibold">{phaseLabel(t.phase)}</td>
-                                                    <td className="px-4 py-2 text-center text-slate-400 tabular-nums">
-                                                        {t.minute_at_entry != null ? `${t.minute_at_entry}′` : '—'}{t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center tabular-nums">
-                                                        {live ? (
-                                                            <span className="text-emerald-300">
-                                                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" aria-hidden />
-                                                                {live}
-                                                            </span>
-                                                        ) : <span className="text-slate-600">—</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center tabular-nums text-[11px]">
-                                                        {model ? (
-                                                            <span data-testid="omega-model-p" title={model.applied ? `P(modello) calibrata ${pctIt(model.calibrated)} · grezza ${pctIt(model.raw)}` : 'P(modello) grezza (nessuna calibrazione)'}>
-                                                                <b className="text-white">{pctIt(model.applied ? model.calibrated : (model.calibrated ?? model.raw))}</b>
-                                                                {model.applied && (
-                                                                    <span className="block text-[10px] text-slate-500">grezza {pctIt(model.raw)}</span>
-                                                                )}
-                                                            </span>
-                                                        ) : <span className="text-slate-600">—</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        <Badge
-                                                            variant="outline"
-                                                            data-testid="omega-status"
-                                                            className={`whitespace-nowrap ${b.cls}`}
-                                                            title={hedged ? hedgeTooltip(t, closing) : undefined}
-                                                        >
-                                                            {b.label}
-                                                        </Badge>
-                                                        {!(hedged && isGreenup) && <ExitBadge meta={t.meta ?? null} className="ml-1" />}
-                                                        {exit?.reason && (
-                                                            <div className="mt-0.5 text-[10px] text-slate-400 whitespace-nowrap" data-testid="omega-exit-reason" title="motivo dell'uscita scritto dal servizio">
-                                                                {exit.reason}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className={`px-4 py-2 text-right font-bold tabular-nums ${t.status === 'won' || (hedged && Number(locked ?? t.pnl) >= 0) ? 'text-emerald-400' : t.status === 'lost' || (hedged && Number(locked ?? t.pnl) < 0) ? 'text-red-400' : 'text-slate-400'}`}>
-                                                        {hedged ? (
-                                                            <span data-testid="omega-locked-pnl" title={hedgeTooltip(t, closing)}>
-                                                                {fmtEurIt(locked ?? Number(t.pnl), true)} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
-                                                            </span>
-                                                        ) : ['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(Number(t.pnl)) : '—'}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-center">
-                                                        {orphanClosing ? (
-                                                            <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">chiude #{t.closes_trade_id}</span>
-                                                        ) : t.status === 'open' && t.side === 'lay' && t.selection_id != null ? (
-                                                            <CashOutButton
-                                                                compact
-                                                                // modalita' del TRADE: il servizio chiude con quella,
-                                                                // non con il toggle corrente della pagina
-                                                                mode={t.mode}
-                                                                win={exp.win}
-                                                                lose={exp.lose}
-                                                                bestBack={book?.back ?? null}
-                                                                bestLay={book?.lay ?? null}
-                                                                commission={params.commission_pct}
-                                                                pending={isCashOutPending(t)}
-                                                                onCashOut={(a) => handleCashOut(t, a)}
-                                                            />
-                                                        ) : hedged ? (
-                                                            <span className="text-[11px] text-teal-300" title="posizione chiusa a mercato: P&L bloccato">coperto</span>
-                                                        ) : <span className="text-slate-600">—</span>}
-                                                    </td>
-                                                </tr>
-                                                {closes.map((c) => {
-                                                    const cb = tradeBadge(c.status);
-                                                    const capped = cappedFrom({ meta: c.meta ?? null });
-                                                    return (
-                                                        <tr key={c.id} className="bg-white/[0.03] border-t border-dashed border-white/5" data-testid="omega-closing-row" data-closes={t.id}>
-                                                            <td className="px-4 py-1 text-slate-500 tabular-nums text-[11px]">{timeLabel(c.placed_at)}</td>
-                                                            <td colSpan={8} className="pl-8 pr-4 py-1 text-[11px] text-slate-300" title={hedgeTooltip(t, c)}>
-                                                                <span className="text-teal-300" aria-hidden>↳ </span>
-                                                                <b className="text-teal-200">{isGreenup ? 'Green-up' : exit?.kind === 'manual' ? 'Cash out' : 'Chiusura'} di #{t.id}</b>
-                                                                {' · '}
-                                                                <Badge variant="outline" className={`px-1 py-0 text-[10px] font-heading font-bold mr-1 ${sideBadgeClass(c.side === 'back' ? 'BACK' : 'LAY')}`}>{c.side.toUpperCase()}</Badge>{' '}
-                                                                <span className="tabular-nums">{fmtEurIt(c.size)} @{fmtOddsIt(c.price)}</span>
-                                                                {c.runner_name && c.runner_name !== t.runner_name && <span className="text-slate-500"> · {c.runner_name}</span>}
-                                                            </td>
-                                                            <td className="px-4 py-1 text-center text-slate-600">—</td>
-                                                            <td className="px-4 py-1 text-center text-slate-600">—</td>
-                                                            <td className="px-4 py-1 text-center">
-                                                                <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${cb.cls}`}>{cb.label}</Badge>
-                                                                <ExitBadge meta={c.meta ?? null} className="ml-1" />
-                                                            </td>
-                                                            <td className="px-4 py-1 text-right text-[11px] text-slate-500 tabular-nums">
-                                                                {['won', 'lost', 'void', 'hedged'].includes(c.status) ? fmtSignedEur(Number(c.pnl)) : '—'}
-                                                            </td>
-                                                            <td className="px-4 py-1 text-center">
-                                                                <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">
-                                                                    chiude #{t.id}
-                                                                    {capped != null && (
-                                                                        <Badge
-                                                                            variant="outline"
-                                                                            className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40"
-                                                                            title="liquidità insufficiente: chiusura PARZIALE rispetto allo stake richiesto"
-                                                                        >
-                                                                            parziale
-                                                                        </Badge>
-                                                                    )}
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                                </Fragment>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <MatchTradesTable
+                                trades={shownTrades}
+                                liveFeed={liveFeed}
+                                commission={params.commission_pct}
+                                onCashOut={handleCashOut}
+                                isCashOutPending={isCashOutPending}
+                                day={operatingDay}
+                                emptyText={showAllMatches ? 'nessun trade ancora — avvia il bot e attendi la finestra dei match' : 'nessuna partita oggi — avvia il bot e attendi la finestra dei match (le giornate passate sono nello Storico)'}
+                            />
                         </Card>
 
                         {/* attività del servizio: green-up, attese, conferme, ritenti */}

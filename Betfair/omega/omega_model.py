@@ -56,6 +56,13 @@ class ModelSelection:
     p_model: float               # probabilità del modello che il risultato esca (CALIBRATA se c'è il calibratore)
     p_implied: float             # 1/quota (probabilità implicita del mercato)
     p_model_raw: Optional[float] = None   # P grezza del modello (audit); None = uguale a p_model
+    p_data: Optional[float] = None        # P empirica HT→FT dai dati storici (§14); None = non disponibile
+
+    @property
+    def p_selected(self) -> float:
+        """P usata per filtro e ordinamento: la PIÙ ALTA fra modello e dati
+        (un risultato si banca solo se è raro per entrambe le viste)."""
+        return self.p_model if self.p_data is None else max(self.p_model, self.p_data)
 
     @property
     def raw(self) -> float:
@@ -227,11 +234,15 @@ def select_by_model(
     min_goal_distance: int = 2,
     calibrator: Any = None,
     family: str = CALIBRATION_FAMILY_FT,
+    p_data: Optional[Callable[[int, int], Optional[float]]] = None,
 ) -> Optional[ModelSelection]:
-    """Runner con la probabilità di modello PIÙ BASSA che rispetti tutti i vincoli.
+    """Runner con la probabilità PIÙ BASSA che rispetti tutti i vincoli.
     ``runners``: ``omega_engine.ScoreRunner`` (lay_price/lay_size). None se nessuno.
     Con ``calibrator`` i vincoli e l'ordinamento usano la P CALIBRATA
-    (``p_model``); la grezza resta in ``p_model_raw`` per l'audit."""
+    (``p_model``); la grezza resta in ``p_model_raw`` per l'audit.
+    Con ``p_data`` (§14: P empirica HT→FT dai dati storici, ``omega_empirical``)
+    la P di filtro/ordinamento è max(P modello, P dati): mai bancare un
+    risultato che i dati dicono meno raro di quanto creda il modello."""
     need = max(float(min_liquidity), float(size_needed))
     best: Optional[ModelSelection] = None
     for r in runners:
@@ -253,16 +264,24 @@ def select_by_model(
             continue                      # fuori griglia: non stimabile → mai a occhi chiusi
         p_model = apply_calibration(p_raw, family, state.minute, calibrator)
         p_implied = 1.0 / float(price)
-        if p_model > p_max or p_model >= p_implied:
+        p_emp: Optional[float] = None
+        if p_data is not None:
+            try:
+                got = p_data(h, a)
+                p_emp = float(got) if got is not None and math.isfinite(float(got)) else None
+            except Exception:  # noqa: BLE001 - i dati non devono mai rompere la selezione
+                p_emp = None
+        p_sel = p_model if p_emp is None else max(p_model, p_emp)
+        if p_sel > p_max or p_sel >= p_implied:
             continue                      # più probabile del consentito, o del mercato
         cand = ModelSelection(
             selection_id=int(r.selection_id), name=str(r.name),
             price=E.round_to_tick(float(price)),
             lay_size_available=float(r.lay_size or 0.0),
             p_model=float(p_model), p_implied=float(p_implied),
-            p_model_raw=float(p_raw),
+            p_model_raw=float(p_raw), p_data=p_emp,
         )
-        if best is None or (cand.p_model, cand.price, -cand.lay_size_available) < (best.p_model, best.price, -best.lay_size_available):
+        if best is None or (cand.p_selected, cand.price, -cand.lay_size_available) < (best.p_selected, best.price, -best.lay_size_available):
             best = cand
     return best
 
@@ -285,6 +304,9 @@ def audit_block(sel: ModelSelection, *, lh_pre: float, la_pre: float, source: st
         "calibrated": sel.p_model_raw is not None and abs(sel.p_model - sel.p_model_raw) > 1e-12,
         "p_implied": round(sel.p_implied, 6),
         "edge": round(sel.edge, 6),
+        # §14: P empirica HT→FT (se disponibile) e P effettivamente usata
+        "p_data": None if sel.p_data is None else round(sel.p_data, 6),
+        "p_selected": round(sel.p_selected, 6),
         "lambda_pre": [round(lh_pre, 3), round(la_pre, 3)],
         "lambda_source": source,
         "state": [state.minute, state.score_home, state.score_away, state.red_home, state.red_away],
@@ -293,3 +315,126 @@ def audit_block(sel: ModelSelection, *, lh_pre: float, la_pre: float, source: st
 
 
 LambdaReader = Callable[[str], Optional[Tuple[float, float, Optional[int], str]]]
+
+
+# ---------------------------------------------------------------------------
+# λ DAL MERCATO LIVE (§14, 11/09): quando né la fixture né le quote 1X2 pre-KO
+# sono disponibili (scanner riavviato a partita in corso, lega minore senza
+# fixture), i gol residui attesi si leggono dal mercato OVER/UNDER in stream
+# (blocchi ``ou`` del feed unico): P(over) de-viggata → λ residuo (Poisson,
+# inversione ``value_engine.poisson_total``) → riportato a "λ pre-match
+# equivalente" con gli STESSI moltiplicatori live del modello, così il resto
+# della catena (residui per minuto/stato/rossi, griglia DC) resta identico.
+# Split casa/trasferta neutro con vantaggio casa (le quote 1X2 live riflettono
+# il punteggio, non la forza residua). Fonte dichiarata: 'live_ou'.
+# ---------------------------------------------------------------------------
+LIVE_OU_HOME_SHARE = 0.54
+LIVE_OU_ANCHOR_GOALS = 2.5        # linea preferita: gol attuali + 2.5 (la più liquida)
+LIVE_OU_P_MIN, LIVE_OU_P_MAX = 0.03, 0.97
+LAMBDA_PRE_MIN, LAMBDA_PRE_MAX = 0.2, 4.0
+
+
+def _ou_sides(block: dict) -> Tuple[Optional[float], Optional[float]]:
+    """(back Over, back Under) del blocco O/U del feed; None se manca un lato."""
+    over = under = None
+    for s in block.get("selections") or []:
+        if not isinstance(s, dict) or s.get("runner_status") not in (None, "ACTIVE"):
+            continue
+        name = str(s.get("name") or "").strip().lower()
+        back = s.get("back")
+        if not isinstance(back, (int, float)) or back <= 1.0:
+            continue
+        if name.startswith("over"):
+            over = float(back)
+        elif name.startswith("under"):
+            under = float(back)
+    return over, under
+
+
+def residual_total_from_ou(payload: Optional[dict], state: LiveState) -> Optional[Tuple[float, float, float]]:
+    """(λ residuo TOTALE, linea usata, P(over) de-viggata) dal mercato O/U più
+    vicino a gol attuali + 2.5 con entrambi i lati prezzati e mercato OPEN.
+    None se nessuna linea è utilizzabile (linea già superata, book vuoto)."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("ou"), list):
+        return None
+    try:
+        from value_engine.devig import devig_pair
+        from value_engine.poisson_total import lam_from_prematch
+    except Exception:  # noqa: BLE001 - libreria assente: nessuna stima
+        return None
+    goals = int(state.score_home) + int(state.score_away)
+    best: Optional[Tuple[float, float, float]] = None   # (distanza, linea, p_over)
+    for blk in payload["ou"]:
+        if not isinstance(blk, dict):
+            continue
+        if str(blk.get("status") or "OPEN").upper() != "OPEN":
+            continue
+        line = blk.get("line")
+        if not isinstance(line, (int, float)):
+            continue
+        k = int(float(line) - 0.5) - goals        # "over" = residuo ≥ k+1
+        if k < 0:
+            continue                                # linea già superata dai gol fatti
+        over, under = _ou_sides(blk)
+        if over is None or under is None:
+            continue
+        p_over = float(devig_pair(over, under))
+        if not (LIVE_OU_P_MIN <= p_over <= LIVE_OU_P_MAX):
+            continue
+        dist = abs(float(line) - (goals + LIVE_OU_ANCHOR_GOALS))
+        if best is None or dist < best[0]:
+            best = (dist, float(line), p_over)
+    if best is None:
+        return None
+    _, line, p_over = best
+    k = int(line - 0.5) - goals
+    try:
+        lam_res = float(lam_from_prematch("over", k, p_over))
+    except Exception:  # noqa: BLE001 - inversione non riuscita
+        return None
+    if not math.isfinite(lam_res) or lam_res <= 0:
+        return None
+    return lam_res, line, p_over
+
+
+def lambdas_from_live_ou(payload: Optional[dict], state: LiveState,
+                         league_id: Optional[int]) -> Optional[Tuple[float, float, Dict[str, Any]]]:
+    """(λ_casa pre-match equivalente, λ_trasferta, dettagli) dal mercato O/U live.
+    ``dettagli`` = {line, p_over, lambda_residual} per l'audit. None se non stimabile."""
+    est = residual_total_from_ou(payload, state)
+    if est is None:
+        return None
+    lam_res, line, p_over = est
+    try:
+        from Betfair.stream.engine.live_engine import inplay_residual_rates
+        mh, ma = inplay_residual_rates(1.0, 1.0, state.minute, state.score_home, state.score_away,
+                                       red_home=state.red_home, red_away=state.red_away,
+                                       league_id=league_id)
+    except Exception:  # noqa: BLE001
+        return None
+    if mh <= 0 or ma <= 0:
+        return None
+    lh = LIVE_OU_HOME_SHARE * lam_res / mh
+    la = (1.0 - LIVE_OU_HOME_SHARE) * lam_res / ma
+    clamp = lambda v: min(LAMBDA_PRE_MAX, max(LAMBDA_PRE_MIN, float(v)))  # noqa: E731
+    return clamp(lh), clamp(la), {"line": line, "p_over": round(p_over, 4),
+                                  "lambda_residual": round(lam_res, 4)}
+
+
+def half_time_score(payload: Optional[dict]) -> Optional[Tuple[int, int]]:
+    """Punteggio del 45′ dal blocco IPS del feed (``halfTimeScore``), o None."""
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("score_raw")
+    score = raw.get("score") if isinstance(raw, dict) else None
+    if not isinstance(score, dict):
+        return None
+    home = score.get("home") if isinstance(score.get("home"), dict) else {}
+    away = score.get("away") if isinstance(score.get("away"), dict) else {}
+    try:
+        h, a = str(home.get("halfTimeScore") or "").strip(), str(away.get("halfTimeScore") or "").strip()
+        if h == "" or a == "":
+            return None
+        return int(h), int(a)
+    except (TypeError, ValueError):
+        return None

@@ -624,3 +624,95 @@ condiviso `execution.py`, cash out, calibrazione, uscite a modello, dashboard).
 
 Commit del 10/09: 99fbff8, 5fd3fae (master). Migrazioni applicate: betfair_live_cashout_v3,
 omega_cashout, safe_strategy_bot, daily_history.
+
+## 14. GIORNATA = PARTITE DEL GIORNO, DUE GAMBE SEMPRE, RISULTATI REALI (11/09/2026)
+
+Decisione dell'utente (11/09 mattina, "sistemiamo strumento per strumento, partiamo da
+Omega"): (1) la barra di avanzamento è GIORNALIERA e ogni giorno il P&L riparte da 0
+**in base alle partite di quella specifica giornata**, lo storico tiene traccia giorno
+per giorno; (2) per OGNI partita DUE trade, uno nel 1T e uno nel 2T, obiettivo della
+partita diviso in due selezioni, la seconda scelta in base al risultato del 1T con tutti
+i dati disponibili; (3) tabella dei trade con il risultato REALE di fine 1T e fine 2T su
+ogni riga, tutte le informazioni delle due gambe, P&L in rosso/verde, chiusure evidenziate.
+
+### 14.1 Giornata operativa = giorno di PIAZZAMENTO della posizione
+- Prima: `R` di oggi = P&L dei trade **regolati** oggi (§2). Difetto visto l'11/09 alle
+  08:25: 11 gambe del 10/09 sera regolate al riavvio del mattino → +23,08 € sulla barra di
+  oggi, senza nessuna partita di oggi.
+- Ora: la giornata di una posizione è il giorno Europe/Rome in cui la sua **apertura** è
+  stata piazzata; le gambe di chiusura ereditano il giorno dell'apertura che chiudono.
+  `R` = P&L delle posizioni piazzate oggi e già regolate. Vale in `omega_engine.
+  aggregate_trades`, nella RPC `get_omega_state` e nello storico (`get_omega_daily` /
+  `get_omega_day_trades` con attribuzione `'placed'`; Safe Strategy resta `'settled'`).
+- **Obiettivo storicizzato**: tabella `omega_daily_goal` (giorno → obiettivo), scritta da
+  `omega_activate` / `omega_update_params` e dal servizio a ogni ciclo (snapshot
+  idempotente). Lo storico mostra l'obiettivo che valeva quel giorno (`goal_snapshot`).
+- Dashboard: card "Obiettivo giornaliero" con partite/operazioni di oggi; KPI
+  "Operazioni oggi" (V/P/vive); tabella "Partite di oggi" (+ vive di giorni precedenti,
+  marcate `prec.`) con toggle "mostra tutte"; le giornate passate vivono nello Storico.
+
+### 14.2 Due gambe SEMPRE — perché il 10/09 la 2T non è mai partita
+- Log del 10/09: **746 skip `ft_cs · no_model_lambdas`** su 12 partite (e 58 sulla 1T):
+  la catena λ era fixture → quote 1X2 pre-KO del feed; lo scanner riavviato a partita in
+  corso (o agganciata dopo il calcio d'inizio) non ha più `pre_ko`, la lega minore non ha
+  fixture, la cache di processo non sopravvive ai riavvii → gamba 2T sempre saltata.
+- **Catena λ (`_prematch_lambdas`)**: 1. fixture abbinata (tactical_engine / Poisson
+  xG-DC) → 2. λ **persistiti sull'evento** (`omega_events.model`, migrazione) → 3. quote
+  1X2 pre-KO congelate → 4. λ salvati nel blocco di audit di un trade precedente dello
+  stesso evento (la 1T porta `meta.model.lambda_pre`) → 5. **mercato OVER/UNDER live**
+  (`omega_model.lambdas_from_live_ou`: P(over) de-viggata della linea più vicina a gol
+  attuali + 2,5 → λ residuo Poisson → "λ pre-match equivalente" con gli stessi
+  moltiplicatori live del modello; split casa/trasferta 0,54/0,46; fonte `live_ou`, log
+  `model_lambda_live`). Ogni λ non da fixture viene persistito sull'evento. Senza nulla →
+  skip `no_model_lambdas` come prima (mai a occhi chiusi). Param `lambda_live_fallback`.
+- **Target di gamba = (G − R) / gambe ancora piazzabili** (`omega_engine.legs_remaining`:
+  2 per partita non toccata, 1 se una gamba è fatta o la sua finestra è passata; il cap
+  `max_events` limita solo le partite NUOVE — la seconda gamba di una partita già in
+  posizione si fa SEMPRE, anche a cap raggiunto). Prima era metà di (G−R)/partite con un conteggio che ignorava le gambe già
+  fatte. Stats: `legs_remaining`, `target_leg`, `target_match` (= 2 × gamba).
+- **Selezione 2T con i DATI (seconda opinione)**: tabella `omega_ht_ft_transitions`
+  (migrazione: da `matches`, punteggio al 45′ → finale, per lega e globale; RPC
+  `get_omega_ht_ft`) letta una volta per lega (`omega_empirical.EmpiricalTable`, shrinkage
+  Bayesiano verso il globale, K=200). Quando il punteggio all'ingresso 2T è ancora quello
+  del 45′ (`halfTimeScore` del feed IPS) la P usata per filtro e ordinamento è
+  **max(P modello calibrata, P empirica)**: si banca un risultato solo se è raro per
+  ENTRAMBE le viste (il backtest del 10/09 dice che il modello è ottimista dal 60′). Con
+  gol già nel 2T, o tabella assente, resta il solo modello. La tabella copre TUTTO il
+  2° tempo: il confronto con `p_max` e con la P implicita è onesto solo a inizio ripresa
+  → il veto si applica fino a `model_empirical_max_minute` (default 60′), oltre resta il
+  modello (audit `fuori_finestra`). Audit in `meta.model`: `p_data`, `p_selected`,
+  `empirical`, `empirical_n`, `ht_score`, `empirical_note`. Param `model_empirical`
+  (`veto`|`off`), `model_empirical_max_minute`.
+
+### 14.3 Risultati reali e tabella per partita
+- `meta.runners` (nomi dei runner a punteggio esatto) salvato al piazzamento: al
+  settlement il WINNER del Half Time Score È il risultato del 1T, quello del Correct Score
+  È il finale → `meta.result_ht` / `meta.result_ft` (`_stamp_market_result`, autorevole
+  quanto il P&L, I3). Ogni ciclo, anche a bot fermo, `track_event_results` legge il feed
+  unico (`halfTimeScore`/`fullTimeScore` IPS; all'intervallo il corrente È il 1T, a partita
+  finita è il finale) e completa i risultati su tutte le aperture della partita. Mai
+  sovrascritti, mai dedotti a partita in corso.
+- UI (`components/omega/MatchTradesTable.tsx`, logica pura `lib/omegaMatches.ts`): UNA
+  riga = UNA partita — Ora/KO · Partita (punteggio live) · **1° tempo** (LAY risultato
+  @quota, stake, rischio, ingresso min·punteggio, P modello, stato, P&L gamba, motivo
+  dell'uscita, chiusure `↳ Green-up BACK 24,24 € @4,90` evidenziate sotto la gamba, cash
+  out) · **Risultato 1T** (reale, rosso se il bancato è uscito) · **2° tempo** (idem) ·
+  **Risultato 2T** · **P&L partita** (regolato / bloccato / in corso, verde-rosso, con il
+  rischio ancora aperto). Stessa tabella nel dettaglio giorno dello Storico.
+
+### 14.4 Migrazione e parametri
+`migrations/omega_daily_v2.sql` (da applicare in Supabase DOPO daily_history.sql e
+omega_cashout.sql): `omega_daily_goal` + snapshot nelle RPC, `get_omega_state` per
+giornata di piazzamento (+ `legs_today`, `events_today`, `won_today`, `lost_today`,
+`goal_today`), `trading_daily_history`/`trading_day_trades` con `p_day_by`, `get_omega_daily`
+con obiettivo per giorno, `omega_events.model`, `omega_ht_ft_transitions` + `get_omega_ht_ft`. La
+costruzione della tabella HT→FT è un PASSO SEPARATO (legge ~1,4 M partite):
+`SELECT public.omega_build_ht_ft_transitions();` una volta, dopo la migrazione. Il codice è tollerante alla migrazione non applicata
+(nessun crash: tabella empirica = off, λ non persistiti, storico per giorno di
+regolazione, obiettivo corrente). Parametri nuovi in `omega_config`: `model_empirical`
+(`veto`), `lambda_live_fallback` (true). Test: `test_omega_giornata_gambe_2026_09_11.py`
+(15), `lib/omegaMatches.test.ts` (9), pagina/DayDetail aggiornati.
+
+### 14.5 Ancora aperto
+Fedeltà paper (bet delay 5 s), certificazione liquidità lato back dalle registrazioni REC,
+uscite loss/profit strategia per strategia (Safe §3), i sei edge del piano 250 (Safe §11).

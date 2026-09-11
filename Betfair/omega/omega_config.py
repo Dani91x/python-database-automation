@@ -66,6 +66,17 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # import guardato): 'auto' = usa il calibratore se c'è | 'off' = P grezza.
     "model_calibration": ("auto", str, None, None),
     "model_calibration_path": ("", str, None, None),   # vuoto = default del calibratore
+    # ---- §14 (11/09): seconda gamba SEMPRE coperta, dati capillari ----
+    # 'veto' = per la gamba 2T la P usata è max(P modello, P empirica HT→FT dai
+    # dati storici, se il punteggio è ancora quello del 45′) | 'off' = solo modello
+    "model_empirical": ("veto", str, None, None),
+    # minuto massimo d'ingresso 2T entro cui il veto empirico si applica (la
+    # tabella HT→FT copre tutto il 2° tempo: oltre sovrastimerebbe la P)
+    "model_empirical_max_minute": (60, int, 45, 90),
+    # λ dal mercato Over/Under live quando mancano fixture e quote pre-KO
+    # (scanner riavviato a partita in corso, lega senza fixture): True = mai
+    # una gamba saltata per "no_model_lambdas" se il mercato a gol è in stream
+    "lambda_live_fallback": (True, bool, None, None),
     # ---- GREEN-UP AUTOMATICO (10/09, §12): la scommessa diventa un trade ----
     "greenup_enabled": (True, bool, None, None),
     "greenup_mode": ("auto", str, None, None),          # 'auto' | 'off'

@@ -415,11 +415,106 @@ def aggregates(day_start=None) -> dict[str, float]:
     # aggregate_trades non vede ``meta.flumine_client_ref`` e i pending in attesa
     # del fill flumine (paper E live) NON contano in liability/max_events (dead
     # code con dati reali). ``mode`` incluso per la stessa ragione (audit/futuro).
-    rows = (
-        _sb().table("omega_trades")
-        .select("status,pnl,liability,bet_id,placed_at,settled_at,meta,mode")
-        .execute().data or []
-    )
+    # §14 (11/09): ``id`` + ``closes_trade_id`` servono per (a) escludere le gambe
+    # di chiusura dai conteggi partita/liability e (b) attribuire il loro P&L al
+    # GIORNO dell'apertura che chiudono (giornata = partite di quel giorno).
+    # PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa farebbe
+    # attribuire il P&L delle chiusure al giorno sbagliato (review 11/09 MED-2)
+    rows: list[dict[str, Any]] = []
+    page = 1000
+    start = 0
+    while True:
+        chunk = (
+            _sb().table("omega_trades")
+            .select("id,status,pnl,liability,bet_id,placed_at,settled_at,meta,mode,closes_trade_id")
+            .order("id").range(start, start + page - 1)
+            .execute().data or []
+        )
+        rows.extend(chunk)
+        if len(chunk) < page:
+            break
+        start += page
     from Betfair.omega import omega_engine as E
 
     return E.aggregate_trades(rows, day_start)  # logica PURA e testata (§I8: pending+bet_id contano)
+
+
+# ---------------------------------------------------------------------------
+# §14 (11/09): due gambe SEMPRE, giornata = partite del giorno, risultati reali.
+# Tutte best-effort e tolleranti alla migrazione ``omega_daily_v2.sql`` non
+# ancora applicata (colonna/tabella/RPC assenti → None/[]/no-op, mai un crash).
+# ---------------------------------------------------------------------------
+def event_lambda_hint(event_id: str) -> Optional[dict[str, Any]]:
+    """λ pre-match già calcolati per l'evento e salvati sul blocco ``meta.model``
+    di un trade precedente (tipicamente la gamba 1T): ``{lambda_pre, lambda_source}``.
+    Sopravvive ai riavvii del servizio e dello scanner. None se nessuno."""
+    try:
+        rows = (
+            _sb().table("omega_trades").select("id,meta")
+            .eq("event_id", str(event_id)).neq("status", "error")
+            .order("id", desc=True).limit(5).execute().data or []
+        )
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega.db] event_lambda_hint KO %s: %s", event_id, str(ex)[:120])
+        return None
+    for r in rows:
+        model = (r.get("meta") or {}).get("model")
+        lam = model.get("lambda_pre") if isinstance(model, dict) else None
+        if isinstance(lam, (list, tuple)) and len(lam) == 2:
+            return {"lambda_pre": [lam[0], lam[1]], "lambda_source": model.get("lambda_source")}
+    return None
+
+
+def save_event_model(event_id: str, model: dict[str, Any]) -> bool:
+    """Persiste i λ risolti sulla cache eventi (``omega_events.model``, colonna
+    della migrazione omega_daily_v2). UPDATE (mai insert): se la riga o la
+    colonna mancano non succede nulla. True se scritto."""
+    try:
+        res = (
+            _sb().table("omega_events").update({"model": model})
+            .eq("event_id", str(event_id)).execute()
+        )
+        return bool(res.data)
+    except Exception as ex:  # noqa: BLE001 - colonna assente (migrazione) o DB KO
+        logger.debug("[omega.db] save_event_model KO %s: %s", event_id, str(ex)[:120])
+        return False
+
+
+def positions_for_results(since_iso: str) -> list[dict[str, Any]]:
+    """Aperture recenti (piazzate da ``since_iso``, mai gambe di chiusura, mai
+    'error') con il meta: servono a scrivere i risultati reali 1T/2T."""
+    try:
+        return (
+            _sb().table("omega_trades")
+            .select("id,event_id,phase,status,placed_at,meta,closes_trade_id")
+            .is_("closes_trade_id", "null").neq("status", "error")
+            .gte("placed_at", since_iso).limit(500).execute().data or []
+        )
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[omega.db] positions_for_results KO: %s", str(ex)[:120])
+        return []
+
+
+def upsert_daily_goal(day: str, goal: float) -> bool:
+    """Snapshot dell'obiettivo della GIORNATA (tabella ``omega_daily_goal``):
+    lo storico mostra l'obiettivo che valeva quel giorno, non quello corrente."""
+    try:
+        _sb().table("omega_daily_goal").upsert(
+            {"day": str(day), "goal": float(goal)}, on_conflict="day"
+        ).execute()
+        return True
+    except Exception as ex:  # noqa: BLE001 - tabella assente (migrazione) o DB KO
+        logger.debug("[omega.db] upsert_daily_goal KO %s: %s", day, str(ex)[:120])
+        return False
+
+
+def ht_ft_transitions(league_id: Optional[int]) -> list[dict[str, Any]]:
+    """Righe ``{league_id, ht, ft, n}`` della tabella HT→FT (globale + lega) via
+    RPC ``get_omega_ht_ft``. [] se la migrazione non è applicata."""
+    try:
+        res = _sb().rpc("get_omega_ht_ft", {"p_league_id": int(league_id) if league_id is not None else None}).execute()
+        data = getattr(res, "data", None)
+        return list(data) if isinstance(data, list) else []
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega.db] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:120])
+        return []

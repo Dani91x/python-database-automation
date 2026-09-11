@@ -121,18 +121,79 @@ describe('Omega dashboard', () => {
     it('KPI target/match e liability aperta presenti', async () => {
         renderPage();
         await gotoAutoTab();
-        expect(await screen.findByText('Target / match')).toBeInTheDocument();
+        expect(await screen.findByText('Target / operazione')).toBeInTheDocument();
         expect(await screen.findByText('€9.50')).toBeInTheDocument();
         expect(await screen.findByText('Liability aperta')).toBeInTheDocument();
         expect(await screen.findByText('€480.00')).toBeInTheDocument();
     });
 
-    it('elenca il trade piazzato con il punteggio laid', async () => {
+    it('elenca la PARTITA con la gamba 2T bancata (3-2), stato APERTO e le colonne 1°/2° tempo + risultati', async () => {
         renderPage();
         await gotoAutoTab();
         expect(await screen.findByText('Roma vs Lazio')).toBeInTheDocument();
         expect(await screen.findByText('3 - 2')).toBeInTheDocument();
         expect(await screen.findByText('APERTO')).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', { name: '1° tempo' })).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', { name: 'Risultato 1T' })).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', { name: '2° tempo' })).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', { name: 'Risultato 2T' })).toBeInTheDocument();
+        expect(screen.getByRole('columnheader', { name: 'P&L partita' })).toBeInTheDocument();
+        const row = screen.getByTestId('omega-match-row');
+        // trade senza fase (v1) → colonna 2T; 1T vuota; risultati in attesa; P&L in corso
+        expect(within(row).getByTestId('omega-leg-ht')).toHaveAttribute('data-empty', '1');
+        expect(within(within(row).getByTestId('omega-leg-ft')).getByText('3 - 2')).toBeInTheDocument();
+        expect(within(row).getByTestId('omega-result-ht')).toHaveTextContent('—');
+        expect(within(row).getByTestId('omega-match-pnl')).toHaveTextContent('—');
+        expect(row).toHaveTextContent('rischio 573,34 €');
+        expect(screen.getByTestId('omega-matches-card')).toHaveTextContent('Partite di oggi (1)');
+    });
+
+    it('mostra tutte / solo oggi: una partita di ieri già regolata compare solo con "mostra tutte"', async () => {
+        mTrades.mockResolvedValue([
+            TRADES[0],
+            { ...TRADES[0], id: 5, event_id: 'old', event_name: 'Vecchia vs Regolata', status: 'won', pnl: 3, placed_at: '2026-01-05T10:00:00Z', settled_at: '2026-01-05T12:00:00Z' },
+        ] as never);
+        renderPage();
+        await gotoAutoTab();
+        expect(await screen.findAllByTestId('omega-match-row')).toHaveLength(1);
+        expect(screen.queryByText('Vecchia vs Regolata')).toBeNull();
+        await userEvent.setup().click(screen.getByTestId('omega-matches-toggle'));
+        expect(await screen.findAllByTestId('omega-match-row')).toHaveLength(2);
+        expect(screen.getByText('Vecchia vs Regolata')).toBeInTheDocument();
+        expect(screen.getByTestId('omega-matches-card')).toHaveTextContent('Tutte le partite (2)');
+    });
+
+    it('risultati REALI 1T/2T e P&L della partita in verde/rosso (entrambe le gambe con le chiusure)', async () => {
+        const base = { ...TRADES[0], placed_at: new Date().toISOString() };
+        mTrades.mockResolvedValue([
+            { ...base, id: 70, phase: 'ht_cs', runner_name: '1 - 2', price: 55, size: 2.16, liability: 116.64, status: 'won', pnl: 2.16, settled_at: new Date().toISOString(),
+              meta: { result_ht: '1-1', result_ft: '1-1', exit_kind: 'greenup', exit_reason: "gol al 28': 1-2 raggiungibile", locked_pnl: -22.1 } },
+            { ...base, id: 71, phase: 'ht_cs', runner_name: '1 - 2', side: 'back', price: 4.9, size: 24.24, liability: 24.24, status: 'lost', pnl: -24.24, closes_trade_id: 70, settled_at: new Date().toISOString(), meta: { exit_kind: 'greenup' } },
+            { ...base, id: 72, phase: 'ft_cs', runner_name: '4 - 1', price: 90, size: 2.71, liability: 241.19, status: 'won', pnl: 2.57, settled_at: new Date().toISOString(), meta: { result_ft: '1-1' } },
+        ] as never);
+        renderPage();
+        await gotoAutoTab();
+        const rows = await screen.findAllByTestId('omega-match-row');
+        expect(rows).toHaveLength(1);
+        const row = rows[0];
+        expect(row).toHaveAttribute('data-state', 'settled');
+        const ht = within(row).getByTestId('omega-leg-ht');
+        expect(within(ht).getByText('1 - 2')).toBeInTheDocument();
+        expect(within(ht).getByTestId('omega-leg-pnl')).toHaveTextContent('−22,08 €');
+        expect(within(ht).getByTestId('omega-closing-line')).toHaveTextContent(/Green-up/);
+        expect(within(ht).getByTestId('omega-closing-line')).toHaveTextContent(/24,24 € @4,90/);
+        expect(within(ht).getByTestId('omega-exit-reason')).toHaveTextContent("gol al 28': 1-2 raggiungibile");
+        const ft = within(row).getByTestId('omega-leg-ft');
+        expect(within(ft).getByText('4 - 1')).toBeInTheDocument();
+        expect(within(ft).getByTestId('omega-leg-pnl')).toHaveTextContent('+2,57 €');
+        expect(within(ft).getByTestId('omega-leg-pnl').className).toMatch(/text-emerald-400/);
+        expect(within(row).getByTestId('omega-result-ht')).toHaveTextContent('1-1');
+        expect(within(row).getByTestId('omega-result-ft')).toHaveTextContent('1-1');
+        expect(within(row).getByTestId('omega-result-ft')).toHaveTextContent('bancato non uscito');
+        const pnl = within(row).getByTestId('omega-match-pnl');
+        expect(pnl).toHaveTextContent('−19,51 €');
+        expect(pnl.className).toMatch(/text-red-400/);
+        expect(screen.getByTestId('omega-matches-summary')).toHaveTextContent('2 operazioni oggi · 1V 1P');
     });
 
     it('mostra il pulsante Ferma quando è in corsa', async () => {
@@ -177,8 +238,9 @@ describe('Omega — cash out', () => {
         ] as never);
         renderPage();
         await gotoAutoTab();
-        expect(await screen.findByTestId('cashout-trigger')).toBeDisabled();
-        expect(screen.getByText(/chiude #1/)).toBeInTheDocument();
+        const line = await screen.findByTestId('omega-closing-line');
+        expect(line).toHaveAttribute('data-closes', '1');
+        expect(screen.queryByTestId('cashout-trigger')).toBeNull();
     });
 
     it('HIGH-1: meta.hedging alzato dal servizio -> cash out spento', async () => {
@@ -240,14 +302,14 @@ describe('Omega — green-up automatico', () => {
         }] as never);
         renderPage();
         await gotoAutoTab();
-        const row = await screen.findByTestId('omega-trade-row');
+        const row = await screen.findByTestId('omega-match-row');
         // apertura coperta in green-up: lo stato lo dice, il motivo sotto
         expect(within(row).getByTestId('omega-status')).toHaveTextContent('CHIUSO IN GREEN-UP');
         expect(within(row).getByTestId('omega-exit-reason')).toHaveTextContent('distanza 1 gol dal 3-2');
         expect(within(row).getByTestId('omega-locked-pnl')).toHaveTextContent('+4,20 € bloccato');
         const model = within(row).getByTestId('omega-model-p');
         expect(model).toHaveTextContent('1,2%');
-        expect(model).toHaveTextContent('grezza 1,8%');
+        expect(model.title).toMatch(/grezza 1,8%/);
     });
 
     it('coppia lay + back di copertura: colonne Selezione/Lato, sub-riga "↳ Green-up di #70", CHIUSO IN GREEN-UP con P&L bloccato, motivo, tooltip e live', async () => {
@@ -265,12 +327,8 @@ describe('Omega — green-up automatico', () => {
         ] as never);
         renderPage();
         await gotoAutoTab();
-        // intestazioni: "Selezione" + "Lato" (niente piu' "Lay" come titolo di colonna)
-        expect(screen.getByRole('columnheader', { name: 'Selezione' })).toBeInTheDocument();
-        expect(screen.getByRole('columnheader', { name: 'Lato' })).toBeInTheDocument();
-        expect(screen.queryByRole('columnheader', { name: 'Lay' })).toBeNull();
-        // UNA sola riga trade: la chiusura e' una sub-riga attaccata
-        const rows = await screen.findAllByTestId('omega-trade-row');
+        // UNA sola riga PARTITA: la chiusura e' attaccata alla gamba che chiude
+        const rows = await screen.findAllByTestId('omega-match-row');
         expect(rows).toHaveLength(1);
         const row = rows[0];
         expect(within(row).getByTestId('omega-side')).toHaveTextContent('LAY');
@@ -280,16 +338,19 @@ describe('Omega — green-up automatico', () => {
             .toBe('il lay a 55,00 è stato coperto con un back a 4,90 sulla stessa selezione: esito identico su ogni risultato');
         expect(within(row).getByTestId('omega-exit-reason')).toHaveTextContent("gol al 29': 1-2 raggiungibile");
         expect(within(row).getByTestId('omega-locked-pnl')).toHaveTextContent('−22,10 € bloccato');
-        expect(within(row).getByTestId('omega-locked-pnl').closest('td')?.className).toMatch(/text-red-400/);
-        // la colonna Live sull'apertura continua a mostrare il punteggio
-        expect(within(row).getByText("71′ · 1-2")).toBeInTheDocument();
-        // sub-riga della copertura
-        const sub = screen.getByTestId('omega-closing-row');
+        expect(within(row).getByTestId('omega-locked-pnl').className).toMatch(/text-red-400/);
+        // il punteggio LIVE della partita resta visibile sulla riga
+        expect(within(row).getByTestId('omega-live-score')).toHaveTextContent("71′ · 1-2");
+        // chiusura evidenziata sotto la gamba
+        const sub = within(row).getByTestId('omega-closing-line');
         expect(sub).toHaveAttribute('data-closes', '70');
-        expect(sub).toHaveTextContent('↳ Green-up di #70 · BACK 24,24 € @4,90');
+        expect(sub).toHaveTextContent(/Green-up/);
+        expect(sub).toHaveTextContent(/24,24 € @4,90/);
         expect(within(sub).getByText('BACK').className).toMatch(/sky/);
-        expect(within(sub).getByText(/chiude #70/)).toBeInTheDocument();
         expect(within(sub).getByText('APERTO')).toBeInTheDocument();
+        // P&L partita = bloccato −22,10 in rosso
+        expect(within(row).getByTestId('omega-match-pnl')).toHaveTextContent('−22,10 €');
+        expect(within(row).getByTestId('omega-match-pnl').className).toMatch(/text-red-400/);
         // nessun cash out sull'apertura coperta ne' sulla copertura
         expect(screen.queryByTestId('cashout-trigger')).toBeNull();
     });
@@ -298,9 +359,11 @@ describe('Omega — green-up automatico', () => {
         mTrades.mockResolvedValue([{ ...TRADES[0], status: 'won', pnl: 5, meta: { exit_kind: 'profit', exit_reason: 'take profit' } }] as never);
         renderPage();
         await gotoAutoTab();
-        const row = await screen.findByTestId('omega-trade-row');
+        const row = await screen.findByTestId('omega-match-row');
         expect(within(row).getByTestId('exit-badge')).toHaveTextContent('Uscita: profitto');
         expect(within(row).getByTestId('omega-status')).toHaveTextContent('VINTO');
+        expect(within(row).getByTestId('omega-match-pnl')).toHaveTextContent('+5,00 €');
+        expect(within(row).getByTestId('omega-match-pnl').className).toMatch(/text-emerald-400/);
     });
 
     it('attivita: green-up / attesa / ritento leggibili in italiano', async () => {

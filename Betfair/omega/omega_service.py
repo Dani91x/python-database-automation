@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_model as M
@@ -222,11 +223,35 @@ def _entry_marks(market, event_id: str, now: datetime) -> dict:
     return {} if st is None else {"minute_at_entry": st.minute, "score_at_entry": score_str}
 
 
-def _prematch_lambdas(db, event_id: str, payload: Optional[dict]
+def _saved_event_lambdas(row: Optional[dict]) -> Optional["tuple[float, float, str]"]:
+    """λ già risolti e persistiti su ``omega_events.model`` (§14), o None."""
+    model = (row or {}).get("model")
+    lam = model.get("lambda_pre") if isinstance(model, dict) else None
+    try:
+        if isinstance(lam, (list, tuple)) and len(lam) == 2 and float(lam[0]) > 0 and float(lam[1]) > 0:
+            return float(lam[0]), float(lam[1]), str(model.get("lambda_source") or "saved")
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _prematch_lambdas(db, event_id: str, payload: Optional[dict], *,
+                      state: Optional["M.LiveState"] = None,
+                      params: Optional[dict] = None,
                       ) -> Optional["tuple[float, float, Optional[int], str]"]:
-    """(λ_casa, λ_trasferta, league_id, fonte). Catena: fixture abbinata del DB
-    (tactical_engine / Poisson xG-DC) → quote 1X2 pre-KO congelate dallo scanner.
-    None = nessun modello possibile (si salta: mai a occhi chiusi)."""
+    """(λ_casa, λ_trasferta, league_id, fonte). CATENA (§14, 11/09 — il 10/09 la
+    gamba 2T è saltata 746 volte per ``no_model_lambdas``: le quote pre-KO
+    sparivano dal feed con lo scanner riavviato e la cache di processo non
+    sopravvive ai riavvii):
+      1. fixture abbinata del DB (tactical_engine / Poisson xG-DC) — la migliore;
+      2. λ già risolti e PERSISTITI per l'evento (``omega_events.model``);
+      3. quote 1X2 pre-KO congelate dallo scanner (``payload.pre_ko``);
+      4. λ salvati sul blocco di audit di un trade precedente dello stesso
+         evento (la gamba 1T porta ``meta.model.lambda_pre``);
+      5. mercato OVER/UNDER live (``payload.ou``, solo con ``state`` e
+         ``lambda_live_fallback``): gol residui attesi dal prezzo del mercato.
+    None = nessun modello possibile (si salta: mai a occhi chiusi). Ogni λ
+    trovato (non da fixture) viene persistito sull'evento, best-effort."""
     cached = _LAMBDA_CACHE.get(event_id)
     if cached is not None:
         return cached
@@ -251,15 +276,82 @@ def _prematch_lambdas(db, event_id: str, payload: Optional[dict]
             if lam and lam[0] and lam[1]:
                 out = (float(lam[0]), float(lam[1]),
                        lam[2] if len(lam) > 2 and lam[2] is not None else league_id, "fixture")
+        if out is None:
+            saved = _saved_event_lambdas(row)
+            if saved is not None:
+                out = (saved[0], saved[1], league_id, saved[2])
+    persist = False
     if out is None and isinstance(payload, dict):
         lam2 = M.lambdas_from_pre_ko(payload.get("pre_ko"))
         if lam2:
             out = (lam2[0], lam2[1], league_id, "pre_ko_odds")
+            persist = True
+    if out is None:
+        hint_fn = getattr(db, "event_lambda_hint", None)
+        try:
+            hint = hint_fn(event_id) if callable(hint_fn) else None
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[omega] event_lambda_hint KO %s: %s", event_id, str(ex)[:100])
+            hint = None
+        saved = _saved_event_lambdas({"model": hint} if hint else None)
+        if saved is not None:
+            out = (saved[0], saved[1], league_id, saved[2])
+            persist = True
+    if out is None and state is not None and isinstance(payload, dict) \
+            and bool((params or {}).get("lambda_live_fallback", True)):
+        live = M.lambdas_from_live_ou(payload, state, league_id)
+        if live is not None:
+            out = (live[0], live[1], league_id, "live_ou")
+            persist = True
+            db.log("model_lambda_live", {"event_id": event_id, "minute": state.minute,
+                                         "score": f"{state.score_home}-{state.score_away}",
+                                         "lambda_pre": [round(live[0], 3), round(live[1], 3)],
+                                         **live[2]})
     if out is not None:
         if len(_LAMBDA_CACHE) >= _LAMBDA_CACHE_MAX:
             _LAMBDA_CACHE.clear()
         _LAMBDA_CACHE[event_id] = out
+        if persist:
+            save_fn = getattr(db, "save_event_model", None)
+            if callable(save_fn):
+                try:
+                    save_fn(event_id, {"lambda_pre": [round(out[0], 4), round(out[1], 4)],
+                                       "lambda_source": out[3]})
+                except Exception as ex:  # noqa: BLE001
+                    logger.debug("[omega] save_event_model KO %s: %s", event_id, str(ex)[:100])
     return out
+
+
+# ---------------------------------------------------------------------------
+# §14: tabella empirica HT→FT (seconda opinione dai dati) — una lettura per
+# lega per processo, tollerante alla migrazione assente (tabella vuota = off).
+# ---------------------------------------------------------------------------
+_EMPIRICAL_CACHE: dict[Any, Any] = {}
+
+
+def _empirical_table(db, league_id: Optional[int], params: dict):
+    """``omega_empirical.EmpiricalTable`` per la lega (globale + lega), o None."""
+    if str(params.get("model_empirical", "veto")) != "veto":
+        return None
+    fn = getattr(db, "ht_ft_transitions", None)
+    if not callable(fn):
+        return None
+    key = int(league_id) if league_id is not None else 0
+    if key in _EMPIRICAL_CACHE:
+        return _EMPIRICAL_CACHE[key]
+    from Betfair.omega import omega_empirical as EMP
+    try:
+        rows = fn(league_id)
+    except Exception as ex:  # noqa: BLE001 — errore transitorio: NON in cache (review LOW-4)
+        logger.debug("[omega] ht_ft_transitions KO (%s): %s", league_id, str(ex)[:100])
+        return None
+    table = EMP.EmpiricalTable(rows or [])
+    if table.empty:
+        table = None
+    if len(_EMPIRICAL_CACHE) >= 500:
+        _EMPIRICAL_CACHE.clear()
+    _EMPIRICAL_CACHE[key] = table
+    return table
 
 
 def _rho_for(league_id: Optional[int]) -> float:
@@ -273,8 +365,10 @@ def _rho_for(league_id: Optional[int]) -> float:
 def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state: "M.LiveState",
                   half: bool, params: dict, size_needed: float
                   ) -> "tuple[Optional[M.ModelSelection], Optional[dict], Optional[str]]":
-    """(selezione del modello, blocco audit, motivo dello skip)."""
-    lam = _prematch_lambdas(db, event_id, payload)
+    """(selezione del modello, blocco audit, motivo dello skip). Per la gamba 2T
+    (§14) la selezione sente anche i DATI STORICI HT→FT quando il punteggio è
+    ancora quello del 45′ (``omega_empirical``): P usata = max(modello, dati)."""
+    lam = _prematch_lambdas(db, event_id, payload, state=state, params=params)
     if lam is None:
         return None, None, "no_model_lambdas"
     lh, la, league_id, source = lam
@@ -284,6 +378,23 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
     # guardato in omega_model → assente/rotto = P grezza, mai un crash
     calibrator = (M.load_calibrator(params.get("model_calibration_path") or None)
                   if str(params.get("model_calibration", "auto")) == "auto" else None)
+    p_data = None
+    ht_score = None
+    emp_table = None
+    emp_in_window = False
+    if not half:
+        from Betfair.omega import omega_empirical as EMP
+        ht_score = M.half_time_score(payload)
+        # la tabella HT→FT copre TUTTO il 2° tempo: confrontabile con p_max e con la
+        # P implicita solo a inizio ripresa (review 11/09 HIGH-3) — oltre la
+        # finestra il veto non si applica (audit: 'fuori_finestra')
+        emp_in_window = int(state.minute) <= int(params.get("model_empirical_max_minute",
+                                                           int(params["ft_entry_min"]) + 10))
+        if emp_in_window:
+            emp_table = _empirical_table(db, league_id, params)
+            p_data = EMP.empirical_lookup(emp_table, ht=ht_score,
+                                          current=(state.score_home, state.score_away),
+                                          league_id=league_id)
     sel = M.select_by_model(
         snapshot.runners, probs, state=state,
         price_min=params["price_min"], price_max=params["price_max"],
@@ -292,10 +403,22 @@ def _model_select(*, db, event_id: str, payload: Optional[dict], snapshot, state
         min_goal_distance=params["model_min_goal_distance"],
         calibrator=calibrator,
         family=M.CALIBRATION_FAMILY_HT if half else M.CALIBRATION_FAMILY_FT,
+        p_data=p_data,
     )
     if sel is None:
         return None, None, "no_runner_by_model"
-    return sel, M.audit_block(sel, lh_pre=lh, la_pre=la, source=source, state=state, half=half), None
+    audit = M.audit_block(sel, lh_pre=lh, la_pre=la, source=source, state=state, half=half)
+    if not half:
+        from Betfair.omega import omega_empirical as EMP
+        parsed = E.parse_scoreline(sel.name)
+        if not emp_in_window:
+            audit.update({"empirical": None, "empirical_note": "fuori_finestra",
+                          "ht_score": None if ht_score is None else f"{ht_score[0]}-{ht_score[1]}"})
+        elif parsed is not None:
+            audit.update(EMP.audit_empirical(emp_table, ht=ht_score,
+                                             current=(state.score_home, state.score_away),
+                                             league_id=league_id, ft=parsed))
+    return sel, audit, None
 
 
 def _leg_market(market, ev, market_type: str, payload: Optional[dict]):
@@ -344,8 +467,9 @@ def scan_and_place_legs(
     for ev in events:
         if ev.event_id in traded_ids:
             continue
-        if params["max_events"] and traded_count >= params["max_events"]:
-            break
+        if params["max_events"] and traded_count >= params["max_events"] \
+                and not any((ev.event_id, leg) in traded_legs for leg in E.LEG_PHASES):
+            continue   # cap raggiunto: niente partite NUOVE, ma la 2ª gamba si fa sempre
         if ev.open_date is not None:   # pre-filtro orologio, largo (recuperi/KO ritardati)
             cm = E.minute_from_clock(ev.open_date, now)
             if cm < params["ht_entry_min"] - 25 or cm > params["ft_entry_max"] + 25:
@@ -367,10 +491,14 @@ def scan_and_place_legs(
             cs, snapshot = pair
             if snapshot.closed or not snapshot.inplay:
                 continue
-            m_rem = matches_remaining(events, traded_ids, now=now, entry_minute_max=params["ft_entry_max"],
-                                      max_events=params["max_events"], traded_count=traded_count)
-            target = M.leg_target(E.dynamic_target(goal, realized, m_rem), leg,
-                                  ht_done=(ev.event_id, "ht_cs") in traded_legs)
+            # §14: target di GAMBA = (G − R) / gambe ancora piazzabili oggi (questa
+            # inclusa): l'obiettivo si spalma su tutte le operazioni residue, la
+            # partita presa in corsa pesa per la sola gamba che può ancora fare.
+            legs_left, _ = E.legs_remaining(
+                events, traded_legs, now=now, ht_entry_max=params["ht_entry_max"],
+                ft_entry_max=params["ft_entry_max"], max_events=params["max_events"],
+                traded_count=traded_count, excluded_ids=traded_ids)
+            target = E.dynamic_target(goal, realized, legs_left)
             if target <= 0:
                 db.log("skip", {"event_id": ev.event_id, "leg": leg, "reason": "target_zero_goal_reached"})
                 continue
@@ -668,6 +796,9 @@ def _place_one(
     """
     runner = next((r for r in snapshot.runners if r.selection_id == sel.selection_id), None)
     ladder = runner.lay_ladder if runner else ()
+    # §14: nomi dei runner a punteggio esatto → al settlement il WINNER dice il
+    # risultato REALE del mercato (1T o finale), senza un secondo catalogo REST.
+    runners_map = E.scoreline_names(snapshot.runners)
 
     reserve: dict[str, Any] = {
         "event_id": ev.event_id,
@@ -691,12 +822,14 @@ def _place_one(
         # requested_size = size PRIMA del cap di liquidità (audit: quanto il trade
         # è rimasto sotto target per colpa del book, §6).
         "meta": {"phase": "reserved",
-                 "requested_size": requested_size if requested_size is not None else size},
+                 "requested_size": requested_size if requested_size is not None else size,
+                 "runners": runners_map},
     }
     if phase:
         reserve["phase"] = phase
     if model:
         reserve["meta"]["model"] = model
+    keep_meta: dict[str, Any] = {"runners": runners_map, **({"model": model} if model else {})}
 
     # 1) RISERVA (il conflitto su event_id = già riservato/piazzato → skip pulito, I1)
     try:
@@ -722,7 +855,7 @@ def _place_one(
                 db=db, trade_id=trade_id, event_id=ev.event_id,
                 market_id=cs.market_id, selection_id=sel.selection_id, side="lay",
                 price=price, size=size,
-                base_meta={"requested_size": req_size, **({"model": model} if model else {})}, now=now)
+                base_meta={"requested_size": req_size, **keep_meta}, now=now)
             if rid:
                 return 1  # riserva in attesa del fill flumine (mai posizioni nude: poll di ciclo)
             gate_reason = "enqueue_failed"
@@ -751,7 +884,7 @@ def _place_one(
                 db=db, trade_id=trade_id, event_id=ev.event_id,
                 market_id=cs.market_id, selection_id=sel.selection_id, side="lay",
                 price=price, size=size,
-                base_meta={"requested_size": req_size}, now=now, mode=mode)
+                base_meta={"requested_size": req_size, **keep_meta}, now=now, mode=mode)
             if rid:  # include _ENQUEUE_UNKNOWN: riserva pending, MAI place REST ora
                 return 1
             gate_reason = "enqueue_failed"
@@ -780,7 +913,7 @@ def _place_one(
         bet_id = res.bet_id
 
     # 3) CONFERMA → 'open' (robusta: un ordine LIVE non deve mai restare non tracciato)
-    _confirm_open_trade(db, trade_id, extra_meta={"model": model} if model else None, event_id=ev.event_id, price=final_price, size=final_size,
+    _confirm_open_trade(db, trade_id, extra_meta=keep_meta, event_id=ev.event_id, price=final_price, size=final_size,
         liability=E.liability_from_lay(final_size, final_price), bet_id=bet_id, meta=meta, mode=mode,
     )
     db.log("place", {
@@ -1545,6 +1678,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
                 meta.pop("market_gone_since", None)
                 meta.pop("orphan_alerted", None)
                 db.update_trade(tr["id"], meta=meta)
+                tr["meta"] = meta   # mai riscrivere i marker appena tolti (review 11/09 MED-3)
             if not snap.closed:
                 continue
             # commissione FISSATA al piazzamento (coerenza P&L anche se il param cambia)
@@ -1564,6 +1698,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime) -> int:
                 "trade_id": tr["id"], "event_id": tr["event_id"], "status": status,
                 "pnl": round(pnl, 2), "runner": tr.get("runner_name"),
             })
+            _stamp_market_result(db, tr, snap.winner_selection_id)
             settled += 1
         except Exception as ex:  # noqa: BLE001
             db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
@@ -1636,6 +1771,7 @@ def _settle_hedged(*, params: dict[str, Any], market, db, now: datetime) -> int:
                                          "status": tr.get("status"), "pnl": tr.get("pnl"),
                                          "legs": len(closings.get(int(tr["id"]), [])),
                                          "runner": tr.get("runner_name")})
+                _stamp_market_result(db, tr, snap.winner_selection_id)
                 n += 1
         except Exception as ex:  # noqa: BLE001
             db.log("settle_error", {"trade_id": tr.get("id"), "err": str(ex)[:160]})
@@ -1666,6 +1802,109 @@ def _has_closing_marker(tr: dict[str, Any]) -> bool:
     meta = tr.get("meta") or {}
     return bool(meta.get("closing_trade_id") or meta.get("hedge_pending_ids")
                 or meta.get("closing_ids"))
+
+
+# ---------------------------------------------------------------------------
+# §14 (11/09): RISULTATI REALI di fine 1T e fine 2T su ogni posizione.
+# Due fonti, mai in conflitto (si scrive solo ciò che manca):
+#   • il FEED unico (blocco IPS: halfTimeScore/fullTimeScore, o punteggio
+#     corrente all'intervallo / a partita finita) — ``track_event_results``,
+#     ogni ciclo, anche a bot fermo;
+#   • il SETTLEMENT del mercato (il runner WINNER del Half Time Score È il
+#     risultato del 1T, quello del Correct Score È il finale) —
+#     ``_stamp_market_result``, dal dizionario ``meta.runners`` salvato al
+#     piazzamento. Autorevole quanto il P&L (I3).
+# ---------------------------------------------------------------------------
+RESULTS_LOOKBACK_H = 36
+
+
+def _stamp_market_result(db, tr: dict[str, Any], winner_selection_id: Optional[int]) -> bool:
+    """Scrive ``meta.result_ht`` / ``meta.result_ft`` dal WINNER del mercato
+    regolato. Best-effort, idempotente (mai sovrascrive un valore presente)."""
+    meta = tr.get("meta") or {}
+    key = E.result_key_for_trade(tr)
+    if key is None or meta.get(key):
+        return False
+    score = E.winner_scoreline(meta, winner_selection_id)
+    if score is None:
+        return False
+    try:
+        new_meta = {**meta, key: score}
+        db.update_trade(int(tr["id"]), meta=new_meta)
+        tr["meta"] = new_meta
+        return True
+    except Exception as ex:  # noqa: BLE001 - il risultato non deve mai rompere il settlement
+        logger.warning("[omega] result %s su trade %s KO: %s", key, tr.get("id"), str(ex)[:120])
+        return False
+
+
+def track_event_results(*, db, market, now: datetime, feed: Any = None) -> int:
+    """Per ogni posizione recente senza risultato finale legge il feed unico e
+    scrive, quando CERTI, ``meta.result_ht`` (45′) e ``meta.result_ft`` (finale)
+    su tutte le aperture della partita. Ritorna il n. di righe aggiornate.
+    ``feed``: event_id → payload (default: feed unico, solo col market reale)."""
+    fn = getattr(db, "positions_for_results", None)
+    if not callable(fn):
+        return 0
+    try:
+        rows = fn((now - timedelta(hours=RESULTS_LOOKBACK_H)).isoformat()) or []
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "results_read_failed", "err": str(ex)[:160]})
+        return 0
+    by_event: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        eid = str(r.get("event_id") or "")
+        if eid and not (r.get("meta") or {}).get("result_ft"):
+            by_event.setdefault(eid, []).append(r)
+    if not by_event:
+        return 0
+    if feed is None:
+        feed = lambda eid: _feed_state(market, eid)  # noqa: E731
+    updated = 0
+    for eid, trades in by_event.items():
+        try:
+            payload = feed(eid)
+            ht, ft = E.results_from_payload(payload, now=now)
+        except Exception as ex:  # noqa: BLE001 - un evento rotto non ferma gli altri
+            logger.debug("[omega] results feed KO %s: %s", eid, str(ex)[:100])
+            continue
+        if ht is None and ft is None:
+            continue
+        for tr in trades:
+            meta = dict(tr.get("meta") or {})
+            add = {}
+            if ht is not None and not meta.get("result_ht"):
+                add["result_ht"] = ht
+            if ft is not None and not meta.get("result_ft"):
+                add["result_ft"] = ft
+            if not add:
+                continue
+            try:
+                db.update_trade(int(tr["id"]), meta={**meta, **add})
+                updated += 1
+            except Exception as ex:  # noqa: BLE001
+                logger.warning("[omega] results su trade %s KO: %s", tr.get("id"), str(ex)[:120])
+    return updated
+
+
+# snapshot dell'obiettivo giornaliero: una scrittura per (giorno, valore) per processo
+_DAILY_GOAL_WRITTEN: dict[str, float] = {}
+
+
+def _snapshot_daily_goal(db, goal: float, now: datetime) -> None:
+    """Persiste l'obiettivo che vale OGGI (storico per giorno, §14). Best-effort."""
+    fn = getattr(db, "upsert_daily_goal", None)
+    if not callable(fn):
+        return
+    day = E.day_start_utc(now).astimezone(ZoneInfo(E.OPERATIONAL_TZ)).strftime("%Y-%m-%d")
+    if _DAILY_GOAL_WRITTEN.get(day) == float(goal):
+        return
+    try:
+        if fn(day, float(goal)):
+            _DAILY_GOAL_WRITTEN.clear()
+            _DAILY_GOAL_WRITTEN[day] = float(goal)
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[omega] snapshot obiettivo KO: %s", str(ex)[:100])
 
 
 # ---------------------------------------------------------------------------
@@ -3019,6 +3258,13 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "greenup_phase_failed", "err": str(ex)[:160]})
         n_greenup = 0
 
+    # 1-ter) RISULTATI REALI 1T/2T (§14) — SEMPRE: dal feed unico sulle
+    #    posizioni recenti (il settlement completa dal WINNER del mercato).
+    try:
+        track_event_results(db=db, market=market, now=now, feed=greenup_feed)
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"reason": "results_phase_failed", "err": str(ex)[:160]})
+
     # 2) MODALITÀ MANUALE — SEMPRE (indipendente dallo stato dell'automatico):
     #    esegue le richieste della UI (refresh eventi, carica mercati/quote, piazza).
     try:
@@ -3081,17 +3327,31 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
             aggregates=agg, market=market, db=db, now=now, score_lookup=score_lookup,
         )
 
-    # 4) heartbeat + stats per la dashboard (obiettivo/target = GIORNATA operativa;
-    #    realized_profit resta il cumulato storico per trasparenza)
+    # 4) heartbeat + stats per la dashboard (obiettivo/target = GIORNATA operativa
+    #    = partite di oggi, §14; realized_profit resta il cumulato storico)
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
+    _snapshot_daily_goal(db, goal, now)
     agg2 = db.aggregates(day_start)
     realized_today = float(agg2.get("realized_today", agg2.get("realized_profit", 0.0)))
     traded_today = int(agg2.get("matches_traded_today", agg2.get("matches_traded", 0)))
-    m_rem = matches_remaining(
-        events, db.traded_event_ids(), now=now,
-        entry_minute_max=params["ft_entry_max"] if str(params.get("engine", "legs")) == "legs" else params["entry_minute_max"],
-        max_events=params["max_events"], traded_count=traded_today,
-    )
+    if str(params.get("engine", "legs")) == "legs":
+        legs_fn = getattr(db, "traded_legs", None)
+        legs_done = set(legs_fn()) if callable(legs_fn) else {
+            (e, p) for e in db.traded_event_ids() for p in E.LEG_PHASES}
+        legs_left, m_rem = E.legs_remaining(
+            events, legs_done, now=now, ht_entry_max=params["ht_entry_max"],
+            ft_entry_max=params["ft_entry_max"], max_events=params["max_events"],
+            traded_count=traded_today, excluded_ids=mission_ids)
+        target_leg = round(E.dynamic_target(goal, realized_today, legs_left), 2)
+        target_match = round(target_leg * 2, 2)
+    else:
+        m_rem = matches_remaining(
+            events, db.traded_event_ids(), now=now, entry_minute_max=params["entry_minute_max"],
+            max_events=params["max_events"], traded_count=traded_today,
+        )
+        legs_left = m_rem
+        target_match = round(E.dynamic_target(goal, realized_today, m_rem), 2)
+        target_leg = target_match
     stats = {
         "events_total": len(events),
         "matches_traded": int(agg2.get("matches_traded", 0)),
@@ -3101,7 +3361,9 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         "realized_today": round(realized_today, 2),
         "open_liability": round(float(agg2.get("open_liability", 0.0)), 2),
         "matches_remaining": m_rem,
-        "target_match": round(E.dynamic_target(goal, realized_today, m_rem), 2),
+        "legs_remaining": legs_left,
+        "target_match": target_match,
+        "target_leg": target_leg,
         "goal": goal,
         "goal_pct": round(min(realized_today / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
         "last_cycle": now.isoformat(),
