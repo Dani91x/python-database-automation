@@ -41,6 +41,19 @@ logger = logging.getLogger("safe.execution")
 # sentinella: esito enqueue IGNOTO in LIVE (mai il place REST subito).
 ENQUEUE_UNKNOWN = -1
 
+# SIZE MINIMA reale di Betfair (M-31): sotto questa soglia l'exchange RIFIUTA
+# l'ordine. In live non si prova nemmeno: si dichiara l'errore (il sotto-minimo
+# ufficiale — place min @1.01 + sizeReduction — vive nella macchina 'submin' del
+# worker della coda, MAI nel place REST del bot). Override: SAFE_MIN_SIZE_LIVE.
+def _min_size_live() -> float:
+    import os
+
+    raw = os.environ.get("SAFE_MIN_SIZE_LIVE", "").strip() or "2"
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 2.0
+
 
 def _omega_service() -> Any:
     """omega_service (gate flumine) con import PIGRO e guardato: se manca, il
@@ -167,6 +180,15 @@ def place(
                             f"paper_fill:{gate_reason}")
 
     # LIVE — soldi veri: REST FOK generico (side esplicito).
+    # M-31: size sotto il minimo Betfair = rifiuto certo → errore PARLANTE
+    # invece di una chiamata buttata. SOLO sulle APERTURE: Betfair ACCETTA gli
+    # ordini sotto minimo che RIDUCONO una posizione (review C2: altrimenti un
+    # residuo da 1,40 € non si chiudeva mai e restava 'retrying' per sempre).
+    min_live = _min_size_live()
+    is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
+    if min_live > 0 and size < min_live - 1e-9 and not is_closing:
+        return PlaceOutcome("error", None, 0.0, None,
+                            f"size_sotto_minimo_betfair:{size:.2f}<{min_live:.2f}")
     try:
         res = market.place_order_live(
             market_id=str(market_id), selection_id=int(selection_id), price=price,
@@ -436,11 +458,78 @@ def hedge_state(trade: dict[str, Any],
     }
 
 
+def hedge_fraction(trade: dict[str, Any], st: dict[str, Any]) -> float:
+    """Frazione di apertura già coperta (0-1): ``hedged_size`` / size d'apertura."""
+    size = float(trade.get("size") or 0.0)
+    if size <= 0:
+        return 0.0
+    return round(min(1.0, max(0.0, float(st.get("hedged_size") or 0.0) / size)), 4)
+
+
+def remaining_liability(trade: dict[str, Any], st: dict[str, Any]) -> float:
+    """Rischio ANCORA VIVO dopo la copertura (M-26).
+
+    0 SOLO a copertura COMPLETA e confermata (la perdita eventuale è BLOCCATA,
+    non è più un rischio — errore H-06 di Omega). Se NESSUNA gamba di chiusura è
+    fillata — copertura ancora IN VOLO sulla coda, ``worst_case`` None — il
+    rischio è la liability PIENA: un ordine non abbinato non copre niente
+    (review C1: prima tornava 0 e il cap giornaliero si liberava con il 100 %
+    del rischio ancora a mercato)."""
+    if st.get("complete") and not st.get("blocked"):
+        return 0.0
+    worst = st.get("worst_case")
+    if worst is None:
+        return _liability_of_row(trade)
+    return round(max(0.0, -float(worst)), 2)
+
+
+def _liability_of_row(trade: dict[str, Any]) -> float:
+    try:
+        return max(0.0, float(trade.get("liability") or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def residual_liability(trade: dict[str, Any]) -> float:
+    """Liability da CONTARE come rischio aperto per una riga (M-26).
+
+    Senza copertura è la liability d'apertura; con ``meta.hedge`` (scritto da
+    ``apply_hedge_state``) è il residuo dopo la copertura. Funzione PURA:
+    la usano gli aggregati Python e la rispecchia la RPC SQL.
+
+    IGNOTO = PIENO (review C1/M10): chiavi mancanti o illeggibili, copertura in
+    volo, residuo non scritto → si conta la liability d'apertura. Mai 0 per
+    default: 0 significa "so con certezza che non c'è più rischio"."""
+    meta = trade.get("meta") or {}
+    hedge = meta.get("hedge")
+    if isinstance(hedge, dict) and hedge.get("remaining_liability") is not None:
+        try:
+            return max(0.0, float(hedge["remaining_liability"]))
+        except (TypeError, ValueError):
+            pass
+    if meta.get("hedged_size") is not None and meta.get("residual_size") is not None:
+        try:
+            if float(meta["residual_size"]) <= HEDGE_EPS \
+                    and not (meta.get("hedge_pending_ids") or []):
+                return 0.0
+            worst = meta.get("worst_case")
+            if worst is not None:
+                return max(0.0, -float(worst))
+        except (TypeError, ValueError):
+            pass
+    return _liability_of_row(trade)
+
+
 def apply_hedge_state(db, trade: dict[str, Any], closings: list[dict[str, Any]],
                       now: datetime) -> dict[str, Any]:
     """Scrive sull'apertura lo stato dell'hedge (meta) e la porta a 'hedged'
     SOLO quando il residuo è nullo e nessuna chiusura è in sospeso.
-    Idempotente: nessuna scrittura se non cambia nulla."""
+    Idempotente: nessuna scrittura se non cambia nulla.
+
+    Scrive anche ``meta.hedge`` = {fraction, remaining_liability, hedged_size,
+    residual_size, complete} (M-06: la copertura PARZIALE deve essere visibile e
+    chiudibile per il residuo) e ``meta.hedging`` = True mentre una gamba di
+    chiusura è in volo (L-01: la UI lo leggeva già, nessuno lo scriveva)."""
     st = hedge_state(trade, closings)
     meta = dict(trade.get("meta") or {})
     last_id = (st["pending_ids"] or st["filled_ids"] or [meta.get("closing_trade_id")])[-1]
@@ -456,6 +545,12 @@ def apply_hedge_state(db, trade: dict[str, Any], closings: list[dict[str, Any]],
         "closing_ids": list(st["filled_ids"]),
         "closing_trade_id": last_id,
         "closing_status": "pending" if st["blocked"] else ("open" if st["filled_ids"] else None),
+        "hedge": {"fraction": hedge_fraction(trade, st),
+                  "remaining_liability": remaining_liability(trade, st),
+                  "hedged_size": st["hedged_size"],
+                  "residual_size": st["residual_size"],
+                  "complete": bool(st["complete"])},
+        "hedging": bool(st["blocked"]),
     }
     status = str(trade.get("status") or "open")
     new_status = "hedged" if (status == "open" and st["complete"] and not st["blocked"]) else status
@@ -541,7 +636,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                 mode: Optional[str] = None, now: datetime,
                 params: Optional[dict[str, Any]] = None,
                 origin: str = "manual", table_prefix: str = "safe",
-                extra_row: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+                extra_row: Optional[dict[str, Any]] = None,
+                exit_kind: Optional[str] = None,
+                exit_reason: Optional[str] = None) -> dict[str, Any]:
     """Chiude a mercato la gamba ``trade`` piazzando l'ordine opposto.
 
     ``prices``: {'back','back_size','lay','lay_size','lay_ladder'?} della STESSA
@@ -590,7 +687,10 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         "price": plan.price,
         "size": plan.size,
         "liability": liability_of(side, plan.size, plan.price),
-        "commission": trade.get("commission"),
+        # L-02: la gamba di chiusura eredita l'aliquota del TRADE; se manca, il
+        # parametro corrente — mai NULL (la UI mostrerebbe la commissione sbagliata).
+        "commission": trade.get("commission") if trade.get("commission") is not None
+        else round(float(params.get("commission_pct", 5.0) or 0.0) / 100.0, 4),
         "status": "pending",
         "pnl": 0.0,
         "closes_trade_id": trade.get("id"),
@@ -600,6 +700,9 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                  "expected_if_win": plan.expected_if_win,
                  "expected_if_lose": plan.expected_if_lose},
     }
+    if exit_kind:
+        reserve["meta"]["exit_kind"] = str(exit_kind)
+        reserve["meta"]["exit_reason"] = str(exit_reason or "")
     reserve.update(extra_row or {})
     try:
         closing_id = db.insert_trade(reserve)
@@ -620,8 +723,12 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     )
     if out.status == "error":
         try:
+            # M-05/L-09: gamba in errore TERMINALE (settled_at + error_final) e
+            # meta CONSERVATO (prima veniva sovrascritto e si perdeva il piano).
             db.update_trade(closing_id, status="error",
-                            meta={"cashout": True, "reason": out.fill_note,
+                            settled_at=now.isoformat(),
+                            meta={**(reserve.get("meta") or {}), "cashout": True,
+                                  "reason": out.fill_note, "error_final": True,
                                   "closes_trade_id": trade.get("id")})
         except Exception:  # noqa: BLE001
             pass
@@ -660,9 +767,15 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                          "hedged_size": st["hedged_size"],
                          "residual_size": st["residual_size"],
                          "mode": mode, "status": out.status})
+    # L-11: ``locked_pnl`` SOLO a copertura completa. Su un parziale il valore
+    # pianificato non è bloccato (resta esposizione): va a ``planned_lock``.
     return {"ok": True, "trade_id": trade.get("id"), "closing_trade_id": closing_id,
             "side": side, "price": out.price, "size": out.size,
-            "locked_pnl": st["locked_pnl"] if st["locked_pnl"] is not None else lock,
+            "locked_pnl": st["locked_pnl"],
+            "planned_lock": lock,
+            "worst_case": st["worst_case"],
+            "hedge_fraction": hedge_fraction(trade, st),
+            "remaining_liability": remaining_liability(trade, st),
             "pending_fill": out.status == "pending",
             "hedged": trade.get("status") == "hedged",
             "hedged_size": st["hedged_size"], "residual_size": st["residual_size"],
@@ -735,15 +848,51 @@ def settle_pair(trade: dict[str, Any], closing: Optional[dict[str, Any]],
 _SETTLED = ("won", "lost", "void")
 
 
-def settle_row(db, tr: dict[str, Any], status: str, pnl: float, now: datetime) -> None:
-    db.update_trade(tr["id"], status=status, pnl=round(float(pnl), 2),
-                    settled_at=now.isoformat())
+def settle_row(db, tr: dict[str, Any], status: str, pnl: float, now: datetime,
+               position: Optional[dict[str, Any]] = None) -> None:
+    """Regola UNA riga. ``position`` (M-04) = {'id','pnl','result'} della
+    POSIZIONE (apertura + chiusure): finisce in ``meta.position_*`` e nel log,
+    così la UI può mostrare l'esito della posizione e non della singola gamba
+    (un green-up in utile ha l'apertura 'lost' e la posizione 'won')."""
+    fields: dict[str, Any] = {"status": status, "pnl": round(float(pnl), 2),
+                              "settled_at": now.isoformat()}
+    if position:
+        # M12: il meta si fonde sulla riga CORRENTE, non sullo snapshot in
+        # memoria (fra la lettura e qui possono averla riscritta apply_hedge_state
+        # o close_trade: si perderebbero hedge/exit_*).
+        cur = tr
+        fn = getattr(db, "get_trade", None)
+        if callable(fn):
+            try:
+                cur = fn(int(tr["id"])) or tr
+            except Exception:  # noqa: BLE001
+                cur = tr
+        meta = {**(cur.get("meta") or {}),
+                "position_id": position.get("id"),
+                "position_pnl": position.get("pnl"),
+                "position_result": position.get("result")}
+        fields["meta"] = meta
+        tr["meta"] = meta
+    db.update_trade(tr["id"], **fields)
     tr["status"] = status
     tr["pnl"] = round(float(pnl), 2)
     _log(db, "settle", {"trade_id": tr.get("id"), "event_id": tr.get("event_id"),
                         "status": status, "pnl": round(float(pnl), 2),
                         "closes_trade_id": tr.get("closes_trade_id"),
+                        "position_id": (position or {}).get("id"),
+                        "position_pnl": (position or {}).get("pnl"),
+                        "position_result": (position or {}).get("result"),
                         "selection": tr.get("selection_name") or tr.get("runner_name")})
+
+
+def position_result(total: float) -> str:
+    """'won' | 'lost' | 'flat' dal P&L TOTALE della posizione.
+
+    Vocabolario COMPLETO di ``meta.position_result`` (contratto UI):
+    ``won | lost | flat | void`` — 'void' lo scrive ``settle_position`` quando
+    il mercato è annullato, non passa da qui."""
+    t = round(float(total), 2)
+    return "won" if t > 0 else ("lost" if t < 0 else "flat")
 
 
 def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]],
@@ -766,20 +915,35 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
                                  "pending_closing_ids": [c.get("id") for c in legs
                                                          if str(c.get("status")) == "pending"]})
         return False
+    pos_id = trade.get("id")
     if snap.voided or snap.winner_selection_id is None:
+        pos = {"id": pos_id, "pnl": 0.0, "result": "void"}
         for c in legs:
             if str(c.get("status")) not in _SETTLED:
-                settle_row(db, c, "void", 0.0, now)
-        settle_row(db, trade, "void", 0.0, now)
+                settle_row(db, c, "void", 0.0, now, position=pos)
+        settle_row(db, trade, "void", 0.0, now, position=pos)
+        _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
+                                     "position_pnl": 0.0, "position_result": "void",
+                                     "legs": [c.get("id") for c in legs]})
         return True
     won = int(snap.winner_selection_id) == int(trade["selection_id"])
     if legs:
         pnl_open, pnl_closes = settle_group(trade, legs, won, commission)
+        # M-04: P&L della POSIZIONE = somma delle gambe, UN SOLO evento di
+        # regolazione ('settle_position'); i 'settle' per gamba restano come
+        # prova dell'ordine di scrittura (ripresa sicura), mai come toast.
+        total = round(float(pnl_open) + sum(float(p) for p in pnl_closes), 2)
+        pos = {"id": pos_id, "pnl": total, "result": position_result(total)}
         for c, p in zip(legs, pnl_closes):
             if str(c.get("status")) in _SETTLED:
                 continue  # già regolata da un ciclo interrotto: resta nel netto
-            settle_row(db, c, "won" if p >= 0 else "lost", p, now)
-        settle_row(db, trade, "won" if pnl_open >= 0 else "lost", pnl_open, now)
+            settle_row(db, c, "won" if p >= 0 else "lost", p, now, position=pos)
+        settle_row(db, trade, "won" if pnl_open >= 0 else "lost", pnl_open, now,
+                   position=pos)
+        _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
+                                     "position_pnl": total, "position_result": pos["result"],
+                                     "legs": [c.get("id") for c in legs],
+                                     "commission": commission})
         return True
     status, pnl = E.settle_pnl(
         our_selection_id=int(trade["selection_id"]),
@@ -788,7 +952,12 @@ def settle_position(*, db, trade: dict[str, Any], closings: list[dict[str, Any]]
         commission=commission, voided=snap.voided,
         side=str(trade.get("side") or "lay"),
     )
-    settle_row(db, trade, status, pnl, now)
+    settle_row(db, trade, status, pnl, now,
+               position={"id": pos_id, "pnl": round(float(pnl), 2),
+                         "result": position_result(pnl)})
+    _log(db, "settle_position", {"trade_id": pos_id, "event_id": trade.get("event_id"),
+                                 "position_pnl": round(float(pnl), 2),
+                                 "position_result": position_result(pnl), "legs": []})
     return True
 
 

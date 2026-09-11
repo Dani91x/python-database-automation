@@ -31,6 +31,36 @@ export interface ScanMediaFlags {
     viz: boolean | null;
 }
 
+/** Blocco GENERICO di un mercato nel payload dello scanner
+ *  (`scanner.build_market_block`): stato del mercato + elenco COMPLETO delle
+ *  selezioni con best back/lay e size abbinabile. È la forma UNICA usata da
+ *  Correct Score, Half Time Score e dai mercati a gol del motore opportunità
+ *  (`ou[]`, `btts`, `ht_result`): un solo formato da leggere per prezzare il
+ *  cash out di QUALSIASI posizione. */
+export interface ScanMarketBlock {
+    market_id: string | null;
+    status: string | null;
+    inplay?: boolean | null;
+    total_matched?: number | null;
+    selections?: ScanCsSelection[];
+    /** 'OVER_UNDER_25' · 'BOTH_TEAMS_TO_SCORE' · 'HALF_TIME' (solo blocchi opportunità) */
+    market_type?: string | null;
+    /** linea Over/Under (0.5 … 5.5) */
+    line?: number | null;
+    ts_ms?: number | null;
+    /** betDelay del marketDefinition (0 pre-match, ~5 s in-play) */
+    bet_delay?: number | null;
+    /**
+     * LINEA GIÀ DECISA dal punteggio (Over vinto / Under perso). Lo scanner la
+     * tiene nel feed SOLO perché una posizione di Mike ci sta ancora sopra
+     * (`for_mike`): per Safe Strategy non è un'opportunità né una quota "viva",
+     * e nemmeno un prezzo con cui chiudere — l'esito è già certo.
+     */
+    decided?: boolean | null;
+    /** true = blocco mantenuto nel feed per una posizione Mike, non per Safe */
+    for_mike?: boolean | null;
+}
+
 export interface CalcioScanPayload {
     media?: ScanMediaFlags | null;
     event_name: string | null;
@@ -72,6 +102,13 @@ export interface CalcioScanPayload {
         total_matched?: number | null;
         selections?: ScanCsSelection[];
     } | null;
+    /** MERCATI A GOL del motore opportunità (chiavi ADDITIVE: assenti nei
+     *  payload scritti da scanner precedenti). `ou` è ordinato per linea.
+     *  Sono i mercati su cui si piazza dalle Opportunità: senza leggerli la
+     *  tabella non sapeva prezzare il cash out (audit R1). */
+    ou?: ScanMarketBlock[] | null;
+    btts?: ScanMarketBlock | null;
+    ht_result?: ScanMarketBlock | null;
 }
 
 /** Selezione del Correct Score nel feed (id/nome/prezzi/size/stato runner). */
@@ -93,6 +130,76 @@ export function htSelection(p: CalcioScanPayload | null | undefined, selectionId
     const sels = p?.ht?.selections;
     if (!Array.isArray(sels)) return null;
     return sels.find((s) => Number(s.selection_id) === Number(selectionId)) ?? null;
+}
+
+/** TUTTI i blocchi di mercato presenti nel payload di un evento, in ordine
+ *  stabile: Correct Score, Half Time Score, le linee Over/Under, Gol/NoGol e
+ *  l'1X2 del primo tempo. Il tennis non ha blocchi (solo Match Odds). Serve a
+ *  prezzare una posizione su QUALSIASI mercato che il feed espone. */
+export function scanMarketBlocks(
+    p: CalcioScanPayload | TennisScanPayload | null | undefined,
+): ScanMarketBlock[] {
+    if (!p || !('cs' in p)) return [];
+    const c = p as CalcioScanPayload;
+    const out: ScanMarketBlock[] = [];
+    if (c.cs) out.push(c.cs as ScanMarketBlock);
+    if (c.ht) out.push(c.ht as ScanMarketBlock);
+    for (const b of (Array.isArray(c.ou) ? c.ou : [])) if (b) out.push(b);
+    if (c.btts) out.push(c.btts);
+    if (c.ht_result) out.push(c.ht_result);
+    return out;
+}
+
+/**
+ * true = blocco utilizzabile da Safe Strategy per prezzare/valutare qualcosa.
+ * Scarta SOLO le linee `decided`: l'esito è già aritmetico e la quota non è un
+ * prezzo di uscita reale.
+ * `for_mike` NON basta a scartare un blocco: il marcatore dice solo che la
+ * linea è tenuta nel feed anche perché una posizione Mike ci sta sopra — se la
+ * linea è ancora viva è un mercato di chiusura legittimo anche per Safe.
+ * Scartarla farebbe sparire il cash out su ogni partita tradata anche da Mike
+ * (è la stessa classe di bug dell'audit R1).
+ */
+export function isUsableBlock(b: ScanMarketBlock | null | undefined): boolean {
+    if (!b) return false;
+    if (b.decided === true) return false;
+    return true;
+}
+
+/** I soli blocchi utilizzabili da Safe (scarta le linee già DECISE). */
+export function usableMarketBlocks(
+    p: CalcioScanPayload | TennisScanPayload | null | undefined,
+): ScanMarketBlock[] {
+    return scanMarketBlocks(p).filter(isUsableBlock);
+}
+
+/** Blocco del feed con quel `market_id` (null = mercato non nel feed). */
+export function scanBlockByMarketId(
+    p: CalcioScanPayload | TennisScanPayload | null | undefined,
+    marketId: string | null | undefined,
+): ScanMarketBlock | null {
+    if (!marketId) return null;
+    const want = String(marketId);
+    return scanMarketBlocks(p).find((b) => String(b.market_id ?? '') === want) ?? null;
+}
+
+/** Selezione dentro un blocco: per selection_id, altrimenti per NOME. */
+export function blockSelection(
+    block: ScanMarketBlock | null | undefined,
+    by: { selectionId?: number | null; name?: string | null },
+): ScanCsSelection | null {
+    const sels = block?.selections;
+    if (!Array.isArray(sels)) return null;
+    if (by.selectionId != null) {
+        const hit = sels.find((s) => Number(s.selection_id) === Number(by.selectionId));
+        if (hit) return hit;
+    }
+    if (by.name != null && String(by.name).trim() !== '') {
+        const n = String(by.name).trim().toLowerCase();
+        const hit = sels.find((s) => String(s.name ?? '').trim().toLowerCase() === n);
+        if (hit) return hit;
+    }
+    return null;
 }
 
 export interface TennisScanPayload {

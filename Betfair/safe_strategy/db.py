@@ -98,3 +98,58 @@ def upsert_status(payload: Dict[str, Any]) -> None:
             _warn_missing_table(e)
         else:
             logger.warning("[safe-scan] upsert status KO: %s", str(e)[:160])
+
+
+_MIKE_TERMINAL_STATES = ("SETTLED", "ERROR", "SKIPPED")
+
+
+_MIKE_IDLE_STATES = ("WATCH", "IDLE_LIVE")
+# stati delle gambe che rappresentano un IMPEGNO reale (ordine vivo o posizione)
+_MIKE_LIVE_LEG_STATUS = ("pending", "pending_reconcile", "open")
+
+
+def _mike_has_exposure(row: dict) -> bool:
+    """True se la partita ha DAVVERO qualcosa da proteggere: uno stato operativo
+    (non WATCH/IDLE_LIVE) oppure almeno una gamba con un ordine vivo o una
+    posizione abbinata. H4 (review): esentare anche le partite in sola
+    osservazione regalava le quote di ~10 mercati a testa a partite senza un
+    euro sopra."""
+    state = str(row.get("state") or "")
+    if state in _MIKE_TERMINAL_STATES:
+        return False
+    for leg in row.get("positions") or []:
+        if not isinstance(leg, dict):
+            continue
+        if str(leg.get("status") or "") in _MIKE_LIVE_LEG_STATUS and not leg.get("archived"):
+            return True
+        try:
+            if float(leg.get("matched") or 0.0) > 0 and not leg.get("archived"):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return state not in _MIKE_IDLE_STATES
+
+
+def list_mike_followed_event_ids() -> Optional[List[str]]:
+    """event_id delle partite di Mike con ESPOSIZIONE (ordini vivi o posizione).
+
+    Servono allo scanner per esentarle dal tetto dei 20 eventi del motore
+    opportunità (audit 11/09 C1): una posizione aperta senza le sue linee O/U nel
+    feed è senza copertura, senza cash out e senza uscita. Le partite in sola
+    osservazione (WATCH/IDLE_LIVE senza gambe) NON sono esenti: non hanno nulla
+    da proteggere e peserebbero sul pool stream per niente (H4).
+    None se la lettura fallisce (tabella assente = Mike mai installato)."""
+    try:
+        sb = get_supabase_client()
+        res = (
+            sb.table("mike_events")
+            .select("event_id,state,positions")
+            .not_.in_("state", list(_MIKE_TERMINAL_STATES))
+            .execute()
+        )
+        return [str(r["event_id"]) for r in (getattr(res, "data", None) or [])
+                if r.get("event_id") and _mike_has_exposure(r)]
+    except Exception as e:  # noqa: BLE001 - best effort, mai fatale
+        if not _is_missing_table(e):
+            logger.warning("[safe-scan] lettura mike_events KO: %s", str(e)[:160])
+        return None

@@ -248,6 +248,18 @@ export function scalperSimulated(m: Pick<MissionRow, 'scalper'>): number {
     return m.scalper && m.scalper.dry_run !== false ? toNum(m.scalper.pnl_locked) : 0;
 }
 
+/**
+ * M-08 — UNA sola formula per le barre di avanzamento (giornata e missione):
+ * percentuale CLAMPATA 0-100 del realizzato sull'obiettivo. Prima ogni barra
+ * calcolava la sua e due barre affiancate potevano raccontare due storie.
+ */
+export function goalProgressPct(realized: number | null | undefined, goal: number | null | undefined): number {
+    const r = Number(realized);
+    const g = Number(goal);
+    if (!Number.isFinite(r) || !Number.isFinite(g) || g <= 0) return 0;
+    return Math.max(0, Math.min(100, (r / g) * 100));
+}
+
 export function missionRealized(m: Pick<MissionRow, 'legs' | 'scalper'>): number {
     return missionLegsRealized(m) + scalperRealized(m);
 }

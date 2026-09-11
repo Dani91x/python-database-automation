@@ -224,6 +224,11 @@ class Scanner:
         # modello opportunità (puro): atlante hazard caricato una volta sola
         self._opp_model: Optional[Any] = None
         self._opp_atlas_loaded = False
+        # partite SEGUITE da Mike (mike_events non terminali): esenti dal tetto
+        # dei 20 eventi e con le linee 3.5/4.5 sempre vive (audit 11/09 C1/C2).
+        # Cache di 10 s: una query leggera, mai nel percorso caldo dello stream.
+        self._mike_followed_ids: set = set()
+        self._mike_followed_ts: float = -1e9
 
     # ------------------------------------------------------------- catalogo MO
     def refresh_catalogue(self, sport: str) -> None:
@@ -332,18 +337,32 @@ class Scanner:
         loro, mai un MATCH_ODDS o un Correct Score. Solo le linee ancora indecise.
         """
         out: List["tuple[tuple, str]"] = []
-        for eid in self.opp_candidates():
+        followed = self._mike_followed()
+        cands = self.opp_candidates()
+        # H4: gli eventi che entrano SOLO perché seguiti da Mike portano nel pool
+        # le due linee 3.5/4.5 e NIENTE altro (gli altri ~8 mercati a gol di
+        # quell'evento restano soggetti al tetto normale).
+        base = set(scanner.select_opp_candidates(cands, followed=()))
+        for eid in cands:
             ev = self.events.get(eid) or {}
             if ev.get("mo_status") == "CLOSED":
                 continue
             meta = self.sports["calcio"].metas.get(eid) or {}
-            key = scanner.opp_rank_key(ev.get("minute"), meta.get("open_date"))
+            is_mike = str(eid) in followed
+            only_mike = is_mike and eid not in base
             for mid, mk in (self.opp_markets.get(eid) or {}).items():
+                mtype = str(mk.get("market_type") or "").upper()
+                mike_line = is_mike and mtype in scanner.MIKE_OU_MARKET_TYPES
+                if only_mike and not mike_line:
+                    continue
                 if scanner.is_opp_market_live(
                     mk.get("market_type"), mk.get("line"), ev.get("minute"),
-                    ev.get("score_home"), ev.get("score_away"),
+                    ev.get("score_home"), ev.get("score_away"), mike=is_mike,
                 ):
-                    out.append((key, mid))
+                    # H5: le linee di Mike hanno priorità sopra gli altri mercati
+                    # opportunità (mai troncate dallo shard dello stream)
+                    out.append((scanner.opp_rank_key(ev.get("minute"), meta.get("open_date"),
+                                                     mike=mike_line), mid))
         # ramo pre-KO O/U (Mike): SOLO le due linee, tier 2 con minuto 0 → dopo
         # ogni mercato in-play; se il pool è pieno escono per primi loro
         for eid in self.pre_ko_ou_candidates(now):
@@ -687,19 +706,44 @@ class Scanner:
         return [eid for eid, ev in self.events.items()
                 if ev.get("sport") == "calcio" and ev.get("inplay") and scanner.is_ht_candidate(ev.get("minute"))]
 
+    _MIKE_FOLLOWED_TTL_S = 10.0
+
+    def _mike_followed(self, now_mono: Optional[float] = None) -> set:
+        """event_id delle partite seguite da Mike (cache 10 s). In caso di
+        errore di lettura resta valida l'ultima lista buona: meglio tenere una
+        linea in più che togliere le quote a una posizione aperta."""
+        if self.dry:
+            # collaudo/dry: nessuna lettura DB (nessuna posizione Mike può
+            # dipendere da uno scanner che non pubblica)
+            return self._mike_followed_ids
+        t = time.monotonic() if now_mono is None else now_mono
+        if t - self._mike_followed_ts >= self._MIKE_FOLLOWED_TTL_S:
+            self._mike_followed_ts = t
+            ids = scan_db.list_mike_followed_event_ids()
+            if ids is not None:
+                self._mike_followed_ids = {str(e) for e in ids}
+        return self._mike_followed_ids
+
     def opp_candidates(self) -> List[str]:
         """Eventi calcio in-play (dal 1') per cui tenere sotto quote i mercati a
         gol del motore opportunità, al massimo ``scanner.OPP_MAX_EVENTS``: i posti
-        vanno ai minuti più avanzati (probabilità estreme = opportunità vere)."""
+        vanno ai minuti più avanzati (probabilità estreme = opportunità vere).
+        Le partite seguite da Mike sono ESENTI dal tetto (audit C1) e sono
+        candidate anche nei primi istanti di gioco (H7): ``is_opp_candidate``
+        chiede ``minute >= 1`` e il ramo pre-KO si spegne appena l'evento va
+        in-play → per qualche minuto una posizione aperta restava senza NESSUNA
+        linea O/U nel feed e il cash out rispondeva "feed assente"."""
+        followed = self._mike_followed()
         cands = [
             (-(ev.get("minute") or 0), eid)
             for eid, ev in self.events.items()
             if ev.get("sport") == "calcio"
             and ev.get("mo_status") != "CLOSED"
-            and scanner.is_opp_candidate(ev.get("inplay"), ev.get("minute"))
+            and (scanner.is_opp_candidate(ev.get("inplay"), ev.get("minute"))
+                 or (str(eid) in followed and ev.get("inplay")))
         ]
         cands.sort()
-        return [eid for _, eid in cands[: scanner.OPP_MAX_EVENTS]]
+        return scanner.select_opp_candidates([eid for _, eid in cands], followed=followed)
 
     def refresh_opp_catalogue(self, candidates: List[str],
                               market_types: Optional["tuple[str, ...]"] = None) -> None:
@@ -817,13 +861,29 @@ class Scanner:
         if not isinstance(blocks, dict):
             return {}
         pre_ko = self._is_pre_ko_ou_event(eid, ev, now)
+        mike = bool(eid) and str(eid) in self._mike_followed()
         live = {
             mid: blk for mid, blk in blocks.items()
             if scanner.is_opp_market_live(
                 blk.get("market_type"), blk.get("line"), ev.get("minute"),
-                ev.get("score_home"), ev.get("score_away"), pre_ko=pre_ko,
+                ev.get("score_home"), ev.get("score_away"), pre_ko=pre_ko, mike=mike,
             )
         }
+        # H6 — una linea tenuta viva SOLO per Mike può essere già DECISA: va
+        # marcata, altrimenti il motore opportunità la prezzerebbe come se fosse
+        # in gioco (e con max_prob_lay=0 il bot Safe potrebbe layarla).
+        for mid, blk in live.items():
+            if not isinstance(blk, dict):
+                continue
+            decided = scanner.ou_block_decided(blk, ev.get("score_home"), ev.get("score_away"))
+            if decided:
+                blk["decided"] = True
+            elif "decided" in blk:
+                blk.pop("decided", None)
+            if mike:
+                blk["for_mike"] = True
+            elif "for_mike" in blk:
+                blk.pop("for_mike", None)
         if len(live) != len(blocks):
             ev["opp"] = live
         return live

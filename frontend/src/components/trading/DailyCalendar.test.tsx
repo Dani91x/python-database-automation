@@ -4,7 +4,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { DailyCalendar, intensityClass } from './DailyCalendar';
+import { DailyCalendar, intensityClass, goalMarkOf } from './DailyCalendar';
 import type { DailyRow } from '@/lib/dailyHistory';
 
 function row(day: string, pnl: number, over: Partial<DailyRow> = {}): DailyRow {
@@ -12,7 +12,7 @@ function row(day: string, pnl: number, over: Partial<DailyRow> = {}): DailyRow {
         day, pnl_realized: pnl, trades_placed: 3, settled: 2, won: 1, lost: 1, void: 0, hedged_closed: 0,
         win_rate: 0.5, avg_win: null, avg_loss: null, best_trade: null, worst_trade: null, max_liability: null,
         gross_profit: pnl > 0 ? pnl : 0, gross_loss: pnl < 0 ? -pnl : 0, profit_factor: null, commission_paid: null,
-        goal: null, goal_pct: null, by_strategy: {}, by_sport: {}, by_origin: {}, first_trade_at: null, last_trade_at: null,
+        goal: null, goal_pct: null, goal_snapshot: true, by_strategy: {}, by_sport: {}, by_origin: {}, first_trade_at: null, last_trade_at: null,
         ...over,
     };
 }
@@ -39,13 +39,13 @@ describe('DailyCalendar', () => {
         const grid = screen.getByRole('grid');
         expect(within(grid).getAllByRole('columnheader')).toHaveLength(7);
         const c3 = screen.getByRole('gridcell', { name: / 3 settembre/ });
-        expect(c3).toHaveTextContent('+€12.50');
+        expect(c3).toHaveTextContent('+12,50 €');
         expect(c3).toHaveTextContent('3 trade');
         const c10 = screen.getByRole('gridcell', { name: /10 settembre/ });
-        expect(c10).toHaveTextContent('−€4.00');
+        expect(c10).toHaveTextContent('−4,00 €');
         expect(c10).toHaveAttribute('aria-selected', 'true');
         expect(c10).toHaveAttribute('aria-current', 'date');
-        expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('+€308.50');
+        expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('+308,50 €');
         expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('3 giornate');
     });
 
@@ -122,5 +122,36 @@ describe('DailyCalendar', () => {
         expect(intensityClass(10, 100)).toMatch(/emerald-500\/10/);
         expect(intensityClass(-100, 100)).toMatch(/red-500\/55/);
         expect(intensityClass(-50, 100)).toMatch(/red-500\/35/);
+    });
+});
+
+// ============================================ audit 11/09: H-10 goal_snapshot
+describe('DailyCalendar — obiettivo STORICIZZATO (H-10)', () => {
+    it('con lo snapshot: ●/○ e giudizio nel nome accessibile', () => {
+        renderCal({ rows: [row('2026-09-03', 300, { goal: 250, goal_snapshot: true })], showGoal: true });
+        expect(screen.getByTestId('goal-hit')).toBeInTheDocument();
+        expect(screen.getByRole('gridcell', { name: /3 settembre.*obiettivo centrato/ })).toBeInTheDocument();
+    });
+
+    it('senza snapshot: nessun ●/○, la cella dice "obiettivo non storicizzato"', () => {
+        renderCal({ rows: [row('2026-09-03', 300, { goal: 250, goal_snapshot: false })], showGoal: true });
+        expect(screen.queryByTestId('goal-hit')).toBeNull();
+        expect(screen.queryByTestId('goal-miss')).toBeNull();
+        expect(screen.getByTestId('goal-not-historized')).toBeInTheDocument();
+        expect(screen.getByRole('gridcell', { name: /3 settembre.*obiettivo non storicizzato/ })).toBeInTheDocument();
+    });
+
+    it('goalMarkOf: puro e difensivo', () => {
+        expect(goalMarkOf(null, true)).toBeNull();
+        expect(goalMarkOf(row('2026-09-03', 300, { goal: 0, goal_snapshot: true }), true)).toBeNull();
+        expect(goalMarkOf(row('2026-09-03', 300, { goal: 250, goal_snapshot: false }), true)).toBeNull();
+        expect(goalMarkOf(row('2026-09-03', 300, { goal: 250, goal_snapshot: true }), false)).toBeNull();
+        expect(goalMarkOf(row('2026-09-03', 300, { goal: 250, goal_snapshot: true }), true)).toBe(true);
+        expect(goalMarkOf(row('2026-09-03', 100, { goal: 250, goal_snapshot: true }), true)).toBe(false);
+    });
+
+    it('formato monetario italiano nelle celle e nel totale del mese', () => {
+        renderCal({ rows: [row('2026-09-03', 12.5, { goal: 250, goal_snapshot: true })] });
+        expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('+12,50 €');
     });
 });

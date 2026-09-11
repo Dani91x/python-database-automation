@@ -346,35 +346,40 @@ def test_fill_parziale_sotto_min_stake_contabilizzato_comunque():
     assert t["meta"]["below_min_stake"] is True
 
 
-def test_richiesta_in_errore_fallback_conferma_riserva():
-    # coda in errore (es. mercato non sottoscritto) → fallback dichiarato:
-    # conferma coi dati della riserva (equivalente al fill legacy), mai bloccati
+def test_richiesta_in_errore_non_e_un_fill():
+    # AUDIT 11/09 (H-12): coda in errore (es. mercato non sottoscritto) = NESSUN
+    # ordine simulato attivo → NO-FILL. Prima si confermava un fill PIENO al
+    # prezzo della riserva (paper ≠ live, P&L regalato "a risultato noto").
     db = FakeQueueDB(_control())
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     t, rid = _placed_flumine(db, market)
     db.queue[rid]["status"] = "error"
     db.queue[rid]["error"] = "market m-1.100 non sottoscritto nel runner"
-    reserved_size, reserved_price = t["size"], t["price"]
     S.run_once(market=market, db=db, now=NOW + timedelta(seconds=20))
     t = db.trades[0]
-    assert t["status"] == "open"
-    assert t["size"] == reserved_size and t["price"] == reserved_price
-    assert t["meta"]["fill"] == "paper_fill_fallback"
-    assert any(k == "paper_fill_fallback" for k, _ in db.activity)
+    assert t["status"] == "error"
+    assert t["meta"]["reason"].startswith("flumine_request_error")
+    assert t["meta"]["error_final"] is True and t["meta"]["leg_failed"] is True
+    # riga TERMINALE (M-05) ma NON regolata (review L5): l'istante sta nel meta
+    assert t["meta"]["error_at"] and t.get("settled_at") in (None, "")
+    reasons = [p.get("reason") for k, p in db.activity if k == "flumine_no_fill"]
+    assert reasons and reasons[0].startswith("request_error")
 
 
-def test_runner_muto_oltre_hard_deadline_fallback():
+def test_runner_muto_oltre_hard_deadline_no_fill():
     # done ma NESSUNO specchio (runner morto prima di specchiare) e nessun bet_id
-    # → oltre TTL+grace si conferma la riserva col fallback dichiarato
+    # → oltre TTL+grace l'esito non è conoscibile: NO-FILL (AUDIT 11/09 H-12),
+    # mai un fill inventato ai dati della riserva 100 s dopo la decisione
     db = FakeQueueDB(_control())
     market = FakeMarket([_event()], _cs(), _open_snapshot())
     t, rid = _placed_flumine(db, market)                # nessuna riga specchio
     S.run_once(market=market, db=db,
                now=NOW + timedelta(seconds=45 + S.FLUMINE_CANCEL_GRACE_S + 5))
     t = db.trades[0]
-    assert t["status"] == "open"
-    assert t["meta"]["fill"] == "paper_fill_fallback"
-    assert t["meta"]["fallback_reason"] == "no_mirror_after_ttl"
+    assert t["status"] == "error"
+    assert t["meta"]["reason"] == "flumine_no_mirror_after_ttl"
+    reasons = [p.get("reason") for k, p in db.activity if k == "flumine_no_fill"]
+    assert "no_mirror_after_ttl" in reasons
 
 
 def test_cancel_in_errore_risolve_col_matched():
@@ -515,7 +520,9 @@ def test_recovery_orfano_adotta_request_per_client_ref():
     assert tr["status"] == "pending"                   # risolto al giro dopo
 
 
-def test_recovery_orfano_senza_richiesta_fa_fallback():
+def test_recovery_orfano_senza_richiesta_no_fill():
+    # AUDIT 11/09 (H-12): la richiesta non è MAI stata creata → nessun ordine
+    # simulato è esistito → NO-FILL (prima: fill pieno al prezzo della riserva)
     db = FakeQueueDB(_control())
     tid = db.insert_trade({"event_id": "E9", "market_id": "1.9", "selection_id": 1,
                            "side": "lay", "mode": "paper", "status": "pending",
@@ -523,9 +530,9 @@ def test_recovery_orfano_senza_richiesta_fa_fallback():
                            "meta": {"flumine_client_ref": f"omega-t999"}})
     S.poll_flumine_paper(db=db, params={}, now=NOW)
     tr = next(t for t in db.trades if t["id"] == tid)
-    assert tr["status"] == "open"                      # fallback legacy dichiarato
-    assert tr["meta"]["fill"] == "paper_fill_fallback"
-    assert tr["meta"]["fallback_reason"] == "request_missing"
+    assert tr["status"] == "error"
+    assert tr["meta"]["reason"] == "flumine_request_missing"
+    assert tr["meta"]["error_final"] is True
 
 
 def test_f4_eta_non_calcolabile_risolve_subito_mai_zombie():

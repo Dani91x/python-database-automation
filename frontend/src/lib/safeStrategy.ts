@@ -20,6 +20,7 @@ import type { LiveNowRow, LiveNowSelection } from '@/lib/live';
 import type { BetfairOdds } from '@/lib/betfair';
 import type { TennisLiveNowRow, TennisScoreState } from '@/lib/tennis';
 import type { CalcioScanPayload, ScanOddsPair, TennisScanPayload } from '@/lib/safeStrategyScan';
+import { fmtMoney, fmtOdds as fmtOddsFmt } from '@/lib/format';
 
 // ---------------------------------------------------------------- tipi base
 export type Sport = 'calcio' | 'tennis';
@@ -289,17 +290,20 @@ function inRange(v: number, min: number, max: number): boolean {
     return v >= min && v <= max;
 }
 
+// Formati: UN SOLO formato in tutta la sezione (DESIGN_SYSTEM.md §2) — quota con
+// la VIRGOLA decimale, denaro con il simbolo DOPO il numero. Il valore assente
+// della checklist resta "n/d" (convenzione del radar, coerente su tutti i check).
 function fmtOdds(v: number | null | undefined): string {
-    return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : 'n/d';
+    return typeof v === 'number' && Number.isFinite(v) ? fmtOddsFmt(v) : 'n/d';
 }
 
-/** importo EUR abbinabile, compatto (es. "€152", "€41.26"); null → assente. */
+/** importo EUR abbinabile, compatto (es. "152 €", "41,26 €"); null → assente. */
 export function fmtEur(v: number | null | undefined): string | null {
     if (typeof v !== 'number' || !Number.isFinite(v)) return null;
-    return `€${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}`;
+    return fmtMoney(v, { decimals: Number.isInteger(v) ? 0 : 2 });
 }
 
-/** quota + size abbinabile per la checklist (es. "8.40 · €120 abbinabili"). */
+/** quota + size abbinabile per la checklist (es. "8,40 · 120 € abbinabili"). */
 function fmtOddsWithSize(odds: number | null | undefined, size: number | null | undefined): string {
     const eur = fmtEur(size);
     return eur === null ? fmtOdds(odds) : `${fmtOdds(odds)} · ${eur} abbinabili`;

@@ -22,6 +22,7 @@ import {
     subscribeOpportunities, buildEquitySeries, detectSettlements, tradeExposure,
     mergeBotParams, oppScore, SAFE_BOT_DEFAULTS, safeTradeBook, resolveSignalPlacement, cappedFrom,
     cashoutInFlight, feedFreshness, staleReason, sameStrategyParams, strategyParamsOf,
+    FEED_ROW_STALE_MS, FEED_HARD_MAX_MS,
     oppKind, oppKindCounts, comboLegStakes, comboLock, anomalyRefLabel, comboIdempotencyPrefix,
     tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind, SAFE_RISK_DEFAULTS,
     groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
@@ -80,7 +81,10 @@ describe('safeBot RPC', () => {
     it('fetchSafeState normalizza una risposta vuota', async () => {
         rpc.mockResolvedValue({ data: null, error: null });
         const st = await fetchSafeState();
-        expect(st).toEqual({ control: null, trades: [], aggregates: null });
+        expect(st).toEqual({
+            control: null, trades: [], aggregates: null,
+            activity: [], params_effective: null, operating_day: null,
+        });
     });
 
     it('fetchSafeTrades passa il limite', async () => {
@@ -126,7 +130,7 @@ describe('safeBot letture su tabella', () => {
 });
 
 describe('safeBot realtime', () => {
-    it('subscribeSafeBot usa UN canale su control+trades+requests', () => {
+    it('subscribeSafeBot usa UN canale su control+trades+requests+activity', () => {
         const tables: string[] = [];
         const ch: Record<string, unknown> = {};
         ch.on = vi.fn((_ev: string, cfg: { table: string }) => { tables.push(cfg.table); return ch; });
@@ -136,6 +140,8 @@ describe('safeBot realtime', () => {
         expect(channel).toHaveBeenCalledWith('safe-bot');
         expect(tables).toEqual([
             'safe_strategy_control', 'safe_strategy_trades', 'safe_strategy_requests',
+            // H-16: anche il log del servizio arriva in realtime
+            'safe_strategy_activity',
         ]);
         off();
         expect(removeChannel).toHaveBeenCalledWith(ch);
@@ -176,8 +182,8 @@ describe('safeBot realtime', () => {
         expect(p.kinds).toEqual({ model: 1, anomaly: 0, combo: 0 });
         // idempotente e tollerante: già normalizzata / senza opportunità / payload nullo
         expect(normalizeOppRow(row)).toEqual(row);
-        expect((normalizeOppRow({ payload: { minute: 3 } }).payload as { opps: unknown[] }).opps).toEqual([]);
-        expect((normalizeOppRow({ payload: null }).payload as { opps: unknown[] }).opps).toEqual([]);
+        expect((normalizeOppRow({ payload: { minute: 3 } }).payload as unknown as { opps: unknown[] }).opps).toEqual([]);
+        expect((normalizeOppRow({ payload: null }).payload as unknown as { opps: unknown[] }).opps).toEqual([]);
     });
 
     it('fetchOpportunities normalizza le righe lette dalla tabella', async () => {
@@ -341,28 +347,28 @@ describe('safeTradeBook', () => {
     it('Correct Score: prende la selezione per id', () => {
         expect(safeTradeBook(
             { market_type: 'CORRECT_SCORE', selection_id: 77, selection_name: null }, PAYLOAD,
-        )).toEqual({ back: 38, lay: 42 });
+        )).toMatchObject({ back: 38, lay: 42, source: 'cs' });
     });
 
     it('Half Time Score: legge il ramo ht del feed', () => {
         expect(safeTradeBook(
             { market_type: 'HALF_TIME_SCORE', selection_id: 55, selection_name: null }, PAYLOAD,
-        )).toEqual({ back: 3, lay: 3.1 });
+        )).toMatchObject({ back: 3, lay: 3.1, source: 'ht' });
     });
 
     it('Match Odds calcio: per nome o per selection_id del lato', () => {
         expect(safeTradeBook(
             { market_type: 'MATCH_ODDS', selection_id: 11, selection_name: 'Roma' }, PAYLOAD,
-        )).toEqual({ back: 1.3, lay: 1.32 });
+        )).toMatchObject({ back: 1.3, lay: 1.32, source: 'match_odds' });
         expect(safeTradeBook(
             { market_type: 'MATCH_ODDS', selection_id: 13, selection_name: null }, PAYLOAD,
-        )).toEqual({ back: 5, lay: 5.2 });
+        )).toMatchObject({ back: 5, lay: 5.2 });
     });
 
     it('Match Odds tennis: legge odds.p1/p2', () => {
         expect(safeTradeBook(
             { market_type: 'MATCH_ODDS', selection_id: 22, selection_name: 'Alcaraz' }, TENNIS,
-        )).toEqual({ back: 18, lay: 20 });
+        )).toMatchObject({ back: 18, lay: 20, source: 'match_odds' });
     });
 
     it('mercato sconosciuto o feed assente -> null', () => {
@@ -447,9 +453,13 @@ describe('cashoutInFlight', () => {
         expect(cashoutInFlight(9, [req({ payload: { trade_id: 10 } })], [])).toBe(false);
     });
 
-    it('gamba di chiusura gia scritta (non in errore) -> in volo; in errore -> libero', () => {
+    // audit C-02: "in volo" = chiusura NON ancora confermata. Una chiusura
+    // confermata (open/hedged/...) NON blocca il bottone: dopo una chiusura
+    // PARZIALE il residuo deve restare chiudibile.
+    it('chiusura pending -> in volo; chiusura confermata o in errore -> libero (C-02)', () => {
         expect(cashoutInFlight(9, [], [trade({ id: 10, closes_trade_id: 9, status: 'pending' })])).toBe(true);
-        expect(cashoutInFlight(9, [], [trade({ id: 10, closes_trade_id: 9, status: 'open' })])).toBe(true);
+        expect(cashoutInFlight(9, [], [trade({ id: 10, closes_trade_id: 9, status: 'open' })])).toBe(false);
+        expect(cashoutInFlight(9, [], [trade({ id: 10, closes_trade_id: 9, status: 'hedged' })])).toBe(false);
         expect(cashoutInFlight(9, [], [trade({ id: 10, closes_trade_id: 9, status: 'error' })])).toBe(false);
     });
 
@@ -512,7 +522,7 @@ describe('feedFreshness', () => {
 
     it('riga fresca e scanner vivo -> non stantio', () => {
         const f = feedFreshness(ago(5), ago(3), now);
-        expect(f).toEqual({ ageSec: 5, scannerAlive: true, stale: false });
+        expect(f).toEqual({ ageSec: 5, scannerAlive: true, hardOld: false, stale: false });
         expect(staleReason(f)).toBeUndefined();
     });
 
@@ -524,7 +534,7 @@ describe('feedFreshness', () => {
 
     it('riga vecchia (>20s) E scanner morto (>45s) -> stantio, bottoni spenti', () => {
         const f = feedFreshness(ago(31), ago(60), now);
-        expect(f).toEqual({ ageSec: 31, scannerAlive: false, stale: true });
+        expect(f).toEqual({ ageSec: 31, scannerAlive: false, hardOld: false, stale: true });
         expect(staleReason(f)).toBe('quote non aggiornate (31s)');
     });
 
@@ -533,9 +543,34 @@ describe('feedFreshness', () => {
     });
 
     it('senza timestamp di riga: stantio solo se lo scanner e morto', () => {
-        expect(feedFreshness(null, ago(3), now)).toEqual({ ageSec: null, scannerAlive: true, stale: false });
-        expect(feedFreshness(null, null, now)).toEqual({ ageSec: null, scannerAlive: false, stale: true });
+        expect(feedFreshness(null, ago(3), now)).toEqual({ ageSec: null, scannerAlive: true, hardOld: false, stale: false });
+        expect(feedFreshness(null, null, now)).toEqual({ ageSec: null, scannerAlive: false, hardOld: false, stale: true });
         expect(staleReason(feedFreshness(null, null, now))).toBe('quote non aggiornate (n/d)');
+    });
+
+    // ----------------------------------------------------------- M-24
+    // Le soglie DEVONO essere le stesse del servizio: se qui cambia un numero
+    // va cambiato anche Betfair/safe_strategy/exits.py (FEED_FRESH_S /
+    // FEED_HARD_MAX_S) - c'e' un test gemello in pytest.
+    it('soglie di freschezza allineate al servizio (exits.py)', () => {
+        expect(FEED_ROW_STALE_MS).toBe(20_000);      // exits.FEED_FRESH_S = 20.0
+        expect(FEED_HARD_MAX_MS).toBe(120_000);      // exits.FEED_HARD_MAX_S = 120.0
+    });
+
+    it('oltre il TETTO DURO (120s) la riga e stantia ANCHE con lo scanner vivo', () => {
+        // prima: scanner vivo -> stale=false, e la tabella mostrava come "prezzo
+        // di ora" una quota di dieci minuti prima. Il servizio invece rifiuta.
+        const f = feedFreshness(ago(300), ago(2), now);
+        expect(f.scannerAlive).toBe(true);
+        expect(f.hardOld).toBe(true);
+        expect(f.stale).toBe(true);
+        expect(staleReason(f)).toMatch(/troppo vecchie \(300s\)/);
+        expect(staleReason(f)).toMatch(/120s/);
+    });
+
+    it('esattamente al tetto duro non e ancora stantia (confine incluso)', () => {
+        expect(feedFreshness(ago(120), ago(2), now).hardOld).toBe(false);
+        expect(feedFreshness(ago(121), ago(2), now).hardOld).toBe(true);
     });
 });
 
@@ -605,8 +640,10 @@ describe('opportunita per tipo (kind) e combinazioni', () => {
 
     it('anomalyRefLabel: "sorella @q → anomala @q" da oggetto o stringa', () => {
         const a = { selection_name: 'Under 7.5', selection_id: 3, price: 1.1, ref: { selection_name: 'Under 6.5', price: 1.01 } };
-        expect(anomalyRefLabel(a as never)).toBe('Under 6.5 @1.01 → Under 7.5 @1.10');
-        expect(anomalyRefLabel({ ...a, ref: 'Under 6.5 @1.01' } as never)).toBe('Under 6.5 @1.01 → Under 7.5 @1.10');
+        expect(anomalyRefLabel(a as never)).toBe('Under 6.5 @1,01 → Under 7.5 @1,10');
+        // `ref` STRINGA: il servizio la scrive gia' formattata e passa verbatim;
+        // solo la quota calcolata dalla UI (@1,10) usa il formato normativo
+        expect(anomalyRefLabel({ ...a, ref: 'Under 6.5 @1.01' } as never)).toBe('Under 6.5 @1.01 → Under 7.5 @1,10');
         expect(anomalyRefLabel({ ...a, ref: null } as never)).toBeNull();
     });
 

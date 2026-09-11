@@ -54,8 +54,12 @@ export interface MatchLeg<T extends MatchTradeLike> {
     /** gambe di chiusura (back/lay opposto sulla stessa selezione), in ordine di id */
     closes: T[];
     pnl: LegPnl;
-    /** posizione ancora viva (pending/open/hedged) */
+    /** posizione ancora viva (pending/open/hedged, esclusi gli esiti certi) */
     live: boolean;
+    /** H-02: ordine REALE a esito ignoto, ancora in verifica su Betfair */
+    reconciling: boolean;
+    /** M-05: riga TERMINALE (nessun ordine reale esiste): mai "in corso per sempre" */
+    terminal: boolean;
 }
 
 export interface MatchGroup<T extends MatchTradeLike> {
@@ -80,6 +84,8 @@ export interface MatchGroup<T extends MatchTradeLike> {
     pnl_locked: number | null;
     /** liability ancora a rischio (aperture vive senza P&L bloccato) */
     open_liability: number;
+    /** H-02: quota di `open_liability` che è un ordine ancora IN VERIFICA */
+    reconciling_liability: number;
     /** stato complessivo */
     state: 'open' | 'partial' | 'settled';
     /** quante gambe hanno un esito (regolate o bloccate) */
@@ -105,6 +111,29 @@ function ts(iso: string | null | undefined): number {
 }
 function laterIso(a: string, b: string | null | undefined): string {
     return b && ts(b) > ts(a) ? b : a;
+}
+
+/** H-02: `meta.reconciling` (o l'eccezione di piazzamento) = ordine reale a
+ *  esito IGNOTO. Conta nella liability e sulla riga va detto in faccia. */
+export function isReconcilingTrade(t: { meta?: Record<string, unknown> | null }): boolean {
+    const m = (t.meta ?? {}) as Record<string, unknown>;
+    return m.reconciling === true || m.reconciling === 'true' || m.reason === 'place_exception_reconciling';
+}
+
+/** M-05: riga TERMINALE (`meta.error_final` / `leg_failed` / `error_at`):
+ *  nessun ordine reale esiste → non è una posizione viva, non è un rischio. */
+export function isTerminalTrade(t: { meta?: Record<string, unknown> | null }): boolean {
+    const m = (t.meta ?? {}) as Record<string, unknown>;
+    return m.error_final === true || m.leg_failed === true
+        || m.no_fill_at != null || m.error_at != null;
+}
+
+/** Istante dell'errore: le righe `status='error'` NON hanno `settled_at`
+ *  (contratto 11/09), l'ora sta in `meta.error_at` (ripiego `no_fill_at`). */
+export function errorAtOf(t: { meta?: Record<string, unknown> | null }): string | null {
+    const m = (t.meta ?? {}) as Record<string, unknown>;
+    const v = m.error_at ?? m.no_fill_at ?? null;
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
 }
 
 /** gamba 1T / 2T / altro: dal campo phase (v2); i trade v1 senza fase sono sul
@@ -173,7 +202,14 @@ export function groupTradesByMatch<T extends MatchTradeLike>(trades: T[]): Match
         rows.sort((a, b) => a.id - b.id);
         const legs: MatchLeg<T>[] = rows.map((t) => {
             const closes = (closesByParent.get(t.id) ?? []).sort((a, b) => a.id - b.id);
-            return { kind: legKindOf(t), trade: t, closes, pnl: legPnl(t, closes), live: LIVE.has(t.status) };
+            const terminal = isTerminalTrade(t);
+            return {
+                kind: legKindOf(t), trade: t, closes, pnl: legPnl(t, closes),
+                // M-05: un esito CERTO negativo non è una posizione viva
+                live: LIVE.has(t.status) && !terminal,
+                reconciling: t.status === 'pending' && isReconcilingTrade(t),
+                terminal,
+            };
         });
         const order: Record<LegKind, number> = { ht: 0, ft: 1, other: 2 };
         legs.sort((a, b) => order[a.kind] - order[b.kind] || a.trade.id - b.trade.id);
@@ -185,6 +221,7 @@ export function groupTradesByMatch<T extends MatchTradeLike>(trades: T[]): Match
         let pnl_settled = 0;
         let pnl_locked: number | null = null;
         let open_liability = 0;
+        let reconciling_liability = 0;
         let n_decided = 0;
         let placed_at = rows[0].placed_at;
         let last_at = rows[0].placed_at;
@@ -200,22 +237,37 @@ export function groupTradesByMatch<T extends MatchTradeLike>(trades: T[]): Match
             else if (leg.live && leg.pnl.state === 'partial') { const w = num(metaOf(leg.trade)['if_win']); open_liability += w != null ? Math.max(0, -w) : (Number(leg.trade.liability) || 0); }
             else if (leg.live && leg.trade.side !== 'back') { open_liability += Number(leg.trade.liability) || 0; }
             else if (leg.live) { open_liability += Number(leg.trade.size) || 0; }
+            // H-02: quanto di quel rischio è un ordine ancora da verificare
+            if (leg.reconciling) {
+                reconciling_liability += leg.trade.side !== 'back'
+                    ? (Number(leg.trade.liability) || 0) : (Number(leg.trade.size) || 0);
+            }
             if (ts(leg.trade.placed_at) < ts(placed_at)) placed_at = leg.trade.placed_at;
             last_at = laterIso(last_at, leg.trade.placed_at);
             last_at = laterIso(last_at, leg.trade.settled_at);
-            for (const c of leg.closes) { last_at = laterIso(last_at, c.placed_at); last_at = laterIso(last_at, c.settled_at); }
+            // una riga in errore non ha settled_at: l'ultima attività è error_at
+            last_at = laterIso(last_at, errorAtOf(leg.trade));
+            for (const c of leg.closes) {
+                last_at = laterIso(last_at, c.placed_at);
+                last_at = laterIso(last_at, c.settled_at);
+                last_at = laterIso(last_at, errorAtOf(c));
+            }
             kickoff = kickoff ?? leg.trade.kickoff ?? null;
             event_name = event_name ?? (leg.trade.event_name?.trim() ? leg.trade.event_name : null);
         }
         const n_legs = legs.length;
         const live = legs.some((l) => l.live);
-        const allSettled = legs.every((l) => l.pnl.state === 'settled');
+        // M-05: le righe TERMINALI (nessun ordine reale) non tengono la partita
+        // "in corso per sempre": si guarda solo alle gambe che esistono davvero
+        const realLegs = legs.filter((l) => !l.terminal);
+        const allSettled = realLegs.length > 0 && realLegs.every((l) => l.pnl.state === 'settled');
         const state: MatchGroup<T>['state'] = allSettled ? 'settled' : n_decided > 0 ? 'partial' : 'open';
         out.push({
             event_id, event_name, kickoff, placed_at, last_at, ht, ft, others, legs,
             result_ht, result_ft, pnl_settled: Math.round(pnl_settled * 100) / 100,
             pnl_locked: pnl_locked == null ? null : Math.round(pnl_locked * 100) / 100,
             open_liability: Math.round(open_liability * 100) / 100,
+            reconciling_liability: Math.round(reconciling_liability * 100) / 100,
             state, n_decided, n_legs, live,
         });
     }
@@ -241,14 +293,17 @@ export function filterMatchesForDay<T extends MatchTradeLike>(groups: MatchGroup
 /** Totali di un insieme di partite (barra/riepilogo). */
 export function summarizeMatches<T extends MatchTradeLike>(groups: MatchGroup<T>[]): {
     matches: number; legs: number; settled: number; won: number; lost: number;
-    pnl_settled: number; pnl_locked: number | null; open_liability: number; live: number;
+    pnl_settled: number; pnl_locked: number | null; open_liability: number;
+    reconciling_liability: number; live: number;
 } {
     let legs = 0, settled = 0, won = 0, lost = 0, pnl_settled = 0, open_liability = 0, live = 0;
+    let reconciling_liability = 0;
     let pnl_locked: number | null = null;
     for (const g of groups) {
         legs += g.n_legs;
         pnl_settled += g.pnl_settled;
         open_liability += g.open_liability;
+        reconciling_liability += g.reconciling_liability;
         if (g.live) live += 1;
         if (g.pnl_locked != null) pnl_locked = (pnl_locked ?? 0) + g.pnl_locked;
         for (const l of g.legs) {
@@ -263,6 +318,20 @@ export function summarizeMatches<T extends MatchTradeLike>(groups: MatchGroup<T>
         matches: groups.length, legs, settled, won, lost,
         pnl_settled: Math.round(pnl_settled * 100) / 100,
         pnl_locked: pnl_locked == null ? null : Math.round(pnl_locked * 100) / 100,
-        open_liability: Math.round(open_liability * 100) / 100, live,
+        open_liability: Math.round(open_liability * 100) / 100,
+        reconciling_liability: Math.round(reconciling_liability * 100) / 100, live,
     };
+}
+
+/** Nome della partita per `event_id`, risolto dai trade: l'attività del
+ *  servizio porta SOLO l'`event_id` (M-01/M-02) e un id nudo non dice nulla. */
+export function eventNamesFrom(
+    trades: { event_id: string; event_name?: string | null }[],
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const t of trades) {
+        const n = t.event_name?.trim();
+        if (n && !out[t.event_id]) out[t.event_id] = n;
+    }
+    return out;
 }

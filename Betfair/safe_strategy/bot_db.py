@@ -18,6 +18,7 @@ from typing import Any, Optional
 from db_client import get_supabase_client
 
 from Betfair.safe_strategy import risk as _risk
+from Betfair.safe_strategy.execution import residual_liability as _residual_liability
 
 logger = logging.getLogger("safe.bot.db")
 
@@ -160,75 +161,201 @@ def traded_signal_keys() -> set[tuple[str, str]]:
     return out
 
 
+# la RPC degli aggregati arriva con la migrazione safe_strategy_bot_v2.sql: se
+# non c'e', si ripiega sulla scansione e si riprova ogni 5 minuti (non a ogni ciclo)
+_AGG_RPC: dict[str, float] = {"ko_ts": 0.0}
+_AGG_RPC_RETRY_S = 300.0
+
+_AGG_KEYS = ("realized_total", "realized_today", "open_liability", "open_count",
+             "reconciling_liability", "day_liability", "day_liability_model",
+             "day_trades", "legs_today", "events_today", "won_today", "lost_today")
+
+
 def aggregates(now: Optional[datetime] = None) -> dict[str, float]:
-    """Realizzato / esposizione aperta (le 'hedged' contano ancora come aperte),
-    con la GIORNATA OPERATIVA Europe/Rome (``risk.operating_day_start``) per
-    realized_today e per la liability giornaliera del motore di rischio."""
+    """Realizzato, rischio APERTO (residuo dopo le coperture) e capitale
+    IMPEGNATO nella giornata operativa Europe/Rome
+    (``risk.operating_day_start``) = giorno di PIAZZAMENTO della posizione.
+    Le 'hedged' restano posizioni vive (il P&L si realizza al settlement) ma
+    con il solo rischio RESIDUO.
+
+    M-29: una sola RPC (``get_safe_aggregates``, migrazione
+    ``safe_strategy_bot_v2.sql``) invece della lettura INTEGRALE della tabella a
+    ogni ciclo (2 s). Se la migrazione non e' applicata si ripiega sulla
+    scansione Python: stesso risultato, solo piu' costosa."""
+    now_ts = (now or datetime.now(timezone.utc)).timestamp()
+    if now_ts - float(_AGG_RPC["ko_ts"]) >= _AGG_RPC_RETRY_S:
+        try:
+            res = _sb().rpc("get_safe_aggregates", {}).execute()
+            data = getattr(res, "data", None)
+            if isinstance(data, dict) and "open_liability" in data:
+                _AGG_RPC["ko_ts"] = 0.0
+                return {k: data.get(k, 0) for k in _AGG_KEYS}
+            logger.info("[safe.db] get_safe_aggregates risposta inattesa (%s): "
+                        "scansione Python", type(data).__name__)
+        except Exception as ex:  # noqa: BLE001 — migrazione non applicata / RPC KO
+            logger.info("[safe.db] get_safe_aggregates non disponibile (%s): scansione Python",
+                        str(ex)[:120])
+        # L3: si arriva qui SOLO se la RPC non ha dato un risultato usabile
+        # (eccezione O risposta non-dict): in entrambi i casi si apre la finestra
+        # di attesa, altrimenti ogni ciclo (2 s) pagherebbe un round-trip inutile
+        _AGG_RPC["ko_ts"] = now_ts
     rows = _fetch_all(lambda: (
         _sb().table("safe_strategy_trades")
-        .select("status,pnl,liability,settled_at,placed_at,strategy,bet_id,meta,closes_trade_id")
+        .select("id,event_id,status,pnl,liability,settled_at,placed_at,strategy,bet_id,meta,closes_trade_id")
         .order("id", desc=False)
     ))
     return aggregate_rows(rows, day_start=_risk.operating_day_start(now))
 
 
+def _is_reconciling_row(r: dict[str, Any]) -> bool:
+    """'pending' senza marker di coda il cui ordine REALE potrebbe esistere."""
+    return str((r.get("meta") or {}).get("reason") or "") == "place_exception_reconciling"
+
+
+def _counts_as_placed(r: dict[str, Any]) -> bool:
+    """La riga ha (o può avere) un ordine a mercato: conta nell'esposizione."""
+    status = str(r.get("status") or "")
+    if status in ("open", "hedged", "won", "lost"):
+        return True
+    if status != "pending":
+        return False
+    meta = r.get("meta") or {}
+    return bool(r.get("bet_id") or meta.get("flumine_client_ref")
+                or _is_reconciling_row(r))
+
+
+def _committed_liability(r: dict[str, Any]) -> float:
+    """Capitale IMPEGNATO dalla riga nella giornata: la liability d'apertura,
+    SEMPRE — anche se poi la posizione è stata coperta (review H1: usare il
+    residuo qui liberava il cap giornaliero a ogni green-up)."""
+    try:
+        return max(0.0, float(r.get("liability") or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def place_attempts() -> dict[tuple[str, str], dict[str, Any]]:
+    """{(event_id, signal_key): {'attempts', 'last_ts', 'final'}} dalle righe
+    AUTOMATICHE andate in 'error' col marker ``meta.place`` (H-21).
+
+    Serve a NON ripartire da zero col budget dei ritentativi dopo un riavvio del
+    servizio: senza, un FOK rifiutato tornerebbe a essere ritentato ogni 2 s."""
+    rows = _fetch_all(lambda: (
+        _sb().table("safe_strategy_trades").select("event_id,signal_key,meta")
+        .eq("origin", "auto").eq("status", "error").order("id", desc=False)
+    ))
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        eid, key = r.get("event_id"), r.get("signal_key")
+        pl = (r.get("meta") or {}).get("place")
+        if not (eid and key and isinstance(pl, dict)):
+            continue
+        prev = out.get((str(eid), str(key))) or {}
+        if int(pl.get("attempts") or 0) >= int(prev.get("attempts") or 0):
+            out[(str(eid), str(key))] = {"attempts": int(pl.get("attempts") or 0),
+                                         "last_ts": pl.get("last_ts"),
+                                         "final": bool(pl.get("final"))}
+    return out
+
+
+def recent_activity(limit: int = 60) -> list[dict[str, Any]]:
+    """Ultime righe di ``safe_strategy_activity`` (per lo stato del servizio)."""
+    try:
+        return (
+            _sb().table("safe_strategy_activity").select("id,ts,kind,payload")
+            .order("id", desc=True).limit(int(limit)).execute().data or []
+        )
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.db] lettura attivita' KO: %s", str(ex)[:160])
+        return []
+
+
 def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = None) -> dict[str, float]:
     """Aggregazione PURA (testabile) delle righe trade.
 
-    Gambe di CHIUSURA (``closes_trade_id``): ESCLUSE da open_count/open_liability
-    — il rischio vivo della coppia e' gia' contato dall'originale 'hedged'
-    (liability piena, stima prudente) — il loro pnl entra nel realizzato solo
-    quando regolate. Stessa regola di ``get_safe_state`` (migrazione) e di
-    ``omega_engine.aggregate_trades``; senza, stats.trades_open contava anche
-    le chiusure (6 per 4 originali, E2E live 10/09).
+    GIORNATA OPERATIVA = giorno di PIAZZAMENTO della POSIZIONE (C-01/H-03):
+    un solo numero per la stessa giornata in KPI, pannello rischio, tab Trade e
+    storico. Una gamba di chiusura appartiene al giorno dell'APERTURA che chiude
+    (``placed_at`` del padre): un green-up di mezzanotte non sposta il P&L di
+    ieri sull'oggi.
 
-    ``day_liability`` / ``day_liability_model`` / ``day_trades``: liability
-    IMPEGNATA nella giornata (righe piazzate da ``day_start``: aperte, in
-    riconciliazione o già regolate won/lost; le void non hanno impegnato nulla),
-    totale e dei soli trade di modello — base dei cap giornalieri di ``risk``."""
-    realized = realized_today = open_liab = 0.0
+    Gambe di CHIUSURA (``closes_trade_id``): ESCLUSE da open_count/open_liability
+    — il rischio vivo della coppia e' gia' contato dall'originale — il loro pnl
+    entra nel realizzato (del giorno del padre) quando regolate.
+
+    DUE liability DIVERSE, e non vanno confuse (review H1):
+      • ``open_liability`` = rischio ANCORA VIVO ora → dopo una copertura
+        confermata conta il RESIDUO (M-26, ``execution.residual_liability``);
+      • ``day_liability`` / ``day_liability_model`` = capitale IMPEGNATO nella
+        giornata (colonna ``liability`` d'apertura) → base dei cap giornalieri
+        di ``risk``: coprire una posizione NON libera il cap del giorno,
+        altrimenti si potrebbe girare capitale all'infinito.
+    I 'pending' in riconciliazione contano nell'esposizione E, a parte, in
+    ``reconciling_liability`` (H-03).
+
+    ``won_today``/``lost_today`` contano le POSIZIONI per SEGNO del P&L totale
+    (apertura + chiusure), non per lo status grezzo della gamba (M-16)."""
+    placed_by_id: dict[Any, Any] = {r.get("id"): r.get("placed_at") for r in rows
+                                    if r.get("id") is not None}
+    total_by_parent: dict[Any, float] = {}
+    for r in rows:
+        pid = r.get("closes_trade_id")
+        if pid is not None and str(r.get("status") or "") in ("won", "lost", "void"):
+            total_by_parent[pid] = total_by_parent.get(pid, 0.0) + float(r.get("pnl") or 0.0)
+
+    realized = realized_today = open_liab = reconciling_liab = 0.0
     day_liab = day_liab_model = 0.0
-    open_n = day_n = 0
+    open_n = day_n = won_today = lost_today = legs_today = 0
+    events_today: set[str] = set()
     for r in rows:
         status = str(r.get("status") or "")
         pnl = float(r.get("pnl") or 0.0)
-        liab = float(r.get("liability") or 0.0)
-        if not r.get("closes_trade_id") and status != "void" and \
-                (day_start is None or _on_or_after(r.get("placed_at"), day_start)) and (
-                status in ("open", "hedged", "won", "lost")
-                or (status == "pending" and (r.get("bet_id")
-                                             or (r.get("meta") or {}).get("flumine_client_ref")))):
-            day_liab += liab
+        liab = _residual_liability(r)          # rischio VIVO ora
+        committed = _committed_liability(r)    # capitale IMPEGNATO (cap del giorno)
+        pid = r.get("closes_trade_id")
+        # giorno della POSIZIONE: quello dell'apertura anche per le chiusure
+        pos_placed = placed_by_id.get(pid) if pid is not None else r.get("placed_at")
+        if pos_placed is None:
+            pos_placed = r.get("placed_at")
+        in_day = day_start is None or _on_or_after(pos_placed, day_start)
+        if not pid and status != "void" and in_day and _counts_as_placed(r):
+            day_liab += committed
             day_n += 1
+            legs_today += 1
+            if r.get("event_id"):
+                events_today.add(str(r.get("event_id")))
             if str(r.get("strategy") or "") in _risk.MODEL_STRATEGIES:
-                day_liab_model += liab
-        if r.get("closes_trade_id"):
-            if status in ("won", "lost", "void"):
-                realized += pnl
-                if day_start is None or _on_or_after(r.get("settled_at"), day_start):
-                    realized_today += pnl
-            continue
+                day_liab_model += committed
         if status in ("won", "lost", "void"):
             realized += pnl
-            if day_start is None or _on_or_after(r.get("settled_at"), day_start):
+            if in_day:
                 realized_today += pnl
-        elif status in ("open", "hedged") or (
-            status == "pending" and (
-                r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref")
-                # esito REST ignoto in riconciliazione: l'ordine può esistere
-                or (r.get("meta") or {}).get("reason") == "place_exception_reconciling"
-            )
-        ):
+            if not pid and in_day:
+                total = round(pnl + total_by_parent.get(r.get("id"), 0.0), 2)
+                if total > 0:
+                    won_today += 1
+                elif total < 0:
+                    lost_today += 1
+        if pid:
+            continue
+        if status in ("open", "hedged") or (status == "pending" and _counts_as_placed(r)):
             open_liab += liab
             open_n += 1
+            if status == "pending" and _is_reconciling_row(r):
+                reconciling_liab += liab
     return {
         "realized_total": round(realized, 2),
         "realized_today": round(realized_today, 2),
         "open_liability": round(open_liab, 2),
         "open_count": open_n,
+        "reconciling_liability": round(reconciling_liab, 2),
         "day_liability": round(day_liab, 2),
         "day_liability_model": round(day_liab_model, 2),
         "day_trades": day_n,
+        "legs_today": legs_today,
+        "events_today": len(events_today),
+        "won_today": won_today,
+        "lost_today": lost_today,
     }
 
 
@@ -255,12 +382,29 @@ def pending_requests(limit: int = 50) -> list[dict[str, Any]]:
     )
 
 
+REQUEST_STATES = ("pending", "processing", "done", "rejected", "error")
+
+
 def set_request_status(req_id: int, status: str,
                        result: Optional[dict[str, Any]] = None) -> None:
+    """Chiude (o avanza) una richiesta della UI. ``status`` del vocabolario
+    ``REQUEST_STATES``: 'rejected' = richiesta RIFIUTATA dal servizio (non un
+    guasto: es. cancel di una riserva in riconciliazione) — richiede la
+    migrazione ``safe_strategy_bot_v2.sql``; senza, il CHECK del DB la
+    rifiuterebbe, quindi si ripiega su 'error' conservando il motivo."""
     fields: dict[str, Any] = {"status": status, "updated_at": _now_iso()}
     if result is not None:
         fields["result"] = result
-    _sb().table("safe_strategy_requests").update(fields).eq("id", int(req_id)).execute()
+    try:
+        _sb().table("safe_strategy_requests").update(fields).eq("id", int(req_id)).execute()
+    except Exception as ex:  # noqa: BLE001
+        if status != "rejected":
+            raise
+        logger.info("[safe.db] stato 'rejected' non ammesso dal DB (%s): ripiego su 'error'",
+                    str(ex)[:120])
+        fields["status"] = "error"
+        fields["result"] = {**(result or {}), "rejected": True}
+        _sb().table("safe_strategy_requests").update(fields).eq("id", int(req_id)).execute()
 
 
 def fail_stale_processing(max_age_min: int = 10) -> None:

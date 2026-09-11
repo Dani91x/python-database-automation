@@ -9,6 +9,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { DEFAULT_PARAMS } from '@/lib/safeStrategy';
 
+
+// Questi test montano la pagina/sheet INTERI (decine di campi, Radix, portali):
+// su una macchina carica il default di 5 s di vitest scade per LENTEZZA, non per
+// un difetto. Timeout esplicito: la suite deve essere verde anche sotto carico.
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock('sonner', () => ({
     toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
@@ -97,7 +103,7 @@ describe('Safe Strategy — giornata operativa e uscite', () => {
     it('il KPI "P&L oggi" dichiara la giornata operativa (Europe/Rome)', async () => {
         renderPage();
         expect(await screen.findByTestId('safe-operating-day')).toHaveTextContent(/giornata operativa 10 settembre · Europe\/Rome/);
-        expect(screen.getByText('+€2.85')).toBeInTheDocument();
+        expect(screen.getAllByText('+2,85 €').length).toBeGreaterThan(0);
     });
 
     it('la tabella trade mostra il badge di uscita su apertura e chiusura', async () => {
@@ -123,16 +129,17 @@ describe('Safe Strategy — giornata operativa e uscite', () => {
         const user = userEvent.setup();
         renderPage();
         await screen.findByTestId('bot-status');
-        await user.click(screen.getByRole('button', { name: /Parametri/ }));
-        expect(await screen.findByTestId('exits-section')).toBeInTheDocument();
+        await user.click(screen.getByTestId('params-trigger'));
+        await screen.findByTestId('params-sheet');
+        expect(screen.getByTestId('params-sheet').querySelector('[data-group="Uscite automatiche"]')).toBeInTheDocument();
         const base = screen.getByLabelText('BASE · uscita a tempo dal minuto') as HTMLInputElement;
         expect(base.value).toBe('78');                                  // dal DB
         expect((screen.getByLabelText('PUNTA · uscita a tempo dal minuto') as HTMLInputElement).value).toBe('83'); // default
-        expect(screen.getByRole('checkbox', { name: 'Uscite automatiche attive' })).toHaveAttribute('data-state', 'checked');
+        expect(screen.getByRole('checkbox', { name: 'Uscite automatiche attive' })).toBeChecked();
         await user.clear(base);
         await user.type(base, '85');
         await user.click(screen.getByRole('checkbox', { name: 'Rosso alla favorita: esci subito' }));
-        await user.click(screen.getByRole('button', { name: 'Salva parametri' }));
+        await user.click(screen.getByTestId('params-save'));
         await waitFor(() => expect(mUpdate).toHaveBeenCalled());
         const saved = mUpdate.mock.calls[0][0] as Record<string, unknown>;
         const exits = saved.exits as Record<string, unknown>;
@@ -204,6 +211,7 @@ describe('Safe Strategy — tab Storico', () => {
             gross_profit: 2.85, gross_loss: 0, profit_factor: null, commission_paid: 0.15, goal: null, goal_pct: null,
             by_strategy: { base: { n: 1, pnl: 2.85, won: 1, lost: 0 } }, by_sport: { calcio: { n: 1, pnl: 2.85, won: 1, lost: 0 } },
             by_origin: { auto: { n: 1, pnl: 2.85, won: 1, lost: 0 } }, first_trade_at: null, last_trade_at: null,
+            goal_snapshot: false,
         }]);
         renderPage();
         await screen.findByTestId('bot-status');
@@ -211,7 +219,7 @@ describe('Safe Strategy — tab Storico', () => {
         expect(await screen.findByTestId('trading-history')).toBeInTheDocument();
         await waitFor(() => expect(mDaily).toHaveBeenCalledWith('2026-09-01', '2026-09-30', null));
         await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', null));
-        await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+€2.85'));
+        await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+2,85 €'));
         expect(within(screen.getByTestId('breakdown-sport')).getByText('⚽ Calcio')).toBeInTheDocument();
         expect(screen.queryByTestId('kpi-goal')).toBeNull();
         await user.click(within(screen.getByTestId('history-sport-filter')).getByRole('button', { name: /tennis/ }));
@@ -232,4 +240,132 @@ describe('Safe Strategy — tab Storico', () => {
         expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(1);
         expect(screen.getAllByTestId('safe-closing-row')).toHaveLength(1);
     });
+});
+
+// ---------------------------------------------------------------------------
+// PUNTO 7 della certificazione — la pagina deve funzionare con la RPC VECCHIA
+// (migrations/safe_strategy_bot.sql, prima di safe_strategy_bot_v2.sql): niente
+// `activity`, niente `params_effective`, niente `operating_day`, e negli
+// aggregates SOLO i sei campi della v1. Finora la copertura esisteva solo come
+// effetto collaterale dei fixture: qui e' un'asserzione dichiarata.
+// ---------------------------------------------------------------------------
+describe('Safe Strategy — senza la migrazione v2 (RPC vecchia)', () => {
+    /** esattamente cio' che torna get_safe_state della v1: nessuna chiave in piu' */
+    const V1_AGGREGATES = {
+        realized_today: 2.85, realized_total: 40,
+        open_liability: 116.64, open_count: 1, won: 1, lost: 0,
+    };
+
+    function mockV1() {
+        mState.mockResolvedValue({
+            control: { ...CONTROL, stats: {} } as never,     // stats vuote: nemmeno risk/opps
+            trades: [TRADE, CLOSE] as never,
+            aggregates: V1_AGGREGATES as never,
+        });
+    }
+
+    it('la pagina si carica: header, stato bot e KPI presenti', async () => {
+        mockV1();
+        renderPage();
+        expect(await screen.findByText(/SAFE STRATEGY/)).toBeInTheDocument();
+        expect(await screen.findByTestId('bot-status')).toBeInTheDocument();
+        // il realizzato della v1 arriva comunque nei KPI
+        expect(await screen.findByTestId('safe-operating-day')).toBeInTheDocument();
+        expect(screen.getAllByText('+2,85 €').length).toBeGreaterThan(0);
+    });
+
+    it('la giornata operativa ripiega su Europe/Rome quando il DB non la dichiara', async () => {
+        mockV1();
+        renderPage();
+        // operating_day assente sia in aggregates sia nella risposta: si usa romeDay()
+        expect(await screen.findByTestId('safe-operating-day'))
+            .toHaveTextContent(/giornata operativa 10 settembre · Europe\/Rome/);
+    });
+
+    it('il pannello Rischio degrada senza stats.risk: usa gli aggregates v1', async () => {
+        mockV1();
+        renderPage();
+        const panel = await screen.findByTestId('risk-panel');
+        // nessuno stop dichiarato dal servizio = stop non attivo, mai "acceso" per default
+        expect(panel).toHaveAttribute('data-loss-stop', 'off');
+        // il rischio VIVO c'e' comunque: viene da aggregates.open_liability
+        expect(within(panel).getByTestId('risk-open-liability')).toHaveTextContent('116,64 €');
+    });
+
+    it('la tabella trade funziona: un trade = una riga, chiusura come sub-riga', async () => {
+        const user = userEvent.setup();
+        mockV1();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(1);
+        expect(screen.getAllByTestId('safe-closing-row')).toHaveLength(1);
+    });
+
+    it('nessuna attivita del servizio (la v1 non la espone): sezione assente, non rotta', async () => {
+        mockV1();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        // la sezione c'e' e SPIEGA perche' e' vuota (cita la migrazione), invece
+        // di mostrare una lista muta o un errore
+        const feed = await screen.findByTestId('safe-activity');
+        expect(feed).toHaveTextContent(/nessuna attività registrata/);
+        expect(feed).toHaveTextContent(/safe_strategy_bot_v2\.sql/);
+        expect(screen.queryByText(/kind sconosciuto/)).toBeNull();
+    });
+
+    it('la barra della giornata DICHIARA che i numeri sono stimati dal client', async () => {
+        mockV1();
+        renderPage();
+        const bar = await screen.findByTestId('day-bar');
+        expect(bar).toHaveTextContent(/stimato dal client/);
+        expect(bar).toHaveTextContent(/safe_strategy_bot_v2\.sql/);
+        // la vecchia promessa "gli stessi numeri dello Storico" era falsa: via
+        expect(bar).not.toHaveTextContent(/gli stessi numeri dei KPI/);
+    });
+
+    it('il pannello Rischio dichiara l impegnato come stimato', async () => {
+        mockV1();
+        renderPage();
+        const nota = await screen.findByTestId('risk-day-estimated');
+        expect(nota).toHaveTextContent(/stimato dal client/);
+    });
+
+    it('la scheda parametri dice che i valori in uso non sono disponibili', async () => {
+        const user = userEvent.setup();
+        mockV1();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(screen.getByTestId('params-trigger'));
+        await screen.findByTestId('params-sheet');
+        expect(screen.getByTestId('params-effective-missing'))
+            .toHaveTextContent(/valori in uso non disponibili/);
+    }, 20_000);
+
+    it('CON la migrazione v2 la barra promette gli stessi numeri dello Storico', async () => {
+        mState.mockResolvedValue({
+            control: CONTROL as never,
+            trades: [TRADE, CLOSE] as never,
+            aggregates: {
+                ...V1_AGGREGATES, won_today: 1, lost_today: 0, legs_today: 1,
+                events_today: 1, day_liability: 116.64, operating_day: '2026-09-10',
+            } as never,
+        });
+        renderPage();
+        const bar = await screen.findByTestId('day-bar');
+        expect(bar).toHaveTextContent(/gli stessi numeri dei KPI/);
+        expect(bar).not.toHaveTextContent(/stimato dal client/);
+        expect(screen.queryByTestId('risk-day-estimated')).toBeNull();
+    });
+
+    it('il pannello parametri si apre senza params_effective', async () => {
+        const user = userEvent.setup();
+        mockV1();
+        renderPage();
+        await screen.findByTestId('bot-status');
+        await user.click(screen.getByTestId('params-trigger'));
+        expect(await screen.findByTestId('params-sheet')).toBeInTheDocument();
+        // i valori arrivano dal form/DB: senza i parametri effettivi nessun avviso
+        expect(screen.queryByText(/il servizio sta usando/i)).toBeNull();
+    }, 20_000);
 });

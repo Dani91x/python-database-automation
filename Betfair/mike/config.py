@@ -74,10 +74,7 @@ PARAM_SPEC: dict[str, Spec] = {
     # ---- generale ----
     "stake": (10.0, float, 0.50, 500.0, None),   # importo LIBERO (es. 1.23): sotto-minimo via place-and-trim
     "commission_pct": (5.0, float, 0.0, 20.0, None),
-    "max_matches": (40, int, 1, 90, None),
     "entry_hours_before_ko": (3.0, float, 0.25, 12.0, None),
-    "catalogue_refresh_s": (300, int, 60, 3600, None),
-    "min_total_matched": (2000.0, float, 0.0, 1_000_000.0, None),
     "competition_filter": ("", str, None, None, None),
     "decide_min_interval_ms": (500, int, 100, 5000, None),
     "feed_max_age_s": (15.0, float, 3.0, 60.0, None),
@@ -163,15 +160,37 @@ PARAM_SPEC: dict[str, Spec] = {
     "reentry_exit_until_min": (0, int, 0, 100, None),
     "reentry_price_min_over_entry": (True, bool, None, None, None),
     "reentry_hold_if_loss": (False, bool, None, None, None),
-    "stream_extra_lines": (False, bool, None, None, None),
     # ---- settlement / rischio ----
+    # intervallo fra due letture REST del book a mercato chiuso (service.py):
+    # mai un poll stretto su un mercato gia' chiuso. Minimo effettivo 5 s.
     "settle_confirm_s": (60, int, 0, 600, None),
     "max_open_matches": (10, int, 1, 90, None),
     "daily_loss_stop": (50.0, float, 0.0, 100_000.0, None),
     "max_liability_per_match": (0.0, float, 0.0, 100_000.0, None),
     "event_loss_cap_pct": (100.0, float, 0.0, 500.0, None),
+    # dedup dei log ripetitivi per partita (skip / no_fill / riconciliazione):
+    # lo stesso motivo non viene riscritto piu' di una volta ogni N secondi.
     "skip_log_interval_s": (300, int, 10, 3600, None),
 }
+
+# Parametri RIMOSSI dalla whitelist l'11/09/2026 (audit M3) perche' non avevano
+# alcun effetto e la UI li mostrava come se lavorassero. Restano elencati qui
+# per documentazione: se arrivano dalla UI vengono semplicemente scartati da
+# ``merge_params`` (nessun errore, nessun comportamento nascosto).
+#   max_matches         — diagnostica del catalogo proprio, che Mike non ha piu'
+#                         (il pool dello scanner e' dinamico); il tetto vero e'
+#                         ``max_open_matches``.
+#   catalogue_refresh_s — nessun catalogo proprio: i mercati arrivano dal feed unico.
+#   stream_extra_lines  — richiede una linea extra nello scanner (re-ingresso
+#                         oltre la 4.5): non implementato, vedi COSTITUZIONE §10.3.
+#   min_total_matched   — gate sullo "scambiato totale" del mercato. NON cablato
+#                         di proposito: 3 ore prima del KO le linee O/U hanno uno
+#                         scambiato bassissimo e una soglia di 2.000 EUR (il
+#                         default che la UI mostrava) avrebbe azzerato ogni
+#                         ingresso. La liquidita' che conta per un fill e' quella
+#                         al BEST, gia' governata da ``pre_min_back_size_factor``.
+#                         Se servira', va reintrodotto con default 0 (= spento).
+REMOVED_PARAMS = ("max_matches", "catalogue_refresh_s", "stream_extra_lines", "min_total_matched")
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in PARAM_SPEC.items()}
 

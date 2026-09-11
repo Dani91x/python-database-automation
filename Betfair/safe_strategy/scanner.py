@@ -61,6 +61,39 @@ PRE_KO_WINDOW_SEC = 15 * 60
 # fallback) ma SENZA requisito di minuto/punteggio. Acceso SOLO se
 # ``SAFE_PRE_KO_OU_HOURS`` > 0 (service.py): a 0 nulla cambia nel feed.
 PRE_KO_OU_MARKET_TYPES = ("OVER_UNDER_35", "OVER_UNDER_45")
+# Le stesse due linee viste dal lato MIKE: finché il bot SEGUE la partita
+# devono restare nel feed anche in-play e anche quando una delle due è già
+# decisa (audit 11/09 C1/C2): senza la 4.5 non c'è copertura né cash out, e la
+# 3.5 potata al 4° gol congelava la card.
+MIKE_OU_MARKET_TYPES = PRE_KO_OU_MARKET_TYPES
+# Tetto DURO delle partite Mike esenti: è il `max_open_matches` del bot (10).
+# Anche con un bug che marcasse 90 partite come "seguite", il pool stream non
+# può essere invaso (H4).
+MIKE_MAX_FOLLOWED = 10
+
+
+def select_opp_candidates(
+    candidates: List[str], *, followed: Any = (), max_events: Optional[int] = None,
+    max_followed: Optional[int] = None,
+) -> List[str]:
+    """Eventi che tengono i mercati a gol sotto quote, con il tetto ``max_events``
+    (default ``OPP_MAX_EVENTS``) e l'ESENZIONE delle partite seguite da Mike.
+
+    ``candidates`` arriva GIÀ in ordine di priorità (minuti più avanzati prima).
+    Le partite in ``followed`` (quelle di Mike CON esposizione) non vengono
+    tagliate: sono posizioni APERTE, restare senza quote significa nessuna
+    copertura Over 4.5, nessun cash out e nessuna uscita (audit C1). L'esenzione
+    è però limitata a ``max_followed`` partite (default ``MIKE_MAX_FOLLOWED``) e
+    il tetto normale continua a valere per tutte le altre: il peso sul pool
+    stream cresce solo di quanto Mike sta davvero tradando.
+    """
+    cap = OPP_MAX_EVENTS if max_events is None else int(max_events)
+    cap_f = MIKE_MAX_FOLLOWED if max_followed is None else int(max_followed)
+    keep_set = {str(e) for e in (followed or ())}
+    keep = [e for e in candidates if str(e) in keep_set][: max(0, cap_f)]
+    kept = set(keep)
+    rest = [e for e in candidates if e not in kept]
+    return keep + rest[: max(0, cap)]
 
 
 def in_pre_ko_ou_window(open_date: Optional[str], now: datetime, hours: float) -> bool:
@@ -477,11 +510,19 @@ def is_live_btts(score_home: Optional[int], score_away: Optional[int]) -> bool:
     return not (int(score_home) >= 1 and int(score_away) >= 1)
 
 
-def opp_rank_key(minute: Optional[int], open_date: Optional[str]) -> "tuple[int, int, str]":
+def opp_rank_key(minute: Optional[int], open_date: Optional[str],
+                 mike: bool = False) -> "tuple[float, int, str]":
     """Priorità dei mercati opportunità nel pool stream: SEMPRE dopo i mercati
     core (rank_key restituisce tier 0/1, qui il tier è 2) e, tra loro, prima i
-    minuti più avanzati — è lì che le probabilità diventano estreme."""
-    return (2, -(minute or 0), str(open_date or ""))
+    minuti più avanzati — è lì che le probabilità diventano estreme.
+
+    ``mike=True`` (linea 3.5/4.5 di una partita Mike CON posizione): tier 1.5,
+    cioè DOPO i mercati core ma PRIMA di ogni altro mercato opportunità (audit
+    H5): restare fuori dal pool per il troncamento degli shard significherebbe
+    una posizione aperta senza prezzo, quindi senza copertura né cash out.
+    I tier restano numerici e distinti, così l'ordinamento non confronta mai una
+    data con un minuto."""
+    return (1.5 if mike else 2, -(minute or 0), str(open_date or ""))
 
 
 def is_opp_market_live(
@@ -491,12 +532,22 @@ def is_opp_market_live(
     score_home: Optional[int],
     score_away: Optional[int],
     pre_ko: bool = False,
+    mike: bool = False,
 ) -> bool:
     """Il mercato opportunità serve ADESSO? (linea indecisa / 1T in corso).
 
     ``pre_ko=True`` (ramo Mike, evento non iniziato): vive SOLO una delle due
-    linee ``PRE_KO_OU_MARKET_TYPES`` — senza punteggio nessuna linea è decisa."""
+    linee ``PRE_KO_OU_MARKET_TYPES`` — senza punteggio nessuna linea è decisa.
+
+    ``mike=True`` (partita SEGUITA da Mike, stato non terminale): le due linee
+    3.5 e 4.5 restano vive anche se già decise (audit C2). Per il motore
+    opportunità una linea superata è aritmetica, ma per una POSIZIONE aperta è
+    il prezzo con cui si esce: l'Over 4.5 dopo il 4° gol è l'unica gamba
+    ancora chiudibile, e senza il suo blocco il cash out risponde
+    "feed assente"."""
     mt = (market_type or "").upper()
+    if mike and mt in MIKE_OU_MARKET_TYPES:
+        return True
     if pre_ko:
         return mt in PRE_KO_OU_MARKET_TYPES
     if mt.startswith("OVER_UNDER"):
@@ -506,6 +557,23 @@ def is_opp_market_live(
     if mt == HT_RESULT_MARKET_TYPE:
         return is_ht_result_candidate(minute)
     return False
+
+
+def ou_block_decided(blk: Optional[Dict[str, Any]], score_home: Optional[int],
+                     score_away: Optional[int]) -> bool:
+    """True se il blocco è una linea Over/Under il cui esito è GIÀ DECISO
+    (i gol segnati l'hanno superata). Serve a marcare le linee che restano nel
+    feed solo per una posizione Mike: sono prezzi validi per CHIUDERE, non
+    opportunità da aprire (audit H6)."""
+    if not isinstance(blk, dict):
+        return False
+    mt = str(blk.get("market_type") or "").upper()
+    if not mt.startswith("OVER_UNDER"):
+        return False
+    line = blk.get("line")
+    if line is None:
+        return False
+    return not is_live_ou_line(float(line), score_home, score_away)
 
 
 def split_opportunity_blocks(blocks: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Any]:

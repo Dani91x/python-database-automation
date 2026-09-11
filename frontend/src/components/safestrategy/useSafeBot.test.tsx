@@ -20,8 +20,8 @@ vi.mock('@/lib/safeBot', async (orig) => {
     };
 });
 
-import { useSafeBot } from './useSafeBot';
-import { fetchSafeState, requestSafe, activateSafe, type SafeState } from '@/lib/safeBot';
+import { useSafeBot, RELOAD_DEBOUNCE_MS } from './useSafeBot';
+import { fetchSafeState, requestSafe, activateSafe, subscribeSafeBot, type SafeState } from '@/lib/safeBot';
 
 const mState = vi.mocked(fetchSafeState);
 const mRequest = vi.mocked(requestSafe);
@@ -126,5 +126,83 @@ describe('useSafeBot — cash out in volo (HIGH-1)', () => {
         const { result } = renderHook(() => useSafeBot());
         await waitFor(() => expect(result.current.trades.length).toBe(1));
         expect(result.current.isCashOutPending(9)).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Realtime COALIZZATO: un settlement tocca apertura, chiusura, richiesta e
+// control (4+ notifiche). Senza debounce partiva una get_safe_state per
+// notifica: con dieci posizioni che si regolano insieme sono decine di RPC in
+// un secondo. Omega usa 1,2 s, Mike 1,5 s: Safe deve fare lo stesso.
+// ---------------------------------------------------------------------------
+describe('useSafeBot — notifiche realtime debounced', () => {
+    const mSub = vi.mocked(subscribeSafeBot);
+
+    /** cattura la callback passata a subscribeSafeBot */
+    function notifier() {
+        const calls = mSub.mock.calls;
+        const cb = calls.length ? calls[calls.length - 1][0] : undefined;
+        if (!cb) throw new Error('subscribeSafeBot non e stato chiamato');
+        return cb as () => void;
+    }
+
+    it('la finestra e almeno 1 s (come Omega e Mike)', () => {
+        expect(RELOAD_DEBOUNCE_MS).toBeGreaterThanOrEqual(1_000);
+    });
+
+    it('una RAFFICA di notifiche produce UNA sola ricarica', async () => {
+        vi.useFakeTimers();
+        try {
+            const { result } = renderHook(() => useSafeBot());
+            await act(async () => { await Promise.resolve(); });
+            expect(mState).toHaveBeenCalledTimes(1);                        // carico iniziale
+            const notify = notifier();
+
+            // 8 notifiche ravvicinate (settlement di due posizioni con chiusura)
+            act(() => { for (let i = 0; i < 8; i++) notify(); });
+            expect(mState).toHaveBeenCalledTimes(1);                       // nessuna ancora
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(RELOAD_DEBOUNCE_MS + 10); });
+            expect(mState).toHaveBeenCalledTimes(2);                       // UNA ricarica
+            expect(result.current.error).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('una notifica dopo la finestra ricarica di nuovo (non si perde nulla)', async () => {
+        vi.useFakeTimers();
+        try {
+            renderHook(() => useSafeBot());
+            await act(async () => { await Promise.resolve(); });
+            expect(mState).toHaveBeenCalledTimes(1);
+            const notify = notifier();
+
+            act(() => { notify(); });
+            await act(async () => { await vi.advanceTimersByTimeAsync(RELOAD_DEBOUNCE_MS + 10); });
+            expect(mState).toHaveBeenCalledTimes(2);
+
+            act(() => { notify(); });
+            await act(async () => { await vi.advanceTimersByTimeAsync(RELOAD_DEBOUNCE_MS + 10); });
+            expect(mState).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('smontaggio durante la finestra: nessuna ricarica dopo lo smontaggio', async () => {
+        vi.useFakeTimers();
+        try {
+            const { unmount } = renderHook(() => useSafeBot());
+            await act(async () => { await Promise.resolve(); });
+            expect(mState).toHaveBeenCalledTimes(1);
+            const notify = notifier();
+            act(() => { notify(); });
+            unmount();
+            await act(async () => { await vi.advanceTimersByTimeAsync(RELOAD_DEBOUNCE_MS + 50); });
+            expect(mState).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

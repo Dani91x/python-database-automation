@@ -73,6 +73,9 @@ class FakeDB:
     def all_trades(self):
         return list(self.trades)
 
+    def open_trades(self):
+        return [t for t in self.trades if t.get("status") in ("pending", "open", "hedged")]
+
     def aggregates(self, now=None):
         from Betfair.safe_strategy import bot_db as B
         from Betfair.safe_strategy import risk as R
@@ -87,6 +90,9 @@ class FakeDB:
             if r["id"] == req_id:
                 r["status"] = status
                 r["result"] = result
+
+    def fail_stale_processing(self, max_age_min=10):
+        return 0
 
     # feed
     def fetch_scan_rows(self):
@@ -233,7 +239,12 @@ def test_inplay_cover_is_deferred_by_bet_delay_in_paper():
     assert state(db) == "LIVE_COVER_PENDING"
     cover = [l for l in legs(db) if l["role"] == "over_cover"][0]
     assert cover["status"] == "pending"                       # differita
-    assert "place_deferred" in db.kinds() and db.trades == []
+    # H2 (audit 11/09): la posizione Under del fixture non aveva la riga mirror
+    # → la riconciliazione la RICOSTRUISCE (mai una posizione invisibile). La
+    # copertura differita, invece, non ha ancora nessuna riga.
+    assert "place_deferred" in db.kinds()
+    assert [t["signal_key"] for t in db.trades] == ["under_last-1-1"]
+    assert "reconcile_fix" in db.kinds()
     # 3 secondi dopo: ancora in attesa
     run(db, mk, NOW + timedelta(seconds=3), [row(p)])
     assert [l for l in legs(db) if l["role"] == "over_cover"][0]["status"] == "pending"
@@ -303,7 +314,13 @@ def test_settlement_when_row_disappears():
     exp = round(10 * 0.5 * 0.95 - 2.53, 2)
     assert abs(db.events["E1"]["settled_pnl"] - exp) < 0.02
     assert db.trades[0]["status"] == "won" and db.trades[1]["status"] == "lost"
-    assert abs(db.trades[0]["pnl"] - 5.0) < 0.01 and db.trades[1]["pnl"] == -2.53
+    # H4 (audit 11/09): il pnl di OGNI riga e' NETTO commissione — la somma
+    # delle righe e' esattamente il settled_pnl della partita (prima le righe
+    # erano lorde e i KPI leggevano numeri piu' grandi della card).
+    assert abs(db.trades[0]["pnl"] - 4.75) < 0.01 and db.trades[1]["pnl"] == -2.53
+    assert abs(sum(t["pnl"] for t in db.trades) - db.events["E1"]["settled_pnl"]) < 0.02
+    assert db.trades[0]["meta"]["commission_paid"] == 0.25
+    assert db.trades[0]["meta"]["pnl_gross"] == 5.0
     assert sorted(mk.calls) == ["1.35", "1.45"]
     # terminale: nessun'altra chiamata
     run(db, mk, NOW + timedelta(seconds=2), [])
@@ -410,7 +427,11 @@ def test_false_settling_is_reverted_when_row_comes_back():
     assert state(db) in ("IDLE_LIVE", "SETTLED", "LIVE_UNCOVERED", "LIVE_COVERED", "LIVE_COVER_PENDING")
 
 
-def test_idle_live_matches_do_not_count_toward_max_open_matches():
+def test_inplay_match_is_never_armed_and_does_not_block_prematch():
+    """L4 (audit 11/09) — una partita GIA' IN CORSO non viene piu' armata: Mike
+    non entra mai in-play da zero, quindi armarla produceva solo IDLE_LIVE →
+    SETTLED "nessuna operazione". E non deve comunque bloccare le candidate
+    pre-match (il tetto conta le partite con POSIZIONE)."""
     db = FakeDB(params={"stake": 10, "max_open_matches": 1})
     mk = FakeMarket()
     p_live = payload(); p_live["inplay"] = True; p_live["minute"] = 30; p_live["score_home"] = 0; p_live["score_away"] = 0
@@ -418,7 +439,7 @@ def test_idle_live_matches_do_not_count_toward_max_open_matches():
         blk["inplay"] = True
     r_live = row(p_live); r_live["event_id"] = "LIVE1"
     res = run(db, mk, NOW, [r_live])
-    assert res["new"] == 1
-    # la partita live senza posizione non deve bloccare la candidata pre-match
+    assert res["new"] == 0 and "LIVE1" not in db.events
+    # la partita live non armata non blocca la candidata pre-match
     res2 = run(db, mk, NOW + timedelta(seconds=2), [r_live, row(payload())])
-    assert res2["new"] == 1
+    assert res2["new"] == 1 and "E1" in db.events

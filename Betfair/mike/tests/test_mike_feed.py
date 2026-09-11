@@ -99,8 +99,10 @@ def test_is_candidate_window_and_filter():
     assert F.is_candidate(info, p, now=(NOW - timedelta(hours=2)).timestamp(), params=params) is False
     assert F.is_candidate(info, p, now=NOW.timestamp(), params=C.merge_params({"competition_filter": "premier"})) is False
     assert F.is_candidate(info, p, now=NOW.timestamp(), params=C.merge_params({"competition_filter": "serie a, liga"})) is True
+    # L4 (audit 11/09): una partita GIA' IN CORSO non viene armata (Mike non
+    # entra mai in-play da zero) → niente card IDLE_LIVE inutili
     p_live = payload(inplay=True, minute=10, sh=0, sa=0, ko=NOW - timedelta(minutes=10))
-    assert F.is_candidate(F.event_info("E1", p_live), p_live, now=NOW.timestamp(), params=params) is True
+    assert F.is_candidate(F.event_info("E1", p_live), p_live, now=NOW.timestamp(), params=params) is False
 
 
 def test_market_status_closed_from_block():

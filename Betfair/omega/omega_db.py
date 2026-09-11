@@ -7,6 +7,7 @@ gli stessi dati via RPC owner-only (migrations/omega_bot.sql).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from db_client import get_supabase_client
@@ -66,10 +67,74 @@ def delete_trade(trade_id: int) -> None:
 
 
 def list_trades(status: Optional[str] = None) -> list[dict[str, Any]]:
-    q = _sb().table("omega_trades").select("*")
-    if status:
-        q = q.eq("status", status)
-    return q.order("placed_at", desc=False).execute().data or []
+    """Righe di ``omega_trades`` (opzionalmente per status), PAGINATE.
+
+    AUDIT 11/09 (L-06): PostgREST tronca in silenzio a max-rows (1000) — con la
+    tabella che cresce ~200 righe/giorno, dopo ~5 giorni ``list_trades(None)``
+    (usata dal fallback degli aggregati e dal settlement) perdeva righe:
+    posizioni vive invisibili = liability sottostimata. Si pagina per id e si
+    riordina per placed_at (l'ordine atteso dai chiamanti)."""
+    rows = _select_all("omega_trades", "*",
+                       build=(lambda q: q.eq("status", status)) if status else None)
+    # review L2: ordine per ISTANTE, non per stringa ('...Z' vs '...+00:00' e i
+    # fusi diversi si ordinavano male; una riga senza placed_at finiva in testa).
+    return sorted(rows, key=lambda r: (_ts_key(r.get("placed_at")), int(r.get("id") or 0)))
+
+
+_TS_FAR_FUTURE = 4102444800.0   # 2100-01-01: le righe senza data vanno IN CODA
+
+
+def _ts_key(v: Any) -> float:
+    """Epoch di un timestamp ISO per l'ORDINAMENTO (review L2). Valore mancante o
+    non parsabile → in coda (non in testa: una riga rotta non deve sembrare la
+    più vecchia)."""
+    if not v:
+        return _TS_FAR_FUTURE
+    try:
+        txt = str(v).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(txt)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (TypeError, ValueError):
+        return _TS_FAR_FUTURE
+
+
+def failed_legs(since_iso: Optional[str] = None) -> dict[tuple[str, str], tuple[int, float]]:
+    """``(event_id, gamba) → (quante volte è fallita, epoch dell'ultimo tentativo)``
+    dalle righe con ``meta.leg_failed`` (esiti CERTI negativi: FOK ucciso, paper
+    senza fill, richiesta di coda mai creata).
+
+    review H4: il budget dei tentativi di gamba (3× a ≥30 s) stava SOLO in memoria
+    — dopo l'esclusione di ``meta.leg_failed`` dall'unique (v5) un riavvio del
+    servizio azzerava il contatore e la stessa gamba poteva essere ritentata
+    all'infinito. Query FILTRATA (poche righe, indice ``idx_omega_trades_leg_failed``
+    della migrazione v5): nessuna lettura in più della tabella intera."""
+    def build(q):
+        q = q.eq("meta->>leg_failed", "true")
+        return q.gte("placed_at", since_iso) if since_iso else q
+
+    try:
+        rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id,placed_at,meta",
+                           build=build)
+    except Exception as ex:  # noqa: BLE001 — senza il DB resta il conteggio in memoria
+        logger.warning("[omega.db] failed_legs KO: %s", str(ex)[:120])
+        return {}
+    out: dict[tuple[str, str], tuple[int, float]] = {}
+    for r in rows or []:
+        if r.get("closes_trade_id"):
+            continue                       # una chiusura non è una gamba d'ingresso
+        meta = r.get("meta") or {}
+        if not meta.get("leg_failed"):
+            continue                       # difesa se il filtro lato DB non è disponibile
+        ph = r.get("phase")
+        key = (str(r.get("event_id") or ""), str(ph) if ph in ("ht_cs", "ft_cs") else "")
+        ts = _ts_key(meta.get("error_at") or meta.get("no_fill_at") or r.get("placed_at"))
+        if ts >= _TS_FAR_FUTURE:
+            ts = 0.0
+        n, last = out.get(key, (0, 0.0))
+        out[key] = (n + 1, max(last, ts))
+    return out
 
 
 def _select_all(table: str, columns: str, build=None, page: int = 1000) -> list[dict[str, Any]]:
@@ -89,9 +154,13 @@ def _select_all(table: str, columns: str, build=None, page: int = 1000) -> list[
 
 
 def traded_event_ids() -> set[str]:
-    """event_id già piazzati (idempotenza I1)."""
-    rows = _select_all("omega_trades", "id,event_id")
-    return {str(r["event_id"]) for r in rows if r.get("event_id")}
+    """event_id già piazzati (idempotenza I1). Le righe con ``meta.leg_failed``
+    (esito CERTO negativo: nessun ordine reale è mai esistito) NON contano —
+    altrimenti un FOK ucciso brucerebbe l'evento per tutta la partita
+    (AUDIT 11/09 H-13)."""
+    rows = _select_all("omega_trades", "id,event_id,meta")
+    return {str(r["event_id"]) for r in rows
+            if r.get("event_id") and not (r.get("meta") or {}).get("leg_failed")}
 
 
 def manual_event_ids(since_iso: Optional[str] = None) -> set[str]:
@@ -111,14 +180,22 @@ def traded_legs(since_iso: Optional[str] = None) -> set[tuple[str, str]]:
     mai una seconda esposizione automatica su un evento già in posizione."""
     # ANCHE le righe in 'error' contano (§16): l'unique del DB uq_omega_trades_auto_leg
     # non le esclude — una gamba automatica andata in errore (ordine reale a esito
-    # ignoto, o paper senza fill) NON si ripiazza sullo stesso evento; prima il
-    # servizio ci riprovava a ogni ciclo e il DB rifiutava l'insert (un errore
-    # loggato ogni 5 s per tutta la partita).
-    rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id",
+    # ignoto) NON si ripiazza sullo stesso evento; prima il servizio ci riprovava a
+    # ogni ciclo e il DB rifiutava l'insert (un errore loggato ogni 5 s per tutta
+    # la partita).
+    # ECCEZIONE (AUDIT 11/09 H-13): le righe con ``meta.leg_failed`` sono esiti
+    # CERTI negativi (FOK ucciso, paper senza fill, richiesta mai creata) — nessun
+    # ordine reale esiste, la gamba è ritentabile col budget di _leg_retry_allowed.
+    # L'unique le esclude dalla migrazione omega_models_v5.sql: senza quella
+    # migrazione l'insert viene rifiutato e il ciclo logga 'already_reserved'
+    # (comportamento di oggi, nessun danno).
+    rows = _select_all("omega_trades", "id,event_id,phase,closes_trade_id,meta",
                        build=(lambda q: q.gte("placed_at", since_iso)) if since_iso else None)
     out: set[tuple[str, str]] = set()
     for r in rows or []:
         if r.get("closes_trade_id"):
+            continue
+        if (r.get("meta") or {}).get("leg_failed"):
             continue
         eid = str(r.get("event_id") or "")
         if not eid:
@@ -463,8 +540,13 @@ def aggregates(day_start=None) -> dict[str, float]:
             res = _sb().rpc("get_omega_aggregates", {}).execute()
             data = getattr(res, "data", None)
             if isinstance(data, dict) and "realized_today" in data:
-                return {k: (float(v) if k in ("realized_profit", "realized_today", "open_liability")
-                            else int(v)) for k, v in data.items() if v is not None}
+                # i campi in EURO restano float (AUDIT 11/09: locked_pnl_open e
+                # reconciling_liability sono importi — con int() si perdevano i
+                # centesimi e un −0,80 bloccato diventava 0)
+                money = ("realized_profit", "realized_today", "open_liability",
+                         "locked_pnl_open", "reconciling_liability")
+                return {k: (float(v) if k in money else int(v))
+                        for k, v in data.items() if v is not None}
         except Exception as ex:  # noqa: BLE001 - RPC assente (migrazione) o DB KO → legacy
             logger.debug("[omega.db] get_omega_aggregates KO → legacy: %s", str(ex)[:120])
     # LEGACY, PAGINATO: PostgREST tronca a max-rows (1000) — una pagina persa farebbe

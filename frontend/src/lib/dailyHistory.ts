@@ -61,6 +61,13 @@ export interface DailyRow {
     /** obiettivo giornaliero (Omega); null per Safe */
     goal: number | null;
     goal_pct: number | null;
+    /**
+     * H-10 — true SOLO se `goal` è lo SNAPSHOT storicizzato di quel giorno.
+     * false = obiettivo di RIPIEGO (quello corrente del control): giudicare
+     * "centrato/mancato" su un obiettivo mai storicizzato è una bugia, perciò
+     * il calendario non mostra ●/○ e lo dichiara.
+     */
+    goal_snapshot: boolean;
     /** Safe: per strategia (base/esatto/punta/tennis/model/manual) · Omega: per fase (ht_cs/ft_cs/scalp/none) */
     by_strategy: Record<string, DailyBreakdown>;
     by_sport: Record<string, DailyBreakdown>;
@@ -159,6 +166,8 @@ export function normalizeDailyRow(raw: unknown): DailyRow | null {
         commission_paid: numOrNull(r.commission_paid),
         goal: numOrNull(r.goal),
         goal_pct: numOrNull(r.goal_pct),
+        // H-10: l'RPC senza la migrazione non manda il flag → NON storicizzato
+        goal_snapshot: r.goal_snapshot === true,
         by_strategy: breakdown(r.by_strategy),
         by_sport: breakdown(r.by_sport),
         by_origin: breakdown(r.by_origin),
@@ -312,6 +321,98 @@ export function filterRange(rows: DailyRow[], from: string, to: string): DailyRo
     return rows.filter((r) => r.day >= from && r.day <= to);
 }
 
+// ----------------------------------------------------------- finestra max
+/** giorni massimi accettati dalle RPC dello storico (`trading_daily_history`) */
+export const MAX_HISTORY_DAYS = 400;
+
+export interface ClampedRange { from: string; to: string; clamped: boolean; days: number }
+
+/**
+ * M-17 — la RPC solleva un'eccezione oltre 400 giorni: chiedere 401 giorni
+ * faceva sparire TUTTO lo storico dietro un "Storico non disponibile". Il
+ * client accorcia la finestra (tenendo la coda più recente) e lo DICHIARA.
+ */
+export function clampHistoryRange(from: string, to: string, maxDays = MAX_HISTORY_DAYS): ClampedRange {
+    if (!isValidDay(from) || !isValidDay(to)) return { from, to, clamped: false, days: 0 };
+    const span = Math.round((dayToMs(to) - dayToMs(from)) / 86_400_000);
+    if (span < 0) return { from: to, to: from, clamped: true, days: -span + 1 };
+    if (span <= maxDays) return { from, to, clamped: false, days: span + 1 };
+    return { from: addDays(to, -maxDays), to, clamped: true, days: maxDays + 1 };
+}
+
+// ------------------------------------------------- attribuzione al giorno
+/** Come il calendario attribuisce una posizione a una giornata operativa. */
+export type DayAttribution = 'placed' | 'settled';
+
+/** Omega e Mike storicizzano per giorno di PIAZZAMENTO, Safe per regolazione. */
+export function attributionOf(variant: HistoryVariant): DayAttribution {
+    // Giornata operativa = giorno di PIAZZAMENTO per TUTTI i bot (Omega §14,
+    // Safe `safe_strategy_bot_v2.sql`, Mike `mike_history_v2.sql`)
+    void variant;
+    return 'placed';
+}
+
+export interface DaySummary {
+    /** posizioni che il CALENDARIO attribuisce a questo giorno */
+    attributed: DayTrade[];
+    /** righe presenti nella risposta ma attribuite a un ALTRO giorno */
+    others: DayTrade[];
+    /** P&L realizzato del giorno: lo stesso numero della cella del calendario */
+    pnl: number;
+    settled: number;
+    won: number;
+    lost: number;
+    voided: number;
+    /** posizioni ancora vive fra quelle attribuite */
+    open: number;
+    /** liability piazzata nel giorno */
+    liability: number;
+    /** P&L bloccato dalle coperture (null = nessuna copertura) */
+    lockedPnl: number | null;
+}
+
+const DAY_SETTLED = new Set(['won', 'lost', 'void']);
+const DAY_LIVE = new Set(['pending', 'open', 'hedged']);
+
+/**
+ * M-18/H-11 — i totali del dettaglio giornata devono coincidere con la cella
+ * del calendario: si sommano SOLO le posizioni attribuite a quel giorno
+ * (`placed_in_day` con l'attribuzione 'placed', `settled_in_day` con
+ * 'settled'). Prima il dettaglio sommava qualunque riga regolata presente
+ * nella risposta, comprese quelle che il calendario conta in un altro giorno.
+ */
+export function summarizeDayTrades(
+    trades: DayTrade[] | null | undefined, attribution: DayAttribution,
+): DaySummary {
+    const list = trades ?? [];
+    const belongs = (t: DayTrade) => (attribution === 'placed' ? t.placed_in_day : t.settled_in_day || (t.placed_in_day && !t.settled_at));
+    const attributed = list.filter(belongs);
+    const others = list.filter((t) => !belongs(t));
+    let pnl = 0, settled = 0, won = 0, lost = 0, voided = 0, open = 0, liability = 0;
+    let lockedPnl: number | null = null;
+    for (const t of attributed) {
+        if (DAY_SETTLED.has(t.status)) {
+            pnl += Number(t.total_pnl ?? t.pnl) || 0;
+            settled += 1;
+            if (t.status === 'won') won += 1;
+            else if (t.status === 'lost') lost += 1;
+            else voided += 1;
+        } else if (DAY_LIVE.has(t.status)) {
+            open += 1;
+        }
+        if (t.placed_in_day) liability += Number(t.liability ?? 0) || 0;
+        const lk = Number((t.meta ?? {})['locked_pnl']);
+        if (Number.isFinite(lk) && !DAY_SETTLED.has(t.status)) lockedPnl = (lockedPnl ?? 0) + lk;
+    }
+    return {
+        attributed, others,
+        pnl: Math.round(pnl * 100) / 100,
+        settled, won, lost, voided, open,
+        liability: Math.round(liability * 100) / 100,
+        lockedPnl: lockedPnl == null ? null : Math.round(lockedPnl * 100) / 100,
+    };
+}
+
 // ------------------------------------------------------------- analitiche
 function sortedByDay(rows: DailyRow[]): DailyRow[] {
     return [...rows].sort((a, b) => a.day.localeCompare(b.day));
@@ -392,23 +493,33 @@ export function expectancy(rows: DailyRow[]): number | null {
 }
 
 export interface GoalHitInfo {
-    /** giornate con obiettivo definito (> 0) */
+    /** giornate con obiettivo STORICIZZATO (> 0 e `goal_snapshot`) */
     total: number;
     /** giornate con pnl_realized ≥ goal */
     hit: number;
-    /** hit/total in [0,1]; null senza giornate con obiettivo */
+    /** hit/total in [0,1]; null senza giornate giudicabili */
     rate: number | null;
+    /** H-10: giornate con un obiettivo di RIPIEGO, escluse dal conteggio */
+    notHistorized: number;
 }
 
-/** Tasso di centratura dell'obiettivo giornaliero (Omega): pnl ≥ goal. */
+/**
+ * Tasso di centratura dell'obiettivo giornaliero (Omega): pnl ≥ goal.
+ * H-10 — solo le giornate con obiettivo STORICIZZATO (`goal_snapshot`): usare
+ * l'obiettivo corrente per giudicare il passato produce numeri inventati.
+ */
 export function goalHitRate(rows: DailyRow[]): GoalHitInfo {
-    let total = 0, hit = 0;
+    let total = 0, hit = 0, notHistorized = 0;
     for (const r of rows) {
         if (r.goal == null || !(r.goal > 0)) continue;
+        if (!r.goal_snapshot) { notHistorized += 1; continue; }
         total += 1;
         if (r.pnl_realized >= r.goal) hit += 1;
     }
-    return { total, hit, rate: total > 0 ? Math.round((hit / total) * 10000) / 10000 : null };
+    return {
+        total, hit, notHistorized,
+        rate: total > 0 ? Math.round((hit / total) * 10000) / 10000 : null,
+    };
 }
 
 export interface MonthSummary {
@@ -596,6 +707,7 @@ const EXIT_KIND_ALIASES: Record<string, ExitKind> = {
     forced: 'forced', mandatory: 'forced', obbligatoria: 'forced', must: 'forced', settle: 'forced',
     lost_game: 'forced', two_lost: 'forced',
     manual: 'manual', cashout: 'manual', user: 'manual',
+    other: 'other', altro: 'other',
 };
 
 export const EXIT_KIND_LABEL: Record<ExitKind, string> = {
@@ -620,7 +732,8 @@ export function exitInfo(meta: Record<string, unknown> | null | undefined): Exit
     const reason = rawReason != null && String(rawReason).trim() !== '' ? String(rawReason) : null;
     if (!kindStr && !reason) return null;
     const kind: ExitKind = kindStr ? (EXIT_KIND_ALIASES[kindStr] ?? 'other') : 'other';
-    const label = kind === 'other' && kindStr ? `Uscita: ${kindStr}` : EXIT_KIND_LABEL[kind];
+    // 'other' è un valore LEGITTIMO del vocabolario: etichetta italiana, non la chiave nuda
+    const label = kind === 'other' && kindStr && !(kindStr in EXIT_KIND_ALIASES) ? `Uscita: ${kindStr}` : EXIT_KIND_LABEL[kind];
     return { kind, label, reason, raw: kindStr || null };
 }
 

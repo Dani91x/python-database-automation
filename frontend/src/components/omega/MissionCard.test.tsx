@@ -42,7 +42,7 @@ vi.mock('@/lib/omegaMissions', async importOriginal => {
 
 import MissionCard from './MissionCard';
 import { requestManual } from '@/lib/omega';
-import { activateScalper } from '@/lib/scalper';
+import { activateScalper, fetchScalperState } from '@/lib/scalper';
 import { toast } from 'sonner';
 import type {
     MissionRow, MissionSuggestionLay, MissionSuggestionScalp,
@@ -50,6 +50,7 @@ import type {
 
 const mRequest = vi.mocked(requestManual);
 const mActivate = vi.mocked(activateScalper);
+const mScalperState = vi.mocked(fetchScalperState);
 
 // ------------------------------------------------------------------ fixture
 const SUGG_HT: MissionSuggestionLay = {
@@ -238,5 +239,45 @@ describe('MissionCard — piazzamento manuale (money-critical)', () => {
         });
         // niente ordini manuali: requestManual mai chiamato dalla riga scalp
         expect(mRequest).not.toHaveBeenCalled();
+    });
+});
+
+// ===========================================================================
+// Certificazione 11/09 (§5.3 stati in italiano, §18 un solo poll per pannello)
+// ===========================================================================
+const SCALPER_CTL = {
+    event_id: 'ev1', status: 'arming', mode: 'maker', dry_run: true,
+    stake: 25, params: {}, stats: {}, error: null,
+    started_at: null, stopped_at: null, heartbeat_at: null, updated_at: null,
+} as never;
+
+describe('MissionCard — stato dello scalper e poll (certificazione 11/09)', () => {
+    it('§5.3: lo stato del bot e in ITALIANO, mai la chiave del DB in maiuscolo', async () => {
+        renderCard(makeMission());
+        // con il prop `scalper` la card non aspetta nessuna RPC
+        render(<MissionCard mission={makeMission()} mode="paper" onChanged={() => {}} scalper={SCALPER_CTL} />);
+        const badge = (await screen.findAllByTestId('mission-scalper-status'))[0];
+        expect(badge).toHaveTextContent('IN ARMAMENTO');
+        expect(badge).not.toHaveTextContent('ARMING');
+    });
+
+    it('§18: col prop `scalper` la card NON interroga il servizio (poll del pannello)', async () => {
+        render(<MissionCard mission={makeMission()} mode="paper" onChanged={() => {}} scalper={SCALPER_CTL} />);
+        await screen.findByTestId('mission-scalper-status');
+        expect(mScalperState).not.toHaveBeenCalled();
+    });
+
+    it('§18: SENZA il prop la card resta autonoma (poll proprio, piu lento)', async () => {
+        mScalperState.mockResolvedValue({ control: SCALPER_CTL, activity: [] } as never);
+        render(<MissionCard mission={makeMission()} mode="paper" onChanged={() => {}} />);
+        await waitFor(() => expect(mScalperState).toHaveBeenCalledWith('ev1', 0));
+        expect(await screen.findByTestId('mission-scalper-status')).toHaveTextContent('IN ARMAMENTO');
+    });
+
+    it('`scalper={null}` = letto e assente: nessun badge, nessuna RPC', async () => {
+        render(<MissionCard mission={makeMission()} mode="paper" onChanged={() => {}} scalper={null} />);
+        await screen.findByRole('button', { name: /AVVIA SCALPER 1-TICK/ });
+        expect(screen.queryByTestId('mission-scalper-status')).toBeNull();
+        expect(mScalperState).not.toHaveBeenCalled();
     });
 });

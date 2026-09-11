@@ -103,6 +103,77 @@ PROFIT_KINDS = ("profit", "time")
 EXIT_KIND_UI = {"profit": "profit", "loss": "loss", "time": "time",
                 "red_card": "red_card", "mandatory": "forced"}
 
+# VOCABOLARIO CHIUSO di ``meta.exit_kind`` (contratto con la UI, ExitBadge):
+# ogni gamba di chiusura scritta dal servizio ne porta esattamente uno.
+EXIT_KINDS = ("greenup", "profit", "loss", "time", "red_card", "forced",
+              "manual", "other")
+
+
+def ui_exit_kind(kind: Any, *, locked: Optional[float] = None,
+                 manual: bool = False, forced: bool = False,
+                 integral: bool = True) -> str:
+    """``meta.exit_kind`` del vocabolario chiuso ``EXIT_KINDS``.
+
+    Regola (deterministica, documentata per il frontend):
+      manual=True                                   → 'manual'  (cash out dalla UI)
+      forced=True  oppure regola 'mandatory'        → 'forced'  (obbligo/combo)
+      regola di PROFITTO ('profit'/'time'), chiusura
+      INTEGRALE e P&L bloccato >= 0                 → 'greenup' (green-up vero)
+      regola 'profit' con bloccato < 0 / ignoto     → 'profit'
+      regola 'time'   con bloccato < 0 / ignoto     → 'time'
+      regola 'loss' / 'red_card'                    → 'loss' / 'red_card'
+      qualunque altro caso                          → 'other'
+    """
+    if manual:
+        return "manual"
+    k = str(kind or "")
+    if forced or k == "mandatory":
+        return "forced"
+    if k in PROFIT_KINDS:
+        if integral and locked is not None and float(locked) >= 0.0:
+            return "greenup"
+        return k
+    if k in ("loss", "red_card"):
+        return k
+    return EXIT_KIND_UI.get(k, "other") if EXIT_KIND_UI.get(k) in EXIT_KINDS else "other"
+
+
+# BACKOFF delle uscite/piazzamenti che non riescono: MAI uno stato terminale
+# (H-05/H-17/H-21/C-04). Oltre l'ultimo valore si ripete l'ultimo, per sempre,
+# finche' il mercato e' aperto: una liability viva va coperta, costi quel che costi.
+RETRY_BACKOFF_S = (5.0, 15.0, 60.0, 300.0)
+
+
+def retry_backoff_s(attempts: Any) -> float:
+    """Attesa (s) prima del tentativo numero ``attempts``+1 (1-based sugli
+    attempts gia' fatti). Oltre la scala si ripete l'ultimo gradino."""
+    n = _int(attempts) or 0
+    if n <= 0:
+        return 0.0
+    idx = min(n, len(RETRY_BACKOFF_S)) - 1
+    return float(RETRY_BACKOFF_S[idx])
+
+
+def hold_code(why: Any) -> str:
+    """Firma STABILE del motivo di un hold: i numeri (che cambiano a ogni tick)
+    diventano '#'. Serve a NON riscrivere ``meta.exit_hold`` a ogni ciclo (M-28)."""
+    return re.sub(r"[-+0-9][-+0-9.,%]*", "#", str(why or "")).strip()
+
+
+def net_of_commission(value: Optional[float], commission: Any) -> Optional[float]:
+    """Valore NETTO della commissione Betfair: si applica solo agli utili (M-27).
+    Una perdita non paga commissione. ``None`` resta ``None``."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return round(v, 2)
+    c = min(1.0, max(0.0, _f(commission, 0.0)))
+    return round(v * (1.0 - c), 2)
+
 _REASON_TEXT = {
     "sfavorita_pareggia": "La squadra bancata ha pareggiato: chiusura in perdita",
     "favorita_segna_ancora": "La favorita ha segnato ancora: green-up",
@@ -128,6 +199,9 @@ RESIDUAL_EPS = 0.01
 # freschezza del feed: la riga dell'evento (o l'heartbeat dello scanner) deve
 # essere più recente di così, altrimenti si ASPETTA (mai chiudere su dati vecchi)
 FEED_FRESH_S = 20.0
+# TETTO DURO di freschezza (M-24): oltre questo, la riga non vale mai, nemmeno
+# con l'heartbeat dello scanner vivo.
+FEED_HARD_MAX_S = 120.0
 
 TRACK_KEY = "exit_track"          # meta.exit_track: stato del tracciamento
 REQUEST_KEY = "exit_requested"    # meta.exit_requested: uscita richiesta/inviata
@@ -265,13 +339,20 @@ def parse_ts(v: Any) -> Optional[float]:
 
 def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
                   scanner_ts: Optional[float] = None,
-                  max_age_s: float = FEED_FRESH_S) -> bool:
+                  max_age_s: float = FEED_FRESH_S,
+                  hard_max_age_s: float = FEED_HARD_MAX_S) -> bool:
     """La riga del feed è utilizzabile per una chiusura: aggiornata da ≤ max_age_s
     OPPURE scanner vivo (heartbeat ≤ max_age_s: la riga non cambia perché non è
-    cambiato nulla, non perché il feed è morto)."""
+    cambiato nulla, non perché il feed è morto).
+
+    TETTO DURO (M-24): oltre ``hard_max_age_s`` la riga NON è mai utilizzabile,
+    nemmeno con lo scanner vivo — uno scanner che non riscrive quella partita da
+    due minuti non sta osservando quel mercato, e su quote vecchie non si chiude."""
     if not isinstance(row, dict):
         return False
     ts = parse_ts(row.get("updated_at"))
+    if ts is not None and now_ts - ts > float(hard_max_age_s):
+        return False
     if ts is not None and now_ts - ts <= max_age_s:
         return True
     return scanner_ts is not None and now_ts - float(scanner_ts) <= max_age_s
@@ -296,7 +377,7 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
     locked ≥ ev_hold − ev_margin → EXIT (tenere non rende di più); altrimenti
     HOLD (si ricontrolla al ciclo successivo). p_lose ignoto → HOLD."""
     if locked_pnl is not None and float(locked_pnl) >= 0.0:
-        return "exit", f"profitto bloccato {float(locked_pnl):+.2f} EUR: esco"
+        return "exit", f"profitto bloccato {_eur(locked_pnl)}: esco"
     if p_lose is None:
         return "hold", "P(perdita) non stimabile e chiusura in perdita: tengo"
     p = min(1.0, max(0.0, float(p_lose)))
@@ -309,11 +390,17 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
         return "exit", (f"rischio alto: P(perdita)={p * 100:.1f}% >= "
                         f"{float(params.get('risk_cap') or 1.0) * 100:.0f}%, esco")
     if locked is not None and locked >= ev_hold - float(params.get("ev_margin") or 0.0):
-        return "exit", (f"tenere non rende: EV(tengo)={ev_hold:+.2f} EUR vs bloccato "
-                        f"{locked:+.2f} EUR, P(perdita)={p * 100:.1f}%, esco")
-    lk = "n/d" if locked is None else f"{round(locked, 2):+.2f} EUR"   # review HIGH-4: mai TypeError
-    return "hold", (f"EV(tengo)={ev_hold:+.2f} EUR > bloccato {lk}, "
+        return "exit", (f"tenere non rende: EV(tengo)={_eur(ev_hold)} vs bloccato "
+                        f"{_eur(locked)}, P(perdita)={p * 100:.1f}%, esco")
+    lk = "n/d" if locked is None else _eur(round(locked, 2))   # review HIGH-4: mai TypeError
+    return "hold", (f"EV(tengo)={_eur(ev_hold)} > bloccato {lk}, "
                     f"P(perdita)={p * 100:.1f}%: tengo")
+
+
+def _eur(v: float) -> str:
+    """Denaro nel formato italiano del design system (`+1,20 €`): i motivi di
+    uscita/hold finiscono a schermo (`exit_hold.reason`, `model_why`)."""
+    return f"{float(v):+.2f}".replace(".", ",") + " €"
 
 
 def ev_hold(p_lose: float, hold_profit: float, loss_if_lose: float) -> float:
@@ -343,16 +430,48 @@ def spread_ratio(prices: Optional[dict[str, Any]]) -> Optional[float]:
     return round(lay / back, 4)
 
 
+# market_type del trade → blocco del feed che porta il SUO status (M-23: prima
+# O/U, BTTS e HT 1X2 leggevano ``mo_status``, lo stato di un ALTRO mercato).
+_STATUS_BLOCK_BY_TYPE = {
+    "CORRECT_SCORE": "cs", "HALF_TIME_SCORE": "ht",
+    "BOTH_TEAMS_TO_SCORE": "btts", "HALF_TIME": "ht_result",
+}
+
+
 def market_open(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> Optional[bool]:
-    """Stato del mercato della posizione dal feed: True/False, None = ignoto."""
+    """Stato del MERCATO DELLA POSIZIONE dal feed: True/False, None = ignoto.
+
+    Ogni blocco del feed (``cs``, ``ht``, ``btts``, ``ht_result``, ogni voce di
+    ``ou``) porta il proprio ``status``; solo il Match Odds usa ``mo_status``.
+    Il blocco si riconosce per ``market_id`` quando il trade lo ha (una linea
+    O/U non e' l'altra), altrimenti per market_type."""
     if not isinstance(payload, dict):
         return None
     mt = str(trade.get("market_type") or "").upper()
-    if mt == "CORRECT_SCORE":
-        cs = payload.get("cs")
-        st = cs.get("status") if isinstance(cs, dict) else None
+    mid = str(trade.get("market_id") or "") or None
+    st: Any = None
+    key = _STATUS_BLOCK_BY_TYPE.get(mt)
+    blocks: Optional[list[Any]] = None
+    if mt == "MATCH_ODDS" or not mt:
+        st = payload.get("mo_status")
+    elif key:
+        blocks = [payload.get(key)]
+    elif mt.startswith("OVER_UNDER"):
+        blocks = list(payload.get("ou") or [])
+    elif mid:
+        # market_type fuori catalogo: si cerca il blocco col market_id del trade
+        blocks = [payload.get(k) for k in _STATUS_BLOCK_BY_TYPE.values()]
+        blocks.extend(payload.get("ou") or [])
     else:
         st = payload.get("mo_status")
+    for blk in blocks or []:
+        if not isinstance(blk, dict):
+            continue
+        if mid and blk.get("market_id") and str(blk["market_id"]) != mid:
+            continue
+        if blk.get("status") is not None:
+            st = blk.get("status")
+            break
     return None if st is None else str(st).upper() == "OPEN"
 
 

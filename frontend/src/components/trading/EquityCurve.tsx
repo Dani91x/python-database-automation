@@ -3,11 +3,9 @@
 // Stessa resa della curva Omega: gradini sui settlement, linea dello zero,
 // colore dal segno finale.
 // ============================================================================
-export interface EquityPoint { t: number; v: number; iso: string }
+import { fmtMoney } from '@/lib/format';
 
-function fmtSignedEur(v: number): string {
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
-}
+export interface EquityPoint { t: number; v: number; iso: string }
 
 export function EquityCurve({ series, emptyLabel = 'nessun trade ancora regolato — la curva compare al primo incasso', label = 'Equity curve' }: {
     series: EquityPoint[]; emptyLabel?: string; label?: string;
@@ -40,7 +38,7 @@ export function EquityCurve({ series, emptyLabel = 'nessun trade ancora regolato
             {yTicks.map((v, i) => (
                 <g key={i}>
                     <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} stroke="#1e293b" strokeWidth={1} />
-                    <text x={W - pad.r + 6} y={y(v) + 3} fontSize={10} fill="#94a3b8" className="tabular-nums">{fmtSignedEur(v)}</text>
+                    <text x={W - pad.r + 6} y={y(v) + 3} fontSize={10} fill="#94a3b8" className="tabular-nums">{fmtMoney(v, { signed: true })}</text>
                 </g>
             ))}
             <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke="#334155" strokeWidth={1} strokeDasharray="3 3" />

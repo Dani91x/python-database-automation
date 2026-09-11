@@ -153,7 +153,14 @@ def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     assert legs[0]["origin"] == "auto" and legs[0]["phase"] == "ft_cs"
     opened = db.get_trade(tr["id"])
     assert opened["status"] == "hedged"               # fill pieno → posizione chiusa
+    # AUDIT 11/09 (H-01) + review H3: exit_kind dal VOCABOLARIO CONDIVISO
+    # (exits.ui_exit_kind): 'greenup' SOLO se integrale e bloccato >= 0. Qui la
+    # chiusura blocca una PERDITA -> 'loss' (il badge "CHIUSO IN GREEN-UP" su una
+    # perdita sarebbe una bugia); la regola che ha deciso sta in greenup.kind.
     assert opened["meta"]["exit_kind"] == "loss" and opened["meta"]["exit_reason"]
+    assert opened["meta"]["exit_profit"] is False
+    assert opened["meta"]["greenup"]["kind"] == "loss"
+    assert opened["meta"]["greenup"]["state"] == "done"
     assert legs[0]["meta"]["exit_kind"] == "loss" and legs[0]["meta"]["exit_reason"] == opened["meta"]["exit_reason"]
     assert opened["meta"]["locked_pnl"] < 0
     log = _logs(db, "greenup")
@@ -163,7 +170,7 @@ def test_trigger_gol_esce_dopo_assestamento_e_marca_le_due_righe(lambdas):
     assert g["p_lose"] is not None and 0.02 < g["p_lose"] < 0.15 and g["p_source"] == "model"
     assert g["locked_pnl"] < 0 and g["back_price"] == 8.0 and g["size"] > 0 and g["trade_id"] == tr["id"]
     assert g["ev_hold"] is not None and g["locked_pnl"] >= g["ev_hold"] - 0.10 and g["decision"] == "exit"
-    assert g["exit_kind"] == "loss"
+    assert g["exit_kind"] == "loss" and g["kind"] == "loss" and g["state"] == "done"
     # ciclo successivo: posizione chiusa → nulla da fare (mai un secondo invio)
     assert _run(db, goal, now=NOW + timedelta(seconds=60)) == 0
     assert len(_closings(db, tr["id"])) == 1
@@ -232,7 +239,8 @@ def test_caso_vivo_trade_70_tiene_a_p_012_esce_a_016_e_a_distanza_zero(monkeypat
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 2): 0.01})
     assert _run(db2, _payload(35, 1, 2, cs=[_sel(12, "1 - 2", 1.8, 1.7)]), p) == 1
     g2 = _logs(db2, "greenup")[0]
-    assert g2["distance"] == 0 and g2["p_lose"] == 0.01 and g2["exit_kind"] == "loss"
+    assert g2["distance"] == 0 and g2["p_lose"] == 0.01
+    assert g2["exit_kind"] == "loss" and g2["kind"] == "loss"
     assert db2.get_trade(tr2["id"])["status"] == "hedged"
 
 
@@ -256,7 +264,8 @@ def test_trigger_quota_decisione_a_modello_con_riserva_di_mercato(no_lambdas):
     assert _run(db, _payload(70, 1, 0, cs=[_sel(14, "1 - 3", 20.0, 19.0)]), p) == 1   # 20/55 ≤ 0.5
     g = _logs(db, "greenup")[0]
     assert g["trigger"] == "price" and g["p_source"] == "market" and g["p_lose"] == pytest.approx(1 / 19, abs=1e-4)
-    assert g["exit_kind"] == "loss" and db.get_trade(tr["id"])["status"] == "hedged"
+    assert g["exit_kind"] == "loss" and g["kind"] == "loss"
+    assert db.get_trade(tr["id"])["status"] == "hedged"
 
 
 def test_trigger_quota_tiene_con_modello_a_margine_ampio(monkeypatch, lambdas):
@@ -280,10 +289,13 @@ def test_take_profit_blocca_il_profitto_quasi_pieno(lambdas):
     assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 320.0, 300.0)]), p) == 0    # 5·(1−55/300)=4.08 < 4.5
     assert _run(db, _payload(85, 1, 0, cs=[_sel(14, "1 - 3", 1000.0, 990.0)]), p) == 1
     g = _logs(db, "greenup")[0]
-    assert g["trigger"] == "take_profit" and g["exit_kind"] == "profit" and g["locked_pnl"] >= 4.5
+    # take-profit INTEGRALE in utile: questo e' il green-up VERO -> 'greenup'
+    assert g["trigger"] == "take_profit" and g["exit_kind"] == "greenup" and g["locked_pnl"] >= 4.5
+    assert g["kind"] == "profit"
     opened = db.get_trade(tr["id"])
-    assert opened["status"] == "hedged" and opened["meta"]["exit_kind"] == "profit"
-    assert _closings(db, tr["id"])[0]["meta"]["exit_kind"] == "profit"
+    assert opened["status"] == "hedged" and opened["meta"]["exit_kind"] == "greenup"
+    assert opened["meta"]["exit_profit"] is True
+    assert _closings(db, tr["id"])[0]["meta"]["exit_kind"] == "greenup"
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +314,7 @@ def test_residuo_ritentato_con_cooldown_e_cap(lambdas):
     assert len(_closings(db, tr["id"])) == 1
     assert _run(db, thin, p, now=NOW + timedelta(seconds=21)) == 1        # residuo: secondo invio
     legs = _closings(db, tr["id"])
+    # chiusure PARZIALI che bloccano una perdita: 'loss', non 'greenup'
     assert len(legs) == 2 and all(l["meta"]["exit_kind"] == "loss" for l in legs)
     assert _logs(db, "greenup")[1]["attempt"] == 2 and _logs(db, "greenup")[1]["residual_before"] > 0
     # cap raggiunto: nessun terzo invio, marcatura 'failed' + log error una volta sola

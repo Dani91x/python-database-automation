@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { lockedPnlAt } from '@/lib/ladderMath';
+import { fmtMoney, fmtOdds } from '@/lib/format';
 
 // --------------------------------------------------------------- matematica
 /** Lato dell'ordine di copertura: W > L → LAY (bancare), altrimenti BACK. */
@@ -84,11 +85,14 @@ export function netAfterCommission(pnl: number, commission?: number): number {
 }
 
 // ------------------------------------------------------------------ helpers
+// §5 del design system: UN solo formato monetario ("−4,36 €"), mai "−€4.36"
+// accanto a "12,50 €" nella stessa vista. `currency` resta un prop (il chiamante
+// può passare '' per il numero nudo): lo inoltriamo a fmtMoney.
 function fmtSigned(v: number, currency: string): string {
-    return `${v < 0 ? '−' : '+'}${currency}${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true, currency });
 }
 function fmtPlain(v: number, currency: string): string {
-    return `${currency}${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(Math.abs(v), { currency });
 }
 
 export interface CashOutButtonProps {
@@ -112,6 +116,13 @@ export interface CashOutButtonProps {
     onCashOut: (args: { amount?: number; fraction?: number }) => Promise<void> | void;
     /** rendering ridotto per le celle di tabella */
     compact?: boolean;
+    /**
+     * Posizione già coperta IN PARTE: `win`/`lose` sono l'esposizione RESIDUA e
+     * il bottone deve dirlo ("chiudi residuo"), perché il trader non stia
+     * chiudendo quello che crede di avere ancora intero. `remaining` = liability
+     * ancora a rischio (€), `fraction` = quota già coperta (0-1).
+     */
+    residual?: { remaining?: number | null; fraction?: number | null } | null;
 }
 
 /** la conferma LIVE armata decade da sola dopo questo tempo */
@@ -120,6 +131,7 @@ export const LIVE_ARM_TIMEOUT_MS = 10_000;
 export function CashOutButton({
     win, lose, bestBack, bestLay, commission, currency = '€',
     disabled = false, disabledReason, pending = false, mode, onCashOut, compact = false,
+    residual = null,
 }: CashOutButtonProps) {
     const [open, setOpen] = useState(false);
     const [stakeStr, setStakeStr] = useState('');
@@ -206,6 +218,13 @@ export function CashOutButton({
     const tone = netFull == null ? 'text-slate-500'
         : netFull >= 0 ? 'text-emerald-300' : 'text-red-300';
     const label = netFull == null ? 'n/d' : fmtSigned(netFull, currency);
+    // copertura PARZIALE: il bottone chiude il RESIDUO, non la posizione piena
+    const isResidual = residual != null
+        && (residual.fraction == null || residual.fraction < 0.999);
+    const residualEur = residual?.remaining != null && Number.isFinite(Number(residual.remaining))
+        ? fmtPlain(Number(residual.remaining), currency)
+        : null;
+    const actionWord = isResidual ? 'Chiudi residuo' : 'Cash out';
 
     const trigger = (
         <Button
@@ -215,7 +234,11 @@ export function CashOutButton({
             disabled={isDisabled}
             onClick={() => setOpen(true)}
             data-testid="cashout-trigger"
-            aria-label={`Cash out ${label}`}
+            data-residual={isResidual ? '1' : undefined}
+            title={isResidual
+                ? `posizione coperta${residual?.fraction != null ? ` al ${Math.round(residual.fraction * 100)} %` : ' in parte'}: questo chiude il RESIDUO${residualEur ? ` (liability ${residualEur})` : ''}`
+                : undefined}
+            aria-label={`${actionWord} ${label}`}
             className={[
                 'border-white/15 bg-black/40 hover:bg-white/10 font-bold tabular-nums',
                 compact ? 'h-7 px-2 text-[11px]' : 'h-9 px-3 text-xs',
@@ -223,7 +246,9 @@ export function CashOutButton({
             ].join(' ')}
         >
             <Coins className={compact ? 'w-3 h-3 mr-1' : 'w-3.5 h-3.5 mr-1'} aria-hidden />
-            {compact ? label : <>Cash out <span className="ml-1">{label}</span></>}
+            {compact
+                ? <>{isResidual && <span className="mr-1 font-normal opacity-80">residuo</span>}{label}</>
+                : <>{actionWord}{isResidual && residualEur ? ` (${residualEur})` : ''} <span className="ml-1">{label}</span></>}
         </Button>
     );
 
@@ -254,12 +279,19 @@ export function CashOutButton({
                 <DialogContent className="glass-card border-white/10 max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 font-display">
-                            <Coins className="w-5 h-5 text-secondary" aria-hidden /> Cash out
+                            <Coins className="w-5 h-5 text-secondary" aria-hidden /> {actionWord}
                         </DialogTitle>
                         <DialogDescription>
                             Chiusura {side === 'lay' ? 'BANCANDO (lay)' : 'PUNTANDO (back)'} a{' '}
-                            <b className="tabular-nums text-white">{price?.toFixed(2) ?? '—'}</b>
+                            <b className="tabular-nums text-white">{fmtOdds(price)}</b>
                             {' '}· green pieno {fmtPlain(fullStake, currency)} di stake.
+                            {isResidual && (
+                                <span data-testid="cashout-residual-note">
+                                    {' '}Posizione già coperta
+                                    {residual?.fraction != null ? ` al ${Math.round(residual.fraction * 100)} %` : ' in parte'}:
+                                    qui si chiude il <b>residuo</b>{residualEur ? ` (liability ancora a rischio ${residualEur})` : ''}.
+                                </span>
+                            )}
                         </DialogDescription>
                     </DialogHeader>
 

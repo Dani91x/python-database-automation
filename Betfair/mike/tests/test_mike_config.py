@@ -33,7 +33,11 @@ def test_defaults_match_plan():
     assert d["pre_max_spread_ticks"] == 6
     assert d["exact_sizes"] is True
     assert d["cover_policy"] == "auto"
-    assert d["max_matches"] == 40
+    # audit 11/09 (M3): i parametri senza effetto sono stati RIMOSSI dalla
+    # whitelist — se arrivano dalla UI vengono scartati in silenzio
+    for key in C.REMOVED_PARAMS:
+        assert key not in d
+    assert C.merge_params({k: 1 for k in C.REMOVED_PARAMS}) == d
 
 
 def test_merge_clamps_and_casts():

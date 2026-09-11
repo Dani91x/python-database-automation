@@ -11,17 +11,16 @@ import {
     equityByDay, summarizeRows, aggregateBreakdown, dayLabel,
     PERIOD_LABEL, type DailyRow, type PeriodKind, type HistoryVariant, type DailyBreakdown,
 } from '@/lib/dailyHistory';
+import { fmtMoney, fmtPct as fmtPctFrac, fmtNum } from '@/lib/format';
 
 function fmtEur(v: number | null | undefined): string {
-    const n = Number(v ?? 0);
-    return `${n < 0 ? '−' : ''}€${Math.abs(n).toFixed(2)}`;
+    return fmtMoney(Number(v ?? 0));
 }
 function fmtSignedEur(v: number | null | undefined): string {
-    if (v == null || !Number.isFinite(v)) return '—';
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
 }
 function fmtPct(v: number | null | undefined): string {
-    return v == null ? '—' : `${(v * 100).toFixed(0)}%`;
+    return fmtPctFrac(v, 0);
 }
 
 const PERIODS: PeriodKind[] = ['month', '30d', '90d', 'year'];
@@ -145,12 +144,12 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
 
             <div className="flex flex-wrap gap-3">
                 <Tile label="P&L periodo" value={fmtSignedEur(s.pnl)} tone={s.pnl > 0 ? 'pos' : s.pnl < 0 ? 'neg' : 'plain'} testId="kpi-pnl"
-                    sub={s.commission != null ? `commissioni ≈ ${fmtEur(s.commission)}` : `${s.days} giornate operative`} />
+                    sub={s.commission != null ? `commissioni ≈ ${fmtEur(s.commission)} (stimate dal netto)` : `${s.days} giornate operative`} />
                 <Tile label="Giornate +/−" value={`${s.positiveDays} / ${s.negativeDays}`} tone={s.positiveDays >= s.negativeDays ? 'pos' : 'neg'} testId="kpi-days"
                     sub={`${s.days} giornate con attività`} />
                 <Tile label="Win rate" value={fmtPct(s.winRate)} tone="plain" testId="kpi-winrate"
-                    sub={`${s.won}V · ${s.lost}P · ${s.void} void · ${s.hedgedClosed} chiusi a mercato`} />
-                <Tile label="Profit factor" value={s.profitFactor == null ? '—' : s.profitFactor.toFixed(2)} tone={s.profitFactor == null ? 'plain' : s.profitFactor >= 1 ? 'pos' : 'neg'} testId="kpi-pf"
+                    sub={`${s.won}V · ${s.lost}P · ${s.void} void · ${s.hedgedClosed} chiusi o in chiusura a mercato`} />
+                <Tile label="Profit factor" value={s.profitFactor == null ? '—' : fmtNum(s.profitFactor, 2)} tone={s.profitFactor == null ? 'plain' : s.profitFactor >= 1 ? 'pos' : 'neg'} testId="kpi-pf"
                     sub="gross profit / gross loss" />
                 <Tile label="Expectancy / trade" value={fmtSignedEur(s.expectancy)} tone={s.expectancy == null ? 'plain' : s.expectancy >= 0 ? 'pos' : 'neg'} testId="kpi-expectancy"
                     sub={`${s.settled} aperture regolate · ${s.tradesPlaced} piazzate`} />
@@ -164,7 +163,11 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
                 {variant === 'omega' && (
                     <Tile label="Obiettivo centrato" value={s.goalHit.total > 0 ? `${s.goalHit.hit}/${s.goalHit.total}` : '—'}
                         tone={s.goalHit.rate == null ? 'plain' : s.goalHit.rate >= 0.5 ? 'gold' : 'neg'} testId="kpi-goal"
-                        sub={s.goalHit.rate != null ? `${fmtPct(s.goalHit.rate)} delle giornate` : 'nessun obiettivo registrato'} />
+                        sub={s.goalHit.rate != null
+                            ? `${fmtPct(s.goalHit.rate)} delle giornate${s.goalHit.notHistorized > 0 ? ` · ${s.goalHit.notHistorized} senza obiettivo storicizzato` : ''}`
+                            : s.goalHit.notHistorized > 0
+                                ? `${s.goalHit.notHistorized} giornate con obiettivo non storicizzato: non giudicabili`
+                                : 'nessun obiettivo registrato'} />
                 )}
                 {s.maxLiability != null && (
                     <Tile label="Liability max" value={fmtEur(s.maxLiability)} tone="danger" testId="kpi-liab" sub="massima esposizione su un trade" />

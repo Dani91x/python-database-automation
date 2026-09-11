@@ -208,6 +208,16 @@ class _GridView:
         return self._g.get(key, 0.0)
 
 
+def _is_live_ou_line(line: Optional[float], score_home: Optional[int],
+                     score_away: Optional[int]) -> bool:
+    """Linea Over/Under ancora INDECISA (copia pura di ``scanner.is_live_ou_line``,
+    tenuta qui per non importare lo scanner nel motore puro): i gol già segnati
+    non l'hanno superata. Superata = esito certo, nessuna opportunità (H6)."""
+    if line is None or score_home is None or score_away is None:
+        return False
+    return float(line) > int(score_home) + int(score_away)
+
+
 def _line_key(line: float) -> str:
     """2.5 → '2_5' (stessa convenzione di ``_markets_from_residual``)."""
     return str(float(line)).replace(".", "_")
@@ -597,6 +607,14 @@ class OpportunityModel:
                 continue
             line = blk.get("line")
             if line is None:
+                continue
+            # H6 (audit 11/09) — linea GIA' DECISA: e' nel feed solo perche' una
+            # posizione Mike deve poterla chiudere (blocco marcato `decided` /
+            # `for_mike` dallo scanner). Per il motore opportunita' non e' un
+            # mercato: l'esito e' certo, il prezzo e' un residuo e con
+            # `max_prob_lay = 0` il bot ci si butterebbe in automatico.
+            if blk.get("decided") or not _is_live_ou_line(
+                    float(line), payload.get("score_home"), payload.get("score_away")):
                 continue
             k = _line_key(float(line))
             runners = []

@@ -1,20 +1,31 @@
 // ============================================================================
-// MikeParamsSheet — TUTTI i parametri del bot Mike, modificabili dall'utente.
-// Guidato da MIKE_PARAM_FIELDS (specchio della whitelist backend), raggruppati
-// per sezione. Salva l'oggetto INTERO via mike_update_params (come Safe/Omega).
+// MikeParamsSheet — TUTTI i parametri del bot Mike, sul pannello CONDIVISO
+// (`ParamsSheetBase`, design system §12): clamp VISIBILE ("clampato a 100
+// (ammesso 0,50 … 100)"), pallino "modifiche non salvate", un solo bottone
+// «Salva parametri» e il bottone «Default» che riporta ai valori di fabbrica
+// (= quelli del servizio, MIKE_PARAM_DEFAULTS, specchio di config.py).
+//
+// La spec arriva da MIKE_PARAM_FIELDS: aggiungere un parametro al data-layer lo
+// fa comparire qui senza toccare questo file.
 // ============================================================================
-import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useMemo } from 'react';
+import { ParamsSheetBase, type ParamGroup } from '@/components/trading/ParamsSheetBase';
 import {
-    Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
-} from '@/components/ui/sheet';
-import { Settings } from 'lucide-react';
-import {
-    MIKE_PARAM_FIELDS, MIKE_PARAM_GROUP_LABEL, mergeMikeParams,
+    MIKE_PARAM_FIELDS, MIKE_PARAM_GROUP_LABEL, MIKE_PARAM_DEFAULTS, mergeMikeParams,
     type MikeParamGroup, type MikeParams,
 } from '@/lib/mike';
 
 const GROUPS: MikeParamGroup[] = ['generale', 'pre', 'cover', 'cashout', 'uscite', 'reentry', 'rischio'];
+
+const GROUP_NOTE: Partial<Record<MikeParamGroup, string>> = {
+    generale: 'finestra di lavoro, importo e commissione: valgono per tutte le partite.',
+    pre: 'ingresso Under 3.5 e green-up ciclico prima del calcio d’inizio.',
+    cover: 'copertura Over 4.5 in gioco: "intelligente ma non lenta".',
+    cashout: 'chiusura globale a profitto (Under 3.5 + Over 4.5), soglia e cash out intelligente.',
+    uscite: 'uscite in perdita all’intervallo e nel secondo tempo (a modello o regola fissa).',
+    reentry: 're-ingresso sull’Under 4.5 dopo un gol e una chiusura in profitto.',
+    rischio: 'tetti e stop: sono l’ultima barriera prima dei soldi veri.',
+};
 
 export interface MikeParamsSheetProps {
     params: MikeParams;
@@ -23,114 +34,39 @@ export interface MikeParamsSheetProps {
 }
 
 export function MikeParamsSheet({ params, busy, onSave }: MikeParamsSheetProps) {
-    const [draft, setDraft] = useState<MikeParams>(() => ({ ...params }));
-    const [open, setOpen] = useState(false);
-    // ri-sincronizza il form quando arrivano parametri nuovi dal server e il pannello e' chiuso
-    useEffect(() => { if (!open) setDraft({ ...params }); }, [params, open]);
-
-    const set = (key: string, value: number | boolean | string) => setDraft((d) => ({ ...d, [key]: value }));
+    const groups = useMemo<ParamGroup[]>(() => GROUPS.map((g) => ({
+        label: MIKE_PARAM_GROUP_LABEL[g],
+        note: GROUP_NOTE[g],
+        fields: MIKE_PARAM_FIELDS.filter((f) => f.group === g).map((f) => {
+            if (f.kind === 'number') {
+                return { key: f.key, label: f.label, hint: f.hint, type: 'number' as const, min: f.min, max: f.max, step: f.step };
+            }
+            if (f.kind === 'bool') return { key: f.key, label: f.label, hint: f.hint, type: 'boolean' as const };
+            if (f.kind === 'choice') {
+                return {
+                    key: f.key, label: f.label, hint: f.hint, type: 'select' as const,
+                    options: f.choices.map((c) => ({ value: c, label: c })),
+                };
+            }
+            // stringa libera (filtro competizioni): nessun clamp, nessun cast
+            return { key: f.key, label: f.label, hint: f.hint, type: 'text' as const };
+        }),
+    })), []);
 
     return (
-        <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="mike-params-trigger">
-                    <Settings className="w-4 h-4 mr-1" />Parametri
-                </Button>
-            </SheetTrigger>
-            <SheetContent className="glass-card border-white/10 w-full sm:max-w-md overflow-y-auto">
-                <SheetHeader>
-                    <SheetTitle className="font-display flex items-center gap-2">
-                        <span className="text-teal-300 text-xl">🎯</span> Parametri Mike
-                    </SheetTitle>
-                    <SheetDescription>
-                        Tutto modificabile. Salva per applicare a caldo: il servizio rilegge i parametri a ogni ciclo.
-                        Valori fuori dai limiti vengono riportati nei limiti dal backend.
-                    </SheetDescription>
-                </SheetHeader>
-
-                <div className="mt-5 space-y-5">
-                    {GROUPS.map((g) => (
-                        <section key={g} data-testid={`mike-params-group-${g}`}>
-                            <div className="text-[11px] uppercase tracking-wide text-teal-300 font-heading font-bold pb-1 border-b border-white/10">
-                                {MIKE_PARAM_GROUP_LABEL[g]}
-                            </div>
-                            <div className="mt-2 space-y-3">
-                                {MIKE_PARAM_FIELDS.filter((f) => f.group === g).map((f) => {
-                                    if (f.kind === 'bool') {
-                                        return (
-                                            <label key={f.key} className="flex items-start gap-2 text-sm">
-                                                <input
-                                                    type="checkbox" className="mt-1" aria-label={f.label}
-                                                    checked={Boolean(draft[f.key])}
-                                                    onChange={(e) => set(f.key, e.target.checked)}
-                                                />
-                                                <span>
-                                                    <span className="block">{f.label}</span>
-                                                    {f.hint && <span className="block text-[11px] text-slate-500">{f.hint}</span>}
-                                                </span>
-                                            </label>
-                                        );
-                                    }
-                                    if (f.kind === 'choice') {
-                                        return (
-                                            <label key={f.key} className="block">
-                                                <span className="text-xs text-slate-400">{f.label}</span>
-                                                <select
-                                                    aria-label={f.label}
-                                                    value={String(draft[f.key])}
-                                                    onChange={(e) => set(f.key, e.target.value)}
-                                                    className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm"
-                                                >
-                                                    {f.choices.map((c) => <option key={c} value={c}>{c}</option>)}
-                                                </select>
-                                                {f.hint && <span className="text-[11px] text-slate-500">{f.hint}</span>}
-                                            </label>
-                                        );
-                                    }
-                                    if (f.kind === 'text') {
-                                        return (
-                                            <label key={f.key} className="block">
-                                                <span className="text-xs text-slate-400">{f.label}</span>
-                                                <input
-                                                    type="text" aria-label={f.label}
-                                                    value={String(draft[f.key] ?? '')}
-                                                    onChange={(e) => set(f.key, e.target.value)}
-                                                    className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm"
-                                                />
-                                                {f.hint && <span className="text-[11px] text-slate-500">{f.hint}</span>}
-                                            </label>
-                                        );
-                                    }
-                                    return (
-                                        <label key={f.key} className="block">
-                                            <span className="text-xs text-slate-400">{f.label}</span>
-                                            <input
-                                                type="number" step={f.step} min={f.min} max={f.max} aria-label={f.label}
-                                                value={Number(draft[f.key])}
-                                                onChange={(e) => set(f.key, Number(e.target.value))}
-                                                className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
-                                            />
-                                            {f.hint && <span className="text-[11px] text-slate-500">{f.hint}</span>}
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                        </section>
-                    ))}
-
-                    <Button
-                        onClick={() => { void onSave(mergeMikeParams(draft)); setOpen(false); }}
-                        disabled={busy}
-                        className="w-full bg-teal-500 text-black hover:bg-teal-400"
-                        data-testid="mike-params-save"
-                    >
-                        Salva parametri
-                    </Button>
-                    <p className="text-[11px] text-slate-500 pb-6">
-                        La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto con conferma.
-                    </p>
-                </div>
-            </SheetContent>
-        </Sheet>
+        <ParamsSheetBase
+            title="Parametri Mike"
+            symbol={<span className="text-teal-300 text-xl" aria-hidden>🎯</span>}
+            description="Tutto modificabile. Salva per applicare a caldo: il servizio rilegge i parametri a ogni ciclo. I valori fuori dai limiti vengono riportati nei limiti e te lo diciamo."
+            groups={groups}
+            values={params}
+            busy={busy}
+            triggerTestId="mike-params-trigger"
+            onSave={(v) => onSave(mergeMikeParams(v))}
+            onReset={() => ({ ...MIKE_PARAM_DEFAULTS })}
+            footer="La modalità (PAPER/LIVE) non è un parametro: si cambia solo dal toggle in alto, con conferma."
+        />
     );
 }
+
+export default MikeParamsSheet;

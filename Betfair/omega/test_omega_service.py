@@ -157,10 +157,14 @@ class FakeDB:
     def insert_trade(self, trade):
         origin = trade.get("origin", "auto")
         # partial unique su (event_id, coalesce(phase,'')) WHERE origin='auto' → I1
-        # automatico per GAMBA (v2: 2 gambe/evento; v1 senza gamba = una sola)
+        # automatico per GAMBA (v2: 2 gambe/evento; v1 senza gamba = una sola).
+        # AUDIT 11/09 (H-13, migrations/omega_models_v5.sql): le righe con
+        # meta.leg_failed (esito CERTO negativo) sono FUORI dall'unique — la gamba
+        # resta ritentabile col budget di _leg_retry_allowed.
         if origin == "auto" and any(
             t["event_id"] == trade["event_id"] and t.get("origin", "auto") == "auto"
             and (t.get("phase") or "") == (trade.get("phase") or "")
+            and not (t.get("meta") or {}).get("leg_failed")
             for t in self.trades
         ):
             raise Exception("unique auto event_id")
@@ -193,6 +197,11 @@ class FakeDB:
 
     def list_trades(self, status=None):
         return [t for t in self.trades if status is None or t["status"] == status]
+
+    def get_trade(self, trade_id):
+        # come omega_db.get_trade: una riga per id (il servizio ci legge il meta
+        # corrente prima di riscriverlo — review M5)
+        return next((t for t in self.trades if t["id"] == int(trade_id)), None)
 
     def open_trades(self):
         return self.list_trades("open")
@@ -229,7 +238,8 @@ class FakeDB:
         return None
 
     def traded_event_ids(self):
-        return {t["event_id"] for t in self.trades}
+        # come omega_db: gli esiti CERTI negativi (meta.leg_failed) non bruciano l'evento
+        return {t["event_id"] for t in self.trades if not (t.get("meta") or {}).get("leg_failed")}
 
     def aggregates(self, day_start=None):
         return E.aggregate_trades(self.trades, day_start)  # stessa logica pura del backend reale

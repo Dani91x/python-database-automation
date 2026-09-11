@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     groupTradesByMatch, legPnl, legKindOf, resultsOf, filterMatchesForDay, summarizeMatches, romeDayOf,
+    isReconcilingTrade, isTerminalTrade, eventNamesFrom, errorAtOf,
     type MatchTradeLike,
 } from './omegaMatches';
 
@@ -151,5 +152,84 @@ describe('omegaMatches — correzioni review 11/09', () => {
         expect(g.ft).toBeNull();
         expect(g.others[0].kind).toBe('other');
         expect(g.open_liability).toBe(0);
+    });
+});
+
+// ================================================ audit 11/09: H-02 / M-05
+describe('omegaMatches — verifica su Betfair e righe terminali', () => {
+    it('H-02: un pending in RICONCILIAZIONE è vivo, conta nella liability e si dichiara', () => {
+        const g = groupTradesByMatch([
+            t({ id: 1, status: 'pending', liability: 573.34, meta: { reconciling: true } }),
+        ])[0];
+        expect(g.ht?.reconciling).toBe(true);
+        expect(g.ht?.live).toBe(true);
+        expect(g.open_liability).toBe(573.34);
+        expect(g.reconciling_liability).toBe(573.34);
+        expect(summarizeMatches([g]).reconciling_liability).toBe(573.34);
+    });
+
+    it('H-02: reconciling anche dall’eccezione di piazzamento', () => {
+        const g = groupTradesByMatch([
+            t({ id: 1, status: 'pending', liability: 100, meta: { reason: 'place_exception_reconciling' } }),
+        ])[0];
+        expect(g.ht?.reconciling).toBe(true);
+        expect(g.reconciling_liability).toBe(100);
+    });
+
+    it('un pending normale (riserva) non è "in verifica"', () => {
+        const g = groupTradesByMatch([t({ id: 1, status: 'pending', liability: 100 })])[0];
+        expect(g.ht?.reconciling).toBe(false);
+        expect(g.reconciling_liability).toBe(0);
+    });
+
+    it('M-05: riga TERMINALE (leg_failed) non è viva, non è rischio e non tiene aperta la partita', () => {
+        const g = groupTradesByMatch([
+            t({ id: 1, status: 'pending', liability: 500, meta: { leg_failed: true, error_final: true } }),
+            t({ id: 2, phase: 'ft_cs', status: 'won', pnl: 2.5, settled_at: '2026-09-11T16:00:00Z' }),
+        ])[0];
+        expect(g.ht?.terminal).toBe(true);
+        expect(g.ht?.live).toBe(false);
+        expect(g.open_liability).toBe(0);
+        expect(g.live).toBe(false);
+        expect(g.state).toBe('settled');       // prima restava "partial" per sempre
+        expect(g.pnl_settled).toBe(2.5);
+    });
+
+    it('isReconcilingTrade / isTerminalTrade come predicati puri', () => {
+        expect(isReconcilingTrade({ meta: { reconciling: 'true' } })).toBe(true);
+        expect(isReconcilingTrade({ meta: null })).toBe(false);
+        expect(isTerminalTrade({ meta: { no_fill_at: '2026-09-11T16:00:00Z' } })).toBe(true);
+        expect(isTerminalTrade({ meta: {} })).toBe(false);
+    });
+
+    it('eventNamesFrom: nome della partita per event_id (l’attività ha solo l’id)', () => {
+        expect(eventNamesFrom([
+            { event_id: 'e1', event_name: 'Roma vs Lazio' },
+            { event_id: 'e1', event_name: 'altro nome ignorato' },
+            { event_id: 'e2', event_name: '  ' },
+        ])).toEqual({ e1: 'Roma vs Lazio' });
+    });
+});
+
+describe('omegaMatches — ordinamento con meta.error_at (contratto 11/09)', () => {
+    it('errorAtOf legge error_at (ripiego no_fill_at)', () => {
+        expect(errorAtOf({ meta: { error_at: '2026-09-11T16:00:00Z' } })).toBe('2026-09-11T16:00:00Z');
+        expect(errorAtOf({ meta: { no_fill_at: '2026-09-11T15:00:00Z' } })).toBe('2026-09-11T15:00:00Z');
+        expect(errorAtOf({ meta: {} })).toBeNull();
+    });
+
+    it('una riga in errore (senza settled_at) aggiorna comunque "ultima attività"', () => {
+        const g = groupTradesByMatch([
+            t({ id: 1, status: 'error', settled_at: null, meta: { error_final: true, error_at: '2026-09-11T18:00:00Z' } }),
+        ])[0];
+        expect(g.last_at).toBe('2026-09-11T18:00:00Z');
+    });
+
+    it('le partite si ordinano per ultima attività anche quando l’ultimo fatto è un errore', () => {
+        const gs = groupTradesByMatch([
+            t({ id: 1, event_id: 'vecchia', status: 'won', pnl: 1, settled_at: '2026-09-11T15:00:00Z' }),
+            t({ id: 2, event_id: 'recente', status: 'error', settled_at: null, meta: { error_final: true, error_at: '2026-09-11T19:00:00Z' } }),
+        ]);
+        expect(gs[0].event_id).toBe('recente');
     });
 });

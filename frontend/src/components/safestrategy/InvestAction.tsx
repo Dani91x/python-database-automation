@@ -11,12 +11,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Send, ShieldAlert, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { SafeMode, SafeRequest, SafeSide } from '@/lib/safeBot';
+import { fmtMoney } from '@/lib/format';
+import { T } from '@/lib/tradeStatus';
+import { requestOutcome, type SafeMode, type SafeRequest, type SafeSide } from '@/lib/safeBot';
 
-function eur(v: number | null | undefined): string {
-    const n = Number(v ?? 0);
-    return `€${n.toFixed(2)}`;
-}
+/** minimo Betfair per una scommessa (il servizio lo pubblica in
+ *  params_effective.min_stake): sotto questa cifra l'ordine non e' immettibile
+ *  normalmente e va gestito col metodo 1000→cancella→sposta. */
+export const BETFAIR_MIN_STAKE = 2;
 
 export interface InvestActionProps {
     mode: SafeMode;
@@ -25,6 +27,8 @@ export interface InvestActionProps {
     /** EUR abbinabili al best sul lato da operare (null = fonte senza size) */
     sizeAvailable: number | null;
     defaultStake: number;
+    /** size minima ammessa (default: minimo Betfair 2 €) */
+    minStake?: number;
     disabled?: boolean;
     /** motivo (tooltip) quando `disabled`: es. quote non aggiornate */
     disabledReason?: string;
@@ -40,9 +44,12 @@ export interface InvestActionProps {
 export const LIVE_ARM_TIMEOUT_MS = 10_000;
 
 export function InvestAction({
-    mode, side, price, sizeAvailable, defaultStake, disabled = false, disabledReason, requests, onPlace,
-    onStakeChange,
+    mode, side, price, sizeAvailable, defaultStake, minStake, disabled = false, disabledReason,
+    requests, onPlace, onStakeChange,
 }: InvestActionProps) {
+    const minAllowed = Number.isFinite(Number(minStake)) && Number(minStake) > 0
+        ? Number(minStake)
+        : BETFAIR_MIN_STAKE;
     const [stakeStr, setStakeStr] = useState(() => String(defaultStake ?? 5));
     // lo stake segue i parametri del bot finche' l'utente non lo tocca: al primo
     // render i parametri del server non sono ancora arrivati (default locali).
@@ -64,8 +71,11 @@ export function InvestAction({
 
     const liability = side === 'lay' && price != null ? Math.round(stake * (price - 1) * 100) / 100 : null;
     const req = reqId != null ? requests.find((r) => r.id === reqId) ?? null : null;
-    const pending = busy || req?.status === 'pending' || req?.status === 'processing';
-    const invalid = stake < 0.5 || price == null || price <= 1;
+    const outcome = requestOutcome(req);
+    const pending = busy || outcome?.tone === 'pending';
+    // L-07: il minimo Betfair e' 2 EUR, non 0,50 — sotto, l'ordine non entra
+    const belowMin = stake > 0 && stake < minAllowed;
+    const invalid = stake <= 0 || belowMin || price == null || price <= 1;
     // guardia anti doppio click: ref, non stato (lo stato e' una closure del render)
     const inFlight = useRef(false);
 
@@ -106,7 +116,7 @@ export function InvestAction({
                     type="number"
                     inputMode="decimal"
                     step={0.5}
-                    min={0.5}
+                    min={minAllowed}
                     value={stakeStr}
                     aria-label="Stake"
                     onChange={(e) => { setTouched(true); setStakeStr(e.target.value); }}
@@ -134,11 +144,11 @@ export function InvestAction({
                 <div>
                     abbinabile subito{' '}
                     <b className="text-emerald-300 tabular-nums">
-                        {sizeAvailable != null ? eur(sizeAvailable) : 'n/d'}
+                        {sizeAvailable != null ? fmtMoney(sizeAvailable) : 'n/d'}
                     </b>
                 </div>
                 {liability != null && (
-                    <div>responsabilità <b className="text-orange-300 tabular-nums">{eur(liability)}</b></div>
+                    <div>{T.openLiability} <b className="text-orange-300 tabular-nums">{fmtMoney(liability)}</b></div>
                 )}
             </div>
 
@@ -146,20 +156,41 @@ export function InvestAction({
                 <span className="text-[11px] text-amber-300/90" data-testid="invest-disabled-reason">{disabledReason}</span>
             )}
 
-            {req && (
-                <Badge
-                    variant="outline"
-                    data-testid="invest-status"
-                    className={
-                        req.status === 'done' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
-                            : req.status === 'error' ? 'bg-red-500/15 text-red-300 border-red-500/40'
-                                : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                    }
-                >
-                    {req.status === 'done' ? <><Check className="w-3 h-3 mr-1" aria-hidden />eseguito</>
-                        : req.status === 'error' ? <><X className="w-3 h-3 mr-1" aria-hidden />errore</>
-                            : 'in coda'}
-                </Badge>
+            {belowMin && (
+                <span className="text-[11px] text-amber-300/90" data-testid="invest-min-stake">
+                    minimo Betfair {fmtMoney(minAllowed)}: sotto questa cifra l'ordine non viene immesso
+                </span>
+            )}
+
+            {outcome && (
+                <span className="flex items-center gap-1.5">
+                    <Badge
+                        variant="outline"
+                        data-testid="invest-status"
+                        data-tone={outcome.tone}
+                        className={
+                            outcome.tone === 'ok' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                                : outcome.tone === 'rejected' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                                    : outcome.tone === 'error' ? 'bg-red-500/15 text-red-300 border-red-500/40'
+                                        : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                        }
+                        title={outcome.message ?? undefined}
+                    >
+                        {outcome.tone === 'ok' ? <><Check className="w-3 h-3 mr-1" aria-hidden />eseguito</>
+                            : outcome.tone === 'error' ? <><X className="w-3 h-3 mr-1" aria-hidden />errore</>
+                                : outcome.tone === 'rejected' ? <><X className="w-3 h-3 mr-1" aria-hidden />rifiutato</>
+                                    : 'in coda'}
+                    </Badge>
+                    {/* ogni richiesta deve dire PERCHE', non solo "errore" (L-07) */}
+                    {outcome.message && (
+                        <span
+                            className={`text-[11px] ${outcome.tone === 'ok' ? 'text-emerald-300/90' : 'text-amber-300/90'}`}
+                            data-testid="invest-status-message"
+                        >
+                            {outcome.message}
+                        </span>
+                    )}
+                </span>
             )}
         </div>
     );

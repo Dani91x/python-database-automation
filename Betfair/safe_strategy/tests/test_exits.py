@@ -332,13 +332,13 @@ def test_decide_time_exit_caso_trade_12_e_soglie():
     assert act == "exit" and why.startswith("rischio alto: P(perdita)=15.0% >= 10%")
     # profitto bloccato -> EXIT sempre, anche con rischio alto
     act, why = XE.decide_time_exit(0.5, 0.3, 2.0, 2.0, P, loss_if_lose=118.0)
-    assert act == "exit" and why == "profitto bloccato +0.30 EUR: esco"
+    assert act == "exit" and why == "profitto bloccato +0,30 €: esco"
     assert XE.decide_time_exit(0.001, 0.0, 2.0, 2.0, P)[0] == "exit"
     # zona intermedia: EV(tengo) = 0.95*2 - 0.05*118 = -4.0
     act, why = XE.decide_time_exit(0.05, -4.0, 2.0, 2.0, P, loss_if_lose=118.0)
-    assert act == "exit" and why.startswith("tenere non rende: EV(tengo)=-4.00")
+    assert act == "exit" and why.startswith("tenere non rende: EV(tengo)=-4,00")
     act, why = XE.decide_time_exit(0.05, -6.0, 2.0, 2.0, P, loss_if_lose=118.0)
-    assert act == "hold" and why.startswith("EV(tengo)=-4.00 EUR > bloccato -6.00")
+    assert act == "hold" and why.startswith("EV(tengo)=-4,00 € > bloccato -6,00")
     assert XE.ev_hold(0.05, 2.0, 118.0) == -4.0
     # P ignota e chiusura in perdita -> HOLD (fail-closed)
     assert XE.decide_time_exit(None, -1.0, 2.0, 2.0, P)[0] == "hold"

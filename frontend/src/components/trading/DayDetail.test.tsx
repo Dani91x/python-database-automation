@@ -27,7 +27,7 @@ const HEDGED_WON: DayTrade = {
 };
 const LOST: DayTrade = {
     ...OPEN, id: 4, event_name: 'Sinner v Alcaraz', sport: 'tennis', strategy: 'tennis', origin: 'manual',
-    status: 'lost', pnl: -10, total_pnl: -10, settled_at: '2026-09-10T21:00:00Z', meta: { exit_kind: 'loss' },
+    status: 'lost', pnl: -10, total_pnl: -10, settled_at: '2026-09-10T21:00:00Z', settled_in_day: true, meta: { exit_kind: 'loss' },
 };
 
 describe('DayDetail', () => {
@@ -39,14 +39,14 @@ describe('DayDetail', () => {
     it('elenca aperture e chiusure con badge uscita, P&L bloccato, totale e link live', async () => {
         const user = userEvent.setup();
         const onGoLive = vi.fn();
-        render(<DayDetail day="2026-09-10" trades={[OPEN, HEDGED_WON, LOST]} variant="safe" onGoLive={onGoLive} />);
+        render(<DayDetail day="2026-09-10" trades={[OPEN, HEDGED_WON, LOST]} variant="safe" attribution="settled" onGoLive={onGoLive} />);
         expect(screen.getByTestId('day-detail')).toHaveTextContent(/giovedì 10 settembre 2026/);
         expect(screen.getByTestId('day-detail')).toHaveTextContent('3 trade');
         expect(screen.getByText('1 ancora vivi')).toBeInTheDocument();
         // totale = solo regolati: 2.5 − 10
-        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−€7.50');
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−7,50 €');
         // liability piazzata OGGI: OPEN (10) + LOST (10); HEDGED_WON è di ieri
-        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata €20.00');
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 20,00 €');
 
         const rows = screen.getAllByTestId('day-trade-row');
         expect(rows).toHaveLength(3);
@@ -56,19 +56,19 @@ describe('DayDetail', () => {
         expect(within(hedged).getByText('(prec.)')).toBeInTheDocument();
         expect(within(hedged).getByTestId('exit-badge')).toHaveTextContent('Uscita: tempo');
         expect(within(hedged).getByTestId('exit-badge')).toHaveAttribute('title', "72' raggiunto");
-        expect(within(hedged).getByText('bloccato +€2.50')).toBeInTheDocument();
-        expect(within(hedged).getByTestId('day-trade-pnl')).toHaveTextContent('+€2.50');
+        expect(within(hedged).getByText('bloccato +2,50 €')).toBeInTheDocument();
+        expect(within(hedged).getByTestId('day-trade-pnl')).toHaveTextContent('+2,50 €');
 
         const close = screen.getAllByTestId('day-close-row');
         expect(close).toHaveLength(1);
         expect(close[0]).toHaveTextContent('chiusura #3 di #2');
         expect(close[0]).toHaveTextContent('parziale');
-        expect(close[0]).toHaveTextContent('−€0.60');
+        expect(close[0]).toHaveTextContent('−0,60 €');
 
         const lost = rows[2];
         expect(within(lost).getByTestId('exit-badge')).toHaveTextContent('Uscita: perdita');
         expect(within(lost).getByText('✋')).toBeInTheDocument();
-        expect(within(lost).getByTestId('day-trade-pnl')).toHaveTextContent('−€10.00');
+        expect(within(lost).getByTestId('day-trade-pnl')).toHaveTextContent('−10,00 €');
 
         // apertura viva: link al live
         const open = rows[0];
@@ -100,7 +100,7 @@ describe('DayDetail', () => {
         expect(within(row).getByTestId('omega-result-ft')).toHaveTextContent('2-1');
         expect(within(row).getByTestId('omega-match-pnl')).toHaveTextContent('−22,08 €');
         expect(within(row).getByTestId('omega-match-pnl').className).toMatch(/text-red-400/);
-        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−€22.08');
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−22,08 €');
     });
 
     it('nessun trade / errore / caricamento', () => {
@@ -126,5 +126,45 @@ describe('ExitBadge', () => {
         expect(screen.getByTestId('exit-badge')).toHaveTextContent('Uscita: obbligatoria');
         rerender(<ExitBadge meta={{ exit_kind: 'profit' }} />);
         expect(screen.getByTestId('exit-badge')).toHaveTextContent('Uscita: profitto');
+    });
+});
+
+// ======================================= audit 11/09: H-11 / M-18 attribuzione
+describe('DayDetail — attribuzione al giorno del calendario (H-11 / M-18)', () => {
+    const base: DayTrade = {
+        ...OPEN, status: 'won', pnl: 3, total_pnl: 3, settled_at: '2026-09-10T20:00:00Z', settled_in_day: true,
+    };
+
+    it("attribuzione 'settled' esplicita: NON somma un trade regolato in un ALTRO giorno", () => {
+        const altro: DayTrade = { ...base, id: 11, total_pnl: -100, status: 'lost', placed_in_day: true, settled_in_day: false };
+        render(<DayDetail day="2026-09-10" trades={[base, altro]} variant="safe" attribution="settled" />);
+        // il calendario conta quel −100 in un'altra cella: qui NON entra
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('+3,00 €');
+        expect(screen.getByTestId('day-count')).toHaveTextContent('1 trade');
+        expect(screen.getByTestId('day-other-days')).toHaveTextContent('+ 1 di altre giornate');
+    });
+
+    it("Omega ('placed'): somma le posizioni PIAZZATE oggi, non quelle regolate oggi", () => {
+        const piazzataIeri: DayTrade = { ...base, id: 12, total_pnl: -50, status: 'lost', placed_in_day: false, settled_in_day: true };
+        render(<DayDetail day="2026-09-10" trades={[base, piazzataIeri]} variant="omega" attribution="placed" />);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('+3,00 €');
+        expect(screen.getByTestId('day-other-days')).toHaveTextContent('+ 1 di altre giornate');
+    });
+
+    it("l'attribuzione si deduce dalla variante quando non è passata", () => {
+        const piazzataIeri: DayTrade = { ...base, id: 13, total_pnl: -50, status: 'lost', placed_in_day: false, settled_in_day: true };
+        const { rerender } = render(<DayDetail day="2026-09-10" trades={[piazzataIeri]} variant="omega" />);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('0,00 €');
+        // giornata operativa = PIAZZAMENTO per tutti i bot (safe_strategy_bot_v2, mike_history_v2)
+        rerender(<DayDetail day="2026-09-10" trades={[piazzataIeri]} variant="safe" />);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('0,00 €');
+        rerender(<DayDetail day="2026-09-10" trades={[piazzataIeri]} variant="mike" />);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('0,00 €');
+    });
+
+    it('formati italiani anche nel dettaglio (€ dopo, virgola, ora di Roma)', () => {
+        render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" />);
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 0,00 €');
+        expect(screen.getAllByTestId('day-trade-row')[0]).toHaveTextContent('20:00');
     });
 });

@@ -220,7 +220,7 @@ describe('MissionPanel (render minimo)', () => {
     it('mostra header giornata e la missione attiva con punteggio live', async () => {
         // MemoryRouter: i pulsanti per-partita Statistiche/Trading (16/07) usano useNavigate
         render(createElement(MemoryRouter, null, createElement(MissionPanel, { mode: 'paper' })));
-        expect(await screen.findByText('Obiettivo giornata €')).toBeInTheDocument();
+        expect(await screen.findByText('Obiettivo giornata (€)')).toBeInTheDocument();
         expect(await screen.findByText('Roma v Lazio')).toBeInTheDocument();
         // punteggio LIVE grande e fase; la scheda attiva è AUTO-ESPANSA (16/07)
         // quindi '1T' appare sia come badge fase sia come riga della card
@@ -232,7 +232,7 @@ describe('MissionPanel (render minimo)', () => {
         // realized = 2 (gamba); l'1.5 dello scalper è DRY-RUN → simulato,
         // NON sommato (audit H2). Compare sia nella barra di giornata sia
         // nella riga della missione.
-        expect((await screen.findAllByText('+€2.00')).length).toBeGreaterThanOrEqual(2);
-        expect(screen.queryByText('+€3.50')).toBeNull();
+        expect((await screen.findAllByText('+2,00 €')).length).toBeGreaterThanOrEqual(2);
+        expect(screen.queryByText('+3,50 €')).toBeNull();
     });
 });

@@ -9,33 +9,28 @@ import { Card } from '@/components/ui/card';
 import { Activity, ExternalLink } from 'lucide-react';
 import { ExitBadge } from '@/components/trading/ExitBadge';
 import { cappedFrom } from '@/lib/safeBot';
-import { dayLabel, tradeExit, type DayTrade, type DayTradeLeg, type HistoryVariant } from '@/lib/dailyHistory';
+import {
+    dayLabel, tradeExit, summarizeDayTrades, attributionOf,
+    type DayTrade, type DayTradeLeg, type HistoryVariant, type DayAttribution,
+} from '@/lib/dailyHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
+import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
+import { statusMeta } from '@/lib/tradeStatus';
 
 function fmtEur(v: number | null | undefined): string {
-    const n = Number(v ?? 0);
-    return `${n < 0 ? '−' : ''}€${Math.abs(n).toFixed(2)}`;
+    return fmtMoney(Number(v ?? 0));
 }
 function fmtSignedEur(v: number): string {
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
 }
+/** ora dell'orologio di ROMA (mai il fuso del browser) */
 function timeLabel(iso: string | null): string {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '—'
-        : d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+    return fmtTime(iso);
 }
 
+/** §19: nessuna mappa duplicata — lo stato lo dice `lib/tradeStatus`. */
 export function statusBadge(status: string): { label: string; cls: string } {
-    switch (status) {
-        case 'pending': return { label: 'IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' };
-        case 'open': return { label: 'APERTO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' };
-        case 'hedged': return { label: 'CHIUSO', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' };
-        case 'won': return { label: 'VINTO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' };
-        case 'lost': return { label: 'PERSO', cls: 'bg-red-500/15 text-red-300 border-red-500/40' };
-        case 'void': return { label: 'VOID', cls: 'bg-slate-500/15 text-slate-300 border-slate-500/40' };
-        default: return { label: 'ERRORE', cls: 'bg-orange-500/15 text-orange-300 border-orange-500/40' };
-    }
+    return statusMeta(status);
 }
 
 const STRATEGY_LABEL: Record<string, string> = {
@@ -69,11 +64,17 @@ export interface DayDetailProps {
     loading?: boolean;
     error?: string | null;
     variant: HistoryVariant;
+    /**
+     * H-11/M-18: come il CALENDARIO attribuisce una posizione al giorno.
+     * Omega/Mike per giorno di PIAZZAMENTO, Safe per giorno di REGOLAZIONE.
+     * Assente = dedotta dalla variante.
+     */
+    attribution?: DayAttribution;
     /** posizione ancora viva → "vai al live" (tab trade della pagina) */
     onGoLive?: (trade: DayTrade) => void;
 }
 
-export function DayDetail({ day, trades, loading = false, error = null, variant, onGoLive }: DayDetailProps) {
+export function DayDetail({ day, trades, loading = false, error = null, variant, attribution, onGoLive }: DayDetailProps) {
     if (!day) {
         return (
             <div className="text-sm text-muted-foreground py-6 text-center" data-testid="day-detail-empty">
@@ -82,10 +83,15 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
         );
     }
     const list = trades ?? [];
-    const settled = list.filter((t) => ['won', 'lost', 'void'].includes(t.status));
-    const totalPnl = settled.reduce((s, t) => s + t.total_pnl, 0);
-    const openCount = list.filter((t) => LIVE_STATUSES.has(t.status)).length;
-    const liability = list.reduce((s, t) => s + (t.placed_in_day ? Number(t.liability ?? 0) : 0), 0);
+    const attr = attribution ?? attributionOf(variant);
+    // H-11/M-18: i totali sono quelli della CELLA del calendario — solo le
+    // posizioni che il calendario attribuisce a questa giornata.
+    const day0 = summarizeDayTrades(list, attr);
+    const settled = day0.attributed.filter((t) => ['won', 'lost', 'void'].includes(t.status));
+    const totalPnl = day0.pnl;
+    const openCount = day0.open;
+    const liability = day0.liability;
+    const otherDays = day0.others.length;
 
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="day-detail" aria-busy={loading || undefined}>
@@ -93,8 +99,15 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                 <Activity className="w-4 h-4 text-primary" />
                 <span className="font-semibold capitalize">{dayLabel(day, { weekday: true })}</span>
                 <span className="text-slate-500">·</span>
-                <span className="tabular-nums">{list.length} trade</span>
+                <span className="tabular-nums" data-testid="day-count">{day0.attributed.length} trade</span>
                 {openCount > 0 && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40 text-[10px]">{openCount} ancora vivi</Badge>}
+                {otherDays > 0 && (
+                    <span className="text-[11px] text-slate-500" data-testid="day-other-days" title={attr === 'placed'
+                        ? 'righe regolate oggi ma PIAZZATE in un altro giorno: il calendario le conta là, quindi non entrano in questi totali'
+                        : 'righe piazzate oggi ma regolate in un altro giorno: il calendario le conta là'}>
+                        + {otherDays} di altre giornate (fuori dai totali)
+                    </span>
+                )}
                 <span className="ml-auto tabular-nums">
                     <span className="text-slate-400 mr-1 text-xs">liability piazzata {fmtEur(liability)} ·</span>
                     <span className="text-slate-400 mr-1 text-xs">realizzato</span>
@@ -161,7 +174,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                         <td className="px-3 py-2 text-center text-[11px] font-heading font-bold text-slate-300">{kindOf(t, variant)}</td>
                                         <td className="px-3 py-2 max-w-[160px] truncate" title={selectionOf(t)}>{selectionOf(t)}</td>
                                         <td className={`px-3 py-2 text-center font-bold ${t.side === 'back' ? 'text-sky-300' : 'text-rose-300'}`}>{String(t.side).toUpperCase()}</td>
-                                        <td className="px-3 py-2 text-right tabular-nums">{t.price != null ? t.price.toFixed(2) : '—'}</td>
+                                        <td className="px-3 py-2 text-right tabular-nums">{fmtOdds(t.price)}</td>
                                         <td className="px-3 py-2 text-right tabular-nums">{fmtEur(t.size)}</td>
                                         <td className="px-3 py-2 text-right tabular-nums text-orange-400/90">{fmtEur(t.liability)}</td>
                                         <td className="px-3 py-2 text-center">
@@ -198,7 +211,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                                 </td>
                                                 <td className="px-3 py-1 text-slate-400 truncate">{selectionOf(c)}</td>
                                                 <td className={`px-3 py-1 text-center font-bold ${c.side === 'back' ? 'text-sky-300' : 'text-rose-300'}`}>{String(c.side).toUpperCase()}</td>
-                                                <td className="px-3 py-1 text-right tabular-nums">{c.price != null ? c.price.toFixed(2) : '—'}</td>
+                                                <td className="px-3 py-1 text-right tabular-nums">{fmtOdds(c.price)}</td>
                                                 <td className="px-3 py-1 text-right tabular-nums">{fmtEur(c.size)}</td>
                                                 <td className="px-3 py-1 text-right tabular-nums text-slate-500">{fmtEur(c.liability)}</td>
                                                 <td className="px-3 py-1 text-center"><Badge variant="outline" className={`${cb.cls} text-[10px]`}>{cb.label}</Badge></td>

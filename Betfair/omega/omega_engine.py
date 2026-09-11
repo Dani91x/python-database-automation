@@ -335,7 +335,23 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
     traded_today = 0
     events_all: set = set()
     events_today: set = set()
+    # AUDIT 11/09 (H-02/H-06/H-08): numeri della giornata e stati del rischio
+    reconciling_liab = 0.0
+    locked_open = 0.0
+    locked_open_today = 0.0
+    legs_today = 0
+    live_events: set = set()
+    pnl_by_parent: dict[Any, float] = {}
     placed_by_id = {r.get("id"): r.get("placed_at") for r in rows if r.get("id") is not None}
+    for r in rows:
+        # esito della POSIZIONE (apertura + chiusure) per il segno V/P della giornata
+        if r.get("closes_trade_id") and r.get("status") in ("won", "lost", "void"):
+            pnl_by_parent[r["closes_trade_id"]] = pnl_by_parent.get(r["closes_trade_id"], 0.0) \
+                + float(r.get("pnl") or 0.0)
+    won_today = 0
+    lost_today = 0
+    won_all = 0
+    lost_all = 0
     for r in rows:
         st = r.get("status")
         if r.get("closes_trade_id"):
@@ -356,22 +372,52 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
             settled += 1
             traded += 1
             events_all.add(str(r.get("event_id")))
+            # esito della POSIZIONE (apertura + chiusure) per SEGNO del P&L totale
+            total = pnl + pnl_by_parent.get(r.get("id"), 0.0)
+            if total > 0:
+                won_all += 1
+            elif total < 0:
+                lost_all += 1
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 realized_today += pnl
                 traded_today += 1
+                legs_today += 1
                 events_today.add(str(r.get("event_id")))
-        elif st in ("open", "hedged") or (st == "pending" and (
-                r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref"))):
+                if total > 0:
+                    won_today += 1
+                elif total < 0:
+                    lost_today += 1
+        elif st in ("open", "hedged") or (st == "pending" and is_placed(r)):
             open_liab += residual_liability(r)
+            lk = locked_open_pnl(r)
+            if lk is not None:
+                locked_open += lk
+                # review H1: la quota della GIORNATA serve alle guardie giornaliere
+                # (stop-loss, target dinamico); il totale serve al cap di esposizione
+                if _ts_on_or_after(r.get("placed_at"), day_start):
+                    locked_open_today += lk
+            if st == "pending" and is_reconciling(r):
+                reconciling_liab += float(r.get("liability") or 0.0)
             open_n += 1
             traded += 1
+            live_events.add(str(r.get("event_id")))
             if _ts_on_or_after(r.get("placed_at"), day_start):
                 traded_today += 1
+                legs_today += 1
                 events_today.add(str(r.get("event_id")))
             events_all.add(str(r.get("event_id")))
     return {
         "realized_profit": round(realized, 2),
         "open_liability": round(open_liab, 2),
+        # P&L già BLOCCATO sulle posizioni vive a copertura completa: non è più
+        # rischio (open_liability non lo conta) ma non è ancora realizzato (H-06)
+        "locked_pnl_open": round(locked_open, 2),
+        # quota del bloccato attribuita alla GIORNATA (posizioni piazzate oggi):
+        # è la parte che deve pesare su stop-loss e target dinamico (review H1)
+        "locked_pnl_open_today": round(locked_open_today if day_start else locked_open, 2),
+        # liability di un ordine a esito IGNOTO in riconciliazione (H-02): è già
+        # dentro open_liability, esposta a parte perché la UI la dica al trader
+        "reconciling_liability": round(reconciling_liab, 2),
         "matches_traded": traded,
         "matches_open": open_n,
         "settled_count": settled,
@@ -381,21 +427,116 @@ def aggregate_trades(rows: list[dict], day_start: Optional[datetime] = None) -> 
         # §16: partite DISTINTE (il cap max_events è per partita, non per gamba)
         "events_traded": len(events_all),
         "events_today": len(events_today) if day_start else len(events_all),
+        # H-08: la giornata la dicono SOLO questi campi (mai il client).
+        # review L3/L4: senza ``day_start`` i campi _today cadono sul CUMULATO
+        # (come realized_today/matches_traded_today) e matches_won/matches_lost
+        # ci sono sempre — il fallback senza RPC espone le STESSE chiavi.
+        "legs_today": legs_today if day_start else traded,
+        "won_today": won_today if day_start else won_all,
+        "lost_today": lost_today if day_start else lost_all,
+        "matches_won": won_all,
+        "matches_lost": lost_all,
+        "live_now": len(live_events),
     }
+
+
+def hedge_complete(r: dict) -> bool:
+    """La posizione è coperta del TUTTO (P&L identico su ogni esito)? È lo stesso
+    criterio di ``safe_strategy.execution.hedge_state``: ``meta.locked_pnl`` è
+    scritto (non None) SOLO a copertura completa; il residuo nullo è la conferma."""
+    meta = r.get("meta") or {}
+    if meta.get("locked_pnl") is None:
+        return False
+    res = meta.get("residual_size")
+    try:
+        return res is None or float(res) <= 0.01
+    except (TypeError, ValueError):
+        return False
+
+
+def locked_open_pnl(r: dict) -> Optional[float]:
+    """P&L GIÀ BLOCCATO di una posizione ancora non regolata (copertura completa),
+    None se la posizione è nuda o coperta solo in parte. Non è realizzato (si
+    incassa al settlement) ma non è più a rischio: va mostrato a parte, mai
+    sommato alla 'liability aperta' (AUDIT 11/09 H-06)."""
+    if not hedge_complete(r):
+        return None
+    try:
+        return round(float((r.get("meta") or {})["locked_pnl"]), 2)
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def realized_effective(aggregates: dict) -> float:
+    """R della giornata ai fini delle GUARDIE (stop-loss giornaliero, target
+    dinamico, stop sull'obiettivo): realizzato di oggi PIÙ le perdite già
+    BLOCCATE dalle coperture complete ancora non regolate (review H1).
+
+    Money-critical: con ``residual_liability``=0 a copertura completa (H-06) una
+    giornata con dieci green-up chiusi a −22 € mostrava R=0 e il bot continuava
+    a entrare — 220 € persi e nessuna guardia che se ne accorgeva. Il bloccato
+    POSITIVO invece NON si somma: il profitto si conta quando è incassato (mai
+    anticipare un utile, sempre anticipare una perdita).
+    """
+    r = float(aggregates.get("realized_today",
+                             aggregates.get("realized_profit", 0.0)) or 0.0)
+    lk = aggregates.get("locked_pnl_open_today", aggregates.get("locked_pnl_open"))
+    try:
+        lk_f = float(lk or 0.0)
+    except (TypeError, ValueError):
+        lk_f = 0.0
+    return round(r + min(0.0, lk_f), 2)
+
+
+def open_liability_effective(aggregates: dict) -> float:
+    """Capitale IMPEGNATO ai fini del cap ``max_open_liability``: liability viva
+    più le perdite già bloccate non ancora incassate (review H1 — senza queste
+    il cap si liberava a ogni green-up in perdita e il bot si riesponeva subito
+    coi soldi che aveva appena perso)."""
+    ol = float(aggregates.get("open_liability", 0.0) or 0.0)
+    try:
+        lk = float(aggregates.get("locked_pnl_open") or 0.0)
+    except (TypeError, ValueError):
+        lk = 0.0
+    return round(ol + max(0.0, -lk), 2)
 
 
 def residual_liability(r: dict) -> float:
     """Rischio ancora VIVO di una posizione: la liability piena se nuda; per una
     posizione coperta (anche in parte) il residuo `max(0, −if_win)` scritto
     dallo strato di esecuzione (review MED-5: un trade chiuso a −22 contava
-    ancora 116 € di rischio)."""
+    ancora 116 € di rischio).
+
+    AUDIT 11/09 (H-06): a copertura COMPLETA il rischio è ZERO anche quando il
+    P&L bloccato è negativo — una perdita bloccata è già fatta, non può più
+    peggiorare. Prima una posizione greenata a −22 € contava 22 € di
+    "liability aperta" (doppio conteggio del danno, cap di esposizione falsato).
+    """
     meta = r.get("meta") or {}
+    if hedge_complete(r):
+        return 0.0
     if meta.get("hedged_size") is not None and meta.get("if_win") is not None:
         try:
             return round(max(0.0, -float(meta["if_win"])), 2)
         except (TypeError, ValueError):
             pass
     return float(r.get("liability") or 0.0)
+
+
+def is_reconciling(r: dict) -> bool:
+    """'pending' il cui ordine REALE potrebbe essere vivo (eccezione dopo
+    l'accettazione Betfair): ``meta.reconciling`` / ``meta.reason``. È denaro a
+    rischio finché la riconciliazione non decide (AUDIT 11/09 H-02)."""
+    meta = r.get("meta") or {}
+    return bool(meta.get("reconciling")) or \
+        str(meta.get("reason") or "") == "place_exception_reconciling"
+
+
+def is_placed(r: dict) -> bool:
+    """La riga corrisponde a un ordine che ESISTE (o può esistere) sul mercato:
+    bet_id reale, marker della coda flumine, o riconciliazione in corso."""
+    return bool(r.get("bet_id") or (r.get("meta") or {}).get("flumine_client_ref")
+                or is_reconciling(r))
 
 
 # ---------------------------------------------------------------------------

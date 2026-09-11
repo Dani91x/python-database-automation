@@ -16,7 +16,7 @@ import { DailyCalendar } from '@/components/trading/DailyCalendar';
 import { PerformancePanel } from '@/components/trading/PerformancePanel';
 import { DayDetail } from '@/components/trading/DayDetail';
 import {
-    periodRange, filterRange, romeDay, addDays,
+    periodRange, filterRange, romeDay, addDays, clampHistoryRange, attributionOf, MAX_HISTORY_DAYS,
     type DailyRow, type DayTrade, type PeriodKind, type HistoryVariant,
 } from '@/lib/dailyHistory';
 
@@ -58,11 +58,13 @@ export function TradingHistory({
 
     const pRange = useMemo(() => periodRange(period, todayDay), [period, todayDay]);
     const mRange = useMemo(() => monthBounds(ym.year, ym.month), [ym]);
-    // finestra unica di caricamento = unione mese ∪ periodo (max 400 giorni lato DB)
-    const loadRange = useMemo(() => ({
-        from: pRange.from < mRange.from ? pRange.from : mRange.from,
-        to: pRange.to > mRange.to ? pRange.to : mRange.to,
-    }), [pRange, mRange]);
+    // finestra unica di caricamento = unione mese ∪ periodo, CLAMPATA a 400
+    // giorni (M-17): oltre quella soglia la RPC solleva un'eccezione e prima
+    // tutto lo storico sparira dietro un "Storico non disponibile".
+    const loadRange = useMemo(() => clampHistoryRange(
+        pRange.from < mRange.from ? pRange.from : mRange.from,
+        pRange.to > mRange.to ? pRange.to : mRange.to,
+    ), [pRange, mRange]);
 
     // guardia anti-risposte fuori ordine
     const seqRef = useRef(0);
@@ -93,11 +95,24 @@ export function TradingHistory({
     return (
         <div className="space-y-5" data-testid="trading-history">
             <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
-                <span>Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300 tabular-nums">{todayDay}</b> · P&L realizzato = trade regolati nel giorno (chiusure incluse)</span>
+                {/* L-08: il testo dice l'ATTRIBUZIONE vera della variante, non
+                    "regolati nel giorno" anche dove il giorno è il piazzamento */}
+                <span>
+                    Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300 tabular-nums">{todayDay}</b> ·
+                    {attributionOf(variant) === 'placed'
+                        ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
+                        : ' P&L realizzato = trade REGOLATI nel giorno (chiusure incluse)'}
+                </span>
                 <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setManualRefresh((n) => n + 1)} disabled={loading}>
                     <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />Aggiorna
                 </Button>
             </div>
+            {loadRange.clamped && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" data-testid="history-clamped">
+                    finestra accorciata agli ultimi {MAX_HISTORY_DAYS} giorni (limite dello storico):
+                    dal <b className="tabular-nums">{loadRange.from}</b> al <b className="tabular-nums">{loadRange.to}</b>
+                </div>
+            )}
             {error && (
                 <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200" data-testid="history-error">
                     Storico non disponibile: {error}
@@ -134,6 +149,7 @@ export function TradingHistory({
                 loading={dayLoading}
                 error={dayError}
                 variant={variant}
+                attribution={attributionOf(variant)}
                 onGoLive={onGoLive}
             />
         </div>

@@ -12,10 +12,12 @@
 // (canale dedicato, come subscribeScanRows).
 // ============================================================================
 import { supabase } from '@/integrations/supabase/client';
+import { fmtMoney, fmtOdds } from '@/lib/format';
 import { DEFAULT_PARAMS, mergeParams, type SafeStrategyParams, type VariantId } from '@/lib/safeStrategy';
 import {
-    csSelection, htSelection,
-    type CalcioScanPayload, type ScanCsSelection, type ScanOddsPair,
+    blockSelection, csSelection, htSelection, isUsableBlock, scanBlockByMarketId,
+    usableMarketBlocks,
+    type CalcioScanPayload, type ScanCsSelection, type ScanMarketBlock, type ScanOddsPair,
     type TennisScanPayload,
 } from '@/lib/safeStrategyScan';
 
@@ -34,8 +36,20 @@ export interface SafeStats {
     signals_active?: number;
     trades_open?: number;
     open_liability?: number;
+    /** liability delle riserve a esito IGNOTO (in verifica su Betfair) */
+    reconciling_liability?: number;
     realized_today?: number;
     realized_total?: number;
+    /** contatori della GIORNATA DI PIAZZAMENTO (Europe/Rome) */
+    won_today?: number;
+    lost_today?: number;
+    legs_today?: number;
+    events_today?: number;
+    /** QUANTE posizioni vive sono CIECHE in questo ciclo (nessuna riga del feed
+     *  per il loro evento). È un CONTATORE, non un flag: `check_feed_blind`
+     *  ritorna un int (bot_service.py). 0 = tutte le posizioni sono viste.
+     *  Il dettaglio per riga sta in `meta.blind_since` (vedi `blindSince`). */
+    feed_blind?: number;
     last_cycle?: string;
 }
 
@@ -45,10 +59,43 @@ export interface SafeRiskStats {
     daily_liability?: number;
     /** cap giornaliero di liability (€) */
     daily_cap?: number;
+    /** liability delle riserve in verifica su Betfair (€) */
+    reconciling_liability?: number;
     /** true = stop per perdita giornaliera scattato: nessun nuovo ingresso */
     loss_stop_active?: boolean;
     /** soglia dello stop (€, negativa) */
     daily_loss_stop?: number;
+}
+
+/** Parametri EFFETTIVI pubblicati dal servizio (`bot_service.params_effective`):
+ *  sono i valori con cui il bot gira DAVVERO, dopo clamp e normalizzazione.
+ *  La UI li mostra e segnala quando differiscono dal form (audit H-14/H-15). */
+export interface SafeParamsEffective {
+    poll_interval_s?: number;
+    commission_pct?: number;
+    max_open_trades?: number;
+    max_liability_per_trade?: number;
+    min_size_available_factor?: number;
+    opps_interval_s?: number;
+    opps_stake?: number;
+    skip_log_interval_s?: number;
+    max_spread_ratio?: number;
+    place_max_attempts?: number;
+    opps_min_confidence?: number;
+    opps_min_edge?: number;
+    paper_fill_ttl_s?: number;
+    live_fill_deadline_s?: number;
+    /** size minima Betfair usata dal servizio (€): default 2 */
+    min_stake?: number;
+    variants?: VariantId[];
+    execution_mode?: string;
+    auto_trade_opportunities?: boolean;
+    auto_trade_anomalies?: boolean;
+    auto_trade_combos?: boolean;
+    auto_trade_tennis?: boolean;
+    omega_live_via_flumine?: boolean;
+    exits?: Record<string, unknown> | null;
+    risk?: Record<string, unknown> | null;
 }
 
 /** conteggio opportunità per tipo (control.stats.opps) */
@@ -57,6 +104,8 @@ export type SafeOppCounts = Partial<Record<SafeOppKind, number>>;
 export interface SafeStatsFull extends SafeStats {
     risk?: SafeRiskStats | null;
     opps?: SafeOppCounts | null;
+    /** parametri REALMENTE in uso dal servizio (clampati/normalizzati): H-15 */
+    params_effective?: SafeParamsEffective | null;
 }
 
 export interface SafeControl {
@@ -103,6 +152,10 @@ export interface SafeTrade {
     meta: Record<string, unknown> | null;
 }
 
+/** Aggregati della GIORNATA DI PIAZZAMENTO (Europe/Rome): fonte UNICA dei
+ *  numeri della pagina. Le chiavi nuove arrivano con
+ *  `migrations/safe_strategy_bot_v2.sql`: la UI deve funzionare anche senza
+ *  (fallback ai campi vecchi / al calcolo lato client). */
 export interface SafeAggregates {
     realized_today: number;
     realized_total: number;
@@ -110,20 +163,68 @@ export interface SafeAggregates {
     open_count: number;
     won: number;
     lost: number;
+    // ---- v2 (opzionali: migrazione non ancora applicata)
+    /** liability delle riserve a esito IGNOTO (in verifica su Betfair) */
+    reconciling_liability?: number;
+    reconciling_count?: number;
+    /** liability IMPEGNATA nella giornata (base dei cap di rischio) */
+    day_liability?: number;
+    day_liability_model?: number;
+    day_trades?: number;
+    legs_today?: number;
+    events_today?: number;
+    won_today?: number;
+    lost_today?: number;
+    /** 'YYYY-MM-DD' della giornata operativa secondo il DB */
+    operating_day?: string;
+}
+
+/**
+ * true = gli aggregati portano i CONTATORI DELLA GIORNATA della v2
+ * (`migrations/safe_strategy_bot_v2.sql`). Senza migrazione la RPC vecchia
+ * torna solo i sei campi v1: la pagina funziona comunque, ma V/P, operazioni,
+ * partite e capitale impegnato sono STIMATI dal client sulle righe caricate
+ * (ultime N, non tutta la giornata) e NON sono gli stessi numeri dello Storico.
+ * La UI deve dirlo, non spacciarli per numeri del servizio.
+ */
+export function aggregatesHaveDay(agg: SafeAggregates | null | undefined): boolean {
+    if (!agg) return false;
+    return agg.won_today != null || agg.lost_today != null
+        || agg.legs_today != null || agg.events_today != null
+        || agg.day_liability != null;
+}
+
+/** Riga del log del servizio (`safe_strategy_activity`). */
+export interface SafeActivityRow {
+    id: number;
+    ts: string | null;
+    kind: string;
+    payload: Record<string, unknown> | null;
 }
 
 export interface SafeState {
     control: SafeControl | null;
     trades: SafeTrade[];
     aggregates: SafeAggregates | null;
+    // Le tre chiavi sotto arrivano con safe_strategy_bot_v2.sql: sono OPZIONALI
+    // di proposito, così la UI (e i test) funzionano anche senza migrazione.
+    /** ultime righe di attività del servizio (v2) */
+    activity?: SafeActivityRow[];
+    /** parametri realmente in uso (v2, o da control.stats) */
+    params_effective?: SafeParamsEffective | null;
+    /** giornata operativa dichiarata dal DB ('YYYY-MM-DD'); assente = romeDay() */
+    operating_day?: string | null;
 }
 
 export type SafeRequestKind = 'place' | 'cashout' | 'cancel';
+/** 'rejected' = il servizio ha RIFIUTATO la richiesta con un motivo leggibile
+ *  (in riconciliazione, ordine già a mercato, mercato sospeso, feed non fresco) */
+export type SafeRequestStatus = 'pending' | 'processing' | 'done' | 'error' | 'rejected';
 export interface SafeRequest {
     id: number;
     kind: SafeRequestKind;
     payload: Record<string, unknown> | null;
-    status: 'pending' | 'processing' | 'done' | 'error';
+    status: SafeRequestStatus;
     result: Record<string, unknown> | null;
     created_at: string;
     updated_at: string | null;
@@ -302,11 +403,11 @@ export function comboLock(o: SafeOpportunity, totalStake: number): {
 export function anomalyRefLabel(o: SafeOpportunity): string | null {
     const ref = o.ref;
     if (ref == null) return null;
-    const own = `${o.selection_name ?? `#${o.selection_id}`} @${Number(o.price).toFixed(2)}`;
+    const own = `${o.selection_name ?? `#${o.selection_id}`} @${fmtOdds(o.price as number)}`;
     if (typeof ref === 'string') return `${ref} → ${own}`;
     const name = ref.selection_name ?? ref.market_name ?? ref.market_type ?? null;
     if (!name && ref.price == null) return null;
-    const price = ref.price != null && Number.isFinite(Number(ref.price)) ? ` @${Number(ref.price).toFixed(2)}` : '';
+    const price = ref.price != null && Number.isFinite(Number(ref.price)) ? ` @${fmtOdds(Number(ref.price))}` : '';
     return `${name ?? '?'}${price} → ${own}`;
 }
 
@@ -486,10 +587,17 @@ export function sameStrategyParams(a: unknown, b: unknown): boolean {
 }
 
 // ------------------------------------------------------ cash out in corso
-/** Cash out gia' in volo per un trade: richiesta 'cashout' pending/processing
- *  con quel trade_id, gamba di chiusura non in errore gia' scritta, oppure
- *  flag meta.hedging alzato dal servizio. Un secondo cash out sullo stesso
- *  trade raddoppierebbe la copertura: la UI deve disabilitare il bottone. */
+/** Cash out gia' IN VOLO per un trade (audit C-02).
+ *
+ *  "In volo" = ancora nessuna conferma:
+ *    · richiesta 'cashout' pending/processing con quel trade_id;
+ *    · gamba di chiusura con stato `pending` (ordine non ancora abbinato);
+ *    · marker del servizio: meta.hedging / hedge_pending_ids / closing_status.
+ *
+ *  NON è in volo una chiusura GIÀ CONFERMATA (open/hedged/won/lost/void):
+ *  prima qualunque chiusura non in errore spegneva il bottone per sempre e
+ *  dopo una chiusura PARZIALE il residuo diventava inchiudibile dalla UI —
+ *  in live metà della liability restava scoperta. */
 export function cashoutInFlight(
     tradeId: number,
     requests: Pick<SafeRequest, 'kind' | 'payload' | 'status'>[],
@@ -501,7 +609,9 @@ export function cashoutInFlight(
         if (Number((r.payload ?? {})['trade_id']) === tradeId) return true;
     }
     for (const t of trades) {
-        if (t.closes_trade_id === tradeId && t.status !== 'error') return true;
+        // gamba di chiusura ANCORA da confermare: un secondo ordine adesso
+        // raddoppierebbe la copertura
+        if (t.closes_trade_id === tradeId && t.status === 'pending') return true;
         if (t.id === tradeId) {
             const m = t.meta ?? {};
             // marker scritti DAVVERO dal servizio (execution.apply_hedge_state):
@@ -514,17 +624,257 @@ export function cashoutInFlight(
     return false;
 }
 
+// -------------------------------------------------- stato letto dal `meta`
+/** Copertura registrata dal servizio (`meta.hedge`). `complete = false` con
+ *  `fraction < 1` = posizione COPERTA IN PARTE: resta liability viva e il
+ *  residuo deve restare chiudibile a mano (audit C-02 / M-06). */
+export interface HedgeState {
+    /** quota della posizione coperta (0-1) */
+    fraction: number | null;
+    /**
+     * Liability ancora A RISCHIO (€) secondo il servizio. ATTENZIONE al
+     * contratto: mentre una chiusura è IN VOLO (`meta.hedging = true`) questo
+     * valore è la liability PIENA — il rischio scende a 0 solo a copertura
+     * COMPLETA e CONFERMATA. La UI non deve mai far credere che il rischio sia
+     * già ridotto per un ordine che non si è ancora abbinato.
+     */
+    remainingLiability: number | null;
+    hedgedSize: number | null;
+    residualSize: number | null;
+    complete: boolean;
+    /** true = copertura NON confermata: rischio ancora pieno */
+    inFlight: boolean;
+}
+
+export function hedgeState(trade: { size: number | null; meta: Record<string, unknown> | null }): HedgeState | null {
+    const m = trade.meta ?? {};
+    const h = m['hedge'];
+    const inFlight = m['hedging'] === true
+        || m['closing_status'] === 'pending'
+        || (Array.isArray(m['hedge_pending_ids']) && (m['hedge_pending_ids'] as unknown[]).length > 0);
+    const n = (v: unknown) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+    if (h && typeof h === 'object') {
+        const r = h as Record<string, unknown>;
+        const fraction = n(r.fraction);
+        const complete = !inFlight && (r.complete === true || (fraction != null && fraction >= 0.999));
+        return {
+            fraction,
+            remainingLiability: n(r.remaining_liability),
+            hedgedSize: n(r.hedged_size),
+            residualSize: n(r.residual_size),
+            complete,
+            inFlight,
+        };
+    }
+    // percorso REST/paper: solo hedged_size / residual_size sull'apertura
+    const p = partialHedge(trade);
+    if (!p) return inFlight
+        ? { fraction: null, remainingLiability: null, hedgedSize: null, residualSize: null, complete: false, inFlight }
+        : null;
+    return {
+        fraction: p.size > 0 ? Math.round((p.hedged / p.size) * 1000) / 1000 : null,
+        remainingLiability: null,
+        hedgedSize: p.hedged,
+        residualSize: p.residual,
+        complete: false,
+        inFlight,
+    };
+}
+
+/** COMBINAZIONE rotta: una gamba non si è abbinata e il servizio sta chiudendo
+ *  il resto (`meta.combo_incomplete`). Il profitto bloccato NON c'è più. */
+export function comboIncomplete(trade: { meta: Record<string, unknown> | null }): boolean {
+    return (trade.meta ?? {})['combo_incomplete'] === true;
+}
+
+/** Stop per perdita giornaliera: il servizio legge il VALORE ASSOLUTO come
+ *  perdita, quindi 50 e −50 sono la stessa soglia (−50 €). La UI accetta
+ *  entrambi i segni e mostra sempre quello vero. */
+export function normalizeLossStop(v: number | null | undefined): number | null {
+    if (v === null || v === undefined || (v as unknown) === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return n === 0 ? 0 : -Math.abs(n);
+}
+
+/** Esposizione ATTUALE della posizione: se il servizio pubblica `meta.if_win` /
+ *  `meta.if_lose` (o `best_case`/`worst_case`) sono già al netto della
+ *  copertura parziale e vanno usati per l'anteprima del cash out, altrimenti
+ *  si ricade sull'esposizione dell'ordine di apertura (M-06: mai proporre di
+ *  chiudere l'esposizione PIENA di una posizione già coperta a metà). */
+export function tradeExposureNow(
+    trade: { side: string | null; price: number | null; size: number | null; meta: Record<string, unknown> | null },
+): TradeExposure {
+    const m = trade.meta ?? {};
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const win = num(m['if_win']) ?? num(m['expected_if_win']);
+    const lose = num(m['if_lose']) ?? num(m['expected_if_lose']);
+    if (win != null && lose != null) {
+        const r2 = (x: number) => Math.round(x * 100) / 100;
+        return { win: r2(win), lose: r2(lose) };
+    }
+    return tradeExposure(trade);
+}
+
+/** Stato dell'USCITA AUTOMATICA (`meta.exit`): il servizio dichiara se sta
+ *  ritentando, se aspetta un prezzo o se ha DEFINITIVAMENTE fallito (H-05:
+ *  prima un'uscita fallita restava un normale "APERTO"). */
+export interface ExitRunState {
+    state: 'retrying' | 'failed' | 'waiting_price' | 'done' | null;
+    attempts: number | null;
+    residualAttempts: number | null;
+    waitAttempts: number | null;
+    kind: string | null;
+    reason: string | null;
+    lastError: string | null;
+    nextRetryAt: string | null;
+}
+
+export function exitRunState(trade: { meta: Record<string, unknown> | null }): ExitRunState | null {
+    const e = (trade.meta ?? {})['exit'];
+    if (!e || typeof e !== 'object') return null;
+    const r = e as Record<string, unknown>;
+    const s = (v: unknown) => (v != null && String(v).trim() !== '' ? String(v) : null);
+    const n = (v: unknown) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+    const raw = String(r.state ?? '').trim().toLowerCase();
+    const state = raw === 'retrying' || raw === 'failed' || raw === 'waiting_price' || raw === 'done'
+        ? (raw as ExitRunState['state'])
+        : null;
+    if (state === null && r.kind == null && r.reason == null) return null;
+    return {
+        state,
+        attempts: n(r.attempts),
+        residualAttempts: n(r.residual_attempts),
+        waitAttempts: n(r.wait_attempts),
+        kind: s(r.kind),
+        reason: s(r.reason),
+        lastError: s(r.last_error),
+        nextRetryAt: s(r.next_retry_at),
+    };
+}
+
+/** Riserva a esito IGNOTO: l'ordine potrebbe essere VIVO su Betfair. Conta
+ *  nella liability e non va mostrata come un normale "IN CORSO" (H-03). */
+export function isReconciling(trade: { status: string; meta: Record<string, unknown> | null }): boolean {
+    return trade.status === 'pending'
+        && String((trade.meta ?? {})['reason'] ?? '') === 'place_exception_reconciling';
+}
+
+/** Errore DEFINITIVO dichiarato dal servizio (`meta.error_final`): la riga è
+ *  terminale, non "in corso per sempre" (M-05). */
+export function errorFinal(trade: { meta: Record<string, unknown> | null }): { at: string | null; detail: string | null } | null {
+    const m = trade.meta ?? {};
+    const flag = m['error_final'];
+    if (!flag) return null;
+    const at = m['error_at'] != null && String(m['error_at']).trim() !== '' ? String(m['error_at']) : null;
+    const detail = typeof flag === 'string' && flag.trim() !== ''
+        ? flag
+        : (m['last_error'] != null ? String(m['last_error']) : null);
+    return { at, detail };
+}
+
+/** Posizione VIVA che il servizio non vede più nel feed (`meta.blind_since`):
+ *  nessuna uscita automatica possibile finché il feed non torna (H-18). */
+export function blindSince(trade: { meta: Record<string, unknown> | null }): string | null {
+    const v = (trade.meta ?? {})['blind_since'] ?? (trade.meta ?? {})['market_missing_since'];
+    return v != null && String(v).trim() !== '' ? String(v) : null;
+}
+
+/** Esito della POSIZIONE (apertura + chiusure) dichiarato dal servizio:
+ *  serve a NON mostrare "PERSO" sull'apertura di un green-up in utile e a non
+ *  fare due toast per la stessa partita (M-04). */
+export interface PositionOutcome {
+    result: 'won' | 'lost' | 'flat' | 'void' | null;
+    pnl: number | null;
+    positionId: number | null;
+}
+
+export function positionOutcome(trade: { meta: Record<string, unknown> | null }): PositionOutcome | null {
+    const m = trade.meta ?? {};
+    const raw = String(m['position_result'] ?? '').trim().toLowerCase();
+    const result = raw === 'won' || raw === 'lost' || raw === 'flat' || raw === 'void' ? raw : null;
+    const pnlRaw = Number(m['position_pnl']);
+    const pnl = Number.isFinite(pnlRaw) ? pnlRaw : null;
+    const idRaw = Number(m['position_id']);
+    const positionId = Number.isFinite(idRaw) ? idRaw : null;
+    if (result === null && pnl === null) return null;
+    return { result, pnl, positionId };
+}
+
+/** Tentativi di PIAZZAMENTO (`meta.place`): "3 tentativi, ritento alle 18:07". */
+export interface PlaceState {
+    attempts: number | null;
+    lastError: string | null;
+    lastTs: string | null;
+    final: boolean;
+    nextRetryAt: string | null;
+}
+
+export function placeState(trade: { meta: Record<string, unknown> | null }): PlaceState | null {
+    const p = (trade.meta ?? {})['place'];
+    if (!p || typeof p !== 'object') return null;
+    const r = p as Record<string, unknown>;
+    const s = (v: unknown) => (v != null && String(v).trim() !== '' ? String(v) : null);
+    const n = (v: unknown) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+    return {
+        attempts: n(r.attempts), lastError: s(r.last_error), lastTs: s(r.last_ts),
+        final: r.final === true, nextRetryAt: s(r.next_retry_at),
+    };
+}
+
+/** Aliquota di commissione DEL TRADE (colonna `commission`, scritta al
+ *  piazzamento): è quella con cui il P&L viene davvero tassato. Il parametro
+ *  corrente del form può essere cambiato dopo (L-02). */
+export function tradeCommission(
+    trade: { commission: number | null } | null | undefined, fallbackPct: number,
+): number {
+    const c = Number(trade?.commission);
+    if (Number.isFinite(c) && c > 0) return c;
+    return fallbackPct;
+}
+
+/** true = la posizione è VIVA (liability a rischio): aperta, riserva a mercato
+ *  o coperta SOLO IN PARTE. `hedged` completo e `error` definitivo NON sono
+ *  vivi (audit M-15 / L-04 / M-05). */
+export function isLivePosition(
+    trade: { status: string; size: number | null; meta: Record<string, unknown> | null; closes_trade_id?: number | null },
+): boolean {
+    if (trade.closes_trade_id != null) return false;      // è una gamba di chiusura
+    if (trade.status === 'open') return true;
+    if (trade.status === 'pending') return isReconciling(trade) || !errorFinal(trade);
+    if (trade.status === 'hedged') {
+        const h = hedgeState(trade);
+        return h != null && !h.complete;
+    }
+    return false;
+}
+
 // ------------------------------------------------------- freschezza feed
+// Le soglie devono essere le STESSE del servizio, altrimenti la UI accende un
+// bottone che il servizio rifiuta (o viceversa):
+//   FEED_ROW_STALE_MS  <-> exits.FEED_FRESH_S    (20 s)
+//   FEED_HARD_MAX_MS   <-> exits.FEED_HARD_MAX_S (120 s)
+// Il test `soglie di freschezza allineate al servizio` le difende.
 /** riga del feed piu' vecchia di cosi' = quote potenzialmente non aggiornate */
 export const FEED_ROW_STALE_MS = 20_000;
-/** heartbeat scanner piu' vecchio di cosi' = scanner considerato NON attivo */
+/** TETTO DURO (M-24, `exits.FEED_HARD_MAX_S`): oltre questa eta' la riga non
+ *  vale MAI, nemmeno con l'heartbeat dello scanner vivo. Il servizio rifiuta
+ *  di usarla: la UI non deve mostrarne il prezzo come "prezzo di ora". */
+export const FEED_HARD_MAX_MS = 120_000;
+/** heartbeat scanner piu' vecchio di cosi' = PROCESSO scanner considerato non
+ *  attivo. E' una soglia di VITA del processo (piu' tollerante del salto di un
+ *  battito), non di freschezza delle quote: quella e' FEED_ROW_STALE_MS. */
 export const SCANNER_STALE_MS = 45_000;
 
 export interface FeedFreshness {
     /** eta' della riga del feed (s); null = riga senza timestamp */
     ageSec: number | null;
     scannerAlive: boolean;
-    /** true = riga vecchia E scanner morto: i bottoni con soldi vanno spenti.
+    /** true = riga oltre il TETTO DURO (`FEED_HARD_MAX_MS`): il servizio non la
+     *  usa in nessun caso, nemmeno con lo scanner vivo. */
+    hardOld: boolean;
+    /** true = i bottoni con soldi vanno spenti: riga vecchia E scanner morto,
+     *  oppure riga oltre il tetto duro.
      *  Riga vecchia con scanner vivo = write-on-change (nulla e' cambiato). */
     stale: boolean;
 }
@@ -539,13 +889,22 @@ export function feedFreshness(
     const hbMs = scannerUpdatedAt ? Date.parse(scannerUpdatedAt) : NaN;
     const scannerAlive = Number.isFinite(hbMs) && nowMs - hbMs <= SCANNER_STALE_MS;
     const rowOld = ageSec == null || ageSec * 1000 > FEED_ROW_STALE_MS;
-    return { ageSec, scannerAlive, stale: rowOld && !scannerAlive };
+    // M-24: il tetto duro vince sullo heartbeat. Con lo scanner vivo e la riga
+    // di dieci minuti prima, "write-on-change" non spiega piu' niente: quella
+    // partita non e' seguita e il prezzo mostrato sarebbe una bugia.
+    const hardOld = ageSec != null && ageSec * 1000 > FEED_HARD_MAX_MS;
+    return { ageSec, scannerAlive, hardOld, stale: hardOld || (rowOld && !scannerAlive) };
 }
 
 /** motivo (tooltip) per cui i bottoni con soldi sono spenti su un feed stantio */
 export function staleReason(f: FeedFreshness | null | undefined): string | undefined {
     if (!f?.stale) return undefined;
-    return `quote non aggiornate (${f.ageSec != null ? `${f.ageSec}s` : 'n/d'})`;
+    const eta = f.ageSec != null ? `${f.ageSec}s` : 'n/d';
+    if (f.hardOld) {
+        return `quote troppo vecchie (${eta}): oltre ${Math.round(FEED_HARD_MAX_MS / 1000)}s `
+            + 'il servizio non le usa: questa partita non risulta seguita';
+    }
+    return `quote non aggiornate (${eta})`;
 }
 
 // -------------------------------------------------------------------- RPC
@@ -573,11 +932,36 @@ export async function fetchSafeState(): Promise<SafeState> {
     const { data, error } = await supabase.rpc('get_safe_state', {});
     if (error) throw new Error(error.message);
     const d = (data ?? {}) as Partial<SafeState>;
+    const control = d.control ?? null;
+    const agg = d.aggregates ?? null;
     return {
-        control: d.control ?? null,
+        control,
         trades: Array.isArray(d.trades) ? d.trades : [],
-        aggregates: d.aggregates ?? null,
+        aggregates: agg,
+        // le tre chiavi sotto esistono solo con safe_strategy_bot_v2.sql: senza
+        // migrazione si ricade su control.stats (params_effective lo scrive il
+        // servizio) e su romeDay() lato client.
+        activity: Array.isArray(d.activity) ? d.activity : [],
+        params_effective: d.params_effective ?? control?.stats?.params_effective ?? null,
+        operating_day: d.operating_day ?? agg?.operating_day ?? null,
     };
+}
+
+/** Attività del servizio. Prima la RPC dedicata (`get_safe_activity`, v2); se
+ *  non esiste ancora si legge la tabella in SELECT (owner via RLS). Mai un
+ *  errore in faccia all'utente: senza log la sezione resta vuota. */
+export async function fetchSafeActivity(limit = 100, kinds?: string[]): Promise<SafeActivityRow[]> {
+    const rpc = await supabase.rpc('get_safe_activity', {
+        p_limit: limit, p_kinds: (kinds ?? null) as never,
+    });
+    if (!rpc.error && Array.isArray(rpc.data)) return rpc.data as unknown as SafeActivityRow[];
+    const sel = await supabase
+        .from('safe_strategy_activity')
+        .select('id,ts,kind,payload')
+        .order('id', { ascending: false })
+        .limit(limit);
+    if (sel.error) throw new Error(sel.error.message);
+    return (sel.data ?? []) as unknown as SafeActivityRow[];
 }
 
 export async function fetchSafeTrades(limit = 300): Promise<SafeTrade[]> {
@@ -616,6 +1000,8 @@ export function subscribeSafeBot(onChange: () => void): () => void {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'safe_strategy_control' }, onChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'safe_strategy_trades' }, onChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'safe_strategy_requests' }, onChange)
+        // H-16: il log del servizio va visto in tempo reale come i trade
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'safe_strategy_activity' }, onChange)
         .subscribe();
     return () => { void supabase.removeChannel(channel); };
 }
@@ -700,13 +1086,18 @@ export function buildEquitySeries(
     });
 }
 
-/** Trade regolati NUOVI rispetto a `seen` (che viene aggiornato in place).
- *  Al primo caricamento memorizza lo storico e ritorna [] (niente toast). */
+/** POSIZIONI regolate NUOVE rispetto a `seen` (aggiornato in place).
+ *  Al primo caricamento memorizza lo storico e ritorna [] (niente toast).
+ *
+ *  Solo APERTURE (`closes_trade_id == null`): una gamba di chiusura non è una
+ *  posizione a sé e faceva scattare un SECONDO toast per la stessa partita —
+ *  con l'apertura di un green-up in utile mostrata come "PERSO" (audit M-04). */
 export function detectSettlements(
     trades: SafeTrade[], seen: Set<number>, firstLoad: boolean,
 ): SafeTrade[] {
     const settled = trades.filter(
-        (t) => t.settled_at && ['won', 'lost', 'void', 'hedged'].includes(t.status),
+        (t) => t.closes_trade_id == null
+            && t.settled_at && ['won', 'lost', 'void', 'hedged'].includes(t.status),
     );
     if (firstLoad) {
         settled.forEach((t) => seen.add(t.id));
@@ -719,6 +1110,73 @@ export function detectSettlements(
         fresh.push(t);
     }
     return fresh;
+}
+
+// ------------------------------------------- esito delle richieste operative
+export type RequestTone = 'pending' | 'ok' | 'rejected' | 'error';
+
+export interface RequestOutcome {
+    tone: RequestTone;
+    /** etichetta corta in ITALIANO per il badge */
+    label: string;
+    /** messaggio del servizio (già in italiano) o motivo/dettaglio */
+    message: string | null;
+    /** true = esito definitivo (la UI può notificarlo una volta sola) */
+    settled: boolean;
+    tradeId: number | null;
+    /** da dove venivano le quote usate per chiudere ('feed' | 'rest') */
+    source: string | null;
+    /** testo italiano della sorgente, da mostrare accanto all'esito */
+    sourceLabel: string | null;
+}
+
+const REQUEST_LABEL: Record<RequestTone, string> = {
+    pending: 'in coda', ok: 'eseguito', rejected: 'rifiutato', error: 'errore',
+};
+
+/** Esito di UNA richiesta operativa, sempre con un messaggio leggibile.
+ *  Il servizio scrive `result.message` in italiano più `reason`/`detail`:
+ *  prima la UI mostrava solo "errore" senza dire perché (audit L-07/M-21). */
+export function requestOutcome(req: SafeRequest | null | undefined): RequestOutcome | null {
+    if (!req) return null;
+    const res = (req.result ?? {}) as Record<string, unknown>;
+    const txt = (v: unknown) => (v != null && String(v).trim() !== '' ? String(v).trim() : null);
+    const message = txt(res['message']) ?? txt(res['error']) ?? txt(res['detail']) ?? txt(res['reason']);
+    const tradeRaw = Number(res['trade_id'] ?? (req.payload ?? {})['trade_id']);
+    const tradeId = Number.isFinite(tradeRaw) ? tradeRaw : null;
+    // il servizio può marcare il rifiuto nello stato OPPURE nel result
+    const rejected = req.status === 'rejected' || res['rejected'] != null
+        || String(res['status'] ?? '').toLowerCase() === 'rejected';
+    const tone: RequestTone = req.status === 'pending' || req.status === 'processing'
+        ? 'pending'
+        : rejected ? 'rejected'
+            : req.status === 'error' || res['error'] != null ? 'error' : 'ok';
+    const source = txt(res['source']);
+    const sourceLabel = source === 'feed' ? 'quote dal feed dello scanner'
+        : source === 'rest' ? 'quote dal book Betfair'
+            : null;
+    return {
+        tone,
+        label: REQUEST_LABEL[tone],
+        message: message && sourceLabel ? `${message} (${sourceLabel})` : message,
+        settled: tone !== 'pending',
+        tradeId,
+        source,
+        sourceLabel,
+    };
+}
+
+/** Ultima richiesta (di qualsiasi tipo, o del solo `kind`) su un trade. */
+export function lastRequestFor(
+    tradeId: number, requests: SafeRequest[], kind?: SafeRequestKind,
+): SafeRequest | null {
+    let best: SafeRequest | null = null;
+    for (const r of requests) {
+        if (kind && r.kind !== kind) continue;
+        if (Number((r.payload ?? {})['trade_id']) !== tradeId) continue;
+        if (!best || r.id > best.id) best = r;
+    }
+    return best;
 }
 
 export interface TradeExposure {
@@ -772,7 +1230,18 @@ export function tradeHold(trade: { meta: Record<string, unknown> | null }): Trad
     };
 }
 
-/** motivo di attesa in italiano (chiavi note del servizio → testo) */
+/**
+ * Motivo di attesa in italiano.
+ *
+ * CONTRATTO REALE (certificato 11/09): `exits.decide_time_exit` e
+ * `_write_model_hold` scrivono FRASI ITALIANE COMPLETE, non codici brevi
+ * (es. "margine ampio: P(perdita)=0.4%, tengo fino al settlement",
+ * "tenere non rende: EV(tengo)=+1,50 € vs bloccato -0,20 €, ...",
+ * "modello: tengo"). Il fallback `?? reason` e' quindi la via NORMALE.
+ * La mappa qui sotto resta come ALIAS DIFENSIVO per i codici brevi usati in
+ * passato (e da eventuali altri produttori): non deve far credere che il
+ * servizio scriva quelle chiavi.
+ */
 const HOLD_REASON_IT: Record<string, string> = {
     wide_margin: 'margine ampio', margin: 'margine ampio', ev_positive: 'EV a favore',
     low_risk: 'rischio basso', no_liquidity: 'liquidità assente', residual: 'residuo da chiudere',
@@ -832,18 +1301,14 @@ export function groupClosingLegs<T extends { id: number; closes_trade_id?: numbe
     return out;
 }
 
-/** "−22,10 €" — euro in formato italiano (virgola, simbolo dopo) */
+/** ALIAS storico di `fmtMoney` (lib/format.ts): "−22,10 €".
+ *  Unica differenza conservata per i chiamanti esistenti: un valore assente
+ *  viene letto come 0 invece di "—". Per i componenti NUOVI usa `fmtMoney`. */
 export function fmtEurIt(v: number | null | undefined, signed = false): string {
-    const n = Number(v ?? 0);
-    const abs = Math.abs(n).toFixed(2).replace('.', ',');
-    const sign = n < 0 ? '−' : signed ? '+' : '';
-    return `${sign}${abs} €`;
+    return fmtMoney(v ?? 0, { signed });
 }
-/** "4,90" — quota in formato italiano */
-export function fmtOddsIt(v: number | null | undefined): string {
-    const n = v == null ? NaN : Number(v);
-    return Number.isFinite(n) ? n.toFixed(2).replace('.', ',') : '—';
-}
+/** ALIAS storico di `fmtOdds` (lib/format.ts): "4,90" / "—". */
+export const fmtOddsIt = fmtOdds;
 
 /** Tooltip della copertura: spiega in una riga cosa e' successo. */
 export function hedgeTooltip(
@@ -931,31 +1396,149 @@ function moRunner(
     return null;
 }
 
-/** Miglior back/lay della selezione di un trade dal feed dello scanner.
- *  Copre i mercati che il feed espone: Correct Score, Half Time Score e
- *  Match Odds (calcio e tennis, id da `odds.<lato>.selection_id`).
- *  null = book non disponibile → il cash out resta disabilitato. */
+/** Book LIVE della selezione di un trade, letto dal feed dello scanner. */
+export interface TradeBook {
+    back: number | null;
+    lay: number | null;
+    /** EUR abbinabili al miglior prezzo (assenti nei payload vecchi) */
+    backSize?: number | null;
+    laySize?: number | null;
+    /** mercato da cui arriva il prezzo (tooltip: corrisponde a Betfair) */
+    marketId?: string | null;
+    /** stato del mercato: 'OPEN' · 'SUSPENDED' · 'CLOSED' */
+    status?: string | null;
+    /** stato del runner ('ACTIVE', 'REMOVED', 'WINNER'…) */
+    runnerStatus?: string | null;
+    /** blocco del feed usato ('match_odds' | 'ou' | 'btts' | 'cs' | …) */
+    source?: string;
+}
+
+/** linea Over/Under dal market_type Betfair: 'OVER_UNDER_35' → 3.5 */
+function ouLineOf(marketType: string | null | undefined): number | null {
+    const m = /^OVER_UNDER_(\d)(\d)$/.exec(String(marketType ?? '').toUpperCase().trim());
+    return m ? Number(`${m[1]}.${m[2]}`) : null;
+}
+
+function bookOf(sel: ScanCsSelection, block: ScanMarketBlock | null, source: string): TradeBook {
+    return {
+        back: sel.back ?? null,
+        lay: sel.lay ?? null,
+        backSize: sel.back_size ?? null,
+        laySize: sel.lay_size ?? null,
+        marketId: block?.market_id ?? null,
+        status: block?.status ?? null,
+        runnerStatus: sel.runner_status ?? null,
+        source,
+    };
+}
+
+/** nome del blocco dal suo market_type (per il tooltip) */
+function blockSource(block: ScanMarketBlock): string {
+    const mt = String(block.market_type ?? '').toUpperCase();
+    if (mt.startsWith('OVER_UNDER')) return 'ou';
+    if (mt === 'BOTH_TEAMS_TO_SCORE') return 'btts';
+    if (mt === 'HALF_TIME') return 'ht_result';
+    return mt ? mt.toLowerCase() : 'feed';
+}
+
+/**
+ * Miglior back/lay della selezione di un trade dal feed dello scanner, su
+ * QUALSIASI mercato che il feed pubblica (audit R1).
+ *
+ * Ordine di risoluzione, dal più affidabile:
+ *   1. `market_id` del trade = `market_id` di un blocco del payload — vale per
+ *      Correct Score, Half Time Score, Over/Under (ogni linea è un mercato a
+ *      sé), Gol/NoGol, 1X2 primo tempo e ogni blocco futuro;
+ *   2. Match Odds (calcio e tennis: gli id stanno in `odds.<lato>.selection_id`);
+ *   3. per TIPO di mercato: CS / HT score / la linea O/U giusta / BTTS / HALF_TIME;
+ *   4. ultimo tentativo, solo se il trade NON porta un market_id: la selezione
+ *      compare in UN SOLO blocco del feed (ambiguo se in più di uno → niente).
+ *
+ * null = il feed non ha quel mercato → il cash out resta disabilitato. Mai
+ * "n/d" quando il prezzo c'è: i trade manuali su Over/Under (#39, #40) non
+ * avevano cash out pur avendo il mercato nel feed con quote di 2 secondi.
+ */
 export function safeTradeBook(
-    trade: { market_type: string | null; selection_id: number | null; selection_name: string | null },
+    trade: { market_id?: string | null; market_type: string | null; selection_id: number | null; selection_name: string | null },
     payload: CalcioScanPayload | TennisScanPayload | null | undefined,
-): { back: number | null; lay: number | null } | null {
+): TradeBook | null {
     if (!payload) return null;
     const type = (trade.market_type ?? '').toUpperCase();
-    if (trade.selection_id != null && 'cs' in payload) {
-        const p = payload as CalcioScanPayload;
-        if (type.includes('HALF_TIME_SCORE') || type === 'HT_CS') {
-            const s = htSelection(p, trade.selection_id);
-            if (s) return { back: s.back ?? null, lay: s.lay ?? null };
-        }
-        if (type.includes('CORRECT_SCORE') || type === 'CS') {
-            const s = csSelection(p, trade.selection_id);
-            if (s) return { back: s.back ?? null, lay: s.lay ?? null };
-        }
+    const by = { selectionId: trade.selection_id, name: trade.selection_name };
+
+    // 1. per market_id: il legame più forte fra riga del DB e feed.
+    //    Una linea O/U già DECISA dal punteggio (tenuta nel feed solo per una
+    //    posizione Mike) non è un prezzo di uscita: si scarta.
+    const byId = scanBlockByMarketId(payload, trade.market_id ?? null);
+    if (byId && isUsableBlock(byId)) {
+        const sel = blockSelection(byId, by);
+        if (sel) return bookOf(sel, byId, blockSource(byId));
     }
+    if (trade.market_id && payload.mo_market_id
+        && String(payload.mo_market_id) === String(trade.market_id)) {
+        const r = moRunner(payload, by);
+        if (r) return bookOf(r, { market_id: payload.mo_market_id, status: payload.mo_status ?? null }, 'match_odds');
+    }
+
+    // 2. Match Odds per tipo (calcio e tennis)
     if (type.includes('MATCH_ODDS') || type === '1X2') {
-        const r = moRunner(payload, { name: trade.selection_name, selectionId: trade.selection_id });
-        if (r) return { back: r.back ?? null, lay: r.lay ?? null };
+        const r = moRunner(payload, by);
+        if (r) return bookOf(r, { market_id: payload.mo_market_id, status: payload.mo_status ?? null }, 'match_odds');
     }
+
+    // 3. per TIPO di mercato dentro i blocchi del calcio
+    if ('cs' in payload) {
+        const p = payload as CalcioScanPayload;
+        if (trade.selection_id != null && (type.includes('HALF_TIME_SCORE') || type === 'HT_CS')) {
+            const s = htSelection(p, trade.selection_id);
+            if (s) return bookOf(s, p.ht as ScanMarketBlock | null, 'ht');
+        }
+        if (trade.selection_id != null && (type.includes('CORRECT_SCORE') || type === 'CS')) {
+            const s = csSelection(p, trade.selection_id);
+            if (s) return bookOf(s, p.cs as ScanMarketBlock | null, 'cs');
+        }
+        if (type.startsWith('OVER_UNDER')) {
+            const line = ouLineOf(type);
+            const blocks = (Array.isArray(p.ou) ? p.ou : []).filter(Boolean) as ScanMarketBlock[];
+            const wanted = (line != null
+                ? blocks.filter((b) => Number(b.line) === line)
+                : blocks).filter(isUsableBlock);
+            for (const b of wanted) {
+                const sel = blockSelection(b, by);
+                if (sel) return bookOf(sel, b, 'ou');
+            }
+        }
+        if (type === 'BOTH_TEAMS_TO_SCORE' || type === 'BTTS') {
+            const sel = blockSelection(p.btts, by);
+            if (sel) return bookOf(sel, p.btts ?? null, 'btts');
+        }
+        if (type === 'HALF_TIME' || type === 'HT_1X2' || type === 'HALF_TIME_RESULT') {
+            const sel = blockSelection(p.ht_result, by);
+            if (sel) return bookOf(sel, p.ht_result ?? null, 'ht_result');
+        }
+    }
+
+    // 4. senza market_id: la selezione in UN SOLO blocco (mai indovinare)
+    if (!trade.market_id && trade.selection_id != null) {
+        const hits = usableMarketBlocks(payload)
+            .map((b) => ({ b, sel: blockSelection(b, { selectionId: trade.selection_id }) }))
+            .filter((x) => x.sel !== null);
+        if (hits.length === 1) {
+            return bookOf(hits[0].sel as ScanCsSelection, hits[0].b, blockSource(hits[0].b));
+        }
+    }
+    return null;
+}
+
+/** true = mercato NON operabile adesso (sospeso/chiuso o runner rimosso):
+ *  il servizio rifiuterebbe la chiusura con "mercato sospeso" (M-23). */
+export function marketBlocked(book: TradeBook | null | undefined): string | null {
+    if (!book) return null;
+    const st = String(book.status ?? '').toUpperCase();
+    if (st === 'SUSPENDED') return 'mercato sospeso';
+    if (st === 'CLOSED' || st === 'INACTIVE') return 'mercato chiuso';
+    const rs = String(book.runnerStatus ?? '').toUpperCase();
+    if (rs === 'REMOVED' || rs === 'REMOVED_VACANT') return 'selezione rimossa';
     return null;
 }
 

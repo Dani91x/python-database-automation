@@ -15,11 +15,25 @@ import {
     calendarGrid, monthLabel, dayLabel, shiftMonth, romeDay,
     type CalendarCell, type DailyRow,
 } from '@/lib/dailyHistory';
+import { fmtMoney } from '@/lib/format';
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
 function fmtSignedEur(v: number): string {
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
+}
+
+/**
+ * H-10 — "centrato / mancato" si può dire SOLO se l'obiettivo di quel giorno è
+ * STORICIZZATO (`goal_snapshot`). Con un obiettivo di ripiego (quello corrente
+ * del control, magari cambiato la settimana dopo) il giudizio è falso: niente
+ * ●/○, e la cella lo dichiara nel tooltip.
+ */
+export function goalMarkOf(row: DailyRow | null, showGoal: boolean): boolean | null {
+    if (!showGoal || !row) return null;
+    if (row.goal == null || !(row.goal > 0)) return null;
+    if (!row.goal_snapshot) return null;
+    return row.pnl_realized >= row.goal;
 }
 
 /** classe di intensità: 4 livelli per segno, in base al |pnl| massimo del mese */
@@ -59,9 +73,9 @@ function cellAria(c: CalendarCell, showGoal: boolean): string {
     if (!c.row) return `${base}: nessuna operazione`;
     const r = c.row;
     let s = `${base}: ${fmtSignedEur(r.pnl_realized)}, ${r.trades_placed} trade`;
-    if (showGoal && r.goal != null && r.goal > 0) {
-        s += r.pnl_realized >= r.goal ? ', obiettivo centrato' : ', obiettivo mancato';
-    }
+    const mark = goalMarkOf(r, showGoal);
+    if (mark != null) s += mark ? ', obiettivo centrato' : ', obiettivo mancato';
+    else if (showGoal && r.goal != null && r.goal > 0) s += ', obiettivo non storicizzato';
     return s;
 }
 
@@ -165,7 +179,9 @@ export function DailyCalendar({
                         const r = c.row;
                         const isSel = c.day === selectedDay;
                         const isToday = c.day === todayDay;
-                        const goalHit = showGoal && r && r.goal != null && r.goal > 0 ? r.pnl_realized >= r.goal : null;
+                        // H-10: solo con obiettivo STORICIZZATO si giudica la giornata
+                        const goalHit = goalMarkOf(r, showGoal);
+                        const goalStale = goalHit == null && showGoal && r != null && r.goal != null && r.goal > 0;
                         const tone = r ? intensityClass(r.pnl_realized, maxAbs) : 'bg-transparent border-white/5 text-slate-500';
                         return (
                             <button
@@ -201,6 +217,14 @@ export function DailyCalendar({
                                             {goalHit ? '●' : '○'}
                                         </span>
                                     )}
+                                    {goalStale && (
+                                        <span
+                                            data-testid="goal-not-historized"
+                                            className="text-[10px] text-slate-600"
+                                            aria-hidden
+                                            title="obiettivo non storicizzato: quello mostrato è quello corrente, non quello di quel giorno"
+                                        >·</span>
+                                    )}
                                 </div>
                                 {r ? (
                                     <>
@@ -223,7 +247,7 @@ export function DailyCalendar({
             )}
             <div className="text-[10px] text-slate-500 flex items-center gap-3 flex-wrap">
                 <span>verde/rosso = P&L realizzato del giorno (intensità relativa al mese)</span>
-                {showGoal && <span>● obiettivo centrato · ○ mancato</span>}
+                {showGoal && <span>● obiettivo centrato · ○ mancato · <span className="text-slate-600">·</span> obiettivo non storicizzato</span>}
                 <span>frecce per muoversi, Invio per selezionare</span>
             </div>
         </div>

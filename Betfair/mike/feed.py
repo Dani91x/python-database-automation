@@ -199,19 +199,27 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         feed_fresh=feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s),
         hazard=hazard, p4_market=implied_p4(blocks, info), p4_model=p4_model,
         last_goal_ts=last_goal_ts, market_status=status, final_total=None,
+        total_matched=_num(blk35.get("total_matched")),   # diagnostica, nessun gate
         cover_gain_pct=cover_gain_pct, pressure=float(pressure or 1.0), model_probs=model_probs,
         p_total_model=p_total_model, p_total_emp=p_total_emp,
     )
 
 
 def is_candidate(info: EventInfo, payload: Dict[str, Any], *, now: float, params: Dict[str, Any]) -> bool:
-    """Partita da seguire ADESSO: entrambe le linee nel feed e KO entro la finestra
-    (o gia' in corso). Il filtro per competizione e liquidita' vive in config."""
+    """Partita da ARMARE ADESSO: entrambe le linee nel feed e KO ancora da venire,
+    entro la finestra pre-match. Il filtro per competizione vive nei params.
+
+    L4 — una partita GIA' IN CORSO non viene piu' armata: Mike non entra mai
+    in-play da zero (l'unico ingresso live e' il re-ingresso dopo un profitto),
+    quindi armarla produceva solo IDLE_LIVE → SETTLED "nessuna operazione" e
+    rumore nella lista. Le partite armate pre-KO restano seguite anche in-play
+    (vengono da ``mike_events``, non da qui).
+    """
     if not info.complete or info.ko_at is None:
         return False
     comp_filter = [s.strip().lower() for s in str(params.get("competition_filter") or "").split(",") if s.strip()]
     if comp_filter and not any(f in str(info.competition or "").lower() for f in comp_filter):
         return False
     if bool(payload.get("inplay")):
-        return True
+        return False
     return 0 < info.ko_at - now <= float(params["entry_hours_before_ko"]) * 3600.0

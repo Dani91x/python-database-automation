@@ -86,13 +86,13 @@ describe('CashOutButton — posizione LAY', () => {
         renderBtn();
         // lay 5 @3 coperto back @4: locked = 5 + (-10-5)/4 = +1.25
         expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('+');
-        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('1.25');
+        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('1,25 €');
     });
 
     it('il P&L bloccato riflette la commissione', () => {
         renderBtn({ commission: 5 });
         // 1.25 * 0.95 = 1.1875 -> 1.19
-        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('1.19');
+        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('1,19 €');
     });
 });
 
@@ -100,7 +100,7 @@ describe('CashOutButton — posizione BACK', () => {
     it('si copre bancando al best lay', () => {
         // back 10 @2.5 -> vince +15 / perde -10 ; lay @2.00: locked = -10 + 25/2 = +2.50
         renderBtn({ win: 15, lose: -10, bestBack: 1.9, bestLay: 2 });
-        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('2.50');
+        expect(screen.getByTestId('cashout-trigger')).toHaveTextContent('2,50 €');
     });
 });
 
@@ -129,7 +129,7 @@ describe('CashOutButton — dialog e conferma', () => {
         await user.click(screen.getByTestId('cashout-trigger'));
         const input = await screen.findByLabelText('Importo cash out');
         expect(input).toHaveValue(3.75);
-        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('1.25');
+        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('1,25 €');
     });
 
     it('i bottoni rapidi impostano la quota; il parziale mostra PEGGIORE (titolo) e migliore', async () => {
@@ -139,25 +139,25 @@ describe('CashOutButton — dialog e conferma', () => {
         await user.click(await screen.findByRole('button', { name: '50%' }));
         expect(screen.getByLabelText('Importo cash out')).toHaveValue(1.88);
         // back 1.88 @4: vince -4.36 / perde +3.12 -> titolo = peggiore
-        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−€4.36');
-        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+€3.12');
+        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−4,36 €');
+        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+3,12 €');
         // parziale = resta esposizione aperta, dichiarata esplicitamente
         expect(screen.getByTestId('cashout-residual')).toHaveTextContent(/resta aperto/);
         expect(screen.getByText(/parziale 50%: resta esposto/)).toBeInTheDocument();
         expect(screen.queryByText(/P&L bloccato/)).toBeNull();
     });
 
-    it('CRITICAL-1: LAY 10 @3, best back 3, 50% -> titolo −€10.00 (non il ramo ottimistico +5)', async () => {
+    it('CRITICAL-1: LAY 10 @3, best back 3, 50% -> titolo −10,00 € (non il ramo ottimistico +5)', async () => {
         const user = userEvent.setup();
         renderBtn({ win: -20, lose: 10, bestBack: 3, bestLay: 3.1 });
         await user.click(screen.getByTestId('cashout-trigger'));
         await user.click(await screen.findByRole('button', { name: '50%' }));
         expect(screen.getByLabelText('Importo cash out')).toHaveValue(5);
-        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−€10.00');
-        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+€5.00');
+        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−10,00 €');
+        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+5,00 €');
         // green pieno: un solo numero, etichetta "bloccato"
         await user.click(screen.getByRole('button', { name: '100%' }));
-        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('+€0.00');
+        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('+0,00 €');
         expect(screen.getByText(/P&L bloccato \(green pieno\)/)).toBeInTheDocument();
         expect(screen.queryByTestId('cashout-best')).toBeNull();
     });
@@ -179,8 +179,8 @@ describe('CashOutButton — dialog e conferma', () => {
         await user.clear(input);
         await user.type(input, '1.20');
         // back 1.20 @4: vince -6.40 / perde +3.80 -> titolo = peggiore
-        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−€6.40');
-        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+€3.80');
+        expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−6,40 €');
+        expect(screen.getByTestId('cashout-best')).toHaveTextContent('+3,80 €');
         await user.click(screen.getByTestId('cashout-confirm'));
         expect(onCashOut).toHaveBeenCalledWith({ amount: 1.2 });
     });

@@ -532,10 +532,45 @@ può più perdere). Gamba HT oltre il 45′ → la regola il settlement.
 quote che si riallineano). Stato e prezzi dal FEED UNICO (mai righe stantie; mercato non
 OPEN → `greenup_wait`); REST solo a rischio già reale. Fill cappato dalla liquidità →
 RESIDUO ritentato con cooldown `greenup_retry_s` (20 s) fino a `greenup_max_attempts` (15),
-poi `failed` + log `error`. Mai un secondo invio con una chiusura `pending` (marker
-`meta.greenup` scritto PRIMA dell'ordine; `hedge_pending_ids` blocca). Contratto UI:
-`meta.exit_kind` (`profit`|`loss`) ed `exit_reason` su apertura E chiusura; log `greenup`
-con trigger, minuto, punteggio, bancato, P(perdita) e fonte, P&L bloccato, back, size.
+poi `failed` + log `greenup_failed` (e `error`). Mai un secondo invio con una chiusura
+`pending` (marker `meta.greenup` scritto PRIMA dell'ordine; `hedge_pending_ids` blocca).
+
+**Contratto UI delle uscite (11/09, vocabolario CHIUSO condiviso con la Safe Strategy —
+`safe_strategy.exits.ui_exit_kind`).** Ogni gamba di chiusura scritta dal servizio porta
+`meta.exit_kind` ∈ `greenup` | `manual` | `profit` | `loss` | `time` | `red_card` |
+`forced` | `other` ed `exit_reason` (testo breve italiano), su apertura E chiusura, più
+`meta.exit_profit` (bool). Regola deterministica:
+- `greenup` SOLO se la chiusura è INTEGRALE **e** il P&L bloccato è ≥ 0 (green-up vero);
+- `loss` se la chiusura blocca una PERDITA (un green-up in perdita **non** è un green-up:
+  il badge "CHIUSO IN GREEN-UP" su una perdita sarebbe una bugia al trader);
+- `profit` se la regola è di profitto ma la chiusura è parziale o il bloccato è ignoto;
+- `manual` per il cash out richiesto dall'operatore (`(parziale)` nel motivo quando
+  `fraction`/`amount` o la liquidità lasciano un residuo).
+Quale regola ha deciso l'uscita resta in `meta.greenup.kind` (`profit`|`loss`).
+
+**Stato del green-up sulla riga (UNA struttura, `meta.greenup`).** `state` ∈ `pending`
+(inviata, residuo da coprire) | `done` (coperta del tutto) | `hold` (TENGO) | `failed`
+(tentativi esauriti: posizione SCOPERTA, `next_retry_at`) | `blind` (nessun feed) |
+`residual_dropped` (residuo non copribile o non più necessario), con `reason` (italiano),
+`at`, `attempts`, `p_lose`, `ev`. Un kind di attività per ogni caso: `greenup`,
+`greenup_hold`, `greenup_wait`, `greenup_failed`, `greenup_blind`,
+`greenup_residual_dropped`, `cashout_manual`.
+
+**Stato della copertura (UN solo writer: `safe_strategy.execution.apply_hedge_state`).**
+`meta.hedge` = {`fraction`, `remaining_liability`, `hedged_size`, `residual_size`,
+`complete`} e `meta.hedging` = una gamba di chiusura è IN VOLO.
+
+Log `greenup` con trigger, minuto, punteggio, bancato, P(perdita) e fonte, P&L bloccato,
+back, size, `exit_kind` e `state`.
+
+**Il rischio dopo la copertura (11/09).** A copertura COMPLETA la liability aperta è ZERO
+(la perdita bloccata è già fatta, non può peggiorare) e il P&L bloccato va a
+`locked_pnl_open` / `locked_pnl_open_today`. Ma le GUARDIE non lo perdono di vista: lo
+stop-loss giornaliero e il target dinamico lavorano su
+R efficace = `realized_today` + min(0, `locked_pnl_open_today`), e il cap
+`max_open_liability` su `open_liability` + max(0, −`locked_pnl_open`). Una perdita
+bloccata è denaro perso anche se si incassa al fischio finale: mai anticipare un utile,
+sempre anticipare una perdita.
 
 **Parametri (§7, whitelist `omega_config`).** `greenup_enabled` (True), `greenup_mode`
 (`auto`|`off`), `greenup_trigger_distance` 1, `greenup_price_trigger_ratio` 0.5,

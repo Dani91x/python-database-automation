@@ -240,7 +240,8 @@ def test_ht_result_aperto_dopo_il_45_con_esito_noto():
     pl = payload_1_1_65(ht_result=_ht_block(), timeline=tl)
     res = detect(pl, {})
     home = _find(res, "Nord FC", "back")
-    assert len(home) == 1 and home[0]["rule"] == "decided" and home[0]["p_model"] == 1.0
+    # audit 11/09: la regola del 1X2 primo tempo porta la SUA etichetta (prima "decided", codice morto in UI)
+    assert len(home) == 1 and home[0]["rule"] == "ht_open" and home[0]["p_model"] == 1.0
     assert home[0]["market_type"] == "HALF_TIME" and "1T finito 1-0" in home[0]["rationale"]
     assert _find(res, "The Draw", "lay") and not _find(res, "Sud FC", "lay")  # 6.0 > max_lay
     # campi espliciti hanno la precedenza

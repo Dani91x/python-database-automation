@@ -16,7 +16,9 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Bot, Info, Loader2, Lock, Pause, ShieldAlert, Square, Zap } from 'lucide-react';
-import { requestManual, type OmegaMode } from '@/lib/omega';
+import { requestManual, isReconciling, terminalError, type OmegaMode } from '@/lib/omega';
+import { fmtMoney, fmtOdds } from '@/lib/format';
+import { statusMeta, scalperStatusMeta } from '@/lib/tradeStatus';
 import {
     activateScalper, stopScalper, fetchScalperState, SCALPER_PARAM_DEFAULTS,
     type ScalperControl,
@@ -34,30 +36,60 @@ function phaseIdx(p: MissionPhase | null | undefined): number {
     const i = PHASE_ORDER.indexOf((p ?? 'pre') as MissionPhase);
     return i < 0 ? 0 : i;
 }
+// formati UNICI del design system (niente "€12.50" accanto a "12,50 €")
 function fmtEur(v: number): string {
-    return `${v < 0 ? '−' : ''}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v);
 }
 function fmtSignedEur(v: number): string {
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
 }
 function fmtQuote(v: number | null | undefined): string {
     const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n.toFixed(2) : '—';
+    return Number.isFinite(n) && n > 0 ? fmtOdds(n) : '—';
 }
 
 // Stati scalper attivi (per decidere Avvia vs Ferma)
 const SCALPER_ACTIVE = ['requested', 'arming', 'armed', 'running', 'stopping'];
 
-const TRADE_BADGE: Record<string, string> = {
-    pending: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
-    open: 'bg-sky-500/15 text-sky-300 border-sky-500/40',
-    won: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
-    lost: 'bg-red-500/15 text-red-300 border-red-500/40',
-    void: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
-};
-function tradeBadgeCls(status: string): string {
-    return TRADE_BADGE[status] ?? 'bg-orange-500/15 text-orange-300 border-orange-500/40';
+/**
+ * M-07 — stato di una gamba della missione: etichetta ITALIANA (prima era la
+ * chiave del DB in maiuscolo: "HEDGED", "ERROR") e, sopra tutto, la
+ * riconciliazione e le righe terminali, che NON sono un normale "in gioco".
+ */
+export function missionTradeStatus(t: {
+    status: string; meta?: Record<string, unknown> | null;
+}): { label: string; cls: string } {
+    // §19: la parola e il colore li decide la mappa CONDIVISA (lib/tradeStatus),
+    // compresa la precedenza esito certo > terminale > riconciliazione.
+    return statusMeta(t.status, {
+        reconciling: isReconciling(t.meta),
+        terminal: terminalError(t.meta) != null,
+    });
 }
+
+/**
+ * M-07 — cosa scrivere a destra della gamba: una gamba COPERTA ha un P&L
+ * bloccato (non è "in gioco"), una in ERRORE non ha nessun rischio vivo.
+ */
+export function missionTradeValue(t: {
+    status: string; pnl?: number | null; liability?: number | null; meta?: Record<string, unknown> | null;
+}): { text: string; tone: 'pos' | 'neg' | 'plain' | 'risk' } {
+    if (['won', 'lost', 'void'].includes(t.status)) {
+        const v = toNum(t.pnl);
+        return { text: fmtSignedEur(v), tone: v >= 0 ? 'pos' : 'neg' };
+    }
+    if (terminalError(t.meta)) return { text: 'nessun ordine reale', tone: 'plain' };
+    const locked = Number((t.meta ?? {})['locked_pnl']);
+    if (t.status === 'hedged' || Number.isFinite(locked)) {
+        const v = Number.isFinite(locked) ? locked : 0;
+        return { text: `bloccato ${fmtSignedEur(v)}`, tone: v >= 0 ? 'pos' : 'neg' };
+    }
+    return { text: `rischio ${fmtEur(toNum(t.liability))}`, tone: 'risk' };
+}
+
+const VALUE_CLS: Record<'pos' | 'neg' | 'plain' | 'risk', string> = {
+    pos: 'text-emerald-400', neg: 'text-red-400', plain: 'text-slate-400', risk: 'text-orange-300',
+};
 
 // Bozza d'ordine: SNAPSHOT immutabile di mercato/selezione/size al momento del
 // click. Il dialog conferma ESATTAMENTE questi id (mai rimappati). Il PREZZO
@@ -88,9 +120,15 @@ interface Props {
     onChanged: () => void;           // ricarica dati dopo un'azione
     /** payload live dello scanner per l'evento (punteggio 2s, CS in stream); null = assente */
     live?: CalcioScanPayload | null;
+    /**
+     * §18 — stato del bot SCALPER dell'evento, letto dal PANNELLO con un solo
+     * poll per tutte le card. `undefined` = nessuno lo gestisce (la card usa un
+     * poll proprio, più lento); `null` = letto e assente.
+     */
+    scalper?: ScalperControl | null;
 }
 
-export default function MissionCard({ mission, mode, onChanged, live = null }: Props) {
+export default function MissionCard({ mission, mode, onChanged, live = null, scalper }: Props) {
     const [busy, setBusy] = useState<string | null>(null);
     const [laySizeHt, setLaySizeHt] = useState(1);    // default €1 (editabile)
     const [laySizeFt, setLaySizeFt] = useState(1);
@@ -124,18 +162,25 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
     // stato del BOT SCALPER (theta 1-tick) letto DIRETTO da scalper_control:
     // la RPC missioni espone solo pnl_locked del maker — qui servono i numeri
     // theta (colpi/green/scratch/pnl) in tempo quasi reale (poll 5s).
-    const [scalperCtl, setScalperCtl] = useState<ScalperControl | null>(null);
+    // §18: il poll è UNO SOLO, a livello di PANNELLO (MissionPanel lo passa in
+    // `scalper`): prima ogni card aperta teneva il proprio setInterval a 5 s e
+    // dieci missioni facevano dieci RPC al secondo non sincronizzate. La card
+    // resta usabile da sola (nessun prop) con un poll di cortesia più lento.
+    const [ownCtl, setOwnCtl] = useState<ScalperControl | null>(null);
+    const managed = scalper !== undefined;
     useEffect(() => {
+        if (managed) return;                 // il pannello ci pensa lui
         let alive = true;
         const load = () => {
             fetchScalperState(mission.event_id, 0)
-                .then(s => { if (alive) setScalperCtl(s.control); })
+                .then(s => { if (alive) setOwnCtl(s.control); })
                 .catch(() => { /* servizio spento: il poll riprova */ });
         };
         load();
-        const t = setInterval(load, 5_000);
+        const t = setInterval(load, 15_000);
         return () => { alive = false; clearInterval(t); };
-    }, [mission.event_id]);
+    }, [mission.event_id, managed]);
+    const scalperCtl = managed ? (scalper ?? null) : ownCtl;
     const scalperActive = !!scalperCtl && SCALPER_ACTIVE.includes(scalperCtl.status);
     const thetaStats = (scalperCtl?.stats ?? {}) as Record<string, number | undefined>;
 
@@ -195,7 +240,7 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
             // "richiesto": il servizio può ridurre la size alla liquidità reale
             // al momento dell'esecuzione — la size effettiva si vede sul trade.
             toast.success('Ordine RICHIESTO (in coda al servizio)', {
-                description: `${draft.side.toUpperCase()} ${draft.runner_name ?? '—'} @ ${price.toFixed(2)} · €${draft.size.toFixed(2)} richiesti · ${mode.toUpperCase()} — la size effettiva può scendere alla liquidità disponibile`,
+                description: `${draft.side.toUpperCase()} ${draft.runner_name ?? '—'} @ ${fmtOdds(price)} · ${fmtEur(draft.size)} richiesti · ${mode.toUpperCase()} — la size effettiva può scendere alla liquidità disponibile`,
             });
             setDraft(null);
             onChanged();
@@ -289,7 +334,7 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                                 lay @ <b>{fmtQuote(lv ? lv.price : sugg.lay_price)}</b>
                                 {lv && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse align-middle" aria-hidden />}
                             </span>
-                            <span className="text-xs text-slate-400 tabular-nums">liq. €{toNum(lv ? lv.size : sugg.lay_size).toFixed(0)}</span>
+                            <span className="text-xs text-slate-400 tabular-nums">liq. {fmtMoney(toNum(lv ? lv.size : sugg.lay_size), { decimals: 0 })}</span>
                             <span className="text-xs text-slate-500 truncate max-w-[180px]" title={sugg.market_name ?? ''}>{sugg.market_name ?? ''}</span>
                             <span className="ml-auto flex items-center gap-2">
                                 <input
@@ -314,7 +359,7 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                                         size: toNum(size),
                                     })}
                                 >
-                                    <Zap className="w-3.5 h-3.5 mr-1" />PIAZZA LAY €{toNum(size).toFixed(0)}
+                                    <Zap className="w-3.5 h-3.5 mr-1" />PIAZZA LAY {fmtMoney(toNum(size), { decimals: 0 })}
                                 </Button>
                             </span>
                         </>
@@ -336,22 +381,26 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                 )}
                 {leg && leg.trades.length > 0 && (
                     <div className="mt-2 space-y-1">
-                        {leg.trades.map(t => (
-                            <div key={t.id} className="flex items-center gap-2 text-xs text-slate-300">
-                                <Badge variant="outline" className={tradeBadgeCls(t.status)}>{t.status.toUpperCase()}</Badge>
-                                <span className="font-medium">{t.runner_name ?? '—'}</span>
-                                <span className="tabular-nums">{String(t.side).toUpperCase()} @ {fmtQuote(t.price)} · €{toNum(t.size).toFixed(2)}</span>
-                                {t.minute_at_entry != null && (
-                                    <span className="text-[10px] text-slate-500 tabular-nums" title="minuto e punteggio all'ingresso">
-                                        ingr. {t.minute_at_entry}′{t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
+                        {leg.trades.map(t => {
+                            const st = missionTradeStatus(t);
+                            const val = missionTradeValue(t);
+                            return (
+                                <div key={t.id} className="flex items-center gap-2 text-xs text-slate-300" data-testid="mission-leg-trade">
+                                    <Badge variant="outline" className={st.cls} data-testid="mission-trade-status">{st.label}</Badge>
+                                    <span className="font-medium">{t.runner_name ?? '—'}</span>
+                                    <span className="tabular-nums">{String(t.side).toUpperCase()} @ {fmtQuote(t.price)} · {fmtEur(toNum(t.size))}</span>
+                                    {t.minute_at_entry != null && (
+                                        <span className="text-[10px] text-slate-500 tabular-nums" title="minuto e punteggio all'ingresso">
+                                            ingr. {t.minute_at_entry}′{t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
+                                        </span>
+                                    )}
+                                    {t.mode === 'live' && <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">LIVE</Badge>}
+                                    <span className={`ml-auto tabular-nums font-bold ${VALUE_CLS[val.tone]}`} data-testid="mission-trade-value">
+                                        {val.text}
                                     </span>
-                                )}
-                                {t.mode === 'live' && <Badge variant="outline" className="bg-red-500/15 text-red-300 border-red-500/40">LIVE</Badge>}
-                                <span className={`ml-auto tabular-nums font-bold ${toNum(t.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {['won', 'lost', 'void'].includes(t.status) ? fmtSignedEur(toNum(t.pnl)) : `liab. ${fmtEur(toNum(t.liability))}`}
-                                </span>
-                            </div>
-                        ))}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -375,10 +424,10 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                 <span className={`text-sm tabular-nums font-bold ${gap <= 0 ? 'text-emerald-400' : 'text-secondary'}`}>{fmtEur(gap)}</span>
                 {scalperCtl ? (
                     <>
-                        <Badge variant="outline" className={scalperActive
-                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
-                            : 'bg-slate-500/15 text-slate-300 border-slate-500/40'}>
-                            {scalperCtl.status.toUpperCase()}
+                        {/* §5.3: etichetta ITALIANA dello stato (mai la chiave
+                            inglese in maiuscolo sotto gli occhi del trader) */}
+                        <Badge variant="outline" className={scalperStatusMeta(scalperCtl.status).cls} data-testid="mission-scalper-status">
+                            {scalperStatusMeta(scalperCtl.status).label}
                         </Badge>
                         {scalperCtl.dry_run && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40">PAPER</Badge>}
                         {/* numeri del theta: colpi/green/scratch + P&L bloccato.
@@ -466,20 +515,20 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                 </div>
                 {allTrades.length > 0 && (
                     <div className="space-y-1">
-                        {allTrades.map(t => (
-                            <div key={`${t.legKey}-${t.id}`} className="flex items-center gap-2 text-xs text-slate-400">
-                                <span className="uppercase text-[10px] text-slate-500 w-10">{t.legKey === 'ht_cs' ? '1T' : t.legKey === 'ft_cs' ? '2T' : 'SCALP'}</span>
-                                <span>{String(t.side).toUpperCase()} {t.runner_name ?? '—'} @ {fmtQuote(t.price)}</span>
-                                <Badge variant="outline" className={tradeBadgeCls(t.status)}>{t.status.toUpperCase()}</Badge>
-                                <span className={`ml-auto tabular-nums ${['won', 'lost', 'void'].includes(t.status)
-                                    ? (toNum(t.pnl) >= 0 ? 'text-emerald-400' : 'text-red-400')
-                                    : 'text-sky-300'}`}>
-                                    {['won', 'lost', 'void'].includes(t.status)
-                                        ? fmtSignedEur(toNum(t.pnl))
-                                        : `in gioco · rischio ${fmtEur(toNum(t.liability))}`}
-                                </span>
-                            </div>
-                        ))}
+                        {allTrades.map(t => {
+                            const st = missionTradeStatus(t);
+                            const val = missionTradeValue(t);
+                            return (
+                                <div key={`${t.legKey}-${t.id}`} className="flex items-center gap-2 text-xs text-slate-400" data-testid="mission-footer-trade">
+                                    <span className="uppercase text-[10px] text-slate-500 w-10">{t.legKey === 'ht_cs' ? '1T' : t.legKey === 'ft_cs' ? '2T' : 'SCALP'}</span>
+                                    <span>{String(t.side).toUpperCase()} {t.runner_name ?? '—'} @ {fmtQuote(t.price)}</span>
+                                    <Badge variant="outline" className={st.cls} data-testid="mission-trade-status">{st.label}</Badge>
+                                    <span className={`ml-auto tabular-nums ${VALUE_CLS[val.tone]}`} data-testid="mission-trade-value">
+                                        {val.text}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -499,14 +548,14 @@ export default function MissionCard({ mission, mode, onChanged, live = null }: P
                                         {draft.market_name ? <> — {draft.market_name}</> : null}
                                     </span>
                                     <span className="block tabular-nums">
-                                        quota <b>{draftPrice(draft).toFixed(2)}</b>
+                                        quota <b>{fmtQuote(draftPrice(draft))}</b>
                                         {draft.side === 'lay' && liveLay(draft.market_id, draft.selection_id) && (
                                             <span className="text-emerald-300 text-xs"> (live)</span>
                                         )}
-                                        {' '}· importo <b>€{draft.size.toFixed(2)}</b>
+                                        {' '}· importo <b>{fmtEur(draft.size)}</b>
                                     </span>
                                     <span className={`block font-bold tabular-nums ${mode === 'live' ? 'text-red-300 text-xl' : 'text-orange-300'}`}>
-                                        Rischio massimo: €{draftRisk(draft, draftPrice(draft)).toFixed(2)}
+                                        Rischio massimo: {fmtEur(draftRisk(draft, draftPrice(draft)))}
                                     </span>
                                     {mode === 'live' && (
                                         <span className="block text-orange-300">Ordine REALE su Betfair: denaro vero.</span>

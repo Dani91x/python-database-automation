@@ -2,20 +2,28 @@
 // useMike — stato del BOT MIKE per la pagina /mike.
 //
 // Stessa architettura di Omega/Safe: realtime (UN canale) + poll di sicurezza,
-// ricarica completa a ogni notifica, guardie di sequenza e smontaggio, LIVE
-// confermato SOLO in questa sessione (mai ereditato dal control).
-// Il bot può NON esistere ancora (migrazione non applicata): `available` false e
-// la pagina resta leggibile senza rompersi.
+// guardie di sequenza e smontaggio, LIVE confermato SOLO in questa sessione
+// (mai ereditato dal control). Il bot può NON esistere ancora (migrazione non
+// applicata): `available` false e la pagina resta leggibile.
+//
+// DUE CORREZIONI (audit H5 + richiesta "le schede non si muovono"):
+//   * le notifiche realtime sono DEBOUNCED (RELOAD_DEBOUNCE_MS): con 26 partite
+//     seguite arrivavano decine di eventi al secondo e la UI ricaricava tutto;
+//   * il battito del servizio (`heartbeat_at` / `stats.last_cycle`) NON fa
+//     ricaricare nulla: il filtro sta in `subscribeMike` (controlSignature).
 // ============================================================================
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     activateMike, stopMike, updateMikeParams, fetchMikeState, fetchMikeRequests, requestMike,
     subscribeMike, mergeMikeParams, detectSettledEvents, requestInFlight, MIKE_PARAM_DEFAULTS,
+    romeDayStartMs,
     type MikeActivity, type MikeAggregates, type MikeControl, type MikeEvent, type MikeMode,
     type MikeParams, type MikeRequest, type MikeRequestKind, type MikeTrade,
 } from '@/lib/mike';
 
 const POLL_MS = 15_000;
+/** finestra minima fra due ricariche scatenate dal realtime (richiesta: ≥ 1,5 s) */
+export const RELOAD_DEBOUNCE_MS = 1_500;
 
 export interface MikeView {
     available: boolean;
@@ -28,6 +36,10 @@ export interface MikeView {
     activity: MikeActivity[];
     aggregates: MikeAggregates | null;
     requests: MikeRequest[];
+    /** inizio della giornata operativa (ms): dal DB (RPC v2) o mezzanotte di Roma stimata qui */
+    dayStartMs: number | null;
+    /** 'rpc' = day_start dal DB (mike_bot_v2); 'client' = mezzanotte di Roma stimata dal client */
+    dayStartSource: 'rpc' | 'client';
     params: MikeParams;
     mode: MikeMode;
     liveConfirmed: boolean;
@@ -39,6 +51,8 @@ export interface MikeView {
     request: (kind: MikeRequestKind, eventId: string) => Promise<number | null>;
     isRequestPending: (eventId: string, kind: MikeRequestKind) => boolean;
     freshSettled: MikeEvent[];
+    /** richieste chiuse dopo l'ultimo giro: la pagina ne fa un toast (M1) */
+    freshOutcomes: MikeRequest[];
 }
 
 export interface MikeHandlers {
@@ -52,15 +66,19 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
     const [activity, setActivity] = useState<MikeActivity[]>([]);
     const [aggregates, setAggregates] = useState<MikeAggregates | null>(null);
     const [requests, setRequests] = useState<MikeRequest[]>([]);
+    const [dayStartMs, setDayStartMs] = useState<number | null>(null);
+    const [dayStartSource, setDayStartSource] = useState<'rpc' | 'client'>('client');
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [freshSettled, setFreshSettled] = useState<MikeEvent[]>([]);
+    const [freshOutcomes, setFreshOutcomes] = useState<MikeRequest[]>([]);
     const [desiredMode, setDesiredMode] = useState<MikeMode>('paper');
     const [liveConfirmed, setLiveConfirmed] = useState(false);
     const [localReqs, setLocalReqs] = useState<Set<string>>(() => new Set());
     const modeSynced = useRef(false);
     const seenSettled = useRef<Set<string>>(new Set());
+    const seenRequestState = useRef<Map<number, string>>(new Map());
     const initialized = useRef(false);
     const onErrorRef = useRef(handlers.onError);
     onErrorRef.current = handlers.onError;
@@ -74,10 +92,10 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
     const reload = useCallback(async () => {
         const seq = ++reloadSeq.current;
         const firstLoad = !initialized.current;
-        const [state, reqs] = await Promise.all([
-            fetchMikeState(),
-            fetchMikeRequests(30).catch(() => [] as MikeRequest[]),
-        ]);
+        const state = await fetchMikeState();
+        // senza mike_bot_v2.sql la RPC non espone le richieste: fallback in lettura
+        let reqs = state.requests;
+        if (!reqs.length) reqs = await fetchMikeRequests(50).catch(() => [] as MikeRequest[]);
         if (seq !== reloadSeq.current || !mounted.current) return;
         setControl(state.control);
         if (state.control && !modeSynced.current) {
@@ -89,15 +107,32 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
         setActivity(state.activity);
         setAggregates(state.aggregates);
         setRequests(reqs);
+        // senza `mike_bot_v2.sql` la RPC non espone `day_start`: la giornata
+        // operativa e' comunque la mezzanotte di Roma (certificazione dati reali)
+        const dayMs = state.day_start ? Date.parse(state.day_start) : NaN;
+        setDayStartMs(Number.isFinite(dayMs) ? dayMs : romeDayStartMs());
+        setDayStartSource(Number.isFinite(dayMs) ? 'rpc' : 'client');
         setError(null);
         const fresh = detectSettledEvents(state.events, seenSettled.current, firstLoad);
         if (fresh.length) setFreshSettled(fresh);
+        // richieste che hanno CAMBIATO stato in qualcosa di definitivo: la pagina
+        // deve dire all'utente com'è finita (M1), una volta sola
+        const closed: MikeRequest[] = [];
+        for (const r of reqs) {
+            const prev = seenRequestState.current.get(r.id);
+            seenRequestState.current.set(r.id, r.status);
+            if (firstLoad || prev === r.status) continue;
+            if (r.status === 'done' || r.status === 'rejected' || r.status === 'error') closed.push(r);
+        }
+        if (closed.length) setFreshOutcomes(closed);
         if (firstLoad) initialized.current = true;
         setLoading(false);
     }, []);
 
     useEffect(() => {
         let lastErrAt = 0;
+        let timer: number | null = null;
+        let disposed = false;
         const run = () => {
             reload().catch((e: unknown) => {
                 if (!mounted.current) return;
@@ -111,10 +146,20 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
                 }
             });
         };
+        // DEBOUNCE: N notifiche ravvicinate = UNA ricarica (mai una per evento)
+        const schedule = () => {
+            if (disposed || timer !== null) return;
+            timer = window.setTimeout(() => { timer = null; run(); }, RELOAD_DEBOUNCE_MS);
+        };
         run();
-        const unsub = subscribeMike(run);
+        const unsub = subscribeMike(schedule);
         const poll = window.setInterval(run, POLL_MS);
-        return () => { unsub(); window.clearInterval(poll); };
+        return () => {
+            disposed = true;
+            if (timer !== null) window.clearTimeout(timer);
+            unsub();
+            window.clearInterval(poll);
+        };
     }, [reload]);
 
     const wrap = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | null> => {
@@ -155,16 +200,27 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
         [localReqs, requests],
     );
 
-    const params = control?.params ? mergeMikeParams(control.params) : { ...MIKE_PARAM_DEFAULTS };
+    // IDENTITÀ STABILE dei parametri: `control` si riscrive a ogni ricarica, ma
+    // se i parametri non sono cambiati l'oggetto resta lo STESSO, così le card
+    // memoizzate non si ri-disegnano (e non si muovono) per nulla.
+    const paramsKey = JSON.stringify(control?.params ?? null);
+    const paramsRef = useRef<{ key: string; value: MikeParams }>({ key: '\u0000', value: { ...MIKE_PARAM_DEFAULTS } });
+    if (paramsRef.current.key !== paramsKey) {
+        paramsRef.current = {
+            key: paramsKey,
+            value: control?.params ? mergeMikeParams(control.params) : { ...MIKE_PARAM_DEFAULTS },
+        };
+    }
+    const params = paramsRef.current.value;
 
     return {
         available: control !== null,
         loading, busy, error,
-        control, events, trades, activity, aggregates, requests,
+        control, events, trades, activity, aggregates, requests, dayStartMs, dayStartSource,
         params,
         mode: running ? (control?.mode ?? desiredMode) : desiredMode,
         liveConfirmed,
         reload, start, stop, setMode, saveParams, request, isRequestPending,
-        freshSettled,
+        freshSettled, freshOutcomes,
     };
 }

@@ -21,6 +21,12 @@ vi.mock('@/lib/omega', () => ({
     requestManual: vi.fn(),
     fetchOmegaEvents: vi.fn(async () => []),
     fetchManualRequests: vi.fn(async () => []),
+    updateOmegaParams: vi.fn(async () => ({})),
+}));
+// §18: il poll dello stato scalper e UNO, a livello di pannello. Mockato: senza,
+// il client Supabase VERO aprirebbe una WebSocket dal test.
+vi.mock('@/lib/scalper', () => ({
+    fetchScalperState: vi.fn(async () => ({ control: null, activity: [] })),
 }));
 
 vi.mock('@/lib/omegaMissions', () => ({
@@ -38,6 +44,11 @@ vi.mock('@/lib/omegaMissions', () => ({
         return { home: (m[0] ?? '').trim(), away: (m[1] ?? '').trim() };
     },
     missionRealized: () => 0,
+    goalProgressPct: (r: unknown, g: unknown) => {
+        const rr = Number(r), gg = Number(g);
+        if (!Number.isFinite(rr) || !Number.isFinite(gg) || gg <= 0) return 0;
+        return Math.max(0, Math.min(100, (rr / gg) * 100));
+    },
 }));
 
 vi.mock('@/components/omega/MissionCard', () => ({
@@ -50,7 +61,8 @@ vi.mock('@/lib/sportsLogos', () => ({
 }));
 
 import MissionPanel from './MissionPanel';
-import { fetchOmegaEvents } from '@/lib/omega';
+import { fetchOmegaEvents, updateOmegaParams } from '@/lib/omega';
+import { fetchScalperState } from '@/lib/scalper';
 import { fetchMissions, followMission, setFollowRecord } from '@/lib/omegaMissions';
 
 const mEvents = vi.mocked(fetchOmegaEvents);
@@ -209,5 +221,81 @@ describe('MissionPanel — pulsanti Statistiche / Trading', () => {
         await user.click(btnOf(/Trading/));
         await waitFor(() => expect(mFollow).toHaveBeenCalledTimes(1));
         expect(screen.getByTestId('mission-card-stub')).toBeInTheDocument();
+    });
+});
+
+// ===========================================================================
+// Certificazione 11/09: "Salva obiettivo" (M-08) e poll unico dello scalper
+// ===========================================================================
+describe('MissionPanel — obiettivo di giornata e poll dello scalper', () => {
+    const mUpdate = vi.mocked(updateOmegaParams);
+    const mScalper = vi.mocked(fetchScalperState);
+
+    /** una missione ATTIVA e SEGUITA (ha un bot scalper da interrogare) */
+    function missione(over: Record<string, unknown> = {}) {
+        return {
+            event_id: 'ev1', event_name: 'Roma vs Lazio', kickoff: null, mission_date: null,
+            target: 10, status: 'active', phase_now: '1t', minute: 20,
+            score_home: 0, score_away: 0, score_status: null,
+            suggestion_ht: null, suggestion_ft: null, suggestion_scalp: null,
+            error: null, created_at: null, updated_at: null, legs: {},
+            scalper: null, followed: true, ...over,
+        };
+    }
+
+    beforeEach(() => {
+        vi.mocked(fetchMissions).mockResolvedValue({
+            missions: [missione()], summary: { active: 1, total: 1 },
+        } as never);
+        vi.mocked(fetchOmegaEvents).mockResolvedValue([] as never);
+    });
+
+    function renderPanel(dailyGoal = 250) {
+        return render(<MemoryRouter><MissionPanel mode="paper" dailyGoal={dailyGoal} /></MemoryRouter>);
+    }
+
+    it('M-08: l obiettivo modificato viene SCRITTO sul control (non solo mostrato)', async () => {
+        const user = userEvent.setup();
+        renderPanel(250);
+        const input = await screen.findByDisplayValue('250');
+        await user.clear(input);
+        await user.type(input, '400');
+        // finche non e salvato la UI DICHIARA che il servizio usa ancora il vecchio
+        expect(await screen.findByText(/obiettivo non salvato/i)).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Salva' }));
+        await waitFor(() => expect(mUpdate).toHaveBeenCalledWith({ dailyGoal: 400 }));
+    });
+
+    it('obiettivo NON modificato: nessun avviso di "non salvato"', async () => {
+        renderPanel(250);
+        await screen.findByDisplayValue('250');
+        expect(screen.queryByText(/obiettivo non salvato/i)).toBeNull();
+    });
+
+    it('§18: UN solo poll dello scalper per il pannello, in SERIE sulle missioni seguite', async () => {
+        vi.mocked(fetchMissions).mockResolvedValue({
+            missions: [missione(), missione({ event_id: 'ev2' }), missione({ event_id: 'ev3' })],
+            summary: { active: 3, total: 3 },
+        } as never);
+        renderPanel();
+        await waitFor(() => expect(mScalper).toHaveBeenCalledTimes(3));
+        // una chiamata per evento, senza attivita (activityLimit 0: solo lo stato)
+        expect(mScalper.mock.calls.map((c) => c[0]).sort()).toEqual(['ev1', 'ev2', 'ev3']);
+        for (const c of mScalper.mock.calls) expect(c[1]).toBe(0);
+    });
+
+    it('§18: le missioni FINITE o non seguite non hanno un bot da interrogare', async () => {
+        vi.mocked(fetchMissions).mockResolvedValue({
+            missions: [
+                missione({ event_id: 'finita', phase_now: 'finita' }),
+                missione({ event_id: 'nonseguita', followed: false }),
+                missione({ event_id: 'viva' }),
+            ],
+            summary: { active: 3, total: 3 },
+        } as never);
+        renderPanel();
+        await waitFor(() => expect(mScalper).toHaveBeenCalledTimes(1));
+        expect(mScalper.mock.calls[0][0]).toBe('viva');
     });
 });

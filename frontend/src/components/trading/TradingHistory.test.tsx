@@ -12,7 +12,7 @@ function row(day: string, pnl: number): DailyRow {
         day, pnl_realized: pnl, trades_placed: 2, settled: 1, won: pnl > 0 ? 1 : 0, lost: pnl < 0 ? 1 : 0, void: 0,
         hedged_closed: 0, win_rate: null, avg_win: null, avg_loss: null, best_trade: null, worst_trade: null,
         max_liability: null, gross_profit: pnl > 0 ? pnl : 0, gross_loss: pnl < 0 ? -pnl : 0, profit_factor: null,
-        commission_paid: null, goal: 250, goal_pct: null, by_strategy: {}, by_sport: {}, by_origin: {},
+        commission_paid: null, goal: 250, goal_pct: null, goal_snapshot: true, by_strategy: {}, by_sport: {}, by_origin: {},
         first_trade_at: null, last_trade_at: null,
     };
 }
@@ -29,7 +29,7 @@ describe('TradingHistory', () => {
         render(<TradingHistory variant="omega" fetchDaily={fetchDaily} fetchDayTrades={fetchDayTrades} today="2026-09-10" />);
         await waitFor(() => expect(fetchDaily).toHaveBeenCalledWith('2026-09-01', '2026-09-30'));
         expect(await screen.findByTestId('calendar-month')).toHaveTextContent(/settembre 2026/);
-        await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+€8.50'));
+        await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+8,50 €'));
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('0/2');
         // dettaglio del giorno corrente
         await waitFor(() => expect(fetchDayTrades).toHaveBeenCalledWith('2026-09-10'));

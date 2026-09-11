@@ -95,8 +95,8 @@ describe('OpportunityGroup — tipi di opportunita', () => {
         expect(screen.getByTestId('opp-kind')).toHaveAttribute('data-kind', 'anomaly');
         expect(screen.getByTestId('opp-kind')).toHaveTextContent('ANOMALIA');
         expect(screen.getByTestId('anomaly-rule')).toHaveTextContent('scala Under/Over incoerente');
-        expect(screen.getByTestId('anomaly-ref')).toHaveTextContent('Under 6.5 @1.01 → Under 7.5 @1.10');
-        expect(screen.getByTestId('anomaly-rule')).toHaveTextContent('scarto +8.9%');
+        expect(screen.getByTestId('anomaly-ref')).toHaveTextContent('Under 6.5 @1,01 → Under 7.5 @1,10');
+        expect(screen.getByTestId('anomaly-rule')).toHaveTextContent('scarto +8,9 %');
     });
 
     it('combinazione: gambe con stake scalato allo stake totale e lock in € (peggiore/migliore)', async () => {
@@ -106,19 +106,19 @@ describe('OpportunityGroup — tipi di opportunita', () => {
         const legs = screen.getAllByTestId('combo-leg');
         expect(legs).toHaveLength(2);
         expect(legs[0]).toHaveTextContent('Under 2.5');
-        expect(legs[0]).toHaveTextContent('€6.00');
+        expect(legs[0]).toHaveTextContent('6,00 €');
         expect(legs[1]).toHaveTextContent('LAY');
-        expect(legs[1]).toHaveTextContent('€4.00');
+        expect(legs[1]).toHaveTextContent('4,00 €');
         const lock = screen.getByTestId('combo-lock');
-        expect(lock).toHaveTextContent('+€0.03');   // per €
-        expect(lock).toHaveTextContent('+€0.30');   // bloccato su €10
-        expect(lock).toHaveTextContent('+€2.50');   // migliore su €10
+        expect(lock).toHaveTextContent('+0,03 €');   // per €
+        expect(lock).toHaveTextContent('+0,30 €');   // bloccato su €10
+        expect(lock).toHaveTextContent('+2,50 €');   // migliore su €10
         // cambio stake totale → gambe e lock si riscalano
         const stake = screen.getByLabelText('Stake');
         await user.clear(stake);
         await user.type(stake, '20');
-        expect(screen.getAllByTestId('combo-leg')[0]).toHaveTextContent('€12.00');
-        expect(screen.getByTestId('combo-lock')).toHaveTextContent('+€0.60');
+        expect(screen.getAllByTestId('combo-leg')[0]).toHaveTextContent('12,00 €');
+        expect(screen.getByTestId('combo-lock')).toHaveTextContent('+0,60 €');
         // "Piazza" consegna lo stake TOTALE: e' la pagina a spezzarlo per gamba
         await user.click(screen.getByTestId('invest-place'));
         expect(onPlace).toHaveBeenCalledWith(expect.objectContaining({ kind: 'combo' }), 20);
@@ -128,8 +128,8 @@ describe('OpportunityGroup — tipi di opportunita', () => {
         renderGroup(row({ payload: { ...row().payload, opps: [MODEL_CAL as never] } }));
         expect(screen.getByTestId('opp-kind')).toHaveAttribute('data-kind', 'model');
         expect(screen.getByText('Modello (calibrato)')).toBeInTheDocument();
-        expect(screen.getByText('72.0%')).toBeInTheDocument();
-        expect(screen.getByTestId('model-raw')).toHaveTextContent('grezza 80.0%');
+        expect(screen.getByText('72,0 %')).toBeInTheDocument();
+        expect(screen.getByTestId('model-raw')).toHaveTextContent('grezza 80,0 %');
     });
 
     it('modello senza calibrazione (payload vecchio): nessuna grezza, tipo MODELLO', () => {
@@ -146,7 +146,7 @@ describe('OpportunityGroup — tipi di opportunita', () => {
         expect(screen.getByTestId('opp-kind')).toHaveAttribute('data-kind', 'tennis');
         expect(screen.getByTestId('tennis-extra')).toHaveTextContent('set 1-0 · game 3-2');
         expect(screen.getByTestId('tennis-extra')).toHaveTextContent('al meglio di 5');
-        expect(screen.getByTestId('tennis-retire')).toHaveTextContent('ritiro 12%');
+        expect(screen.getByTestId('tennis-retire')).toHaveTextContent('ritiro 12 %');
         expect(screen.getByTestId('tennis-retire').className).toMatch(/red/);
         expect(screen.getByTestId('tennis-momentum')).toHaveTextContent('momentum contro');
     });

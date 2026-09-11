@@ -443,7 +443,10 @@ def test_richiesta_cancel_non_tocca_un_ordine_gia_a_mercato():
     db.requests.append({"id": 1, "kind": "cancel", "status": "pending",
                         "payload": {"trade_id": tid}})
     _run(db)
-    assert db.requests[0]["result"]["error"] == "ordine_gia_a_mercato"
+    # C-03/M-21: non e' un guasto ma un RIFIUTO, con esito leggibile dalla UI
+    assert db.requests[0]["status"] == "rejected"
+    assert db.requests[0]["result"]["rejected"] == "ordine gia' a mercato"
+    assert "gia' a mercato" in db.requests[0]["result"]["message"]
     assert db.get_trade(tid) is not None
 
 
@@ -767,6 +770,24 @@ def test_reconcile_live_libera_la_riserva_mai_piazzata_dopo_il_grace():
     mk = ReconMarket()
     res = _run(db, market=mk)
     assert res["reconciled"] == 1
+    # C-03: la riga marcata 'place_exception_reconciling' NON si cancella in
+    # silenzio (poteva avere un ordine reale): si chiude in error TERMINALE
+    t = db.get_trade(tid)
+    assert t["status"] == "error" and t["meta"]["reason"] == "reconcile_ordine_assente"
+    assert t["meta"]["error_final"] is True and t["settled_at"]
+    assert "reconciled_error" in db.kinds()
+
+
+def test_reconcile_live_cancella_la_riserva_senza_marker():
+    """Senza il marker di riconciliazione (nessun ordine mai partito) la riserva
+    si LIBERA: e' l'unico caso in cui la riga si cancella."""
+    from datetime import timedelta
+
+    db = FakeDB(status="stopped")
+    tid = _pending_live(db, meta={"phase": "reserved"},
+                        placed_at=(NOW - timedelta(minutes=10)).isoformat())
+    res = _run(db, market=ReconMarket())
+    assert res["reconciled"] == 1
     assert db.get_trade(tid) is None and "reconciled_free" in db.kinds()
 
 
@@ -797,9 +818,23 @@ def test_reconcile_non_tocca_i_pending_della_coda_flumine():
     assert db.get_trade(tid)["status"] == "pending", "proprieta' del poll flumine"
 
 
-def test_reconcile_paper_conferma_con_i_dati_della_riserva():
+def test_reconcile_paper_in_riconciliazione_non_inventa_un_fill():
+    """L-10: in paper il marker 'place_exception_reconciling' significa che il
+    fill simulato e' ESPLOSO, quindi non e' mai avvenuto: confermarlo al prezzo
+    della riserva inventava una posizione che il live non avrebbe avuto."""
     db = FakeDB(status="stopped")
     tid = _pending_live(db, mode="paper")
+    res = _run(db)
+    assert res["reconciled"] == 1
+    t = db.get_trade(tid)
+    assert t["status"] == "error" and t["meta"]["reason"] == "reconcile_paper_senza_fill"
+    assert t["meta"]["error_final"] is True
+    assert "reconciled_error" in db.kinds()
+
+
+def test_reconcile_paper_senza_marker_conferma_con_i_dati_della_riserva():
+    db = FakeDB(status="stopped")
+    tid = _pending_live(db, mode="paper", meta={"phase": "reserved"})
     res = _run(db)
     assert res["reconciled"] == 1
     t = db.get_trade(tid)
@@ -1529,20 +1564,34 @@ def test_exit_ritenta_fino_al_cap_poi_logga_errore():
     db = NoClosingDB(status="running")
     tid = _auto_trade(db, "base")
     _cycle(db, _exit_feed_row(60, 1, 0))
-    for i in range(1, 4):
-        r = _cycle(db, _exit_feed_row(81, 1, 0))
+    # H-05/H-17: fra un tentativo e l'altro c'e' il BACKOFF (5, 15, 60 s...):
+    # i tentativi si consumano solo quando e' scaduto.
+    for i, s_off in enumerate((0, 6, 22), start=1):
+        at = NOW + timedelta(seconds=s_off)
+        r = _cycle(db, _exit_feed_row(81, 1, 0, updated_at=at), at=at)
         assert r["exits"] == 0
         assert db.get_trade(tid)["meta"]["exit_requested"]["attempts"] == i
     assert db.closing_attempts == 3
-    req = db.get_trade(tid)["meta"]["exit_requested"]
+    meta = db.get_trade(tid)["meta"]
+    req = meta["exit_requested"]
     assert req["failed"] is True and req["sent"] is False
     assert req["last_error"] == "riserva_chiusura_fallita"
-    errs = [p for k, p in db.activity if k == "error" and p.get("reason") == "exit_failed"]
+    # stato VISIBILE per la UI + prossimo tentativo GIA' programmato
+    st = meta["exit"]
+    assert st["state"] == "failed" and st["attempts"] == 3
+    assert st["last_error"] == "riserva_chiusura_fallita" and st["next_retry_at"]
+    errs = [p for k, p in db.activity if k == "exit_failed"]
     assert len(errs) == 1 and errs[0]["trade_id"] == tid and errs[0]["attempts"] == 3
     assert len([k for k in db.kinds() if k == "exit_retry"]) == 2
-    # oltre il cap: nessun altro tentativo
-    _cycle(db, _exit_feed_row(82, 1, 0))
+    # dentro il backoff: nessun tentativo nuovo
+    at = NOW + timedelta(seconds=30)
+    _cycle(db, _exit_feed_row(82, 1, 0, updated_at=at), at=at)
     assert db.closing_attempts == 3
+    # scaduto il backoff: SI RITENTA (mai terminale, la liability e' viva)
+    at = NOW + timedelta(seconds=100)
+    _cycle(db, _exit_feed_row(82, 1, 0, updated_at=at), at=at)
+    assert db.closing_attempts == 4
+    assert db.get_trade(tid)["meta"]["exit"]["attempts"] == 4
 
 
 def test_exit_cashout_manuale_in_volo_non_conta_come_tentativo():
@@ -1646,15 +1695,22 @@ def test_exit_residuo_si_ferma_al_cap_e_logga_una_volta():
     assert len(_closings(db, tid)) == 3
     assert db.get_trade(tid)["status"] == "open" and \
         db.get_trade(tid)["meta"]["residual_size"] > 0.01
-    for s in (33, 44):
-        at = NOW + timedelta(seconds=s)
-        r = _cycle(db, _cs_row(74, back_size=50.0, updated_at=at), at=at)
-        assert r["exits"] == 0
-    assert len(_closings(db, tid)) == 3, "oltre il cap nessun tentativo"
-    errs = [p for k, p in db.activity if k == "error"
+    # H-17: superato il cap si passa al BACKOFF (5 s, 15 s, ...) e si dice una
+    # volta; NON si abbandona il residuo (liability viva mai piu' coperta).
+    at = NOW + timedelta(seconds=25)
+    r = _cycle(db, _cs_row(74, back_size=50.0, updated_at=at), at=at)
+    assert r["exits"] == 0
+    assert len(_closings(db, tid)) == 3, "dentro il backoff nessun tentativo"
+    errs = [p for k, p in db.activity if k == "exit_failed"
             and p.get("reason") == "exit_residual_exhausted"]
     assert len(errs) == 1 and errs[0]["trade_id"] == tid and errs[0]["attempts"] == 2
-    assert db.get_trade(tid)["meta"]["exit_requested"]["residual_exhausted"] is True
+    meta = db.get_trade(tid)["meta"]
+    assert meta["exit_requested"]["residual_exhausted"] is True
+    assert meta["exit"]["state"] == "failed" and meta["exit"]["next_retry_at"]
+    # backoff scaduto: il residuo si RITENTA
+    at = NOW + timedelta(seconds=60)
+    r = _cycle(db, _cs_row(74, back_size=50.0, updated_at=at), at=at)
+    assert r["exits"] == 1 and len(_closings(db, tid)) == 4
 
 
 def test_exit_parametri_residuo_con_clamp():
@@ -1669,9 +1725,22 @@ def test_exit_parametri_residuo_con_clamp():
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
 def _reset_skip_log_state():
-    S._SKIP_LOG_STATE.clear()
+    """Stato di MODULO azzerato fra i test: log dedupe, budget REST (H-19),
+    budget dei ritentativi di piazzamento (H-21), mercati spariti (M-25) e
+    cecita' del feed (H-18). Con un NOW fisso, senza questo reset la cadenza
+    di 10 s del gate REST bloccherebbe i test successivi."""
+    _reset_module_state()
     yield
+    _reset_module_state()
+
+
+def _reset_module_state():
     S._SKIP_LOG_STATE.clear()
+    S._REST_STATE.update({"last": {}, "cycle_ts": 0.0, "used": 0})
+    S._PLACE_ATTEMPTS.clear()
+    S._PLACE_SEED["ts"] = 0.0
+    S._MARKET_MISSING.clear()
+    S._FEED_BLIND_LOG.clear()
 
 
 def _skips(db, reason=None):
@@ -1770,11 +1839,12 @@ def test_caso_trade_12_uscita_a_tempo_in_perdita_con_margine_ampio_tiene():
     assert len(holds) == 1, "log una sola volta per motivo"
     h = holds[0]
     assert h["trade_id"] == tid and h["kind"] == "time"
-    assert h["locked"] == pytest.approx(-4.0, abs=0.01)
+    assert h["locked"] == pytest.approx(-4.0, abs=0.01)   # perdita: nessuna commissione
     assert h["source"] == "model" and h["p_lose"] is not None and h["p_lose"] <= 0.02
     assert h["msg"].startswith("margine ampio: P(perdita)=")
     assert h["msg"].endswith("tengo fino al settlement")
-    assert h["hold_profit"] == 2.0 and h["loss_if_lose"] == 118.0
+    # M-27: il profitto del tenere e' NETTO di commissione (2.00 lordi -> 1.90)
+    assert h["hold_profit"] == 1.9 and h["loss_if_lose"] == 118.0
     meta = db.get_trade(tid)["meta"]
     assert meta.get("exit_requested") is None, "nessun invio"
     eh = meta["exit_hold"]
@@ -1787,10 +1857,12 @@ def test_caso_trade_12_uscita_a_tempo_in_perdita_con_margine_ampio_tiene():
     r = _cycle(db, _cs_away_row(72, back=65.0, lay=70.0, updated_at=at), at=at)
     assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
     meta = db.get_trade(tid)["meta"]
-    assert "exit_hold" not in meta and meta["exit_kind"] == "time"
+    # H-01: chiusura integrale con profitto BLOCCATO = 'greenup' (il badge
+    # "CHIUSO IN GREEN-UP" della UI non e' piu' codice morto)
+    assert "exit_hold" not in meta and meta["exit_kind"] == "greenup"
     assert meta["exit_reason"] == "Uscita a tempo al 72': green-up"
     ex = [p for k, p in db.activity if k == "exit"][0]
-    assert ex["model_why"].startswith("profitto bloccato") and ex["exit_kind"] == "time"
+    assert ex["model_why"].startswith("profitto bloccato") and ex["exit_kind"] == "greenup"
     assert len(_holds(db)) == 1
 
 
@@ -1816,7 +1888,7 @@ def test_uscita_a_tempo_in_profitto_esce_sempre():
     assert r["exits"] == 1 and _holds(db) == []
     ex = [p for k, p in db.activity if k == "exit"][0]
     assert ex["locked_pnl"] == pytest.approx(0.15, abs=0.01)
-    assert ex["model_why"].startswith("profitto bloccato +0.15")
+    assert ex["model_why"].startswith("profitto bloccato +0,14")   # M-27: netto
     assert db.get_trade(tid)["status"] == "hedged"
 
 
@@ -1831,7 +1903,7 @@ def test_riserva_di_mercato_quando_il_modello_manca(monkeypatch):
     assert r["exits"] == 1
     ex = [p for k, p in db.activity if k == "exit"][0]
     assert ex["p_source"] == "market" and ex["p_lose"] == pytest.approx(0.05)
-    assert ex["ev_hold"] == pytest.approx(-4.0, abs=0.01)
+    assert ex["ev_hold"] == pytest.approx(-4.1, abs=0.01)   # M-27: profitto netto
     assert ex["model_why"].startswith("tenere non rende")
 
 
@@ -2084,8 +2156,9 @@ def test_manuale_controllo_morbido_solo_cap():
     db.requests.append({"id": 1, "kind": "place", "status": "pending", "payload": _place_payload()})
     _run(db)
     assert db.requests[0]["status"] == "error"
-    assert db.requests[0]["result"] == {"error": "risk_block", "reason": "daily_liability_cap",
-                                        "liability": 5.0}
+    res = db.requests[0]["result"]
+    assert res["error"] == "risk_block" and res["reason"] == "daily_liability_cap"
+    assert res["liability"] == 5.0 and res["message"].startswith("non eseguito: risk_block")
     assert _blocks(db, "daily_liability_cap")[0]["soft"] is True
 
 
@@ -2211,7 +2284,9 @@ def test_uscita_modello_take_profit(monkeypatch):
     r = _cycle(db, row)
     assert r["exits"] == 1 and db.get_trade(tid)["status"] == "hedged"
     meta = db.get_trade(tid)["meta"]
-    assert meta["exit_kind"] == "profit" and meta["exit_reason"] == "Take profit del modello: profitto bloccato"
+    # H-01: take profit del modello con bloccato >= 0 = 'greenup'
+    assert meta["exit_kind"] == "greenup"
+    assert meta["exit_reason"] == "Take profit del modello: profitto bloccato"
     ex = [p for k, p in db.activity if k == "exit"][0]
     assert ex["locked_pnl"] >= 16.0
     # a 1.3 blocca solo ~13 (< 16): si tiene
@@ -2318,7 +2393,7 @@ def test_anomalie_valutate_a_ogni_ciclo_solo_se_le_quote_cambiano_e_fuse_nelle_o
     assert r["anomalies"] == {"events": 1, "found": 1, "traded": 0} and an.calls == 1
     body = db.opportunities[-1][0]["payload"]
     kinds = [o["kind"] for o in body["opportunities"]]
-    assert sorted(kinds) == ["anomaly", "model"] and body["kinds"] == {"model": 1, "anomaly": 1, "combo": 0}
+    assert sorted(kinds) == ["anomaly", "model"] and body["kinds"] == {"model": 1, "anomaly": 1, "combo": 0, "tennis": 0}
     assert r["stats"]["opps"] == {"model": 1, "anomaly": 1, "combo": 0, "tennis": 0}
     # stesso odds_ts_ms: nessuna rivalutazione; cambia -> rivalutata
     r = _run(db, engine=None, opp_model=FakeBookModel([_opp()]), opp_mod=FAKE_OPP_MOD,

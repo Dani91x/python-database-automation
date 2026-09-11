@@ -17,40 +17,45 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy, BarChart3, TrendingUp, CircleDot } from 'lucide-react';
 import {
-    requestManual, fetchOmegaEvents, fetchManualRequests,
+    requestManual, fetchOmegaEvents, fetchManualRequests, updateOmegaParams,
     type OmegaEvent, type OmegaMode,
 } from '@/lib/omega';
 import {
     fetchMissions, activateMission, followMission, setFollowRecord, subscribeOmegaMissions,
-    missionRealized, toNum, splitEventName,
+    missionRealized, goalProgressPct, toNum, splitEventName,
     type MissionRow, type MissionsSummary, type MissionPhase,
 } from '@/lib/omegaMissions';
+import { fmtMoney, fmtPctPoints, fmtTime } from '@/lib/format';
+import { romeDay } from '@/lib/dailyHistory';
 import { leagueLogo, teamLogo } from '@/lib/sportsLogos';
 import MissionCard from '@/components/omega/MissionCard';
+import { fetchScalperState, type ScalperControl } from '@/lib/scalper';
 import { useScanLiveFeed } from '@/lib/useScanLiveFeed';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// formati UNICI del design system; le ORE sono sempre quelle di ROMA (M-08:
+// prima erano quelle del browser e la "giornata" cambiava prima del servizio)
 function fmtEur(v: number): string {
-    return `${v < 0 ? '−' : ''}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v);
 }
 function fmtSignedEur(v: number): string {
-    return `${v < 0 ? '−' : '+'}€${Math.abs(v).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
 }
 function timeLabel(iso: string | null | undefined): string {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    return fmtTime(iso);
 }
-function isSameLocalDay(iso: string, ref: Date): boolean {
+function isSameRomeDay(iso: string, ref: string = romeDay()): boolean {
     const d = new Date(iso);
-    return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+    return Number.isNaN(d.getTime()) ? false : romeDay(d) === ref;
 }
 // data breve (es. "13/07") mostrata SOLO se il kickoff non è oggi: senza data
 // visibile l'utente ha attivato una missione su un evento vecchio di 3 giorni.
 function dateLabel(iso: string | null | undefined): string | null {
     if (!iso) return null;
-    if (isSameLocalDay(iso, new Date())) return null;
-    return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+    if (isSameRomeDay(iso)) return null;
+    const d = romeDay(new Date(iso));
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : null;
 }
 // stato desunto dal solo kickoff (per gli eventi SENZA missione, dove non c'è
 // fase dal servizio): pre | live (iniziata <3h fa) | finita (>3h, come il
@@ -223,6 +228,20 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     const [dayGoal, setDayGoal] = useState(dailyGoal ?? 250);  // obiettivo di GIORNATA €
     // segue il daily_goal del control quando cambia (l'edit locale resta possibile)
     useEffect(() => { if (dailyGoal != null && dailyGoal > 0) setDayGoal(dailyGoal); }, [dailyGoal]);
+    // M-08: l'obiettivo modificato qui va SCRITTO sul control, altrimenti il
+    // servizio continua a dividere un obiettivo diverso da quello mostrato
+    const goalDirty = dailyGoal != null && toNum(dayGoal) !== toNum(dailyGoal);
+    async function saveDayGoal() {
+        setBusy('goal');
+        try {
+            await updateOmegaParams({ dailyGoal: toNum(dayGoal) });
+            toast.success('Obiettivo di giornata salvato', {
+                description: `il servizio userà ${fmtEur(toNum(dayGoal))} al giorno`,
+            });
+        } catch (e) {
+            toast.error('Salvataggio obiettivo fallito', { description: String((e as Error)?.message ?? e) });
+        } finally { setBusy(null); }
+    }
     const [onlyActive, setOnlyActive] = useState(false);
     // le missioni ATTIVE nascono ESPANSE (16/07: l'utente non trovava posizioni
     // né pulsanti — erano dietro un click invisibile); qui si tiene solo chi
@@ -269,6 +288,40 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         return () => { unsub(); if (pending !== undefined) clearTimeout(pending); clearInterval(poll); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // §18 — UN SOLO poll dello stato scalper per TUTTE le card (prima ogni card
+    // aperta ne teneva uno suo a 5 s: dieci missioni = dieci RPC al secondo,
+    // non sincronizzate, con l'app desktop a fare da collo di bottiglia).
+    // Si interrogano solo le missioni SEGUITE e non finite: le altre non hanno
+    // un bot da mostrare.
+    const [scalpers, setScalpers] = useState<Record<string, ScalperControl | null>>({});
+    const scalperIds = useMemo(
+        () => missions.filter((m) => m.followed !== false && m.phase_now !== 'finita').map((m) => m.event_id),
+        [missions],
+    );
+    const scalperIdsKey = scalperIds.join(',');
+    useEffect(() => {
+        if (scalperIds.length === 0) { setScalpers({}); return; }
+        let alive = true;
+        const load = async () => {
+            const out: Record<string, ScalperControl | null> = {};
+            // in SERIE: una raffica parallela di N RPC è esattamente il carico
+            // che stiamo togliendo
+            for (const id of scalperIds) {
+                if (!alive) return;
+                try {
+                    out[id] = (await fetchScalperState(id, 0)).control ?? null;
+                } catch {
+                    out[id] = null;          // servizio spento: il poll riprova
+                }
+            }
+            if (alive) setScalpers(out);
+        };
+        void load();
+        const t = window.setInterval(() => { void load(); }, 10_000);
+        return () => { alive = false; window.clearInterval(t); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scalperIdsKey]);
 
     // ---- notifiche live (16/07: "non vedo niente di quello che fa il bot") --
     // Confronta lo stato precedente delle missioni: GOL (punteggio cambiato) e
@@ -375,11 +428,14 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     // barra di giornata: SOLO le missioni di OGGI (review 16/07: le attive di
     // ieri restano in lista per essere gestite, ma il loro P&L è di ieri e non
     // deve gonfiare l'avanzamento verso l'obiettivo di oggi)
-    const todayStr = new Date().toLocaleDateString('sv-SE');  // YYYY-MM-DD locale
+    // M-08: la GIORNATA è quella di Roma (come il servizio e la RPC), non
+    // quella del browser: dopo mezzanotte le due non coincidono
+    const todayStr = romeDay();
     const totalRealized = missions
         .filter(m => (m.mission_date ?? todayStr) === todayStr)
         .reduce((s, m) => s + missionRealized(m), 0);
-    const goalPct = goal > 0 ? Math.max(0, Math.min(100, (totalRealized / goal) * 100)) : 0;
+    // M-08: UNA sola formula per TUTTE le barre (lib/omegaMissions)
+    const goalPct = goalProgressPct(totalRealized, goal);
 
     // ---- azioni ----------------------------------------------------------
     async function doRefreshEvents() {
@@ -458,7 +514,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         const liveAway = lp?.score_away ?? m.score_away;
         const realized = missionRealized(m);
         const target = toNum(m.target);
-        const pct = target > 0 ? Math.max(0, Math.min(100, (realized / target) * 100)) : 0;
+        const pct = goalProgressPct(realized, target);
         const expanded = !collapsedIds.has(m.event_id);
         // riepilogo posizioni SEMPRE visibile anche a scheda richiusa
         const legsObj = m.legs ?? {};
@@ -537,7 +593,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                 </div>
                 {expanded && (
                     <div className="px-3 pb-3">
-                        <MissionCard mission={m} mode={mode} live={lp ?? null} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
+                        <MissionCard mission={m} mode={mode} live={lp ?? null} scalper={scalpers[m.event_id] ?? null} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
                     </div>
                 )}
             </div>
@@ -646,13 +702,32 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
             {/* header giornata */}
             <Card className="glass-card border-white/10 p-5 space-y-3">
                 <div className="flex flex-wrap items-end gap-4">
+                    {/* M-08: l'obiettivo si SALVA sul control (prima restava
+                        solo nello stato locale e il servizio non lo vedeva) */}
                     <label className="block">
-                        <span className="text-xs text-slate-400">Obiettivo giornata €</span>
-                        <input
-                            type="number" min={0} step={10} value={dayGoal}
-                            onChange={e => setDayGoal(toNum(e.target.value))}
-                            className="mt-1 w-32 rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
-                        />
+                        <span className="text-xs text-slate-400">Obiettivo giornata (€)</span>
+                        <span className="mt-1 flex items-center gap-1">
+                            <input
+                                type="number" min={0} step={10} value={dayGoal}
+                                aria-label="Obiettivo giornata (€)"
+                                onChange={e => setDayGoal(toNum(e.target.value))}
+                                className="w-32 rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
+                            />
+                            <Button
+                                size="sm" variant="outline"
+                                disabled={busy === 'goal' || !goalDirty}
+                                onClick={saveDayGoal}
+                                data-testid="mission-save-goal"
+                                title="scrive l'obiettivo sul servizio (omega_control.daily_goal)"
+                            >
+                                {busy === 'goal' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salva'}
+                            </Button>
+                        </span>
+                        {goalDirty && (
+                            <span className="text-[11px] text-amber-300 block" data-testid="mission-goal-dirty">
+                                obiettivo non salvato: il servizio usa ancora {fmtEur(toNum(dailyGoal))}
+                            </span>
+                        )}
                     </label>
                     <div>
                         <div className="text-xs text-slate-400">Eventi oggi</div>
@@ -694,7 +769,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                             style={{ width: `${goalPct}%` }}
                         />
                         <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/90 tabular-nums">
-                            {goalPct.toFixed(1)}%
+                            {fmtPctPoints(goalPct, 1)}
                         </div>
                     </div>
                 </div>

@@ -14,6 +14,8 @@ export default defineConfig({
         },
     },
     test: {
+        // userEvent su pagine intere sotto carico supera i 5 s di default: falsi rossi
+        testTimeout: 20_000,
         environment: 'jsdom',
         include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
         setupFiles: ['./src/test/setup.ts'],

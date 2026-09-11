@@ -3,6 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { SafeTradesTable, pctIt } from './SafeTradesTable';
+import { fmtPct } from '@/lib/format';
 import type { SafeTrade } from '@/lib/safeBot';
 
 function trade(over: Partial<SafeTrade> = {}): SafeTrade {
@@ -26,7 +27,7 @@ describe('SafeTradesTable — trade di modello', () => {
         renderTable([trade({ meta: { kind: 'anomaly', p_lose_entry: 0.032 } })]);
         expect(screen.getByTestId('trade-kind')).toHaveAttribute('data-kind', 'anomaly');
         expect(screen.getByTestId('trade-kind')).toHaveTextContent('ANOMALIA');
-        expect(screen.getByTestId('trade-p-lose-entry')).toHaveTextContent('P(perdita) ingresso 3,2%');
+        expect(screen.getByTestId('trade-p-lose-entry')).toHaveTextContent('P(perdita) ingresso 3,2 %');
     });
 
     it('strategy model senza meta.kind = MODELLO; strategie classiche senza badge', () => {
@@ -38,14 +39,14 @@ describe('SafeTradesTable — trade di modello', () => {
         expect(screen.queryByTestId('trade-p-lose-entry')).toBeNull();
     });
 
-    it('stato di attesa da meta.exit_hold: "In attesa: margine ampio, P(perdita) 0,4%"', () => {
+    it('stato di attesa da meta.exit_hold: "In attesa: margine ampio, P(perdita) 0,4 %"', () => {
         renderTable([trade({
             meta: { kind: 'model', exit_hold: { reason: 'wide_margin', p_lose: 0.004, source: 'model', locked: 1.2, ev_hold: 1.5, ts: '2026-09-10T10:05:00Z' } },
         })]);
         const hold = screen.getByTestId('trade-hold');
-        expect(hold).toHaveTextContent('In attesa: margine ampio, P(perdita) 0,4%');
+        expect(hold).toHaveTextContent('In attesa: margine ampio, P(perdita) 0,4 %');
         expect(hold.title).toMatch(/fonte: model/);
-        expect(hold.title).toMatch(/bloccabile ora: \+€1\.20/);
+        expect(hold.title).toMatch(/bloccabile ora: \+1,20 €/);
     });
 
     it('motivo ignoto: mostrato cosi com e; attesa non mostrata su trade chiusi', () => {
@@ -55,7 +56,7 @@ describe('SafeTradesTable — trade di modello', () => {
         ]);
         const holds = screen.getAllByTestId('trade-hold');
         expect(holds).toHaveLength(1);
-        expect(holds[0]).toHaveTextContent('In attesa: custom_reason, P(perdita) 10,0%');
+        expect(holds[0]).toHaveTextContent('In attesa: custom_reason, P(perdita) 10,0 %');
     });
 
     it('uscita registrata: badge esito accanto allo stato', () => {
@@ -93,8 +94,9 @@ describe('SafeTradesTable — trade di modello', () => {
         expect(screen.getByText('chiude #70')).toBeInTheDocument();
     });
 
-    it('pctIt formatta con la virgola', () => {
-        expect(pctIt(0.004)).toBe('0,4%');
+    it('pctIt è un alias di fmtPct (lib/format.ts): virgola e spazio prima del %', () => {
+        expect(pctIt(0.004)).toBe('0,4 %');
+        expect(pctIt(0.004)).toBe(fmtPct(0.004));
         expect(pctIt(null)).toBe('—');
     });
 });

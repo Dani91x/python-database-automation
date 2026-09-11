@@ -193,7 +193,7 @@ describe('buildFootballCtx', () => {
     it('segnala il mismatch dei nomi selezione (quote n/d per naming, non per ritardo)', () => {
         const bad = buildFootballCtx(
             { event_id: 'ev1', home_name: 'Nome Diverso', away_name: 'Sud FC' },
-            liveNow({}), PRE_MATCH, 50,
+            liveNow({}), PRE_MATCH, 50, null,
         );
         expect(bad.oddsNameMismatch).toBe(true);
         expect(bad.odds?.home).toBeNull();
@@ -647,14 +647,14 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
         expect(ev.state).toBe('signal');
         expect(ev.entryOdds).toBe(8.4);
         expect(ev.entrySize).toBe(120);
-        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8.40 · €120 abbinabili');
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8,40 · 120 € abbinabili');
     });
     it('R.E. (LAY "Altro risultato"): size del lay al miglior prezzo, anche decimale', () => {
         const ev = evaluateEsatto(scanCalcio(), DEFAULT_PARAMS.esatto, 'home');
         expect(ev.state).toBe('signal');
         expect(ev.entryOdds).toBe(45);
         expect(ev.entrySize).toBe(2.25);
-        expect(ev.checks.find((c) => c.id === 'entry')?.value).toBe('45.00 · €2.25 abbinabili');
+        expect(ev.checks.find((c) => c.id === 'entry')?.value).toBe('45,00 · 2,25 € abbinabili');
     });
     it('Punta (BACK chi vince di 2): size del back della squadra in vantaggio', () => {
         const ev = evaluatePunta(scanCalcio({
@@ -679,13 +679,13 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
         const ev = evaluateTennis(ctx, DEFAULT_PARAMS.tennis);
         expect(ev.state).toBe('signal');
         expect(ev.entrySize).toBe(812.5);
-        expect(ev.checks.find((c) => c.id === 'odds')?.value).toBe('back 1.03 · €812.50 abbinabili · lay perdente 30.00 · €6 abbinabili');
+        expect(ev.checks.find((c) => c.id === 'odds')?.value).toBe('back 1,03 · 812,50 € abbinabili · lay perdente 30,00 · 6 € abbinabili');
     });
     it('fonte senza size (snapshot legacy / righe vecchie): entrySize null, checklist solo quota', () => {
         const ev = evaluateBase(ctxOf(), DEFAULT_PARAMS.base);
         expect(ev.state).toBe('signal');
         expect(ev.entrySize).toBeNull();
-        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8.40');
+        expect(ev.checks.find((c) => c.id === 'dogLay')?.value).toBe('8,40');
         const scan = evaluateBase(scanCalcio({
             odds: { home: { back: 1.28, lay: 1.3 }, draw: { back: 5, lay: 5.2 }, away: { back: 8, lay: 8.4 } },
         }), DEFAULT_PARAMS.base);

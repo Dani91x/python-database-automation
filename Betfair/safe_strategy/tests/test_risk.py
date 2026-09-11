@@ -37,7 +37,11 @@ def test_default_e_clamp_dei_parametri():
                               "daily_loss_stop": 20, "per_event_max_trades": -1,
                               "max_open_trades": 7, "sconosciuta": 1, "model_stake": "x"})
     assert m["daily_liability_cap"] == 0.0 and m["correlated_cap"] == 1.0
-    assert m["daily_loss_stop"] == 0.0 and m["per_event_max_trades"] == 0
+    # review H2: il SEGNO del loss stop si interpreta (20 = "fermati a -20"),
+    # non si azzera: clamparlo a 0 SPEGNEVA lo stop perdite in silenzio
+    assert m["daily_loss_stop"] == -20.0 and m["per_event_max_trades"] == 0
+    assert RK.merge_risk_params({"daily_loss_stop": 0})["daily_loss_stop"] == 0.0
+    assert RK.merge_risk_params({"daily_loss_stop": -30})["daily_loss_stop"] == -30.0
     assert m["max_open_trades"] == 7 and m["model_stake"] == 5.0
     assert "sconosciuta" not in m
     # max_open_trades None -> quello del bot

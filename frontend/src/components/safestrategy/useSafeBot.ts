@@ -12,13 +12,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     activateSafe, stopSafe, updateSafeParams, fetchSafeState, fetchSafeTrades,
-    fetchSafeRequests, requestSafe, subscribeSafeBot, fetchOpportunities,
-    subscribeOpportunities, detectSettlements, mergeBotParams, cashoutInFlight, SAFE_BOT_DEFAULTS,
-    type SafeAggregates, type SafeBotParams, type SafeControl, type SafeMode,
-    type SafeOpportunityRow, type SafeRequest, type SafeTrade,
+    fetchSafeRequests, fetchSafeActivity, requestSafe, subscribeSafeBot, fetchOpportunities,
+    subscribeOpportunities, detectSettlements, mergeBotParams, cashoutInFlight,
+    requestOutcome, SAFE_BOT_DEFAULTS,
+    type RequestOutcome, type SafeActivityRow, type SafeAggregates, type SafeBotParams,
+    type SafeControl, type SafeMode, type SafeOpportunityRow, type SafeParamsEffective,
+    type SafeRequest, type SafeTrade,
 } from '@/lib/safeBot';
 
 const POLL_MS = 15_000;
+/** Finestra minima fra due ricariche scatenate dal REALTIME (>= 1 s, come
+ *  Omega 1,2 s e Mike 1,5 s). Senza debounce una raffica di notifiche (un
+ *  settlement tocca l'apertura, la gamba di chiusura, la richiesta e il
+ *  control: 4+ eventi) faceva partire una `get_safe_state` per notifica, con
+ *  dieci posizioni che si regolano insieme sono decine di RPC in un secondo
+ *  (rischio di esaurire l'IO di Supabase) e la tabella che sfarfalla. */
+export const RELOAD_DEBOUNCE_MS = 1_200;
 const OPPS_FLUSH_MS = 400;
 
 export interface SafeBotView {
@@ -32,6 +41,12 @@ export interface SafeBotView {
     aggregates: SafeAggregates | null;
     requests: SafeRequest[];
     opportunities: SafeOpportunityRow[];
+    /** log del servizio (H-16): [] se la migrazione v2 non c'è e la tabella non è leggibile */
+    activity: SafeActivityRow[];
+    /** parametri REALMENTE in uso dal servizio (null = servizio mai partito) */
+    paramsEffective: SafeParamsEffective | null;
+    /** giornata operativa dichiarata dal DB ('YYYY-MM-DD'); null = usa romeDay() */
+    operatingDay: string | null;
     /** parametri EFFETTIVI: server se il bot esiste, default altrimenti */
     params: SafeBotParams;
     mode: SafeMode;
@@ -55,6 +70,9 @@ export interface SafeBotView {
     isCashOutPending: (tradeId: number) => boolean;
     /** trade regolati dall'ultimo giro (per i toast di settlement) */
     freshSettlements: SafeTrade[];
+    /** richieste operative arrivate a un esito DEFINITIVO dall'ultimo giro:
+     *  ogni richiesta deve essere notificata, anche quando è un rifiuto (L-07) */
+    freshOutcomes: { request: SafeRequest; outcome: RequestOutcome }[];
 }
 
 export interface SafeBotHandlers {
@@ -68,10 +86,18 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     const [aggregates, setAggregates] = useState<SafeAggregates | null>(null);
     const [requests, setRequests] = useState<SafeRequest[]>([]);
     const [opportunities, setOpportunities] = useState<SafeOpportunityRow[]>([]);
+    const [activity, setActivity] = useState<SafeActivityRow[]>([]);
+    const [paramsEffective, setParamsEffective] = useState<SafeParamsEffective | null>(null);
+    const [operatingDay, setOperatingDay] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [freshSettlements, setFreshSettlements] = useState<SafeTrade[]>([]);
+    const [freshOutcomes, setFreshOutcomes] = useState<{ request: SafeRequest; outcome: RequestOutcome }[]>([]);
+    // esito già notificato per richiesta (id → stato finale visto)
+    const seenOutcomes = useRef<Map<number, string>>(new Map());
+    // ultimo tentativo di leggere l'attività fuori da get_safe_state (throttle)
+    const activityTriedAt = useRef(0);
     // modalita scelta dall'utente: a bot fermo vive solo qui, all'avvio va in safe_activate
     const [desiredMode, setDesiredMode] = useState<SafeMode>('paper');
     const modeSynced = useRef(false);
@@ -106,6 +132,20 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
         // un reload piu' recente ha gia' vinto, o il componente non c'e' piu'
         if (seq !== reloadSeq.current || !mounted.current) return;
         setControl(state.control);
+        // H-16: con la migrazione v2 il log arriva dentro get_safe_state; senza,
+        // si prova la RPC dedicata / la tabella IN BACKGROUND — mai bloccando lo
+        // stato del bot su una seconda chiamata di rete.
+        const acts = Array.isArray(state.activity) ? state.activity : null;
+        if (acts !== null) setActivity(acts);
+        if ((acts === null || acts.length === 0) && Date.now() - activityTriedAt.current > 30_000) {
+            activityTriedAt.current = Date.now();
+            void fetchSafeActivity(100)
+                .then((rows) => { if (mounted.current && rows.length) setActivity(rows); })
+                .catch(() => { /* migrazione/tabella assenti: sezione vuota */ });
+        }
+        setParamsEffective(state.params_effective
+            ?? state.control?.stats?.params_effective ?? null);
+        setOperatingDay(state.operating_day ?? state.aggregates?.operating_day ?? null);
         if (state.control && !modeSynced.current) {
             // la modalita' del control si RIFLETTE (banner), non si eredita
             // come autorizzazione: liveConfirmed resta false finche' l'utente
@@ -119,12 +159,25 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
         setError(null);
         const fresh = detectSettlements(rows, seenSettled.current, firstLoad);
         if (fresh.length) setFreshSettlements(fresh);
+        // L-07/M-21: ogni richiesta deve avere un esito VISIBILE, una volta sola
+        const outs: { request: SafeRequest; outcome: RequestOutcome }[] = [];
+        for (const r of reqs) {
+            const o = requestOutcome(r);
+            if (!o || !o.settled) continue;
+            const key = `${r.status}:${o.tone}`;
+            if (seenOutcomes.current.get(r.id) === key) continue;
+            seenOutcomes.current.set(r.id, key);
+            if (!firstLoad) outs.push({ request: r, outcome: o });
+        }
+        if (outs.length) setFreshOutcomes(outs);
         if (firstLoad) initialized.current = true;
         setLoading(false);
     }, []);
 
     useEffect(() => {
         let lastErrAt = 0;
+        let disposed = false;
+        let timer: number | null = null;
         const run = () => {
             reload().catch((e: unknown) => {
                 if (!mounted.current) return;
@@ -138,10 +191,22 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
                 }
             });
         };
-        run();
-        const unsub = subscribeSafeBot(run);
+        // DEBOUNCE: N notifiche ravvicinate = UNA ricarica (mai una per evento).
+        // Il primo timer vince: le notifiche che arrivano nella finestra sono
+        // COALIZZATE nella stessa ricarica, non accodate.
+        const schedule = () => {
+            if (disposed || timer !== null) return;
+            timer = window.setTimeout(() => { timer = null; run(); }, RELOAD_DEBOUNCE_MS);
+        };
+        run();                                   // il primo carico e' immediato
+        const unsub = subscribeSafeBot(schedule);
         const poll = window.setInterval(run, POLL_MS);
-        return () => { unsub(); window.clearInterval(poll); };
+        return () => {
+            disposed = true;
+            if (timer !== null) window.clearTimeout(timer);
+            unsub();
+            window.clearInterval(poll);
+        };
     }, [reload]);
 
     // ------------------------------------------------- opportunità di modello
@@ -237,12 +302,14 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     return {
         available: control !== null,
         loading, busy, error,
-        control, trades, aggregates, requests, opportunities,
+        control, trades, aggregates, requests, opportunities, activity,
+        paramsEffective, operatingDay,
         params,
         mode: running ? (control?.mode ?? desiredMode) : desiredMode,
         liveConfirmed,
         reload, start, stop, setMode, saveParams, place, cashout, cancel,
         isCashOutPending,
         freshSettlements,
+        freshOutcomes,
     };
 }

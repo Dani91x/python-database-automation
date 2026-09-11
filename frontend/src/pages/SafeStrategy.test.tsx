@@ -11,6 +11,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { DEFAULT_PARAMS } from '@/lib/safeStrategy';
 
+
+// Questi test montano la pagina/sheet INTERI (decine di campi, Radix, portali):
+// su una macchina carica il default di 5 s di vitest scade per LENTEZZA, non per
+// un difetto. Timeout esplicito: la suite deve essere verde anche sotto carico.
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock('sonner', () => ({
     toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
@@ -198,21 +204,31 @@ describe('pagina Safe Strategy', () => {
         renderPage();
         expect(await screen.findByText('Segnali attivi')).toBeInTheDocument();
         expect(await screen.findByText('Trade aperti')).toBeInTheDocument();
-        expect(await screen.findByText('+€12.50')).toBeInTheDocument();
-        expect(await screen.findByText('+€40.00')).toBeInTheDocument();
+        expect((await screen.findAllByText('+12,50 €')).length).toBeGreaterThan(0);
+        expect((await screen.findAllByText('+40,00 €')).length).toBeGreaterThan(0);
     });
 
-    it('LOW: "Trade aperti" conta solo gli open, i pending a parte', async () => {
+    // M-15: "Trade aperti" = POSIZIONI VIVE. Una gamba di CHIUSURA non e' una
+    // posizione e non va contata; una copertura completa (hedged) nemmeno.
+    it('M-15: "Trade aperti" conta le posizioni vive, non le chiusure ne le hedged complete', async () => {
         mState.mockResolvedValue({
             control: CONTROL as never,
-            trades: [OPEN_TRADE, { ...OPEN_TRADE, id: 11, status: 'pending', signal_key: null }] as never,
+            trades: [
+                OPEN_TRADE,
+                { ...OPEN_TRADE, id: 11, status: 'pending', signal_key: null },
+                // gamba di chiusura: NON e' una posizione
+                { ...OPEN_TRADE, id: 12, status: 'open', closes_trade_id: 9, signal_key: null },
+                // coperta del tutto: liability azzerata, non e' viva
+                { ...OPEN_TRADE, id: 13, status: 'hedged', signal_key: null, meta: { hedge: { fraction: 1, complete: true } } },
+                // coperta A META': resta viva
+                { ...OPEN_TRADE, id: 14, status: 'hedged', signal_key: null, meta: { hedge: { fraction: 0.4, complete: false, remaining_liability: 117 } } },
+            ] as never,
             aggregates: null,
         });
         renderPage();
-        const label = await screen.findByText('Trade aperti');
-        const tile = label.closest('.glass-card') as HTMLElement;
-        expect(within(tile).getByText('1')).toBeInTheDocument();
-        expect(within(tile).getByText('1 in corso · 2 oggi')).toBeInTheDocument();
+        const tile = await screen.findByTestId('safe-kpi-open');
+        expect(within(tile).getByText('3')).toBeInTheDocument();
+        expect(within(tile).getByTestId('safe-open-sub')).toHaveTextContent('1 coperte in parte');
     });
 
     it('la tab Trade elenca il trade aperto col cash out', async () => {
@@ -306,7 +322,7 @@ describe('pagina Safe Strategy', () => {
     it('se esiste gia un trade per il segnale mostra il suo stato al posto dell azione', async () => {
         scanState.signals = [{ ...SIGNAL, key: 'e1:esatto:home:1-0' }];
         renderPage();
-        expect(await screen.findByTestId('signal-trade')).toHaveTextContent('OPEN');
+        expect(await screen.findByTestId('signal-trade')).toHaveTextContent('APERTO');
         expect(screen.queryByTestId('invest-place')).toBeNull();
     });
 });
@@ -433,7 +449,8 @@ describe('Safe Strategy — tennis (HIGH-3)', () => {
         // lay 10 @3 (vince -20 / perde +10) coperto back @2.9: locked = 10 - 30/2.9 = -0.34
         const trigger = within(row).getByTestId('cashout-trigger');
         expect(trigger).toBeEnabled();
-        expect(trigger).toHaveTextContent('0.34');
+        // formato normativo (DESIGN_SYSTEM.md §2): virgola decimale, € dopo il numero, meno U+2212
+        expect(trigger).toHaveTextContent('−0,34 €');
     });
 });
 
@@ -576,7 +593,7 @@ describe('Safe Strategy — opportunita per tipo, combinazioni e tennis', () => 
         mOpps.mockResolvedValue([TENNIS_OPP_ROW as never]);
         renderPage();
         await screen.findByTestId('bot-status');
-        await user.click(await screen.findByRole('tab', { name: /🎾 Tennis/ }));
+        await user.click(await screen.findByRole('tab', { name: /^Tennis \(/ }));
         await user.click(await screen.findByRole('tab', { name: /Opportunità tennis \(1\)/ }));
         expect(await screen.findByTestId('opp-group')).toHaveTextContent('Sinner v Alcaraz');
         expect(screen.getByTestId('opp-kind')).toHaveTextContent('TENNIS');
@@ -595,8 +612,8 @@ describe('Safe Strategy — opportunita per tipo, combinazioni e tennis', () => 
         renderPage();
         const panel = await screen.findByTestId('risk-panel');
         expect(panel).toHaveAttribute('data-loss-stop', 'active');
-        expect(within(panel).getByTestId('risk-liability')).toHaveTextContent('€240.00');
-        expect(within(panel).getByText('/ cap €500.00')).toBeInTheDocument();
+        expect(within(panel).getByTestId('risk-liability')).toHaveTextContent('240,00 €');
+        expect(within(panel).getByText('impegnato oggi / cap 500,00 €')).toBeInTheDocument();
         expect(within(panel).getByTestId('loss-stop')).toHaveTextContent('STOP PERDITA');
         expect(within(panel).getByTestId('risk-opp-counts')).toHaveTextContent('TENNIS 3');
     });

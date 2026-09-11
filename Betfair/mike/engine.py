@@ -47,6 +47,14 @@ ROLES = (
     "over_close", "reentry", "reentry_green", "manual_close",
 )
 OPENING_ROLES = ("under_entry", "under_last", "over_cover", "reentry")
+# gambe di CHIUSURA: sul DB portano ``closes_trade_id`` = riga dell'apertura (H4)
+CLOSING_ROLES = ("under_green", "under_close", "over_close", "reentry_green", "manual_close")
+
+# status della gamba il cui ordine ha esito IGNOTO (C3)
+STATUS_RECONCILE = "pending_reconcile"
+
+# meta.exit_kind ammessi sulle righe di chiusura (contratto con la UI, H4)
+EXIT_KINDS = ("greenup", "profit", "loss", "time", "forced", "manual", "other")
 
 IT_BACK_MIN = 2.0
 IT_BACK_STEP = 0.5
@@ -81,9 +89,16 @@ class Leg:
       - ``status='open'`` SOLO quando non e' piu' vivo: abbinato per intero
         oppure residuo cancellato con ``matched`` > 0;
       - ``status='cancelled'`` = mai abbinato e ritirato; ``'settled'`` a fine mercato;
+      - ``status='pending_reconcile'`` (C3) = ordine il cui esito e' IGNOTO
+        (eccezione REST dopo l'invio): NON e' vivo per il bot (niente cancel,
+        niente riprezzo) ma conta SEMPRE nel rischio (peggior caso: abbinato per
+        intero) e blocca ogni nuovo ingresso sulla partita finche' non si
+        riconcilia contro Betfair. MAI 'cancelled'/'error' per scadenza del TTL;
       - ``archived=True`` = gamba di un ciclo pre-match gia' CHIUSO in green: resta
         per la contabilita' (settle) ma NON conta piu' come capitale a rischio
-        (``position``/``invested``/``exposure``).
+        (``position``/``invested``/``exposure``);
+      - ``closes_ref`` = ref della gamba di APERTURA che questa gamba chiude
+        (H4: sul DB diventa ``closes_trade_id``; lo storico conta i CICLI, non le gambe).
     """
 
     role: str
@@ -95,12 +110,13 @@ class Leg:
     matched: float = 0.0
     avg_price: Optional[float] = None
     ref: str = ""
-    status: str = "pending"          # pending | open | cancelled | settled
+    status: str = "pending"          # pending | pending_reconcile | open | cancelled | settled
     placed_at: float = 0.0
     persistence: str = "LAPSE"
     cycle_no: int = 0
     final: bool = False
     archived: bool = False
+    closes_ref: Optional[str] = None
 
     @property
     def remaining(self) -> float:
@@ -109,6 +125,11 @@ class Leg:
     @property
     def is_live(self) -> bool:
         return self.status == "pending"
+
+    @property
+    def needs_reconcile(self) -> bool:
+        """Ordine a esito IGNOTO: puo' esistere davvero su Betfair (C3)."""
+        return self.status == STATUS_RECONCILE
 
     @property
     def filled(self) -> bool:
@@ -139,6 +160,9 @@ class Snapshot:
     last_goal_ts: Optional[float] = None
     market_status: str = "OPEN"
     final_total: Optional[int] = None
+    # scambiato totale sul mercato 3.5 (dal feed): DIAGNOSTICA mostrata sulla
+    # card (``live.total_matched``), nessun gate — vedi config.REMOVED_PARAMS.
+    total_matched: Optional[float] = None
     # risparmio atteso (%) sulla copertura se si aspetta cover_wait_step_min senza gol
     cover_gain_pct: Optional[float] = None
     # pressione (corner/cartellini dal feed): moltiplicatore >= 1.0, 1.0 = neutra
@@ -172,6 +196,14 @@ class MatchCtx:
     cover_skipped: bool = False
     seq: int = 0
     settled_pnl: Optional[float] = None
+    # C2 — chiusura MANUALE in corso (cash out / flatten dalla UI): finche' e'
+    # attiva nessun ordine di APERTURA e nessuna lay di green-up riappoggiata
+    # (senza questo flag, in pre-match con ``pre_exit_mode='resting'`` il ciclo
+    # cancellava la lay e la riappoggiava subito: cash out impossibile).
+    flatten_pending: bool = False
+    # C3 — dopo un cash out manuale pre-KO il bot NON rientra da solo: solo
+    # "Riprendi" dalla UI riabilita gli ingressi su questa partita.
+    no_reentry: bool = False
 
 
 @dataclass(frozen=True)
@@ -187,6 +219,7 @@ class Action:
     ref: Optional[str] = None        # cancel: ref della gamba
     final: bool = False
     note: str = ""
+    closes_ref: Optional[str] = None   # place di chiusura: ref della gamba di apertura (H4)
 
 
 @dataclass
@@ -202,16 +235,22 @@ class Decision:
 class CashoutValue:
     net: float
     gross: float
-    per_selection: Dict[Tuple[str, str], float]
+    per_selection: Dict[Tuple[str, str], float]        # LORDO per selezione
     plans: Dict[Tuple[str, str], GreenupPlan]
     complete: bool
+    # selezioni il cui esito e' GIA' deciso (linea superata): valgono 0/1 senza
+    # prezzo e non rendono il cash-out incompleto (C2)
+    decided: Tuple[Tuple[str, str], ...] = ()
+    per_selection_net: Dict[Tuple[str, str], float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class SettleResult:
-    per_leg: List[Tuple[str, str, float]]     # (ref, status, pnl lordo)
+    per_leg: List[Tuple[str, str, float]]     # (ref, status, pnl NETTO commissione) — H4
     per_market: Dict[str, float]               # netto per mercato (commissione applicata)
     net: float
+    per_leg_gross: List[Tuple[str, str, float]] = field(default_factory=list)
+    commission_by_market: Dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +328,20 @@ def selection_wins(market: str, selection: str, total_goals: int) -> bool:
     return total_goals > line
 
 
+def selection_decided(market: str, selection: str, goals: Optional[int]) -> Optional[bool]:
+    """Esito GIA' CERTO della selezione con ``goals`` gol segnati (C2).
+
+    I gol non si togliono: appena la linea e' superata l'Over ha VINTO e l'Under
+    ha PERSO, qualunque cosa faccia il mercato (la linea viene potata dal feed).
+    Sotto la linea nulla e' deciso. Ritorna True (vinta), False (persa) o None.
+    """
+    if goals is None:
+        return None
+    if int(goals) > LINE[market]:
+        return selection == SEL_OVER
+    return None
+
+
 def exposure(legs: List[Leg], market: str, selection: str) -> Tuple[float, float]:
     """(W, L) = profit se la selezione vince / perde, dai soli fill."""
     w = l = 0.0
@@ -316,6 +369,12 @@ def open_selections(legs: List[Leg]) -> List[Tuple[str, str]]:
         if abs(w - l) >= _FLAT_EPS:
             out.append(key)
     return out
+
+
+def live_open_selections(legs: List[Leg], goals: Optional[int] = None) -> List[Tuple[str, str]]:
+    """Selezioni aperte ANCORA IN GIOCO: quelle il cui esito e' gia' deciso
+    (linea superata) non sono piu' gestibili — nessun prezzo, nessuna azione (C2)."""
+    return [k for k in open_selections(legs) if selection_decided(k[0], k[1], goals) is None]
 
 
 def position(legs: List[Leg], market: str, selection: str, roles: Tuple[str, ...]) -> Tuple[float, Optional[float]]:
@@ -372,14 +431,32 @@ def net_pnl_by_total(legs: List[Leg], commission: float, max_total: int = 8) -> 
 
 
 def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commission: float,
-                  place_at_ticks: int = 0) -> CashoutValue:
-    """Valore di cash-out globale: somma dei P&L bloccati chiudendo OGNI selezione ora."""
+                  place_at_ticks: int = 0, goals: Optional[int] = None) -> CashoutValue:
+    """Valore di cash-out globale: somma dei P&L bloccati chiudendo OGNI selezione ora.
+
+    C2 — dopo il 4o gol la linea 3.5 viene potata dal feed: una selezione il cui
+    esito e' GIA' deciso (``selection_decided``) vale 0/1 SENZA prezzo (W se ha
+    vinto, L se ha perso) e NON rende il cash-out incompleto. ``complete`` dice
+    solo se tutte le selezioni ancora VIVE hanno un prezzo: sono quelle su cui
+    si puo' davvero agire.
+    """
     per: Dict[Tuple[str, str], float] = {}
+    per_net: Dict[Tuple[str, str], float] = {}
     plans: Dict[Tuple[str, str], GreenupPlan] = {}
+    decided: List[Tuple[str, str]] = []
     complete = True
     gross = net = 0.0
     for key in open_selections(legs):
         w, l = exposure(legs, *key)
+        won = selection_decided(key[0], key[1], goals)
+        if won is not None:
+            locked = float(w if won else l)
+            decided.append(key)
+            per[key] = round(locked, 2)
+            per_net[key] = round(_net(locked, commission), 2)
+            gross += locked
+            net += _net(locked, commission)
+            continue
         bk = books.get(key)
         plan = compute_greenup(
             matched_if_win=w, matched_if_lose=l,
@@ -393,10 +470,86 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
             continue
         locked = float(min(plan.expected_if_win, plan.expected_if_lose))
         per[key] = round(locked, 2)
+        per_net[key] = round(_net(locked, commission), 2)
         gross += locked
         net += _net(locked, commission)
     return CashoutValue(net=round(net, 2), gross=round(gross, 2), per_selection=per,
-                        plans=plans, complete=complete)
+                        plans=plans, complete=complete, decided=tuple(decided),
+                        per_selection_net=per_net)
+
+
+def active_legs(legs: List[Leg]) -> List[Leg]:
+    """Gambe che portano ancora rischio: i cicli archiviati sono chiusi e bloccati."""
+    return [l for l in legs if not l.archived]
+
+
+def _assume_matched(legs: List[Leg]) -> List[Leg]:
+    """Copia delle gambe con gli ordini a esito IGNOTO considerati ABBINATI per
+    intero: un ordine che POTREBBE essere vivo su Betfair conta sempre nel
+    rischio (C3, mai una posizione invisibile)."""
+    out: List[Leg] = []
+    for l in legs:
+        if l.needs_reconcile and float(l.matched) <= 0:
+            out.append(replace(l, matched=float(l.size), avg_price=float(l.price), status="open"))
+        else:
+            out.append(l)
+    return out
+
+
+def event_liability(legs: List[Leg], commission: float) -> float:
+    """Rischio VERO della partita (M4): la perdita peggiore possibile sulle
+    posizioni NETTE ancora aperte, non la somma delle gambe. Un back di apertura
+    coperto da una lay ha come rischio il residuo, non back + lay. Gli ordini a
+    esito ignoto contano come abbinati (peggior caso)."""
+    act = _assume_matched(active_legs(legs))
+    if not any(float(l.matched) > 0 for l in act):
+        return 0.0
+    dist = net_pnl_by_total(act, commission)
+    return round(max(0.0, -min(dist.values())), 2) if dist else 0.0
+
+
+def locked_pnl(legs: List[Leg], commission: float) -> Optional[float]:
+    """P&L NETTO gia' BLOCCATO: identico su ogni somma gol perche' non c'e' piu'
+    esposizione aperta (ciclo greenato o chiuso, mercato non ancora pagato).
+    ``None`` se qualche selezione e' ancora viva (nulla e' deciso). L3: lo stop
+    giornaliero deve vedere anche questo, non solo il regolato."""
+    if open_selections(legs) or any(l.needs_reconcile for l in legs):
+        return None
+    dist = net_pnl_by_total(legs, commission)
+    return round(min(dist.values()), 2) if dist else None
+
+
+def exit_kind_for(role: str, close_reason: Optional[str]) -> str:
+    """``meta.exit_kind`` della riga di chiusura (H4, contratto UI).
+
+    greenup = take-profit di un ciclo (lay a +N tick sull'apertura);
+    profit   = cash-out globale a profitto; loss = uscita HT/2T a perdita
+    tollerata; forced = cap di perdita evento; time = chiusura forzata a minuto;
+    manual = cash out/flatten dalla UI; other = tutto il resto.
+    """
+    reason = str(close_reason or "")
+    if role == "manual_close" or reason == "manual":
+        return "manual"
+    if role in ("under_green", "reentry_green"):
+        return "time" if reason == "reentry_time" else "greenup"
+    if reason == "profit":
+        return "profit"
+    if reason.startswith("loss_"):
+        return "forced" if reason == "loss_cap" else "loss"
+    if reason == "reentry_time":
+        return "time"
+    return "other"
+
+
+def opening_ref(legs: List[Leg], market: str, selection: str) -> Optional[str]:
+    """``ref`` della gamba di APERTURA che una chiusura su questa selezione sta
+    chiudendo: l'ultima abbinata e non archiviata (H4)."""
+    cands = [l for l in legs if l.market == market and l.selection == selection
+             and l.role in OPENING_ROLES and l.side == "back"]
+    live = [l for l in cands if float(l.matched) > 0 and not l.archived]
+    if live:
+        return live[-1].ref
+    return cands[-1].ref if cands else None
 
 
 def should_cashout(value_net: float, base: float, pct: float) -> bool:
@@ -604,14 +757,41 @@ def cover_timing(*, goals: Optional[int], minute: Optional[int], hazard: Optiona
     return "wait"
 
 
+def winners_from_total(total_goals: int) -> Dict[str, str]:
+    """Selezione vincente di OGNI mercato dato il totale gol."""
+    return {m: (SEL_UNDER if int(total_goals) < LINE[m] else SEL_OVER)
+            for m in (MARKET_OU35, MARKET_OU45)}
+
+
 def settle_legs(legs: List[Leg], total_goals: int, commission: float) -> SettleResult:
-    per_leg: List[Tuple[str, str, float]] = []
-    per_market: Dict[str, float] = {}
+    """Esito per gamba dato il totale gol finale (caso normale)."""
+    return settle_legs_by_market(legs, winners_from_total(int(total_goals)), commission)
+
+
+def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
+                          commission: float) -> SettleResult:
+    """Esito per gamba con il vincitore di OGNI MERCATO (C4).
+
+    ``winners[market]`` = ``SEL_UNDER``/``SEL_OVER`` oppure ``None`` = mercato
+    ANNULLATO (void): solo le gambe di QUEL mercato valgono zero. Prima un solo
+    mercato illeggibile o annullato azzerava il P&L di tutta la partita — con 4
+    gol la perdita reale sull'Under 3.5 diventava 0.
+
+    H4: il P&L di OGNI riga e' NETTO commissione. La commissione Betfair e' per
+    MERCATO sul netto positivo: viene ripartita PRO-RATA sulle gambe in utile di
+    quel mercato, cosi' ``sum(per_leg) == net``.
+    """
+    raw: List[Tuple[Leg, str, float]] = []
+    gross_market: Dict[str, float] = {}
+    pos_market: Dict[str, float] = {}
     for leg in legs:
-        if leg.matched <= 0:
-            per_leg.append((leg.ref, "void", 0.0))
+        winner = winners.get(leg.market, "__missing__")
+        if leg.matched <= 0 or winner is None:
+            raw.append((leg, "void", 0.0))
             continue
-        win = selection_wins(leg.market, leg.selection, int(total_goals))
+        if winner == "__missing__":
+            raise ValueError(f"vincitore non dichiarato per il mercato {leg.market}")
+        win = leg.selection == winner
         s = float(leg.matched)
         p = leg.fill_price
         if leg.side == "back":
@@ -620,13 +800,26 @@ def settle_legs(legs: List[Leg], total_goals: int, commission: float) -> SettleR
         else:
             pnl = -s * (p - 1.0) if win else s
             status = "lost" if win else "won"
-        per_leg.append((leg.ref, status, round(pnl, 2)))
-        per_market[leg.market] = per_market.get(leg.market, 0.0) + pnl
-    net = 0.0
-    for m, v in list(per_market.items()):
-        per_market[m] = round(_net(v, commission), 2)
-        net += per_market[m]
-    return SettleResult(per_leg=per_leg, per_market=per_market, net=round(net, 2))
+        raw.append((leg, status, pnl))
+        gross_market[leg.market] = gross_market.get(leg.market, 0.0) + pnl
+        if pnl > 0:
+            pos_market[leg.market] = pos_market.get(leg.market, 0.0) + pnl
+    comm_market: Dict[str, float] = {}
+    for m, v in gross_market.items():
+        comm_market[m] = round(max(0.0, v) * float(commission), 2) if v > 0 else 0.0
+    per_leg: List[Tuple[str, str, float]] = []
+    per_leg_gross: List[Tuple[str, str, float]] = []
+    for leg, status, pnl in raw:
+        share = 0.0
+        pos = pos_market.get(leg.market, 0.0)
+        if pnl > 0 and pos > 0 and comm_market.get(leg.market, 0.0) > 0:
+            share = comm_market[leg.market] * (pnl / pos)
+        per_leg_gross.append((leg.ref, status, round(pnl, 2)))
+        per_leg.append((leg.ref, status, round(pnl - share, 2)))
+    per_market = {m: round(_net(v, commission), 2) for m, v in gross_market.items()}
+    net = round(sum(per_market.values()), 2)
+    return SettleResult(per_leg=per_leg, per_market=per_market, net=net,
+                        per_leg_gross=per_leg_gross, commission_by_market=comm_market)
 
 
 # ---------------------------------------------------------------------------
@@ -666,10 +859,15 @@ def _under_position(ctx: MatchCtx) -> Tuple[float, Optional[float]]:
     return position(ctx.legs, MARKET_OU35, SEL_UNDER, ("under_entry", "under_last"))
 
 
-def _cashout_base(ctx: MatchCtx, params: Dict[str, Any]) -> float:
+def cashout_base(ctx: MatchCtx, params: Dict[str, Any]) -> float:
+    """Base percentuale del cash-out: capitale investito (``total``) o solo
+    l'Under (``under``). Pubblica: la usa anche il servizio per la card."""
     if params.get("cashout_base") == "under":
         return _under_position(ctx)[0]
     return invested(ctx.legs)
+
+
+_cashout_base = cashout_base       # retro-compatibilita' interna
 
 
 def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
@@ -698,12 +896,33 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
     return acts
 
 
-def force_flat_actions(ctx: MatchCtx, books: Dict[Tuple[str, str], Book],
-                       params: Dict[str, Any]) -> List[Action]:
-    """Chiusura al best di ogni selezione aperta (richiesta manuale / stop)."""
+MANUAL_ROLE_MAP = {(MARKET_OU35, SEL_UNDER): "manual_close",
+                   (MARKET_OU45, SEL_OVER): "manual_close",
+                   (MARKET_OU45, SEL_UNDER): "manual_close"}
+
+
+def force_flat_plan(ctx: MatchCtx, books: Dict[Tuple[str, str], Book],
+                    params: Dict[str, Any], goals: Optional[int] = None,
+                    role_map: Optional[Dict[Tuple[str, str], str]] = None
+                    ) -> Tuple[List[Action], List[Action]]:
+    """(cancel, close) per una chiusura forzata (cash out / flatten dalla UI).
+
+    H1: i due gruppi sono SEPARATI perche' vanno eseguiti in ORDINE — prima si
+    cancellano gli ordini vivi (una lay di green-up appoggiata che resta sul
+    book lascerebbe una posizione netta lay SCOPERTA), solo dopo si chiude la
+    posizione netta. C2: le selezioni con esito gia' deciso non hanno prezzo e
+    non vengono chiuse (non serve: valgono 0/1).
+    """
     c = float(params["commission_pct"]) / 100.0
-    cv = cashout_value(ctx.legs, books, c, int(params["cashout_place_at_ticks"]))
-    return _cancel_live(ctx) + _close_actions(ctx, cv, params)
+    cv = cashout_value(ctx.legs, books, c, int(params["cashout_place_at_ticks"]), goals=goals)
+    return (_cancel_live(ctx), _close_actions(ctx, cv, params, role_map))
+
+
+def force_flat_actions(ctx: MatchCtx, books: Dict[Tuple[str, str], Book],
+                       params: Dict[str, Any], goals: Optional[int] = None) -> List[Action]:
+    """Chiusura al best di ogni selezione aperta (richiesta manuale / stop)."""
+    cancels, closes = force_flat_plan(ctx, books, params, goals)
+    return cancels + closes
 
 
 def _pending_closings(ctx: MatchCtx) -> List[Leg]:
@@ -713,11 +932,81 @@ def _pending_closings(ctx: MatchCtx) -> List[Leg]:
 # ---------------------------------------------------------------------------
 # decide
 # ---------------------------------------------------------------------------
+def has_unknown_orders(ctx: MatchCtx) -> bool:
+    """True se una gamba ha esito IGNOTO: nessun nuovo ingresso sulla partita (C3)."""
+    return any(l.needs_reconcile for l in ctx.legs)
+
+
+def _strip_openings(d: Decision, why: str) -> Decision:
+    """Toglie da una decisione le APERTURE, lasciando cancel e chiusure (H8).
+
+    Con un ordine a esito IGNOTO l'esposizione reale non e' nota: si continua a
+    valutare tutto cio' che RIDUCE il rischio (annulli, cash-out, uscite, cap di
+    perdita) e si bloccano solo gli ordini che ne aggiungono.
+    """
+    kept = [a for a in d.actions if not (a.kind == "place" and a.role in OPENING_ROLES)]
+    if len(kept) == len(d.actions):
+        return d
+    return Decision(state=d.state, actions=kept, reason=f"{d.reason} ({why})",
+                    updates=dict(d.updates), telemetry=dict(d.telemetry))
+
+
+def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
+    """Chiusura MANUALE in corso (C2): prima si annullano gli ordini vivi, poi si
+    chiude la posizione netta delle selezioni ancora VIVE, poi si chiude il ciclo.
+
+    In pre-match si torna a WATCH con il ciclo ARCHIVIATO (il capitale non e' piu'
+    a rischio) e ``no_reentry`` attivo: il bot non rientra finche' l'utente non
+    riabilita la partita con "Riprendi". In-play si va in FLAT.
+    """
+    cancels, closes = force_flat_plan(ctx, snap.books, params, snap.goals, MANUAL_ROLE_MAP)
+    if cancels:
+        return Decision(ctx.state, cancels, "chiusura manuale: annullo gli ordini vivi",
+                        updates={"close_reason": "manual"})
+    if closes:
+        return Decision("LIVE_CLOSING" if snap.inplay else "PRE_GREEN_PENDING", closes,
+                        "chiusura manuale: chiudo la posizione",
+                        updates={"close_reason": "manual", "attempts": 0})
+    if live_open_selections(ctx.legs, snap.goals):
+        # posizione ancora VIVA ma nessun prezzo con cui chiuderla: si ASPETTA.
+        # Chiudere il ciclo qui archivierebbe una posizione aperta (capitale a
+        # rischio invisibile) — mai.
+        return Decision(ctx.state, [], "chiusura manuale: prezzi non disponibili, attendo")
+    if snap.inplay:
+        return Decision("FLAT", [], "chiusura manuale completata",
+                        updates={"flatten_pending": False, "reentry_allowed": False,
+                                 "reentry_done": True, "_archive_legs": True})
+    return Decision("WATCH", [], "chiusura manuale completata (pre-match)",
+                    updates={"flatten_pending": False, "no_reentry": True,
+                             "cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now,
+                             "attempts": 0, "_archive_legs": True})
+
+
 def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     st = ctx.state
     if st in TERMINAL_STATES:
         return Decision(st, [], "terminale")
 
+    # mercato chiuso: il regolamento ha sempre la precedenza su tutto
+    if snap.market_status != "CLOSED" and st != "SETTLING":
+        # C2 — chiusura manuale in corso: nessuna riappoggiata, nessuna apertura
+        if ctx.flatten_pending:
+            return _decide_flatten(ctx, snap, params)
+        # C3 — cash out manuale pre-KO: ingressi disabilitati finche' l'utente
+        # non riabilita la partita ("Riprendi")
+        if ctx.no_reentry:
+            params = dict(params, pre_enabled=False, reentry_enabled=False,
+                          last_entry_persist=False)
+
+    d = _dispatch(ctx, snap, params)
+    if has_unknown_orders(ctx):
+        # H8 — ordine a esito ignoto: via le APERTURE, restano le riduzioni di rischio
+        d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura")
+    return d
+
+
+def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
+    st = ctx.state
     c = float(params["commission_pct"]) / 100.0
 
     # -- mercato chiuso: regolamento -------------------------------------------------
@@ -730,7 +1019,8 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
         return Decision("SETTLED", [], f"regolato T={snap.final_total}",
                         updates={"settled_pnl": res.net},
                         telemetry={"settle": {"per_leg": res.per_leg, "per_market": res.per_market,
-                                              "net": res.net}})
+                                              "net": res.net, "per_leg_gross": res.per_leg_gross,
+                                              "commission_by_market": res.commission_by_market}})
 
     if st in ("WATCH", "PRE_ENTRY_PENDING", "PRE_OPEN", "PRE_GREEN_PENDING", "HOLD",
               "PRE_LAST_ENTRY_PENDING"):
@@ -763,6 +1053,11 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
 # ---- pre-match -------------------------------------------------------------------
 def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optional[str]:
     """None se si puo' entrare, altrimenti il motivo."""
+    if ctx.no_reentry:
+        # C3: cash out manuale su questa partita → nessun nuovo ingresso
+        return "rientro disabilitato (chiusura manuale): premi Riprendi"
+    if ctx.flatten_pending:
+        return "chiusura manuale in corso"
     if not params["pre_enabled"]:
         return "pre_disabilitato"
     if not snap.feed_fresh:
@@ -784,6 +1079,9 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
     need = float(params["stake"]) * float(params["pre_min_back_size_factor"])
     if float(bk.back_size) < need:
         return f"liquidita {bk.back_size:.2f} < {need:.2f}"
+    # Nota M3: ``min_total_matched`` NON e' un gate (vedi config.REMOVED_PARAMS):
+    # ore prima del KO lo scambiato e' fisiologicamente basso. Quello che conta
+    # per un fill e' la liquidita' al BEST, appena verificata.
     if bk.best_lay is not None:
         t = ticks_between(bk.best_back, bk.best_lay)
         if t is None or t > int(params["pre_max_spread_ticks"]):
@@ -1013,6 +1311,19 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                                "x_now": x_now}}
         return Decision("LIVE_UNCOVERED", acts, "attendo per coprire", telemetry=tele)
     size, over = cover_legal_size(x_now, params)
+    # M3: ``cover_max_overshoot_pct`` CABLATO — con importi legalizzati .it
+    # l'arrotondamento per eccesso puo' gonfiare la copertura: oltre il tetto si
+    # ripiega su 'floor' (mai comprare piu' Over di quanto la formula chieda).
+    cap_over = float(params.get("cover_max_overshoot_pct") or 0.0)
+    if cap_over > 0 and over > cap_over + _EPS:
+        size2, over2 = legalize_back_size(x_now, "floor")
+        if size2 > 0:
+            size, over = size2, over2
+        if over > cap_over + _EPS:
+            return Decision("LIVE_UNCOVERED", acts,
+                            f"copertura: overshoot {over:.1f}% oltre il tetto {cap_over:.0f}%",
+                            telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                                                      "x_now": x_now, "reason": "overshoot"}})
     room = liability_room(ctx, params)
     if room < 0.01:
         return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
@@ -1081,13 +1392,18 @@ def _loss_rule(snap: Snapshot, params: Dict[str, Any]) -> Optional[Tuple[float, 
 
 
 def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
-    if not open_selections(ctx.legs):
-        return Decision("FLAT", [], "nessuna esposizione")
+    if not live_open_selections(ctx.legs, snap.goals):
+        return Decision("FLAT", [], "nessuna esposizione gestibile")
     acts = _late_persist_cancel(ctx, snap, params)
-    cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]))
+    cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]), goals=snap.goals)
     base = _cashout_base(ctx, params)
+    # M5: SEMPRE netto commissione lato servizio (``net``); ``gross`` e ``per``
+    # restano per trasparenza, ``commission`` e' l'aliquota usata.
     tele = {"cashout": {"net": cv.net, "gross": cv.gross, "base": base, "complete": cv.complete,
-                        "per": {f"{m}|{s}": v for (m, s), v in cv.per_selection.items()},
+                        "per": {f"{m}|{s}": v for (m, s), v in cv.per_selection_net.items()},
+                        "per_gross": {f"{m}|{s}": v for (m, s), v in cv.per_selection.items()},
+                        "decided": [f"{m}|{s}" for (m, s) in cv.decided],
+                        "commission": round(c, 4),
                         "pct": round(100.0 * cv.net / base, 2) if base > 0 else None}}
     if not cv.complete:
         return Decision("LIVE_COVERED", acts, "prezzi incompleti", telemetry=tele)
@@ -1136,10 +1452,19 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
 
 def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     pend = _pending_closings(ctx)
+    # C2: una chiusura in attesa su una selezione GIA' DECISA non si abbinera'
+    # mai a un prezzo sensato (la linea e' potata dal feed): si ritira.
+    dead = [l for l in pend if selection_decided(l.market, l.selection, snap.goals) is not None]
+    if dead:
+        return Decision("LIVE_CLOSING",
+                        [Action(kind="cancel", ref=l.ref, role=l.role, market=l.market,
+                                selection=l.selection) for l in dead],
+                        "chiusura su selezione gia' decisa: annullo")
     if not pend:
-        if open_selections(ctx.legs):
+        if live_open_selections(ctx.legs, snap.goals):
             # residuo non chiuso (fill parziale gia' consolidato): riprova
-            cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]))
+            cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]),
+                               goals=snap.goals)
             acts = _close_actions(ctx, cv, params)
             if acts and ctx.attempts < int(params["close_max_attempts"]):
                 return Decision("LIVE_CLOSING", acts, "chiusura residuo",
@@ -1174,8 +1499,10 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
 
 
 def _decide_flat(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
-    if open_selections(ctx.legs):
+    if live_open_selections(ctx.legs, snap.goals):
         return Decision("LIVE_COVERED", [], "esposizione residua")
+    if ctx.no_reentry:
+        return Decision("FLAT", [], "flat: rientro disabilitato (chiusura manuale)")
     if not params["reentry_enabled"] or not ctx.reentry_allowed or ctx.reentry_done:
         return Decision("FLAT", [], "flat")
     if not snap.feed_fresh or snap.goals is None or snap.minute is None:
@@ -1242,7 +1569,8 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
                 acts.append(_place("reentry_green", MARKET_OU45, SEL_UNDER, plan.side, plan.price, plan.size))
-                return Decision("REENTRY_GREEN_PENDING", acts, "re-ingresso: chiusura a mercato")
+                return Decision("REENTRY_GREEN_PENDING", acts, "re-ingresso: chiusura a mercato",
+                                updates={"close_reason": "reentry_time"})
         return Decision("REENTRY_OPEN", acts, "re-ingresso: prezzo assente")
     if green is None or not green.is_live:
         S, Pe = position(ctx.legs, MARKET_OU45, SEL_UNDER, ("reentry",))
@@ -1315,6 +1643,10 @@ def apply_decision(ctx: MatchCtx, d: Decision, now: float) -> List[Leg]:
                   price=float(a.price), size=float(a.size), ref=ref, status="pending",
                   placed_at=float(now), persistence=a.persistence, cycle_no=ctx.cycle_no,
                   final=a.final)
+        if a.role in CLOSING_ROLES:
+            # H4: ogni gamba di chiusura sa QUALE apertura chiude (sul DB:
+            # closes_trade_id) → lo storico conta i CICLI, non le gambe
+            leg.closes_ref = a.closes_ref or opening_ref(ctx.legs, a.market, a.selection)
         ctx.legs.append(leg)
         new.append(leg)
     if d.actions:

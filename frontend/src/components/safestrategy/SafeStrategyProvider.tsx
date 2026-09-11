@@ -29,6 +29,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
+import { fmtOdds } from '@/lib/format';
 import {
     fetchScanRows,
     fetchScanStatus,
@@ -356,7 +357,7 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
             const meta = VARIANT_META[s.variant];
             toast.warning(`🛡️ ${meta.short} — ${s.headline}`, {
                 description: `${s.matchLabel} · ${s.contextAtTrigger}${
-                    s.entryOdds != null ? ` · @${s.entryOdds.toFixed(2)}` : ''
+                    s.entryOdds != null ? ` · @${fmtOdds(s.entryOdds)}` : ''
                 }${
                     s.entrySize != null ? ` · abbinabili ${fmtEur(s.entrySize)}` : ''
                 }`,

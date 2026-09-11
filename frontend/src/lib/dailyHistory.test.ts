@@ -8,6 +8,7 @@ import {
     monthSummary, summarizeRows, aggregateBreakdown, calendarGrid, shiftMonth,
     dayToMs, msToDay, addDays, isValidDay, romeDay, periodRange, filterRange,
     dayLabel, monthLabel, exitInfo, tradeExit,
+    clampHistoryRange, attributionOf, summarizeDayTrades,
     type DailyRow,
 } from './dailyHistory';
 
@@ -20,7 +21,7 @@ function row(day: string, pnl: number, over: Partial<DailyRow> = {}): DailyRow {
         avg_win: pnl > 0 ? pnl : null, avg_loss: pnl < 0 ? pnl : null,
         best_trade: pnl, worst_trade: pnl, max_liability: 10,
         gross_profit: pnl > 0 ? pnl : 0, gross_loss: pnl < 0 ? -pnl : 0,
-        profit_factor: null, commission_paid: null, goal: null, goal_pct: null,
+        profit_factor: null, commission_paid: null, goal: null, goal_pct: null, goal_snapshot: true,
         by_strategy: {}, by_sport: {}, by_origin: {}, first_trade_at: null, last_trade_at: null,
         ...over,
     };
@@ -184,14 +185,14 @@ describe('profitFactor / expectancy', () => {
 
 describe('goalHitRate', () => {
     it('conta solo le giornate con obiettivo > 0; centrato se pnl ≥ goal', () => {
-        expect(goalHitRate([])).toEqual({ total: 0, hit: 0, rate: null });
+        expect(goalHitRate([])).toEqual({ total: 0, hit: 0, rate: null, notHistorized: 0 });
         const rows = [
             row('2026-09-01', 250, { goal: 250 }),
             row('2026-09-02', 100, { goal: 250 }),
             row('2026-09-03', 300, { goal: 0 }),
             row('2026-09-04', 5, { goal: null }),
         ];
-        expect(goalHitRate(rows)).toEqual({ total: 2, hit: 1, rate: 0.5 });
+        expect(goalHitRate(rows)).toEqual({ total: 2, hit: 1, rate: 0.5, notHistorized: 0 });
     });
 });
 
@@ -215,7 +216,7 @@ describe('monthSummary', () => {
         expect(m.won).toBe(1);
         expect(m.lost).toBe(2);
         expect(m.winRate).toBeCloseTo(0.3333, 3);
-        expect(m.goalHit).toEqual({ total: 1, hit: 0, rate: 0 });
+        expect(m.goalHit).toEqual({ total: 1, hit: 0, rate: 0, notHistorized: 0 });
     });
     it('mese fuori range → RangeError', () => {
         expect(() => monthSummary([], 2026, 0)).toThrow(RangeError);
@@ -347,5 +348,113 @@ describe('exitInfo / tradeExit', () => {
         expect(tradeExit({ meta: null, closes: [] })).toBeNull();
         expect(tradeExit({ meta: { exit_kind: 'profit' }, closes: [{ meta: { exit_kind: 'loss' } } as never] })?.kind).toBe('profit');
         expect(tradeExit({ meta: {}, closes: [{ meta: null } as never, { meta: { exit_kind: 'time' } } as never] })?.kind).toBe('time');
+    });
+});
+
+// ============================================== audit 11/09: M-17 / H-10 / H-11
+describe('clampHistoryRange (M-17)', () => {
+    it('finestra dentro il limite: invariata', () => {
+        expect(clampHistoryRange('2026-09-01', '2026-09-30'))
+            .toEqual({ from: '2026-09-01', to: '2026-09-30', clamped: false, days: 30 });
+    });
+
+    it('oltre 400 giorni: accorcia tenendo la CODA recente e lo dichiara', () => {
+        const r = clampHistoryRange('2024-01-01', '2026-09-11');
+        expect(r.clamped).toBe(true);
+        expect(r.to).toBe('2026-09-11');
+        expect(r.from).toBe(addDays('2026-09-11', -400));
+        expect(r.days).toBe(401);
+    });
+
+    it('esattamente 400 giorni: nessun clamp (il DB accetta <= 400)', () => {
+        const from = addDays('2026-09-11', -400);
+        expect(clampHistoryRange(from, '2026-09-11').clamped).toBe(false);
+    });
+
+    it('estremi invertiti: li rimette in ordine invece di sparire', () => {
+        const r = clampHistoryRange('2026-09-30', '2026-09-01');
+        expect(r).toMatchObject({ from: '2026-09-01', to: '2026-09-30', clamped: true });
+    });
+
+    it('giorni non validi: nessuna eccezione', () => {
+        expect(clampHistoryRange('boh', '2026-09-01').clamped).toBe(false);
+    });
+});
+
+describe('goalHitRate — solo obiettivi STORICIZZATI (H-10)', () => {
+    it('un obiettivo di RIPIEGO non viene giudicato, ma si conta a parte', () => {
+        const rows = [
+            row('2026-09-01', 250, { goal: 250, goal_snapshot: true }),
+            row('2026-09-02', 100, { goal: 250, goal_snapshot: true }),
+            row('2026-09-03', 300, { goal: 250, goal_snapshot: false }),
+            row('2026-09-04', 5, { goal: null, goal_snapshot: false }),
+        ];
+        expect(goalHitRate(rows)).toEqual({ total: 2, hit: 1, rate: 0.5, notHistorized: 1 });
+    });
+
+    it('nessuna giornata storicizzata → rate null (mai un 100 % inventato)', () => {
+        const rows = [row('2026-09-01', 300, { goal: 250, goal_snapshot: false })];
+        expect(goalHitRate(rows)).toEqual({ total: 0, hit: 0, rate: null, notHistorized: 1 });
+    });
+});
+
+describe('normalizeDailyRow — goal_snapshot (H-10)', () => {
+    it('senza il flag (RPC vecchia) il giorno NON è storicizzato', () => {
+        expect(normalizeDailyRow({ day: '2026-09-10', goal: 250 })?.goal_snapshot).toBe(false);
+        expect(normalizeDailyRow({ day: '2026-09-10', goal: 250, goal_snapshot: true })?.goal_snapshot).toBe(true);
+        expect(normalizeDailyRow({ day: '2026-09-10', goal_snapshot: 'true' })?.goal_snapshot).toBe(false);
+    });
+});
+
+describe('attributionOf / summarizeDayTrades (M-18 / H-11)', () => {
+    const leg = (over: Record<string, unknown>) => ({
+        id: 1, event_id: 'e1', event_name: 'Roma vs Lazio', side: 'lay', mode: 'paper' as const,
+        price: 40, size: 5, liability: 195, status: 'won', pnl: 3, placed_at: '2026-09-10T18:00:00Z',
+        settled_at: '2026-09-10T20:00:00Z', meta: null, closes: [], total_pnl: 3,
+        placed_in_day: true, settled_in_day: true, ...over,
+    }) as never;
+
+    it('Omega e Mike attribuiscono per PIAZZAMENTO, Safe per REGOLAZIONE', () => {
+        expect(attributionOf('omega')).toBe('placed');
+        expect(attributionOf('mike')).toBe('placed');
+        expect(attributionOf('safe')).toBe('placed');   // safe_strategy_bot_v2: giorno di piazzamento
+    });
+
+    it("'placed': somma solo le posizioni piazzate nel giorno (le altre sono di un'altra cella)", () => {
+        const s = summarizeDayTrades([
+            leg({ id: 1, total_pnl: 3, placed_in_day: true, settled_in_day: true }),
+            leg({ id: 2, total_pnl: -10, status: 'lost', placed_in_day: false, settled_in_day: true }),
+        ], 'placed');
+        expect(s.pnl).toBe(3);
+        expect(s.attributed).toHaveLength(1);
+        expect(s.others).toHaveLength(1);
+        expect(s.settled).toBe(1);
+        expect(s.won).toBe(1);
+        expect(s.liability).toBe(195);
+    });
+
+    it("'settled': somma solo quelle REGOLATE nel giorno (più le vive piazzate oggi)", () => {
+        const s = summarizeDayTrades([
+            leg({ id: 1, total_pnl: 3, placed_in_day: false, settled_in_day: true }),
+            leg({ id: 2, total_pnl: -10, status: 'lost', placed_in_day: true, settled_in_day: false }),
+            leg({ id: 3, status: 'open', settled_at: null, total_pnl: 0, placed_in_day: true, settled_in_day: false }),
+        ], 'settled');
+        expect(s.pnl).toBe(3);
+        expect(s.open).toBe(1);            // la viva piazzata oggi si vede
+        expect(s.others.map((t) => t.id)).toEqual([2]);
+    });
+
+    it('P&L bloccato dalle coperture vive, liability solo di quelle piazzate oggi', () => {
+        const s = summarizeDayTrades([
+            leg({ id: 1, status: 'hedged', settled_at: null, total_pnl: 0, meta: { locked_pnl: -22.1 }, placed_in_day: true, settled_in_day: false }),
+        ], 'placed');
+        expect(s.lockedPnl).toBe(-22.1);
+        expect(s.pnl).toBe(0);
+        expect(s.open).toBe(1);
+        expect(s.liability).toBe(195);
+    });
+
+    it('lista vuota/null: zero, mai NaN', () => {
+        expect(summarizeDayTrades(null, 'placed')).toMatchObject({ pnl: 0, settled: 0, open: 0, lockedPnl: null });
     });
 });

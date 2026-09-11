@@ -18,11 +18,45 @@ import {
     type OmegaEvent, type OmegaMarketSnapshot, type OmegaMarketRunner,
     type OmegaMode, type OmegaSide, type OmegaManualRequest,
 } from '@/lib/omega';
+import { fmtMoney, fmtOdds, fmtTime, fmtAge, ageSeconds } from '@/lib/format';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+/** oltre questa età le quote del book NON si usano per piazzare */
+export const MANUAL_BOOK_STALE_S = 20;
+
 function fmtQuote(v: number | null): string {
-    return v == null ? '—' : v.toFixed(2);
+    return fmtOdds(v);
+}
+
+/** stato di una richiesta in coda, in ITALIANO (prima era la chiave del DB) */
+export const MANUAL_STATUS_LABEL: Record<string, string> = {
+    pending: 'IN CODA', processing: 'IN CORSO', done: 'ESEGUITA', error: 'FALLITA',
+};
+/** tipo di richiesta, in ITALIANO */
+export const MANUAL_KIND_LABEL: Record<string, string> = {
+    refresh_events: 'aggiorna eventi',
+    load_markets: 'carica mercati',
+    load_book: 'carica quote',
+    place: 'piazza ordine',
+    cashout: 'cash out',
+};
+export function manualRequestText(r: { kind: string; status: string; result: Record<string, unknown> | null }): {
+    kind: string; status: string; detail: string | null; cls: string;
+} {
+    const detail = [r.result?.error, r.result?.err, r.result?.reason]
+        .find((v) => v != null && String(v).trim() !== '');
+    return {
+        kind: MANUAL_KIND_LABEL[r.kind] ?? r.kind,
+        // §5.3: mai la chiave del DB in inglese sotto gli occhi del trader —
+        // uno stato che la UI non conosce si DICHIARA sconosciuto
+        status: MANUAL_STATUS_LABEL[r.status] ?? 'STATO SCONOSCIUTO',
+        detail: detail != null ? String(detail) : null,
+        cls: r.status === 'done' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+            : r.status === 'error' ? 'bg-red-500/15 text-red-300 border-red-500/40'
+            : r.status === 'processing' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+            : 'bg-slate-500/15 text-slate-300 border-slate-500/40',
+    };
 }
 
 export default function ManualPanel() {
@@ -44,6 +78,15 @@ export default function ManualPanel() {
     const [busy, setBusy] = useState<string | null>(null);
     const [requests, setRequests] = useState<OmegaManualRequest[]>([]);
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
+    // orologio della pagina: serve per l'ETÀ delle quote (un ordine su un book
+    // vecchio si esegue a un prezzo che l'operatore non ha visto)
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = window.setInterval(() => setNowMs(Date.now()), 2000);
+        return () => window.clearInterval(t);
+    }, []);
+    const bookAgeS = ageSeconds(snapshot?.updated_at ?? null, nowMs);
+    const bookStale = snapshot != null && (bookAgeS == null || bookAgeS > MANUAL_BOOK_STALE_S);
 
     const selectedEvent = useMemo(() => events.find(e => e.event_id === eventId) ?? null, [events, eventId]);
     const markets = selectedEvent?.markets ?? [];
@@ -143,10 +186,14 @@ export default function ManualPanel() {
                 target: sizeMode === 'target' ? Number(target) : null,
             });
             toast.success('Ordine manuale accodato', {
-                description: `${side.toUpperCase()} ${sel.name} @ ${Number(price).toFixed(2)} · ${mode.toUpperCase()}`,
+                description: `${side.toUpperCase()} ${sel.name} @ ${fmtOdds(Number(price))} · ${mode === 'live' ? 'LIVE (soldi veri)' : 'PAPER'} · mercato ${marketId} · selezione ${sel.selection_id}`,
             });
             await loadRequests();
-        } catch (e) { toast.error('Piazzamento fallito', { description: String((e as Error).message) }); }
+        } catch (e) {
+            toast.error('Piazzamento fallito', {
+                description: `${String((e as Error).message)} — mercato ${marketId}, selezione ${sel.selection_id}`,
+            });
+        }
         finally { setBusy(null); }
     }
 
@@ -190,7 +237,7 @@ export default function ManualPanel() {
                         <option value="">— scegli evento ({events.length}) —</option>
                         {events.map(ev => (
                             <option key={ev.event_id} value={ev.event_id}>
-                                {ev.name || ev.event_id}{ev.open_date ? ` · ${new Date(ev.open_date).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''}{liveScoreLabel(liveFeed[ev.event_id]) ? ` · LIVE ${liveScoreLabel(liveFeed[ev.event_id])}` : ''}
+                                {ev.name || ev.event_id}{ev.open_date ? ` · ${fmtTime(ev.open_date)}` : ''}{liveScoreLabel(liveFeed[ev.event_id]) ? ` · LIVE ${liveScoreLabel(liveFeed[ev.event_id])}` : ''}
                             </option>
                         ))}
                     </select>
@@ -268,14 +315,20 @@ export default function ManualPanel() {
                     )}
 
                     <div className="text-xs text-slate-400 flex items-center justify-between border-t border-white/5 pt-2">
-                        <span>Stake ≈ <b className="text-white/90">€{previewStake.toFixed(2)}</b></span>
+                        <span>Stake ≈ <b className="text-white/90">{fmtMoney(previewStake)}</b></span>
                         <span className={side === 'lay' ? 'text-orange-400' : 'text-sky-300'}>
-                            {side === 'lay' ? 'Liability' : 'Rischio'} ≈ <b>€{(previewLiability || 0).toFixed(2)}</b>
+                            {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ <b>{fmtMoney(previewLiability || 0)}</b>
                         </span>
                     </div>
+                    {bookStale && (
+                        <div className="text-[11px] text-red-300" data-testid="manual-book-stale">
+                            quote del mercato vecchie{bookAgeS != null ? ` di ${fmtAge(bookAgeS)}` : ''}: ricarica le quote prima di piazzare
+                        </div>
+                    )}
 
                     <Button onClick={() => { if (mode === 'live') setLiveConfirmOpen(true); else void doPlace(); }}
-                        disabled={!sel || busy === 'place'}
+                        disabled={!sel || busy === 'place' || bookStale}
+                        title={bookStale ? 'quote non aggiornate: premi "Carica quote del mercato"' : undefined}
                         className={`w-full ${mode === 'live' ? 'bg-red-600 hover:bg-red-500 text-white' : side === 'lay' ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}>
                         {busy === 'place' ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Zap className="w-4 h-4 mr-1" />}
                         Piazza {side.toUpperCase()} {mode === 'live' ? '(SOLDI VERI)' : '(paper)'}
@@ -286,9 +339,23 @@ export default function ManualPanel() {
             {/* book runners */}
             {snapshot && (
                 <Card className="glass-card border-white/10 p-0 overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
+                    <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-sm text-slate-300">
-                            {snapshot.market_name || 'Mercato'} · {snapshot.inplay ? <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/40">IN-PLAY</Badge> : 'pre-match'}
+                            {snapshot.market_name || 'Mercato'} · {snapshot.inplay ? <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-500/40">IN CORSO</Badge> : 'pre-partita'}
+                            {/* l'ordine deve corrispondere a quello che si vede su Betfair */}
+                            <span className="ml-2 text-[10px] text-slate-500 tabular-nums" title="identificativi Betfair del mercato caricato">
+                                mercato {snapshot.market_id}
+                            </span>
+                            <span
+                                className={`ml-2 text-[10px] ${bookStale ? 'text-red-300 font-semibold' : 'text-slate-500'}`}
+                                data-testid="manual-book-age"
+                                data-stale={bookStale ? '1' : undefined}
+                                title={bookStale
+                                    ? 'quote vecchie: ricarica prima di piazzare'
+                                    : 'età dello snapshot delle quote'}
+                            >
+                                {bookAgeS == null ? 'quote senza orario' : bookStale ? `QUOTE FERME da ${fmtAge(bookAgeS)}` : `quote di ${fmtAge(bookAgeS)}`}
+                            </span>
                         </span>
                         <Button variant="outline" size="sm" onClick={suggestLeastProbable}>
                             <Target className="w-3.5 h-3.5 mr-1" />Suggerisci meno probabile
@@ -307,11 +374,11 @@ export default function ManualPanel() {
                             </thead>
                             <tbody>
                                 {snapshot.runners.map(r => (
-                                    <tr key={r.selection_id} className={`border-t border-white/5 hover:bg-white/5 ${sel?.selection_id === r.selection_id ? 'bg-primary/10' : ''}`}>
-                                        <td className="px-4 py-2 font-medium">{r.name}</td>
+                                    <tr key={r.selection_id} className={`border-t border-white/5 hover:bg-white/5 ${sel?.selection_id === r.selection_id ? 'bg-primary/10' : ''}`} data-testid="manual-runner">
+                                        <td className="px-4 py-2 font-medium" title={`selezione ${r.selection_id} · mercato ${snapshot.market_id}`}>{r.name}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-sky-300/90">{fmtQuote(r.back_price)}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-rose-300">{fmtQuote(r.lay_price)}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums text-slate-400">€{r.lay_size.toFixed(0)}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums text-slate-400">{fmtMoney(r.lay_size, { decimals: 0 })}</td>
                                         <td className="px-4 py-2 text-center">
                                             <Button variant="ghost" size="sm" onClick={() => pickRunner(r)}>usa</Button>
                                         </td>
@@ -326,19 +393,27 @@ export default function ManualPanel() {
             {/* stato ultime richieste */}
             {requests.length > 0 && (
                 <Card className="glass-card border-white/10 p-3">
-                    <div className="text-xs text-slate-400 mb-2">Ultime richieste</div>
+                    <div className="text-xs text-slate-400 mb-2">Ultime richieste al servizio</div>
                     <div className="space-y-1">
-                        {requests.slice(0, 6).map(r => (
-                            <div key={r.id} className="flex items-center justify-between text-xs">
-                                <span className="text-slate-300">{r.kind}</span>
-                                <Badge variant="outline" className={
-                                    r.status === 'done' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
-                                    : r.status === 'error' ? 'bg-red-500/15 text-red-300 border-red-500/40'
-                                    : 'bg-slate-500/15 text-slate-300 border-slate-500/40'}>
-                                    {r.status}{r.result?.error ? ` · ${String(r.result.error)}` : ''}
-                                </Badge>
-                            </div>
-                        ))}
+                        {requests.slice(0, 6).map(r => {
+                            const m = manualRequestText(r);
+                            return (
+                                <div key={r.id} className="flex items-center justify-between gap-2 text-xs" data-testid="manual-request">
+                                    <span className="text-slate-300">
+                                        <span className="text-slate-500 tabular-nums mr-1">{fmtTime(r.created_at)}</span>
+                                        {m.kind}
+                                    </span>
+                                    <span className="flex items-center gap-1 min-w-0">
+                                        {m.detail && (
+                                            <span className="text-[11px] text-red-300 truncate max-w-[220px]" title={m.detail} data-testid="manual-request-detail">
+                                                {m.detail}
+                                            </span>
+                                        )}
+                                        <Badge variant="outline" className={m.cls}>{m.status}</Badge>
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 </Card>
             )}
@@ -352,9 +427,14 @@ export default function ManualPanel() {
                         </DialogTitle>
                         <DialogDescription className="space-y-2 text-sm">
                             <span className="block">Stai per piazzare un <b>{side.toUpperCase()}</b> REALE su
-                                <b> {sel?.name ?? '—'}</b> a quota <b>{Number(price) || '—'}</b>.</span>
+                                <b> {sel?.name ?? '—'}</b> a quota <b>{fmtOdds(Number(price) || null)}</b>.</span>
                             <span className="block text-orange-300">
-                                Stake ≈ €{previewStake.toFixed(2)} · {side === 'lay' ? 'Liability' : 'Rischio'} ≈ €{(previewLiability || 0).toFixed(2)}.
+                                Stake ≈ {fmtMoney(previewStake)} · {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ {fmtMoney(previewLiability || 0)}.
+                            </span>
+                            {/* l'ordine deve corrispondere a quello che si vede su Betfair */}
+                            <span className="block text-[11px] text-slate-400 tabular-nums">
+                                mercato {marketId || '—'} · selezione {sel?.selection_id ?? '—'}
+                                {snapshot?.market_name ? ` · ${snapshot.market_name}` : ''}
                             </span>
                         </DialogDescription>
                     </DialogHeader>

@@ -15,6 +15,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { fmtMoney, fmtNum, fmtOdds, fmtPct, DASH, MINUS } from '@/lib/format';
 import { InvestAction } from './InvestAction';
 import {
     anomalyRefLabel, comboLegStakes, comboLock, oppKind, oppScore,
@@ -22,24 +23,20 @@ import {
 } from '@/lib/safeBot';
 import { sideBadgeClass } from './variantStyles';
 
+// formati UNICI del design system: percentuali "12,5 %", denaro "12,50 €"
 function pct(v: number | null | undefined, digits = 1): string {
-    const n = Number(v);
-    return Number.isFinite(n) ? `${(n * 100).toFixed(digits)}%` : '—';
+    return fmtPct(v, digits);
 }
 function signedPct(v: number | null | undefined): string {
     const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return `${n < 0 ? '−' : '+'}${(Math.abs(n) * 100).toFixed(1)}%`;
+    if (!Number.isFinite(n)) return DASH;
+    return `${n < 0 ? MINUS : '+'}${fmtPct(Math.abs(n))}`;
 }
 function eur(v: number | null | undefined): string {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return `${n < 0 ? '−' : ''}€${Math.abs(n).toFixed(2)}`;
+    return fmtMoney(v);
 }
 function signedEur(v: number | null | undefined): string {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return '—';
-    return `${n < 0 ? '−' : '+'}€${Math.abs(n).toFixed(2)}`;
+    return fmtMoney(v, { signed: true });
 }
 
 /** stile FISSO per tipo: l'occhio lo riconosce anche con tante card insieme */
@@ -106,6 +103,8 @@ export interface OpportunityGroupProps {
     row: SafeOpportunityRow;
     mode: SafeMode;
     stake: number;
+    /** size minima Betfair in uso dal servizio (params_effective.min_stake) */
+    minStake?: number;
     requests: SafeRequest[];
     minConfidence: number;
     sideFilter: 'all' | 'back' | 'lay';
@@ -143,8 +142,8 @@ function Cell({ label, children, title }: { label: string; children: ReactNode; 
 }
 
 /** blocco COMBINAZIONE: gambe con stake scalato e lock garantito */
-function ComboBody({ o, stake, mode, requests, disabled, disabledReason, onPlace }: {
-    o: SafeOpportunity; stake: number; mode: SafeMode; requests: SafeRequest[];
+function ComboBody({ o, stake, minStake, mode, requests, disabled, disabledReason, onPlace }: {
+    o: SafeOpportunity; stake: number; minStake?: number; mode: SafeMode; requests: SafeRequest[];
     disabled: boolean; disabledReason?: string;
     onPlace: (size: number) => Promise<number | null>;
 }) {
@@ -177,7 +176,7 @@ function ComboBody({ o, stake, mode, requests, disabled, disabledReason, onPlace
                         </Badge>
                         <span className="text-white font-semibold">{l.selection_name ?? `#${l.selection_id}`}</span>
                         <span className="text-slate-500">{l.market_type}</span>
-                        <span className="ml-auto tabular-nums text-primary font-bold">@{Number(l.price).toFixed(2)}</span>
+                        <span className="ml-auto tabular-nums text-primary font-bold">@{fmtOdds(l.price)}</span>
                         <span className="tabular-nums text-white font-bold w-16 text-right" title="stake di questa gamba (scalato allo stake totale)">
                             {eur(l.stake)}
                         </span>
@@ -211,6 +210,7 @@ function ComboBody({ o, stake, mode, requests, disabled, disabledReason, onPlace
                 price={Number(o.price)}
                 sizeAvailable={minAvail}
                 defaultStake={stake}
+                minStake={minStake}
                 requests={requests}
                 disabled={disabled || legs.length === 0}
                 disabledReason={legs.length === 0 ? 'combinazione senza gambe' : disabledReason}
@@ -226,7 +226,8 @@ function ComboBody({ o, stake, mode, requests, disabled, disabledReason, onPlace
 }
 
 export function OpportunityGroup({
-    row, mode, stake, requests, minConfidence, sideFilter, kindFilter = 'all', nowMs, onPlace, players,
+    row, mode, stake, minStake, requests, minConfidence, sideFilter, kindFilter = 'all', nowMs,
+    onPlace, players,
 }: OpportunityGroupProps) {
     const p = row.payload ?? { opps: [] };
     const opps = filterOpps(row, minConfidence, sideFilter, kindFilter);
@@ -244,7 +245,7 @@ export function OpportunityGroup({
         ? (p.sets ? `set ${p.sets.p1}-${p.sets.p2}${p.games ? ` · game ${p.games.p1}-${p.games.p2}` : ''}` : 'set —')
         : (p.score_home != null && p.score_away != null ? `${p.score_home}-${p.score_away}` : '?-?');
     const lam = p.lambdas
-        ? `λ ${Number(p.lambdas.home ?? 0).toFixed(2)} / ${Number(p.lambdas.away ?? 0).toFixed(2)}`
+        ? `λ ${fmtNum(p.lambdas.home ?? 0, 2)} / ${fmtNum(p.lambdas.away ?? 0, 2)}`
         : null;
 
     return (
@@ -281,6 +282,15 @@ export function OpportunityGroup({
                 </Badge>
             </div>
 
+            {stale && (
+                // M-21: la riga resta elencata come "attuale" per mezz'ora, ma
+                // "Piazza" si spegne a 60 s: il motivo va DETTO, non subito
+                <p className="mt-2 text-[11px] text-red-300" data-testid="opp-stale-note">
+                    modello e quote non aggiornati da {ageSec}s: il bottone Piazza resta spento finché
+                    il servizio non ricalcola (un'opportunità vale solo sul prezzo di adesso).
+                </p>
+            )}
+
             <div className="mt-3 space-y-3">
                 {opps.map((o) => {
                     const kind = oppKind(o);
@@ -300,12 +310,20 @@ export function OpportunityGroup({
                                 <Badge variant="outline" className={`text-[10px] font-heading font-bold ${sideBadgeClass(o.side === 'lay' ? 'LAY' : 'BACK')}`}>
                                     {o.side.toUpperCase()}
                                 </Badge>
-                                <span className="font-bold text-white text-sm">{o.selection_name ?? `#${o.selection_id}`}</span>
-                                <span className="text-[11px] text-muted-foreground">
-                                    {o.market_name ?? o.market_type}{o.line != null ? ` ${o.line}` : ''}
+                                <span
+                                    className="font-bold text-white text-sm"
+                                    title={`selezione ${o.selection_id} · mercato ${o.market_id} (${o.market_type})`}
+                                >
+                                    {o.selection_name ?? `#${o.selection_id}`}
+                                </span>
+                                <span
+                                    className="text-[11px] text-muted-foreground"
+                                    title={`mercato Betfair ${o.market_id}`}
+                                >
+                                    {o.market_name ?? o.market_type}{o.line != null ? ` ${fmtNum(o.line, 1)}` : ''}
                                 </span>
                                 <span className="ml-auto font-mono tabular-nums text-xl font-bold text-primary">
-                                    @{Number(o.price).toFixed(2)}
+                                    @{fmtOdds(o.price)}
                                 </span>
                             </div>
 
@@ -380,7 +398,7 @@ export function OpportunityGroup({
                                         <span className={`font-bold ${Number(o.edge) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{signedPct(o.edge)}</span>
                                     </Cell>
                                     <Cell label="EV">
-                                        <span className={`font-bold ${Number(o.ev) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{Number(o.ev).toFixed(3)}</span>
+                                        <span className={`font-bold ${Number(o.ev) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtNum(o.ev, 3)}</span>
                                     </Cell>
                                 </div>
                             )}
@@ -397,7 +415,7 @@ export function OpportunityGroup({
 
                             {kind === 'combo' ? (
                                 <ComboBody
-                                    o={o} stake={stake} mode={mode} requests={requests}
+                                    o={o} stake={stake} minStake={minStake} mode={mode} requests={requests}
                                     disabled={stale} disabledReason={staleMsg}
                                     onPlace={(size) => onPlace(o, size)}
                                 />
@@ -408,6 +426,7 @@ export function OpportunityGroup({
                                     price={Number(o.price)}
                                     sizeAvailable={o.size_available ?? null}
                                     defaultStake={stake}
+                                    minStake={minStake}
                                     requests={requests}
                                     disabled={stale}
                                     disabledReason={staleMsg}

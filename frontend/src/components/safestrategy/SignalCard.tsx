@@ -11,22 +11,20 @@ import { Badge } from '@/components/ui/badge';
 import { BetfairMediaButtons, type BetfairMediaAvailability } from '@/components/BetfairMediaButtons';
 import { fmtEur, type ActiveSignal } from '@/lib/safeStrategy';
 import { CashOutButton } from '@/components/trading/CashOutButton';
+import { ExitBadge } from '@/components/trading/ExitBadge';
+import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
+import { T } from '@/lib/tradeStatus';
+
 import {
-    tradeExposure, staleReason, FEED_ROW_STALE_MS,
+    hedgeState, lastRequestFor, marketBlocked, requestOutcome,
+    tradeCommission, tradeExposureNow, tradeHold, holdReasonLabel,
+    staleReason, FEED_ROW_STALE_MS,
     type FeedFreshness, type SafeMode, type SafeRequest, type SafeTrade, type SignalPlacement,
+    type TradeBook,
 } from '@/lib/safeBot';
+import { safeRowStatus } from './SafeTradesTable';
 import { InvestAction } from './InvestAction';
 import { VARIANT_STYLE, sideBadgeClass } from './variantStyles';
-
-const TRADE_BADGE: Record<string, string> = {
-    pending: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
-    open: 'bg-sky-500/15 text-sky-300 border-sky-500/40',
-    hedged: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
-    won: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
-    lost: 'bg-red-500/15 text-red-300 border-red-500/40',
-    void: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
-    error: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
-};
 
 /** Riga "importo abbinabile SUBITO": la size al miglior prezzo sul lato da
  *  operare, aggiornata live con la quota. Per il LAY l'importo è la puntata da
@@ -46,17 +44,13 @@ function MatchableLine({ signal }: { signal: ActiveSignal }) {
             <span className="text-muted-foreground">Abbinabile subito</span>{' '}
             <span className="font-mono tabular-nums font-bold text-emerald-300">{eur}</span>
             {signal.side === 'LAY' && (
-                <span className="text-muted-foreground"> da bancare{liability ? ` · responsabilità ${liability}` : ''}</span>
+                <span className="text-muted-foreground"> da bancare{liability ? ` · ${T.openLiability} ${liability}` : ''}</span>
             )}
             {signal.side === 'BACK' && <span className="text-muted-foreground"> da puntare</span>}
         </span>
     );
 }
 
-function fmtClock(ms: number): string {
-    const d = new Date(ms);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
 
 function fmtAgo(ms: number, nowMs: number): string {
     const s = Math.max(0, Math.round((nowMs - ms) / 1000));
@@ -79,12 +73,14 @@ interface Props {
     requests?: SafeRequest[];
     /** trade gia' esistente per questo segnale (match su signal_key) */
     trade?: SafeTrade | null;
-    tradeBook?: { back: number | null; lay: number | null } | null;
+    tradeBook?: TradeBook | null;
     commissionPct?: number;
     /** cash out gia' in volo per il trade del segnale */
     cashOutPending?: boolean;
     /** freschezza della riga del feed dell'evento (quote stantie → azioni spente) */
     freshness?: FeedFreshness | null;
+    /** size minima Betfair in uso dal servizio (params_effective.min_stake) */
+    minStake?: number;
     onPlace?: (placement: SignalPlacement, size: number) => Promise<number | null>;
     onCashOut?: (trade: SafeTrade, args: { amount?: number; fraction?: number }) => Promise<void> | void;
 }
@@ -92,11 +88,21 @@ interface Props {
 export function SignalCard({
     signal, nowMs, media, placement, mode = 'paper', stake = 5, requests = [],
     trade = null, tradeBook = null, commissionPct, cashOutPending = false, freshness = null,
-    onPlace, onCashOut,
+    minStake, onPlace, onCashOut,
 }: Props) {
     const style = VARIANT_STYLE[signal.variant];
     const active = signal.status === 'active';
     const stale = staleReason(freshness);
+    // stato/copertura/esito del trade: le stesse regole della tabella, in italiano
+    const tradeStatus = trade ? safeRowStatus(trade) : null;
+    const hedge = trade ? hedgeState(trade) : null;
+    const hold = trade && ['open', 'pending'].includes(trade.status) ? tradeHold(trade) : null;
+    const blocked = trade && ['open', 'pending'].includes(trade.status)
+        ? marketBlocked(tradeBook)
+        : null;
+    const outcome = trade ? requestOutcome(lastRequestFor(trade.id, requests)) : null;
+    const canCashOut = trade != null
+        && (trade.status === 'open' || (trade.status === 'hedged' && hedge != null && !hedge.complete));
     const ageBadge = freshness?.ageSec != null && freshness.ageSec * 1000 > FEED_ROW_STALE_MS ? (
         <Badge
             variant="outline"
@@ -123,7 +129,7 @@ export function SignalCard({
                     {signal.side ?? '—'}
                 </Badge>
                 <span className="ml-auto text-[11px] text-muted-foreground font-mono tabular-nums">
-                    {fmtClock(signal.triggeredAtMs)} · {fmtAgo(signal.triggeredAtMs, nowMs)}
+                    {fmtTime(signal.triggeredAtMs)} · {fmtAgo(signal.triggeredAtMs, nowMs)}
                 </span>
             </div>
 
@@ -132,7 +138,7 @@ export function SignalCard({
                     {signal.headline}
                 </span>
                 <span className="font-mono tabular-nums text-2xl font-bold text-primary">
-                    {signal.entryOdds != null ? `@${signal.entryOdds.toFixed(2)}` : '@ n/d'}
+                    {signal.entryOdds != null ? `@${fmtOdds(signal.entryOdds)}` : '@ n/d'}
                 </span>
             </div>
 
@@ -157,26 +163,54 @@ export function SignalCard({
 
             {trade ? (
                 <div className="mt-3 flex items-center gap-2 flex-wrap" data-testid="signal-trade">
-                    <Badge variant="outline" className={`text-[10px] font-heading font-bold ${TRADE_BADGE[trade.status] ?? TRADE_BADGE.error}`}>
-                        {trade.status.toUpperCase()}
+                    {/* stato in ITALIANO, lo stesso della tabella (audit L-07) */}
+                    <Badge
+                        variant="outline"
+                        data-testid="signal-trade-status"
+                        className={`text-[10px] font-heading font-bold ${tradeStatus?.cls ?? ''}`}
+                        title={tradeStatus?.title}
+                    >
+                        {tradeStatus?.label}
                     </Badge>
+                    <ExitBadge meta={trade.meta} />
                     <span className="text-[11px] text-muted-foreground tabular-nums">
-                        {trade.side.toUpperCase()} €{Number(trade.size ?? 0).toFixed(2)} @{Number(trade.price ?? 0).toFixed(2)}
+                        {trade.side.toUpperCase()} {fmtMoney(trade.size)} @{fmtOdds(trade.price)}
                     </span>
-                    {trade.status === 'open' && onCashOut && (
+                    {hold && (
+                        <span className="text-[10px] text-sky-300/90" data-testid="signal-hold" title="il servizio tiene la posizione aperta">
+                            In attesa: {holdReasonLabel(hold.reason)}
+                        </span>
+                    )}
+                    {canCashOut && onCashOut && (
                         <CashOutButton
                             compact
                             // modalita' del TRADE (il servizio chiude con quella), non della pagina
                             mode={trade.mode}
-                            {...tradeExposure(trade)}
+                            {...tradeExposureNow(trade)}
                             bestBack={tradeBook?.back ?? null}
                             bestLay={tradeBook?.lay ?? null}
-                            commission={commissionPct}
+                            commission={tradeCommission(trade, commissionPct ?? 5)}
                             pending={cashOutPending}
-                            disabled={stale != null}
-                            disabledReason={stale}
+                            disabled={stale != null || blocked != null}
+                            disabledReason={stale ?? blocked ?? undefined}
+                            residual={hedge && !hedge.complete
+                                ? { remaining: hedge.remainingLiability ?? hedge.residualSize, fraction: hedge.fraction }
+                                : null}
                             onCashOut={(a) => onCashOut(trade, a)}
                         />
+                    )}
+                    {blocked && (
+                        <span className="text-[10px] text-amber-300" data-testid="signal-market-blocked">{blocked}</span>
+                    )}
+                    {outcome && (
+                        <span
+                            className={`text-[10px] ${outcome.tone === 'ok' ? 'text-emerald-300' : outcome.tone === 'pending' ? 'text-amber-300' : 'text-red-300'}`}
+                            data-testid="signal-request-outcome"
+                            data-tone={outcome.tone}
+                            title={outcome.message ?? undefined}
+                        >
+                            {outcome.label}{outcome.message ? `: ${outcome.message}` : ''}
+                        </span>
                     )}
                     {ageBadge}
                 </div>
@@ -189,11 +223,20 @@ export function SignalCard({
                             price={placement.price ?? signal.entryOdds}
                             sizeAvailable={placement.size_available ?? signal.entrySize}
                             defaultStake={stake}
+                            minStake={minStake}
                             requests={requests}
                             disabled={stale != null}
                             disabledReason={stale}
                             onPlace={(size) => onPlace(placement, size)}
                         />
+                        {/* l'ingresso deve corrispondere a Betfair: mercato, selezione e
+                            best price con la size abbinabile (audit L-07) */}
+                        <p className="mt-1 text-[10px] text-slate-500 tabular-nums" data-testid="signal-placement">
+                            mercato <b className="text-slate-400">{placement.market_type}</b> {placement.market_id}
+                            {' · '}selezione {placement.selection_id}
+                            {placement.price != null && <> · best {signal.side === 'LAY' ? 'lay' : 'back'} {fmtOdds(placement.price)}</>}
+                            {placement.size_available != null && <> ({fmtMoney(placement.size_available)} abbinabili)</>}
+                        </p>
                         {ageBadge && <div className="mt-1">{ageBadge}</div>}
                     </>
                 ) : (

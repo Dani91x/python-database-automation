@@ -67,7 +67,8 @@ def _f(v: Any, default: float) -> float:
 
 def merge_risk_params(raw: Any) -> dict[str, Any]:
     """Default + override utente con clamp: cap ≥ 0 (0 = nessun cap), conteggi
-    interi ≥ 0, peso correlazione 0-1, loss stop ≤ 0 (0 = disattivo), stake ≥ 0.
+    interi ≥ 0, peso correlazione 0-1, stake ≥ 0. ``daily_loss_stop`` è sempre
+    ≤ 0 per SEGNO INTERPRETATO (50 → −50; 0 = disattivo).
     Chiavi sconosciute ignorate."""
     out = dict(DEFAULT_RISK_PARAMS)
     src = raw if isinstance(raw, dict) else {}
@@ -80,7 +81,11 @@ def merge_risk_params(raw: Any) -> dict[str, Any]:
     out["max_open_trades"] = None if mo is None else max(0, int(_f(mo, 0.0)))
     out["correlated_cap"] = min(1.0, max(0.0, _f(src.get("correlated_cap"),
                                                  float(out["correlated_cap"]))))
-    out["daily_loss_stop"] = min(0.0, _f(src.get("daily_loss_stop"), float(out["daily_loss_stop"])))
+    # daily_loss_stop: il SEGNO si interpreta, non si azzera (review H2).
+    # L'utente che scrive "50" intende "fermati a -50 EUR": clamparlo a 0
+    # SPEGNEVA lo stop perdite senza dirlo. 0 resta 0 = disattivo.
+    out["daily_loss_stop"] = -abs(_f(src.get("daily_loss_stop"),
+                                     float(out["daily_loss_stop"])))
     return out
 
 

@@ -337,21 +337,22 @@ def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
 
 
 def _emit_decided(ctx: _Ctx, *, market_type: str, market_name: str, line: Optional[float],
-                  market_id: Any, runner: dict, won: bool, why: str) -> None:
+                  market_id: Any, runner: dict, won: bool, why: str,
+                  rule: str = "decided") -> None:
     """Esito gia' deciso: back del vincitore sopra decided_min_price, lay del perdente."""
     p = ctx.p
     conf = float(p["conf_decided"])
     if won:
         back = _price(runner.get("back"))
         if back and back > float(p["decided_min_price"]) + _EPS:
-            ctx.emit(rule="decided", market_type=market_type, market_name=market_name,
+            ctx.emit(rule=rule, market_type=market_type, market_name=market_name,
                      line=line, market_id=market_id, runner=runner, side="back",
                      p_model=1.0, p_implied=1.0 / back, confidence=conf,
                      gap=back - 1.0, ref="punteggio", why=why)
     else:
         lay = _price(runner.get("lay"))
         if lay:
-            ctx.emit(rule="decided", market_type=market_type, market_name=market_name,
+            ctx.emit(rule=rule, market_type=market_type, market_name=market_name,
                      line=line, market_id=market_id, runner=runner, side="lay",
                      p_model=0.0, p_implied=1.0 / lay, confidence=conf,
                      gap=1.0 / lay, ref="punteggio", why=why)
@@ -475,7 +476,7 @@ def _rule_ht_open(ctx: _Ctx) -> None:
             continue
         _emit_decided(ctx, market_type="HALF_TIME", market_name="1X2 primo tempo", line=None,
                       market_id=blk.get("market_id"), runner={**s, "prob_key": f"ht_{side_k}"},
-                      won=(side_k == winner),
+                      won=(side_k == winner), rule="ht_open",
                       why=f"1T finito {h}-{a}, mercato ancora aperto al {ctx.minute}'")
 
 
