@@ -109,7 +109,7 @@ export interface DayTrade extends DayTradeLeg {
 }
 export type DayTrades = DayTrade[];
 
-export type HistoryVariant = 'omega' | 'safe';
+export type HistoryVariant = 'omega' | 'safe' | 'mike';
 export type SafeSportFilter = 'calcio' | 'tennis' | null;
 
 // -------------------------------------------------------- normalizzazione
@@ -222,6 +222,18 @@ export async function fetchOmegaDayTrades(day: string): Promise<DayTrade[]> {
 
 export async function fetchSafeDayTrades(day: string, sport: SafeSportFilter = null): Promise<DayTrade[]> {
     const { data, error } = await supabase.rpc('get_safe_day_trades', { p_day: day, p_sport: sport });
+    if (error) throw new Error(error.message);
+    return normalizeDayTrades(data);
+}
+
+export async function fetchMikeDaily(from: string, to: string): Promise<DailyRow[]> {
+    const { data, error } = await supabase.rpc('get_mike_daily', { p_from: from, p_to: to });
+    if (error) throw new Error(error.message);
+    return normalizeDailyRows(data);
+}
+
+export async function fetchMikeDayTrades(day: string): Promise<DayTrade[]> {
+    const { data, error } = await supabase.rpc('get_mike_day_trades', { p_day: day });
     if (error) throw new Error(error.message);
     return normalizeDayTrades(data);
 }

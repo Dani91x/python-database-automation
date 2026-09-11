@@ -54,6 +54,35 @@ OPP_MAX_EVENTS = 20
 _OU_LINE_RE = re.compile(r"OVER_UNDER_(\d)(\d)$", re.IGNORECASE)
 # cattura pre-KO: da KO-15' fino al kickoff
 PRE_KO_WINDOW_SEC = 15 * 60
+# ------------------------------------------------------- RAMO PRE-KO O/U (Mike)
+# Le DUE linee a gol tenute sotto quote PRIMA del calcio d'inizio per il bot Mike
+# (Under 3.5 / Over 4.5): stesso ciclo di vita dei mercati opportunità (catalogo
+# per i candidati nuovi, quote dal pool stream con priorità tier 2, REST di
+# fallback) ma SENZA requisito di minuto/punteggio. Acceso SOLO se
+# ``SAFE_PRE_KO_OU_HOURS`` > 0 (service.py): a 0 nulla cambia nel feed.
+PRE_KO_OU_MARKET_TYPES = ("OVER_UNDER_35", "OVER_UNDER_45")
+
+
+def in_pre_ko_ou_window(open_date: Optional[str], now: datetime, hours: float) -> bool:
+    """KO fra ``now`` e ``now + hours`` (hours <= 0 = ramo spento)."""
+    if hours is None or float(hours) <= 0.0:
+        return False
+    ko = parse_iso(open_date)
+    if ko is None:
+        return False
+    delta = (ko - now).total_seconds()
+    return 0 < delta <= float(hours) * 3600.0
+
+
+def is_pre_ko_ou_candidate(
+    inplay: Optional[bool], mo_status: Optional[str], open_date: Optional[str],
+    now: datetime, hours: float,
+) -> bool:
+    """Evento calcio NON ancora iniziato con KO entro ``hours``: le sue linee
+    O/U 3.5 e 4.5 vanno sotto quote (ramo pre-KO Mike)."""
+    if inplay or mo_status == "CLOSED":
+        return False
+    return in_pre_ko_ou_window(open_date, now, hours)
 
 _ANY_OTHER_HOME = re.compile(r"any\s*other.*home", re.IGNORECASE)
 _ANY_OTHER_AWAY = re.compile(r"any\s*other.*away", re.IGNORECASE)
@@ -171,9 +200,16 @@ def in_pre_ko_window(open_date: Optional[str], now: datetime) -> bool:
     return 0 < delta <= PRE_KO_WINDOW_SEC
 
 
-def is_monitorable(inplay: bool, open_date: Optional[str], now: datetime) -> bool:
-    """Riga da pubblicare: evento in-play oppure con KO entro la finestra pre-KO."""
-    return inplay or in_pre_ko_window(open_date, now)
+def is_monitorable(
+    inplay: bool, open_date: Optional[str], now: datetime, pre_ko_ou_hours: float = 0.0,
+) -> bool:
+    """Riga da pubblicare: evento in-play, KO entro la finestra pre-KO, oppure
+    (ramo pre-KO O/U acceso) KO entro ``pre_ko_ou_hours``."""
+    return (
+        inplay
+        or in_pre_ko_window(open_date, now)
+        or in_pre_ko_ou_window(open_date, now, pre_ko_ou_hours)
+    )
 
 
 # mercati per cui servono QUOTE (stream o REST): in-play, oppure KO entro
@@ -333,6 +369,7 @@ def build_market_block(
     market_type: Optional[str] = None,
     line: Optional[float] = None,
     ts_ms: Optional[int] = None,
+    bet_delay: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """Blocco GENERICO di un mercato nel payload: stato + elenco COMPLETO delle
     selezioni (selection_id, nome, best back/lay con le size abbinabili, stato
@@ -368,6 +405,10 @@ def build_market_block(
         blk["line"] = float(line)
     if ts_ms is not None:
         blk["ts_ms"] = int(ts_ms)
+    if bet_delay is not None:
+        # betDelay del marketDefinition (0 pre-match, ~5s in-play calcio): serve a
+        # chi simula i fill in paper con lo stesso ritardo del live (Mike)
+        blk["bet_delay"] = int(bet_delay)
     return blk
 
 
@@ -449,9 +490,15 @@ def is_opp_market_live(
     minute: Optional[int],
     score_home: Optional[int],
     score_away: Optional[int],
+    pre_ko: bool = False,
 ) -> bool:
-    """Il mercato opportunità serve ADESSO? (linea indecisa / 1T in corso)."""
+    """Il mercato opportunità serve ADESSO? (linea indecisa / 1T in corso).
+
+    ``pre_ko=True`` (ramo Mike, evento non iniziato): vive SOLO una delle due
+    linee ``PRE_KO_OU_MARKET_TYPES`` — senza punteggio nessuna linea è decisa."""
     mt = (market_type or "").upper()
+    if pre_ko:
+        return mt in PRE_KO_OU_MARKET_TYPES
     if mt.startswith("OVER_UNDER"):
         return is_live_ou_line(line, score_home, score_away)
     if mt == BTTS_MARKET_TYPE:

@@ -15,15 +15,21 @@ import { LogOut, ArrowRight } from 'lucide-react';
  */
 
 interface SportChoice {
-    key: 'football' | 'tennis' | 'omega' | 'safe';
+    key: 'football' | 'tennis' | 'omega' | 'safe' | 'mike';
     emoji: string;
     title: string;
     subtitle: string;
     to: string;
-    /** classi accento: verde (primary) per football, oro (secondary) per tennis */
-    accent: 'primary' | 'secondary';
+    /** classi accento: verde (primary) per football, oro (secondary) per tennis, teal per Mike */
+    accent: 'primary' | 'secondary' | 'teal';
     available: boolean;
 }
+
+const ACCENT = {
+    primary: { glow: 'hover:neon-glow-primary', border: 'border-primary/30', text: 'text-primary' },
+    secondary: { glow: 'hover:neon-glow-gold', border: 'border-secondary/30', text: 'text-secondary' },
+    teal: { glow: 'hover:shadow-[0_0_30px_rgba(20,184,166,0.35)]', border: 'border-teal-400/30', text: 'text-teal-300' },
+} as const;
 
 const CHOICES: SportChoice[] = [
     {
@@ -60,6 +66,15 @@ const CHOICES: SportChoice[] = [
         subtitle: 'Segnali live calcio + tennis · ingresso sempre manuale',
         to: '/safe-strategy',
         accent: 'secondary',
+        available: true,
+    },
+    {
+        key: 'mike',
+        emoji: '🎯',
+        title: 'Mike',
+        subtitle: 'Under 3.5 / Over 4.5 · green-up e cash-out · paper-first',
+        to: '/mike',
+        accent: 'teal',
         available: true,
     },
 ];
@@ -119,7 +134,7 @@ export default function SelectSport() {
                     </p>
                 </motion.div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 md:gap-8 w-full max-w-7xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 md:gap-8 w-full max-w-7xl">
                     {CHOICES.map((c, i) => (
                         <motion.button
                             key={c.key}
@@ -135,9 +150,7 @@ export default function SelectSport() {
                                 'group relative overflow-hidden rounded-2xl glass-card animated-border p-8 md:p-10 text-left',
                                 'flex flex-col items-start gap-4 min-h-[240px] transition-all',
                                 c.available ? 'cursor-pointer hover:border-white/20' : 'opacity-40 cursor-not-allowed',
-                                c.accent === 'primary'
-                                    ? 'hover:neon-glow-primary'
-                                    : 'hover:neon-glow-gold',
+                                ACCENT[c.accent].glow,
                             ].join(' ')}
                             aria-label={`Apri sezione ${c.title}`}
                         >
@@ -145,7 +158,7 @@ export default function SelectSport() {
                                 className={[
                                     'w-20 h-20 rounded-2xl flex items-center justify-center text-5xl',
                                     'bg-black/40 border',
-                                    c.accent === 'primary' ? 'border-primary/30' : 'border-secondary/30',
+                                    ACCENT[c.accent].border,
                                 ].join(' ')}
                                 aria-hidden
                             >
@@ -156,7 +169,7 @@ export default function SelectSport() {
                                 <h2
                                     className={[
                                         'font-display font-black text-3xl md:text-4xl tracking-tight',
-                                        c.accent === 'primary' ? 'text-primary' : 'text-secondary',
+                                        ACCENT[c.accent].text,
                                     ].join(' ')}
                                 >
                                     {c.title}
@@ -167,7 +180,7 @@ export default function SelectSport() {
                             <span
                                 className={[
                                     'inline-flex items-center gap-2 text-sm font-heading font-bold uppercase tracking-wide',
-                                    c.accent === 'primary' ? 'text-primary' : 'text-secondary',
+                                    ACCENT[c.accent].text,
                                 ].join(' ')}
                             >
                                 Entra

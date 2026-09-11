@@ -258,6 +258,11 @@ function startRunners() {
     // scanner (nessuna chiamata Betfair duplicata). A riposo (bot fermo) processa
     // solo le richieste manuali e i settlement. Lock single-instance 127.0.0.1:47318.
     spawnRunner('safe-strategy-bot', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.safe_strategy.bot_service']);
+    // MIKE (Under 3.5 / Over 4.5, 11/09): bot di trading come il Safe bot — legge SOLO
+    // il feed unico dello scanner (ramo pre-KO O/U: SAFE_PRE_KO_OU_HOURS nel .env),
+    // nessun login/stream proprio; paper di default, live solo da /mike. A riposo
+    // processa richieste manuali, protezioni e settlement. Lock 127.0.0.1:47319.
+    spawnRunner('mike-service', ['-m', 'Betfair.stream.watchdog', '--', 'Betfair.mike.service']);
     // PARTITE DEL GIORNO tennis: il job quote (betfair_tennis_odds.py) popola
     // tennis_markets — all'avvio e poi ogni 30 minuti (processo breve, esce da solo).
     // MAI due run sovrapposte (audit 09/09): una run lenta ancora viva NON viene

@@ -32,6 +32,14 @@ const OMEGA_PHASE_LABEL: Record<string, string> = {
 const SAFE_STRATEGY_LABEL: Record<string, string> = {
     base: 'BASE', esatto: 'R. ESATTO', punta: 'PUNTA', tennis: 'TENNIS', model: 'MODELLO', manual: 'MANUALE',
 };
+const MIKE_ROLE_LABEL: Record<string, string> = {
+    under_entry: 'Ingresso Under 3.5', under_green: 'Green-up Under 3.5', under_last: 'Ultimo ingresso (PERSIST)',
+    over_cover: 'Copertura Over 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
+    reentry: 'Re-ingresso Under 4.5', reentry_green: 'Green re-ingresso', manual_close: 'Chiusura manuale',
+};
+const STRATEGY_LABELS: Record<HistoryVariant, Record<string, string>> = {
+    omega: OMEGA_PHASE_LABEL, safe: SAFE_STRATEGY_LABEL, mike: MIKE_ROLE_LABEL,
+};
 const SPORT_LABEL: Record<string, string> = { calcio: '⚽ Calcio', tennis: '🎾 Tennis' };
 const ORIGIN_LABEL: Record<string, string> = { auto: '⚙️ Automatico', manual: '✋ Manuale' };
 
@@ -175,9 +183,9 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
             {rows.length > 0 && (
                 <Card className="glass-card border-white/10 p-0 overflow-hidden divide-y divide-white/5">
                     <BreakdownTable
-                        title={variant === 'omega' ? 'Gamba' : 'Strategia'}
+                        title={variant === 'safe' ? 'Strategia' : 'Gamba'}
                         data={byStrategy}
-                        labels={variant === 'omega' ? OMEGA_PHASE_LABEL : SAFE_STRATEGY_LABEL}
+                        labels={STRATEGY_LABELS[variant]}
                         testId="breakdown-strategy"
                     />
                     {variant === 'safe' && (

@@ -23,6 +23,7 @@ import LadderPopout from "@/pages/LadderPopout";
 import MatchReplay from "@/pages/MatchReplay";
 import Omega from "@/pages/Omega";
 import SafeStrategy from "@/pages/SafeStrategy";
+import Mike from "@/pages/Mike";
 import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
@@ -180,6 +181,14 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <SafeStrategy />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/mike"
+                                element={
+                                    <ProtectedRoute>
+                                        <Mike />
                                     </ProtectedRoute>
                                 }
                             />

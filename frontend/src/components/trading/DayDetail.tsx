@@ -42,6 +42,11 @@ const STRATEGY_LABEL: Record<string, string> = {
     base: 'BASE', esatto: 'R. ESATTO', punta: 'PUNTA', tennis: 'TENNIS', model: 'MODELLO', manual: 'MANUALE',
 };
 const PHASE_LABEL: Record<string, string> = { ht_cs: '1T', ft_cs: '2T', scalp: 'SCALP' };
+const MIKE_ROLE_LABEL: Record<string, string> = {
+    under_entry: 'INGRESSO U3.5', under_green: 'GREEN U3.5', under_last: 'ULTIMO (PERSIST)',
+    over_cover: 'COPERTURA O4.5', under_close: 'CHIUSURA U3.5', over_close: 'CHIUSURA O4.5',
+    reentry: 'RE-INGRESSO U4.5', reentry_green: 'GREEN RE-INGRESSO', manual_close: 'MANUALE',
+};
 
 const LIVE_STATUSES = new Set(['pending', 'open', 'hedged']);
 
@@ -54,6 +59,7 @@ function selectionOf(t: DayTradeLeg): string {
 }
 function kindOf(t: DayTradeLeg, variant: HistoryVariant): string {
     if (variant === 'omega') return PHASE_LABEL[t.phase ?? ''] ?? '—';
+    if (variant === 'mike') return MIKE_ROLE_LABEL[t.strategy ?? ''] ?? (t.strategy ?? '—');
     return STRATEGY_LABEL[t.strategy ?? ''] ?? (t.strategy ?? '—');
 }
 
