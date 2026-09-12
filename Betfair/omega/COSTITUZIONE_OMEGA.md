@@ -1681,3 +1681,83 @@ applicata)»; «carica altre» non compare; `live_now` cade su `matches_open`. O
 - Fedeltà paper (bet delay 5 s), certificazione liquidità lato back dalle registrazioni REC,
   calibratore con una famiglia alimentata dagli stati REC/paper di **Omega** (§16.7 2P-F-03),
   e i punti già elencati in §14.5 / §16.6.
+
+---
+
+## 18. CHIUSURE, PUNTI APERTI E CONSIGLI (12/09/2026 sera, pushato `cda8e20` + `b267497`)
+
+Analisi completa in `Betfair/CHIUSURE_2026-09-12.md`. Qui restano le **regole** e le
+**decisioni aperte**: quello che è scritto qui vale più di ogni parametro.
+
+### 18.1 La regola che manca in ogni manuale: chiudere a mercato è NEUTRO
+
+Verificato su quattro chiusure vere: ognuna ha bloccato **esattamente** l'EV al prezzo di
+quel momento (scarto 0,00 €; una a −0,54 € = lo spread).
+
+| Caso | P mercato | P modello | EV mercato | bloccato |
+|---|---|---|---|---|
+| trade 70 FK Teleoptik | 20,4 % | 12,0 % | −22,08 | −22,08 |
+| trade 84 VJS v Inter 2 | 67,1 % | 8,5 % | −9,23 | −9,23 |
+| trade 88 Lazio-Milan | 30,3 % | 20,7 % | −7,62 | −8,16 |
+
+**Ne segue una legge**: una chiusura distrugge valore SOLO se il modello batte il mercato.
+Ogni cifra di «valore recuperato» vale a quella condizione, mai in assoluto. Chi scrive
+report su questo bot deve dichiararlo, altrimenti sta vendendo una certezza che non ha.
+
+### 18.2 Le due correzioni alle chiusure (norme, non parametri)
+
+1. **Una quota vale come probabilità solo se è un prezzo VERO.** Il tetto di fine gara
+   accetta la quota implicita solo con liquidità reale (`omega_model.quote_p`, ≥ 2 €) e
+   dentro `greenup_market_floor_max_ratio` (default 3×) rispetto al modello. A distanza 0
+   il tetto vale SEMPRE (il bancato è già sul tabellone: è il modello a essere rotto);
+   col bancato irraggiungibile non vale MAI (nessuna quota inventa un rischio che non c'è).
+   Caso che l'ha motivata: trade 84, back 1,49 = 67,1 % su un risultato che richiedeva un
+   gol nel recupero, book a un lato solo, modello 8,5 %. Costo: −9,23 €.
+   **Prova dal vivo (12/09, 22:10)**: Zaglebie-Katowice 96′, mercato 11,6 % contro modello
+   0,13 % con 7,73 € dietro e nessun lato lay → quota SCARTATA, posizione tenuta, lay
+   **vincente +1,32 €**. Stessa situazione del trade 84, esito opposto.
+2. **`risk_cap` non chiude più a QUALUNQUE prezzo.** Su un lay la liability è già impegnata
+   all'ingresso: chiudere non riduce il rischio preso, trasforma una distribuzione in una
+   perdita certa. Sopra il tetto si esce solo a un prezzo che vale almeno
+   `EV(tengo) − ev_margin − premio`, col premio limitato a `risk_premium_pct` della
+   liability (default 5 %). `risk_premium_pct = 1` ripristina il vecchio tetto secco.
+   Il controllo del rischio vero sta nel DIMENSIONAMENTO all'ingresso e nel
+   `daily_loss_cap`, mai in una chiusura in perdita a mercato.
+
+### 18.3 Punti aperti
+
+1. **Il margine NON è dimostrato, e con questo profilo non è dimostrabile.**
+   Margine mediano dichiarato dal modello: **0,49 punti percentuali**, cioè **+0,23 €** per
+   scommessa, contro una deviazione standard di **12,06 €**. Rumore/segnale **53 a 1**:
+   servono circa **10.700 scommesse** per distinguerlo dal caso al 95 %.
+2. **Il campione non distingue margine da fortuna.** v2 (dal 09/09): 62 aperture, **2**
+   perdite contro 1,36 attese (P = 0,84), liability media **221,53 €** contro una vincita
+   media di **3,24 €**. **Una sola perdita in più cancella 68 vincite.**
+3. **La calibrazione modello-contro-mercato non è misurabile**: su 25 aperture col blocco
+   `meta.model` registrato, **zero** hanno perso. Senza eventi positivi il confronto è vuoto
+   (il Brier premia chi prevede la probabilità più bassa, non chi ci prende). Strumento
+   rieseguibile: `python -m Betfair.tools.verifica_margine_2026_09_12` — **dichiara** quando
+   i dati non bastano invece di produrre un numero che sembra una risposta.
+4. Migrazione `omega_models_v6.sql` ancora da applicare.
+
+### 18.4 Consigli (in ordine di valore)
+
+1. **Abbassare la quota di lay: `price_max` da 120 a ~40.** È il consiglio più forte.
+   L'EV per scommessa **non cambia di un centesimo**: cambia solo la varianza.
+
+   | Quota | Liability | EV/scommessa | Scommesse per dimostrarlo |
+   |---|---|---|---|
+   | 10 | 19,26 | +0,67 | **248** |
+   | 30 | 62,06 | +0,67 | 781 |
+   | 60 | 126,26 | +0,67 | 1.580 |
+   | **110 (oggi)** | **233,26** | +0,67 | **2.911** |
+
+   La quota alta non aggiunge margine: aggiunge varianza, e con essa il tempo e i soldi che
+   servono per accorgersi di essere in torto.
+2. **`greenup_risk_cap` da 0,10 al default 0,15.** Il valore stretto serviva quando il tetto
+   chiudeva a qualunque prezzo; ora produce solo chiusure premature. Caso vero del 12/09:
+   Gremio-Vasco, P(perdita) 12,7 %, chiuso pagando **1,08 €** sopra l'EV del tenere. A 0,13
+   e a 0,15 la stessa posizione si tiene. Si cambia dal pannello, senza riavvio.
+3. **Pretendere un margine minimo per entrare.** `select_k_se = 0` significa nessun margine
+   di sicurezza richiesto: il bot banca qualunque selezione nella finestra 20-120. Senza
+   selezione non c'è margine, si paga solo lo spread.

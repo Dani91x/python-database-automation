@@ -1019,3 +1019,77 @@ cd frontend && npx vitest run --config vitest.cert.config.ts
    perimetro Safe): `get_mike_aggregates()` in `mike_bot_v2.sql:127-134` è l'unica delle
    tre RPC gemelle senza il controllo `betfair_live_is_owner()` nel corpo — `get_safe_aggregates`
    e `get_omega_aggregates` ce l'hanno.
+
+---
+
+## 13. CHIUSURE, PUNTI APERTI E CONSIGLI (12/09/2026 sera, `cda8e20` + `b267497`)
+
+Analisi completa in `Betfair/CHIUSURE_2026-09-12.md`. Safe è **l'unica delle tre sezioni in
+positivo** e le sue chiusure sono risultate corrette: quasi nulla è stato toccato.
+
+### 13.1 Le uscite incondizionate NON sono un difetto (verificato, non cambiate)
+
+Sei uscite per «il lato bancato ha segnato», tutte e sei su lay poi **vincenti**: reale
+−20,02 contro +10,08 tenendo. Sembra lo stesso schema che ha affondato Omega e Mike, **ma
+non lo è**, e la differenza va scritta qui perché è facile sbagliarsi guardando solo il P&L.
+
+Caso Cesena v US Cremonese: la chiusura ha bloccato **−10,77** dove tenere valeva **−10,72**
+al mercato. È un **pareggio**, in cambio del taglio di una coda da **118 € di liability**.
+Con un lay che vince circa il 90 % delle volte, sei successi su sei sono esattamente quello
+che ci si aspetta: non è un difetto, è la distribuzione.
+
+**NORMA**: prima di dichiarare «difettosa» una chiusura, confrontarla con l'EV **al prezzo di
+mercato di quel momento**, non con l'esito realizzato. Chiudere a mercato è neutro per
+definizione (vedi §18.1 della costituzione Omega): distrugge valore solo se il modello batte
+il mercato. Il senno di poi non è una misura.
+
+### 13.2 Quello che è cambiato (regola condivisa con Omega)
+
+`exits.decide_time_exit` è condivisa: la modifica a `risk_cap` vale anche qui.
+Sopra il tetto **non si esce più a qualunque prezzo**, ma solo a un prezzo che vale almeno
+`EV(tengo) − ev_margin − premio`, col premio limitato a `risk_premium_pct` (default **5 %**)
+della liability. Su un lay la liability è già impegnata all'ingresso: chiudere non riduce il
+rischio preso, lo trasforma in una perdita certa. In pratica su Safe questo percorso è raro,
+perché quasi tutte le chiusure hanno `locked_pnl ≥ 0` e passano dalla prima regola.
+
+Corretta anche una riga che mentiva: uno scarto con il **lato back assente** veniva
+etichettato `spread_anomalo` con rapporto «n/d», cioè una misura mai fatta. Ora è
+`book_senza_lato_back`. Due cose diverse non possono avere la stessa etichetta.
+
+### 13.3 Il realtime era MUTO (correzione infrastrutturale)
+
+`subscribeSafeBot` sottoscrive quattro tabelle ma solo due erano pubblicate su
+`supabase_realtime`. **`safe_strategy_activity` e `safe_strategy_requests` erano mute dal
+giorno in cui il codice è stato scritto**, nonostante il commento dicesse «H-16: il log del
+servizio va visto in tempo reale come i trade». Senza publication Postgres non replica nulla:
+nessun errore, nessun log, solo aggiornamenti in ritardo di un poll (15 s).
+
+Migrazione `migrations/omega_activity_realtime_2026-09-12.sql`, **applicata e verificata in
+diretta** (canale di prova per 60 s: eventi ricevuti; prima sarebbero stati zero).
+Il test `Betfair/test_realtime_contratto_2026_09_12.py` lega ora le due cose: ogni tabella
+sottoscritta dal TypeScript deve comparire in un `ALTER PUBLICATION` dentro `migrations/`.
+
+### 13.4 Punti aperti
+
+1. **Il profilo di rischio è «monetine davanti al rullo compressore»**, e va tenuto presente
+   quando si legge il P&L positivo: 29 aperture vinte su 30 con una **liability media di
+   50,47 €** contro incassi di ~2 €. L'unica perdita registrata è stata di **−0,12 €**, cioè
+   fortuna, non prova. Le uscite programmate al 72′-73′ sono ciò che tiene in piedi il
+   profilo: **non toccarle** senza rifare i conti sulla coda.
+2. `model_calibration` resta `off`: il modello di Safe non ha edge dimostrato (backtest
+   −18,6 %). Le correzioni rendono le probabilità più oneste, non redditizie. Il backtest va
+   rifatto ora che la calibrazione non estrapola e il recupero non produce più segnali.
+3. **L'età delle quote PER SINGOLO MERCATO non è pubblicata da nessun servizio.** Quella per
+   partita esiste e funziona (`feedFreshness`, soglie 5 s e 20 s; misura dal vivo su 55
+   partite: mediana 3,5 s, 90° percentile 15 s, massimo 111 s, il 9 % oltre i 20 s).
+   Il payload porta `odds_ts_ms` ma la UI **non lo usa di proposito**: due misure della stessa
+   cosa sarebbero due verità diverse sotto gli occhi del trader.
+
+### 13.5 Consigli
+
+1. **Non «correggere» le uscite incondizionate** guardando il P&L realizzato: vedi §13.1.
+   Se si vuole cambiarle, il criterio è l'EV al mercato del momento, non l'esito.
+2. **Safe è l'unica sezione in positivo**: prima di spostare capitale sulle altre due,
+   pretendere da Omega e Mike la stessa cosa che Safe ha già, cioè chiusure che non
+   distruggono valore e un profilo di rischio dichiarato.
+3. Il tennis resta **mai validato** su serie storiche: tenerlo spento.

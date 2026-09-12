@@ -1030,3 +1030,113 @@ Una sola definizione, in tutti i posti: **la giornata operativa di una riga è i
   con il ripiego dichiarato `romeDayStartMs` quando il DB non espone `day_start`.
 - Anche lo **stop giornaliero** usa la stessa giornata, e comprende il P&L BLOCCATO delle partite
   vive piazzate oggi: il bloccato di ieri non entra nello stop di oggi (§13.3 M-1).
+
+---
+
+## §14 IL MODELLO ERA SPENTO, PUNTI APERTI E CONSIGLI (12/09/2026 sera, `cda8e20` + `b267497`)
+
+Analisi completa in `Betfair/CHIUSURE_2026-09-12.md`.
+
+### §14.1 Il difetto più grave della storia del bot: il modello non ha MAI funzionato
+
+Il dossier era **vuoto su tutti e 93 gli eventi** (`lambda_home` e `lambda_away` a `null`,
+`source: "none"`). Causa: `fixture_id_for_event` cercava la partita SOLO in `live_follow`,
+la tabella del runner del trading live, che segue partite sue — **nessuno dei 19 eventi Mike
+vivi era lì dentro** (55 righe, zero in comune).
+
+Senza gol attesi non c'è griglia Poisson. Quindi, su OGNI partita:
+
+| Dato | Stato | Che cosa comandava al suo posto |
+|---|---|---|
+| `p_total_model` | sempre `null` | l'uscita in perdita decideva su tabella empirica e mercato |
+| `hazard_model` | sempre `null` | il cash out «intelligente» non si è **mai** attivato |
+| `cover_gain_pct` | sempre `null` | l'attesa della copertura non si è **mai** attivata |
+
+Conseguenza pratica più cara: `cover_timing` copre subito a ogni dato mancante («mai attesa
+al buio»), quindi **Mike ha sempre coperto al primo prezzo invece che al migliore**.
+
+**Correzioni** (tutte e tre necessarie, una sola non basta):
+1. `db.fixture_id_for_event` guarda anche `omega_events` (17 eventi vivi su 25 hanno lì la
+   fixture). È la fonte MIGLIORE: lambda indipendenti dai prezzi.
+2. `dossier.lambdas_con_ripiego` riusa la catena di Omega (§14 di quella costituzione):
+   fixture → quote 1X2 pre-KO → mercato O/U live. Nessun ripiego riuscito = `(None, None,
+   "none")`: il bot resta cieco ma **non decide su numeri inventati**.
+3. `service._retry_dossier` RITENTA ogni 300 s le partite vive col dossier cieco.
+   `build_prematch` girava una sola volta alla presa in carico: se in quel momento la fixture
+   non c'era, il dossier restava vuoto **per sempre**. È così che tutti e 93 gli eventi si
+   sono ritrovati con `source: "none"`.
+
+**Verificato dal vivo (12/09, 22:42:46)**: due partite hanno risolto la fixture e ricevuto
+gol attesi veri (CD Gualberto Villarroel 1,50/1,11 · Deportivo La Guaira 0,99/1,70). È la
+prima volta che Mike ha un modello **indipendente dai prezzi di mercato**.
+
+**NORMA**: `lambda_source` è pubblicato nello stato live e mostrato in scheda. Se dice
+`none`, il bot sta decidendo senza modello e chi legge deve saperlo. Un numero etichettato
+«modello» che nasce dal mercato non è un modello.
+
+### §14.2 Uscita in perdita: lo stesso rischio non si conta due volte
+
+`loss_exit_model` chiude se `cv_net ≥ ev_hold − premio`, con
+`premio = capitale × pct × P(4 gol)`. Ma **il disastro dei 4 gol è già dentro `ev_hold`**
+(è uno dei termini di `Σ P(totale) × P&L(totale)`, su una posizione tipica pesa −2,41 €):
+sottrarne un altro pezzo proporzionale a P(4) conta la stessa perdita una seconda volta.
+`loss_exit_risk_premium_pct` **50 → 10**.
+
+Storia che l'ha motivata: 7 uscite in perdita, **6 su partite finite sotto i 3,5 gol**
+(l'Under avrebbe vinto), 4 chiuse con l'Under ancora **favorito al 57-66 %**.
+Reale −19,56 contro +21,37 tenendo. Vale però la legge di §18.1 della costituzione Omega:
+chiudere a mercato è neutro, quindi quella differenza si realizza solo se il modello batte
+il mercato — ed è esattamente perché il modello era spento che non poteva farlo.
+
+### §14.3 Esecuzione (corretto e misurato)
+
+- **Copertura sotto il minimo Betfair**: 176 tentativi rifiutati, ritentati a ogni giro.
+  Decisioni di copertura da **4,9 al minuto a 0,08** (61 volte meno rumore).
+- **Priorità a chi ha soldi a rischio** (`scanner.prioritize_followed`): il lotto del catalogo
+  mercati viene troncato e l'ordine era solo «minuti più avanzati». Al riavvio 11 partite con
+  posizioni aperte sono rimaste ~10 minuti **senza nessuna linea O/U** (46 allarmi critici).
+  Dopo il fix: **8 partite su 8** con le linee, allarmi **da 46 a 9**.
+- **Allarme critico falso**: le gambe pianificate e mai piazzate valgono zero e non sono un
+  errore (verificato: scarto 0,00 € su 8 partite). Ora scrivono `settle_gambe_non_piazzate`.
+- Il paper è **fedele al live**: FILL OR KILL con uccisione dei parziali, rispetto della
+  liquidità al best price, rifiuto sotto i 2 €. I suoi numeri valgono come prova.
+
+### §14.4 Punti aperti
+
+1. **Nessun margine dimostrato.** Su 42 partite l'Under è uscito **69,0 %**, ma l'intervallo
+   di confidenza al 95 % va da **55,1 % a 83,0 %** (z = 0,43 contro il pareggio al 65,8 %):
+   compatibile con zero. Servono ~330 partite per misurarlo a ±5 punti, ~910 a ±3.
+   **Non tarare la selezione sulle fasce di quota**: i gruppi hanno 3-18 casi, è rumore.
+2. **La copertura Over 4.5 peggiora SEMPRE il valore atteso.** Non è assicurazione gratuita:
+   si paga sul 66 % delle partite in cui l'Under vince.
+
+   | Copertura | Stake | EV/partita |
+   |---|---|---|
+   | nessuna, solo Under | — | −0,13 |
+   | Over 4.5 @ 5,0 | 2,50 | −1,13 |
+   | Over 4.5 @ 6,0 | 2,00 | −0,69 |
+   | Over 4.5 @ 7,0 | 1,67 | −0,40 |
+
+   Compra **riduzione della varianza** (il caso ≥5 gol da −10 a circa zero), non profitto.
+   Più alta è la quota Over quando si copre, meno costa.
+3. Distribuzione reale dei gol su 56 partite: **≤3 66,1 % · 4 21,4 % · ≥5 12,5 %**. A quota
+   media d'ingresso 1,52 il pareggio è al 65,8 %: il margine è indistinguibile da zero.
+
+### §14.5 Consigli (in ordine di valore)
+
+1. **FAR SCEGLIERE MIKE. È il consiglio più importante di tutto il documento.**
+   Oggi l'ingresso è una **pura finestra di prezzo**: `pre_entry_price_min` 1,30 e
+   `pre_entry_price_max` 3,00, e dentro quella finestra entra su qualunque partita, **senza
+   mai confrontare il modello col prezzo**. Il modello lo usa solo per USCIRE.
+   Senza selezione non c'è margine: si paga lo spread su tutto, ed è la spiegazione del
+   66,1 % osservato contro il 65,8 % di pareggio.
+   Da quando il modello funziona (§14.1) questo confronto è **finalmente possibile**: entrare
+   solo quando `P(≤3) del modello − P(≤3) implicita nel prezzo` supera una soglia dichiarata.
+   È l'unico intervento che può **creare** un margine invece di proteggerne uno che non
+   sappiamo se esista.
+2. **`cover_profit_factor` da 1,2 a 1,0**: vale **+0,19 € per partita** (~11 € sulle 56
+   seguite) e rispetta comunque la regola dichiarata «si perde solo con 4 gol» — a 1,0 il
+   caso ≥5 chiude in pareggio invece che a +2. Caso vero: Koper v Olimpija, coperti 6,16 €
+   dove 5,13 bastavano.
+3. Il rialzo al minimo Betfair su quote Over alte **conviene** (verificato: +0,05 € di EV):
+   l'extra costa 0,46 € nell'87,5 % dei casi e rende +3,58 € nel 12,5 %. Non toccarlo.
