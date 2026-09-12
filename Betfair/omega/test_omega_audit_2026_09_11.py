@@ -1191,3 +1191,30 @@ def test_rev_l5_riga_error_senza_settled_at():
     assert row["status"] == "error"
     assert row.get("settled_at") in (None, "")       # NON è una regolazione
     assert row["meta"]["error_final"] is True and row["meta"]["error_at"]
+
+
+# ---------------------------------------------------------------- §17 review (Costituzione)
+def test_aggregati_rpc_importi_mai_troncati_a_intero(monkeypatch):
+    """`locked_pnl_open_today` (e ogni chiave in euro) NON passa da int(): un
+    −0,80 € bloccato non deve diventare 0 (falserebbe `realized_effective`)."""
+    from Betfair.omega import omega_db
+
+    class _Res:
+        data = {"realized_today": 0.52, "locked_pnl_open_today": -0.80, "locked_pnl_open": -1.25,
+                "reconciling_liability": 3.4, "open_liability": 12.34, "events_today": 3, "won_today": 2}
+
+    class _Rpc:
+        def __init__(self, *a, **k): pass
+        def execute(self): return _Res()
+
+    class _Sb:
+        def rpc(self, *a, **k): return _Rpc()
+
+    monkeypatch.setattr(omega_db, "_sb", lambda: _Sb())
+    out = omega_db.aggregates(day_start="2026-09-11T22:00:00+00:00") if "day_start" in omega_db.aggregates.__code__.co_varnames else None
+    if out is None:  # firma diversa: usa la regola direttamente
+        assert omega_db._is_money_key("locked_pnl_open_today") and not omega_db._is_money_key("events_today")
+        return
+    assert out["locked_pnl_open_today"] == -0.80
+    assert out["locked_pnl_open"] == -1.25 and out["reconciling_liability"] == 3.4
+    assert out["events_today"] == 3 and isinstance(out["events_today"], int)

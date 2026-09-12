@@ -17,6 +17,17 @@ logger = logging.getLogger("omega.db")
 CONTROL_ID = 1
 
 
+_MONEY_HINTS = ("realized", "liability", "locked", "pnl", "profit")
+
+
+def _is_money_key(key: str) -> bool:
+    """Chiavi degli aggregati che sono IMPORTI (euro): restano float. Le altre
+    (conteggi) tornano int. Regola per nome: `locked_pnl_open_today`,
+    `reconciling_liability`, `realized_*`… non perdono mai i centesimi."""
+    k = str(key).lower()
+    return any(h in k for h in _MONEY_HINTS)
+
+
 def _sb() -> Any:
     return get_supabase_client()
 
@@ -543,9 +554,9 @@ def aggregates(day_start=None) -> dict[str, float]:
                 # i campi in EURO restano float (AUDIT 11/09: locked_pnl_open e
                 # reconciling_liability sono importi — con int() si perdevano i
                 # centesimi e un −0,80 bloccato diventava 0)
-                money = ("realized_profit", "realized_today", "open_liability",
-                         "locked_pnl_open", "reconciling_liability")
-                return {k: (float(v) if k in money else int(v))
+                # (§17 review: anche ``locked_pnl_open_today``; regola per NOME, così
+                # una chiave nuova in euro non torna mai intera per sbaglio)
+                return {k: (float(v) if _is_money_key(k) else int(v))
                         for k, v in data.items() if v is not None}
         except Exception as ex:  # noqa: BLE001 - RPC assente (migrazione) o DB KO → legacy
             logger.debug("[omega.db] get_omega_aggregates KO → legacy: %s", str(ex)[:120])
