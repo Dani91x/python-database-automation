@@ -569,3 +569,80 @@ class TestLambdaConRipiego:
         out = self.D.live_frame(self.VUOTO, minute=40, score_home=0, score_away=0, payload=None)
         assert out["lambda_source"] == "none"
         assert out["p_total_model"] is None and out["p4_model"] is None
+
+
+# ===========================================================================
+# CERT. 12/09 - il dossier cieco va RITENTATO, non subito per sempre
+# ===========================================================================
+class TestRitentativoDelDossier:
+    """``build_prematch`` girava UNA SOLA VOLTA, alla presa in carico. Se in quel
+    momento la fixture non era abbinata, il dossier restava vuoto PER SEMPRE e il
+    bot decideva senza modello per tutta la partita. E' cosi' che tutti e 93 gli
+    eventi si sono ritrovati con ``source: "none"``."""
+    from Betfair.mike import service as S
+
+    VUOTO = {"lambda_home": None, "lambda_away": None, "source": "none"}
+    PIENO = {"lambda_home": 1.3, "lambda_away": 1.1, "source": "fixture"}
+
+    def test_un_dossier_gia_risolto_non_si_tocca(self) -> None:
+        ev = {"state": "LIVE_COVERED", "dossier": self.PIENO}
+        assert self.S.dossier_da_ritentare(ev, now_ts=1e9) is False
+
+    def test_un_dossier_cieco_si_ritenta(self) -> None:
+        ev = {"state": "LIVE_COVERED", "dossier": self.VUOTO}
+        assert self.S.dossier_da_ritentare(ev, now_ts=1e9) is True
+
+    def test_le_partite_finite_non_si_ritentano(self) -> None:
+        for st in ("SETTLED", "ERROR", "SKIPPED"):
+            ev = {"state": st, "dossier": self.VUOTO}
+            assert self.S.dossier_da_ritentare(ev, now_ts=1e9) is False
+
+    def test_non_si_martella_il_database(self) -> None:
+        """Fra due tentativi deve passare almeno la finestra dichiarata."""
+        ev = {"state": "WATCH", "dossier": {**self.VUOTO, "retry_ts": 1000.0}}
+        assert self.S.dossier_da_ritentare(ev, now_ts=1100.0, ogni=300.0) is False
+        assert self.S.dossier_da_ritentare(ev, now_ts=1299.0, ogni=300.0) is False
+        assert self.S.dossier_da_ritentare(ev, now_ts=1300.0, ogni=300.0) is True
+
+    def test_un_dossier_assente_o_rotto_si_ritenta(self) -> None:
+        for d in (None, "non un dict", {}, {"retry_ts": "x"}):
+            assert self.S.dossier_da_ritentare({"state": "WATCH", "dossier": d}, now_ts=1e9) is True
+
+    def test_quando_si_risolve_il_modello_si_accende_e_lo_dichiara(self) -> None:
+        class _DB:
+            def __init__(self): self.righe = []
+            def log(self, kind, payload, eid=None): self.righe.append((kind, payload, eid))
+
+        db = _DB()
+        tracked = {"E1": {"state": "LIVE_COVERED", "dossier": dict(self.VUOTO)}}
+        risolto = {"lambda_home": 1.42, "lambda_away": 1.08, "fixture_id": 999,
+                   "league_id": 135, "source": "fixture"}
+        import Betfair.mike.service as MS
+        vecchio = MS.D.build_prematch
+        MS.D.build_prematch = lambda eid, _db: dict(risolto)
+        try:
+            n = MS._retry_dossier(db, tracked, now_ts=1e9)
+        finally:
+            MS.D.build_prematch = vecchio
+        assert n == 1
+        assert tracked["E1"]["fixture_id"] == 999 and tracked["E1"]["league_id"] == 135
+        assert tracked["E1"]["dossier"]["lambda_home"] == 1.42
+        assert any(r[0] == "dossier_risolto" for r in db.righe), db.righe
+
+    def test_un_tentativo_fallito_non_ferma_il_ciclo(self) -> None:
+        class _DB:
+            def log(self, *a, **k): pass
+
+        tracked = {"E1": {"state": "WATCH", "dossier": dict(self.VUOTO)}}
+        import Betfair.mike.service as MS
+        vecchio = MS.D.build_prematch
+
+        def _esplode(eid, _db):
+            raise RuntimeError("database irraggiungibile")
+
+        MS.D.build_prematch = _esplode
+        try:
+            assert MS._retry_dossier(_DB(), tracked, now_ts=1e9) == 0
+        finally:
+            MS.D.build_prematch = vecchio
+        assert tracked["E1"]["dossier"]["lambda_home"] is None

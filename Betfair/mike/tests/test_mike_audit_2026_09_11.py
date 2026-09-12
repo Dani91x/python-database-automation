@@ -1029,6 +1029,8 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # (prima veniva sovrascritta al ciclo dopo e spariva), e le gambe
         # pianificate mai piazzate, che valgono zero e non sono un errore
         "loss_exit_deciso", "settle_gambe_non_piazzate",
+        # il dossier cieco viene RITENTATO: quando si risolve, il modello si accende
+        "dossier_risolto",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

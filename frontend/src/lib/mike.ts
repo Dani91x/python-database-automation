@@ -961,6 +961,9 @@ export const MIKE_ACTIVITY_KINDS = [
     // gambe pianificate e mai piazzate (importo sotto il minimo): valgono zero,
     // non sono un errore. Prima ognuna scriveva un 'error' critico a vuoto.
     'settle_gambe_non_piazzate',
+    // cert. 12/09: il dossier rimasto cieco viene ritentato; quando si risolve
+    // il modello si accende a partita in corso
+    'dossier_risolto',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -973,6 +976,7 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     size_legalized: { label: 'IMPORTO LEGALIZZATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
     loss_exit_deciso: { label: 'USCITA IN PERDITA DECISA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_gambe_non_piazzate: { label: 'GAMBE MAI PIAZZATE', cls: 'bg-white/5 text-slate-300 border-white/10' },
+    dossier_risolto: { label: 'MODELLO ACCESO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
@@ -1030,6 +1034,11 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         }
         case 'size_legalized':
             return `${role()} importo ${money('from')} → ${money('to')}`;
+        case 'dossier_risolto': {
+            const lam = Array.isArray(p.lambda) ? p.lambda : [];
+            const gol = lam.length === 2 ? ` · gol attesi ${Number(lam[0]).toFixed(2)} - ${Number(lam[1]).toFixed(2)}` : '';
+            return `modello acceso: partita abbinata${p.fonte ? ` (${String(p.fonte)})` : ''}${gol}`;
+        }
         case 'settle_gambe_non_piazzate':
             return `${String(p.quante ?? '?')} gambe pianificate e mai piazzate (importo sotto il minimo): regolate a zero, nessun effetto sul P&L`;
         case 'loss_exit_deciso': {

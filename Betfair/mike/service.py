@@ -862,6 +862,17 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
             n_new += 1
             db.log("armed", {"event": info.event_name, "ko": _iso(info.ko_at), "dossier": dossier}, eid)
 
+    # CERT. 12/09 -- RITENTATIVO DEL DOSSIER.
+    # ``build_prematch`` girava UNA SOLA VOLTA, alla presa in carico della
+    # partita. Se in quel momento la fixture non era ancora abbinata, il dossier
+    # restava vuoto PER SEMPRE: niente gol attesi, niente griglia Poisson, e il
+    # bot decideva senza modello per tutta la partita. E' cosi' che tutti e 93
+    # gli eventi si sono ritrovati con ``source: "none"``.
+    # Ora una partita ancora viva col dossier cieco riprova, al massimo ogni
+    # ``_DOSSIER_RETRY_SEC``: il catalogo di Omega si popola nel tempo, e una
+    # fixture che arriva dopo deve poter accendere il modello.
+    _retry_dossier(db, tracked, now_ts)
+
     # ciclo per partita
     n_actions = n_settled = 0
     trades_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -1944,6 +1955,52 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
             db.log("settle_gambe_non_piazzate",
                    {"quante": len(orphan_legs), "legs": orphan_legs[:10]}, event_id)
     return ok
+
+
+# ogni quanto riprovare a costruire un dossier rimasto cieco (secondi)
+_DOSSIER_RETRY_SEC = 300.0
+
+
+def dossier_da_ritentare(ev: Dict[str, Any], now_ts: float,
+                         ogni: float = _DOSSIER_RETRY_SEC) -> bool:
+    """True se questa partita vale un nuovo tentativo di dossier: e' ancora viva,
+    i gol attesi mancano, e l'ultimo tentativo e' abbastanza vecchio."""
+    if str(ev.get("state") or "") in E.TERMINAL_STATES:
+        return False
+    d = ev.get("dossier")
+    if not isinstance(d, dict):
+        return True
+    if d.get("lambda_home") and d.get("lambda_away"):
+        return False                      # gia' risolto: non si tocca
+    try:
+        ultimo = float(d.get("retry_ts") or 0.0)
+    except (TypeError, ValueError):
+        ultimo = 0.0
+    return (now_ts - ultimo) >= float(ogni)
+
+
+def _retry_dossier(db: Any, tracked: Dict[str, Dict[str, Any]], now_ts: float) -> int:
+    """Riprova il dossier delle partite vive rimaste senza gol attesi. Ritorna
+    quante sono state RISOLTE. Non solleva mai: un dossier e' un di piu'."""
+    risolte = 0
+    for eid, ev in tracked.items():
+        if not dossier_da_ritentare(ev, now_ts):
+            continue
+        try:
+            nuovo = D.build_prematch(str(eid), db)
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[mike] dossier retry %s KO: %s", eid, str(ex)[:120])
+            continue
+        nuovo["retry_ts"] = now_ts
+        ev["dossier"] = nuovo
+        if nuovo.get("lambda_home") and nuovo.get("lambda_away"):
+            ev["fixture_id"] = nuovo.get("fixture_id")
+            ev["league_id"] = nuovo.get("league_id") or ev.get("league_id")
+            risolte += 1
+            db.log("dossier_risolto", {"fixture_id": nuovo.get("fixture_id"),
+                                       "fonte": nuovo.get("source"),
+                                       "lambda": [nuovo.get("lambda_home"), nuovo.get("lambda_away")]}, eid)
+    return risolte
 
 
 def _persist(db: Any, ev: Dict[str, Any], before_sig: str) -> None:
