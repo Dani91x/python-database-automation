@@ -16,14 +16,14 @@ import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
 import { T } from '@/lib/tradeStatus';
 
 import {
-    hedgeState, lastRequestFor, marketBlocked, requestOutcome,
+    hedgeState, lastRequestFor, marketBlocked,
     tradeCommission, tradeExposureNow, tradeHold, holdReasonLabel,
     staleReason, FEED_ROW_STALE_MS,
     type FeedFreshness, type SafeMode, type SafeRequest, type SafeTrade, type SignalPlacement,
     type TradeBook,
 } from '@/lib/safeBot';
 import { safeRowStatus } from './SafeTradesTable';
-import { InvestAction } from './InvestAction';
+import { InvestAction, placementOutcome } from './InvestAction';
 import { VARIANT_STYLE, sideBadgeClass } from './variantStyles';
 
 /** Riga "importo abbinabile SUBITO": la size al miglior prezzo sul lato da
@@ -81,6 +81,8 @@ interface Props {
     freshness?: FeedFreshness | null;
     /** size minima Betfair in uso dal servizio (params_effective.min_stake) */
     minStake?: number;
+    /** cap di responsabilità per operazione (params.max_liability_per_trade) */
+    maxLiability?: number | null;
     onPlace?: (placement: SignalPlacement, size: number) => Promise<number | null>;
     onCashOut?: (trade: SafeTrade, args: { amount?: number; fraction?: number }) => Promise<void> | void;
 }
@@ -88,7 +90,7 @@ interface Props {
 export function SignalCard({
     signal, nowMs, media, placement, mode = 'paper', stake = 5, requests = [],
     trade = null, tradeBook = null, commissionPct, cashOutPending = false, freshness = null,
-    minStake, onPlace, onCashOut,
+    minStake, maxLiability, onPlace, onCashOut,
 }: Props) {
     const style = VARIANT_STYLE[signal.variant];
     const active = signal.status === 'active';
@@ -100,7 +102,10 @@ export function SignalCard({
     const blocked = trade && ['open', 'pending'].includes(trade.status)
         ? marketBlocked(tradeBook)
         : null;
-    const outcome = trade ? requestOutcome(lastRequestFor(trade.id, requests)) : null;
+    // CERT. 12/09 — l'esito va letto con `placementOutcome`, non con
+    // `requestOutcome`: per il servizio "done" comprende anche il fill PARZIALE,
+    // l'abbinamento IGNOTO e la richiesta DEDUPLICATA, che non sono "eseguito".
+    const outcome = trade ? placementOutcome(lastRequestFor(trade.id, requests)) : null;
     const canCashOut = trade != null
         && (trade.status === 'open' || (trade.status === 'hedged' && hedge != null && !hedge.complete));
     const ageBadge = freshness?.ageSec != null && freshness.ageSec * 1000 > FEED_ROW_STALE_MS ? (
@@ -149,7 +154,17 @@ export function SignalCard({
             <div className="mt-1 text-sm text-muted-foreground">
                 {signal.matchLabel}
                 <span className="mx-2 text-white/20">·</span>
-                <span className="font-mono tabular-nums">{signal.contextAtTrigger}</span>
+                {/* il punteggio del feed Betfair ha 2-3 s di ritardo sul campo e
+                    questo e' comunque il contesto AL MOMENTO DEL SEGNALE, non
+                    quello di adesso: dirlo evita di operare su una situazione
+                    gia' superata (M-21). */}
+                <span
+                    className="font-mono tabular-nums"
+                    data-testid="signal-context"
+                    title="minuto e punteggio al momento del segnale (il feed Betfair li porta con 2-3 s di ritardo): controlla il punteggio di adesso prima di piazzare"
+                >
+                    {signal.contextAtTrigger} <span className="text-slate-600">al segnale</span>
+                </span>
                 {!active && (
                     <span className="ml-2 text-[11px] uppercase tracking-wide text-amber-300/80">
                         condizioni non più valide
@@ -204,7 +219,9 @@ export function SignalCard({
                     )}
                     {outcome && (
                         <span
-                            className={`text-[10px] ${outcome.tone === 'ok' ? 'text-emerald-300' : outcome.tone === 'pending' ? 'text-amber-300' : 'text-red-300'}`}
+                            className={`text-[10px] ${outcome.tone === 'ok' ? 'text-emerald-300'
+                                : outcome.tone === 'error' || outcome.tone === 'rejected' ? 'text-red-300'
+                                    : 'text-amber-300'}`}
                             data-testid="signal-request-outcome"
                             data-tone={outcome.tone}
                             title={outcome.message ?? undefined}
@@ -224,6 +241,7 @@ export function SignalCard({
                             sizeAvailable={placement.size_available ?? signal.entrySize}
                             defaultStake={stake}
                             minStake={minStake}
+                            maxLiability={maxLiability}
                             requests={requests}
                             disabled={stale != null}
                             disabledReason={stale}

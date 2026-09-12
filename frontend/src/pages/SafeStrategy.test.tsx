@@ -446,11 +446,16 @@ describe('Safe Strategy — tennis (HIGH-3)', () => {
         const row = await screen.findByTestId('safe-trade-row');
         expect(within(row).getByText('Sinner v Alcaraz')).toBeInTheDocument();
         expect(within(row).getByText('set 1-0 · game 3-2')).toBeInTheDocument();
-        // lay 10 @3 (vince -20 / perde +10) coperto back @2.9: locked = 10 - 30/2.9 = -0.34
+        // lay 10 @3 (vince -20 / perde +10) coperto back @2.9.
+        // CERT. 12/09 — si usa la formula del SERVIZIO, non quella a precisione
+        // infinita: lo stake di chiusura e' arrotondato al centesimo (10,34) e
+        // si blocca il PEGGIORE dei due esiti (se vince -0,354 / se perde
+        // -0,340) => -0,35. La UI mostrava -0,34, un centesimo piu' ottimista
+        // di quello che il servizio avrebbe davvero incassato.
         const trigger = within(row).getByTestId('cashout-trigger');
         expect(trigger).toBeEnabled();
         // formato normativo (DESIGN_SYSTEM.md §2): virgola decimale, € dopo il numero, meno U+2212
-        expect(trigger).toHaveTextContent('−0,34 €');
+        expect(trigger).toHaveTextContent('−0,35 €');
     });
 });
 

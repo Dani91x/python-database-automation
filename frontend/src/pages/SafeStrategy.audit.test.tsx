@@ -180,13 +180,27 @@ describe('C-01 / H-03 — una sola giornata, una sola liability', () => {
             .toHaveTextContent('di cui in verifica su Betfair 117,00 €');
     });
 
-    it('pannello Rischio: "impegnato oggi" e "rischio aperto ora" sono numeri DIVERSI e dichiarati', async () => {
+    // Certificazione 12/09: la "Liability aperta" (rischio vivo ADESSO) si legge
+    // in UN SOLO posto, la sua tile. Il pannello Rischio parla solo di capitale
+    // IMPEGNATO nella giornata rispetto al cap, e lo dichiara.
+    it('pannello Rischio: SOLO "impegnato oggi / cap", con la spiegazione', async () => {
         renderPage();
         const panel = await screen.findByTestId('risk-panel');
         expect(within(panel).getByTestId('risk-liability')).toHaveTextContent('260,00 €');
         expect(within(panel).getByText(/impegnato oggi/)).toBeInTheDocument();
-        expect(within(panel).getByTestId('risk-open-liability')).toHaveTextContent('130,00 €');
-        expect(within(panel).getByTestId('risk-reconciling')).toHaveTextContent('117,00 €');
+        expect(within(panel).getByTestId('risk-explain')).toHaveTextContent(/base dei cap/);
+        // il rischio vivo NON si ripete qui: ha una sola casa
+        expect(within(panel).queryByTestId('risk-open-liability')).toBeNull();
+        expect(within(panel).queryByTestId('risk-reconciling')).toBeNull();
+    });
+
+    it('la barra della giornata NON ripete la liability aperta', async () => {
+        renderPage();
+        await screen.findByTestId('day-bar-line');
+        expect(screen.queryByTestId('day-bar-liability')).toBeNull();
+        // sta solo nella tile, con la spiegazione di cosa sia
+        const tile = screen.getByTestId('safe-kpi-liability');
+        expect(within(tile).getByTestId('safe-liability-sub')).toHaveTextContent(/rischio vivo ora/);
     });
 });
 
@@ -201,9 +215,26 @@ describe('H-16 — attività del servizio visibile', () => {
         expect(rows[0]).toHaveTextContent('BLOCCATO DAL RISCHIO');
         expect(rows[0]).toHaveTextContent('cap di liability giornaliera raggiunto');
         expect(rows[1]).toHaveTextContent('NON ENTRATO');
-        expect(rows[1]).toHaveTextContent('spread troppo ampio');
+        expect(rows[1]).toHaveTextContent('spread troppo largo fra back e lay');
         expect(rows[2]).toHaveTextContent('ORDINE PIAZZATO');
-        expect(screen.getByTestId('safe-activity-note')).toHaveTextContent('1 da guardare');
+        // "da guardare" dice ANCHE che cosa sono (prima era un numero muto)
+        const note = screen.getByTestId('safe-activity-note');
+        expect(note).toHaveTextContent('1 da guardare');
+        expect(note).toHaveTextContent(/errori, blocchi di rischio/);
+    });
+
+    it('«solo da guardare»: filtro esplicito sulle righe critiche', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByTestId('safe-activity');
+        const toggle = screen.getByTestId('safe-activity-critical-toggle');
+        expect(toggle).toHaveTextContent('solo da guardare (1)');
+        await user.click(toggle);
+        const rows = within(screen.getByTestId('safe-activity')).getAllByTestId('activity-row');
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toHaveAttribute('data-critical', '1');
+        await user.click(screen.getByTestId('safe-activity-critical-toggle'));
+        expect(within(screen.getByTestId('safe-activity')).getAllByTestId('activity-row')).toHaveLength(3);
     });
 
     it('si può filtrare per evento', async () => {

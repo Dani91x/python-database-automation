@@ -39,6 +39,11 @@ def shrunk_upper(k_l: float, n_l: float, k_g: float, g_tot: float, k_shrink: flo
     certo: con 10 casi di lega e 200 globali → 1,26 % (≈ globale 1,33 %), non 0,52 %."""
     n_l = float(n_l)
     g_tot = float(g_tot)
+    # certificazione 12/09: senza campione globale non esiste prior — prima era
+    # una ZeroDivisionError (i chiamanti interni filtrano su MIN_GLOBAL_N, ma la
+    # funzione è pubblica e riusata dal dossier di Mike)
+    if g_tot <= 0:
+        return 1.0
     if n_l <= 0:
         return p_upper(k_g, g_tot, z)
     k_eff = min(float(k_shrink), g_tot)

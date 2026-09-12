@@ -21,6 +21,7 @@ breve, condivisa fra i poller dello stesso processo), non una per evento.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -40,6 +41,30 @@ SCANNER_ALIVE_MAX_AGE_SEC = 30.0
 # diretta. Lo scanner pubblica i cambi di punteggio SUBITO (fuori throttle) con
 # poll IPS a 3s: 15s è ampiamente sopra la cadenza normale.
 DEFAULT_MAX_AGE_SEC = 15.0
+# LIMITE ASSOLUTO di eta' della riga: vale ANCHE con lo scanner vivo. Lo scanner
+# riscrive la riga a ogni cambio di quota/punteggio/minuto (throttle 2.5 s), e il
+# minuto entra nella firma critica: in-play una riga piu' vecchia di questo
+# limite NON significa "non e' cambiato nulla", significa che il feed di QUEL
+# singolo evento si e' fermato (IPS muto per il suo chunk, evento uscito dal
+# catalogo e non ancora ripulito) mentre lo scanner resta vivo per gli altri.
+# Senza questo tetto un punteggio fermo da ore veniva servito come fresco.
+# Override: SCAN_FEED_HARD_MAX_AGE_SEC (env vuota = default, mai `??`).
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        return default
+    return v if v > 0 else default
+
+
+HARD_MAX_AGE_SEC = _env_float("SCAN_FEED_HARD_MAX_AGE_SEC", 180.0)
+# RITARDO NOTO dell'IPS Betfair sul campo: il punteggio arriva 2-3 s dopo il
+# fatto reale. Va SOMMATO all'eta' della riga per sapere quanto e' vecchio
+# davvero il punteggio che si sta usando (vedi ``score_age_sec``).
+IPS_SCORE_LAG_SEC = 3.0
 # una SELECT al massimo ogni TTL per l'insieme di eventi richiesti
 DEFAULT_CACHE_TTL_SEC = 1.0
 # eventi non più richiesti da tanto escono dall'insieme letto
@@ -142,6 +167,13 @@ class ScanRowCache:
         row = self.rows_for([str(event_id)]).get(str(event_id))
         return fresh_payload(row, max_age_sec, scanner_age_sec=self.scanner_age_sec())
 
+    def row_age_for(self, event_id: str) -> Optional[float]:
+        """Età REALE (secondi) della riga del feed per l'evento; None se la riga
+        manca o il timestamp è illeggibile. Serve a DICHIARARE la freschezza,
+        non solo a filtrarla."""
+        row = self.rows_for([str(event_id)]).get(str(event_id))
+        return row_age_sec(row) if row else None
+
 
 def _fetch_status() -> Optional[Dict[str, Any]]:
     from db_client import get_supabase_client
@@ -194,11 +226,20 @@ def fresh_payload(
     Affidabile = riga riscritta entro ``max_age_sec`` OPPURE scanner vivo
     (``scanner_age_sec`` ≤ SCANNER_ALIVE_MAX_AGE_SEC): lo scanner scrive
     write-on-change, quindi con lo scanner vivo una riga vecchia è semplicemente
-    un evento in cui nulla è cambiato (0-0 fermo), non un dato stantio."""
+    un evento in cui nulla è cambiato (0-0 fermo), non un dato stantio.
+
+    MA con un TETTO ASSOLUTO (``HARD_MAX_AGE_SEC``): oltre quello nemmeno lo
+    scanner vivo rende buona la riga — è il feed di QUEL evento che si è fermato.
+    Meglio la chiamata diretta che un punteggio vecchio spacciato per fresco."""
     if not row:
         return None
     age = row_age_sec(row, now_epoch)
     if age is None:
+        return None
+    # il tetto non può essere più stretto di quello chiesto esplicitamente dal
+    # chiamante: max_age_sec resta la soglia "normale", HARD è solo il limite
+    # oltre il quale cade anche la deroga "scanner vivo".
+    if age > max(float(max_age_sec), HARD_MAX_AGE_SEC):
         return None
     alive = scanner_age_sec is not None and scanner_age_sec <= SCANNER_ALIVE_MAX_AGE_SEC
     if age > max_age_sec and not alive:
@@ -229,6 +270,19 @@ class ScanFeedScoreProvider:
     # ------------------------------------------------------------ lettura feed
     def fresh_payload(self, event_id: str) -> Optional[Dict[str, Any]]:
         return self._cache.payload_if_fresh(event_id, self.max_age_sec)
+
+    # ------------------------------------------------------------- freschezza
+    def feed_age_sec(self, event_id: str) -> Optional[float]:
+        """Età (secondi) della riga del feed per l'evento; None se assente."""
+        return self._cache.row_age_for(event_id)
+
+    def score_age_sec(self, event_id: str) -> Optional[float]:
+        """Età ONESTA del PUNTEGGIO servito: età della riga PIÙ il ritardo noto
+        dell'IPS Betfair (``IPS_SCORE_LAG_SEC``, 2-3 s fra il gol sul campo e il
+        dato pubblicato). Chi decide con soldi veri deve vedere questo numero,
+        non solo l'età della riga. None se la riga non c'è (dato dal diretto)."""
+        age = self.feed_age_sec(event_id)
+        return None if age is None else age + IPS_SCORE_LAG_SEC
 
     def get_raw_state(self, event_id: str) -> Optional[Dict[str, Any]]:
         """``state`` IPS grezzo dell'evento dal feed (None = assente/stantio)."""

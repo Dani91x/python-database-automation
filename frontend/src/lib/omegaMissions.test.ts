@@ -28,6 +28,17 @@ vi.mock('@/integrations/supabase/client', () => {
 vi.mock('@/lib/omega', () => ({
     requestManual: vi.fn(async () => 1),
     fetchOmegaEvents: vi.fn(async () => []),
+    // helper PURI usati dal pannello (semantica del modulo reale, certificata
+    // in lib/omega.test.ts): qui il mock è totale per non importare supabase
+    OMEGA_DAILY_GOAL_MAX: 100000,
+    filterEventsInWindow: (evs: { open_date?: string | null }[], nowMs: number) =>
+        evs.filter((e) => {
+            if (!e.open_date) return true;
+            const k = Date.parse(e.open_date);
+            if (!Number.isFinite(k)) return true;
+            return nowMs < k || nowMs - k <= 3 * 3600_000;
+        }),
+    eventsCacheUpdatedAt: () => null,
 }));
 
 vi.mock('@/lib/scalper', () => ({

@@ -235,6 +235,19 @@ def _feed_state_bounded(market, event_id: str, max_age: float) -> Optional[dict]
     return payload if isinstance(payload, dict) else None
 
 
+def _feed_prices_fresh(market, event_id: str) -> bool:
+    """I PREZZI del feed sono utilizzabili per una CHIUSURA (tetto DURO
+    ``CASHOUT_FEED_MAX_AGE_S``, lo stesso del cash out manuale e del bottone in
+    UI, §17.7)? Il green-up legge lo STATO (punteggio/minuto) fino a
+    ``GREENUP_MAX_AGE_S`` per non restare cieco, ma non deve mai decidere né
+    chiudere ai prezzi di un book fermo da più di 20 s (cert. 12/09): oltre il
+    tetto i prezzi si prendono dal book REST. Con un market fake (test): True."""
+    if market is not _real_market:
+        return True
+    payload, _ = _feed_row(str(event_id), hard_max_age=CASHOUT_FEED_MAX_AGE_S)
+    return isinstance(payload, dict)
+
+
 def _feed_fresh_for_decision(market, event_id: str) -> bool:
     """La riga del feed è abbastanza fresca per DECIDERE (tetto duro, senza il
     bypass "scanner vivo")? Con un market fake (test) il feed non esiste: True."""
@@ -1268,7 +1281,13 @@ def _place_one(
         if str((params or {}).get("execution_mode", "auto")) == "auto":
             db.log("paper_fill_fallback", {"event_id": ev.event_id,
                                            "trade_id": trade_id, "reason": gate_reason})
-        fill = E.paper_fill(size, best_price=price, lay_ladder=ladder, limit_price=price, side="lay")
+        # cert. 12/09: ``paper_fill`` non regala piu' fill senza controparte
+        # DICHIARATA. Quando il book non espone la ladder completa (solo i best,
+        # p.es. una lettura ridotta) si passa esplicitamente la size al best:
+        # la controparte simulata resta quella REALE del book, mai infinita.
+        best_size = float(getattr(runner, "lay_size", 0.0) or 0.0) if runner else float(sel.lay_size_available or 0.0)
+        fill = E.paper_fill(size, best_price=price, lay_ladder=ladder, limit_price=price,
+                            side="lay", best_size=best_size)
         if fill is None or fill.matched_size <= 0:
             _leg_certain_failure(db, trade_id, ev.event_id, phase, now, "paper_no_fill",
                                  base_meta={**keep_meta, "requested_size": req_size})
@@ -1628,8 +1647,9 @@ def _flumine_no_fill_error(tr: dict[str, Any], *, db, reason: str,
     """Nessun € matchato → la riserva NON diventa una posizione.
 
     AUDIT 11/09 (H-13 + M-05): la riga resta come STORIA ma TERMINALE
-    (``meta.error_final``, ``settled_at``: mai "in corso per sempre" negli
-    aggregati e nella UI) e porta ``meta.leg_failed`` — il marker degli esiti
+    (``meta.error_final`` + ``meta.error_at``, MAI ``settled_at`` — review L5:
+    mai "in corso per sempre" negli aggregati e nella UI) e porta
+    ``meta.leg_failed`` — il marker degli esiti
     CERTI negativi che libera la gamba: ``traded_legs`` la salta e l'unique
     ``uq_omega_trades_auto_leg`` (migrations/omega_models_v5.sql) la esclude,
     così un FOK ucciso non brucia la gamba per tutta la partita. Il budget dei
@@ -2025,7 +2045,10 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
         _confirm_open_trade(
             db, tr["id"], event_id=tr["event_id"], price=price, size=size,
             liability=float(tr.get("liability") or _back_liability(size, tr.get("side", "lay"), price)),
-            bet_id=None, meta={**meta_tr, "reconciled": "paper"}, mode="paper",
+            # cert. 12/09: 'reserved' è la fase della RISERVA, non di una posizione
+            # aperta (gli altri percorsi di conferma la tolgono: qui restava)
+            bet_id=None, meta={**{k: v for k, v in meta_tr.items() if k != "phase"},
+                               "reconciled": "paper"}, mode="paper",
         )
         # L-06: la conferma PAPER non era loggata da nessuna parte (attività muta)
         db.log("reconciled_paper", {"trade_id": tr["id"], "event_id": tr.get("event_id"),
@@ -2049,7 +2072,9 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 _confirm_open_trade(
                     db, tr["id"], event_id=tr["event_id"], price=price, size=size,
                     liability=_back_liability(size, tr.get("side", "lay"), price),
-                    bet_id=d.get("bet_id"), meta={**(tr.get("meta") or {}), "reconciled": "live"}, mode="live",
+                    bet_id=d.get("bet_id"),
+                    meta={**{k: v for k, v in (tr.get("meta") or {}).items() if k != "phase"},
+                          "reconciled": "live"}, mode="live",
                 )
                 db.log("reconciled_open", {"trade_id": tr["id"], "event_id": tr["event_id"], "bet_id": d.get("bet_id")})
                 n += 1
@@ -2559,6 +2584,17 @@ def refresh_events(*, market, db, now: Optional[datetime] = None) -> int:
             "away_team_id": ex.get("away_team_id"),
             "updated_at": now.isoformat(),
         })
+    if not rows:
+        # CERTIFICAZIONE 12/09 — MAI svuotare la cache su una risposta VUOTA.
+        # ``replace_events`` con lista vuota cancella TUTTA la tabella (purge
+        # dei non piu' presenti): con il refresh automatico ogni 30 minuti, un
+        # singolo errore trasparente di Betfair (risposta vuota invece di
+        # eccezione) avrebbe azzerato in silenzio la scheda Missione e il menu
+        # del Manuale. Una lista vuota non e' un'informazione: si tiene quella
+        # di prima e si dichiara l'anomalia.
+        db.log("events_refresh_vuoto", {"reason": "nessun evento dal catalogo: cache CONSERVATA",
+                                        "critical": True})
+        return 0
     db.replace_events(rows)
     return len(rows)
 
@@ -2755,17 +2791,26 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
     # cap alla LIQUIDITÀ disponibile sul lato scelto → niente fill parziali
     # (esposizione reale non tracciata). Meglio completo che parziale.
     avail = None
+    best_price = price          # miglior prezzo REALE sul lato scelto (per il paper)
     if runner:
         avail = runner.get("lay_size") if side == "lay" else runner.get("back_size")
+        bp = runner.get("lay_price") if side == "lay" else runner.get("back_price")
+        if isinstance(bp, (int, float)) and float(bp) > 1.0:
+            best_price = float(bp)
     if avail and size > float(avail):
         size = round(float(avail), 2)
     if size < min_stake:
         return {"error": f"liquidità insufficiente per lo stake minimo €{min_stake:.2f}"}
     liability = _back_liability(size, side, price)
+    manual_meta: dict[str, Any] = {"manual": True, "commission": commission}
     cap_open = params["max_open_liability"]
     if cap_open and cap_open > 0:
-        agg = db.aggregates()
-        if float(agg.get("open_liability", 0.0)) + liability > cap_open:
+        # cert. 12/09: STESSA barriera del path automatico (review H1) — il
+        # capitale impegnato include le perdite già BLOCCATE non incassate; e
+        # aggregati della giornata (RPC, una query) invece della lettura legacy
+        # di tutta la tabella a ogni ordine manuale
+        agg = db.aggregates(E.day_start_utc(now))
+        if E.open_liability_effective(agg) + liability > cap_open:
             return {"error": "max_open_liability_superato"}
 
     reserve = {
@@ -2786,7 +2831,9 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         "target": round(float(target), 2) if target else None,
         "status": "pending",
         "pnl": 0.0,
-        "meta": {"phase": "reserved", "manual": True},
+        # L-02 anche sui MANUALI (cert. 12/09): la UI legge ``meta.commission``
+        # (commissionPctOf) — senza, la riga usava il parametro corrente del form
+        "meta": {**manual_meta, "phase": "reserved"},
     }
     reserve.update(_entry_marks(market, event_id, now))
     try:
@@ -2807,7 +2854,7 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
             rid = _flumine_enqueue_place(
                 db=db, trade_id=trade_id, event_id=event_id, market_id=market_id,
                 selection_id=selection_id, side=side, price=price, size=size,
-                base_meta={"manual": True}, now=now, mode=mode)
+                base_meta=dict(manual_meta), now=now, mode=mode)
             if rid:  # include _ENQUEUE_UNKNOWN: riserva pending, MAI place REST ora
                 db.log("manual_place", {"trade_id": trade_id, "event_id": event_id,
                                         "side": side, "price": price, "size": size,
@@ -2837,7 +2884,7 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
             # La riserva resta 'pending': reconcile_pending la risolve contro
             # Betfair (match forte su customerOrderRef omega-m<id>) o la libera
             # dopo il GRACE se l'ordine non esiste davvero.
-            db.update_trade(trade_id, meta={"phase": "reserved", "manual": True,
+            db.update_trade(trade_id, meta={**manual_meta, "phase": "reserved",
                                             "reason": "place_exception_reconciling",
                                             "reconciling": True,           # H-02: stato leggibile
                                             "reconciling_since": now.isoformat(),
@@ -2850,13 +2897,26 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
                                               "err": str(ex)[:160]})
             return {"error": "place_exception_in_riconciliazione", "trade_id": trade_id}
         if not res.ok or res.size_matched <= 0:
-            db.update_trade(trade_id, status="error", meta={"reason": "live_not_matched", "order_status": res.order_status})
+            # esito CERTO (report Betfair: FOK non abbinato) -> nessun ordine reale
+            # vive. Riga TERMINALE come nel path automatico (M-05: error_final +
+            # error_at + leg_failed) e meta CONSERVATO — cert. 12/09: prima il meta
+            # veniva SOSTITUITO (manual/commissione persi) e senza i marker la
+            # tabella per partita la teneva "in corso per sempre" e senza orario.
+            db.update_trade(trade_id, status="error", pnl=0.0,
+                            meta={**manual_meta, "reason": "live_not_matched",
+                                  "order_status": res.order_status,
+                                  "leg_failed": True, "error_final": True,
+                                  "error_at": now.isoformat()})
+            db.log("manual_place_exception", {
+                "trade_id": trade_id, "event_id": event_id, "side": side,
+                "price": price, "size": size, "mode": mode,
+                "reason": "live_not_matched", "order_status": res.order_status})
             return {"error": "live_not_matched", "trade_id": trade_id}
         avg = float(res.avg_price_matched or price)
         _confirm_open_trade(
             db, trade_id, event_id=event_id, price=avg, size=res.size_matched,
             liability=_back_liability(res.size_matched, side, avg), bet_id=res.bet_id,
-            meta={"manual": True, "order_status": res.order_status}, mode="live",
+            meta={**manual_meta, "order_status": res.order_status}, mode="live",
         )
     else:  # paper
         # DEMO=LIVE: gate flumine come per il path automatico — se passa, il
@@ -2867,7 +2927,7 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
             rid = _flumine_enqueue_place(
                 db=db, trade_id=trade_id, event_id=event_id, market_id=market_id,
                 selection_id=selection_id, side=side, price=price, size=size,
-                base_meta={"manual": True}, now=now)
+                base_meta=dict(manual_meta), now=now)
             if rid:
                 db.log("manual_place", {"trade_id": trade_id, "event_id": event_id,
                                         "side": side, "price": price, "size": size,
@@ -2878,10 +2938,37 @@ def _manual_place(*, market, db, payload: dict, now: datetime) -> dict:
         if str(params.get("execution_mode", "auto")) == "auto":
             db.log("paper_fill_fallback", {"event_id": event_id, "trade_id": trade_id,
                                            "reason": gate_reason})
-        # LEGACY INVARIATO: fill simulato al prezzo scelto
+        # CERTIFICAZIONE 12/09 — PAPER = LIVE senza soldi, anche nel MANUALE.
+        # Prima questo ramo confermava il fill al prezzo scelto dall'utente
+        # senza guardare il book: (a) la liquidita' del BEST veniva spesa come
+        # se fosse disponibile a un prezzo diverso; (b) un prezzo non abbinabile
+        # (lay sotto il best lay, back sopra il best back) riempiva lo stesso,
+        # mentre in live il FOK lo avrebbe ucciso. Ora si passa dallo stesso
+        # simulatore del path automatico: ladder se c'e', altrimenti il solo
+        # livello (best, size del best), e MAI oltre il prezzo limite scelto.
+        ladder = tuple(runner.get("lay_ladder") or ()) if side == "lay" else ()
+        fill = E.paper_fill(size, best_price=float(best_price), lay_ladder=ladder,
+                            limit_price=price, side=side,
+                            best_size=(float(avail) if avail else None))
+        if fill is None or fill.matched_size <= 0:
+            # esito CERTO di non abbinamento: stessa riga terminale del live
+            # (nessun ordine vive), cosi' la tabella per partita non la tiene
+            # "in corso per sempre".
+            db.update_trade(trade_id, status="error", pnl=0.0,
+                            meta={**manual_meta, "reason": "paper_not_matched",
+                                  "leg_failed": True, "error_final": True,
+                                  "error_at": now.isoformat()})
+            db.log("manual_place_exception", {
+                "trade_id": trade_id, "event_id": event_id, "side": side,
+                "price": price, "size": size, "mode": mode,
+                "reason": "paper_not_matched"})
+            return {"error": "paper_non_abbinabile", "trade_id": trade_id}
+        avg = float(fill.avg_price)
         _confirm_open_trade(
-            db, trade_id, event_id=event_id, price=price, size=size, liability=liability,
-            bet_id=None, meta={"manual": True, "fill": "paper_at_price"}, mode="paper",
+            db, trade_id, event_id=event_id, price=avg, size=fill.matched_size,
+            liability=_back_liability(fill.matched_size, side, avg), bet_id=None,
+            meta={**manual_meta, "fill": "paper_at_price",
+                  "fully_matched": fill.fully_matched}, mode="paper",
         )
     db.log("manual_place", {"trade_id": trade_id, "event_id": event_id, "side": side,
                             "price": price, "size": size, "mode": mode})
@@ -3234,6 +3321,11 @@ def _greenup_block(tr: dict[str, Any], payload: dict) -> "tuple[Optional[dict], 
     return None, str(tr.get("phase") or "") == "ht_cs"
 
 
+# Sotto questo scarto assoluto fra mercato e modello il rapporto non e'
+# significativo: il tetto di fine gara si applica comunque.
+_FLOOR_TOLLERANZA_ASSOLUTA = 0.05
+
+
 def _greenup_prices_from_block(blk: dict, sid: int) -> "tuple[Optional[dict], Optional[str]]":
     """(prezzi della selezione, motivo di attesa). Mercato non OPEN → si aspetta."""
     if str(blk.get("status") or "OPEN").upper() != "OPEN":
@@ -3251,6 +3343,49 @@ def _greenup_prices_from_block(blk: dict, sid: int) -> "tuple[Optional[dict], Op
     return None, "selezione_non_nel_feed"
 
 
+def _goal_distance(laid: "tuple[int, int]", state: "M.LiveState") -> Optional[int]:
+    """Gol che mancano perche' il punteggio bancato sia quello finale; None se il
+    bancato e' ormai IRRAGGIUNGIBILE (il lay ha gia' vinto)."""
+    h_laid, a_laid = int(laid[0]), int(laid[1])
+    sh, sa = int(state.score_home), int(state.score_away)
+    if h_laid < sh or a_laid < sa:
+        return None
+    return (h_laid - sh) + (a_laid - sa)
+
+
+def _floor_plausibile(p_model: float, p_mkt: float, distance: Optional[int],
+                      params: dict[str, Any]) -> bool:
+    """Il tetto di fine gara puo' ALZARE il rischio stimato dal modello, ma solo
+    quando il mercato puo' saperne piu' del modello.
+
+    • distanza 0 — il punteggio bancato E' GIA' sul tabellone: il rischio e' alto
+      per definizione e un modello che dice ~0 e' quello rotto. Tetto sempre
+      valido (e' il caso della review F2).
+    • bancato irraggiungibile — il lay non puo' piu' perdere: nessuna quota puo'
+      creare un rischio che non esiste.
+    • distanza >= 1 — perche' il bancato esca serve ancora un gol nei minuti che
+      restano: e' un evento fisicamente limitato. Qui una quota che vale molte
+      volte il modello non e' informazione, e' un prezzo rotto (book a un lato,
+      civetta, selezione sbagliata). Vale solo dentro
+      ``greenup_market_floor_max_ratio`` volte il modello, o se lo scarto
+      assoluto resta sotto ``_FLOOR_TOLLERANZA_ASSOLUTA`` (fra lo 0,2% e lo 0,8%
+      il rapporto e' 4 ma il rischio e' comunque trascurabile)."""
+    if distance is None:
+        return False
+    if int(distance) <= 0:
+        return True
+    try:
+        ratio = float(params.get("greenup_market_floor_max_ratio",
+                                 omega_config.DEFAULTS["greenup_market_floor_max_ratio"]))
+    except (TypeError, ValueError):
+        ratio = float(omega_config.DEFAULTS["greenup_market_floor_max_ratio"])
+    if ratio <= 0:
+        return True
+    if p_mkt - p_model <= _FLOOR_TOLLERANZA_ASSOLUTA:
+        return True
+    return p_mkt <= p_model * ratio
+
+
 def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, int]",
                     state: "M.LiveState", half: bool, prices: dict,
                     params: Optional[dict[str, Any]] = None) -> "tuple[Optional[float], str]":
@@ -3260,8 +3395,10 @@ def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, 
     gara (review F2): dall'88′ (43′ per la gamba HT) mai sotto la P implicita del
     back: nel recupero il modello non può azzerare il rischio."""
     params = params or {}
-    back = _fnum(prices.get("back")) or 0.0
-    p_mkt = (1.0 / back) if back > 1.0 else None
+    # 12/09: la quota vale come probabilita' solo se e' LIQUIDA (stessa regola di
+    # anomaly/_ref_ok e di quote_p). Il trade 84 e' uscito a -9,73 EUR su un back
+    # 1.49 senza lato lay: una civetta, non un mercato.
+    p_mkt = M.quote_p(prices.get("back"), prices.get("back_size"))
     lam = _prematch_lambdas(db, str(tr.get("event_id") or ""), payload, state=state, params=params)
     p: Optional[float] = None
     if lam is not None:
@@ -3282,9 +3419,20 @@ def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, 
             p = None
     end_game = (half and state.minute >= 43) or (not half and state.minute >= 88)
     if p is not None:
+        p = min(1.0, max(0.0, float(p)))
         if end_game and p_mkt is not None:
-            return round(min(1.0, max(float(p), p_mkt)), 4), "model_floor_market"
-        return round(min(1.0, max(0.0, float(p))), 4), "model"
+            distance = _goal_distance(laid, state)
+            if not _floor_plausibile(p, p_mkt, distance, params):
+                db.log("greenup_quota_implausibile", {
+                    "trade_id": tr.get("id"), "event_id": tr.get("event_id"),
+                    "minute": int(state.minute), "distanza_gol": distance,
+                    "back": prices.get("back"), "back_size": prices.get("back_size"),
+                    "lay": prices.get("lay"),
+                    "p_mercato": round(p_mkt, 4), "p_modello": round(p, 4),
+                    "nota": "quota fuori scala rispetto al modello: tetto di fine gara ignorato"})
+                return round(p, 4), "model_quota_implausibile"
+            return round(min(1.0, max(p, p_mkt)), 4), "model_floor_market"
+        return round(p, 4), "model"
     if p_mkt is not None:
         return round(p_mkt, 4), "market"
     return None, "none"
@@ -3311,7 +3459,8 @@ def _greenup_decide(trigger: str, p_lose: Optional[float], locked: Optional[floa
         return "exit", f"il bancato è il punteggio corrente (P(perdita)={p_txt}): esco"
     gp = {"hold_max_risk": float(params["greenup_hold_max_risk"]),
           "risk_cap": float(params["greenup_risk_cap"]),
-          "ev_margin": float(params["greenup_ev_margin"])}
+          "ev_margin": float(params["greenup_ev_margin"]),
+          "risk_premium_pct": float(params["greenup_risk_premium_pct"])}
     return XE.decide_time_exit(p_lose, locked, hold_profit, stake, gp, loss_if_lose=loss_if_lose)
 
 
@@ -3618,6 +3767,12 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         db.update_trade(int(tr["id"]), meta=meta)
         tr["meta"] = meta
     block, half = _greenup_block(tr, payload)
+    if block is not None and not _feed_prices_fresh(market, str(tr.get("event_id") or "")):
+        # cert. 12/09: lo STATO può avere fino a GREENUP_MAX_AGE_S (90 s) per non
+        # restare ciechi, ma i PREZZI di una chiusura hanno il tetto del cash out
+        # (20 s): oltre, il blocco del feed si ignora e si va al book REST
+        # (solo se un trigger lo richiede) — mai una chiusura a quote congelate
+        block = None
     if half and minute > 45:
         return False                                   # HALF TIME SCORE: si regola all'intervallo
     sid = int(tr.get("selection_id") or 0)
@@ -4119,6 +4274,23 @@ def process_missions(*, market, db, now: datetime) -> int:
 IDLE_STATS_EVERY_S = 60.0        # review M6: a bot fermo basta un aggiornamento al minuto
 _IDLE_STATS_AT: dict[str, float] = {}
 
+# CERTIFICAZIONE 12/09 — la cache eventi (omega_events) alimenta il tab Missione
+# e il menu del Manuale. Fino a oggi la riempiva SOLO la richiesta manuale
+# "Aggiorna eventi": se l'utente non la premeva, la lista invecchiava senza
+# limite (il 12/09 mostrava 73 partite del 09/09 gia' finite, attivabili come
+# missioni). Ora il ciclo la rinfresca da solo, anche a bot fermo, al massimo
+# una volta ogni EVENTS_REFRESH_EVERY_S: una chiamata REST ogni mezz'ora.
+EVENTS_REFRESH_EVERY_S = 1800.0
+_EVENTS_REFRESH_AT: dict[str, float] = {}
+
+
+def _events_refresh_due(now: datetime) -> bool:
+    last = _EVENTS_REFRESH_AT.get("ts")
+    if last is None or now.timestamp() - last >= EVENTS_REFRESH_EVERY_S:
+        _EVENTS_REFRESH_AT["ts"] = now.timestamp()
+        return True
+    return False
+
 
 def _idle_stats_due(status: Any, now: datetime) -> bool:
     """A bot fermo gli aggregati (una RPC) e il set_control delle stats si
@@ -4256,6 +4428,16 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "manual_failed", "err": str(ex)[:160]})
         n_manual = 0
+
+    # 2-ter) CACHE EVENTI — SEMPRE (anche a bot fermo: Missione e Manuale si
+    #    usano soprattutto a bot fermo), al massimo ogni EVENTS_REFRESH_EVERY_S.
+    #    Senza questo la lista restava ferma all'ultimo "Aggiorna eventi"
+    #    premuto a mano e offriva partite gia' finite (cert. 12/09).
+    try:
+        if _events_refresh_due(now):
+            refresh_events(market=market, db=db, now=now)
+    except Exception as ex:  # noqa: BLE001 — mai fermare il ciclo per la cache
+        db.log("error", {"reason": "events_refresh_failed", "err": str(ex)[:160]})
 
     # 2-bis) MISSIONI — SEMPRE: punteggio live, fase, suggerimenti per gamba.
     try:

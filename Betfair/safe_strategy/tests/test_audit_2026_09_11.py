@@ -896,12 +896,32 @@ def test_m31_size_sotto_il_minimo_non_arriva_a_betfair():
     assert out.status == "open" and len(mk.placed) == 1
 
 
-def test_m31_il_minimo_non_vale_in_paper():
+def test_m31_il_minimo_vale_anche_in_paper():
+    """CERTIFICAZIONE 12/09 — PAPER = LIVE anche sul minimo di 2 EUR.
+
+    Fino all'11/09 il controllo M-31 stava SOLO nel ramo live: un'apertura da
+    0,50 EUR (stake piccolo, oppure size CAPPATA a ``best_size``) veniva
+    riempita in paper e RIFIUTATA in live. Il paper dichiarava cosi' posizioni
+    che il live non avrebbe mai avuto: e' una scorciatoia che regala fill.
+    Le CHIUSURE restano esenti (Betfair accetta il sotto-minimo che riduce)."""
     db = FakeDB(status="stopped")
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
                   best_size=100.0, client_ref="safe-t1", trade_id=1, now=NOW, params={})
+    assert out.status == "error"
+    assert out.fill_note.startswith("size_sotto_minimo_betfair")
+    # stessa size, ma e' una gamba di CHIUSURA: passa (come in live)
+    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
+                  best_size=100.0, client_ref="safe-t2", trade_id=2, now=NOW, params={},
+                  meta={"cashout": True, "closes_trade_id": 1})
     assert out.status == "open"
+    # size CAPPATA dalla liquidita' sotto il minimo: rifiutata come in live
+    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=5.0,
+                  best_size=1.2, client_ref="safe-t3", trade_id=3, now=NOW, params={})
+    assert out.status == "error"
+    assert out.fill_note.startswith("size_sotto_minimo_betfair")
 
 
 # ===========================================================================

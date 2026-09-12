@@ -37,11 +37,16 @@ sonda sul DB reale (stato 11/09 sera, prima di applicare nulla).
 2. **`migrations/mike_history_v2.sql`**
 3. **`migrations/safe_strategy_bot_v2.sql`**
 4. **`migrations/omega_models_v5.sql`**
+5. **`migrations/omega_models_v6.sql`** *(aggiunta 12/09 — certificazione chirurgica Omega)*
 
 `omega_models_v5.sql` è indipendente dalla catena Mike/Safe (tocca solo
 `omega_*`) e potrebbe stare ovunque nell'elenco; la sequenza sopra è quella
 con il minor numero di stati intermedi "a metà" (Mike prima, poi Safe che
 lo richiede esplicitamente in testa, poi Omega).
+**`omega_models_v6.sql` va per ULTIMA**: la sua verifica finale pretende che
+`trading_daily_history` / `trading_day_trades` abbiano UNA sola firma (quella
+a 8/4 argomenti di `mike_history_v2.sql`) e solleva un'eccezione con il
+rimedio se non è così — applicarla prima del punto 2 fallirebbe di proposito.
 
 ---
 
@@ -136,6 +141,32 @@ select public.get_omega_state();                       -- 'aggregates' deve aver
 select public.omega_aggregates_sql()->'locked_pnl_open_today';
 select indexdef from pg_indexes where indexname = 'uq_omega_trades_auto_leg';
                                                          -- deve escludere leg_failed
+```
+
+### 5. `omega_models_v6.sql` (aggiunta 12/09)
+**Fa**: ridefinisce `omega_aggregates_sql()` allineandola in due punti residui a
+`omega_engine.aggregate_trades` (S-01: `hedged_size` conta solo se NON null;
+il bloccato include anche un `pending` piazzato a copertura completa);
+ridefinisce `get_omega_missions()` con gli STESSI criteri di rischio dei KPI
+(S-02: `hedged`/flumine/riconciliazione contano come vive, le gambe di
+chiusura non sommano il loro stake in `open_liability` né in `n_open`;
+nuove chiavi `locked_pnl`, `reconciling_liability` per gamba) e manda per ogni
+trade un `meta` RIDOTTO al contratto UI + `closes_trade_id`/`settled_at`
+(S-03: prima la scheda missione leggeva `meta` che la RPC non mandava);
+REVOKE/GRANT espliciti su `get_omega_missions` (S-04); DROP IF EXISTS degli
+overload a 7/3 argomenti di `trading_daily_history`/`trading_day_trades` e
+**verifica finale** che ne resti ESATTAMENTE una firma (S-05: eccezione con
+rimedio, mai uno stato ambiguo silenzioso).
+**Se non applicata**: il servizio funziona (Python ha il proprio
+`aggregate_trades`), ma il tab Missione mostra rischio/conteggi diversi dalla
+barra di giornata e non dice mai «IN VERIFICA SU BETFAIR»; il bloccato di
+giornata dell'RPC resta 0 su un pending piazzato a copertura completa.
+**Verifica**:
+```sql
+select jsonb_object_keys(public.omega_aggregates_sql());      -- 17 chiavi (§17.3)
+select public.get_omega_missions();                             -- legs.*.trades[].meta e closes_trade_id
+select count(*) from pg_proc where proname = 'trading_daily_history';  -- 1
+select count(*) from pg_proc where proname = 'trading_day_trades';     -- 1
 ```
 
 ## Avvertenze

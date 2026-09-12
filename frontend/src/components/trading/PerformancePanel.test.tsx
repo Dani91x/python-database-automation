@@ -29,9 +29,9 @@ describe('PerformancePanel', () => {
     it('KPI dal fixture (Safe): P&L, giornate, win rate, PF, expectancy, DD, best/worst, serie', () => {
         render(<PerformancePanel rows={ROWS} period="month" onPeriodChange={() => {}} variant="safe" range={{ from: '2026-09-01', to: '2026-09-10' }} />);
         expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+360,00 €');
-        expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('commissioni ≈ 1,50 €');
+        expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('commissioni 1,50 € già dedotte dal P&L');
         expect(screen.getByTestId('kpi-days')).toHaveTextContent('2 / 1');
-        expect(screen.getByTestId('kpi-winrate')).toHaveTextContent('80 %');          // 4V / 5
+        expect(screen.getByTestId('kpi-winrate')).toHaveTextContent('80,0 %');          // 4V / 5
         expect(screen.getByTestId('kpi-winrate')).toHaveTextContent('3 chiusi o in chiusura a mercato');
         expect(screen.getByTestId('kpi-pf')).toHaveTextContent('10,00');
         expect(screen.getByTestId('kpi-expectancy')).toHaveTextContent('+72,00 €');
@@ -45,7 +45,7 @@ describe('PerformancePanel', () => {
         expect(screen.getByTestId('kpi-liab')).toHaveTextContent('50,00 €');
         expect(screen.queryByTestId('kpi-goal')).toBeNull();                          // solo Omega
         expect(screen.getByTestId('period-range')).toHaveTextContent(/1 settembre → 10 settembre 2026/);
-        expect(screen.getByRole('img', { name: 'Equity per giornata' })).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: /Equity per giornata/ })).toBeInTheDocument();
     });
 
     it('breakdown Safe: strategia, sport, origine con etichette italiane e ordinamento per P&L', () => {
@@ -54,7 +54,7 @@ describe('PerformancePanel', () => {
         const rows = within(strat).getAllByRole('row').slice(1);
         expect(rows[0]).toHaveTextContent('BASE');
         expect(rows[0]).toHaveTextContent('+400,00 €');
-        expect(rows[0]).toHaveTextContent('100 %');
+        expect(rows[0]).toHaveTextContent('100,0 %');
         expect(rows[1]).toHaveTextContent('TENNIS');
         expect(rows[1]).toHaveTextContent('−40,00 €');
         expect(within(screen.getByTestId('breakdown-sport')).getByText('⚽ Calcio')).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe('PerformancePanel', () => {
         const rows = ROWS.map((r) => ({ ...r, by_strategy: { ht_cs: { n: 1, pnl: r.pnl_realized, won: r.won, lost: r.lost } } }));
         render(<PerformancePanel rows={rows} period="30d" onPeriodChange={() => {}} variant="omega" />);
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('1/3');
-        expect(screen.getByTestId('kpi-goal')).toHaveTextContent('33 % delle giornate');
+        expect(screen.getByTestId('kpi-goal')).toHaveTextContent('33,3 % delle giornate');
         expect(within(screen.getByTestId('breakdown-strategy')).getByText('Gamba 1T (Half Time Score)')).toBeInTheDocument();
         expect(screen.queryByTestId('breakdown-sport')).toBeNull();
     });
@@ -88,5 +88,20 @@ describe('PerformancePanel', () => {
         expect(screen.getByTestId('kpi-goal')).toHaveTextContent('nessun obiettivo registrato');
         expect(screen.queryByTestId('breakdown-strategy')).toBeNull();
         expect(screen.getByText(/nessuna giornata regolata nel periodo/)).toBeInTheDocument();
+    });
+});
+
+describe('PerformancePanel — nessuno zero prima dei dati (12/09)', () => {
+    it('in caricamento senza righe: scheletro, non una fila di KPI a zero', () => {
+        render(<PerformancePanel rows={[]} period="month" onPeriodChange={() => {}} variant="safe" loading />);
+        expect(screen.getByTestId('kpi-row')).toHaveAttribute('data-loading', '1');
+        expect(screen.queryByTestId('kpi-pnl')).toBeNull();
+        expect(screen.queryByTestId('kpi-winrate')).toBeNull();
+        expect(screen.getByTestId('performance-panel')).toHaveAttribute('aria-busy', 'true');
+    });
+
+    it('a dati caricati (davvero vuoti) i KPI neutri si mostrano', () => {
+        render(<PerformancePanel rows={[]} period="month" onPeriodChange={() => {}} variant="safe" />);
+        expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+0,00 €');
     });
 });

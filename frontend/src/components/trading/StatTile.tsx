@@ -18,25 +18,39 @@ const TONE_CLS: Record<StatTone, string> = {
     teal: 'text-teal-300',
 };
 
-/** tono automatico dal segno di un valore monetario */
+/**
+ * Tono automatico dal segno di un valore monetario.
+ * Certificazione 12/09: un valore ASSENTE non è uno zero e non è un guadagno —
+ * prima `toneOf(null)` tornava 'pos' e un KPI mai calcolato si accendeva di
+ * verde. Assente = neutro.
+ */
 export function toneOf(v: number | null | undefined): StatTone {
-    return Number(v ?? 0) >= 0 ? 'pos' : 'neg';
+    if (v == null || !Number.isFinite(Number(v))) return 'plain';
+    return Number(v) >= 0 ? 'pos' : 'neg';
 }
 
-export function StatTile({ label, value, tone = 'plain', icon, sub, testId }: {
+export function StatTile({ label, value, tone = 'plain', icon, sub, hint, testId }: {
     label: string;
     value: ReactNode;
     tone?: StatTone;
     icon?: ReactNode;
     sub?: ReactNode;
+    /** UNA riga che spiega cosa guardare (tooltip): usa `TIP` di lib/tradeStatus */
+    hint?: string;
     testId?: string;
 }) {
     return (
-        <Card className="glass-card border-white/10 p-3 flex-1 min-w-[130px]" data-testid={testId ?? 'stat-tile'}>
+        <Card
+            className="glass-card border-white/10 p-3 flex-1 min-w-[130px]"
+            data-testid={testId ?? 'stat-tile'}
+            title={hint}
+        >
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400">
                 {icon}{label}
             </div>
-            <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ${TONE_CLS[tone]}`}>{value}</div>
+            <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ${TONE_CLS[tone]}`}>
+                {value}
+            </div>
             {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
         </Card>
     );

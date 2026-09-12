@@ -39,6 +39,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_ANOMALY_PARAMS: Dict[str, Any] = {
     "min_gap": 0.03,            # scarto relativo minimo fra quote della scala O/U
+    # CERTIFICAZIONE 12/09 — il riferimento della scala O/U e' un PREZZO, non
+    # una verita': se e' lui quello sbagliato, la "quota incoerente" e' un
+    # FALSO SEGNALE. Caso reale (Daegu-Yongin 1-0 al 48'): Over 7.5 offerto a
+    # 1,11 su mercato illiquido -> Over 4.5 @16,50 segnalato con "modello
+    # 90,1%" ed EV +13. I due tetti qui sotto piu' il bound del modello
+    # (vedi _Ctx.emit) rendono impossibile quella segnalazione.
+    "max_ref_gap": 1.00,        # scarto oltre il quale il RIFERIMENTO e' inaffidabile (100%)
+    "min_ref_size": 10.0,       # EUR abbinabili sul riferimento: sotto, non fa testo
     "mo_cs_gap": 0.08,          # scarto minimo P(1X2 da CS) vs P(1X2 da MO)
     "commission": 0.05,         # commissione sul profitto netto
     "min_size": 10.0,           # EUR abbinabili SUBITO al prezzo segnalato
@@ -238,6 +246,35 @@ class _Ctx:
         if side == "lay" and price > float(p["max_lay_price"]):
             return
         p_model = max(0.0, min(1.0, p_model))
+        key = runner.get("prob_key")
+        # --- BOUND DEL MODELLO (certificazione 12/09) -----------------------
+        # Per le regole che deducono la probabilita' da una quota SORELLA
+        # (``ou_ladder``, ``mo_cs``), quella probabilita' e' un limite implicito
+        # nel PREZZO di riferimento, non una stima: se il modello sa fare di
+        # meglio, la stima del modello vince quando e' piu' PRUDENTE.
+        #   back: p troppo alta gonfia l'edge  -> si prende il MINIMO
+        #   lay : p troppo bassa gonfia l'edge -> si prende il MASSIMO
+        # Cosi' un riferimento-spazzatura non puo' piu' generare un segnale:
+        # o il modello lo smentisce, o l'edge crolla sotto ``min_edge``.
+        # Le regole ``decided``/``ht_open`` NON passano di qui: la loro p (0/1)
+        # viene dal PUNTEGGIO, non da un prezzo.
+        # Un solo interruttore per "usa il modello": ``book_veto``. Spento,
+        # restano comunque le protezioni STRUTTURALI della scala (_ref_ok:
+        # liquidita' e scarto massimo del riferimento), che non dipendono da
+        # nessun modello.
+        # ``p_source`` dice alla UI DA DOVE viene il numero che mostra, cosi' il
+        # trader sa se sta guardando una stima del modello o solo un limite
+        # implicito in una quota sorella (che puo' essere illiquida).
+        p_source = "riferimento" if rule in ("ou_ladder", "mo_cs") else "punteggio"
+        if (p.get("book_veto") and rule in ("ou_ladder", "mo_cs")
+                and key and key in self.book):
+            pb = _num(self.book.get(key))
+            if pb is not None:
+                pb = max(0.0, min(1.0, pb))
+                bounded = min(p_model, pb) if side == "back" else max(p_model, pb)
+                if bounded != p_model:
+                    p_source = "modello"       # ha vinto la stima del modello
+                p_model = bounded
         edge = _edge(side, price, p_model)
         if edge < float(p["min_edge"]):
             return
@@ -245,7 +282,6 @@ class _Ctx:
         ev = _ev(side, price, p_model, comm)
         if ev <= 0:
             return
-        key = runner.get("prob_key")
         if p.get("book_veto") and key and key in self.book:
             pb = _num(self.book.get(key))
             if pb is not None and _ev(side, price, pb, comm) <= 0:
@@ -264,7 +300,7 @@ class _Ctx:
             "p_implied": round(p_implied if p_implied is not None else 1.0 / price, 6),
             "edge": round(edge, 6), "ev": round(ev, 6),
             "confidence": round(float(confidence), 4),
-            "gap": round(gap, 6), "ref": ref,
+            "gap": round(gap, 6), "ref": ref, "p_source": p_source,
             "rationale": (f"{head} {why} sul {self.score} al {self.minute}': "
                           f"edge {_pct(edge)}, {size:.0f} EUR abbinabili"),
             "minute": self.minute, "score": self.score,
@@ -272,6 +308,24 @@ class _Ctx:
 
 
 # ------------------------------------------------------------------- regole
+def _ref_ok(ctx: _Ctx, runner: Optional[dict], field: str, gap: float) -> bool:
+    """Il RIFERIMENTO della scala e' credibile? (certificazione 12/09)
+
+    Il vincolo di monotonia dice solo che UNA delle due quote e' sbagliata, non
+    quale. Prima si assumeva sempre che fosse quella del bersaglio. Un
+    riferimento e' credibile solo se:
+      1. ha liquidita' abbinabile >= ``min_ref_size`` (un'offerta-civetta da
+         pochi euro su una linea estrema non prezza nulla);
+      2. lo scarto che produce sta sotto ``max_ref_gap`` — uno scarto del
+         +1386% non e' una quota incoerente, e' un prezzo che non esiste.
+    """
+    p = ctx.p
+    if gap > float(p["max_ref_gap"]):
+        return False
+    size = _size((runner or {}).get(field))
+    return size >= float(p["min_ref_size"])
+
+
 def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
     p = ctx.p
     gap_min = float(p["min_gap"])
@@ -285,7 +339,8 @@ def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
             if u_lo and u_hi:
                 ref = _price(u_lo.get("back"))
                 cur = _price(u_hi.get("back"))
-                if ref and cur and cur >= (1.0 + gap_min) * ref:
+                if (ref and cur and cur >= (1.0 + gap_min) * ref
+                        and _ref_ok(ctx, u_lo, "back_size", cur / ref - 1.0)):
                     ctx.emit(rule="ou_ladder", market_type="OVER_UNDER",
                              market_name=f"Over/Under {hi['line']}", line=hi["line"],
                              market_id=hi["market_id"],
@@ -297,7 +352,8 @@ def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
                                   f"{_pct(cur / ref - 1.0)}"))
                 # lay(Under lo) sotto il back(Under hi): P(Under lo) <= 1/back(Under hi)
                 lay_lo = _price(u_lo.get("lay"))
-                if lay_lo and cur and lay_lo * (1.0 + gap_min) <= cur:
+                if (lay_lo and cur and lay_lo * (1.0 + gap_min) <= cur
+                        and _ref_ok(ctx, u_hi, "back_size", cur / lay_lo - 1.0)):
                     ctx.emit(rule="ou_ladder", market_type="OVER_UNDER",
                              market_name=f"Over/Under {lo['line']}", line=lo["line"],
                              market_id=lo["market_id"],
@@ -312,7 +368,8 @@ def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
             if o_lo and o_hi:
                 ref = _price(o_hi.get("back"))
                 cur = _price(o_lo.get("back"))
-                if ref and cur and cur >= (1.0 + gap_min) * ref:
+                if (ref and cur and cur >= (1.0 + gap_min) * ref
+                        and _ref_ok(ctx, o_hi, "back_size", cur / ref - 1.0)):
                     ctx.emit(rule="ou_ladder", market_type="OVER_UNDER",
                              market_name=f"Over/Under {lo['line']}", line=lo["line"],
                              market_id=lo["market_id"],
@@ -324,7 +381,8 @@ def _rule_ou_ladder(ctx: _Ctx, lines: List[dict]) -> None:
                                   f"{_pct(cur / ref - 1.0)}"))
                 # lay(Over hi) sotto il back(Over lo): P(Over hi) <= 1/back(Over lo)
                 lay_hi = _price(o_hi.get("lay"))
-                if lay_hi and cur and lay_hi * (1.0 + gap_min) <= cur:
+                if (lay_hi and cur and lay_hi * (1.0 + gap_min) <= cur
+                        and _ref_ok(ctx, o_lo, "back_size", cur / lay_hi - 1.0)):
                     ctx.emit(rule="ou_ladder", market_type="OVER_UNDER",
                              market_name=f"Over/Under {hi['line']}", line=hi["line"],
                              market_id=hi["market_id"],

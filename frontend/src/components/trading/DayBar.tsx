@@ -12,7 +12,7 @@
 import { Target } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { fmtMoney, fmtPctPoints } from '@/lib/format';
-import { T } from '@/lib/tradeStatus';
+import { T, TIP } from '@/lib/tradeStatus';
 
 export interface DayBarProps {
     /** etichetta della giornata (già formattata, es. "giovedì 10 settembre 2026") */
@@ -34,6 +34,16 @@ export interface DayBarProps {
     lockedPnl?: number | null;
     /** nota libera (es. "conta SOLO le partite piazzate oggi") */
     note?: string;
+    /**
+     * Certificazione 12/09 — le parole dei contatori sono sovrascrivibili:
+     * «operazioni» non significa la stessa cosa nei tre bot (cicli in Mike,
+     * posizioni in Omega/Safe) e le pagine erano costrette a spiegarlo nella
+     * `note`. I default restano quelli del glossario (`T.matches` /
+     * `T.operations`): chi non passa nulla non cambia di una virgola.
+     */
+    labels?: { matches?: string; operations?: string };
+    /** spiegazione dei contatori (tooltip): sostituisce quella generica */
+    countsNote?: string;
     testId?: string;
     /** override dei data-testid interni (le pagine conservano i loro storici) */
     ids?: Partial<Record<'day' | 'line' | 'counts' | 'remaining' | 'goalHit', string>>;
@@ -41,8 +51,12 @@ export interface DayBarProps {
 
 export function DayBar({
     dayLabel, realized, realizedTotal, goal, matches, operations, won, lost, live,
-    openLiability, lockedPnl, note, testId = 'day-bar', ids,
+    openLiability, lockedPnl, note, labels, countsNote, testId = 'day-bar', ids,
 }: DayBarProps) {
+    const matchesLabel = labels?.matches?.trim() || T.matches;
+    const operationsLabel = labels?.operations?.trim() || T.operations;
+    const matchesTip = countsNote?.trim() || TIP.matches;
+    const operationsTip = countsNote?.trim() || TIP.operations;
     const tid = {
         day: ids?.day ?? 'day-bar-day',
         line: ids?.line ?? 'day-bar-line',
@@ -83,24 +97,24 @@ export function DayBar({
                 className="text-sm text-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums"
                 data-testid={tid.line}
             >
-                {hasGoal && <span>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
+                {hasGoal && <span title={TIP.goalToday}>{T.goalToday} <b className="text-secondary">{fmtMoney(g)}</b></span>}
                 {hasGoal && <span className="text-slate-600" aria-hidden>·</span>}
                 {(matches != null || operations != null) && (
                     <>
                         <span data-testid={tid.counts}>
-                            {matches != null && <>{T.matches} <b className="text-slate-100">{matches}</b></>}
+                            {matches != null && <span title={matchesTip}>{matchesLabel} <b className="text-slate-100">{matches}</b></span>}
                             {matches != null && operations != null && ' · '}
-                            {operations != null && <>{T.operations} <b className="text-slate-100">{operations}</b></>}
+                            {operations != null && <span title={operationsTip}>{operationsLabel} <b className="text-slate-100">{operations}</b></span>}
                             {(won != null || lost != null) && (
-                                <> · <b className="text-emerald-400">{won ?? 0}V</b> <b className="text-red-400">{lost ?? 0}P</b></>
+                                <> · <span title={TIP.winLoss}><b className="text-emerald-400">{won ?? 0}V</b> <b className="text-red-400">{lost ?? 0}P</b></span></>
                             )}
-                            {live != null && live > 0 && <> · <b className="text-sky-300">{live}</b> {T.live}</>}
+                            {live != null && live > 0 && <> · <span title={TIP.liveCount}><b className="text-sky-300">{live}</b> {T.live}</span></>}
                         </span>
                         <span className="text-slate-600" aria-hidden>·</span>
                     </>
                 )}
                 {real !== null && (
-                    <span>{T.realizedToday} <b className={real >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtMoney(real, { signed: true })}</b></span>
+                    <span title={TIP.realizedToday}>{T.realizedToday} <b className={real >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtMoney(real, { signed: true })}</b></span>
                 )}
                 {hasGoal && real !== null && <span className="text-slate-600" aria-hidden>·</span>}
                 {hasGoal && real !== null && (remaining > 0 ? (
@@ -111,16 +125,21 @@ export function DayBar({
                         {real > g ? ` (${fmtMoney(real - g, { signed: true })} oltre)` : ''}
                     </span>
                 ))}
-                {openLiability != null && openLiability > 0 && (
+                {/* §6: la liability si mostra SEMPRE se il bot la fornisce, anche
+                    a zero — prima spariva sotto lo zero e «nessuna esposizione»
+                    diventava indistinguibile da «dato non passato», mentre il
+                    P&L bloccato a zero restava a schermo: due regole per due
+                    grandezze gemelle. */}
+                {openLiability != null && (
                     <>
                         <span className="text-slate-600" aria-hidden>·</span>
-                        <span>{T.openLiability} <b className="text-orange-400" data-testid="day-bar-liability">{fmtMoney(openLiability)}</b></span>
+                        <span title={TIP.openLiability}>{T.openLiability} <b className="text-orange-400" data-testid="day-bar-liability">{fmtMoney(openLiability)}</b></span>
                     </>
                 )}
                 {lockedPnl != null && (
                     <>
                         <span className="text-slate-600" aria-hidden>·</span>
-                        <span>{T.lockedPnl} <b className={lockedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'} data-testid="day-bar-locked">{fmtMoney(lockedPnl, { signed: true })}</b></span>
+                        <span title={TIP.lockedPnl}>{T.lockedPnl} <b className={lockedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'} data-testid="day-bar-locked">{fmtMoney(lockedPnl, { signed: true })}</b></span>
                     </>
                 )}
                 {realizedTotal != null && (

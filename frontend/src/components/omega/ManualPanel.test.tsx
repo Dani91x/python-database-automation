@@ -49,7 +49,7 @@ vi.mock('@/lib/useScanLiveFeed', () => ({
     liveScoreLabel: () => null,
 }));
 
-import ManualPanel, { manualRequestText, MANUAL_STATUS_LABEL, MANUAL_BOOK_STALE_S } from './ManualPanel';
+import ManualPanel, { manualRequestText, manualRequestWhen, MANUAL_STATUS_LABEL, MANUAL_BOOK_STALE_S } from './ManualPanel';
 import { requestManual, fetchOmegaMarket } from '@/lib/omega';
 import { toast } from 'sonner';
 
@@ -67,9 +67,12 @@ function placeCalls(): Record<string, unknown>[] {
         .map((c) => (c[1] ?? {}) as Record<string, unknown>);
 }
 
+// audit 12/09: il menu elenca SOLO le partite ancora operabili (finestra
+// operativa) — il calcio d'inizio della fixture è relativo ad ADESSO
 const EVENTO = {
-    event_id: 'ev1', name: 'Roma v Lazio', open_date: '2026-09-11T18:00:00Z',
-    updated_at: '2026-09-11T19:59:00Z',
+    event_id: 'ev1', name: 'Roma v Lazio',
+    open_date: new Date(Date.now() + 30 * 60_000).toISOString(),
+    updated_at: new Date().toISOString(),
     markets: [{ market_id: '1.777', market_name: 'Risultato Corretto', market_type: 'CORRECT_SCORE', total_matched: 5000 }],
 };
 
@@ -168,6 +171,12 @@ describe('ManualPanel — il payload è ESATTAMENTE il runner scelto', () => {
         await setup(user);
         await user.click(screen.getByRole('button', { name: 'BACK' }));
         await pickRunner(user, '3 - 2');
+        // CERT. 12/09: a "Target 5 €" su quota 95 lo stake sarebbe 0,06 €, sotto
+        // il minimo Betfair del BACK (2 €): il bottone ora è spento apposta.
+        await user.click(screen.getByRole('button', { name: /Stake €/i }));
+        const importo = screen.getByRole('spinbutton', { name: /stake/i });
+        await user.clear(importo);
+        await user.type(importo, '3');
 
         await user.click(screen.getByRole('button', { name: /Piazza BACK \(paper\)/i }));
         await waitFor(() => expect(placeCalls()).toHaveLength(1));
@@ -303,8 +312,10 @@ describe('manualRequestText — gli esiti della coda sono in ITALIANO', () => {
     it('il motivo del fallimento viene mostrato da error/err/reason', () => {
         expect(manualRequestText({ kind: 'place', status: 'error', result: { error: 'INSUFFICIENT_FUNDS' } }).detail)
             .toBe('INSUFFICIENT_FUNDS');
+        // CERT. 12/09: il motivo passa dal dizionario italiano di Omega
+        // (omegaReasonText): mai una chiave snake_case sotto gli occhi del trader
         expect(manualRequestText({ kind: 'cashout', status: 'error', result: { reason: 'prezzi_non_disponibili' } }).detail)
-            .toBe('prezzi_non_disponibili');
+            .toBe('prezzi di chiusura non disponibili');
         expect(manualRequestText({ kind: 'place', status: 'done', result: null }).detail).toBeNull();
     });
 
@@ -336,14 +347,60 @@ describe('ManualPanel — niente richiesta senza i dati minimi', () => {
         expect(placeCalls()).toEqual([]);
     });
 
-    it('quota azzerata: errore esplicito e NESSUNA richiesta', async () => {
+    it('quota azzerata: bottone SPENTO col motivo e NESSUNA richiesta', async () => {
         const user = userEvent.setup();
         await setup(user);
         await pickRunner(user, '3 - 2');
         const quota = screen.getByRole('spinbutton', { name: /quota/i });
         await user.clear(quota);
+        // CERT. 12/09: il blocco arriva PRIMA del click (non un toast dopo),
+        // e senza quota valida l'anteprima del rischio non inventa un numero
+        await waitFor(() => expect(screen.getByRole('button', { name: /Piazza LAY/i })).toBeDisabled());
+        expect(screen.getByTestId('manual-place-block')).toHaveTextContent('quota maggiore di 1');
+        expect(screen.getByTestId('manual-preview-liability')).toHaveTextContent('\u2014');
         await user.click(screen.getByRole('button', { name: /Piazza LAY/i }));
-        await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Imposta una quota valida'));
         expect(placeCalls()).toEqual([]);
+        void toast;
+    });
+});
+
+// ================================ 7. AUDIT 12/09 — chiarezza della schermata
+describe('ManualPanel — audit 12/09', () => {
+    it('l’orario di una richiesta di OGGI è l’ora, quello di un altro giorno porta la data', () => {
+        const oggi = '2026-09-12T13:30:00Z';
+        expect(manualRequestWhen(oggi, '2026-09-12')).toMatch(/^\d{2}:\d{2}$/);
+        // bug: "15:30" e "17:13" nello stesso elenco sembravano fuori ordine,
+        // in realtà le 17:13 erano di tre giorni prima
+        expect(manualRequestWhen('2026-09-09T15:13:00Z', '2026-09-12')).toMatch(/·/);
+    });
+
+    it('il menu elenca SOLO le partite ancora operabili', async () => {
+        data.events = [
+            EVENTO,
+            { ...EVENTO, event_id: 'vecchio', name: 'Finita v Finita',
+              open_date: new Date(Date.now() - 26 * 3600_000).toISOString() },
+        ];
+        render(<ManualPanel />);
+        await waitFor(() => expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('Roma v Lazio'));
+        expect(screen.getAllByRole('combobox')[0]).not.toHaveTextContent('Finita v Finita');
+        expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('scegli evento (1)');
+    });
+
+    it('cache con sole partite finite: lo dice invece di offrire mercati chiusi', async () => {
+        data.events = [{ ...EVENTO, open_date: new Date(Date.now() - 26 * 3600_000).toISOString() }];
+        render(<ManualPanel />);
+        expect(await screen.findByTestId('manual-events-note'))
+            .toHaveTextContent(/nessuna partita nella finestra operativa/);
+    });
+
+    it('la modalità parte da quella della PAGINA e lo scarto è dichiarato', async () => {
+        const user = userEvent.setup();
+        render(<ManualPanel pageMode="live" />);
+        // nessuno scarto all'avvio: il bottone è quello LIVE
+        await waitFor(() => expect(screen.getByRole('button', { name: /Piazza LAY/i })).toHaveTextContent('SOLDI VERI'));
+        expect(screen.queryByTestId('manual-mode-mismatch')).toBeNull();
+        // l'operatore passa a PAPER: la differenza con la pagina è scritta
+        await user.click(screen.getByRole('button', { name: 'PAPER' }));
+        expect(await screen.findByTestId('manual-mode-mismatch')).toHaveTextContent(/PAPER.*pagina è in.*LIVE/);
     });
 });

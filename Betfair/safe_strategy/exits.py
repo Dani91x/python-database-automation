@@ -82,12 +82,17 @@ DEFAULT_EXIT_PARAMS: dict[str, Any] = {
     # USCITE IN PROFITTO (a tempo / take-profit) con P&L bloccato < 0: decisione
     # a MODELLO sulla probabilità residua di perdere la posizione (decide_time_exit):
     #   p_lose ≤ hold_max_risk            → si TIENE fino al settlement (margine ampio)
-    #   p_lose ≥ risk_cap                 → si ESCE (rischio troppo alto)
     #   locked ≥ ev_hold − ev_margin      → si ESCE (tenere non rende di più)
+    #   p_lose ≥ risk_cap                 → si VUOLE uscire e si accetta di pagare
+    #                                       fino a risk_premium_pct della liability
+    #                                       oltre l'EV del tenere — non di più
+    #                                       (12/09: il tetto secco chiudeva in
+    #                                       perdita posizioni che poi VINCEVANO)
     # Le uscite in PERDITA (gol subito, rosso, obbligo tennis) restano incondizionate.
     "hold_max_risk": 0.02,
     "risk_cap": 0.10,
     "ev_margin": 0.10,
+    "risk_premium_pct": 0.05,
     # TRADE DI MODELLO (decide_model): evento avverso se P(perdita) > model_exit_p_lose;
     # take-profit a model_take_profit_frac del profitto massimo; cash-out quasi
     # gratis quando P(perdita) <= model_free_cashout_p_lose e P&L bloccato >= 0
@@ -202,6 +207,17 @@ FEED_FRESH_S = 20.0
 # TETTO DURO di freschezza (M-24): oltre questo, la riga non vale mai, nemmeno
 # con l'heartbeat dello scanner vivo.
 FEED_HARD_MAX_S = 120.0
+# CERTIFICAZIONE 12/09 — tolleranza dedicata all'HEARTBEAT dello scanner.
+# L'heartbeat risponde a una domanda DIVERSA dalla riga: non "questo prezzo è
+# fresco?" ma "lo scanner è vivo?". ``service._STATUS_PERIOD_SEC`` lo riscrive
+# ogni 10 s, quindi con la vecchia soglia di 20 s il margine era di UN SOLO
+# giro: un tick lungo (refresh catalogo di due sport, poll REST dei mercati
+# scoperti, latenza Supabase) bastava a far scadere l'heartbeat e a CONGELARE
+# di colpo ogni ingresso e ogni uscita automatica di tutte le posizioni.
+# 45 s = 4 battiti: lo scanner davvero morto si riconosce comunque in meno di
+# un minuto, e la freschezza del PREZZO resta garantita dalle altre due
+# soglie, che NON cambiano (riga ≤ 20 s, tetto duro 120 s).
+SCANNER_HEARTBEAT_MAX_S = 45.0
 
 TRACK_KEY = "exit_track"          # meta.exit_track: stato del tracciamento
 REQUEST_KEY = "exit_requested"    # meta.exit_requested: uscita richiesta/inviata
@@ -242,7 +258,18 @@ def merge_exit_params(raw: Any) -> dict[str, Any]:
     out["residual_max_attempts"] = int(min(100, max(0, _f(out.get("residual_max_attempts"), 15))))
     out["hold_max_risk"] = float(min(1.0, max(0.0, _f(out.get("hold_max_risk"), 0.02))))
     out["risk_cap"] = float(min(1.0, max(0.0, _f(out.get("risk_cap"), 0.10))))
+    # CERTIFICAZIONE 12/09 — le due soglie non possono contraddirsi: sopra
+    # ``risk_cap`` si esce SEMPRE, quindi una zona "tengo fino al settlement"
+    # oltre quel tetto non puo' esistere. Con parametri incoerenti dell'utente
+    # (hold_max_risk > risk_cap) la fascia in mezzo era decisa dall'ORDINE dei
+    # controlli, non da una regola. Clamp dichiarato: la UI legge i valori
+    # EFFETTIVI da qui (params_effective), quindi l'utente vede il valore vero.
+    if out["hold_max_risk"] > out["risk_cap"]:
+        out["hold_max_risk"] = out["risk_cap"]
     out["ev_margin"] = float(max(0.0, _f(out.get("ev_margin"), 0.10)))
+    # premio di rischio: frazione della liability che si accetta di pagare, sopra
+    # il tetto, per comprare la certezza. 0 = mai oltre l'EV; 1 = tetto secco.
+    out["risk_premium_pct"] = float(min(1.0, max(0.0, _f(out.get("risk_premium_pct"), 0.05))))
     out["model_exit_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_exit_p_lose"), 0.10))))
     out["model_take_profit_frac"] = float(min(1.0, max(0.0, _f(out.get("model_take_profit_frac"), 0.8))))
     out["model_free_cashout_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_free_cashout_p_lose"), 0.005))))
@@ -340,10 +367,16 @@ def parse_ts(v: Any) -> Optional[float]:
 def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
                   scanner_ts: Optional[float] = None,
                   max_age_s: float = FEED_FRESH_S,
-                  hard_max_age_s: float = FEED_HARD_MAX_S) -> bool:
-    """La riga del feed è utilizzabile per una chiusura: aggiornata da ≤ max_age_s
-    OPPURE scanner vivo (heartbeat ≤ max_age_s: la riga non cambia perché non è
-    cambiato nulla, non perché il feed è morto).
+                  hard_max_age_s: float = FEED_HARD_MAX_S,
+                  scanner_max_age_s: float = SCANNER_HEARTBEAT_MAX_S) -> bool:
+    """La riga del feed è utilizzabile per una chiusura: aggiornata da
+    ≤ ``max_age_s`` OPPURE scanner vivo (heartbeat ≤ ``scanner_max_age_s``: la
+    riga non cambia perché non è cambiato nulla, non perché il feed è morto).
+
+    Le due soglie sono DIVERSE di proposito (certificazione 12/09): la riga
+    misura la freschezza del PREZZO (20 s), l'heartbeat misura solo se lo
+    scanner respira e viene riscritto ogni 10 s — a 20 s il margine era di un
+    solo giro e un tick lungo congelava tutte le uscite automatiche.
 
     TETTO DURO (M-24): oltre ``hard_max_age_s`` la riga NON è mai utilizzabile,
     nemmeno con lo scanner vivo — uno scanner che non riscrive quella partita da
@@ -355,12 +388,13 @@ def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
         return False
     if ts is not None and now_ts - ts <= max_age_s:
         return True
-    return scanner_ts is not None and now_ts - float(scanner_ts) <= max_age_s
+    return scanner_ts is not None and now_ts - float(scanner_ts) <= float(scanner_max_age_s)
 
 
 def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
                      hold_profit: float, stake: Any, params: dict[str, Any],
-                     *, loss_if_lose: Optional[float] = None) -> tuple[str, str]:
+                     *, loss_if_lose: Optional[float] = None,
+                     model_blind: bool = False) -> tuple[str, str]:
     """Decisione a MODELLO per un'uscita in PROFITTO (a tempo / take-profit):
     ('exit'|'hold', motivo). PURA.
 
@@ -373,26 +407,83 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
 
     Regole: locked ≥ 0 → EXIT (profitto: come da manuale). Altrimenti
     p_lose ≤ hold_max_risk → HOLD (margine ampio, si tiene fino al settlement);
-    p_lose ≥ risk_cap → EXIT; ev_hold = (1−p)·hold_profit − p·loss_if_lose e
-    locked ≥ ev_hold − ev_margin → EXIT (tenere non rende di più); altrimenti
-    HOLD (si ricontrolla al ciclo successivo). p_lose ignoto → HOLD."""
+    ev_hold = (1−p)·hold_profit − p·loss_if_lose e locked ≥ ev_hold − ev_margin
+    → EXIT (tenere non rende di più); altrimenti HOLD (si ricontrolla al ciclo
+    successivo). p_lose ignoto → HOLD.
+
+    CERTIFICAZIONE 12/09 — ``risk_cap`` non e' piu' un'uscita A QUALUNQUE PREZZO.
+    Su un lay la liability e' gia' impegnata all'ingresso: chiudere non riduce il
+    rischio preso, trasforma una distribuzione in una certezza. Se quella certezza
+    vale meno del tenere, uscire distrugge valore e basta. Casi veri di Omega, tutti
+    e due su lay che hanno poi VINTO:
+      • trade 88 (Lazio-Milan, 67′): P=20,7 % ≥ 10 % → uscita a −8,16 mentre
+        EV(tengo) era −5,03. Realizzato −7,77 contro un lay vincente (+0,65).
+      • trade 84 (VJS-Inter 2, 91′): stessa regola su una quota rotta, −9,73.
+    Ora sopra ``risk_cap`` si esce solo se il prezzo vale almeno l'EV del tenere
+    meno ``ev_margin`` e meno un PREMIO DI RISCHIO pari a ``risk_premium_pct``
+    della liability: si paga per la certezza, ma una cifra limitata e dichiarata.
+    Il controllo del rischio vero sta all'INGRESSO (dimensionamento) e nel
+    ``daily_loss_cap``, non in una chiusura in perdita a mercato.
+
+    ``model_blind=True`` (dal 95': vedi ``model_is_blind``): ``p_lose`` viene
+    SCARTATA. Non e' una stima, e' il pavimento della curva dei gol residui, e
+    dichiarare "margine ampio: P(perdita)=0,2%" al 96' e' un numero FALSO
+    mostrato all'utente su cui si decide di tenere una posizione mentre restano
+    minuti di recupero. Senza probabilita' la regola resta quella prudente gia'
+    esistente: si esce se il P&L bloccato e' >= 0, altrimenti si tiene (mai
+    cristallizzare una perdita su un dato che non c'e')."""
     if locked_pnl is not None and float(locked_pnl) >= 0.0:
         return "exit", f"profitto bloccato {_eur(locked_pnl)}: esco"
+    if model_blind:
+        p_lose = None
     if p_lose is None:
         return "hold", "P(perdita) non stimabile e chiusura in perdita: tengo"
     p = min(1.0, max(0.0, float(p_lose)))
-    if p <= float(params.get("hold_max_risk") or 0.0):
+    # "sopra il tetto" (risk_cap) vince su "margine ampio" (hold_max_risk): con
+    # hold_max_risk >= risk_cap (parametri incoerenti dell'utente) l'hold
+    # scavalcherebbe il tetto di rischio. Sopra il tetto NON si esce piu' a
+    # qualunque prezzo (12/09): si esce al prezzo che lo vale, premio incluso.
+    # CERTIFICAZIONE 12/09 — ``_f(..., 1.0)`` e NON ``or 1.0``: con
+    # ``risk_cap = 0`` (l'utente che vuole "a qualunque rischio, esco") il
+    # vecchio ``or`` lo trasformava in 1.0, cioe' nel tetto DISATTIVATO —
+    # l'esatto contrario di quanto chiesto. Solo un valore assente/illeggibile
+    # significa "nessun tetto".
+    cap = _f(params.get("risk_cap"), 1.0)
+    sopra_il_tetto = p >= cap
+    if not sopra_il_tetto and p <= _f(params.get("hold_max_risk"), 0.0):
         return "hold", f"margine ampio: P(perdita)={p * 100:.1f}%, tengo fino al settlement"
     loss = _f(loss_if_lose, _f(stake, 0.0)) if loss_if_lose is not None else _f(stake, 0.0)
-    ev_hold = round((1.0 - p) * float(hold_profit) - p * max(0.0, loss), 2)
+    loss = max(0.0, loss)
+    ev_hold = round((1.0 - p) * float(hold_profit) - p * loss, 2)
     locked = float(locked_pnl) if locked_pnl is not None else None
-    if p >= float(params.get("risk_cap") or 1.0):
-        return "exit", (f"rischio alto: P(perdita)={p * 100:.1f}% >= "
-                        f"{float(params.get('risk_cap') or 1.0) * 100:.0f}%, esco")
-    if locked is not None and locked >= ev_hold - float(params.get("ev_margin") or 0.0):
+    soglia = ev_hold - _f(params.get("ev_margin"), 0.0)
+    premio = 0.0
+    if sopra_il_tetto:
+        # Sopra il tetto di rischio si VUOLE uscire e si accetta di pagare un
+        # premio per la certezza — ma un premio LIMITATO, non qualunque prezzo.
+        # ``risk_premium_pct`` >= 1 resta la via d'uscita incondizionata per chi
+        # la vuole davvero: sopra il tetto si esce e basta.
+        pct = _f(params.get("risk_premium_pct"), 0.0)
+        if pct >= 1.0:
+            return "exit", (f"rischio alto: P(perdita)={p * 100:.1f}% >= "
+                            f"{cap * 100:.0f}%, esco")
+        premio = round(loss * pct, 2)
+        soglia -= premio
+    if locked is not None and locked >= soglia:
+        if sopra_il_tetto:
+            return "exit", (f"rischio alto: P(perdita)={p * 100:.1f}% >= {cap * 100:.0f}% "
+                            f"e il prezzo lo vale (bloccato {_eur(locked)} vs "
+                            f"EV(tengo)={_eur(ev_hold)}, premio {_eur(premio)}), esco")
         return "exit", (f"tenere non rende: EV(tengo)={_eur(ev_hold)} vs bloccato "
                         f"{_eur(locked)}, P(perdita)={p * 100:.1f}%, esco")
     lk = "n/d" if locked is None else _eur(round(locked, 2))   # review HIGH-4: mai TypeError
+    if sopra_il_tetto:
+        if locked is None:
+            return "hold", (f"rischio alto (P(perdita)={p * 100:.1f}%) ma il P&L di una "
+                            f"chiusura non e' calcolabile: non cristallizzo al buio, tengo")
+        return "hold", (f"rischio alto (P(perdita)={p * 100:.1f}%) ma uscire ora costa "
+                        f"troppo: bloccato {lk} sotto EV(tengo)={_eur(ev_hold)} "
+                        f"anche col premio di rischio {_eur(premio)}, tengo")
     return "hold", (f"EV(tengo)={_eur(ev_hold)} > bloccato {lk}, "
                     f"P(perdita)={p * 100:.1f}%: tengo")
 
@@ -784,6 +875,8 @@ def _decide_tennis(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitD
 # TRADE DI MODELLO: situazione (pura) + decisione a numeri (pura)
 # ---------------------------------------------------------------------------
 _OU_LINE_RE = re.compile(r"(\d+)[._](\d)")
+# market_type Betfair 'OVER_UNDER_25' -> 2.5 (nessun separatore fra le cifre)
+_OU_TYPE_RE = re.compile(r"OVER_UNDER_(\d)(\d)$", re.IGNORECASE)
 _OVER_RE = re.compile(r"\bover\b", re.IGNORECASE)
 _UNDER_RE = re.compile(r"\bunder\b", re.IGNORECASE)
 _YES_RE = re.compile(r"^\s*(yes|s[iì])\s*$", re.IGNORECASE)
@@ -798,7 +891,14 @@ def ou_line(trade: dict[str, Any]) -> Optional[float]:
     ln = meta.get("line")
     if isinstance(ln, (int, float)) and not isinstance(ln, bool):
         return float(ln)
-    for src in (str(trade.get("market_type") or ""), str(trade.get("selection_name") or "")):
+    mt = str(trade.get("market_type") or "").strip()
+    m = _OU_TYPE_RE.match(mt)
+    if m:
+        # 'OVER_UNDER_25' -> 2.5: prima la regex con separatore non lo leggeva e
+        # una linea O/U senza meta.line e con nome selezione atipico non
+        # risultava mai "decisa contro"
+        return float(f"{m.group(1)}.{m.group(2)}")
+    for src in (mt, str(trade.get("selection_name") or "")):
         m = _OU_LINE_RE.search(src.replace(" ", ""))
         if m:
             return float(f"{m.group(1)}.{m.group(2)}")
@@ -840,17 +940,52 @@ def line_decided_against(trade: dict[str, Any], sh: Optional[int], sa: Optional[
     return False
 
 
+# ---------------------------------------------------------------------------
+# CECITA' DEL MODELLO oltre il recupero (certificazione 12/09)
+# ---------------------------------------------------------------------------
+# Oltre il 90'+recupero i tassi di gol residui di ``live_engine`` tornano il
+# loro PAVIMENTO: il modello non dice piu' "e' quasi certo", dice "e' finita la
+# tabella". Misurato sul book: 85' -> P(perdita) 72,2%, 94' -> 95,9%, dal 95'
+# in poi 99,8% PIATTO fino al 120'. Una P(perdita) di 0,2% al 96' non e' una
+# misura: e' un artefatto, e sotto ``hold_max_risk`` fa TENERE una posizione
+# mentre restano 5-8 minuti di recupero da giocare (si puo' perdere tutto).
+# In quel regime la probabilita' del MODELLO non si usa per decidere di tenere.
+_BLIND_MINUTE_FALLBACK = 95.0   # 90' + live_engine.INJURY_TIME_MIN
+
+
+def model_is_blind(minute: Any, params: Optional[dict[str, Any]] = None) -> bool:
+    """True quando il minuto e' oltre il recupero modellato (``opportunity.
+    model_is_blind``): le probabilita' del modello collassano a 0/1 solo perche'
+    la curva dei gol residui e' esaurita.
+
+    Import PIGRO e guardato: ``exits`` resta importabile anche senza il motore
+    delle opportunita' (che tira dentro lo stack ``live_engine``); senza di
+    esso vale la soglia di riserva 90'+5'."""
+    m = _int(minute)
+    if m is None:
+        return False
+    try:
+        from .opportunity import model_is_blind as _mib
+
+        return bool(_mib(m, params))
+    except Exception:  # noqa: BLE001 - mai far cadere una decisione di uscita
+        return float(m) >= _BLIND_MINUTE_FALLBACK
+
+
 def model_situation(trade: dict[str, Any], meta: dict[str, Any], payload: Optional[dict[str, Any]],
                     params: dict[str, Any]) -> dict[str, Any]:
     """Fatti del tracciamento utili alla decisione a modello (PURA):
       adverse_event    'gol' | 'rosso' (calcio, dopo l'ingresso) |
                        'due_game_persi_di_fila' | 'set_perso' (tennis) | None
       not_before_ts    evento + ritardo di assestamento (calcio), 0 altrimenti
-      decided_against  linea già decisa contro (calcio)"""
+      decided_against  linea già decisa contro (calcio)
+      minute           minuto corrente dal feed (None = ignoto/tennis)
+      model_blind      oltre il recupero modellato: la P del modello non vale"""
     tr = (meta or {}).get(TRACK_KEY)
     tr = tr if isinstance(tr, dict) else {}
     payload = payload if isinstance(payload, dict) else {}
-    out: dict[str, Any] = {"adverse_event": None, "not_before_ts": 0.0, "decided_against": False}
+    out: dict[str, Any] = {"adverse_event": None, "not_before_ts": 0.0,
+                           "decided_against": False, "minute": None, "model_blind": False}
     if is_tennis(trade):
         if "entry_sets" not in tr or tr.get("last_sets") is None:
             return out
@@ -864,6 +999,9 @@ def model_situation(trade: dict[str, Any], meta: dict[str, Any], payload: Option
             out["adverse_event"] = "due_game_persi_di_fila"
         return out
     sh, sa = _int(payload.get("score_home")), _int(payload.get("score_away"))
+    minute = _int(payload.get("minute"))
+    out["minute"] = minute
+    out["model_blind"] = model_is_blind(minute, params)
     out["decided_against"] = line_decided_against(trade, sh, sa)
     if out["decided_against"]:
         out["not_before_ts"] = _after(tr, "last_goal_ts", params)
@@ -889,27 +1027,40 @@ def decide_model(*, p_lose: Optional[float], p_lose_entry: Optional[float],
          p_lose > p_lose_entry (l'evento è AVVERSO)   → 'loss' | 'red_card'
       4. locked ≥ model_take_profit_frac × max_profit → 'profit' take_profit_modello
       5. p_lose ≤ model_free_cashout_p_lose, locked ≥ 0 → 'profit' cashout_quasi_gratis
-      altrimenti None (si tiene fino al settlement)."""
+      altrimenti None (si tiene fino al settlement).
+
+    MODELLO CIECO (``situation['model_blind']``, dal 95' in poi): la P del
+    modello non e' piu' una misura (vedi ``model_is_blind``). In quel regime:
+      · un evento avverso fa uscire SENZA passare dalla soglia su p_lose —
+        altrimenti una P(perdita) finta dello 0,2% sopprimeva l'uscita dopo un
+        gol subito al 96' e la posizione restava aperta nel recupero;
+      · il cash-out "quasi gratis" (regola 5) e' SOSPESO: non si piazza un
+        ordine vero sulla fede di una certezza che non c'e'. Il take-profit
+        (regola 4) resta: guarda il P&L BLOCCATO, non una probabilita'."""
     sit = situation or {}
     nb = float(sit.get("not_before_ts") or 0.0)
+    blind = bool(sit.get("model_blind"))
     if sit.get("decided_against"):
         return ExitDecision("loss", "linea_decisa_contro", nb)
     ev = sit.get("adverse_event")
     if ev in ("due_game_persi_di_fila", "set_perso"):
         return ExitDecision("loss", str(ev), 0.0)
-    if ev in ("gol", "rosso") and p_lose is not None:
-        p = float(p_lose)
-        thr = float(params.get("model_exit_p_lose") or 0.0)
-        worse = p_lose_entry is None or p > float(p_lose_entry) + 1e-9
-        if p > thr and worse:
-            kind = "red_card" if ev == "rosso" else "loss"
+    if ev in ("gol", "rosso"):
+        kind = "red_card" if ev == "rosso" else "loss"
+        if blind:
             return ExitDecision(kind, f"{ev}_avverso", nb)
+        if p_lose is not None:
+            p = float(p_lose)
+            thr = _f(params.get("model_exit_p_lose"), 0.0)
+            worse = p_lose_entry is None or p > float(p_lose_entry) + 1e-9
+            if p > thr and worse:
+                return ExitDecision(kind, f"{ev}_avverso", nb)
     if locked is not None and max_profit is not None and float(max_profit) > 0:
-        frac = float(params.get("model_take_profit_frac") or 0.0)
+        frac = _f(params.get("model_take_profit_frac"), 0.0)
         if frac > 0 and float(locked) >= frac * float(max_profit) - 1e-9:
             return ExitDecision("profit", "take_profit_modello", 0.0)
-    if p_lose is not None and locked is not None and float(locked) >= 0.0 and \
-            float(p_lose) <= float(params.get("model_free_cashout_p_lose") or 0.0):
+    if not blind and p_lose is not None and locked is not None and float(locked) >= 0.0 and \
+            float(p_lose) <= _f(params.get("model_free_cashout_p_lose"), 0.0):
         return ExitDecision("profit", "cashout_quasi_gratis", 0.0)
     return None
 

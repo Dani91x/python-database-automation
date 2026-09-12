@@ -1046,3 +1046,25 @@ def test_js_num_stampa_come_javascript():
 def test_signal_key_con_e_senza_sub_id():
     assert eng.signal_key("ev1", "base", None, "1-0") == "ev1:base:1-0"
     assert eng.signal_key("ev1", "esatto", "home", "1-0") == "ev1:esatto:home:1-0"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - chiave del tracker di stabilita' punteggio
+# ===========================================================================
+def test_engine_punteggio_float_nel_payload_non_blocca_i_segnali():
+    """``track_score_stability`` costruisce la chiave con ``_int_field`` (interi).
+    Il confronto dentro ``_ingest`` la ricostruiva dai valori GREZZI del
+    payload: con un punteggio arrivato come float (1.0 invece di 1, tipico di
+    un round-trip JSONB/numeric) la chiave era "1.0-0.0" contro "1-0" del
+    tracker, ``stable`` restava None per sempre, il check "punteggio
+    confermato" restava n/d e NESSUN segnale usciva mai."""
+    clock = FakeClock()
+    e = eng.SafeEngine(clock=clock)
+    p = calcio_payload(with_sizes=True)
+    p["score_home"], p["score_away"] = 1.0, 0.0     # float, non int
+    rows = [row("ev1", "calcio", p)]
+    e.evaluate(rows)
+    clock.advance(60)
+    assert by_variant(e.evaluate(rows), "base") is not None
+    # la situazione nella chiave resta quella intera (nessun "1.0-0.0")
+    assert keys_of(e.evaluate(rows))[0].endswith(":1-0")

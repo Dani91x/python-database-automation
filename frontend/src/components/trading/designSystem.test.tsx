@@ -80,16 +80,18 @@ describe('BotHeader', () => {
         expect(badge).toHaveTextContent('IN CORSA · SENZA BATTITO');
         expect(badge).toHaveAttribute('data-stale', 'true');
         expect(badge.className).toMatch(/red/);
-        // e dice quanto e cosa fare (title): mai un allarme senza rimedio
+        // e dice quanto e cosa fare (title + aria): mai un allarme senza rimedio
         expect(badge.getAttribute('title')).toMatch(/non batte da 5 h 00/);
         expect(badge.getAttribute('title')).toMatch(/riavvia l/);
+        expect(badge.getAttribute('aria-label')).toMatch(/IN CORSA, ma il servizio non batte da 5 h 00/);
     });
 
-    it('running SENZA battito mai scritto: anomalo, lo dice', () => {
+    it('running SENZA battito mai scritto: anomalo, lo dice (tooltip + aria)', () => {
         wrap(<BotHeader bot="mike" status="running" statusPrefix="BOT" {...base} running heartbeatAt={null} nowMs={T0} />);
         const badge = screen.getByTestId('bot-status');
         expect(badge).toHaveTextContent('BOT IN CORSA · SENZA BATTITO');
         expect(badge.getAttribute('title')).toMatch(/mai battuto/);
+        expect(badge.getAttribute('aria-label')).toMatch(/mai battuto/);
     });
 
     it('lo stato NON running non viene giudicato dal battito', () => {
@@ -160,8 +162,11 @@ describe('ServiceHealthChip', () => {
         const chip = screen.getByTestId('service-health');
         expect(chip).toHaveAttribute('data-feed', 'stale');
         expect(chip).toHaveTextContent('feed FERMO da 5 min');
+        // il battito dice tutto in UNA riga (stato + rimedio): la riga d'azione
+        // resta al feed, così l'allarme non è scritto due volte nel chip
         expect(chip).toHaveTextContent('servizio Safe: nessun battito');
-        expect(screen.getByTestId('service-health-action')).toHaveTextContent('riavvia l’app desktop');
+        expect(screen.getByTestId('service-beat')).toHaveTextContent('riavvia l’app desktop');
+        expect(screen.getByTestId('service-health-action')).toHaveTextContent('feed dello scanner è fermo');
         expect(chip.className).toMatch(/red/);
     });
     it('nessun dato dal feed e DRY/REST', () => {
@@ -170,7 +175,8 @@ describe('ServiceHealthChip', () => {
         expect(chip).toHaveTextContent('feed: nessun dato');
         expect(chip).toHaveTextContent('DRY');
         expect(chip).toHaveTextContent('REST');
-        expect(screen.getByTestId('service-health-action')).toHaveTextContent('nessun heartbeat');
+        // §4: il rimedio NOMINA il guasto — qui manca lo stato del FEED
+        expect(screen.getByTestId('service-health-action')).toHaveTextContent('stato del feed non è mai stato pubblicato');
     });
     it('battito oltre 45 s = servizio morto', () => {
         wrap(<ServiceHealthChip botName="Omega" nowMs={NOW} feedUpdatedAt="2026-09-11T16:05:04Z" heartbeatAt="2026-09-11T16:04:00Z" />);
@@ -252,7 +258,11 @@ describe('StatTile / KpiRow', () => {
     it('toneOf dal segno', () => {
         expect(toneOf(1)).toBe('pos');
         expect(toneOf(-1)).toBe('neg');
-        expect(toneOf(null)).toBe('pos');
+        // §6: un valore ASSENTE non e' uno zero ne' un guadagno: tono neutro
+        expect(toneOf(null)).toBe('plain');
+        expect(toneOf(undefined)).toBe('plain');
+        expect(toneOf(Number.NaN)).toBe('plain');
+        expect(toneOf(0)).toBe('pos');
     });
 });
 
@@ -331,7 +341,7 @@ describe('ActivityFeed', () => {
         wrap(<ActivityFeed rows={rows} />);
         const r = screen.getAllByTestId('activity-row');
         expect(r).toHaveLength(2);
-        expect(r[0]).toHaveTextContent('18:05');
+        expect(r[0]).toHaveTextContent('18:05:07');   // §1: i secondi ci sono in TUTTE le sezioni
         expect(r[0]).toHaveTextContent('ORDINE');
         expect(r[0]).toHaveTextContent('Roma v Lazio · lay 3 - 2 · 5,26 € @ 110,00');
     });
@@ -363,13 +373,15 @@ describe('EquityCard', () => {
     it('titolo unico + ambito, e il vuoto spiegato', () => {
         wrap(<EquityCard series={[]} scope="giornata 10 settembre" emptyLabel="nessun match ancora regolato" />);
         const c = screen.getByTestId('equity-card');
-        expect(c).toHaveTextContent('Equity curve · P&L cumulato regolato');
+        expect(c).toHaveTextContent('Equity · P&L cumulato realizzato');
+        // §7: la card dichiara cosa c'e' sull'asse e da dove parte
+        expect(screen.getByTestId('equity-axis-note')).toHaveTextContent('si parte da 0,00 €');
         expect(c).toHaveTextContent('giornata 10 settembre');
         expect(c).toHaveTextContent('nessun match ancora regolato');
     });
     it('con dati disegna la curva', () => {
         wrap(<EquityCard series={[{ t: 1, v: 2, iso: 'a' }, { t: 2, v: -1, iso: 'b' }]} label="Equity Omega" />);
-        expect(screen.getByRole('img', { name: 'Equity Omega' })).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: /Equity Omega/ })).toBeInTheDocument();
     });
 });
 
@@ -424,5 +436,118 @@ describe('ParamsSheetBase', () => {
         await user.click(await screen.findByTestId('params-reset'));
         expect((screen.getByLabelText('Importo €') as HTMLInputElement).value).toBe('2');
         expect(screen.getByRole('checkbox', { name: 'Green-up attivo' })).toBeChecked();
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE UI 12/09 — coerenza fra le tre pagine (dump dei dati reali)
+// ============================================================================
+describe('ServiceHealthChip — le DUE salute, dette distinte (12/09)', () => {
+    const NOW = Date.parse('2026-09-12T08:56:00Z');
+    it('feed vivo ma servizio SENZA BATTITO: il chip è rosso, non verde', () => {
+        // il caso di /omega nel dump: "feed vivo (22 s)" + "servizio Omega:
+        // nessun battito" con il badge di stato GIÀ rosso e il chip verde
+        wrap(<ServiceHealthChip botName="Omega" nowMs={NOW} feedUpdatedAt="2026-09-12T08:55:45Z" heartbeatAt="2026-09-12T08:51:00Z" />);
+        const chip = screen.getByTestId('service-health');
+        expect(chip).toHaveAttribute('data-feed', 'alive');
+        expect(chip).toHaveAttribute('data-service', 'stale');
+        expect(chip.className).toMatch(/red/);
+        // l'allarme del battito è scritto UNA volta sola, nella sua riga
+        expect(screen.getByTestId('service-beat')).toHaveTextContent('nessun battito da 5 min — riavvia l’app desktop');
+        expect(screen.queryByTestId('service-health-action')).toBeNull();
+    });
+
+    it('feed assente ma servizio VIVO: il rimedio nomina il FEED, non il battito', () => {
+        // il caso di /safe-strategy nel dump: diceva "nessun heartbeat" mentre
+        // il battito c'era da 26 s
+        wrap(<ServiceHealthChip botName="Safe" nowMs={NOW} feedUpdatedAt={null} feedMissing heartbeatAt="2026-09-12T08:55:40Z" />);
+        const chip = screen.getByTestId('service-health');
+        expect(chip).toHaveTextContent('feed: nessun dato');
+        expect(chip).toHaveTextContent('servizio Safe vivo');
+        const action = screen.getByTestId('service-health-action');
+        expect(action).toHaveTextContent('stato del feed');
+        expect(action).not.toHaveTextContent('nessun heartbeat');
+    });
+
+    it('chi NON passa heartbeatAt non viene giudicato sul battito', () => {
+        wrap(<ServiceHealthChip botName="Mike" nowMs={NOW} feedUpdatedAt="2026-09-12T08:55:45Z" />);
+        expect(screen.getByTestId('service-health').className).toMatch(/emerald/);
+        expect(screen.queryByTestId('service-health-action')).toBeNull();
+    });
+});
+
+describe('DayBar — «Liability aperta» a zero NON sparisce (12/09)', () => {
+    it('liability 0 si vede come 0,00 €, esattamente come il P&L bloccato', () => {
+        wrap(<DayBar dayLabel="oggi" realized={0} openLiability={0} lockedPnl={0} />);
+        expect(screen.getByTestId('day-bar-liability')).toHaveTextContent('0,00 €');
+        expect(screen.getByTestId('day-bar-locked')).toHaveTextContent('+0,00 €');
+    });
+    it('liability non passata: la voce non compare (dato assente ≠ zero)', () => {
+        wrap(<DayBar dayLabel="oggi" realized={0} />);
+        expect(screen.queryByTestId('day-bar-liability')).toBeNull();
+    });
+    it('ogni grandezza condivisa porta la sua spiegazione in una riga', () => {
+        wrap(<DayBar dayLabel="oggi" realized={5} openLiability={100} lockedPnl={-2} matches={2} operations={3} won={1} lost={0} />);
+        const line = screen.getByTestId('day-bar-line');
+        expect(line.querySelector('[title*="ADESSO"]')).not.toBeNull();          // Liability aperta
+        expect(line.querySelector('[title*="non cambia più"]')).not.toBeNull();  // P&L bloccato
+        expect(line.querySelector('[title*="PIAZZATE oggi"]')).not.toBeNull();   // realizzato oggi
+    });
+});
+
+describe('ActivityFeed — filtro che non trova nulla (12/09)', () => {
+    it('lo dice invece di lasciare una lista vuota e muta', async () => {
+        const rows = [
+            { id: 1, ts: '2026-09-12T08:00:00Z', kind: 'place', event_name: 'A v B', payload: {} },
+            { id: 2, ts: '2026-09-12T08:01:00Z', kind: 'skip', event_name: 'C v D', payload: {} },
+        ];
+        wrap(<ActivityFeed rows={rows} filterable />);
+        await userEvent.setup().click(screen.getByRole('button', { name: 'C v D' }));
+        expect(screen.getAllByTestId('activity-row')).toHaveLength(1);
+        expect(screen.queryByTestId('activity-filtered-empty')).toBeNull();
+    });
+});
+
+describe('LiveConfirmDialog — la conferma DECADE se cambiano le condizioni (12/09)', () => {
+    it('armKey cambiata a dialog aperto: OK spento e motivo a schermo', async () => {
+        const onConfirm = vi.fn();
+        const { rerender } = wrap(
+            <LiveConfirmDialog open onOpenChange={() => {}} onConfirm={onConfirm}
+                intro="Mike piazzerà back reali" armKey="stake=10|price=1.62" />,
+        );
+        expect(await screen.findByTestId('live-confirm-ok')).not.toBeDisabled();
+        rerender(
+            <HelmetProvider><MemoryRouter>
+                <LiveConfirmDialog open onOpenChange={() => {}} onConfirm={onConfirm}
+                    intro="Mike piazzerà back reali" armKey="stake=10|price=1.71" />
+            </MemoryRouter></HelmetProvider>,
+        );
+        expect(screen.getByTestId('live-confirm-ok')).toBeDisabled();
+        expect(screen.getByTestId('live-confirm-stale')).toHaveTextContent('conferma è decaduta');
+        await userEvent.setup().click(screen.getByTestId('live-confirm-ok'));
+        expect(onConfirm).not.toHaveBeenCalled();
+    });
+
+    it('senza armKey il comportamento resta quello di prima', async () => {
+        const onConfirm = vi.fn();
+        wrap(<LiveConfirmDialog open onOpenChange={() => {}} onConfirm={onConfirm} intro="x" />);
+        await userEvent.setup().click(await screen.findByTestId('live-confirm-ok'));
+        expect(onConfirm).toHaveBeenCalled();
+    });
+});
+
+describe('DayBar — etichette dei contatori specializzabili (12/09)', () => {
+    it('default: le parole del glossario, invariate', () => {
+        wrap(<DayBar dayLabel="oggi" realized={0} matches={3} operations={4} />);
+        expect(screen.getByTestId('day-bar-counts')).toHaveTextContent('partite 3 · operazioni 4');
+    });
+    it('override per bot: «cicli» dove «operazioni» significherebbe un’altra cosa', () => {
+        wrap(
+            <DayBar dayLabel="oggi" realized={0} matches={3} operations={4}
+                labels={{ operations: 'cicli' }} countsNote="cicli del motore Mike, non posizioni" />,
+        );
+        const counts = screen.getByTestId('day-bar-counts');
+        expect(counts).toHaveTextContent('partite 3 · cicli 4');
+        expect(counts.querySelector('[title="cicli del motore Mike, non posizioni"]')).not.toBeNull();
     });
 });

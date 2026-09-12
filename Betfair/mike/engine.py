@@ -176,6 +176,11 @@ class Snapshot:
     # quello dell'intervallo). Servono all'uscita in perdita "a modello".
     p_total_model: Optional[Dict[int, float]] = None
     p_total_emp: Optional[Dict[int, float]] = None
+    # CERTIFICAZIONE 12/09 — distribuzione dei totali implicita nel MERCATO
+    # (tre classi: <=3 / 4 / >=5, da ``feed.market_totals``). Si usa SOLO come
+    # ripiego, quando modello ed empirico mancano: e' pur sempre il consenso di
+    # chi scommette, ed e' molto meglio di una soglia percentuale fissa.
+    p_total_market: Optional[Dict[int, float]] = None
 
     def book(self, market: str, selection: str) -> Optional[Book]:
         return self.books.get((market, selection))
@@ -273,16 +278,46 @@ def cover_size(stake_under: float, price_over: float, commission: float, factor:
     return float(factor) * float(stake_under) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
 
 
+def cover_residual(liability_under: float, price_over: float, commission: float, factor: float,
+                   already: float) -> float:
+    """Stake RESIDUO sull'Over 4.5 dato il netto ``already`` GIA' garantito dalle
+    coperture abbinate (somma di m·(p−1)·(1−c) su OGNI gamba over_cover):
+    il resto porta il netto con 5+ gol a (factor−1)·liability_under. Mai negativo."""
+    if price_over is None or price_over <= 1.0:
+        raise ValueError(f"price_over non valido: {price_over!r}")
+    target = float(factor) * float(liability_under)
+    residual = (target - float(already)) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
+    return max(0.0, residual)
+
+
 def cover_size_residual(stake_under: float, price_over: float, commission: float, factor: float, *,
                         matched: float, matched_price: float) -> float:
     """Stake RESIDUO sull'Over 4.5 dopo un fill parziale ``matched`` @ ``matched_price``:
     la parte abbinata rende gia' m·(p_old−1)·(1−c); il resto porta il netto a (factor-1)·S."""
-    if price_over is None or price_over <= 1.0:
-        raise ValueError(f"price_over non valido: {price_over!r}")
-    target = float(factor) * float(stake_under)
     already = float(matched) * (float(matched_price) - 1.0) * (1.0 - float(commission))
-    residual = (target - already) / ((float(price_over) - 1.0) * (1.0 - float(commission)))
-    return max(0.0, residual)
+    return cover_residual(stake_under, price_over, commission, factor, already)
+
+
+def cover_matched_value(legs: List[Leg], commission: float) -> float:
+    """Netto GIA' garantito con 5+ gol dal mercato Over/Under 4.5, dai soli fill.
+
+    Conta TUTTE le gambe vive del mercato OU45 (piu' coperture ``over_cover``
+    parzialmente abbinate, eventuali lay di chiusura, un re-ingresso Under 4.5),
+    non solo l'ultima: con due coperture abbinate dimensionare il residuo sulla
+    sola ultima gamba comprerebbe Over gia' comprato (test dedicato).
+    La commissione e' per MERCATO sul netto positivo, quindi si applica alla
+    somma del mercato, non gamba per gamba."""
+    gross = _market_pnl_by_total(active_legs(legs), MARKET_OU45, 5)
+    return round(_net(gross, float(commission)), 6)
+
+
+def under_liability(legs: List[Leg]) -> float:
+    """Euro persi sull'Under 3.5 se l'Under PERDE, dalla posizione NETTA (back
+    abbinati meno eventuali lay parziali di green): e' la base della copertura.
+    Con una lay parziale abbinata la liability e' minore dello stake back: coprire
+    lo stake intero comprerebbe piu' Over del necessario (perdita maggiore con 0-3 gol)."""
+    _w, l = exposure(legs, MARKET_OU35, SEL_UNDER)
+    return round(max(0.0, -float(l)), 2)
 
 
 def legalize_back_size(size: float, rounding: str = "ceil",
@@ -305,9 +340,24 @@ def legalize_back_size(size: float, rounding: str = "ceil",
 
 def cover_legal_size(x: float, params: Dict[str, Any]) -> Tuple[float, float]:
     """Size effettiva della copertura: ESATTA al centesimo (exact_sizes, default) oppure
-    legalizzata .it (min 2.00 / passo 0.50) come ripiego. Ritorna (size, overshoot %)."""
+    legalizzata .it (min 2.00 / passo 0.50) come ripiego. Ritorna (size, overshoot %).
+
+    CERTIFICAZIONE 12/09 (osservata dal vivo) — la size ESATTA puo' scendere
+    SOTTO il minimo Betfair (2 EUR) quando la quota dell'Over e' alta: in quel
+    caso l'exchange rifiuta l'ordine e la partita resta SCOPERTA. Caso reale
+    (Koper v Olimpija): la copertura serviva gia' a 1,91 EUR, il bot l'ha
+    ritentata 172 volte — tutte rifiutate — e la partita e' finita a 4 gol
+    perdendo il massimo (-16,16 EUR) senza essere mai stata coperta.
+    Si alza quindi al minimo piazzabile: si copre un pelo di piu' (l'overshoot
+    e' dichiarato al chiamante) invece di non coprire affatto. Restare scoperti
+    per 9 centesimi non e' un risparmio, e' il rischio pieno.
+    """
+    x = float(x)
     if params.get("exact_sizes", True):
-        return (round(float(x), 2), 0.0)
+        size = round(x, 2)
+        if 0 < size < IT_BACK_MIN:
+            return (IT_BACK_MIN, round((IT_BACK_MIN / size - 1.0) * 100.0, 4))
+        return (size, 0.0)
     return legalize_back_size(x, str(params.get("cover_rounding", "ceil")))
 
 
@@ -319,6 +369,51 @@ def needs_submin(side: str, size: float, min_stake: float = IT_BACK_MIN, step: f
     if s < min_stake - _EPS:
         return True
     return abs(round(s / step) * step - s) > 0.005
+
+
+def cycle_label(cycle_no: int) -> int:
+    """Numero di ciclo COME LO LEGGE IL TRADER, 1-based.
+
+    ``ctx.cycle_no`` conta i cicli GIA' CHIUSI (0 = primo ciclo in corso): e' il
+    dato strutturato che finiscono sul DB (``mike_events.cycle_no``,
+    ``pre_cycle.cycle``, il ``ref``/``signal_key`` delle gambe) e NON si tocca —
+    la UI lo converte con ``lib/mike.ts::cycleNumber``. I testi dei ``reason``,
+    invece, arrivano GREZZI nella scheda Attivita' (``state.reason``) e sulla
+    card (``ctx.last_reason``): devono usare la stessa numerazione della pagina,
+    altrimenti la stessa partita mostra "ciclo 0" e "ciclo 1" per lo stesso ciclo.
+    Unica convenzione: nei testi si scrive sempre ``cycle_label(cycle_no)``.
+    """
+    n = int(cycle_no)
+    return n + 1 if n >= 0 else 1
+
+
+def price_ok(price: Optional[float]) -> bool:
+    """Prezzo utilizzabile: presente, finito e > 1.0.
+
+    Il feed puo' consegnare ``None``, ``NaN`` o 0 su una riga potata/sospesa: senza
+    questo controllo ``NaN > 1.0`` e' False ma ``NaN is not None`` e' True, e il
+    prezzo finiva in ``round_to_tick``/``cover_size`` producendo size NaN oppure
+    un'eccezione che congelava la partita (COSTITUZIONE §4.6: prezzo mancante =
+    nessuna azione, mai numeri inventati).
+    """
+    if price is None:
+        return False
+    try:
+        p = float(price)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(p) and p > 1.0
+
+
+def size_ok(size: Optional[float]) -> bool:
+    """Size piazzabile: finita e >= 1 centesimo (mai ordini-fantasma da 0,00 EUR)."""
+    if size is None:
+        return False
+    try:
+        s = float(size)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(s) and s >= 0.01
 
 
 def selection_wins(market: str, selection: str, total_goals: int) -> bool:
@@ -441,38 +536,51 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
     si puo' davvero agire.
     """
     per: Dict[Tuple[str, str], float] = {}
-    per_net: Dict[Tuple[str, str], float] = {}
     plans: Dict[Tuple[str, str], GreenupPlan] = {}
     decided: List[Tuple[str, str]] = []
     complete = True
-    gross = net = 0.0
+    gross = 0.0
+    gross_market: Dict[str, float] = {}
+    pos_market: Dict[str, float] = {}
     for key in open_selections(legs):
         w, l = exposure(legs, *key)
         won = selection_decided(key[0], key[1], goals)
         if won is not None:
             locked = float(w if won else l)
             decided.append(key)
-            per[key] = round(locked, 2)
-            per_net[key] = round(_net(locked, commission), 2)
-            gross += locked
-            net += _net(locked, commission)
-            continue
-        bk = books.get(key)
-        plan = compute_greenup(
-            matched_if_win=w, matched_if_lose=l,
-            best_back_price=bk.best_back if bk else None,
-            best_lay_price=bk.best_lay if bk else None,
-            fraction=1.0, place_at_ticks=int(place_at_ticks),
-        )
-        plans[key] = plan
-        if not plan.actionable:
-            complete = False
-            continue
-        locked = float(min(plan.expected_if_win, plan.expected_if_lose))
+        else:
+            bk = books.get(key)
+            plan = compute_greenup(
+                matched_if_win=w, matched_if_lose=l,
+                best_back_price=bk.best_back if bk else None,
+                best_lay_price=bk.best_lay if bk else None,
+                fraction=1.0, place_at_ticks=int(place_at_ticks),
+            )
+            plans[key] = plan
+            if not plan.actionable:
+                complete = False
+                continue
+            locked = float(min(plan.expected_if_win, plan.expected_if_lose))
         per[key] = round(locked, 2)
-        per_net[key] = round(_net(locked, commission), 2)
         gross += locked
-        net += _net(locked, commission)
+        gross_market[key[0]] = gross_market.get(key[0], 0.0) + locked
+        if locked > 0:
+            pos_market[key[0]] = pos_market.get(key[0], 0.0) + locked
+    # Commissione per MERCATO sul netto positivo (docstring del modulo, COSTITUZIONE
+    # §4.4): su OU45 possono convivere OVER (copertura) e UNDER (re-ingresso) e
+    # applicare il 5% a ogni selezione in utile avrebbe tassato un lordo che il
+    # mercato non paga. La commissione del mercato viene ripartita PRO-RATA sulle
+    # selezioni in utile, cosi' sum(per_selection_net) == net.
+    per_net: Dict[Tuple[str, str], float] = {}
+    comm_market: Dict[str, float] = {m: (v * float(commission) if v > 0 else 0.0)
+                                     for m, v in gross_market.items()}
+    for key, locked in per.items():
+        share = 0.0
+        pos = pos_market.get(key[0], 0.0)
+        if locked > 0 and pos > 0 and comm_market.get(key[0], 0.0) > 0:
+            share = comm_market[key[0]] * (locked / pos)
+        per_net[key] = round(locked - share, 2)
+    net = sum(_net(v, commission) for v in gross_market.values())
     return CashoutValue(net=round(net, 2), gross=round(gross, 2), per_selection=per,
                         plans=plans, complete=complete, decided=tuple(decided),
                         per_selection_net=per_net)
@@ -635,8 +743,12 @@ def smart_cashout(*, cv_net: float, base: float, legs: List[Leg], books: Dict[Tu
         bg = projected_books(books, model_probs, "goal")
         bl = projected_books(books, model_probs, "later")
         if bg and bl:
-            cv_goal = cashout_value(legs, bg, commission, place_at_ticks)
-            cv_later = cashout_value(legs, bl, commission, place_at_ticks)
+            # ``goals``: gli scenari proiettati devono valutare le selezioni GIA'
+            # decise come 0/1 esattamente come ``cv_net`` (C2), altrimenti si
+            # confrontano due grandezze diverse e una linea potata rende
+            # ``complete=False`` spegnendo il criterio del valore atteso.
+            cv_goal = cashout_value(legs, bg, commission, place_at_ticks, goals=goals)
+            cv_later = cashout_value(legs, bl, commission, place_at_ticks, goals=goals)
             if cv_goal.complete and cv_later.complete:
                 step = max(1.0, float(params.get("cover_wait_step_min", 5)))
                 h_step = 1.0 - (1.0 - min(1.0, max(0.0, float(hazard)))) ** (step / 3.0)
@@ -671,11 +783,17 @@ def hold_expectation(pnl_by_total: Dict[int, float], p_total: Dict[int, float],
     PRUDENTE (fra modello, empirico e mercato comanda il piu' pessimista sui 4 gol)."""
     dist = {int(k): float(v) for k, v in p_total.items()}
     p4 = dist.get(4, 0.0)
-    if p4_floor is not None and float(p4_floor) > p4:
+    # una probabilita' dal feed/mercato puo' arrivare sporca (NaN, >1, negativa):
+    # senza clamp il riscalamento produce probabilita' NEGATIVE, un EV fuori dal
+    # range dei P&L possibili e una "P(4) 150%" in UI.
+    floor = None
+    if p4_floor is not None and math.isfinite(float(p4_floor)):
+        floor = max(0.0, min(1.0, float(p4_floor)))
+    if floor is not None and floor > p4:
         rest = 1.0 - p4
-        scale = (1.0 - float(p4_floor)) / rest if rest > 0 else 0.0
-        dist = {k: (float(p4_floor) if k == 4 else v * scale) for k, v in dist.items()}
-        p4 = float(p4_floor)
+        scale = (1.0 - floor) / rest if rest > 0 else 0.0
+        dist = {k: (floor if k == 4 else v * scale) for k, v in dist.items()}
+        p4 = floor
     max_t = max(pnl_by_total) if pnl_by_total else 8
     ev = 0.0
     for t, p in dist.items():
@@ -685,7 +803,9 @@ def hold_expectation(pnl_by_total: Dict[int, float], p_total: Dict[int, float],
 
 def loss_exit_model(*, cv_net: float, base: float, pnl_by_total: Dict[int, float],
                     p_total_model: Optional[Dict[int, float]], p_total_emp: Optional[Dict[int, float]],
-                    p4_market: Optional[float], params: Dict[str, Any]) -> Tuple[Optional[bool], str, Dict[str, Any]]:
+                    p4_market: Optional[float], params: Dict[str, Any],
+                    p_total_market: Optional[Dict[int, float]] = None
+                    ) -> Tuple[Optional[bool], str, Dict[str, Any]]:
     """Uscita in perdita A MODELLO: confronta il valore CERTO di chiudere ora (cv_net)
     con il valore ATTESO di tenere fino alla fine (EV = sum P(tot) * P&L(tot)), meno un
     premio al rischio proporzionale alla P(4 gol): premio = risk_premium% * P(4) * base.
@@ -693,6 +813,13 @@ def loss_exit_model(*, cv_net: float, base: float, pnl_by_total: Dict[int, float
     Ritorna (None, ...) quando i dati mancano (il chiamante usa la regola fissa)."""
     tele: Dict[str, Any] = {"mode": "model"}
     dist = blend_totals(p_total_model, p_total_emp)
+    if dist is None and p_total_market:
+        # CERT. 12/09 — senza modello si decide sul MERCATO, non su una soglia
+        # fissa: la regola percentuale chiudeva posizioni ancora favorite
+        # (caso reale: chiusa sullo 0-2 al 46', la partita e' finita 3 gol e
+        # l'Under 3.5 avrebbe VINTO; la chiusura e' costata 5,02 EUR).
+        dist = dict(p_total_market)
+        tele["mode"] = "market"
     if dist is None or base <= 0 or not pnl_by_total:
         tele["missing"] = True
         return None, "", tele
@@ -809,6 +936,7 @@ def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
         comm_market[m] = round(max(0.0, v) * float(commission), 2) if v > 0 else 0.0
     per_leg: List[Tuple[str, str, float]] = []
     per_leg_gross: List[Tuple[str, str, float]] = []
+    by_market: Dict[str, List[int]] = {}
     for leg, status, pnl in raw:
         share = 0.0
         pos = pos_market.get(leg.market, 0.0)
@@ -816,7 +944,26 @@ def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
             share = comm_market[leg.market] * (pnl / pos)
         per_leg_gross.append((leg.ref, status, round(pnl, 2)))
         per_leg.append((leg.ref, status, round(pnl - share, 2)))
+        if leg.market in gross_market and leg.matched > 0:
+            by_market.setdefault(leg.market, []).append(len(per_leg) - 1)
     per_market = {m: round(_net(v, commission), 2) for m, v in gross_market.items()}
+    # §4.15 — la somma dei P&L delle RIGHE deve fare ESATTAMENTE il P&L della
+    # partita: arrotondare ogni riga al centesimo in modo indipendente lasciava
+    # fino a 0,02 EUR di scarto fra ``sum(mike_trades.pnl)`` e ``settled_pnl``
+    # (tabella Trade che non torna con la partita, e lo storico che eredita lo
+    # scarto). Il residuo va sulla riga di PESO maggiore del mercato (in utile se
+    # ce n'e' una): e' un centesimo, e cade dove si nota di meno.
+    for market, idxs in by_market.items():
+        target = per_market.get(market)
+        if target is None or not idxs:
+            continue
+        diff = round(target - sum(per_leg[i][2] for i in idxs), 2)
+        if abs(diff) < 0.005:
+            continue
+        winners = [i for i in idxs if per_leg[i][2] > 0]
+        pick = max(winners or idxs, key=lambda i: (abs(per_leg[i][2]), -i))
+        ref, status, val = per_leg[pick]
+        per_leg[pick] = (ref, status, round(val + diff, 2))
     net = round(sum(per_market.values()), 2)
     return SettleResult(per_leg=per_leg, per_market=per_market, net=net,
                         per_leg_gross=per_leg_gross, commission_by_market=comm_market)
@@ -870,6 +1017,26 @@ def cashout_base(ctx: MatchCtx, params: Dict[str, Any]) -> float:
 _cashout_base = cashout_base       # retro-compatibilita' interna
 
 
+def cover_place_price(best_back: Optional[float], params: Dict[str, Any]) -> Optional[float]:
+    """Prezzo a cui PIAZZARE la copertura: ``cover_place_at_ticks`` sotto il best.
+
+    CERT. 12/09 — con il ritardo di piazzamento in gioco un ordine al prezzo
+    esatto muore (misurati 188 tentativi per 13 coperture abbinate). Qualche
+    tick di quota in meno e' il prezzo per entrare davvero. La size si
+    dimensiona SU QUESTO prezzo, mai sul best: e' qui che la copertura entra.
+    """
+    if best_back is None or not price_ok(best_back):
+        return None
+    n = int(params.get("cover_place_at_ticks") or 0)
+    if n <= 0:
+        return float(best_back)
+    try:
+        cand = float(ticks_away(float(best_back), -n))
+    except Exception:  # noqa: BLE001 - prezzo fuori scala: si resta al best
+        return float(best_back)
+    return cand if (price_ok(cand) and cand > 1.0) else float(best_back)
+
+
 def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
     """Capitale ancora piazzabile sulla partita sotto ``max_liability_per_match``
     (0 = nessun tetto → inf). Clamp DIFENSIVO dentro l'engine: vale anche se il
@@ -878,6 +1045,20 @@ def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
     if cap <= 0:
         return float("inf")
     return max(0.0, cap - invested(ctx.legs))
+
+
+def size_chiudibile(size: Optional[float]) -> bool:
+    """La size di una CHIUSURA e' abbastanza grande da essere accettata?
+
+    Betfair rifiuta gli ordini sotto ``IT_BACK_MIN`` (2 EUR). Su una quota molto
+    salita la size che chiude la posizione puo' scendere sotto quella soglia:
+    quel residuo NON e' chiudibile, e continuare a provarci produce solo righe
+    in errore. Una posizione con un residuo cosi' piccolo vale meno del minimo
+    piazzabile: la si porta al regolamento.
+    """
+    if not size_ok(size):
+        return False
+    return float(size) >= IT_BACK_MIN - 0.005
 
 
 def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
@@ -890,6 +1071,16 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
     acts = []
     for key, plan in cv.plans.items():
         if not plan.actionable:
+            continue
+        # CERTIFICAZIONE 12/09 — RESIDUO NON CHIUDIBILE.
+        # Su una quota salita molto, la size che chiude la posizione scende sotto
+        # il minimo Betfair (2 EUR): l'exchange rifiuta l'ordine. Prima si
+        # tentava lo stesso a OGNI ciclo, e ogni tentativo lasciava una riga
+        # 'error' sul DB (osservato dal vivo: 64 righe fallite sulla stessa
+        # posizione, e il residuo non si chiudeva comunque). Non si tenta:
+        # la posizione resta aperta fino al regolamento, che e' l'unico esito
+        # possibile, e il servizio lo dichiara una volta sola.
+        if not size_chiudibile(plan.size):
             continue
         acts.append(_place(role_map[key], key[0], key[1], plan.side, plan.price, plan.size,
                            note=plan.note))
@@ -960,11 +1151,32 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
     riabilita la partita con "Riprendi". In-play si va in FLAT.
     """
     cancels, closes = force_flat_plan(ctx, snap.books, params, snap.goals, MANUAL_ROLE_MAP)
+    st_close = "LIVE_CLOSING" if snap.inplay else "PRE_GREEN_PENDING"
+    # H1 — si annullano PRIMA gli ordini vivi che aggiungono/lasciano rischio, ma
+    # MAI la chiusura manuale gia' al lavoro: ``_cancel_live`` la prendeva dentro e
+    # ogni ciclo la cancellava per poi riappoggiarla (place/cancel all'infinito, cash
+    # out mai completato quando il fill non e' immediato — coda flumine, REST, fill
+    # parziale). La chiusura manuale si riprezza SOLO dopo ``close_retry_s``.
+    cancels = [a for a in cancels if a.role != "manual_close"]
     if cancels:
         return Decision(ctx.state, cancels, "chiusura manuale: annullo gli ordini vivi",
                         updates={"close_reason": "manual"})
+    working = [l for l in ctx.legs if l.is_live and l.role == "manual_close"]
+    if working:
+        stale = [l for l in working
+                 if snap.now - l.placed_at >= float(params["close_retry_s"])]
+        if not stale or ctx.attempts >= int(params["close_max_attempts"]):
+            return Decision(st_close, [], "chiusura manuale: attendo il fill",
+                            telemetry={"close_retries_exhausted": True,
+                                       "attempts": ctx.attempts} if stale else {})
+        acts = [Action(kind="cancel", ref=l.ref, role=l.role, market=l.market,
+                       selection=l.selection) for l in stale]
+        # ``closes`` e' gia' dimensionato sull'esposizione NETTA (la parte abbinata
+        # della gamba pending e' dentro ``exposure``): si riprezza il solo residuo.
+        return Decision(st_close, acts + closes, "chiusura manuale: riprezzo",
+                        updates={"close_reason": "manual", "attempts": ctx.attempts + 1})
     if closes:
-        return Decision("LIVE_CLOSING" if snap.inplay else "PRE_GREEN_PENDING", closes,
+        return Decision(st_close, closes,
                         "chiusura manuale: chiudo la posizione",
                         updates={"close_reason": "manual", "attempts": 0})
     if live_open_selections(ctx.legs, snap.goals):
@@ -1072,7 +1284,7 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
     if ctx.last_green_at is not None and snap.now - ctx.last_green_at < float(params["pre_reentry_cooldown_s"]):
         return "cooldown"
     bk = snap.book(MARKET_OU35, SEL_UNDER)
-    if bk is None or bk.best_back is None or bk.status != "OPEN" or bk.inplay:
+    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN" or bk.inplay:
         return "book assente"
     if bk.best_back < float(params["pre_entry_price_min"]) or bk.best_back > float(params["pre_entry_price_max"]):
         return f"prezzo {bk.best_back} fuori banda"
@@ -1120,7 +1332,7 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             return Decision("WATCH", [], why)
         return Decision("PRE_ENTRY_PENDING",
                         [_place("under_entry", MARKET_OU35, SEL_UNDER, "back", bk.best_back, stake)],
-                        f"ingresso ciclo {ctx.cycle_no}")
+                        f"ingresso ciclo {cycle_label(ctx.cycle_no)}")
 
     if st == "PRE_ENTRY_PENDING":
         leg = _last(ctx, "under_entry")
@@ -1256,7 +1468,13 @@ def _cycle_done(ctx: MatchCtx, snap: Snapshot, S: float, Pe: Optional[float], gr
     tele = {"pre_cycle": {"cycle": ctx.cycle_no, "entry": Pe, "exit": green.fill_price if green else None,
                           "stake": S, "locked": round(locked, 2),
                           "closed_at": snap.now}}
-    return Decision("WATCH", [], f"ciclo {ctx.cycle_no} chiuso: +{locked:.2f}",
+    # Il ciclo viene ARCHIVIATO: una gamba ancora VIVA sul book diventerebbe
+    # 'cancelled' solo nei nostri libri pur restando sull'exchange (posizione
+    # invisibile). Prima si annulla davvero.
+    # ``{locked:+.2f}``: il segno lo mette il formato — un '+' cablato scriveva
+    # "+-0.27" quando il ciclo si chiude sotto zero (fill parziali).
+    return Decision("WATCH", _cancel_live(ctx),
+                    f"ciclo {cycle_label(ctx.cycle_no)} chiuso: {locked:+.2f}",
                     updates={"cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now,
                              "attempts": 0, "_archive_legs": True},
                     telemetry=tele)
@@ -1267,7 +1485,7 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     upd = {"cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now, "attempts": 0, "_archive_legs": True}
     if not params["last_entry_persist"]:
         return Decision("IDLE_LIVE", [], "ultimo ingresso disabilitato", updates=upd)
-    if bk is None or bk.best_back is None or bk.status != "OPEN":
+    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN":
         return Decision("IDLE_LIVE", [], "ultimo ingresso: book assente", updates=upd)
     need = stake * float(params["pre_min_back_size_factor"])
     if float(bk.back_size) < need:
@@ -1282,7 +1500,8 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     if n_up > 0:
         price = float(ticks_away(price, n_up))
     return Decision("PRE_LAST_ENTRY_PENDING",
-                    [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake, persistence="PERSIST")],
+                    [_place("under_last", MARKET_OU35, SEL_UNDER, "back", price, stake,
+                            persistence="PERSIST")],
                     "ultimo ingresso PERSIST", updates=upd)
 
 
@@ -1294,22 +1513,50 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     acts = _late_persist_cancel(ctx, snap, params)
     if not params["cover_enabled"]:
         return Decision("LIVE_COVERED", acts, "copertura disabilitata", updates={"cover_skipped": True})
+    # §4.1 — la copertura si dimensiona sull'esposizione NETTA: se una lay di green
+    # e' stata abbinata (anche solo in parte) la liability Under e' minore dello
+    # stake e coprire lo stake intero comprerebbe Over di troppo (perdita maggiore
+    # con 0-3 gol). ``already`` e' il netto con 5+ gol gia' garantito dal mercato
+    # OU45 (coperture parziali gia' abbinate comprese).
+    liab = under_liability(ctx.legs)
+    already = cover_matched_value(ctx.legs, c)
     bk = snap.book(MARKET_OU45, SEL_OVER)
+    price_best = bk.best_back if (bk is not None and price_ok(bk.best_back)) else None
+    # CERT. 12/09 — CUSCINETTO in tick: si piazza ``cover_place_at_ticks`` SOTTO
+    # il best back, perche' con il ritardo di piazzamento in gioco un ordine al
+    # prezzo esatto muore (misurati 188 tentativi per 13 coperture abbinate, e
+    # tre partite finite a -10,00 perche' scoperte). La size si dimensiona sul
+    # prezzo DI PIAZZAMENTO, non sul best: altrimenti la copertura entrerebbe
+    # sotto l'obiettivo di protezione dichiarato (``cover_profit_factor``).
+    # La SIZE si dimensiona sul BEST (e' li' che l'ordine si abbina: su un
+    # exchange un limite piu' basso prende comunque il miglior prezzo
+    # disponibile). Il cuscinetto vale solo come LIMITE dell'ordine, per
+    # sopravvivere al movimento durante il ritardo di piazzamento.
+    price_over = price_best
+    price_limite = cover_place_price(price_best, params)
+    n_buf = int(params.get("cover_place_at_ticks") or 0)
     timing = cover_timing(goals=snap.goals, minute=snap.minute, hazard=snap.hazard,
                           p4_market=snap.p4_market, last_goal_ts=snap.last_goal_ts,
                           now=snap.now, params=params,
-                          price_over=bk.best_back if bk else None,
+                          price_over=price_over,
                           cover_gain_pct=snap.cover_gain_pct)
     x_now = None
-    if bk is not None and bk.best_back is not None and bk.best_back > 1.0:
-        x_now = cover_size(S, bk.best_back, c, float(params["cover_profit_factor"]))
+    if price_over is not None:
+        x_now = cover_residual(liab, price_over, c, float(params["cover_profit_factor"]), already)
     if timing == "skip":
         return Decision("LIVE_COVERED", acts, "copertura saltata: troppi gol", updates={"cover_skipped": True})
-    if timing == "wait" or bk is None or bk.best_back is None or bk.status != "OPEN":
+    if liab <= 0.0:
+        return Decision("LIVE_COVERED", acts, "nessuna liability Under da coprire",
+                        updates={"cover_skipped": True})
+    if timing == "wait" or price_over is None or bk.status != "OPEN":
         tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals, "hazard": snap.hazard,
-                               "p4_market": snap.p4_market, "price_over": bk.best_back if bk else None,
+                               "p4_market": snap.p4_market, "price_over": price_over,
+                               "max_min": int(params["cover_wait_max_min"]),
                                "x_now": x_now}}
         return Decision("LIVE_UNCOVERED", acts, "attendo per coprire", telemetry=tele)
+    if not size_ok(x_now):
+        return Decision("LIVE_COVERED", acts, "copertura gia' sufficiente",
+                        updates={"cover_skipped": True})
     size, over = cover_legal_size(x_now, params)
     # M3: ``cover_max_overshoot_pct`` CABLATO — con importi legalizzati .it
     # l'arrotondamento per eccesso puo' gonfiare la copertura: oltre il tetto si
@@ -1335,11 +1582,17 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                                "reason": "liquidita"}}
         return Decision("LIVE_UNCOVERED", acts, f"copertura: liquidita {bk.back_size:.2f} < {size:.2f}",
                         telemetry=tele)
-    acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back", bk.best_back, size,
-                       note=f"X={x_now:.2f} legal={size:.2f} over={over:.1f}%"))
+    if not size_ok(size):
+        return Decision("LIVE_UNCOVERED", acts, "copertura: size non piazzabile",
+                        telemetry={"cover_wait": {"minute": snap.minute, "goals": snap.goals,
+                                                  "x_now": x_now, "reason": "size_nulla"}})
+    acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back",
+                       price_limite if price_limite is not None else price_over, size,
+                       note=f"X={x_now:.2f} legal={size:.2f} over={over:.1f}% buf={n_buf}t"))
     return Decision("LIVE_COVER_PENDING", acts, "copertura Over 4.5",
                     telemetry={"cover": {"x": round(x_now, 2), "size": size, "overshoot_pct": over,
-                                         "price": bk.best_back, "minute": snap.minute}})
+                                         "price": price_over, "liability": liab,
+                                         "already": round(already, 2), "minute": snap.minute}})
 
 
 def _late_persist_cancel(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> List[Action]:
@@ -1364,19 +1617,29 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     if leg.is_live and snap.now - leg.placed_at >= float(params["close_retry_s"]) and \
             ctx.attempts < int(params["close_max_attempts"]):
         bk = snap.book(MARKET_OU45, SEL_OVER)
-        if bk is not None and bk.best_back is not None and leg.remaining > 0:
-            S, _ = _under_position(ctx)
-            # RESIDUO ESATTO: la parte gia' abbinata (m @ p_old) contribuisce
-            # m·(p_old−1)·(1−c); il resto va dimensionato al prezzo NUOVO
-            x = cover_size_residual(S, bk.best_back, c, float(params["cover_profit_factor"]),
-                                    matched=leg.matched, matched_price=leg.fill_price)
-            if x <= 0:
+        if bk is not None and price_ok(bk.best_back) and leg.remaining > 0:
+            # RESIDUO ESATTO sull'esposizione NETTA: la liability Under e' al netto
+            # delle lay di green gia' abbinate; ``already`` somma il netto con 5+ gol
+            # di TUTTE le coperture gia' abbinate (anche di gambe precedenti gia'
+            # cancellate con fill parziale), non solo di questa gamba — altrimenti
+            # il riprezzo ricompra Over gia' comprato.
+            liab = under_liability(ctx.legs)
+            already = cover_matched_value(ctx.legs, c)
+            # stesso cuscinetto del primo piazzamento: si dimensiona e si piazza
+            # allo STESSO prezzo, altrimenti il riprezzo entra sotto obiettivo
+            prezzo_cop = cover_place_price(bk.best_back, params) or bk.best_back
+            # size sul BEST (prezzo di abbinamento), limite col cuscinetto
+            x = cover_residual(liab, bk.best_back, c, float(params["cover_profit_factor"]), already)
+            if not size_ok(x):
                 return Decision("LIVE_COVERED", [Action(kind="cancel", ref=leg.ref, role=leg.role)],
                                 "copertura sufficiente", updates={"attempts": 0})
             size, _ = cover_legal_size(x, params)
+            if not size_ok(size):
+                return Decision("LIVE_COVERED", [Action(kind="cancel", ref=leg.ref, role=leg.role)],
+                                "copertura sufficiente", updates={"attempts": 0})
             return Decision("LIVE_COVER_PENDING",
                             [Action(kind="cancel", ref=leg.ref, role=leg.role),
-                             _place("over_cover", MARKET_OU45, SEL_OVER, "back", bk.best_back, size)],
+                             _place("over_cover", MARKET_OU45, SEL_OVER, "back", prezzo_cop, size)],
                             "copertura: riprezzo", updates={"attempts": ctx.attempts + 1})
     return Decision("LIVE_COVER_PENDING", [], "attesa fill copertura")
 
@@ -1427,18 +1690,35 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
         in_goals = snap.goals is not None and gmin <= int(snap.goals) <= gmax
         decided = None
         if in_goals and params.get("loss_exit_mode", "model") == "model":
+            # ``active_legs``: il P&L dei cicli ARCHIVIATI e' identico su ogni totale
+            # (posizione chiusa) e NON e' dentro ``cv.net`` — lasciarlo nel ramo
+            # "tengo" e non in quello "chiudo ora" spostava la soglia di quel
+            # profitto gia' bloccato e faceva tenere posizioni da chiudere.
             decided, why, ltele = loss_exit_model(
-                cv_net=cv.net, base=base, pnl_by_total=net_pnl_by_total(ctx.legs, c),
+                cv_net=cv.net, base=base, pnl_by_total=net_pnl_by_total(active_legs(ctx.legs), c),
                 p_total_model=snap.p_total_model, p_total_emp=snap.p_total_emp,
-                p4_market=snap.p4_market, params=params)
+                p4_market=snap.p4_market, params=params,
+                p_total_market=snap.p_total_market)
             ltele["window"] = label
             tele["loss_exit"] = ltele
             if decided:
+                # CERT. 12/09 — la telemetria della decisione finiva solo in
+                # ``last_loss_exit`` sullo stato dell'evento, quindi veniva
+                # SOVRASCRITTA al ciclo dopo: delle chiusure in perdita non
+                # restava nulla da verificare. Questa riga e' permanente e dice
+                # perche' si e' chiuso: EV del tenere, premio, P(4), fonte.
+                tele["loss_exit_deciso"] = {**ltele, "cv_net": round(cv.net, 2),
+                                            "base": round(base, 2), "motivo": why,
+                                            "minuto": snap.minute, "gol": snap.goals}
                 return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                                 f"uscita a modello ({label}): {why}",
                                 updates={"close_reason": f"loss_{label}", "attempts": 0}, telemetry=tele)
         if decided is None and loss_exit_ok(cv.net, base, pct, goals=snap.goals, gmin=gmin, gmax=gmax):
             tele.setdefault("loss_exit", {"mode": "fixed", "window": label, "pct": pct})
+            tele["loss_exit_deciso"] = {"mode": "fixed", "window": label, "pct": pct,
+                                        "cv_net": round(cv.net, 2), "base": round(base, 2),
+                                        "minuto": snap.minute, "gol": snap.goals,
+                                        "motivo": f"regola fissa: {cv.net:.2f} entro {pct}% di {base:.2f}"}
             return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                             f"loss tollerata ({label}): {cv.net:.2f} entro {pct}% di {base:.2f}",
                             updates={"close_reason": f"loss_{label}", "attempts": 0}, telemetry=tele)
@@ -1498,8 +1778,35 @@ def _decide_closing(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
     return Decision("LIVE_CLOSING", [], "attesa fill chiusura")
 
 
+def residuo_non_chiudibile(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
+                           c: float) -> bool:
+    """L'esposizione ancora aperta e' cosi' piccola che NESSUN ordine puo'
+    chiuderla (ogni gamba starebbe sotto il minimo Betfair di 2 EUR)?
+
+    CERTIFICAZIONE 12/09 (osservata dal vivo) — senza questo controllo lo stato
+    FLAT tornava a LIVE_COVERED per "esposizione residua", la chiusura veniva
+    rifiutata perche' sotto il minimo, e si ricominciava: 222 oscillazioni
+    registrate in poche ore, con una riga in errore a ogni giro. Un residuo che
+    l'exchange non accetta non e' gestibile: lo si tiene fino al regolamento e
+    lo si dichiara UNA volta, invece di inseguirlo per sempre.
+    """
+    try:
+        cv = cashout_value(ctx.legs, snap.books, c, int(params["cashout_place_at_ticks"]),
+                           goals=snap.goals)
+    except Exception:  # noqa: BLE001 - senza prezzi non si decide nulla
+        return False
+    piani = [pl for pl in cv.plans.values() if pl.actionable]
+    if not piani:
+        return False
+    return all(not size_chiudibile(pl.size) for pl in piani)
+
+
 def _decide_flat(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     if live_open_selections(ctx.legs, snap.goals):
+        if residuo_non_chiudibile(ctx, snap, params, c):
+            # niente oscillazione FLAT <-> LIVE_COVERED: il residuo resta e si
+            # porta al regolamento, dichiarandolo
+            return Decision("FLAT", [], "residuo sotto il minimo Betfair: si porta al regolamento")
         return Decision("LIVE_COVERED", [], "esposizione residua")
     if ctx.no_reentry:
         return Decision("FLAT", [], "flat: rientro disabilitato (chiusura manuale)")
@@ -1629,8 +1936,14 @@ def apply_decision(ctx: MatchCtx, d: Decision, now: float) -> List[Leg]:
         for leg in ctx.legs:
             if leg.archived:
                 continue
-            if leg.status == "pending" and leg.matched <= 0:
-                leg.status = "cancelled"
+            if leg.is_live or leg.needs_reconcile:
+                # money-critical: una gamba ancora VIVA (o a esito IGNOTO, C3) puo'
+                # esistere su Betfair. Darla per 'cancelled' e archiviarla renderebbe
+                # INVISIBILE la sua esposizione (fuori da exposure/invested/liability,
+                # e ``_assume_matched`` non la vedrebbe piu'). Resta com'e' finche' il
+                # chiamante non conferma l'annullamento o la riconciliazione: senza
+                # fill non pesa su nessun calcolo.
+                continue
             leg.archived = True
     ctx.state = d.state
     new: List[Leg] = []

@@ -89,16 +89,22 @@ def _poisson_pmf(lmbda: float, k: int) -> float:
 
 
 def _dc_tau(hg: int, ag: int, lh: float, la: float, rho: float) -> float:
-    """Correzione Dixon-Coles sulle 4 celle basse — COPIA FEDELE di
-    Prediction/today_predictions_backfill.py::_dc_tau (tenere allineata)."""
+    """Correzione Dixon-Coles sulle 4 celle basse — allineata a
+    Prediction/today_predictions_backfill.py::_dc_tau (tenere allineata).
+
+    Certificazione 12/09: tau SEMPRE >= 0 su tutte e quattro le celle (come in
+    ``omega_model._dc_tau``). Con un ``dc_rho`` positivo letto dal DB (il motore
+    non lo vincola al segno) le celle (0,0) e (1,1) potevano diventare NEGATIVE
+    e la griglia rinormalizzata restituiva una "probabilità" negativa mostrata
+    all'utente come consiglio."""
     if hg == 0 and ag == 0:
-        return 1.0 - lh * la * rho
+        return max(0.0, 1.0 - lh * la * rho)
     if hg == 1 and ag == 0:
         return max(0.0, 1.0 + la * rho)
     if hg == 0 and ag == 1:
         return max(0.0, 1.0 + lh * rho)
     if hg == 1 and ag == 1:
-        return 1.0 - rho
+        return max(0.0, 1.0 - rho)
     return 1.0
 
 
@@ -109,6 +115,10 @@ def score_grid_prob(lh: float, la: float, rho: float,
     Identica al motore: griglia troncata a ``max_goals`` (FT=10, HT=4), tau
     sulle celle (0,0)(1,0)(0,1)(1,1), rinormalizzazione sul totale griglia."""
     if hg < 0 or ag < 0 or hg > max_goals or ag > max_goals:
+        return None
+    # certificazione 12/09: un lambda/rho NaN supera ``<= 0`` e usciva come
+    # "probabilità" NaN mostrata all'utente
+    if not all(math.isfinite(float(v)) for v in (lh, la, rho)):
         return None
     if lh <= 0 or la <= 0:
         return None

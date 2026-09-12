@@ -399,16 +399,24 @@ def test_h4_solo_le_partite_con_esposizione_sono_esenti():
 
 
 def test_h4_esenzione_cappata():
-    # 20 partite "seguite" (bug o giornata anomala) con la priorita' piu' BASSA
-    cands = [f"E{i}" for i in range(30)] + [f"M{i}" for i in range(20)]
-    out = SC.select_opp_candidates(cands, followed=[f"M{i}" for i in range(20)])
-    assert out[:SC.MIKE_MAX_FOLLOWED] == [f"M{i}" for i in range(SC.MIKE_MAX_FOLLOWED)]
-    assert len([e for e in out if e.startswith("M")]) == SC.MIKE_MAX_FOLLOWED
-    assert len(out) == SC.MIKE_MAX_FOLLOWED + SC.OPP_MAX_EVENTS
+    """Il tetto esiste ancora (il pool stream non si puo' invadere), ma e' stato
+    ALZATO il 12/09: con 10 restavano senza quote le posizioni oltre la decima,
+    e tre partite reali sono finite a -10,00 ciascuna senza copertura ne' uscita.
+    Il test usa quindi un tetto ESPLICITO, non il default."""
+    cap = 10
+    n = cap + 10                      # piu' partite seguite del tetto
+    cands = [f"E{i}" for i in range(30)] + [f"M{i}" for i in range(n)]
+    out = SC.select_opp_candidates(cands, followed=[f"M{i}" for i in range(n)],
+                                   max_followed=cap)
+    assert out[:cap] == [f"M{i}" for i in range(cap)]
+    assert len([e for e in out if e.startswith("M")]) == cap
+    assert len(out) == cap + SC.OPP_MAX_EVENTS
+    # e il default di oggi copre l'operativita' reale di Mike
+    assert SC.MIKE_MAX_FOLLOWED >= 40
     # le seguite oltre il tetto non spariscono: competono col tetto normale
-    out2 = SC.select_opp_candidates([f"M{i}" for i in range(20)],
-                                    followed=[f"M{i}" for i in range(20)])
-    assert len(out2) == 20
+    out2 = SC.select_opp_candidates([f"M{i}" for i in range(n)],
+                                    followed=[f"M{i}" for i in range(n)], max_followed=cap)
+    assert len(out2) == n
 
 
 def test_h5_le_linee_di_mike_hanno_priorita_sopra_le_altre_opportunita():

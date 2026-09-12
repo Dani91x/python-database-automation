@@ -20,7 +20,7 @@ Architettura:
     così non basta, gli shard tengono i mercati a priorità più alta (in-play
     prima) e il resto va al poll REST di fallback (service.py);
   · ogni shard: 1 connessione, conflate 1s, best offers (ladder_levels=1, prezzo +
-    SIZE), heartbeat 5s; riconnessione con backoff; resubscribe throttled 60s;
+    SIZE), heartbeat 5s; riconnessione con backoff; resubscribe throttled 30s;
   · salute per shard misurata sul socket (ogni messaggio, heartbeat incluso): un
     mercato fermo NON rende lo shard "malato" e non spreca REST.
 
@@ -168,7 +168,7 @@ class StreamShard:
             return len(self._desired)
 
     def maybe_resubscribe(self) -> None:
-        """Ricrea la subscription se il set desiderato è cambiato (throttle 60s);
+        """Ricrea la subscription se il set desiderato è cambiato (throttle 30s);
         chiude la connessione se lo shard non ha più mercati."""
         with self._lock:
             desired = set(self._desired)

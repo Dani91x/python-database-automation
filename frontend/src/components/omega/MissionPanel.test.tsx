@@ -16,12 +16,30 @@ vi.mock('react-router-dom', async (importOriginal) => {
     return { ...actual, useNavigate: () => mockNavigate };
 });
 
-vi.mock('@/lib/useScanLiveFeed', () => ({ useScanLiveFeed: () => ({}), liveScoreLabel: () => null }));
+vi.mock('@/lib/useScanLiveFeed', () => ({
+    useScanLiveFeed: () => ({}),
+    // cert. 12/09: il pannello usa la variante con l'`updated_at` di ogni riga,
+    // perche' la card deve poter DATARE la quota che mostra
+    useScanLiveFeedRows: () => ({}),
+    liveScoreLabel: () => null,
+}));
 vi.mock('@/lib/omega', () => ({
     requestManual: vi.fn(),
     fetchOmegaEvents: vi.fn(async () => []),
     fetchManualRequests: vi.fn(async () => []),
     updateOmegaParams: vi.fn(async () => ({})),
+    // helper PURI (mock totale per non importare il client supabase nel test):
+    // stessa semantica del modulo reale, certificata in lib/omega.test.ts
+    OMEGA_DAILY_GOAL_MAX: 100000,
+    filterEventsInWindow: (evs: { open_date?: string | null }[], nowMs: number) =>
+        evs.filter((e) => {
+            if (!e.open_date) return true;
+            const k = Date.parse(e.open_date);
+            if (!Number.isFinite(k)) return true;
+            return nowMs < k || nowMs - k <= 3 * 3600_000;
+        }),
+    eventsCacheUpdatedAt: (evs: { updated_at?: string | null }[]) =>
+        evs.map((e) => e.updated_at ?? null).filter(Boolean).sort().pop() ?? null,
 }));
 // §18: il poll dello stato scalper e UNO, a livello di pannello. Mockato: senza,
 // il client Supabase VERO aprirebbe una WebSocket dal test.
@@ -70,10 +88,18 @@ const mMissions = vi.mocked(fetchMissions);
 const mFollow = vi.mocked(followMission);
 const mSetRecord = vi.mocked(setFollowRecord);
 
+/**
+ * Audit 12/09: la lista mostra SOLO le partite della finestra operativa (non
+ * finite). Una fixture con kickoff congelato nel passato uscirebbe dalla lista
+ * il giorno dopo averla scritta — il calcio d'inizio è relativo ad ADESSO.
+ */
+const KICKOFF_SOON = new Date(Date.now() + 60 * 60_000).toISOString();
+
 const EVENT = {
     event_id: '34009000',
     name: 'Puskas Akademia v Basaksehir',
-    open_date: '2026-07-16T18:00:00Z',
+    open_date: KICKOFF_SOON,
+    updated_at: new Date().toISOString(),
     markets: [],
     competition_id: 'c1',
     competition_name: 'Conference League',
@@ -137,7 +163,7 @@ describe('MissionPanel — pulsanti Statistiche / Trading', () => {
         await user.click(screen.getByRole('button', { name: /Trading/ }));
         await waitFor(() => expect(mFollow).toHaveBeenCalledTimes(1));
         expect(mFollow).toHaveBeenCalledWith(
-            '34009000', 'Puskas Akademia', 'Basaksehir', '2026-07-16T18:00:00Z');
+            '34009000', 'Puskas Akademia', 'Basaksehir', KICKOFF_SOON);
         await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/segui-live?event=34009000&from=omega'));
     });
 
@@ -175,7 +201,7 @@ describe('MissionPanel — pulsanti Statistiche / Trading', () => {
         await waitFor(() => expect(mSetRecord).toHaveBeenCalledWith('34009000', true));
         // il follow è prerequisito del flag (idempotente)
         expect(mFollow).toHaveBeenCalledWith(
-            '34009000', 'Puskas Akademia', 'Basaksehir', '2026-07-16T18:00:00Z');
+            '34009000', 'Puskas Akademia', 'Basaksehir', KICKOFF_SOON);
         // stato attivo visibile: il pulsante diventa REC
         await screen.findByRole('button', { name: /REC/ });
         // niente navigazione: la registrazione non apre il trading
@@ -297,5 +323,64 @@ describe('MissionPanel — obiettivo di giornata e poll dello scalper', () => {
         renderPanel();
         await waitFor(() => expect(mScalper).toHaveBeenCalledTimes(1));
         expect(mScalper.mock.calls[0][0]).toBe('viva');
+    });
+});
+
+// ================================= AUDIT 12/09 — un solo target, una sola lista
+describe('MissionPanel — audit 12/09: niente numeri contraddittori', () => {
+    /** una partita FINITA da un pezzo: la cache eventi è ferma */
+    const FINITA = {
+        ...EVENT,
+        event_id: 'vecchio',
+        name: 'Pyramids v El Gounah',
+        open_date: new Date(Date.now() - 3 * 24 * 3600_000).toISOString(),
+        updated_at: new Date(Date.now() - 3 * 24 * 3600_000).toISOString(),
+    };
+
+    it('le partite già FINITE non compaiono più in lista (bug: 73 eventi del 09/09)', async () => {
+        mEvents.mockResolvedValue([FINITA as never]);
+        renderPanel();
+        await waitFor(() => expect(mEvents).toHaveBeenCalled());
+        expect(screen.queryByText('Pyramids')).toBeNull();
+        // e il contatore dice ZERO, coerente con la lista vuota
+        expect(await screen.findByTestId('mission-events-count')).toHaveTextContent('0');
+    });
+
+    it('cache ferma: stato vuoto che dice PERCHÉ e da quando', async () => {
+        mEvents.mockResolvedValue([FINITA as never]);
+        renderPanel();
+        const empty = await screen.findByTestId('mission-events-empty');
+        expect(empty).toHaveTextContent(/solo partite già finite/);
+        expect(empty).toHaveTextContent(/Aggiorna eventi/);
+    });
+
+    it('il target per partita è quello del SERVIZIO, non un secondo calcolo locale', async () => {
+        mEvents.mockResolvedValue([EVENT as never]);
+        render(
+            <MemoryRouter>
+                <MissionPanel mode="paper" dailyGoal={100} targetMatch={0.34} matchesRemaining={296} />
+            </MemoryRouter>,
+        );
+        expect(await screen.findByTestId('mission-target-match')).toHaveTextContent('0,34 €');
+        expect(screen.getByTestId('mission-target-source')).toHaveTextContent('dal servizio · 296 partite rimaste');
+    });
+
+    it('a bot FERMO il target è una stima locale e lo DICHIARA (mai l’intero obiettivo)', async () => {
+        mEvents.mockResolvedValue([EVENT as never]);
+        render(
+            <MemoryRouter>
+                <MissionPanel mode="paper" dailyGoal={100} targetMatch={null} matchesRemaining={null} />
+            </MemoryRouter>,
+        );
+        // 1 partita attivabile → 100/1; il punto è che la fonte è dichiarata
+        expect(await screen.findByTestId('mission-target-source')).toHaveTextContent('stima locale');
+    });
+
+    it('niente SECONDA barra di giornata: l’avanzamento si legge una volta sola', async () => {
+        mEvents.mockResolvedValue([EVENT as never]);
+        renderPanel();
+        await waitFor(() => expect(mEvents).toHaveBeenCalled());
+        expect(screen.queryByText('Avanzamento giornata')).toBeNull();
+        expect(await screen.findByTestId('mission-day-note')).toHaveTextContent(/barra in cima alla pagina/);
     });
 });

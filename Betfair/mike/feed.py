@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from Betfair.stream.trading.xhedge import OVER_UNDER, canonical_selection
 
-from . import config as C
 from . import engine as E
 
 _LINE_TO_MARKET = {3.5: E.MARKET_OU35, 4.5: E.MARKET_OU45}
@@ -140,6 +139,43 @@ def implied_p4(blocks: Dict[str, Dict[str, Any]], info: EventInfo) -> Optional[f
     return round(max(0.0, po35 - po45), 4)
 
 
+def market_totals(blocks: Dict[str, Dict[str, Any]], info: EventInfo) -> Optional[Dict[int, float]]:
+    """Distribuzione dei GOL TOTALI implicita nel MERCATO, in tre classi.
+
+    Il P&L di Mike dipende solo da tre casi: <=3 gol (Under 3.5 vince), 4 gol
+    esatti (perdono entrambe le linee), >=5 gol (Over 4.5 vince). Le due linee
+    O/U quotate danno esattamente queste tre probabilita', de-viggate:
+        P(<=3) = 1 - P(O3.5) · P(4) = P(O3.5) - P(O4.5) · P(>=5) = P(O4.5)
+    Si restituisce nella forma attesa da ``hold_expectation`` (chiave = un
+    totale rappresentativo della classe: 3, 4, 5).
+
+    CERTIFICAZIONE 12/09 — serve quando il dossier della partita e' vuoto
+    (leghe minori senza fixture): senza questa, l'uscita in perdita ricadeva su
+    una soglia PERCENTUALE fissa che chiude posizioni ancora favorite. Il
+    mercato non e' il modello, ma e' pur sempre il consenso di chi scommette:
+    meglio decidere sul suo prezzo che su una percentuale arbitraria.
+    """
+    def p_over(market: str) -> Optional[float]:
+        blk = blocks.get(market)
+        bo = _book_for(blk, info.selection_id(market, E.SEL_OVER))
+        bu = _book_for(blk, info.selection_id(market, E.SEL_UNDER))
+        if bo is None or bu is None or not bo.best_back or not bu.best_back:
+            return None
+        io_, iu = 1.0 / bo.best_back, 1.0 / bu.best_back
+        return io_ / (io_ + iu) if io_ + iu > 0 else None
+
+    po35, po45 = p_over(E.MARKET_OU35), p_over(E.MARKET_OU45)
+    if po35 is None or po45 is None:
+        return None
+    p_le3 = max(0.0, 1.0 - po35)
+    p4 = max(0.0, po35 - po45)
+    p_ge5 = max(0.0, po45)
+    tot = p_le3 + p4 + p_ge5
+    if tot <= 0:
+        return None
+    return {3: round(p_le3 / tot, 6), 4: round(p4 / tot, 6), 5: round(p_ge5 / tot, 6)}
+
+
 def ht_active_from_payload(payload: Dict[str, Any]) -> bool:
     raw = payload.get("score_raw") or {}
     status = str(raw.get("matchStatus") or raw.get("match_status") or "").lower()
@@ -158,16 +194,38 @@ def goals_from_payload(payload: Dict[str, Any]) -> Optional[int]:
         return None
 
 
+def _hard_max_age() -> float:
+    """Tetto assoluto sull'eta' di una riga del feed, condiviso con lo scanner.
+    Import PIGRO e guardato: se il modulo non e' importabile si usa il default
+    (180 s) invece di far esplodere il ciclo di Mike."""
+    try:
+        from Betfair.stream.scores import scan_feed as _sf
+
+        return float(_sf.HARD_MAX_AGE_SEC)
+    except Exception:  # noqa: BLE001
+        return 180.0
+
+
 def feed_fresh(row: Dict[str, Any], now: float, max_age_s: float, scanner_age_s: Optional[float],
                scanner_alive_max_s: float = 30.0) -> bool:
     """Riga fresca (età ≤ max_age) OPPURE scanner vivo (write-on-change: riga
-    immutata = nulla e' cambiato) — stessa regola di scan_feed.fresh_payload."""
+    immutata = nulla e' cambiato) — stessa regola di scan_feed.fresh_payload.
+
+    CERTIFICAZIONE 12/09 — con un TETTO ASSOLUTO (``scan_feed.HARD_MAX_AGE_SEC``)
+    che vale ANCHE a scanner vivo: se il feed di QUESTA partita si ferma (IPS
+    muto sul suo chunk, evento uscito dal catalogo) mentre lo scanner continua a
+    scrivere le altre, "scanner vivo" non dice piu' nulla su questa riga e Mike
+    deciderebbe su un punteggio di ore prima. Stessa falla corretta in
+    ``scan_feed.fresh_payload`` (difetto P7 dell'audit del motore condiviso).
+    """
     age = None
     ts = parse_iso_epoch(row.get("updated_at"))
     if ts is not None:
         age = now - ts
     if age is not None and age <= max_age_s:
         return True
+    if age is not None and age > max(float(max_age_s), _hard_max_age()):
+        return False            # oltre il tetto: nessun bypass, mai
     return scanner_age_s is not None and scanner_age_s <= scanner_alive_max_s
 
 
@@ -202,6 +260,7 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         total_matched=_num(blk35.get("total_matched")),   # diagnostica, nessun gate
         cover_gain_pct=cover_gain_pct, pressure=float(pressure or 1.0), model_probs=model_probs,
         p_total_model=p_total_model, p_total_emp=p_total_emp,
+        p_total_market=market_totals(blocks, info),
     )
 
 

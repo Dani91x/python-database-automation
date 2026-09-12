@@ -262,9 +262,14 @@ function LegCell<T extends MatchTradeLike>({
     const exp = tradeExposure({ side: t.side, price: t.price ?? null, size: t.size ?? null });
     const book = bookFor(t, kind, live);
     const side = t.side === 'back' ? 'BACK' : 'LAY';
-    const risk = hedge?.remainingLiability != null && !hedge.complete
-        ? hedge.remainingLiability
-        : side === 'LAY' ? Number(t.liability ?? 0) : Number(t.size ?? 0);
+    // H-06 (audit 12/09): a copertura COMPLETA il rischio è ZERO — è lo stesso
+    // numero che l'RPC toglie da «Liability aperta»; prima la cella diceva
+    // ancora «rischio 573,34 €» su una gamba chiusa del tutto a mercato.
+    const risk = hedge?.complete
+        ? 0
+        : hedge?.remainingLiability != null
+            ? hedge.remainingLiability
+            : side === 'LAY' ? Number(t.liability ?? 0) : Number(t.size ?? 0);
     const pnl = leg.pnl;
     // P(perdita) IMPLICITA del mercato = 1/quota lay del risultato bancato
     const marketLay = book?.lay ?? null;
@@ -307,11 +312,13 @@ function LegCell<T extends MatchTradeLike>({
                 </div>
                 <div className="text-[11px] text-slate-400 tabular-nums flex flex-wrap gap-x-2">
                     <span>stake <b className="text-slate-200">{fmtMoney(t.size)}</b></span>
-                    <span title={side === 'LAY'
-                        ? (hedge && !hedge.complete && hedge.remainingLiability != null
-                            ? 'liability ANCORA VIVA dopo la copertura parziale'
-                            : 'liability: quanto perdi se il risultato bancato esce')
-                        : 'importo puntato'}>
+                    <span title={hedge?.complete
+                        ? 'copertura COMPLETA: il P&L è bloccato, nessun rischio vivo'
+                        : side === 'LAY'
+                            ? (hedge && hedge.remainingLiability != null
+                                ? 'liability ANCORA VIVA dopo la copertura parziale'
+                                : 'liability: quanto perdi se il risultato bancato esce')
+                            : 'importo puntato'}>
                         rischio <b className="text-orange-300">{fmtMoney(risk)}</b>
                     </span>
                     {(t.minute_at_entry != null || t.score_at_entry) && (
@@ -446,12 +453,22 @@ function LegCell<T extends MatchTradeLike>({
                         )}
                         <CashOutButton
                             compact
-                            mode={(t.mode === 'live' ? 'live' : 'paper')}
+                            /* CERT. 12/09 (review) — FAIL-CLOSED sulla modalita':
+                               un `mode` mancante o inatteso NON puo' degradare a
+                               'paper', perche' significherebbe conferma singola su
+                               una posizione che potrebbe essere reale. Solo un
+                               'paper' esplicito vale come paper. */
+                            mode={(t.mode === 'paper' ? 'paper' : 'live')}
                             win={cashExp.win}
                             lose={cashExp.lose}
                             bestBack={book?.back ?? null}
                             bestLay={book?.lay ?? null}
                             commission={commPct}
+                            // copertura PARZIALE: il dialog deve dire che si sta
+                            // chiudendo il RESIDUO, non la posizione intera
+                            residual={residual != null
+                                ? { remaining: hedge?.remainingLiability ?? residual, fraction: hedge?.fraction ?? null }
+                                : null}
                             pending={isCashOutPending ? isCashOutPending(t) : false}
                             disabled={feedStale}
                             disabledReason={feedStale

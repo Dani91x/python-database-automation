@@ -93,10 +93,11 @@ def risk_params(params: Optional[dict[str, Any]]) -> dict[str, Any]:
     """Sezione ``risk`` completa dai parametri del bot (già fusa da resolve_params
     oppure grezza); ``max_open_trades`` None → quello del bot."""
     params = params if isinstance(params, dict) else {}
-    sec = params.get("risk")
-    rp = sec if isinstance(sec, dict) and set(sec) >= set(DEFAULT_RISK_PARAMS) \
-        else merge_risk_params(sec)
-    rp = dict(rp)
+    # SEMPRE clampata: una sezione "completa" ma grezza (dal DB, con valori non
+    # numerici o con lo stop perdite a segno positivo) passava senza clamp e
+    # ``check``/``loss_stop_active`` esplodevano o spegnevano lo stop.
+    # ``merge_risk_params`` e' idempotente su una sezione gia' fusa.
+    rp = merge_risk_params(params.get("risk"))
     if rp.get("max_open_trades") is None:
         rp["max_open_trades"] = max(0, int(_f(params.get("max_open_trades"), 0.0)))
     return rp

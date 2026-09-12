@@ -107,7 +107,7 @@ describe('DayDetail', () => {
         const { rerender } = render(<DayDetail day="2026-09-10" trades={[]} variant="safe" />);
         expect(screen.getByTestId('day-detail-none')).toBeInTheDocument();
         rerender(<DayDetail day="2026-09-10" trades={null} loading variant="safe" />);
-        expect(screen.getByText('caricamento…')).toBeInTheDocument();
+        expect(screen.getByTestId('day-detail-loading')).toHaveTextContent('caricamento…');
         rerender(<DayDetail day="2026-09-10" trades={[]} error="RPC assente" variant="safe" />);
         expect(screen.getByTestId('day-detail-error')).toHaveTextContent('RPC assente');
     });
@@ -163,8 +163,141 @@ describe('DayDetail — attribuzione al giorno del calendario (H-11 / M-18)', ()
     });
 
     it('formati italiani anche nel dettaglio (€ dopo, virgola, ora di Roma)', () => {
-        render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" />);
+        // attribuzione 'settled': la riga (piazzata ieri, regolata oggi) è
+        // attribuita a questa giornata e quindi compare in tabella
+        render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" attribution="settled" />);
         expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 0,00 €');
         expect(screen.getAllByTestId('day-trade-row')[0]).toHaveTextContent('20:00');
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE UI 12/09 — lo storico deve dire quello che dice il live
+// ============================================================================
+describe('DayDetail — badge, V/P e dati assenti (12/09)', () => {
+    const RECON: DayTrade = {
+        ...OPEN, id: 10, status: 'pending', event_name: 'Riserva ignota',
+        meta: { reason: 'place_exception_reconciling', phase: 'reserved' },
+    };
+    const TERMINAL: DayTrade = {
+        ...OPEN, id: 11, status: 'error', event_name: 'Mai piazzato',
+        meta: { error_final: true, error_at: '2026-09-10T18:01:00Z' },
+    };
+
+    it('riserva a esito IGNOTO: «IN VERIFICA SU BETFAIR», non un innocuo «IN CORSO»', () => {
+        render(<DayDetail day="2026-09-10" trades={[RECON]} variant="safe" />);
+        expect(screen.getByTestId('day-trade-row')).toHaveTextContent('IN VERIFICA SU BETFAIR');
+    });
+
+    it('riga terminale: «ERRORE (definitivo)», così si sa che non è più viva', () => {
+        render(<DayDetail day="2026-09-10" trades={[TERMINAL]} variant="safe" />);
+        expect(screen.getByTestId('day-trade-row')).toHaveTextContent('ERRORE (definitivo)');
+    });
+
+    it('V/P del piede tabella = SEGNO del P&L totale, come la cella del calendario', () => {
+        // Certificazione 12/09: `trading_daily_history` e i tre *_aggregates_sql
+        // contano per segno del P&L della POSIZIONE. Contando lo stato, il
+        // 10/09 la cella Omega diceva «11V 2P» e questo piede «12V 1P».
+        const wonNegative: DayTrade = {
+            ...OPEN, id: 12, status: 'won', pnl: -1.2, total_pnl: -1.2,
+            settled_at: '2026-09-10T20:00:00Z', settled_in_day: true,
+        };
+        const lostPositive: DayTrade = {
+            ...OPEN, id: 15, status: 'lost', pnl: -9, total_pnl: 2.4,
+            settled_at: '2026-09-10T20:00:00Z', settled_in_day: true,
+        };
+        const voided: DayTrade = {
+            ...OPEN, id: 13, status: 'void', pnl: 0, total_pnl: 0,
+            settled_at: '2026-09-10T20:00:00Z', settled_in_day: true,
+        };
+        render(<DayDetail day="2026-09-10" trades={[wonNegative, lostPositive, voided]} variant="safe" />);
+        const foot = screen.getByTestId('day-detail').querySelector('tfoot') as HTMLElement;
+        expect(foot).toHaveTextContent('1V 1P');
+        expect(foot).toHaveTextContent('1 void');
+    });
+
+    it('stake/liability mai scritti: «—», non uno zero credibile', () => {
+        const senzaImporti: DayTrade = { ...OPEN, id: 14, size: null, liability: null };
+        render(<DayDetail day="2026-09-10" trades={[senzaImporti]} variant="safe" />);
+        const cells = within(screen.getByTestId('day-trade-row')).getAllByRole('cell');
+        // colonne: Ora, Match, Strategia, Selezione, Lato, Quota, Stake, Liability, ...
+        expect(cells[6]).toHaveTextContent('—');
+        expect(cells[7]).toHaveTextContent('—');
+    });
+});
+
+describe('DayDetail — righe e totali dicono la stessa cosa (12/09)', () => {
+    it("le righe di un'ALTRA giornata non entrano nella tabella (né nei totali)", () => {
+        // attribuzione 'placed': HEDGED_WON è stata piazzata ieri
+        render(<DayDetail day="2026-09-10" trades={[OPEN, HEDGED_WON, LOST]} variant="safe" attribution="placed" />);
+        expect(screen.getByTestId('day-count')).toHaveTextContent('2 trade');
+        expect(screen.getByTestId('day-other-days')).toHaveTextContent('+ 1 di altre giornate');
+        expect(screen.getAllByTestId('day-trade-row')).toHaveLength(2);
+        expect(screen.queryByText('Inter vs Milan')).toBeNull();
+    });
+
+    it('solo righe di altre giornate: lo dice, non una tabella vuota', () => {
+        render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" attribution="placed" />);
+        expect(screen.getByTestId('day-detail-none')).toHaveTextContent("un’altra giornata");
+    });
+});
+
+describe('DayDetail — nessuno zero prima dei dati (12/09)', () => {
+    it('trades null: «caricamento…» e trattini, mai «0 trade · realizzato +0,00 €»', () => {
+        render(<DayDetail day="2026-09-12" trades={null} loading variant="mike" />);
+        const head = screen.getByTestId('day-detail');
+        expect(screen.getByTestId('day-count')).toHaveTextContent('caricamento');
+        expect(screen.getByTestId('day-count')).not.toHaveTextContent('0 trade');
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('—');
+        expect(head).not.toHaveTextContent('+0,00 €');
+        expect(head).toHaveTextContent('liability piazzata —');
+        expect(screen.getByTestId('day-detail-loading')).toBeInTheDocument();
+        expect(screen.queryByTestId('day-detail-none')).toBeNull();
+    });
+
+    it('giornata davvero vuota (lista caricata): allora lo zero si può dire', () => {
+        render(<DayDetail day="2026-09-12" trades={[]} variant="mike" />);
+        expect(screen.getByTestId('day-count')).toHaveTextContent('0 trade');
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('+0,00 €');
+        expect(screen.getByTestId('day-detail-none')).toBeInTheDocument();
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE REPORTISTICA 12/09 — testata del dettaglio = cella del
+// calendario (numeri ricostruiti dai dati reali del 12/09/2026).
+// ============================================================================
+describe('DayDetail — la testata dice gli stessi numeri del calendario (12/09)', () => {
+    const OPEN_HEDGED: DayTrade = {
+        ...OPEN, id: 20, status: 'open', pnl: 0, total_pnl: -2.67, liability: 100,
+        closes: [{
+            id: 21, event_id: 'e1', event_name: 'Roma vs Lazio', side: 'lay', mode: 'paper',
+            price: 3, size: 4, liability: 8, status: 'lost', pnl: -2.67,
+            placed_at: '2026-09-12T09:00:00Z', settled_at: '2026-09-12T09:30:00Z',
+            closes_trade_id: 20, meta: null,
+        }],
+    };
+    const WON_190: DayTrade = {
+        ...OPEN, id: 22, status: 'won', pnl: 1.9, total_pnl: 1.9, liability: 66,
+        settled_at: '2026-09-12T08:45:00Z', settled_in_day: true,
+    };
+
+    it('copertura già incassata su posizione viva: realizzato −0,77 €, non +1,90 €', () => {
+        render(<DayDetail day="2026-09-12" trades={[WON_190, OPEN_HEDGED]} variant="safe" attribution="placed" />);
+        expect(screen.getByTestId('day-total-pnl')).toHaveTextContent('−0,77 €');
+        expect(screen.getByTestId('day-realized-on-open')).toHaveTextContent('−2,67 €');
+        // la riga viva mostra quanto ha già incassato, non un «—» muto
+        const rows = screen.getAllByTestId('day-trade-row');
+        expect(within(rows[1]).getByTestId('day-trade-pnl')).toHaveTextContent('−2,67 €');
+    });
+
+    it('ordini mai arrivati a mercato: visibili ma fuori da conteggio e liability', () => {
+        const failed: DayTrade = { ...OPEN, id: 23, status: 'error', pnl: 0, total_pnl: 0, liability: 10, bet_id: null };
+        render(<DayDetail day="2026-09-12" trades={[WON_190, failed]} variant="safe" attribution="placed" />);
+        expect(screen.getByTestId('day-count')).toHaveTextContent('1 trade');
+        expect(screen.getByTestId('day-not-placed')).toHaveTextContent('1 non piazzati');
+        expect(screen.getByTestId('day-detail')).toHaveTextContent('liability piazzata 66,00 €');
+        // la riga fallita resta in tabella: un ordine perso è un'informazione
+        expect(screen.getAllByTestId('day-trade-row')).toHaveLength(2);
     });
 });

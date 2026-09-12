@@ -7,6 +7,11 @@
 // e dello storico (audit C-01). Prima il pannello poteva mostrare un numero
 // diverso dai KPI per la stessa giornata.
 //
+// UN SOLO numero di rischio qui: l'IMPEGNATO della giornata rispetto al cap.
+// La "Liability aperta" (rischio vivo adesso) sta SOLO nella sua tile: prima
+// compariva tre volte (barra giornata + tile + questo pannello) con due
+// definizioni diverse e lo stesso nome.
+//
 // Rosso quando lo stop giornaliero è scattato: da quel momento nessun nuovo
 // ingresso automatico, e l'utente deve vederlo a colpo d'occhio.
 // ============================================================================
@@ -28,10 +33,6 @@ export interface RiskPanelProps {
     paramLossStop?: number;
     /** capitale IMPEGNATO oggi (base dei cap): aggregates.day_liability */
     dayLiability?: number | null;
-    /** rischio VIVO adesso (liability delle posizioni aperte) */
-    openLiability?: number | null;
-    /** di cui in VERIFICA su Betfair (riserve a esito ignoto): H-03 */
-    reconcilingLiability?: number | null;
     /** etichetta della giornata operativa: lo stesso giorno dei KPI (C-01) */
     dayLabel?: string;
     /** true = i conteggi mostrati sono quelli calcolati dalla UI (stessi dei tab) */
@@ -44,18 +45,18 @@ export interface RiskPanelProps {
 
 export function RiskPanel({
     risk, opps, fallbackCounts, paramDailyCap, paramLossStop,
-    dayLiability, openLiability, reconcilingLiability, dayLabel, countsFromUi, dayFromUi,
+    dayLiability, dayLabel, countsFromUi, dayFromUi,
 }: RiskPanelProps) {
-    // "impegnato oggi" = capitale usato nella giornata (base dei cap di rischio);
-    // "rischio aperto" = quello ancora a mercato ADESSO. Sono due cose diverse:
-    // mescolarle faceva leggere un numero per un altro (contratto backend 11/09).
+    // UN SOLO numero in questo pannello: "impegnato oggi" = capitale usato nella
+    // GIORNATA (base dei cap di rischio). Il rischio ancora vivo ADESSO ha una
+    // sola casa, la tile "Liability aperta": mostrarlo anche qui (e nella barra
+    // della giornata) faceva leggere tre volte due grandezze diverse con lo
+    // stesso nome — certificazione 12/09.
     const used = Number(risk?.daily_liability ?? dayLiability ?? 0);
-    const open = openLiability == null ? null : Number(openLiability);
     const cap = Number(risk?.daily_cap ?? paramDailyCap ?? 0);
     // il servizio legge lo stop in valore assoluto: 50 e −50 sono −50 €
     const lossStop = normalizeLossStop(risk?.daily_loss_stop ?? paramLossStop ?? null);
     const stopActive = risk?.loss_stop_active === true;
-    const reconciling = Number(risk?.reconciling_liability ?? reconcilingLiability ?? 0);
     const pctUsed = cap > 0 ? Math.max(0, Math.min(100, (used / cap) * 100)) : 0;
     const barTone = stopActive || pctUsed >= 90 ? 'bg-red-500' : pctUsed >= 70 ? 'bg-amber-400' : 'bg-emerald-500';
     // M-21: se il servizio non pubblica i conteggi si usano quelli della UI —
@@ -97,11 +98,10 @@ export function RiskPanel({
                 <span className="text-[11px] text-slate-500">impegnato oggi / cap {cap > 0 ? fmtMoney(cap) : '—'}</span>
                 {cap > 0 && <span className="ml-auto text-[11px] text-slate-400">{fmtPctPoints(pctUsed, 0)}</span>}
             </div>
-            {open != null && (
-                <div className="text-[10px] text-orange-300/90" data-testid="risk-open-liability" title={`${T.openLiability}: quello che e' ancora a rischio ADESSO sulle posizioni vive`}>
-                    rischio aperto ora <b>{fmtMoney(open)}</b>
-                </div>
-            )}
+            <div className="text-[10px] text-slate-500" data-testid="risk-explain">
+                somma delle liability PIAZZATE oggi (anche su posizioni già chiuse): è la base dei cap.
+                Il rischio ancora vivo adesso è la tile «{T.openLiability}».
+            </div>
             {dayLabel && (
                 <div className="text-[10px] text-slate-500" data-testid="risk-day">
                     {T.operatingDay} {dayLabel} · Europe/Rome
@@ -114,11 +114,6 @@ export function RiskPanel({
                     title="la RPC vecchia non torna i contatori di giornata: l'impegnato e' sommato sulle righe caricate da questa schermata, non su tutta la giornata operativa"
                 >
                     ⚠ impegnato stimato dal client (applica safe_strategy_bot_v2.sql)
-                </div>
-            )}
-            {reconciling > 0 && (
-                <div className="text-[10px] text-fuchsia-300/90" data-testid="risk-reconciling" title="riserve a esito IGNOTO: l'ordine potrebbe essere vivo su Betfair, la liability va considerata impegnata">
-                    di cui in verifica su Betfair <b>{fmtMoney(reconciling)}</b>
                 </div>
             )}
             <div

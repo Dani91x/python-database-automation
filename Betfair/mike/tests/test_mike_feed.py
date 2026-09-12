@@ -110,3 +110,28 @@ def test_market_status_closed_from_block():
     info = F.event_info("E1", p)
     s = F.snapshot_from_row(row(p), info, now=NOW.timestamp(), params=C.merge_params(None), scanner_age_s=1.0)
     assert s.market_status == "CLOSED"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — tetto ASSOLUTO sull'eta' della riga del feed.
+# "Scanner vivo" dice che lo scanner scrive QUALCHE riga, non che scrive
+# QUESTA: se il feed di una partita si ferma mentre le altre vanno avanti,
+# Mike decideva su un punteggio di ore prima.
+# ===========================================================================
+def test_riga_vecchissima_non_e_fresca_neanche_con_scanner_vivo():
+    row = {"updated_at": "2026-09-12T08:00:00+00:00"}
+    now = F.parse_iso_epoch(row["updated_at"]) + 3600.0     # un'ora dopo
+    assert F.feed_fresh(row, now, max_age_s=15.0, scanner_age_s=1.0) is False
+
+
+def test_riga_entro_il_tetto_resta_coperta_dallo_scanner_vivo():
+    """Write-on-change: riga immutata da poco + scanner vivo = fresca."""
+    row = {"updated_at": "2026-09-12T08:00:00+00:00"}
+    now = F.parse_iso_epoch(row["updated_at"]) + 60.0       # sotto il tetto (180 s)
+    assert F.feed_fresh(row, now, max_age_s=15.0, scanner_age_s=1.0) is True
+
+
+def test_riga_fresca_di_suo_non_dipende_dallo_scanner():
+    row = {"updated_at": "2026-09-12T08:00:00+00:00"}
+    now = F.parse_iso_epoch(row["updated_at"]) + 5.0
+    assert F.feed_fresh(row, now, max_age_s=15.0, scanner_age_s=None) is True

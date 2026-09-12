@@ -11,6 +11,7 @@ import {
     marketStatusMeta, awaitingKickoff, mikeHistoryErrorMessage, withMikeHistoryError,
     MIKE_ACTIVITY_KINDS, MIKE_ACTIVITY_EXTRA, MIKE_REQUEST_CODE_MESSAGE, MIKE_REQUEST_KIND_LABEL,
     MIKE_REALTIME_TABLES, MIKE_AWAITING_KICKOFF_NOTE, MIKE_HISTORY_MIGRATION_HINT,
+    cashoutBarPct, hasModel, lockedPnlTotal, settledOperated, cycleNumber, stateLabel,
     type MikeEvent, type MikeLeg, type MikeRequest, type MikeTrade, romeDayStartMs, dayResultCounts } from './mike';
 import { activityMeta } from './tradeStatus';
 
@@ -49,7 +50,7 @@ describe('mike params', () => {
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_min_pct).toBe(2);
         expect(MIKE_PARAM_DEFAULTS.cashout_smart_goals_hot).toBe(3);
         expect(MIKE_PARAM_DEFAULTS.loss_exit_mode).toBe('model');
-        expect(MIKE_PARAM_DEFAULTS.loss_exit_risk_premium_pct).toBe(50);
+        expect(MIKE_PARAM_DEFAULTS.loss_exit_risk_premium_pct).toBe(10);
     });
     it('number defaults are inside their bounds', () => {
         for (const f of MIKE_PARAM_FIELDS) {
@@ -564,5 +565,96 @@ describe('ripieghi di giornata senza mike_bot_v2.sql', () => {
         ];
         expect(dayResultCounts(trades, day)).toEqual({ won: 1, lost: 1 });
         expect(dayResultCounts(trades, null)).toEqual({ won: 2, lost: 1 });
+    });
+});
+
+// ===========================================================================
+// CERTIFICAZIONE UI 12/09/2026 — "il trader deve sapere che cosa guardare".
+// Ogni test qui sotto nasce da un'incoerenza VISTA in pagina sui dati reali.
+// ===========================================================================
+describe('mike — numeri e parole coerenti in pagina (audit UI 12/09)', () => {
+    it('lineLabel: il servizio scrive anche il solo MERCATO, mai piu "undefined 3.5"', () => {
+        // service.py:1125 scrive lines_missing = ['OU35','OU45'] (senza selezione)
+        expect(lineLabel('OU35')).toBe('linea 3.5');
+        expect(lineLabel('OU45')).toBe('linea 4.5');
+        expect(lineLabel('OVER_UNDER_35')).toBe('linea 3.5');
+        expect(lineLabel('')).toBe('—');
+        expect(lineLabel(null)).toBe('—');
+        for (const k of ['OU35', 'OU45', 'OU35|UNDER', 'OU45|OVER', '', null]) {
+            expect(lineLabel(k)).not.toContain('undefined');
+        }
+    });
+
+    it('cashoutBarPct: la barra parte da ZERO, un cash out in perdita non e avanzamento', () => {
+        expect(cashoutBarPct(-2, 5)).toBe(0);
+        expect(cashoutBarPct(0, 5)).toBe(0);
+        expect(cashoutBarPct(2.5, 5)).toBe(50);
+        expect(cashoutBarPct(9, 5)).toBe(100);
+        expect(cashoutBarPct(3, 0)).toBe(0);
+        expect(cashoutBarPct(null, 5)).toBe(0);
+    });
+
+    it('lockedPnlTotal: `locked` assente NON vale zero (barra "+0,00 €" con le card a "—")', () => {
+        const vuoto = lockedPnlTotal([ev({ live: { inplay: false } as never }), ev({ live: null })]);
+        expect(vuoto).toEqual({ value: null, known: 0, pending: 2 });
+        const misto = lockedPnlTotal([
+            ev({ event_id: 'A', live: { locked: 0.13 } as never }),
+            ev({ event_id: 'B', live: { locked: -0.4 } as never }),
+            ev({ event_id: 'C', live: { locked: null } as never }),
+        ]);
+        expect(misto).toEqual({ value: -0.27, known: 2, pending: 1 });
+    });
+
+    it('settledOperated: nella scheda Regolate solo le partite davvero giocate', () => {
+        const giocata = ev({ event_id: 'E1', state: 'SETTLED', settled_pnl: 4.51 });
+        const seguita = ev({ event_id: 'E2', state: 'SETTLED', settled_pnl: 0 });
+        const trades = [{ id: 1, event_id: 'E1' }] as unknown as MikeTrade[];
+        expect(settledOperated([giocata, seguita], trades).map((e) => e.event_id)).toEqual(['E1']);
+        expect(settledOperated([giocata, seguita], [])).toEqual([]);
+    });
+
+    it('hasModel: senza modello la card non deve disegnare listogramma', () => {
+        expect(hasModel(ev({ live: null, dossier: null }))).toBe(false);
+        expect(hasModel(ev({ live: { p4_market: 0.12 } as never, dossier: {} }))).toBe(false);
+        expect(hasModel(ev({ dossier: { lambda_home: 1.4 } }))).toBe(true);
+        expect(hasModel(ev({ live: { p_total_model: { '4': 0.14 } } as never }))).toBe(true);
+        expect(hasModel(ev({ live: { p_total_emp: { '4': 0.14 } } as never }))).toBe(true);
+    });
+
+    it('cycleNumber: il servizio conta da 0, il trader legge "ciclo 1"', () => {
+        expect(cycleNumber(0)).toBe(1);
+        expect(cycleNumber(3)).toBe(4);
+        expect(cycleNumber(null)).toBe(1);
+        expect(cycleNumber('2')).toBe(3);
+    });
+
+    it('stateLabel: mai il codice dellenum, sempre letichetta del badge', () => {
+        expect(stateLabel('PRE_OPEN')).toBe(MIKE_PHASE_META.PRE_OPEN.label);
+        expect(stateLabel('HOLD')).toBe('TIENE FINO AL FISCHIO');
+        expect(stateLabel(null)).toBe('—');
+        expect(stateLabel('BOH_SCONOSCIUTO')).toBe('BOH SCONOSCIUTO');
+    });
+
+    it('ogni fase dichiara COSA sta facendo il bot, in italiano', () => {
+        for (const st of MIKE_STATES) {
+            const m = MIKE_PHASE_META[st];
+            expect(m.what.length, st).toBeGreaterThan(10);
+            expect(m.label, st).not.toMatch(/→ LIVE|FLAT$/);
+        }
+    });
+
+    it('attivita: fasi con le parole del badge, cicli da 1, motivi composti tradotti', () => {
+        expect(mikeActivityLine('state', { from: 'PRE_OPEN', to: 'HOLD', reason: 'x' }))
+            .toContain('UNDER 3.5 APERTO → TIENE FINO AL FISCHIO');
+        expect(mikeActivityLine('pre_cycle', { cycle: 0, entry: 1.4, exit: 1.38, locked: 0.15 }))
+            .toContain('ciclo 1 chiuso');
+        expect(mikeActivityLine('feed_line_missing', { markets: ['OU35', 'OU45'], state: 'HOLD' }))
+            .toBe('linee assenti nel feed: linea 3.5, linea 4.5 · fase TIENE FINO AL FISCHIO');
+        // esito del gate di esecuzione: prima finiva in pagina in inglese
+        expect(reasonLabel('paper_fill:execution_mode_rest'))
+            .toBe('fill simulato (paper) · esecuzione diretta REST (coda flumine non usata)');
+        expect(mikeActivityLine('place', { role: 'under_entry', side: 'back', size: 10, price: 1.37,
+                                           note: 'paper_fill:execution_mode_rest' }))
+            .toContain('fill simulato (paper)');
     });
 });

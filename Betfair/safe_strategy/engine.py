@@ -1433,7 +1433,13 @@ class SafeEngine:
                 )
             else:
                 stab = self._stab.get(eid)
-                cur_key = f"{p.get('score_home')}-{p.get('score_away')}"
+                # la chiave DEVE nascere dagli stessi interi con cui la costruisce
+                # ``track_score_stability`` (_int_field): col valore GREZZO del
+                # payload un punteggio arrivato come float (1.0 invece di 1,
+                # JSONB round-trip) dava "1.0-0.0" contro "1-0" del tracker ->
+                # stable sempre None -> ``score_observed_sec`` n/d -> il check
+                # "punteggio confermato" restava n/d e NESSUN segnale usciva mai.
+                cur_key = f"{_int_field(p.get('score_home'))}-{_int_field(p.get('score_away'))}"
                 stable = stab if stab is not None and cur_key == stab.score_key else None
                 ctx = build_football_ctx_from_scan(
                     eid,

@@ -1,4 +1,4 @@
-"""config — whitelist parametri e costanti del bot Mike (COSTITUZIONE_MIKE.md §3).
+"""config — whitelist parametri e costanti del bot Mike (COSTITUZIONE_MIKE.md §6).
 
 La whitelist e' la barriera di sicurezza backend: SOLO queste chiavi, con questi
 tipi/limiti/scelte, vengono applicate dai ``params`` che arrivano dalla UI.
@@ -18,8 +18,10 @@ OU35 = "OVER_UNDER_35"
 OU45 = "OVER_UNDER_45"
 FOOTBALL_EVENT_TYPE_ID = "1"
 
-# Selection id ATTESI (Under 3.5 / Over 4.5). Usati SOLO come assert-warn: la
-# risoluzione avviene sempre PER NOME dal catalogo (catalogue.group_by_event).
+# Selection id ATTESI (Under 3.5 / Over 4.5). Costante DOCUMENTALE: usata solo
+# dai test, mai a runtime. La risoluzione avviene sempre PER NOME dal FEED UNICO
+# (``feed.event_info`` -> ``xhedge.canonical_selection``): un nome non mappabile
+# non produce nessuna selezione (partita non completa), mai un id indovinato.
 # Nota: sulla linea 4.5 Betfair inverte l'ordine (Under 4.5 = 1222347).
 EXPECTED_SEL = {"UNDER_35": 1222344, "OVER_35": 1222345,
                 "OVER_45": 1222346, "UNDER_45": 1222347}
@@ -122,6 +124,15 @@ PARAM_SPEC: dict[str, Spec] = {
     "cashout_profit_pct": (5.0, float, 0.5, 50.0, None),
     "cashout_base": ("total", str, None, None, ("total", "under")),
     "cashout_place_at_ticks": (0, int, 0, 3, None),
+    # CERT. 12/09 (osservato dal vivo) — CUSCINETTO in tick sulla COPERTURA.
+    # La copertura si piazzava al best back ESATTO: con il ritardo di
+    # piazzamento in gioco il prezzo si muove e l'ordine muore. Misurato: 188
+    # tentativi per 13 coperture abbinate (93% di fallimenti), e tre partite
+    # finite a -10,00 perche' scoperte. Piazzando N tick SOTTO il best si paga
+    # una quota un po' peggiore ma si ENTRA: per una protezione e' il
+    # compromesso giusto (2 tick su 4,60 = 4,40: costo ~0,70 EUR contro un
+    # rischio di 10,00 EUR).
+    "cover_place_at_ticks": (2, int, 0, 6, None),
     # cash-out INTELLIGENTE (engine.smart_cashout): chiude prima della soglia quando tenere
     # non vale il rischio (punteggio caldo, hazard/pressione alti vicino alla soglia,
     # valore atteso dell'attesa < valore attuale). MAI sotto cashout_smart_min_pct.
@@ -139,7 +150,17 @@ PARAM_SPEC: dict[str, Spec] = {
     # (risk_premium% x P(4 gol) x capitale), P(4) prudente = max(modello/empirico, mercato);
     # senza dati di modello ricade sulla regola fissa "perdita <= ht_loss_pct". "fixed" = solo la regola fissa.
     "loss_exit_mode": ("model", str, None, None, ("model", "fixed")),
-    "loss_exit_risk_premium_pct": (50.0, float, 0.0, 300.0, None),
+    # CERT. 12/09 — 50 -> 10. Il premio SOTTRAE valore alla soglia, quindi fa
+    # chiudere PRIMA. Ma il disastro dei 4 gol e' gia' dentro ``ev_hold``
+    # (P(4) x P&L(4) e' uno dei termini della somma): sottrarne un altro pezzo
+    # proporzionale a P(4) conta lo stesso rischio DUE VOLTE. Col 50% il bot ha
+    # chiuso in perdita quattro Under che il mercato dava ancora FAVORITI al
+    # 57-66% (Catania, Sparta Praga, Cukaricki, Granada): tutte e quattro le
+    # partite sono finite sotto i 3,5 gol e l'Under avrebbe VINTO. Sulle 7
+    # uscite in perdita della storia, tenere valeva +21,37 invece di -19,56.
+    # Resta un premio piccolo come avversione al rischio, non come secondo
+    # conteggio della stessa perdita.
+    "loss_exit_risk_premium_pct": (10.0, float, 0.0, 300.0, None),
     "loss_exit_p4_prudent": (True, bool, None, None, None),
     "loss_exit_max_pct": (0.0, float, 0.0, 100.0, None),
     "loss_exit_emp_min_n": (200, int, 20, 5000, None),

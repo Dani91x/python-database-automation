@@ -16,7 +16,8 @@ import { DailyCalendar } from '@/components/trading/DailyCalendar';
 import { PerformancePanel } from '@/components/trading/PerformancePanel';
 import { DayDetail } from '@/components/trading/DayDetail';
 import {
-    periodRange, filterRange, romeDay, addDays, clampHistoryRange, attributionOf, MAX_HISTORY_DAYS,
+    periodRange, filterRange, romeDay, addDays, historyWindow, attributionOf, dayLabel,
+    calendarGridBounds, PERIOD_LABEL, MAX_HISTORY_DAYS,
     type DailyRow, type DayTrade, type PeriodKind, type HistoryVariant,
 } from '@/lib/dailyHistory';
 
@@ -51,20 +52,26 @@ export function TradingHistory({
     const [rows, setRows] = useState<DailyRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [dayTrades, setDayTrades] = useState<DayTrade[] | null>(null);
+    // le posizioni caricate INSIEME al giorno a cui appartengono: senza questa
+    // coppia, cambiando giorno restavano a schermo i trade del giorno prima
+    // sotto la data nuova (totali compresi) finché non arrivava la risposta.
+    const [dayData, setDayData] = useState<{ day: string; trades: DayTrade[] } | null>(null);
     const [dayLoading, setDayLoading] = useState(false);
     const [dayError, setDayError] = useState<string | null>(null);
     const [manualRefresh, setManualRefresh] = useState(0);
 
     const pRange = useMemo(() => periodRange(period, todayDay), [period, todayDay]);
     const mRange = useMemo(() => monthBounds(ym.year, ym.month), [ym]);
-    // finestra unica di caricamento = unione mese ∪ periodo, CLAMPATA a 400
-    // giorni (M-17): oltre quella soglia la RPC solleva un'eccezione e prima
-    // tutto lo storico sparira dietro un "Storico non disponibile".
-    const loadRange = useMemo(() => clampHistoryRange(
-        pRange.from < mRange.from ? pRange.from : mRange.from,
-        pRange.to > mRange.to ? pRange.to : mRange.to,
-    ), [pRange, mRange]);
+    // la finestra deve coprire la GRIGLIA, non il solo mese: le celle di coda
+    // del mese precedente e di testa del successivo sono disegnate e prima
+    // dichiaravano «nessuna operazione» su giornate mai caricate.
+    const gRange = useMemo(() => calendarGridBounds(ym.year, ym.month), [ym]);
+    // finestra unica di caricamento = mese visualizzato (SEMPRE dentro) esteso
+    // al periodo fin dove il limite dei 400 giorni lo consente (M-17). Prima la
+    // finestra teneva gli ultimi 400 giorni a partire da OGGI: navigando il
+    // calendario indietro di più di un anno il mese mostrato restava fuori e la
+    // griglia dichiarava «nessuna operazione» su giornate che esistono.
+    const loadRange = useMemo(() => historyWindow(gRange, pRange), [pRange, gRange]);
 
     // guardia anti-risposte fuori ordine
     const seqRef = useRef(0);
@@ -79,15 +86,19 @@ export function TradingHistory({
 
     const daySeqRef = useRef(0);
     useEffect(() => {
-        if (!selectedDay) { setDayTrades(null); return; }
+        if (!selectedDay) { setDayData(null); return; }
+        const day = selectedDay;
         const seq = ++daySeqRef.current;
         setDayLoading(true);
         setDayError(null);
-        fetchDayTrades(selectedDay)
-            .then((t) => { if (seq === daySeqRef.current) { setDayTrades(t); setDayLoading(false); } })
-            .catch((e) => { if (seq === daySeqRef.current) { setDayError(String((e as Error)?.message ?? e)); setDayTrades([]); setDayLoading(false); } });
+        fetchDayTrades(day)
+            .then((t) => { if (seq === daySeqRef.current) { setDayData({ day, trades: t }); setDayLoading(false); } })
+            .catch((e) => { if (seq === daySeqRef.current) { setDayError(String((e as Error)?.message ?? e)); setDayData({ day, trades: [] }); setDayLoading(false); } });
     }, [fetchDayTrades, selectedDay, filterKey, refreshToken, manualRefresh]);
 
+    // i trade mostrati sono SOLO quelli del giorno selezionato: mai quelli di
+    // un'altra giornata rimasti da una richiesta precedente
+    const dayTrades = dayData && dayData.day === selectedDay ? dayData.trades : null;
     const periodRows = useMemo(() => filterRange(rows, pRange.from, pRange.to), [rows, pRange]);
     const onMonthChange = useCallback((year: number, month: number) => setYm({ year, month }), []);
     const onSelectDay = useCallback((day: string) => setSelectedDay(day), []);
@@ -98,7 +109,10 @@ export function TradingHistory({
                 {/* L-08: il testo dice l'ATTRIBUZIONE vera della variante, non
                     "regolati nel giorno" anche dove il giorno è il piazzamento */}
                 <span>
-                    Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300 tabular-nums">{todayDay}</b> ·
+                    {/* §1: le date si leggono nella stessa forma ovunque
+                        («12 settembre 2026»), mai l'ISO grezzo accanto alle
+                        etichette italiane del calendario e del dettaglio */}
+                    Giornata operativa = fuso Europe/Rome · oggi <b className="text-slate-300">{dayLabel(todayDay)}</b> ·
                     {attributionOf(variant) === 'placed'
                         ? ' P&L realizzato = posizioni PIAZZATE nel giorno (chiusure incluse), anche se si regolano dopo'
                         : ' P&L realizzato = trade REGOLATI nel giorno (chiusure incluse)'}
@@ -109,8 +123,9 @@ export function TradingHistory({
             </div>
             {loadRange.clamped && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" data-testid="history-clamped">
-                    finestra accorciata agli ultimi {MAX_HISTORY_DAYS} giorni (limite dello storico):
-                    dal <b className="tabular-nums">{loadRange.from}</b> al <b className="tabular-nums">{loadRange.to}</b>
+                    finestra limitata a {MAX_HISTORY_DAYS} giorni (limite dello storico): caricato
+                    dal <b>{dayLabel(loadRange.from)}</b> al <b>{dayLabel(loadRange.to)}</b>
+                    {loadRange.periodTruncated && <> — il mese mostrato c’è per intero, il periodo «{PERIOD_LABEL[period]}» no</>}
                 </div>
             )}
             {error && (
@@ -140,7 +155,9 @@ export function TradingHistory({
                         variant={variant}
                         loading={loading}
                         range={pRange}
-                    />
+                        unavailable={loadRange.periodTruncated
+                            ? `Periodo non calcolabile: con il mese di ${dayLabel(mRange.from, { year: true })} a schermo lo storico può caricare al massimo ${MAX_HISTORY_DAYS} giorni, e «${PERIOD_LABEL[period]}» resta fuori. Torna al mese corrente per rivedere questi KPI.`
+                            : null} />
                 </div>
             </div>
             <DayDetail

@@ -15,6 +15,8 @@ const EXIT_CLS: Record<ExitKind, string> = {
     forced: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
     manual: 'bg-violet-500/15 text-violet-300 border-violet-500/40',
     greenup: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50',
+    // uscita decisa dal MODELLO (Safe scrive `model` in meta.exit.kind)
+    model: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40',
     other: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
 };
 

@@ -23,10 +23,17 @@ export interface ActivityRow {
     payload?: Record<string, unknown> | null;
 }
 
+/**
+ * Certificazione 12/09 — l'ora dell'attività ha i SECONDI in tutte e tre le
+ * sezioni. Prima `timeSeconds` era opt-in: Safe e Mike lo passavano, Omega no,
+ * e la stessa lista mostrava «10:55» in una pagina e «10:55:45» nelle altre.
+ * Su righe che arrivano a raffica (cinque «FEED CIECO» nello stesso minuto) il
+ * minuto secco non permette nemmeno di dire quale è venuta prima.
+ */
 export function ActivityFeed({
     rows, metaOf, lineOf, filterable = false, maxHeightCls = 'max-h-72',
     emptyText = T.noActivityToday, testId = 'activity-feed', rowTestId = 'activity-row',
-    timeSeconds = false,
+    timeSeconds = true,
 }: {
     rows: ActivityRow[];
     /** mappa kind → etichetta della sezione (default: quella condivisa) */
@@ -80,6 +87,11 @@ export function ActivityFeed({
                             className={`px-2 py-0.5 rounded-full border ${event === e ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
                         >{e}</button>
                     ))}
+                </div>
+            )}
+            {shown.length === 0 && (
+                <div className="px-5 py-6 text-center text-sm text-muted-foreground" data-testid="activity-filtered-empty">
+                    nessuna attività per «{event}» — premi «tutti» per rivedere l’intera lista
                 </div>
             )}
             <ul className={`divide-y divide-white/5 ${maxHeightCls} overflow-y-auto`}>

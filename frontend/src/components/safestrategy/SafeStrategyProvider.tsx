@@ -254,11 +254,16 @@ export function SafeStrategyProvider({ children }: { children: ReactNode }) {
                 .catch(() => {
                     /* migrazione non applicata o rete: si ritenta al prossimo giro */
                 });
+            // CERT. 12/09 — un errore di rete NON deve azzerare lo stato del
+            // feed: prima il catch lasciava `scanStatus` a null e la pagina
+            // dichiarava "feed: nessun dato" mentre Omega e Mike, sullo STESSO
+            // feed unico, lo davano vivo. Si tiene l'ultimo valore noto: sara'
+            // la sua eta' a dire che e' vecchio.
             fetchScanStatus()
                 .then((s) => {
-                    if (alive) setScanStatus(s);
+                    if (alive && s) setScanStatus(s);
                 })
-                .catch(() => {});
+                .catch(() => { /* si tiene l'ultimo stato noto */ });
         };
         load();
         const poll = window.setInterval(load, BACKUP_POLL_MS);

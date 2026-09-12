@@ -96,7 +96,7 @@ describe('MikeTradesTable — giornata operativa e tetto della RPC', () => {
         expect(screen.getByTestId('mike-trades')).toHaveTextContent('ven 11/09');
         await user.click(screen.getByTestId('mike-trades-toggle'));
         expect(screen.getAllByTestId('mike-trade-row')).toHaveLength(2);
-        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Tutti i trade caricati');
+        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Tutte le operazioni caricate');
         await user.click(screen.getByTestId('mike-trades-toggle'));
         expect(screen.getAllByTestId('mike-trade-row')).toHaveLength(1);
     });
@@ -134,7 +134,7 @@ describe('MikeTradesTable — giornata operativa e tetto della RPC', () => {
     it('senza trade nella giornata resta un vuoto parlante', () => {
         render(<MikeTradesTable trades={[ieri]} dayStartMs={DAY_START} />);
         expect(screen.queryByTestId('mike-trades-table')).toBeNull();
-        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Nessun trade nella giornata operativa');
+        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Nessuna operazione nella giornata operativa');
     });
 });
 

@@ -122,11 +122,15 @@ function renderPage() {
     );
 }
 
-// Il default è il tab MISSIONE: per i contenuti della dashboard automatica
-// bisogna prima cliccare "⚙️ Automatico".
+// Audit 12/09: il default è il tab AUTOMATICO (le posizioni vive di oggi sono
+// la prima cosa che un trader deve vedere). Restano i click espliciti sui tab.
 async function gotoAutoTab() {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('tab', { name: /Automatico/ }));
+}
+async function gotoMissionTab() {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: /Missione/ }));
 }
 
 describe('Omega dashboard', () => {
@@ -136,8 +140,16 @@ describe('Omega dashboard', () => {
         expect(await screen.findByText('IN CORSA')).toBeInTheDocument();
     });
 
-    it('il tab Missione è il default e monta il pannello', async () => {
+    it('il tab AUTOMATICO è il default: le posizioni vive di oggi si vedono subito', async () => {
         renderPage();
+        // la tabella delle partite (tab Automatico) è montata senza click
+        expect(await screen.findByTestId('omega-matches-card')).toBeInTheDocument();
+        expect(screen.queryByTestId('mission-panel-stub')).toBeNull();
+    });
+
+    it('il tab Missione monta il pannello quando lo si apre', async () => {
+        renderPage();
+        await gotoMissionTab();
         expect(await screen.findByTestId('mission-panel-stub')).toBeInTheDocument();
     });
 
@@ -157,10 +169,11 @@ describe('Omega dashboard', () => {
         expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('operazioni 2');
         expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('1V');
         expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('1P');
-        expect(screen.getByTestId('omega-kpi-legs')).toHaveTextContent('2');
-        expect(screen.getByTestId('omega-kpi-legs')).toHaveTextContent('1V · 1P');
+        // audit 12/09: operazioni/V/P si leggono UNA volta sola, nella barra:
+        // il KPI "Operazioni oggi" che li ripeteva è stato tolto
+        expect(screen.queryByTestId('omega-kpi-legs')).toBeNull();
+        expect(screen.queryByTestId('omega-kpi-pnl')).toBeNull();
         // e il riepilogo della tabella usa gli STESSI numeri
-        await gotoAutoTab();
         expect(screen.getByTestId('omega-matches-summary')).toHaveTextContent('2 operazioni oggi · 1V 1P');
     });
 
@@ -180,8 +193,12 @@ describe('Omega dashboard', () => {
             control: { ...CONTROL, status: 'stopped', stats: { ...CONTROL.stats, bot_running: false } } as never,
         }));
         renderPage();
-        expect(await screen.findByTestId('omega-kpi-events')).toHaveTextContent('disponibile a bot avviato');
-        expect(screen.getByTestId('omega-kpi-target')).toHaveTextContent('bot fermo: nessun target in corso');
+        // audit 12/09: "Eventi in finestra" non è più un KPI a sé (si leggeva
+        // come un secondo conteggio di partite): il numero vive nel sottotitolo
+        // del target, e a bot fermo il target dichiara di non essere vivo
+        expect(await screen.findByTestId('omega-kpi-target')).toHaveTextContent('bot fermo: nessun target in corso');
+        expect(screen.getByTestId('omega-kpi-target')).toHaveTextContent('—');
+        expect(screen.queryByTestId('omega-kpi-events')).toBeNull();
     });
 
     it('KPI target/match e liability aperta presenti', async () => {

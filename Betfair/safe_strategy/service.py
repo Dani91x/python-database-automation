@@ -97,6 +97,9 @@ _REQ_DELAY = 0.35         # respiro tra chiamate REST (anti-throttling)
 # FUORI dal radar finché quelli del pomeriggio non chiudevano; con 1000 nessuna
 # giornata reale (calcio ~300-500 match/20h) tocca il tetto.
 _MAX_MARKETS = 1000
+# limite DURO di listMarketCatalogue (Betfair: max_results 1-1000). Oltre,
+# l'API risponde INVALID_INPUT_DATA e l'eccezione porterebbe via l'intero giro.
+_MAX_CATALOGUE_RESULTS = 1000
 # finestra catalogo MOBILE: in-play iniziati fino a 6h fa + KO nelle prossime
 # 14h (la vecchia finestra "fino a mezzanotte UTC" perdeva i notturni)
 _CATALOGUE_PAST_H = 6
@@ -122,6 +125,12 @@ _OPPORTUNITIES_ENV = "SAFE_SCAN_OPPORTUNITIES"
 # finestra sul pool stream (tier 2: mai davanti ai mercati core) + UNA
 # listMarketCatalogue ogni 20s SOLO se ci sono candidati senza catalogo.
 _PRE_KO_OU_ENV = "SAFE_PRE_KO_OU_HOURS"
+# chiavi che _prune_opp_blocks aggiunge ai blocchi a gol in cache (H6): non
+# sono prezzo, non contano nel confronto "book invariato" di _apply_opp_book
+_OPP_MARKER_KEYS = ("ts_ms", "decided", "for_mike")
+# una chiamata Betfair fallita NON si ripete a ogni tick (0,5 s): catalogo
+# ritentato dopo 30 s, poll REST dei book dopo la sua cadenza normale
+_CATALOGUE_RETRY_SEC = 30.0
 
 
 def _pre_ko_ou_hours() -> float:
@@ -167,6 +176,9 @@ def _catalogue_window_iso() -> "tuple[str, str]":
 class SportState:
     def __init__(self) -> None:
         self.catalogue_ts = 0.0
+        # ultimo TENTATIVO di catalogo fallito (backoff _CATALOGUE_RETRY_SEC);
+        # separato da catalogue_ts, che resta "0 = mai caricato" per lo stream
+        self.catalogue_fail_ts = -1e9
         self.books_ts = 0.0
         # meta per evento: market_id, event_name, open_date, competition, sides
         self.metas: Dict[str, Dict[str, Any]] = {}
@@ -308,7 +320,16 @@ class Scanner:
         """Mercati del sport che servono QUOTE adesso (scanner.is_relevant_market),
         ordinati per priorità (in-play prima, poi per KO). Il resto del catalogo
         (KO lontano) non consuma né stream né REST."""
-        out: List["tuple[tuple[int, str], str]"] = []
+        return [mid for _, mid in self.ranked_relevant_markets(sport, now)]
+
+    def ranked_relevant_markets(self, sport: str, now: datetime) -> List["tuple[tuple, str]"]:
+        """Come ``relevant_market_ids`` ma con la CHIAVE di priorità di ogni
+        mercato (core: ``scanner.rank_key``; a gol: ``scanner.opp_rank_key``,
+        con il tier 1.5 delle linee di Mike). E' l'UNICA fonte dell'ordine:
+        lo stream (``refresh_stream_set``) la riusa tale e quale — prima
+        ricalcolava un tier 2 uniforme e le linee di una posizione Mike
+        potevano essere troncate dallo shard (audit H5)."""
+        out: List["tuple[tuple, str]"] = []
         for eid, meta in self.sports[sport].metas.items():
             ev = self.events.get(eid)
             inplay: Optional[bool] = None if ev is None else bool(ev.get("inplay"))
@@ -327,7 +348,7 @@ class Scanner:
         if sport == "calcio":
             out.extend(self._opp_ranked_market_ids(now))
         out.sort()
-        return [mid for _, mid in out]
+        return out
 
     def _opp_ranked_market_ids(self, now: Optional[datetime] = None) -> List["tuple[tuple, str]"]:
         """Mercati a gol del motore opportunità da tenere sotto quote ADESSO.
@@ -414,18 +435,13 @@ class Scanner:
             return
         if not all(st.catalogue_ts > 0.0 for st in self.sports.values()):
             return
-        ranked: List["tuple[tuple[int, str], str]"] = []
+        # STESSA priorità di ranked_relevant_markets (core tier 0/1, linee Mike
+        # 1.5, altri mercati a gol 2): prima qui il tier veniva ricalcolato a 2
+        # per ogni mercato a gol e le linee 3.5/4.5 di una posizione Mike
+        # potevano essere troncate dallo shard con il pool pieno (audit H5)
+        ranked: List["tuple[tuple, str]"] = []
         for sport in self.sports:
-            for mid in self.relevant_market_ids(sport, now):
-                _, meta = self.market_meta[mid]
-                ev = self.events.get(meta["event_id"])
-                inplay = None if ev is None else bool(ev.get("inplay"))
-                if meta.get("kind") == "opp":
-                    # mai davanti ai mercati core: tier 2 (vedi _opp_ranked_market_ids)
-                    ranked.append((scanner.opp_rank_key(
-                        None if ev is None else ev.get("minute"), None), mid))
-                else:
-                    ranked.append((scanner.rank_key(inplay, meta.get("open_date")), mid))
+            ranked.extend(self.ranked_relevant_markets(sport, now))
         ranked.sort()
         ids = [mid for _, mid in ranked]
         if ids:
@@ -534,9 +550,13 @@ class Scanner:
         store = ev.setdefault("opp", {})
         prev = store.get(meta["market_id"])
         prev_ts = prev.get("ts_ms") if isinstance(prev, dict) else None
+        # i marker ``decided``/``for_mike`` li aggiunge _prune_opp_blocks sul
+        # blocco in cache: non sono un cambio di PREZZO. Confrontandoli, ogni
+        # book (anche identico) rinfrescava ts_ms e riscriveva la riga a ogni
+        # giro per tutte le partite seguite da Mike o con una linea decisa.
         unchanged = (
             isinstance(prev, dict) and prev_ts is not None
-            and {k: v for k, v in prev.items() if k != "ts_ms"} == blk
+            and {k: v for k, v in prev.items() if k not in _OPP_MARKER_KEYS} == blk
         )
         blk["ts_ms"] = int(prev_ts) if unchanged else int(time.time() * 1000)
         store[meta["market_id"]] = blk
@@ -771,12 +791,31 @@ class Scanner:
             missing = [e for e in candidates if e not in self.opp_markets]
         if not missing:
             return  # nessuna chiamata: il throttle non parte
+        # LIMITE BETFAIR: listMarketCatalogue accetta max_results 1-1000 e oltre
+        # risponde INVALID_INPUT_DATA. Col ramo pre-KO acceso su molte ore
+        # ``missing`` puo' valere centinaia di partite: senza questo taglio la
+        # chiamata falliva e con lei TUTTO il giro dello scanner (nessuna
+        # pubblicazione). Si prende quel che ci sta e il resto al giro dopo:
+        # il lotto e' gia' "solo i mancanti", quindi converge in pochi giri.
+        per_event = max(1, len(types))
+        # CERT. 12/09 -- PRIORITA' A CHI HA SOLDI A RISCHIO.
+        # Il lotto viene TRONCATO, e chi non ci sta aspetta il giro dopo. Finche'
+        # l'ordine era solo "minuti piu' avanzati", una posizione Mike APERTA
+        # poteva restare in fondo alla coda: senza i suoi mercati a catalogo non
+        # arrivano le quote, e senza quote non c'e' copertura, ne' cash out, ne'
+        # uscita. Osservato dal vivo al riavvio delle 21:43: 11 partite con
+        # posizioni aperte sono rimaste ~10 minuti senza NESSUNA linea O/U, con
+        # 46 allarmi 'feed_line_missing' critici.
+        # Le partite seguite da Mike passano davanti: sono poche (tetto
+        # MIKE_MAX_FOLLOWED) e non spostano il costo della chiamata.
+        missing = scanner.prioritize_followed(missing, self._mike_followed())
+        missing = missing[:max(1, _MAX_CATALOGUE_RESULTS // per_event)]
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
                 event_ids=missing, market_type_codes=list(types),
             ),
             market_projection=["EVENT", "MARKET_DESCRIPTION", "RUNNER_DESCRIPTION"],
-            max_results=len(missing) * len(types),
+            max_results=min(_MAX_CATALOGUE_RESULTS, len(missing) * per_event),
         )
         found = {e: {} for e in missing}
         for c in cats or []:
@@ -826,12 +865,17 @@ class Scanner:
         missing = [e for e in candidates if e not in store]
         if not missing:
             return  # nessuna chiamata: il throttle non parte
+        # un mercato per evento: ``max_results`` deve seguire il LOTTO, non
+        # restare fisso a 50 — in una giornata piena i candidati CS superano
+        # i 50 e le partite oltre il tetto restavano senza Correct Score
+        # (Omega e la Safe R.E. cieche su quelle) fino al giro successivo.
+        missing = missing[:_MAX_CATALOGUE_RESULTS]
         cats = self.client.betting.list_market_catalogue(
             filter=filters.market_filter(
                 event_ids=missing, market_type_codes=[market_type],
             ),
             market_projection=["EVENT", "RUNNER_DESCRIPTION"],
-            max_results=50,
+            max_results=min(_MAX_CATALOGUE_RESULTS, max(1, len(missing))),
         )
         for c in cats or []:
             event_id = getattr(getattr(c, "event", None), "id", None)
@@ -1000,6 +1044,9 @@ class Scanner:
                         "media": ev.get("media"),
                         "score_raw": ev.get("score_raw"),
                         "mo_total_matched": ev.get("mo_total_matched"),
+                        # ts dell'ultimo CAMBIO delle quote (freschezza prezzo),
+                        # come per il calcio: chiave additiva
+                        "odds_ts_ms": ev.get("odds_ts_ms"),
                     }
                 sig = scanner.payload_signature(payload)
                 if self.written_sig.get(eid) == sig:
@@ -1107,6 +1154,18 @@ class Scanner:
             for ev in self.events.values()
         )
 
+    def _safe_catalogue(self, label: str, fn: Any, *args: Any, **kwargs: Any) -> None:
+        """Un catalogo SECONDARIO (CS, HT, mercati a gol, pre-KO) non e' mai
+        motivo per perdere un giro: si logga, si segna in ``last_error`` e si
+        riprova al prossimo throttle. Le quote e i punteggi vengono pubblicati
+        comunque — sono loro che tengono vive copertura, cash out e uscite."""
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 - mai fermare la pubblicazione dei fatti
+            self.last_error = f"catalogo {label}: {type(e).__name__}: {str(e)[:120]}"
+            logger.warning("[safe-scan] catalogo %s KO (riprovo al prossimo giro): %s",
+                           label, str(e)[:140])
+
     def tick(self) -> None:
         now_mono = time.monotonic()
         now = datetime.now(timezone.utc)
@@ -1116,8 +1175,18 @@ class Scanner:
                 self.keepalive_ts = now_mono
 
             for sport, st in self.sports.items():
-                if now_mono - st.catalogue_ts > _CATALOGUE_TTL_SEC:
-                    self.refresh_catalogue(sport)
+                if now_mono - st.catalogue_ts > _CATALOGUE_TTL_SEC \
+                        and now_mono - st.catalogue_fail_ts > _CATALOGUE_RETRY_SEC:
+                    try:
+                        self.refresh_catalogue(sport)
+                    except Exception as e:  # noqa: BLE001 - backoff, il resto del giro continua
+                        # prima: eccezione → giro abortito (nessuna pubblicazione) e
+                        # NUOVA listMarketCatalogue ogni 0,5 s finché Betfair non
+                        # rispondeva (martellamento + feed fermo per tutti gli sport)
+                        st.catalogue_fail_ts = now_mono
+                        self.last_error = f"catalogo {sport}: {type(e).__name__}: {str(e)[:120]}"
+                        logger.warning("[safe-scan] catalogo %s KO (riprovo fra %.0fs): %s",
+                                       sport, _CATALOGUE_RETRY_SEC, str(e)[:140])
                     time.sleep(_REQ_DELAY)
             # pruning: eventi non più nel catalogo del giorno → via dallo stato
             known = {
@@ -1154,7 +1223,15 @@ class Scanner:
                     mid for mid in self.relevant_market_ids(sport, now) if mid not in covered
                 ]
                 if uncovered:
-                    self.poll_books(sport, uncovered)
+                    try:
+                        self.poll_books(sport, uncovered)
+                    except Exception as e:  # noqa: BLE001 - si riprova alla cadenza normale
+                        # prima: eccezione → giro abortito e listMarketBook ripetuta
+                        # a ogni tick (0,5 s) con Betfair già in difficoltà
+                        st.books_ts = now_mono
+                        self.last_error = f"book {sport}: {type(e).__name__}: {str(e)[:120]}"
+                        logger.warning("[safe-scan] poll book %s KO (riprovo fra %.0fs): %s",
+                                       sport, period, str(e)[:140])
                 else:
                     st.books_ts = now_mono
 
@@ -1169,26 +1246,31 @@ class Scanner:
             # Correct Score: catalogo appena compare un candidato nuovo; le QUOTE
             # arrivano dallo stream (o dal poll REST di fallback) come per il
             # MATCH_ODDS — nessun poll dedicato (audit 09/09 sera: prima 15s REST)
+            # Un catalogo secondario che fallisce NON deve portarsi via il giro:
+            # la pubblicazione dei FATTI (quote, punteggi) e' la linea vitale di
+            # tutti e tre i bot. Prima una qualunque eccezione qui saltava
+            # ``publish`` e ``publish_status`` di quel tick.
             candidates = self.cs_candidates()
             if candidates and now_mono - self.cs_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.cs_catalogue_ts = now_mono
-                self.refresh_cs_catalogue(candidates)
+                self._safe_catalogue("correct score", self.refresh_cs_catalogue, candidates)
             ht_cands = self.ht_candidates()
             if ht_cands and now_mono - self.ht_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.ht_catalogue_ts = now_mono
-                self.refresh_ht_catalogue(ht_cands)
+                self._safe_catalogue("half time score", self.refresh_ht_catalogue, ht_cands)
             # mercati a gol del motore opportunità: stesso schema (catalogo solo
             # per i candidati nuovi, quote dallo stream / REST di fallback)
             opp_cands = self.opp_candidates()
             if opp_cands and now_mono - self.opp_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.opp_catalogue_ts = now_mono
-                self.refresh_opp_catalogue(opp_cands)
+                self._safe_catalogue("mercati a gol", self.refresh_opp_catalogue, opp_cands)
             # ramo pre-KO O/U (Mike): SOLO le linee 3.5/4.5 delle partite in
             # finestra, stesso throttle; a ramo spento la lista è vuota
             pre_cands = self.pre_ko_ou_candidates(now)
             if pre_cands and now_mono - self.pre_ko_catalogue_ts > _CS_CATALOGUE_MIN_INTERVAL_SEC:
                 self.pre_ko_catalogue_ts = now_mono
-                self.refresh_opp_catalogue(pre_cands, market_types=scanner.PRE_KO_OU_MARKET_TYPES)
+                self._safe_catalogue("pre-KO O/U", self.refresh_opp_catalogue, pre_cands,
+                                     market_types=scanner.PRE_KO_OU_MARKET_TYPES)
 
             written, deleted = self.publish(now)
             if written or deleted:

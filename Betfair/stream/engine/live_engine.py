@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 REG_MINUTES = 90.0
 
@@ -91,13 +91,82 @@ def _intensity_params(league_id: Optional[int], section: str) -> dict:
 
 INJURY_TIME_MIN = 5.0     # durata attesa del recupero del 2° tempo (minuti)
 
+# Banda AMMESSA per i moltiplicatori di stato-gioco/cartellini. I coefficienti
+# arrivano da un file di calibrazione ESTERNO: se un giorno quel file contenesse
+# un valore anomalo (segno sbagliato, ordine di grandezza sbagliato) il
+# moltiplicatore poteva diventare NEGATIVO o esplodere -> lambda residuo assurdo
+# per i tre bot (Omega/Safe/Mike). La banda e' SIMMETRICA: prima il "leader" non
+# aveva tetto e il "chaser" non aveva pavimento (poteva andare sotto zero).
+STATE_MULT_MIN = 0.4
+STATE_MULT_MAX = 2.0
+# lambda residuo AMMESSO: sotto il minimo Poisson/Dixon-Coles non e' definito
+# (score_matrix pretende lambda > 0); sopra il massimo la griglia troncata a 10
+# gol per lato non ha piu' senso e la correzione tau puo' diventare negativa.
+MIN_RESIDUAL_LAMBDA = 0.001
+MAX_RESIDUAL_LAMBDA = 12.0
+
+
+def _clamp_mult(value: float) -> float:
+    """Moltiplicatore dentro la banda ammessa; NaN/inf -> NEUTRO (1.0)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(v):
+        return 1.0
+    return max(STATE_MULT_MIN, min(STATE_MULT_MAX, v))
+
+
+def _clamp_lambda(value: float) -> float:
+    """Lambda residuo dentro [MIN_RESIDUAL_LAMBDA, MAX_RESIDUAL_LAMBDA].
+    NaN/inf -> minimo (mai propagare un NaN nella griglia dei tre bot)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return MIN_RESIDUAL_LAMBDA
+    if not math.isfinite(v) or v < MIN_RESIDUAL_LAMBDA:
+        return MIN_RESIDUAL_LAMBDA
+    return min(MAX_RESIDUAL_LAMBDA, v)
+
+
+def _non_negative(value: float, default: float = 0.0) -> float:
+    """float >= 0; None/NaN/inf/non numerico -> ``default``; negativo -> 0.0."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(v):
+        return default
+    return max(0.0, v)
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    """int difensivo: None/NaN/stringa non numerica -> ``default``."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return default
+    return v
+
+
+def _pressure(value: float) -> float:
+    """Fattore pressione: se il valore non e' utilizzabile (None/NaN/inf) l'effetto
+    e' NEUTRO (1.0), non zero — un hook rotto non deve azzerare i lambda."""
+    return _non_negative(value, default=1.0)
+
 
 def residual_time_weight(minute: Optional[int], league_id: Optional[int] = None) -> float:
     """Frazione ATTESA dei gol di partita ancora da segnare dopo ``minute``,
     dalla CDF gol empirica REALE (non lineare). Fallback lineare se la CDF manca."""
     if minute is None:
         return 1.0
-    m = max(0.0, float(minute))
+    try:
+        m = float(minute)
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(m):
+        return 1.0
+    m = max(0.0, m)
     if _goal_remaining_frac is not None:
         if m >= 90.0:
             # RECUPERO (Omega §16 / review F2): i gol al 90'+ sono ~8 % dei gol di
@@ -126,8 +195,11 @@ def game_state_multipliers(
         return 1.0, 1.0  # nessun dato → nessun effetto inventato
     lead = min(abs(int(score_diff)), int(p.get("max_lead", 2)))
     late = 1.0 + float(p.get("late_amp", 0.0)) * max(0.0, ((minute or 0) - 45) / 45.0)
-    leader = max(0.4, 1.0 + float(leader_pg) * lead * late)
-    chaser = min(2.0, 1.0 + float(chaser_pg) * lead * late)
+    # banda SIMMETRICA su entrambi (audit 12/09): con la banda asimmetrica di
+    # prima un `chaser_per_goal` negativo in calibrazione dava un moltiplicatore
+    # NEGATIVO -> lambda residuo negativo silenziosamente azzerato a valle.
+    leader = _clamp_mult(1.0 + float(leader_pg) * lead * late)
+    chaser = _clamp_mult(1.0 + float(chaser_pg) * lead * late)
     return (leader, chaser) if score_diff > 0 else (chaser, leader)
 
 
@@ -138,7 +210,7 @@ def red_card_multipliers(
 
     ``carded_factor``/``opponent_factor`` da calibrazione storica. NEUTRO se assenti.
     """
-    rh, ra = max(0, int(red_home or 0)), max(0, int(red_away or 0))
+    rh, ra = max(0, _as_int(red_home)), max(0, _as_int(red_away))
     if rh == 0 and ra == 0:
         return 1.0, 1.0
     p = _intensity_params(league_id, "red_card")
@@ -158,7 +230,7 @@ def yellow_card_multipliers(
     Effetto debole (il giallo rende cauti). L'esponente è SATURATO a 2 (la
     calibrazione misura lo stato "ammonita", non un effetto per-cartellino) → niente
     estrapolazione. NEUTRO (1.0) se assente la calibrazione."""
-    yh, ya = max(0, int(yellow_home or 0)), max(0, int(yellow_away or 0))
+    yh, ya = max(0, _as_int(yellow_home)), max(0, _as_int(yellow_away))
     if yh == 0 and ya == 0:
         return 1.0, 1.0
     p = _intensity_params(league_id, "yellow_card")
@@ -190,12 +262,14 @@ def inplay_residual_rates(
     cartellini (rossi+gialli) × pressione. ``pressure_*`` è un hook (1.0) per
     tiri/corner live, attivabile solo dopo calibrazione."""
     w = residual_time_weight(minute, league_id)
-    gh, ga = game_state_multipliers(int(score_home) - int(score_away), minute, league_id)
+    gh, ga = game_state_multipliers(_as_int(score_home) - _as_int(score_away), minute, league_id)
     rh, ra = red_card_multipliers(red_home, red_away, league_id)
     yh, ya = yellow_card_multipliers(yellow_home, yellow_away, league_id)
-    lam_h = max(0.0, prematch_lambda_home) * w * gh * rh * yh * max(0.0, pressure_home)
-    lam_a = max(0.0, prematch_lambda_away) * w * ga * ra * ya * max(0.0, pressure_away)
-    return max(0.001, lam_h), max(0.001, lam_a)
+    # ogni ingresso e' ripulito (None/NaN/inf -> neutro): un NaN qui diventerebbe
+    # una griglia di NaN per Omega, Safe Strategy e Mike insieme.
+    lam_h = _non_negative(prematch_lambda_home) * w * gh * rh * yh * _pressure(pressure_home)
+    lam_a = _non_negative(prematch_lambda_away) * w * ga * ra * ya * _pressure(pressure_away)
+    return _clamp_lambda(lam_h), _clamp_lambda(lam_a)
 
 
 @dataclass(frozen=True)

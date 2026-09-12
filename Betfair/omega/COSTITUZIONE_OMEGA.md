@@ -1,6 +1,15 @@
 # ⟶ COSTITUZIONE DEL BOT «OMEGA» ⟵
 ### Fonte unica di verità. Ogni riga di codice di Omega deve essere conforme a questo documento.
-### v1.0 — 2026-07-12 · Betfair Exchange (.it) · Correct Score LAY · Set-and-forget
+### v3.0 — 11/09/2026 sera (§17, commit `9d09c81`) · Betfair Exchange (.it)
+### Correct Score LAY a **DUE GAMBE** per partita · **green-up automatico** · PAPER (live bloccato)
+
+> Storia delle versioni: **v1.0** 12/07 (una gamba, quota più alta, set-and-forget) → **v2.0**
+> 09/09 (§11: due gambe, selezione per **probabilità di modello**) → **v2.1** 10/09 (§12:
+> green-up automatico — Omega non è più una scommessa ma un **trade**) → **v2.2** 11/09 giorno
+> (§§14-15: giornata operativa = giorno di piazzamento, modello definitivo) → **v3.0** 11/09 sera
+> (§16 certificazione capillare, §16.7 seconda passata, **§17 audit applicato + contratto UI**).
+> Le sezioni sono **datate e mai cancellate**: dove una regola è stata superata, la riga porta un
+> rimando alla sezione che la supera.
 
 ---
 
@@ -16,6 +25,13 @@ probabile** con **quota entro un range configurabile** (non 600).
 > Omega non fa scalping né trading continuo. Piazza **un ordine per match** e
 > attende il **settlement del mercato Betfair** (verità ultima). Nessun'altra
 > azione richiesta all'utente dopo lo START.
+
+> ⚠️ **Superato il 09/09 (§11) e il 10/09 (§12).** Oggi Omega piazza **DUE** gambe per partita
+> (1T sull'Half Time Score, 2T sul Correct Score) scegliendo il risultato con la **probabilità di
+> modello più bassa** — mai «la quota più alta» — e **non aspetta più il settlement**: ogni gamba
+> viene **chiusa a mercato** (green-up) appena il rischio diventa reale, oppure TENUTA se il
+> modello dice che uscire butta valore atteso. «Set-and-forget» vale ancora per l'**utente**
+> (nessuna azione richiesta dopo lo START), non per il bot.
 
 ---
 
@@ -93,6 +109,13 @@ bloccherebbe il bot per sempre. La **liability aperta** resta invece SEMPRE
 totale: il rischio vivo non ha giorno. Il cumulato storico resta visibile in
 dashboard accanto al P&L di oggi.
 
+> ⚠️ **Superato l'11/09 (§14.1)**: la giornata di una posizione è il giorno Europe/Rome in cui
+> la sua **APERTURA** è stata piazzata (le gambe di chiusura ereditano il giorno del padre), e
+> `R` = P&L delle posizioni **piazzate** oggi e già regolate. Dall'11/09 sera (§17.2, review H1)
+> le **guardie** (stop-loss giornaliero, target dinamico, stop sull'obiettivo) non usano `R` ma
+> `realized_effective` = `R` + `min(0, locked_pnl_open_today)`: una perdita già **bloccata** da
+> una copertura completa è denaro perso anche se si incassa al fischio finale.
+
 **Sizing del LAY** (backer stake `s` = ciò che incassi se il risultato NON esce):
 ```
 s          = P / (1 − c)          # incasso netto commissione = P
@@ -122,6 +145,10 @@ Per il mercato `CORRECT_SCORE` del match, tra i runner con `availableToLay`:
 4. **Scegli il meno probabile**: tra i superstiti, prendi quello con **quota lay
    più ALTA** (probabilità minima). Tie-break: liquidità maggiore, poi liability
    minore.
+   > ⚠️ **Superato il 09/09 (§11) e l'11/09 (§15.2/§15.4)**: la quota più alta è la regola del
+   > motore **v1** (`params.engine='single'`, kill-switch). Il motore di default `legs` ordina
+   > per **probabilità del modello** — `max`(P calibrata o con fattore di coda, P empirica per
+   > minuto) — e, fra i candidati a P equivalente, per **costo di copertura**.
 5. Se nessun runner supera i filtri → **salta il match** (I6), logga `skip`.
 
 > Nota: il mercato Correct Score si ri-prezza da solo con il punteggio live e
@@ -151,6 +178,11 @@ Un match è **eleggibile** quando **tutte** valgono:
 L'universo giornaliero si ottiene con `list_events(["1"], from=now−12h, to=fine
 giornata)` per includere anche i match **già iniziati** (il loro `marketStartTime`
 è nel passato).
+
+> ⚠️ `entry_minute_min`/`entry_minute_max` valgono SOLO per il motore **v1**. Nel motore di
+> default `legs` (§11) le finestre sono `ht_entry_min/max` (20′–40′) per la gamba 1T e
+> `ft_entry_min/max` (50′–80′) per la 2T, sempre sul **minuto REALE** del feed unico — mai
+> sull'orologio, che al 60′ di kickoff+minuti mette una partita ancora al 45′ (§16.1 HIGH-1).
 
 ---
 
@@ -202,6 +234,12 @@ seguiti Omega usa il `clock` (`marketStartTime`), senza mai fermarsi (I6).
   confondere due ordini reali distinti.
 - **Settlement PAPER**: si polla il market book della CS finché `status='CLOSED'`,
   poi si leggono gli stati runner (`WINNER`/`LOSER`). Autorevole quanto il LIVE.
+
+> ⚠️ **Superato il 10/09 (§12)**: fra `open` e il settlement c'è ora il **green-up automatico**.
+> Una gamba coperta passa a `hedged` e la copertura è una **riga nuova** con `closes_trade_id`; il
+> settlement nettizza la coppia con la commissione sul netto (`safe_strategy.execution`), e dall'
+> 11/09 sera lo fa **per POSIZIONE** (`meta.position_pnl`/`position_result`, §17.1 M-04). Il
+> settlement REST resta l'autorità ultima (I3).
 
 ### 6-bis. Esecuzione via flumine — DEMO = LIVE (v1 PAPER 2026-07-16, v2 LIVE 2026-07-17)
 
@@ -305,29 +343,69 @@ NON viene toccato: omega è un normale client della coda, come il frontend).
 
 Colonne dedicate su `omega_control`: `daily_goal`, `mode` (`paper|live`),
 `status`, più `params JSONB` con **whitelist doppia** (frontend `OMEGA_PARAM_*`
-in `lib/omega.ts` ↔ backend `omega_config.resolve_params`). Chiavi e default:
+in `lib/omega.ts` ↔ backend `omega_config.resolve_params`). Elenco **COMPLETO e allineato alla
+`_SPEC` reale** di `Betfair/omega/omega_config.py` (52 chiavi, verificato l'11/09 sera — la
+tabella parziale a 18 righe delle versioni precedenti è **superata**). I gruppi sono quelli del
+pannello UI (`frontend/src/lib/omega.ts:OMEGA_PARAM_GROUPS`): **ogni** chiave della whitelist ha
+un campo, e un test lo impedisce di dimenticarlo nelle due direzioni, con gli **stessi** clamp e
+le stesse unità (`test_omega_ui_contratto_2026_09_11.py::TestWhitelistParametri`). L'obiettivo
+giornaliero (`__daily_goal` nel pannello) NON è un `params`: va sulla colonna dedicata
+`omega_control.daily_goal`.
 
-| chiave | default | significato |
-|---|---:|---|
-| `price_min` | 20 | quota lay minima |
-| `price_max` | 120 | quota lay massima ("non 600") |
-| `entry_minute_min` | 30 | minuto minimo d'ingresso |
-| `entry_minute_max` | 60 | minuto massimo d'ingresso |
-| `max_events` | 0 | tetto match/giorno (0 = illimitato) |
-| `commission_pct` | 5.0 | commissione Betfair |
-| `min_lay_liquidity` | 5 | size lay minima al best |
-| `min_stake` | 0.50 | stake lay minimo .it |
-| `include_aggregate` | false | includere runner "Any Other …" |
-| `stop_on_goal` | true | stop nuovi ingressi a obiettivo raggiunto |
-| `entry_window_source` | "score" | `score` (minuto+punteggio da `live_now` CONDIVISO col runner, guardia freschezza; fallback clock per match non seguiti) \| `clock` (minuto da `marketStartTime`) |
-| `poll_interval_s` | 20 | cadenza del loop |
-| `max_liability_per_match` | 0 | cap liability/match (0 = off) |
-| `daily_loss_cap` | 0 | stop-loss giornaliero (0 = off) |
-| `max_open_liability` | 0 | cap liability aperta totale (0 = off) |
-| `execution_mode` | "auto" | esecuzione via coda flumine (§6-bis, paper E live): `auto` (coda se il gate passa, fallback legacy) \| `rest` (forza il percorso legacy: fill snapshot in paper, place REST FOK in live) |
-| `paper_fill_ttl_s` | 45 | TTL quasi-FOK del place paper via flumine: senza fill entro il TTL → cancel del residuo, conferma dei soli € matchati. SOLO paper |
-| `omega_live_via_flumine` | true | kill-switch del LIVE via coda flumine (§6-bis v2): `false` = live legacy puro (REST FOK diretto), senza log di fallback |
-| `live_fill_deadline_s` | 20 | hard deadline dell'esito FOK live dallo specchio: oltre → riconciliazione REST per bet_id / revoca della richiesta mai presa in carico (mai zombie) |
+| gruppo nel pannello UI | chiave | default | unità · limiti (clamp del servizio) | significato |
+|---|---|---:|---|---|
+| Selezione e finestre | `engine` | `legs` | `legs` \| `single` | motore: due gambe per partita (v2, §11) \| una gamba CS (v1, kill-switch) |
+| Selezione e finestre | `price_min` | 20 | quota · 1,01…1000 | quota lay minima |
+| Selezione e finestre | `price_max` | 120 | quota · 1,01…1000 | quota lay massima («non 600») |
+| Selezione e finestre | `ht_entry_min` | 20 | minuto · 0…45 | finestra gamba 1T (Half Time Score), minuto REALE dal feed |
+| Selezione e finestre | `ht_entry_max` | 40 | minuto · 0…45 | niente 1T dopo questo minuto |
+| Selezione e finestre | `ft_entry_min` | 50 | minuto · 45…130 | finestra gamba 2T (Correct Score) |
+| Selezione e finestre | `ft_entry_max` | 80 | minuto · 45…130 | niente 2T dopo questo minuto |
+| Selezione e finestre | `model_p_max_pct` | 2.0 | **punti %** · 0,01…50 | P(modello) massima del risultato layato |
+| Selezione e finestre | `model_min_goal_distance` | 2 | gol · 1…5 | gol AGGIUNTIVI minimi dal punteggio corrente |
+| Selezione e finestre | `max_events` | 0 | partite/giorno · 0…1000 | tetto **PARTITE** (non gambe, §17.2 M1); 0 = illimitato |
+| Selezione e finestre | `min_lay_liquidity` | 5.0 | € · 0…100 000 | size lay minima disponibile al best |
+| Selezione e finestre | `min_stake` | 0.50 | € · 0,50…1000 | stake lay minimo Betfair .it |
+| Selezione e finestre | `include_aggregate` | false | bool | includere i runner «Any Other …» |
+| Selezione e finestre | `entry_window_source` | `score` | `score` \| `clock` | minuto+punteggio dal feed condiviso \| orologio da `marketStartTime` |
+| Motore v1 (una gamba) | `entry_minute_min` | 30 | minuto · 0…130 | **solo** con `engine='single'` |
+| Motore v1 (una gamba) | `entry_minute_max` | 60 | minuto · 0…130 | **solo** con `engine='single'` |
+| Modello e probabilità | `model_calibration` | **`off`** | `off` \| `auto` | calibratore condiviso sulla P del modello. **OFF di default**: è addestrato sulla Safe Strategy, non su Omega (§16.7 2P-F-03); la coda la corregge `model_tail_factor` |
+| Modello e probabilità | `model_calibration_path` | `""` | testo | vuoto = percorso di default del calibratore |
+| Modello e probabilità | `model_empirical` | `veto` | `veto` \| `off` | P usata = max(modello, dato empirico) — si banca solo se raro per ENTRAMBE le viste |
+| Modello e probabilità | `model_empirical_max_minute` | 60 | minuto · 45…90 | minuto entro cui vale il veto HT→FT (§14.2); con la tabella per minuto (§15.2) il veto vale sempre |
+| Modello e probabilità | `model_tail_factor` | 1.3 | fattore · 0,5…5 | correzione **continua** della coda del Poisson (banco §15.3/§16.5) |
+| Modello e probabilità | `model_lambda_cv` | 0.30 | cv · 0…1 | incertezza sui λ (mistura lognormale ≈ coda binomiale negativa); 0 = Poisson puro |
+| Modello e probabilità | `model_use_yellow_cards` | true | bool | cartellini gialli del feed nei tassi residui (§15.5) |
+| Modello e probabilità | `lambda_market_grid` | true | bool | λ impliciti nell'INTERO mercato (scala CS + linee O/U, §15.1) |
+| Modello e probabilità | `lambda_live_fallback` | true | bool | λ dal mercato Over/Under live quando mancano fixture e pre-KO (§14.2) |
+| Modello e probabilità | `select_cost_aware` | true | bool | a P equivalente vince il risultato più economico da coprire (§15.4) |
+| Modello e probabilità | `select_p_band_ratio` | 2.0 | × la P più bassa · 1…10 | ampiezza della banda di «P equivalente» |
+| Modello e probabilità | `select_k_se` | 0.0 | k·SE · 0…3 | P conservativa = centro log-pool + k·SE; 0 = solo il centro (§16.3) |
+| Modello e probabilità | `select_p_hedge` | 0.5 | frazione · 0…1 | P di dover coprire, nel ranking per EV |
+| Modello e probabilità | `select_ev_kappa` | 1.0 | peso · 0…5 | peso del costo di copertura nel ranking per EV |
+| Green-up automatico | `greenup_enabled` | true | bool | uscita a mercato attiva (§12) |
+| Green-up automatico | `greenup_mode` | `auto` | `auto` \| `off` | interruttore del green-up automatico |
+| Green-up automatico | `greenup_trigger_distance` | 1 | gol · 0…3 | il bancato è raggiungibile con ≤ N gol → si valuta l'uscita |
+| Green-up automatico | `greenup_price_trigger_ratio` | 0.5 | frazione dell'ingresso · 0,05…1 | lay ≤ ratio × prezzo d'ingresso → si valuta l'uscita |
+| Green-up automatico | `greenup_settle_delay_s` | 30 | secondi · 0…600 | attesa dopo un gol (mercato sospeso, quote che si riallineano) |
+| Green-up automatico | `greenup_hold_max_risk` | 0.02 | **frazione 0-1** · 0…1 | P(perdita) ≤ → si TIENE (clampato a `greenup_risk_cap`) |
+| Green-up automatico | `greenup_risk_cap` | **0.15** | **frazione 0-1** · 0…1 | P(perdita) ≥ → si ESCE comunque |
+| Green-up automatico | `greenup_ev_margin` | **0.10** | **EURO** (non una frazione) · 0…1000 | bloccato ≥ EV(tengo) − margine → si esce |
+| Green-up automatico | `greenup_take_profit_frac` | 0.9 | frazione · 0,1…1 | il cash-out blocca ≥ questa quota dello stake… |
+| Green-up automatico | `greenup_take_profit_minute` | 80 | minuto · 0…130 | …e da questo minuto → take-profit |
+| Green-up automatico | `greenup_retry_s` | 20 | secondi · 2…600 | cooldown fra tentativi (residuo o errore) |
+| Green-up automatico | `greenup_max_attempts` | 15 | · 0…100 | cap tentativi per posizione (poi `failed` + cooldown 5′, §16.1 H6) |
+| Protezioni e cap | `commission_pct` | 5.0 | % · 0…20 | commissione Betfair, **fissata sul trade** al piazzamento (§17.1 L-02) |
+| Protezioni e cap | `max_liability_per_match` | 0 | € · 0…1 000 000 | cap liability **PER GAMBA** (1T e 2T si sommano, §16.7); 0 = OFF |
+| Protezioni e cap | `daily_loss_cap` | 0 | € · 0…1 000 000 | stop-loss giornaliero su `realized_effective`; 0 = OFF |
+| Protezioni e cap | `max_open_liability` | 0 | € · 0…10 000 000 | cap su `open_liability_effective`; 0 = OFF |
+| Protezioni e cap | `stop_on_goal` | true | bool | stop ai NUOVI ingressi a obiettivo raggiunto |
+| Esecuzione | `poll_interval_s` | 20 | secondi · 5…600 | cadenza del loop |
+| Esecuzione | `execution_mode` | `auto` | `auto` \| `rest` | coda flumine quando il gate passa \| forza il percorso legacy (§6-bis) |
+| Esecuzione | `paper_fill_ttl_s` | 45 | secondi · 5…600 | TTL quasi-FOK del place paper via coda. **SOLO paper** |
+| Esecuzione | `omega_live_via_flumine` | true | bool | kill-switch del LIVE via coda (`FILL_OR_KILL` vero di Betfair) |
+| Esecuzione | `live_fill_deadline_s` | 20 | secondi · 5…300 | hard deadline dell'esito FOK live dallo specchio (mai zombie) |
 
 > Scelta utente 11/07: **set-and-forget senza limiti** → i tre cap
 > (`max_liability_per_match`, `daily_loss_cap`, `max_open_liability`) sono
@@ -368,10 +446,15 @@ UI React (/omega)  ──RPC owner-only──►  Supabase (omega_control, omega
   (mirror append/update) + `omega_activity` (log) + RPC `omega_activate` /
   `omega_stop` / `omega_update_params` / `get_omega_state` / `get_omega_trades`.
   `omega_control` e `omega_trades` in **realtime publication** per la dashboard.
-- **Frontend**: `frontend/src/lib/omega.ts` (client RPC + tipi + whitelist),
-  route `/omega` (App.tsx), card in `SelectSport`, pagina fullscreen
-  `pages/Omega.tsx` (equity curve, barra obiettivo, lista trade live, popup incassi
-  via `sonner`, pannello parametri, START/STOP + toggle PAPER/LIVE).
+- **Frontend**: `frontend/src/lib/omega.ts` (client RPC + tipi + whitelist + vocabolari),
+  route `/omega` (App.tsx), card in `SelectSport`, pagina fullscreen `pages/Omega.tsx`.
+  > ⚠️ **Superato l'11/09 sera (§17.8)**: la pagina non è più «equity + lista trade + popup
+  > incassi» ma la **struttura unica** delle tre sezioni di trading, normata da
+  > `frontend/src/components/trading/DESIGN_SYSTEM.md`: `PageShell` → `BotHeader` (battito del
+  > servizio, salute del feed, PAPER/LIVE) → `ModeBanner` → `DayBar` → `KpiRow` → tab sticky
+  > `🎯 Missione · ⚙️ Automatico · ✋ Manuale · 📅 Storico`, con fondamenta pure condivise
+  > (`lib/format.ts`, `lib/tradeStatus.ts`, `lib/toasts.ts`) e componenti in
+  > `components/trading/`.
 
 **Avvio locale**: `python -m Betfair.omega.omega_service`
 (+ `.bat` dedicato e voce in `desktop/main.js`).
@@ -416,6 +499,12 @@ solo. Ogni ordine parte da un click (coda `omega_manual_requests` con `phase`).
   MONEY-CRITICAL: l'advisor non deriva MAI market_id/selection_id/prezzi;
   la UI lo mostra in piccolo sotto la proposta, bottoni e payload INTOCCATI.
 
+> **Aggiornamento 11/09 sera (§17).** Il tab «🎯 Missione» vive dentro la struttura unica di
+> pagina (§17.8) e usa i **vocabolari condivisi**: gli stati delle gambe non sono più in inglese
+> (`hedged`/`error` non sono «in gioco», audit M-07), la giornata è Europe/Rome e l'obiettivo ha
+> UNA sola formula (audit M-08). La selezione delle gambe è quella per **modello** di §11/§15 —
+> non più lo stake fisso di 1 € sulla quota più alta della v1.
+
 ---
 
 ## 9. Onestà sul rischio (da mostrare, non nascondere — I8)
@@ -434,6 +523,15 @@ richiesta, ma la dashboard espone sempre **liability aperta** e **drawdown**, e 
 tre cap del §7 sono a un click di distanza. Questa sezione è parte della
 Costituzione: nessuna versione di Omega può rimuoverla o mascherare il rischio.
 
+> **Aggiornamento 10/09 (§12) e 11/09 sera (§17).** La coda pesante è **tagliata** dal green-up:
+> la perdita massima di una gamba è il **costo della copertura** al prezzo corrente, non la
+> liability. In cambio il rischio ha ora **TRE** numeri da mostrare, non uno, e la dashboard li
+> mostra tutti e tre (§17.8): **Liability aperta** (rischio VIVO — zero a copertura completa),
+> **P&L bloccato** (perdita o utile già fatti e non ancora incassati) e **In verifica su Betfair**
+> (ordini reali a esito IGNOTO). E le **guardie** non guardano i numeri della vetrina ma quelli
+> effettivi, `realized_effective` e `open_liability_effective` (§17.2 review H1): il rischio
+> nascosto più pericoloso non è la liability, è **una perdita già bloccata che nessun cap conta**.
+
 ---
 
 ## 10. Definition of Done
@@ -451,6 +549,15 @@ Costituzione: nessuna versione di Omega può rimuoverla o mascherare il rischio.
 - [ ] **Review approfondita finale** (punto 6 del goal): code-review + security +
       verifica manuale del flusso PAPER.
 - [ ] LIVE **non** attivato senza semaforo esplicito dell'utente.
+
+> **Stato all'11/09/2026 sera (§17).** Tutti i punti sono soddisfatti tranne l'ultimo, che resta
+> un gate aperto **per scelta**: `omega_engine`/`omega_model` puri e testati (**453 pytest** su
+> `Betfair/omega`, **1254** sui tre bot), migrazioni idempotenti (`omega_bot` → `omega_v2` →
+> `omega_manual` → `omega_missions` → `omega_cashout` → `daily_history` → `omega_daily_v2` →
+> `omega_models_v3`/`v4` **verificate applicate** sul DB reale; **`omega_models_v5.sql` da
+> applicare**, §17.9), servizio in PAPER end-to-end su eventi reali, frontend con **1642 test
+> vitest** più **26/26** di certificazione sui **dati reali**, review multiple (§16, §16.7,
+> §17.2), nessun `print()` nel runtime. **LIVE ancora BLOCCATO** (§16.6, §17.9).
 
 ---
 
@@ -577,7 +684,8 @@ sempre anticipare una perdita.
 `greenup_settle_delay_s` 30, `greenup_hold_max_risk` 0.02, `greenup_risk_cap` 0.15,
 `greenup_ev_margin` 0.10, `greenup_take_profit_frac` 0.9, `greenup_take_profit_minute` 80,
 `greenup_retry_s` 20, `greenup_max_attempts` 15. **Calibrazione della selezione**:
-`model_calibration` (`auto`|`off`) e `model_calibration_path`: se esiste
+`model_calibration` (`auto`|`off`, **default `off`** dall'11/09 sera — §16.7 2P-F-03 e §7) e
+`model_calibration_path`: se esiste
 `safe_strategy/calibration.py` (`Calibrator.load(path)` / `.apply(p, family, minute)`,
 famiglie `cs`/`hts`) la selezione usa la P CALIBRATA; import guardato, `p_model_raw` e
 `p_model` entrambi nel blocco di audit.
@@ -623,6 +731,10 @@ condiviso `execution.py`, cash out, calibrazione, uscite a modello, dashboard).
   all'apertura ("↳ Green-up di #70 · BACK 24,24 € @4,90"), stato "CHIUSO IN GREEN-UP",
   P&L bloccato, motivo, tooltip. Non verificata a occhio (browser agente bloccato su
   127.0.0.1): l'utente la giudica ancora illeggibile → da rifare (vedi Safe §6).
+  **Superato l'11/09 sera (§17.8)**: rifatta — una riga per **PARTITA**, stati in italiano dal
+  vocabolario condiviso, badge green-up per **stato**, quote LIVE con freschezza, «se chiudo ora»
+  netto, cash out sul **residuo**. E il badge «CHIUSO IN GREEN-UP» non è più incondizionato: vale
+  SOLO per una chiusura **integrale** con bloccato ≥ 0 (§17.2 review H3).
 - Settlement di ieri: 11 trade regolati all'avvio (tutti vinti, +53,44), P&L realizzato
   oggi contabilizzato per giorno di settlement (§2).
 
@@ -747,6 +859,11 @@ costruzione della tabella HT→FT è un PASSO SEPARATO (legge ~1,4 M partite):
 regolazione, obiettivo corrente). Parametri nuovi in `omega_config`: `model_empirical`
 (`veto`), `lambda_live_fallback` (true). Test: `test_omega_giornata_gambe_2026_09_11.py`
 (15), `lib/omegaMatches.test.ts` (9), pagina/DayDetail aggiornati.
+
+> **Stato 11/09 sera**: `omega_daily_v2.sql` e `omega_models_v3.sql` sono **verificate APPLICATE**
+> sul DB reale (sonda in `migrations/APPLY_ORDER_2026-09-11.md`: `get_omega_state` risponde e
+> `get_omega_daily` porta `goal_snapshot` e `by_strategy` per `phase`). L'unica migrazione Omega
+> ancora da applicare è **`omega_models_v5.sql`** (§17.9).
 
 ### 14.4-bis Costo a runtime (verificato 11/09)
 - Nulla di pesante gira nel ciclo: gli aggregati li calcola il DB in UNA query
@@ -944,7 +1061,7 @@ sul codice corretto. Ogni correzione ha un test (`test_omega_certificazione_2026
 modello∥mercato; > 0 = P conservativa + k·SE), `select_p_hedge` (0,5), `select_ev_kappa`
 (1,0). Tutti clampati.
 
-### 16.4 Migrazione `omega_models_v4.sql` (da applicare, idempotente)
+### 16.4 Migrazione `omega_models_v4.sql` (idempotente — **verificata APPLICATA** l'11/09 sera)
 Grant espliciti a `service_role`; indici parziali su `omega_trades` (posizioni aperte,
 regolate, manuali, gambe); lookup empirici come due range sulla PK (UNION ALL);
 `get_omega_daily` set-based; liability aperta residua e vinte/perse per segno negli aggregati e nello storico (§16.7); costruzione per minuto con `FOR UPDATE NOWAIT` (un passo
@@ -1051,3 +1168,516 @@ ragionamento, certifica ogni funzionalità". Quattro nuove review sul codice GI�
 - Convenzione del minuto (cdf[m] vs cdf[m−1], ~0,5 % dei gol): da verificare sul feed IPS.
 - Card "partite/operazioni" vs riepilogo tabella con una posizione di ieri viva: due
   definizioni diverse e volute (piazzate oggi vs mostrate).
+
+## 17. CERTIFICAZIONE 11/09 sera — audit applicato, review, CONTRATTO UI (pushato `9d09c81`)
+
+Richiesta dell'utente: applicare **per intero** l'indagine
+`Betfair/AUDIT_2026-09-11_omega_safe_mike.md` (quattro revisioni indipendenti — Mike completo,
+residui Omega+Safe, contratti servizio↔UI, uniformità di design — più verifiche dirette sui dati
+reali del DB), poi rivedere il lavoro con **nuove review sul codice già corretto** e certificarlo
+con **dati reali**. Un solo commit per i tre bot: **`9d09c81`** su master (base `1b6b151`).
+
+Numeri delle suite (verificati, non a memoria): **Omega 453** test
+(`.venv/Scripts/python -m pytest Betfair/omega -q --collect-only` → `453 tests collected`),
+**tre bot 1254** (`Betfair/omega Betfair/safe_strategy Betfair/mike`; era 941 — commit message),
+**frontend 1642 vitest** (era 1122) più **certificazione su dati reali 26/26**. I test NUOVI di
+Omega sono 93: `test_omega_audit_2026_09_11.py` (69), `test_omega_ui_contratto_2026_09_11.py` (15),
+`test_omega_cashout_feed_fermo_2026_09_11.py` (9).
+
+> **INVARIANTE NUOVO — I9: il contratto servizio↔UI è CODICE, non buona volontà.**
+> Ogni chiave della whitelist, ogni `kind` di attività, ogni `exit_kind` e ogni stato del
+> green-up vive in **UN solo vocabolario**, e un test legge i SORGENTI di entrambe le parti
+> (Python e TypeScript) per impedirne la deriva: `test_omega_ui_contratto_2026_09_11.py`.
+> Corollario: **ogni numero mostrato al trader ha UNA provenienza dichiarata** — la RPC, oppure
+> una stima del client che si dichiara stima. È la classe di errori che l'audit ha trovato più
+> volte (default divergenti, badge su un `exit_kind` che nessuno scriveva, `kind` senza
+> etichetta): nessuno rompe un test unitario, tutti mentono al trader.
+
+### 17.1 Audit → fix, item per item
+
+| item | cosa diceva l'audit | fix | dove (file:funzione) |
+|---|---|---|---|
+| **R3 / H-09** | `upsert_daily_goal` falliva SEMPRE con un `NameError` inghiottito (manca l'import di `datetime` a livello di modulo): lo snapshot dell'obiettivo non veniva mai scritto dal servizio | import a livello di modulo; lo snapshot scrive `{day, goal, updated_at}` una volta per giorno/valore | `omega_db.py` (import di testa) → `omega_db.upsert_daily_goal`; scrittore `omega_service._snapshot_daily_goal` (`_DAILY_GOAL_WRITTEN`) |
+| **H-02** | un `pending` in riconciliazione (ordine reale a esito IGNOTO) era un normale «IN CORSO» e spariva dalla liability della RPC: il KPI ignorava un lay reale forse vivo | predicati PURI + liability esposta a parte + marker leggibile sulla riga | `omega_engine.is_reconciling`, `omega_engine.is_placed`, `omega_engine.aggregate_trades` (`reconciling_liability`); `meta.reconciling=True` + `reconciling_since` in `omega_service._place_one` (ramo eccezione) e `_manual_place`; `migrations/omega_models_v5.sql:omega_aggregates_sql` |
+| **H-04** | green-up FALLITO, CIECO, residuo abbandonato, TENGO: invisibili sulla riga (chiavi lette da nessuno) | **UNA** struttura `meta.greenup` a **6 stati** + un `kind` di attività per ogni caso | `omega_service.GREENUP_STATES`, `_greenup_state_fields`, `_greenup_blind`, `_greenup_clear_blind`, `_greenup_hold`, `_greenup_residual_dropped`, `_greenup_send`; UI `lib/omega.ts:greenupBadge` |
+| **H-06** | «Liability aperta» contava come rischio una PERDITA già BLOCCATA a copertura completa | a copertura COMPLETA il rischio è **0**; il bloccato va su chiavi proprie | `omega_engine.hedge_complete`, `locked_open_pnl`, `residual_liability`, `aggregate_trades` (`locked_pnl_open`, `locked_pnl_open_today`); `omega_models_v5.sql:omega_aggregates_sql` |
+| **H-08** | due «operazioni oggi» e due V/P nella stessa card (KPI dalla RPC, riepilogo ricalcolato dal client); `won_today`/`lost_today` mai letti; equity «giornata» con i regolati di ieri | la giornata la dice **UNA** fonte: gli aggregati. Nuovo `live_now`; `control.stats` porta le STESSE chiavi della RPC; la UI non ricalcola più nulla | `omega_engine.aggregate_trades`; `omega_models_v5.sql` (`live_now`); `omega_service.run_once` / `_idle_stats`; `frontend/src/pages/Omega.tsx` (KPI solo dalla RPC) |
+| **H-10** | `goal_snapshot=false` perso dal client: un obiettivo di RIPIEGO veniva giudicato come storico (calendario ●/○ e «centrato» falsi) | flag esplicito nella RPC e confronto `=== true` in UI; le righe senza snapshot NON entrano nel tasso di centratura | `omega_models_v5.sql:get_omega_state`; `frontend/src/lib/dailyHistory.ts:normalizeDailyRow` e `goalHitRate`; `DailyCalendar` (`goal-not-historized`) |
+| **H-12** | paper via coda flumine: un ERRORE della coda diventava un **fill pieno** al prezzo della riserva (paper ≠ live, fill «a risultato noto») | `_flumine_fallback_confirm` **RIMOSSO**: quei casi sono NO-FILL espliciti, con la gamba ritentabile | `omega_service._flumine_no_fill_error` (nota di cancellazione nel sorgente), chiamata da `_poll_one_flumine_trade` / `_recover_flumine_orphan` |
+| **H-13** | il budget di retry di gamba (3× a ≥30 s) NON copriva il percorso flumine (il default): un FOK ucciso bruciava la gamba per tutta la partita | marker `meta.leg_failed` sugli esiti **CERTI** negativi (nessun ordine reale esiste): `traded_legs`/`traded_event_ids` lo saltano e l'unique lo esclude | `omega_service._leg_note_certain_failure`, `_leg_retry_allowed`, `_leg_certain_failure`, `_flumine_no_fill_error`; `omega_db.traded_legs`, `traded_event_ids`; `omega_models_v5.sql` (`uq_omega_trades_auto_leg`, `uq_omega_trades_leg`) |
+| **M-11** | se il `delete` della riserva falliva, in paper la riserva senza fill veniva **confermata** dal reconcile | il marker di fallimento si scrive **PRIMA** del delete: il reconcile trova una gamba già decisa e la marca `error`, non la conferma | `omega_service._leg_certain_failure`; lettura in `omega_service.reconcile_pending` |
+| **M-12** | i λ di ripiego persistiti sull'evento annullavano il TTL di 15′ (una fixture abbinata dopo, o un mercato più informativo, non entravano più) | timbro del TTL sul persistito; scaduto si ritenta la catena e il ripiego stantio si usa solo come **ultima risorsa, marcata** | `omega_service._saved_event_lambdas`, `_prematch_lambdas` |
+| **M-13** | posizione `open` su un mercato che non si chiude MAI: nessun allarme | allarme **una volta per riga** (`meta.stale_open_alerted`), anche sulle `hedged` (review M2) | `omega_service._alert_stale_open`, chiamato da `settle_open` e `_settle_hedged` |
+| **M-14** | `reconcile_pending` azione `error` **sovrascriveva** il meta (persi il blocco modello e i runner) | il meta si **fonde**, non si sostituisce | `omega_service.reconcile_pending` (rami `paper_no_fill` e `reconcile_orphan_old`) |
+| **M-19** | il cash out manuale diceva solo «Chiusura», mai «Cash out» | `exit_kind='manual'` + `exit_reason` su **apertura E chiusura**, con `(parziale)` quando resta un residuo | `omega_service._manual_cashout` + `_greenup_stamp_closing`; log `cashout_manual`; UI sotto-riga «Cash out» |
+| **M-22** | l'attività «di oggi» erano le ultime 60 righe filtrate lato client | la RPC filtra sulla **giornata operativa Europe/Rome** e dichiara quante righe restano fuori | `omega_models_v5.sql:get_omega_state` (`activity`, `activity_more`, `activity_day`, indice `idx_omega_activity_ts`); UI «carica altre» |
+| **H-01** | `exit_kind:'greenup'` **non esisteva** nei backend (scrivevano `profit`/`loss`): il badge «CHIUSO IN GREEN-UP» e la sotto-riga «Green-up» erano codice morto e i test certificavano un contratto **inventato** | vocabolario CHIUSO **condiviso** con la Safe Strategy; il backend è l'unico a decidere | `safe_strategy/exits.py:EXIT_KINDS` e `ui_exit_kind`; usati da `omega_service._greenup_send` e `_manual_cashout`; test `test_ogni_exit_kind_ha_un_badge` |
+| **M-04** | settlement **per gamba**: l'apertura di un green-up chiuso in utile appariva «PERSO», con doppio toast | settlement **per POSIZIONE** (apertura + chiusure nettate insieme) e risultato di posizione su ogni riga | `safe_strategy/execution.py:settle_position`, `settle_group`, `settle_row`, `position_result`; chiamato da `omega_service._settle_hedged`; UI `omega-position-result` |
+| **M-05** | una gamba `error` era contata e restava «in corso per sempre» | riga **TERMINALE**: `meta.error_final` + `meta.error_at`, fuori da ogni contatore di vivo | `omega_service._flumine_no_fill_error`, `_leg_certain_failure`, `reconcile_pending`; conteggi in `omega_engine.aggregate_trades` |
+| **M-06** | copertura parziale senza via manuale; anteprima del cash out sull'esposizione **piena** | `meta.hedge` con frazione e residuo; la UI mostra «COPERTA x %» e il cash out chiude **solo il residuo** | `safe_strategy/execution.py:apply_hedge_state` (+ `hedge_state`, `hedge_fraction`, `remaining_liability`); UI `CashOutButton`, `omega-residual-note` |
+| **L-01** | `meta.hedging` era **letto ma mai scritto** | scritto dall'unico writer dello stato di copertura | `safe_strategy/execution.py:apply_hedge_state` |
+| **L-02** | ore in tabella senza fuso; commissione della tabella presa dal **parametro corrente** e non dal trade | `meta.commission` **fissata sulla riga** all'apertura e sulla gamba di chiusura; ore sempre Europe/Rome | `omega_service._place_one`, `_greenup_stamp_closing`; `safe_strategy/execution.py:close_trade`; UI `lib/format.ts:fmtTime` |
+| **L-03** | «Eventi oggi» e «Target» restavano i valori dell'ultimo ciclo attivo con il bot fermo | `stats` a bot fermo: eventi/target/gambe a **ZERO** e `bot_running:false`, soldi veri e freschi, riscritte al più ogni 60 s | `omega_service._idle_stats`, `_idle_stats_due`, `IDLE_STATS_EVERY_S` |
+| **L-04** | (item **Safe Strategy**, non Omega: «prec.» fuorviante, `hedged` contate come vive, chiusure orfane oltre 200 righe) | in Omega l'equivalente era già risolto dalla tabella per PARTITA: `prec.` sulle posizioni vive di giorni precedenti, `hedged` mai «vive», fino a 2000 righe in «mostra tutte» | `frontend/src/lib/omegaMatches.ts`, `components/omega/MatchTradesTable.tsx` |
+| **L-05** | nel green-up i cartellini gialli non arrivavano al modello; la cache del fit di mercato memorizzava gli errori | gialli passati anche al green-up; un errore TRANSITORIO non entra in cache | `omega_service._greenup_one` / `_state_for_model`; `_market_fit_cached` |
+| **L-06** | log mancanti (conferma paper, `open→hedged`, residuo abbandonato), `list_trades` non paginata, fasi 2-3 di `run_once` non protette, motore v1 senza dedup, `_LEG_RETRY` senza spurgo | pacchetto completo: `list_trades` **paginata** e ordinata per istante, `try/except` **per fase** in `run_once`, dedup anche nel motore v1, spurgo di `_LEG_RETRY` **per età** (mai un `clear()` che regala tentativi), i tre log aggiunti | `omega_db.list_trades` (+ `_select_all`, `_ts_key`); `omega_service.run_once`, `scan_and_place`, `_leg_note_certain_failure`, `reconcile_pending`, `_settle_hedged`, `_greenup_residual_dropped` |
+| **M-10** (backend) | `model_use_yellow_cards` era **inerte** | il parametro spegne davvero i gialli nei tassi residui | `omega_service._state_for_model` |
+| **H-07** | default UI ≠ servizio (`model_calibration:'auto'` contro `'off'`, `greenup_risk_cap` 0,10 contro 0,15) e «Salva» scriveva l'**intero** oggetto → riaccendeva il calibratore | default della UI allineati alla `_SPEC` **da test**, e «Salva» invia una **patch** | `frontend/src/lib/omega.ts:OMEGA_PARAM_DEFAULTS` / `omegaParamsPatch`; test `test_default_della_ui_uguali_a_quelli_del_servizio`, `test_clamp_e_unita_uguali` |
+| **M-01 / M-02 / M-03** (UI) | 30+ `kind` senza etichetta (badge grigio con la chiave inglese, anche se `critical`); `activityLine` leggeva chiavi che il backend non scrive; etichette green-up scambiate | mappa completa `kind → etichetta italiana`, con `critical` dichiarato; riga costruita dai campi REALI del payload | `frontend/src/lib/omega.ts:OMEGA_ACTIVITY_EXTRA` + `lib/tradeStatus.ts:ACTIVITY_BASE`; test `test_ogni_kind_loggato_e_mappato_in_italiano` |
+| **M-07 / M-08** (UI) | MissionCard mostrava `hedged`/`error` come «in gioco» con badge inglese; MissionPanel usava il giorno locale del browser e una seconda formula dell'obiettivo | stati dal vocabolario condiviso; giornata **Europe/Rome** e una sola formula | `components/omega/MissionCard.tsx`, `MissionPanel.tsx` |
+| **M-09** (UI) | clamp e unità della UI divergenti dalla `_SPEC` (`greenup_ev_margin` in EUR etichettato «0-1») | `min`/`max` della UI **uguali** ai clamp del servizio, unità dichiarate, clamp **visibile** | `lib/omega.ts:OMEGA_PARAM_GROUPS`; `components/trading/ParamsSheetBase.tsx:clampField` |
+| **M-17 / M-18 / H-11** (storico) | finestra > 400 giorni → errore; DayDetail sommava righe attribuite dal calendario a un altro giorno | finestra clampata a 400 giorni con banner; il dettaglio somma **solo** gli attribuiti | `components/trading/TradingHistory.tsx` (`MAX_HISTORY_DAYS`), `lib/dailyHistory.ts:summarizeDayTrades`, `DayDetail.tsx` |
+| **§5 DESIGN** (20 mancanze) | formati monetari misti, quote con punto, stati in inglese, etichette divergenti, Omega senza banner modalità né salute del servizio, tre pannelli parametri diversi… | **design system unico** delle tre sezioni, con documento normativo e due test-guardia | `frontend/src/components/trading/DESIGN_SYSTEM.md`; `lib/format.ts`, `lib/tradeStatus.ts`, `lib/toasts.ts`; `components/trading/*`; `designGuard.test.ts` (statico sui sorgenti) e `designSystem.test.tsx` |
+
+### 17.2 Le review indipendenti SUL CODICE GIÀ CORRETTO
+
+Dopo l'audit sono state fatte nuove review (ingresso, uscita, matematica, dati/UI) sul codice
+appena modificato. Ogni finding ha un test in `test_omega_audit_2026_09_11.py`
+(`test_rev_*`).
+
+**ALTI**
+- **H1 — la perdita BLOCCATA era invisibile alle guardie.** Con `residual_liability = 0` a
+  copertura completa (H-06) il rischio spariva dal KPI **e dalle decisioni**: dieci green-up
+  chiusi a −22 € davano `realized_today = 0`, lo stop-loss giornaliero non scattava mai e il cap
+  `max_open_liability` si liberava a ogni uscita — il bot si riesponeva coi soldi appena persi.
+  Ora le guardie lavorano su due grandezze dedicate:
+  `realized_effective = realized_today + min(0, locked_pnl_open_today)` e
+  `open_liability_effective = open_liability + max(0, −locked_pnl_open)` — **mai anticipare un
+  utile, sempre anticipare una perdita** (un bloccato positivo NON si somma).
+  `omega_engine.realized_effective` / `open_liability_effective`, usate da
+  `omega_service.scan_and_place_legs`, `scan_and_place`, `_size_and_place`, `run_once`.
+  Test: `test_rev_h1_*` (incluso «bloccato di ieri non tocca lo stop di oggi»).
+- **H2 — due writer di `meta.hedge`/`meta.hedging`** con semantiche diverse: due UPDATE per ciclo
+  per sempre e un `hedging` che oscillava. `_stamp_hedge_meta` è stato **RIMOSSO**: writer unico e
+  **idempotente** `safe_strategy/execution.py:apply_hedge_state` (nota di cancellazione nel
+  sorgente di `omega_service.py`). Test `test_rev_h2_un_solo_writer_dello_stato_hedge`,
+  `test_rev_h2_stato_hedge_idempotente_nessuna_scrittura_a_vuoto`.
+- **H3 — `exit_kind='greenup'` anche su una chiusura in PERDITA.** Il badge «CHIUSO IN GREEN-UP»
+  su −22 € è una bugia al trader. Ora `greenup` **solo** se la chiusura è INTEGRALE **e** il P&L
+  bloccato è ≥ 0; altrimenti `loss` (perdita bloccata) o `profit` (regola di profitto ma chiusura
+  parziale / bloccato ignoto). `safe_strategy/exits.py:ui_exit_kind`, applicato in
+  `omega_service._greenup_send`. Test `test_rev_h3_chiusura_in_perdita_e_exit_kind_loss`,
+  `test_rev_h3_take_profit_integrale_e_greenup_vero`.
+- **H4 — il budget dei tentativi di gamba stava SOLO in memoria di processo.** Dopo l'esclusione
+  di `meta.leg_failed` dall'unique (v5) un riavvio del servizio azzerava il contatore e la stessa
+  gamba poteva essere ritentata all'infinito. Ora il budget viene **anche dal DB**:
+  `omega_db.failed_legs` (query FILTRATA su `meta->>leg_failed`, indice
+  `idx_omega_trades_leg_failed`), caricata una volta per ciclo da `omega_service.load_failed_legs`;
+  `_leg_attempts` prende il **massimo** fra DB e memoria — **mai la somma**: sono due viste dello
+  STESSO fallimento. Test `test_rev_h4_*`.
+
+**MEDI**
+- **M1** cap `max_events` contato sulle **gambe** invece che sulle partite distinte →
+  `events_today` (`omega_service.scan_and_place_legs`).
+- **M2** l'allarme «mercato che non si chiude mai» valeva solo sulle posizioni nude: anche una
+  `hedged` deve allarmare (il P&L bloccato si incassa solo al settlement) →
+  `_settle_hedged` → `_alert_stale_open`.
+- **M3** sul cash out **parziale** `locked_pnl` è `None` (non c'è nulla di bloccato) e
+  `exit_profit` risultava sempre `False`: ora il segno viene dal valore **pianificato**
+  (`planned_lock`) o dal **caso peggiore** (`worst_case`) — `omega_service._manual_cashout`.
+- **M4** parziale non riconosciuto quando l'utente chiede TUTTO ma la **liquidità** cappa il fill:
+  ora `partial` anche con `residual_size > HEDGE_EPS` (`_manual_cashout`).
+- **M5** `_leg_certain_failure` **sostituiva** la colonna `meta` (persi `model`, `runners`,
+  `requested_size`): ora merge col meta corrente (o rilettura via `get_trade`).
+- **M6** a bot fermo erano una RPC + una UPDATE **ogni 5 s per ore**: ora
+  `_idle_stats_due` (`IDLE_STATS_EVERY_S = 60`, o subito al cambio di stato).
+- **M7** uscendo dallo stato CIECO lo stato tornava sempre `pending`: una posizione già chiusa o
+  con residuo abbandonato risultava «in copertura» per il resto della partita. Ora
+  `_greenup_clear_blind` **ricostruisce dai fatti** `failed` / `residual_dropped` / `done` /
+  `pending` / `hold`, o cancella del tutto la chiave.
+- **M8** i rami d'uscita di `run_once` facevano `return` **prima** del `set_control`: proprio nel
+  caso da coprire la UI dava il servizio per morto e mostrava i numeri dell'ultimo ciclo buono.
+  Ora `_degraded_heartbeat` scrive heartbeat + stats con `degraded=<motivo>`
+  (`traded_ids_failed`, `aggregates_failed`, `manual_ids_failed`, `mission_ids_failed`) e la UI
+  mostra «⚠ CICLO DEGRADATO».
+- **M12** 746 righe di skip identiche in un giorno → `_log_dedup` applicato **anche** al motore v1.
+- **M13** `closing_trades_for` con URL troppo lunga / troncata → blocchi di 200 id
+  (`omega_db.closing_trades_for`).
+
+**BASSI**
+- **L1** il secondo unique parziale (`uq_omega_trades_leg`) bloccava comunque la gamba bruciata
+  (una riga con `leg_failed` può essere `error` **oppure**, se il delete è fallito, ancora
+  `pending`): ora porta la **stessa** esclusione `meta->>'leg_failed' <> 'true'`
+  (`omega_models_v5.sql`).
+- **L2** `list_trades` ordinava per **stringa** (`…Z` contro `…+00:00`, fusi diversi, riga senza
+  data in testa) → `omega_db._ts_key`, righe senza data **in coda**.
+- **L3/L4** il fallback senza RPC non esponeva le stesse chiavi: ora senza `day_start` i campi
+  `_today` cadono sul CUMULATO e l'insieme delle chiavi è **sempre lo stesso**
+  (`omega_engine.aggregate_trades`).
+- **L5** (a) una riga `error` con `settled_at` sembrava **regolata** in ogni finestra «regolati»:
+  ora scrive `meta.error_at`, **non** `settled_at`; (b) `_settle_hedged` senza l'accessor
+  `closing_trades_for` regolava una posizione coperta **come se fosse nuda** → `return 0`.
+
+> Nota di lettura del codice: due marker omonimi nei sorgenti appartengono a review
+> **precedenti** (§16), non a questa tornata: «review M9/H4» sul tetto duro
+> `DECISION_MAX_AGE_S`, e «§8, review H2» sull'esclusione degli eventi manuali.
+
+### 17.3 CONTRATTO UI — `get_omega_state(p_activity_limit)`
+
+Definita in `migrations/omega_models_v5.sql`. Owner-only (`betfair_live_is_owner()`),
+`REVOKE ALL FROM public, anon` + `GRANT EXECUTE TO authenticated, service_role`.
+Limite attività clampato a **1…300** (default 50). **Sette** chiavi di primo livello:
+
+| chiave | contenuto |
+|---|---|
+| `control` | la riga singleton `omega_control` intera: `id`, `status`, `mode`, `daily_goal`, `params`, `stats`, `error`, `started_at`, `stopped_at`, `heartbeat_at`, `updated_at`, `created_at` |
+| `aggregates` | `omega_aggregates_sql()` (sotto) |
+| `activity` | righe `omega_activity` (`id`, `ts`, `kind`, `payload`) con `ts ≥` mezzanotte **Europe/Rome**, `ORDER BY ts DESC LIMIT` (M-22) |
+| `activity_more` | quante righe **di oggi** restano fuori dal limite → bottone «carica altre» |
+| `activity_day` | la data (Europe/Rome) a cui `activity` si riferisce |
+| `goal_today` | obiettivo del giorno: `omega_daily_goal.goal` se esiste, altrimenti `omega_control.daily_goal` |
+| `goal_snapshot` | `true` **solo** se `goal_today` è lo snapshot storicizzato (H-10); `false` = ripiego dichiarato |
+
+**`omega_aggregates_sql()`** (owner-only via `get_omega_aggregates()`; grant diretto solo a
+`service_role`) — **17 chiavi**, e sono le SOLE che decidono la giornata (H-08):
+
+| chiave | significato |
+|---|---|
+| `realized_profit` | P&L realizzato CUMULATIVO a vita (aperture + chiusure) |
+| `realized_today` | realizzato attribuito a oggi per il giorno di **PIAZZAMENTO dell'apertura** (§14: le chiusure ereditano il giorno del padre) |
+| `open_liability` | rischio **VIVO**: 0 a copertura completa, `max(0, −if_win)` a copertura parziale, liability piena se nuda; nessun filtro di giorno |
+| `locked_pnl_open` | P&L **già bloccato** sulle posizioni vive a copertura COMPLETA: non è più rischio e non è ancora realizzato (H-06) |
+| `locked_pnl_open_today` | la quota di `locked_pnl_open` delle posizioni **piazzate oggi**: è quella che pesa su stop-loss e target (review H1) |
+| `reconciling_liability` | quanto di `open_liability` è un ordine reale a esito **IGNOTO** (H-02): sottoinsieme informativo, già incluso |
+| `matches_traded` / `matches_traded_today` | posizioni (aperture) con esito o vive, totali / di oggi |
+| `legs_today` | **gambe** di oggi (esclusi `error` e le riserve mai piazzate) |
+| `events_today` | **PARTITE** distinte di oggi — il cap `max_events` è per partita (review M1) |
+| `matches_open` | posizioni vive adesso |
+| `live_now` | **partite** distinte con una posizione viva ADESSO, senza giorno: il rischio vivo non ha giorno (H-08) |
+| `matches_won` / `matches_lost` | esito per **SEGNO** del P&L di POSIZIONE (apertura + chiusure), non per `status` |
+| `won_today` / `lost_today` | gli stessi, sulle posizioni piazzate oggi |
+
+Criteri condivisi fra SQL e Python (`omega_engine`): `is_placed` = `bet_id` **o**
+`meta.flumine_client_ref` **o** `reconciling`; `reconciling` = `meta.reconciling` **o**
+`meta.reason = 'place_exception_reconciling'`; `hedge_complete` = `meta.locked_pnl` numerico **e**
+`meta.residual_size ≤ 0,01`. Le letture dal `meta` sono difensive (regex numerica): un valore
+scritto a mano non fa fallire l'RPC. Il percorso PURO `omega_engine.aggregate_trades` produce le
+stesse 17 chiavi più `settled_count`, `total_count`, `events_traded`, ed è il **fallback** quando
+l'RPC non c'è.
+
+### 17.4 CONTRATTO UI — le chiavi `meta` di un trade
+
+**Uscite (vocabolario CHIUSO, `safe_strategy/exits.py:EXIT_KINDS`)**:
+`greenup | profit | loss | time | red_card | forced | manual | other`. Le decide
+`exits.ui_exit_kind(kind, locked=…, manual=…, forced=…, integral=…)` — `manual` per il cash out
+dell'operatore; `forced` per le uscite obbligatorie; `greenup` **solo** se regola di profitto
+**+** chiusura INTEGRALE **+** bloccato ≥ 0; `loss`/`red_card` sé stessi; tutto il resto `other`.
+Su apertura **E** chiusura stanno `meta.exit_kind`, `meta.exit_reason` (testo breve italiano) e
+`meta.exit_profit` (bool). La REGOLA che ha deciso resta in `meta.greenup.kind` (`profit|loss`).
+
+**`meta.greenup`** (UNA struttura, H-04) — blocco di stato da
+`omega_service._greenup_state_fields`: `state`, `reason` (italiano, ≤180), `at`, `next_retry_at`,
+`attempts`, `p_lose`, `ev`. `state` ∈ **`pending`** (uscita inviata, residuo da coprire) ·
+**`done`** (coperta del tutto) · **`hold`** (TENGO) · **`failed`** (tentativi esauriti: posizione
+SCOPERTA, con `next_retry_at`) · **`blind`** (nessun feed) · **`residual_dropped`** (residuo non
+copribile o non più necessario). Chiavi operative conservate: `trigger`, `kind`, `ts`, `minute`,
+`score`, `laid_score`, `sent`, `failed`, `failed_ts`, `rounds`, `last_attempt_ts`,
+`closing_trade_id`, `price`, `size`, `residual_after`, `pending_fill`, `residual_dropped`, `note`,
+`why`, `p_source`, `locked_pnl`, `last_error`, `detail`, `exit_kind`.
+
+**`meta.greenup_hold`** (decisione «tengo» per la UI): `trigger`, `reason`, `p_lose`, `p_source`,
+`locked_pnl`, `ev_hold`, `minute`, `score`, `laid_score`, `ts`. Riscritta al cambio di motivo o al
+più ogni 30 s; **rimossa** quando l'uscita viene inviata.
+
+**`meta.hedge`** e **`meta.hedging`** — UN solo writer: `safe_strategy/execution.py:apply_hedge_state`
+(review H2). `hedge` = `{fraction, remaining_liability, hedged_size, residual_size, complete}`;
+`hedging = true` significa **una gamba di chiusura È IN VOLO** — e in quel caso il rischio da
+mostrare resta la liability **PIENA** (nulla è ancora coperto). Insieme scrive `hedged_size`,
+`residual_size`, `locked_pnl` (**solo** a copertura completa, altrimenti `None`), `worst_case`,
+`best_case`, `if_win`, `if_lose`, `hedge_pending_ids`, `closing_ids`, `closing_trade_id`,
+`closing_status`, `hedge_synced_at`.
+
+**Riconciliazione**: `meta.reconciling = true` + `meta.reconciling_since` (ISO) — ordine reale a
+esito IGNOTO: conta come piazzato, come liability e come gamba occupata finché la
+riconciliazione non decide (H-02).
+
+**Esito CERTO negativo**: `meta.leg_failed = true` (nessun ordine reale è mai esistito: FOK
+ucciso, paper senza fill, richiesta di coda mai creata) + `meta.error_final = true` +
+`meta.error_at` (+ `no_fill_at` sul percorso flumine). **Le righe `error` NON hanno più
+`settled_at`** (review L5): una riga in errore non è una regolazione e non deve comparire come
+tale in nessuna finestra «regolati» — `settled_at` sopravvive solo nel settlement vero
+(`omega_service.settle_open`) e nel void di un mercato sparito (`_maybe_void_orphan`).
+Eccezione dichiarata: lo strato condiviso `execution.close_trade` lo scrive ancora su una **gamba
+di chiusura** andata in errore (convenzione Safe).
+
+**Commissione**: `meta.commission` **fissata sulla riga** al piazzamento e ricopiata sulla gamba
+di chiusura (L-02): la tabella non usa più il parametro corrente.
+
+**Settlement per POSIZIONE** (M-04): `meta.position_id`, `meta.position_pnl`,
+`meta.position_result` ∈ `won | lost | flat | void` (`execution.position_result`; `void` lo scrive
+`settle_position` su mercato annullato), scritti con **merge** sulla riga corrente per non
+perdere `hedge`/`exit_*`.
+
+**Altre chiavi** già in uso e confermate: `phase` (`reserved` / `flumine_wait`),
+`requested_size`, `runners` (nomi dei runner a punteggio esatto), `model` (blocco di audit del
+modello), `result_ht` / `result_ft` (risultati REALI, idempotenti: mai sovrascritti),
+`flumine_client_ref` / `flumine_request_id` / `flumine_enqueued_at`, `fill`
+(`paper_at_price` / `flumine_paper` / `flumine_live`), `below_min_stake`, `market_gone_since`,
+`orphan_alerted`, `stale_open_alerted`, `cashout` / `cashout_at`, `closes_trade_id`,
+`exit_track` (tracciamento gol/rossi dello strato uscite).
+
+### 17.5 CONTRATTO UI — i `kind` di attività (elenco COMPLETO)
+
+Scrittore unico `omega_db.log(kind, payload)`; anti-rumore `omega_service._log_dedup` (una riga
+per chiave ogni 10′). **Ogni** kind ha un'etichetta italiana esplicita in
+`frontend/src/lib/omega.ts:OMEGA_ACTIVITY_EXTRA` (o in `lib/tradeStatus.ts:ACTIVITY_BASE`), con
+`critical: true` dove il trader **deve** accorgersene — e un test lo impedisce di dimenticarlo.
+
+**Ingressi e piazzamento** — `place` (event_id, trade_id, runner, price, size, liability, target,
+minute, mode) · `skip` (event_id, reason, + leg/minute/score/trade_id/attempt/max/avail/
+impegnato/liability/cap/err) · `size_reduced` (event_id, requested, available, size) ·
+`goal_stop` (realized, goal) · `loss_stop` (realized, cap) · `confirm_failed` (event_id,
+trade_id, bet_id, size, price, liability, mode, critical) · `place_reconciling` (event_id,
+trade_id, critical, liability, price, size, leg, err; manuale: + origin, side) ·
+`place_exception` (trade_id, mode, err) · `manual_place` (trade_id, event_id, side, price, size,
+mode, flumine_request_id) · `manual_place_exception` (trade_id, event_id, err) ·
+`paper_fill_fallback` / `live_fok_fallback` (event_id, trade_id, reason).
+
+**Coda flumine** — `flumine_enqueue` (trade_id, event_id, request_id, price, size, mode) ·
+`flumine_fill` (trade_id, event_id, size, price, mode, request_id) · `flumine_no_fill` (trade_id,
+event_id, reason, leg, attempt, max, max_attempts, mode) · `flumine_cancel` (trade_id, bet_id,
+cancel_request_id) · `flumine_cancel_timeout` (trade_id, request_id) · `flumine_recovered`
+(trade_id, request_id) · `flumine_live_freed` (trade_id, event_id, reason) ·
+`flumine_live_orphan` (trade_id, event_id, request_id, bet_id) · `flumine_poll_error` (trade_id,
+err).
+
+**Riconciliazione e sorveglianza** — `reconciled_open` (trade_id, event_id, bet_id) ·
+`reconciled_free` (trade_id, event_id) · `reconciled_paper` (trade_id, event_id, price, size) ·
+`reconciled_error` (trade_id, event_id, reason) · `reconcile_error` (reason | trade_id, err) ·
+`orphan_live_alert` (trade_id, event_id, market_id, bet_id) · `stale_open_alert` (trade_id,
+event_id, market_id, critical, hours, liability, mode).
+
+**Green-up e chiusure** — `greenup` (trade_id, event_id, trigger, minute, score, laid_score,
+distance, p_lose, p_source, locked_pnl, ev_hold, decision, back_price, lay_price, entry_price,
+side, price, size, closing_trade_id, exit_kind, kind, state, exit_reason, why, pending_fill,
+attempt, residual_before, residual_after, hedged_size, mode) · `greenup_hold` (… msg, p_lose,
+p_source, locked_pnl, ev_hold, decision, hold_profit, loss_if_lose, back_price, lay_price) ·
+`greenup_wait` (trade_id, event_id, trigger, wait) · `greenup_retry` (reason, trade_id, event_id,
+trigger, attempts, err, detail, residual) · `greenup_failed` (trade_id, event_id, attempts,
+residual, critical, state, liability, next_retry_at, retry_in_s, last_error) ·
+`greenup_residual_dropped` (trade_id, event_id, state, reason, residual, trigger, attempts) ·
+`greenup_blind` (trade_id, event_id, liability, cycles, critical, state) · `cashout` (trade_id,
+closing_trade_id, side, price, size, locked_pnl, planned_lock, hedged_size, residual_size, mode,
+status) · `cashout_manual` (trade_id, event_id, closing_trade_id, exit_kind, exit_reason,
+fraction, amount, partial, price, size, locked_pnl, planned_lock, residual_size, mode) ·
+`cashout_error` (trade_id, closing_trade_id, reason).
+
+**Regolamento** — `settle` (trade_id, event_id, status, pnl, runner; dallo strato condiviso anche
+closes_trade_id, position_id, position_pnl, position_result, selection) · `hedged` (trade_id,
+event_id, locked_pnl, hedged_size, legs, runner) · `settle_hedged` (trade_id, event_id, status,
+pnl, legs, runner) · `settle_position` (trade_id, event_id, position_pnl, position_result, legs,
+commission) · `settle_wait` (trade_id, reason, pending_closing_ids) · `settle_orphan` (trade_id,
+event_id, reason, mode) · `settle_orphan_closing` (trade_id, parent_id, pnl) · `settle_error`
+(trade_id | reason, err).
+
+**Modello, missioni, ciclo** — `model_lambda_market` / `model_lambda_live` (event_id, minute,
+score, lambda_pre, + fit o dati live) · `mission_scores_error` (err) · `mission_error` (event_id,
+err) · `error` (reason, err, + event_id/trade_id/attempts/residual/critical/retry_in_s) ·
+`stop` (payload vuoto).
+
+I `reason` dei kind `skip`/`error` sono anch'essi un vocabolario: `already_reserved`,
+`aggregates_failed`, `book_error`, `catalogue_error`, `closings_read_failed`, `cycle_exception`,
+`fetch_failed`, `flumine_poll_failed`, `greenup_attempts_exhausted`, `greenup_candidates_failed`,
+`greenup_failed`, `greenup_phase_failed`, `hedged_read_failed`, `insufficient_liquidity`,
+`list_events_failed`, `live_not_matched`, `manual_failed`, `manual_ids_failed`,
+`max_open_liability`, `mission_ids_failed`, `missions_failed`, `no_correct_score_market`,
+`no_legs_remaining`, `no_live_state`, `no_market`, `no_runner_in_range`, `no_model_lambdas`,
+`market_suspended`, `place_exception_reconciling`, `reconcile_orphan_old`,
+`reconcile_phase_failed`, `request_missing`, `reserve_no_id`, `results_phase_failed`,
+`results_read_failed`, `scan_event_failed`, `scan_phase_failed`, `settle_phase_failed`,
+`target_zero_goal_reached`, `traded_ids_failed`.
+
+### 17.6 CONTRATTO UI — `omega_control.stats`
+
+Scritte da `omega_service.run_once` (bot vivo) e `omega_service._idle_stats` (bot fermo), con
+`_degraded_heartbeat` che aggiunge `degraded`. Sono la **fotografia** del servizio e portano le
+STESSE chiavi degli aggregati (H-08): `events_total`, `matches_traded`, `matches_traded_today`,
+`matches_open`, `realized_profit`, `realized_today`, `open_liability`, `locked_pnl_open`,
+`locked_pnl_open_today`, **`realized_effective`**, **`open_liability_effective`**,
+`reconciling_liability`, `legs_today`, `events_today`, `won_today`, `lost_today`, `live_now`,
+`matches_remaining`, `legs_remaining`, `target_match`, `target_leg`, `goal`, `goal_pct`,
+**`bot_running`**, `last_cycle` (+ **`degraded`** solo nel battito degradato, con
+`bot_running=true`).
+
+A bot fermo `_idle_stats` azzera `events_total`, `matches_remaining`, `legs_remaining`,
+`target_match`, `target_leg` e mette `bot_running=false` (L-03) tenendo veri e freschi i numeri
+dei SOLDI (settlement e green-up girano comunque): **la UI non mostra più per ore i numeri di un
+bot che non stava lavorando.** `realized_effective` e `open_liability_effective` non esistono nel
+SQL: sono i numeri che il bot **USA** per decidere e arrivano alla UI solo da qui.
+
+### 17.7 Cash out manuale — tetto DURO di 20 s sul feed
+
+`CASHOUT_FEED_MAX_AGE_S = 20.0` (`omega_service.py`) è lo **stesso** numero che spegne il bottone
+in dashboard (`MatchTradesTable.FEED_STALE_S`), e un test certifica la parità
+(`test_omega_cashout_feed_fermo_2026_09_11.py`). Sequenza in
+`omega_service._cashout_prices`:
+
+1. riga del FEED UNICO solo se **≤ 20 s** (`_cs_from_feed(..., max_age=CASHOUT_FEED_MAX_AGE_S)` →
+   `_feed_row(hard_max_age=…)`): tetto **duro**, nessun bypass «scanner vivo» — un book fermo da
+   25 s non è un book;
+2. altrimenti **book REST** (`market.read_book`), valido solo se il mercato è `OPEN`;
+3. nulla di leggibile → `_manual_cashout` ritorna **`{"error": "prezzi_non_disponibili"}`**:
+   nessuna riga di chiusura, nessun log `cashout_manual`. Lo stesso motivo lo riusa il green-up
+   automatico (`_greenup_wait`).
+
+Il cash out eseguito scrive `exit_kind = 'manual'` ed `exit_reason =
+«Cash out manuale richiesto dall'operatore»` su **apertura** (`db.update_trade`) **e** su gamba di
+chiusura (`_greenup_stamp_closing`), con **«(parziale)»** nel motivo quando `fraction < 1`,
+`amount` è indicato **oppure** la liquidità ha lasciato un residuo (review M4). Il segno
+(`exit_profit`) viene da `locked_pnl` → `planned_lock` → `worst_case` (review M3): sul parziale
+non si spaccia un caso peggiore per «bloccato».
+
+### 17.8 La dashboard `/omega` come è ORA
+
+> Supera la descrizione del §8 («equity curve, barra obiettivo, lista trade live, popup incassi,
+> pannello parametri, START/STOP») e le note del §13.1 sulla tabella «illeggibile».
+> Documento **normativo**: `frontend/src/components/trading/DESIGN_SYSTEM.md` — le tre sezioni
+> (Omega, Safe Strategy, Mike) hanno la stessa struttura, le stesse parole, gli stessi formati.
+> Regola d'oro: *lo stesso concetto ha sempre la stessa parola, lo stesso colore e lo stesso
+> formato*. Due test-guardia: `designGuard.test.ts` (statico: legge i sorgenti e vieta formatter
+> locali, `toFixed`, `€${…}`, stati in inglese, mappe di etichette duplicate, i sinonimi
+> «Capitale a rischio»/«Cash-out») e `designSystem.test.tsx` (rendering di tutti i condivisi).
+
+**Struttura unica di pagina** (`pages/Omega.tsx`):
+`PageShell` → `BotHeader` (sticky, misura `navH`) → `ModeBanner` → `DayBar` → `KpiRow`/`StatTile`
+→ `Tabs` con `TabsList` **sticky** a `top: navH` → footer. Tab, naming ed emoji sono parte del
+contratto: **`🎯 Missione · ⚙️ Automatico · ✋ Manuale · 📅 Storico`**.
+
+- **BotHeader**: link «AI TERMINAL» → `/select-sport`, simbolo `Ω` + nome, badge di stato
+  (`INATTIVO / IN CORSA / IN ARRESTO / FERMO / ERRORE`), `ServiceHealthChip`, `ModeToggle`
+  (`aria-pressed`), pannello parametri, `Avvia`/`Ferma`. Badge **«IN CORSA · SENZA BATTITO»**
+  (rosso) quando lo stato è `running` ma `heartbeat_at` è più vecchio di **45 s** o assente, con
+  il rimedio nel `title` («il servizio non batte da …: riavvia l'app desktop»). Il chip di salute
+  mostra feed (`feed vivo (3 s)` / `feed FERMO da …` / `feed: nessun dato`, soglia 45 s), battito
+  del servizio, `⚡ STREAM n` / `REST`, e **«⚠ CICLO DEGRADATO: <motivo>»** da `stats.degraded`
+  (review M8) — un ciclo degradato non è un servizio morto, e si distingue.
+- **ModeBanner**: `MODALITÀ PAPER` (verde) — «simulazione fedele: coda, liquidità, betDelay e
+  protezioni identiche al live, nessun denaro reale»; `MODALITÀ LIVE` (rosso, `role="alert"`) —
+  «Omega piazza **lay reali** sul Correct Score con **soldi veri**». Il passaggio a LIVE passa
+  SEMPRE da `LiveConfirmDialog` («Passare a LIVE (soldi veri)?») che cita il §9.
+- **DayBar** «Giornata operativa» (Europe/Rome): `Obiettivo di oggi` · `partite` (`events_today`)
+  · `operazioni` (`legs_today`) · `nV nP` (`won_today`/`lost_today`) · `n vive` (`live_now`) ·
+  `realizzato oggi` (`realized_today`) · `resta` **oppure** `obiettivo CENTRATO (… oltre)` ·
+  `Liability aperta` · `P&L bloccato`. Barra con `role="progressbar"`. La nota dichiara la
+  provenienza: «numeri dalla RPC (giornata Europe/Rome)…» con `goal_snapshot=true`, altrimenti
+  «obiettivo non ancora storicizzato per oggi: è quello corrente del servizio» (H-10).
+- **KPI (solo dalla RPC, H-08)**: `P&L oggi` · `Target / operazione` (da `stats`, con
+  «bot fermo: nessun target in corso» quando `bot_running=false`) · `Eventi in finestra` ·
+  `Operazioni oggi` (con V/P/vive nel sottotitolo) · `Liability aperta` · `P&L bloccato` ·
+  `In verifica su Betfair` (rosso se > 0).
+- **Tabella partite** (`components/omega/MatchTradesTable.tsx`, logica pura
+  `lib/omegaMatches.ts`): **UNA riga = UNA partita**, colonne
+  `Ora` (Roma, `prec.` per le vive di giorni precedenti) · `Partita` (punteggio LIVE + freschezza
+  del feed) · `1° tempo` · `Risultato 1T` · `2° tempo` · `Risultato 2T` · `P&L partita`
+  (`regolato` / `n/m decise` / `bloccato` / `in corso`, `· rischio …`, `· di cui … in verifica`).
+  Ogni cella di gamba porta lato (BACK `sky` / LAY `rose`), runner bancato @quota d'ingresso,
+  stake, **rischio** (il residuo, se la copertura è parziale), minuto e punteggio d'ingresso,
+  **P(perdita)** del modello con la P implicita del mercato accanto (e nel tooltip grezza vs
+  calibrata, fonte dei λ, dati storici, costo di copertura), e — se la partita è viva — la riga
+  **quote LIVE** (`ora LAY … / BACK …`), la **freschezza** (`feed 3 s` / **`FEED FERMO da 45 s`**
+  / **`FEED ASSENTE`**, tetto **20 s**) e **«se chiudo ora … netti»** calcolato con la
+  commissione **fissata sulla riga** (L-02), oppure «chiusura non disponibile».
+  Le gambe di chiusura sono annidate sotto l'apertura (`↳ Green-up · BACK 24,24 € @4,90` /
+  `↳ Cash out` / `↳ Chiusura a mercato`, badge `parziale` se la liquidità ha cappato il fill).
+  Il risultato reale dice **`bancato USCITO`** (rosso) o **`bancato non uscito`** (verde), e per
+  gli aggregati «Any Other…» non dice nulla.
+- **Stati in italiano** (una sola mappa, `lib/tradeStatus.ts`; precedenza esito certo > terminale
+  > riconciliazione > stato DB): **IN CORSO** (`pending`) · **APERTO** (`open`) · **CHIUSO**
+  (`hedged` senza `exit_kind`) · **VINTO** · **PERSO** · **VOID** · **ERRORE** (anche per uno
+  stato ignoto: mai una cella muta) · **IN VERIFICA SU BETFAIR** (`pending` + `meta.reconciling`,
+  H-02) · **ERRORE (definitivo)** (`meta.error_final` / `leg_failed` / `error_at`, con
+  «nessun ordine reale · <motivo> · ERRORE alle HH:MM» — l'istante viene da `meta.error_at`, non
+  da `settled_at`). Sovrascritture sulle chiusure: **CHIUSO IN GREEN-UP** (`exit_kind='greenup'`)
+  · **CASH OUT MANUALE** (`manual`) · **CHIUSO IN PERDITA** (`loss`) · **CHIUSO IN UTILE**
+  (`profit`) · **CHIUSO A MERCATO** (solo `time|forced|red_card|other`: **mai inventato** senza
+  `exit_kind`) · **`COPERTA 40 % (restano 120,00 €)`** sulla copertura parziale (M-06).
+  Più il riquadro `posizione in utile / in perdita / in pari …` dal P&L di POSIZIONE (M-04).
+- **Badge green-up** per i 6 stati (`lib/omega.ts:greenupBadge`): `GREEN-UP in attesa` ·
+  `TENGO · P(perdita) 12,0 % · EV −12,10 €` · `GREEN-UP fallito, ritento alle 21:07` ·
+  `GREEN-UP CIECO (senza feed)` · `residuo abbandonato` · `GREEN-UP fatto`, con motivo,
+  tentativi e ora nel tooltip.
+- **Cash out** (`components/trading/CashOutButton.tsx`): solo su una gamba LAY `open`/`pending`
+  non in riconciliazione e non terminale; l'esposizione è il **RESIDUO** se la copertura è
+  parziale («residuo scoperto …: il cash out chiude SOLO quello»); **spento** se il feed è fermo
+  («un cash out su prezzi vecchi si esegue a un prezzo che non hai visto»); frazioni rapide e
+  importo libero; in LIVE serve un **secondo click** entro 10 s, che decade a ogni cambio di
+  prezzo o importo.
+- **Attività del servizio**: `ActivityFeed` con le etichette italiane del §17.5, righe `critical`
+  in rosso e marcate, filtro per partita (`aria-pressed`), ora di Roma, vuoto dichiarato
+  («nessuna attività oggi»), e **«carica altre (n)»** da `activity_more` (+120 righe per volta);
+  la card dichiara `· giornata <data>` da `activity_day`.
+- **Manuale** (`components/omega/ManualPanel.tsx`, ora **testato**: 19 test in
+  `ManualPanel.test.tsx`): quattro passi (evento → mercato → quote → ordine) con guardie
+  money-critical **certificate dai test** — il payload porta il `selection_id` REALE del runner
+  scelto (mai l'indice di riga), `size` **XOR** `target`, conferma obbligatoria in LIVE, bottone
+  **spento** con book più vecchio di 20 s, «Liability aperta ≈» solo in LAY, esiti della coda in
+  italiano (`IN CODA / IN CORSO / ESEGUITA / FALLITA`, e «STATO SCONOSCIUTO» dichiarato).
+- **Parametri** (`components/trading/ParamsSheetBase.tsx`, spec-driven): i valori mostrati sono
+  quelli **del SERVIZIO** (`control.params`), lo sheet non sovrascrive l'editing in corso, i
+  fuori-range sono **clampati e dichiarati** (`clampato a 100 (ammesso 0,50 … 100)`), un solo
+  bottone `Salva parametri` più `Default`. **«Salva» invia una PATCH**
+  (`lib/omega.ts:omegaParamsPatch`): parte dai parametri del servizio e aggiunge solo ciò che
+  l'utente ha davvero cambiato — un default della UI non può più sovrascrivere il valore vivo
+  (H-07). L'obiettivo (`__daily_goal`) va sulla colonna dedicata `omega_control.daily_goal`, non
+  nei `params`.
+- **Storico** (`components/trading/TradingHistory.tsx`, `variant="omega"`): attribuzione per
+  giorno di **PIAZZAMENTO** per tutti i bot (`lib/dailyHistory.ts:attributionOf` → sempre
+  `'placed'`), finestra clampata a **400 giorni**, calendario con `● centrato / ○ mancato /
+  · obiettivo non storicizzato` (H-10: `goal_snapshot` **rispettato**, le righe senza snapshot non
+  entrano nel tasso di centratura), dettaglio giorno che somma **solo** i trade attribuiti a quel
+  giorno (M-18/H-11) e riusa la **stessa** tabella per partita.
+
+**Fallback dichiarati senza `omega_models_v5.sql`** (la UI funziona, e dice che sta stimando):
+`P&L bloccato` e `In verifica su Betfair` si stimano dalle righe caricate con la nota
+«stimato dal client dalle righe caricate (applica omega_models_v5.sql per il valore dal DB)»;
+`goal_snapshot` è forzato a `false` e la DayBar dice «obiettivo non ancora storicizzato»;
+l'attività è filtrata lato client con la nota «filtro di giornata lato client (migrazione v5 non
+applicata)»; «carica altre» non compare; `live_now` cade su `matches_open`. Ogni KPI ha la catena
+`aggregates.X ?? stats.X`. Certificato da `pages/Omega.certificazione.test.tsx` §7 e da
+`src/certification/migrations.cert.test.ts`.
+
+### 17.9 Stato operativo e passi da fare
+
+1. **Migrazione da applicare a mano** (Supabase SQL editor): **`migrations/omega_models_v5.sql`**,
+   ultima nell'ordine dichiarato in **`migrations/APPLY_ORDER_2026-09-11.md`** —
+   `mike_bot_v2.sql` → `mike_history_v2.sql` → `safe_strategy_bot_v2.sql` → `omega_models_v5.sql`.
+   È indipendente dalla catena Mike/Safe (tocca solo `omega_*`) ma quell'ordine è quello con il
+   minor numero di stati intermedi. Idempotente. Verifica:
+   `select public.get_omega_state();` deve avere `locked_pnl_open`, `live_now`,
+   `reconciling_liability` in `aggregates`; `select indexdef from pg_indexes where indexname =
+   'uq_omega_trades_auto_leg';` deve escludere `leg_failed`.
+   ⚠️ Se in futuro si riapplica `omega_models_v4.sql`, `omega_daily_v2.sql` o
+   `daily_history.sql`, **rieseguire subito `mike_history_v2.sql`**: rimettono in vita la firma a
+   7/3 argomenti di `trading_daily_history`/`trading_day_trades` e ricreano l'overload ambiguo
+   (bug R2).
+2. **Riavviare i servizi** e **riavviare l'app desktop** (l'exe è l'avviatore del `main.js` vivo:
+   mai ricompilare). I servizi toccati sono `omega_service`, il servizio Safe Strategy e quello
+   di Mike; lo scanner del feed unico non cambia.
+3. **LIVE ancora BLOCCATO** (§16.6): serve la certificazione della liquidità lato **back**
+   (§13.1, ancora parziale) e alcuni giorni di paper con le correzioni di oggi. I due gate del §I2
+   restano intatti.
+4. **Certificazione ripetibile sui DATI REALI**: `cd frontend && npx vitest run --config
+   vitest.cert.config.ts` — monta `/omega`, `/safe-strategy` e `/mike` sul DB reale (letture SOLO,
+   service role), cattura `console.error`/`warn` come KO, e verifica anche quali RPC esistono e
+   quali campi rispondono (`src/certification/migrations.cert.test.ts`). Esito dell'11/09 sera:
+   **26/26**. I file `*.cert.test.*` si **auto-saltano** fuori da quella config, così `npm test`
+   non interroga mai il DB reale.
+
+### 17.10 Ancora aperto (con motivo)
+
+- **`locked_pnl_open_today` troncato a intero nel percorso RPC.** In `omega_db.aggregates` la
+  tupla dei campi «in euro» è `("realized_profit", "realized_today", "open_liability",
+  "locked_pnl_open", "reconciling_liability")`: `locked_pnl_open_today` **non c'è** e passa da
+  `int(v)` → una perdita bloccata oggi di −0,80 € diventa 0. Effetto diretto su
+  `realized_effective` (review H1) e quindi su stop-loss e target quando il bloccato è sotto
+  l'euro. Il percorso PURO (`omega_engine.aggregate_trades`, fallback senza RPC) è corretto.
+  **Fix di una riga, da fare prima del live.**
+- Il docstring di `omega_service._flumine_no_fill_error` cita ancora `settled_at` fra i campi
+  scritti: il codice sotto scrive `meta.error_at` e NON `settled_at` (review L5). Commento da
+  allineare.
+- `DESIGN_SYSTEM.md` è indietro sul codice in due punti: dice ancora «DA RICONCILIARE» dove il
+  codice usa **IN VERIFICA SU BETFAIR**, e dichiara i tre pannelli parametri «non ancora
+  migrati» mentre Omega usa già `ParamsSheetBase`.
+- Fedeltà paper (bet delay 5 s), certificazione liquidità lato back dalle registrazioni REC,
+  calibratore con una famiglia alimentata dagli stati REC/paper di **Omega** (§16.7 2P-F-03),
+  e i punti già elencati in §14.5 / §16.6.

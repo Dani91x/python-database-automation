@@ -391,7 +391,13 @@ def test_live_cover_wait_then_cover():
     d2 = E.decide(ctx, s2, p)
     assert d2.state == "LIVE_COVER_PENDING"
     a = d2.actions[0]
-    assert (a.role, a.market, a.selection, a.side, a.price) == ("over_cover", E.MARKET_OU45, E.SEL_OVER, "back", 9.0)
+    # cert. 12/09: la copertura si piazza ``cover_place_at_ticks`` SOTTO il best
+    # back (9,00 -> 8,60 con 2 tick da 0,20 nella banda 6-10), perche' un ordine
+    # al prezzo esatto muore durante il ritardo di piazzamento: misurati 188
+    # tentativi per 13 coperture abbinate.
+    assert (a.role, a.market, a.selection, a.side) == ("over_cover", E.MARKET_OU45, E.SEL_OVER, "back")
+    assert a.price == pytest.approx(float(E.ticks_away(9.0, -int(p["cover_place_at_ticks"]))), abs=1e-9)
+    assert a.price < 9.0, "il limite deve essere piu' basso del best, mai piu' alto"
     x = E.cover_size(20, 9.0, 0.05, 1.2)
     assert a.size == round(x, 2)                      # importo ESATTO (exact_sizes)
     assert E.needs_submin("back", a.size) is True     # 3.16: fuori passo 0.50 -> place-and-trim
@@ -725,8 +731,14 @@ def test_partial_cover_reprice_uses_exact_residual():
              inplay=True, minute=20, goals=0, hazard=0.05, p4_market=0.12)
     E.apply_decision(ctx, E.decide(ctx, s, p), s.now)
     cover = ctx.legs[-1]
+    # cert. 12/09: si dimensiona sul prezzo DI PIAZZAMENTO (best meno
+    # ``cover_place_at_ticks``), che e' quello a cui la copertura entra davvero
+    # cert. 12/09: la SIZE resta dimensionata sul BEST (e' li' che l'ordine si
+    # abbina: su un exchange un limite piu' basso prende comunque il miglior
+    # prezzo disponibile); il cuscinetto vale solo come LIMITE dell'ordine.
     x_full = E.cover_size(20, 8.0, 0.05, 1.2)
     assert cover.size == pytest.approx(round(x_full, 2))
+    assert cover.price == pytest.approx(float(E.ticks_away(8.0, -int(p["cover_place_at_ticks"]))))
     cover.matched = 1.0; cover.avg_price = 8.0          # 1 € abbinato a 8.0, resto sul book
     s2 = snap(s.now + 11, u35=book(1.35, inplay=True), o45=book(6.0, bs=50, inplay=True),
               inplay=True, minute=21, goals=0)
@@ -881,7 +893,8 @@ def test_hold_expectation_and_prudent_p4():
 def test_loss_exit_model_holds_when_holding_is_worth_more():
     ctx, p = _live_covered()
     # HT 1-1: chiudere ora = -5.51 (23% -> la regola FISSA chiuderebbe), ma tenere vale -0.79
-    # e il premio al rischio e' 24*50%*0.22 = 2.64 -> soglia -3.43 -> si TIENE
+    # e il premio al rischio e' 24*10%*0.22 = 0.53 -> soglia -1.32 -> si TIENE
+    # (premio 50% -> 10% il 12/09: il caso 4 gol e' gia' dentro ev_hold)
     s = snap(KO + 46 * 60, u35=book(2.20, bl=2.24, inplay=True), o45=book(6.0, bl=6.2, inplay=True),
              inplay=True, minute=45, goals=2, ht_active=True, p_total_model=_HT11)
     d = E.decide(ctx, s, p)
@@ -889,31 +902,40 @@ def test_loss_exit_model_holds_when_holding_is_worth_more():
     le = d.telemetry["loss_exit"]
     assert le["mode"] == "model" and le["window"] == "ht" and le["sources"] == ["model"]
     assert le["ev_hold"] == pytest.approx(-0.79, abs=0.05)
-    assert le["premium"] == pytest.approx(2.64, abs=0.02)
+    assert le["premium"] == pytest.approx(0.53, abs=0.02)
     assert d.telemetry["cashout"]["net"] < le["threshold"]
 
 
 def test_loss_exit_model_closes_when_certain_value_beats_expectation():
     ctx, p = _live_covered()
-    # HT 2-1: chiudere ora = -3.54 ; tenere vale -3.08 - premio 3.60 = -6.68 -> CHIUDE
+    # HT 2-1: chiudere ora = -3.54 ; tenere vale -3.08 - premio 0.72 = -3.80 -> CHIUDE
     s = snap(KO + 46 * 60, u35=book(3.4, bl=3.5, inplay=True), o45=book(2.5, bl=2.6, inplay=True),
              inplay=True, minute=45, goals=3, ht_active=True, p_total_model=_HT21)
     d = E.decide(ctx, s, p)
     assert d.state == "LIVE_CLOSING" and d.reason.startswith("uscita a modello (ht)")
     assert d.updates["close_reason"] == "loss_ht"
     assert sorted(a.role for a in d.actions) == ["over_close", "under_close"]
-    # stesso caso con perdita del 27% (oltre il 25% della regola fissa): il modello chiude lo stesso
+    # CERT. 12/09 — il modello decide in ENTRAMBE le direzioni, non solo verso la
+    # chiusura. Stesso caso con una perdita del 27% (oltre il 25% della regola
+    # fissa, che quindi chiuderebbe): cristallizzare -6.53 quando tenere vale
+    # -3.08 butta 3,45 EUR, e il modello TIENE. Col vecchio premio al 50% la
+    # soglia scendeva a -6.68 e si chiudeva: e' il difetto che ha chiuso in
+    # perdita quattro Under poi vincenti.
     s2 = snap(KO + 46 * 60, u35=book(4.1, bl=4.2, inplay=True), o45=book(2.9, bl=3.0, inplay=True),
               inplay=True, minute=45, goals=3, ht_active=True, p_total_model=_HT21)
     d2 = E.decide(ctx, s2, p)
     assert d2.telemetry["cashout"]["net"] == pytest.approx(-6.53, abs=0.05)
-    assert d2.state == "LIVE_CLOSING"
+    assert d2.state == "LIVE_COVERED", "tenere vale piu' che cristallizzare -6.53"
+    assert d2.telemetry["loss_exit"]["ev_hold"] > d2.telemetry["cashout"]["net"]
+    # col premio vecchio si chiudeva: la differenza e' tutta li'
+    assert E.decide(ctx, s2, dict(p, loss_exit_risk_premium_pct=50.0)).state == "LIVE_CLOSING"
 
 
 def test_loss_exit_model_uses_market_p4_when_more_pessimistic():
     ctx, p = _live_covered()
-    # HT 1-1 come sopra (tiene con P4 0.22) ma il mercato prezza P(4) al 45%: premio 5.4,
-    # EV con P4 0.45 = 0.4231*5.5 -10.8 + 0.1269*6.6 = -7.63 -> soglia -13 -> ... chiudere -5.51 >= -13 -> CHIUDE
+    # HT 1-1 come sopra (tiene con P4 0.22) ma il mercato prezza P(4) al 45%:
+    # EV con P4 0.45 = 0.4231*5.5 -10.8 + 0.1269*6.6 = -7.63; premio 24*10%*0.45 = 1.08
+    # -> soglia -8.71 -> chiudere -5.51 >= -8.71 -> CHIUDE
     s = snap(KO + 46 * 60, u35=book(2.20, bl=2.24, inplay=True), o45=book(6.0, bl=6.2, inplay=True),
              inplay=True, minute=45, goals=2, ht_active=True, p_total_model=_HT11, p4_market=0.45)
     d = E.decide(ctx, s, p)

@@ -45,7 +45,7 @@ describe('SafeTradesTable — trade di modello', () => {
         })]);
         const hold = screen.getByTestId('trade-hold');
         expect(hold).toHaveTextContent('In attesa: margine ampio, P(perdita) 0,4 %');
-        expect(hold.title).toMatch(/fonte: model/);
+        expect(hold.title).toMatch(/stima da: modello del servizio/);
         expect(hold.title).toMatch(/bloccabile ora: \+1,20 €/);
     });
 

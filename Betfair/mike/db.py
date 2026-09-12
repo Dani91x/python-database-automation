@@ -188,6 +188,12 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
       (``engine.event_liability``) e la passa in ``open_liability``.
     * C3 — una riga 'pending' con esito ignoto (``place_exception_reconciling``)
       conta come APERTA: potrebbe essere un ordine reale vivo.
+    * §10.B.4 — ``is_placed`` ha UNA sola definizione, la stessa del SQL
+      (``mike_bot_v2.sql`` + ``mike_history_v2.sql``): una riga 'pending' e'
+      PIAZZATA se ha un ``bet_id``, un ``meta.flumine_client_ref`` (ordine
+      accodato al runner: puo' essere reale) oppure e' in riconciliazione.
+      Prima il Python contava solo l'ultimo caso e i cicli/partite del giorno
+      divergevano dalla RPC e dallo storico sul percorso flumine.
     """
     from Betfair.safe_strategy import execution as _X
 
@@ -211,6 +217,7 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
     realized = realized_today = 0.0
     won = lost = won_today = lost_today = 0
     open_n = 0
+    open_liability = 0.0
     cycles_today = 0
     events_today: set[str] = set()
     total_by_position: dict[Any, float] = {}
@@ -219,6 +226,7 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
         pnl = float(r.get("pnl") or 0.0)
         is_closer = bool(r.get("closes_trade_id"))
         reconciling = status == "pending" and _X.is_reconciling(r)
+        placed = reconciling or bool(r.get("bet_id")) or bool((r.get("meta") or {}).get("flumine_client_ref"))
         day = _in_day(_placed_at(r))
         if status in ("won", "lost", "void"):
             realized += pnl
@@ -229,7 +237,11 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
         elif status in ("open", "hedged") or reconciling:
             if not is_closer:
                 open_n += 1
-        if not is_closer and status != "error" and (status != "pending" or reconciling) and day:
+                try:
+                    open_liability += float(r.get("liability") or 0.0)
+                except (TypeError, ValueError):
+                    pass
+        if not is_closer and status != "error" and (status != "pending" or placed) and day:
             cycles_today += 1
             if r.get("event_id"):
                 events_today.add(str(r.get("event_id")))
@@ -244,7 +256,12 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
             lost_today += 1 if day else 0
     return {
         "realized_total": round(realized, 2), "realized_today": round(realized_today, 2),
-        "open_count": open_n, "open_liability": 0.0,
+        # ``open_liability`` qui e' la SOMMA DELLE RIGHE (la stessa di
+        # ``open_liability_rows`` del SQL): il servizio la pubblica come
+        # ``stats.open_liability_rows`` e usa la liability NETTA dell'engine per
+        # ``stats.open_liability`` (M4). Prima era fissa a 0.0 e a migrazione
+        # non applicata la UI leggeva "0" con decine di posizioni aperte.
+        "open_count": open_n, "open_liability": round(open_liability, 2),
         "won": won, "lost": lost, "won_today": won_today, "lost_today": lost_today,
         "cycles_today": cycles_today, "events_today": len(events_today),
     }
@@ -371,15 +388,32 @@ def scanner_status() -> Optional[dict[str, Any]]:
 # Dossier: ponte evento → fixture e letture modelli (nessuna chiamata Betfair)
 # ---------------------------------------------------------------------------
 def fixture_id_for_event(event_id: str) -> Optional[int]:
-    """Ponte Betfair event_id → fixture_id: SOLO se la partita e' in live_follow."""
-    try:
-        rows = (_sb().table("live_follow").select("fixture_id,league_id")
-                .eq("event_id", str(event_id)).limit(1).execute().data or [])
-        fid = rows[0].get("fixture_id") if rows else None
-        return int(fid) if fid is not None else None
-    except Exception as ex:  # noqa: BLE001
-        logger.debug("[mike.db] live_follow KO %s: %s", event_id, str(ex)[:120])
-        return None
+    """Ponte Betfair event_id -> fixture_id.
+
+    CERT. 12/09 -- prima guardava SOLO ``live_follow``, la tabella del runner del
+    trading live, che segue partite sue. Risultato: dei 19 eventi Mike vivi
+    NESSUNO era li' dentro (55 righe, zero in comune), il dossier restava vuoto
+    su tutti e 93 gli eventi e il modello di Mike non ha MAI funzionato: senza
+    gol attesi niente griglia Poisson, quindi niente ``p_total_model``,
+    ``hazard_model`` ne' ``cover_gain_pct``, e la copertura partiva sempre al
+    primo prezzo invece che al migliore.
+
+    Seconda fonte: ``omega_events``, che Omega popola col proprio catalogo e che
+    conosce le stesse partite (17 su 25 degli eventi Mike vivi, tutte con
+    ``fixture_id``). E' la fonte MIGLIORE per i lambda, meglio dei ripieghi
+    ricavati dalle quote (vedi ``dossier.lambdas_con_ripiego``).
+    None solo se nessuna delle due sa nulla.
+    """
+    for tabella in ("live_follow", "omega_events"):
+        try:
+            rows = (_sb().table(tabella).select("fixture_id")
+                    .eq("event_id", str(event_id)).limit(1).execute().data or [])
+            fid = rows[0].get("fixture_id") if rows else None
+            if fid is not None:
+                return int(fid)
+        except Exception as ex:  # noqa: BLE001 - tabella assente o lettura KO: si prova la prossima
+            logger.debug("[mike.db] %s KO %s: %s", tabella, event_id, str(ex)[:120])
+    return None
 
 
 def fixture_lambdas(fixture_id: Optional[int]) -> Optional[tuple]:

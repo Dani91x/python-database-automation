@@ -15,15 +15,34 @@ import { RefreshCw, Download, Zap, Target, Loader2, ShieldAlert } from 'lucide-r
 import { useScanLiveFeed, liveScoreLabel } from '@/lib/useScanLiveFeed';
 import {
     requestManual, fetchOmegaEvents, fetchOmegaMarket, fetchManualRequests,
+    filterEventsInWindow, eventsCacheUpdatedAt,
+    omegaReasonText,
     type OmegaEvent, type OmegaMarketSnapshot, type OmegaMarketRunner,
     type OmegaMode, type OmegaSide, type OmegaManualRequest,
 } from '@/lib/omega';
-import { fmtMoney, fmtOdds, fmtTime, fmtAge, ageSeconds } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtTime, fmtDateTime, fmtAge, ageSeconds, DASH } from '@/lib/format';
+import { romeDay } from '@/lib/dailyHistory';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** oltre questa età le quote del book NON si usano per piazzare */
 export const MANUAL_BOOK_STALE_S = 20;
+
+/** CERT. 12/09 — minimi REALI dell'Exchange italiano, per lato: una puntata
+ *  (back) sotto 2,00 € viene rifiutata da Betfair anche se Omega la accetta
+ *  (`omega_config.min_stake` vale 0,50 e non distingue il lato). Sotto il
+ *  minimo l'ordine LIVE non entra e la riserva resta da riconciliare. */
+export const OMEGA_MIN_STAKE: Record<OmegaSide, number> = { back: 2, lay: 0.5 };
+
+/** stato Betfair di una selezione, in italiano: mai la costante inglese nuda */
+export function runnerStatusLabel(status: unknown): string {
+    const s = String(status ?? '').trim().toUpperCase();
+    if (s === 'REMOVED') return 'RITIRATA';
+    if (s === 'WINNER') return 'VINCENTE';
+    if (s === 'LOSER') return 'PERDENTE';
+    if (s === '' || s === 'ACTIVE') return 'ATTIVA';
+    return 'NON ATTIVA';
+}
 
 function fmtQuote(v: number | null): string {
     return fmtOdds(v);
@@ -41,25 +60,79 @@ export const MANUAL_KIND_LABEL: Record<string, string> = {
     place: 'piazza ordine',
     cashout: 'cash out',
 };
+const CLS_OK = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
+const CLS_WARN = 'bg-amber-500/15 text-amber-300 border-amber-500/40';
+const CLS_ERR = 'bg-red-500/15 text-red-300 border-red-500/40';
+const CLS_IDLE = 'bg-slate-500/15 text-slate-300 border-slate-500/40';
+
+function num(v: unknown): number | null {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Stato ed esito di una richiesta della coda, come lo deve leggere un trader.
+ *
+ * CERT. 12/09 — `done` del servizio NON vuol dire "ordine eseguito": Omega
+ * chiude `done` anche quando l'ordine e' solo ACCODATO su flumine
+ * (`result.pending_fill=true`, esito IGNOTO) e quando la size e' stata TAGLIATA
+ * alla liquidita' disponibile. Mostrare "ESEGUITA" verde in quei casi fa
+ * credere di avere una posizione che potrebbe non esserci (o essere piu'
+ * piccola), e invita a ripiazzare raddoppiando l'esposizione.
+ */
 export function manualRequestText(r: { kind: string; status: string; result: Record<string, unknown> | null }): {
     kind: string; status: string; detail: string | null; cls: string;
 } {
-    const detail = [r.result?.error, r.result?.err, r.result?.reason]
-        .find((v) => v != null && String(v).trim() !== '');
-    return {
-        kind: MANUAL_KIND_LABEL[r.kind] ?? r.kind,
-        // §5.3: mai la chiave del DB in inglese sotto gli occhi del trader —
-        // uno stato che la UI non conosce si DICHIARA sconosciuto
-        status: MANUAL_STATUS_LABEL[r.status] ?? 'STATO SCONOSCIUTO',
-        detail: detail != null ? String(detail) : null,
-        cls: r.status === 'done' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
-            : r.status === 'error' ? 'bg-red-500/15 text-red-300 border-red-500/40'
-            : r.status === 'processing' ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-            : 'bg-slate-500/15 text-slate-300 border-slate-500/40',
-    };
+    const res = r.result ?? {};
+    const raw = [res.error, res.err, res.reason].find((v) => v != null && String(v).trim() !== '');
+    // mai la chiave del servizio in inglese/snake_case sotto gli occhi del
+    // trader: il dizionario italiano di Omega esiste gia' (omegaReasonText)
+    let detail = raw != null ? (omegaReasonText(raw) ?? String(raw)) : null;
+    let status = MANUAL_STATUS_LABEL[r.status] ?? 'STATO SCONOSCIUTO';
+    let cls = r.status === 'done' ? CLS_OK
+        : r.status === 'error' ? CLS_ERR
+        : r.status === 'processing' ? CLS_WARN
+        : CLS_IDLE;
+    if (r.status === 'done' && r.kind === 'place') {
+        const asked = num(res.requested_size ?? (res.payload as Record<string, unknown> | undefined)?.size);
+        const got = num(res.size ?? res.placed_size);
+        if (res.pending_fill === true) {
+            status = 'IN ATTESA DI ABBINAMENTO';
+            cls = CLS_WARN;
+            detail = detail ?? "ordine accodato: l'abbinamento non e' ancora confermato";
+        } else if (res.reduced === true || (asked != null && got != null && got < asked - 0.005)) {
+            status = 'ABBINATA IN PARTE';
+            cls = CLS_WARN;
+            detail = got != null && asked != null
+                ? `piazzati ${fmtMoney(got)} dei ${fmtMoney(asked)} richiesti`
+                : (detail ?? 'importo ridotto alla liquidita disponibile');
+        }
+    }
+    return { kind: MANUAL_KIND_LABEL[r.kind] ?? r.kind, status, detail, cls };
 }
 
-export default function ManualPanel() {
+/**
+ * Orario di una richiesta in coda: l'ORA sola basta solo se la richiesta è di
+ * OGGI. Audit 12/09: l'elenco mostrava "15:30 cash out" sopra "17:13 piazza
+ * ordine" — sembrava fuori ordine, in realtà le 17:13 erano di tre giorni prima.
+ */
+export function manualRequestWhen(iso: string, today: string = romeDay()): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return fmtTime(iso);
+    return romeDay(d) === today ? fmtTime(iso) : fmtDateTime(iso);
+}
+
+interface ManualPanelProps {
+    /**
+     * Modalità della PAGINA (toggle globale PAPER/LIVE). Audit 12/09: il
+     * pannello partiva SEMPRE da 'paper' anche con la pagina in LIVE: due
+     * modalità diverse nella stessa schermata. Resta scavalcabile qui, ma la
+     * differenza va dichiarata.
+     */
+    pageMode?: OmegaMode;
+}
+
+export default function ManualPanel({ pageMode = 'paper' }: ManualPanelProps) {
     const [events, setEvents] = useState<OmegaEvent[]>([]);
     // minuto/punteggio LIVE dal feed dello scanner accanto a ogni evento in-play
     const liveFeed = useScanLiveFeed(events.map((e) => e.event_id));
@@ -69,7 +142,12 @@ export default function ManualPanel() {
     const [sel, setSel] = useState<OmegaMarketRunner | null>(null);
 
     const [side, setSide] = useState<OmegaSide>('lay');
-    const [mode, setMode] = useState<OmegaMode>('paper');
+    const [mode, setMode] = useState<OmegaMode>(pageMode);
+    // il toggle globale della pagina comanda anche qui finché l'operatore non
+    // sceglie diversamente in questa schermata (poi lo scarto è dichiarato)
+    const [modeTouched, setModeTouched] = useState(false);
+    useEffect(() => { if (!modeTouched) setMode(pageMode); }, [pageMode, modeTouched]);
+    function pickMode(m: OmegaMode) { setModeTouched(true); setMode(m); }
     const [sizeMode, setSizeMode] = useState<'target' | 'stake'>('target');
     const [target, setTarget] = useState(5);
     const [stake, setStake] = useState(1);
@@ -90,6 +168,17 @@ export default function ManualPanel() {
 
     const selectedEvent = useMemo(() => events.find(e => e.event_id === eventId) ?? null, [events, eventId]);
     const markets = selectedEvent?.markets ?? [];
+    /**
+     * Audit 12/09 — SOLO le partite della finestra operativa, la stessa
+     * definizione della scheda Missione (lib/omega.eventIsOperable). Il menu
+     * offriva 73 partite di tre giorni prima, tutte già finite: un ordine
+     * manuale su quei mercati è un ordine su un mercato chiuso.
+     */
+    const windowEvents = useMemo(() => filterEventsInWindow(events, nowMs), [events, nowMs]);
+    const cacheAt = useMemo(() => eventsCacheUpdatedAt(events), [events]);
+    const cacheAgeS = ageSeconds(cacheAt, nowMs);
+    const cacheStale = events.length > 0 && windowEvents.length === 0;
+    const today = romeDay();
 
     async function loadEvents() {
         try { setEvents(await fetchOmegaEvents()); } catch { /* servizio offline: ok */ }
@@ -153,9 +242,17 @@ export default function ManualPanel() {
         finally { setBusy(null); }
     }
 
-    function pickRunner(r: OmegaMarketRunner) {
+    function pickRunner(r: OmegaMarketRunner, s: OmegaSide = side) {
         setSel(r);
-        setPrice(side === 'lay' ? (r.lay_price ?? '') : (r.back_price ?? ''));
+        setPrice(s === 'lay' ? (r.lay_price ?? '') : (r.back_price ?? ''));
+    }
+
+    /** CERT. 12/09 — cambiando BACK/LAY il prezzo DEVE seguire il lato: prima
+     *  restava quello dell'altro lato e si finiva per mandare un BACK al prezzo
+     *  lay (in live: FOK ucciso; se abbinasse, a un prezzo pessimo). */
+    function pickSide(s: OmegaSide) {
+        setSide(s);
+        if (sel) setPrice(s === 'lay' ? (sel.lay_price ?? '') : (sel.back_price ?? ''));
     }
 
     // helper: suggerisci il punteggio MENO probabile (quota lay più alta in [20,120])
@@ -165,7 +262,7 @@ export default function ManualPanel() {
             .filter(r => r.lay_price != null && r.lay_price >= 20 && r.lay_price <= 120 && /^\d+\s*-\s*\d+$/.test(r.name))
             .sort((a, b) => (b.lay_price ?? 0) - (a.lay_price ?? 0));
         if (cand.length === 0) { toast('Nessun punteggio in fascia [20,120]'); return; }
-        setSide('lay'); pickRunner(cand[0]);
+        setSide('lay'); pickRunner(cand[0], 'lay');
         toast.success(`Suggerito: lay ${cand[0].name} @ ${fmtQuote(cand[0].lay_price)}`);
     }
 
@@ -212,7 +309,33 @@ export default function ManualPanel() {
         previewStake = Number(target) / (1 - PREVIEW_COMM);
     }
     // Rischio massimo: LAY = stake·(quota−1); BACK = stake.
-    const previewLiability = side === 'lay' ? previewStake * (pPrice - 1) : previewStake;
+    // CERT. 12/09 — con la quota vuota `pPrice` vale 0 e (pPrice−1) è NEGATIVO:
+    // il pannello mostrava "Liability aperta ≈ −5,26 €" (dump reale delle 17:00),
+    // cioè un rischio negativo che sembra un credito. Sotto quota 1 non esiste
+    // un'anteprima: si dice "—".
+    const priceValid = pPrice > 1;
+    const previewLiability = side === 'lay'
+        ? previewStake * Math.max(pPrice - 1, 0)
+        : previewStake;
+    const previewOk = priceValid && Number.isFinite(previewStake) && previewStake > 0;
+    const previewText = previewOk ? fmtMoney(previewLiability) : DASH;
+    const previewStakeText = previewOk ? fmtMoney(previewStake) : DASH;
+
+    // CERT. 12/09 — GUARDIE D'INGRESSO: il bottone che spende non deve accendersi
+    // su un ordine che il servizio taglia in silenzio (liquidità) o che Betfair
+    // rifiuta (sotto il minimo del lato).
+    const minStake = OMEGA_MIN_STAKE[side];
+    const availAtBest = sel ? (side === 'lay' ? sel.lay_size : sel.back_size) : null;
+    const avail = availAtBest != null && Number.isFinite(Number(availAtBest)) ? Number(availAtBest) : null;
+    const belowMin = previewOk && previewStake < minStake - 0.005;
+    const overBook = previewOk && avail != null && avail > 0 && previewStake > avail + 0.005;
+    const placeBlock = !sel ? 'scegli una selezione dal book'
+        : !priceValid ? 'imposta una quota maggiore di 1'
+            : bookStale ? 'quote non aggiornate: premi "Carica quote del mercato"'
+                : belowMin ? `sotto il minimo Betfair per il ${side.toUpperCase()} (${fmtMoney(minStake)}): l'ordine verrebbe rifiutato`
+                    : avail != null && avail <= 0 ? 'nessun importo abbinabile al miglior prezzo'
+                        : overBook ? `abbinabili solo ${fmtMoney(avail)} al miglior prezzo: ${fmtMoney(previewStake)} non entrerebbero tutti (il servizio taglia la size alla liquidità)`
+                            : null;
 
     return (
         <div className="space-y-4">
@@ -234,13 +357,31 @@ export default function ManualPanel() {
                     </div>
                     <select value={eventId} onChange={e => { setEventId(e.target.value); setMarketId(''); setSnapshot(null); setSel(null); }}
                         className="w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm">
-                        <option value="">— scegli evento ({events.length}) —</option>
-                        {events.map(ev => (
+                        <option value="">— scegli evento ({windowEvents.length}) —</option>
+                        {windowEvents.map(ev => (
                             <option key={ev.event_id} value={ev.event_id}>
                                 {ev.name || ev.event_id}{ev.open_date ? ` · ${fmtTime(ev.open_date)}` : ''}{liveScoreLabel(liveFeed[ev.event_id]) ? ` · LIVE ${liveScoreLabel(liveFeed[ev.event_id])}` : ''}
                             </option>
                         ))}
                     </select>
+                    <div className="text-[11px]" data-testid="manual-events-note">
+                        {cacheStale ? (
+                            <span className="text-amber-300">
+                                nessuna partita nella finestra operativa: l'elenco è fermo
+                                {cacheAgeS != null ? ` da ${fmtAge(cacheAgeS)}` : ''} e contiene solo partite finite —
+                                premi "Aggiorna eventi" con il servizio acceso
+                            </span>
+                        ) : (
+                            <span className="text-slate-500">
+                                solo le partite ancora operabili (non finite)
+                                {cacheAgeS != null ? ` · elenco di ${fmtAge(cacheAgeS)} fa` : ''}
+                                {' · '}
+                                <span title="minuto e punteggio arrivano dal feed Betfair con 2-3 s di ritardo sul campo: controllali prima di piazzare">
+                                    minuto e punteggio LIVE con 2-3 s di ritardo
+                                </span>
+                            </span>
+                        )}
+                    </div>
 
                     <div className="flex items-center justify-between pt-1">
                         <span className="text-sm text-slate-300">2 · Mercato</span>
@@ -272,14 +413,20 @@ export default function ManualPanel() {
 
                     <div className="flex gap-2">
                         <div className="flex rounded-md border border-white/10 overflow-hidden text-xs font-bold flex-1">
-                            <button onClick={() => setSide('back')} className={`flex-1 py-1.5 ${side === 'back' ? 'bg-sky-500/25 text-sky-300' : 'text-slate-400'}`}>BACK</button>
-                            <button onClick={() => setSide('lay')} className={`flex-1 py-1.5 ${side === 'lay' ? 'bg-rose-500/25 text-rose-300' : 'text-slate-400'}`}>LAY</button>
+                            <button onClick={() => pickSide('back')} className={`flex-1 py-1.5 ${side === 'back' ? 'bg-sky-500/25 text-sky-300' : 'text-slate-400'}`}>BACK</button>
+                            <button onClick={() => pickSide('lay')} className={`flex-1 py-1.5 ${side === 'lay' ? 'bg-rose-500/25 text-rose-300' : 'text-slate-400'}`}>LAY</button>
                         </div>
                         <div className="flex rounded-md border border-white/10 overflow-hidden text-xs font-bold flex-1">
-                            <button onClick={() => setMode('paper')} className={`flex-1 py-1.5 ${mode === 'paper' ? 'bg-emerald-500/25 text-emerald-300' : 'text-slate-400'}`}>PAPER</button>
-                            <button onClick={() => setMode('live')} className={`flex-1 py-1.5 ${mode === 'live' ? 'bg-red-500/25 text-red-300' : 'text-slate-400'}`}>LIVE</button>
+                            <button onClick={() => pickMode('paper')} className={`flex-1 py-1.5 ${mode === 'paper' ? 'bg-emerald-500/25 text-emerald-300' : 'text-slate-400'}`}>PAPER</button>
+                            <button onClick={() => pickMode('live')} className={`flex-1 py-1.5 ${mode === 'live' ? 'bg-red-500/25 text-red-300' : 'text-slate-400'}`}>LIVE</button>
                         </div>
                     </div>
+                    {mode !== pageMode && (
+                        <div className={`text-[11px] ${mode === 'live' ? 'text-red-300 font-semibold' : 'text-amber-300'}`} data-testid="manual-mode-mismatch">
+                            questo ordine parte in <b>{mode.toUpperCase()}</b>, ma la pagina è in <b>{pageMode.toUpperCase()}</b>
+                            {mode === 'live' ? ' — sono soldi veri' : ''}
+                        </div>
+                    )}
 
                     <div className="text-xs text-slate-400">
                         Selezione: {sel ? <span className={`font-bold ${side === 'lay' ? 'text-rose-300' : 'text-sky-300'}`}>{sel.name}</span> : <span className="italic">nessuna (scegli dal book)</span>}
@@ -315,9 +462,9 @@ export default function ManualPanel() {
                     )}
 
                     <div className="text-xs text-slate-400 flex items-center justify-between border-t border-white/5 pt-2">
-                        <span>Stake ≈ <b className="text-white/90">{fmtMoney(previewStake)}</b></span>
+                        <span>Stake ≈ <b className="text-white/90" data-testid="manual-preview-stake">{previewStakeText}</b></span>
                         <span className={side === 'lay' ? 'text-orange-400' : 'text-sky-300'}>
-                            {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ <b>{fmtMoney(previewLiability || 0)}</b>
+                            {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ <b data-testid="manual-preview-liability">{previewText}</b>
                         </span>
                     </div>
                     {bookStale && (
@@ -326,9 +473,21 @@ export default function ManualPanel() {
                         </div>
                     )}
 
+                    {placeBlock && !bookStale && (
+                        <div className="text-[11px] text-amber-300" data-testid="manual-place-block">{placeBlock}</div>
+                    )}
+                    {sel && (
+                        <div className="text-[11px] text-slate-400" data-testid="manual-matchable">
+                            abbinabile subito al miglior {side.toUpperCase()}:{' '}
+                            <b className={overBook ? 'text-amber-300 tabular-nums' : 'text-emerald-300 tabular-nums'}>
+                                {avail != null ? fmtMoney(avail) : 'n/d'}
+                            </b>
+                        </div>
+                    )}
+
                     <Button onClick={() => { if (mode === 'live') setLiveConfirmOpen(true); else void doPlace(); }}
-                        disabled={!sel || busy === 'place' || bookStale}
-                        title={bookStale ? 'quote non aggiornate: premi "Carica quote del mercato"' : undefined}
+                        disabled={busy === 'place' || placeBlock != null}
+                        title={placeBlock ?? undefined}
                         className={`w-full ${mode === 'live' ? 'bg-red-600 hover:bg-red-500 text-white' : side === 'lay' ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'bg-sky-600 hover:bg-sky-500 text-white'}`}>
                         {busy === 'place' ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Zap className="w-4 h-4 mr-1" />}
                         Piazza {side.toUpperCase()} {mode === 'live' ? '(SOLDI VERI)' : '(paper)'}
@@ -368,17 +527,32 @@ export default function ManualPanel() {
                                     <th className="text-left px-4 py-2">Selezione</th>
                                     <th className="text-right px-4 py-2">Back</th>
                                     <th className="text-right px-4 py-2">Lay</th>
-                                    <th className="text-right px-4 py-2">Liq. lay</th>
+                                    <th className={`text-right px-4 py-2 ${side === 'back' ? 'text-sky-300' : ''}`}>Liq. back</th>
+                                    <th className={`text-right px-4 py-2 ${side === 'lay' ? 'text-rose-300' : ''}`}>Liq. lay</th>
                                     <th className="text-center px-4 py-2"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {snapshot.runners.map(r => (
                                     <tr key={r.selection_id} className={`border-t border-white/5 hover:bg-white/5 ${sel?.selection_id === r.selection_id ? 'bg-primary/10' : ''}`} data-testid="manual-runner">
-                                        <td className="px-4 py-2 font-medium" title={`selezione ${r.selection_id} · mercato ${snapshot.market_id}`}>{r.name}</td>
+                                        <td className="px-4 py-2 font-medium" title={`selezione ${r.selection_id} · mercato ${snapshot.market_id}`}>
+                                            {r.name}
+                                            {r.status != null && String(r.status).toUpperCase() !== 'ACTIVE' && (
+                                                <Badge variant="outline" className="ml-2 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40" data-testid="manual-runner-status">
+                                                    {runnerStatusLabel(r.status)}
+                                                </Badge>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-2 text-right tabular-nums text-sky-300/90">{fmtQuote(r.back_price)}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-rose-300">{fmtQuote(r.lay_price)}</td>
-                                        <td className="px-4 py-2 text-right tabular-nums text-slate-400">{fmtMoney(r.lay_size, { decimals: 0 })}</td>
+                                        {/* CERT. 12/09 — c'era SOLO la liquidità lay: in modalità BACK
+                                            si dimensionava l'ordine sulla profondità del lato sbagliato. */}
+                                        <td className={`px-4 py-2 text-right tabular-nums ${side === 'back' ? 'text-sky-300' : 'text-slate-500'}`} data-testid="manual-liq-back">
+                                            {r.back_size != null ? fmtMoney(r.back_size, { decimals: 0 }) : DASH}
+                                        </td>
+                                        <td className={`px-4 py-2 text-right tabular-nums ${side === 'lay' ? 'text-rose-300' : 'text-slate-500'}`} data-testid="manual-liq-lay">
+                                            {r.lay_size != null ? fmtMoney(r.lay_size, { decimals: 0 }) : DASH}
+                                        </td>
                                         <td className="px-4 py-2 text-center">
                                             <Button variant="ghost" size="sm" onClick={() => pickRunner(r)}>usa</Button>
                                         </td>
@@ -400,7 +574,7 @@ export default function ManualPanel() {
                             return (
                                 <div key={r.id} className="flex items-center justify-between gap-2 text-xs" data-testid="manual-request">
                                     <span className="text-slate-300">
-                                        <span className="text-slate-500 tabular-nums mr-1">{fmtTime(r.created_at)}</span>
+                                        <span className="text-slate-500 tabular-nums mr-1" title="ora di Roma (la data compare se non è di oggi)">{manualRequestWhen(r.created_at, today)}</span>
                                         {m.kind}
                                     </span>
                                     <span className="flex items-center gap-1 min-w-0">
@@ -429,7 +603,7 @@ export default function ManualPanel() {
                             <span className="block">Stai per piazzare un <b>{side.toUpperCase()}</b> REALE su
                                 <b> {sel?.name ?? '—'}</b> a quota <b>{fmtOdds(Number(price) || null)}</b>.</span>
                             <span className="block text-orange-300">
-                                Stake ≈ {fmtMoney(previewStake)} · {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ {fmtMoney(previewLiability || 0)}.
+                                Stake ≈ {previewStakeText} · {side === 'lay' ? 'Liability aperta' : 'Rischio'} ≈ {previewText}.
                             </span>
                             {/* l'ordine deve corrispondere a quello che si vede su Betfair */}
                             <span className="block text-[11px] text-slate-400 tabular-nums">

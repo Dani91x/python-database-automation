@@ -48,7 +48,7 @@ import { romeDay, dayLabel, fetchMikeDaily, fetchMikeDayTrades } from '@/lib/dai
 import {
     splitMikeEvents, rememberLive, lastRequestFor, requestOutcome, mikeActivityLine,
     mikeEquitySeries, activeLegs, voidedMarketsOf, withMikeHistoryError, MIKE_ACTIVITY_EXTRA,
-    dayResultCounts,
+    dayResultCounts, groupMikeTrades, groupsOfDay, lockedPnlTotal, settledOperated,
     type MikeEvent, type MikeMode, type MikeRequestKind, type MikeStatus,
 } from '@/lib/mike';
 
@@ -137,11 +137,33 @@ export default function Mike() {
     // un trader deve sapere quale dei due sta leggendo (e se e' stantia)
     const liabilityFromRows = agg?.liability_source === 'rows_sum';
     const liabilityStale = agg?.liability_stale === true;
-    // P&L bloccato della giornata: somma dei `live.locked` delle partite vive
-    const lockedPnl = useMemo(
-        () => Math.round(active.reduce((s, e) => s + Number(e.live?.locked ?? 0), 0) * 100) / 100,
-        [active],
+    // P&L bloccato della giornata: somma dei `live.locked` DICHIARATI dalle
+    // partite vive. `locked` assente = "niente ancora bloccato su questa
+    // partita", NON zero: sommarlo come 0 faceva scrivere "+0,00 €" nella barra
+    // mentre ogni card diceva "—" (audit UI 3).
+    const locked = useMemo(() => lockedPnlTotal(active), [active]);
+    const lockedPnl = locked.value;
+    const dailyStop = Number(bot.params.daily_loss_stop ?? 0);
+    // OPERAZIONI della giornata = CICLI (1 apertura + le sue chiusure), mai le
+    // righe di database: è il numero che si legge anche nella scheda Trade e
+    // nello Storico (audit UI 1).
+    const tradeGroups = useMemo(() => groupMikeTrades(bot.trades), [bot.trades]);
+    const dayOperations = useMemo(
+        () => groupsOfDay(tradeGroups, bot.dayStartMs).length,
+        [tradeGroups, bot.dayStartMs],
     );
+    // REGOLATE = partite regolate su cui Mike ha OPERATO nella giornata: senza
+    // questo filtro la scheda elencava anche le partite solo seguite (card con
+    // "regolato +0,00 €") e mescolava due giornate operative.
+    const settledShown = useMemo(
+        () => settledOperated(sections.settled, bot.trades),
+        [sections.settled, bot.trades],
+    );
+    const settledHidden = sections.settled.length - settledShown.length;
+    // UN SOLO numero di "operazioni di oggi" in tutta la pagina: barra giornata,
+    // linguetta e riepilogo della scheda. Il DB è la fonte (non ha il tetto di
+    // 500 righe della RPC); senza migrazione si ripiega sul conto dal client.
+    const operationsToday = agg?.cycles_today ?? dayOperations;
     // V/P della giornata: dalla RPC v2; senza migrazione dal client (dichiarato)
     const clientCounts = useMemo(() => dayResultCounts(bot.trades, bot.dayStartMs), [bot.trades, bot.dayStartMs]);
     const countsFromClient = agg?.won_today == null && agg?.lost_today == null;
@@ -275,43 +297,59 @@ export default function Mike() {
                 migrationWarning={!bot.available && !bot.loading ? 'tabelle Mike assenti: applica migrations/mike_bot.sql' : null}
             />
 
+            {/* UNA semantica, dichiarata: partite = EVENTI con almeno una posizione
+                piazzata oggi; operazioni = CICLI aperti oggi (1 ciclo = 1 riga di
+                apertura + le sue chiusure); V/P = cicli già chiusi, la cui somma
+                è il P&L realizzato di oggi. Sono numeri diversi da "Partite
+                seguite" dei KPI, che conta le partite in lavorazione ADESSO. */}
             <DayBar
                 dayLabel={dayLabel(operatingDay, { weekday: true })}
                 realized={realizedToday}
                 realizedTotal={realizedTotal}
                 matches={agg?.events_today ?? active.length}
-                operations={agg?.cycles_today ?? bot.trades.length}
+                operations={operationsToday}
                 won={wonToday}
                 lost={lostToday}
                 live={agg?.live_now ?? sections.live.length}
                 openLiability={openLiability}
                 lockedPnl={lockedPnl}
                 note={countsFromClient
-                    ? 'conta le partite PIAZZATE oggi (Europe/Rome) · V/P stimati dal client: applica migrations/mike_bot_v2.sql'
-                    : 'conta le partite PIAZZATE oggi (giorno di piazzamento, Europe/Rome)'}
+                    ? 'partite con posizione piazzata oggi · operazioni = cicli aperti oggi · V/P stimati dal client: applica migrations/mike_bot_v2.sql'
+                    : 'partite con almeno una posizione piazzata oggi · operazioni = cicli aperti oggi · V/P = cicli già chiusi, la loro somma è il realizzato'}
             />
 
             <KpiRow loading={bot.loading}>
                 <StatTile
-                    label="Partite seguite"
+                    label="Partite seguite ora"
                     value={String(active.length)}
                     tone="teal"
                     icon={<Layers className="w-3.5 h-3.5" />}
-                    sub={`${sections.pre.length} pre-match · ${sections.live.length} live · ${withPosition} con posizione`}
+                    sub={`${sections.pre.length} prima del fischio · ${sections.live.length} in gioco · ${withPosition} con posizione aperta`}
                     testId="mike-kpi-matches"
                 />
                 <StatTile
                     label="Posizioni aperte"
                     value={String(agg?.open_count ?? stats?.trades_open ?? 0)}
                     icon={<Activity className="w-3.5 h-3.5" />}
-                    sub={reconciling > 0 ? <span className="text-fuchsia-300">{reconciling} in verifica su Betfair</span> : `${bot.trades.length} righe caricate`}
+                    // MAI "N righe caricate": un conteggio di righe di database
+                    // non è un numero da trader (audit UI 1).
+                    sub={reconciling > 0
+                        ? <span className="text-fuchsia-300">{reconciling} in verifica su Betfair</span>
+                        : 'cicli con capitale ancora esposto'}
                 />
                 <StatTile
                     label={T.pnlToday}
                     value={fmtMoney(realizedToday, { signed: true })}
                     tone={toneOf(realizedToday)}
                     icon={<TrendingUp className="w-3.5 h-3.5" />}
-                    sub={<span>{T.operatingDay} {dayLabel(operatingDay, { year: false })} · Europe/Rome</span>}
+                    // lo STOP è una soglia sul P&L della giornata: sta qui, non
+                    // dentro la liability (che è il capitale esposto adesso).
+                    sub={stats?.daily_stop
+                        ? <span className="text-rose-300 font-semibold" data-testid="mike-daily-stop">STOP giornaliero ATTIVO · solo chiusure</span>
+                        : <span data-testid="mike-pnl-today-sub">
+                            {dayLabel(operatingDay, { year: false })} · Europe/Rome
+                            {dailyStop > 0 && <> · stop a {fmtMoney(-dailyStop, { signed: true })}</>}
+                        </span>}
                 />
                 <StatTile label={T.pnlTotal} value={fmtMoney(realizedTotal, { signed: true })} tone={toneOf(realizedTotal)} />
                 <StatTile
@@ -319,21 +357,23 @@ export default function Mike() {
                     value={fmtMoney(openLiability)}
                     tone="danger"
                     icon={<ShieldAlert className="w-3.5 h-3.5" />}
-                    sub={stats?.daily_stop
-                        ? <span className="text-rose-300 font-semibold" data-testid="mike-daily-stop">STOP giornaliero ATTIVO · solo chiusure</span>
-                        : <span data-testid="mike-liability-sub">
-                            {liabilityFromRows
-                                ? <span className="text-amber-300">stimata dalle righe</span>
-                                : <>stop giornaliero {fmtMoney(Number(bot.params.daily_loss_stop ?? 0))}</>}
-                            {reconciling > 0 ? ` · di cui ${reconciling} in verifica` : ''}
-                            {liabilityStale && <span className="text-amber-300"> · dato stantio</span>}
-                        </span>}
+                    // UN concetto solo: quanto capitale è esposto ADESSO e DA
+                    // DOVE arriva il numero (audit UI 4).
+                    sub={<span data-testid="mike-liability-sub">
+                        {liabilityFromRows
+                            ? <span className="text-amber-300">stimata dalle righe (servizio da riavviare)</span>
+                            : 'perdita peggiore sulle posizioni aperte, netta dal servizio'}
+                        {reconciling > 0 ? ` · di cui ${reconciling} in verifica` : ''}
+                        {liabilityStale && <span className="text-amber-300"> · dato stantio</span>}
+                    </span>}
                 />
                 <StatTile
                     label={T.lockedPnl}
-                    value={fmtMoney(lockedPnl, { signed: true })}
-                    tone={toneOf(lockedPnl)}
-                    sub="già bloccato sulle partite vive"
+                    value={lockedPnl == null ? '—' : fmtMoney(lockedPnl, { signed: true })}
+                    tone={lockedPnl == null ? 'plain' : toneOf(lockedPnl)}
+                    sub={lockedPnl == null
+                        ? 'nessuna partita ha ancora un risultato bloccato'
+                        : `già bloccato su ${locked.known} ${locked.known === 1 ? 'partita' : 'partite'}${locked.pending > 0 ? ` · ${locked.pending} ancora da decidere` : ''}`}
                     testId="mike-kpi-locked"
                 />
                 <StatTile
@@ -342,17 +382,21 @@ export default function Mike() {
                     tone={serviceAlive ? 'plain' : 'danger'}
                     sub={!serviceAlive
                         ? <span className="text-red-300" data-testid="mike-service-stale">servizio senza battito: riavvia l’app desktop</span>
-                        : stats?.scanner_age_s != null ? `feed ${fmtNum(stats.scanner_age_s, 0)} s` : 'feed: nessun dato'}
+                        : stats?.scanner_age_s != null ? `feed aggiornato ${fmtNum(stats.scanner_age_s, 0)} s fa` : 'feed: nessun dato'}
                     testId="mike-kpi-cycle"
                 />
             </KpiRow>
 
             <Tabs value={tab} onValueChange={setTab} className="w-full">
                 <TabsList className="sticky z-30" style={{ top: navH }}>
+                    {/* ogni contatore è lo STESSO numero della scheda che apre:
+                        Partite = seguite ora, Operazioni = cicli della giornata
+                        (come "operazioni" nella barra), Regolate = partite chiuse
+                        su cui si è operato oggi. Mai conteggi di righe (audit UI 1). */}
                     <TabsTrigger value="partite" aria-label={`Partite (${active.length})`}>⚽ Partite ({active.length})</TabsTrigger>
-                    <TabsTrigger value="trade" aria-label={`Trade (${bot.trades.length})`}>📋 Trade ({bot.trades.length})</TabsTrigger>
+                    <TabsTrigger value="trade" aria-label={`Operazioni (${operationsToday})`}>📋 Operazioni ({operationsToday})</TabsTrigger>
                     <TabsTrigger value="attivita" aria-label="Attività">🧾 Attività</TabsTrigger>
-                    <TabsTrigger value="regolate" aria-label={`Regolate (${sections.settled.length})`}>✅ Regolate ({sections.settled.length})</TabsTrigger>
+                    <TabsTrigger value="regolate" aria-label={`Regolate (${settledShown.length})`}>✅ Regolate ({settledShown.length})</TabsTrigger>
                     <TabsTrigger value="storico" aria-label="Storico">📅 Storico</TabsTrigger>
                 </TabsList>
 
@@ -413,6 +457,7 @@ export default function Mike() {
                         dayStartSource={bot.dayStartSource}
                         dayLabel={dayLabel(operatingDay, { weekday: true })}
                         summary={{
+                            operationsToday: operationsToday,
                             openCount: agg?.open_count ?? stats?.trades_open ?? 0,
                             won: wonToday ?? agg?.won ?? 0,
                             lost: lostToday ?? agg?.lost ?? 0,
@@ -450,12 +495,17 @@ export default function Mike() {
                     </SectionCard>
                 </TabsContent>
 
-                <TabsContent value="regolate" className="mt-3">
-                    {sections.settled.length === 0 ? (
+                <TabsContent value="regolate" className="mt-3 space-y-2">
+                    <p className="text-[11px] text-slate-500" data-testid="mike-settled-note">
+                        Partite CHIUSE su cui Mike ha operato nella {T.operatingDay} ({dayLabel(operatingDay, { weekday: true })}).
+                        {settledHidden > 0 && ` ${settledHidden} ${settledHidden === 1 ? 'partita seguita ma mai giocata non è elencata' : 'partite seguite ma mai giocate non sono elencate'}.`}
+                        {' '}Le giornate precedenti stanno nella scheda Storico.
+                    </p>
+                    {settledShown.length === 0 ? (
                         <EmptyState>Nessuna partita regolata nella {T.operatingDay}.</EmptyState>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start" data-testid="mike-cards-settled">
-                            {sections.settled.map((e) => (
+                            {settledShown.map((e) => (
                                 <MikeMatchCard
                                     key={e.event_id} ev={e} params={bot.params} mode={mode}
                                     voidedMarkets={voidedOf(e.event_id)}

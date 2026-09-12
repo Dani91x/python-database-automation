@@ -53,6 +53,7 @@ export interface ExitsParams {
     hold_max_risk: number;
     /** oltre questa P(perdita) chiude comunque (0-1) */
     risk_cap: number;
+    risk_premium_pct: number;
     /** margine di EV richiesto per tenere invece di chiudere (0-1) */
     ev_margin: number;
     /** residuo non abbinato: attesa fra un tentativo e l'altro (s) */
@@ -79,6 +80,7 @@ export const EXITS_DEFAULTS: ExitsParams = {
     exit_max_retries: 3,
     hold_max_risk: 0.02,
     risk_cap: 0.10,
+    risk_premium_pct: 0.05,
     ev_margin: 0.10,
     residual_retry_s: 20,
     residual_max_attempts: 15,
@@ -104,6 +106,7 @@ export function mergeExits(raw: unknown): ExitsParams {
         exit_max_retries: n(r.exit_max_retries, EXITS_DEFAULTS.exit_max_retries),
         hold_max_risk: n(r.hold_max_risk, EXITS_DEFAULTS.hold_max_risk),
         risk_cap: n(r.risk_cap, EXITS_DEFAULTS.risk_cap),
+        risk_premium_pct: n(r.risk_premium_pct, EXITS_DEFAULTS.risk_premium_pct),
         ev_margin: n(r.ev_margin, EXITS_DEFAULTS.ev_margin),
         residual_retry_s: n(r.residual_retry_s, EXITS_DEFAULTS.residual_retry_s),
         residual_max_attempts: n(r.residual_max_attempts, EXITS_DEFAULTS.residual_max_attempts),
@@ -154,6 +157,11 @@ const RISK_FIELDS: Num[] = [
     // (-50 EUR), quindi nessun clamp sul segno - si scrive come si preferisce
     { key: 'risk.daily_loss_stop', label: 'Stop perdita giornaliera €', step: 5, hint: 'soglia di PERDITA: sotto questo P&L di giornata il bot smette di entrare. Il segno non conta (50 e −50 sono lo stesso stop); 0 = stop SPENTO' },
     { key: 'risk.model_daily_liability_cap', label: 'Cap liability giornaliera trade di modello €', step: 25, min: 0, hint: 'quota del cap riservata a modello/anomalie/combinazioni/tennis' },
+    // CERT. 12/09 — il servizio applica `risk.max_open_trades` e SOVRASCRIVE
+    // il "Max trade aperti" generale (risk.py:101): finora era un cap
+    // money-critical INVISIBILE, che l'utente non poteva ne' vedere ne'
+    // cambiare. Vuoto/assente = vale quello generale.
+    { key: 'risk.max_open_trades', label: 'Max posizioni aperte (rischio)', step: 1, min: 0, hint: 'tetto sulle posizioni vive contemporanee: ha la PRECEDENZA su "Max trade aperti". 0 = illimitato' },
 ];
 
 const MODEL_STAKE_FIELDS: Num[] = [
@@ -163,7 +171,8 @@ const MODEL_STAKE_FIELDS: Num[] = [
 
 const MODEL_EXIT_FIELDS: Num[] = [
     { key: 'exits.hold_max_risk', label: 'Tieni se P(perdita) ≤ (0-1)', step: 0.005, min: 0, max: 1, hint: 'sotto questa probabilità di perdita il servizio TIENE la posizione ("In attesa" in tabella) invece di chiudere' },
-    { key: 'exits.risk_cap', label: 'Chiudi comunque se P(perdita) ≥ (0-1)', step: 0.01, min: 0, max: 1, hint: 'oltre questa soglia si chiude a mercato anche con EV a favore' },
+    { key: 'exits.risk_cap', label: 'Rischio alto se P(perdita) ≥ (0-1)', step: 0.01, min: 0, max: 1, hint: 'oltre questa soglia si vuole uscire, ma solo a un prezzo che vale (vedi premio di rischio)' },
+    { key: 'exits.risk_premium_pct', label: 'Premio di rischio (frazione della liability)', step: 0.01, min: 0, max: 1, hint: 'quanto si accetta di pagare, sopra il tetto, per comprare la certezza. 0 = mai sotto l’EV del tenere; 1 = si esce a qualunque prezzo' },
     { key: 'exits.ev_margin', label: 'Margine EV per tenere (€)', step: 0.01, min: 0, hint: 'tenere deve valere almeno questo margine rispetto al cash out immediato' },
     { key: 'exits.model_exit_p_lose', label: 'Modello · esci in perdita da P(perdita) (0-1)', step: 0.01, min: 0, max: 1, hint: 'il modello ricalcola P(perdita) a ogni ciclo: sopra questa soglia esce in perdita controllata' },
     { key: 'exits.model_take_profit_frac', label: 'Modello · incassa a frazione del max (0-1)', step: 0.05, min: 0, max: 1, hint: '0,8 = chiude quando ha in mano l’80 % del profitto massimo possibile' },

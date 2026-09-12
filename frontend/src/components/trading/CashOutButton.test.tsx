@@ -136,14 +136,14 @@ describe('CashOutButton — dialog e conferma', () => {
         const user = userEvent.setup();
         renderBtn();
         await user.click(screen.getByTestId('cashout-trigger'));
-        await user.click(await screen.findByRole('button', { name: '50%' }));
+        await user.click(await screen.findByRole('button', { name: '50 %' }));
         expect(screen.getByLabelText('Importo cash out')).toHaveValue(1.88);
         // back 1.88 @4: vince -4.36 / perde +3.12 -> titolo = peggiore
         expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−4,36 €');
         expect(screen.getByTestId('cashout-best')).toHaveTextContent('+3,12 €');
         // parziale = resta esposizione aperta, dichiarata esplicitamente
         expect(screen.getByTestId('cashout-residual')).toHaveTextContent(/resta aperto/);
-        expect(screen.getByText(/parziale 50%: resta esposto/)).toBeInTheDocument();
+        expect(screen.getByText(/parziale 50 %: resta esposto/)).toBeInTheDocument();
         expect(screen.queryByText(/P&L bloccato/)).toBeNull();
     });
 
@@ -151,12 +151,12 @@ describe('CashOutButton — dialog e conferma', () => {
         const user = userEvent.setup();
         renderBtn({ win: -20, lose: 10, bestBack: 3, bestLay: 3.1 });
         await user.click(screen.getByTestId('cashout-trigger'));
-        await user.click(await screen.findByRole('button', { name: '50%' }));
+        await user.click(await screen.findByRole('button', { name: '50 %' }));
         expect(screen.getByLabelText('Importo cash out')).toHaveValue(5);
         expect(screen.getByTestId('cashout-locked')).toHaveTextContent('−10,00 €');
         expect(screen.getByTestId('cashout-best')).toHaveTextContent('+5,00 €');
         // green pieno: un solo numero, etichetta "bloccato"
-        await user.click(screen.getByRole('button', { name: '100%' }));
+        await user.click(screen.getByRole('button', { name: '100 %' }));
         expect(screen.getByTestId('cashout-locked')).toHaveTextContent('+0,00 €');
         expect(screen.getByText(/P&L bloccato \(green pieno\)/)).toBeInTheDocument();
         expect(screen.queryByTestId('cashout-best')).toBeNull();
@@ -166,7 +166,7 @@ describe('CashOutButton — dialog e conferma', () => {
         const user = userEvent.setup();
         const { onCashOut } = renderBtn();
         await user.click(screen.getByTestId('cashout-trigger'));
-        await user.click(await screen.findByRole('button', { name: '50%' }));
+        await user.click(await screen.findByRole('button', { name: '50 %' }));
         await user.click(screen.getByTestId('cashout-confirm'));
         expect(onCashOut).toHaveBeenCalledWith({ fraction: 0.5 });
     });
@@ -223,7 +223,7 @@ describe('CashOutButton — dialog e conferma', () => {
         await user.click(screen.getByTestId('cashout-trigger'));
         await user.click(await screen.findByTestId('cashout-confirm'));
         expect(screen.getByTestId('cashout-confirm')).toHaveTextContent(/Confermi/);
-        await user.click(screen.getByRole('button', { name: '50%' }));
+        await user.click(screen.getByRole('button', { name: '50 %' }));
         expect(screen.getByTestId('cashout-confirm')).toHaveTextContent(/^Chiudi/);
         await user.click(screen.getByTestId('cashout-confirm'));
         expect(onCashOut).not.toHaveBeenCalled();
@@ -275,5 +275,43 @@ describe('CashOutButton — anti doppio cash out (HIGH-1)', () => {
         expect(onCashOut).toHaveBeenCalledTimes(1);
         expect(confirm).toBeDisabled();
         await act(async () => { release(); });
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE UI 12/09 — un cash out FALLITO non sparisce in silenzio
+// ============================================================================
+describe('CashOutButton — errore dell ordine di copertura (12/09)', () => {
+    it('onCashOut che fallisce: dialog APERTO, motivo a schermo, posizione dichiarata scoperta', async () => {
+        const user = userEvent.setup();
+        const onCashOut = vi.fn().mockRejectedValue(new Error('INSUFFICIENT_FUNDS'));
+        render(
+            <TooltipProvider>
+                <CashOutButton win={-10} lose={5} bestBack={4} bestLay={4.2} mode="paper" onCashOut={onCashOut} />
+            </TooltipProvider>,
+        );
+        await user.click(screen.getByTestId('cashout-trigger'));
+        await user.click(await screen.findByTestId('cashout-confirm'));
+        const err = await screen.findByTestId('cashout-error');
+        expect(err).toHaveTextContent('INSUFFICIENT_FUNDS');
+        expect(err).toHaveTextContent('ancora scoperta');
+        // il dialog NON si è chiuso: si può riprovare vedendo l'errore
+        expect(screen.getByTestId('cashout-confirm')).toBeInTheDocument();
+    });
+
+    it('riaprendo il dialog l errore precedente non resta appiccicato', async () => {
+        const user = userEvent.setup();
+        const onCashOut = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(undefined);
+        render(
+            <TooltipProvider>
+                <CashOutButton win={-10} lose={5} bestBack={4} bestLay={4.2} mode="paper" onCashOut={onCashOut} />
+            </TooltipProvider>,
+        );
+        await user.click(screen.getByTestId('cashout-trigger'));
+        await user.click(await screen.findByTestId('cashout-confirm'));
+        expect(await screen.findByTestId('cashout-error')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Annulla' }));
+        await user.click(screen.getByTestId('cashout-trigger'));
+        expect(screen.queryByTestId('cashout-error')).toBeNull();
     });
 });

@@ -107,8 +107,11 @@ def test_c1_linee_mancanti_sono_gridate_nel_log_e_nella_card():
     run(db, mk, NOW, [row(p)])
     assert "feed_line_missing" in db.kinds()
     payload_log = [pl for k, pl, _ in db.activity if k == "feed_line_missing"][0]
-    assert payload_log["critical"] is True and payload_log["markets"] == ["OU45"]
-    assert db.events["E1"]["live"]["lines_missing"] == ["OU45"]
+    # cert. 12/09: UNA sola forma "MERCATO|SELEZIONE" (prima qui era "OU45" e
+    # nel blocco live "OU45|OVER": la UI leggeva "undefined 3.5")
+    assert payload_log["critical"] is True
+    assert payload_log["markets"] == ["OU45|OVER", "OU45|UNDER"]
+    assert db.events["E1"]["live"]["lines_missing"] == ["OU45|OVER", "OU45|UNDER"]
     # il log non si ripete a ogni ciclo (skip_log_interval_s)
     t = NOW + timedelta(seconds=3)
     run(db, mk, t, [row(p, updated=t)])
@@ -433,7 +436,12 @@ def test_h4_ogni_chiusura_sa_quale_apertura_chiude():
     ctx = E.MatchCtx(state="LIVE_COVERED", legs=[under_leg(), over_leg()], cycle_no=1)
     books = {(E.MARKET_OU35, E.SEL_UNDER): E.Book(best_back=1.2, back_size=99.0, best_lay=1.22,
                                                   lay_size=99.0, inplay=True),
-             (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=20.0, back_size=99.0, best_lay=22.0,
+             # cert. 12/09: la quota dell'Over deve restare abbastanza BASSA da
+             # rendere la chiusura >= minimo Betfair (2 EUR). A 22,00 la size
+             # che chiude 2,53 @6,00 vale 0,69 EUR: l'exchange la rifiuterebbe,
+             # e ``_close_actions`` ora non la tenta nemmeno (residuo non
+             # chiudibile: si porta la posizione al regolamento).
+             (E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=4.8, back_size=99.0, best_lay=5.0,
                                                  lay_size=99.0, inplay=True)}
     cancels, closes = E.force_flat_plan(ctx, books, C.merge_params({"stake": 10}), goals=1)
     assert cancels == [] and len(closes) == 2
@@ -752,7 +760,14 @@ def test_m4_stats_open_liability_dalle_posizioni_nette():
 # M5 — "se chiudo ora" SEMPRE netto, lato servizio
 # ===========================================================================
 def test_m5_cashout_netto_esposto_per_la_ui():
-    db = FakeDB(params={"stake": 10})
+    # CERT. 12/09 -- cash out "intelligente" SPENTO di proposito: questo test
+    # certifica la FORMA del dato "se chiudo ora" (sempre netto, mai lordo), non
+    # la decisione di prendere profitto. Finche' il modello di Mike era cieco
+    # (dossier senza gol attesi: vedi ``dossier.lambdas_con_ripiego``) l'hazard
+    # era None e la funzione non si attivava mai, quindi la distinzione non
+    # serviva; ora che il modello vede, va isolata o il test certificherebbe
+    # due cose insieme.
+    db = FakeDB(params={"stake": 10, "cashout_smart_enabled": False})
     mk = FakeMarket()
     db.events["E1"] = live_event([asdict(under_leg(size=20.0, price=1.5)),
                                   asdict(over_leg(size=4.0, price=8.0))])
@@ -1006,6 +1021,14 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         "error", "stop", "daily_stop", "loss_exit", "cashout", "close_retries_exhausted",
         "reconcile_pending", "reconcile_fix", "resting_live_unsupported", "feed_line_missing",
         "config_warn", "schema_warn", "skip_event", "resume_event",
+        # cert. 12/09: aliquote di commissione diverse sulle righe della stessa
+        # partita (parametro cambiato a posizione aperta) -> dichiarato, mai
+        # scelto in silenzio
+        "settle_commissione_mista",
+        # cert. 12/09: la decisione di chiudere in perdita con i suoi numeri
+        # (prima veniva sovrascritta al ciclo dopo e spariva), e le gambe
+        # pianificate mai piazzate, che valgono zero e non sono un errore
+        "loss_exit_deciso", "settle_gambe_non_piazzate",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

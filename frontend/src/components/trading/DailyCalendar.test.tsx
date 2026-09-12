@@ -155,3 +155,37 @@ describe('DailyCalendar — obiettivo STORICIZZATO (H-10)', () => {
         expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('+12,50 €');
     });
 });
+
+// ============================================================================
+// CERTIFICAZIONE UI 12/09 — mai uno ZERO affermativo prima di avere i dati
+// ============================================================================
+describe('DailyCalendar — stato di caricamento (12/09)', () => {
+    const props = {
+        rows: [] as DailyRow[], year: 2026, month: 9, selectedDay: null,
+        onSelectDay: () => {}, onMonthChange: () => {}, today: '2026-09-12',
+    };
+
+    it('in caricamento le celle dicono «caricamento», non «nessuna operazione»', () => {
+        render(<DailyCalendar {...props} loading />);
+        const cella = screen.getAllByTestId('calendar-day')[0];
+        expect(cella.getAttribute('aria-label')).toMatch(/caricamento/);
+        expect(cella.getAttribute('aria-label')).not.toMatch(/nessuna operazione/);
+    });
+
+    it('in caricamento la testata NON dichiara «0 giornate · +0,00 €»', () => {
+        render(<DailyCalendar {...props} loading />);
+        const tot = screen.getByTestId('calendar-month-total');
+        expect(tot).toHaveTextContent('caricamento');
+        expect(tot).not.toHaveTextContent('0 giornate');
+        expect(tot).not.toHaveTextContent('+0,00 €');
+        // e il riquadro "nessuna operazione in settembre" resta nascosto
+        expect(screen.queryByTestId('calendar-empty')).toBeNull();
+    });
+
+    it('a dati caricati (davvero vuoti) lo zero si può dire', () => {
+        render(<DailyCalendar {...props} />);
+        expect(screen.getByTestId('calendar-month-total')).toHaveTextContent('0 giornate');
+        expect(screen.getAllByTestId('calendar-day')[0].getAttribute('aria-label')).toMatch(/nessuna operazione/);
+        expect(screen.getByTestId('calendar-empty')).toBeInTheDocument();
+    });
+});

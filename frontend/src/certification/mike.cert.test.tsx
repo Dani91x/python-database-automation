@@ -26,7 +26,8 @@ vi.mock('sonner', () => ({
 import Mike from '@/pages/Mike';
 import {
     fetchMikeState, fetchMikeRequests, splitMikeEvents, rememberLive, activeLegs,
-    positionRows, type MikeEvent,
+    positionRows, lockedPnlTotal, settledOperated, groupMikeTrades, groupsOfDay,
+    romeDayStartMs, type MikeEvent,
 } from '@/lib/mike';
 import { fetchScanStatus } from '@/lib/safeStrategyScan';
 import { fetchMikeDaily, romeDay, dayLabel } from '@/lib/dailyHistory';
@@ -129,22 +130,25 @@ d('/mike sui dati reali', () => {
         const realizedToday = Number(agg.realized_today ?? stats.realized_today ?? 0);
         const realizedTotal = Number(agg.realized_total ?? stats.realized_total ?? 0);
         const openLiability = Number(agg.open_liability ?? stats.open_liability ?? 0);
-        const lockedPnl = Math.round(active.reduce((s, e) => s + Number(e.live?.locked ?? 0), 0) * 100) / 100;
+        // `live.locked` assente = "niente ancora bloccato", NON zero (audit UI 3)
+        const locked = lockedPnlTotal(active);
+        const lockedPnl = locked.value;
 
         renderPage();
         await loaded();
 
-        rep.check('KPI «Partite seguite»', String(active.length), kpi('Partite seguite').value);
-        rep.check('KPI «Partite seguite» — sottotitolo',
-            `${sections.pre.length} pre-match · ${sections.live.length} live · ${withPosition} con posizione`,
+        rep.check('KPI «Partite seguite ora»', String(active.length), kpi('Partite seguite').value);
+        rep.check('KPI «Partite seguite ora» — sottotitolo',
+            `${sections.pre.length} prima del fischio · ${sections.live.length} in gioco · ${withPosition} con posizione aperta`,
             kpi('Partite seguite').sub);
         rep.check('KPI «Posizioni aperte»', String(agg.open_count ?? stats.trades_open ?? 0), kpi('Posizioni aperte').value);
         rep.check('KPI «P&L oggi»', fmtMoney(realizedToday, { signed: true }), kpi('P&L oggi').value);
         rep.check('KPI «P&L totale»', fmtMoney(realizedTotal, { signed: true }), kpi('P&L totale').value);
         rep.check('KPI «Liability aperta»', fmtMoney(openLiability), kpi('Liability aperta').value);
-        rep.check('KPI «P&L bloccato» (somma live.locked delle partite vive)', fmtMoney(lockedPnl, { signed: true }), kpi('P&L bloccato').value);
+        rep.check('KPI «P&L bloccato» (somma dei live.locked DICHIARATI; "—" se nessuno)',
+            lockedPnl == null ? '—' : fmtMoney(lockedPnl, { signed: true }), kpi('P&L bloccato').value);
         rep.check('KPI «Ultimo ciclo» — età feed',
-            stats.scanner_age_s != null ? `feed ${fmtNum(stats.scanner_age_s as number, 0)} s` : 'feed: nessun dato',
+            stats.scanner_age_s != null ? `feed aggiornato ${fmtNum(stats.scanner_age_s as number, 0)} s fa` : 'feed: nessun dato',
             kpi('Ultimo ciclo').sub);
         // coerenza fra il KPI (fotografia congelata di control.stats) e il chip
         // di salute (updated_at del feed vs Date.now())
@@ -163,7 +167,8 @@ d('/mike sui dati reali', () => {
         // barra della giornata
         rep.check('Barra giornata — giorno operativo', dayLabel(romeDay(), { weekday: true }), text(screen.getByTestId('day-bar-day')));
         const matches = agg.events_today ?? active.length;
-        const operations = agg.cycles_today ?? st.trades.length;
+        const dayStartMs = st.day_start ? Date.parse(st.day_start) : romeDayStartMs();
+        const operations = agg.cycles_today ?? groupsOfDay(groupMikeTrades(st.trades), dayStartMs).length;
         const won = agg.won_today ?? null;
         const lost = agg.lost_today ?? null;
         const live = agg.live_now ?? sections.live.length;
@@ -181,7 +186,9 @@ d('/mike sui dati reali', () => {
             rep.finding('HIGH', 'pages/Mike.tsx:131-132 → DayBar (components/trading/DayBar.tsx:95)',
                 `aggregates.won_today/lost_today assenti → wonToday=lostToday=null e il blocco «V/P» SPARISCE dalla barra della giornata, anche se aggregates.won=${agg.won} / aggregates.lost=${agg.lost} sono disponibili. Il ripiego su agg.won/agg.lost esiste solo nel riepilogo del tab Trade (Mike.tsx:395-396), non sulla barra: manca il fallback.`);
         }
-        rep.check('Barra giornata — P&L bloccato', fmtMoney(lockedPnl, { signed: true }), text(screen.getByTestId('day-bar-locked')));
+        rep.check('Barra giornata — P&L bloccato',
+            lockedPnl == null ? 'ASSENTE (nessuna partita con risultato bloccato)' : fmtMoney(lockedPnl, { signed: true }),
+            lockedPnl == null ? 'ASSENTE (nessuna partita con risultato bloccato)' : text(screen.getByTestId('day-bar-locked')));
         if (openLiability > 0) {
             rep.check('Barra giornata — liability aperta', fmtMoney(openLiability), text(screen.getByTestId('day-bar-liability')));
         }
@@ -219,7 +226,11 @@ d('/mike sui dati reali', () => {
         rep.check('Tab «Partite» — contatore',
             `⚽ Partite (${sections.pre.length + sections.live.length + sections.fix.length})`,
             text(screen.getByLabelText(/^Partite/)));
-        rep.check('Tab «Regolate» — contatore', `✅ Regolate (${sections.settled.length})`, text(screen.getByLabelText(/^Regolate/)));
+        // «Regolate» = partite CHIUSE su cui si e' operato nella giornata
+        // operativa, non tutti i terminali delle ultime 24 h
+        rep.check('Tab «Regolate» — contatore',
+            `✅ Regolate (${settledOperated(sections.settled, st.trades).length})`,
+            text(screen.getByLabelText(/^Regolate/)));
 
         // ORDINE stabile: pre e live sono ordinate per calcio d'inizio crescente
         const shownPre = preCards ? within(preCards).queryAllByTestId('mike-match-card').map((c) => text(c).slice(0, 0)) : [];
@@ -344,9 +355,16 @@ d('/mike sui dati reali', () => {
         const actRows = screen.queryAllByTestId('mike-activity-row');
         rep.check('Attività — righe = get_mike_state.activity', String(st.activity.length), String(actRows.length));
 
-        await user.click(screen.getByLabelText(/^Trade/));
-        await waitFor(() => expect(screen.getByLabelText(/^Trade/)).toHaveAttribute('data-state', 'active'));
-        rep.check('Tab «Trade» — contatore', `📋 Trade (${st.trades.length})`, text(screen.getByLabelText(/^Trade/)));
+        await user.click(screen.getByLabelText(/^Operazioni/));
+        await waitFor(() => expect(screen.getByLabelText(/^Operazioni/)).toHaveAttribute('data-state', 'active'));
+        // il contatore della linguetta = OPERAZIONI (cicli) della giornata, lo
+        // stesso numero della barra: mai il conto delle righe di mike_trades
+        const opsToday = (st.aggregates ?? {}).cycles_today
+            ?? groupsOfDay(groupMikeTrades(st.trades), st.day_start ? Date.parse(st.day_start) : romeDayStartMs()).length;
+        rep.check('Tab «Operazioni» — contatore', `📋 Operazioni (${opsToday})`, text(screen.getByLabelText(/^Operazioni/)));
+        // e la linguetta «Regolate» conta SOLO le partite chiuse su cui si e' operato oggi
+        const settledToday = settledOperated(splitMikeEvents(st.events, rememberLive(st.events, new Set<string>())).settled, st.trades);
+        rep.check('Tab «Regolate» — contatore', `✅ Regolate (${settledToday.length})`, text(screen.getByLabelText(/^Regolate/)));
 
         // Storico: get_mike_daily è rotto sul DB (overload ambiguo) → deve
         // almeno dichiararlo, non morire in silenzio

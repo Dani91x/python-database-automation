@@ -649,6 +649,85 @@ def test_pressure_hook_modifica_il_book_e_la_cache(monkeypatch):
         payload, lambdas=(1.3, 1.1), league_id=None) == base
 
 
+# ======================================================================
+# CERTIFICAZIONE 12/09 — regressioni money-critical
+# ======================================================================
+def test_recupero_nessun_segnale_quando_il_modello_e_cieco():
+    """Oltre 90' + recupero modellato i tassi residui sono azzerati: il modello
+    dichiara P(Under)=99,8% e P(pareggio)=99,8% su un 1-1 ANCHE al 120'. Un back
+    a 1,05 li' e' un segnale FALSO (si gioca ancora): niente segnali."""
+    m = OpportunityModel({"min_size": 1.0})
+    lam, league = _lam(payload_1_1_65())
+    b = m.book(payload_1_1_65(minute=96), lambdas=lam, league_id=league)
+    assert b["under_2_5"] > 0.99 and b["draw"] > 0.99      # finta certezza del modello
+    assert OPP.model_is_blind(96) and OPP.model_is_blind(120)
+    assert not OPP.model_is_blind(94) and not OPP.model_is_blind(89)
+    assert OPP.blind_minute() == pytest.approx(95.0)
+    # al 94' (dentro il recupero modellato) i segnali ci sono ancora
+    p94 = payload_1_1_65(minute=94, ou=[{
+        "market_id": "1.25", "status": "OPEN", "market_type": "OVER_UNDER_25",
+        "line": 2.5, "ts_ms": 1_000_000_000_000,
+        "selections": [_sel(801, "Over 2.5", back=30.0, lay=40.0, back_size=50.0, lay_size=50.0),
+                       _sel(802, "Under 2.5", back=1.12, lay=1.14, back_size=200.0, lay_size=200.0)]}])
+    assert [o for o in _eval(m, p94) if o["selection_name"] == "Under 2.5"]
+    # al 96' NIENTE, per nessun mercato
+    assert _eval(m, payload_1_1_65(minute=96, ou=p94["ou"])) == []
+    assert _eval(m, payload_1_1_65(minute=130, ou=p94["ou"])) == []
+    # la soglia e' un parametro
+    largo = OpportunityModel({"min_size": 1.0, "max_signal_minute": 200})
+    assert _eval(largo, payload_1_1_65(minute=96, ou=p94["ou"]))
+
+
+def test_feed_rotto_nessuna_eccezione():
+    """"[] - mai eccezioni" e' un contratto: minuto o punteggio non numerici
+    facevano esplodere evaluate() e il ciclo perdeva l'intero evento."""
+    m = OpportunityModel()
+    lam, league = _lam(payload_1_1_65())
+    for rotto in ({"minute": "abc"}, {"score_home": "x"}, {"score_away": []},
+                  {"minute": float("nan")}, {"minute": True}):
+        p = payload_1_1_65(**rotto)
+        assert m.evaluate(p, sport="calcio", lambdas=lam, league_id=league, now_ts=NOW) == []
+    # punteggio estremo (celle Risultato esatto tutte morte): nessuna eccezione
+    assert isinstance(_eval(m, payload_1_1_65(score_home=5, score_away=4)), list)
+
+
+def test_commissione_dal_parametro_del_bot():
+    """``commission_pct`` del bot (percentuale) vince sul 5% fisso: prima EV ed
+    edge erano calcolati con un'aliquota che il trade non usava."""
+    assert OpportunityModel().params["commission"] == pytest.approx(0.05)
+    assert OpportunityModel({"commission_pct": 6.5}).params["commission"] == pytest.approx(0.065)
+    assert OpportunityModel({"commission_pct": 0}).params["commission"] == pytest.approx(0.0)
+    # 'commission' esplicita (frazione) ha la precedenza
+    assert OpportunityModel({"commission": 0.02, "commission_pct": 6.5}
+                            ).params["commission"] == pytest.approx(0.02)
+    # valori assurdi: si torna al default
+    assert OpportunityModel({"commission_pct": "x"}).params["commission"] == pytest.approx(0.05)
+    assert OpportunityModel({"commission_pct": 150}).params["commission"] == pytest.approx(0.05)
+    p = payload_1_1_65()
+    ev5 = [o for o in _eval(OpportunityModel(), p) if o["selection_name"] == "Under 7.5"]
+    ev13 = [o for o in _eval(OpportunityModel({"commission_pct": 13}), p)
+            if o["selection_name"] == "Under 7.5"]
+    assert ev5 and ev13 and ev13[0]["ev"] < ev5[0]["ev"]
+
+
+def test_pressione_spenta_di_default(monkeypatch):
+    """L'hook pressione non e' calibrato (live_engine: 'attivabile solo dopo
+    calibrazione') e le tabelle di calibrazione sono state stimate con pressione
+    NEUTRA: acceso di default muoveva i lambda fino a +-25% sotto una
+    calibrazione stimata su un altro modello."""
+    monkeypatch.setattr(OPP, "_pressure_from_payload", lambda p: (2.0, 1.0))
+    assert OpportunityModel(calibration="off").pressure_enabled is False
+    assert DEFAULT_OPP_PARAMS["use_pressure"] is False
+    # opt-in dai parametri o dal costruttore
+    assert OpportunityModel({"use_pressure": True}, calibration="off").pressure_enabled is True
+    assert OpportunityModel(calibration="off", pressure=True).pressure_enabled is True
+    payload = payload_1_1_65()
+    base = OpportunityModel(calibration="off").book(payload, lambdas=(1.3, 1.1), league_id=None)
+    on = OpportunityModel({"use_pressure": True}, calibration="off").book(
+        payload, lambdas=(1.3, 1.1), league_id=None)
+    assert on["over_2_5"] > base["over_2_5"]
+
+
 # ---------------------------------------------------------------------------
 # Soglie di PRODUZIONE (backtest 10/09 su 38 registrazioni: i lay del modello
 # perdono, i back sugli Under alti sono in pari): lay spenti, back >=95%, edge 3%.

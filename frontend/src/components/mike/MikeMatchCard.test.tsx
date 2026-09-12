@@ -42,7 +42,10 @@ describe('MikeMatchCard — altezza stabile', () => {
         expect(within(card).getByTestId('mike-orders')).toHaveTextContent('—');
         expect(within(card).getByTestId('mike-cashout-value')).toHaveTextContent('nessuna posizione');
         expect(within(card).getByTestId('mike-liability')).toHaveTextContent('—');
-        expect(within(card).getByTestId('mike-goals-histogram')).toHaveTextContent('nessun modello per questa partita');
+        expect(within(card).getByTestId('mike-goals-histogram')).toHaveTextContent('Nessun modello per questa lega');
+        // ...e NESSUNA barra vuota: senza modello non si disegna un istogramma finto
+        expect(within(card).queryByTestId('mike-goals-bar-0')).toBeNull();
+        expect(within(card).getByTestId('mike-model-missing')).toBeInTheDocument();
         // senza posizione non c'è cash out, ma c'è "Salta"
         expect(within(card).queryByTestId('mike-cashout-btn')).toBeNull();
         expect(within(card).getByTestId('mike-skip-btn')).toBeInTheDocument();
@@ -246,7 +249,12 @@ describe('MikeMatchCard — ogni pulsante manda il suo comando', () => {
             <MikeMatchCard ev={ev({ state: 'LIVE_COVERED', positions: [leg()], live })}
                            params={params} onRequest={onRequest} />,
         );
+        // CERT. 12/09: il flatten NON parte piu' con un click solo (chiude a
+        // mercato senza guardare la soglia: e' l'azione piu' pericolosa della
+        // card). Passa dal dialog di conferma, come il cash out.
         await userEvent.click(screen.getByTestId('mike-flatten-btn'));
+        expect(onRequest).not.toHaveBeenCalled();
+        await userEvent.click(screen.getByTestId('mike-flatten-confirm'));
         expect(onRequest).toHaveBeenCalledWith('flatten', 'E1');
     });
 
@@ -364,5 +372,77 @@ describe('MikeMatchCard — KO passato ma partita non ancora iniziata', () => {
             />,
         );
         expect(screen.queryByTestId('mike-awaiting-kickoff')).toBeNull();
+    });
+});
+
+// ===========================================================================
+// CERTIFICAZIONE UI 12/09/2026 — la scheda deve dire in italiano che cosa sta
+// facendo il bot e non deve disegnare avanzamenti che non esistono.
+// ===========================================================================
+describe('MikeMatchCard — leggibilita per il trader (audit UI 12/09)', () => {
+    it('la fase dice a parole che cosa sta facendo il bot', () => {
+        render(<MikeMatchCard ev={ev({ state: 'HOLD' })} params={params} />);
+        expect(screen.getByTestId('mike-phase')).toHaveTextContent('TIENE FINO AL FISCHIO');
+        expect(screen.getByTestId('mike-phase')).not.toHaveTextContent('HOLD');
+        expect(screen.getByTestId('mike-phase-what'))
+            .toHaveTextContent('chiudere adesso sarebbe in perdita');
+    });
+
+    it('riga meta leggibile: volume, quota di ingresso e ciclo contato da 1', () => {
+        render(<MikeMatchCard
+            ev={ev({ state: 'PRE_OPEN', cycle_no: 0, entry_price_initial: 1.48,
+                     live: { inplay: false, total_matched: 0 } as never })}
+            params={{ ...params, pre_max_cycles: 10 }} />);
+        const meta = screen.getByTestId('mike-meta-line');
+        // CERT. 12/09: il feed manda total_matched=0 su TUTTE le partite reali.
+        // Uno "0 €" con l'aria di una misura di profondita' e' una bugia: si
+        // dichiara che il dato non c'e'.
+        expect(meta).toHaveTextContent('Volume mercato non pubblicato');
+        expect(meta).toHaveTextContent('ingresso @1,48');
+        expect(meta).toHaveTextContent('ciclo 1 di 10');
+        expect(meta).not.toHaveTextContent('scambiato');
+    });
+
+    it('cash out in perdita: barra a zero e testo che dice che si chiude in perdita', () => {
+        render(<MikeMatchCard
+            ev={ev({ state: 'PRE_OPEN', positions: [leg()],
+                     live: { inplay: false, cashout: { net: -0.2, gross: -0.2, base: 10, complete: true,
+                                                       pct: -2, target_pct: 5, per: { 'OU35|UNDER': -0.2 } } } as never })}
+            params={params} />);
+        expect(screen.getByTestId('mike-cashout-value')).toHaveTextContent('−0,20 €');
+        expect(screen.getByTestId('mike-cashout-value')).toHaveTextContent('in perdita');
+        expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    it('"se chiudo ora" dichiara UN solo numero, netto (mai lordo + netto insieme)', () => {
+        render(<MikeMatchCard
+            ev={ev({ state: 'PRE_OPEN', positions: [leg()],
+                     live: { inplay: false, books: { 'OU35|UNDER': { best_back: 1.47, back_size: 10, best_lay: 1.5, lay_size: 10, status: 'OPEN', inplay: false, bet_delay: 0 } },
+                             cashout: { net: 0.35, gross: 0.37, base: 10, complete: true, pct: 3.5, target_pct: 5,
+                                        per: { 'OU35|UNDER': 0.35 }, per_gross: { 'OU35|UNDER': 0.37 } } } as never })}
+            params={params} />);
+        const cell = screen.getByTestId('mike-pos-locked');
+        expect(cell).toHaveTextContent('+0,35 €');
+        expect(cell.getAttribute('title')).toBe('netto della commissione, calcolato dal servizio');
+        expect(cell.getAttribute('title')).not.toContain('lordo');
+    });
+
+    it('partita chiusa: niente falsi allarmi di feed fermo o linee assenti', () => {
+        render(<MikeMatchCard
+            ev={ev({ state: 'SETTLED', settled_pnl: 0,
+                     live: { inplay: false, feed_age_s: 900, lines_missing: ['OU35', 'OU45'] } as never })}
+            params={params} />);
+        expect(screen.getByTestId('mike-feed-age')).toHaveTextContent('partita chiusa');
+        expect(screen.queryByTestId('mike-lines-missing')).toBeNull();
+    });
+
+    it('linea assente dal feed: mai la parola "undefined" in un allarme', () => {
+        render(<MikeMatchCard
+            ev={ev({ state: 'HOLD', positions: [leg()],
+                     live: { inplay: false, lines_missing: ['OU35', 'OU45'] } as never })}
+            params={params} />);
+        const alert = screen.getByTestId('mike-lines-missing');
+        expect(alert).toHaveTextContent('linea 3.5, linea 4.5');
+        expect(alert).not.toHaveTextContent('undefined');
     });
 });

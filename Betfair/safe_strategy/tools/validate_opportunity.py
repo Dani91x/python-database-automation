@@ -704,6 +704,7 @@ def calibration_samples(
     prezzabile di ogni mercato REGOLATO: (famiglia, minuto, p grezza, esito).
     Le certezze (p<=0 o p>=1: esito gia' deciso) non si campionano."""
     from Betfair.safe_strategy.calibration import family_of_market
+    from Betfair.safe_strategy.opportunity import model_is_blind
 
     model = model or OpportunityModel(calibration="off")
     if lambdas is None:
@@ -715,6 +716,12 @@ def calibration_samples(
     for snap in cache.get("snapshots") or []:
         m = int(snap["minute"])
         if m in seen or (m % max(1, int(step_min))) != 0:
+            continue
+        # RECUPERO: oltre il recupero modellato il modello non stima piu' nulla
+        # (tassi residui azzerati, p = 0.998 per costruzione). Sono campioni di
+        # una finta certezza: il motore li' non segnala, la calibrazione non
+        # deve impararli (finirebbero tutti nell'ultimo bin della fascia 75-90).
+        if model_is_blind(m, model.params):
             continue
         seen.add(m)
         payload = {"minute": m, "score_home": snap["sh"], "score_away": snap["sa"],

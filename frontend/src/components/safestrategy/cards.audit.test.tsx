@@ -121,9 +121,11 @@ describe('OpportunityGroup — freschezza dichiarata (M-21)', () => {
 
     it('riga vecchia: avviso ESPLICITO del perché «Piazza» è spento', () => {
         renderRow(75);
-        expect(screen.getByTestId('opp-stale-note')).toHaveTextContent('non aggiornati da 75s');
+        // CERT. 12/09 — il testo dice la VERITA': l'eta' della riga e' quella
+        // dell'ultimo CALCOLO del servizio, non quella della quota.
+        expect(screen.getByTestId('opp-stale-note')).toHaveTextContent('modello non ricalcolato da 75s');
         expect(screen.getByTestId('invest-place')).toBeDisabled();
-        expect(screen.getByTestId('opp-age')).toHaveTextContent('75s fa');
+        expect(screen.getByTestId('opp-age')).toHaveTextContent('calcolo 75s fa');
     });
 
     it('mercato e selezione Betfair nel tooltip: l ingresso deve corrispondere', () => {

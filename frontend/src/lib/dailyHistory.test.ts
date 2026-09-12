@@ -8,7 +8,8 @@ import {
     monthSummary, summarizeRows, aggregateBreakdown, calendarGrid, shiftMonth,
     dayToMs, msToDay, addDays, isValidDay, romeDay, periodRange, filterRange,
     dayLabel, monthLabel, exitInfo, tradeExit,
-    clampHistoryRange, attributionOf, summarizeDayTrades,
+    clampHistoryRange, attributionOf, summarizeDayTrades, calendarGridBounds,
+    historyWindow, exitReasonText, MAX_HISTORY_DAYS,
     type DailyRow,
 } from './dailyHistory';
 
@@ -456,5 +457,193 @@ describe('attributionOf / summarizeDayTrades (M-18 / H-11)', () => {
 
     it('lista vuota/null: zero, mai NaN', () => {
         expect(summarizeDayTrades(null, 'placed')).toMatchObject({ pnl: 0, settled: 0, open: 0, lockedPnl: null });
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE UI 12/09 — storico condiviso
+// ============================================================================
+describe('historyWindow — il MESE mostrato è sempre dentro la finestra (12/09)', () => {
+    it('mese + periodo dentro il limite: una finestra sola, nessun taglio', () => {
+        const w = historyWindow({ from: '2026-09-01', to: '2026-09-30' }, { from: '2026-09-01', to: '2026-09-12' });
+        expect(w).toMatchObject({ from: '2026-09-01', to: '2026-09-30', clamped: false, periodTruncated: false });
+    });
+
+    it('calendario indietro di anni: il MESE resta caricato per intero e il periodo è dichiarato fuori', () => {
+        // prima: clampHistoryRange teneva gli ultimi 400 giorni da OGGI e il
+        // mese di gennaio 2025 finiva fuori → "nessuna operazione" su dati veri
+        const mese = { from: '2025-01-01', to: '2025-01-31' };
+        const periodo = { from: '2026-09-01', to: '2026-09-12' };
+        const w = historyWindow(mese, periodo);
+        expect(w.from <= mese.from).toBe(true);
+        expect(w.to).toBe(mese.to);
+        expect(w.days).toBeLessThanOrEqual(MAX_HISTORY_DAYS + 1);
+        expect(w.clamped).toBe(true);
+        expect(w.periodTruncated).toBe(true);
+        expect(w.periodFrom).toBe(w.from);
+    });
+
+    it('giorni non validi: nessuna eccezione, finestra = mese', () => {
+        const w = historyWindow({ from: 'boh', to: '2026-09-30' }, { from: '2026-09-01', to: '2026-09-12' });
+        expect(w.clamped).toBe(false);
+        expect(w.periodTruncated).toBe(false);
+    });
+});
+
+describe('clampHistoryRange — estremi invertiti E oltre il limite (12/09)', () => {
+    it('rimette in ordine e RI-CLAMPA: prima tornava una finestra di 600 giorni', () => {
+        const r = clampHistoryRange('2026-09-11', '2024-01-01');
+        expect(r.from).toBe(addDays('2026-09-11', -MAX_HISTORY_DAYS));
+        expect(r.to).toBe('2026-09-11');
+        expect(r.days).toBe(MAX_HISTORY_DAYS + 1);
+        expect(r.clamped).toBe(true);
+    });
+});
+
+describe('exitInfo — vocabolari dei tre servizi (12/09)', () => {
+    it("`model` di Safe (meta.exit.kind) non è più una 'Uscita' generica", () => {
+        const e = exitInfo({ exit: { kind: 'model', reason: 'take_profit_modello' } });
+        expect(e?.kind).toBe('model');
+        expect(e?.label).toBe('Uscita: modello');
+    });
+
+    it("`mandatory` della regola Safe resta l'uscita obbligatoria", () => {
+        expect(exitInfo({ exit: { kind: 'mandatory' } })?.kind).toBe('forced');
+    });
+
+    it('il motivo tecnico di Mike diventa italiano (prima il tooltip diceva «under_green»)', () => {
+        const e = exitInfo({ exit_kind: 'greenup', exit_reason: 'under_green' });
+        expect(e?.reason).toBe('green-up sull’Under 3.5');
+        expect(exitReasonText('loss_cap')).toBe('tetto di perdita raggiunto');
+        // un motivo già in italiano (Omega/Safe) passa invariato
+        expect(exitReasonText('Cash out manuale richiesto dall’operatore'))
+            .toBe('Cash out manuale richiesto dall’operatore');
+        expect(exitReasonText(null)).toBeNull();
+        expect(exitReasonText('   ')).toBeNull();
+    });
+});
+
+// ============================================================================
+// CERTIFICAZIONE REPORTISTICA 12/09 — il dettaglio giornata deve dire gli
+// STESSI numeri della cella del calendario (`trading_daily_history`).
+// Casi ricostruiti dai dati REALI del 12/09/2026 (DB in sola lettura).
+// ============================================================================
+describe('summarizeDayTrades — allineamento alla RPC (certificazione 12/09)', () => {
+    const leg = (over: Record<string, unknown>) => ({
+        id: 1, event_id: 'e1', event_name: 'Roma vs Lazio', side: 'lay', mode: 'paper' as const,
+        price: 40, size: 5, liability: 100, status: 'open', pnl: 0, placed_at: '2026-09-12T08:00:00Z',
+        settled_at: null, meta: null, bet_id: 'B1', closes: [], total_pnl: 0,
+        placed_in_day: true, settled_in_day: false, ...over,
+    }) as never;
+    const close = (over: Record<string, unknown>) => ({
+        id: 90, event_id: 'e1', event_name: 'Roma vs Lazio', side: 'back', mode: 'paper' as const,
+        price: 30, size: 5, liability: 5, status: 'won', pnl: 0, placed_at: '2026-09-12T09:00:00Z',
+        settled_at: '2026-09-12T09:30:00Z', meta: null, closes_trade_id: 1, ...over,
+    }) as never;
+
+    it('Safe 12/09: le coperture INCASSATE su posizioni vive entrano nel realizzato (+1,90 vs −0,77)', () => {
+        // dump reale: la cella del calendario diceva −0,77 € e la testata del
+        // dettaglio della STESSA giornata +1,90 € — 2,67 € di chiusure già
+        // regolate su posizioni ancora aperte che la testata non mostrava.
+        const s = summarizeDayTrades([
+            leg({ id: 1, status: 'won', pnl: 1.9, total_pnl: 1.9, settled_at: '2026-09-12T09:00:00Z', settled_in_day: true }),
+            leg({ id: 2, status: 'open', total_pnl: -1.5, closes: [close({ id: 91, closes_trade_id: 2, status: 'lost', pnl: -1.5 })] }),
+            leg({ id: 3, status: 'hedged', total_pnl: -1.17, closes: [close({ id: 92, closes_trade_id: 3, status: 'won', pnl: -1.17 })] }),
+        ], 'placed');
+        expect(s.pnl).toBe(-0.77);
+        expect(s.realizedOnOpen).toBe(-2.67);
+        expect(s.settled).toBe(1);
+        expect(s.open).toBe(2);
+    });
+
+    it('una chiusura NON ancora regolata non è realizzato', () => {
+        const s = summarizeDayTrades([
+            leg({ id: 2, status: 'open', closes: [close({ id: 91, closes_trade_id: 2, status: 'pending', pnl: 0, settled_at: null })] }),
+        ], 'placed');
+        expect(s.pnl).toBe(0);
+        expect(s.realizedOnOpen).toBe(0);
+    });
+
+    it('V/P per SEGNO del P&L totale, lo stato solo come spareggio sullo zero', () => {
+        // Omega 10/09 reale: cella 11V 2P, piede tabella (per stato) 12V 1P
+        const s = summarizeDayTrades([
+            leg({ id: 1, status: 'won', pnl: -0.35, total_pnl: -0.35, settled_at: 'x', settled_in_day: true }),
+            leg({ id: 2, status: 'lost', pnl: -9, total_pnl: 2.4, settled_at: 'x', settled_in_day: true }),
+            leg({ id: 3, status: 'won', pnl: 0, total_pnl: 0, settled_at: 'x', settled_in_day: true }),
+            leg({ id: 4, status: 'void', pnl: 0, total_pnl: 0, settled_at: 'x', settled_in_day: true }),
+        ], 'placed');
+        expect([s.won, s.lost, s.voided]).toEqual([2, 1, 1]);
+        expect(s.settled).toBe(4);
+    });
+
+    it('le righe MAI arrivate a mercato non contano (Mike 11/09: 32 in calendario, 44 in testata)', () => {
+        const s = summarizeDayTrades([
+            leg({ id: 1, status: 'won', pnl: 2, total_pnl: 2, settled_at: 'x', settled_in_day: true }),
+            leg({ id: 2, status: 'error', pnl: 0, total_pnl: 0, bet_id: null, liability: 10 }),
+            leg({ id: 3, status: 'pending', pnl: 0, total_pnl: 0, bet_id: null, liability: 10 }),
+            // riserva in RICONCILIAZIONE: esito ignoto, l'ordine può essere vivo → conta
+            leg({ id: 4, status: 'pending', pnl: 0, total_pnl: 0, bet_id: null, liability: 7, meta: { reason: 'place_exception_reconciling' } }),
+        ], 'placed');
+        expect(s.attributed.map((t) => t.id)).toEqual([1, 4]);
+        expect(s.notPlaced.map((t) => t.id)).toEqual([2, 3]);
+        expect(s.liability).toBe(107);
+        expect(s.pnl).toBe(2);
+    });
+});
+
+describe('calendarGridBounds — ogni cella disegnata è una cella caricata (12/09)', () => {
+    it('settembre 2026: dal lunedì 31 agosto alla domenica 4 ottobre', () => {
+        expect(calendarGridBounds(2026, 9)).toEqual({ from: '2026-08-31', to: '2026-10-04' });
+    });
+
+    it('la griglia contiene sempre il mese per intero', () => {
+        const g = calendarGridBounds(2025, 6);
+        expect(dayToMs(g.from)).toBeLessThanOrEqual(dayToMs('2025-06-01'));
+        expect(dayToMs(g.to)).toBeGreaterThanOrEqual(dayToMs('2025-06-30'));
+    });
+
+    it('la finestra caricata copre SEMPRE la griglia del mese mostrato', () => {
+        const g = calendarGridBounds(2026, 2);
+        const w = historyWindow(g, { from: '2026-09-01', to: '2026-09-12' });
+        expect(w.from <= g.from).toBe(true);
+        expect(w.to >= g.to).toBe(true);
+    });
+
+    it('mese non valido: eccezione, mai una griglia inventata', () => {
+        expect(() => calendarGridBounds(2026, 0)).toThrow(RangeError);
+        expect(() => calendarGridBounds(2026, 13)).toThrow(RangeError);
+    });
+});
+
+describe('tradeExit — un green-up ANNULLATO non è un green-up (12/09)', () => {
+    const close = (over: Record<string, unknown>) => ({
+        id: 50, event_id: 'e1', event_name: 'x', side: 'lay', mode: 'paper' as const,
+        price: 1.46, size: 10.14, liability: 4.66, status: 'error', pnl: 0,
+        placed_at: '2026-09-11T22:19:34Z', settled_at: null, closes_trade_id: 46, ...over,
+    }) as never;
+
+    it("gamba di green-up in 'error': nessuna uscita dichiarata sulla posizione", () => {
+        // caso reale Mike #46/#50: posizione regolata a mercato, green-up
+        // annullato dal motore — la UI mostrava comunque «Green-up»
+        const t = {
+            meta: null,
+            closes: [close({ meta: { exit_kind: 'greenup', exit_reason: 'under_green', reason: 'cancelled_by_engine' } })],
+        };
+        expect(tradeExit(t)).toBeNull();
+    });
+
+    it('una chiusura VERA continua a dichiarare la sua uscita', () => {
+        const t = {
+            meta: null,
+            closes: [
+                close({ id: 49, status: 'lost', pnl: -6.07, meta: { exit_kind: 'greenup', exit_reason: 'under_green' } }),
+            ],
+        };
+        expect(tradeExit(t)?.kind).toBe('greenup');
+    });
+
+    it('cash out manuale: solo da una chiusura non in errore', () => {
+        expect(tradeExit({ meta: null, closes: [close({ meta: { cashout: true } })] })).toBeNull();
+        expect(tradeExit({ meta: null, closes: [close({ status: 'won', meta: { cashout: true } })] })?.kind).toBe('manual');
     });
 });

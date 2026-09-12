@@ -18,13 +18,15 @@
 import { Fragment } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CashOutButton, greenPrice, hedgeSide, netAfterCommission } from '@/components/trading/CashOutButton';
+import {
+    CashOutButton, greenPrice, hedgeSide, netAfterCommission, partialLockedPnl,
+} from '@/components/trading/CashOutButton';
 import { ExitBadge } from '@/components/trading/ExitBadge';
-import { lockedPnlAt } from '@/lib/ladderMath';
 import { liveScoreLabel } from '@/lib/useScanLiveFeed';
 import { tradeExit } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime, DASH } from '@/lib/format';
 import { statusMeta, T } from '@/lib/tradeStatus';
+import { positionInfo } from '@/lib/omega';
 import { ticksBetween } from '@/lib/riskMath';
 import type { CalcioScanPayload, TennisScanPayload } from '@/lib/safeStrategyScan';
 import {
@@ -35,7 +37,7 @@ import {
     groupClosingLegs, hedgeTooltip, partialHedge,
     type FeedFreshness, type SafeRequest, type SafeTrade, type SafeTradeStatus, type TradeBook,
 } from '@/lib/safeBot';
-import { safeReasonLabel } from './safeActivity';
+import { safeMarketLabel, safeReasonLabel } from './safeActivity';
 import { OPP_KIND_META } from './OpportunityGroup';
 import { sideBadgeClass } from './variantStyles';
 
@@ -83,6 +85,11 @@ function lockedPnlOf(t: SafeTrade): number | null {
     const v = Number((t.meta ?? {})['locked_pnl']);
     return Number.isFinite(v) ? v : null;
 }
+
+/** `meta.exit_hold.source` del servizio (`_p_selection_wins`) → italiano. */
+const HOLD_SOURCE_IT: Record<string, string> = {
+    model: 'modello del servizio', market: 'quote di mercato', none: 'nessuna stima disponibile',
+};
 
 const CLS = {
     amber: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
@@ -304,8 +311,13 @@ export function SafeTradesTable({
                         const dTicks = nowPrice != null && t.price != null && t.price > 1
                             ? ticksBetween(t.price, nowPrice) * (t.side === 'lay' ? -1 : 1)
                             : null;
+                        // CHIUSURA-01: stessa formula del servizio (stake di
+                        // copertura arrotondato al centesimo, peggiore dei due
+                        // esiti) e dello stesso CashOutButton della riga: il
+                        // numero della colonna e quello del bottone non possono
+                        // differire. `lockedPnlAt` (ideale) li faceva divergere.
                         const closeNow = nowPrice != null
-                            ? netAfterCommission(lockedPnlAt(nowPrice, exp.win, exp.lose), commission)
+                            ? netAfterCommission(partialLockedPnl(nowPrice, exp.win, exp.lose, 1), commission)
                             : null;
                         const locked = lockedPnlOf(t);
                         const fresh = isLive ? (freshnessOf?.(t.event_id) ?? null) : null;
@@ -318,6 +330,14 @@ export function SafeTradesTable({
                         const orphanClosing = t.closes_trade_id != null;
                         const reason = safeReasonLabel(String((t.meta ?? {})['reason'] ?? '') || null);
                         const outcome = requestOutcome(lastRequestFor(t.id, requests));
+                        // CHIUSURA-06 (12/09): esito della POSIZIONE (apertura +
+                        // gambe di chiusura) scritto dal servizio in
+                        // `meta.position_pnl` / `meta.position_result`. La
+                        // colonna P&L porta il risultato della SOLA apertura: su
+                        // un cash out in perdita diceva "+2,00 €" per una
+                        // posizione chiusa a −10,27 €. Il servizio lo scriveva
+                        // gia', nessuno lo leggeva.
+                        const posInfo = positionInfo(t.meta ?? null);
                         const canCashOut = t.status === 'open'
                             || (t.status === 'hedged' && hedge != null && !hedge.complete);
                         return (
@@ -353,8 +373,9 @@ export function SafeTradesTable({
                                         </div>
                                     )}
                                 </td>
-                                <td className="px-3 py-2 text-[11px] text-slate-400 max-w-[140px] truncate" title={[t.market_type, t.market_id ? `mercato ${t.market_id}` : null, t.selection_id != null ? `selezione ${t.selection_id}` : null].filter(Boolean).join(' · ')}>
-                                    {t.market_type ?? DASH}
+                                <td className="px-3 py-2 text-[11px] text-slate-400 max-w-[140px] truncate" data-testid="safe-market" title={[t.market_type, t.market_id ? `mercato ${t.market_id}` : null, t.selection_id != null ? `selezione ${t.selection_id}` : null].filter(Boolean).join(' · ')}>
+                                    {/* mercato in CHIARO: "Risultato Esatto", non "CORRECT_SCORE" */}
+                                    {safeMarketLabel(t.market_type) ?? DASH}
                                 </td>
                                 <td className="px-3 py-2 max-w-[160px] truncate" title={t.selection_name ?? ''}>
                                     {t.selection_name ?? DASH}
@@ -457,7 +478,8 @@ export function SafeTradesTable({
                                             data-testid="trade-hold"
                                             title={[
                                                 'il servizio tiene la posizione aperta',
-                                                hold.source ? `fonte: ${hold.source}` : null,
+                                                // 'model' | 'market' | 'none' dal servizio: in chiaro
+                                                hold.source ? `stima da: ${HOLD_SOURCE_IT[hold.source] ?? hold.source}` : null,
                                                 hold.evHold != null ? `EV tenere: ${fmtMoney(hold.evHold, { signed: true })}` : null,
                                                 hold.locked != null ? `bloccabile ora: ${fmtMoney(hold.locked, { signed: true })}` : null,
                                                 hold.ts ? `aggiornato ${fmtTime(hold.ts)}` : null,
@@ -488,6 +510,16 @@ export function SafeTradesTable({
                                             {fmtMoney(Number(t.pnl), { signed: true })}
                                         </span>
                                     ) : DASH}
+                                    {closes.length > 0 && posInfo?.pnl != null && (
+                                        <div
+                                            className={`mt-0.5 text-[10px] font-normal whitespace-nowrap ${posInfo.pnl > 0 ? 'text-emerald-300' : posInfo.pnl < 0 ? 'text-red-300' : 'text-slate-400'}`}
+                                            data-testid="safe-position-result"
+                                            title="risultato della POSIZIONE (apertura + gambe di chiusura): il numero sopra è la sola gamba d'apertura"
+                                        >
+                                            posizione {posInfo.result === 'won' ? 'in utile' : posInfo.result === 'lost' ? 'in perdita' : 'in pari'}{' '}
+                                            <b>{fmtMoney(posInfo.pnl, { signed: true })}</b>
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                     {orphanClosing ? (

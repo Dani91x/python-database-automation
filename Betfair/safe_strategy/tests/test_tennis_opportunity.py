@@ -298,7 +298,12 @@ def test_serve_data_fallback(monkeypatch):
     p = payload(sets=(0, 0), games=(3, 2))
     prior = m.p_win(p, "p1")
     ha, hb = m._holds(p)
-    assert ha == hb == pytest.approx(estimate_holds(0, 0, 0, 0, prior=0.75)[0])
+    # senza dato di servizio si usa ESATTAMENTE il prior dichiarato: prima
+    # `estimate_holds(0,0,0,0)` lo alzava a 0,792 ("nessun break su 1 turno")
+    # e gonfiava la P del leader sopra la soglia di back del 90%
+    assert ha == hb == pytest.approx(0.75)
+    assert ha < estimate_holds(0, 0, 0, 0, prior=0.75)[0]
+    assert TennisOpportunityModel({"hold_prior": 0.82})._holds(p) == (0.82, 0.82)
     monkeypatch.setattr(sd, "_cache", {"anna rossi": 0.70, "bea verdi": 0.58})
     ha2, hb2 = m._holds(p)
     assert ha2 == pytest.approx(hold_from_serve_point(0.70)) and ha2 > hb2

@@ -221,8 +221,10 @@ def fit_table(samples: Sequence[CalSample], *, min_n: int = DEFAULT_MIN_N,
                 merged[x] = ((y0 * w0 + y * w) / (w0 + w), w0 + w)
             else:
                 merged[x] = (y, w)
-        knots = [[x, max(0.0, min(1.0, y))] for x, (y, _w) in sorted(merged.items())]
-        # con gli estremi fissi (0,0) e (1,1) la spezzata resta monotona
+        # ogni nodo porta anche il suo PESO (n campioni del bin): serve a
+        # dichiarare quanto e' sostenuto dai dati (i consumatori vecchi leggono
+        # solo i primi due elementi)
+        knots = [[x, max(0.0, min(1.0, y)), float(w)] for x, (y, w) in sorted(merged.items())]
         for i in range(1, len(knots)):
             knots[i][1] = max(knots[i][1], knots[i - 1][1])
     return {"n": int(n_tot), "applied": bool(applied), "bins": bins, "knots": knots}
@@ -338,9 +340,30 @@ class Calibrator:
             return False, 0
         return bool(t.get("applied")) and bool(t.get("knots")), int(t.get("n") or 0)
 
+    def support(self, family: Optional[str], minute: Optional[int]) -> Optional[Tuple[float, float]]:
+        """(p minima, p massima) OSSERVATE dalla tabella: fuori da qui la
+        correzione non viene estrapolata. None senza tabella."""
+        if not family:
+            return None
+        t = self.tables.get(_table_key(family, bucket_of(minute)))
+        knots = (t or {}).get("knots") or []
+        if not t or not t.get("applied") or not knots:
+            return None
+        xs = [float(k[0]) for k in knots]
+        return min(xs), max(xs)
+
     def apply(self, p: float, family: Optional[str], minute: Optional[int]) -> float:
         """p calibrata: monotona, mai oltre (0,1), identita' con n piccolo o
-        famiglia sconosciuta; le certezze (p<=0, p>=1) passano invariate."""
+        famiglia sconosciuta; le certezze (p<=0, p>=1) passano invariate.
+
+        FUORI dall'intervallo OSSERVATO (12/09): la correzione NON viene
+        estrapolata verso (1,1)/(0,0). Prima una tabella i cui campioni si
+        fermavano a p=0,83 (es. ``btts|30-45``) spingeva comunque una p grezza
+        di 0,93 a 0,949 e una di 0,94 sopra la soglia di back del 95%: una
+        probabilita' gonfiata dove non c'e' un solo campione. Ora, oltre
+        l'ultimo nodo, il valore resta il piu' conservativo fra la spezzata e
+        l'identita' (e mai sotto l'ultimo nodo: la monotonia e' preservata).
+        """
         try:
             p = float(p)
         except (TypeError, ValueError):
@@ -353,17 +376,25 @@ class Calibrator:
         knots = t.get("knots") or []
         if not knots:
             return p
-        pts: List[Tuple[float, float]] = [(0.0, 0.0)]
-        pts += [(float(x), float(y)) for x, y in knots]
-        pts.append((1.0, 1.0))
+        obs: List[Tuple[float, float]] = [(float(k[0]), float(k[1])) for k in knots]
+        x_first, y_first = obs[0]
+        x_last, y_last = obs[-1]
+        pts: List[Tuple[float, float]] = [(0.0, 0.0)] + obs + [(1.0, 1.0)]
+        out: Optional[float] = None
         for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
             if x0 <= p <= x1:
                 if x1 - x0 <= _EPS:
                     out = max(y0, y1)
                 else:
                     out = y0 + (y1 - y0) * (p - x0) / (x1 - x0)
-                return max(_EPS, min(1.0 - _EPS, out))
-        return p
+                break
+        if out is None:
+            return p
+        if p > x_last:            # nessun campione sopra: mai piu' dell'identita'
+            out = max(y_last, min(p, out))
+        elif p < x_first:         # nessun campione sotto: mai meno dell'identita'
+            out = min(y_first, max(p, out))
+        return max(_EPS, min(1.0 - _EPS, out))
 
     def info(self) -> Dict[str, Any]:
         """Riassunto (meta + tabelle applicate) per log/UI."""

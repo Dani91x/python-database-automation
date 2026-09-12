@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("safe.scanner")
 
 # finestre di interesse (minuti EFFETTIVI di gioco, come certificato).
 # REGOLA (utente, 09/09): il minuto delle strategie calcio è una SOGLIA
@@ -66,10 +69,49 @@ PRE_KO_OU_MARKET_TYPES = ("OVER_UNDER_35", "OVER_UNDER_45")
 # decisa (audit 11/09 C1/C2): senza la 4.5 non c'è copertura né cash out, e la
 # 3.5 potata al 4° gol congelava la card.
 MIKE_OU_MARKET_TYPES = PRE_KO_OU_MARKET_TYPES
-# Tetto DURO delle partite Mike esenti: è il `max_open_matches` del bot (10).
-# Anche con un bug che marcasse 90 partite come "seguite", il pool stream non
-# può essere invaso (H4).
-MIKE_MAX_FOLLOWED = 10
+# Tetto DURO delle partite Mike esenti dal taglio dei mercati a gol.
+#
+# CERTIFICAZIONE 12/09 (osservata sui dati reali) — era 10, allineato a
+# ``max_open_matches``, ma le partite con ESPOSIZIONE sono di piu': restano
+# aperte anche dopo il cap (in chiusura, in regolamento, con un residuo), e il
+# 12/09 ne sono state contate 26 insieme. Le eccedenti restavano SENZA quote in
+# gioco: niente copertura Over 4.5, niente cash out, niente uscita. Tre partite
+# reali sono finite cosi' a -10,00 ciascuna, con un buco di SETTE ORE fra
+# l'ingresso e il regolamento e l'attivita' "linee assenti dal feed".
+#
+# Il costo di alzarlo e' trascurabile: ogni partita Mike pesa 2 mercati, quindi
+# 40 partite = 80 mercati su una capacita' di 2000 (200 per connessione x 10).
+# Il rischio di NON alzarlo e' la perdita piena su una posizione aperta.
+# Override: MIKE_MAX_FOLLOWED (env vuota = default, mai `??`).
+def _mike_max_followed() -> int:
+    import os
+
+    raw = os.environ.get("MIKE_MAX_FOLLOWED", "").strip() or "40"
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return 40
+
+
+MIKE_MAX_FOLLOWED = _mike_max_followed()
+
+
+def prioritize_followed(candidates: List[str], followed: Any = ()) -> List[str]:
+    """``candidates`` con le partite di ``followed`` DAVANTI, ordine relativo
+    invariato per tutto il resto.
+
+    Serve dove la lista viene TRONCATA (lotto del catalogo mercati): chi resta
+    fuori aspetta il giro dopo, e aspettare con una posizione APERTA significa
+    restare senza quote, quindi senza copertura, senza cash out e senza uscita.
+    Caso vivo del 12/09, riavvio delle 21:43: 11 partite di Mike con posizioni
+    aperte sono rimaste ~10 minuti senza nessuna linea O/U nel feed, con 46
+    allarmi 'feed_line_missing' critici, perche' l'ordine era solo "minuti piu'
+    avanzati" e i soldi a rischio non contavano.
+    """
+    keep = {str(e) for e in (followed or ())}
+    if not keep:
+        return list(candidates)
+    return sorted(candidates, key=lambda e: str(e) not in keep)
 
 
 def select_opp_candidates(
@@ -92,6 +134,14 @@ def select_opp_candidates(
     keep_set = {str(e) for e in (followed or ())}
     keep = [e for e in candidates if str(e) in keep_set][: max(0, cap_f)]
     kept = set(keep)
+    if len(keep_set) > len(keep):
+        # una partita con SOLDI A RISCHIO tagliata dal tetto resta senza quote:
+        # niente copertura, niente uscita. Non si tace: si grida nel log, cosi'
+        # il tetto si alza prima che costi una perdita piena.
+        logger.warning(
+            "[scanner] %d partite seguite da Mike OLTRE il tetto %d: restano senza "
+            "quote in gioco (nessuna copertura ne' uscita). Alzare MIKE_MAX_FOLLOWED.",
+            len(keep_set) - len(keep), cap_f)
     rest = [e for e in candidates if e not in kept]
     return keep + rest[: max(0, cap)]
 

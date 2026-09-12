@@ -22,7 +22,7 @@ export function EmptyState({ children, testId = 'empty-state' }: { children: Rea
 /** Caricamento: spinner + testo, mai una pagina bianca. */
 export function LoadingState({ label = 'caricamento…', testId = 'loading-state' }: { label?: string; testId?: string }) {
     return (
-        <div className="text-center text-muted-foreground py-24" data-testid={testId}>
+        <div className="text-center text-muted-foreground py-24" data-testid={testId} role="status" aria-live="polite">
             <Activity className="w-6 h-6 animate-spin mx-auto mb-3 text-primary" aria-hidden />
             {label}
         </div>

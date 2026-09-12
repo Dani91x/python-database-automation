@@ -138,6 +138,60 @@ def test_apply_input_strani():
     assert cal.apply(0.5, None, 70) == 0.5
 
 
+# --------------------------------------------- 12/09: niente estrapolazione
+def test_nessuna_inflazione_fuori_dal_supporto_osservato():
+    """Una tabella i cui campioni si fermano a p=0,60 NON deve spingere una p
+    grezza di 0,93 sopra la soglia di back del 95%: fuori dall'intervallo
+    osservato la correzione non si estrapola verso (1,1)."""
+    rng = random.Random(7)
+    # modello PESSIMISTA (dichiara meno di quanto succede) osservato SOLO fra
+    # 0,05 e 0,60: senza guardia la spezzata verso (1,1) gonfia anche 0,9+
+    samples = [CalSample("mo", 70, p := rng.uniform(0.05, 0.60),
+                         int(rng.random() < min(1.0, p + 0.25)), f"e{i % 6}")
+               for i in range(4000)]
+    cal = Calibrator.from_dict(C.fit_calibration(samples, min_n=50, shrink_n=50))
+    lo, hi = cal.support("mo", 70)
+    assert hi < 0.65 and lo > 0.0
+    assert cal.apply(0.5, "mo", 70) > 0.5              # dentro il supporto: corregge
+    y_hi = cal.apply(hi, "mo", 70)
+    for p in (0.80, 0.90, 0.93, 0.95, 0.99):
+        out = cal.apply(p, "mo", 70)
+        assert out <= max(p, y_hi) + 1e-9, (p, out)    # mai oltre l'identita'
+    assert cal.apply(0.99, "mo", 70) == pytest.approx(0.99, abs=1e-6)
+    # monotonia conservata su tutta la griglia
+    ys = [cal.apply(i / 500, "mo", 70) for i in range(1, 500)]
+    assert all(a <= b + 1e-12 for a, b in zip(ys, ys[1:]))
+    assert cal.support("mo", 10) is None and cal.support(None, 70) is None
+
+
+def test_nessuna_deflazione_fuori_dal_supporto_osservato():
+    """Simmetrico: sotto il primo nodo osservato la p non viene schiacciata
+    (una p schiacciata verso 0 accenderebbe i LAY senza un campione)."""
+    rng = random.Random(11)
+    samples = [CalSample("mo", 70, p := rng.uniform(0.40, 0.95),
+                         int(rng.random() < max(0.0, p - 0.25)), f"e{i % 6}")
+               for i in range(4000)]
+    cal = Calibrator.from_dict(C.fit_calibration(samples, min_n=50, shrink_n=50))
+    lo, _hi = cal.support("mo", 70)
+    assert lo > 0.35
+    y_lo = cal.apply(lo, "mo", 70)
+    for p in (0.30, 0.10, 0.02):
+        assert cal.apply(p, "mo", 70) >= min(p, y_lo) - 1e-9
+
+
+def test_knots_portano_il_peso_del_bin_e_i_vecchi_restano_leggibili():
+    data = C.fit_calibration(_samples(3000), min_n=50)
+    knots = data["tables"]["ou_line|60-75"]["knots"]
+    assert knots and all(len(k) == 3 and k[2] > 0 for k in knots)
+    assert sum(k[2] for k in knots) == pytest.approx(3000)
+    # formato storico a 2 elementi: ancora applicabile
+    old = {"version": 1, "meta": {}, "tables": {"mo|60-75": {
+        "n": 500, "applied": True, "bins": [], "knots": [[0.2, 0.1], [0.6, 0.5]]}}}
+    cal = Calibrator.from_dict(old)
+    assert cal.apply(0.4, "mo", 70) == pytest.approx(0.3, abs=1e-6)
+    assert cal.apply(0.9, "mo", 70) <= 0.9 + 1e-9      # fuori supporto: mai gonfiata
+
+
 # Soglie storiche per i test di meccanica (in produzione: lay spenti, back >=95%, edge 3%).
 import pytest as _pytest
 from Betfair.safe_strategy import opportunity as _opp_mod

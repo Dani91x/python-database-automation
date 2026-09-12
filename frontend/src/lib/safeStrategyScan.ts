@@ -63,6 +63,14 @@ export interface ScanMarketBlock {
 
 export interface CalcioScanPayload {
     media?: ScanMediaFlags | null;
+    /** Istante (ms epoch) in cui lo scanner ha letto le quote di questa partita.
+     *  Lo scrive `safe_strategy/service.py` ed e' il gate di freschezza del
+     *  backend. La UI NON lo usa di proposito: l'eta' del feed la dichiara gia'
+     *  `feedFreshness` sull'`updated_at` della riga, con le stesse soglie
+     *  (5 s / 20 s). Due numeri per la stessa cosa sarebbero due verita'
+     *  diverse sotto gli occhi del trader. Resta il punto aperto vero, che
+     *  nessuno dei due risolve: l'eta' PER SINGOLO MERCATO non e' pubblicata. */
+    odds_ts_ms?: number | null;
     event_name: string | null;
     home: string | null;
     away: string | null;
@@ -204,6 +212,8 @@ export function blockSelection(
 
 export interface TennisScanPayload {
     media?: ScanMediaFlags | null;
+    /** vedi `CalcioScanPayload.odds_ts_ms` */
+    odds_ts_ms?: number | null;
     event_name: string | null;
     p1: string | null;
     p2: string | null;
@@ -295,11 +305,15 @@ export function subscribeScanStatus(cb: (row: ScanStatusRow | null) => void): ()
         .channel(`safe_strategy_status:${Math.random().toString(36).slice(2, 10)}`)
         .on(
             'postgres_changes',
-            { event: '*', schema: 'public', table: 'safe_strategy_status' },
+            // CERT. 12/09 — SOLO la riga dello scanner: senza filtro qualunque
+            // altra riga della tabella (altri id) sovrascriveva lo stato del
+            // feed e la pagina dichiarava il radar morto (o vivo) a sproposito.
+            { event: '*', schema: 'public', table: 'safe_strategy_status', filter: 'id=eq.scanner' },
             (payload) => {
                 const next = (payload.new && Object.keys(payload.new).length > 0
                     ? payload.new
                     : null) as ScanStatusRow | null;
+                if (next && String((next as { id?: string }).id ?? 'scanner') !== 'scanner') return;
                 cb(next);
             },
         )

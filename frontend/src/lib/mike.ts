@@ -156,6 +156,11 @@ export interface MikeLive {
     p_total_emp?: Record<string, number> | null;
     ht_score?: [number, number] | null;
     loss_exit?: MikeLossExit | null;
+    /** cert. 12/09 - da dove arrivano i gol attesi che alimentano il modello:
+     *  'fixture' (la migliore), 'pre_ko_odds', 'live_ou', oppure 'none' = il bot
+     *  e' cieco e decide su tabella empirica e mercato. Prima era sempre 'none'
+     *  su ogni partita e non c'era modo di accorgersene. */
+    lambda_source?: string | null;
     score_home?: number | null;
     score_away?: number | null;
     red_home?: number;
@@ -340,6 +345,7 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'cashout_profit_pct', label: 'Chiudi tutto a profitto ≥ %', kind: 'number', step: 0.5, min: 0.5, max: 50, hint: 'somma dei P&L bloccabili di Under 3.5 + Over 4.5', group: 'cashout' },
     { key: 'cashout_base', label: 'Base della %', kind: 'choice', choices: ['total', 'under'], hint: 'total = stake Under + copertura; under = solo stake Under', group: 'cashout' },
     { key: 'cashout_place_at_ticks', label: 'Chiusura N tick oltre il best', kind: 'number', step: 1, min: 0, max: 3, hint: 'fill più sicuro, P&L leggermente peggiore', group: 'cashout' },
+    { key: 'cover_place_at_ticks', label: 'Copertura N tick sotto il best', kind: 'number', step: 1, min: 0, max: 6, hint: 'cuscinetto perché la copertura entri davvero: con il ritardo di piazzamento un ordine al prezzo esatto muore (misurato: 93% di coperture non abbinate). Costa qualche tick, evita di restare scoperti', group: 'cover' },
     { key: 'cashout_smart_enabled', label: 'Cash-out intelligente', kind: 'bool', hint: 'chiude prima della soglia se tenere non vale il rischio (punteggio, hazard, pressione, valore atteso)', group: 'cashout' },
     { key: 'cashout_smart_min_pct', label: 'Profitto minimo per chiudere prima (%)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'mai sotto questo profitto, qualunque sia il rischio', group: 'cashout' },
     { key: 'cashout_smart_tolerance_pct', label: '"A un passo" dalla soglia = entro (punti %)', kind: 'number', step: 0.5, min: 0, max: 50, hint: 'es. soglia 5 e tolleranza 2 → da 3% in su si può chiudere se la fase è calda', group: 'cashout' },
@@ -352,7 +358,7 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'ht_loss_exit_enabled', label: 'Uscita HT attiva', kind: 'bool', hint: 'a fine 1T con 2-4 gol', group: 'uscite' },
     { key: 'ht_loss_pct', label: 'HT: perdita tollerata %', kind: 'number', step: 1, min: 0, max: 100, hint: 'chiude comunque se la perdita è entro questa % del capitale', group: 'uscite' },
     { key: 'loss_exit_mode', label: 'Decisione di uscita', kind: 'choice', choices: ['model', 'fixed'], hint: 'model = chiudi se il valore certo batte il valore atteso a fine gara meno il premio al rischio sui 4 gol; fixed = solo la regola "perdita ≤ %"', group: 'uscite' },
-    { key: 'loss_exit_risk_premium_pct', label: 'Premio al rischio (% capitale × P(4))', kind: 'number', step: 5, min: 0, max: 300, hint: 'più alto = esce prima quando i 4 gol sono probabili', group: 'uscite' },
+    { key: 'loss_exit_risk_premium_pct', label: 'Premio al rischio (% capitale × P(4))', kind: 'number', step: 5, min: 0, max: 300, hint: 'più alto = esce prima quando i 4 gol sono probabili. Attenzione: il caso 4 gol è già dentro il valore atteso, quindi alzarlo lo conta due volte e chiude in anticipo', group: 'uscite' },
     { key: 'loss_exit_p4_prudent', label: 'P(4) prudente (max modello/mercato)', kind: 'bool', hint: 'usa la stima più pessimista fra modello, tabella HT→FT e mercato', group: 'uscite' },
     { key: 'loss_exit_max_pct', label: 'Non cristallizzare oltre (%)', kind: 'number', step: 5, min: 0, max: 100, hint: '0 = spento: decide solo il modello', group: 'uscite' },
     { key: 'loss_exit_emp_min_n', label: 'Casi minimi tabella HT→FT', kind: 'number', step: 10, min: 20, max: 5000, hint: 'sotto, l\'empirico non parla', group: 'uscite' },
@@ -388,10 +394,10 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     cover_wait_max_min: 10, cover_wait_p4_max: 0.16, cover_good_price: 7, cover_wait_min_gain_pct: 8,
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
     cover_rounding: 'ceil', cover_max_overshoot_pct: 30, exact_sizes: true,
-    cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, close_retry_s: 10, close_max_attempts: 20,
+    cashout_profit_pct: 5, cashout_base: 'total', cashout_place_at_ticks: 0, cover_place_at_ticks: 2, close_retry_s: 10, close_max_attempts: 20,
     cashout_smart_enabled: true, cashout_smart_min_pct: 2, cashout_smart_tolerance_pct: 2, cashout_smart_hazard_hot: 0.1,
     cashout_smart_pressure_hot: 1.15, cashout_smart_goals_hot: 3, cashout_smart_ev_margin_pct: 1,
-    loss_exit_mode: 'model', loss_exit_risk_premium_pct: 50, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,
+    loss_exit_mode: 'model', loss_exit_risk_premium_pct: 10, loss_exit_p4_prudent: true, loss_exit_max_pct: 0, loss_exit_emp_min_n: 200,
     ht_loss_exit_enabled: true, ht_loss_pct: 25, ht_loss_goals_min: 2, ht_loss_goals_max: 4,
     h2_loss_exit_enabled: true, h2_loss_pct: 25, h2_loss_from_min: 46, h2_loss_to_min: 85,
     reentry_enabled: true, reentry_green_ticks: 2, reentry_max_goals: 1, reentry_until_min: 45,
@@ -425,28 +431,38 @@ export function mergeMikeParams(raw: unknown): MikeParams {
 }
 
 // -------------------------------------------------------------- fasi / UI
-export interface PhaseMeta { label: string; cls: string; dot: string; group: 'pre' | 'live' | 'flat' | 'done' | 'off' }
+/**
+ * `label` = nome BREVE della fase (badge); `what` = che cosa sta facendo il bot
+ * e che cosa aspetta, in italiano e per esteso. Il trader non deve tradurre a
+ * mente sigle come "HOLD → LIVE" o "IN ATTESA": la card scrive la frase.
+ */
+export interface PhaseMeta {
+    label: string; cls: string; dot: string;
+    group: 'pre' | 'live' | 'flat' | 'done' | 'off';
+    /** che cosa sta facendo il bot ADESSO su questa partita (italiano) */
+    what: string;
+}
 
 export const MIKE_PHASE_META: Record<MikeState, PhaseMeta> = {
-    WATCH: { label: 'IN ATTESA', cls: 'bg-teal-500/15 text-teal-200 border-teal-400/40', dot: 'bg-teal-400', group: 'pre' },
-    PRE_ENTRY_PENDING: { label: 'INGRESSO…', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'pre' },
-    PRE_OPEN: { label: 'UNDER APERTO (PRE)', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
-    PRE_GREEN_PENDING: { label: 'GREEN-UP…', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'pre' },
-    HOLD: { label: 'HOLD → LIVE', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50', dot: 'bg-amber-400', group: 'pre' },
-    PRE_LAST_ENTRY_PENDING: { label: 'ULTIMO INGRESSO (PERSIST)', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
-    IDLE_LIVE: { label: 'LIVE · NESSUNA POSIZIONE', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'live' },
-    LIVE_UNCOVERED: { label: 'LIVE · SCOPERTO', cls: 'bg-sky-500/20 text-sky-200 border-sky-400/50', dot: 'bg-sky-400', group: 'live' },
-    LIVE_COVER_PENDING: { label: 'COPERTURA…', cls: 'bg-violet-500/20 text-violet-200 border-violet-400/50 animate-pulse', dot: 'bg-violet-400 animate-pulse', group: 'live' },
-    LIVE_COVERED: { label: 'LIVE · COPERTO', cls: 'bg-violet-500/25 text-violet-100 border-violet-300/60', dot: 'bg-violet-300', group: 'live' },
-    LIVE_CLOSING: { label: 'CHIUSURA…', cls: 'bg-rose-500/20 text-rose-200 border-rose-400/50 animate-pulse', dot: 'bg-rose-400 animate-pulse', group: 'live' },
-    FLAT: { label: 'FLAT', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50', dot: 'bg-emerald-400', group: 'flat' },
-    REENTRY_PENDING: { label: 'RE-INGRESSO…', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'live' },
-    REENTRY_OPEN: { label: 'RE-INGRESSO U4.5', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'live' },
-    REENTRY_GREEN_PENDING: { label: 'GREEN RE-INGRESSO…', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'live' },
-    SETTLING: { label: 'REGOLAMENTO…', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'done' },
-    SETTLED: { label: 'REGOLATA', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'done' },
-    ERROR: { label: 'ERRORE', cls: 'bg-red-500/20 text-red-300 border-red-500/50', dot: 'bg-red-500', group: 'off' },
-    SKIPPED: { label: 'SALTATA', cls: 'bg-slate-600/30 text-slate-400 border-slate-500/40', dot: 'bg-white/20', group: 'off' },
+    WATCH: { label: 'IN ATTESA', what: 'cerca l’ingresso Under 3.5: aspetta quota, liquidità e spread nei limiti', cls: 'bg-teal-500/15 text-teal-200 border-teal-400/40', dot: 'bg-teal-400', group: 'pre' },
+    PRE_ENTRY_PENDING: { label: 'INGRESSO IN CORSO', what: 'ordine di ingresso Under 3.5 sul book: aspetta l’abbinamento', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'pre' },
+    PRE_OPEN: { label: 'UNDER 3.5 APERTO', what: 'posizione abbinata prima del fischio: aspetta il green-up a +N tick', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
+    PRE_GREEN_PENDING: { label: 'GREEN-UP IN CORSO', what: 'lay appoggiata sul book per bloccare il profitto del ciclo', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'pre' },
+    HOLD: { label: 'TIENE FINO AL FISCHIO', what: 'chiudere adesso sarebbe in perdita: tiene l’Under 3.5 e lo porta in gioco', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50', dot: 'bg-amber-400', group: 'pre' },
+    PRE_LAST_ENTRY_PENDING: { label: 'ULTIMO INGRESSO', what: 'ultimo ingresso prima del fischio: l’ordine resta valido anche in gioco', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
+    IDLE_LIVE: { label: 'IN GIOCO · NESSUNA POSIZIONE', what: 'partita iniziata senza posizione: Mike non opera più su questa partita', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'live' },
+    LIVE_UNCOVERED: { label: 'IN GIOCO · SCOPERTO', what: 'Under 3.5 aperto senza copertura: valuta quando comprare l’Over 4.5', cls: 'bg-sky-500/20 text-sky-200 border-sky-400/50', dot: 'bg-sky-400', group: 'live' },
+    LIVE_COVER_PENDING: { label: 'COPERTURA IN CORSO', what: 'ordine Over 4.5 sul book: aspetta l’abbinamento della copertura', cls: 'bg-violet-500/20 text-violet-200 border-violet-400/50 animate-pulse', dot: 'bg-violet-400 animate-pulse', group: 'live' },
+    LIVE_COVERED: { label: 'IN GIOCO · COPERTO', what: 'Under 3.5 + Over 4.5 abbinati: aspetta la soglia di cash out o il fischio finale', cls: 'bg-violet-500/25 text-violet-100 border-violet-300/60', dot: 'bg-violet-300', group: 'live' },
+    LIVE_CLOSING: { label: 'CHIUSURA IN CORSO', what: 'sta chiudendo tutte le posizioni della partita a mercato', cls: 'bg-rose-500/20 text-rose-200 border-rose-400/50 animate-pulse', dot: 'bg-rose-400 animate-pulse', group: 'live' },
+    FLAT: { label: 'PIATTA', what: 'nessuna esposizione aperta: il risultato della partita è già bloccato', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50', dot: 'bg-emerald-400', group: 'flat' },
+    REENTRY_PENDING: { label: 'RE-INGRESSO IN CORSO', what: 'dopo il gol: ordine Under 4.5 sul book, aspetta l’abbinamento', cls: 'bg-teal-500/20 text-teal-200 border-teal-400/50 animate-pulse', dot: 'bg-teal-400 animate-pulse', group: 'live' },
+    REENTRY_OPEN: { label: 'RE-INGRESSO UNDER 4.5', what: 're-ingresso abbinato: aspetta il green a +N tick', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'live' },
+    REENTRY_GREEN_PENDING: { label: 'GREEN RE-INGRESSO IN CORSO', what: 'lay appoggiata sul book per chiudere il re-ingresso in profitto', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'live' },
+    SETTLING: { label: 'IN REGOLAMENTO', what: 'partita finita: aspetta il punteggio finale confermato per contabilizzare', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'done' },
+    SETTLED: { label: 'REGOLATA', what: 'partita chiusa e contabilizzata: nessuna azione possibile', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'done' },
+    ERROR: { label: 'ERRORE', what: 'il bot si è fermato su questa partita: serve «Riprendi» per rimetterla in gioco', cls: 'bg-red-500/20 text-red-300 border-red-500/50', dot: 'bg-red-500', group: 'off' },
+    SKIPPED: { label: 'SALTATA', what: 'partita esclusa dal bot: «Riprendi» la rimette in gioco', cls: 'bg-slate-600/30 text-slate-400 border-slate-500/40', dot: 'bg-white/20', group: 'off' },
 };
 
 export function phaseMeta(state: string | null | undefined): PhaseMeta {
@@ -691,11 +707,24 @@ export function isManualTrade(t: MikeTrade): boolean {
 /** tetto di righe della RPC get_mike_state (migrations/mike_bot_v2.sql) */
 export const MIKE_TRADES_LIMIT = 500;
 
-/** etichetta italiana di una linea del feed ("OU45|OVER" → "Over 4.5") */
-export function lineLabel(key: string): string {
-    const [market, selection] = String(key).split('|');
-    const line = market === 'OU35' ? '3.5' : market === 'OU45' ? '4.5' : market;
-    return `${selection === 'UNDER' ? 'Under' : selection === 'OVER' ? 'Over' : selection} ${line}`;
+/**
+ * Etichetta italiana di una linea del feed ("OU45|OVER" → "Over 4.5").
+ *
+ * DIFENSIVA di proposito: il servizio scrive `lines_missing` in DUE forme —
+ * "OU35|UNDER" (service.py:1374) ma anche il solo mercato "OU35"
+ * (service.py:1125, log `feed_line_missing`). Con la vecchia versione la card
+ * gridava «linea undefined 3.5 assente nel feed»: un allarme illeggibile su una
+ * partita con soldi dentro. Senza selezione si dice "linea 3.5".
+ */
+export function lineLabel(key: string | null | undefined): string {
+    const raw = String(key ?? '').trim();
+    if (!raw) return '—';
+    const [market, selection] = raw.split('|');
+    const line = market === 'OU35' || market === 'OVER_UNDER_35' ? '3.5'
+        : market === 'OU45' || market === 'OVER_UNDER_45' ? '4.5' : null;
+    if (!selection) return line ? `linea ${line}` : marketLabel(market);
+    const sel = selection === 'UNDER' ? 'Under' : selection === 'OVER' ? 'Over' : selection;
+    return line ? `${sel} ${line}` : `${sel} ${market}`;
 }
 
 /** % del valore di cash-out rispetto alla base (null se base ≤ 0) */
@@ -704,6 +733,77 @@ export function cashoutPct(value: number | null | undefined, base: number | null
     const v = Number(value), b = Number(base);
     if (!Number.isFinite(v) || !Number.isFinite(b) || b <= 0) return null;
     return Math.round((v / b) * 1000) / 10;
+}
+
+/**
+ * Riempimento della barra "avanzamento verso la soglia di cash out", in %.
+ *
+ * La barra parte da ZERO: un valore di chiusura NEGATIVO non è "un po' di
+ * avanzamento", è una perdita. Prima `-2 %` su soglia `5 %` disegnava comunque
+ * una barra colorata e sembrava un progresso (audit UI 6).
+ */
+export function cashoutBarPct(pct: number | null | undefined, threshold: number | null | undefined): number {
+    const p = Number(pct);
+    const t = Number(threshold);
+    if (!Number.isFinite(p) || !Number.isFinite(t) || t <= 0 || p <= 0) return 0;
+    return Math.max(0, Math.min(100, (p / t) * 100));
+}
+
+/**
+ * La partita ha un MODELLO (λ / distribuzione dei gol / P(4) di modello)?
+ * Senza modello la card non deve disegnare un istogramma di nove barre vuote e
+ * tre celle con "—": dice UNA riga ("nessun modello per questa lega").
+ */
+export function hasModel(ev: MikeEvent): boolean {
+    const live = ev.live ?? {};
+    const d = ev.dossier ?? {};
+    const dist = (o: Record<string, number> | null | undefined) => Boolean(o && Object.keys(o).length > 0);
+    return dist(live.p_total_model) || dist(live.p_total_emp)
+        || live.p4_model != null || live.p_over45_model != null
+        || d.p4_pre != null || d.lambda_home != null || d.lambda_away != null;
+}
+
+export interface MikeLockedTotal {
+    /** somma dei `live.locked` DICHIARATI; null se nessuna partita ne ha uno */
+    value: number | null;
+    /** quante partite hanno un P&L già bloccato */
+    known: number;
+    /** quante partite hanno ancora tutto da decidere (`locked` assente) */
+    pending: number;
+}
+
+/**
+ * P&L BLOCCATO della giornata = somma dei `live.locked` delle partite vive.
+ *
+ * `live.locked` è `null` quando una selezione è ancora aperta (engine.locked_pnl):
+ * NON è zero, è "non ancora deciso". Sommare i null come 0 faceva scrivere
+ * «P&L bloccato +0,00 €» nella barra mentre ogni card diceva «—» (audit UI 3).
+ */
+export function lockedPnlTotal(events: readonly MikeEvent[]): MikeLockedTotal {
+    let sum = 0; let known = 0; let pending = 0;
+    for (const e of events) {
+        const v = e.live?.locked;
+        if (v == null || !Number.isFinite(Number(v))) { pending += 1; continue; }
+        sum += Number(v); known += 1;
+    }
+    return { value: known > 0 ? Math.round(sum * 100) / 100 : null, known, pending };
+}
+
+/**
+ * Partite REGOLATE su cui Mike ha davvero OPERATO nella giornata operativa.
+ *
+ * `get_mike_state` restituisce gli eventi terminali delle ultime 24 h: senza
+ * questo filtro la scheda "Regolate" elencava anche le partite semplicemente
+ * seguite e mai giocate (34 card con "regolato +0,00 €" e nessuna posizione) e
+ * mescolava due giornate operative. Le righe di `trades` sono già quelle della
+ * giornata (giorno di PIAZZAMENTO) più le posizioni ancora vive: l'intersezione
+ * è esattamente "le partite che hanno pesato sul P&L di oggi".
+ */
+export function settledOperated(
+    settled: readonly MikeEvent[], trades: readonly MikeTrade[],
+): MikeEvent[] {
+    const traded = new Set(trades.map((t) => String(t.event_id)));
+    return settled.filter((e) => traded.has(String(e.event_id)));
 }
 
 /** gambe VIVE (non archiviate) con capitale a rischio */
@@ -851,6 +951,16 @@ export const MIKE_ACTIVITY_KINDS = [
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
     'resting_live_unsupported', 'feed_line_missing', 'config_warn', 'schema_warn', 'error',
+    // cert. 12/09: il regolamento usa l'aliquota FISSATA sulle righe; se le
+    // righe della stessa partita hanno aliquote diverse (parametro cambiato a
+    // posizione aperta) lo si dichiara invece di sceglierne una in silenzio
+    'settle_commissione_mista',
+    // cert. 12/09: la decisione di chiudere in perdita, con i numeri che l'hanno
+    // motivata. Prima restava solo nello stato dell'evento e veniva sovrascritta.
+    'loss_exit_deciso',
+    // gambe pianificate e mai piazzate (importo sotto il minimo): valgono zero,
+    // non sono un errore. Prima ognuna scriveva un 'error' critico a vuoto.
+    'settle_gambe_non_piazzate',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -861,7 +971,10 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     place_resting: { label: 'ORDINE APPOGGIATO', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/40' },
     fill_resting: { label: 'APPOGGIATA ABBINATA', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
     size_legalized: { label: 'IMPORTO LEGALIZZATO', cls: 'bg-white/5 text-slate-300 border-white/10' },
+    loss_exit_deciso: { label: 'USCITA IN PERDITA DECISA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    settle_gambe_non_piazzate: { label: 'GAMBE MAI PIAZZATE', cls: 'bg-white/5 text-slate-300 border-white/10' },
     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
+    settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     skip_event: { label: 'PARTITA SALTATA (utente)', cls: 'bg-white/5 text-slate-400 border-white/10' },
     resume_event: { label: 'PARTITA RIPRESA (utente)', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
@@ -890,7 +1003,10 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'armed':
             return `partita armata · KO ${fmtTime(p.ko == null ? null : String(p.ko))}`;
         case 'state':
-            return `${String(p.from ?? '—')} → ${String(p.to ?? '—')}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
+            // MAI i codici dell'enum ("PRE_OPEN → HOLD"): le stesse parole del
+            // badge della card, così la riga di attività e la scheda dicono la
+            // stessa cosa.
+            return `${stateLabel(p.from)} → ${stateLabel(p.to)}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
         case 'place':
             return `${role()} ${side()} ${money('size')} @ ${odds('price')}${p.mode === 'live' ? ' · LIVE' : ''}${p.note ? ` · ${reasonLabel(p.note)}` : ''}`;
         case 'place_pending':
@@ -907,12 +1023,28 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `${role()} annullato${p.by ? ` · ${String(p.by)}` : ''}`;
         case 'skip':
             return `${reasonLabel(p.reason)}${p.leg ? ` · ${String(p.leg)}` : ''}`;
-        case 'no_fill':
-            return `${role()} ${side()} non abbinato · voluto ${odds('wanted')} · disponibile ${odds('available')}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
+        case 'no_fill': {
+            const quanto = Number.isFinite(n('size')) ? ` ${money('size')}` : '';
+            const liq = Number.isFinite(n('size_disponibile')) ? ` (liquidita' ${money('size_disponibile')})` : '';
+            return `${role()} ${side()}${quanto} non abbinato · voluto ${odds('wanted')} · disponibile ${odds('available')}${liq}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
+        }
         case 'size_legalized':
             return `${role()} importo ${money('from')} → ${money('to')}`;
+        case 'settle_gambe_non_piazzate':
+            return `${String(p.quante ?? '?')} gambe pianificate e mai piazzate (importo sotto il minimo): regolate a zero, nessun effetto sul P&L`;
+        case 'loss_exit_deciso': {
+            // perche' si e' chiuso in perdita: i tre numeri che decidono.
+            const certo = Number.isFinite(n('cv_net')) ? `chiudere ora vale ${money('cv_net', true)}` : 'valore di chiusura non noto';
+            const atteso = Number.isFinite(n('ev_hold')) ? ` · tenere vale ${money('ev_hold', true)}` : '';
+            const prem = Number.isFinite(n('premium')) ? ` · premio di rischio ${money('premium')}` : '';
+            const p4 = Number.isFinite(n('p4')) ? ` · P(4 gol) ${(n('p4') * 100).toFixed(0)}%` : '';
+            const quando = Number.isFinite(n('minuto')) ? `${n('minuto')}′` : '';
+            const gol = Number.isFinite(n('gol')) ? ` su ${n('gol')} gol` : '';
+            return `${quando}${gol}: ${certo}${atteso}${prem}${p4}`;
+        }
         case 'pre_cycle':
-            return `ciclo ${String(p.cycle ?? '?')}: ${odds('entry')} → ${odds('exit')} · ${T.lockedPnl} ${money('locked', true)}`;
+            // il servizio conta i cicli da 0; per il trader il primo ciclo è "1"
+            return `ciclo ${cycleLabel(p.cycle)} chiuso: ${odds('entry')} → ${odds('exit')} · ${T.lockedPnl} ${money('locked', true)}`;
         case 'cover':
             return `copertura Over 4.5 ${money('size')} @ ${odds('price')} · ${String(p.x ?? '?')}× · minuto ${String(p.minute ?? '?')}${Number.isFinite(n('overshoot_pct')) ? ` · sovracopertura ${fmtPct(n('overshoot_pct') / 100)}` : ''}`;
         case 'close_retries_exhausted':
@@ -928,7 +1060,7 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'settle_fallback':
             return `regolamento dal feed (${reasonLabel(p.reason)}) · totale gol ${String(p.total_from_feed ?? '?')}`;
         case 'settling_reverted':
-            return `regolamento annullato → ${String(p.to ?? '—')} · ${reasonLabel(p.reason)}`;
+            return `regolamento annullato → ${stateLabel(p.to)} · ${reasonLabel(p.reason)}`;
         case 'daily_stop':
             return `stop giornaliero: P&L ${fmtMoney(Number(p.day_pnl ?? 0), { signed: true })} (regolato ${fmtMoney(Number(p.realized_today ?? 0), { signed: true })} · bloccato ${fmtMoney(Number(p.locked_open ?? 0), { signed: true })}) · soglia ${fmtMoney(Number(p.stop ?? 0))}`;
         case 'stop':
@@ -936,7 +1068,7 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'skip_event':
             return `partita saltata${p.by ? ` da ${String(p.by)}` : ''}`;
         case 'resume_event':
-            return `partita ripresa${p.by ? ` da ${String(p.by)}` : ''}${p.to ? ` → ${String(p.to)}` : ''}${p.no_reentry === false ? ' · rientro riabilitato' : ''}`;
+            return `partita ripresa${p.by ? ` da ${String(p.by)}` : ''}${p.to ? ` → ${stateLabel(p.to)}` : ''}${p.no_reentry === false ? ' · rientro riabilitato' : ''}`;
         case 'reconcile_pending':
             return `ordine con esito ignoto su Betfair${p.leg ? ` (${String(p.leg)})` : ''}${p.legs ? ` · ${String(p.legs)} gambe` : ''}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}${p.action ? ` · ${reasonLabel(p.action)}` : ''}`;
         case 'reconcile_fix':
@@ -944,7 +1076,7 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
         case 'resting_live_unsupported':
             return `lay appoggiata non supportata in live (${role()}): si chiude al best${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
         case 'feed_line_missing':
-            return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · stato ${String(p.state ?? '—')}`;
+            return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
         case 'config_warn':
             return `${String(p.message ?? '')} (finestra ${String(p.entry_hours_before_ko ?? '?')} h · scanner ${String(p.scanner_pre_ko_hours ?? '?')} h)`;
         case 'schema_warn':
@@ -957,6 +1089,28 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return Object.keys(p).length ? JSON.stringify(p).slice(0, 140) : '';
         }
     }
+}
+
+/**
+ * Numero di ciclo COME LO LEGGE UN TRADER: il servizio conta da 0 (`cycle_no` =
+ * cicli già chiusi), la pagina scrive "ciclo 1" per il primo. Una sola regola,
+ * usata dalla card e dall'attività.
+ */
+export function cycleNumber(raw: unknown): number {
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) + 1 : 1;
+}
+
+export function cycleLabel(raw: unknown): string {
+    return String(cycleNumber(raw));
+}
+
+/** codice di stato del servizio ("PRE_OPEN") → etichetta italiana del badge */
+export function stateLabel(raw: unknown): string {
+    const s = String(raw ?? '').trim();
+    if (!s) return '—';
+    const meta = MIKE_PHASE_META[s as MikeState];
+    return meta ? meta.label : s.replace(/_/g, ' ');
 }
 
 /** motivi del backend (snake_case) → italiano leggibile */
@@ -975,12 +1129,36 @@ export const MIKE_REASON_LABEL: Record<string, string> = {
     mai_piazzata: 'mai piazzata', cancelled_by_user: 'annullata dall’utente',
     cancelled_manual: 'annullata (chiusura manuale)', cancelled_by_engine: 'annullata dal motore',
     pending_stale: 'ordine scaduto', place_exception_reconciling: 'esito ignoto: in verifica',
+    // esito del gate di esecuzione (safe_strategy/execution.py → omega _flumine_gate):
+    // finiva in pagina in inglese ("paper fill:execution mode rest")
+    paper_fill: 'fill simulato (paper)', paper_no_fill: 'nessun fill (paper)',
+    flumine_paper: 'coda flumine (paper)', flumine_live: 'coda flumine (live)',
+    execution_mode_rest: 'esecuzione diretta REST (coda flumine non usata)',
+    live_via_flumine_off: 'coda flumine disattivata per il live',
+    mode_sconosciuto: 'modalità sconosciuta', db_senza_coda: 'database senza coda ordini',
+    db_senza_revoca: 'database senza revoca ordini',
+    runner_heartbeat_stantio: 'runner dello stream senza battito',
+    enqueue_failed: 'accodamento fallito', gate_error: 'errore del gate di esecuzione',
+    ok: 'ok',
 };
 
+/**
+ * Motivo del backend → italiano. Gestisce anche i motivi COMPOSTI `a:b`
+ * ("paper_fill:execution_mode_rest"), che altrimenti arrivavano in pagina in
+ * inglese: si traduce ogni pezzo e si uniscono con " · ".
+ */
 export function reasonLabel(raw: unknown): string {
     const s = raw == null ? '' : String(raw).trim();
     if (!s) return '';
-    return MIKE_REASON_LABEL[s] ?? s.replace(/_/g, ' ');
+    const direct = MIKE_REASON_LABEL[s];
+    if (direct) return direct;
+    if (s.includes(':')) {
+        const parts = s.split(':').map((x) => x.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            return parts.map((x) => MIKE_REASON_LABEL[x] ?? x.replace(/_/g, ' ')).join(' · ');
+        }
+    }
+    return s.replace(/_/g, ' ');
 }
 
 // ------------------------------------------------ esito richieste della UI

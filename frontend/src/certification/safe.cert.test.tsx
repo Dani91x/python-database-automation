@@ -200,11 +200,30 @@ d('/safe-strategy sui dati reali', () => {
             barText.includes('Obiettivo di oggi') ? 'PRESENTE' : 'assente', !barText.includes('Obiettivo di oggi'));
         rep.note(`barra: ${barText.slice(0, 260)}`);
 
-        // partite monitorate = righe dello scanner (calcio + tennis)
-        const calcio = scanRows.filter((r) => r.sport === 'calcio').length;
-        const tennis = scanRows.filter((r) => r.sport === 'tennis').length;
-        rep.check('KPI «Partite monitorate»', String(calcio + tennis), kpi('Partite monitorate').value);
-        rep.check('KPI «Partite monitorate» — sottotitolo', `⚽ ${calcio} · 🎾 ${tennis}`, kpi('Partite monitorate').sub);
+        // CERT. 12/09 — "Partite monitorate" sono le partite IN GIOCO dichiarate
+        // dallo scanner (`calcio_inplay`/`tennis_inplay`), le STESSE del chip di
+        // salute e delle pagine Omega/Mike: NON il numero di righe del feed, che
+        // comprende anche il pre-match. Il ripiego sulle righe caricate scatta
+        // solo se lo scanner non pubblica i contatori, e la UI lo dichiara.
+        const calcioRows = scanRows.filter((r) => r.sport === 'calcio').length;
+        const tennisRows = scanRows.filter((r) => r.sport === 'tennis').length;
+        const calcioLive = Number(scanStatus?.payload?.calcio_inplay);
+        const tennisLive = Number(scanStatus?.payload?.tennis_inplay);
+        const daScanner = Number.isFinite(calcioLive) || Number.isFinite(tennisLive);
+        const calcio = Number.isFinite(calcioLive) ? calcioLive : calcioRows;
+        const tennis = Number.isFinite(tennisLive) ? tennisLive : tennisRows;
+        rep.note(`righe del feed: calcio ${calcioRows} · tennis ${tennisRows}; in gioco dallo scanner: calcio ${calcioLive} · tennis ${tennisLive}`);
+        await waitFor(() => {
+            expect(kpi('Partite monitorate').value).toBe(String(calcio + tennis));
+        }, { timeout: 30_000 }).catch(() => { /* il riscontro sotto lo dichiara */ });
+        rep.check(`KPI «Partite monitorate» (${daScanner ? 'in gioco dallo scanner' : 'ripiego sulle righe'})`,
+            String(calcio + tennis), kpi('Partite monitorate').value);
+        // il sottotitolo puo' aggiungere in coda le righe caricate da QUESTA
+        // schermata ("· N caricate"): si verifica il PREFISSO, che e' il dato
+        const subAtteso = `⚽ ${calcio} · 🎾 ${tennis}`;
+        const subVisto = kpi('Partite monitorate').sub;
+        rep.mark('KPI «Partite monitorate» — sottotitolo', `inizia con "${subAtteso}"`,
+            subVisto, subVisto.startsWith(subAtteso));
         rep.note(`safe_strategy_status.payload: monitored=${scanStatus?.payload?.monitored} calcio_inplay=${scanStatus?.payload?.calcio_inplay} tennis_inplay=${scanStatus?.payload?.tennis_inplay} updated_at=${scanStatus?.updated_at}`);
         expect(consoleCapture.errors).toEqual([]);
     });

@@ -281,3 +281,28 @@ describe('MissionCard — stato dello scalper e poll (certificazione 11/09)', ()
         expect(mScalperState).not.toHaveBeenCalled();
     });
 });
+
+// =============== AUDIT 12/09 — la scheda dice gli STESSI numeri dei KPI
+describe('MissionCard — rischio della gamba con i nomi dei KPI', () => {
+    it('rischio vivo / bloccato / in verifica dalla RPC v6, senza inventare nulla', () => {
+        renderCard(makeMission({
+            legs: {
+                ht_cs: {
+                    realized: null, open_liability: 573.34, n_open: 1, n_settled: 0,
+                    locked_pnl: -22.5, reconciling_liability: 120, trades: [],
+                },
+            },
+        } as never));
+        const box = screen.getByTestId('mission-leg-risk');
+        expect(box).toHaveTextContent('rischio vivo 573,34 €');
+        expect(box).toHaveTextContent('bloccato −22,50 €');
+        expect(box).toHaveTextContent('in verifica su Betfair 120,00 €');
+    });
+
+    it('gamba senza rischio e senza bloccato: nessuna riga (mai uno 0,00 € finto)', () => {
+        renderCard(makeMission({
+            legs: { ht_cs: { realized: 3, open_liability: 0, n_open: 0, n_settled: 1, trades: [] } },
+        } as never));
+        expect(screen.queryByTestId('mission-leg-risk')).toBeNull();
+    });
+});

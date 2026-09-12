@@ -217,13 +217,15 @@ describe('Safe Strategy — tab Storico', () => {
         await screen.findByTestId('bot-status');
         await user.click(screen.getByRole('tab', { name: /Storico/ }));
         expect(await screen.findByTestId('trading-history')).toBeInTheDocument();
-        await waitFor(() => expect(mDaily).toHaveBeenCalledWith('2026-09-01', '2026-09-30', null));
+        await waitFor(() => // 12/09: la finestra copre la GRIGLIA del mese (lun 31 ago → dom 4 ott),
+        // altrimenti le celle fuori mese dichiarano «nessuna operazione» su dati mai letti
+        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04', null));
         await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10', null));
         await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+2,85 €'));
         expect(within(screen.getByTestId('breakdown-sport')).getByText('⚽ Calcio')).toBeInTheDocument();
         expect(screen.queryByTestId('kpi-goal')).toBeNull();
         await user.click(within(screen.getByTestId('history-sport-filter')).getByRole('button', { name: /tennis/ }));
-        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-09-01', '2026-09-30', 'tennis'));
+        await waitFor(() => expect(mDaily).toHaveBeenLastCalledWith('2026-08-31', '2026-10-04', 'tennis'));
         await waitFor(() => expect(mDay).toHaveBeenLastCalledWith('2026-09-10', 'tennis'));
     });
 
@@ -288,8 +290,9 @@ describe('Safe Strategy — senza la migrazione v2 (RPC vecchia)', () => {
         const panel = await screen.findByTestId('risk-panel');
         // nessuno stop dichiarato dal servizio = stop non attivo, mai "acceso" per default
         expect(panel).toHaveAttribute('data-loss-stop', 'off');
-        // il rischio VIVO c'e' comunque: viene da aggregates.open_liability
-        expect(within(panel).getByTestId('risk-open-liability')).toHaveTextContent('116,64 €');
+        // il rischio VIVO si legge nella SUA tile (una sola casa), non qui
+        expect(within(panel).queryByTestId('risk-open-liability')).toBeNull();
+        expect(screen.getByTestId('safe-kpi-liability')).toHaveTextContent('116,64 €');
     });
 
     it('la tabella trade funziona: un trade = una riga, chiusura come sub-riga', async () => {

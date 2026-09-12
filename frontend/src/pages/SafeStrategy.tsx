@@ -63,7 +63,10 @@ import {
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
 import type { ActiveSignal, Sport } from '@/lib/safeStrategy';
-import type { CalcioScanPayload, ScanMediaFlags, TennisScanPayload } from '@/lib/safeStrategyScan';
+import {
+    fetchScanStatus,
+    type CalcioScanPayload, type ScanMediaFlags, type ScanStatusRow, type TennisScanPayload,
+} from '@/lib/safeStrategyScan';
 
 function footballLiveLine(m: FootballMonitor): string {
     const { minute, scoreHome, scoreAway, inplay } = m.ctx;
@@ -82,8 +85,43 @@ function tennisLiveLine(m: TennisMonitor): string {
 
 // =============================================================== main page
 export default function SafeStrategy() {
-    const { football, tennis, signals, scanStatus, params: localParams, saveParams } = useSafeStrategy();
+    const {
+        football, tennis, signals, scanStatus: providerScanStatus,
+        params: localParams, saveParams,
+    } = useSafeStrategy();
     const bot = useSafeBot({ onError: (m) => toast.error('Bot Safe Strategy', { description: m }) });
+
+    // ------------------------------------------------------------------
+    // SALUTE DELLO SCANNER: la STESSA fonte di /omega e /mike
+    // (`fetchScanStatus` su safe_strategy_status, id='scanner'), letta QUI e
+    // non solo dal provider. Il provider legge il feed solo a sessione
+    // autenticata: bastava una sessione non ancora risolta perché Safe urlasse
+    // «feed: nessun dato — riavvia l'app desktop» mentre Omega e Mike, nello
+    // stesso istante e sullo stesso feed unico, mostravano «feed vivo».
+    // Vince la lettura PIÙ RECENTE fra le due (mai una regressione all'indietro).
+    // ------------------------------------------------------------------
+    const [ownScanStatus, setOwnScanStatus] = useState<ScanStatusRow | null>(null);
+    useEffect(() => {
+        let alive = true;
+        const load = () => {
+            fetchScanStatus().then((s) => { if (alive && s) setOwnScanStatus(s); }).catch(() => {});
+        };
+        load();
+        const t = window.setInterval(load, 15_000);
+        return () => { alive = false; window.clearInterval(t); };
+    }, []);
+    const scanStatus = useMemo<ScanStatusRow | null>(() => {
+        const ts = (r: ScanStatusRow | null) => (r?.updated_at ? Date.parse(r.updated_at) : NaN);
+        const a = providerScanStatus;
+        const b = ownScanStatus;
+        if (!a) return b;
+        if (!b) return a;
+        const ta = ts(a);
+        const tb = ts(b);
+        if (!Number.isFinite(ta)) return b;
+        if (!Number.isFinite(tb)) return a;
+        return tb > ta ? b : a;
+    }, [providerScanStatus, ownScanStatus]);
 
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
@@ -102,6 +140,8 @@ export default function SafeStrategy() {
     const [tennisTab, setTennisTab] = useState<string>('segnali');
     // filtro sport dello storico (null = tutti)
     const [historySport, setHistorySport] = useState<SafeSportFilter>(null);
+    // attività: mostra solo le righe CRITICHE ("da guardare")
+    const [onlyCriticalActivity, setOnlyCriticalActivity] = useState(false);
     const fetchHistoryDaily = useCallback(
         (from: string, to: string) => fetchSafeDaily(from, to, historySport),
         [historySport],
@@ -335,6 +375,16 @@ export default function SafeStrategy() {
     const openCount = agg?.open_count ?? livePositions.length;
     const dayLiability = Number(agg?.day_liability ?? stats.risk?.daily_liability ?? openLiability);
     const totalActive = bySport.calcioActive.length + bySport.tennisActive.length;
+    // PARTITE MONITORATE = quelle che lo SCANNER dichiara di seguire in questo
+    // momento: lo stesso numero del chip di salute e delle pagine Omega/Mike.
+    // Le righe montate da questa schermata sono solo la copia locale del feed e
+    // si usano quando lo scanner non pubblica i contatori (payload vecchio).
+    const scanCalcio = Number(scanStatus?.payload?.calcio_inplay);
+    const scanTennis = Number(scanStatus?.payload?.tennis_inplay);
+    const monitoredCalcio = Number.isFinite(scanCalcio) ? scanCalcio : football.length;
+    const monitoredTennis = Number.isFinite(scanTennis) ? scanTennis : tennis.length;
+    const monitoredFromScanner = Number.isFinite(scanCalcio) || Number.isFinite(scanTennis);
+    const localRows = football.length + tennis.length;
     // V/P e operazioni della GIORNATA: gli stessi numeri del pannello Rischio,
     // del tab Trade e dello Storico (C-01)
     const positionsToday = groupClosingLegs([...todayTradesCalcio, ...todayTradesTennis]).length;
@@ -352,20 +402,73 @@ export default function SafeStrategy() {
         : null;
     // size minima Betfair realmente in uso dal servizio (H-15)
     const minStake = Number(bot.paramsEffective?.min_stake ?? 2);
+    // ------------------------------------------------------------------
+    // NOME DELLA PARTITA per l'attività del servizio.
+    // Il servizio scrive `event_name` SOLO su poche righe (feed_blind): tutte le
+    // altre portano l'`event_id` numerico e il trader leggeva "36050104 ·
+    // spread_anomalo". Qui l'id viene risolto in nome usando, in ordine: il feed
+    // dello scanner, le opportunità del servizio, i trade (che conservano il
+    // nome anche a partita finita e sparita dal feed) e, quando l'evento non
+    // c'è nel payload, il trade_id della riga.
+    // ------------------------------------------------------------------
+    const tradeById = useMemo(() => {
+        const out = new Map<number, SafeTrade>();
+        for (const t of bot.trades) out.set(t.id, t);
+        return out;
+    }, [bot.trades]);
+    const eventNameById = useMemo(() => {
+        const out = new Map<string, string>();
+        for (const t of bot.trades) {
+            if (t.event_name && !out.has(String(t.event_id))) out.set(String(t.event_id), t.event_name);
+        }
+        for (const [id, p] of Object.entries(payloadByEvent)) {
+            const n = p?.event_name ?? null;
+            if (n && !out.has(String(id))) out.set(String(id), n);
+        }
+        for (const r of bot.opportunities) {
+            const n = r.payload?.event_name ?? null;
+            if (n && !out.has(String(r.event_id))) out.set(String(r.event_id), n);
+        }
+        return out;
+    }, [bot.trades, payloadByEvent, bot.opportunities]);
+
     // righe di attività del servizio, pronte per ActivityFeed (H-16)
     const activityRows = useMemo<ActivityRow[]>(
-        () => bot.activity.map((a) => ({
-            id: a.id,
-            ts: a.ts,
-            kind: a.kind,
-            event_name: (a.payload ?? {})['event_name'] as string | undefined ?? null,
-            payload: a.payload,
-        })),
-        [bot.activity],
+        () => bot.activity.map((a) => {
+            const p = a.payload ?? {};
+            const declared = typeof p['event_name'] === 'string' && String(p['event_name']).trim() !== ''
+                ? String(p['event_name'])
+                : null;
+            const evId = p['event_id'] != null && String(p['event_id']).trim() !== ''
+                ? String(p['event_id'])
+                : null;
+            const tradeId = Number(p['trade_id']);
+            const fromTrade = Number.isFinite(tradeId) ? tradeById.get(tradeId) ?? null : null;
+            const name = declared
+                ?? (evId ? eventNameById.get(evId) ?? null : null)
+                ?? (fromTrade?.event_name ?? null)
+                ?? (fromTrade ? eventNameById.get(String(fromTrade.event_id)) ?? null : null);
+            return {
+                id: a.id,
+                ts: a.ts,
+                kind: a.kind,
+                event_name: name,
+                payload: name ? { ...p, event_name: name } : p,
+            };
+        }),
+        [bot.activity, eventNameById, tradeById],
     );
     const criticalActivity = useMemo(
         () => activityRows.filter((r) => safeActivityMeta(String(r.kind)).critical).length,
         [activityRows],
+    );
+    // "da guardare" = righe CRITICHE (errori, blocchi di rischio, feed cieco,
+    // uscite fallite). Prima era un numero senza spiegazione né filtro.
+    const shownActivity = useMemo(
+        () => (onlyCriticalActivity
+            ? activityRows.filter((r) => safeActivityMeta(String(r.kind)).critical)
+            : activityRows),
+        [activityRows, onlyCriticalActivity],
     );
     // H-15: il servizio NON riallinea il DB, ma dichiara le correzioni
     // nell'attività `params_clamped` ({chiave: {stored, effective}}) e le chiavi
@@ -637,6 +740,14 @@ export default function SafeStrategy() {
                                 sideFilter={oppSide}
                                 kindFilter={oppKindFilter}
                                 nowMs={nowMs}
+                                /* CERT. 12/09 — la card deve poter DATARE la quota:
+                                   senza questa prop mostrava "eta' quote n/d" pur
+                                   avendo il dato in pagina. La freschezza che conta
+                                   e' quella del FEED (20/120 s), non l'eta' del
+                                   calcolo del modello. */
+                                freshness={freshnessOf(r.event_id)}
+                                maxLiability={bot.paramsEffective?.max_liability_per_trade
+                                    ?? bot.params.max_liability_per_trade}
                                 players={sport === 'tennis' && payloadByEvent[r.event_id] && 'sets' in payloadByEvent[r.event_id]
                                     ? { p1: (payloadByEvent[r.event_id] as TennisScanPayload).p1, p2: (payloadByEvent[r.event_id] as TennisScanPayload).p2 }
                                     : null}
@@ -770,7 +881,10 @@ export default function SafeStrategy() {
                     won={wonToday}
                     lost={lostToday}
                     live={openCount}
-                    openLiability={openLiability}
+                    // NIENTE liability qui: il rischio vivo adesso ha UNA sola
+                    // casa, la tile "Liability aperta". Prima lo stesso numero
+                    // compariva tre volte (barra, tile, pannello Rischio) e due
+                    // volte con un significato diverso.
                     lockedPnl={lockedToday}
                     note={dayFromUi
                         ? `giorno di PIAZZAMENTO della posizione — ${MIGRAZIONE_NOTA}: contati sulle righe caricate, non sull'intera giornata`
@@ -786,11 +900,14 @@ export default function SafeStrategy() {
                             testId="safe-kpi-open"
                             icon={<Activity className="w-3.5 h-3.5" />}
                             sub={
-                                <span data-testid="safe-open-sub">
-                                    posizioni vive
+                                // le OPERAZIONI della giornata stanno nella barra
+                                // "Giornata operativa": qui solo ciò che è vivo ADESSO,
+                                // altrimenti lo stesso numero si legge due volte con
+                                // due nomi diversi ("operazioni 6" e "6 oggi").
+                                <span data-testid="safe-open-sub" title="posizioni ancora a mercato in questo momento (le operazioni della giornata sono nella barra Giornata operativa)">
+                                    vive adesso
                                     {reconcilingTrades.length > 0 && ` · ${reconcilingTrades.length} in verifica`}
                                     {partiallyHedged.length > 0 && ` · ${partiallyHedged.length} coperte in parte`}
-                                    {` · ${legsToday} oggi`}
                                 </span>
                             }
                         />
@@ -802,21 +919,44 @@ export default function SafeStrategy() {
                             tone="danger"
                             testId="safe-kpi-liability"
                             icon={<ShieldAlert className="w-3.5 h-3.5" />}
-                            sub={reconcilingLiability > 0
-                                ? <span data-testid="safe-liability-reconciling">di cui in verifica su Betfair {fmtMoney(reconcilingLiability)}</span>
-                                : undefined}
+                            sub={
+                                <span data-testid="safe-liability-sub" title="quanto puoi ancora perdere sulle posizioni APERTE in questo momento. Il capitale impegnato nella giornata (base dei cap) è nel pannello Rischio.">
+                                    rischio vivo ora su {openCount} {openCount === 1 ? 'posizione' : 'posizioni'}
+                                    {reconcilingLiability > 0 && (
+                                        <b className="block text-fuchsia-300/90" data-testid="safe-liability-reconciling">
+                                            di cui in verifica su Betfair {fmtMoney(reconcilingLiability)}
+                                        </b>
+                                    )}
+                                </span>
+                            }
                         />
                         {lockedToday != null && (
                             <StatTile label={T.lockedPnl} value={fmtMoney(lockedToday, { signed: true })} tone="teal" testId="safe-kpi-locked" sub="posizioni chiuse a mercato oggi" />
                         )}
-                        <StatTile label="Partite monitorate" value={String(football.length + tennis.length)} icon={<Layers className="w-3.5 h-3.5" />} sub={`⚽ ${football.length} · 🎾 ${tennis.length}`} />
+                        <StatTile
+                            label="Partite monitorate"
+                            value={String(monitoredCalcio + monitoredTennis)}
+                            testId="safe-kpi-monitored"
+                            icon={<Layers className="w-3.5 h-3.5" />}
+                            sub={
+                                <span
+                                    data-testid="safe-monitored-sub"
+                                    title={monitoredFromScanner
+                                        ? 'partite in gioco seguite dallo scanner (feed unico): lo stesso numero del chip di salute, di Omega e di Mike'
+                                        : 'lo scanner non pubblica i contatori: contate sulle righe del feed montate da questa schermata'}
+                                >
+                                    ⚽ {monitoredCalcio} · 🎾 {monitoredTennis}
+                                    {monitoredFromScanner && localRows !== monitoredCalcio + monitoredTennis && (
+                                        <> · {localRows} caricate qui</>
+                                    )}
+                                </span>
+                            }
+                        />
                         <RiskPanel
                             risk={stats.risk}
                             opps={stats.opps}
                             fallbackCounts={oppCountsAll}
                             dayLiability={dayLiability}
-                            openLiability={openLiability}
-                            reconcilingLiability={reconcilingLiability}
                             dayLabel={dayLabel(operatingDay, { year: false })}
                             dayFromUi={dayFromUi}
                             paramDailyCap={bot.params.risk.daily_liability_cap}
@@ -837,7 +977,13 @@ export default function SafeStrategy() {
                         <Tabs value={calcioTab} onValueChange={setCalcioTab} className="w-full">
                             <TabsList className="mb-3">
                                 <TabsTrigger value="segnali">Segnali ({bySport.calcioActive.length})</TabsTrigger>
-                                <TabsTrigger value="opportunita" title={`${oppRows.length} partite con opportunità`}>
+                                {/* il numero fra parentesi sono le OPPORTUNITÀ, non le partite:
+                                    il tooltip diceva "N partite con opportunità" anche quando le
+                                    opportunità erano 0 (righe analizzate, nessuna sopra soglia). */}
+                                <TabsTrigger
+                                    value="opportunita"
+                                    title={`${oppCountCalcio} opportunità sopra le soglie del servizio, su ${oppRows.length} partite analizzate dal modello in questo momento`}
+                                >
                                     Opportunità modello ({oppCountCalcio})
                                 </TabsTrigger>
                                 <TabsTrigger value="monitor">Monitor ({fbSorted.length})</TabsTrigger>
@@ -896,7 +1042,10 @@ export default function SafeStrategy() {
                         <Tabs value={tennisTab} onValueChange={setTennisTab} className="w-full">
                             <TabsList className="mb-3">
                                 <TabsTrigger value="segnali">Segnali ({bySport.tennisActive.length})</TabsTrigger>
-                                <TabsTrigger value="opportunita" title={`${tennisOppRows.length} match con opportunità`}>
+                                <TabsTrigger
+                                    value="opportunita"
+                                    title={`${oppCountTennis} opportunità sopra le soglie del servizio, su ${tennisOppRows.length} match analizzati dal modello in questo momento`}
+                                >
                                     Opportunità tennis ({oppCountTennis})
                                 </TabsTrigger>
                                 <TabsTrigger value="monitor">Monitor ({tnSorted.length})</TabsTrigger>
@@ -995,13 +1144,26 @@ export default function SafeStrategy() {
                             perché il bot è entrato o NON è entrato: salti, blocchi di rischio, uscite,
                             riconciliazioni, feed
                             {criticalActivity > 0 && (
-                                <b className="text-red-300"> · {criticalActivity} da guardare</b>
+                                <b className="text-red-300"> · {criticalActivity} da guardare (errori, blocchi di rischio, feed cieco, uscite fallite)</b>
                             )}
                         </span>
                     }
+                    actions={criticalActivity > 0 ? (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            data-testid="safe-activity-critical-toggle"
+                            aria-pressed={onlyCriticalActivity}
+                            title="mostra solo le righe che richiedono una decisione: errori, blocchi di rischio, feed cieco, uscite fallite"
+                            onClick={() => setOnlyCriticalActivity((v) => !v)}
+                        >
+                            {onlyCriticalActivity ? 'mostra tutte' : `solo da guardare (${criticalActivity})`}
+                        </Button>
+                    ) : undefined}
                 >
                     <ActivityFeed
-                        rows={activityRows}
+                        rows={shownActivity}
                         metaOf={safeActivityMeta}
                         lineOf={(r) => safeActivityLine(r.payload)}
                         filterable

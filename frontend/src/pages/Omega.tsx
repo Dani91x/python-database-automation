@@ -47,12 +47,12 @@ import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
 import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
-    TrendingUp, Zap, ShieldAlert, Activity, Lock,
+    Zap, ShieldAlert, Activity, Lock,
 } from 'lucide-react';
 import {
     activateOmega, stopOmega, updateOmegaParams, fetchOmegaState, fetchOmegaTrades,
-    subscribeOmega, buildEquitySeries, requestManual,
-    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, omegaParamsPatch,
+    subscribeOmega, buildEquitySeries, requestManual, settlementNotifications,
+    OMEGA_PARAM_DEFAULTS, OMEGA_PARAM_GROUPS, OMEGA_DAILY_GOAL_MAX, omegaParamsPatch,
     activityMeta, activityLine, isHedging,
     type OmegaControl, type OmegaTrade, type OmegaParams, type OmegaMode, type OmegaStatus,
     type OmegaAggregates, type OmegaActivityRow,
@@ -111,8 +111,10 @@ export default function Omega() {
     const [goalInput, setGoalInput] = useState(250);
     const [params, setParams] = useState<OmegaParams>(OMEGA_PARAM_DEFAULTS);
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
-    // tab attivo (controllato: dallo Storico si torna all'Automatico sul trade vivo)
-    const [tab, setTab] = useState<string>('mission');
+    // tab attivo (controllato: dallo Storico si torna all'Automatico sul trade vivo).
+    // Audit 12/09: si apre su AUTOMATICO — le posizioni vive di oggi sono la prima
+    // cosa che un trader deve vedere, non la lista delle partite da attivare.
+    const [tab, setTab] = useState<string>('auto');
 
     const seenSettled = useRef<Set<number>>(new Set());
     const initialized = useRef(false);
@@ -159,31 +161,24 @@ export default function Omega() {
     }
 
     function detectSettlements(tr: OmegaTrade[], firstLoad: boolean) {
-        const settled = tr.filter(t => t.settled_at && ['won', 'lost', 'void'].includes(t.status));
         if (firstLoad) {
             // primo caricamento: memorizza lo storico come "già visto", nessun toast
-            settled.forEach(t => seenSettled.current.add(t.id));
+            for (const t of tr) if (t.settled_at && ['won', 'lost', 'void'].includes(t.status)) seenSettled.current.add(t.id);
             return;
         }
-        for (const t of settled) {
-            if (seenSettled.current.has(t.id)) continue;
-            seenSettled.current.add(t.id);
-            // M-04: il toast racconta l'esito della POSIZIONE quando il servizio
-            // lo ha scritto (una gamba d'apertura "persa" può essere una
-            // posizione in utile: prima arrivava un "⚠️ perso" falso + doppione)
-            const posPnl = Number((t.meta as Record<string, unknown> | null)?.position_pnl);
-            const posId = (t.meta as Record<string, unknown> | null)?.position_id;
-            if (Number.isFinite(posPnl) && posId != null && t.closes_trade_id != null) {
-                continue;   // la chiusura non notifica: lo fa l'apertura con il totale
-            }
+        // M-04/audit 12/09: la decisione di CHI notifica e CON QUALE P&L è una
+        // funzione PURA e testata (lib/omega.settlementNotifications): una gamba
+        // di chiusura non fa un toast per conto suo quando la sua apertura si
+        // regola nello stesso giro — parla l'apertura con il P&L di POSIZIONE.
+        for (const n of settlementNotifications(tr, seenSettled.current)) {
             // formato UNICO delle notifiche di regolazione (lib/toasts.ts):
             // i trade decisi a mano restano distinguibili da quelli del bot
             toastSettlement({
-                name: t.event_name || t.event_id,
-                pnl: t.status === 'void' ? 0 : (Number.isFinite(posPnl) ? posPnl : Number(t.pnl)),
-                side: t.side,
-                selection: t.runner_name,
-                manual: t.origin === 'manual',
+                name: n.closing ? `${n.name} · chiusura` : n.name,
+                pnl: n.pnl,
+                side: n.side,
+                selection: n.selection,
+                manual: n.manual,
                 statusLabel: 'Match VOID',
             });
         }
@@ -496,51 +491,31 @@ export default function Omega() {
                         live={liveNow}
                         openLiability={openLiability}
                         lockedPnl={lockedToday ?? lockedOpen}
+                        // audit 12/09: il cumulato storico stava nel sottotitolo di
+                        // un KPI "P&L oggi" che ripeteva il realizzato della barra;
+                        // ora il realizzato si legge UNA volta sola, qui
+                        realizedTotal={realizedTotal}
                         note={goalSnapshot
                             ? 'numeri dalla RPC (giornata Europe/Rome): il realizzato riparte da zero ogni giorno e conta SOLO le posizioni piazzate oggi'
                             : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
                     />
 
-                    <KpiRow tiles={5}>
-                        <StatTile label={T.pnlToday} value={fmtMoney(realized, { signed: true })} tone={toneOf(realized)} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={`totale storico ${fmtMoney(realizedTotal, { signed: true })}`} testId="omega-kpi-pnl" />
-                        <StatTile
-                            label="Target / operazione"
-                            value={fmtMoney(stats.target_leg ?? stats.target_match)}
-                            tone="gold"
-                            icon={<Zap className="w-3.5 h-3.5" />}
-                            sub={statsFresh
-                                ? `${stats.legs_remaining ?? '—'} operazioni · ${stats.matches_remaining ?? '—'} partite rimaste · ${fmtMoney(stats.target_match)}/partita`
-                                : 'bot fermo: nessun target in corso'}
-                            testId="omega-kpi-target"
-                        />
-                        <StatTile
-                            label="Eventi in finestra"
-                            value={statsFresh ? String(stats.events_total ?? '—') : '—'}
-                            icon={<Activity className="w-3.5 h-3.5" />}
-                            sub={statsFresh ? 'ultimo ciclo dello scanner' : 'disponibile a bot avviato'}
-                            testId="omega-kpi-events"
-                        />
-                        <StatTile
-                            label="Operazioni oggi"
-                            value={legsToday != null ? fmtNum(legsToday) : '—'}
-                            sub={`${wonToday ?? 0}V · ${lostToday ?? 0}P · ${liveNow ?? 0} partite vive · storico ${fmtNum(matchesTraded)}`}
-                            testId="omega-kpi-legs"
-                        />
+                    {/* UNA sola riga di KPI (audit 12/09): la barra qui sopra dice
+                        già obiettivo, realizzato, resta, partite/operazioni e V/P.
+                        Qui restano SOLO i numeri che la barra non ha: quanto
+                        rischio è vivo, quanto è già bloccato, quanto è a esito
+                        ignoto e a quanto si punta per operazione. */}
+                    <KpiRow tiles={4}>
                         <StatTile
                             label={T.openLiability}
                             value={fmtMoney(openLiability)}
                             tone="danger"
                             icon={<ShieldAlert className="w-3.5 h-3.5" />}
                             sub={reconcilingLiab > 0
-                                ? `di cui ${fmtMoney(reconcilingLiab)} in verifica su Betfair`
-                                : 'esposizione a coda (copertura completa = rischio 0)'}
+                                ? `rischio vivo adesso · di cui ${fmtMoney(reconcilingLiab)} in verifica su Betfair`
+                                : 'rischio vivo adesso: quanto perdi se escono i risultati bancati (copertura completa = 0)'}
                             testId="omega-kpi-liability"
                         />
-                    </KpiRow>
-                    {/* la riga c'è SEMPRE: senza la v5 i due numeri sono stimati
-                        dalle righe caricate e la UI lo dichiara (mai nascondere
-                        quanto si è già perso e quanto è a esito ignoto) */}
-                    <KpiRow tiles={2}>
                         <StatTile
                             label={T.lockedPnl}
                             value={fmtMoney(lockedOpen, { signed: true })}
@@ -564,19 +539,45 @@ export default function Omega() {
                                     : 'nessun ordine in sospeso'}
                             testId="omega-kpi-reconciling"
                         />
+                        {/* UNICO "target" della pagina: quello del SERVIZIO
+                            (obiettivo ÷ gambe ancora piazzabili). La scheda
+                            Missione non ne calcola più uno suo diverso. */}
+                        <StatTile
+                            label="Target / operazione"
+                            value={statsFresh ? fmtMoney(stats.target_leg ?? stats.target_match) : '—'}
+                            tone="gold"
+                            icon={<Zap className="w-3.5 h-3.5" />}
+                            sub={statsFresh
+                                ? `${stats.legs_remaining ?? '—'} operazioni e ${stats.matches_remaining ?? '—'} partite ancora in finestra (su ${stats.events_total ?? '—'} viste dallo scanner) · ${fmtMoney(stats.target_match)}/partita`
+                                : 'bot fermo: nessun target in corso'}
+                            testId="omega-kpi-target"
+                        />
                     </KpiRow>
 
                     <Tabs value={tab} onValueChange={setTab} className="w-full">
+                        {/* ORDINE (audit 12/09): prima quello che il trader deve
+                            vedere al primo colpo — le POSIZIONI VIVE di oggi —
+                            poi la scelta delle partite, poi l'ordine a mano, poi
+                            lo storico. Prima la pagina si apriva sulla scheda
+                            Missione e le posizioni aperte erano nascoste dietro
+                            un click. */}
                         <TabsList className="sticky z-30" style={{ top: navH }}>
-                            <TabsTrigger value="mission" aria-label="Missione">🎯 Missione</TabsTrigger>
                             <TabsTrigger value="auto" aria-label="Automatico">⚙️ Automatico</TabsTrigger>
+                            <TabsTrigger value="mission" aria-label="Missione">🎯 Missione</TabsTrigger>
                             <TabsTrigger value="manual" aria-label="Manuale">✋ Manuale</TabsTrigger>
                             <TabsTrigger value="storico" aria-label="Storico">📅 Storico</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="mission" className="mt-3">
-                            {/* mode paper/live dal toggle globale in alto (control.mode) */}
-                            <MissionPanel mode={mode} dailyGoal={goal} />
+                            {/* mode paper/live dal toggle globale in alto (control.mode);
+                                target e partite in finestra dal SERVIZIO (mai un
+                                secondo target calcolato dal client) */}
+                            <MissionPanel
+                                mode={mode}
+                                dailyGoal={goal}
+                                targetMatch={statsFresh ? stats.target_match ?? null : null}
+                                matchesRemaining={statsFresh ? stats.matches_remaining ?? null : null}
+                            />
                         </TabsContent>
 
                         <TabsContent value="auto" className="mt-3 space-y-5">
@@ -596,9 +597,10 @@ export default function Omega() {
                                 note={
                                     // H-08: gli stessi numeri della barra e dei KPI (RPC)
                                     <span data-testid="omega-matches-summary">
-                                        · {legsToday ?? shownSummary.legs} operazioni oggi · {wonToday ?? 0}V {lostToday ?? 0}P
+                                        · {legsToday ?? shownSummary.legs} operazioni oggi · {wonToday ?? 0}V {lostToday ?? 0}P · {liveNow ?? 0} partite vive
                                         {lockedOpen != null && lockedOpen !== 0 && ` · ${T.lockedPnl} ${fmtMoney(lockedOpen, { signed: true })}`}
                                         {openLiability > 0 && ` · ${T.openLiability} ${fmtMoney(openLiability)}`}
+                                        <span className="text-slate-500"> · storico {fmtNum(matchesTraded)} partite</span>
                                     </span>
                                 }
                                 actions={
@@ -659,7 +661,10 @@ export default function Omega() {
                         </TabsContent>
 
                         <TabsContent value="manual" className="mt-3">
-                            <ManualPanel />
+                            {/* la modalità parte da quella della PAGINA: prima il
+                                pannello era sempre su PAPER anche con la pagina in
+                                LIVE (e viceversa), due modalità nella stessa schermata */}
+                            <ManualPanel pageMode={mode} />
                         </TabsContent>
 
                         <TabsContent value="storico" className="mt-3">
@@ -694,8 +699,10 @@ const OMEGA_PARAM_GROUPS_UI = [
         label: 'Obiettivo',
         note: 'quanto deve produrre la giornata: il servizio ne ricava il target per partita e per gamba.',
         fields: [{
+            // il tetto è quello del CHECK di `omega_control.daily_goal` (100 000):
+            // dichiararne uno più alto faceva fallire il "Salva" con un errore SQL
             key: '__daily_goal', label: 'Obiettivo giornaliero (€)', type: 'number' as const,
-            min: 0, max: 1000000, step: 10,
+            min: 0, max: OMEGA_DAILY_GOAL_MAX, step: 10,
             hint: 'storicizzato a fine giornata: lo Storico giudica "centrato" solo sull’obiettivo di QUEL giorno',
         }],
     },

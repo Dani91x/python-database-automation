@@ -122,8 +122,14 @@ def get_empirical(league_id: Optional[int], db: Any, now_ts: Optional[float] = N
             _EMPIRICAL_FAILED[key] = now_ts
             return None
         table = EmpiricalTable(rows)
-        _EMPIRICAL_CACHE[key] = None if table.empty else table
-        return _EMPIRICAL_CACHE[key]
+        if table.empty:
+            # tabella VUOTA: non si mette in cache per sempre (il servizio gira per
+            # giorni e la lega puo' riempirsi). Si ritenta come un errore, fra
+            # ``_EMPIRICAL_RETRY_S``.
+            _EMPIRICAL_FAILED[key] = now_ts
+            return None
+        _EMPIRICAL_CACHE[key] = table
+        return table
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.dossier] tabella empirica %s KO: %s", key, str(ex)[:120])
         _EMPIRICAL_FAILED[key] = now_ts
@@ -197,6 +203,63 @@ def model_probs_from_grids(grid_now: Dict[tuple, float], grid_later: Dict[tuple,
     return out
 
 
+def lambdas_con_ripiego(dossier: Dict[str, Any], payload: Optional[Dict[str, Any]],
+                        *, minute: Optional[int], score_home: Optional[int],
+                        score_away: Optional[int], red_home: int = 0, red_away: int = 0
+                        ) -> "tuple[Optional[float], Optional[float], str]":
+    """(lambda_casa, lambda_trasferta, fonte) con la CATENA DI RIPIEGO di Omega.
+
+    CERT. 12/09 -- difetto trovato dal vivo: il dossier di Mike era VUOTO su tutti
+    e 93 gli eventi (``lambda_home``/``lambda_away`` a None, ``source: none``),
+    perche' ``fixture_id_for_event`` cerca l'evento in ``live_follow`` e NESSUNA
+    partita di Mike era li' dentro (55 righe, zero in comune con i 19 eventi vivi).
+
+    Conseguenza: il modello di Mike non ha MAI funzionato. Senza lambda niente
+    griglia Poisson, quindi ``p_total_model``, ``p4_model``, ``hazard_model`` e
+    ``cover_gain_pct`` sempre None. In concreto:
+      * l'uscita in perdita decideva su tabella empirica e mercato, mai sul modello;
+      * l'attesa "intelligente" della copertura non si e' mai attivata, perche'
+        ``cover_timing`` copre subito a ogni dato mancante: Mike ha sempre coperto
+        al primo prezzo disponibile invece che al migliore.
+
+    Omega aveva lo stesso problema il 10/09 (746 salti per ``no_model_lambdas``) e
+    lo ha risolto l'11/09 con una catena di ripieghi. Qui si riusano le STESSE
+    funzioni pure, gia' collaudate, sullo stesso payload del feed unico:
+      1. fixture del dossier (invariata: resta la fonte migliore);
+      2. quote 1X2 pre-KO congelate dallo scanner;
+      3. mercato Over/Under live.
+    Nessun ripiego riuscito -> (None, None, "none"), esattamente come prima: il
+    bot resta cieco ma non decide su numeri inventati.
+    """
+    lh, la = dossier.get("lambda_home"), dossier.get("lambda_away")
+    if lh and la:
+        return float(lh), float(la), str(dossier.get("source") or "fixture")
+    if not payload:
+        return None, None, "none"
+    try:
+        from Betfair.omega import omega_model as _M
+    except Exception:  # noqa: BLE001 - modulo assente: si resta come prima
+        return None, None, "none"
+    try:
+        pre = _M.lambdas_from_pre_ko(payload.get("pre_ko"))
+        if pre and pre[0] and pre[1]:
+            return float(pre[0]), float(pre[1]), "pre_ko_odds"
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike.dossier] lambda pre-KO KO: %s", str(ex)[:120])
+    if minute is None or score_home is None or score_away is None:
+        return None, None, "none"
+    try:
+        state = _M.LiveState(minute=int(minute), score_home=int(score_home),
+                             score_away=int(score_away), red_home=int(red_home or 0),
+                             red_away=int(red_away or 0))
+        live = _M.lambdas_from_live_ou(payload, state, dossier.get("league_id"))
+        if live and live[0] and live[1]:
+            return float(live[0]), float(live[1]), "live_ou"
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike.dossier] lambda O/U live KO: %s", str(ex)[:120])
+    return None, None, "none"
+
+
 def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Optional[int],
                score_away: Optional[int], red_home: int = 0, red_away: int = 0,
                atlas: Optional[Dict[str, Any]] = None, home: Optional[str] = None,
@@ -213,7 +276,7 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
     out: Dict[str, Any] = {"hazard": None, "hazard_atlas": None, "hazard_model": None,
                            "hazard_source": "none", "pressure": 1.0, "p4_model": None,
                            "p_over45_model": None, "cover_gain_pct": None, "model_probs": None,
-                           "p_total_model": None, "p_total_emp": None}
+                           "p_total_model": None, "p_total_emp": None, "lambda_source": "none"}
     if minute is None or score_home is None or score_away is None:
         return out
     # empirico HT->FT: parla SOLO finche' il punteggio e' quello dell'intervallo
@@ -238,7 +301,10 @@ def live_frame(dossier: Dict[str, Any], *, minute: Optional[int], score_home: Op
             out["pressure"] = round(max(float(mh), float(ma)), 3)
     except Exception as ex:  # noqa: BLE001
         logger.debug("[mike.dossier] pressione KO: %s", str(ex)[:120])
-    lh, la = dossier.get("lambda_home"), dossier.get("lambda_away")
+    lh, la, lam_src = lambdas_con_ripiego(
+        dossier, payload, minute=minute, score_home=score_home, score_away=score_away,
+        red_home=red_home, red_away=red_away)
+    out["lambda_source"] = lam_src
     if lh and la:
         try:
             from Betfair.stream.engine.live_engine_pro import event_goal_hazard

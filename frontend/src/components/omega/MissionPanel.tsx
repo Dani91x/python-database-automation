@@ -18,6 +18,7 @@ import {
 import { Loader2, RefreshCw, Target, ChevronDown, ChevronRight, Trophy, BarChart3, TrendingUp, CircleDot } from 'lucide-react';
 import {
     requestManual, fetchOmegaEvents, fetchManualRequests, updateOmegaParams,
+    filterEventsInWindow, eventsCacheUpdatedAt, OMEGA_DAILY_GOAL_MAX,
     type OmegaEvent, type OmegaMode,
 } from '@/lib/omega';
 import {
@@ -25,12 +26,12 @@ import {
     missionRealized, goalProgressPct, toNum, splitEventName,
     type MissionRow, type MissionsSummary, type MissionPhase,
 } from '@/lib/omegaMissions';
-import { fmtMoney, fmtPctPoints, fmtTime } from '@/lib/format';
+import { fmtMoney, fmtTime, fmtAge, ageSeconds } from '@/lib/format';
 import { romeDay } from '@/lib/dailyHistory';
 import { leagueLogo, teamLogo } from '@/lib/sportsLogos';
 import MissionCard from '@/components/omega/MissionCard';
 import { fetchScalperState, type ScalperControl } from '@/lib/scalper';
-import { useScanLiveFeed } from '@/lib/useScanLiveFeed';
+import { useScanLiveFeedRows } from '@/lib/useScanLiveFeed';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -216,9 +217,20 @@ interface Props {
     // obiettivo € di giornata dal control (audit M8: prima era stato locale
     // scollegato da daily_goal); resta editabile localmente.
     dailyGoal?: number;
+    /**
+     * Audit 12/09 — target per partita del SERVIZIO (`stats.target_match`) e
+     * partite ancora in finestra (`stats.matches_remaining`). Prima questo
+     * pannello ne calcolava DUE suoi (obiettivo ÷ eventi in cache) e con la
+     * cache eventi ferma mostrava «Target / partita suggerito 100,00 €», cioè
+     * l'INTERO obiettivo di giornata su una sola partita, mentre il KPI in alto
+     * diceva 0,17 €. null = servizio fermo → si ripiega sul calcolo locale e lo
+     * si DICHIARA.
+     */
+    targetMatch?: number | null;
+    matchesRemaining?: number | null;
 }
 
-export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
+export default function MissionPanel({ mode = 'paper', dailyGoal, targetMatch = null, matchesRemaining = null }: Props) {
     const [missions, setMissions] = useState<MissionRow[]>([]);
     const [summary, setSummary] = useState<MissionsSummary>({ missions_total: 0, missions_active: 0 });
     const [events, setEvents] = useState<OmegaEvent[]>([]);
@@ -355,7 +367,26 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     }, [missions]);
 
     // ---- derivati (Number(...) con fallback: mai NaN in UI) -------------
+    // orologio del pannello: serve alla FINESTRA OPERATIVA degli eventi e
+    // all'età della cache (un evento "finito" va tolto anche senza un reload)
+    const [nowMs, setNowMs] = useState(() => Date.now());
+    useEffect(() => {
+        const t = window.setInterval(() => setNowMs(Date.now()), 30_000);
+        return () => window.clearInterval(t);
+    }, []);
     const eventById = useMemo(() => new Map(events.map(e => [e.event_id, e])), [events]);
+    /**
+     * Audit 12/09 — SOLO le partite della finestra operativa (non ancora finite).
+     * `get_omega_events` restituisce tutta la cache senza filtro di data: il
+     * 12/09 la lista mostrava 73 partite del 09/09 marcate "FINITA" mentre il
+     * contatore diceva 0. UNA definizione sola (lib/omega.eventIsOperable) per
+     * la lista, per il contatore e per il menu della modalità manuale.
+     */
+    const windowEvents = useMemo(() => filterEventsInWindow(events, nowMs), [events, nowMs]);
+    const cacheAt = useMemo(() => eventsCacheUpdatedAt(events), [events]);
+    const cacheAgeS = ageSeconds(cacheAt, nowMs);
+    /** true = la cache ha SOLO partite già finite: è ferma, va aggiornata */
+    const cacheStale = events.length > 0 && windowEvents.length === 0;
     // stato REC per evento (anche per missioni non visibili in lista): il
     // pulsante "Segui live" delle righe-evento parte dallo stato DB se noto
     const missionByEvent = useMemo(() => new Map(missions.map(m => [m.event_id, m])), [missions]);
@@ -378,8 +409,8 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     // (review 16/07: prima il match svaniva dal pannello per il resto del giorno)
     const plainEvents = useMemo(() => {
         const visible = new Set([...activeMissions, ...otherMissions].map(m => m.event_id));
-        return events.filter(e => !visible.has(e.event_id));
-    }, [events, activeMissions, otherMissions]);
+        return windowEvents.filter(e => !visible.has(e.event_id));
+    }, [windowEvents, activeMissions, otherMissions]);
 
     // gruppi per COMPETIZIONE, ordinati per primo kickoff; dentro, per orario.
     // Le partite già FINITE (kickoff >3h fa) scendono in coda al proprio gruppo.
@@ -412,19 +443,50 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
         return groups;
     }, [plainEvents]);
 
-    // per il target/partita contano solo gli eventi ANCORA OPERABILI (pre o
-    // live): dividere l'obiettivo per partite già finite gonfiava il denominatore.
-    // Fallback (review 16/07): solo le missioni ancora vive, non tutte.
-    const operableEvents = useMemo(
-        () => events.filter(e => kickoffState(e.open_date) !== 'finita').length,
-        [events]);
+    // partite ancora OPERABILI = esattamente quelle che si vedono in lista
+    // (finestra operativa): un contatore che non corrisponde alla lista sotto
+    // è la prima cosa che fa perdere fiducia nella pagina.
     const liveMissionsCount = useMemo(
         () => missions.filter(m => m.status === 'active' || m.status === 'paused').length,
         [missions]);
-    const eventsCount = operableEvents > 0 ? operableEvents : liveMissionsCount;
+    const eventsCount = windowEvents.length > 0 ? windowEvents.length : liveMissionsCount;
     const goal = toNum(dayGoal);
-    // target/partita suggerito = obiettivo / n° eventi, 2 decimali
-    const targetSuggested = eventsCount > 0 ? Math.round((goal / eventsCount) * 100) / 100 : goal;
+    /**
+     * Audit 12/09 — il target per partita è UNO SOLO in tutta la pagina: quello
+     * che il SERVIZIO sta usando (`stats.target_match` = obiettivo ÷ partite
+     * ancora in finestra), lo stesso del KPI in alto. Il calcolo locale resta
+     * solo come ripiego a bot fermo ed è DICHIARATO. Prima si divideva per gli
+     * eventi della cache: con la cache ferma il denominatore era 0 e il
+     * "suggerito" diventava l'INTERO obiettivo di giornata (100 € su UNA
+     * partita) mentre il KPI diceva 0,17 €.
+     */
+    const targetFromService = targetMatch != null && Number.isFinite(targetMatch) && Number(targetMatch) > 0;
+    const targetShown = targetFromService
+        ? Number(targetMatch)
+        : eventsCount > 0 ? Math.round((goal / eventsCount) * 100) / 100 : 0;
+    /** partite che il SERVIZIO considera ancora da giocare (ripiego: la lista) */
+    const remainingShown = matchesRemaining != null && Number.isFinite(matchesRemaining)
+        ? Number(matchesRemaining) : eventsCount;
+    const remainingShownLabel = () => (remainingShown > 0
+        ? `${remainingShown} partite in finestra` : 'le partite in finestra');
+    // Target precompilato del dialog ATTIVA (CERT. 12/09, review).
+    // ``targetShown`` e' l'obiettivo diviso per TUTTE le partite in finestra:
+    // con 250 EUR su ~600 partite vale 0,17 EUR, e una missione attivata senza
+    // toccare il campo si chiuderebbe al primo centesimo di profitto. All'altro
+    // estremo, a servizio fermo e lista vuota, il ripiego era l'INTERO obiettivo
+    // su una sola partita. Si precompila quindi entro limiti sensati e si
+    // dichiara da dove viene il numero.
+    const TARGET_MIN_EUR = 1;
+    const targetSuggested = Math.min(
+        Math.max(targetShown > 0 ? targetShown : goal, TARGET_MIN_EUR),
+        Math.max(goal, TARGET_MIN_EUR),
+    );
+    /** da dove viene il suggerimento, per dirlo all'utente sotto al campo */
+    const targetSuggestedNote = targetShown > 0
+        ? (targetShown < TARGET_MIN_EUR
+            ? `obiettivo diviso per ${remainingShownLabel()} = ${fmtEur(targetShown)}, arrotondato al minimo di ${fmtEur(TARGET_MIN_EUR)}`
+            : `obiettivo diviso per ${remainingShownLabel()}`)
+        : 'nessuna stima dal servizio: e’ l’obiettivo intero, correggilo';
     // barra di giornata: SOLO le missioni di OGGI (review 16/07: le attive di
     // ieri restano in lista per essere gestite, ma il loro P&L è di ieri e non
     // deve gonfiare l'avanzamento verso l'obiettivo di oggi)
@@ -434,8 +496,12 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
     const totalRealized = missions
         .filter(m => (m.mission_date ?? todayStr) === todayStr)
         .reduce((s, m) => s + missionRealized(m), 0);
-    // M-08: UNA sola formula per TUTTE le barre (lib/omegaMissions)
-    const goalPct = goalProgressPct(totalRealized, goal);
+    // CERT. 12/09 — la percentuale di avanzamento della giornata la mostra UNA
+    // sola barra, quella in cima alla pagina (alimentata dalla RPC). Qui la
+    // seconda barra e' stata rimossa perche' sommava il realizzato delle
+    // MISSIONI mentre quella in alto somma le POSIZIONI: due percentuali
+    // diverse per la stessa giornata. ``totalRealized`` resta perche' la riga
+    // "Di quel totale, X" dichiara quanto arriva dalle missioni.
 
     // ---- azioni ----------------------------------------------------------
     async function doRefreshEvents() {
@@ -501,14 +567,19 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
 
     // ---- feed live (scanner) per le missioni attive -----------------------
     // feed live dello scanner (punteggio 2s, CS/HT in stream): un canale condiviso
-    const liveFeed = useScanLiveFeed(missions.map((m) => m.event_id));
+    // CERT. 12/09 — servono ANCHE gli `updated_at`: senza, la card non puo'
+    // datare la "quota live" che mostra accanto al bottone che spende, e la
+    // dichiarava live anche su un book fermo. `useScanLiveFeed` butta via quel
+    // campo, `useScanLiveFeedRows` no.
+    const liveRows = useScanLiveFeedRows(missions.map((m) => m.event_id));
 
     // ---- righe lista -----------------------------------------------------
     function activeRow(m: MissionRow) {
         const phase = (m.phase_now ?? 'pre') as MissionPhase;
         const meta = PHASE_META[phase] ?? PHASE_META.pre;
         // punteggio/minuto LIVE dal feed (2s) quando c'è, altrimenti quelli del servizio
-        const lp = liveFeed[m.event_id];
+        const lp = liveRows[m.event_id]?.payload ?? null;
+        const lpAt = liveRows[m.event_id]?.updated_at ?? null;
         const liveMinute = lp?.minute ?? m.minute;
         const liveHome = lp?.score_home ?? m.score_home;
         const liveAway = lp?.score_away ?? m.score_away;
@@ -593,7 +664,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                 </div>
                 {expanded && (
                     <div className="px-3 pb-3">
-                        <MissionCard mission={m} mode={mode} live={lp ?? null} scalper={scalpers[m.event_id] ?? null} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
+                        <MissionCard mission={m} mode={mode} live={lp ?? null} liveAt={lpAt} scalper={scalpers[m.event_id] ?? null} onChanged={() => { reload().catch(() => { /* il polling riprova */ }); }} />
                     </div>
                 )}
             </div>
@@ -708,7 +779,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         <span className="text-xs text-slate-400">Obiettivo giornata (€)</span>
                         <span className="mt-1 flex items-center gap-1">
                             <input
-                                type="number" min={0} step={10} value={dayGoal}
+                                type="number" min={0} max={OMEGA_DAILY_GOAL_MAX} step={10} value={dayGoal}
                                 aria-label="Obiettivo giornata (€)"
                                 onChange={e => setDayGoal(toNum(e.target.value))}
                                 className="w-32 rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
@@ -730,18 +801,35 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         )}
                     </label>
                     <div>
-                        <div className="text-xs text-slate-400">Eventi oggi</div>
-                        <div className="text-2xl font-display font-black tabular-nums">{eventsCount}</div>
+                        <div className="text-xs text-slate-400" title="partite non ancora finite presenti in cache: sono esattamente quelle elencate qui sotto">
+                            Partite attivabili
+                        </div>
+                        <div className="text-2xl font-display font-black tabular-nums" data-testid="mission-events-count">{eventsCount}</div>
+                        <div className="text-[10px] text-slate-500">
+                            {cacheAgeS != null
+                                ? `elenco aggiornato ${fmtAge(cacheAgeS)} fa`
+                                : 'elenco senza orario di aggiornamento'}
+                        </div>
                     </div>
                     <div>
-                        <div className="text-xs text-slate-400">Target / partita suggerito</div>
-                        <div className="text-2xl font-display font-black tabular-nums text-secondary">{fmtEur(targetSuggested)}</div>
+                        <div className="text-xs text-slate-400" title="lo stesso numero del KPI «Target / operazione» in cima alla pagina: obiettivo diviso le partite ancora in finestra">
+                            Target / partita
+                        </div>
+                        <div className="text-2xl font-display font-black tabular-nums text-secondary" data-testid="mission-target-match">
+                            {targetShown > 0 ? fmtEur(targetShown) : '—'}
+                        </div>
+                        <div className="text-[10px] text-slate-500" data-testid="mission-target-source">
+                            {targetFromService
+                                ? `dal servizio · ${remainingShown} partite rimaste`
+                                : 'bot fermo: stima locale (obiettivo ÷ partite attivabili)'}
+                        </div>
                     </div>
                     <div>
                         <div className="text-xs text-slate-400">Missioni</div>
                         <div className="text-2xl font-display font-black tabular-nums">
                             {summary.missions_active}<span className="text-slate-500 text-lg"> / {summary.missions_total}</span>
                         </div>
+                        <div className="text-[10px] text-slate-500">attive / totali</div>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
                         <label className="flex items-center gap-2 text-xs text-slate-400">
@@ -754,24 +842,19 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                         </Button>
                     </div>
                 </div>
-                {/* barra avanzamento giornata: Σ realized missioni / obiettivo */}
-                <div>
-                    <div className="flex items-center justify-between mb-1 text-sm">
-                        <span className="flex items-center gap-2 text-slate-300"><Target className="w-4 h-4 text-secondary" />Avanzamento giornata</span>
-                        <span className="font-display font-black tabular-nums">
-                            <span className={totalRealized >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(totalRealized)}</span>
-                            <span className="text-slate-500"> / {fmtEur(goal)}</span>
-                        </span>
-                    </div>
-                    <div className="relative h-4 rounded-full bg-black/50 border border-white/10 overflow-hidden">
-                        <div
-                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-secondary transition-all duration-700"
-                            style={{ width: `${goalPct}%` }}
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/90 tabular-nums">
-                            {fmtPctPoints(goalPct, 1)}
-                        </div>
-                    </div>
+                {/*
+                    Audit 12/09 — QUI NON c'è più una seconda barra di giornata.
+                    Ne esisteva una che sommava il realizzato delle MISSIONI, e
+                    la barra in cima alla pagina somma le POSIZIONI della giornata
+                    dalla RPC: due numeri diversi per la stessa cosa, nella stessa
+                    schermata. La giornata si legge UNA volta sola, in alto.
+                    Qui resta il contributo delle missioni, dichiarato per quello
+                    che è.
+                */}
+                <div className="text-[11px] text-slate-500" data-testid="mission-day-note">
+                    Avanzamento della giornata e obiettivo: nella barra in cima alla pagina (numeri della RPC).
+                    Di quel totale, <b className={totalRealized >= 0 ? 'text-emerald-400' : 'text-red-400'} data-testid="mission-day-realized">{fmtSignedEur(totalRealized)}</b>
+                    {' '}viene dalle missioni attivate oggi.
                 </div>
             </Card>
 
@@ -807,9 +890,25 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                             {g.events.map(eventRow)}
                         </div>
                     ))}
-                    {!onlyActive && otherMissions.length === 0 && plainEvents.length === 0 && (
-                        <div className="text-center text-xs text-muted-foreground py-4">
-                            nessun evento in cache — premi "Aggiorna eventi" (servizio locale acceso)
+                    {/* stato vuoto CHIARO (audit 12/09): la lista non mostra più
+                        le partite già finite, quindi quando non c'è nulla da
+                        attivare bisogna dire PERCHÉ e da quando */}
+                    {!onlyActive && plainEvents.length === 0 && (
+                        <div className="text-center text-xs text-muted-foreground py-6 space-y-1" data-testid="mission-events-empty">
+                            {cacheStale ? (
+                                <>
+                                    <div className="text-amber-300">
+                                        nessuna partita nella finestra operativa: in elenco ci sono solo partite già finite
+                                    </div>
+                                    <div>
+                                        l'elenco eventi è fermo{cacheAgeS != null ? ` da ${fmtAge(cacheAgeS)}` : ''}
+                                        {cacheAt ? ` (ultimo aggiornamento ${fmtTime(cacheAt)})` : ''} —
+                                        premi "Aggiorna eventi" con il servizio locale acceso (avvia_omega_service.bat)
+                                    </div>
+                                </>
+                            ) : (
+                                <div>nessun evento in cache — premi "Aggiorna eventi" (servizio locale acceso)</div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -831,7 +930,7 @@ export default function MissionPanel({ mode = 'paper', dailyGoal }: Props) {
                             onChange={e => setActivationTarget(toNum(e.target.value))}
                             className="mt-1 w-full rounded-md bg-black/50 border border-white/10 px-3 py-2 text-sm tabular-nums"
                         />
-                        <span className="text-[11px] text-slate-500">suggerito: {fmtEur(targetSuggested)} (obiettivo / eventi di oggi)</span>
+                        <span className="text-[11px] text-slate-500" data-testid="mission-target-note">suggerito: {fmtEur(targetSuggested)} ({targetSuggestedNote})</span>
                     </label>
                     <DialogFooter>
                         <Button variant="ghost" onClick={() => setActivation(null)}>Annulla</Button>

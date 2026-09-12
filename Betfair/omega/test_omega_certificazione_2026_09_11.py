@@ -250,17 +250,24 @@ def test_f1_f2_greenup_usa_la_p_del_modello_con_tetto_di_fine_gara(monkeypatch, 
     p0, _ = S._greenup_p_lose(db=db, tr=tr, payload={"cs": {}}, laid=(1, 3), state=st, half=False,
                               prices={"back": 20.0}, params=G._params(model_tail_factor=1.0))
     assert p0 == 0.04
-    # 89′: il modello dice 0,1 % ma il back a 1,50 dice 67 % → vince il mercato
+    # 89′: il bancato E' GIA' sul tabellone (distanza 0). Il modello dice 0,1 %
+    # ma il back a 1,50 dice 67 % → vince il mercato: a distanza 0 il rischio e'
+    # alto per definizione ed e' il modello a essere rotto.
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 3): 0.001})
     p, src = S._greenup_p_lose(db=db, tr=tr, payload={"cs": {}}, laid=(1, 3),
                                state=M.LiveState(minute=89, score_home=1, score_away=3), half=False,
-                               prices={"back": 1.5}, params=G._params())
+                               prices={"back": 1.5, "back_size": 20.0}, params=G._params())
     assert src == "model_floor_market" and p == pytest.approx(0.6667, abs=1e-3)
     # gamba HT: tetto dal 43′
     p, src = S._greenup_p_lose(db=db, tr=tr, payload={"ht": {}}, laid=(1, 3),
                                state=M.LiveState(minute=44, score_home=1, score_away=3), half=True,
-                               prices={"back": 1.2}, params=G._params())
+                               prices={"back": 1.2, "back_size": 20.0}, params=G._params())
     assert src == "model_floor_market" and p == pytest.approx(0.8333, abs=1e-3)
+    # 12/09 — la stessa quota SENZA liquidita' non e' un prezzo: resta il modello
+    p, src = S._greenup_p_lose(db=db, tr=tr, payload={"cs": {}}, laid=(1, 3),
+                               state=M.LiveState(minute=89, score_home=1, score_away=3), half=False,
+                               prices={"back": 1.5, "back_size": 0.5}, params=G._params())
+    assert src == "model" and p == pytest.approx(0.001, abs=1e-4)
 
 
 # ---------------------------------------------------------------- C3 letture paginate
@@ -524,3 +531,73 @@ def test_2p_m4_heartbeat_anche_a_bot_fermo():
     db.control.pop("heartbeat_at", None)
     S.run_once(market=FakeMarket([], None, _open_snapshot()), db=db, now=NOW)
     assert db.control.get("heartbeat_at") == NOW.isoformat()
+
+
+# ------------------------------------------------ 12/09 caso vivo: trade 84 (VJS v FC Inter 2)
+class TestQuotaImplausibileNonForzaLUscita:
+    """Il 12/09 la posizione 84 (lay 0,50 @29 sul '3 - 1', liability 14,00) e'
+    uscita al 91' sul 2-1 pagando 9,73 EUR, e il lay ha poi VINTO (FT 2-1).
+
+    Causa: al 91' il tetto di fine gara ha preso per buona una quota back 1,49 sul
+    '3 - 1' = 67,1 %, contro un modello all'8,5 %. Perche' quel bancato uscisse
+    serviva ancora un gol della sola squadra di casa nel recupero: 67 % non e' un
+    prezzo, e' un book rotto.
+    """
+
+    @staticmethod
+    def _ctx(monkeypatch, p_modello: float):
+        db = G._db_with_model()
+        G._trade(db, name="3 - 1", price=29.0, size=0.5, score="1-0", minute=60)
+        monkeypatch.setattr(M, "score_probs", lambda **kw: {(3, 1): p_modello})
+        return db, db.trades[0], M.LiveState(minute=91, score_home=2, score_away=1)
+
+    def test_la_quota_fuori_scala_viene_scartata_e_resta_il_modello(self, monkeypatch, lambdas):
+        db, tr, st = self._ctx(monkeypatch, 0.085)
+        p, src = S._greenup_p_lose(db=db, tr=tr, payload={"cs": {}}, laid=(3, 1), state=st,
+                                   half=False, prices={"back": 1.49, "back_size": 20.0},
+                                   params=G._params())
+        assert src == "model_quota_implausibile"
+        assert p == pytest.approx(0.085, abs=1e-4)
+        riga = next(r for r in db.activity if r[0] == "greenup_quota_implausibile")
+        assert riga[1]["distanza_gol"] == 1 and riga[1]["p_mercato"] == pytest.approx(0.6711, abs=1e-3)
+
+    def test_con_la_P_scartata_la_decisione_diventa_TENERE(self, lambdas):
+        """Il punto che costa i soldi: 9,73 EUR di uscita contro un lay vincente."""
+        params = G._params(greenup_risk_cap=0.10)
+        hold_profit, loss_if_lose, locked = 0.50, 14.00, -9.23
+        esce, _ = S._greenup_decide("goal", 0.6711, locked, hold_profit, loss_if_lose,
+                                    0.5, params, 1)
+        tiene, _ = S._greenup_decide("goal", 0.085, locked, hold_profit, loss_if_lose,
+                                     0.5, params, 1)
+        assert esce == "exit", "la quota rotta faceva uscire"
+        assert tiene == "hold", "con la P del modello si tiene e si incassa il lay"
+
+    def test_a_distanza_zero_il_tetto_di_mercato_resta_valido(self, monkeypatch, lambdas):
+        """Nessuna regressione sulla protezione F2: se il bancato e' gia' sul
+        tabellone il mercato ha ragione anche a rapporti altissimi."""
+        db = G._db_with_model()
+        G._trade(db, name="2 - 1", price=29.0, size=0.5, score="1-0", minute=60)
+        monkeypatch.setattr(M, "score_probs", lambda **kw: {(2, 1): 0.001})
+        p, src = S._greenup_p_lose(db=db, tr=db.trades[0], payload={"cs": {}}, laid=(2, 1),
+                                   state=M.LiveState(minute=91, score_home=2, score_away=1),
+                                   half=False, prices={"back": 1.49, "back_size": 20.0},
+                                   params=G._params())
+        assert src == "model_floor_market" and p == pytest.approx(0.6711, abs=1e-3)
+
+    def test_bancato_irraggiungibile_nessuna_quota_puo_inventare_un_rischio(self, monkeypatch, lambdas):
+        db = G._db_with_model()
+        G._trade(db, name="3 - 1", price=29.0, size=0.5, score="1-0", minute=60)
+        monkeypatch.setattr(M, "score_probs", lambda **kw: {(3, 1): 0.0})
+        p, src = S._greenup_p_lose(db=db, tr=db.trades[0], payload={"cs": {}}, laid=(3, 1),
+                                   state=M.LiveState(minute=91, score_home=2, score_away=2),
+                                   half=False, prices={"back": 1.49, "back_size": 20.0},
+                                   params=G._params())
+        assert src == "model_quota_implausibile" and p == 0.0
+
+    def test_il_mercato_puo_ancora_correggere_il_modello_entro_il_rapporto(self, monkeypatch, lambdas):
+        """Il tetto non e' disattivato: fino a 3x il mercato alza il rischio."""
+        db, tr, st = self._ctx(monkeypatch, 0.05)
+        p, src = S._greenup_p_lose(db=db, tr=tr, payload={"cs": {}}, laid=(3, 1), state=st,
+                                   half=False, prices={"back": 8.0, "back_size": 20.0},
+                                   params=G._params())
+        assert src == "model_floor_market" and p == pytest.approx(0.125, abs=1e-3)

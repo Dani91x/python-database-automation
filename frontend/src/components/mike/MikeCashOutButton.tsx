@@ -55,9 +55,18 @@ export function MikeCashOutButton({
     const [open, setOpen] = useState(false);
     const [liveArmed, setLiveArmed] = useState(false);
     const [busy, setBusy] = useState(false);
+    /**
+     * Certificazione 12/09 (MIKE-01) — una richiesta di chiusura che NON parte
+     * non puo' sparire in silenzio. Prima `confirm()` aveva try/finally senza
+     * catch: la promise veniva rigettata fuori dal componente (il chiamante fa
+     * `void confirm()` -> unhandled rejection), il dialog restava identico e il
+     * trader non sapeva se la chiusura fosse partita. Ora l'errore si vede.
+     */
+    const [failure, setFailure] = useState<string | null>(null);
     const inFlight = useRef(false);
 
     useEffect(() => { if (!open) setLiveArmed(false); }, [open]);
+    useEffect(() => { if (open) setFailure(null); }, [open]);
     useEffect(() => { setLiveArmed(false); }, [net]);
     useEffect(() => {
         if (!liveArmed) return;
@@ -67,17 +76,29 @@ export function MikeCashOutButton({
 
     const unavailable = net == null || !complete;
     const isDisabled = Boolean(disabledReason) || pending || unavailable;
+    // MIKE-02: se le condizioni decadono mentre il dialog e' APERTO (feed che
+    // muore, linea che sparisce, richiesta partita da un altro punto) l'eventuale
+    // conferma LIVE gia' armata deve cadere insieme al bottone.
+    useEffect(() => { if (isDisabled) setLiveArmed(false); }, [isDisabled]);
     const tone = net == null ? 'text-slate-400' : net >= 0 ? 'text-emerald-300' : 'text-red-300';
     const label = net == null ? 'n/d' : fmtMoney(net, { signed: true });
 
     async function confirm() {
+        // MIKE-02: il dialog resta aperto anche quando il bottone si spegne:
+        // l'invio deve morire con le condizioni che lo autorizzavano
+        if (isDisabled) return;
         if (busy || pending || inFlight.current) return;
         if (mode === 'live' && !liveArmed) { setLiveArmed(true); return; }
         inFlight.current = true;
         setBusy(true);
+        setFailure(null);
         try {
             await onCashOut();
             setOpen(false);
+        } catch (e) {
+            // il dialog RESTA aperto col motivo: una chiusura che non parte e'
+            // una posizione ancora scoperta, non un non-evento
+            setFailure(String((e as Error)?.message ?? e) || 'cash out non riuscito');
         } finally {
             inFlight.current = false;
             setBusy(false);
@@ -180,6 +201,27 @@ export function MikeCashOutButton({
                                 <ShieldAlert className="w-3.5 h-3.5" aria-hidden /> {T.modeLive}: soldi veri.
                             </p>
                         )}
+
+                        {isDisabled && (
+                            <p
+                                className="text-[11px] text-amber-200 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5"
+                                data-testid="mike-cashout-blocked"
+                                role="alert"
+                            >
+                                Chiusura non inviabile adesso: {why} Riapri quando le condizioni tornano valide.
+                            </p>
+                        )}
+
+                        {failure && (
+                            <p
+                                className="text-[11px] text-red-200 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5"
+                                data-testid="mike-cashout-error"
+                                role="alert"
+                            >
+                                Cash out NON riuscito: {failure}. La posizione è ancora aperta —
+                                controlla su Betfair prima di riprovare.
+                            </p>
+                        )}
                     </div>
 
                     <DialogFooter>
@@ -188,7 +230,7 @@ export function MikeCashOutButton({
                             type="button"
                             data-testid="mike-cashout-confirm"
                             variant={mode === 'live' ? 'destructive' : 'default'}
-                            disabled={busy || pending}
+                            disabled={busy || pending || isDisabled}
                             onClick={() => { void confirm(); }}
                         >
                             {mode === 'live' && liveArmed ? 'Confermi? soldi veri' : `Chiudi tutto (${label})`}

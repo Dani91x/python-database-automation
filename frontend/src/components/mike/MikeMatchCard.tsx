@@ -18,10 +18,14 @@
 //   → cash out (valore, % sulla soglia, riga intelligente, uscita a modello)
 //   → azioni (Cash out / Flatten / Salta / Riprendi) + esito ultima richiesta
 // ============================================================================
-import { memo, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
+import { ShieldAlert } from 'lucide-react';
 import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { countdownToOff, formatMinute } from '@/lib/matchClock';
 import { ticksBetween } from '@/lib/riskMath';
@@ -30,7 +34,8 @@ import { sideMeta, T } from '@/lib/tradeStatus';
 import { MikeCashOutButton } from '@/components/mike/MikeCashOutButton';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import {
-    activeLegs, awaitingKickoff, bookOrders, eventFlags, feedFreshness, legSelectionLabel, legStatusLabel,
+    activeLegs, awaitingKickoff, bookOrders, cashoutBarPct, cycleNumber, eventFlags, feedFreshness, hasModel,
+    legSelectionLabel, legStatusLabel,
     lineLabel, marketLabel, marketStatusMeta, phaseMeta, pnlByTotalCells, positionRows, requestOutcome,
     roleLabel, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
     MIKE_TERMINAL_STATES, type MikeBook, type MikeCashoutSmart, type MikeEvent, type MikeLossExit,
@@ -177,16 +182,42 @@ function KickoffCountdown({ koAt, ev }: { koAt: string | null; ev: MikeEvent }) 
 }
 
 /** tile del quadro dati: altezza fissa, "—" quando il dato non c'è */
-function Cell({ label, value, title, testId }: { label: string; value: ReactNode; title?: string; testId?: string }) {
+/** cert. 12/09 - da dove arrivano i gol attesi che alimentano il modello.
+ *  Finche' il dossier era vuoto su OGNI partita il valore era sempre 'none' e
+ *  nessuno poteva accorgersene: il bot decideva su tabella empirica e mercato
+ *  mentre la scheda mostrava "P(4 gol) modello" come se il modello ci fosse. */
+const LAMBDA_SOURCE_LABEL: Record<string, string> = {
+    fixture: 'da partita abbinata',
+    pre_ko_odds: 'da quote pre-partita',
+    live_ou: 'da mercato Over/Under',
+    none: 'MODELLO ASSENTE',
+};
+const LAMBDA_SOURCE_TIP: Record<string, string> = {
+    fixture: 'gol attesi dalla partita abbinata nel database: la fonte migliore',
+    pre_ko_odds: 'gol attesi ricavati dalle quote 1X2 congelate prima del calcio d’inizio',
+    live_ou: 'gol attesi ricavati dal mercato Over/Under live',
+    none: 'nessuna fonte per i gol attesi: il bot decide su tabella empirica e mercato, non sul modello',
+};
+
+function Cell({ label, value, title, testId, sub }: {
+    label: string; value: ReactNode; title?: string; testId?: string; sub?: ReactNode;
+}) {
     return (
         <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5 min-h-[42px]" title={title} data-testid={testId}>
             <div className="text-slate-500 uppercase tracking-wide text-[9px] truncate">{label}</div>
             <div className="tabular-nums text-white/90 truncate">{value}</div>
+            {sub ? <div className="truncate">{sub}</div> : null}
         </div>
     );
 }
 
-/** distribuzione P(totale gol) 0..8: barre, la colonna dei 4 gol in rosso */
+/**
+ * Distribuzione P(totale gol) 0..8: barre, la colonna dei 4 gol in rosso.
+ *
+ * SENZA modello NON si disegnano nove barre vuote (audit UI 5): una sola riga
+ * dice che per questa lega il modello non c'è e che il bot lavora a regola
+ * fissa. La zona resta montata (altezza stabile, testid invariato).
+ */
 function GoalsHistogram({ model, emp }: {
     model: Record<string, number> | null | undefined;
     emp: Record<string, number> | null | undefined;
@@ -195,11 +226,19 @@ function GoalsHistogram({ model, emp }: {
     const source = model ? 'modello' : emp ? 'empirico' : null;
     const keys = Array.from({ length: 9 }, (_, i) => i);
     const max = src ? Math.max(0.0001, ...keys.map((k) => Number(src[String(k)] ?? 0))) : 1;
+    if (!src) {
+        return (
+            <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5 text-[11px] text-slate-400 min-h-[34px] flex items-center"
+                data-testid="mike-goals-histogram">
+                Nessun modello per questa lega: copertura a regola fissa (quote e soglie del mercato).
+            </div>
+        );
+    }
     return (
         <div className="rounded-md bg-black/30 border border-white/5 px-2 py-1.5" data-testid="mike-goals-histogram">
             <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-slate-500">
                 <span>P(totale gol) 0…8</span>
-                <span>{source ?? 'nessun modello per questa partita'}</span>
+                <span>{source}</span>
             </div>
             <div className="flex items-end gap-1 h-10 mt-1">
                 {keys.map((k) => {
@@ -222,26 +261,28 @@ function GoalsHistogram({ model, emp }: {
 }
 
 /** quote di UNA linea: back/lay con size, variazione dal tick precedente, betDelay */
-function QuoteLine({ label, book, prev, title, testId }: {
+function QuoteLine({ label, book, prev, title, testId, frozen = false }: {
     label: string;
     book: MikeBook | undefined;
     prev: { back: number | null; lay: number | null } | undefined;
     title?: string;
     testId?: string;
+    /** partita chiusa: i numeri sono l'ULTIMO blob visto, non il book di adesso */
+    frozen?: boolean;
 }) {
     // lo stato del mercato Betfair non arriva mai grezzo in pagina: SOSPESO e
     // CHIUSO significano "non si opera adesso" (ambra/rosso), OPEN non si dice.
     const status = marketStatusMeta(book?.status);
     return (
         <div
-            className={`rounded-md bg-black/30 border px-2 py-1.5 min-h-[50px] ${status?.alarming ? 'border-amber-400/40' : 'border-white/5'}`}
-            title={title}
+            className={`rounded-md bg-black/30 border px-2 py-1.5 min-h-[50px] ${status?.alarming ? 'border-amber-400/40' : 'border-white/5'} ${frozen ? 'opacity-50' : ''}`}
+            title={frozen ? `${title ?? ''} — partita chiusa: quote all'ultimo aggiornamento` : title}
             data-testid={testId}
         >
             <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-slate-500">
                 <span>{label}</span>
                 <span>
-                    {book?.bet_delay ? `betDelay ${book.bet_delay} s` : ''}
+                    {book?.bet_delay ? `ritardo scommessa ${book.bet_delay} s` : ''}
                     {status && (
                         <span className={status.cls} data-testid="mike-market-status">
                             {book?.bet_delay ? ' · ' : ''}{status.label}
@@ -261,6 +302,191 @@ function QuoteLine({ label, book, prev, title, testId }: {
                 </span>
             </div>
         </div>
+    );
+}
+
+/**
+ * "ciclo N di M" onesto.
+ *
+ * CERT. 12/09 — `cycleNumber(cycle_no)` è "cicli chiusi + 1", cioè il ciclo
+ * IN CORSO: su una partita già regolata (o che ha consumato tutti i cicli) non
+ * esiste nessun ciclo in corso e uscivano numeri impossibili ("ciclo 11 di 10").
+ * Senza `pre_max_cycles` configurato usciva "di 0".
+ */
+export function cycleText(cycleNo: unknown, maxCycles: unknown, terminal: boolean): {
+    value: string; of: string; title: string;
+} {
+    const done = Math.max(0, Math.floor(Number(cycleNo) || 0));
+    const maxRaw = Number(maxCycles);
+    const max = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.floor(maxRaw) : null;
+    const of = max != null ? `di ${max}` : '(massimo non configurato)';
+    if (terminal) {
+        return {
+            value: String(done),
+            of: max != null ? `${of} usati` : of,
+            title: `partita chiusa · cicli completati: ${done}${max != null ? ` su un massimo di ${max}` : ''}`,
+        };
+    }
+    const current = cycleNumber(cycleNo);
+    if (max != null && current > max) {
+        return {
+            value: String(done),
+            of: `${of} — esauriti`,
+            title: `cicli già chiusi: ${done} · massimo ${max}: nessun altro re-ingresso previsto`,
+        };
+    }
+    return {
+        value: String(current),
+        of,
+        title: `ciclo in corso · cicli già chiusi: ${done}${max != null ? ` · massimo ${max}` : ' · massimo non configurato'}`,
+    };
+}
+
+/**
+ * CHIUDI A MERCATO (flatten) — con la STESSA protezione del cash out.
+ *
+ * CERT. 12/09 (BLOCCANTE) — il flatten partiva con UN SOLO click, anche in
+ * LIVE, mentre il cash out accanto ne chiedeva due. Ed è l'azione PIÙ
+ * pericolosa delle due: chiude tutto ai prezzi che trova, senza guardare la
+ * soglia di profitto, quindi può cristallizzare una perdita. Qui ha: dialog di
+ * conferma, doppia conferma in LIVE che decade da sola, invio che muore se le
+ * condizioni decadono col dialog aperto, nessun doppio invio, errore visibile.
+ */
+export const MIKE_FLATTEN_ARM_TIMEOUT_MS = 10_000;
+
+export function MikeFlattenButton({
+    eventName, net, disabledReason, pending = false, mode, onFlatten,
+}: {
+    eventName: string;
+    /** P&L netto di chiusura secondo il SERVIZIO (null = non calcolabile) */
+    net: number | null;
+    disabledReason?: string | null;
+    pending?: boolean;
+    mode: 'paper' | 'live';
+    onFlatten: () => Promise<void> | void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [armed, setArmed] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [failure, setFailure] = useState<string | null>(null);
+    const inFlight = useRef(false);
+    // il flatten si può sempre chiedere (chiude a mercato): non dipende dal
+    // fatto che il servizio sappia calcolare il netto.
+    const isDisabled = Boolean(disabledReason) || pending;
+
+    useEffect(() => { if (!open) { setArmed(false); setFailure(null); } }, [open]);
+    useEffect(() => { setArmed(false); }, [net]);
+    useEffect(() => { if (isDisabled) setArmed(false); }, [isDisabled]);
+    useEffect(() => {
+        if (!armed) return;
+        const t = window.setTimeout(() => setArmed(false), MIKE_FLATTEN_ARM_TIMEOUT_MS);
+        return () => window.clearTimeout(t);
+    }, [armed]);
+
+    async function confirm() {
+        if (isDisabled || busy || pending || inFlight.current) return;
+        if (mode === 'live' && !armed) { setArmed(true); return; }
+        inFlight.current = true;
+        setBusy(true);
+        setFailure(null);
+        try {
+            await onFlatten();
+            setOpen(false);
+        } catch (e) {
+            setFailure(String((e as Error)?.message ?? e) || 'chiusura a mercato non riuscita');
+        } finally {
+            inFlight.current = false;
+            setBusy(false);
+            setArmed(false);
+        }
+    }
+
+    return (
+        <>
+            <Button
+                size="sm" variant="ghost" className="h-7 text-[11px] text-rose-200"
+                disabled={isDisabled}
+                onClick={() => setOpen(true)}
+                data-testid="mike-flatten-btn"
+                title={disabledReason
+                    ?? 'Chiudi a mercato: chiude tutto subito ai prezzi disponibili, senza guardare la soglia di profitto'}
+            >Chiudi a mercato</Button>
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="glass-card border-rose-500/30 max-w-md" data-testid="mike-flatten-dialog">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 font-display text-rose-300">
+                            <ShieldAlert className="w-5 h-5" aria-hidden /> Chiudi a mercato
+                        </DialogTitle>
+                        <DialogDescription>
+                            Chiusura IMMEDIATA di <b className="text-white">{eventName}</b> ai prezzi disponibili
+                            adesso: il servizio annulla gli ordini sul book e chiude tutte le posizioni
+                            <b> senza guardare la soglia di profitto</b>. Se il mercato è contro, la perdita
+                            diventa definitiva.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-3">
+                        <div className="rounded-md border border-white/10 bg-black/40 p-3">
+                            <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                                {T.lockedPnl} chiudendo ora (netto commissione, dal servizio)
+                            </div>
+                            <div
+                                data-testid="mike-flatten-net"
+                                className={`text-2xl font-display font-black tabular-nums ${net == null ? 'text-slate-400' : net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                            >
+                                {net == null ? 'n/d' : fmtMoney(net, { signed: true })}
+                            </div>
+                            {net == null && (
+                                <div className="text-[11px] text-amber-200">
+                                    il servizio non sa quanto vale la chiusura adesso: chiuderesti al buio
+                                </div>
+                            )}
+                        </div>
+
+                        {mode === 'live' && (
+                            <p className="text-[11px] text-red-300 flex items-center gap-1">
+                                <ShieldAlert className="w-3.5 h-3.5" aria-hidden /> {T.modeLive}: soldi veri.
+                            </p>
+                        )}
+
+                        {isDisabled && (
+                            <p
+                                className="text-[11px] text-amber-200 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5"
+                                data-testid="mike-flatten-blocked"
+                                role="alert"
+                            >
+                                Chiusura non inviabile adesso: {disabledReason ?? 'richiesta gi\u00e0 inviata: attendi l\u2019esito.'}
+                            </p>
+                        )}
+
+                        {failure && (
+                            <p
+                                className="text-[11px] text-red-200 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5"
+                                data-testid="mike-flatten-error"
+                                role="alert"
+                            >
+                                Chiusura NON riuscita: {failure}. La posizione è ancora aperta —
+                                controlla su Betfair prima di riprovare.
+                            </p>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Annulla</Button>
+                        <Button
+                            type="button"
+                            data-testid="mike-flatten-confirm"
+                            variant="destructive"
+                            disabled={busy || pending || isDisabled}
+                            onClick={() => { void confirm(); }}
+                        >
+                            {mode === 'live' && armed ? 'Confermi? soldi veri' : 'Chiudi tutto a mercato'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
 
@@ -287,9 +513,14 @@ function MikeMatchCardBase({
     const orders = bookOrders(ev);
     const sels = ((ev.ctx as { selections?: Record<string, number> } | null)?.selections) ?? {};
     const marketIds = (ev.markets ?? {}) as Record<string, { market_id?: string | null } | undefined>;
-    const barPct = coPct != null && threshold > 0 ? Math.max(0, Math.min(100, (coPct / threshold) * 100)) : 0;
+    // la barra parte da ZERO: un cash out NEGATIVO non è avanzamento (audit UI 6)
+    const barPct = cashoutBarPct(coPct, threshold);
+    const modelKnown = hasModel(ev);
     const freshness = feedFreshness(live.feed_age_s);
-    const linesMissing = (live.lines_missing ?? []).filter(Boolean);
+    // su una partita REGOLATA/SALTATA il feed non deve più arrivare: il badge
+    // rosso "FEED FERMO" e l'allarme "linea assente" erano falsi allarmi su 34
+    // schede chiuse (audit UI: rumore che nasconde gli allarmi veri)
+    const linesMissing = terminal ? [] : (live.lines_missing ?? []).filter(Boolean);
     const outcome = lastRequest ? requestOutcome(lastRequest) : null;
     const flags = eventFlags(ev);
     const voidAll = voidedMarkets.includes(VOID_ALL);
@@ -313,8 +544,16 @@ function MikeMatchCardBase({
         ? 'Operazione in corso: attendi.'
         : stale
             ? `Feed stantio (${staleReason ?? 'scanner fermo'}): il servizio rifiuterebbe la richiesta.`
-            : freshness.tone === 'stale'
-                ? 'Feed di questa partita fermo: nessuna chiusura a prezzi fantasma.'
+            /* CERT. 12/09 (BLOCCANTE) — `unknown` = il servizio non pubblica
+                   l'eta' del feed per questa partita. Prima il badge diceva
+                   "FEED: NESSUN DATO" e i bottoni con SOLDI VERI restavano
+                   accesi: si poteva chiudere senza sapere di quando fossero i
+                   prezzi. Non sapere l'eta' e' peggio di saperla vecchia:
+                   fail-closed, esattamente come 'stale'. */
+                : freshness.tone === 'stale' || freshness.tone === 'unknown'
+                    ? (freshness.tone === 'unknown'
+                        ? "Eta' delle quote sconosciuta: il servizio non la pubblica per questa partita, nessun ordine al buio."
+                        : 'Feed di questa partita fermo: nessuna chiusura a prezzi fantasma.')
                 : linesMissing.length > 0
                     ? `Linea ${linesMissing.map(lineLabel).join(', ')} assente nel feed: chiusura non calcolabile.`
                     : !hasPosition
@@ -322,6 +561,7 @@ function MikeMatchCardBase({
                         : null;
 
     const cashBreakdown = rows.map((r) => ({ label: r.label, value: cashout?.per?.[r.key] ?? null }));
+    const cycleText_ = cycleText(ev.cycle_no, params.pre_max_cycles, terminal);
 
     return (
         <Card
@@ -350,18 +590,21 @@ function MikeMatchCardBase({
                         <div className="font-heading font-bold text-sm truncate">{ev.event_name ?? ev.event_id}</div>
                         <div className="text-[11px] text-slate-400 truncate">
                             {ev.competition ?? '—'}
-                            {inplay
+                            {/* PRIMA il terminale: una partita REGOLATA non deve
+                                mostrare il minuto congelato dell'ultimo feed
+                                ("62'") come se fosse ancora in gioco. */}
+                            {terminal
                                 ? <>
-                                    {' · '}<span className="text-white/90 font-semibold">{minuteLabel ?? '—′'}</span>
-                                    {live.goals != null && <> · {live.goals} gol</>}
-                                    {live.ht && <span className="text-amber-300"> · intervallo</span>}
-                                    {live.ht_score && <span className="text-slate-500"> · 1T {live.ht_score[0]}–{live.ht_score[1]}</span>}
+                                    {' · KO '}<span className="text-white/90">{fmtTime(ev.ko_at)}</span>
+                                    {live.goals != null && <> · {live.goals} gol totali</>}
+                                    {' · '}<span className="text-slate-300">{meta.label.toLowerCase()}</span>
                                 </>
-                                : terminal
+                                : inplay
                                     ? <>
-                                        {' · KO '}<span className="text-white/90">{fmtTime(ev.ko_at)}</span>
-                                        {live.goals != null && <> · {live.goals} gol totali</>}
-                                        {' · '}<span className="text-slate-300">{meta.label.toLowerCase()}</span>
+                                        {' · '}<span className="text-white/90 font-semibold">{minuteLabel ?? '—′'}</span>
+                                        {live.goals != null && <> · {live.goals} gol</>}
+                                        {live.ht && <span className="text-amber-300"> · intervallo</span>}
+                                        {live.ht_score && <span className="text-slate-500"> · 1T {live.ht_score[0]}–{live.ht_score[1]}</span>}
                                     </>
                                     : <>
                                         {' · KO '}<span className="text-white/90">{fmtTime(ev.ko_at)}</span>
@@ -371,14 +614,26 @@ function MikeMatchCardBase({
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <Badge variant="outline" className={`text-[10px] font-heading ${meta.cls}`} data-testid="mike-phase">
+                    <Badge variant="outline" className={`text-[10px] font-heading ${meta.cls}`} data-testid="mike-phase" title={meta.what}>
                         {meta.label}
                     </Badge>
-                    <Badge variant="outline" className={`text-[10px] ${freshness.cls}`} data-testid="mike-feed-age">
-                        {freshness.label}
-                    </Badge>
+                    {/* su una partita chiusa il feed non arriva più: "FEED FERMO"
+                        in rosso sarebbe un falso allarme */}
+                    {terminal
+                        ? <Badge variant="outline" className="text-[10px] bg-slate-600/30 text-slate-300 border-slate-500/40" data-testid="mike-feed-age">
+                            partita chiusa
+                        </Badge>
+                        : <Badge variant="outline" className={`text-[10px] ${freshness.cls}`} data-testid="mike-feed-age">
+                            {freshness.label}
+                        </Badge>}
                     <BetfairMediaButtons eventId={ev.event_id} compact />
                 </div>
+            </div>
+
+            {/* che cosa sta facendo il bot ADESSO, in italiano: la sigla della
+                fase da sola ("HOLD → LIVE") non diceva niente (audit UI 7) */}
+            <div className="text-[11px] text-slate-400 min-h-[16px]" data-testid="mike-phase-what">
+                {meta.what}
             </div>
 
             {/* ------------------------------------------------- allarmi (zona sempre presente) */}
@@ -418,11 +673,28 @@ function MikeMatchCardBase({
             </div>
 
             {/* ------------------------------------------------- quadro modello */}
+            {/* Senza modello (lega senza λ/distribuzione) NON si mostrano tre
+                celle con "—" che sembrano dati rotti: si scrive UNA riga e si
+                lascia in piedi il solo numero che esiste davvero, la P(4) del
+                MERCATO (audit UI 5). */}
+            {!modelKnown ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]" data-testid="mike-model">
+                    <Cell label="P(4 gol) mercato" value={fmtPct(live.p4_market ?? null, 1)} title="P(4) implicita dalle due linee O/U: è l'unico esito che perde" />
+                    <div className="sm:col-span-2 rounded-md bg-black/30 border border-white/5 px-2 py-1.5 min-h-[42px] flex items-center text-slate-400"
+                        data-testid="mike-model-missing">
+                        Nessun modello per questa lega: il bot decide con le quote e le soglie fisse.
+                    </div>
+                </div>
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]" data-testid="mike-model">
                 <Cell
                     label="P(4 gol) modello"
                     value={fmtPct(live.p4_model ?? dossier.p4_pre ?? null, 1)}
-                    title="probabilità di esattamente 4 gol secondo il modello: è l'unico esito che perde"
+                    title={`probabilità di esattamente 4 gol secondo il modello: è l'unico esito che perde · ${LAMBDA_SOURCE_TIP[String(live.lambda_source ?? 'none')] ?? LAMBDA_SOURCE_TIP.none}`}
+                    sub={<span className={live.lambda_source && live.lambda_source !== 'none'
+                        ? 'text-slate-500 text-[9px]' : 'text-amber-400 text-[9px]'}>
+                        {LAMBDA_SOURCE_LABEL[String(live.lambda_source ?? 'none')] ?? LAMBDA_SOURCE_LABEL.none}
+                    </span>}
                 />
                 <Cell label="P(4 gol) mercato" value={fmtPct(live.p4_market ?? null, 1)} title="P(4) implicita dalle due linee O/U" />
                 <Cell
@@ -445,6 +717,7 @@ function MikeMatchCardBase({
                     title={inplay ? 'corner e cartellini dal feed (1,00 = neutra)' : 'gol attesi da modello'}
                 />
             </div>
+            )}
 
             <GoalsHistogram model={live.p_total_model} emp={live.p_total_emp} />
 
@@ -454,32 +727,52 @@ function MikeMatchCardBase({
                 accorcia (e il banner rosso qui sopra lo dice) */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" data-testid="mike-quotes">
                 <QuoteLine
-                    label="Under 3.5 back / lay"
+                    label={terminal ? 'Under 3.5 · ultime quote viste' : 'Under 3.5 back / lay'}
                     book={books['OU35|UNDER']}
-                    prev={prevSnapshot['OU35|UNDER']}
+                    frozen={terminal}
+                    prev={terminal ? undefined : prevSnapshot['OU35|UNDER']}
                     title={`Under 3.5 · market ${marketIds.OU35?.market_id ?? '—'} · selection ${sels['OU35|UNDER'] ?? '—'}`}
                     testId="mike-quote-ou35"
                 />
                 <QuoteLine
-                    label="Over 4.5 back / lay"
+                    label={terminal ? 'Over 4.5 · ultime quote viste' : 'Over 4.5 back / lay'}
                     book={books['OU45|OVER']}
-                    prev={prevSnapshot['OU45|OVER']}
+                    frozen={terminal}
+                    prev={terminal ? undefined : prevSnapshot['OU45|OVER']}
                     title={`Over 4.5 · market ${marketIds.OU45?.market_id ?? '—'} · selection ${sels['OU45|OVER'] ?? '—'}`}
                     testId="mike-quote-ou45"
                 />
                 <QuoteLine
-                    label="Under 4.5 (re-ingresso)"
+                    label={terminal ? 'Under 4.5 · ultime quote viste' : 'Under 4.5 (re-ingresso)'}
                     book={books['OU45|UNDER']}
-                    prev={prevSnapshot['OU45|UNDER']}
+                    frozen={terminal}
+                    prev={terminal ? undefined : prevSnapshot['OU45|UNDER']}
                     title={`Under 4.5 · market ${marketIds.OU45?.market_id ?? '—'} · selection ${sels['OU45|UNDER'] ?? '—'} · linea del re-ingresso dopo un gol`}
                     testId="mike-quote-ou45-under"
                 />
             </div>
 
+            {/* riga leggibile: prima era "scambiato 0 € primo ingresso 1,48 ciclo 0",
+                tre numeri incollati e un ciclo contato da zero (audit UI 8) */}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 min-h-[18px]" data-testid="mike-meta-line">
-                <span>scambiato <span className="tabular-nums text-white/90">{live.total_matched != null ? fmtMoney(live.total_matched, { decimals: 0 }) : '—'}</span></span>
-                <span>primo ingresso <span className="tabular-nums text-white/90">{fmtOdds(ev.entry_price_initial)}</span></span>
-                <span>ciclo <span className="tabular-nums text-white/90">{ev.cycle_no}</span></span>
+                {/* CERT. 12/09 — il feed manda `total_matched` a 0 su TUTTE le
+                    partite del dump reale: uno zero con l'aria di una misura di
+                    profondità del mercato è peggio di un "non disponibile". */}
+                <span title={live.total_matched ? 'volume totale scambiato sul mercato Under 3.5 (dal feed)' : 'il feed non pubblica il volume scambiato di questo mercato'}>
+                    Volume mercato <span className="tabular-nums text-white/90" data-testid="mike-volume">
+                        {live.total_matched ? fmtMoney(live.total_matched, { decimals: 0 }) : 'non pubblicato'}
+                    </span>
+                </span>
+                <span title="quota del PRIMO ingresso Under 3.5 su questa partita">
+                    ingresso <span className="tabular-nums text-white/90">@{fmtOdds(ev.entry_price_initial)}</span>
+                </span>
+                {/* CERT. 12/09 — `cycleNumber` = cicli chiusi + 1: su una partita
+                    REGOLATA o con tutti i cicli consumati usciva "ciclo 11 di 10".
+                    Senza il massimo configurato usciva "ciclo 1 di 0". */}
+                <span title={cycleText_.title}>
+                    ciclo <span className="tabular-nums text-white/90" data-testid="mike-cycle">{cycleText_.value}</span>
+                    <span className="text-slate-500"> {cycleText_.of}</span>
+                </span>
                 {ev.settled_pnl != null && (
                     <span>regolato <span className={`tabular-nums font-semibold ${pnlClass(ev.settled_pnl)}`}>{fmtMoney(ev.settled_pnl, { signed: true })}</span></span>
                 )}
@@ -494,28 +787,53 @@ function MikeMatchCardBase({
                             <th className="text-right font-normal">Ingresso</th>
                             <th className="text-right font-normal">Quota ora</th>
                             <th className="text-right font-normal">Δ ingresso</th>
-                            <th className="text-right font-normal px-2">Se chiudo ora</th>
+                            <th className="text-right font-normal px-2" title="P&L che resta in tasca chiudendo questa selezione adesso, già NETTO della commissione: lo calcola il servizio">
+                                Se chiudo ora (netto)
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
                         {rows.length === 0 ? (
                             <tr><td colSpan={5} className="px-2 py-2 text-slate-500">nessuna posizione aperta —</td></tr>
                         ) : rows.map((r) => {
-                            const book = books[r.key];
+                            // CERT. 12/09 — su una partita REGOLATA il blob del feed
+                            // è congelato: "chiudo @1,48" e "▲ 6 tick" su una partita
+                            // finita sono prezzi che non esistono piu'.
+                            const book = terminal ? undefined : books[r.key];
                             const { ticks, favourable, closeAt } = positionTicks(r, book);
                             // M5: SOLO il netto del servizio. Se manca si dichiara.
                             const locked = cashout?.per?.[r.key] ?? null;
-                            const gross = cashout?.per_gross?.[r.key] ?? null;
                             const decided = (cashout?.decided ?? []).includes(r.key);
                             const legsOfRow = legs.filter((l) => `${l.market}|${l.selection}` === r.key);
-                            const unmatched = legsOfRow.reduce((s, l) => s + Math.max(0, Number(l.size) - Number(l.matched || 0)), 0);
+                            // CERT. 12/09 — prima si sommavano le gambe di QUALUNQUE
+                            // lato accanto al badge del lato NETTO: un green-up LAY da
+                            // 10,13 € appoggiato su una posizione BACK da 10 € si
+                            // leggeva come 20 € di esposizione BACK in arrivo, mentre
+                            // e' una CHIUSURA. Due numeri, due significati opposti.
+                            const rest = (same: boolean) => legsOfRow
+                                .filter((l) => (String(l.side).toLowerCase() === r.netSide.toLowerCase()) === same)
+                                .reduce((acc, l) => acc + Math.max(0, Number(l.size) - Number(l.matched || 0)), 0);
+                            const restIn = rest(true);
+                            const restOut = rest(false);
                             return (
                                 <tr key={r.key} className="border-t border-white/5" data-testid="mike-pos-row"
                                     title={`${r.label} · market ${marketIds[r.market]?.market_id ?? '—'} · selection ${r.selectionId ?? '—'} · ${r.roles.map(roleLabel).join(', ')}`}>
                                     <td className="px-2 py-1">
                                         <Badge variant="outline" className={`text-[9px] mr-1 ${sideMeta(r.netSide.toLowerCase()).cls}`}>{r.netSide}</Badge>
                                         <span className="font-semibold text-white/90">{r.label}</span>
-                                        <span className="text-slate-500"> · {fmtMoney(r.matched)}{unmatched > 0.004 ? ` (+${fmtMoney(unmatched)} sul book)` : ''}</span>
+                                        <span className="text-slate-500" data-testid="mike-pos-rest">
+                                            {' · '}{fmtMoney(r.matched)}
+                                            {restIn > 0.004 && (
+                                                <span className="text-amber-200/80" title="ordine ancora sul book che AUMENTEREBBE questa posizione">
+                                                    {` (+${fmtMoney(restIn)} in ingresso sul book)`}
+                                                </span>
+                                            )}
+                                            {restOut > 0.004 && (
+                                                <span className="text-teal-200/80" title="ordine di CHIUSURA appoggiato sul book (lato opposto): non aumenta l'esposizione, la riduce">
+                                                    {` (${fmtMoney(restOut)} di chiusura appoggiata)`}
+                                                </span>
+                                            )}
+                                        </span>
                                         <span className="block text-[9px] text-slate-500">
                                             {r.roles.map(roleLabel).join(' · ')}
                                             {legsOfRow.some((l) => l.status === 'pending_reconcile') ? ' · IN VERIFICA' : ''}
@@ -531,16 +849,20 @@ function MikeMatchCardBase({
                                         <span className="text-slate-600">/</span>
                                         <span className="text-rose-300">{fmtOdds(book?.best_lay ?? null)}</span>
                                         <span className="block text-[9px] text-slate-500">
-                                            {closeAt != null ? `chiudo @${fmtOdds(closeAt)}` : 'nessun prezzo per chiudere'}
+                                            {terminal ? 'partita chiusa'
+                                                : closeAt != null ? `chiudo @${fmtOdds(closeAt)}` : 'nessun prezzo per chiudere'}
                                         </span>
                                     </td>
                                     <td className="text-right"><TickDelta ticks={ticks} favourable={favourable} /></td>
+                                    {/* UN SOLO numero, dichiarato netto (audit UI 9): il lordo nel
+                                        tooltip accanto a un netto diverso faceva credere a due
+                                        valori in disaccordo. */}
                                     <td
                                         className={`text-right tabular-nums px-2 font-semibold ${pnlClass(locked)}`}
                                         data-testid="mike-pos-locked"
                                         title={locked == null
                                             ? 'il servizio non ha pubblicato il netto per questa selezione'
-                                            : `lordo ${fmtMoney(gross, { signed: true })} · netto commissione dal servizio`}
+                                            : 'netto della commissione, calcolato dal servizio'}
                                     >
                                         {locked != null ? fmtMoney(locked, { signed: true }) : '—'}
                                     </td>
@@ -570,7 +892,10 @@ function MikeMatchCardBase({
                                     <span>{roleLabel(l.role)} <span className="text-slate-500">({legSelectionLabel(l)})</span></span>
                                     <span className="tabular-nums text-white/90">{fmtMoney(rest)} @ {fmtOdds(price)}</span>
                                     <span className="text-slate-500">
-                                        {legStatusLabel(l)}{l.persistence === 'PERSIST' ? ' · PERSIST' : ''}
+                                        {legStatusLabel(l)}
+                                        {l.persistence === 'PERSIST'
+                                            ? <span title="PERSIST: l’ordine resta valido anche dopo il calcio d’inizio"> · resta valido in gioco</span>
+                                            : ''}
                                         {Number(l.matched) > 0 ? ` · abbinati ${fmtMoney(Number(l.matched))}` : ''}
                                     </span>
                                     <span className={`tabular-nums ${dist === null ? 'text-slate-500' : dist === 0 ? 'text-emerald-300' : 'text-amber-200/80'}`}>
@@ -601,32 +926,66 @@ function MikeMatchCardBase({
                     </div>
                 )}
                 <div className="flex flex-wrap gap-x-3 text-[11px] mt-1">
-                    <span className="text-slate-400">
-                        {T.openLiability} <b className="text-orange-400 tabular-nums" data-testid="mike-liability">{live.liability != null ? fmtMoney(live.liability) : '—'}</b>
-                    </span>
-                    <span className="text-slate-400">
-                        {T.lockedPnl} <b className={`tabular-nums ${pnlClass(live.locked)}`} data-testid="mike-locked">{live.locked != null ? fmtMoney(live.locked, { signed: true }) : '—'}</b>
-                    </span>
+                    {/* CERT. 12/09 — su una partita REGOLATA non esiste nessuna
+                        "liability aperta": il numero congelato dell'ultimo feed
+                        faceva contare due volte lo stesso rischio nella scheda
+                        Regolate. Chiusa la partita si mostra l'esito, non il rischio. */}
+                    {terminal ? (
+                        <span className="text-slate-400" data-testid="mike-liability">
+                            rischio chiuso <b className="text-slate-300">0,00 €</b>
+                            <span className="text-slate-500"> · esito </span>
+                            <b className={`tabular-nums ${pnlClass(ev.settled_pnl)}`}>
+                                {ev.settled_pnl != null ? fmtMoney(ev.settled_pnl, { signed: true }) : '—'}
+                            </b>
+                        </span>
+                    ) : (
+                        <>
+                            <span className="text-slate-400">
+                                {T.openLiability} <b className="text-orange-400 tabular-nums" data-testid="mike-liability">{live.liability != null ? fmtMoney(live.liability) : '—'}</b>
+                            </span>
+                            <span className="text-slate-400">
+                                {T.lockedPnl} <b className={`tabular-nums ${pnlClass(live.locked)}`} data-testid="mike-locked">{live.locked != null ? fmtMoney(live.locked, { signed: true }) : '—'}</b>
+                            </span>
+                        </>
+                    )}
                 </div>
             </div>
 
             {/* ------------------------------------------------- cash out + azioni */}
             <div className="flex items-start justify-between gap-2 flex-wrap min-h-[64px]">
                 <div className="text-[11px] min-w-0 flex-1">
-                    <span className="text-slate-500 uppercase tracking-wide text-[9px] mr-1">{T.cashOut} ora</span>
-                    {cashout && cashout.complete
+                    <span className="text-slate-500 uppercase tracking-wide text-[9px] mr-1" title="quanto resta in tasca chiudendo TUTTA la partita adesso, netto commissione">
+                        Se chiudo tutto ora (netto)
+                    </span>
+                    {/* CERT. 12/09 — il ramo `terminal` era CODICE MORTO: si
+                        testava prima `cashout.complete`, così una partita GIÀ
+                        REGOLATA continuava a mostrare "Se chiudo tutto ora
+                        −0,41 €" accanto al suo "regolato +3,99 €" (dump reale
+                        delle 17:00, scheda Regolate). Il terminale vince. */}
+                    {terminal
+                        ? <span className="text-slate-400" data-testid="mike-cashout-value">
+                            {`partita già chiusa${ev.settled_pnl != null ? ` · risultato ${fmtMoney(ev.settled_pnl, { signed: true })}` : ''}`}
+                        </span>
+                        : cashout && cashout.complete
                         ? <span className={`tabular-nums font-heading font-bold ${pnlClass(cashout.net)}`} data-testid="mike-cashout-value">
                             {fmtMoney(cashout.net, { signed: true })}
-                            {coPct != null && <span className="text-slate-400 font-normal"> ({fmtPctPoints(coPct)} · soglia {fmtPctPoints(threshold)})</span>}
+                            {coPct != null && (coPct > 0
+                                ? <span className="text-slate-400 font-normal"> ({fmtPctPoints(coPct)} · chiude da solo a {fmtPctPoints(threshold)})</span>
+                                : <span className="text-red-300/90 font-normal"> (in perdita · il bot chiude da solo solo sopra {fmtPctPoints(threshold)})</span>)}
                         </span>
                         : <span className="text-slate-500" data-testid="mike-cashout-value">
                             {hasPosition ? 'prezzi incompleti' : 'nessuna posizione'}
                         </span>}
+                    {/* la barra misura SOLO la strada verso la soglia: sotto zero
+                        resta vuota, non si colora un "progresso" inesistente */}
                     <div className="mt-1 h-1 w-full max-w-[220px] rounded bg-white/10 overflow-hidden"
                         role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(barPct)}
-                        aria-label="Avanzamento verso la soglia di cash out">
+                        aria-label="Avanzamento verso la soglia di cash out"
+                        title={coPct != null && coPct <= 0
+                            ? 'chiusura in perdita: nessun avanzamento verso la soglia'
+                            : `avanzamento verso la soglia di chiusura automatica (${fmtPctPoints(threshold)})`}>
                         <div
-                            className={`h-full ${coPct != null && coPct >= threshold ? 'bg-emerald-400' : coPct != null && coPct > 0 ? 'bg-teal-400/70' : 'bg-red-400/70'}`}
+                            className={`h-full ${coPct != null && coPct >= threshold ? 'bg-emerald-400' : 'bg-teal-400/70'}`}
                             style={{ width: `${barPct}%` }}
                         />
                     </div>
@@ -677,13 +1036,14 @@ function MikeMatchCardBase({
                         >Annulla ordini</Button>
                     )}
                     {!terminal && hasPosition && (
-                        <Button
-                            size="sm" variant="ghost" className="h-7 text-[11px] text-rose-200"
-                            disabled={Boolean(busy) || Boolean(cashDisabledReason) || isPending('flatten')}
-                            onClick={() => onRequest?.('flatten', ev.event_id)}
-                            data-testid="mike-flatten-btn"
-                            title="chiude tutto a mercato senza guardare la soglia di profitto"
-                        >Flatten</Button>
+                        <MikeFlattenButton
+                            eventName={ev.event_name ?? ev.event_id}
+                            net={cashout?.net ?? null}
+                            disabledReason={Boolean(busy) ? 'Operazione in corso: attendi.' : cashDisabledReason}
+                            pending={isPending('flatten')}
+                            mode={mode}
+                            onFlatten={() => onRequest?.('flatten', ev.event_id)}
+                        />
                     )}
                     {!terminal && !hasPosition && ev.state !== 'SKIPPED' && (
                         <Button

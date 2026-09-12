@@ -168,27 +168,48 @@ def place(
         gate_reason = "enqueue_failed"
 
     # --- percorso legacy (fallback SEMPRE disponibile) ---
-    if mode == "paper":
-        try:
-            fill = E.paper_fill(size, best_price=price, lay_ladder=_ladder_tuple(ladder),
-                                limit_price=price, side=side)
-        except Exception as ex:  # noqa: BLE001 — stessa semantica del live
-            return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
-        if fill is None or fill.matched_size <= 0:
-            return PlaceOutcome("error", None, 0.0, None, f"paper_no_fill:{gate_reason}")
-        return PlaceOutcome("open", fill.avg_price, fill.matched_size, None,
-                            f"paper_fill:{gate_reason}")
-
-    # LIVE — soldi veri: REST FOK generico (side esplicito).
-    # M-31: size sotto il minimo Betfair = rifiuto certo → errore PARLANTE
-    # invece di una chiamata buttata. SOLO sulle APERTURE: Betfair ACCETTA gli
-    # ordini sotto minimo che RIDUCONO una posizione (review C2: altrimenti un
-    # residuo da 1,40 € non si chiudeva mai e restava 'retrying' per sempre).
+    # M-31: size sotto il minimo Betfair = rifiuto certo dell'exchange. SOLO
+    # sulle APERTURE (Betfair accetta gli ordini sotto minimo che RIDUCONO una
+    # posizione: review C2) e SOLO sul percorso legacy (il sotto-minimo
+    # ufficiale vive nella macchina 'submin' del worker della coda).
+    # CERTIFICAZIONE 12/09 — il controllo vale ANCHE IN PAPER: fino a oggi era
+    # solo nel ramo live, cosi' un'apertura da 1,20 EUR (stake piccolo, oppure
+    # size CAPPATA a ``best_size``) veniva riempita in paper e RIFIUTATA in
+    # live. Paper = live senza soldi: lo stesso ordine deve avere lo stesso
+    # esito, altrimenti il paper dichiara posizioni che il live non avrebbe mai.
     min_live = _min_size_live()
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
     if min_live > 0 and size < min_live - 1e-9 and not is_closing:
         return PlaceOutcome("error", None, 0.0, None,
                             f"size_sotto_minimo_betfair:{size:.2f}<{min_live:.2f}")
+    if mode == "paper":
+        try:
+            # ``best_size`` = liquidita' abbinabile al best price dichiarata dal
+            # chiamante (la size e' gia' cappata li' sopra): senza ladder e' la
+            # SOLA controparte ammessa. Se il chiamante non la dichiara e non
+            # c'e' ladder, paper_fill ritorna None (nessun fill regalato).
+            fill = E.paper_fill(size, best_price=price, lay_ladder=_ladder_tuple(ladder),
+                                limit_price=price, side=side,
+                                best_size=best_size)
+        except Exception as ex:  # noqa: BLE001 — stessa semantica del live
+            return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
+        if fill is None or fill.matched_size <= 0:
+            return PlaceOutcome("error", None, 0.0, None, f"paper_no_fill:{gate_reason}")
+        # CERTIFICAZIONE 12/09 — PAPER = LIVE anche sul FILL OR KILL.
+        # In live l'ordine parte con ``time_in_force=FILL_OR_KILL`` (coda) o come
+        # FOK REST: se il book non copre TUTTA la size, Betfair lo annulla e a
+        # mercato non resta nulla. In paper invece il fill parziale veniva
+        # accettato: una richiesta da 5,00 EUR risultava "eseguita" con 0,43 EUR
+        # (caso reale safe_strategy_requests#7). Cosi' il paper dichiarava
+        # posizioni che il live non avrebbe mai avuto, e i suoi numeri non
+        # potevano valere come prova. Ora il paper uccide come il live.
+        if not fill.fully_matched:
+            return PlaceOutcome("error", None, 0.0, None,
+                                f"paper_fok_parziale:{round(fill.matched_size, 2)}/{size}")
+        return PlaceOutcome("open", fill.avg_price, fill.matched_size, None,
+                            f"paper_fill:{gate_reason}")
+
+    # LIVE — soldi veri: REST FOK generico (side esplicito).
     try:
         res = market.place_order_live(
             market_id=str(market_id), selection_id=int(selection_id), price=price,
@@ -249,6 +270,11 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
     sid = trade.get("selection_id")
     sid = int(sid) if sid is not None else None
     side = str(trade.get("side", "lay")).lower()
+    if trade.get("closes_trade_id") is not None:
+        # una gamba di CHIUSURA condivide mercato+selezione con l'apertura: mai
+        # il fallback senza ref (confermerebbe la chiusura con l'ordine
+        # dell'apertura) — stessa regola di omega_engine (review CRIT-1)
+        mid, sid = None, None
     for o in current_orders or []:
         if E._order_matches(o, ref, mid, sid, side):
             matched = float(o.get("size_matched") or 0.0)
@@ -260,9 +286,16 @@ def reconcile_decision(trade: dict[str, Any], current_orders: list[dict],
             return {"action": "keep"}
     for o in cleared_orders or []:
         if E._order_matches(o, ref, mid, sid, side):
+            settled = float(o.get("size_settled") or 0.0)
+            if settled <= 0:
+                # ordine chiuso SENZA size (lapsed/cancellato/void): nessuna
+                # esposizione — mai confermare con la size della RISERVA (prima
+                # un FOK ucciso diventava una posizione reale fantasma; porta
+                # della regola F6 di omega_engine.reconcile_decision)
+                return {"action": "free"}
             return {"action": "confirm",
                     "price": float(o.get("price") or trade.get("price") or 0.0),
-                    "size": float(o.get("size_settled") or trade.get("size") or 0.0),
+                    "size": settled,
                     "bet_id": o.get("bet_id")}
     age = E._age_seconds(trade.get("placed_at"), now_iso)
     if age is None or age > 24 * 3600:
@@ -415,6 +448,25 @@ def net_exposures(trade: dict[str, Any],
     return win, lose
 
 
+def _net_locked(locked: float, trade: dict[str, Any]) -> float:
+    """P&L bloccato al NETTO della commissione (solo se positivo).
+
+    L'aliquota è quella FISSATA sul trade (``commission``), non quella corrente
+    dei parametri: il P&L di una posizione non può cambiare perché l'utente ha
+    toccato un campo dopo averla aperta.
+    """
+    lk = float(locked)
+    if lk <= 0:
+        return round(lk, 2)          # su una perdita non si paga commissione
+    raw = trade.get("commission")
+    try:
+        comm = float(raw) if raw is not None else 0.05
+    except (TypeError, ValueError):
+        comm = 0.05
+    comm = min(1.0, max(0.0, comm))
+    return round(lk * (1.0 - comm), 2)
+
+
 def hedge_state(trade: dict[str, Any],
                 closings: Optional[list[dict[str, Any]]]) -> dict[str, Any]:
     """Stato dell'hedge di una gamba dato l'elenco delle sue chiusure. PURO.
@@ -447,8 +499,16 @@ def hedge_state(trade: dict[str, Any],
         "if_win": round(win, 2),
         "if_lose": round(lose, 2),
         # P&L BLOCCATO solo a copertura COMPLETA (review MED-4): su un hedge
-        # parziale min(W,L) è il caso peggiore, non un valore bloccato
+        # parziale min(W,L) è il caso peggiore, non un valore bloccato.
+        # ``locked_pnl`` è LORDO (``exposures`` lo dichiara); il realizzato che
+        # seguirà sarà NETTO della commissione sul vincente. CERTIFICAZIONE
+        # 12/09: si pubblica anche il valore NETTO, perché la UI mostra questo
+        # numero come "non cambia più, qualunque sia l'esito" e su un bloccato
+        # POSITIVO il lordo lo sovrastima del 5% (Mike lo dava già netto: stessa
+        # etichetta, due significati diversi). Sulle perdite non cambia nulla:
+        # Betfair non incassa commissione su un mercato chiuso in perdita.
         "locked_pnl": round(min(win, lose), 2) if complete else None,
+        "locked_pnl_net": _net_locked(min(win, lose), trade) if complete else None,
         "worst_case": round(min(win, lose), 2) if filled else None,
         "best_case": round(max(win, lose), 2) if filled else None,
         "filled_ids": [c.get("id") for c in filled],
@@ -529,7 +589,17 @@ def apply_hedge_state(db, trade: dict[str, Any], closings: list[dict[str, Any]],
     Scrive anche ``meta.hedge`` = {fraction, remaining_liability, hedged_size,
     residual_size, complete} (M-06: la copertura PARZIALE deve essere visibile e
     chiudibile per il residuo) e ``meta.hedging`` = True mentre una gamba di
-    chiusura è in volo (L-01: la UI lo leggeva già, nessuno lo scriveva)."""
+    chiusura è in volo (L-01: la UI lo leggeva già, nessuno lo scriveva).
+
+    NOTA (certificazione 12/09): ``meta.hedge`` NON porta ``size`` né ``at``.
+    ``frontend/src/lib/omega.ts → hedgeInfo`` li DICHIARA nel tipo, ma l'unico
+    consumatore (``components/omega/MatchTradesTable.tsx``) legge solo
+    ``complete``/``hedgedSize``/``residualSize``: nessun testo a schermo li usa
+    (la size d'apertura la UI la prende dalla colonna ``size`` della riga) e
+    ``Betfair/omega/test_omega_audit_2026_09_11.py`` ne verifica l'ASSENZA,
+    perché erano chiavi di un vecchio writer duplicato. Aggiungerle vorrebbe
+    dire scrivere byte inutili nel meta a ogni copertura — e un ``at`` dentro
+    la firma di idempotenza riscriverebbe la riga a OGNI ciclo (IO Supabase)."""
     st = hedge_state(trade, closings)
     meta = dict(trade.get("meta") or {})
     last_id = (st["pending_ids"] or st["filled_ids"] or [meta.get("closing_trade_id")])[-1]
@@ -537,6 +607,7 @@ def apply_hedge_state(db, trade: dict[str, Any], closings: list[dict[str, Any]],
         "hedged_size": st["hedged_size"],
         "residual_size": st["residual_size"],
         "locked_pnl": st["locked_pnl"],
+        "locked_pnl_net": st.get("locked_pnl_net"),
         "worst_case": st["worst_case"],
         "best_case": st["best_case"],
         "if_win": st["if_win"],
@@ -674,6 +745,19 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
 
     side = str(plan.side)
     best_size = _num(prices.get(f"{side}_size"))
+    # CERTIFICAZIONE 12/09 — PAPER = LIVE: senza sapere QUANTO c'e' sul book non
+    # si puo' simulare un fill (``paper_fill`` non riempie piu' a controparte
+    # ignota). Ci si ferma PRIMA di riservare la gamba: altrimenti ogni ciclo
+    # creava una riga di chiusura 'error' e l'uscita non avveniva mai, con un
+    # motivo tecnico ("paper_no_fill") al posto della causa vera. In LIVE non
+    # serve: decide l'exchange col FOK.
+    if mode == "paper" and not (prices.get(f"{side}_ladder") or ()) and (
+            best_size is None or float(best_size) <= 0):
+        _log(db, "exit_wait", {"trade_id": trade.get("id"), "side": side,
+                               "reason": "book_size_ignota", "price": plan.price})
+        return {"error": "liquidita_del_book_ignota",
+                "note": "il feed porta il prezzo ma non la size abbinabile: "
+                        "chiusura rimandata al prossimo aggiornamento del book"}
     lock = locked_pnl(trade, plan)
 
     reserve: dict[str, Any] = {
@@ -690,7 +774,7 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         # L-02: la gamba di chiusura eredita l'aliquota del TRADE; se manca, il
         # parametro corrente — mai NULL (la UI mostrerebbe la commissione sbagliata).
         "commission": trade.get("commission") if trade.get("commission") is not None
-        else round(float(params.get("commission_pct", 5.0) or 0.0) / 100.0, 4),
+        else _commission_fallback(params),
         "status": "pending",
         "pnl": 0.0,
         "closes_trade_id": trade.get("id"),
@@ -718,7 +802,12 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
         price=plan.price, size=plan.size, best_size=best_size,
         ladder=prices.get(f"{side}_ladder") or (),
         client_ref=f"{table_prefix}-t{closing_id}", trade_id=int(closing_id),
-        meta={"cashout": True, "closes_trade_id": trade.get("id")},
+        # meta COMPLETO della riserva (piano, esposizioni attese, exit_kind):
+        # sul percorso flumine/riconciliazione ``place`` riscrive il meta della
+        # riga partendo da questo — con il solo {cashout, closes_trade_id} il
+        # piano andava perso (L-09 valeva solo sull'errore)
+        meta={**dict(reserve.get("meta") or {}), "cashout": True,
+              "closes_trade_id": trade.get("id")},
         now=now, params=params,
     )
     if out.status == "error":
@@ -787,6 +876,31 @@ def _num(v: Any) -> Optional[float]:
         return float(v) if v is not None else None
     except (TypeError, ValueError):
         return None
+
+
+# aliquota di DEFAULT se il control non la dichiara (Betfair Italia: 5%)
+DEFAULT_COMMISSION_PCT = 5.0
+
+
+def _commission_fallback(params: dict[str, Any]) -> float:
+    """Aliquota (frazione 0-1) da scrivere su una gamba di chiusura quando
+    l'apertura non ne porta una (L-02: mai NULL).
+
+    CERTIFICAZIONE 12/09 — prima era
+    ``float(params.get("commission_pct", 5.0) or 0.0) / 100``: con la chiave
+    PRESENTE ma a ``None`` (control senza il campo, o campo azzerato dalla UI)
+    il ``or`` faceva scattare lo 0 e la gamba nasceva allo 0 % di commissione,
+    cioe' con un P&L mostrato PIU' ALTO del vero. Uno 0 ESPLICITO resta 0
+    (commissione davvero azzerata), un valore assente/illeggibile torna al 5 %.
+    Aliquote gia' in frazione (0,05) o in punti (5) sono entrambe accettate."""
+    raw = params.get("commission_pct")
+    try:
+        pct = float(raw) if raw is not None else DEFAULT_COMMISSION_PCT
+    except (TypeError, ValueError):
+        pct = DEFAULT_COMMISSION_PCT
+    if pct != pct:  # NaN
+        pct = DEFAULT_COMMISSION_PCT
+    return round(min(1.0, max(0.0, pct / 100.0)), 4)
 
 
 def _log(db, kind: str, payload: dict[str, Any]) -> None:

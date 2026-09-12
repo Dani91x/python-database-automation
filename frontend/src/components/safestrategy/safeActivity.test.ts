@@ -5,7 +5,8 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import {
-    SAFE_ACTIVITY_EXTRA, safeActivityMeta, safeActivityLine, safeReasonLabel, safeSourceLabel,
+    SAFE_ACTIVITY_EXTRA, safeActivityMeta, safeActivityLine, safeExitKindLabel,
+    safeMarketLabel, safeReasonLabel, safeSourceLabel,
 } from './safeActivity';
 
 /** TUTTI i kind del contratto del servizio (bot_service.py, 11/09/2026). */
@@ -89,7 +90,36 @@ describe('safeActivityLine — la riga dice cosa è successo, coi formati unici'
         expect(safeActivityLine({
             event_name: 'Roma vs Lazio', market_type: 'OVER_UNDER_25', side: 'back',
             selection_name: 'Under 2.5', size: 5, price: 2.1, reason: 'spread_troppo_ampio',
-        })).toBe('Roma vs Lazio · BACK Under 2.5 · OVER_UNDER_25 · 5,00 € @ 2,10 · spread troppo ampio');
+        })).toBe('Roma vs Lazio · BACK Under 2.5 · Over/Under 2.5 · 5,00 € @ 2,10 · spread troppo largo fra back e lay');
+    });
+
+    // Il servizio scrive `spread_anomalo` (bot_service._log_skip), non
+    // `spread_troppo_ampio`: senza la voce il trader leggeva la chiave inglese.
+    it('motivi REALI del servizio: nessuna chiave tecnica a schermo', () => {
+        expect(safeActivityLine({ event_id: '36050104', reason: 'spread_anomalo' }))
+            .toBe('36050104 · spread troppo largo fra back e lay');
+        expect(safeActivityLine({ event_id: '1', market_type: 'CORRECT_SCORE', liability: 62, reason: 'per_event_liability_cap' }))
+            .toBe('1 · Risultato Esatto · liability 62,00 € · cap di liability per evento raggiunto');
+        expect(safeActivityLine({ reason: 'daily_loss_stop' })).toContain('stop per perdita giornaliera');
+        expect(safeActivityLine({ reason: 'model_daily_liability_cap' })).toContain('cap giornaliero');
+        expect(safeActivityLine({ reason: 'open_count_failed' })).toContain('conteggio delle posizioni aperte');
+    });
+
+    // exit / exit_wait portano SIA `exit_reason` (frase italiana di
+    // exits.reason_text) SIA `reason` (codice tecnico): vince la frase.
+    it('uscita: vince la frase italiana, non il codice tecnico', () => {
+        const line = safeActivityLine({
+            event_name: 'Roma vs Lazio', exit_kind: 'loss',
+            exit_reason: 'Il lato bancato ha segnato: chiusura in perdita',
+            reason: 'lato_bancato_segna', trade_id: 47,
+        });
+        expect(line).toContain('Il lato bancato ha segnato: chiusura in perdita');
+        expect(line).not.toContain('lato_bancato_segna');
+        // solo il codice tecnico (exit_wait): tradotto lo stesso
+        expect(safeActivityLine({ reason: 'lato_bancato_segna', trade_id: 48 }))
+            .toBe('il lato bancato ha segnato: chiusura in perdita · #48');
+        expect(safeActivityLine({ reason: 'minuto_77_lato_bancato_senza_gol' }))
+            .toContain("uscita a tempo al 77′");
     });
 
     it('uscita che ritenta: tentativi e ora del prossimo tentativo (Roma)', () => {
@@ -97,7 +127,7 @@ describe('safeActivityLine — la riga dice cosa è successo, coi formati unici'
             event_name: 'Roma vs Lazio', exit_kind: 'loss', attempts: 2,
             next_retry_at: '2026-09-11T16:07:00Z', trade_id: 41,
         });
-        expect(line).toContain('uscita: loss');
+        expect(line).toContain('uscita: chiusura in perdita');
         expect(line).toContain('2° tentativo');
         expect(line).toContain('ritento alle 18:07');
         expect(line).toContain('#41');
@@ -133,5 +163,39 @@ describe('safeActivityLine — la riga dice cosa è successo, coi formati unici'
         expect(safeActivityLine(null)).toBe('');
         expect(safeActivityLine({})).toBe('');
         expect(safeActivityLine({ qualcosa: 1 })).toContain('qualcosa');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Mercato e tipo di uscita in CHIARO: "CORRECT_SCORE" e "loss" sotto gli occhi
+// di un trader italiano sono un bug (certificazione 12/09).
+// ---------------------------------------------------------------------------
+describe('safeMarketLabel — mercati Betfair in italiano', () => {
+    it('i market_type che il servizio scrive davvero', () => {
+        expect(safeMarketLabel('CORRECT_SCORE')).toBe('Risultato Esatto');
+        expect(safeMarketLabel('HALF_TIME_SCORE')).toBe('Risultato Esatto 1º tempo');
+        expect(safeMarketLabel('MATCH_ODDS')).toBe('1X2 finale');
+        expect(safeMarketLabel('HALF_TIME')).toBe('1X2 primo tempo');
+        expect(safeMarketLabel('BOTH_TEAMS_TO_SCORE')).toBe('Gol/NoGol');
+        expect(safeMarketLabel('OVER_UNDER_45')).toBe('Over/Under 4.5');
+        expect(safeMarketLabel('OVER_UNDER', 3.5)).toBe('Over/Under 3,5');
+        expect(safeMarketLabel('COMBO')).toBe('Combinazione');
+    });
+
+    it('tipo sconosciuto: mai la costante inglese con gli underscore', () => {
+        expect(safeMarketLabel('QUALCOSA_DI_NUOVO')).toBe('Qualcosa di nuovo');
+        expect(safeMarketLabel(null)).toBeNull();
+        expect(safeMarketLabel('')).toBeNull();
+    });
+});
+
+describe('safeExitKindLabel — tipo di uscita in italiano', () => {
+    it('vocabolario chiuso di exits.EXIT_KINDS', () => {
+        expect(safeExitKindLabel('loss')).toBe('chiusura in perdita');
+        expect(safeExitKindLabel('greenup')).toContain('green-up');
+        expect(safeExitKindLabel('time')).toBe('uscita a tempo');
+        expect(safeExitKindLabel('manual')).toBe('cash out manuale');
+        expect(safeExitKindLabel('red_card')).toBe('cartellino rosso');
+        expect(safeExitKindLabel(null)).toBeNull();
     });
 });

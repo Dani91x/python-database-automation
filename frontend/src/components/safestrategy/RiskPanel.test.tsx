@@ -43,7 +43,7 @@ describe('RiskPanel', () => {
 // ---------------------------------------------------------------------------
 describe('RiskPanel — impegnato stimato dal client (senza migrazione v2)', () => {
     it('dayFromUi: avviso esplicito che cita la migrazione', () => {
-        render(<RiskPanel risk={null} opps={null} dayLiability={125} openLiability={60} dayFromUi paramDailyCap={500} />);
+        render(<RiskPanel risk={null} opps={null} dayLiability={125} dayFromUi paramDailyCap={500} />);
         const nota = screen.getByTestId('risk-day-estimated');
         expect(nota).toHaveTextContent(/stimato dal client/);
         expect(nota).toHaveTextContent(/safe_strategy_bot_v2\.sql/);
@@ -55,5 +55,22 @@ describe('RiskPanel — impegnato stimato dal client (senza migrazione v2)', () 
     it('con i numeri del servizio (v2) nessun avviso', () => {
         render(<RiskPanel risk={{ daily_liability: 125, daily_cap: 500, loss_stop_active: false }} opps={{ model: 1 }} />);
         expect(screen.queryByTestId('risk-day-estimated')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Certificazione 12/09: nel pannello Rischio c'e' UN SOLO numero, l'impegnato
+// della giornata. "Liability aperta" (rischio vivo adesso) ha una sola casa:
+// la sua tile. Prima lo stesso nome indicava due grandezze in tre punti.
+// ---------------------------------------------------------------------------
+describe('RiskPanel — una sola liability, una sola definizione', () => {
+    it('niente "rischio aperto ora" ne "di cui in verifica": solo impegnato/cap + spiegazione', () => {
+        render(<RiskPanel risk={{ daily_liability: 260, daily_cap: 500, reconciling_liability: 117 }} opps={null} />);
+        expect(screen.getByTestId('risk-liability')).toHaveTextContent('260,00 €');
+        expect(screen.queryByTestId('risk-open-liability')).toBeNull();
+        expect(screen.queryByTestId('risk-reconciling')).toBeNull();
+        const explain = screen.getByTestId('risk-explain');
+        expect(explain).toHaveTextContent(/base dei cap/);
+        expect(explain).toHaveTextContent(/Liability aperta/);
     });
 });

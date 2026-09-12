@@ -13,8 +13,8 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 # ---------------------------------------------------------------------------
@@ -44,7 +44,14 @@ _SCORELINE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
 
 def _tick_bounds(price: float) -> tuple[float, float]:
     """(tick valido ≤ price, tick valido ≥ price) sulla scala Betfair. Il bordo
-    superiore di una banda È un tick valido (è l'inizio della banda dopo)."""
+    superiore di una banda È un tick valido (è l'inizio della banda dopo).
+
+    Certificazione 12/09: un prezzo NaN/inf non è arrotondabile — prima
+    ritornava NaN in silenzio e finiva nel ``limitOrder.price`` dell'ordine.
+    Solleva ``ValueError``: mai un ordine a prezzo indefinito."""
+    price = float(price)
+    if not math.isfinite(price):
+        raise ValueError(f"prezzo non finito: {price!r}")
     if price <= MIN_PRICE:
         return MIN_PRICE, MIN_PRICE
     if price >= MAX_PRICE:
@@ -135,7 +142,7 @@ def select_lay_runner(
     """
     candidates: list[ScoreRunner] = []
     for r in runners:
-        if r.lay_price is None:
+        if r.lay_price is None or not math.isfinite(float(r.lay_price)):
             continue
         if not include_aggregate and not is_scoreline(r.name):
             continue
@@ -173,6 +180,17 @@ def day_start_utc(now: datetime, tz_name: str = OPERATIONAL_TZ) -> datetime:
     local = now.astimezone(ZoneInfo(tz_name))
     midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
     return midnight.astimezone(timezone.utc)
+
+
+def day_end_utc(now: datetime, tz_name: str = OPERATIONAL_TZ) -> datetime:
+    """Mezzanotte locale del giorno DOPO quello di ``now`` (fine esclusiva della
+    giornata operativa), come datetime UTC. Calcolata sul calendario locale, non
+    con "+24 h": nei giorni di cambio ora legale la giornata dura 23 o 25 ore."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    local = now.astimezone(ZoneInfo(tz_name))
+    next_day = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return next_day.astimezone(timezone.utc)
 
 
 def _ts_on_or_after(iso: Optional[str], boundary: Optional[datetime]) -> bool:
@@ -265,16 +283,27 @@ def paper_fill(
     lay_ladder: tuple[tuple[float, float], ...] = (),
     limit_price: Optional[float] = None,
     side: str = "lay",
+    best_size: Optional[float] = None,
 ) -> Optional[PaperFill]:
     """Simula il match di un lay per ``target_size``.
 
-    Se ``lay_ladder`` è fornita (dal best al peggiore) cammina i livelli;
-    altrimenti usa solo (best_price, +inf) con la liquidità al best implicita.
-    Ritorna None se non si può riempire nulla.
+    Cammina i livelli di ``lay_ladder`` (dal best al peggiore). Senza ladder si
+    usa il SOLO livello (``best_price``, ``best_size``): la controparte deve
+    essere dichiarata dal chiamante. Ritorna None se non si puo' riempire nulla
+    — ANCHE quando mancano sia la ladder sia ``best_size``: fino al 12/09 una
+    ladder vuota valeva "liquidita' infinita al best" e il paper riempiva tutta
+    la size senza alcuna controparte nota (PAPER = LIVE senza soldi: ogni
+    scorciatoia che regala fill e' un bug). Chi non sa quanto c'e' sul book non
+    ottiene fill.
     """
     if target_size <= 0:
         return None
-    levels = list(lay_ladder) if lay_ladder else [(best_price, target_size)]
+    if lay_ladder:
+        levels = list(lay_ladder)
+    elif best_size is not None and float(best_size) > 0:
+        levels = [(float(best_price), float(best_size))]
+    else:
+        return None
     remaining = target_size
     cost = 0.0
     filled = 0.0
@@ -642,6 +671,12 @@ def reconcile_decision(
                 return {"action": "confirm",
                         "price": float(o.get("avg_price_matched") or trade.get("price") or 0.0),
                         "size": matched, "bet_id": o.get("bet_id")}
+            # certificazione 12/09: ordine COMPLETO con zero abbinato e zero
+            # residuo (FOK ucciso / annullato) — nessuna esposizione. Prima
+            # restava 'keep' per sempre (un pending mai liberato). 'free' solo
+            # con stato terminale esplicito: un EXECUTABLE senza fill è 'keep'.
+            if matched <= 0 and remaining <= 0 and str(o.get("status") or "") == "EXECUTION_COMPLETE":
+                return {"action": "free"}
             return {"action": "keep"}
     for o in cleared_orders:
         if _order_matches(o, ref, mid, sid, side):

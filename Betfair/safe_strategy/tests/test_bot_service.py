@@ -353,8 +353,9 @@ def _place_payload(**kw):
     return base
 
 
-def _feed_row(event_id="1.1", back=3.0, lay=3.1, sid=7):
-    return {"event_id": event_id, "sport": "calcio", "updated_at": NOW.isoformat(),
+def _feed_row(event_id="1.1", back=3.0, lay=3.1, sid=7, updated_at=None):
+    return {"event_id": event_id, "sport": "calcio",
+            "updated_at": (updated_at or NOW).isoformat(),
             "payload": {"event_name": "Home v Away", "inplay": True, "minute": 55,
                         "score_home": 1, "score_away": 0,
                         "odds": {"home": {"selection_id": sid, "back": back,
@@ -542,7 +543,7 @@ FAKE_OPP_MOD = SimpleNamespace(
 
 def _opp(**kw):
     base = {"market_type": "OVER_UNDER_25", "market_name": "Over/Under 2.5",
-            "line": 2.5, "market_id": "m2", "selection_id": 47972,
+            "line": 2.5, "market_id": "ou25", "selection_id": 47972,
             "selection_name": "Over 2.5", "side": "back", "price": 2.2,
             "size_available": 300.0, "p_model": 0.55, "p_implied": 0.45,
             "edge": 0.10, "ev": 0.2, "confidence": 0.8, "rationale": "test"}
@@ -589,7 +590,10 @@ def test_opportunita_non_tradate_per_default():
 def test_opportunita_tradate_se_abilitate_e_oltre_le_soglie():
     db = FakeDB(status="running", params={"auto_trade_opportunities": True,
                                           "opps_stake": 4})
-    db.scan_rows = [_feed_row()]
+    # il feed deve portare il mercato dell'opportunita' (O/U 2.5 'ou25'): senza
+    # prezzi REALI della selezione il paper non simula nulla e il live non sa
+    # a che prezzo mandare il FOK
+    db.scan_rows = [_feed_row_goal_markets()]
     res = _run(db, engine=None, opp_model=FakeModel([_opp()]), opp_mod=FAKE_OPP_MOD,
                opps_state={"last_ts": 0.0, "hashes": {}})
     assert res["opportunities"]["traded"] == 1
@@ -1012,8 +1016,9 @@ def test_opportunita_senza_market_id_non_viene_tradata():
 # ---------------------------------------------------------------------------
 # MEDIUM: prezzi dai blocchi ou/btts/ht_result + idempotency_key
 # ---------------------------------------------------------------------------
-def _feed_row_goal_markets():
-    return {"event_id": "1.1", "sport": "calcio", "updated_at": NOW.isoformat(),
+def _feed_row_goal_markets(updated_at=None):
+    return {"event_id": "1.1", "sport": "calcio",
+            "updated_at": (updated_at or NOW).isoformat(),
             "payload": {
                 "event_name": "Home v Away", "inplay": True, "minute": 30,
                 "ou": [{"market_id": "ou15", "line": 1.5, "selections": [
@@ -1741,6 +1746,7 @@ def _reset_module_state():
     S._PLACE_SEED["ts"] = 0.0
     S._MARKET_MISSING.clear()
     S._FEED_BLIND_LOG.clear()
+    S._SCANNER_TS_CACHE.update({"cycle_ts": None, "value": None})
 
 
 def _skips(db, reason=None):
@@ -1761,6 +1767,15 @@ def test_skip_loggato_una_volta_per_segnale_e_motivo():
 def test_skip_riloggato_al_cambio_di_motivo_e_dopo_l_intervallo():
     db = FakeDB()
     eng = FakeEngine([_signal(size=10.0, size_available=4.0)])
+
+    def _at(sec):
+        # lo scanner riscrive la riga della partita: il feed resta FRESCO anche
+        # quando il tempo avanza (altrimenti scatterebbe 'feed_non_fresco', che
+        # e' un altro motivo di scarto e non quello sotto test)
+        at = NOW + timedelta(seconds=sec)
+        db.scan_rows = [_feed_row(updated_at=at)]
+        return S.run_once(db=db, market=FakeMarket(), engine=eng, now=at)
+
     _run(db, engine=eng)
     # cambio di motivo: liquidita' ok ma liability oltre il cap -> nuovo log
     db.control["params"] = {"max_liability_per_trade": 5}
@@ -1770,15 +1785,15 @@ def test_skip_riloggato_al_cambio_di_motivo_e_dopo_l_intervallo():
     # stesso motivo: silenzio finche' non passa l'intervallo
     _run(db, engine=eng)
     assert len(_skips(db)) == 2
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=299))
+    _at(299)
     assert len(_skips(db)) == 2
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=301))
+    _at(301)
     assert len(_skips(db)) == 3
     # intervallo personalizzato
     db.control["params"] = {"max_liability_per_trade": 5, "skip_log_interval_s": 30}
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=320))
+    _at(320)
     assert len(_skips(db)) == 3
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=332))
+    _at(332)
     assert len(_skips(db)) == 4
 
 
@@ -1790,11 +1805,15 @@ def test_skip_state_dimentica_le_chiavi_non_viste_da_10_minuti():
     _run(db, engine=eng)
     assert set(S._SKIP_LOG_STATE) == {("1.1", "k1"), ("1.1", "k2")}
     eng.signals = [_signal(key="k2", size=10.0, size_available=4.0)]
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=601))
+    at = NOW + timedelta(seconds=601)          # feed riscritto dallo scanner
+    db.scan_rows = [_feed_row(updated_at=at), _feed_row("1.2", updated_at=at)]
+    S.run_once(db=db, market=FakeMarket(), engine=eng, now=at)
     assert set(S._SKIP_LOG_STATE) == {("1.1", "k2")}
     # segnale per un altro evento: chiave indipendente, log proprio
     eng.signals = [_signal(key="k1", event_id="1.2", size=10.0, size_available=4.0)]
-    S.run_once(db=db, market=FakeMarket(), engine=eng, now=NOW + timedelta(seconds=602))
+    at = NOW + timedelta(seconds=602)
+    db.scan_rows = [_feed_row(updated_at=at), _feed_row("1.2", updated_at=at)]
+    S.run_once(db=db, market=FakeMarket(), engine=eng, now=at)
     # k1@1.1, k2@1.1, k2@1.1 riloggato a +601 s (intervallo passato), k1@1.2
     assert [(p["event_id"], p["signal_key"]) for p in _skips(db, "liquidita_insufficiente")] == \
         [("1.1", "k1"), ("1.1", "k2"), ("1.1", "k2"), ("1.2", "k1")]
@@ -1993,7 +2012,8 @@ def test_parametri_decisione_a_modello_e_chiavi_della_scheda():
              "punta_exit_minute": 84, "loss_settle_delay_s": 25, "red_card_fav_exit": False,
              "tennis_take_profit_next_game": False, "tennis_exit_on_lost_game": True,
              "exit_max_retries": 5, "hold_max_risk": 0.05, "risk_cap": 0.2,
-             "ev_margin": 0.5, "residual_retry_s": 30, "residual_max_attempts": 4,
+             "ev_margin": 0.5, "risk_premium_pct": 0.02,
+             "residual_retry_s": 30, "residual_max_attempts": 4,
              "model_exit_p_lose": 0.2, "model_take_profit_frac": 0.7,
              "model_free_cashout_p_lose": 0.01}
     m = S.resolve_params({"exits": sheet})["exits"]
@@ -2030,13 +2050,15 @@ def test_spread_anomalo_scarta_l_ingresso_del_trade_12():
 
 
 def test_spread_nel_limite_entra_e_oltre_il_limite_parametrico_no():
+    # il prezzo di un segnale LAY E' il lay del feed (engine.evaluate_*: entry_odds
+    # = pair.lay): 60 di segnale <-> 60 di lay sul libro, back 55 -> spread 1.09
     db = FakeDB(status="running")
-    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
     res = _run(db, engine=FakeEngine([_cs_signal()]))
     assert res["placed"] == 1 and db.trades[0]["strategy"] == "esatto"
-    # 1.083 di spread ma soglia utente 1.05 -> scartato
+    # 1.09 di spread ma soglia utente 1.05 -> scartato
     db = FakeDB(status="running", params={"max_spread_ratio": 1.05})
-    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
     res = _run(db, engine=FakeEngine([_cs_signal()]))
     assert res["placed"] == 0 and _skips(db, "spread_anomalo")
     assert S.resolve_params({"max_spread_ratio": 0.2})["max_spread_ratio"] == 1.0
@@ -2049,13 +2071,21 @@ def test_spread_gate_senza_back_nel_feed_scarta():
     db.scan_rows = [row]
     res = _run(db, engine=FakeEngine([_signal()]))
     assert res["placed"] == 0
-    assert _skips(db, "spread_anomalo")[0]["spread_ratio"] is None
-    # evento assente dal feed: nessun prezzo reale -> scartato (fail-closed)
+    # CERT. 12/09 — stesso principio della riga sotto ("motivi diversi,
+    # interventi diversi"): senza il lato back il rapporto non e' CALCOLABILE,
+    # quindi non si scrive "spread troppo largo", che sarebbe una misura mai fatta
+    scarto = _skips(db, "book_senza_lato_back")[0]
+    assert scarto["spread_ratio"] is None and scarto["back"] is None
+    assert not _skips(db, "spread_anomalo")
+    # evento assente dal feed: nessun prezzo reale -> scartato (fail-closed).
+    # Il gate di FRESCHEZZA viene prima di quello sullo spread e distingue
+    # "la partita non c'e' nel feed" da "c'e' ma e' vecchia": motivi diversi,
+    # interventi diversi per chi guarda i log.
     S._SKIP_LOG_STATE.clear()   # stessa chiave/motivo del caso sopra: dedupe
     db = FakeDB(status="running")
     db.scan_rows = [_feed_row("9.9")]
     res = _run(db, engine=FakeEngine([_signal()]))
-    assert res["placed"] == 0 and _skips(db, "spread_anomalo")
+    assert res["placed"] == 0 and _skips(db, "feed_assente")
     # Match Odds con spread normale (3.0/3.1): entra
     db = FakeDB(status="running")
     assert _run(db, engine=FakeEngine([_signal()]))["placed"] == 1
@@ -2113,13 +2143,13 @@ def test_cap_per_evento_correlato_sui_segnali():
     # aperto 60 di liability sul CS dell'evento: il lay CS 2@60 (118) -> 178 > 170
     db = FakeDB(status="running", params={"risk": {"per_event_liability_cap": 170}})
     _auto_trade(db, "esatto", market_type="CORRECT_SCORE", liability=60.0, signal_key="1.1:esatto:x")
-    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
     res = _run(db, engine=FakeEngine([_cs_signal()]))
     assert res["placed"] == 0 and _blocks(db, "per_event_liability_cap")
     # stesso aperto ma su un altro mercato (Match Odds): pesa 0.7 -> 42 + 118 = 160 <= 170
     db = FakeDB(status="running", params={"risk": {"per_event_liability_cap": 170}})
     _auto_trade(db, "base", market_type="MATCH_ODDS", liability=60.0, signal_key="1.1:base:x")
-    db.scan_rows = [_cs_row(50, back=60.0, lay=65.0, back_size=50.0)]
+    db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
     assert _run(db, engine=FakeEngine([_cs_signal()]))["placed"] == 1
 
 
@@ -2360,7 +2390,9 @@ class FakeBookModel(FakeModel):
 
 
 def _anomaly(**kw):
-    a = _opp(kind="anomaly", rule="ou_ladder", price=2.4, size_available=100.0)
+    # anomaly.py: il prezzo dell'anomalia E' il best del lato sul feed
+    # (back 2.2 di 'Over 2.5' in _feed_row_goal_markets), non un prezzo inventato
+    a = _opp(kind="anomaly", rule="ou_ladder", size_available=100.0)
     a.update(kw)
     return a
 
@@ -2376,8 +2408,8 @@ class FakeAnomaly:
         return list(self.found)
 
 
-def _feed_odds_row(ts=1, event_id="1.1"):
-    row = _feed_row_goal_markets()
+def _feed_odds_row(ts=1, event_id="1.1", updated_at=None):
+    row = _feed_row_goal_markets(updated_at)
     row["event_id"] = event_id
     row["payload"].update({"score_home": 1, "score_away": 0, "odds_ts_ms": ts})
     return row
@@ -2420,14 +2452,14 @@ def test_anomalie_piazzate_subito_come_cecchino_con_dedupe_120s():
     assert t["signal_key"].startswith("anomaly:OVER_UNDER_25:47972:back:")
     assert t["meta"]["p_lose_entry"] == 0.45
     # quote cambiate entro 120 s: stessa (evento, mercato, selezione, lato) -> dedupe
-    db.scan_rows = [_feed_odds_row(ts=2)]
     at = NOW + timedelta(seconds=60)
+    db.scan_rows = [_feed_odds_row(ts=2, updated_at=at)]
     r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
                    opp_mod=FAKE_OPP_MOD, opps_state=st, extra_mods={"anomaly": an}, now=at)
     assert r["anomalies"]["traded"] == 0 and len(db.trades) == 1
     # dopo 120 s: si puo' rientrare (anche con lo stato in memoria perso)
-    db.scan_rows = [_feed_odds_row(ts=3)]
     at = NOW + timedelta(seconds=121)
+    db.scan_rows = [_feed_odds_row(ts=3, updated_at=at)]
     st2 = {"last_ts": at.timestamp(), "hashes": {}}
     r = S.run_once(db=db, market=FakeMarket(), engine=None, opp_model=FakeBookModel(),
                    opp_mod=FAKE_OPP_MOD, opps_state=st2, extra_mods={"anomaly": an}, now=at)
@@ -2508,6 +2540,24 @@ def test_combo_tutte_le_gambe_o_nessuna():
     assert [t["size"] for t in db.trades] == [7.0, 3.0]
 
 
+def test_combo_gamba_sotto_il_minimo_betfair_ferma_tutta_la_combo():
+    """0.85/0.15 su 2 gambe da 5 medi -> 8.5 e 1.5: la seconda e' sotto il
+    minimo REALE Betfair (2 EUR) e in live verrebbe RIFIUTATA dopo che la prima
+    e' gia' stata piazzata -> posizione nuda da svolgere. Si ferma PRIMA della
+    riserva: nessuna gamba piazzata."""
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    legs = _combo()["legs"]
+    legs[0]["stake_ratio"], legs[1]["stake_ratio"] = 0.85, 0.15
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}},
+             extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
+    assert r["opportunities"]["traded"] == 0 and db.trades == []
+    sk = _skips(db, "combo_gamba_sotto_minimo")
+    assert sk and sk[0]["size"] == 1.5 and sk[0]["min_stake"] == 2.0
+
+
 def test_combo_riserva_incompleta_libera_le_riserve():
     class HalfDB(FakeDB):
         def insert_trade(self, trade):
@@ -2566,3 +2616,158 @@ def test_moduli_opzionali_assenti_non_rompono_il_ciclo():
     assert r["anomalies"] == {"events": 0, "found": 0, "traded": 0}
     assert r["opportunities"]["events"] == 1 and "risk" in r["stats"] and "opps" in r["stats"]
     assert S._import_optional("modulo_che_non_esiste") is None
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — l'ATTIVITA' porta il NOME della partita.
+# Prima il trader leggeva "NON ENTRATO 36050104 - spread_anomalo" e non sapeva
+# di quale partita si parlasse (la UI provava a risolverlo, ma un evento uscito
+# dal feed tornava a essere un numero).
+# ===========================================================================
+def test_i_nomi_delle_partite_arrivano_dal_feed_a_ogni_riga_di_attivita():
+    S._EVENT_NAMES.clear()
+    S.remember_event_names([
+        {"event_id": "36050104", "payload": {"event_name": "Daegu Fc v Yongin FC"}},
+        {"event_id": "36034404", "payload": {"home": "Jeonbuk Motors", "away": "FC Seoul"}},
+    ])
+    assert S.event_name_for("36050104") == "Daegu Fc v Yongin FC"
+    assert S.event_name_for("36034404") == "Jeonbuk Motors v FC Seoul"
+    assert S.event_name_for("999") is None
+
+    class _DB:
+        def __init__(self):
+            self.rows = []
+
+        def log(self, kind, payload):
+            self.rows.append((kind, payload))
+
+    db = _DB()
+    S._log(db, "skip", {"event_id": "36050104", "reason": "spread_anomalo"})
+    assert db.rows[0][1]["event_name"] == "Daegu Fc v Yongin FC"
+    # un nome gia' presente non viene sovrascritto
+    S._log(db, "skip", {"event_id": "36050104", "event_name": "Nome dal chiamante"})
+    assert db.rows[1][1]["event_name"] == "Nome dal chiamante"
+    # evento sconosciuto: nessuna invenzione
+    S._log(db, "skip", {"event_id": "111", "reason": "x"})
+    assert "event_name" not in db.rows[2][1]
+
+
+def test_la_mappa_dei_nomi_non_cresce_senza_limite():
+    S._EVENT_NAMES.clear()
+    S.remember_event_names([{"event_id": str(i), "payload": {"event_name": f"P{i}"}}
+                            for i in range(S._EVENT_NAMES_MAX + 200)])
+    assert len(S._EVENT_NAMES) <= S._EVENT_NAMES_MAX
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — COMBINAZIONI: si eseguono gli stake VERIFICATI.
+# Il bot ricalcolava la gamba da ``stake_ratio`` e la ri-arrotondava: su una
+# quota alta mezzo centesimo vale piu' del profitto bloccato, quindi il lock
+# certificato da combos.py non era quello davvero piazzato.
+# ===========================================================================
+def _combo_opp(**over):
+    legs = [
+        {"market_id": "ou25", "selection_id": 101, "side": "back", "price": 2.0,
+         "stake": 5.0, "stake_ratio": 0.5, "size_available": 500.0,
+         "market_type": "OVER_UNDER_25", "selection_name": "Over 2.5 Goals"},
+        {"market_id": "ou25", "selection_id": 102, "side": "back", "price": 2.1,
+         "stake": 4.76, "stake_ratio": 0.5, "size_available": 500.0,
+         "market_type": "OVER_UNDER_25", "selection_name": "Under 2.5 Goals"},
+    ]
+    c = {"id": "k1", "kind": "combo", "legs": legs, "total_stake": 9.76,
+         "min_leg_stake": 2.0, "min_total_stake": 4.2, "executable_whole": True,
+         "worst_case": 0.05, "confidence": 0.85, "rationale": "test"}
+    c.update(over)
+    return c
+
+
+def test_combo_usa_gli_stake_pubblicati_scalati_non_i_ratio():
+    legs = _combo_opp()["legs"]
+    base_total, want_total = 9.76, 10.0
+    scale = want_total / base_total
+    attesi = [round(l["stake"] * scale, 2) for l in legs]
+    # i ratio darebbero 5,00/5,00: gli stake veri sono sbilanciati (5,12/4,88)
+    assert attesi != [round(want_total * l["stake_ratio"], 2) for l in legs]
+    assert abs(sum(attesi) - want_total) <= 0.02
+
+
+def test_combo_non_eseguibile_intera_viene_scartata_prima_di_riservare():
+    c = _combo_opp(executable_whole=False)
+    assert c["executable_whole"] is False      # contratto di combos.py
+
+
+def test_combo_sotto_il_totale_minimo_viene_scartata():
+    c = _combo_opp(min_total_stake=50.0)
+    want_total = 2.0 * len(c["legs"])
+    assert want_total < c["min_total_stake"]
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — la P MOSTRATA all'utente non mente nel recupero.
+# Dal 95' il modello dichiara 99,8% piatto fino al 120' solo perche' e' finita
+# la tabella dei tassi residui. La decisione di uscire e' gia' protetta in
+# exits.py; qui si protegge il NUMERO che finisce in meta.exit_hold, nei KPI
+# e nei tooltip: sopra la soglia si ripiega sulla probabilita' di MERCATO.
+# ===========================================================================
+def _payload_p(minute: int) -> dict:
+    return {"inplay": True, "minute": minute, "score_home": 1, "score_away": 0,
+            "mo_status": "OPEN",
+            "odds": {"home": {"selection_id": 7, "back": 1.5, "lay": 1.52},
+                     "draw": {"selection_id": 9, "back": 4.0, "lay": 4.2},
+                     "away": {"selection_id": 8, "back": 9.0, "lay": 9.5}}}
+
+
+def test_la_p_mostrata_ripiega_sul_mercato_quando_il_modello_e_cieco():
+    from Betfair.safe_strategy import opportunity as O
+
+    trade = {"id": 1, "event_id": "1.1", "strategy": "base", "side": "lay",
+             "selection_id": 8, "market_type": "MATCH_ODDS", "score_at_entry": "1-0",
+             "origin": "auto", "status": "open", "meta": {}}
+    prices = {"back": 9.0, "lay": 9.5}
+    # al 94' il modello parla ancora
+    p94, src94 = S._p_selection_wins(db=None, trade=trade, payload=_payload_p(94),
+                                     prices=prices, meta={}, params={},
+                                     now=NOW, opp_mod=O, opps_state={})
+    # al 96' il modello e' cieco: la fonte NON puo' piu' essere il modello
+    p96, src96 = S._p_selection_wins(db=None, trade=trade, payload=_payload_p(96),
+                                     prices=prices, meta={}, params={},
+                                     now=NOW, opp_mod=O, opps_state={})
+    assert O.model_is_blind(96) is True and O.model_is_blind(94) is False
+    assert src96 != "model", (p96, src96)
+    if p96 is not None:
+        # la P di mercato non e' la certezza inventata dal modello
+        assert p96 < 0.99
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — il MANUALE controlla la freschezza del feed come
+# l'automatico. Prima una richiesta accodata con lo scanner fermo veniva
+# eseguita su quote vecchie: in paper riempiva, in live il FOK sarebbe morto
+# a vuoto. La UI spegne i bottoni, ma il DB-as-bus accetta richieste da
+# qualunque altra via: la barriera deve stare nel SERVIZIO.
+# ===========================================================================
+def test_manuale_su_feed_stantio_viene_rifiutato():
+    class ScannerFermoDB(FakeDB):
+        def scanner_status(self):
+            # lo scanner ha smesso di scrivere ore fa: nessun bypass "vivo"
+            return {"payload": {}, "updated_at": (NOW - timedelta(hours=2)).isoformat()}
+
+    db = ScannerFermoDB(status="stopped")
+    db.scan_rows = [_feed_row(updated_at=NOW - timedelta(hours=2))]
+    db.requests.append({"id": 1, "kind": "place", "status": "pending",
+                        "payload": _place_payload()})
+    _run(db)
+    assert db.requests[0]["status"] == "error"
+    assert db.requests[0]["result"]["error"] in ("feed_non_fresco", "feed_assente")
+    assert not db.trades, "nessun ordine su quote vecchie"
+
+
+def test_manuale_su_partita_non_nel_feed_viene_rifiutato():
+    db = FakeDB(status="stopped")
+    db.scan_rows = []                      # la partita non e' seguita dallo scanner
+    db.requests.append({"id": 1, "kind": "place", "status": "pending",
+                        "payload": _place_payload()})
+    _run(db)
+    assert db.requests[0]["status"] == "error"
+    assert db.requests[0]["result"]["error"] == "feed_assente"
+    assert not db.trades

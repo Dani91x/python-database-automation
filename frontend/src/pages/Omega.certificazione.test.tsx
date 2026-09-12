@@ -142,8 +142,10 @@ describe('§7 — la pagina funziona con la RPC v4 (migrazione v5 NON applicata)
         mState.mockResolvedValue(stateV4());
         renderPage();
         expect(await screen.findByTestId('omega-daily-mission')).toBeInTheDocument();
-        expect(screen.getByTestId('omega-kpi-pnl')).toBeInTheDocument();
+        // audit 12/09: il realizzato di oggi si legge nella barra (una volta
+        // sola); i KPI tengono solo il rischio vivo e il bloccato
         expect(screen.getByTestId('omega-kpi-liability')).toBeInTheDocument();
+        expect(screen.getByTestId('omega-kpi-locked')).toBeInTheDocument();
     });
 
     it('il KPI «P&L bloccato» C’È comunque, STIMATO dalle righe caricate', async () => {
@@ -303,11 +305,9 @@ describe('§4 — KPI e barra SOLO dagli aggregati (nessun conteggio client)', (
         renderPage();
         const bar = await screen.findByTestId('omega-daily-mission');
         expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('1');
-        const kpi = screen.getByTestId('omega-kpi-legs');
-        expect(kpi).toHaveTextContent('1V');
-        expect(kpi).toHaveTextContent('0P');
+        expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('1V');
+        expect(within(bar).getByTestId('omega-today-legs')).toHaveTextContent('0P');
         // il riepilogo della tabella usa gli STESSI numeri della RPC
-        await gotoAutoTab();
         expect(await screen.findByTestId('omega-matches-summary'))
             .toHaveTextContent('1 operazioni oggi · 1V 0P');
     });

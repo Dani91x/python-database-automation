@@ -321,6 +321,10 @@ export interface SafeOpportunity {
     /** distanza dalla quota di riferimento (frazione) */
     gap?: number | null;
     ref?: SafeAnomalyRef | string | null;
+    /** CERT. 12/09 — da dove viene `p_model` di un'anomalia: 'modello' (stima
+     *  del modello, piu' prudente del limite di mercato), 'riferimento' (limite
+     *  implicito nella quota sorella) o 'punteggio' (esito gia' deciso). */
+    p_source?: 'modello' | 'riferimento' | 'punteggio' | string | null;
     // ---- combo
     combo?: SafeComboType | string | null;
     legs?: SafeComboLeg[] | null;
@@ -329,6 +333,19 @@ export interface SafeOpportunity {
     /** profitto per € nel caso migliore */
     best_case_per_eur?: number | null;
     total_stake?: number | null;
+    /** CERT. 12/09 — il minimo Betfair vale per OGNI GAMBA: sotto questo totale
+     *  una gamba resterebbe sotto il minimo e verrebbe RIFIUTATA dall'exchange,
+     *  lasciando una posizione nuda (l'opposto del "rischio zero"). */
+    min_total_stake?: number | null;
+    /** stake minimo per singola gamba usato per il calcolo sopra */
+    min_leg_stake?: number | null;
+    /** false = eseguibile agli stake PUBBLICATI (total_stake); con un totale
+     *  piu' alto la combinazione puo' comunque essere piazzabile */
+    executable_whole?: boolean | null;
+    /** false = il book non regge le gambe nemmeno al totale MINIMO: mai piazzabile intera */
+    book_supports_min?: boolean | null;
+    /** da dove viene `p_model` di una combo: 'book' (modello) o 'implicita' (quota) */
+    p_model_source?: 'book' | 'implicita' | string | null;
     // ---- tennis
     extra?: SafeTennisExtra | null;
 }

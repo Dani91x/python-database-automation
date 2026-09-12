@@ -6,6 +6,7 @@ alla whitelist frontend in ``frontend/src/lib/omega.ts``.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Callable
 
 # Obiettivo giornaliero di default (colonna dedicata su omega_control).
@@ -115,10 +116,20 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     "greenup_hold_max_risk": (0.02, float, 0.0, 1.0),   # P(perdita) ≤ → si tiene
     "greenup_risk_cap": (0.15, float, 0.0, 1.0),        # P(perdita) ≥ → si esce (caso vivo 10/09: 0.12 → tengo)
     "greenup_ev_margin": (0.10, float, 0.0, 1000.0),    # EUR: bloccato ≥ EV(tengo) − margine → esce
+    # Sopra greenup_risk_cap si esce solo se il prezzo vale almeno l'EV del tenere
+    # meno questa frazione della liability (premio pagato per la certezza).
+    # 0 = mai sotto l'EV; 1 = vecchio tetto secco, uscita a qualunque prezzo.
+    "greenup_risk_premium_pct": (0.05, float, 0.0, 1.0),
     "greenup_take_profit_frac": (0.9, float, 0.1, 1.0), # cash-out blocca ≥ frac dello stake…
     "greenup_take_profit_minute": (80, int, 0, 130),    # …dal minuto → take-profit
     "greenup_retry_s": (20, int, 2, 600),               # cooldown fra tentativi (residuo/errore)
     "greenup_max_attempts": (15, int, 0, 100),          # cap tentativi per posizione
+    # 12/09: quanto il tetto di fine gara puo' superare il modello. Oltre questo
+    # rapporto la quota e' considerata rotta e il modello resta l'unica stima
+    # (trade 84: back 1.49 = 67,1% contro un modello all'8,5%, 8x: uscita da
+    # -9,73 EUR su un lay che ha poi VINTO). 0 = nessun limite (vecchio
+    # comportamento).
+    "greenup_market_floor_max_ratio": (3.0, float, 0.0, 100.0),
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}
@@ -141,8 +152,18 @@ def _coerce(key: str, raw: Any) -> Any:
         return default
     if key in ("greenup_mode", "model_calibration") and val not in ("auto", "off"):
         return default
+    # certificazione 12/09: ``model_empirical`` non era validato — un valore
+    # qualsiasi ("xxx", "on") passava e il servizio (`!= "veto"`) lo leggeva
+    # come OFF: veto empirico spento in silenzio da un refuso della UI
+    if key == "model_empirical" and val not in ("veto", "off"):
+        return default
     if key == "model_calibration_path":
-        return str(val).strip()
+        # None/null dalla UI → "" (prima str(None) = "None": un percorso inesistente)
+        return "" if raw is None else str(val).strip()
+    # certificazione 12/09: NaN/inf superano i clamp (``nan < lo`` è False) →
+    # un prezzo o un cap "nan" entrava nella whitelist come valido
+    if isinstance(val, float) and not math.isfinite(val):
+        return default
     if lo is not None and isinstance(val, (int, float)) and val < lo:
         val = lo if cast is float else int(lo)
     if hi is not None and isinstance(val, (int, float)) and val > hi:

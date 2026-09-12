@@ -39,6 +39,7 @@ import math
 import re
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from Betfair.safe_strategy.opportunity import resolve_commission
 from Betfair.stream.trading.dutching import dutch_back
 
 DEFAULT_COMBO_PARAMS: Dict[str, Any] = {
@@ -52,6 +53,15 @@ DEFAULT_COMBO_PARAMS: Dict[str, Any] = {
     "conf_single_market": 0.85,
     "conf_multi_market": 0.65,
     "ternary_iters": 70,
+    # size minima REALE Betfair per GAMBA (bot_service.DEFAULT_PARAMS.min_stake):
+    # sotto questa cifra l'exchange rifiuta l'apertura e la combinazione resta
+    # monca (una gamba abbinata e una no = posizione NUDA). Serve a calcolare
+    # ``min_total_stake`` e ``executable_whole``.
+    "min_leg_stake": 2.0,
+    # tolleranza di ARROTONDAMENTO sullo stake di una gamba (mezzo centesimo):
+    # il lock viene verificato anche con gli stake spostati di questa cifra nel
+    # verso peggiore, perche' chi esegue ri-arrotonda su un totale diverso.
+    "stake_round_tol": 0.005,
 }
 
 _EPS = 1e-9
@@ -179,9 +189,13 @@ def _unit_profits(legs: Sequence[Leg], outcomes: Sequence[Outcome]) -> List[List
 
 
 def _net_from_units(legs: Sequence[Leg], units: Sequence[Sequence[float]],
-                    stakes: Sequence[float], comm: float) -> List[float]:
+                    stakes: Sequence[float], comm: float, tol: float = 0.0) -> List[float]:
     """Saldo NETTO per esito: commissione sul profitto positivo di ogni mercato,
-    le perdite di un mercato NON compensano i profitti di un altro."""
+    le perdite di un mercato NON compensano i profitti di un altro.
+
+    ``tol`` > 0: ogni stake viene spostato di ``tol`` EUR nel verso PEGGIORE per
+    quell'esito (l'arrotondamento al centesimo di chi esegue non e' noto qui).
+    """
     n = len(units[0]) if units else 0
     groups: Dict[Any, List[int]] = {}
     for i, leg in enumerate(legs):
@@ -189,7 +203,13 @@ def _net_from_units(legs: Sequence[Leg], units: Sequence[Sequence[float]],
     out = [0.0] * n
     for idxs in groups.values():
         for k in range(n):
-            v = sum(units[i][k] * stakes[i] for i in idxs)
+            v = 0.0
+            for i in idxs:
+                u = units[i][k]
+                s = stakes[i]
+                if tol > 0.0:
+                    s = max(0.0, s - tol) if u > 0 else s + tol
+                v += u * s
             out[k] += v * (1.0 - comm) if v > 0 else v
     return out
 
@@ -391,11 +411,35 @@ def _evaluate(ev: _Event, combo: str, legs: List[Leg], ratios: List[float],
     for leg, s in zip(legs, stakes):
         if leg.size_available < s or leg.size_available < float(p["min_size"]):
             return None
-    net = _net_payoffs(legs, stakes, ev.outcomes, comm)
+    units = _unit_profits(legs, ev.outcomes)
+    net = _net_from_units(legs, units, stakes, comm)
     worst = min(net) / total
     best = max(net) / total
     if worst < float(p["min_worst"]) - _EPS or best < float(p["min_lock"]) - _EPS:
         return None
+    # ROBUSTEZZA ALL'ARROTONDAMENTO: chi esegue (bot o utente) ricalcola gli
+    # stake da ``stake_ratio`` su un totale DIVERSO e ri-arrotonda al centesimo.
+    # Un lock che regge solo agli stake pubblicati qui non e' un lock.
+    tol = max(0.0, float(p.get("stake_round_tol") or 0.0))
+    worst_tol = worst
+    if tol > 0.0:
+        worst_tol = min(_net_from_units(legs, units, stakes, comm, tol=tol)) / total
+        if worst_tol < float(p["min_worst"]) - _EPS:
+            return None
+    # SIZE MINIMA REALE Betfair per gamba: con ``combo_stake`` le gambe piccole
+    # possono cadere sotto il minimo (es. dutching O/U 5.5 -> 9,66 / 0,34 EUR):
+    # in live la gamba sotto minimo viene RIFIUTATA e resta una posizione nuda.
+    # Qui si dichiara il totale che serve perche' OGNI gamba sia piazzabile e se
+    # la liquidita' del book lo regge.
+    min_leg = max(0.0, float(p.get("min_leg_stake") or 0.0))
+    ratios_eff = [s / total for s in stakes]
+    min_total = 0.0
+    if min_leg > 0:
+        min_total = max(min_leg / r for r in ratios_eff if r > 0)
+    min_total = round(max(min_total, total), 2)
+    executable = all(
+        leg.size_available + 1e-9 >= min_total * r for leg, r in zip(legs, ratios_eff)
+    ) if min_leg > 0 else True
     markets = {leg.market_id for leg in legs}
     base = float(p["conf_single_market"] if len(markets) == 1 else p["conf_multi_market"])
     depth = min(leg.size_available / max(_EPS, 2.0 * s) for leg, s in zip(legs, stakes))
@@ -415,13 +459,24 @@ def _evaluate(ev: _Event, combo: str, legs: List[Leg], ratios: List[float],
         "market_id": first.market_id, "selection_id": first.selection_id,
         "selection_name": first.selection_name, "side": first.side,
         "price": round(first.price, 4), "size_available": round(first.size_available, 2),
+        # ONESTA': senza la P del modello per questa selezione NON si spaccia la
+        # probabilita' implicita nel prezzo per "modello" (stesso errore delle
+        # anomalie): il campo resta valorizzato per compatibilita', ma
+        # ``p_model_source`` dichiara da dove viene.
         "p_model": round(pb if pb is not None else 1.0 / first.price, 6),
+        "p_model_source": "book" if pb is not None else "implicita",
         "p_implied": round(1.0 / first.price, 6),
         "edge": round(worst, 6), "ev": round(worst, 6),
         "confidence": round(conf, 4),
         "rationale": (f"{parts} sul {score} al {ev.minute}': {why}; profitto bloccato "
                       f"{_pct(worst)} per EUR (caso migliore {_pct(best)}), "
-                      f"{total:.2f} EUR totali"),
+                      f"{total:.2f} EUR totali"
+                      + ("" if min_total <= total + 1e-9 else
+                         f"; ATTENZIONE: servono almeno {min_total:.2f} EUR totali "
+                         f"perche' ogni gamba superi il minimo Betfair di "
+                         f"{min_leg:.2f} EUR"
+                         + ("" if executable else
+                            " e la liquidita' del book NON lo regge: NON piazzabile intera"))),
         "minute": ev.minute, "score": score,
         "legs": [{
             "market_type": leg.market_type, "market_id": leg.market_id,
@@ -432,8 +487,22 @@ def _evaluate(ev: _Event, combo: str, legs: List[Leg], ratios: List[float],
         } for leg, s in zip(legs, stakes)],
         "locked_profit_per_eur": round(worst, 6),
         "worst_case_per_eur": round(worst, 6),
+        "worst_case_rounded_per_eur": round(worst_tol, 6),
         "best_case_per_eur": round(best, 6),
         "total_stake": round(total, 2),
+        # stake TOTALE minimo perche' ogni gamba superi il minimo Betfair
+        # (``min_leg_stake``) e se il book lo regge: sotto questo totale la
+        # combinazione NON e' piazzabile intera.
+        "min_leg_stake": round(min_leg, 2),
+        "min_total_stake": min_total,
+        # ``executable_whole``: eseguibile AGLI STAKE PUBBLICATI (total).
+        # ``book_supports_min``: il book regge la combinazione al totale MINIMO
+        # (min_total_stake). CERT. 12/09 — sono due cose diverse: chi esegue con
+        # un totale PIU' ALTO del pubblicato (il bot usa stake x n_gambe, la UI
+        # il totale scelto dall'utente) puo' benissimo superare il minimo. Senza
+        # questa distinzione una combinazione valida veniva scartata sempre.
+        "book_supports_min": bool(executable),
+        "executable_whole": bool(executable and total + 1e-9 >= min_total),
     }
 
 
@@ -534,6 +603,9 @@ def find_combos(payload: dict, book: Dict[str, float], *, params: Optional[dict]
     blocchi mancanti.
     """
     prm = {**DEFAULT_COMBO_PARAMS, **(params or {})}
+    # la commissione del BOT (``commission_pct``) vince sul default 5%: con
+    # un'aliquota piu' alta un lock "positivo" al 5% puo' essere NEGATIVO
+    prm["commission"] = resolve_commission(params, float(DEFAULT_COMBO_PARAMS["commission"]))
     if not isinstance(payload, dict):
         return []
     ev = _Event(payload, book if isinstance(book, dict) else {}, prm)

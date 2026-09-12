@@ -4,23 +4,31 @@
 // Tutte le cifre escono dalle funzioni pure di lib/dailyHistory (testate):
 // qui solo presentazione. Il selettore di periodo è controllato dal padre.
 // ============================================================================
-import { useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { EquityCurve } from '@/components/trading/EquityCurve';
+import { EQUITY_TITLE, EQUITY_AXIS_NOTE } from '@/components/trading/EquityCard';
+import { StatTile, KpiRow } from '@/components/trading/StatTile';
 import {
-    equityByDay, summarizeRows, aggregateBreakdown, dayLabel,
+    equityByDay, summarizeRows, aggregateBreakdown, dayLabel, WIN_LOSS_TIP,
     PERIOD_LABEL, type DailyRow, type PeriodKind, type HistoryVariant, type DailyBreakdown,
 } from '@/lib/dailyHistory';
 import { fmtMoney, fmtPct as fmtPctFrac, fmtNum } from '@/lib/format';
 
 function fmtEur(v: number | null | undefined): string {
-    return fmtMoney(Number(v ?? 0));
+    return fmtMoney(v);
 }
 function fmtSignedEur(v: number | null | undefined): string {
     return fmtMoney(v, { signed: true });
 }
+/**
+ * §1 — UNA forma per le percentuali: virgola, spazio e UN decimale, come la
+ * barra della giornata (`fmtPctPoints(pct, 1)`). Prima qui erano a zero
+ * decimali: «94 %» accanto a «0,0 %» nella stessa pagina, e un win rate di
+ * 93,6 % arrotondato a 94 % su 52 trade.
+ */
 function fmtPct(v: number | null | undefined): string {
-    return fmtPctFrac(v, 0);
+    return fmtPctFrac(v, 1);
 }
 
 const PERIODS: PeriodKind[] = ['month', '30d', '90d', 'year'];
@@ -42,22 +50,12 @@ const STRATEGY_LABELS: Record<HistoryVariant, Record<string, string>> = {
 const SPORT_LABEL: Record<string, string> = { calcio: '⚽ Calcio', tennis: '🎾 Tennis' };
 const ORIGIN_LABEL: Record<string, string> = { auto: '⚙️ Automatico', manual: '✋ Manuale' };
 
-function Tile({ label, value, tone, sub, testId }: {
-    label: string; value: string; tone?: 'pos' | 'neg' | 'plain' | 'gold' | 'danger'; sub?: ReactNode; testId?: string;
-}) {
-    const color = tone === 'pos' ? 'text-emerald-400'
-        : tone === 'neg' ? 'text-red-400'
-        : tone === 'gold' ? 'text-secondary'
-        : tone === 'danger' ? 'text-orange-400'
-        : 'text-white/90';
-    return (
-        <Card className="glass-card border-white/10 p-3 flex-1 min-w-[140px]" data-testid={testId}>
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
-            <div className={`mt-0.5 text-xl md:text-2xl font-display font-black tabular-nums ${color}`}>{value}</div>
-            {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
-        </Card>
-    );
-}
+/**
+ * §19 — il pannello aveva una copia privata di StatTile (stesse classi, altra
+ * `min-w`, niente tooltip): due tessere KPI diverse nella stessa pagina. Ora si
+ * usa la tessera condivisa; `Tile` resta solo come alias tipizzato locale.
+ */
+const Tile = StatTile;
 
 function BreakdownTable({ title, data, labels, testId }: {
     title: string; data: Record<string, DailyBreakdown>; labels: Record<string, string>; testId: string;
@@ -71,8 +69,8 @@ function BreakdownTable({ title, data, labels, testId }: {
                     <tr>
                         <th className="text-left px-3 py-2">{title}</th>
                         <th className="text-right px-3 py-2" title="aperture piazzate nel periodo">Trade</th>
-                        <th className="text-right px-3 py-2">Vinti</th>
-                        <th className="text-right px-3 py-2">Persi</th>
+                        <th className="text-right px-3 py-2" title={WIN_LOSS_TIP}>Vinti</th>
+                        <th className="text-right px-3 py-2" title={WIN_LOSS_TIP}>Persi</th>
                         <th className="text-right px-3 py-2">Win rate</th>
                         <th className="text-right px-3 py-2">P&L</th>
                     </tr>
@@ -108,9 +106,14 @@ export interface PerformancePanelProps {
     loading?: boolean;
     /** intervallo mostrato accanto al selettore */
     range?: { from: string; to: string } | null;
+    /**
+     * Il periodo NON è coperto dalla finestra caricata (limite dei 400 giorni
+     * dello storico): meglio dirlo che mostrare zeri che sembrano dati.
+     */
+    unavailable?: string | null;
 }
 
-export function PerformancePanel({ rows, period, onPeriodChange, variant, loading = false, range }: PerformancePanelProps) {
+export function PerformancePanel({ rows, period, onPeriodChange, variant, loading = false, range, unavailable = null }: PerformancePanelProps) {
     const s = useMemo(() => summarizeRows(rows), [rows]);
     const equity = useMemo(() => equityByDay(rows), [rows]);
     const byStrategy = useMemo(() => aggregateBreakdown(rows, 'by_strategy'), [rows]);
@@ -142,24 +145,41 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
                 )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            {unavailable && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" data-testid="period-unavailable">
+                    {unavailable}
+                </div>
+            )}
+
+            <KpiRow loading={loading && rows.length === 0} tiles={10}>
                 <Tile label="P&L periodo" value={fmtSignedEur(s.pnl)} tone={s.pnl > 0 ? 'pos' : s.pnl < 0 ? 'neg' : 'plain'} testId="kpi-pnl"
-                    sub={s.commission != null ? `commissioni ≈ ${fmtEur(s.commission)} (stimate dal netto)` : `${s.days} giornate operative`} />
+                    hint="somma dei P&L realizzati delle giornate del periodo"
+                    sub={s.commission != null
+                        // il P&L è già NETTO: la commissione è quella scritta dal
+                        // servizio dove c'è, altrimenti ricavata dal netto positivo
+                        ? `commissioni ${fmtEur(s.commission)} già dedotte dal P&L`
+                        : `${s.days} giornate operative`} />
                 <Tile label="Giornate +/−" value={`${s.positiveDays} / ${s.negativeDays}`} tone={s.positiveDays >= s.negativeDays ? 'pos' : 'neg'} testId="kpi-days"
+                    hint="giornate chiuse in utile / in perdita nel periodo"
                     sub={`${s.days} giornate con attività`} />
                 <Tile label="Win rate" value={fmtPct(s.winRate)} tone="plain" testId="kpi-winrate"
+                    hint={WIN_LOSS_TIP}
                     sub={`${s.won}V · ${s.lost}P · ${s.void} void · ${s.hedgedClosed} chiusi o in chiusura a mercato`} />
                 <Tile label="Profit factor" value={s.profitFactor == null ? '—' : fmtNum(s.profitFactor, 2)} tone={s.profitFactor == null ? 'plain' : s.profitFactor >= 1 ? 'pos' : 'neg'} testId="kpi-pf"
+                    hint="quanto si incassa per ogni euro perso: sotto 1 il bot perde"
                     sub="gross profit / gross loss" />
                 <Tile label="Expectancy / trade" value={fmtSignedEur(s.expectancy)} tone={s.expectancy == null ? 'plain' : s.expectancy >= 0 ? 'pos' : 'neg'} testId="kpi-expectancy"
+                    hint="P&L medio per apertura regolata nel periodo"
                     sub={`${s.settled} aperture regolate · ${s.tradesPlaced} piazzate`} />
                 <Tile label="Max drawdown" value={fmtEur(s.drawdown.maxDrawdown)} tone={s.drawdown.maxDrawdown > 0 ? 'danger' : 'plain'} testId="kpi-dd"
+                    hint="massima discesa dell’equity dal suo picco, dentro il periodo"
                     sub={s.drawdown.currentDrawdown > 0 ? `in corso ${fmtEur(s.drawdown.currentDrawdown)} dal picco` : 'sul picco'} />
                 <Tile label="Miglior giornata" value={fmtSignedEur(s.bestDay?.pnl_realized ?? null)} tone="pos" testId="kpi-best"
                     sub={s.bestDay ? dayLabel(s.bestDay.day, { year: false }) : '—'} />
                 <Tile label="Peggior giornata" value={fmtSignedEur(s.worstDay?.pnl_realized ?? null)} tone="neg" testId="kpi-worst"
                     sub={s.worstDay ? dayLabel(s.worstDay.day, { year: false }) : '—'} />
-                <Tile label="Serie" value={`${s.streaks.bestWin}+ / ${s.streaks.bestLoss}−`} tone="plain" testId="kpi-streak" sub={streakLabel} />
+                <Tile label="Serie" value={`${s.streaks.bestWin}+ / ${s.streaks.bestLoss}−`} tone="plain" testId="kpi-streak"
+                    hint="giornate positive e negative consecutive: record del periodo" sub={streakLabel} />
                 {variant === 'omega' && (
                     <Tile label="Obiettivo centrato" value={s.goalHit.total > 0 ? `${s.goalHit.hit}/${s.goalHit.total}` : '—'}
                         tone={s.goalHit.rate == null ? 'plain' : s.goalHit.rate >= 0.5 ? 'gold' : 'neg'} testId="kpi-goal"
@@ -170,12 +190,14 @@ export function PerformancePanel({ rows, period, onPeriodChange, variant, loadin
                                 : 'nessun obiettivo registrato'} />
                 )}
                 {s.maxLiability != null && (
-                    <Tile label="Liability max" value={fmtEur(s.maxLiability)} tone="danger" testId="kpi-liab" sub="massima esposizione su un trade" />
+                    <Tile label="Liability max" value={fmtEur(s.maxLiability)} tone="danger" testId="kpi-liab"
+                        hint="massima liability registrata su una singola posizione nel periodo" sub="massima esposizione su un trade" />
                 )}
-            </div>
+            </KpiRow>
 
             <Card className="glass-card border-white/10 p-4">
-                <div className="text-sm text-slate-300 mb-2">Equity per giornata · P&L cumulato realizzato</div>
+                <div className="text-sm text-slate-300" title={EQUITY_AXIS_NOTE}>{EQUITY_TITLE} · per giornata</div>
+                <div className="text-[10px] text-slate-500 mb-2">{EQUITY_AXIS_NOTE}</div>
                 <EquityCurve
                     series={equity}
                     label="Equity per giornata"

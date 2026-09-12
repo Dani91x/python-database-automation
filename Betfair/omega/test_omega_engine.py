@@ -174,7 +174,10 @@ def test_apply_liability_cap_off():
 # paper fill (§6)
 # ---------------------------------------------------------------------------
 def test_paper_fill_best_price():
-    f = E.paper_fill(5.0, best_price=110.0)
+    # certificazione 12/09: senza ladder NON c'è liquidità nota → nessun fill
+    # (prima: fill INTERO al best con controparte inventata = regalo paper)
+    assert E.paper_fill(5.0, best_price=110.0) is None
+    f = E.paper_fill(5.0, best_price=110.0, lay_ladder=((110.0, 5.0),))
     assert f is not None
     assert f.matched_size == 5.0
     assert f.avg_price == 110.0

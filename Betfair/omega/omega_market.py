@@ -7,6 +7,7 @@ mercato CORRECT_SCORE, lettura del book (→ ScoreRunner), piazzamento LAY reale
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
@@ -122,25 +123,69 @@ def _best_lay(levels: Any) -> tuple[Optional[float], float, tuple[tuple[float, f
     """Ritorna (best_price, best_size, ladder) da availableToLay."""
     if not levels:
         return None, 0.0, ()
-    ladder = tuple((float(l["price"]), float(l["size"])) for l in levels if l.get("price"))
+    ladder: list[tuple[float, float]] = []
+    for l in levels:
+        if not isinstance(l, dict) or not l.get("price"):
+            continue
+        try:
+            price, size = float(l["price"]), float(l.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        # certificazione 12/09: un livello a prezzo non finito o size <= 0 non
+        # è liquidità (prima ``l["size"]`` mancante era un KeyError sull'intero
+        # book e un NaN passava fino al prezzo dell'ordine)
+        if not (math.isfinite(price) and math.isfinite(size)) or price < 1.0 or size <= 0:
+            continue
+        ladder.append((price, size))
+    ladder = tuple(ladder)
     if not ladder:
         return None, 0.0, ()
     best_price, best_size = ladder[0]
     return best_price, best_size, ladder
 
 
+def _best_back(levels: Any) -> tuple[Optional[float], float]:
+    """(best back price, size abbinabile) da availableToBack, con gli STESSI
+    filtri del lato lay. Certificazione 12/09: prima si leggeva ``levels[0]``
+    senza guardare né la finitezza né la size, e la size del back non finiva
+    MAI nello snapshot automatico (``ScoreRunner.back_size`` restava 0,0): il
+    ranking per costo di copertura (§15) trattava "size ignota" come "liquidità
+    sufficiente" e poteva scegliere un risultato NON copribile."""
+    for l in levels or ():
+        if not isinstance(l, dict) or not l.get("price"):
+            continue
+        try:
+            price, size = float(l["price"]), float(l.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(price) and math.isfinite(size)) or price <= 1.0 or size <= 0:
+            continue
+        return price, size
+    return None, 0.0
+
+
 def _best_back_price(levels: Any) -> Optional[float]:
-    if not levels:
-        return None
-    try:
-        return float(levels[0]["price"])
-    except (KeyError, IndexError, TypeError, ValueError):
-        return None
+    """Compatibilità: solo il prezzo (vedi ``_best_back``)."""
+    return _best_back(levels)[0]
 
 
 # ---------------------------------------------------------------------------
 # Listing eventi calcio di oggi (include i match già iniziati)
 # ---------------------------------------------------------------------------
+def today_window_utc(now: datetime, *, lookback_hours: int = 12) -> tuple[str, str]:
+    """(from, to) ISO-Z della finestra "eventi di oggi": da ``now − lookback`` alla
+    FINE DELLA GIORNATA OPERATIVA Europe/Rome (§2/§4: "marketStartTime cade
+    oggi"). Certificazione 12/09: prima il tetto era 23:59:59 **UTC**, cioè fino
+    alle 01:59 di Roma del giorno dopo — due ore di partite di DOMANI entravano
+    nell'universo di oggi (gambe residue e target per gamba falsati)."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    start = now - timedelta(hours=lookback_hours)
+    end = E.day_end_utc(now) - timedelta(seconds=1)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    return start.astimezone(timezone.utc).strftime(fmt), end.astimezone(timezone.utc).strftime(fmt)
+
+
 def list_today_football_events(lookback_hours: int = 12,
                                with_competitions: bool = False) -> list[EventInfo]:
     """Eventi calcio di oggi. ``with_competitions=True`` aggiunge la competizione
@@ -148,9 +193,7 @@ def list_today_football_events(lookback_hours: int = 12,
     cache UI — il loop automatico, che chiama questa funzione a ogni ciclo,
     NON deve pagare la chiamata in più."""
     now = datetime.now(timezone.utc)
-    from_date = (now - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_today = now.replace(hour=23, minute=59, second=59, microsecond=0)
-    to_date = end_today.strftime("%Y-%m-%dT%H:%M:%SZ")
+    from_date, to_date = today_window_utc(now, lookback_hours=lookback_hours)
     raw = call(lambda c: c.list_events([FOOTBALL_EVENT_TYPE_ID], from_date=from_date, to_date=to_date)) or []
     out: list[EventInfo] = []
     for e in raw:
@@ -257,13 +300,15 @@ def _snapshot_from_book(market: CorrectScoreMarket, b: dict) -> MarketSnapshot:
             any_winner = True
         ex = r.get("ex", {}) or {}
         lay_price, lay_size, ladder = _best_lay(ex.get("availableToLay"))
+        back_price, back_size = _best_back(ex.get("availableToBack"))
         runners.append(
             E.ScoreRunner(
                 selection_id=sid,
                 name=market.runner_names.get(sid, "?"),
                 lay_price=lay_price,
                 lay_size=lay_size,
-                back_price=_best_back_price(ex.get("availableToBack")),
+                back_price=back_price,
+                back_size=back_size,
                 lay_ladder=ladder,
             )
         )
@@ -438,9 +483,10 @@ def read_book(market_id: str, runner_names: dict[int, str]) -> Optional[dict]:
         sid = int(sid)
         ex = r.get("ex", {}) or {}
         lay_price, lay_size, ladder = _best_lay(ex.get("availableToLay"))
-        back = ex.get("availableToBack") or []
-        back_price = _best_back_price(back)
-        back_size = float(back[0]["size"]) if back and back[0].get("size") is not None else 0.0
+        # certificazione 12/09: prezzo e size del back dallo STESSO livello
+        # filtrato (prima il prezzo veniva da levels[0] e la size pure, ma senza
+        # il filtro finitezza/size>0: una coppia incoerente finiva nella UI)
+        back_price, back_size = _best_back(ex.get("availableToBack"))
         runners.append({
             "selection_id": sid,
             "name": runner_names.get(sid, "?"),
@@ -476,8 +522,24 @@ def place_order_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     side: str = "lay", customer_ref: Optional[str] = None,
 ) -> PlaceResult:
-    """Piazza un ordine REALE (lay/back). customerRef deterministico = de-dup Betfair (I1)."""
+    """Piazza un ordine REALE (lay/back). customerRef deterministico = de-dup Betfair (I1).
+
+    Certificazione 12/09 (money-critical): prezzo e size sono VALIDATI PRIMA di
+    qualunque chiamata di rete. ``round(float(nan), 2)`` è NaN e finiva dritto
+    nel ``limitOrder.size``; una size 0/negativa sarebbe un ordine senza senso.
+    Si solleva ``ValueError`` senza aver contattato Betfair: nessun ordine reale
+    esiste, la riga resta in riconciliazione e si libera dopo il grace.
+    """
     side_bf = "BACK" if str(side).lower() == "back" else "LAY"
+    try:
+        size_f = float(size)
+    except (TypeError, ValueError):
+        raise ValueError(f"size non numerica: {size!r}") from None
+    if not math.isfinite(size_f) or round(size_f, 2) <= 0:
+        raise ValueError(f"size non valida per un ordine reale: {size!r}")
+    price_tick = E.round_to_tick(float(price))   # solleva su prezzo non finito
+    if not (E.MIN_PRICE <= price_tick <= E.MAX_PRICE):
+        raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
     customer_ref = (customer_ref or f"omega-{event_id}")[:32]
     instruction = {
         "selectionId": int(selection_id),
@@ -488,8 +550,8 @@ def place_order_live(
         # listClearedOrders → è la chiave forte per la riconciliazione (I3).
         "customerOrderRef": customer_ref,
         "limitOrder": {
-            "size": round(float(size), 2),
-            "price": E.round_to_tick(float(price)),
+            "size": round(size_f, 2),
+            "price": price_tick,
             "persistenceType": "LAPSE",
             # FILL_OR_KILL = "immediato o annullato": la parte NON matchata subito
             # viene cancellata da Betfair. Senza, un fill parziale lascerebbe un

@@ -68,9 +68,17 @@ export interface DailyCalendarProps {
     loading?: boolean;
 }
 
-function cellAria(c: CalendarCell, showGoal: boolean): string {
+/**
+ * Certificazione 12/09 — MAI uno zero affermativo prima di avere i dati.
+ * Durante il caricamento ogni cella dichiarava «nessuna operazione» e la
+ * testata «0 giornate · +0,00 €»: nel dump reale lo Storico diceva al trader
+ * che il 12 settembre non aveva fatto nulla mentre il dettaglio della stessa
+ * giornata elencava già 6 trade. Finché i dati non ci sono si dice
+ * «caricamento», non «niente».
+ */
+function cellAria(c: CalendarCell, showGoal: boolean, loading = false): string {
     const base = dayLabel(c.day, { weekday: true });
-    if (!c.row) return `${base}: nessuna operazione`;
+    if (!c.row) return `${base}: ${loading ? 'caricamento' : 'nessuna operazione'}`;
     const r = c.row;
     let s = `${base}: ${fmtSignedEur(r.pnl_realized)}, ${r.trades_placed} trade`;
     const mark = goalMarkOf(r, showGoal);
@@ -87,7 +95,12 @@ export function DailyCalendar({
     const cells = useMemo(() => weeks.flat(), [weeks]);
     const monthRows = useMemo(() => cells.filter((c) => c.inMonth && c.row).map((c) => c.row as DailyRow), [cells]);
     const maxAbs = useMemo(() => monthRows.reduce((m, r) => Math.max(m, Math.abs(r.pnl_realized)), 0), [monthRows]);
-    const monthPnl = useMemo(() => monthRows.reduce((s, r) => s + r.pnl_realized, 0), [monthRows]);
+    // somma in centesimi: sommando float il totale del mese poteva uscire
+    // 60.640000000000004 e il segno/colore a zero diventare casuale
+    const monthPnl = useMemo(
+        () => Math.round(monthRows.reduce((s, r) => s + r.pnl_realized, 0) * 100) / 100,
+        [monthRows],
+    );
 
     // roving tabindex: una sola cella nel tab order
     const [focusDay, setFocusDay] = useState<string>(() => selectedDay ?? todayDay);
@@ -155,10 +168,17 @@ export function DailyCalendar({
                     </Button>
                 </div>
                 <div className="text-sm tabular-nums" data-testid="calendar-month-total">
-                    <span className="text-slate-400 mr-2">{monthRows.length} giornate</span>
-                    <span className={`font-bold ${monthPnl > 0 ? 'text-emerald-400' : monthPnl < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-                        {fmtSignedEur(monthPnl)}
-                    </span>
+                    {loading && monthRows.length === 0 ? (
+                        // niente "0 giornate · +0,00 €" prima di avere i dati
+                        <span className="text-slate-400">caricamento…</span>
+                    ) : (
+                        <>
+                            <span className="text-slate-400 mr-2">{monthRows.length} giornate</span>
+                            <span className={`font-bold ${monthPnl > 0 ? 'text-emerald-400' : monthPnl < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                                {fmtSignedEur(monthPnl)}
+                            </span>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -193,7 +213,7 @@ export function DailyCalendar({
                                 data-in-month={c.inMonth ? '1' : '0'}
                                 aria-selected={isSel}
                                 aria-current={isToday ? 'date' : undefined}
-                                aria-label={cellAria(c, showGoal)}
+                                aria-label={cellAria(c, showGoal, loading)}
                                 tabIndex={c.day === focusDay ? 0 : -1}
                                 onClick={() => onSelectDay(c.day)}
                                 onKeyDown={(e) => onKey(e, c)}
@@ -232,7 +252,7 @@ export function DailyCalendar({
                                         <div className="text-[10px] opacity-80 tabular-nums">{r.trades_placed} trade</div>
                                     </>
                                 ) : (
-                                    <div className="mt-1 text-[10px] text-slate-600">—</div>
+                                    <div className="mt-1 text-[10px] text-slate-600">{loading ? '…' : '—'}</div>
                                 )}
                             </button>
                         );

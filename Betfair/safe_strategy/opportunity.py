@@ -78,6 +78,17 @@ DEFAULT_OPP_PARAMS: Dict[str, Any] = {
     "max_stale_s": 60.0,       # oltre: prezzo considerato morto (peso 0)
     # gate di contesto
     "post_goal_cooldown_s": 90.0,   # dopo un gol i prezzi sono instabili
+    # RECUPERO (12/09): oltre questo minuto la curva dei gol residui e' esaurita e
+    # il modello dichiara P=0/1 ("partita finita") anche se si sta ancora giocando:
+    # non e' una certezza, e' la fine della tabella. None = soglia automatica
+    # (90' + ``live_engine.INJURY_TIME_MIN``). Vedi ``model_is_blind``.
+    "max_signal_minute": None,
+    # PRESSIONE live (corner/cartellini -> moltiplicatori dei lambda): hook NON
+    # calibrato (live_engine: "attivabile solo dopo calibrazione") e le tabelle di
+    # ``data/opp_calibration.json`` sono state stimate con pressione NEUTRA.
+    # Tenerlo spento finche' non e' validato: acceso cambierebbe i lambda fino a
+    # +-25% sotto una calibrazione stimata su un modello diverso.
+    "use_pressure": False,
     "hazard_horizon_min": 3.0,      # orizzonte del controincrocio con l'atlante
     "hazard_warn": 0.30,            # divergenza > 30% -> confidenza dimezzata
     "hazard_drop": 0.60,            # divergenza > 60% -> segnale scartato
@@ -92,6 +103,73 @@ DEFAULT_OPP_PARAMS: Dict[str, Any] = {
 }
 
 _EPS = 1e-9
+
+# recupero: minuti oltre il 90' in cui la curva dei gol ha ancora massa
+# (``live_engine.INJURY_TIME_MIN``). Oltre, ``inplay_residual_rates`` torna il
+# suo pavimento (lambda 0.001) e OGNI mercato diventa una finta certezza.
+_DEFAULT_INJURY_TIME_MIN = 5.0
+
+
+def _injury_time_min() -> float:
+    try:
+        from Betfair.stream.engine.live_engine import INJURY_TIME_MIN
+        v = float(INJURY_TIME_MIN)
+        return v if math.isfinite(v) and v > 0 else _DEFAULT_INJURY_TIME_MIN
+    except Exception:  # noqa: BLE001 - mai fermare lo scanner per una costante
+        return _DEFAULT_INJURY_TIME_MIN
+
+
+def blind_minute(params: Optional[dict] = None) -> float:
+    """Primo minuto in cui il modello NON sa piu' nulla del tempo che resta."""
+    v = (params or {}).get("max_signal_minute")
+    try:
+        f = float(v)
+        if math.isfinite(f) and f > 0:
+            return f
+    except (TypeError, ValueError):
+        pass
+    return 90.0 + _injury_time_min()
+
+
+def model_is_blind(minute: Optional[int], params: Optional[dict] = None) -> bool:
+    """True quando il minuto e' oltre il recupero modellato: i tassi residui
+    sono azzerati e le probabilita' del modello diventano 0/1 SOLO perche' la
+    tabella e' finita. In quel regime nessun segnale del modello e' onesto
+    (una partita al 90'+7 puo' ancora subire un gol).
+    """
+    if minute is None:
+        return False
+    try:
+        m = float(minute)
+    except (TypeError, ValueError):
+        return False
+    return m >= blind_minute(params)
+
+
+def resolve_commission(params: Optional[dict], default: float = 0.05) -> float:
+    """Aliquota di commissione (frazione) dai parametri del chiamante.
+
+    ``commission`` esplicita (frazione) vince; altrimenti ``commission_pct`` del
+    bot (percentuale, es. 5 -> 0.05). Senza nessuna delle due: ``default``.
+    Prima l'aliquota era fissa al 5% anche quando il trade ne usava un'altra:
+    EV, edge e "profitto bloccato" erano calcolati con la commissione sbagliata.
+    """
+    p = params or {}
+    if "commission" in p:
+        try:
+            c = float(p["commission"])
+            if math.isfinite(c) and 0.0 <= c < 1.0:
+                return c
+        except (TypeError, ValueError):
+            pass
+    if "commission_pct" in p:
+        try:
+            c = float(p["commission_pct"]) / 100.0
+            if math.isfinite(c) and 0.0 <= c < 1.0:
+                return c
+        except (TypeError, ValueError):
+            pass
+    return float(default)
 
 # aggregati dei mercati "punteggio" (mai una scoreline: mai celle singole)
 _ANY_OTHER_HOME = re.compile(r"any\s*other.*home", re.IGNORECASE)
@@ -130,6 +208,17 @@ class Opportunity:
 # ---------------------------------------------------------------------------
 # λ: fixture del DB, altrimenti quote pre-KO congelate
 # ---------------------------------------------------------------------------
+def _as_int(v: Any) -> Optional[int]:
+    """int difensivo: None (non un'eccezione) su valori non numerici del feed."""
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if math.isfinite(f) else None
+
+
 def _pos_float(v: Any) -> Optional[float]:
     try:
         f = float(v)
@@ -236,16 +325,22 @@ class OpportunityModel:
         atlas: Optional[dict] = None,
         clock: Callable[[], float] = time.time,
         calibration: Any = "auto",
-        pressure: bool = True,
+        pressure: Optional[bool] = None,
     ) -> None:
         self.params: Dict[str, Any] = {**DEFAULT_OPP_PARAMS, **(params or {})}
+        # la commissione del BOT (``commission_pct``) vince sul default 5%:
+        # si guardano i parametri del CHIAMANTE, non quelli gia' fusi coi default
+        self.params["commission"] = resolve_commission(
+            params, float(DEFAULT_OPP_PARAMS["commission"]))
         self.atlas = atlas
         self.clock = clock
         # CALIBRAZIONE sui nostri dati: 'auto' = data/opp_calibration.json se
         # esiste, 'off' = probabilita' grezze, path/Calibrator espliciti
         self.calibrator: Optional[Calibrator] = self._resolve_calibration(calibration)
-        # PRESSIONE live: hook opzionale (pressure.py); senza modulo = neutra
-        self.pressure_enabled = bool(pressure) and _pressure_from_payload is not None
+        # PRESSIONE live: hook opzionale (pressure.py), SPENTO di default
+        # (non calibrato: vedi ``use_pressure`` nei parametri)
+        use_pressure = self.params.get("use_pressure") if pressure is None else pressure
+        self.pressure_enabled = bool(use_pressure) and _pressure_from_payload is not None
         # cache del book per (stato live + λ): il tick dello scanner ricalcola
         # la stessa griglia decine di volte al minuto per lo stesso evento
         self._book_cache: Dict[Tuple[Any, ...], Dict[str, float]] = {}
@@ -463,12 +558,24 @@ class OpportunityModel:
         if _pos_float(lambdas[0]) is None or _pos_float(lambdas[1]) is None:
             return []
         p = self.params
-        m = max(0, int(minute))
-        sh = int(payload.get("score_home") or 0)
-        sa = int(payload.get("score_away") or 0)
+        # la docstring promette "mai eccezioni": un feed con minuto/punteggio
+        # non numerico non deve far esplodere il ciclo dello scanner
+        m = _as_int(minute)
+        sh = _as_int(payload.get("score_home"))
+        sa = _as_int(payload.get("score_away"))
+        if m is None or sh is None or sa is None:
+            return []
+        m = max(0, m)
 
         cool = self._goal_cooldown_left(payload, m, now_ts)
         if cool > 0.0:
+            return []
+        # RECUPERO: oltre il recupero modellato i tassi residui sono azzerati e
+        # ogni esito diventa 0/1 per esaurimento della tabella, non per certezza.
+        # Un back Under a 1,05 al 96' con 5 minuti di recupero ancora da giocare
+        # e' un segnale FALSO: si sta zitti (stessa regola dei riferimenti
+        # illiquidi delle anomalie).
+        if model_is_blind(m, p):
             return []
 
         try:

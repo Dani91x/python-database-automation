@@ -97,9 +97,12 @@ describe('Omega — giornata operativa', () => {
         expect(within(card).getByTestId('omega-operating-day')).toHaveTextContent(/giovedì 10 settembre 2026/);
         expect(within(card).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '24');
         expect(card).toHaveTextContent('24,0 %');
-        // lo storico cumulato (+900) resta nel KPI, non nella missione
-        expect(card).not.toHaveTextContent('900');
-        expect(screen.getByText('totale storico +900,00 €')).toBeInTheDocument();
+        // audit 12/09: il cumulato storico è una NOTA in coda alla riga di
+        // giornata (prima stava nel sottotitolo di un KPI "P&L oggi" che
+        // ripeteva il realizzato già scritto qui sopra)
+        expect(line).toHaveTextContent('totale storico +900,00 €');
+        // e il realizzato di OGGI resta +60,00 €, non lo storico
+        expect(line).toHaveTextContent('realizzato oggi +60,00 €');
     });
 
     it('obiettivo centrato quando il realizzato di oggi supera il goal', async () => {
@@ -136,7 +139,9 @@ describe('Omega — tab Storico', () => {
         renderPage();
         await user.click(await screen.findByRole('tab', { name: /Storico/ }));
         expect(await screen.findByTestId('trading-history')).toBeInTheDocument();
-        await waitFor(() => expect(mDaily).toHaveBeenCalledWith('2026-09-01', '2026-09-30'));
+        await waitFor(() => // 12/09: la finestra copre la GRIGLIA del mese (lun 31 ago → dom 4 ott),
+        // altrimenti le celle fuori mese dichiarano «nessuna operazione» su dati mai letti
+        expect(mDaily).toHaveBeenCalledWith('2026-08-31', '2026-10-04'));
         await waitFor(() => expect(mDay).toHaveBeenCalledWith('2026-09-10'));
         expect(await screen.findByRole('gridcell', { name: /10 settembre.*\+60,00 €.*3 trade.*obiettivo mancato/ })).toBeInTheDocument();
         await waitFor(() => expect(screen.getByTestId('kpi-pnl')).toHaveTextContent('+60,00 €'));

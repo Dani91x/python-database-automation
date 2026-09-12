@@ -1130,3 +1130,136 @@ def test_manuale_live_exception_resta_pending_per_riconciliazione():
                                   "price": 110, "size": 10})
     S.run_once(market=market, db=db, now=NOW)
     assert len([x for x in db.trades if x.get("side") == "lay"]) == 1
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — PAPER = LIVE anche nel piazzamento MANUALE.
+# Prima il fallback legacy confermava il fill al prezzo scelto dall'utente
+# senza guardare il book: la liquidita' del BEST veniva spesa a un prezzo
+# diverso e un prezzo NON abbinabile riempiva lo stesso (in live il FOK lo
+# avrebbe ucciso). Ora passa dallo stesso simulatore del path automatico.
+# ===========================================================================
+def test_manuale_paper_prezzo_non_abbinabile_non_riempie():
+    """LAY a 60 quando il best lay e' 110: in live non si abbina, in paper neppure."""
+    db = FakeDB(_control(status="idle"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 60, "size": 5})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    t = db.trades[0]
+    assert t["status"] == "error", t
+    assert t["meta"]["reason"] == "paper_not_matched"
+    assert t["meta"]["leg_failed"] is True and t["meta"]["error_final"] is True
+    # la richiesta manuale risulta FALLITA all'utente (non "eseguita"): il
+    # motivo e' leggibile, cosi' il trader sa che l'ordine non e' mai entrato
+    assert db.manual_reqs[0]["status"] == "error"
+    assert "paper_non_abbinabile" in str(db.manual_reqs[0].get("result"))
+
+
+def test_manuale_paper_size_oltre_la_liquidita_riempie_solo_il_disponibile():
+    """Il book ha 40 EUR sul lay a 110: una size da 100 non puo' riempirsi tutta."""
+    db = FakeDB(_control(status="idle"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 110, "size": 100})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    t = db.trades[0]
+    assert t["status"] == "open"
+    assert t["size"] == 40.0            # cappata alla liquidita' REALE del book
+    assert t["price"] == 110.0
+    assert t["liability"] == E.liability_from_lay(40.0, 110.0)
+
+
+def test_manuale_paper_abbinabile_resta_invariato():
+    """Caso normale: prezzo al best e size disponibile -> fill pieno, come prima."""
+    db = FakeDB(_control(status="idle"))
+    db.manual_reqs = _manual_req({"event_id": "1.100", "market_id": "m-1.100",
+                                  "selection_id": 4, "side": "lay", "mode": "paper",
+                                  "price": 110, "size": 10})
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    t = db.trades[0]
+    assert t["status"] == "open" and t["size"] == 10.0 and t["price"] == 110.0
+    assert t["meta"]["fully_matched"] is True
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — il gate dei PREZZI del feed per le chiusure.
+# Lo STATO (punteggio/minuto) puo' invecchiare fino a 90 s per non restare
+# ciechi, ma i PREZZI di una chiusura hanno il tetto DURO del cash out (20 s):
+# oltre, il blocco del feed va ignorato e i prezzi si prendono dal book REST.
+# Senza questo test il ramo non era esercitato da nessuna suite.
+# ===========================================================================
+class _FakeCache:
+    def __init__(self, age_sec, payload):
+        self._age, self._payload = age_sec, payload
+
+    def rows_for(self, ids):
+        return {str(i): {"payload": self._payload, "updated_at": "2026-09-12T10:00:00Z",
+                         "_age": self._age} for i in ids}
+
+    def scanner_age_sec(self):
+        return 0.0
+
+
+def _patch_feed(monkeypatch, age_sec, payload=None):
+    """Installa un feed finto con righe di eta' nota e finge il market REALE."""
+    payload = payload if payload is not None else {"score_home": 0, "score_away": 0, "minute": 30}
+    cache = _FakeCache(age_sec, payload)
+    monkeypatch.setattr(S._scan_feed, "shared_cache", lambda: cache)
+    monkeypatch.setattr(S._scan_feed, "row_age_sec",
+                        lambda row, now_epoch=None: (row or {}).get("_age"))
+    monkeypatch.setattr(S._scan_feed, "fresh_payload",
+                        lambda row, max_age, scanner_age_sec=None: (row or {}).get("payload"))
+    sentinel = object()
+    monkeypatch.setattr(S, "_real_market", sentinel)
+    return sentinel
+
+
+def test_gate_prezzi_feed_fresco_entro_il_tetto_del_cashout(monkeypatch):
+    market = _patch_feed(monkeypatch, age_sec=5.0)
+    assert S._feed_prices_fresh(market, "1.100") is True
+
+
+def test_gate_prezzi_feed_stantio_oltre_20s_non_si_usa_per_chiudere(monkeypatch):
+    # 25 s: lo stato sarebbe ancora leggibile (tetto green-up 90 s), i PREZZI no
+    market = _patch_feed(monkeypatch, age_sec=25.0)
+    assert S._feed_prices_fresh(market, "1.100") is False
+    assert S.CASHOUT_FEED_MAX_AGE_S == 20.0
+    # ...e lo stato resta invece disponibile per NON restare ciechi
+    assert S._feed_state_bounded(market, "1.100", S.GREENUP_MAX_AGE_S) is not None
+
+
+def test_gate_prezzi_con_market_fake_non_blocca_i_test(monkeypatch):
+    _patch_feed(monkeypatch, age_sec=999.0)
+    assert S._feed_prices_fresh(object(), "1.100") is True
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — la cache eventi si aggiorna DA SOLA.
+# Prima la riempiva solo la richiesta manuale "Aggiorna eventi": senza quel
+# click la scheda Missione offriva partite di giorni prima, gia' finite.
+# ===========================================================================
+def test_cache_eventi_aggiornata_dal_ciclo_anche_a_bot_fermo():
+    S._EVENTS_REFRESH_AT.clear()
+    db = FakeDB(_control(status="stopped"))
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    assert getattr(db, "events_cache", None), "la cache eventi non e' stata riscritta"
+    assert db.events_cache[0]["event_id"] == "1.100"
+
+
+def test_cache_eventi_non_si_aggiorna_a_ogni_giro():
+    """Una chiamata REST ogni mezz'ora, non ogni ciclo da 2 secondi."""
+    S._EVENTS_REFRESH_AT.clear()
+    db = FakeDB(_control(status="stopped"))
+    market = FakeMarket([_event()], _cs(), _open_snapshot())
+    S.run_once(market=market, db=db, now=NOW)
+    n1 = getattr(db, "replace_calls", 0)
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=30))
+    assert getattr(db, "replace_calls", 0) == n1
+    # passata la finestra, si rinfresca
+    S.run_once(market=market, db=db, now=NOW + timedelta(seconds=S.EVENTS_REFRESH_EVERY_S + 1))
+    assert getattr(db, "replace_calls", 0) == n1 + 1

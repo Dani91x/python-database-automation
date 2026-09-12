@@ -34,7 +34,7 @@ import { fetchOmegaState, fetchOmegaTrades } from '@/lib/omega';
 import { fetchOmegaDaily } from '@/lib/dailyHistory';
 import { groupTradesByMatch, filterMatchesForDay } from '@/lib/omegaMatches';
 import { romeDay, dayLabel } from '@/lib/dailyHistory';
-import { fmtMoney, fmtNum, fmtPctPoints } from '@/lib/format';
+import { fmtMoney, fmtPctPoints } from '@/lib/format';
 import { writeAttempts, CERT_RUN } from './realClient';
 import { consoleCapture } from './setup.cert';
 import { Report, text } from './report';
@@ -126,6 +126,7 @@ d('/omega sui dati reali', () => {
         const stats = (st.control?.stats ?? {}) as Record<string, number | null | boolean>;
         const realized = Number(agg.realized_today ?? stats.realized_today ?? 0);
         const realizedTotal = Number(agg.realized_profit ?? stats.realized_profit ?? 0);
+        void realizedTotal;   // ora e' una nota in coda alla barra di giornata
         const goal = Number(st.goal_today ?? st.control?.daily_goal ?? 250);
         const openLiability = Number(agg.open_liability ?? stats.open_liability ?? 0);
         // `stats` può contenere booleani (bot_running): i contatori si leggono
@@ -137,33 +138,29 @@ d('/omega sui dati reali', () => {
         const wonToday = n(agg.won_today) ?? n(stats.won_today);
         const lostToday = n(agg.lost_today) ?? n(stats.lost_today);
         const matchesTraded = Number(agg.matches_traded ?? stats.matches_traded ?? 0);
+        void matchesTraded;   // ora e' nel riepilogo della tabella partite
 
         renderPage();
         await waitFor(() => expect(screen.queryByTestId('loading-state')).toBeNull(), { timeout: 60_000 });
 
-        // --- KPI «P&L oggi»
-        const kpiPnl = screen.getByTestId('omega-kpi-pnl');
-        rep.check('KPI «P&L oggi» (valore)', fmtMoney(realized, { signed: true }), text(kpiPnl.children[1]));
-        rep.check('KPI «P&L oggi» (sottotitolo totale)', `totale storico ${fmtMoney(realizedTotal, { signed: true })}`, text(kpiPnl.children[2]));
-        expect(text(kpiPnl.children[1])).toBe(fmtMoney(realized, { signed: true }));
+        // --- AUDIT 12/09: i KPI che RIPETEVANO la barra (P&L oggi, Operazioni
+        // oggi, Eventi in finestra) sono stati tolti. Il realizzato di oggi e il
+        // cumulato storico si leggono UNA volta sola, nella barra di giornata.
+        expect(screen.queryByTestId('omega-kpi-pnl')).toBeNull();
+        expect(screen.queryByTestId('omega-kpi-legs')).toBeNull();
+        expect(screen.queryByTestId('omega-kpi-events')).toBeNull();
 
         // --- KPI «Liability aperta»
         const kpiLiab = screen.getByTestId('omega-kpi-liability');
         rep.check('KPI «Liability aperta»', fmtMoney(openLiability), text(kpiLiab.children[1]));
         expect(text(kpiLiab.children[1])).toBe(fmtMoney(openLiability));
 
-        // --- KPI «Operazioni oggi»
-        const kpiLegs = screen.getByTestId('omega-kpi-legs');
-        rep.check('KPI «Operazioni oggi» (valore)', legsToday != null ? fmtNum(legsToday) : '—', text(kpiLegs.children[1]));
-        rep.check('KPI «Operazioni oggi» (V/P/vive/storico)',
-            `${wonToday ?? 0}V · ${lostToday ?? 0}P · ${agg.live_now ?? stats.live_now ?? agg.matches_open ?? 0} partite vive · storico ${fmtNum(matchesTraded)}`,
-            text(kpiLegs.children[2]));
-
-        // --- KPI «Target / operazione» e «Eventi in finestra»
-        rep.check('KPI «Target / operazione»', fmtMoney((stats.target_leg ?? stats.target_match) as number), text(screen.getByTestId('omega-kpi-target').children[1]));
+        // --- KPI «Target / operazione» (unico target della pagina)
         const running = st.control?.status === 'running' || st.control?.status === 'stopping';
         const statsFresh = stats.bot_running !== false && running;
-        rep.check('KPI «Eventi in finestra»', statsFresh ? String(stats.events_total ?? '—') : '—', text(screen.getByTestId('omega-kpi-events').children[1]));
+        rep.check('KPI «Target / operazione»',
+            statsFresh ? fmtMoney((stats.target_leg ?? stats.target_match) as number) : '—',
+            text(screen.getByTestId('omega-kpi-target').children[1]));
 
         // --- riga KPI «P&L bloccato» (solo con omega_models_v5)
         const lockedOpen = agg.locked_pnl_open ?? (stats.locked_pnl_open as number | null) ?? null;

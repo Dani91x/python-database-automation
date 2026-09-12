@@ -39,10 +39,40 @@ export const STATUS_META: Record<TradeStatus, Meta> = {
  * ("IN VERIFICA SU BETFAIR"): era la mappa condivisa a dire un'altra parola
  * ("DA RICONCILIARE"), cioè due nomi per lo stesso rischio.
  */
+/** esiti CERTI: nessun flag di riconciliazione/terminale può sovrascriverli */
+const SETTLED_STATUS = new Set(['won', 'lost', 'void']);
+
+type MetaObj = Record<string, unknown> | null | undefined;
+
 export const RECONCILING_META: Meta = {
     label: 'IN VERIFICA SU BETFAIR',
     cls: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40',
 };
+
+/**
+ * Certificazione 12/09 — ordine APPOGGIATO sul book e NON ANCORA ABBINATO.
+ *
+ * Una lay di green-up appoggiata a +N tick resta sul book finche' il mercato
+ * non scambia sotto il suo prezzo. Fino a quel momento **non copre niente**:
+ * la posizione aperta e' ancora tutta scoperta. La riga pero' veniva salvata
+ * con `status='open'`, cioe' con lo STESSO badge di una gamba abbinata, e in
+ * tabella il trader vedeva una chiusura che in realta' non era avvenuta.
+ * Caso vivo: Paris FC v Lyon con 30 EUR di Under abbinati e 20,25 EUR di lay
+ * solo appoggiate — rischio reale 30 EUR, mostrato 9,75.
+ */
+export const RESTING_META: Meta = {
+    label: 'APPOGGIATA · NON ABBINATA',
+    // indaco: DEVE differire da 'open' (sky), che significa posizione abbinata,
+    // e da 'pending' (ambra), che significa ordine ancora in corso di invio
+    cls: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40',
+};
+
+/** `meta.fill = 'paper_resting'`: ordine sul book, nessun abbinamento ancora. */
+export function isRestingMeta(status: string | null | undefined, meta: MetaObj): boolean {
+    if (SETTLED_STATUS.has(String(status ?? '').toLowerCase())) return false;
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return String(m['fill'] ?? '').endsWith('resting');
+}
 
 /**
  * Riga TERMINALE: è PROVATO che nessun ordine reale esiste (FOK ucciso, paper
@@ -54,8 +84,51 @@ export const TERMINAL_ERROR_META: Meta = {
     cls: 'bg-orange-500/20 text-orange-200 border-orange-400/50',
 };
 
-/** esiti CERTI: nessun flag di riconciliazione/terminale può sovrascriverli */
-const SETTLED_STATUS = new Set(['won', 'lost', 'void']);
+/**
+ * Certificazione 12/09 — UNA regola di "in verifica su Betfair" per i tre bot.
+ *
+ * I tre servizi marcano la riserva a esito IGNOTO in due modi diversi:
+ *   · Omega   `meta.reconciling = true` + `meta.reason='place_exception_reconciling'`
+ *             (omega_service.py:1337-1341)
+ *   · Safe    SOLO `meta.reason='place_exception_reconciling'` (execution.py:225)
+ *   · Mike    come Safe (service.py:346-353, stesso writer condiviso)
+ * Chi leggeva un solo campo dava due badge diversi per lo STESSO rischio. Qui
+ * la regola è una: lo stato deve essere ancora `pending` (un esito arrivato
+ * vince sempre) e basta uno dei due marcatori.
+ */
+export function isReconcilingMeta(status: string | null | undefined, meta: MetaObj): boolean {
+    if (String(status ?? '').toLowerCase() !== 'pending') return false;
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return m['reconciling'] === true
+        || String(m['reason'] ?? '') === 'place_exception_reconciling';
+}
+
+/**
+ * Riga TERMINALE: è PROVATO che nessun ordine reale esiste.
+ *   · Omega  `meta.error_final` / `meta.leg_failed` / `meta.no_fill_at` / `meta.error_at`
+ *   · Safe   `meta.error_final` (+ `error_at`)
+ *   · Mike   NON scrive nessuno di questi flag (vedi report): per Mike la riga
+ *            resta un semplice `error`, e questa funzione ritorna false.
+ */
+export function isTerminalErrorMeta(meta: MetaObj): boolean {
+    const m = (meta ?? {}) as Record<string, unknown>;
+    return Boolean(m['error_final']) || Boolean(m['leg_failed'])
+        || m['no_fill_at'] != null || m['error_at'] != null;
+}
+
+/**
+ * Badge di stato di una riga leggendo direttamente il `meta` del servizio:
+ * la stessa posizione ha lo stesso badge nel LIVE e nello STORICO.
+ */
+export function statusMetaOf(
+    row: { status: string | null | undefined; meta?: MetaObj },
+): Meta {
+    return statusMeta(row.status, {
+        reconciling: isReconcilingMeta(row.status, row.meta),
+        terminal: isTerminalErrorMeta(row.meta),
+        resting: isRestingMeta(row.status, row.meta),
+    });
+}
 
 /**
  * Stato di un trade -> etichetta + classi.
@@ -65,12 +138,14 @@ const SETTLED_STATUS = new Set(['won', 'lost', 'void']);
  */
 export function statusMeta(
     status: string | null | undefined,
-    opts: { reconciling?: boolean; terminal?: boolean } = {},
+    opts: { reconciling?: boolean; terminal?: boolean; resting?: boolean } = {},
 ): Meta {
     const key = String(status ?? '').toLowerCase() as TradeStatus;
     const settled = SETTLED_STATUS.has(key);
     if (!settled && opts.terminal) return TERMINAL_ERROR_META;
     if (!settled && opts.reconciling) return RECONCILING_META;
+    // dopo la riconciliazione: un ordine sul book non e' una posizione
+    if (!settled && opts.resting) return RESTING_META;
     return STATUS_META[key] ?? STATUS_META.error;
 }
 
@@ -172,6 +247,34 @@ export const T = {
     stop: 'Ferma',
 } as const;
 
+/**
+ * TOOLTIP UNICI: una riga che dice COSA guardare, identica nelle tre sezioni.
+ *
+ * Certificazione 12/09: le stesse quattro grandezze avevano sottotitoli diversi
+ * in ogni pagina ("esposizione a coda", "stop giornaliero 50,00 €", niente) e
+ * nessuna diceva che cosa fossero davvero. Il sottotitolo resta della sezione
+ * (è un dato del bot); la SPIEGAZIONE è una sola e sta qui.
+ */
+export const TIP = {
+    openLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)',
+    lockedPnl: 'risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito',
+    realizedToday: 'somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)',
+    pnlToday: 'P&L realizzato della giornata operativa di oggi (Europe/Rome)',
+    pnlTotal: 'P&L realizzato da sempre, tutte le giornate',
+    // CERT. 12/09 (collaudo reportistica) — il testo precedente diceva «conta lo
+    // stato, non il segno del P&L»: era FALSO. Tutte le fonti (trading_daily_history,
+    // omega_aggregates_sql, safe_aggregates_sql, mike_aggregates_sql) contano per
+    // SEGNO del P&L totale della POSIZIONE (apertura + chiusure).
+    winLoss: 'V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa',
+    goalToday: 'obiettivo di P&L realizzato per la giornata di oggi',
+    matches: 'partite con almeno una posizione piazzata oggi',
+    operations: 'posizioni (gambe) piazzate oggi, chiusure escluse',
+    liveCount: 'posizioni ancora vive: non regolate',
+    equity: 'P&L cumulato realizzato, un gradino per giornata: parte da 0 il primo giorno del periodo',
+    feed: 'FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna',
+    beat: 'BATTITO del servizio del bot: se manca, il bot non sta operando',
+} as const;
+
 // -------------------------------------------------------------- attivita' bot
 export interface ActivityMeta extends Meta {
     /** true = l'utente DEVE accorgersene (rosso, mai sepolto nella lista) */
@@ -237,10 +340,80 @@ export const ACTIVITY_BASE: Record<string, ActivityMeta> = {
     // guardie
     feed_blind: { label: 'FEED CIECO', cls: BAD, critical: true },
     feed_back: { label: 'FEED TORNATO', cls: GOOD },
+    feed_line_missing: { label: 'LINEA ASSENTE DAL FEED', cls: WARN },
     daily_stop: { label: 'STOP GIORNALIERO', cls: BAD, critical: true },
+    goal_stop: { label: 'OBIETTIVO RAGGIUNTO: STOP', cls: GOOD },
+    loss_stop: { label: 'STOP PER PERDITA', cls: BAD, critical: true },
+    risk_block: { label: 'BLOCCATO DAL RISCHIO', cls: WARN },
     error: { label: 'ERRORE', cls: BAD, critical: true },
     armed: { label: 'ARMATA', cls: CLOSE },
     pre_cycle: { label: 'CICLO PRE', cls: GOOD },
+
+    // --------------------------------------------------------------------
+    // Certificazione 12/09 — kind che i tre servizi scrivono DAVVERO e che la
+    // mappa condivisa non conosceva: senza questi la UI cadeva sul traduttore
+    // parola-per-parola (o su "kind sconosciuto") e ogni sezione doveva
+    // ripetersi il dizionario. Fonte: omega_service.py / bot_service.py +
+    // execution.py / mike service.py.
+    // --------------------------------------------------------------------
+    // piazzamento e conferma
+    place_pending: { label: 'ORDINE IN ATTESA DI CONFERMA', cls: INFO },
+    place_retry: { label: 'PIAZZAMENTO · ritento', cls: WARN },
+    place_reconciling: { label: 'PIAZZAMENTO: ESITO DA VERIFICARE', cls: BAD, critical: true },
+    place_exception: { label: 'PIAZZAMENTO: ECCEZIONE', cls: BAD, critical: true },
+    place_resting: { label: 'ORDINE A BOOK', cls: INFO },
+    fill_resting: { label: 'ORDINE A BOOK ABBINATO', cls: GOOD },
+    resting_live_unsupported: { label: 'ORDINE A BOOK NON SUPPORTATO IN LIVE', cls: WARN },
+    confirm_failed: { label: 'CONFERMA FALLITA', cls: BAD, critical: true },
+    size_reduced: { label: 'IMPORTO RIDOTTO', cls: WARN },
+    size_legalized: { label: 'IMPORTO PORTATO AL MINIMO BETFAIR', cls: WARN },
+    paper_fill_fallback: { label: 'PAPER: FILL DI RIPIEGO', cls: WARN },
+    live_fok_fallback: { label: 'LIVE: RIPIEGO SU FOK', cls: WARN },
+    // coda flumine
+    flumine_enqueue: { label: 'ORDINE IN CODA (flumine)', cls: INFO },
+    flumine_fill: { label: 'ABBINATO (flumine)', cls: GOOD },
+    flumine_no_fill: { label: 'NON ABBINATO (flumine)', cls: WARN },
+    flumine_cancel: { label: 'ANNULLO (flumine)', cls: WARN },
+    flumine_cancel_timeout: { label: 'ANNULLO SCADUTO (flumine)', cls: BAD, critical: true },
+    flumine_recovered: { label: 'ORDINE RECUPERATO (flumine)', cls: GOOD },
+    flumine_live_freed: { label: 'RISERVA LIVE LIBERATA', cls: NEUTRAL },
+    flumine_live_orphan: { label: 'ORDINE LIVE ORFANO', cls: BAD, critical: true },
+    flumine_poll_error: { label: 'CODA NON LEGGIBILE (flumine)', cls: BAD, critical: true },
+    // chiusure e uscite
+    cashout_error: { label: 'CASH OUT: ERRORE', cls: BAD, critical: true },
+    cashout_manual: { label: 'CASH OUT MANUALE', cls: CLOSE },
+    cover_wait: { label: 'COPERTURA · attesa', cls: WARN },
+    greenup_blind: { label: 'GREEN-UP CIECO (feed assente)', cls: BAD, critical: true },
+    greenup_residual_dropped: { label: 'GREEN-UP: RESIDUO ABBANDONATO', cls: WARN },
+    hedged: { label: 'CHIUSA A MERCATO', cls: CLOSE },
+    // regolamento
+    settle_error: { label: 'REGOLAMENTO: ERRORE', cls: BAD, critical: true },
+    settle_wait: { label: 'REGOLAMENTO · attesa', cls: WARN },
+    settle_hedged: { label: 'REGOLATA (coperta)', cls: NEUTRAL },
+    settle_orphan: { label: 'REGOLATA ORFANA', cls: WARN },
+    settle_orphan_closing: { label: 'CHIUSURA ORFANA REGOLATA', cls: WARN },
+    settle_fallback: { label: 'REGOLAMENTO DI RIPIEGO', cls: WARN },
+    settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: WARN },
+    // riconciliazione
+    reconcile_error: { label: 'RICONCILIAZIONE: ERRORE', cls: BAD, critical: true },
+    reconcile_pending: { label: 'RICONCILIAZIONE IN CORSO', cls: WARN },
+    reconciled_open: { label: 'RICONCILIATA: POSIZIONE APERTA', cls: INFO },
+    reconciled_free: { label: 'RICONCILIATA: NESSUN ORDINE', cls: NEUTRAL },
+    reconciled_error: { label: 'RICONCILIATA: ORDINE ASSENTE', cls: WARN },
+    reconciled_paper: { label: 'RICONCILIATA (paper)', cls: NEUTRAL },
+    // vigilanza
+    orphan_live_alert: { label: 'ORDINE LIVE ORFANO', cls: BAD, critical: true },
+    stale_open_alert: { label: 'POSIZIONE APERTA DA TROPPO', cls: BAD, critical: true },
+    // manuale, modello, ciclo
+    manual_place: { label: 'PIAZZAMENTO MANUALE', cls: INFO },
+    manual_place_exception: { label: 'PIAZZAMENTO MANUALE: ECCEZIONE', cls: BAD, critical: true },
+    model_lambda_market: { label: 'MODELLO: λ DAL MERCATO', cls: NEUTRAL },
+    model_lambda_live: { label: 'MODELLO: λ DA O/U LIVE', cls: NEUTRAL },
+    mission_error: { label: 'MISSIONI: ERRORE', cls: BAD, critical: true },
+    mission_scores_error: { label: 'MISSIONI: PUNTEGGI NON LETTI', cls: BAD, critical: true },
+    resume_event: { label: 'PARTITA RIPRESA IN CARICO', cls: NEUTRAL },
+    skip_event: { label: 'PARTITA SALTATA', cls: MUTED },
+    schema_warn: { label: 'MIGRAZIONE MANCANTE', cls: BAD, critical: true },
 };
 
 /** dizionario di PAROLE per tradurre un kind mai visto prima */

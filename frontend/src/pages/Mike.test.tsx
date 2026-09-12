@@ -265,7 +265,10 @@ describe('Mike page — profondità dei dati sulla card', () => {
         expect(within(card).getByTestId('mike-model')).toHaveTextContent('12,0 %');   // P(4) mercato
         expect(within(card).getByTestId('mike-goals-histogram')).toHaveTextContent('modello');
         expect(within(card).getByTestId('mike-quote-ou35')).toHaveTextContent('1,47');
-        expect(within(card).getByTestId('mike-meta-line')).toHaveTextContent('scambiato 4200 €');
+        expect(within(card).getByTestId('mike-meta-line')).toHaveTextContent('Volume mercato 4200 €');
+        expect(within(card).getByTestId('mike-meta-line')).toHaveTextContent('ingresso @1,50');
+        // il servizio conta i cicli da 0: in pagina il primo ciclo e' "ciclo 1"
+        expect(within(card).getByTestId('mike-meta-line')).toHaveTextContent('ciclo 1');
         expect(within(card).getByTestId('mike-countdown')).toBeInTheDocument();
     });
 
@@ -318,7 +321,7 @@ describe('Mike page — profondità dei dati sulla card', () => {
         const pre = (await screen.findAllByTestId('mike-match-card')).find((c) => c.getAttribute('data-event-id') === 'e1')!;
         expect(within(pre).getByTestId('mike-cashout-btn')).toBeEnabled();
         expect(within(pre).getByTestId('mike-cashout-btn')).toHaveTextContent('+0,35 €');
-        expect(within(pre).getByTestId('mike-cashout-value')).toHaveTextContent('3,5 % · soglia 5,0 %');
+        expect(within(pre).getByTestId('mike-cashout-value')).toHaveTextContent('3,5 % · chiude da solo a 5,0 %');
     });
 });
 
@@ -331,17 +334,50 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
     it('KPI e giornata operativa leggono gli aggregati del DB', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('kpi-row')).toBeInTheDocument());
-        expect(screen.getByTestId('mike-kpi-matches')).toHaveTextContent('2 pre-match · 1 live');
+        expect(screen.getByTestId('mike-kpi-matches')).toHaveTextContent('2 prima del fischio · 1 in gioco');
         expect(screen.getByTestId('day-bar')).toHaveTextContent('partite 2');
         expect(screen.getByTestId('day-bar')).toHaveTextContent('operazioni 4');
         expect(screen.getByTestId('day-bar-liability')).toHaveTextContent('12,50 €');
         expect(screen.getByTestId('mike-kpi-locked')).toHaveTextContent('−0,27 €');
     });
 
+    // ---------------------------------------------------------------- audit UI
+    it('UNA semantica per i conteggi: barra, linguette e KPI non contano cose diverse', async () => {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('kpi-row')).toBeInTheDocument());
+        // operazioni = CICLI della giornata: stesso numero nella barra e nella linguetta
+        expect(screen.getByTestId('day-bar-counts')).toHaveTextContent('operazioni 4');
+        expect(screen.getByRole('tab', { name: /Operazioni/ })).toHaveTextContent('Operazioni (4)');
+        // partite seguite ORA != partite piazzate oggi: due etichette diverse
+        expect(screen.getByTestId('mike-kpi-matches')).toHaveTextContent('Partite seguite ora');
+        expect(screen.getByTestId('day-bar')).toHaveTextContent('partite 2');
+        // nessun conteggio di RIGHE di database fra i KPI
+        expect(screen.getByTestId('kpi-row')).not.toHaveTextContent('righe caricate');
+        // la barra dichiara che cosa conta
+        expect(screen.getByTestId('day-bar')).toHaveTextContent('operazioni = cicli aperti oggi');
+    });
+
+    it('P&L bloccato: se nessuna partita ha un valore si scrive "—", mai "+0,00 €"', async () => {
+        mState.mockResolvedValue(state({
+            events: [
+                { ...PRE, live: { ...PRE.live, locked: null } },
+                { ...LIVE, live: { ...LIVE.live, locked: null } },
+            ],
+        }));
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('kpi-row')).toBeInTheDocument());
+        const kpi = screen.getByTestId('mike-kpi-locked');
+        expect(kpi).toHaveTextContent('—');
+        expect(kpi).not.toHaveTextContent('0,00 €');
+        expect(kpi).toHaveTextContent('nessuna partita ha ancora un risultato bloccato');
+        // e la barra della giornata non scrive un numero che non esiste
+        expect(screen.queryByTestId('day-bar-locked')).toBeNull();
+    });
+
     it('tab Trade: chiusure annidate, uscita, LIVE, P&L netto del ciclo e toggle della giornata', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
-        await userEvent.click(screen.getByRole('tab', { name: /Trade/ }));
+        await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
         const table = await screen.findByTestId('mike-trades-table');
         const opens = within(table).getAllByTestId('mike-trade-row');
         expect(opens).toHaveLength(1);
@@ -355,7 +391,7 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         expect(closes[0]).toHaveTextContent('LAY');
         expect(screen.getByTestId('mike-trades')).toHaveTextContent('giornata operativa');
         await userEvent.click(screen.getByTestId('mike-trades-toggle'));
-        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Tutti i trade caricati');
+        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Tutte le operazioni caricate');
         expect(screen.getByTestId('equity-card')).toBeInTheDocument();
     });
 
@@ -374,9 +410,14 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         expect(screen.getByTestId('activity-filter')).toBeInTheDocument();
     });
 
-    it('tab Regolate: solo le partite regolate, senza azioni', async () => {
+    it('tab Regolate: SOLO le partite regolate su cui si è operato oggi, senza azioni', async () => {
+        // e6 = partita seguita e regolata ma MAI giocata: non deve comparire
+        // (prima la scheda ne elencava 34 con "regolato +0,00 €" e due giornate
+        // operative mescolate).
+        const MAI_GIOCATA = { ...PRE_LATE, event_id: 'e6', event_name: 'Lecce v Udinese', state: 'SETTLED', settled_pnl: 0 };
         mState.mockResolvedValue(state({
-            events: [PRE, { ...LIVE, state: 'SETTLED', settled_pnl: 4.51 }],
+            events: [PRE, { ...LIVE, state: 'SETTLED', settled_pnl: 4.51 }, MAI_GIOCATA],
+            trades: [...TRADES, { ...TRADES[0], id: 20, event_id: 'e2', event_name: 'Napoli v Torino' }],
         }));
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
@@ -387,6 +428,12 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         expect(cards[0]).toHaveTextContent('Napoli v Torino');
         expect(cards[0]).toHaveTextContent('+4,51 €');
         expect(within(cards[0]).queryByTestId('mike-cashout-btn')).toBeNull();
+        expect(settled).not.toHaveTextContent('Lecce v Udinese');
+        expect(screen.getByRole('tab', { name: /Regolate/ })).toHaveTextContent('Regolate (1)');
+        expect(screen.getByTestId('mike-settled-note')).toHaveTextContent('1 partita seguita ma mai giocata non è elencata');
+        // su una partita chiusa niente falsi allarmi di feed fermo
+        expect(within(cards[0]).getByTestId('mike-feed-age')).toHaveTextContent('partita chiusa');
+        expect(within(cards[0]).queryByTestId('mike-lines-missing')).toBeNull();
     });
 
     it('KPI Liability: dichiara "stimata dalle righe" e "dato stantio"', async () => {
@@ -409,7 +456,10 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         const sub = await screen.findByTestId('mike-liability-sub');
         expect(sub).not.toHaveTextContent('stimata dalle righe');
         expect(sub).not.toHaveTextContent('dato stantio');
-        expect(sub).toHaveTextContent('stop giornaliero');
+        expect(sub).toHaveTextContent('netta dal servizio');
+        // lo STOP giornaliero e' una soglia sul P&L, non sulla liability
+        expect(sub).not.toHaveTextContent('stop giornaliero');
+        expect(screen.getByTestId('mike-pnl-today-sub')).toHaveTextContent('stop a −50,00 €');
     });
 
     it('tab Trade: nota del tetto di 500 righe, ✋ sulle chiusure manuali e VOID per mercato', async () => {
@@ -424,7 +474,7 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         mState.mockResolvedValue(state({ trades: many }));
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
-        await userEvent.click(screen.getByRole('tab', { name: /Trade/ }));
+        await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
         expect(await screen.findByTestId('mike-trades-capped')).toHaveTextContent('mostrate le ultime 500');
         const rows = screen.getAllByTestId('mike-trade-row');
         // VOID dichiarato sulla SOLA gamba del mercato annullato
@@ -633,7 +683,7 @@ describe('Mike page — RPC v1, senza migrazione mike_bot_v2', () => {
     it('tab Trade: senza giornata dal DB lo dichiara e mostra tutte le righe', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
-        await userEvent.click(screen.getByRole('tab', { name: /Trade/ }));
+        await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
         await waitFor(() => expect(screen.getByTestId('mike-trades-noday')).toBeInTheDocument());
         expect(screen.getByTestId('mike-trades-noday')).toHaveTextContent('mike_bot_v2.sql');
     });
@@ -673,7 +723,7 @@ describe('Mike page — dalla tabella Trade alla scheda', () => {
     it('la riga di una posizione APERTA porta al tab Partite e alla card', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
-        await userEvent.click(screen.getByRole('tab', { name: /Trade/ }));
+        await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
         const link = await screen.findByTestId('mike-trade-goto-card');
         expect(link).toHaveAttribute('data-event-id', 'e1');
         await userEvent.click(link);

@@ -568,7 +568,10 @@ def aggregates(day_start=None) -> dict[str, float]:
     while True:
         chunk = (
             _sb().table("omega_trades")
-            .select("id,status,pnl,liability,bet_id,placed_at,settled_at,meta,mode,closes_trade_id")
+            # ``event_id`` OBBLIGATORIO (cert. 12/09): senza, aggregate_trades
+            # contava UN solo evento ("None") -> events_today/live_now sbagliati e
+            # il cap max_events (partite distinte) non applicato quando la RPC manca
+            .select("id,event_id,status,pnl,liability,bet_id,placed_at,settled_at,meta,mode,closes_trade_id")
             .order("id").range(start, start + page - 1)
             .execute().data or []
         )

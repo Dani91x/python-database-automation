@@ -27,8 +27,7 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
-import { lockedPnlAt } from '@/lib/ladderMath';
-import { fmtMoney, fmtOdds } from '@/lib/format';
+import { fmtMoney, fmtOdds, fmtPctPoints } from '@/lib/format';
 
 // --------------------------------------------------------------- matematica
 /** Lato dell'ordine di copertura: W > L → LAY (bancare), altrimenti BACK. */
@@ -138,13 +137,32 @@ export function CashOutButton({
     const [quickFraction, setQuickFraction] = useState<number | null>(1);
     const [liveArmed, setLiveArmed] = useState(false);
     const [busy, setBusy] = useState(false);
+    /**
+     * Certificazione 12/09 — un cash out FALLITO non può sparire in silenzio.
+     * Prima `confirm()` aveva try/finally senza catch: se `onCashOut` andava in
+     * errore la promise veniva rigettata fuori dal componente (il chiamante fa
+     * `void confirm()`), il dialog restava aperto identico e il trader non
+     * sapeva se la copertura fosse partita o no. Ora l'errore si vede.
+     */
+    const [failure, setFailure] = useState<string | null>(null);
     // guardia anti doppio click: ref, non stato (lo stato e' una closure del render)
     const inFlight = useRef(false);
 
     const side = hedgeSide(win, lose);
     const price = greenPrice(win, lose, bestBack, bestLay);
     const fullStake = price != null ? fullGreenStake(win, lose, price) : 0;
-    const lockedFull = price != null ? Math.round(lockedPnlAt(price, win, lose) * 100) / 100 : null;
+    /**
+     * Certificazione 12/09 (CHIUSURA-01) — il numero mostrato deve essere
+     * QUELLO CHE IL SERVIZIO BLOCCHERÀ, non l'ideale matematico.
+     * `lockedPnlAt` = L + (W−L)/p presuppone uno stake a precisione infinita;
+     * Betfair accetta size al CENTESIMO e il backend
+     * (`Betfair/stream/trading/greenup.py::_hedge_size` →
+     * `execution.locked_pnl = round(min(if_win, if_lose), 2)`) lavora sullo
+     * stake arrotondato, che su quote alte sposta il peggiore dei due esiti
+     * di decine di centesimi (lay 5,26 @110 chiuso @200: ideale +2,37 €,
+     * reale +1,77 €). Si usa quindi la STESSA formula del servizio.
+     */
+    const lockedFull = price != null ? partialLockedPnl(price, win, lose, 1) : null;
     const netFull = lockedFull != null ? netAfterCommission(lockedFull, commission) : null;
 
     const balanced = Math.abs(win - lose) < 0.005;
@@ -157,6 +175,7 @@ export function CashOutButton({
         setStakeStr(fullStake > 0 ? fullStake.toFixed(2) : '');
         setQuickFraction(1);
         setLiveArmed(false);
+        setFailure(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -187,7 +206,9 @@ export function CashOutButton({
     const amountInvalid = effAmount < 0.01 || effAmount > fullStake + 0.005;
 
     // la conferma LIVE armata decade se cambia importo/prezzo/esposizione…
-    useEffect(() => { setLiveArmed(false); }, [effAmount, price, win, lose]);
+    // …e anche se la chiusura diventa (o torna) non inviabile: un OK armato non
+    // deve sopravvivere a un feed che muore e riparte
+    useEffect(() => { setLiveArmed(false); }, [effAmount, price, win, lose, isDisabled]);
     // …e comunque dopo LIVE_ARM_TIMEOUT_MS
     useEffect(() => {
         if (!liveArmed) return;
@@ -200,14 +221,36 @@ export function CashOutButton({
         setStakeStr((Math.round(fullStake * f * 100) / 100).toFixed(2));
     }
 
+    /**
+     * Certificazione 12/09 (CHIUSURA-02) — motivo UNICO per cui la chiusura non
+     * si può mandare: lo stesso testo va nel tooltip del bottone spento e nel
+     * dialog, se le condizioni decadono MENTRE il dialog è aperto.
+     */
+    const blockedReason = !isDisabled ? null
+        : pending
+            ? 'Cash out già in corso per questa posizione.'
+            : disabled
+                ? (disabledReason ?? 'Cash out non disponibile in questo momento.')
+                : balanced
+                    ? 'Posizione già bilanciata: non c’è nulla da chiudere.'
+                    : `Quote ${side === 'lay' ? 'lay' : 'back'} non disponibili: senza book non si può calcolare la chiusura.`;
+
     async function confirm() {
+        // il dialog resta aperto anche se il feed muore o la posizione viene
+        // coperta da un altro ciclo: l'invio deve morire con esso
+        if (isDisabled) return;
         if (amountInvalid || busy || pending || inFlight.current) return;
         if (mode === 'live' && !liveArmed) { setLiveArmed(true); return; }
         inFlight.current = true;
         setBusy(true);
+        setFailure(null);
         try {
             await onCashOut(quickFraction != null ? { fraction: quickFraction } : { amount: effAmount });
             setOpen(false);
+        } catch (e) {
+            // il dialog RESTA aperto con il motivo: un ordine di copertura che
+            // non parte è un rischio ancora scoperto, non un non-evento
+            setFailure(String((e as Error)?.message ?? e) || 'cash out non riuscito');
         } finally {
             inFlight.current = false;
             setBusy(false);
@@ -236,7 +279,7 @@ export function CashOutButton({
             data-testid="cashout-trigger"
             data-residual={isResidual ? '1' : undefined}
             title={isResidual
-                ? `posizione coperta${residual?.fraction != null ? ` al ${Math.round(residual.fraction * 100)} %` : ' in parte'}: questo chiude il RESIDUO${residualEur ? ` (liability ${residualEur})` : ''}`
+                ? `posizione coperta${residual?.fraction != null ? ` al ${fmtPctPoints(residual.fraction * 100, 0)}` : ' in parte'}: questo chiude il RESIDUO${residualEur ? ` (liability ${residualEur})` : ''}`
                 : undefined}
             aria-label={`${actionWord} ${label}`}
             className={[
@@ -262,15 +305,7 @@ export function CashOutButton({
                     <TooltipTrigger asChild>
                         <span className="inline-block" data-testid="cashout-disabled-wrap">{trigger}</span>
                     </TooltipTrigger>
-                    <TooltipContent>
-                        {pending
-                            ? 'Cash out già in corso per questa posizione.'
-                            : disabled
-                                ? (disabledReason ?? 'Cash out non disponibile in questo momento.')
-                                : balanced
-                                    ? 'Posizione già bilanciata: non c’è nulla da chiudere.'
-                                    : `Quote ${side === 'lay' ? 'lay' : 'back'} non disponibili: senza book non si può calcolare la chiusura.`}
-                    </TooltipContent>
+                    <TooltipContent>{blockedReason}</TooltipContent>
                 </Tooltip>
                 </TooltipProvider>
             ) : trigger}
@@ -288,7 +323,7 @@ export function CashOutButton({
                             {isResidual && (
                                 <span data-testid="cashout-residual-note">
                                     {' '}Posizione già coperta
-                                    {residual?.fraction != null ? ` al ${Math.round(residual.fraction * 100)} %` : ' in parte'}:
+                                    {residual?.fraction != null ? ` al ${fmtPctPoints(residual.fraction * 100, 0)}` : ' in parte'}:
                                     qui si chiude il <b>residuo</b>{residualEur ? ` (liability ancora a rischio ${residualEur})` : ''}.
                                 </span>
                             )}
@@ -323,7 +358,7 @@ export function CashOutButton({
                                     className="flex-1 text-xs tabular-nums"
                                     onClick={() => pickFraction(f)}
                                 >
-                                    {Math.round(f * 100)}%
+                                    {fmtPctPoints(f * 100, 0)}
                                 </Button>
                             ))}
                         </div>
@@ -349,7 +384,7 @@ export function CashOutButton({
                             <div className="text-[10px] uppercase tracking-wide text-slate-400">
                                 {isFull
                                     ? 'P&L bloccato (green pieno)'
-                                    : `Peggiore · parziale ${Math.round(effFraction * 100)}%: resta esposto`}
+                                    : `Peggiore · parziale ${fmtPctPoints(effFraction * 100, 0)}: resta esposto`}
                             </div>
                             <div
                                 data-testid="cashout-locked"
@@ -388,6 +423,31 @@ export function CashOutButton({
                                 <ShieldAlert className="w-3.5 h-3.5" aria-hidden /> Modalità LIVE: soldi veri.
                             </p>
                         )}
+
+                        {blockedReason && (
+                            // le condizioni sono decadute col dialog APERTO
+                            // (feed fermo, mercato sospeso, copertura partita da
+                            // un altro ciclo): la conferma si spegne e lo dice
+                            <p
+                                className="text-[11px] text-amber-200 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5"
+                                data-testid="cashout-blocked"
+                                role="alert"
+                            >
+                                Chiusura non inviabile adesso: {blockedReason} Riapri quando le
+                                condizioni tornano valide.
+                            </p>
+                        )}
+
+                        {failure && (
+                            <p
+                                className="text-[11px] text-red-200 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1.5"
+                                data-testid="cashout-error"
+                                role="alert"
+                            >
+                                Cash out NON riuscito: {failure}. La posizione è ancora scoperta —
+                                controlla su Betfair prima di riprovare.
+                            </p>
+                        )}
                     </div>
 
                     <DialogFooter>
@@ -396,7 +456,7 @@ export function CashOutButton({
                             type="button"
                             data-testid="cashout-confirm"
                             variant={mode === 'live' ? 'destructive' : 'default'}
-                            disabled={amountInvalid || busy || pending}
+                            disabled={amountInvalid || busy || pending || isDisabled}
                             onClick={() => { void confirm(); }}
                         >
                             {mode === 'live' && liveArmed ? 'Confermi? soldi veri' : `Chiudi ${fmtPlain(effAmount, currency)}`}

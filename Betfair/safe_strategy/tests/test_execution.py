@@ -795,3 +795,303 @@ def test_flumine_cancel_ref_eredita_il_prefisso_del_bot():
     assert db.queue[-1]["params"]["source"] == "omega"
     ok = OS._flumine_enqueue_cancel(tr, db=db, bet_id="sim1", meta={}, now=NOW)
     assert ok and db.queue[-1]["client_ref"] == "omega-t5-cancel"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — chiusura in PAPER con liquidita' del book IGNOTA.
+# paper_fill non riempie piu' senza controparte dichiarata: se il feed porta
+# il PREZZO ma non la SIZE, tentare la chiusura creava a ogni ciclo una riga
+# di chiusura 'error' con motivo tecnico, e l'uscita non avveniva mai.
+# Ora ci si ferma PRIMA della riserva, con un motivo leggibile.
+# ===========================================================================
+def test_close_trade_paper_senza_size_del_book_non_riserva_nulla():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({**_lay_trade(), "status": "open"})
+    prima = len(db.trades)
+    res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                        prices={"back": 5.0, "lay": 5.2},   # prezzi si, size no
+                        now=NOW, params={}, mode="paper",
+                        origin="manual", table_prefix="safe")
+    assert res.get("error") == "liquidita_del_book_ignota", res
+    assert len(db.trades) == prima          # NESSUNA riga di chiusura creata
+    assert db.get_trade(tid)["status"] == "open"   # la posizione resta viva
+
+
+def test_close_trade_paper_con_ladder_procede_anche_senza_campo_size():
+    """La ladder E' la controparte: se c'e', la chiusura parte."""
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({**_lay_trade(), "status": "open"})
+    res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                        prices={"back": 5.0, "lay": 5.2,
+                                "back_ladder": ((5.0, 500.0),)},
+                        now=NOW, params={}, mode="paper",
+                        origin="manual", table_prefix="safe")
+    assert res.get("ok") is True, res
+
+
+def test_close_trade_live_non_e_bloccato_dalla_size_ignota():
+    """In LIVE decide l'exchange col FOK: il pre-check non si applica."""
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({**_lay_trade(), "status": "open"})
+    res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                        prices={"back": 5.0, "lay": 5.2}, now=NOW, params={},
+                        mode="live", origin="manual", table_prefix="safe")
+    assert res.get("error") != "liquidita_del_book_ignota", res
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — aliquota della gamba di CHIUSURA: mai 0 per svista.
+# L-02 dice "mai NULL"; il vecchio ``params.get("commission_pct", 5.0) or 0.0``
+# faceva scattare lo 0 anche con la chiave PRESENTE ma a None (control senza il
+# campo, campo azzerato dalla UI): la gamba nasceva allo 0 % e il P&L mostrato
+# era piu' ALTO del vero. Uno 0 ESPLICITO invece resta 0.
+# ===========================================================================
+def test_commission_fallback_none_torna_al_5_percento():
+    assert X._commission_fallback({}) == 0.05
+    assert X._commission_fallback({"commission_pct": None}) == 0.05
+    assert X._commission_fallback({"commission_pct": "boh"}) == 0.05
+    assert X._commission_fallback({"commission_pct": 0}) == 0.0      # 0 esplicito
+    assert X._commission_fallback({"commission_pct": 2}) == 0.02
+    assert X._commission_fallback({"commission_pct": 500}) == 1.0    # clamp
+
+
+def test_close_trade_senza_aliquota_sul_trade_usa_il_default_non_zero():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tr = {**_lay_trade(), "status": "open"}
+    tr.pop("commission")                       # apertura storica senza aliquota
+    tid = db.insert_trade(tr)
+    res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                        prices={"back": 5.0, "lay": 5.2, "back_size": 500.0},
+                        now=NOW, params={"commission_pct": None},   # chiave a None
+                        mode="paper", origin="manual", table_prefix="safe")
+    assert res.get("ok") is True, res
+    closing = db.get_trade(res["closing_trade_id"])
+    assert closing["commission"] == 0.05, "mai 0 % per una chiave a None"
+
+
+def test_close_trade_eredita_sempre_l_aliquota_del_trade():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({**_lay_trade(), "status": "open", "commission": 0.02})
+    res = X.close_trade(db=db, market=mk, trade=db.get_trade(tid),
+                        prices={"back": 5.0, "lay": 5.2, "back_size": 500.0},
+                        now=NOW, params={"commission_pct": 5.0}, mode="paper",
+                        origin="manual", table_prefix="safe")
+    assert db.get_trade(res["closing_trade_id"])["commission"] == 0.02
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — PAPER = LIVE sul minimo Betfair di 2 EUR.
+# ===========================================================================
+def test_place_paper_rifiuta_l_apertura_sotto_il_minimo_come_il_live():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    common = dict(db=db, market=mk, event_id="1.1", market_id="m1", selection_id=7,
+                  side="back", price=3.0, best_size=100.0, trade_id=1, now=NOW, params={})
+    paper = X.place(mode="paper", size=1.5, client_ref="safe-t1", **common)
+    live = X.place(mode="live", size=1.5, client_ref="safe-t1", **common)
+    assert paper.status == "error" and live.status == "error"
+    assert paper.fill_note.startswith("size_sotto_minimo_betfair")
+    assert paper.fill_note == live.fill_note, "paper e live devono dire la stessa cosa"
+    # a 2,00 EUR esatti passano entrambi
+    assert X.place(mode="paper", size=2.0, client_ref="safe-t1", **common).status == "open"
+
+
+def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():
+    """Betfair ACCETTA il sotto-minimo che RIDUCE una posizione: un residuo da
+    1,40 EUR deve poter essere chiuso, in paper come in live (review C2)."""
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=1.4, best_size=100.0,
+                  client_ref="safe-t9", trade_id=9, now=NOW, params={},
+                  meta={"cashout": True, "closes_trade_id": 1})
+    assert out.status == "open" and out.size == 1.4
+
+
+# ===========================================================================
+# CERTIFICAZIONE P&L 12/09 -- il numero su cui il trader giudica se guadagna.
+# Riscontro incrociato con Betfair/tools/verifica_pnl_2026_09_12.py sul DB reale.
+# ===========================================================================
+def _lay(size: float, price: float, **kw) -> dict:
+    return {"id": kw.pop("id", 1), "side": "lay", "size": size, "price": price, **kw}
+
+
+def _back(size: float, price: float, **kw) -> dict:
+    return {"id": kw.pop("id", 2), "side": "back", "size": size, "price": price, **kw}
+
+
+def test_settle_group_commissione_una_volta_sola_sul_netto_della_posizione():
+    """Regola money-critical: 5% sul NETTO vincente, MAI per gamba.
+
+    Riscontro reale (safe_strategy_trades 9 + 16, mercato 1.262238413):
+    lay 2.00@36 vinto (+2.00 lordo) chiuso con back 0.60@120 perso (-0.60):
+    netto lordo 1.40 -> commissione 0.07 -> 1.33 sul DB. Con la commissione per
+    gamba sarebbe stato 1.90 - 0.60 = 1.30 (3 centesimi in meno per posizione).
+    """
+    apertura, chiusure = X.settle_group(_lay(2.0, 36.0), [_back(0.6, 120.0)],
+                                        runner_won=False, commission=0.05)
+    assert round(apertura + sum(chiusure), 2) == 1.33
+    # e la somma delle gambe deve fare ESATTAMENTE il netto (nessun centesimo
+    # creato o distrutto dall'arrotondamento)
+    assert round(apertura + sum(chiusure), 2) == round(1.40 * 0.95, 2)
+
+
+def test_settle_group_nessuna_commissione_se_il_mercato_chiude_in_perdita():
+    """Riscontro reale (trade 47 + chiusure 51/52/53): lay 2.00@46 vinto (+2.00)
+    contro 12.27 di chiusure perse -> netto -10.27, commissione ZERO. Applicarla
+    sul +2.00 avrebbe scritto -10.37: dieci centesimi di perdita inventata."""
+    apertura, chiusure = X.settle_group(
+        _lay(2.0, 46.0),
+        [_back(6.01, 2.48), _back(3.43, 10.5), _back(2.83, 14.5)],
+        runner_won=False, commission=0.05)
+    assert round(apertura + sum(chiusure), 2) == -10.27
+    assert apertura == 2.0, "sul netto negativo l'apertura resta LORDA"
+
+
+def test_settle_group_void_non_paga_commissione_e_vale_zero():
+    apertura, chiusure = X.settle_group({"id": 1, "side": "lay", "size": 0.0,
+                                         "price": 0.0}, [], runner_won=False,
+                                        commission=0.05)
+    assert (apertura, chiusure) == (0.0, [])
+
+
+def test_locked_pnl_e_LORDO_mentre_il_realizzato_e_NETTO():
+    """DIFETTO CERTIFICATO 12/09 (non corretto: fuori perimetro di questo file).
+
+    ``meta.locked_pnl`` -- quello che la UI mostra come «P&L bloccato ... non
+    cambia piu', qualunque sia l'esito» -- e' LORDO, mentre il P&L realizzato
+    scritto a settlement e' NETTO. Sulla stessa posizione il trader legge prima
+    1,40 e poi incassa 1,33. Questo test FISSA la differenza: se un giorno il
+    servizio comincia a nettare ``locked_pnl``, deve fallire e va aggiornato
+    insieme alla UI.
+    """
+    st = X.hedge_state(_lay(2.0, 36.0), [_back(0.6, 120.0, status="open")])
+    assert st["complete"] is True
+    lordo = st["locked_pnl"]
+    ap, ch = X.settle_group(_lay(2.0, 36.0), [_back(0.6, 120.0)],
+                            runner_won=False, commission=0.05)
+    netto = ap + sum(ch)
+    assert lordo == 1.4, "oggi il bloccato e' LORDO"
+    assert round(netto, 2) == 1.33
+    assert round(lordo - netto, 2) == 0.07, "scarto = la commissione non dedotta"
+
+
+def test_due_posizioni_sullo_stesso_mercato_non_si_nettano_per_la_commissione():
+    """DIFETTO CERTIFICATO 12/09 (latente, non corretto).
+
+    ``settle_group`` netta la commissione fra APERTURA e sue CHIUSURE, non fra
+    POSIZIONI DIVERSE sullo stesso mercato. Sul DB reale esistono mercati con
+    due lay indipendenti (safe 21+22 su 1.262169551, 9+14 su 1.262238413): se
+    uno vince e l'altro perde, Betfair netta e non incassa nulla, il bot invece
+    addebita il 5% sulla gamba vincente. Direzione CONSERVATIVA (mostra meno
+    profitto del reale) ma il numero e' sbagliato.
+    """
+    vincente, _ = X.settle_group(_lay(2.0, 34.0, id=22), [], runner_won=False,
+                                 commission=0.05)
+    perdente, _ = X.settle_group(_lay(2.0, 34.0, id=21), [], runner_won=True,
+                                 commission=0.05)
+    totale_bot = round(vincente + perdente, 2)
+    lordo_mercato = 2.0 - 2.0 * 33.0          # +2,00 e -66,00 = -64,00
+    assert round(lordo_mercato, 2) == -64.0
+    # Betfair: netto negativo -> commissione zero -> -64,00
+    assert totale_bot == -64.1, "oggi il bot addebita 0,10 di commissione in piu'"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — "P&L bloccato": LORDO e NETTO dichiarati entrambi.
+# La UI mostra questo numero come "non cambia piu', qualunque sia l'esito":
+# su un bloccato POSITIVO il lordo lo sovrastima del 5% (la commissione si
+# paga sul vincente). Mike lo dava gia' netto: stessa etichetta, due numeri.
+# ===========================================================================
+def test_locked_pnl_pubblica_anche_il_valore_netto():
+    tr = {"id": 1, "side": "lay", "size": 10.0, "price": 3.0, "commission": 0.05}
+    # chiusura che blocca un profitto: back 15 @2.0 copre il lay 10 @3.0
+    closings = [{"id": 2, "side": "back", "size": 15.0, "price": 2.0, "status": "open",
+                 "closes_trade_id": 1}]
+    st = X.hedge_state(tr, closings)
+    assert st["complete"] is True
+    lordo = st["locked_pnl"]
+    netto = st["locked_pnl_net"]
+    assert lordo is not None and netto is not None
+    if lordo > 0:
+        assert netto == pytest.approx(round(lordo * 0.95, 2), abs=0.01)
+        assert netto < lordo
+    else:
+        assert netto == lordo
+
+
+def test_locked_pnl_netto_uguale_al_lordo_quando_e_una_perdita():
+    """Betfair non incassa commissione su un mercato chiuso in perdita."""
+    tr = {"id": 1, "side": "lay", "size": 10.0, "price": 3.0, "commission": 0.05}
+    closings = [{"id": 2, "side": "back", "size": 10.0, "price": 4.0, "status": "open",
+                 "closes_trade_id": 1}]
+    st = X.hedge_state(tr, closings)
+    if st["complete"] and st["locked_pnl"] is not None and st["locked_pnl"] <= 0:
+        assert st["locked_pnl_net"] == st["locked_pnl"]
+
+
+def test_locked_pnl_netto_usa_l_aliquota_del_trade_non_il_default():
+    tr = {"id": 1, "side": "lay", "size": 10.0, "price": 3.0, "commission": 0.02}
+    closings = [{"id": 2, "side": "back", "size": 15.0, "price": 2.0, "status": "open",
+                 "closes_trade_id": 1}]
+    st = X.hedge_state(tr, closings)
+    if st["complete"] and (st["locked_pnl"] or 0) > 0:
+        assert st["locked_pnl_net"] == pytest.approx(round(st["locked_pnl"] * 0.98, 2), abs=0.01)
+
+
+def test_copertura_parziale_non_dichiara_nessun_bloccato():
+    tr = {"id": 1, "side": "lay", "size": 10.0, "price": 3.0, "commission": 0.05}
+    closings = [{"id": 2, "side": "back", "size": 3.0, "price": 2.0, "status": "open",
+                 "closes_trade_id": 1}]
+    st = X.hedge_state(tr, closings)
+    assert st["complete"] is False
+    assert st["locked_pnl"] is None and st["locked_pnl_net"] is None
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 — PAPER = LIVE anche sul FILL OR KILL.
+# In live l'ordine parte FOK: se il book non copre tutta la size, Betfair lo
+# ANNULLA e a mercato non resta nulla. In paper il fill parziale veniva
+# accettato: una richiesta da 5,00 EUR risultava "eseguita" con 0,43 EUR
+# (caso reale safe_strategy_requests#7). Il paper dichiarava cosi' posizioni
+# che il live non avrebbe mai avuto.
+# ===========================================================================
+def test_paper_non_accetta_un_fill_parziale_come_il_fok_live():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+    # il book ha solo 3 EUR al prezzo richiesto, se ne chiedono 10
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=10.0,
+                  ladder=((3.0, 3.0),), client_ref=f"safe-t{tid}", trade_id=tid,
+                  now=NOW, params={})
+    assert out.status == "error", out
+    assert out.fill_note.startswith("paper_fok_parziale"), out.fill_note
+    assert out.size == 0.0
+
+
+def test_paper_accetta_il_fill_completo():
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=10.0,
+                  ladder=((3.0, 50.0),), client_ref=f"safe-t{tid}", trade_id=tid,
+                  now=NOW, params={})
+    assert out.status == "open" and out.size == 10.0
+
+
+def test_paper_size_cappata_alla_liquidita_resta_un_fill_completo():
+    """La size viene prima cappata a ``best_size``: cosi' il FOK trova tutto."""
+    db, mk = FakeDB(), FakeMarket()
+    db.follow = "NONE"
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=3.0, size=50.0, best_size=12.0,
+                  client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
+    assert out.status == "open" and out.size == 12.0

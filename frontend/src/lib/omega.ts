@@ -176,6 +176,7 @@ export interface OmegaParams {
     greenup_hold_max_risk: number;
     /** chiude comunque se P(perdita) ≥ (0-1) */
     greenup_risk_cap: number;
+    greenup_risk_premium_pct: number;
     /** margine di EV richiesto per tenere (0-1) */
     greenup_ev_margin: number;
     /** incassa a questa frazione del profitto massimo (0-1) */
@@ -186,6 +187,7 @@ export interface OmegaParams {
     greenup_retry_s: number;
     /** residuo non abbinato: tentativi max */
     greenup_max_attempts: number;
+    greenup_market_floor_max_ratio: number;
     /** calibrazione della P(modello): 'auto' applica la curva per famiglia, 'off' usa la grezza */
     model_calibration: 'auto' | 'off';
     // ---- M-10: chiavi della whitelist del servizio prima senza UI --------
@@ -269,6 +271,9 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     skip: { label: 'SALTATA', cls: A_MUTED },
     size_reduced: { label: 'IMPORTO RIDOTTO', cls: A_WARN },
     goal_stop: { label: 'STOP: OBIETTIVO RAGGIUNTO', cls: A_GOOD },
+    // cert. 12/09: il catalogo ha risposto VUOTO e la cache eventi e' stata
+    // CONSERVATA invece di essere svuotata (Missione/Manuale restano usabili)
+    events_refresh_vuoto: { label: 'ELENCO EVENTI NON AGGIORNATO', cls: A_WARN, critical: true },
     loss_stop: { label: 'STOP-LOSS GIORNALIERO', cls: A_BAD, critical: true },
     confirm_failed: { label: 'CONFERMA FALLITA', cls: A_BAD, critical: true },
     place_reconciling: { label: 'ORDINE IN VERIFICA SU BETFAIR', cls: A_BAD, critical: true },
@@ -299,6 +304,7 @@ export const OMEGA_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     greenup: { label: 'GREEN-UP', cls: A_GOOD },
     greenup_hold: { label: 'GREEN-UP · TENGO', cls: A_INFO },
     greenup_wait: { label: 'GREEN-UP · attesa prezzi', cls: A_WARN },
+    greenup_quota_implausibile: { label: 'GREEN-UP · quota scartata (fuori scala)', cls: A_WARN },
     greenup_retry: { label: 'GREEN-UP · ritento', cls: A_WARN },
     greenup_failed: { label: 'GREEN-UP FALLITO', cls: A_BAD, critical: true },
     greenup_residual_dropped: { label: 'GREEN-UP · residuo abbandonato', cls: A_BAD, critical: true },
@@ -330,8 +336,43 @@ export function activityMeta(kind: string | null | undefined): ActivityMeta {
     return sharedActivityMeta(kind, OMEGA_ACTIVITY_EXTRA);
 }
 
-/** motivi di `error` scritti dal servizio → frase italiana (payload.reason) */
+/**
+ * motivi di `error` E di `skip` scritti dal servizio → frase italiana
+ * (payload.reason). Vocabolario CHIUSO del contratto §17.5: un motivo che
+ * non è qui compare come chiave nuda (il test lo impedisce per quelli noti).
+ */
 export const OMEGA_ERROR_REASON: Record<string, string> = {
+    // ---- skip: perché la gamba NON è entrata (audit 12/09: prima in inglese nudo)
+    already_reserved: 'gamba già riservata su questa partita',
+    book_error: 'book del mercato non leggibile',
+    catalogue_error: 'catalogo mercati non leggibile',
+    fetch_failed: 'lettura eventi fallita',
+    insufficient_liquidity: 'liquidità lay insufficiente al best',
+    live_not_matched: 'ordine LIVE non abbinato (FOK)',
+    max_open_liability: 'cap di liability aperta raggiunto',
+    no_correct_score_market: 'nessun mercato Correct Score',
+    no_legs_remaining: 'nessuna gamba ancora piazzabile',
+    no_live_state: 'minuto/punteggio live non disponibili',
+    no_market: 'mercato della gamba non trovato',
+    no_runner_in_range: 'nessun risultato nella fascia di quota',
+    // audit 12/09: era il motivo PIÙ FREQUENTE nel feed di attività e compariva
+    // come chiave inglese nuda ("... · no_runner_by_model")
+    no_runner_by_model: 'nessun risultato sotto la P(modello) massima',
+    no_model_lambdas: 'modello senza λ (fixture, pre-KO e O/U live assenti)',
+    // `reason` = f"market_{status.lower()}" (omega_service._scan_event)
+    market_suspended: 'mercato sospeso',
+    market_closed: 'mercato chiuso',
+    market_inactive: 'mercato non attivo',
+    // esiti certi di non-abbinamento (omega_service._leg_certain_failure)
+    paper_no_fill: 'PAPER: nessun abbinamento entro il TTL',
+    reconcile_orphan_old: 'ordine non trovato su Betfair e troppo vecchio',
+    request_missing: 'richiesta di coda mai creata',
+    reserve_no_id: 'riserva senza id (insert fallito)',
+    scan_event_failed: 'scansione della partita fallita',
+    target_zero_goal_reached: 'obiettivo raggiunto: target zero',
+    closings_read_failed: 'chiusure non leggibili',
+    hedged_read_failed: 'posizioni coperte non leggibili',
+    // ---- error: fasi e guardie
     greenup_attempts_exhausted: 'green-up: tentativi esauriti, posizione SCOPERTA',
     greenup_failed: 'green-up fallito',
     greenup_candidates_failed: 'green-up: nessun prezzo di chiusura utilizzabile',
@@ -344,6 +385,7 @@ export const OMEGA_ERROR_REASON: Record<string, string> = {
     manual_failed: 'richiesta manuale fallita',
     missions_failed: 'missioni non aggiornate',
     list_events_failed: 'elenco eventi non letto',
+    events_refresh_failed: 'aggiornamento elenco eventi non riuscito',
     manual_ids_failed: 'id delle richieste manuali non letti',
     mission_ids_failed: 'id delle missioni non letti',
     traded_ids_failed: 'gambe già piazzate non lette',
@@ -351,7 +393,31 @@ export const OMEGA_ERROR_REASON: Record<string, string> = {
     scan_phase_failed: 'scansione interrotta',
     cycle_exception: 'ciclo interrotto da un errore',
     place_exception_reconciling: 'piazzamento interrotto: ordine da verificare su Betfair',
+    // motivi scritti da safe_strategy/execution.py con il db di Omega
+    chiusura_non_ancora_confermata: 'chiusura non ancora confermata: regolamento in attesa',
 };
+
+/**
+ * Motivi COSTRUITI dal servizio con un numero dentro (f-string): la mappa non
+ * può elencarli tutti. Audit 12/09: `market_gone_3h_consecutive` compariva
+ * crudo sulla riga "REGOLAMENTO: CHIUSURA ORFANA".
+ */
+const OMEGA_REASON_PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [
+    [/^market_gone_(\d+)h_consecutive$/, (m) => `mercato sparito da Betfair da ${m[1]} h di fila`],
+];
+
+/** motivo del servizio → frase italiana; chiave sconosciuta = chiave nuda. */
+export function omegaReasonText(raw: unknown): string | null {
+    const key = String(raw ?? '').trim();
+    if (key === '') return null;
+    const known = OMEGA_ERROR_REASON[key] ?? OMEGA_WAIT_REASON[key];
+    if (known) return known;
+    for (const [re, fn] of OMEGA_REASON_PATTERNS) {
+        const m = key.match(re);
+        if (m) return fn(m);
+    }
+    return key;
+}
 
 /** etichetta della gamba dal payload (`leg`) */
 function legTag(v: unknown): string | null {
@@ -399,10 +465,8 @@ export function activityLine(row: OmegaActivityRow, eventName?: string | null): 
     if (Number.isFinite(residual) && residual > 0) parts.push(`residuo ${fmtMoney(residual)}`);
     // motivo: exit_reason (italiano dal servizio) → reason (chiave) → wait → err
     const rawReason = p.exit_reason ?? p.reason ?? p.wait ?? p.err ?? null;
-    if (rawReason != null && String(rawReason).trim() !== '') {
-        const key = String(rawReason).trim();
-        parts.push(OMEGA_ERROR_REASON[key] ?? OMEGA_WAIT_REASON[key] ?? key);
-    }
+    const reasonText = omegaReasonText(rawReason);
+    if (reasonText) parts.push(reasonText);
     const attempt = Number(p.attempt);
     if (Number.isFinite(attempt)) {
         const max = Number(p.max_attempts ?? p.max);
@@ -697,6 +761,15 @@ export function phaseLabel(phase: OmegaTrade['phase'] | undefined): string {
     return phase === 'ht_cs' ? '1T' : phase === 'ft_cs' ? '2T' : phase === 'scalp' ? 'SCALP' : '—';
 }
 
+/**
+ * Tetto dell'obiettivo giornaliero: è il CHECK della colonna
+ * `omega_control.daily_goal` e delle RPC `omega_activate` /
+ * `omega_update_params` (migrations/omega_bot.sql, omega_daily_v2.sql:
+ * `daily_goal >= 0 AND daily_goal <= 100000`). Audit 12/09: la UI dichiarava
+ * ammesso fino a 1 000 000 e il «Salva» falliva con l'eccezione SQL.
+ */
+export const OMEGA_DAILY_GOAL_MAX = 100000;
+
 export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     price_min: 20,
     price_max: 120,
@@ -725,11 +798,13 @@ export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
     greenup_settle_delay_s: 30,
     greenup_hold_max_risk: 0.02,
     greenup_risk_cap: 0.15,
+    greenup_risk_premium_pct: 0.05,
     greenup_ev_margin: 0.10,
     greenup_take_profit_frac: 0.9,
     greenup_take_profit_minute: 80,
     greenup_retry_s: 20,
     greenup_max_attempts: 15,
+    greenup_market_floor_max_ratio: 3.0,
     // H-07: il SERVIZIO ha 'off' e 0.15 (Betfair/omega/omega_config.py). Il
     // default della UI non deve MAI riaccendere il calibratore né abbassare il
     // cap di rischio con un "Salva" involontario.
@@ -841,12 +916,14 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'greenup_price_trigger_ratio', label: 'Scatta se la quota scende sotto (frazione dell’ingresso)', type: 'number', step: 0.05, min: 0.05, max: 1, hint: '0,5 = quota lay dimezzata: il mercato sta convergendo sul risultato' },
             { key: 'greenup_settle_delay_s', label: 'Attesa assestamento dopo il gol (s)', type: 'number', step: 5, min: 0, max: 600, hint: 'VAR e correzioni: si aspetta che il mercato si riallinei' },
             { key: 'greenup_hold_max_risk', label: 'TIENI se P(perdita) ≤ (frazione 0-1)', type: 'number', step: 0.005, min: 0, max: 1, hint: 'sotto questa probabilità di perdita il servizio TIENE (attività "GREEN-UP · TENGO")' },
-            { key: 'greenup_risk_cap', label: 'ESCI comunque se P(perdita) ≥ (frazione 0-1)', type: 'number', step: 0.01, min: 0, max: 1, hint: 'oltre questa soglia si chiude anche con EV a favore (default del servizio 0,15)' },
+            { key: 'greenup_risk_cap', label: 'Rischio alto se P(perdita) ≥ (frazione 0-1)', type: 'number', step: 0.01, min: 0, max: 1, hint: 'oltre questa soglia si vuole uscire, ma solo a un prezzo che vale (default del servizio 0,15)' },
+            { key: 'greenup_risk_premium_pct', label: 'Premio di rischio (frazione della liability)', type: 'number', step: 0.01, min: 0, max: 1, hint: 'quanto si accetta di pagare, sopra il tetto, per comprare la certezza. 0 = mai sotto l’EV del tenere; 1 = si esce a qualunque prezzo' },
             { key: 'greenup_ev_margin', label: 'Margine EV per tenere (€)', type: 'number', step: 0.5, min: 0, max: 1000, hint: 'in EURO, non una frazione: tenere deve valere almeno questo margine rispetto al green-up immediato' },
             { key: 'greenup_take_profit_frac', label: 'Incassa a frazione del massimo (0,1-1)', type: 'number', step: 0.05, min: 0.1, max: 1, hint: '0,9 = si chiude con il 90 % del profitto massimo in mano' },
             { key: 'greenup_take_profit_minute', label: 'Incassa comunque dal minuto', type: 'number', step: 1, min: 0, max: 130 },
             { key: 'greenup_retry_s', label: 'Residuo: attesa fra i tentativi (s)', type: 'number', step: 5, min: 2, max: 600 },
             { key: 'greenup_max_attempts', label: 'Residuo: tentativi massimi', type: 'number', step: 1, min: 0, max: 100, hint: '0 = nessun ritentativo' },
+            { key: 'greenup_market_floor_max_ratio', label: 'Quota di fine gara: quante volte il modello', type: 'number', step: 0.5, min: 0, max: 100, hint: 'dall’88′ la quota può alzare il rischio del modello al massimo di tante volte; oltre è considerata rotta e vale il modello. 0 = nessun limite' },
         ],
     },
     {
@@ -971,6 +1048,11 @@ export function subscribeOmega(onChange: () => void): () => void {
         .channel('omega-live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_control' }, onChange)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'omega_trades' }, onChange)
+        // CERT. 12/09 — mancava il log del servizio, l'unica delle tre sezioni.
+        // Safe e Mike lo seguono gia' in tempo reale; su Omega un evento che non
+        // tocca i trade (green-up in attesa, quota scartata, skip, riconciliazione)
+        // si vedeva solo al poll di sicurezza dei 15 s, cioe' in ritardo.
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'omega_activity' }, onChange)
         .subscribe();
     return () => { void supabase.removeChannel(channel); };
 }
@@ -1061,6 +1143,55 @@ export async function fetchOmegaEvents(): Promise<OmegaEvent[]> {
     return (data ?? []) as unknown as OmegaEvent[];
 }
 
+// ------------------------------------------------ FINESTRA OPERATIVA EVENTI
+/**
+ * Oltre questo tempo dal calcio d'inizio una partita è considerata FINITA.
+ * È lo stesso ripiego del servizio (`omega_engine.mission_phase`): 90′ + recupero
+ * + intervallo stanno abbondantemente dentro 3 h.
+ */
+export const EVENT_FINISHED_AFTER_MS = 3 * 3600_000;
+
+/**
+ * Audit 12/09 — `get_omega_events` (migrations/omega_manual.sql) restituisce
+ * TUTTA la tabella `omega_events` SENZA filtro di data: se il servizio non
+ * aggiorna la cache, la UI continua a mostrare le partite dell'ultimo refresh.
+ * Il 12/09 la scheda Missione elencava 73 partite del 09/09 marcate "FINITA"
+ * mentre il contatore diceva "Eventi oggi 0": lista e numero avevano due
+ * definizioni diverse.
+ *
+ * UNA sola definizione, usata dal contatore E dalla lista E dal menu a tendina
+ * della modalità manuale: è nella finestra operativa la partita che NON è
+ * ancora finita (calcio d'inizio nel futuro, oppure iniziato da meno di 3 h).
+ * Una partita finita non è più operabile: su di essa non si piazza nulla.
+ */
+export function eventIsOperable(openDate: string | null | undefined, nowMs: number): boolean {
+    if (!openDate) return true;                      // senza orario: non si può escludere
+    const k = Date.parse(openDate);
+    if (!Number.isFinite(k)) return true;
+    if (nowMs < k) return true;                      // pre-partita
+    return nowMs - k <= EVENT_FINISHED_AFTER_MS;     // in corso
+}
+
+/** Gli eventi della finestra operativa (vedi `eventIsOperable`). */
+export function filterEventsInWindow<T extends { open_date?: string | null }>(
+    events: T[], nowMs: number,
+): T[] {
+    return events.filter((e) => eventIsOperable(e.open_date ?? null, nowMs));
+}
+
+/** Istante dell'ultimo aggiornamento della CACHE eventi (il più recente). */
+export function eventsCacheUpdatedAt(events: { updated_at?: string | null }[]): string | null {
+    let best: string | null = null;
+    let bestMs = -Infinity;
+    for (const e of events) {
+        const iso = e.updated_at ?? null;
+        if (!iso) continue;
+        const ms = Date.parse(iso);
+        if (Number.isFinite(ms) && ms > bestMs) { bestMs = ms; best = iso; }
+    }
+    return best;
+}
+
 export async function fetchOmegaMarket(marketId: string): Promise<OmegaMarketSnapshot | null> {
     const { data, error } = await supabase.rpc('get_omega_market', { p_market_id: marketId });
     if (error) throw new Error(error.message);
@@ -1071,6 +1202,78 @@ export async function fetchManualRequests(limit = 20): Promise<OmegaManualReques
     const { data, error } = await supabase.rpc('get_omega_manual_requests', { p_limit: limit });
     if (error) throw new Error(error.message);
     return (data ?? []) as unknown as OmegaManualRequest[];
+}
+
+// ------------------------------------------------ notifiche di regolazione
+const SETTLED_STATUS = new Set(['won', 'lost', 'void']);
+
+export interface SettlementNotice {
+    tradeId: number;
+    name: string;
+    /** P&L da mostrare: della POSIZIONE (apertura + chiusure) quando c'è */
+    pnl: number;
+    side: string;
+    selection: string | null;
+    manual: boolean;
+    isVoid: boolean;
+    /** true = è una gamba di CHIUSURA notificata da sola (apertura già regolata prima) */
+    closing: boolean;
+}
+
+/**
+ * Quali toast di regolazione mostrare per un caricamento di trade, PURA
+ * (audit 12/09). Regole:
+ *  - solo righe regolate (won/lost/void con settled_at) MAI viste prima;
+ *    `seen` viene aggiornato qui;
+ *  - una gamba di CHIUSURA non notifica da sola quando la sua apertura si
+ *    regola nello stesso caricamento: parla l'APERTURA con il P&L di
+ *    POSIZIONE (`meta.position_pnl`, altrimenti apertura + chiusure regolate).
+ *    Prima un green-up chiuso a +24,24 € su un lay perso a −22 € faceva due
+ *    toast contraddittori («💰 +24,24» e «⚠️ −22,00») per un +2,24 reale;
+ *  - una chiusura la cui apertura è stata regolata in un caricamento
+ *    PRECEDENTE (o è fuori finestra) notifica il suo P&L e si dichiara chiusura.
+ */
+export function settlementNotifications(trades: OmegaTrade[], seen: Set<number>): SettlementNotice[] {
+    const settled = trades.filter((t) => t.settled_at && SETTLED_STATUS.has(t.status));
+    const fresh = settled.filter((t) => !seen.has(t.id));
+    const freshIds = new Set(fresh.map((t) => t.id));
+    // CERT. 12/09 — chiusure GIA' annunciate in un giro precedente: il loro P&L
+    // e' gia' arrivato all'utente, quindi non va risommato nel toast
+    // dell'apertura (lo stesso guadagno sarebbe annunciato due volte).
+    const giaAnnunciate = new Set(seen);
+    for (const t of fresh) seen.add(t.id);
+    const out: SettlementNotice[] = [];
+    for (const t of fresh) {
+        const parent = t.closes_trade_id ?? null;
+        if (parent != null && freshIds.has(parent)) continue;   // parla l'apertura
+        const meta = (t.meta ?? {}) as Record<string, unknown>;
+        const posPnl = nOrNull(meta.position_pnl);
+        let pnl: number;
+        if (posPnl != null) {
+            pnl = posPnl;
+        } else {
+            pnl = Number(t.pnl) || 0;
+            if (parent == null) {
+                for (const c of trades) {
+                    if (c.closes_trade_id !== t.id || !SETTLED_STATUS.has(c.status)) continue;
+                    if (giaAnnunciate.has(c.id)) continue;   // gia' detto all'utente
+                    pnl += Number(c.pnl) || 0;
+                }
+            }
+        }
+        const isVoid = t.status === 'void' && posPnl == null;
+        out.push({
+            tradeId: t.id,
+            name: t.event_name || t.event_id,
+            pnl: isVoid ? 0 : Math.round(pnl * 100) / 100,
+            side: t.side,
+            selection: t.runner_name,
+            manual: t.origin === 'manual',
+            isVoid,
+            closing: parent != null,
+        });
+    }
+    return out;
 }
 
 // Equity curve: cumulato del P&L sui trade REGOLATI, ordinati per settled_at.

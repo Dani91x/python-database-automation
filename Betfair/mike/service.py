@@ -120,11 +120,18 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                "close_reason", "cover_skipped", "seq", "flatten_pending", "no_reentry")
 
 
+_MALFORMED_LOGGED: Dict[str, float] = {}   # {event_id: epoch} — dedup dell'attivita' 'leg_malformata'
+_MALFORMED_EVERY_S = 300.0
+
+
 def _legs_from_json(raw: Any, db: Any = None, event_id: Optional[str] = None) -> List[E.Leg]:
     """Gambe dal JSON di ``mike_events.positions``.
 
     M3 — una gamba MALFORMATA non viene piu' scartata in silenzio: e' una
     posizione che il bot non vedrebbe piu' (soldi invisibili) → log critico.
+    L'ATTIVITA' e' deduplicata per partita (``_MALFORMED_EVERY_S``): il ciclo
+    rilegge le stesse posizioni ogni secondo e senza freno riempirebbe
+    ``mike_activity``.
     """
     out: List[E.Leg] = []
     fields = {f.name for f in dataclasses.fields(E.Leg)}
@@ -141,6 +148,11 @@ def _legs_from_json(raw: Any, db: Any = None, event_id: Optional[str] = None) ->
         logger.critical("[mike] %s: gamba MALFORMATA scartata (%s): %s", event_id, bad,
                         str(d)[:200])
         if db is not None:
+            key = str(event_id)
+            now_ts = time.time()
+            if now_ts - float(_MALFORMED_LOGGED.get(key) or 0.0) < _MALFORMED_EVERY_S:
+                continue
+            _MALFORMED_LOGGED[key] = now_ts
             try:
                 db.log("error", {"reason": "leg_malformata", "err": bad, "raw": str(d)[:200],
                                  "critical": True}, event_id)
@@ -297,7 +309,12 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         ok_price = avail_price is not None and avail_price <= leg.price + 1e-9
     if not ok_price:
         leg.status = "cancelled"
-        db.log("no_fill", {"leg": leg.ref, "wanted": leg.price, "available": avail_price,
+        # CERT. 12/09 — mancavano ``role`` e ``size``: in UI la riga diceva
+        # "— lay non abbinato" senza dire QUALE gamba (ingresso, green, copertura,
+        # chiusura) e per quanto. Osservati 58 casi in un giorno, tutti muti.
+        db.log("no_fill", {"leg": leg.ref, "role": leg.role, "size": leg.size,
+                           "wanted": leg.price, "available": avail_price,
+                           "size_disponibile": avail_size,
                            "side": leg.side}, info.event_id)
         return "cancelled"
     if dry:
@@ -451,6 +468,29 @@ def settle_plan(b35: Optional[dict], b45: Optional[dict], info: F.EventInfo
 # ---------------------------------------------------------------------------
 # Ciclo
 # ---------------------------------------------------------------------------
+_LAST_AGG: Dict[str, Any] = {}
+
+
+def _aggregates(db: Any, now: datetime) -> Dict[str, Any]:
+    """Aggregati con MEMORIA dell'ultima lettura buona.
+
+    Una lettura fallita non deve valere "zero": con ``{}`` lo STOP GIORNALIERO
+    si spegneva (``realized_today`` = 0 → il bot continuava ad aprire dopo aver
+    gia' perso il massimo) e i KPI della UI (P&L, posizioni aperte, V/P)
+    lampeggiavano a zero. Si riusa l'ultimo valore noto e si logga il guasto.
+    """
+    try:
+        agg = db.aggregates(now)
+        if isinstance(agg, dict) and agg:
+            _LAST_AGG["v"] = dict(agg)
+            return agg
+        raise ValueError("aggregati vuoti")
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
+        last = _LAST_AGG.get("v")
+        return dict(last) if isinstance(last, dict) else {}
+
+
 def _scanner_age(db: Any, now: float) -> Optional[float]:
     st = db.scanner_status()
     if not st:
@@ -459,19 +499,28 @@ def _scanner_age(db: Any, now: float) -> Optional[float]:
     return None if ts is None else max(0.0, now - ts)
 
 
-def _params_for(params: Dict[str, Any], running: bool, mode: str = "paper") -> Dict[str, Any]:
-    """A bot fermo: NESSUN nuovo ingresso, protezioni e uscite sempre attive.
-
-    H3 — in LIVE la lay APPOGGIATA non e' cablata su NESSUN percorso: ne' REST
+def _live_exit_override(params: Dict[str, Any], mode: str) -> Dict[str, Any]:
+    """H3 — in LIVE la lay APPOGGIATA non e' cablata su NESSUN percorso: ne' REST
     (servirebbe un ordine senza FOK + polling) ne' coda flumine (la gamba
     resting non passa da ``execution.place``, viene solo riservata su
     ``mike_trades``). Finche' non esiste davvero (F6) in live si usa SEMPRE la
     chiusura taker: mai un fill simulato su soldi veri, con o senza
     ``MIKE_USE_FLUMINE_QUEUE``.
+
+    12/09 — va applicato sul mode della PARTITA (``mike_events.mode``), non solo
+    su quello del control: una partita armata in LIVE mentre il control e' gia'
+    tornato in paper riceveva parametri ``pre_exit_mode='resting'`` su soldi
+    veri (l'engine pianificava una lay appoggiata che il servizio poi annullava,
+    lasciando la posizione senza green-up).
     """
-    p = dict(params)
-    if mode == "live" and p.get("pre_exit_mode") == "resting":
-        p["pre_exit_mode"] = "taker"
+    if str(mode) == "live" and str(params.get("pre_exit_mode")) == "resting":
+        return dict(params, pre_exit_mode="taker")
+    return params
+
+
+def _params_for(params: Dict[str, Any], running: bool, mode: str = "paper") -> Dict[str, Any]:
+    """A bot fermo: NESSUN nuovo ingresso, protezioni e uscite sempre attive."""
+    p = dict(_live_exit_override(params, mode))
     if running:
         return p
     p["pre_enabled"] = False
@@ -654,6 +703,9 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
     ctx = _ctx_from_row(ev, db)
     extra = dict(ev.get("ctx") or {})
     eid = str(ev["event_id"])
+    # H3/L-3 — la chiusura manuale usa i parametri EFFETTIVI della PARTITA: se
+    # la partita e' in live la lay appoggiata non esiste, si chiude taker.
+    params = _live_exit_override(params, str(ev.get("mode") or "paper"))
     info = F.event_info(eid, (row or {}).get("payload") or {})
     if row is None or not info.complete:
         return _result("feed_assente",
@@ -760,11 +812,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # PIAZZAMENTO — M6) = REGOLATO + BLOCCATO. Il bloccato sono i cicli già
     # chiusi/greenati non ancora pagati dal mercato: prima erano invisibili allo
     # stop e il bot continuava ad aprire dopo aver già perso il massimo.
-    try:
-        agg = db.aggregates(now)
-    except Exception as ex:  # noqa: BLE001
-        logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
-        agg = {}
+    agg = _aggregates(db, now)
     day_start_ts = _operating_day_start_ts(now)
     locked_open = _locked_open_pnl(tracked, params, day_start_ts)
     realized_today = float(agg.get("realized_today", 0.0))
@@ -838,10 +886,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         status = "stopped"
 
     if n_actions or n_settled or n_requests:
-        try:
-            agg = db.aggregates(now)          # aggiornati dopo le azioni del ciclo
-        except Exception as ex:  # noqa: BLE001
-            logger.warning("[mike] aggregates KO: %s", str(ex)[:160])
+        agg = _aggregates(db, now)            # aggiornati dopo le azioni del ciclo
         locked_open = _locked_open_pnl(tracked, params, day_start_ts)
     by_state: Dict[str, int] = {}
     for e in tracked.values():
@@ -904,7 +949,7 @@ def _operating_day_key(now: datetime) -> str:
 
 
 def _ctx_legs_of(ev: Dict[str, Any]) -> List[E.Leg]:
-    return _legs_from_json(ev.get("positions"))
+    return _legs_from_json(ev.get("positions"), None, ev.get("event_id"))
 
 
 def _open_liability(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any]) -> float:
@@ -988,7 +1033,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     now_ts = now.timestamp()
     if str(ev.get("state")) in E.TERMINAL_STATES:
         return (0, 0)
-    ctx = _ctx_from_row(ev)
+    # H3 — i parametri EFFETTIVI dipendono dal mode della PARTITA, non solo da
+    # quello del control (una partita live con il control tornato in paper
+    # riceveva 'resting' su soldi veri).
+    params = _live_exit_override(params, mode)
+    ctx = _ctx_from_row(ev, db)
     extra = dict(ev.get("ctx") or {})
     before_sig = _signature(ev)
     payload = (row or {}).get("payload") or {}
@@ -1067,23 +1116,35 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # mercato annullato valgono zero; l'altra linea viene regolata dai suoi
         # runner (prima un solo mercato illeggibile azzerava tutta la partita e
         # con 4 gol la perdita reale sull'Under 3.5 spariva).
-        if total is None:
-            winners, tele = settle_plan(b35, b45, info_s)
-            if winners is not None:
-                res = E.settle_legs_by_market(ctx.legs, winners, C.commission_rate(params))
-                settle = {"per_leg": res.per_leg, "per_market": res.per_market, "net": res.net,
-                          "per_leg_gross": res.per_leg_gross,
-                          "commission_by_market": res.commission_by_market,
-                          "void": bool(tele.get("voided"))}
-                E.apply_decision(ctx, E.Decision("SETTLED", [], "regolamento per mercato (void parziale)",
-                                                 updates={"settled_pnl": res.net}), now_ts)
-                _settle_trades(db, ev["event_id"], ctx, settle, params)
-                db.log("settled", {"void": True, "reason": "mercato_annullato",
-                                   "voided": tele.get("voided"), "winners": tele.get("winners"),
-                                   "pnl": res.net, "legs": len(res.per_leg)}, ev["event_id"])
+        #
+        # 12/09 (COSTITUZIONE §10.B.1): il ramo per MERCATO vale anche quando il
+        # totale gol e' comunque deducibile dall'altra linea. Prima era dentro un
+        # ``if total is None``: con la 3.5 che dichiara UNDER (totale = 3) e la
+        # 4.5 ANNULLATA si passava dalla strada normale e le gambe della 4.5
+        # venivano regolate come UNDER (perdita/vincita inventata) invece che
+        # void.
+        winners, tele = settle_plan(b35, b45, info_s)
+        if winners is not None and tele.get("voided"):
+            res = E.settle_legs_by_market(
+                ctx.legs, winners, C.commission_rate(_settle_params(db, ev["event_id"], params)))
+            settle = {"per_leg": res.per_leg, "per_market": res.per_market, "net": res.net,
+                      "per_leg_gross": res.per_leg_gross,
+                      "commission_by_market": res.commission_by_market,
+                      "void": True}
+            E.apply_decision(ctx, E.Decision("SETTLED", [], "regolamento per mercato (void parziale)",
+                                             updates={"settled_pnl": res.net}), now_ts)
+            ok = _settle_trades(db, ev["event_id"], ctx, settle, params)
+            if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                 ev.update(_row_from_ctx(ev, ctx, extra))
                 _persist(db, ev, before_sig)
-                return (0, 1)
+                return (0, 0)
+            extra.pop("settle_rows_attempts", None)
+            db.log("settled", {"void": True, "reason": "mercato_annullato",
+                               "voided": tele.get("voided"), "winners": tele.get("winners"),
+                               "pnl": res.net, "legs": len(res.per_leg)}, ev["event_id"])
+            ev.update(_row_from_ctx(ev, ctx, extra))
+            _persist(db, ev, before_sig)
+            return (0, 1)
         if total is None and now_ts - float(extra["settle_first_ts"]) > _SETTLE_MAX_WAIT_S:
             last_goals = extra.get("last_goals")
             if extra.get("seen_inplay") and last_goals is not None:
@@ -1099,14 +1160,23 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 return (0, 0)
         snap = E.Snapshot(now=now_ts, ko_at=info_s.ko_at or now_ts, books={}, inplay=True,
                           market_status="CLOSED", final_total=total)
-        d = E.decide(ctx, snap, params)
+        # aliquota di commissione FISSATA sulle righe (cert. 12/09): il P&L di
+        # una posizione non cambia perche' l'utente ha toccato un parametro dopo
+        # averla aperta
+        s_params = _settle_params(db, ev["event_id"], params)
+        d = E.decide(ctx, snap, s_params)
         E.apply_decision(ctx, d, now_ts)
         if d.state == "SETTLING" and total is not None:
-            d = E.decide(ctx, snap, params)      # stesso ciclo: SETTLING -> SETTLED
+            d = E.decide(ctx, snap, s_params)    # stesso ciclo: SETTLING -> SETTLED
             E.apply_decision(ctx, d, now_ts)
         if d.state == "SETTLED":
+            ok = _settle_trades(db, ev["event_id"], ctx, d.telemetry.get("settle") or {}, s_params)
+            if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
+                ev.update(_row_from_ctx(ev, ctx, extra))
+                _persist(db, ev, before_sig)
+                return (0, 0)
+            extra.pop("settle_rows_attempts", None)
             settled = 1
-            _settle_trades(db, ev["event_id"], ctx, d.telemetry.get("settle") or {}, params)
             db.log("settled", {"total": total, "pnl": ctx.settled_pnl, **(d.telemetry.get("settle") or {})},
                    ev["event_id"])
         ev.update(_row_from_ctx(ev, ctx, extra))
@@ -1118,7 +1188,14 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
         # significa nessuna copertura, nessun cash out, nessuna uscita. Non si
         # inventa un prezzo: si GRIDA e lo si mostra sulla card.
         if info is not None and E.open_selections(ctx.legs):
-            missing = [m for m in (E.MARKET_OU35, E.MARKET_OU45) if info.market_id(m) is None]
+            # CERTIFICAZIONE 12/09 — UNA sola forma per ``lines_missing``:
+            # "MERCATO|SELEZIONE", la stessa scritta dal blocco live piu' sotto.
+            # Con i due formati mescolati la UI produceva "undefined 3.5" e il
+            # trader leggeva un allarme illeggibile su partite con soldi dentro.
+            missing = [f"{m}|{s}" for (m, s) in ((E.MARKET_OU35, E.SEL_UNDER),
+                                                 (E.MARKET_OU45, E.SEL_OVER),
+                                                 (E.MARKET_OU45, E.SEL_UNDER))
+                       if info.market_id(m) is None]
             _log_throttled(db, extra, params, now_ts, "feed_line_missing",
                            {"reason": "linee assenti dal feed", "markets": missing or ["selezioni"],
                             "state": ctx.state, "critical": True}, ev["event_id"])
@@ -1159,6 +1236,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                model_probs=live.get("model_probs"),
                                p_total_model=live.get("p_total_model"), p_total_emp=live.get("p_total_emp"))
     if snap is None:
+        # payload senza ``open_date`` (o non leggibile): la partita smetterebbe di
+        # essere decisa SENZA dire niente. Con una posizione aperta e' un allarme.
+        _log_throttled(db, extra, params, now_ts, "feed_line_missing",
+                       {"reason": "snapshot_non_costruibile", "state": ctx.state,
+                        "critical": bool(E.open_selections(ctx.legs))}, ev["event_id"])
+        ev.update(_row_from_ctx(ev, ctx, extra))
+        _persist(db, ev, before_sig)
         return (0, 0)
 
     # -- C1: linee MANCANTI dal feed su una partita con posizione ------------------
@@ -1331,7 +1415,8 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             # ramo "mercato chiuso" come 'settled', DOPO ``_settle_trades``.
             # Loggarlo da qui avrebbe prodotto un kind non dichiarato alla UI
             # (badge grigio in inglese) e un regolamento senza righe aggiornate.
-            if k in ("pre_cycle", "cover", "cover_wait", "cashout", "close_retries_exhausted", "loss_exit"):
+            if k in ("pre_cycle", "cover", "cover_wait", "cashout", "close_retries_exhausted",
+                     "loss_exit", "loss_exit_deciso"):
                 if k == "cashout":
                     extra["last_cashout"] = v
                 elif k == "cover_wait":
@@ -1388,8 +1473,20 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   "hazard_model": live.get("hazard_model"), "pressure": live.get("pressure"),
                   "cover_gain_pct": live.get("cover_gain_pct"), "p_over45_model": live.get("p_over45_model"),
                   "p4_market": snap.p4_market, "p4_model": snap.p4_model,
+                  # CERT. 12/09 -- DA DOVE arriva il modello: "fixture" (la migliore),
+                  # "pre_ko_odds", "live_ou", oppure "none" = il bot e' cieco e decide
+                  # su tabella empirica e mercato. Finche' il dossier era vuoto su tutti
+                  # gli eventi era sempre "none" e nessuno poteva accorgersene.
+                  "lambda_source": live.get("lambda_source"),
                   "cashout": cashout_live, "cover_wait": extra.get("last_cover_wait"),
-                  "pnl_by_total": E.net_pnl_by_total(ctx.legs, C.commission_rate(params)),
+                  # CERTIFICAZIONE 12/09 — stessa BASE di ``cashout`` e
+                  # ``liability`` (gambe ATTIVE): con le gambe archiviate dentro,
+                  # la card mostrava "se chiudo ora" e "a fine gara per gol
+                  # totali" calcolati su insiemi diversi, e i due numeri non
+                  # tornavano fra loro. I cicli archiviati sono gia' chiusi: il
+                  # loro risultato sta nel realizzato, non nel rischio aperto.
+                  "pnl_by_total": E.net_pnl_by_total(E.active_legs(ctx.legs),
+                                                     C.commission_rate(params)),
                   "books": {f"{m}|{s}": dataclasses.asdict(b) for (m, s), b in snap.books.items()},
                   "feed_fresh": snap.feed_fresh}
     ev.update(_row_from_ctx(ev, ctx, extra))
@@ -1526,8 +1623,12 @@ def _reconcile_trades(db: Any, event_id: str, ctx: E.MatchCtx, info: Optional[F.
             continue
         row = _trade_row(info, leg, mode, params, None, None, None, ctx.close_reason)
         if leg.matched > 0:
+            # la liability va RICALCOLATA sull'abbinato reale: ``_trade_row`` la
+            # calcola sulla size CHIESTA e la riga ricostruita finiva nella somma
+            # delle righe (KPI "stimata dalle righe") con un numero gonfiato.
             row.update({"status": "open", "size": round(float(leg.matched), 2),
-                        "price": leg.fill_price})
+                        "price": leg.fill_price,
+                        "liability": X.liability_of(leg.side, float(leg.matched), leg.fill_price)})
         row["meta"] = {**row["meta"], "phase": "reconstructed", "reconciled": True}
         try:
             _insert_trade_row(db, row, event_id)
@@ -1669,14 +1770,84 @@ def _mark_trade_cancelled(db: Any, event_id: str, leg: E.Leg, reason: str,
         logger.warning("[mike] mark cancelled %s KO: %s", leg.ref, str(ex)[:120])
 
 
+_SETTLE_ROWS_MAX_TRIES = 5
+
+
+def _retry_settle_rows(db: Any, event_id: str, ctx: E.MatchCtx, extra: Dict[str, Any],
+                       now_ts: float) -> bool:
+    """Righe ``mike_trades`` NON aggiornate dal regolamento: la partita NON puo'
+    diventare terminale.
+
+    Una partita SETTLED non viene piu' guardata dal ciclo (``_run_event`` esce
+    subito sugli stati terminali): le sue righe resterebbero 'open'/'pending'
+    PER SEMPRE — posizioni aperte fantasma nei KPI, liability dichiarata su
+    soldi gia' regolati e P&L reale mai contabilizzato. Si torna quindi in
+    SETTLING e si riprova al giro dopo (il throttle ``settle_next_ts`` e' gia'
+    fissato). Ritorna True se si deve riprovare, False se si rinuncia dopo
+    ``_SETTLE_ROWS_MAX_TRIES`` (partita chiusa lo stesso, ma GRIDANDO).
+    """
+    tries = int(extra.get("settle_rows_attempts") or 0) + 1
+    extra["settle_rows_attempts"] = tries
+    if tries >= _SETTLE_ROWS_MAX_TRIES:
+        logger.critical("[mike] %s: righe di regolamento non aggiornate dopo %d tentativi: "
+                        "partita chiusa lo stesso, righe da sistemare a mano", event_id, tries)
+        db.log("error", {"reason": "settle_rows_failed", "attempts": tries, "critical": True},
+               event_id)
+        return False
+    logger.warning("[mike] %s: righe di regolamento non aggiornate (tentativo %d): si riprova",
+                   event_id, tries)
+    db.log("error", {"reason": "settle_rows_retry", "attempts": tries, "critical": True}, event_id)
+    E.apply_decision(ctx, E.Decision("SETTLING", [], "righe non aggiornate: nuovo tentativo"), now_ts)
+    return True
+
+
+def _settle_params(db: Any, event_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """``params`` con l'ALIQUOTA DI COMMISSIONE FISSATA SULLE RIGHE della partita.
+
+    CERTIFICAZIONE 12/09 — il regolamento usava sempre ``commission_pct``
+    CORRENTE: se il trader cambiava il parametro con posizioni gia' aperte, le
+    vecchie si regolavano con la nuova aliquota e il P&L storico cambiava di
+    significato. Omega e Safe usano da sempre quella della riga. Qui si legge
+    dalle righe della partita: se sono tutte d'accordo si usa quella, altrimenti
+    (caso raro: parametro cambiato a partita aperta) si tiene quella corrente e
+    lo si DICHIARA nel log, perche' il numero non e' piu' ricostruibile.
+    """
+    try:
+        rows = db.trades_for_event(str(event_id)) or []
+    except Exception:  # noqa: BLE001 - mai bloccare il regolamento per questo
+        return params
+    rates = set()
+    for r in rows:
+        v = r.get("commission")
+        if v is None:
+            continue
+        try:
+            rates.add(round(float(v), 6))
+        except (TypeError, ValueError):
+            continue
+    if len(rates) != 1:
+        if len(rates) > 1:
+            db.log("settle_commissione_mista", {
+                "reason": "righe con aliquote diverse: uso quella corrente",
+                "aliquote": sorted(rates), "critical": True}, str(event_id))
+        return params
+    rate = rates.pop()
+    if abs(rate - C.commission_rate(params)) < 1e-9:
+        return params
+    return {**params, "commission_pct": round(rate * 100.0, 6)}
+
+
 def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, Any],
-                   params: Optional[Dict[str, Any]] = None) -> None:
+                   params: Optional[Dict[str, Any]] = None) -> bool:
     """Riporta l'esito per gamba sulle righe mike_trades (signal_key = leg.ref).
 
     H4 — il ``pnl`` scritto su ogni riga e' NETTO commissione (la somma delle
     righe = ``settled_pnl`` della partita).
     L-08 — ``meta.commission_paid`` viene SCRITTA davvero (quota di commissione
     del mercato attribuita alla riga): lo storico non deve piu' stimarla.
+
+    Ritorna False se le righe NON sono state scritte (lettura fallita o anche un
+    solo update fallito): il chiamante non deve chiudere la partita.
     """
     per_leg = {ref: (st, pnl) for ref, st, pnl in (settle.get("per_leg") or [])}
     gross_leg = {ref: pnl for ref, _st, pnl in (settle.get("per_leg_gross") or [])}
@@ -1685,8 +1856,10 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
     try:
         rows = db.trades_for_event(str(event_id))
     except Exception as ex:  # noqa: BLE001
-        db.log("error", {"reason": "settle_rows_failed", "err": str(ex)[:160]}, event_id)
-        return
+        db.log("error", {"reason": "settle_rows_unreadable", "err": str(ex)[:160],
+                         "critical": True}, event_id)
+        return False
+    ok = True
     now_iso = _now().isoformat()
     # C1 — DEDUP per signal_key: se per qualunque motivo esistono due righe per
     # la stessa gamba, il P&L si scrive UNA volta sola (sulla piu' vecchia) e le
@@ -1702,6 +1875,7 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
             try:
                 db.update_trade(int(r["id"]), status="error", pnl=0.0, meta=meta_d)
             except Exception as ex:  # noqa: BLE001
+                ok = False
                 logger.warning("[mike] dedup riga %s KO: %s", r.get("id"), str(ex)[:120])
             logger.critical("[mike] %s: riga DOPPIA per %s (id %s, tenuta %s)", event_id, ref0,
                             r.get("id"), seen[ref0].get("id"))
@@ -1732,8 +1906,44 @@ def _settle_trades(db: Any, event_id: str, ctx: E.MatchCtx, settle: Dict[str, An
             db.update_trade(int(r["id"]), status=st, pnl=round(float(pnl), 2), settled_at=now_iso,
                             meta=meta)
         except Exception as ex:  # noqa: BLE001
-            db.log("error", {"reason": "settle_update_failed", "trade_id": r.get("id"), "err": str(ex)[:120]},
-                   event_id)
+            ok = False
+            db.log("error", {"reason": "settle_update_failed", "trade_id": r.get("id"),
+                             "err": str(ex)[:120], "critical": True}, event_id)
+    # H4 — la somma dei ``pnl`` delle righe DEVE fare ``settled_pnl``: una gamba
+    # regolata senza riga specchio (riserva mai scritta e mai ricostruita perche'
+    # il feed era incompleto) rompe quella garanzia. Non si puo' riparare qui
+    # (non c'e' ``EventInfo``), ma non deve restare muta.
+    refs_on_db = {str(r.get("signal_key") or "") for r in rows}
+    orphan_legs = [ref for ref in per_leg if ref not in refs_on_db]
+    if orphan_legs:
+        # CERT. 12/09 — distinzione che prima mancava. Una gamba PIANIFICATA e mai
+        # piazzata (importo sotto il minimo Betfair, ordine annullato) si regola
+        # 'void' e vale ZERO: non rompe nessuna garanzia e non e' un errore, e'
+        # cronaca. Osservato dal vivo: 8 partite, 69 gambe orfane, scarto fra P&L
+        # dichiarato e somma delle righe pari a 0,00 EUR su tutte e 8 — eppure
+        # ognuna scriveva un 'error' critico che faceva sembrare rotto il conto.
+        # Rompe la garanzia solo una gamba orfana con P&L NON nullo.
+        def _pnl_of(ref: str) -> float:
+            # ``per_leg`` e' {ref: (stato, pnl)} — vedi la riga che lo costruisce
+            v = per_leg.get(ref)
+            if isinstance(v, (tuple, list)) and len(v) >= 2:
+                v = v[1]
+            try:
+                return float(v or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+        pesanti = [ref for ref in orphan_legs if abs(_pnl_of(ref)) > 0.005]
+        if pesanti:
+            logger.critical("[mike] %s: %d gambe regolate SENZA riga e con P&L: %s",
+                            event_id, len(pesanti), pesanti[:5])
+            db.log("error", {"reason": "settle_leg_senza_riga", "legs": pesanti[:10],
+                             "critical": True}, event_id)
+        else:
+            logger.info("[mike] %s: %d gambe pianificate e mai piazzate, regolate a zero",
+                        event_id, len(orphan_legs))
+            db.log("settle_gambe_non_piazzate",
+                   {"quante": len(orphan_legs), "legs": orphan_legs[:10]}, event_id)
+    return ok
 
 
 def _persist(db: Any, ev: Dict[str, Any], before_sig: str) -> None:

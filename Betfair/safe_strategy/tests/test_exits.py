@@ -345,8 +345,18 @@ def test_decide_time_exit_caso_trade_12_e_soglie():
     # loss_if_lose assente = caso back (perdita = stake)
     act, _ = XE.decide_time_exit(0.05, -1.0, 4.0, 10.0, P)   # EV = 3.8-0.5 = 3.3
     assert act == "hold"
+    # parametri INCOERENTI (hold_max_risk 0.20 > risk_cap 0.10): merge_exit_params
+    # riporta hold_max_risk al tetto di rischio, quindi P(perdita)=15% resta
+    # sopra il cap e si ESCE. Tenere varrebbe EV = 0.85*2 - 0.15*118 = -16,00 €
+    # contro i -4,00 € gia' bloccati: chiudere e' anche la scelta piu' ricca.
     custom = XE.merge_exit_params({"hold_max_risk": 0.2, "ev_margin": 3})
-    assert XE.decide_time_exit(0.15, -4.0, 2.0, 2.0, custom, loss_if_lose=118.0)[0] == "hold"
+    assert custom["hold_max_risk"] == 0.10
+    act, why = XE.decide_time_exit(0.15, -4.0, 2.0, 2.0, custom, loss_if_lose=118.0)
+    assert act == "exit" and why.startswith("rischio alto: P(perdita)=15.0% >= 10%")
+    # sotto il tetto e sotto hold_max_risk allineato: si TIENE (margine ampio)
+    assert XE.decide_time_exit(0.05, -4.0, 2.0, 2.0,
+                               XE.merge_exit_params({"hold_max_risk": 0.2, "risk_cap": 0.3}),
+                               loss_if_lose=118.0)[0] == "hold"
     assert XE.decide_time_exit(0.3, -6.0, 2.0, 2.0,
                                XE.merge_exit_params({"risk_cap": 0.5, "ev_margin": 3}),
                                loss_if_lose=118.0)[0] == "exit", "-6 >= EV(-34.4)-3"
@@ -416,7 +426,8 @@ def test_situazione_modello_calcio_gol_e_rosso():
     t = _model("MATCH_ODDS", "Away", side="lay", selection_id=8, score="1-0")
     meta, _ = _step(t, [_calcio(60, 1, 0)])
     sit = XE.model_situation(t, meta, _calcio(60, 1, 0), P)
-    assert sit == {"adverse_event": None, "not_before_ts": 0.0, "decided_against": False}
+    assert sit == {"adverse_event": None, "not_before_ts": 0.0, "decided_against": False,
+                   "minute": 60, "model_blind": False}
     meta, _ = _step(t, [_calcio(60, 1, 0), _calcio(66, 1, 1)])
     sit = XE.model_situation(t, meta, _calcio(66, 1, 1), P)
     assert sit["adverse_event"] == "gol" and sit["not_before_ts"] == T0 + 2.0 + 30.0
@@ -504,3 +515,142 @@ def test_decide_model_take_profit_e_cashout_quasi_gratis():
     assert XE.reason_text("loss", "gol_avverso").startswith("Gol avverso")
     assert XE.reason_text("profit", "take_profit_modello") == "Take profit del modello: profitto bloccato"
     assert XE.reason_text("loss", "linea_decisa_contro").startswith("La linea tradata")
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - il MODELLO e' CIECO oltre il recupero (dal 95')
+# ===========================================================================
+# Misura reale sul book: 85' -> P(perdita) 72,2%, 94' -> 95,9%, dal 95' in poi
+# 99,8% PIATTO fino al 120'. Non e' una certezza: e' finita la tabella dei gol
+# residui. Una P(perdita) dello 0,2% al 96' fa TENERE una posizione mentre ci
+# sono ancora 5-8 minuti di recupero da giocare.
+def _sit_blind(adverse=None, nb=0.0, decided=False, minute=96, blind=True):
+    return {"adverse_event": adverse, "not_before_ts": nb, "decided_against": decided,
+            "minute": minute, "model_blind": blind}
+
+
+def test_model_is_blind_confine_94_contro_95():
+    """94' = modello ancora valido, 95' (90' + recupero) = cieco."""
+    assert XE.model_is_blind(94) is False
+    assert XE.model_is_blind(95) is True
+    assert XE.model_is_blind(96) is True
+    assert XE.model_is_blind(120) is True
+    # minuto ignoto: NON si dichiara cieco (nessun cambio di comportamento)
+    assert XE.model_is_blind(None) is False
+    assert XE.model_is_blind("boh") is False
+
+
+def test_situazione_modello_marca_la_cecita_al_96():
+    t = _model("MATCH_ODDS", "Away", side="lay", selection_id=8, score="1-1")
+    meta, _ = _step(t, [_calcio(94, 1, 1)])
+    sit = XE.model_situation(t, meta, _calcio(94, 1, 1), P)
+    assert sit["minute"] == 94 and sit["model_blind"] is False
+    meta, _ = _step(t, [_calcio(96, 1, 1)])
+    sit = XE.model_situation(t, meta, _calcio(96, 1, 1), P)
+    assert sit["minute"] == 96 and sit["model_blind"] is True
+
+
+def test_decide_model_al_96_non_si_fida_della_p_finta_dopo_un_gol():
+    """1-1 al 96', gol subito dopo l'ingresso: il modello dice P(perdita)=0,002
+    (pavimento), sotto la soglia del 10% -> prima NON si usciva e la posizione
+    restava aperta nel recupero. Ora l'evento avverso fa uscire lo stesso."""
+    p_finta = 0.002
+    # 94': modello ancora onesto, sotto soglia -> si tiene (comportamento storico)
+    assert XE.decide_model(p_lose=p_finta, p_lose_entry=0.001, locked=-2.0,
+                           max_profit=5.0, situation=_sit_blind("gol", 500.0, minute=94,
+                                                               blind=False),
+                           params=P) is None
+    # 96': modello cieco -> si esce, senza passare dalla soglia su p_lose
+    d = XE.decide_model(p_lose=p_finta, p_lose_entry=0.001, locked=-2.0, max_profit=5.0,
+                        situation=_sit_blind("gol", 500.0), params=P)
+    assert d == XE.ExitDecision("loss", "gol_avverso", 500.0)
+    # il ritardo di assestamento dopo il gol resta rispettato (not_before_ts)
+    assert d.not_before_ts == 500.0
+    # rosso avverso: stessa regola, kind 'red_card'
+    d = XE.decide_model(p_lose=p_finta, p_lose_entry=None, locked=-2.0, max_profit=5.0,
+                        situation=_sit_blind("rosso", 700.0), params=P)
+    assert d == XE.ExitDecision("red_card", "rosso_avverso", 700.0)
+
+
+def test_decide_model_al_96_niente_cashout_quasi_gratis():
+    """La regola 5 piazza un ordine VERO sulla fede di P(perdita) ~ 0: con il
+    modello cieco quella certezza non esiste, la regola resta sospesa. Il
+    take-profit (regola 4), che guarda il P&L BLOCCATO, continua a valere."""
+    assert XE.decide_model(p_lose=0.002, p_lose_entry=None, locked=0.5, max_profit=None,
+                           situation=_sit_blind(), params=P) is None
+    # stesso caso al 94' (modello valido): la regola 5 scatta come sempre
+    assert XE.decide_model(p_lose=0.002, p_lose_entry=None, locked=0.5, max_profit=None,
+                           situation=_sit_blind(minute=94, blind=False),
+                           params=P) == XE.ExitDecision("profit", "cashout_quasi_gratis", 0.0)
+    # take-profit sul BLOCCATO: vale anche col modello cieco
+    assert XE.decide_model(p_lose=0.002, p_lose_entry=None, locked=8.0, max_profit=10.0,
+                           situation=_sit_blind(),
+                           params=P) == XE.ExitDecision("profit", "take_profit_modello", 0.0)
+    # linea decisa contro: incondizionata, cieco o no
+    assert XE.decide_model(p_lose=None, p_lose_entry=None, locked=None, max_profit=None,
+                           situation=_sit_blind(decided=True),
+                           params=P) == XE.ExitDecision("loss", "linea_decisa_contro", 0.0)
+
+
+def test_decide_time_exit_al_96_non_dichiara_margine_ampio():
+    """Con chiusura in perdita l'azione resta PRUDENTE (si tiene), ma il motivo
+    mostrato all'utente non puo' essere 'margine ampio: P(perdita)=0,2%': quel
+    numero non e' una misura. Col modello cieco la P viene scartata."""
+    action, why = XE.decide_time_exit(0.002, -1.5, 5.0, 2.0, P)
+    assert action == "hold" and "margine ampio" in why
+    action, why = XE.decide_time_exit(0.002, -1.5, 5.0, 2.0, P, model_blind=True)
+    assert action == "hold" and "non stimabile" in why
+    # il profitto bloccato resta la regola che comanda, cieco o no
+    assert XE.decide_time_exit(0.002, 1.20, 5.0, 2.0, P, model_blind=True)[0] == "exit"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - risk_cap a 0 non deve DISATTIVARE il tetto di rischio
+# ===========================================================================
+def test_decide_time_exit_risk_cap_zero_significa_esco_sempre():
+    xp = XE.merge_exit_params({"risk_cap": 0.0, "risk_premium_pct": 1.0})
+    assert xp["risk_cap"] == 0.0 and xp["hold_max_risk"] == 0.0
+    # p = 30%: col vecchio ``or 1.0`` il tetto diventava 100% e non usciva mai.
+    # Con premio 1.0 il tetto torna SECCO: sopra la soglia si esce e basta.
+    action, why = XE.decide_time_exit(0.30, -1.0, 5.0, 2.0, xp)
+    assert action == "exit" and "rischio alto" in why
+    # il tetto assente (chiave mancante) resta "nessun tetto"
+    assert XE.decide_time_exit(0.30, -1.0, 5.0, 2.0, {})[0] == "hold"
+
+
+def test_decide_time_exit_il_tetto_di_rischio_non_paga_qualunque_prezzo():
+    """12/09 — sopra ``risk_cap`` si esce solo a un prezzo che vale. Numeri veri
+    di Omega trade 88 (Lazio-Milan, 67′, lay 0,65 @42): P(perdita) 20,7 % sopra
+    il tetto del 10 %, ma chiudere bloccava −8,16 dove tenere valeva −5,03. Il
+    lay ha poi VINTO: il tetto secco ha buttato 8,42 EUR."""
+    xp = XE.merge_exit_params({"risk_cap": 0.10, "ev_margin": 0.10,
+                               "risk_premium_pct": 0.05})
+    tiene, why = XE.decide_time_exit(0.2072, -8.16, 0.65, 0.65, xp, loss_if_lose=26.65)
+    assert tiene == "hold" and "costa troppo" in why
+    # lo stesso rischio a un prezzo che lo vale: si esce
+    esce, why2 = XE.decide_time_exit(0.2072, -5.50, 0.65, 0.65, xp, loss_if_lose=26.65)
+    assert esce == "exit" and "rischio alto" in why2 and "lo vale" in why2
+    # premio a 0: mai un centesimo sotto l'EV del tenere
+    stretto = XE.merge_exit_params({"risk_cap": 0.10, "ev_margin": 0.0,
+                                    "risk_premium_pct": 0.0})
+    assert XE.decide_time_exit(0.2072, -5.50, 0.65, 0.65, stretto,
+                               loss_if_lose=26.65)[0] == "hold"
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - heartbeat dello scanner: margine di piu' di un giro
+# ===========================================================================
+def test_feed_is_fresh_heartbeat_scanner_ha_la_sua_tolleranza():
+    """``service._STATUS_PERIOD_SEC`` riscrive l'heartbeat ogni 10 s: con la
+    stessa soglia della riga (20 s) il margine era UN SOLO giro e un tick lungo
+    congelava di colpo tutti gli ingressi e le uscite automatiche."""
+    now = 1_000_000.0
+    row = {"updated_at": now - 60.0}          # riga vecchia (ma sotto il tetto duro)
+    assert XE.SCANNER_HEARTBEAT_MAX_S > 2 * 10.0
+    assert XE.feed_is_fresh(row, now, now - 25.0) is True    # heartbeat 25 s: scanner vivo
+    assert XE.feed_is_fresh(row, now, now - 50.0) is False   # oltre 45 s: scanner morto
+    # la freschezza della RIGA non cambia: resta 20 s
+    assert XE.feed_is_fresh({"updated_at": now - 19.0}, now, None) is True
+    assert XE.feed_is_fresh({"updated_at": now - 21.0}, now, None) is False
+    # TETTO DURO 120 s: nemmeno con l'heartbeat freschissimo
+    assert XE.feed_is_fresh({"updated_at": now - 121.0}, now, now - 1.0) is False

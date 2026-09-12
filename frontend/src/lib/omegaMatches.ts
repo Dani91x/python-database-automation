@@ -153,10 +153,23 @@ export function legPnl<T extends MatchTradeLike>(trade: T, closes: T[]): LegPnl 
         for (const c of closes) if (SETTLED.has(c.status)) v += Number(c.pnl) || 0;
         return { state: 'settled', value: Math.round(v * 100) / 100 };
     }
-    const locked = num(metaOf(trade)['locked_pnl']);
+    // CERT. 12/09 — si mostra il bloccato NETTO quando il servizio lo pubblica
+    // (`locked_pnl_net`): il lordo sovrastimava del 5% un profitto bloccato,
+    // mentre il realizzato che segue e' netto. Ripiego sul lordo per le righe
+    // scritte prima di questa versione.
+    const lockedNet = num(metaOf(trade)['locked_pnl_net']);
+    const lockedGross = num(metaOf(trade)['locked_pnl']);
+    const locked = lockedNet ?? lockedGross;
     // bloccato solo con una chiusura DAVVERO abbinata: una chiusura ancora 'pending'
     // (cash out in coda) lascia la gamba aperta e il suo rischio vivo (review 11/09 HIGH-1)
-    if (trade.status === 'hedged' || (locked != null && closes.some((c) => c.status !== 'error' && c.status !== 'pending'))) {
+    // CERT. 12/09 (collaudo P&L): su una copertura PARZIALE una riga legacy puo'
+    // avere `locked_pnl` scritto (es. −68,98 con residuo 1,14: il reale era
+    // −0,58). "Bloccato" vale solo a copertura COMPLETA.
+    const residual = num(metaOf(trade)['residual_size']);
+    const coperturaCompleta = residual == null || residual <= 0.01;
+    if (coperturaCompleta
+        && (trade.status === 'hedged'
+            || (locked != null && closes.some((c) => c.status !== 'error' && c.status !== 'pending')))) {
         return { state: 'locked', value: locked ?? 0 };
     }
     // copertura PARZIALE (review MEDIUM-3): niente "bloccato", ma il caso peggiore è

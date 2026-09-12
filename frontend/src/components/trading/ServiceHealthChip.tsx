@@ -46,6 +46,21 @@ export interface ServiceHealthChipProps {
     degraded?: string | null;
 }
 
+/**
+ * Certificazione 12/09 — le DUE salute sono distinte e vanno dette distinte.
+ *
+ * Prima il chip era rosso solo per il feed: con `/omega` che mostrava
+ * «feed vivo (22 s)» e «servizio Omega: nessun battito` il bordo restava VERDE
+ * accanto a un badge di stato ROSSO «IN CORSA · SENZA BATTITO» nello stesso
+ * header. E l'azione consigliata diceva «nessun heartbeat» anche quando il
+ * battito del servizio c'era e mancava solo lo stato del FEED (il caso di
+ * `/safe-strategy`): due guasti diversi, una sola frase, sbagliata in entrambi.
+ *
+ * Qui: il feed e il servizio hanno ciascuno il proprio giudizio e la propria
+ * riga d'azione; il chip è rosso se uno dei due è fermo. Il servizio viene
+ * giudicato solo se il chiamante passa `heartbeatAt` (anche null: «mai
+ * battuto»); chi non lo passa affatto non viene giudicato.
+ */
 export function ServiceHealthChip({
     botName, feedUpdatedAt, feedStaleMs = 45_000, heartbeatAt, nowMs,
     counts, source, streamMarkets, dry, lastError, feedMissing, degraded,
@@ -53,8 +68,26 @@ export function ServiceHealthChip({
     const feedAge = ageSeconds(feedUpdatedAt, nowMs);
     const feedAlive = feedAge !== null && feedAge * 1000 <= feedStaleMs;
     const hbAge = ageSeconds(heartbeatAt, nowMs);
+    const beatJudged = heartbeatAt !== undefined;
     const botAlive = hbAge !== null && hbAge <= SERVICE_STALE_S;
-    const bad = !feedAlive;
+    const beatBad = beatJudged && !botAlive;
+    const bad = !feedAlive || beatBad;
+    // che cosa fare, nominando il guasto: mai un allarme senza rimedio e mai
+    // il rimedio sbagliato (§4 della certificazione UI). La riga d'azione
+    // riguarda SOLO il feed: il guasto del battito è già detto per intero
+    // dalla riga del battito qui accanto — lo stesso allarme scritto due volte
+    // non è più urgente, copre solo gli altri.
+    const action = !feedAlive
+        ? (feedMissing || feedAge === null
+            ? `lo stato del feed non è mai stato pubblicato: ${T.restartApp}`
+            : `il feed dello scanner è fermo da ${fmtAge(feedAge)}: ${T.restartApp}`)
+        : null;
+    /** testo UNICO del battito: stato + età + rimedio, tutto in una riga sola */
+    const beatText = botAlive
+        ? `servizio ${botName} vivo (${fmtAge(hbAge)})`
+        : beatJudged
+            ? `servizio ${botName}: ${T.serviceNoBeat}${hbAge == null ? '' : ` da ${fmtAge(hbAge)}`} — ${T.restartApp}`
+            : `servizio ${botName}: ${T.serviceNoBeat}`;
 
     return (
         <div
@@ -63,9 +96,14 @@ export function ServiceHealthChip({
             data-feed={feedAlive ? 'alive' : 'stale'}
             data-service={botAlive ? 'alive' : 'stale'}
             data-degraded={degraded ? '1' : undefined}
+            role="status"
         >
             <Radar className={`w-3.5 h-3.5 ${feedAlive ? 'text-emerald-400' : 'text-red-400'}`} aria-hidden />
-            <span className={feedAlive ? 'text-emerald-300' : 'text-red-300'}>
+            <span
+                className={feedAlive ? 'text-emerald-300' : 'text-red-300'}
+                data-testid="service-feed"
+                title="FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna"
+            >
                 {feedAlive
                     ? `${T.feedAlive} (${fmtAge(feedAge)})`
                     : feedAge === null
@@ -80,10 +118,12 @@ export function ServiceHealthChip({
                 </span>
             )}
             <span className="text-slate-600" aria-hidden>·</span>
-            <span className={botAlive ? 'text-emerald-300' : 'text-slate-400'} data-testid="service-beat">
-                {botAlive
-                    ? `servizio ${botName} vivo (${fmtAge(hbAge)})`
-                    : `servizio ${botName}: ${T.serviceNoBeat}`}
+            <span
+                className={botAlive ? 'text-emerald-300' : beatJudged ? 'text-red-300' : 'text-slate-400'}
+                data-testid="service-beat"
+                title={`BATTITO del servizio ${botName}: se manca, il bot non sta operando (soglia ${SERVICE_STALE_S} s)`}
+            >
+                {beatText}
             </span>
             {source && (
                 <Badge
@@ -111,10 +151,8 @@ export function ServiceHealthChip({
                     ⚠ CICLO DEGRADATO: {degraded}
                 </Badge>
             )}
-            {bad && (
-                <span className="text-red-300" data-testid="service-health-action">
-                    — {feedMissing ? `nessun heartbeat: ${T.restartApp}` : T.restartApp}
-                </span>
+            {action && (
+                <span className="text-red-300" data-testid="service-health-action">— {action}</span>
             )}
             {lastError && <span className="text-amber-300" title={lastError} aria-label={lastError}>⚠</span>}
         </div>

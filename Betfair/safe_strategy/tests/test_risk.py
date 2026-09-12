@@ -126,3 +126,39 @@ def test_ordine_dei_motivi_e_candidato_incompleto():
     assert RK.check(open_, _cand(liability=50.0), -100.0, P, day_liability=1000.0)[1] == "daily_loss_stop"
     # liability assente = 0: passano solo i conteggi
     assert RK.check([], {"event_id": "1.1"}, 0.0, P) == (True, None)
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - contratto coi valori mostrati dalla UI
+# ===========================================================================
+# ``frontend/src/lib/safeBot.ts`` (DEFAULT_RISK) e ``BotParamsSheet.tsx``
+# (RISK_FIELDS) mostrano all'utente questi stessi default e questi stessi
+# limiti. Se il servizio si sposta, la UI dichiara un numero che il bot non
+# usa: questo test e' il fermo contro quella deriva.
+def test_default_del_rischio_coincidono_con_quelli_dichiarati_dalla_ui():
+    d = RK.DEFAULT_RISK_PARAMS
+    assert d["daily_liability_cap"] == 500.0
+    assert d["per_event_liability_cap"] == 150.0
+    assert d["per_event_max_trades"] == 3
+    assert d["correlated_cap"] == 0.7
+    assert d["daily_loss_stop"] == -50.0
+    assert d["model_stake"] == 5.0
+    assert d["model_daily_liability_cap"] == 150.0
+    assert d["max_open_trades"] is None, "None = eredita il max_open_trades del bot"
+
+
+def test_clamp_del_rischio_come_i_limiti_della_ui():
+    # correlated_cap: la UI dichiara min 0 / max 1, il servizio clampa uguale
+    assert RK.merge_risk_params({"correlated_cap": 5})["correlated_cap"] == 1.0
+    assert RK.merge_risk_params({"correlated_cap": -1})["correlated_cap"] == 0.0
+    # cap e stake: la UI dichiara min 0, il servizio non scende sotto 0
+    for k in ("daily_liability_cap", "per_event_liability_cap",
+              "model_daily_liability_cap", "model_stake"):
+        assert RK.merge_risk_params({k: -10})[k] == 0.0
+    # conteggi interi: la UI mostra step 1, il servizio TRONCA (3,7 -> 3)
+    assert RK.merge_risk_params({"per_event_max_trades": 3.7})["per_event_max_trades"] == 3
+    # stop perdite: il SEGNO si interpreta (la UI mostra il valore applicato)
+    assert RK.merge_risk_params({"daily_loss_stop": 50})["daily_loss_stop"] == -50.0
+    assert RK.merge_risk_params({"daily_loss_stop": 0})["daily_loss_stop"] == 0.0
+    # valore non numerico: si torna al default, mai a 0 (che spegnerebbe il cap)
+    assert RK.merge_risk_params({"daily_liability_cap": "tanto"})["daily_liability_cap"] == 500.0

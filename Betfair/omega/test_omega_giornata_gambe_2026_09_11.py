@@ -125,10 +125,15 @@ def test_scoreline_names_e_winner():
 
 
 # --------------------------------------------------------- λ dal mercato O/U live
-def _ou(line, over, under, status="OPEN"):
+def _ou(line, over, under, status="OPEN", size=50.0):
+    # certificazione 12/09: le size fanno parte del blocco O/U reale del feed
+    # (scanner.price_pair) e ORA sono obbligatorie — un prezzo senza liquidità
+    # non è più una probabilità per il modello (omega_model.quote_p).
     return {"market_type": f"OVER_UNDER_{int(line)}5", "line": line, "status": status,
-            "selections": [{"selection_id": 1, "name": f"Over {line} Goals", "back": over, "lay": over + 0.1},
-                           {"selection_id": 2, "name": f"Under {line} Goals", "back": under, "lay": under + 0.02}]}
+            "selections": [{"selection_id": 1, "name": f"Over {line} Goals", "back": over, "lay": over + 0.1,
+                            "back_size": size, "lay_size": size},
+                           {"selection_id": 2, "name": f"Under {line} Goals", "back": under, "lay": under + 0.02,
+                            "back_size": size, "lay_size": size}]}
 
 
 def test_lambdas_from_live_ou():

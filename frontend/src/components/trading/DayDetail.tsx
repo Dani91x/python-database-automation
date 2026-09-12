@@ -10,15 +10,20 @@ import { Activity, ExternalLink } from 'lucide-react';
 import { ExitBadge } from '@/components/trading/ExitBadge';
 import { cappedFrom } from '@/lib/safeBot';
 import {
-    dayLabel, tradeExit, summarizeDayTrades, attributionOf,
+    dayLabel, tradeExit, summarizeDayTrades, attributionOf, WIN_LOSS_TIP,
     type DayTrade, type DayTradeLeg, type HistoryVariant, type DayAttribution,
 } from '@/lib/dailyHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
-import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
-import { statusMeta } from '@/lib/tradeStatus';
+import { fmtMoney, fmtOdds, fmtTime, DASH } from '@/lib/format';
+import { statusMeta, statusMetaOf, TIP } from '@/lib/tradeStatus';
 
+/**
+ * §1 — un dato ASSENTE è «—», non «0,00 €». Prima `fmtEur` faceva
+ * `Number(v ?? 0)`: uno stake o una liability mai scritti dal servizio
+ * comparivano come uno zero perfettamente credibile.
+ */
 function fmtEur(v: number | null | undefined): string {
-    return fmtMoney(Number(v ?? 0));
+    return fmtMoney(v);
 }
 function fmtSignedEur(v: number): string {
     return fmtMoney(v, { signed: true });
@@ -31,6 +36,17 @@ function timeLabel(iso: string | null): string {
 /** §19: nessuna mappa duplicata — lo stato lo dice `lib/tradeStatus`. */
 export function statusBadge(status: string): { label: string; cls: string } {
     return statusMeta(status);
+}
+
+/**
+ * Certificazione 12/09 — lo STORICO deve dire la stessa parola del LIVE.
+ * Qui si passava il solo `status`: una riserva a esito IGNOTO
+ * (`meta.reason='place_exception_reconciling'` / `meta.reconciling`) che nel
+ * tab Trade è «IN VERIFICA SU BETFAIR» nello storico diventava un innocuo
+ * «IN CORSO», e una riga terminale in errore un «ERRORE» qualsiasi.
+ */
+function statusBadgeOf(leg: DayTradeLeg): { label: string; cls: string } {
+    return statusMetaOf({ status: leg.status, meta: leg.meta });
 }
 
 const STRATEGY_LABEL: Record<string, string> = {
@@ -49,6 +65,14 @@ function lockedPnl(leg: DayTradeLeg): number | null {
     const v = Number((leg.meta ?? {})['locked_pnl']);
     return Number.isFinite(v) ? v : null;
 }
+/** P&L già incassato dalle gambe di chiusura REGOLATE di una posizione. */
+function cashedOf(t: DayTrade): number {
+    let s = 0;
+    for (const c of t.closes ?? []) {
+        if (['won', 'lost', 'void'].includes(c.status)) s += Number(c.pnl) || 0;
+    }
+    return Math.round(s * 100) / 100;
+}
 function selectionOf(t: DayTradeLeg): string {
     return t.selection_name ?? t.runner_name ?? '—';
 }
@@ -66,8 +90,8 @@ export interface DayDetailProps {
     variant: HistoryVariant;
     /**
      * H-11/M-18: come il CALENDARIO attribuisce una posizione al giorno.
-     * Omega/Mike per giorno di PIAZZAMENTO, Safe per giorno di REGOLAZIONE.
-     * Assente = dedotta dalla variante.
+     * Per TUTTI E TRE i bot è il giorno di PIAZZAMENTO (Europe/Rome).
+     * Assente = dedotta dalla variante (`attributionOf`).
      */
     attribution?: DayAttribution;
     /** posizione ancora viva → "vai al live" (tab trade della pagina) */
@@ -92,6 +116,17 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
     const openCount = day0.open;
     const liability = day0.liability;
     const otherDays = day0.others.length;
+    // le righe MAI arrivate a mercato restano visibili (un ordine fallito è
+    // un'informazione), ma fuori dai conteggi: il calendario non le conta
+    const rowsShown = [...day0.attributed, ...day0.notPlaced];
+    const notPlaced = day0.notPlaced.length;
+    /**
+     * Certificazione 12/09 — finché i trade della giornata non sono arrivati
+     * la testata NON deve dichiarare «0 trade · liability piazzata 0,00 € ·
+     * realizzato +0,00 €»: sono tre affermazioni false su una pagina di
+     * trading (il dump lo mostrava accanto a un dettaglio con 6 posizioni).
+     */
+    const noData = trades == null;
 
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="day-detail" aria-busy={loading || undefined}>
@@ -99,9 +134,16 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                 <Activity className="w-4 h-4 text-primary" />
                 <span className="font-semibold capitalize">{dayLabel(day, { weekday: true })}</span>
                 <span className="text-slate-500">·</span>
-                <span className="tabular-nums" data-testid="day-count">{day0.attributed.length} trade</span>
-                {openCount > 0 && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40 text-[10px]">{openCount} ancora vivi</Badge>}
-                {otherDays > 0 && (
+                <span className="tabular-nums" data-testid="day-count">
+                    {noData ? 'caricamento…' : `${day0.attributed.length} trade`}
+                </span>
+                {!noData && openCount > 0 && <Badge variant="outline" className="bg-sky-500/15 text-sky-300 border-sky-500/40 text-[10px]">{openCount} ancora vivi</Badge>}
+                {!noData && notPlaced > 0 && (
+                    <span className="text-[11px] text-slate-500" data-testid="day-not-placed" title="ordini mai arrivati a mercato (errore o riserva senza esito): il calendario non li conta fra i trade piazzati né nella liability">
+                        + {notPlaced} non piazzati (fuori dai totali)
+                    </span>
+                )}
+                {!noData && otherDays > 0 && (
                     <span className="text-[11px] text-slate-500" data-testid="day-other-days" title={attr === 'placed'
                         ? 'righe regolate oggi ma PIAZZATE in un altro giorno: il calendario le conta là, quindi non entrano in questi totali'
                         : 'righe piazzate oggi ma regolate in un altro giorno: il calendario le conta là'}>
@@ -109,24 +151,49 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                     </span>
                 )}
                 <span className="ml-auto tabular-nums">
-                    <span className="text-slate-400 mr-1 text-xs">liability piazzata {fmtEur(liability)} ·</span>
-                    <span className="text-slate-400 mr-1 text-xs">realizzato</span>
-                    <b className={totalPnl > 0 ? 'text-emerald-400' : totalPnl < 0 ? 'text-red-400' : 'text-slate-300'} data-testid="day-total-pnl">
-                        {fmtSignedEur(totalPnl)}
+                    <span
+                        className="text-slate-400 mr-1 text-xs"
+                        title="capitale IMPEGNATO dalle posizioni piazzate in questa giornata (non è quello ancora a rischio adesso)"
+                    >
+                        liability piazzata {noData ? DASH : fmtEur(liability)} ·
+                    </span>
+                    <span className="text-slate-400 mr-1 text-xs" title={TIP.realizedToday}>realizzato</span>
+                    <b className={noData ? 'text-slate-500' : totalPnl > 0 ? 'text-emerald-400' : totalPnl < 0 ? 'text-red-400' : 'text-slate-300'} data-testid="day-total-pnl">
+                        {noData ? DASH : fmtSignedEur(totalPnl)}
                     </b>
+                    {!noData && day0.realizedOnOpen !== 0 && (
+                        <span
+                            className="ml-1 text-[11px] text-slate-500"
+                            data-testid="day-realized-on-open"
+                            title="P&L già incassato dalle coperture di posizioni ancora VIVE: è realizzato e il calendario lo conta, ma l’apertura non è ancora regolata"
+                        >
+                            (di cui {fmtSignedEur(day0.realizedOnOpen)} da coperture su posizioni vive)
+                        </span>
+                    )}
                 </span>
             </div>
             {error ? (
                 <div className="text-sm text-red-300 py-6 text-center" data-testid="day-detail-error">{error}</div>
-            ) : loading && trades == null ? (
-                <div className="text-sm text-muted-foreground py-8 text-center">caricamento…</div>
-            ) : list.length === 0 ? (
-                <div className="text-sm text-muted-foreground py-8 text-center" data-testid="day-detail-none">nessun trade in questa giornata</div>
+            ) : noData ? (
+                <div className="text-sm text-muted-foreground py-8 text-center" data-testid="day-detail-loading" role="status">caricamento…</div>
+            ) : rowsShown.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-8 text-center" data-testid="day-detail-none">
+                    nessun trade in questa giornata
+                    {otherDays > 0 && (
+                        <>: le {otherDays} righe di questa risposta sono {attr === 'placed' ? 'state piazzate' : 'state regolate'} in
+                        un’altra giornata e il calendario le conta là</>
+                    )}
+                </div>
             ) : variant === 'omega' ? (
                 // Omega §14: UNA riga per PARTITA (gamba 1T + gamba 2T con le chiusure
                 // attaccate, risultati reali, P&L della partita) — stessa tabella del live
+                // §3: la tabella mostra SOLO le posizioni che il calendario
+                // attribuisce a questa giornata — le altre sono già dichiarate
+                // dalla nota «+N di altre giornate (fuori dai totali)». Prima
+                // entravano nella tabella ma non nei totali di testata, senza
+                // alcun segno che le distinguesse: le somme a mano non tornavano.
                 <MatchTradesTable
-                    trades={list.flatMap((t) => [t, ...t.closes])}
+                    trades={rowsShown.flatMap((t) => [t, ...t.closes])}
                     onGoLive={onGoLive ? (t) => onGoLive(t as DayTrade) : undefined}
                     day={day}
                     emptyText="nessun trade in questa giornata"
@@ -150,8 +217,12 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                             </tr>
                         </thead>
                         <tbody>
-                            {list.map((t) => {
-                                const b = statusBadge(t.status);
+                            {/* §3: righe = SOLO le posizioni attribuite a questa
+                                giornata, le stesse che fanno i totali di testata e
+                                del piede. Le altre restano dichiarate dalla nota
+                                «+N di altre giornate (fuori dai totali)». */}
+                            {rowsShown.map((t) => {
+                                const b = statusBadgeOf(t);
                                 const exit = tradeExit(t);
                                 const locked = lockedPnl(t);
                                 const live = LIVE_STATUSES.has(t.status);
@@ -194,11 +265,17 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                             )}
                                         </td>
                                         <td className={`px-3 py-2 text-right font-bold tabular-nums ${isSettled ? (t.total_pnl > 0 ? 'text-emerald-400' : t.total_pnl < 0 ? 'text-red-400' : 'text-slate-300') : 'text-slate-500'}`} data-testid="day-trade-pnl">
-                                            {isSettled ? fmtSignedEur(t.total_pnl) : (locked != null ? `(${fmtSignedEur(locked)})` : '—')}
+                                            {isSettled
+                                                ? fmtSignedEur(t.total_pnl)
+                                                : cashedOf(t) !== 0
+                                                    // la copertura è già regolata: quei soldi sono
+                                                    // incassati e il calendario li conta già
+                                                    ? <span title="già incassato dalle coperture regolate; l’apertura è ancora viva">{fmtSignedEur(cashedOf(t))}</span>
+                                                    : (locked != null ? `(${fmtSignedEur(locked)})` : '—')}
                                         </td>
                                     </tr>,
                                     ...t.closes.map((c) => {
-                                        const cb = statusBadge(c.status);
+                                        const cb = statusBadgeOf(c);
                                         const cLocked = lockedPnl(c);
                                         return (
                                             <tr key={`c${c.id}`} className="border-t border-white/5 bg-black/20 text-[12px]" data-testid="day-close-row">
@@ -231,7 +308,15 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                         <tfoot className="text-[11px] text-slate-400 bg-black/30">
                             <tr>
                                 <td className="px-3 py-2" colSpan={8}>
-                                    {settled.length} regolati · {openCount} vivi · {settled.filter((t) => Number(t.total_pnl ?? t.pnl) > 0).length}V {settled.filter((t) => Number(t.total_pnl ?? t.pnl) < 0).length}P
+                                    {/* Certificazione 12/09 — V/P per SEGNO del P&L TOTALE della
+                                        posizione (apertura + chiusure), con lo stato come spareggio
+                                        sullo zero: la stessa regola di `trading_daily_history` e dei
+                                        tre `*_aggregates_sql`. Contando lo STATO il piede diceva
+                                        «12V 1P» dove la cella del calendario diceva «11V 2P». */}
+                                    {settled.length} regolati · {openCount} vivi ·{' '}
+                                    <span title={WIN_LOSS_TIP}>{day0.won}V {day0.lost}P</span>
+                                    {day0.voided > 0 ? ` · ${day0.voided} void` : ''}
+                                    {notPlaced > 0 ? ` · ${notPlaced} non piazzati (fuori dai totali)` : ''}
                                 </td>
                                 <td className="px-3 py-2 text-right" colSpan={3}>
                                     totale realizzato <b className={totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(totalPnl)}</b>

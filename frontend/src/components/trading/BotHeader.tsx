@@ -45,7 +45,7 @@ export function botStatusWithBeat(
     statusPrefix: string,
     heartbeatAt: string | null | undefined,
     nowMs: number | undefined,
-): { label: string; cls: string; title?: string; stale: boolean } {
+): { label: string; cls: string; title?: string; aria?: string; stale: boolean } {
     const meta = botStatusMeta(status, statusPrefix);
     const live = String(status ?? '').toLowerCase() === 'running';
     // nowMs assente = il chiamante non passa l'orologio: nessun giudizio
@@ -55,12 +55,29 @@ export function botStatusWithBeat(
     // il servizio non ha mai preso in carico l'attivazione
     const stale = age == null || age > SERVICE_STALE_S;
     if (!stale) return { ...meta, stale: false };
+    const detail = age == null
+        ? `il servizio non ha mai battuto da quando è stato avviato: ${T.restartApp}`
+        : `il servizio non batte da ${fmtAge(age)}: ${T.restartApp}`;
     return {
+        /**
+         * Certificazione 12/09 — RIDONDANZA RESIDUA, NON RISOLTA QUI.
+         *
+         * Con il servizio fermo l'avviso compare due volte nella stessa riga:
+         * questo badge («IN CORSA · SENZA BATTITO») e il chip di salute
+         * («servizio Omega: nessun battito da 5 min — riavvia l'app desktop»).
+         * La ripetizione andrebbe tolta DA QUI, lasciando al badge il solo
+         * giudizio di stato (rosso + «⚠» + il testo per intero in `title` e
+         * `aria-label`, già presenti qui sotto). Non lo si fa in questa
+         * certificazione perché la stringa «SENZA BATTITO» è asserita da un
+         * test di un'altra sezione — `src/pages/Omega.certificazione.test.tsx`
+         * righe 269 e 277 — fuori dal perimetro di questo intervento.
+         * Dentro il chip la ripetizione È stata tolta (una riga sola: stato +
+         * età + rimedio).
+         */
         label: `${meta.label} · SENZA BATTITO`,
         cls: 'bg-red-500/20 text-red-200 border-red-400/60',
-        title: age == null
-            ? `il servizio non ha mai battuto da quando è stato avviato: ${T.restartApp}`
-            : `il servizio non batte da ${fmtAge(age)}: ${T.restartApp}`,
+        title: detail,
+        aria: `${meta.label}, ma ${detail}`,
         stale: true,
     };
 }
@@ -137,6 +154,7 @@ export function BotHeader({
                         data-testid={statusTestId ?? 'bot-status'}
                         data-stale={meta.stale ? 'true' : undefined}
                         title={meta.title}
+                        aria-label={meta.aria}
                     >
                         {meta.label}
                     </Badge>

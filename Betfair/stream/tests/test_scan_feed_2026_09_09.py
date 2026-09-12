@@ -175,3 +175,48 @@ def test_scanner_vivo_rende_valida_una_riga_non_riscritta():
     assert alive.scanner_alive() is True and dead.scanner_alive() is False
     assert sf.ScanFeedScoreProvider(_Direct(), cache=alive).get_score("e1").minute == 70
     assert sf.ScanFeedScoreProvider(_Direct(), cache=dead).get_score("e1").minute == 1   # diretto
+
+
+# ------------------------------- audit 12/09: freschezza ONESTA del feed unico
+def test_tetto_assoluto_riga_vecchissima_anche_con_scanner_vivo():
+    """REGRESSIONE (money): con lo scanner vivo QUALSIASI riga veniva servita come
+    fresca. Se il feed di UN evento si ferma (IPS muto per il suo chunk, evento
+    uscito dal catalogo) mentre lo scanner resta vivo per gli altri, il runner
+    tradava su un punteggio di ore prima. Ora oltre HARD_MAX_AGE_SEC si torna
+    alla chiamata diretta."""
+    vecchia = {"event_id": "e1", "sport": "calcio",
+               "updated_at": _iso(sf.HARD_MAX_AGE_SEC + 60.0),
+               "payload": {"score_raw": _state(70, 0, 0)}}
+    # scanner VIVO ma riga oltre il tetto -> NON affidabile
+    assert sf.fresh_payload(vecchia, 15.0, scanner_age_sec=2.0) is None
+    # sotto il tetto la deroga "scanner vivo" continua a valere (write-on-change)
+    recente = {"event_id": "e1", "sport": "calcio", "updated_at": _iso(60.0),
+               "payload": {"score_raw": _state(70, 0, 0)}}
+    assert sf.fresh_payload(recente, 15.0, scanner_age_sec=2.0) == recente["payload"]
+    # e un chiamante che chiede esplicitamente una soglia piu' larga resta padrone
+    assert sf.fresh_payload(vecchia, sf.HARD_MAX_AGE_SEC + 600.0,
+                            scanner_age_sec=2.0) == vecchia["payload"]
+    # end-to-end: il provider ricade sul diretto, non serve il punteggio vecchio
+    fetch = _Fetch([vecchia])
+    cache = sf.ScanRowCache(ttl_sec=1.0, fetch=fetch, clock=lambda: 0.0,
+                            fetch_status=lambda: {"id": "scanner", "updated_at": _iso(2),
+                                                  "payload": {}})
+    prov = sf.ScanFeedScoreProvider(_Direct(), cache=cache)
+    assert cache.scanner_alive() is True
+    assert prov.get_score("e1").minute == 1     # diretto, non il 70' congelato
+    assert prov.direct_calls == 1
+
+
+def test_eta_del_feed_e_del_punteggio_dichiarate():
+    """La freschezza va ESPOSTA, non solo usata per filtrare: l'eta' del
+    punteggio servito include il ritardo NOTO dell'IPS Betfair (2-3 s)."""
+    rows = [{"event_id": "e1", "sport": "calcio", "updated_at": _iso(4.0),
+             "payload": {"score_raw": _state(58, 1, 0)}}]
+    prov, _, _ = _provider(rows)
+    eta = prov.feed_age_sec("e1")
+    assert eta is not None and 3.0 <= eta <= 8.0
+    assert abs(prov.score_age_sec("e1") - (eta + sf.IPS_SCORE_LAG_SEC)) < 0.5
+    assert sf.IPS_SCORE_LAG_SEC >= 2.0          # il ritardo dichiarato e' quello reale
+    # evento assente dal feed: nessuna eta' inventata
+    assert prov.feed_age_sec("mancante") is None
+    assert prov.score_age_sec("mancante") is None

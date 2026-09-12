@@ -54,7 +54,7 @@ class ModelSelection:
     price: float                 # tick Betfair valido
     lay_size_available: float
     p_model: float               # probabilità del modello che il risultato esca (CALIBRATA se c'è il calibratore)
-    p_implied: float             # 1/quota (probabilità implicita del mercato)
+    p_implied: float             # soglia di valore del mercato: (1−c)/(quota−c) (= 1/quota a commissione 0)
     p_model_raw: Optional[float] = None   # P grezza del modello (audit); None = uguale a p_model
     p_data: Optional[float] = None        # P empirica dai dati storici (§14/§15); None = non disponibile
     back_price: Optional[float] = None    # §15: miglior back della selezione (costo di copertura)
@@ -405,6 +405,30 @@ def apply_calibration(p: float, family: str, minute: int, calibrator: Any) -> fl
     return q
 
 
+def _finite_or_none(v: Any) -> Optional[float]:
+    """float finito e > 0, altrimenti None (prezzi/size del lato back)."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) and x > 0 else None
+
+
+def _p_band(cands: "list", band_ratio: float) -> "list":
+    """I candidati a probabilita' EQUIVALENTE: P ≤ ``band_ratio`` × la piu' bassa
+    (costituzione §15.4). ``band_ratio`` ≤ 1 o non finito = solo i minimi."""
+    if not cands:
+        return []
+    try:
+        ratio = float(band_ratio)
+    except (TypeError, ValueError):
+        ratio = 1.0
+    if not math.isfinite(ratio) or ratio < 1.0:
+        ratio = 1.0
+    p_min = min(c.p_selected for c in cands)
+    return [c for c in cands if c.p_selected <= p_min * ratio]
+
+
 def select_by_model(
     runners: list,
     probs: Dict[Tuple[int, int], float],
@@ -440,13 +464,18 @@ def select_by_model(
     cands: list = []
     for r in runners:
         price = getattr(r, "lay_price", None)
-        if price is None or price < price_min or price > price_max:
+        # certificazione 12/09: un NaN supera ``< min`` e ``> max`` (entrambi
+        # False) e finiva candidato con prezzo indefinito → guardia esplicita
+        if price is None or not math.isfinite(float(price)) or price < price_min or price > price_max:
             continue
         # liquidità richiesta = size CAPPATA a questo prezzo (seconda passata F4: con
         # un cap di liability la size piazzata è molto più piccola di quella "da
         # target" → skip falsi per liquidità)
         need = max(float(min_liquidity), E.apply_liability_cap(float(size_needed), float(price), liability_cap))
-        if float(getattr(r, "lay_size", 0.0) or 0.0) < need:
+        # certificazione 12/09: una size NaN supera ``< need`` (confronto sempre
+        # False) e passava il filtro di liquidita' -> guardia esplicita
+        lay_size = float(getattr(r, "lay_size", 0.0) or 0.0)
+        if not math.isfinite(lay_size) or lay_size < need:
             continue
         parsed = E.parse_scoreline(getattr(r, "name", "") or "")
         if parsed is None:
@@ -486,19 +515,28 @@ def select_by_model(
         cand = ModelSelection(
             selection_id=int(r.selection_id), name=str(r.name),
             price=E.round_to_tick(float(price)),
-            lay_size_available=float(r.lay_size or 0.0),
+            lay_size_available=lay_size,
             p_model=float(p_model), p_implied=float(p_implied),
             p_model_raw=float(p_raw), p_data=p_emp,
-            back_price=(float(r.back_price) if getattr(r, "back_price", None) else None),
-            back_size=(float(r.back_size) if getattr(r, "back_size", None) else None),
+            # certificazione 12/09: un back NaN/inf non e' un prezzo di copertura
+            # (passava i confronti di ``cover_cost`` e avvelenava il ranking EV)
+            back_price=_finite_or_none(getattr(r, "back_price", None)),
+            back_size=_finite_or_none(getattr(r, "back_size", None)),
         )
         cands.append(cand)
         if best is None or (cand.p_selected, cand.price, -cand.lay_size_available) < (best.p_selected, best.price, -best.lay_size_available):
             best = cand
     if best is not None and cost_aware and size_needed > 0:
         # §15/F5: si massimizza il VALORE ATTESO (vincita netta, perdita, costo
-        # atteso della copertura) — non una banda di P con il costo per primo
-        return rank_by_ev(cands, size=float(size_needed), commission=commission,
+        # atteso della copertura) — non una banda di P con il costo per primo.
+        # Certificazione 12/09: la BANDA di P equivalente (costituzione §15.4,
+        # parametro `select_p_band_ratio`, esposto anche dalla UI) non veniva mai
+        # applicata — ``band_ratio`` era un argomento inerte e il ranking EV
+        # poteva scegliere un risultato molto piu' probabile del piu' raro solo
+        # perche' costava meno coprirlo. La banda resta il primo filtro:
+        # l'identita' di Omega e' bancare il risultato PIU' RARO.
+        band = _p_band(cands, band_ratio)
+        return rank_by_ev(band, size=float(size_needed), commission=commission,
                           p_hedge=p_hedge, kappa=ev_kappa, liability_cap=liability_cap)
     return best
 
@@ -553,20 +591,59 @@ LIVE_OU_P_MIN, LIVE_OU_P_MAX = 0.03, 0.97
 LAMBDA_PRE_MIN, LAMBDA_PRE_MAX = 0.2, 4.0
 
 
+# ---------------------------------------------------------------------------
+# CERTIFICAZIONE 12/09 — UN PREZZO SENZA LIQUIDITA' NON E' UNA PROBABILITA'.
+# Ogni λ che nasce dal mercato (linee O/U, scala Correct Score) veniva letto dal
+# solo PREZZO, senza guardare la size abbinabile: una singola offerta-civetta da
+# 2 EUR bastava a spostare i λ e quindi la P del modello (misurato: con una
+# quota back civetta sul 0-0 i λ scendevano da (0,56; 0,44) a (0,38; 0,31) e
+# P(3-1) passava da 0,46 % a 0,14 %, cioe' un risultato 3x piu' probabile di
+# quanto il modello credesse, su soldi veri). Regola unica: un lato conta solo
+# se ha almeno ``MARKET_QUOTE_MIN_SIZE`` EUR abbinabili; size assente = zero.
+MARKET_QUOTE_MIN_SIZE = 2.0
+
+
+def quote_p(price: Any, size: Any, *, min_size: float = MARKET_QUOTE_MIN_SIZE) -> Optional[float]:
+    """1/quota se il prezzo e' un prezzo VERO e LIQUIDO (finito, > 1, con almeno
+    ``min_size`` EUR abbinabili), altrimenti None. Size assente/non numerica = 0."""
+    if not isinstance(price, (int, float)) or isinstance(price, bool):
+        return None
+    p = float(price)
+    if not math.isfinite(p) or p <= 1.0:
+        return None
+    s = float(size) if isinstance(size, (int, float)) and not isinstance(size, bool) else 0.0
+    if not math.isfinite(s) or s < float(min_size):
+        return None
+    return 1.0 / p
+
+
+def _is_half_line(line: Any) -> bool:
+    """True solo per le linee Over/Under a mezzo gol (0,5 · 1,5 · 2,5 …).
+    Certificazione 12/09: ``int(line - 0.5)`` su una linea asiatica intera o a
+    quarti (2,0 · 2,25) troncava in silenzio e leggeva la linea SBAGLIATA."""
+    if not isinstance(line, (int, float)) or isinstance(line, bool):
+        return False
+    v = float(line)
+    if not math.isfinite(v) or v <= 0:
+        return False
+    return abs(v - (math.floor(v) + 0.5)) < 1e-9
+
+
 def _ou_sides(block: dict) -> Tuple[Optional[float], Optional[float]]:
-    """(back Over, back Under) del blocco O/U del feed; None se manca un lato."""
+    """(back Over, back Under) del blocco O/U del feed; None se manca un lato o
+    se il lato non ha liquidita' reale (``MARKET_QUOTE_MIN_SIZE``)."""
     over = under = None
     for s in block.get("selections") or []:
         if not isinstance(s, dict) or s.get("runner_status") not in (None, "ACTIVE"):
             continue
         name = str(s.get("name") or "").strip().lower()
-        back = s.get("back")
-        if not isinstance(back, (int, float)) or back <= 1.0:
+        if quote_p(s.get("back"), s.get("back_size")) is None:
             continue
+        back = float(s["back"])
         if name.startswith("over"):
-            over = float(back)
+            over = back
         elif name.startswith("under"):
-            under = float(back)
+            under = back
     return over, under
 
 
@@ -589,9 +666,9 @@ def residual_total_from_ou(payload: Optional[dict], state: LiveState) -> Optiona
         if str(blk.get("status") or "OPEN").upper() != "OPEN":
             continue
         line = blk.get("line")
-        if not isinstance(line, (int, float)):
+        if not _is_half_line(line):
             continue
-        k = int(float(line) - 0.5) - goals        # "over" = residuo ≥ k+1
+        k = int(round(float(line) - 0.5)) - goals        # "over" = residuo ≥ k+1
         if k < 0:
             continue                                # linea già superata dai gol fatti
         over, under = _ou_sides(blk)
@@ -684,6 +761,26 @@ def half_time_score(payload: Optional[dict]) -> Optional[Tuple[int, int]]:
 # moltiplicatori live del modello (come per la singola linea O/U).
 # ---------------------------------------------------------------------------
 MARKET_GRID_MIN_CS = 6          # selezioni CS prezzate minime per fidarsi della scala
+# OVERROUND PLAUSIBILE della scala Correct Score (somma dei mid di TUTTE le
+# selezioni prezzate, aggregati inclusi). Un book CS in-play sta fra ~1,05 e
+# ~1,5: fuori da questa banda la scala non e' un book (pezzi mancanti, o un
+# prezzo assurdo che si prende la massa di tutti gli altri) e i λ che ne
+# uscirebbero sarebbero inventati. E' questo il controllo di PLAUSIBILITA' che
+# ferma la quota-civetta: un back a 1,20 su uno 0-0 al 60' vale "p = 83 %" e da
+# solo porta l'overround a 1,65.
+MARKET_TOTAL_MIN, MARKET_TOTAL_MAX = 0.90, 1.60
+# quota MINIMA della massa del book che deve venire da selezioni con ENTRAMBI i
+# lati liquidi. E' il colpo di grazia alla quota-civetta: un prezzo senza
+# controparte puo' esistere (le longshot ne sono piene) ma non puo' PESARE.
+# Nel caso misurato (back 1,20 sullo 0-0, 2 EUR, nessun lay) la quota a due lati
+# scendeva a 0,45 -> scala rifiutata, nessun λ di mercato inventato.
+MARKET_TWO_SIDED_MIN_SHARE = 0.80
+# loss MASSIMA del fit: se nessuna coppia di lambda riproduce il book entro
+# questo scarto, il mercato e una griglia di Poisson sono inconciliabili e il
+# "consenso di chi rischia soldi" non esiste - si rinuncia. (Book coerente
+# misurato: 0,0002; stesso book con una cella centrale tolta da una quota senza
+# controparte: 0,34-0,68, e i lambda finivano sul fondo scala.)
+MARKET_FIT_MAX_LOSS = 0.25
 MARKET_GRID_LAMBDA_MIN = 0.02
 MARKET_GRID_LAMBDA_MAX = 4.0
 _GRID_STEPS = 28
@@ -704,11 +801,12 @@ def market_cs_probs(payload: Optional[dict], state: LiveState) -> Dict[Tuple[int
     for s_ in cs.get("selections") or []:
         if not isinstance(s_, dict) or s_.get("runner_status") not in (None, "ACTIVE"):
             continue
-        back, lay = s_.get("back"), s_.get("lay")
-        prices = [float(q) for q in (back, lay) if isinstance(q, (int, float)) and q > 1.0]
-        if not prices:
+        # certificazione 12/09: solo lati con liquidita' reale (vedi quote_p)
+        sides = [q for q in (quote_p(s_.get("back"), s_.get("back_size")),
+                             quote_p(s_.get("lay"), s_.get("lay_size"))) if q is not None]
+        if not sides:
             continue
-        p = sum(1.0 / q for q in prices) / len(prices)
+        p = sum(sides) / len(sides)
         total += p
         parsed = E.parse_scoreline(str(s_.get("name") or ""))
         if parsed is None:
@@ -738,9 +836,9 @@ def market_ou_probs(payload: Optional[dict], state: LiveState) -> Dict[int, floa
         if not isinstance(blk, dict) or str(blk.get("status") or "OPEN").upper() != "OPEN":
             continue
         line = blk.get("line")
-        if not isinstance(line, (int, float)):
+        if not _is_half_line(line):
             continue
-        k = int(float(line) - 0.5) - goals
+        k = int(round(float(line) - 0.5)) - goals
         if k < 0:
             continue
         over, under = _ou_sides(blk)
@@ -766,12 +864,13 @@ def market_cs_brackets(payload: Optional[dict], state: LiveState
     cells: Dict[Tuple[int, int], Tuple[float, float, float]] = {}
     aggs: "list[Tuple[str, float, float]]" = []
     total = 0.0
+    two_sided = 0.0
     for s_ in cs.get("selections") or []:
         if not isinstance(s_, dict) or s_.get("runner_status") not in (None, "ACTIVE"):
             continue
-        back, lay = s_.get("back"), s_.get("lay")
-        pb = 1.0 / float(back) if isinstance(back, (int, float)) and back > 1.0 else None
-        pl = 1.0 / float(lay) if isinstance(lay, (int, float)) and lay > 1.0 else None
+        # certificazione 12/09 (money-critical): solo lati LIQUIDI (vedi quote_p)
+        pb = quote_p(s_.get("back"), s_.get("back_size"))
+        pl = quote_p(s_.get("lay"), s_.get("lay_size"))
         if pb is None and pl is None:
             continue
         # microprice pesato per size quando ci sono entrambi i lati
@@ -780,8 +879,16 @@ def market_cs_brackets(payload: Optional[dict], state: LiveState
             mid = (ql * pb + qb * pl) / (qb + ql) if (qb + ql) > 0 else 0.5 * (pb + pl)
         else:
             mid = pb if pb is not None else pl
-        lo, hi = (pl if pl is not None else mid), (pb if pb is not None else mid)
+        # la selezione pesa SEMPRE nella normalizzazione (la devig ha senso solo
+        # sul book intero), ma VINCOLA il fit solo se ha ENTRAMBI i lati: una
+        # quota unilaterale non e' una forchetta e il codice precedente la
+        # trasformava in un vincolo PUNTUALE (lo = hi = quel solo lato), cosi'
+        # una singola offerta-civetta da 2 EUR spostava i λ di tutto il mercato.
         total += mid
+        if pb is None or pl is None:
+            continue
+        two_sided += mid
+        lo, hi = pl, pb
         name = str(s_.get("name") or "")
         parsed = E.parse_scoreline(name)
         if parsed is None:
@@ -794,7 +901,12 @@ def market_cs_brackets(payload: Optional[dict], state: LiveState
         if h < state.score_home or a < state.score_away:
             continue
         cells[(h, a)] = (mid, lo, hi)
-    if total <= 0 or len(cells) < MARKET_GRID_MIN_CS:
+    # il totale dei mid e' l'OVERROUND della scala: fuori dalla banda plausibile
+    # non e' un book e i λ che ne uscirebbero sarebbero inventati
+    if not (MARKET_TOTAL_MIN <= total <= MARKET_TOTAL_MAX) or len(cells) < MARKET_GRID_MIN_CS:
+        return {}, []
+    # e la massa deve venire dal CONSENSO (due lati), non da prezzi senza controparte
+    if two_sided < MARKET_TWO_SIDED_MIN_SHARE * total:
         return {}, []
     cells = {k: (v[0] / total, v[1] / total, v[2] / total) for k, v in cells.items()}
     aggs = [(k, lo / total, hi / total) for k, lo, hi in aggs]
@@ -898,6 +1010,11 @@ def lambdas_from_market_grid(payload: Optional[dict], state: LiveState, league_i
     edge = MARKET_GRID_LAMBDA_MIN * 1.05
     if lh_res <= edge or la_res <= edge or lh_res >= MARKET_GRID_LAMBDA_MAX * 0.95 or la_res >= MARKET_GRID_LAMBDA_MAX * 0.95:
         return None
+    # certificazione 12/09: un fit che NON riproduce il book non e' l'opinione
+    # del mercato (fino a ieri lo scarto finiva solo nell'audit e i lambda
+    # venivano usati lo stesso)
+    if not math.isfinite(loss) or loss > MARKET_FIT_MAX_LOSS:
+        return None
     mult = _live_multipliers(state, league_id)
     if mult is None:
         return None
@@ -936,8 +1053,13 @@ def yellow_cards(payload: Optional[dict]) -> Tuple[int, int]:
 # liquidità back sufficiente — poi la liability minore.
 # ---------------------------------------------------------------------------
 def cover_cost(size: float, lay_price: float, back_price: Optional[float]) -> Optional[float]:
-    """Costo (€) di coprire SUBITO il lay al miglior back: size·(L/B − 1). None senza back."""
-    if back_price is None or back_price <= 1.0 or lay_price <= 1.0 or size <= 0:
+    """Costo (€) di coprire SUBITO il lay al miglior back: size·(L/B − 1). None senza back.
+    Certificazione 12/09: un argomento NaN superava tutti i confronti (`nan <= 1`
+    e' False) e restituiva un costo NaN che avvelenava il ranking per EV."""
+    for v in (back_price, lay_price, size):
+        if v is None or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+            return None
+    if back_price <= 1.0 or lay_price <= 1.0 or size <= 0:
         return None
     return round(float(size) * (float(lay_price) / float(back_price) - 1.0), 2)
 
@@ -971,6 +1093,9 @@ def rank_by_ev(cands: list, *, size: float, commission: float, p_hedge: float, k
         liquid = c.back_size is None or c.back_size <= 0 or need is None or c.back_size >= need
         coverable = 1 if (cost is not None and liquid) else 0
         ev = expected_value(c.p_selected, c.price, s, commission, cost, p_hedge, kappa)
+        # un EV non finito non e' un EV: va in fondo, mai in cima a un max()
+        if not math.isfinite(ev):
+            ev = float("-inf")
         return (coverable, ev, -c.p_selected)
 
     return max(cands, key=key)
@@ -980,10 +1105,9 @@ def rank_by_cover_cost(cands: list, *, size: float, band_ratio: float) -> Option
     """Fra le ``ModelSelection`` prende la banda a P equivalente e sceglie: copertura
     possibile e più economica → liquidità back maggiore → prezzo lay più basso →
     P più bassa. Senza alcun back noto la banda si riduce alla P più bassa."""
-    if not cands:
+    band = _p_band(cands, band_ratio)
+    if not band:
         return None
-    p_min = min(c.p_selected for c in cands)
-    band = [c for c in cands if c.p_selected <= p_min * max(1.0, float(band_ratio))]
 
     def key(c):
         cost = cover_cost(size, c.price, c.back_price)

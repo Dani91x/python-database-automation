@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import statistics
 import sys
 from dataclasses import dataclass, field
@@ -159,13 +160,16 @@ def eligible_observations(
     out: List[EligibleObs] = []
     for ln in lines:
         sh, sa = ln.get("sh"), ln.get("sa")
-        if sh is None or sa is None:
+        if not isinstance(sh, int) or not isinstance(sa, int):
             continue
         for s in ln.get("sel") or []:
             if s.get("st") != "ACTIVE":
                 continue
-            lay = s.get("lay")
-            if lay is None or lay < price_min or lay > price_max:
+            # certificazione 12/09: un lay NaN/stringa passava i confronti di
+            # fascia (``nan < min`` e ``nan > max`` sono entrambi False) e
+            # finiva nel report come osservazione "in fascia"
+            lay = _num(s.get("lay"))
+            if lay is None or not math.isfinite(lay) or lay < price_min or lay > price_max:
                 continue
             parsed = parse_score(s.get("name") or "")
             if parsed is None:
@@ -177,7 +181,8 @@ def eligible_observations(
                 ts=float(ln["ts"]), event_id=str(ln["event_id"]), name=str(ln.get("name")),
                 blk=str(ln["blk"]), minute=ln.get("minute"), score=(int(sh), int(sa)),
                 sid=s.get("sid"), sel_name=str(s.get("name")), lay=float(lay),
-                lay_size=float(s.get("ls") or 0.0), back=s.get("back"), back_size=s.get("bs"),
+                lay_size=float(_num(s.get("ls")) or 0.0), back=_num(s.get("back")),
+                back_size=_num(s.get("bs")),
             ))
     return out
 
@@ -245,7 +250,9 @@ def greenup_cases(
     il gol sono a ≤1 gol → cosa offre il lato BACK nei ``window_s`` successivi."""
     by_ev: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
     for ln in lines:
-        if ln.get("sh") is None:
+        # certificazione 12/09: serve la coppia COMPLETA (prima ``sa`` assente
+        # dava TypeError su ``cur["sh"] + cur["sa"]`` e faceva saltare il report)
+        if not isinstance(ln.get("sh"), int) or not isinstance(ln.get("sa"), int):
             continue
         by_ev.setdefault((str(ln["event_id"]), str(ln["blk"])), []).append(ln)
     cases: List[GreenUpCase] = []

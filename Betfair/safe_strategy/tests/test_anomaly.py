@@ -101,24 +101,46 @@ def test_min_gap_parametrico():
     assert detect(payload_1_1_65(), BOOK_1_1, params={"min_gap": 0.05})
 
 
-def test_scala_over_simmetrica_back_e_lay():
-    # Over 6.5 back 50 con Over 7.5 a 9.0: P(Over 6.5) >= P(Over 7.5) -> back Over 6.5 regalato
+def test_scala_over_riferimento_assurdo_non_si_segnala_piu():
+    """CERTIFICAZIONE 12/09 — questo caso era un FALSO SEGNALE certificato.
+
+    Over 6.5 back 50 con Over 7.5 a 9,00: lo scarto e' +456%, cioe' il
+    riferimento (9,00) e' fuori scala quanto il bersaglio. Sul 1-1 al 65'
+    servono 5 gol: P reale ~0,5%, quota equa ~184. Il vecchio comportamento
+    prendeva p_model = 1/9 = 11,1% e segnalava un back @50 che vale
+    EV = -0,74 EUR per euro puntato. Ora il riferimento e' scartato.
+    """
     res = detect(payload_1_1_65(), {})
-    got = _find(res, "Over 6.5 Goals", "back")
+    assert not _find(res, "Over 6.5 Goals", "back"), res
+
+
+def test_scala_over_simmetrica_back_e_lay():
+    # scarto CREDIBILE (+40%) e riferimento liquido: la simmetria Over funziona
+    pl = payload_1_1_65(ou=[
+        _ou("1.65", 6.5, (1.01, 1.02, 300.0, 200.0), (14.0, 15.0, 20.0, 15.0)),
+        _ou("1.75", 7.5, (1.02, 1.03, 120.0, 90.0), (10.0, 12.0, 200.0, 80.0)),
+    ])
+    got = _find(detect(pl, {}), "Over 6.5 Goals", "back")
     assert len(got) == 1 and got[0]["rule"] == "ou_ladder"
-    assert got[0]["p_model"] == pytest.approx(1 / 9.0, abs=1e-6)
-    assert "Over 7.5 a 9.00" in got[0]["rationale"]
+    assert got[0]["p_model"] == pytest.approx(1 / 10.0, abs=1e-6)
+    assert "Over 7.5 a 10.00" in got[0]["rationale"]
+    res = detect(payload_1_1_65(), {})
     # lay Over 7.5 sotto il back di Over 6.5: sopra max_lay_price NON si segnala...
     assert not _find(res, "Over 7.5 Goals", "lay")
-    # ...con lay 4.0 (<=5.0) si': P(Over 7.5) <= 1/50
+    # ...con lay 4.0 (<=5.0) e un riferimento CREDIBILE si': P(Over 7.5) <= 1/5.0.
+    # Nota (12/09): il riferimento deve restare entro ``max_ref_gap``. Un back di
+    # Over 6.5 a 50,00 contro un lay di Over 7.5 a 4,00 (+1150%) non prova piu'
+    # nulla: entrambe le quote sono fuori scala. Costo della scelta: si perde
+    # qualche occasione su book assurdi; il guadagno e' che nessun prezzo
+    # inventato puo' piu' generare un segnale su soldi veri.
     pl = payload_1_1_65(ou=[
-        _ou("1.65", 6.5, (1.01, 1.02, 300.0, 200.0), (50.0, 80.0, 20.0, 15.0)),
+        _ou("1.65", 6.5, (1.01, 1.02, 300.0, 200.0), (5.0, 5.2, 400.0, 150.0)),
         _ou("1.75", 7.5, (1.02, 1.03, 120.0, 90.0), (9.0, 4.0, 15.0, 30.0)),
     ])
     got = _find(detect(pl, {}), "Over 7.5 Goals", "lay")
     assert len(got) == 1
-    assert got[0]["p_model"] == pytest.approx(1 / 50.0, abs=1e-6)
-    assert got[0]["edge"] == pytest.approx(1 / 4.0 - 1 / 50.0, abs=1e-6)
+    assert got[0]["p_model"] == pytest.approx(1 / 5.0, abs=1e-6)
+    assert got[0]["edge"] == pytest.approx(1 / 4.0 - 1 / 5.0, abs=1e-6)
 
 
 # ------------------------------------------------------------- decise (b)(d)
@@ -298,3 +320,80 @@ def test_nessuna_eccezione_su_blocchi_mancanti_o_rotti():
               "minute": 70, "score_home": 1, "score_away": 1}
     assert detect(rotto2, {}) == []
     assert detect("non un dict", {}) == []
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09/2026 — il RIFERIMENTO della scala puo' essere la quota
+# sbagliata. Caso REALE visto dall'utente in produzione:
+#   Daegu Fc v Yongin FC, 1-0 al 48', lambda 1,42/1,31
+#   Over 7.5 back 1,11 (offerta-civetta su mercato illiquido)
+#   -> la regola segnalava Over 4.5 back @16,50 come "quota incoerente"
+#      con "Modello 90,1%", edge +84%, EV 13,167, scarto +1386,5%.
+# Over 4.5 a 16,50 e' invece una quota SENSATA (servono 4 gol in 42 minuti):
+# il prezzo sbagliato era il riferimento. Era un FALSO SEGNALE su soldi veri.
+# ===========================================================================
+def _payload_daegu(**over) -> dict:
+    base = {
+        "home": "Daegu Fc", "away": "Yongin FC", "minute": 48,
+        "score_home": 1, "score_away": 0,
+        "mo_market_id": "1.900", "mo_status": "OPEN",
+        "ou": [
+            # linea sensata e liquida
+            _ou("1.45", 4.5, (1.02, 1.03, 2000.0, 1500.0), (16.50, 22.0, 40.0, 30.0)),
+            # linea estrema: back 1.11 con appena 6 EUR abbinabili
+            _ou("1.75", 7.5, (1.01, 1.02, 900.0, 800.0), (1.11, 60.0, 6.0, 4.0)),
+        ],
+    }
+    base.update(over)
+    return base
+
+
+# P del modello: 4 gol in 42 minuti con lambda ~1,4 e' raro
+BOOK_DAEGU = {"over_4_5": 0.061, "under_4_5": 0.939,
+              "over_7_5": 0.0008, "under_7_5": 0.9992}
+
+
+def test_riferimento_spazzatura_non_genera_piu_il_falso_segnale_over_4_5():
+    """Il caso reale: NESSUNA anomalia sull'Over 4.5 (ne' con modello ne' senza)."""
+    con_modello = detect(_payload_daegu(), BOOK_DAEGU)
+    assert not _find(con_modello, "Over 4.5 Goals", "back"), con_modello
+    # anche SENZA modello (book vuoto) le protezioni strutturali bastano:
+    # il riferimento ha 6 EUR (< min_ref_size) e produce uno scarto del +1386%
+    senza_modello = detect(_payload_daegu(), {})
+    assert not _find(senza_modello, "Over 4.5 Goals", "back"), senza_modello
+
+
+def test_il_bound_del_modello_abbassa_la_p_e_azzera_l_edge():
+    """Con il book, p_model non puo' superare la P del modello (lato back)."""
+    # riferimento reso LIQUIDO e con scarto sotto il tetto: resta solo il bound
+    pl = _payload_daegu(ou=[
+        _ou("1.45", 4.5, (1.02, 1.03, 2000.0, 1500.0), (1.60, 1.70, 40.0, 30.0)),
+        _ou("1.75", 7.5, (1.01, 1.02, 900.0, 800.0), (1.20, 1.30, 500.0, 400.0)),
+    ])
+    # senza modello la regola segnala (1/1.20 = 83,3% contro 1/1.60 = 62,5%)
+    assert _find(detect(pl, {}), "Over 4.5 Goals", "back")
+    # con il modello (P reale 6,1%) l'edge sparisce: nessun segnale
+    assert not _find(detect(pl, BOOK_DAEGU), "Over 4.5 Goals", "back")
+
+
+def test_riferimento_illiquido_scartato_anche_con_scarto_piccolo():
+    pl = payload_1_1_65(ou=[
+        # Under 6.5 back 1.01 ma con SOLI 3 EUR abbinabili: non prezza nulla
+        _ou("1.65", 6.5, (1.01, 1.02, 3.0, 200.0), (50.0, 80.0, 20.0, 15.0)),
+        _ou("1.75", 7.5, (1.10, 1.12, 120.0, 90.0), (9.0, 12.0, 15.0, 8.0)),
+    ])
+    assert not _find(detect(pl, {}), "Under 7.5 Goals", "back")
+    # con liquidita' sufficiente sul riferimento il segnale torna
+    assert _find(detect(payload_1_1_65(), {}), "Under 7.5 Goals", "back")
+
+
+def test_tetto_max_ref_gap_parametrico():
+    pl = _payload_daegu(ou=[
+        # riferimento liquido, ma scarto +1275%: resta inaffidabile
+        _ou("1.45", 4.5, (1.02, 1.03, 2000.0, 1500.0), (16.50, 22.0, 40.0, 30.0)),
+        _ou("1.75", 7.5, (1.01, 1.02, 900.0, 800.0), (1.20, 1.30, 500.0, 400.0)),
+    ])
+    assert not _find(detect(pl, {}), "Over 4.5 Goals", "back")
+    # alzando il tetto la segnalazione riappare (parametro, non magia)
+    got = _find(detect(pl, {}, params={"max_ref_gap": 20.0}), "Over 4.5 Goals", "back")
+    assert len(got) == 1 and got[0]["p_model"] == pytest.approx(1 / 1.20, abs=1e-6)

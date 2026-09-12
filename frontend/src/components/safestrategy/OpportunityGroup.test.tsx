@@ -179,19 +179,135 @@ describe('OpportunityGroup — tipi di opportunita', () => {
 describe('OpportunityGroup — eta della riga (MEDIUM-3)', () => {
     it('riga fresca: mostra l eta e Investi e attivo', () => {
         renderGroup(row());
-        expect(screen.getByTestId('opp-age')).toHaveTextContent('5s fa');
+        expect(screen.getByTestId('opp-age')).toHaveTextContent('calcolo 5s fa');
         for (const b of screen.getAllByTestId('invest-place')) expect(b).toBeEnabled();
     });
 
     it('riga piu vecchia di 60 s: Investi spento con motivo', () => {
         renderGroup(row({ updated_at: new Date(NOW - OPP_ROW_STALE_MS - 15_000).toISOString() }));
-        expect(screen.getByTestId('opp-age')).toHaveTextContent('75s fa');
+        expect(screen.getByTestId('opp-age')).toHaveTextContent('calcolo 75s fa');
         for (const b of screen.getAllByTestId('invest-place')) expect(b).toBeDisabled();
-        expect(screen.getAllByTestId('invest-disabled-reason')[0]).toHaveTextContent('quote non aggiornate (75s)');
+        expect(screen.getAllByTestId('invest-disabled-reason')[0]).toHaveTextContent('modello non ricalcolato da 75s');
     });
 
     it('filtri che escludono tutto: il gruppo non rende nulla', () => {
         renderGroup(row(), { minConfidence: 0.9 });
         expect(screen.queryByTestId('opp-group')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// ANOMALIA: `p_model` NON e' il modello Poisson, e' 1/quota di RIFERIMENTO
+// (anomaly.py `_rule_ou_ladder`). Chiamarlo "Modello" faceva leggere
+// "Modello 90,1 %" su un Over 4.5 @16,50 solo perche' l'Over 7.5 era offerto a
+// 1,11 (riferimento illiquido). La UI mostra il valore del payload SENZA
+// ricalcolarlo e DICHIARA da quale quota viene.
+// ---------------------------------------------------------------------------
+describe('OpportunityGroup — anomalia: la probabilita dichiara la sua fonte', () => {
+    const CASO_REALE = {
+        kind: 'anomaly', market_type: 'OVER_UNDER', market_name: 'Over/Under 4.5', line: 4.5,
+        market_id: '1.45', selection_id: 9, selection_name: 'Over 4.5', side: 'back',
+        price: 16.5, size_available: 12, p_model: 0.901, p_implied: 0.0606,
+        edge: 0.84, ev: 0.9, confidence: 0.9, rationale: null, rule: 'ou_ladder', gap: 13.8,
+        ref: 'Over 7.5 back 1.11',
+    } as const;
+
+    it('etichetta "Limite dal riferimento", valore del payload, quota sorella dichiarata', () => {
+        renderGroup(row({ payload: { ...row().payload, opps: [CASO_REALE as never] } }));
+        expect(screen.queryByText('Modello')).toBeNull();
+        expect(screen.getByText('Limite dal riferimento')).toBeInTheDocument();
+        // il numero e' ESATTAMENTE quello del payload (nessun ricalcolo in UI)
+        expect(screen.getByTestId('anomaly-ref-prob')).toHaveTextContent('90,1 %');
+        const src = screen.getByTestId('anomaly-ref-source');
+        expect(src).toHaveTextContent('Over 7.5 back 1,11');
+        expect(screen.getByText('Limite dal riferimento').parentElement?.title)
+            .toMatch(/quota SORELLA di riferimento/);
+    });
+
+    it('il riferimento e dichiarato anche quando arriva come oggetto', () => {
+        const o = { ...(CASO_REALE as Record<string, unknown>), ref: { selection_name: 'Under 6.5', price: 1.01 } };
+        renderGroup(row({ payload: { ...row().payload, opps: [o as never] } }));
+        expect(screen.getByTestId('anomaly-ref-source')).toHaveTextContent('Under 6.5 1,01');
+    });
+
+    it('le opportunita di MODELLO restano etichettate "Modello"', () => {
+        renderGroup(row());
+        expect(screen.getAllByText('Modello').length).toBeGreaterThan(0);
+        expect(screen.queryByTestId('anomaly-ref-prob')).toBeNull();
+    });
+});
+
+// ===========================================================================
+// CERTIFICAZIONE 12/09 — COMBINAZIONI: il minimo Betfair vale per OGNI GAMBA.
+// Un dutching sbilanciato (9,66 € + 0,34 €) veniva accettato dalla UI: in live
+// la gamba da 0,34 € e' rifiutata dall'exchange e resta una posizione NUDA,
+// cioe' l'opposto del "rischio zero" promesso all'utente.
+// ===========================================================================
+describe('OpportunityGroup — combinazioni eseguibili per intero', () => {
+    const comboRow = (over: Record<string, unknown> = {}) => row({
+        payload: {
+            minute: 60, score_home: 1, score_away: 0, event_name: 'Roma vs Lazio',
+            opps: [{
+                kind: 'combo', combo: 'dutch', side: 'back', price: 2.0,
+                market_type: 'OVER_UNDER_55', market_name: 'Over/Under 5.5', line: 5.5,
+                market_id: 'm1', selection_id: 1, selection_name: 'Dutching',
+                p_model: 0.5, p_implied: 0.5, edge: 0.01, ev: 0.01, confidence: 0.85,
+                size_available: 500, rationale: null, locked_profit_per_eur: 0.004,
+                total_stake: 10, min_leg_stake: 2, min_total_stake: 58.8,
+                executable_whole: true, book_supports_min: true,
+                legs: [
+                    { market_id: 'm1', selection_id: 1, side: 'back', price: 1.03, stake: 9.66,
+                      stake_ratio: 0.966, size_available: 500, selection_name: 'Under 5.5 Goals',
+                      market_type: 'OVER_UNDER_55' },
+                    { market_id: 'm1', selection_id: 2, side: 'back', price: 29.0, stake: 0.34,
+                      stake_ratio: 0.034, size_available: 500, selection_name: 'Over 5.5 Goals',
+                      market_type: 'OVER_UNDER_55' },
+                ],
+                ...over,
+            }],
+        },
+    } as Partial<SafeOpportunityRow>);
+
+    it('lo stake minimo e quello che rende ESEGUIBILI tutte le gambe', () => {
+        // stake totale 10 EUR: la gamba piccola varrebbe 0,35 EUR, sotto il
+        // minimo Betfair -> la UI deve avvisare col minimo della COMBINAZIONE
+        renderGroup(comboRow(), { stake: 10, minStake: 2 });
+        const avviso = screen.getByTestId('invest-min-stake').textContent || '';
+        expect(avviso).toMatch(/58,80|58\.80/);
+    });
+
+    it('combinazione non eseguibile per intero: piazzamento SPENTO con il motivo', () => {
+        renderGroup(comboRow({ book_supports_min: false }), { stake: 10, minStake: 2 });
+        expect((screen.getByTestId('invest-place') as HTMLButtonElement).disabled).toBe(true);
+        expect(document.body.textContent || '').toMatch(/non regge tutte le gambe al minimo/i);
+    });
+});
+
+// CERT. 12/09 — quando il BACKEND dichiara che la probabilita' dell'anomalia
+// viene dalla stima del modello (piu' prudente del limite di mercato), la card
+// deve dirlo: e' la differenza fra un numero affidabile e un numero di mercato.
+describe('OpportunityGroup — anomalia: fonte dichiarata dal backend', () => {
+    const anomRow = (over: Record<string, unknown> = {}) => row({
+        payload: {
+            minute: 48, score_home: 1, score_away: 0, event_name: 'Daegu Fc v Yongin FC',
+            opps: [{
+                kind: 'anomaly', rule: 'ou_ladder', side: 'back', price: 16.5,
+                market_type: 'OVER_UNDER_45', market_name: 'Over/Under 4.5', line: 4.5,
+                market_id: 'm45', selection_id: 9, selection_name: 'Over 4.5 Goals',
+                p_model: 0.061, p_implied: 0.0606, edge: 0.0004, ev: 0.01,
+                confidence: 0.75, size_available: 23.29, rationale: null,
+                ref: 'Over 7.5 back 1.11', gap: 13.865, ...over,
+            }],
+        },
+    } as Partial<SafeOpportunityRow>);
+
+    it('p_source "modello": etichetta prudente, non "limite dal riferimento"', () => {
+        renderGroup(anomRow({ p_source: 'modello' }));
+        expect(document.body.textContent || '').toMatch(/Modello \(prudente\)/);
+    });
+
+    it('p_source "riferimento": resta dichiarata la quota sorella', () => {
+        renderGroup(anomRow({ p_source: 'riferimento' }));
+        expect(document.body.textContent || '').toMatch(/Limite dal riferimento/);
     });
 });

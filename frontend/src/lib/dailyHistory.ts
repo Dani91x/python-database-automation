@@ -91,6 +91,8 @@ export interface DayTradeLeg {
     pnl: number;
     placed_at: string;
     settled_at: string | null;
+    /** id dell'ordine su Betfair: null = mai arrivato a mercato */
+    bet_id?: string | null;
     origin?: 'auto' | 'manual' | null;
     closes_trade_id?: number | null;
     meta: Record<string, unknown> | null;
@@ -335,16 +337,72 @@ export interface ClampedRange { from: string; to: string; clamped: boolean; days
 export function clampHistoryRange(from: string, to: string, maxDays = MAX_HISTORY_DAYS): ClampedRange {
     if (!isValidDay(from) || !isValidDay(to)) return { from, to, clamped: false, days: 0 };
     const span = Math.round((dayToMs(to) - dayToMs(from)) / 86_400_000);
-    if (span < 0) return { from: to, to: from, clamped: true, days: -span + 1 };
+    // estremi invertiti: si rimettono in ordine E si ri-clampano (prima una
+    // finestra rovesciata di oltre 400 giorni tornava intatta e l'RPC alzava
+    // di nuovo l'eccezione che questo clamp esiste per evitare)
+    if (span < 0) {
+        const r = clampHistoryRange(to, from, maxDays);
+        return { ...r, clamped: true };
+    }
     if (span <= maxDays) return { from, to, clamped: false, days: span + 1 };
     return { from: addDays(to, -maxDays), to, clamped: true, days: maxDays + 1 };
+}
+
+export interface HistoryWindow extends ClampedRange {
+    /** true = il PERIODO del pannello performance non entra tutto in finestra */
+    periodTruncated: boolean;
+    /** primo giorno del periodo effettivamente caricato (null = tutto dentro) */
+    periodFrom: string | null;
+}
+
+/**
+ * Certificazione 12/09 — finestra di caricamento dello storico.
+ *
+ * Prima la finestra era `clampHistoryRange(min(mese, periodo), max(...))`: la
+ * coda tenuta erano gli ultimi 400 giorni, quindi navigando il calendario
+ * indietro di più di un anno il MESE MOSTRATO finiva FUORI dalla finestra e la
+ * griglia diceva «nessuna operazione in gennaio 2025» — una bugia su dati che
+ * esistono.
+ *
+ * Qui il mese visualizzato è SEMPRE dentro (sono al massimo 31 giorni); il
+ * periodo del pannello viene incluso fin dove il limite lo consente e, se non
+ * ci sta tutto, lo si DICHIARA (`periodTruncated`) invece di mostrare un
+ * aggregato silenziosamente parziale.
+ */
+export function historyWindow(
+    month: { from: string; to: string },
+    period: { from: string; to: string },
+    maxDays = MAX_HISTORY_DAYS,
+): HistoryWindow {
+    const valid = [month.from, month.to, period.from, period.to].every(isValidDay);
+    if (!valid) {
+        return { from: month.from, to: month.to, clamped: false, days: 0, periodTruncated: false, periodFrom: null };
+    }
+    const wantFrom = period.from < month.from ? period.from : month.from;
+    const wantTo = period.to > month.to ? period.to : month.to;
+    const want = clampHistoryRange(wantFrom, wantTo, maxDays);
+    if (!want.clamped) {
+        return { ...want, periodTruncated: false, periodFrom: null };
+    }
+    // non ci sta tutto: si ancora al MESE e si allarga all'indietro quanto resta
+    const monthSpan = Math.round((dayToMs(month.to) - dayToMs(month.from)) / 86_400_000);
+    const room = maxDays - monthSpan;
+    const from = room > 0 ? addDays(month.from, -room) : month.from;
+    const to = month.to;
+    const days = Math.round((dayToMs(to) - dayToMs(from)) / 86_400_000) + 1;
+    const periodTruncated = period.from < from || period.to > to;
+    return { from, to, clamped: true, days, periodTruncated, periodFrom: periodTruncated ? from : null };
 }
 
 // ------------------------------------------------- attribuzione al giorno
 /** Come il calendario attribuisce una posizione a una giornata operativa. */
 export type DayAttribution = 'placed' | 'settled';
 
-/** Omega e Mike storicizzano per giorno di PIAZZAMENTO, Safe per regolazione. */
+/**
+ * Giornata operativa = giorno di PIAZZAMENTO per TUTTI E TRE i bot.
+ * (Il commento storico diceva «Safe per regolazione»: non è più vero dal
+ * `safe_strategy_bot_v2.sql`, e la funzione ha sempre ritornato 'placed'.)
+ */
 export function attributionOf(variant: HistoryVariant): DayAttribution {
     // Giornata operativa = giorno di PIAZZAMENTO per TUTTI i bot (Omega §14,
     // Safe `safe_strategy_bot_v2.sql`, Mike `mike_history_v2.sql`)
@@ -353,12 +411,28 @@ export function attributionOf(variant: HistoryVariant): DayAttribution {
 }
 
 export interface DaySummary {
-    /** posizioni che il CALENDARIO attribuisce a questo giorno */
+    /** posizioni che il CALENDARIO attribuisce a questo giorno (le stesse che
+     *  fanno `trades_placed` e `pnl_realized` della cella) */
     attributed: DayTrade[];
     /** righe presenti nella risposta ma attribuite a un ALTRO giorno */
     others: DayTrade[];
+    /**
+     * Certificazione 12/09 — righe della giornata che il calendario NON conta
+     * perché NON sono mai arrivate a mercato: `status='error'` e le riserve
+     * `pending` senza alcun segno di piazzamento (né `bet_id`, né
+     * `flumine_client_ref`, né riconciliazione). `trading_daily_history` le
+     * esclude da `trades_placed`/`max_liability`; il dettaglio le contava e
+     * l'11/09 Mike diceva «32 trade» in calendario e «44 trade» in testata,
+     * con 12 ordini falliti dentro la «liability piazzata».
+     */
+    notPlaced: DayTrade[];
     /** P&L realizzato del giorno: lo stesso numero della cella del calendario */
     pnl: number;
+    /**
+     * Quota di `pnl` GIÀ incassata dalle coperture di posizioni ancora VIVE
+     * (gambe di chiusura regolate mentre l'apertura è ancora a mercato).
+     */
+    realizedOnOpen: number;
     settled: number;
     won: number;
     lost: number;
@@ -375,38 +449,106 @@ const DAY_SETTLED = new Set(['won', 'lost', 'void']);
 const DAY_LIVE = new Set(['pending', 'open', 'hedged']);
 
 /**
+ * Certificazione 12/09 — che cosa contano DAVVERO V e P.
+ *
+ * `lib/tradeStatus.TIP.winLoss` dice «conta lo stato, non il segno del P&L»:
+ * è FALSO: `trading_daily_history` (`trade_tot`), `omega_aggregates_sql`,
+ * `safe_aggregates_sql` e `mike_aggregates_sql` contano tutte per SEGNO del
+ * P&L totale della posizione. Finché quel testo non viene corretto alla
+ * fonte, calendario, KPI e dettaglio usano QUESTO.
+ */
+export const WIN_LOSS_TIP =
+    'V = posizioni con P&L totale positivo, P = negativo (apertura + chiusure): un ciclo greenato vale UNA posizione, non 1 vinta + 1 persa';
+
+/** P&L delle sole gambe di CHIUSURA già regolate di una posizione. */
+function settledClosesPnl(t: DayTrade): number {
+    let s = 0;
+    for (const c of t.closes ?? []) {
+        if (DAY_SETTLED.has(c.status)) s += Number(c.pnl) || 0;
+    }
+    return s;
+}
+
+/**
+ * Una riga è PIAZZATA con gli stessi criteri del DB (`is_placed` di
+ * `trading_daily_history`): ordine reale, marker flumine, oppure riserva in
+ * riconciliazione (esito ignoto = l'ordine può essere vivo su Betfair).
+ */
+export function isPlacedLeg(t: Pick<DayTrade, 'status' | 'meta'> & { bet_id?: unknown }): boolean {
+    if (t.status === 'error') return false;
+    if (t.status !== 'pending') return true;
+    const meta = (t.meta ?? {}) as Record<string, unknown>;
+    return t.bet_id != null
+        || meta['flumine_client_ref'] != null
+        || meta['reason'] === 'place_exception_reconciling';
+}
+
+/**
+ * Esito della POSIZIONE come lo contano il DB e i KPI: per SEGNO del P&L
+ * totale (apertura + chiusure regolate), con lo stato come spareggio sullo
+ * zero. Stessa regola di `trading_daily_history` (`trade_tot`),
+ * `omega_aggregates_sql`, `safe_aggregates_sql` e `mike_aggregates_sql`.
+ * Prima il dettaglio contava lo STATO: il 10/09 la cella Omega diceva
+ * «11V 2P» e il piede della stessa tabella «12V 1P».
+ */
+export function outcomeOf(status: string, totalPnl: number): 'won' | 'lost' | 'void' | null {
+    if (!DAY_SETTLED.has(status)) return null;
+    if (totalPnl > 0) return 'won';
+    if (totalPnl < 0) return 'lost';
+    return status === 'won' ? 'won' : status === 'lost' ? 'lost' : 'void';
+}
+
+/**
  * M-18/H-11 — i totali del dettaglio giornata devono coincidere con la cella
  * del calendario: si sommano SOLO le posizioni attribuite a quel giorno
  * (`placed_in_day` con l'attribuzione 'placed', `settled_in_day` con
  * 'settled'). Prima il dettaglio sommava qualunque riga regolata presente
  * nella risposta, comprese quelle che il calendario conta in un altro giorno.
+ *
+ * Certificazione 12/09 — tre allineamenti alla RPC (`trading_daily_history`):
+ *  1. il P&L realizzato include le CHIUSURE già regolate anche quando
+ *     l'apertura è ancora viva (nel dump reale del 12/09 il calendario Safe
+ *     diceva −0,77 € e il dettaglio della stessa giornata +1,90 €: 2,67 € di
+ *     coperture incassate che la testata non mostrava);
+ *  2. V/P per SEGNO del P&L della posizione, non per stato;
+ *  3. conteggio e liability escludono le righe mai arrivate a mercato.
  */
 export function summarizeDayTrades(
     trades: DayTrade[] | null | undefined, attribution: DayAttribution,
 ): DaySummary {
     const list = trades ?? [];
     const belongs = (t: DayTrade) => (attribution === 'placed' ? t.placed_in_day : t.settled_in_day || (t.placed_in_day && !t.settled_at));
-    const attributed = list.filter(belongs);
+    const mine = list.filter(belongs);
     const others = list.filter((t) => !belongs(t));
-    let pnl = 0, settled = 0, won = 0, lost = 0, voided = 0, open = 0, liability = 0;
+    const attributed = mine.filter((t) => isPlacedLeg(t));
+    const notPlaced = mine.filter((t) => !isPlacedLeg(t));
+    let pnl = 0, realizedOnOpen = 0, settled = 0, won = 0, lost = 0, voided = 0, open = 0, liability = 0;
     let lockedPnl: number | null = null;
     for (const t of attributed) {
         if (DAY_SETTLED.has(t.status)) {
-            pnl += Number(t.total_pnl ?? t.pnl) || 0;
+            const total = Number(t.total_pnl ?? t.pnl) || 0;
+            pnl += total;
             settled += 1;
-            if (t.status === 'won') won += 1;
-            else if (t.status === 'lost') lost += 1;
+            const outcome = outcomeOf(t.status, total);
+            if (outcome === 'won') won += 1;
+            else if (outcome === 'lost') lost += 1;
             else voided += 1;
         } else if (DAY_LIVE.has(t.status)) {
             open += 1;
+            // coperture già incassate su una posizione ancora viva: sono soldi
+            // REALIZZATI e il calendario li conta (settled_rows della RPC)
+            const cashed = settledClosesPnl(t);
+            pnl += cashed;
+            realizedOnOpen += cashed;
         }
         if (t.placed_in_day) liability += Number(t.liability ?? 0) || 0;
         const lk = Number((t.meta ?? {})['locked_pnl']);
         if (Number.isFinite(lk) && !DAY_SETTLED.has(t.status)) lockedPnl = (lockedPnl ?? 0) + lk;
     }
     return {
-        attributed, others,
+        attributed, others, notPlaced,
         pnl: Math.round(pnl * 100) / 100,
+        realizedOnOpen: Math.round(realizedOnOpen * 100) / 100,
         settled, won, lost, voided, open,
         liability: Math.round(liability * 100) / 100,
         lockedPnl: lockedPnl == null ? null : Math.round(lockedPnl * 100) / 100,
@@ -679,6 +821,28 @@ export function calendarGrid(year: number, month: number, rows: DailyRow[]): Cal
     return weeks;
 }
 
+/**
+ * Estremi della GRIGLIA del mese (lunedì della prima settimana → domenica
+ * dell'ultima), non del solo mese.
+ *
+ * Certificazione 12/09 — il calendario disegna anche le celle di coda del mese
+ * precedente e di testa del successivo (`calendar-day-outside`) e su ognuna
+ * dichiarava «nessuna operazione». Quelle giornate però non erano MAI dentro
+ * la finestra caricata (che partiva dal 1° del mese): un'affermazione su dati
+ * mai chiesti. Caricando la griglia intera (al massimo 12 giorni in più su
+ * 400) ogni cella mostrata è una cella letta davvero.
+ */
+export function calendarGridBounds(year: number, month: number): { from: string; to: string } {
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        throw new RangeError(`mese non valido: ${year}-${month} (atteso 1-12)`);
+    }
+    const firstMs = Date.UTC(year, month - 1, 1);
+    const lastMs = Date.UTC(year, month, 0);
+    const firstDow = (new Date(firstMs).getUTCDay() + 6) % 7;   // lun = 0
+    const lastDow = (new Date(lastMs).getUTCDay() + 6) % 7;
+    return { from: msToDay(firstMs - firstDow * 86_400_000), to: msToDay(lastMs + (6 - lastDow) * 86_400_000) };
+}
+
 /** Mese precedente/successivo (month 1-12). */
 export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
     const idx = year * 12 + (month - 1) + delta;
@@ -686,7 +850,7 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
 }
 
 // ----------------------------------------------------------- uscite auto
-export type ExitKind = 'profit' | 'loss' | 'time' | 'red_card' | 'forced' | 'manual' | 'greenup' | 'other';
+export type ExitKind = 'profit' | 'loss' | 'time' | 'red_card' | 'forced' | 'manual' | 'greenup' | 'model' | 'other';
 
 export interface ExitInfo {
     kind: ExitKind;
@@ -707,6 +871,10 @@ const EXIT_KIND_ALIASES: Record<string, ExitKind> = {
     forced: 'forced', mandatory: 'forced', obbligatoria: 'forced', must: 'forced', settle: 'forced',
     lost_game: 'forced', two_lost: 'forced',
     manual: 'manual', cashout: 'manual', user: 'manual',
+    // certificazione 12/09: Safe scrive in `meta.exit.kind` il vocabolario
+    // della REGOLA (safe_strategy/exits.py), non quello della UI: `model` è
+    // l'uscita decisa dal modello e prima finiva in "Uscita" generica
+    model: 'model', modello: 'model',
     other: 'other', altro: 'other',
 };
 
@@ -718,8 +886,47 @@ export const EXIT_KIND_LABEL: Record<ExitKind, string> = {
     forced: 'Uscita: obbligatoria',
     manual: 'Cash out manuale',
     greenup: 'Green-up',
+    model: 'Uscita: modello',
     other: 'Uscita',
 };
+
+/**
+ * Certificazione 12/09 — il MOTIVO dell'uscita in italiano.
+ *
+ * Omega e Safe scrivono `meta.exit_reason` già tradotto; Mike ci mette la
+ * chiave tecnica grezza (`mike/service.py:204` = `close_reason` o il `role`
+ * della gamba), e il tooltip del badge mostrava «under_green» a un trader.
+ * Qui la chiave tecnica diventa una frase; qualunque testo non in tabella
+ * passa invariato (Omega/Safe sono già in italiano).
+ */
+const EXIT_REASON_TEXT: Record<string, string> = {
+    // Mike — ruolo della gamba
+    under_entry: 'ingresso Under 3.5',
+    under_green: 'green-up sull’Under 3.5',
+    under_last: 'ultimo ingresso (ordine che resta a book)',
+    under_close: 'chiusura dell’Under 3.5',
+    over_cover: 'copertura con l’Over 4.5',
+    over_close: 'chiusura dell’Over 4.5',
+    reentry: 're-ingresso sull’Under 4.5',
+    reentry_green: 'green-up del re-ingresso',
+    manual_close: 'chiusura manuale',
+    // Mike — motivo
+    manual: 'richiesta manuale dell’operatore',
+    profit: 'profitto raggiunto',
+    loss_cap: 'tetto di perdita raggiunto',
+    reentry_time: 'finestra del re-ingresso scaduta',
+    overshoot: 'prezzo oltre la soglia',
+    liquidita: 'liquidità insufficiente',
+    pending_stale: 'riserva rimasta senza esito',
+};
+
+/** Motivo dell'uscita in italiano; un testo già in chiaro passa invariato. */
+export function exitReasonText(reason: string | null | undefined): string | null {
+    if (reason == null) return null;
+    const s = String(reason).trim();
+    if (s === '') return null;
+    return EXIT_REASON_TEXT[s.toLowerCase()] ?? s;
+}
 
 /** Legge meta.exit_kind / meta.exit_reason (o meta.exit.{kind,reason}) di una
  *  gamba. null = nessuna uscita automatica registrata. */
@@ -729,7 +936,7 @@ export function exitInfo(meta: Record<string, unknown> | null | undefined): Exit
     const rawKind = meta.exit_kind ?? nested?.kind ?? null;
     const rawReason = meta.exit_reason ?? nested?.reason ?? null;
     const kindStr = rawKind != null ? String(rawKind).trim().toLowerCase() : '';
-    const reason = rawReason != null && String(rawReason).trim() !== '' ? String(rawReason) : null;
+    const reason = exitReasonText(rawReason == null ? null : String(rawReason));
     if (!kindStr && !reason) return null;
     const kind: ExitKind = kindStr ? (EXIT_KIND_ALIASES[kindStr] ?? 'other') : 'other';
     // 'other' è un valore LEGITTIMO del vocabolario: etichetta italiana, non la chiave nuda
@@ -737,17 +944,26 @@ export function exitInfo(meta: Record<string, unknown> | null | undefined): Exit
     return { kind, label, reason, raw: kindStr || null };
 }
 
-/** Uscita di una posizione: prima quella sull'apertura, poi sulle chiusure. */
+/**
+ * Uscita di una posizione: prima quella sull'apertura, poi sulle chiusure.
+ *
+ * Certificazione 12/09 — una gamba di chiusura in ERRORE (ordine annullato o
+ * mai piazzato) NON è un'uscita avvenuta: nel dump reale di Mike del 12/09 tre
+ * posizioni regolate a mercato mostravano il badge «Green-up» mentre la gamba
+ * di green-up era `status='error'` (`meta.reason='cancelled_by_engine'`). Il
+ * trader leggeva un green-up che non c'è mai stato.
+ */
 export function tradeExit(trade: { meta: Record<string, unknown> | null; closes?: DayTradeLeg[] }): ExitInfo | null {
     const own = exitInfo(trade.meta);
     if (own) return own;
-    for (const c of trade.closes ?? []) {
+    const real = (trade.closes ?? []).filter((c) => c.status !== 'error');
+    for (const c of real) {
         const e = exitInfo(c.meta);
         if (e) return e;
     }
     // cash out MANUALE: il servizio marca la chiusura con meta.cashout=true senza
     // exit_kind (review 11/09 L3) → "Cash out manuale", non una generica "Chiusura"
-    for (const c of trade.closes ?? []) {
+    for (const c of real) {
         if ((c.meta ?? {})['cashout'] === true && !(c.meta ?? {})['exit_kind']) {
             return { kind: 'manual', label: EXIT_KIND_LABEL.manual, reason: null, raw: 'cashout' };
         }

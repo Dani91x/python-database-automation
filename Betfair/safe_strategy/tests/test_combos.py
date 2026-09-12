@@ -309,3 +309,66 @@ def test_nessuna_eccezione_su_blocchi_mancanti_o_rotti():
               "minute": 70, "score_home": 1, "score_away": 1, "mo_status": "OPEN"}
     assert find_combos(rotto2, {}) == []
     assert find_combos("non un dict", {}) == []
+
+
+# ============================================================================
+# CERTIFICAZIONE 12/09 — il "rischio zero" deve reggere anche all'esecuzione
+# ============================================================================
+def _ou_55():
+    """Dutching Over/Under 5.5 al 99,49%: lock +0,44% ma gambe 9,66 / 0,34 EUR
+    (la seconda sotto il minimo REALE Betfair di 2 EUR)."""
+    return payload(ou=[_ou("1.55", 5.5, (1.04, 1.05, 100.0, 100.0),
+                           (30.0, 34.0, 100.0, 100.0))])
+
+
+def test_gamba_sotto_il_minimo_betfair_e_dichiarata():
+    c = [x for x in find_combos(_ou_55(), {}) if x["combo"] == "dutch"][0]
+    stakes = sorted(lg["stake"] for lg in c["legs"])
+    assert stakes[0] < DEFAULT_COMBO_PARAMS["min_leg_stake"]
+    # il totale minimo perche' OGNI gamba sia piazzabile e' dichiarato
+    assert c["min_leg_stake"] == 2.0
+    assert c["min_total_stake"] == pytest.approx(2.0 / min(lg["stake_ratio"] for lg in c["legs"]),
+                                                 rel=0.01)
+    assert c["min_total_stake"] > c["total_stake"]
+    assert c["executable_whole"] is False
+    assert "minimo Betfair" in c["rationale"] and c["rationale"].isascii()
+    # con uno stake totale sufficiente diventa piazzabile intera
+    # (a stake grande il lock per EUR e' lo stesso: min_lock scende di pari passo)
+    big = [x for x in find_combos(_ou_55(), {},
+                                  params={"combo_stake": 80.0, "min_lock": 0.004})
+           if x["combo"] == "dutch"][0]
+    assert big["executable_whole"] is True
+    assert all(lg["stake"] >= 2.0 for lg in big["legs"])
+    assert "minimo Betfair" not in big["rationale"]
+
+
+def test_lock_verificato_anche_con_stake_riarrotondati():
+    """Chi esegue ricalcola gli stake da ``stake_ratio`` su un totale diverso e
+    ri-arrotonda al centesimo: il lock deve reggere anche li'."""
+    c = [x for x in find_combos(payload(), BOOK) if x["combo"] == "under_stack"][0]
+    assert c["worst_case_rounded_per_eur"] <= c["worst_case_per_eur"] + 1e-9
+    assert c["worst_case_rounded_per_eur"] >= 0.0
+    # con una tolleranza assurda (1 EUR per gamba) nessun lock sopravvive
+    assert find_combos(payload(), BOOK, params={"stake_round_tol": 1.0}) == []
+
+
+def test_commissione_dal_parametro_del_bot():
+    pl = payload(odds=_mo(3.0, 3.2, 3.1), ou=[])
+    c5 = _by(find_combos(pl, {}), "dutch")[0]
+    c13 = _by(find_combos(pl, {}, params={"commission_pct": 13.0}), "dutch")[0]
+    assert c13["locked_profit_per_eur"] < c5["locked_profit_per_eur"]
+    # 'commission' esplicita vince su 'commission_pct'
+    c0 = _by(find_combos(pl, {}, params={"commission": 0.0, "commission_pct": 13.0}), "dutch")[0]
+    assert c0["locked_profit_per_eur"] > c5["locked_profit_per_eur"]
+    # aliquota abbastanza alta -> il "profitto bloccato" sparisce
+    assert _by(find_combos(pl, {}, params={"commission_pct": 90.0}), "dutch") == []
+
+
+def test_p_model_dichiara_la_sua_fonte():
+    """Senza P del modello il campo resta la probabilita' IMPLICITA nel prezzo:
+    va detto, non spacciato per modello (stesso errore delle anomalie)."""
+    con = _by(find_combos(payload(), BOOK), "under_stack")[0]
+    assert con["p_model_source"] == "book" and con["p_model"] == pytest.approx(0.999)
+    senza = _by(find_combos(payload(), {}), "under_stack")[0]
+    assert senza["p_model_source"] == "implicita"
+    assert senza["p_model"] == senza["p_implied"]

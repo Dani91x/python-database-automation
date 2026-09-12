@@ -78,17 +78,24 @@ d('realtime: debounce delle ricariche', () => {
 
     it('Omega — il feed live per evento parte solo dal realtime (cold start)', () => {
         const hook = read('lib/useScanLiveFeed.ts');
-        // l'effetto ha deps [] e legge wanted.current al momento del fetch: al
-        // mount `eventIds` è vuoto (i trade arrivano dopo), quindi il fetch
-        // iniziale non popola nulla.
-        const emptyDeps = /const unsub = subscribeScanRows\([\s\S]{0,600}?\}, \[\]\);/.test(hook);
-        rep.mark('useScanLiveFeedRows — refetch al cambio di eventIds', 'presente',
-            emptyDeps ? 'ASSENTE (effetto con deps [])' : 'presente', !emptyDeps);
-        if (emptyDeps) {
-            rep.finding('MEDIUM', 'lib/useScanLiveFeed.ts:28-71',
-                "l'effetto ha deps [] e filtra il fetch iniziale su `wanted.current`, che al mount è VUOTO (gli event_id arrivano con i trade, un giro dopo): le quote live della tabella Omega compaiono solo quando arriva il primo messaggio realtime per quell'evento. A scanner fermo (o nei primi secondi) la colonna «chiudendo ora» resta vuota.");
+        // CERT. 12/09 — due effetti DISTINTI, ed e' giusto cosi':
+        //  · la SOTTOSCRIZIONE realtime ha deps [] (un solo canale per la vita
+        //    del componente: cambiare l'insieme non deve riaprirlo);
+        //  · la FOTOGRAFIA iniziale dipende dalla chiave ORDINATA degli
+        //    event_id, cosi' si rifa' quando l'insieme cambia davvero (i trade
+        //    arrivano dopo il mount). Senza il secondo, le quote live comparivano
+        //    solo al primo messaggio realtime: su un mercato tranquillo, minuti
+        //    di colonne vuote.
+        const chiaveOrdinata = /sort\(\)\.join\(','\), \[eventIds\]\)/.test(hook);
+        const refetch = /fetchScanRows\(\)[\s\S]{0,1600}?\}, \[key\]\);/.test(hook);
+        const ok = chiaveOrdinata && refetch;
+        rep.mark('useScanLiveFeedRows — fotografia iniziale al cambio di eventIds', 'presente',
+            ok ? 'presente' : `chiave=${chiaveOrdinata} refetch=${refetch}`, ok);
+        if (!ok) {
+            rep.finding('MEDIUM', 'lib/useScanLiveFeed.ts',
+                "manca il refetch della fotografia iniziale al cambio dell'insieme di eventi: le quote live compaiono solo quando arriva il primo messaggio realtime per quella partita, e nei primi secondi la colonna «se chiudo ora» resta vuota.");
         }
-        expect(typeof emptyDeps).toBe('boolean');
+        expect(ok).toBe(true);
     });
 });
 

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { ExitBadge } from '@/components/trading/ExitBadge';
 import { SectionCard, EmptyState } from '@/components/trading/EmptyState';
 import { fmtMoney, fmtOdds, fmtTime } from '@/lib/format';
-import { statusMeta, sideMeta, T } from '@/lib/tradeStatus';
+import { statusMeta, statusMetaOf, sideMeta, T } from '@/lib/tradeStatus';
 import { exitInfo } from '@/lib/dailyHistory';
 import {
     groupMikeTrades, groupsOfDay, isManualTrade, marketLabel, roleLabel, MIKE_TRADES_LIMIT,
@@ -67,6 +67,8 @@ export interface MikeTradesTableProps {
     dayLabel?: string;
     /** riepilogo dagli aggregati del DB (mai ricontato dal client) */
     summary?: {
+        /** operazioni (cicli) della giornata secondo il DB: è il numero della barra e della linguetta */
+        operationsToday?: number | null;
         openCount?: number | null;
         won?: number | null;
         lost?: number | null;
@@ -104,9 +106,16 @@ export function MikeTradesTable({ trades, dayStartMs, dayStartSource = 'rpc', da
                         : 'giornata operativa stimata dal client (mezzanotte di Roma): applica migrations/mike_bot_v2.sql'} ·{' '}
                 </span>
             )}
+            {onlyToday && summary.operationsToday != null && summary.operationsToday !== shown.length && (
+                <span className="text-amber-300" data-testid="mike-trades-partial">
+                    il DB conta {summary.operationsToday} operazioni oggi, qui ne sono caricate {shown.length} ·{' '}
+                </span>
+            )}
+            <span className="text-slate-500">1 riga per operazione (le chiusure stanno annidate sotto la loro apertura) · </span>
             posizioni aperte <b className="text-slate-200">{summary.openCount ?? 0}</b>
             {' · '}<b className="text-emerald-400">{summary.won ?? 0}V</b>{' '}
             <b className="text-red-400">{summary.lost ?? 0}P</b>
+            <span className="text-slate-500"> (operazioni già chiuse)</span>
             {summary.lockedPnl != null && <> · {T.lockedPnl} <b className={summary.lockedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtMoney(summary.lockedPnl, { signed: true })}</b></>}
             {summary.openLiability != null && <> · {T.openLiability} <b className="text-orange-400">{fmtMoney(summary.openLiability)}</b></>}
             {summary.reconciling ? <> · <b className="text-fuchsia-300">{summary.reconciling} in verifica</b></> : null}
@@ -115,7 +124,7 @@ export function MikeTradesTable({ trades, dayStartMs, dayStartSource = 'rpc', da
 
     return (
         <SectionCard
-            title={onlyToday ? `Trade della ${T.operatingDay}${dayLabel ? ` · ${dayLabel}` : ''}` : 'Tutti i trade caricati'}
+            title={onlyToday ? `Operazioni della ${T.operatingDay}${dayLabel ? ` · ${dayLabel}` : ''}` : 'Tutte le operazioni caricate'}
             count={shown.length}
             note={note}
             testId="mike-trades"
@@ -131,7 +140,7 @@ export function MikeTradesTable({ trades, dayStartMs, dayStartSource = 'rpc', da
             {shown.length === 0 ? (
                 <div className="p-3">
                     <EmptyState>
-                        Nessun trade {onlyToday ? `nella ${T.operatingDay}` : 'caricato'}. Le righe compaiono al primo
+                        Nessuna operazione {onlyToday ? `nella ${T.operatingDay}` : 'caricata'}. Le righe compaiono al primo
                         ordine piazzato dal bot; le chiusure stanno annidate sotto la loro apertura.
                     </EmptyState>
                 </div>
@@ -154,7 +163,9 @@ export function MikeTradesTable({ trades, dayStartMs, dayStartSource = 'rpc', da
                         <tbody>
                             {shown.map((g) => {
                                 const t = g.open;
-                                const sb = statusMeta(t.status, { reconciling: isReconciling(t) });
+                                // statusMetaOf legge anche meta.fill: una lay solo APPOGGIATA
+                                // sul book non e' una posizione abbinata e non deve sembrarlo
+                                const sb = statusMetaOf(t);
                                 const sd = sideMeta(t.side);
                                 return [
                                     <tr key={t.id} className="border-t border-white/10" data-testid="mike-trade-row" data-trade-id={t.id}>
@@ -197,7 +208,7 @@ export function MikeTradesTable({ trades, dayStartMs, dayStartSource = 'rpc', da
                                         </td>
                                     </tr>,
                                     ...g.closes.map((c) => {
-                                        const cb = statusMeta(c.status, { reconciling: isReconciling(c) });
+                                        const cb = statusMetaOf(c);
                                         const cd = sideMeta(c.side);
                                         const info = exitInfo(c.meta);
                                         return (

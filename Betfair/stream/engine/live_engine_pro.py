@@ -23,7 +23,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from tactical_engine.dixon_coles import score_matrix
+from tactical_engine.dixon_coles import dc_tau, score_matrix
 
 from .live_engine import (
     estimate_prematch_lambdas,
@@ -53,6 +53,34 @@ def _load_json(path: str) -> dict:
 
 _RHO_DATA = _load_json(_RHO_PATH)
 _CAL_DATA = _load_json(_CAL_PATH)
+
+
+def effective_rho(rho: float, lam_h: float, lam_a: float,
+                  score_home: int, score_away: int) -> float:
+    """rho DA USARE davvero sulla griglia dei gol RESIDUI (0.0 = tau neutro).
+
+    1) La correzione Dixon-Coles e' calibrata sui RISULTATI FINALI bassi
+       (0-0, 1-0, 0-1, 1-1). Sui gol RESIDUI vale solo se la partita e' ancora
+       0-0: a 1-1 la tau colpirebbe il residuo 1-1, cioe' il finale 2-2, e
+       lascerebbe il finale 1-1 quasi senza correzione. STESSA REGOLA di
+       ``omega_model.residual_grid`` (``dixon_coles=(score==0-0)``) e di
+       ``safe_strategy.opportunity`` -> i tre bot vedono la stessa griglia.
+    2) Con lambda grandi la tau puo' diventare NEGATIVA (es. 1 + lam*rho < 0):
+       celle di probabilita' negative. In quel caso si spegne la correzione
+       invece di produrre una distribuzione non valida.
+    """
+    if not rho:
+        return 0.0
+    if score_home != 0 or score_away != 0:
+        return 0.0
+    for x, y in ((0, 0), (0, 1), (1, 0), (1, 1)):
+        if dc_tau(x, y, lam_h, lam_a, rho) <= 0.0:
+            logger.debug(
+                "[live-pro] tau DC non positiva (lam=%.3f/%.3f rho=%.3f): DC spento",
+                lam_h, lam_a, rho,
+            )
+            return 0.0
+    return rho
 
 
 def rho_for_league(league_id: Optional[int]) -> float:
@@ -196,7 +224,12 @@ def event_goal_hazard(
     w_now = residual_time_weight(m, league_id)
     if w_now <= 1e-9:
         return None  # tempo (modello) esaurito: nessun residuo su cui ripartire
-    w_then = residual_time_weight(m + max(1, int(round(horizon_min))), league_id)
+    # la CDF dei tempi-gol ha granularita' al MINUTO: l'orizzonte reale e' il
+    # numero INTERO di minuti usato nel calcolo, ed e' quello che dichiariamo
+    # (prima si dichiarava ``horizon_min`` grezzo: un 2.4 diventava 2 nel conto
+    # ma restava 2.4 in UI -> hazard letto su una finestra che non esiste).
+    eff_horizon = max(1, int(round(float(horizon_min))))
+    w_then = residual_time_weight(m + eff_horizon, league_id)
     # quota dei gol residui che cade nell'orizzonte (clamp difensivo [0,1]).
     share = max(0.0, min(1.0, (w_now - w_then) / w_now))
     exp_goals = lam_tot * share
@@ -204,7 +237,7 @@ def event_goal_hazard(
     return {
         "p_next": round(p, 4),
         "exp_goals_next": round(exp_goals, 4),
-        "horizon_min": float(horizon_min),
+        "horizon_min": float(eff_horizon),
         "minute": m,
         "lam_home": round(lam_h, 4),
         "lam_away": round(lam_a, 4),
@@ -315,7 +348,20 @@ def _markets_from_residual(
     grid: Any, score_home: int, score_away: int, lines: List[float]
 ) -> Dict[str, float]:
     """Probabilità finali dei mercati partendo dalla griglia dei gol RESIDUI
-    (DC) e sommando il punteggio corrente. grid[rh][ra] = P(rh, ra residui)."""
+    (DC) e sommando il punteggio corrente. grid[rh][ra] = P(rh, ra residui).
+
+    GARANZIE (certificate da test numerici, sono la rete dei tre bot):
+      - ogni probabilità sta in [0, 1];
+      - 1X2, Over+Under di ogni linea e BTTS sommano ESATTAMENTE a 1: TUTTE le
+        famiglie sono normalizzate sulla STESSA massa ``z`` (la massa positiva
+        della griglia troncata). Prima solo l'1X2 era normalizzato: con una
+        griglia non normalizzata (o con celle negative da tau) Over/Under e BTTS
+        restavano su una scala diversa dall'1X2;
+      - SCALA COERENTE: P(Over n) non crescente in n, P(Under n) non decrescente
+        (la regola delle anomalie di Safe Strategy si basa su questo);
+      - esiti GIA' DECISI dal punteggio corrente = 1/0 ESATTI (nessun 0.999...
+        che poi arrotondato mostra un edge inesistente).
+    """
     n = grid.shape[0]
     p_home = p_draw = p_away = 0.0
     p_over = {ln: 0.0 for ln in lines}
@@ -323,7 +369,10 @@ def _markets_from_residual(
     for rh in range(n):
         for ra in range(n):
             p = float(grid[rh, ra])
-            if p <= 0.0:
+            # celle non positive (coda nulla, oppure tau negativo su lambda
+            # estremi) non portano massa: scartate, e la normalizzazione sotto
+            # riporta comunque il risultato a una distribuzione vera.
+            if not (p > 0.0):
                 continue
             fh, fa = score_home + rh, score_away + ra
             if fh > fa:
@@ -341,12 +390,21 @@ def _markets_from_residual(
     z = p_home + p_draw + p_away
     if z > 0:
         p_home, p_draw, p_away = p_home / z, p_draw / z, p_away / z
-    out = {"home": p_home, "draw": p_draw, "away": p_away, "btts_yes": min(1.0, btts_yes)}
-    out["btts_no"] = max(0.0, 1.0 - out["btts_yes"])
+        btts_yes /= z
+        p_over = {ln: v / z for ln, v in p_over.items()}
+    out = {"home": p_home, "draw": p_draw, "away": p_away,
+           "btts_yes": max(0.0, min(1.0, btts_yes))}
+    # BTTS gia' avvenuto: certezza, non stima
+    if score_home >= 1 and score_away >= 1:
+        out["btts_yes"] = 1.0
+    out["btts_no"] = 1.0 - out["btts_yes"]
+    total_now = score_home + score_away
     for ln in lines:
         key = str(ln).replace(".", "_")
-        out[f"over_{key}"] = p_over[ln]
-        out[f"under_{key}"] = max(0.0, 1.0 - p_over[ln])
+        # linea gia' superata dal punteggio corrente: Over = 1 ESATTO
+        po = 1.0 if total_now > ln else max(0.0, min(1.0, p_over[ln]))
+        out[f"over_{key}"] = po
+        out[f"under_{key}"] = 1.0 - po
     return out
 
 
@@ -448,8 +506,11 @@ def evaluate_event(
         yellow_home=yellow_home, yellow_away=yellow_away, league_id=league_id,
         pressure_home=pressure_home, pressure_away=pressure_away,
     )
-    rho = rho_for_league(league_id)
-    grid = score_matrix(max(0.01, lam_h), max(0.01, lam_a), rho)
+    lam_h, lam_a = max(0.01, lam_h), max(0.01, lam_a)
+    # Dixon-Coles SOLO dove ha senso (partita ancora 0-0) e solo se tau resta
+    # positiva: stessa regola di Omega e Safe Strategy.
+    rho = effective_rho(rho_for_league(league_id), lam_h, lam_a, sh, sa)
+    grid = score_matrix(lam_h, lam_a, rho)
 
     # calcola TUTTE le linee O/U realmente presenti (non solo 0.5–3.5), così le
     # linee alte non ricevono prob=0.0 di default → niente segnali falsi.

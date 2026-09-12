@@ -40,6 +40,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from Betfair.safe_strategy import engine as E
+from Betfair.safe_strategy.opportunity import resolve_commission
 from Betfair.stream.tennis_scalper import tennis_serve_data as _sd
 from Betfair.stream.tennis_scalper.tennis_score import TennisScore, parse_tennis_scores
 from Betfair.stream.tennis_scalper.tennis_winprob import estimate_holds, p_match
@@ -200,6 +201,9 @@ class TennisOpportunityModel:
         merged = dict(DEFAULT_TENNIS_OPP_PARAMS)
         if params:
             merged.update({k: v for k, v in params.items() if v is not None})
+        # la commissione del BOT (``commission_pct``) vince sul default 5%
+        merged["commission"] = resolve_commission(
+            params, float(DEFAULT_TENNIS_OPP_PARAMS["commission"]))
         self.params = merged
         self._clock = clock
         # memoria momentum: chiave evento -> (stato (sets, games), vincitori ultimi game)
@@ -226,9 +230,17 @@ class TennisOpportunityModel:
 
     def _holds(self, payload: dict) -> Tuple[float, float]:
         """(hold p1, hold p2): dal dato di servizio per giocatore se c'e', altrimenti
-        dal prior di ``estimate_holds`` (break non noti dal feed)."""
-        prior = float(self.params["hold_prior"])
-        ha, hb = estimate_holds(0, 0, 0, 0, prior=prior)
+        il PRIOR dichiarato (i break non arrivano dal feed).
+
+        12/09: prima si passava da ``estimate_holds(0, 0, 0, 0, prior)``, che con
+        zero game e zero break legge "nessun break subito" e alza il prior a
+        0,792 invece di 0,75. Un hold piu' alto rende il break piu' decisivo e
+        GONFIA la P(vittoria) del leader (es. 1 set + 3-1 -> 91,2% invece di
+        90,4%): proprio sopra la soglia di back del 90%. Il parametro
+        ``hold_prior`` ora e' davvero quello in uso.
+        """
+        prior = min(0.95, max(0.5, float(self.params["hold_prior"])))
+        ha = hb = prior
         s1 = _sd.get_serve_prob(payload.get("p1"))
         s2 = _sd.get_serve_prob(payload.get("p2"))
         if s1 is not None:

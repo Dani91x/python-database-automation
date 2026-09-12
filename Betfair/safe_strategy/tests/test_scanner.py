@@ -601,3 +601,112 @@ def test_scanner_write_on_change_non_dipende_dalle_opportunita(monkeypatch):
     quarto, _ = scan.build_rows(now)
     assert len(quarto) == 1
     assert quarto[0]["payload"]["score_home"] == 2
+
+
+# ===========================================================================
+# CERTIFICAZIONE 12/09 - limiti di listMarketCatalogue e giro a prova di errore
+# ===========================================================================
+class _FakeCatalogueClient:
+    """Registra le chiamate a list_market_catalogue e non risponde nulla."""
+
+    def __init__(self, boom=False):
+        self.calls = []
+        self.boom = boom
+        self.betting = self
+
+    def list_market_catalogue(self, **kw):
+        self.calls.append(kw)
+        if self.boom:
+            raise RuntimeError("INVALID_INPUT_DATA")
+        return []
+
+
+def test_catalogo_opportunita_non_sfora_max_results_di_betfair():
+    """Betfair accetta max_results 1-1000: oltre risponde INVALID_INPUT_DATA e
+    l'eccezione si portava via l'INTERO giro dello scanner (nessuna riga
+    pubblicata). Col ramo pre-KO acceso su molte ore i candidati sono centinaia."""
+    from Betfair.safe_strategy import service
+
+    scan = service.Scanner(api_client=_FakeCatalogueClient(), dry=True, use_stream=False)
+    scan.client = scan.client  # esplicito: il fake e' sia client sia .betting
+    cands = [f"e{i}" for i in range(600)]
+    scan.refresh_opp_catalogue(cands)          # 600 eventi x 10 tipi = 6000
+    kw = scan.client.calls[-1]
+    assert kw["max_results"] <= service._MAX_CATALOGUE_RESULTS
+    assert len(kw["filter"]["eventIds"]) * len(service.scanner.OPP_MARKET_TYPES) \
+        <= service._MAX_CATALOGUE_RESULTS
+    # ramo pre-KO: due soli tipi, quindi entrano piu' eventi nello stesso lotto
+    scan2 = service.Scanner(api_client=_FakeCatalogueClient(), dry=True, use_stream=False)
+    scan2.refresh_opp_catalogue(cands, market_types=service.scanner.PRE_KO_OU_MARKET_TYPES)
+    kw2 = scan2.client.calls[-1]
+    assert kw2["max_results"] <= service._MAX_CATALOGUE_RESULTS
+    assert len(kw2["filter"]["eventIds"]) > len(kw["filter"]["eventIds"])
+
+
+def test_catalogo_correct_score_segue_il_lotto_non_il_50_fisso():
+    """Un mercato per evento: con piu' di 50 candidati il vecchio max_results=50
+    lasciava le partite oltre il tetto senza Correct Score (Omega e la Safe
+    R.E. cieche su quelle) fino al giro dopo."""
+    from Betfair.safe_strategy import service
+
+    scan = service.Scanner(api_client=_FakeCatalogueClient(), dry=True, use_stream=False)
+    cands = [f"e{i}" for i in range(120)]
+    for e in cands:
+        scan.events[e] = {"sport": "calcio", "inplay": True}
+    scan.refresh_cs_catalogue(cands)
+    kw = scan.client.calls[-1]
+    assert kw["max_results"] == 120
+    assert len(kw["filter"]["eventIds"]) == 120
+
+
+def test_un_catalogo_secondario_che_esplode_non_ferma_la_pubblicazione():
+    """La pubblicazione dei FATTI e' la linea vitale dei tre bot: un errore sul
+    catalogo Correct Score / mercati a gol non deve saltare il giro."""
+    from Betfair.safe_strategy import service
+
+    scan = service.Scanner(api_client=_FakeCatalogueClient(boom=True), dry=True,
+                           use_stream=False)
+    scan._safe_catalogue("correct score", scan.refresh_cs_catalogue, ["e1"])
+    assert scan.last_error and "correct score" in scan.last_error
+    assert scan.client.calls, "la chiamata e' stata tentata"
+
+
+# ===========================================================================
+# CERT. 12/09 - i soldi a rischio passano davanti nel lotto del catalogo
+# ===========================================================================
+class TestPrioritaAChiHaSoldiARischio:
+    """Il lotto del catalogo mercati viene TRONCATO: chi resta fuori aspetta il
+    giro dopo, e aspettare con una posizione aperta vuol dire restare senza
+    quote (niente copertura, niente cash out, niente uscita). Caso vivo del
+    riavvio delle 21:43: 11 partite di Mike ~10 minuti senza linee O/U."""
+
+    def test_le_partite_seguite_vanno_davanti(self) -> None:
+        cand = ["a", "b", "c", "d", "e"]
+        assert scanner.prioritize_followed(cand, ["d", "b"]) == ["b", "d", "a", "c", "e"]
+
+    def test_l_ordine_relativo_degli_altri_non_cambia(self) -> None:
+        """Il resto della coda resta ordinato per minuto come prima."""
+        cand = ["m90", "m75", "m60", "m10"]
+        out = scanner.prioritize_followed(cand, ["m10"])
+        assert out == ["m10", "m90", "m75", "m60"]
+
+    def test_senza_seguite_la_lista_non_cambia(self) -> None:
+        cand = ["a", "b", "c"]
+        for vuoto in ([], (), None, set()):
+            assert scanner.prioritize_followed(cand, vuoto) == cand
+
+    def test_nessun_candidato_viene_perso_ne_duplicato(self) -> None:
+        cand = [str(i) for i in range(30)]
+        out = scanner.prioritize_followed(cand, ["7", "22", "0"])
+        assert sorted(out) == sorted(cand) and len(out) == len(cand)
+
+    def test_una_seguita_non_fra_i_candidati_non_inventa_righe(self) -> None:
+        cand = ["a", "b"]
+        assert scanner.prioritize_followed(cand, ["zzz"]) == ["a", "b"]
+
+    def test_col_taglio_del_lotto_la_posizione_aperta_SOPRAVVIVE(self) -> None:
+        """Il punto vero: con un lotto da 3 la partita con soldi a rischio, che
+        prima era ultima, ora entra."""
+        cand = ["m90", "m80", "m70", "m60", "aperta"]
+        assert scanner.prioritize_followed(cand, [])[:3] == ["m90", "m80", "m70"]
+        assert "aperta" in scanner.prioritize_followed(cand, ["aperta"])[:3]

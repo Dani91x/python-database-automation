@@ -635,10 +635,12 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 _sync_parent_of(db, tr, now)
                 n += 1
             elif act == "error":
-                _terminal_error(db, tr, reason="reconcile_orphan_old", now=now)
+                why = str(d.get("reason") or "reconcile_orphan_old")
+                _terminal_error(db, tr, reason=why, now=now,
+                                extra={"bet_id_seen": tr.get("bet_id")} if tr.get("bet_id") else None)
                 _log(db, "reconciled_error", {"trade_id": tr.get("id"),
                                               "event_id": tr.get("event_id"),
-                                              "reason": "reconcile_orphan_old"})
+                                              "reason": why})
                 _sync_parent_of(db, tr, now)
                 n += 1
             # 'keep' → ordine reale non ancora matchato / troppo fresco: non toccare
@@ -674,9 +676,16 @@ def _reconcile_by_bet_id(market, tr: dict[str, Any]) -> Optional[dict]:
     if not st or not st.get("found"):
         return None
     matched = float(st.get("size_matched") or 0.0)
-    if matched > 0 and float(st.get("size_remaining") or 0.0) <= 0:
+    remaining = float(st.get("size_remaining") or 0.0)
+    if matched > 0 and remaining <= 0:
         return {"action": "confirm", "price": float(st.get("avg_price_matched") or tr.get("price") or 0.0),
                 "size": matched, "bet_id": str(bet_id)}
+    if matched <= 0 and remaining <= 0:
+        # 12/09: ordine CONOSCIUTO da Betfair ma MORTO senza fill (FOK ucciso,
+        # LAPSED/CANCELLED): prima tornava 'keep' e la riga restava 'pending'
+        # per sempre (esposizione contata, segnale bloccato). Esito CERTO
+        # negativo -> 'error' terminale con la traccia del bet_id.
+        return {"action": "error", "reason": "reconcile_ordine_senza_fill"}
     return {"action": "keep"}
 
 
@@ -762,23 +771,30 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
     sync_hedges(db, parents, closings, now)
     fallback_commission = float(params.get("commission_pct", 5.0)) / 100.0
     settled = 0
+    # H-19 (12/09): UNA ``listMarketBook`` per ciclo per TUTTI i mercati da
+    # regolare (``read_markets``, blocchi da 40), non una per posizione. Il
+    # feed decide QUANDO vale la pena chiamare Betfair; la cadenza per mercato
+    # (10 s) resta; il budget per ciclo conta le CHIAMATE, non i mercati.
+    todo: list[dict] = []
     for tr in parents:
+        row = rows_by_event.get(str(tr.get("event_id")))
+        if not _settlement_needs_rest(tr, row, now_ts):
+            continue
+        todo.append(tr)
+    snaps = _read_markets_batch(market, todo, now_ts)
+    for tr in todo:
         try:
-            row = rows_by_event.get(str(tr.get("event_id")))
-            # H-19: il feed decide QUANDO vale la pena chiamare Betfair
-            if not _settlement_needs_rest(tr, row, now_ts):
-                continue
-            if not rest_gate(tr.get("market_id"), now_ts):
-                continue
-            snap = _read_market(market, tr)
+            mid = str(tr.get("market_id") or "")
+            if mid not in snaps:
+                continue           # non letto in questo ciclo (cadenza/budget/rete)
+            snap = snaps[mid]
             if snap is None:
                 _market_missing(db, tr, now_ts)
                 continue
-            _market_seen(str(tr.get("market_id") or ""))
+            _market_seen(mid)
             if not snap.closed:
                 continue
-            comm = tr.get("commission")
-            comm = float(comm) if comm is not None else fallback_commission
+            comm = _commission_rate(tr.get("commission"), fallback_commission)
             if X.settle_position(db=db, trade=tr, closings=closings.get(int(tr["id"]), []),
                                  snap=snap, commission=comm, now=now):
                 settled += 1
@@ -819,8 +835,7 @@ def settle_open(*, params: dict[str, Any], market, db, now: datetime,
                 # sorelle = ogni ALTRA chiusura della stessa apertura (quelle già
                 # regolate entrano nel netto: le filtra settle_orphan_closing)
                 siblings = [s for s in all_legs if int(s.get("id") or 0) != cid]
-                comm = c.get("commission")
-                comm = float(comm) if comm is not None else fallback_commission
+                comm = _commission_rate(c.get("commission"), fallback_commission)
                 if X.settle_orphan_closing(db=db, closing=c, parent=parent,
                                            commission=comm, now=now,
                                            siblings=siblings):
@@ -893,11 +908,84 @@ def sync_hedges(db, parents: list[dict[str, Any]], closings: dict[int, list[dict
 
 
 def _read_market(market, tr: dict[str, Any]):
-    cs = _real_market.CorrectScoreMarket(
+    return market.read_market(_cs_of(tr))
+
+
+def _cs_of(tr: dict[str, Any]):
+    return _real_market.CorrectScoreMarket(
         market_id=str(tr.get("market_id")), event_id=str(tr.get("event_id")),
         event_name=tr.get("event_name") or "", market_start_time=None, runner_names={},
     )
-    return market.read_market(cs)
+
+
+def _read_markets_batch(market, trades: list[dict[str, Any]],
+                        now_ts: float) -> dict[str, Any]:
+    """{market_id: MarketSnapshot | None} dei mercati delle posizioni ``trades``
+    che passano la cadenza REST (``REST_MIN_INTERVAL_S`` per mercato).
+
+    Con ``market.read_markets`` (omega_market): UNA ``listMarketBook`` per
+    blocco di 40 mercati e UNA unita' di budget per blocco. Un mercato assente
+    dalla risposta (blocco KO di rete) NON compare nel risultato: non e' un
+    mercato sparito, si rilegge al ciclo dopo. Senza ``read_markets`` (fake o
+    client vecchio): una lettura per mercato dentro il budget di ``rest_gate``.
+    Le eccezioni di una singola lettura restano fuori dal risultato."""
+    out: dict[str, Any] = {}
+    if not trades:
+        return out
+    by_mid: dict[str, dict[str, Any]] = {}
+    for tr in trades:
+        mid = str(tr.get("market_id") or "")
+        if mid and mid not in by_mid:
+            by_mid[mid] = tr
+    batch = getattr(market, "read_markets", None)
+    if not callable(batch):
+        for mid, tr in by_mid.items():
+            if not rest_gate(mid, now_ts):
+                continue
+            try:
+                out[mid] = _read_market(market, tr)
+            except Exception as ex:  # noqa: BLE001 — lettura KO: non e' un mercato sparito
+                logger.warning("[safe.bot] read_market KO %s: %s", mid, str(ex)[:120])
+        return out
+    st = _REST_STATE
+    if float(st.get("cycle_ts") or 0.0) != now_ts:
+        st["cycle_ts"] = now_ts
+        st["used"] = 0
+    last: dict = st.setdefault("last", {})
+    due = [mid for mid in by_mid
+           if last.get(mid) is None or now_ts - float(last[mid]) >= REST_MIN_INTERVAL_S]
+    if not due:
+        return out
+    for i in range(0, len(due), 40):
+        if int(st.get("used") or 0) >= REST_BUDGET_PER_CYCLE:
+            break
+        chunk = due[i:i + 40]
+        st["used"] = int(st.get("used") or 0) + 1
+        for mid in chunk:
+            last[mid] = now_ts
+        try:
+            res = batch([_cs_of(by_mid[m]) for m in chunk]) or {}
+        except Exception as ex:  # noqa: BLE001
+            logger.warning("[safe.bot] read_markets KO: %s", str(ex)[:120])
+            continue
+        for mid in chunk:
+            if mid in res:
+                out[mid] = res[mid]
+    return out
+
+
+def _commission_rate(value: Any, fallback: float) -> float:
+    """Aliquota della POSIZIONE come FRAZIONE (0,05). La colonna ``commission``
+    porta la frazione (``commission_pct``/100); un valore > 1 e' una percentuale
+    scritta per errore (5 = 5 %) e NON deve diventare 100 % (12/09: prima
+    ``_commission_of`` la clampava a 1,0 e il netto delle uscite andava a zero)."""
+    if value is None:
+        c = _f(fallback, 0.05)
+    else:
+        c = _f(value, fallback)
+        if c > 1.0:
+            c = c / 100.0
+    return min(1.0, max(0.0, c))
 
 
 # ---------------------------------------------------------------------------
@@ -1005,6 +1093,19 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"error": "price/size non numerici"}
     if price <= 1.0 or size <= 0:
         return {"error": "price/size fuori range"}
+    # CERTIFICAZIONE 12/09 — FRESCHEZZA DEL FEED anche sul MANUALE.
+    # L'automatico la controlla (``_row_is_fresh``), il manuale no: una richiesta
+    # accodata con lo scanner fermo veniva eseguita su quote vecchie (in paper
+    # riempiva, in live il FOK sarebbe morto a vuoto). La UI oggi spegne i
+    # bottoni, ma il DB-as-bus accetta richieste da qualunque altra via: la
+    # barriera deve stare QUI, non solo a schermo.
+    row_feed = (rows_by_event or {}).get(event_id)
+    if not _row_is_fresh(row_feed, now.timestamp(), _scanner_ts(db, now.timestamp())):
+        motivo = _stale_reason(row_feed)
+        _log(db, "skip", {"event_id": event_id, "reason": motivo, "origin": "manual",
+                          "market_id": market_id, "selection_id": selection_id})
+        return {"error": motivo}
+
     # idempotenza del MANUALE: la UI può reinviare la stessa richiesta (retry,
     # doppio click): con la stessa chiave non si piazza due volte.
     idem = str(payload.get("idempotency_key") or "").strip() or None
@@ -1076,9 +1177,13 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     if not trade_id:
         return {"error": "riserva_senza_id"}
     _risk_commit(risk_ctx, {**row, "id": trade_id})
+    # la ladder del book REST e' quella del LAY: per un BACK non vale (12/09:
+    # prima veniva passata a prescindere dal lato e il paper camminava livelli
+    # del lato sbagliato); il livello del feed lo costruisce _execute.
     out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
                    now=now, best_size=best_size,
-                   ladder=(prices or {}).get("lay_ladder") or ())
+                   ladder=((prices or {}).get("lay_ladder") or ()) if side == "lay" else (),
+                   feed_prices=prices)
     if out.status == "error":
         return {"error": "non_eseguito", "detail": out.fill_note, "trade_id": trade_id}
     return {"ok": True, "trade_id": trade_id, "status": out.status,
@@ -1115,8 +1220,33 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         # C-03/coerenza: su una riga a esito ignoto non si chiude nulla
         return {"rejected": "in riconciliazione", "trade_id": int(tid),
                 "message": "rifiutato: in riconciliazione (esito dell'ordine ancora ignoto)"}
+    # 12/09: lo stato della riga si dichiara PRIMA di provare (prima una
+    # 'hedged' o una riserva 'pending' finivano in 'error' generico
+    # "trade_non_aperto:<stato>" senza spiegazione per l'utente).
+    status = str(trade.get("status") or "")
+    if status != "open":
+        why = {"pending": "riserva non ancora abbinata: si chiude solo una posizione aperta",
+               "hedged": "posizione gia' coperta per intero: nulla da chiudere",
+               }.get(status, f"la riga non e' una posizione aperta (stato {status})")
+        return {"rejected": f"stato {status}", "trade_id": int(tid),
+                "message": f"rifiutato: {why}"}
     amount = payload.get("amount")
     fraction = payload.get("fraction", 1.0)
+    # 12/09: importo/frazione VALIDATI qui (la UI puo' mandare 0, negativi o
+    # testo): frazione in (0, 1], importo > 0 — mai una chiusura "vuota" o
+    # con segno sbagliato passata alla matematica del green-up.
+    try:
+        fraction_f = float(fraction) if fraction is not None else 1.0
+        amount_f = float(amount) if amount is not None else None
+    except (TypeError, ValueError):
+        return {"rejected": "importo o frazione non numerici", "trade_id": int(tid),
+                "message": "rifiutato: importo o frazione non numerici"}
+    if not (0.0 < fraction_f <= 1.0) or fraction_f != fraction_f:
+        return {"rejected": f"frazione fuori da (0,1]: {fraction}", "trade_id": int(tid),
+                "message": "rifiutato: la frazione da chiudere deve essere fra 0 e 1"}
+    if amount_f is not None and (amount_f <= 0.0 or amount_f != amount_f):
+        return {"rejected": f"importo non valido: {amount}", "trade_id": int(tid),
+                "message": "rifiutato: l'importo da chiudere deve essere positivo"}
     # L-15: il MANUALE ha le stesse guardie dell'automatico — mercato SOSPESO
     # (rifiuto: a mercato sospeso non si abbina nulla) e quote NON FRESCHE.
     # H5: sul feed stantio NON si rifiuta subito — si legge il book REST (è un
@@ -1128,7 +1258,7 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
         return {"rejected": "mercato sospeso", "trade_id": int(tid),
                 "message": "rifiutato: mercato sospeso, riprova appena riapre"}
     feed_ok = isinstance(row, dict) and XE.feed_is_fresh(row, now.timestamp(),
-                                                         _scanner_ts(db))
+                                                         _scanner_ts(db, now.timestamp()))
     source = "feed"
     prices = None
     if feed_ok:
@@ -1158,8 +1288,7 @@ def _request_cashout(*, db, market, rows_by_event, payload: dict, params: dict,
     # H-01: la gamba di chiusura MANUALE nasce con exit_kind='manual'
     # (la UI mostra "Cash out", non un'uscita automatica inventata).
     res = X.close_trade(db=db, market=market, trade=trade, prices=prices,
-                        amount=float(amount) if amount is not None else None,
-                        fraction=float(fraction) if fraction is not None else 1.0,
+                        amount=amount_f, fraction=fraction_f,
                         mode=str(trade.get("mode") or "paper"), now=now,
                         params=params, origin="manual", table_prefix="safe",
                         extra_row=extra, exit_kind="manual",
@@ -1246,17 +1375,31 @@ def _request_cancel(*, db, payload: dict, now: Optional[datetime] = None) -> dic
 # ---------------------------------------------------------------------------
 # (c-bis) USCITE automatiche — SEMPRE (anche a bot fermo: gestione posizioni)
 # ---------------------------------------------------------------------------
-def _scanner_ts(db) -> Optional[float]:
-    """Epoch dell'heartbeat dello scanner (None se non esposto/illeggibile)."""
+_SCANNER_TS_CACHE: dict[str, Any] = {"cycle_ts": None, "value": None}
+
+
+def _scanner_ts(db, cycle_ts: Optional[float] = None) -> Optional[float]:
+    """Epoch dell'heartbeat dello scanner (None se non esposto/illeggibile).
+
+    12/09 — MEMOIZZATO per ciclo (``cycle_ts`` = ``now.timestamp()``): lo stesso
+    heartbeat serve a segnali, opportunita', combo, anomalie, uscite e richieste
+    manuali. Senza memo erano una SELECT per PARTITA a ogni giro (2 s)."""
+    if cycle_ts is not None and _SCANNER_TS_CACHE.get("cycle_ts") == cycle_ts:
+        return _SCANNER_TS_CACHE.get("value")
     fn = getattr(db, "scanner_status", None)
-    if not callable(fn):
-        return None
-    try:
-        row = fn()
-    except Exception as ex:  # noqa: BLE001
-        logger.debug("[safe.bot] scanner_status KO: %s", str(ex)[:120])
-        return None
-    return XE.parse_ts((row or {}).get("updated_at")) if isinstance(row, dict) else None
+    value: Optional[float] = None
+    if callable(fn):
+        try:
+            row = fn()
+        except Exception as ex:  # noqa: BLE001
+            logger.debug("[safe.bot] scanner_status KO: %s", str(ex)[:120])
+            row = None
+        if isinstance(row, dict):
+            value = XE.parse_ts(row.get("updated_at"))
+    if cycle_ts is not None:
+        _SCANNER_TS_CACHE["cycle_ts"] = cycle_ts
+        _SCANNER_TS_CACHE["value"] = value
+    return value
 
 
 def _residual_of(trade: dict[str, Any]) -> Optional[float]:
@@ -1292,6 +1435,19 @@ def exit_state(trade: dict[str, Any]) -> dict[str, Any]:
 # soldi ogni secondo (H4) — il backoff è pensato per i ritentativi, non per
 # rimandare una NUOVA regola peggiorativa.
 URGENT_EXIT_KINDS = ("loss", "red_card", "mandatory")
+# cadenza dei ricontrolli in 'waiting_price' (solo feed, nessuna REST) e
+# diradamento del log 'exit_wait' relativo (1, 2, 3, poi uno ogni 12 ~ 1/min)
+WAITING_PRICE_RETRY_S = float(XE.RETRY_BACKOFF_S[0])
+WAITING_PRICE_LOG_EVERY = 12
+# CERTIFICAZIONE 12/09 — la CADENZA dell'attesa prezzo vive in memoria, non sul
+# DB: ``last_wait_at``/``wait_attempts`` cambiano a OGNI giro, quindi scriverli
+# nel meta faceva una lettura + una scrittura ogni 5 s per ogni posizione senza
+# prezzo opposto, per sempre (su questo progetto l'esaurimento dell'IO Supabase
+# e' gia' successo). Sul DB si scrive solo quando cambia qualcosa che l'utente
+# deve vedere (primi tentativi, cambio di motivo/errore, o una volta ogni
+# WAITING_PRICE_LOG_EVERY). Perso al riavvio: si riparte con un ricontrollo
+# subito, che e' il comportamento prudente.
+_EXIT_WAIT_AT: dict[int, float] = {}
 
 
 def _exit_due(trade: dict[str, Any], now_ts: float,
@@ -1302,12 +1458,29 @@ def _exit_due(trade: dict[str, Any], now_ts: float,
     decisione; una decisione URGENTE nuova (perdita, rosso, obbligo tennis) lo
     scavalca: aspettare 5 minuti per chiudere una posizione che sta perdendo
     non è un ritentativo, è un danno."""
+    st = exit_state(trade)
     if decision is not None and decision.kind in URGENT_EXIT_KINDS:
-        st = exit_state(trade)
         if str(st.get("kind") or "") not in URGENT_EXIT_KINDS:
             return True   # regola NUOVA e urgente: si invia subito
-    nxt = XE.parse_ts(exit_state(trade).get("next_retry_at"))
-    return nxt is None or now_ts >= nxt
+    nxt = XE.parse_ts(st.get("next_retry_at"))
+    if nxt is None or now_ts >= nxt:
+        return True
+    # 12/09: 'waiting_price' (nessun prezzo opposto nel feed) NON e' un
+    # fallimento dell'invio: ricontrollare costa una lettura del feed, non una
+    # chiamata a Betfair. Un backoff fino a 300 s su una posizione che sta
+    # PERDENDO era un danno: la cadenza e' il primo gradino (5 s), sempre.
+    if str(st.get("state") or "") == "waiting_price":
+        # cadenza dalla memoria di processo (niente scritture); il valore sul
+        # meta resta come ripiego dopo un riavvio del servizio
+        try:
+            tid = int(trade.get("id"))
+        except (TypeError, ValueError):
+            tid = None
+        last = _EXIT_WAIT_AT.get(tid) if tid is not None else None
+        if last is None:
+            last = XE.parse_ts(st.get("last_wait_at"))
+        return last is None or now_ts - last >= WAITING_PRICE_RETRY_S
+    return False
 
 
 def _exit_candidates(open_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1374,7 +1547,7 @@ def process_exits(*, db, market, rows_by_event: dict[str, dict], params: dict[st
         return 0
     if not candidates:
         return 0
-    scanner_ts = _scanner_ts(db)
+    scanner_ts = _scanner_ts(db, now_ts)
     sent = 0
     for tr in candidates:
         try:
@@ -1549,10 +1722,21 @@ def _close_combo_siblings(*, db, market, legs: list[dict[str, Any]],
         except Exception as ex:  # noqa: BLE001
             res = {"error": "exception", "detail": str(ex)[:160]}
         if res.get("error"):
+            err = str(res.get("error") or "")
+            if err in ("chiusura_in_corso", "posizione_gia_chiusa") or \
+                    err.startswith("trade_non_aperto"):
+                # 12/09: una gamba GIA' in chiusura (o coperta) non e' un
+                # fallimento critico: la sua chiusura e' in volo o fatta.
+                _log(db, "exit_wait", {"trade_id": leg.get("id"),
+                                       "combo_id": (leg.get("meta") or {}).get("combo_id"),
+                                       "wait": err, "kind": "mandatory",
+                                       "reason": "combo_solidale"})
+                continue
             _log(db, "exit_failed", {"reason": "combo_gamba_non_chiusa",
                                      "trade_id": leg.get("id"),
                                      "combo_id": (leg.get("meta") or {}).get("combo_id"),
-                                     "err": res.get("error"), "critical": True})
+                                     "err": err, "detail": res.get("detail"),
+                                     "critical": True})
             continue
         _stamp_exit_on_parent(db, leg, "forced", reason)
         _log(db, "exit", {"trade_id": leg.get("id"), "event_id": leg.get("event_id"),
@@ -1595,10 +1779,8 @@ def _exit_model(opp_mod: Any, params: dict[str, Any]) -> Any:
 def _commission_of(trade: dict[str, Any], params: dict[str, Any]) -> float:
     """Aliquota di commissione della POSIZIONE: quella fissata al piazzamento
     (colonna ``commission``), altrimenti il parametro corrente."""
-    c = trade.get("commission")
-    if c is not None:
-        return min(1.0, max(0.0, _f(c, 0.0)))
-    return min(1.0, max(0.0, _f(params.get("commission_pct"), 5.0) / 100.0))
+    fallback = min(1.0, max(0.0, _f(params.get("commission_pct"), 5.0) / 100.0))
+    return _commission_rate(trade.get("commission"), fallback)
 
 
 def _market_implied_p_sel(trade: dict[str, Any], prices: dict[str, Any]) -> Optional[float]:
@@ -1646,6 +1828,21 @@ def _p_calcio(*, db, trade: dict[str, Any], payload: dict[str, Any], side: Optio
     model = _exit_model(opp_mod, params)
     if model is None or payload.get("score_home") is None or payload.get("score_away") is None:
         return None
+    # CERTIFICAZIONE 12/09 — MODELLO CIECO NEL RECUPERO.
+    # Oltre il 90'+recupero i tassi residui tornano il pavimento e il book
+    # dichiara P = 99,8% PIATTA fino al 120': non perche' l'esito sia certo,
+    # ma perche' e' finita la tabella. Qui la P finisce anche SOTTO GLI OCCHI
+    # dell'utente (meta.exit_hold.p_lose, KPI, tooltip della tabella): restituire
+    # None fa ripiegare il chiamante sulla probabilita' IMPLICITA DEL MERCATO,
+    # che nel recupero e' l'unica fonte onesta. La DECISIONE di uscire e' gia'
+    # protetta a valle in exits.py: qui si protegge il NUMERO MOSTRATO.
+    try:
+        opp = opp_mod or _import_opportunity_module()
+        if opp is not None and getattr(opp, "model_is_blind", None) is not None:
+            if opp.model_is_blind(payload.get("minute")):
+                return None
+    except Exception:  # noqa: BLE001 — mai per un controllo di sicurezza
+        pass
     key = _prob_key_for_trade(trade, payload, side)
     if not key:
         return None
@@ -2166,13 +2363,28 @@ def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],
         waits = int((meta.get(EXIT_KEY) or {}).get("wait_attempts") or 0) + 1
         req.update({"note": err})
         _persist_exit_request(db, trade, req)
-        _write_exit_state(db, trade, trade.get("meta") or meta, state="waiting_price",
-                          kind=decision.kind, reason=decision.reason,
-                          last_error=err, wait_attempts=waits,
-                          next_retry_at=_iso_in(now, XE.retry_backoff_s(waits)))
-        _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
-                               "reason": decision.reason, "wait": "niente_da_chiudere",
-                               "attempt": waits, "note": res.get("note")})
+        # 12/09: il ricontrollo del prezzo e' a cadenza FISSA (WAITING_PRICE_RETRY_S,
+        # vedi _exit_due), non col backoff lungo: ``next_retry_at`` resta per la
+        # UI; ``last_wait_at`` guida la cadenza; il log si dirada.
+        try:
+            _EXIT_WAIT_AT[int(trade["id"])] = now.timestamp()
+        except (TypeError, ValueError, KeyError):
+            pass
+        prev_exit = (trade.get("meta") or meta or {}).get(EXIT_KEY) or {}
+        cambiato = (str(prev_exit.get("state") or "") != "waiting_price"
+                    or str(prev_exit.get("kind") or "") != str(decision.kind)
+                    or str(prev_exit.get("reason") or "") != str(decision.reason)
+                    or str(prev_exit.get("last_error") or "") != str(err))
+        if cambiato or waits <= 3 or waits % WAITING_PRICE_LOG_EVERY == 0:
+            _write_exit_state(db, trade, trade.get("meta") or meta, state="waiting_price",
+                              kind=decision.kind, reason=decision.reason,
+                              last_error=err, wait_attempts=waits,
+                              last_wait_at=now.isoformat(),
+                              next_retry_at=_iso_in(now, WAITING_PRICE_RETRY_S))
+        if waits <= 3 or waits % WAITING_PRICE_LOG_EVERY == 0:
+            _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
+                                   "reason": decision.reason, "wait": "niente_da_chiudere",
+                                   "attempt": waits, "note": res.get("note")})
         return False
     if err == "posizione_gia_chiusa" or \
             (isinstance(err, str) and err.startswith("trade_non_aperto")):
@@ -2330,14 +2542,72 @@ def _reserve_row(*, event_id, event_name, sport, strategy, market_id, market_typ
     }
 
 
+def _paper_ladder(side: str, feed_prices: Optional[dict[str, Any]],
+                  best_size: Optional[float] = None) -> Optional[tuple]:
+    """Livello di libro per il fill PAPER dal feed: ((prezzo abbinabile, size)).
+
+    12/09 (paper = live senza soldi): ``omega_engine.paper_fill`` senza ladder
+    riempie TUTTA la size AL PREZZO RICHIESTO, qualunque sia il libro. Con un
+    livello reale del feed un LAY a P si abbina solo se P >= miglior lay
+    disponibile (e AL prezzo del libro, come Betfair), un BACK solo se
+    P <= miglior back; la size e' cappata alla liquidita' del feed. Prezzo del
+    lato ASSENTE nel feed = in live il FOK muore -> livello a size 0 (nessun
+    fill). ``feed_prices`` None (nessuna riga) -> None: il chiamante decide.
+
+    LIQUIDITA': prima la size del livello, poi ``best_size`` dichiarata dal
+    chiamante (la stessa che il segnale/opportunita' ha visto sul book). Se
+    NESSUNA delle due e' nota il livello vale 0: chi non sa quanto c'e' sul
+    book non ottiene fill (stessa regola di ``paper_fill``, mai fill regalati)."""
+    if not isinstance(feed_prices, dict):
+        return None
+    px = _f(feed_prices.get(side), 0.0)
+    if px <= 1.0:
+        return ((0.0, 0.0),)
+    avail = feed_prices.get(f"{side}_size")
+    if avail is None:
+        avail = best_size
+    if avail is None:
+        return ((px, 0.0),)
+    return ((px, max(0.0, _f(avail, 0.0))),)
+
+
 def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
-             now: datetime, best_size: Optional[float], ladder: Any) -> X.PlaceOutcome:
+             now: datetime, best_size: Optional[float], ladder: Any,
+             feed_prices: Optional[dict[str, Any]] = None) -> X.PlaceOutcome:
     """Esegue la riga riservata e la porta a 'open'/'error' (o la lascia
-    'pending' se il fill arriva dalla coda flumine)."""
+    'pending' se il fill arriva dalla coda flumine).
+
+    12/09 — guardie di APERTURA comuni a tutti i percorsi (segnali, opportunita',
+    anomalie, combo, manuale):
+      • size sotto il minimo REALE Betfair (``params.min_stake``, 2 €) = rifiuto
+        certo in live -> errore parlante ANCHE in paper (prima il paper la
+        riempiva e il live no: paper ≠ live);
+      • fill PAPER sul libro del feed (``_paper_ladder``): prezzo abbinabile e
+        liquidita' reali, mai "al prezzo richiesto qualunque sia il mercato".
+        Senza prezzi del feed (``feed_prices`` None) in paper non si simula
+        nulla: errore ``paper_prezzi_non_disponibili``."""
+    side = str(row["side"])
+    mode = str(row["mode"])
+    try:
+        size = float(row["size"])
+    except (TypeError, ValueError):
+        size = 0.0
+    min_stake = max(0.0, _f(params.get("min_stake"), 2.0))
+    if min_stake > 0 and size < min_stake - 1e-9:
+        _place_fail(db, trade_id, row, f"size_sotto_minimo_betfair:{size:.2f}<{min_stake:.2f}",
+                    now, params)
+        return X.PlaceOutcome("error", None, 0.0, None,
+                              f"size_sotto_minimo_betfair:{size:.2f}<{min_stake:.2f}")
+    if mode == "paper" and not ladder:
+        lvl = _paper_ladder(side, feed_prices, best_size)
+        if lvl is None:
+            _place_fail(db, trade_id, row, "paper_prezzi_non_disponibili", now, params)
+            return X.PlaceOutcome("error", None, 0.0, None, "paper_prezzi_non_disponibili")
+        ladder = lvl
     out = X.place(
-        db=db, market=market, mode=str(row["mode"]), event_id=str(row["event_id"]),
+        db=db, market=market, mode=mode, event_id=str(row["event_id"]),
         market_id=str(row["market_id"]), selection_id=int(row["selection_id"]),
-        side=str(row["side"]), price=row["price"], size=row["size"],
+        side=side, price=row["price"], size=row["size"],
         best_size=best_size, ladder=ladder, client_ref=f"safe-t{trade_id}",
         trade_id=int(trade_id), meta=dict(row.get("meta") or {}), now=now,
         params=params,
@@ -2471,6 +2741,42 @@ def _sig(signal: Any, name: str, default: Any = None) -> Any:
 _SKIP_LOG_STATE: dict[tuple[str, str], dict[str, Any]] = {}
 _SKIP_LOG_PRUNE_S = 600.0
 
+# CERTIFICAZIONE 12/09 — NOMI DELLE PARTITE PER L'ATTIVITA'.
+# Il servizio scriveva solo l'``event_id`` nei log: nella scheda Attivita' il
+# trader leggeva "NON ENTRATO 36050104 · spread_anomalo" e non sapeva di quale
+# partita si parlasse (la UI provava a risolverlo dalle righe caricate, ma un
+# evento uscito dal feed tornava a essere un numero). Il nome ce l'ha il feed:
+# lo si registra UNA volta per ciclo e lo si allega a ogni riga di attivita'.
+# Mappa di processo con tetto: nessuna scrittura in piu' sul DB.
+_EVENT_NAMES: dict[str, str] = {}
+_EVENT_NAMES_MAX = 800
+
+
+def remember_event_names(rows: Any) -> None:
+    """Memorizza event_id -> nome leggibile dalle righe del feed unico."""
+    if not isinstance(rows, (list, tuple)):
+        return
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        eid = str(r.get("event_id") or "")
+        if not eid:
+            continue
+        pl = r.get("payload") if isinstance(r.get("payload"), dict) else {}
+        name = str(pl.get("event_name") or "").strip()
+        if not name:
+            home, away = str(pl.get("home") or "").strip(), str(pl.get("away") or "").strip()
+            name = f"{home} v {away}".strip(" v") if (home or away) else ""
+        if name:
+            _EVENT_NAMES[eid] = name
+    if len(_EVENT_NAMES) > _EVENT_NAMES_MAX:      # tetto: mai crescita illimitata
+        for k in list(_EVENT_NAMES)[:len(_EVENT_NAMES) - _EVENT_NAMES_MAX]:
+            _EVENT_NAMES.pop(k, None)
+
+
+def event_name_for(event_id: Any) -> Optional[str]:
+    return _EVENT_NAMES.get(str(event_id or "")) or None
+
 
 def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any],
               kind: str = "skip") -> bool:
@@ -2558,7 +2864,9 @@ def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
 
 
 def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
-                   mode: str, now: datetime, risk_ctx: Optional[dict] = None) -> "tuple[int, int]":
+                   mode: str, now: datetime, risk_ctx: Optional[dict] = None,
+                   scanner_ts: Optional[float] = None,
+                   scanner_ts_known: bool = False) -> "tuple[int, int]":
     """(piazzati, segnali_attivi). Un segnale già tradato non si ripiazza (I1
     per (event_id, signal_key)); le barriere di rischio sono le stesse del
     manuale più il motore ``risk`` (gate prima della riserva)."""
@@ -2590,6 +2898,9 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     max_spread = float(params.get("max_spread_ratio") or 1.6)
     rows_by_event = {str(r.get("event_id")): r for r in rows if isinstance(r, dict)
                      and r.get("event_id")}
+    now_ts = now.timestamp()
+    if not scanner_ts_known:
+        scanner_ts = _scanner_ts(db, now_ts)
     placed = 0
     for s in signals:
         key = _sig(s, "key")
@@ -2600,6 +2911,14 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             continue
         variant = str(_sig(s, "variant") or "")
         if variants and variant not in variants:
+            continue
+        # 12/09: mai un ingresso su una riga del feed NON FRESCA (scanner fermo
+        # o partita non riscritta da >120 s): il paper riempirebbe a quote
+        # vecchie, il live manderebbe un FOK a vuoto.
+        feed_row = rows_by_event.get(str(event_id))
+        if not _row_is_fresh(feed_row, now_ts, scanner_ts):
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "reason": _stale_reason(feed_row)})
             continue
         # H-21: budget dei ritentativi dopo un rifiuto dell'exchange
         blocked_place = place_allowed(db, now, params, event_id, key)
@@ -2643,8 +2962,13 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                                       selection_id=selection_id, market_id=str(market_id))
         ratio = XE.spread_ratio(feed_prices)
         if ratio is None or ratio > max_spread:
+            # CERT. 12/09 — due cose diverse avevano la STESSA etichetta. Con il
+            # lato back assente il rapporto non e' calcolabile e scrivere
+            # "spread anomalo · rapporto n/d" dice al trader una cosa che non e'
+            # stata misurata. Il motivo vero e' che meta' del book non c'e'.
+            motivo = "spread_anomalo" if ratio is not None else "book_senza_lato_back"
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
-                                        "reason": "spread_anomalo",
+                                        "reason": motivo,
                                         "back": (feed_prices or {}).get("back"),
                                         "lay": (feed_prices or {}).get("lay"),
                                         "spread_ratio": ratio, "max_spread_ratio": max_spread})
@@ -2695,7 +3019,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         traded.add((str(event_id), str(key)))
         _risk_commit(risk_ctx, {**row, "id": trade_id})
         out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
-                       now=now, best_size=avail, ladder=())
+                       now=now, best_size=avail, ladder=(), feed_prices=feed_prices)
         if out.status != "error":
             placed += 1
     return placed, len(signals)
@@ -2986,7 +3310,9 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                           rows_by_event: Optional[dict] = None,
                           extra: Optional[dict] = None,
                           auto_trade_kinds: Optional[dict] = None,
-                          risk_ctx: Optional[dict] = None) -> dict[str, int]:
+                          risk_ctx: Optional[dict] = None,
+                          scanner_ts: Optional[float] = None,
+                          scanner_ts_known: bool = False) -> dict[str, int]:
     """Calcola le opportunità sugli in-play (calcio: modello + combo + anomalie
     dell'ultimo cecchino; tennis: modello tennis) e le pubblica (write-on-change),
     ogni ``opps_interval_s``. ``opps`` di ogni evento = tutti i tipi fusi e
@@ -3008,6 +3334,12 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
     if now_ts - float(st.get("last_ts") or 0.0) < every:
         return out
     st["last_ts"] = now_ts
+    # 12/09: l'heartbeat dello scanner si legge UNA volta per ciclo e si passa a
+    # tutte le partite (prima ogni _auto_trade_opps/_auto_trade_combos faceva la
+    # sua SELECT: con 100 in-play erano 100 letture ogni 2 s).
+    if not scanner_ts_known:
+        scanner_ts = _scanner_ts(db, now_ts)
+        scanner_ts_known = True
     hashes = st.setdefault("hashes", {})
     counts = {"model": 0, "anomaly": 0, "combo": 0, "tennis": 0}
     to_write: list[dict] = []
@@ -3047,7 +3379,8 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
                 out["traded"] += _auto_trade_opps(
                     db=db, market=market, payload=payload, event_id=event_id, opps=t_opps,
                     params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
-                    sport="tennis", kind="tennis", risk_ctx=risk_ctx)
+                    sport="tennis", kind="tennis", risk_ctx=risk_ctx,
+                    scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
             continue
         if sport != "calcio" or model is None or opp_mod is None:
             continue
@@ -3104,12 +3437,14 @@ def process_opportunities(*, db, market, rows: list[dict], params: dict, model: 
             out["traded"] += _auto_trade_opps(
                 db=db, market=market, payload=payload, event_id=event_id, opps=opps,
                 params=params, mode=mode, now=now,
-                rows_by_event=rows_by_event or {}, risk_ctx=risk_ctx)
+                rows_by_event=rows_by_event or {}, risk_ctx=risk_ctx,
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
         if kinds.get("combo") and combos:
             out["traded"] += _auto_trade_combos(
                 db=db, market=market, payload=payload, event_id=event_id, combos=combos,
                 params=params, mode=mode, now=now, rows_by_event=rows_by_event or {},
-                risk_ctx=risk_ctx)
+                risk_ctx=risk_ctx,
+                scanner_ts=scanner_ts, scanner_ts_known=scanner_ts_known)
     st["counts"] = counts
     if to_write:
         try:
@@ -3171,11 +3506,13 @@ def _score_of(payload: dict, sport: str) -> Optional[str]:
 def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
                      params: dict, mode: str, now: datetime,
                      rows_by_event: dict, sport: str = "calcio", kind: str = "model",
-                     risk_ctx: Optional[dict] = None) -> int:
+                     risk_ctx: Optional[dict] = None,
+                     scanner_ts: Optional[float] = None,
+                     scanner_ts_known: bool = False) -> int:
     """Tratta le opportunità che superano confidenza+edge minimi (strategia
     'model', tipo in ``meta.kind``; tennis: stake ``risk.model_stake``).
     DISATTIVO per default: si accende solo da parametri. Gate ``risk`` prima
-    della riserva."""
+    della riserva. 12/09: riga del feed FRESCA obbligatoria."""
     min_conf = float(params.get("opps_min_confidence") or 0.0)
     min_edge = float(params.get("opps_min_edge") or 0.0)
     stake = float(params.get("opps_stake") or 0.0) if kind == "model" \
@@ -3183,6 +3520,13 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
     cap = float(params.get("max_liability_per_trade") or 0.0)
     commission = float(params.get("commission_pct", 5.0)) / 100.0
     if stake <= 0:
+        return 0
+    if not scanner_ts_known:
+        scanner_ts = _scanner_ts(db, now.timestamp())
+    feed_row = (rows_by_event or {}).get(str(event_id))
+    if not _row_is_fresh(feed_row, now.timestamp(), scanner_ts):
+        _log_skip(db, now, params, {"event_id": event_id, "signal_key": f"{kind}:*",
+                                    "reason": _stale_reason(feed_row)})
         return 0
     try:
         traded = set(db.traded_signal_keys() or set())
@@ -3243,10 +3587,40 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
         traded.add((event_id, key))
         _risk_commit(risk_ctx, {**row, "id": trade_id})
         out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
-                       now=now, best_size=avail, ladder=())
+                       now=now, best_size=avail, ladder=(),
+                       feed_prices=_feed_prices_of(rows_by_event, event_id, row))
         if out.status != "error":
             n += 1
     return n
+
+
+def _feed_prices_of(rows_by_event: Optional[dict], event_id: str,
+                    row: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Prezzi della selezione della riga riservata dal feed (per il fill paper)."""
+    try:
+        return prices_from_row((rows_by_event or {}).get(str(event_id)),
+                               market_type=str(row.get("market_type") or ""),
+                               selection_id=int(row.get("selection_id") or 0),
+                               market_id=row.get("market_id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
+                  scanner_ts: Optional[float]) -> bool:
+    """12/09: nessun piazzamento AUTOMATICO su una riga del feed non fresca
+    (``exits.feed_is_fresh``: ≤ 20 s o scanner vivo, mai oltre 120 s). Il
+    motore e i modelli non guardano ``updated_at``: con lo scanner fermo i
+    segnali restavano 'attivi' e il paper riempiva a quote vecchie (live: FOK
+    a vuoto). Riga assente = non fresca."""
+    return isinstance(row, dict) and XE.feed_is_fresh(row, now_ts, scanner_ts)
+
+
+def _stale_reason(row: Optional[dict[str, Any]]) -> str:
+    """Motivo dello scarto per FRESCHEZZA, distinto per l'operatore: la partita
+    NON e' nel feed (lo scanner non la sta seguendo) oppure c'e' ma le sue quote
+    sono vecchie. Due guasti diversi, due interventi diversi."""
+    return "feed_non_fresco" if isinstance(row, dict) else "feed_assente"
 
 
 # ---------------------------------------------------------------------------
@@ -3280,7 +3654,9 @@ def _leg_matchable(leg: dict, stake: float, rows_by_event: dict, event_id: str) 
 
 def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list,
                        params: dict, mode: str, now: datetime, rows_by_event: dict,
-                       risk_ctx: Optional[dict] = None) -> int:
+                       risk_ctx: Optional[dict] = None,
+                       scanner_ts: Optional[float] = None,
+                       scanner_ts_known: bool = False) -> int:
     """Piazza ogni combo con TUTTE le gambe o NESSUNA: soglie su confidenza/edge
     della combo, gate ``risk`` sulla liability complessiva, riserva di tutte le
     gambe (una qualunque fallita → le riserve fatte si liberano), in paper una
@@ -3293,7 +3669,15 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
     stake = float(RK.risk_params(params).get("model_stake") or 0.0)
     cap = float(params.get("max_liability_per_trade") or 0.0)
     commission = float(params.get("commission_pct", 5.0)) / 100.0
+    min_stake = max(0.0, _f(params.get("min_stake"), 2.0))
     if stake <= 0:
+        return 0
+    if not scanner_ts_known:
+        scanner_ts = _scanner_ts(db, now.timestamp())
+    feed_row = (rows_by_event or {}).get(str(event_id))
+    if not _row_is_fresh(feed_row, now.timestamp(), scanner_ts):
+        _log_skip(db, now, params, {"event_id": event_id, "signal_key": "combo:*",
+                                    "reason": _stale_reason(feed_row)})
         return 0
     try:
         traded = set(db.traded_signal_keys() or set())
@@ -3323,12 +3707,43 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
         rows: list[dict] = []
         total_liab = 0.0
         ok = True
-        ratios = [_f(l.get("stake_ratio"), 0.0) for l in legs]
-        if any(r <= 0 for r in ratios) or abs(sum(ratios) - 1.0) > 0.05:
-            ratios = [1.0 / len(legs)] * len(legs)
-        for leg, key, ratio in zip(legs, keys, ratios):
+        # CERTIFICAZIONE 12/09 — SI ESEGUONO GLI STAKE VERIFICATI.
+        # Prima la gamba veniva ricalcolata da ``stake_ratio`` e ri-arrotondata
+        # al centesimo: su una quota alta mezzo centesimo vale piu' del profitto
+        # bloccato, quindi il lock CERTIFICATO da combos.py non era quello
+        # eseguito e il "rischio zero" poteva uscire negativo. Ora si parte
+        # dagli stake pubblicati (gia' verificati anche contro il ri-arrotondamento)
+        # e li si scala sul totale voluto.
+        # ``book_supports_min`` = il book regge la combinazione al totale MINIMO.
+        # Se non lo regge NESSUNO stake la rende intera: si salta. Se invece lo
+        # regge, si controlla soltanto che il totale che stiamo per usare superi
+        # ``min_total_stake`` (il flag ``executable_whole`` riguarda gli stake
+        # PUBBLICATI, che sono quasi sempre piu' bassi del nostro totale: usarlo
+        # come veto scartava anche le combinazioni buone).
+        if c.get("book_supports_min") is False:
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": keys[0],
+                                        "reason": "combo_book_non_regge_il_minimo",
+                                        "min_total_stake": c.get("min_total_stake")})
+            continue
+        want_total = round(float(stake) * len(legs), 2)
+        min_total = _f(c.get("min_total_stake"), 0.0)
+        if min_total > 0 and want_total + 1e-9 < min_total:
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": keys[0],
+                                        "reason": "combo_totale_sotto_minimo",
+                                        "size": want_total, "min_stake": min_total})
+            continue
+        base_total = _f(c.get("total_stake"), 0.0)
+        published = [_f(l.get("stake"), 0.0) for l in legs]
+        if base_total > 0 and all(s > 0 for s in published):
+            scale = want_total / base_total
+            leg_stakes = [round(s * scale, 2) for s in published]
+        else:   # combo senza stake pubblicati (contratto vecchio): ripiego sui ratio
+            ratios = [_f(l.get("stake_ratio"), 0.0) for l in legs]
+            if any(r <= 0 for r in ratios) or abs(sum(ratios) - 1.0) > 0.05:
+                ratios = [1.0 / len(legs)] * len(legs)
+            leg_stakes = [round(want_total * r, 2) for r in ratios]
+        for leg, key, leg_stake in zip(legs, keys, leg_stakes):
             side = str(leg.get("side") or "").lower()
-            leg_stake = round(stake * len(legs) * ratio, 2)
             try:
                 price = float(leg.get("price"))
                 sid = int(leg.get("selection_id"))
@@ -3336,6 +3751,16 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
                 ok = False
                 break
             if side not in ("back", "lay") or price <= 1.0 or not leg.get("market_id")                     or leg_stake <= 0:
+                ok = False
+                break
+            # 12/09: una gamba sotto il minimo REALE Betfair fa fallire _execute
+            # DOPO che le altre sono gia' state piazzate -> combo rotta e
+            # posizione nuda da svolgere. "Tutte o nessuna" si decide PRIMA
+            # della riserva, non davanti al rifiuto dell'exchange.
+            if leg_stake < min_stake - 1e-9:
+                _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
+                                            "reason": "combo_gamba_sotto_minimo",
+                                            "size": leg_stake, "min_stake": min_stake})
                 ok = False
                 break
             if mode == "paper" and not _leg_matchable(leg, leg_stake, rows_by_event, event_id):
@@ -3392,7 +3817,8 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
         for row, tid in zip(rows, ids):
             _risk_commit(risk_ctx, {**row, "id": tid})
             out = _execute(db=db, market=market, trade_id=tid, row=row, params=params,
-                           now=now, best_size=row.get("size"), ladder=())
+                           now=now, best_size=row.get("size"), ladder=(),
+                           feed_prices=_feed_prices_of(rows_by_event, event_id, row))
             if out.status != "error":
                 placed_legs += 1
                 live_ids.append(int(tid))
@@ -3516,7 +3942,9 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
                       opp_mod: Any, anomaly_mod: Any, mode: str, now: datetime,
                       state: Optional[dict] = None, auto_trade: bool = False,
                       rows_by_event: Optional[dict] = None,
-                      risk_ctx: Optional[dict] = None) -> dict[str, int]:
+                      risk_ctx: Optional[dict] = None,
+                      scanner_ts: Optional[float] = None,
+                      scanner_ts_known: bool = False) -> dict[str, int]:
     """Valuta ``anomaly.detect(payload, book, params=)`` per ogni in-play calcio
     il cui ``odds_ts_ms`` è cambiato dall'ultima valutazione (ogni ciclo, non
     sulla cadenza delle opportunità); l'ultimo esito per evento resta in
@@ -3567,6 +3995,17 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
         out["found"] += len(found)
         if not auto_trade or not found or stake <= 0:
             continue
+        # 12/09: il CECCHINO non spara su quote vecchie. Il gate ``odds_ts_ms``
+        # non basta: al primo giro dopo un riavvio ``seen_ts`` e' vuoto e una
+        # riga ferma da minuti verrebbe valutata come nuova. Stessa regola dei
+        # segnali/opportunita'/combo (``_row_is_fresh``).
+        if not scanner_ts_known:
+            scanner_ts = _scanner_ts(db, now_ts)
+            scanner_ts_known = True
+        if not _row_is_fresh(row, now_ts, scanner_ts):
+            _log_skip(db, now, params, {"event_id": event_id, "signal_key": "anomaly:*",
+                                        "reason": _stale_reason(row)})
+            continue
         if traded is None:
             try:
                 traded = set(db.traded_signal_keys() or set())
@@ -3597,7 +4036,10 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
                           {"event_id": event_id, "market_type": mt,
                            "liability": liability, "strategy": "model"}, signal_key=key):
                 continue
-            row = _reserve_row(
+            # NB: ``res_row`` (riserva), non ``row`` (riga del FEED di questa
+            # partita): schiacciarla qui dentro renderebbe cieco ogni controllo
+            # sul feed a valle del ciclo delle anomalie.
+            res_row = _reserve_row(
                 event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
                 strategy="model", market_id=mid, market_type=mt, selection_id=sid,
                 selection_name=o.get("selection_name"), side=side, mode=mode, price=price,
@@ -3607,7 +4049,7 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
                 meta={**_model_meta(o, "anomaly", side), "sniper": True,
                       "anomaly_type": o.get("anomaly_type") or o.get("type")})
             try:
-                trade_id = db.insert_trade(row)
+                trade_id = db.insert_trade(res_row)
             except Exception:  # noqa: BLE001
                 dedupe[dkey] = now_ts
                 continue
@@ -3615,9 +4057,10 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
                 continue
             dedupe[dkey] = now_ts
             traded.add((event_id, key))
-            _risk_commit(risk_ctx, {**row, "id": trade_id})
-            res = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
-                           now=now, best_size=o.get("size_available"), ladder=())
+            _risk_commit(risk_ctx, {**res_row, "id": trade_id})
+            res = _execute(db=db, market=market, trade_id=trade_id, row=res_row, params=params,
+                           now=now, best_size=o.get("size_available"), ladder=(),
+                           feed_prices=_feed_prices_of(rows_by_event, event_id, res_row))
             if res.status != "error":
                 out["traded"] += 1
     if rows:
@@ -3662,6 +4105,10 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         _log(db, "error", {"reason": "feed_failed", "err": str(ex)[:160]})
         rows = []
     rows_by_event = {str(r.get("event_id")): r for r in rows if r.get("event_id")}
+    # nomi delle partite per l'ATTIVITA' (cert. 12/09): il feed ce li ha, i log
+    # no — senza questo il trader legge "NON ENTRATO 36050104" e non sa di che
+    # partita si parli. Costo: nessuna lettura in piu'.
+    remember_event_names(rows)
 
     # (a) coda flumine — SEMPRE (anche a bot fermo: mai posizioni nude)
     n_polled = poll_flumine(db=db, params=params, now=now, market=market)
@@ -3786,6 +4233,17 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
 
 
 def _log(db, kind: str, payload: dict[str, Any]) -> None:
+    # CERTIFICAZIONE 12/09 — ogni riga di attivita' porta il NOME della partita
+    # quando lo conosciamo (vedi ``remember_event_names``): nella scheda
+    # Attivita' il trader deve leggere "Daegu Fc - Yongin FC", non "36050104".
+    # Qui, nel punto unico di scrittura, cosi' vale per TUTTI i kind.
+    try:
+        if isinstance(payload, dict) and payload.get("event_id") and not payload.get("event_name"):
+            nm = event_name_for(payload.get("event_id"))
+            if nm:
+                payload = {**payload, "event_name": nm}
+    except Exception:  # noqa: BLE001 — mai per un'etichetta
+        pass
     try:
         db.log(kind, payload)
     except Exception:  # noqa: BLE001 — il log non ferma mai il trading

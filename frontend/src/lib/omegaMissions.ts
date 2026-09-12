@@ -66,13 +66,29 @@ export interface MissionTrade {
     score_at_entry?: string | null;
     placed_at?: string | null;
     origin?: 'auto' | 'manual' | null;
+    /** dal 12/09 (migrazione omega_models_v6.sql): gamba di CHIUSURA (cash out /
+     *  green-up) dell'apertura indicata — mai una posizione a sé */
+    closes_trade_id?: number | null;
+    settled_at?: string | null;
+    /** meta RIDOTTO al contratto UI (§17.4): reconciling, reason, error_final,
+     *  leg_failed, error_at, no_fill_at, locked_pnl, hedged_size, residual_size,
+     *  if_win, hedging, exit_kind, exit_reason, exit_profit, cashout.
+     *  Assente con la RPC precedente alla v6. */
+    meta?: Record<string, unknown> | null;
 }
 
 export interface MissionLeg {
     realized: number | null;
+    /** rischio VIVO delle aperture (0 a copertura completa, residuo se parziale) */
     open_liability: number | null;
+    /** aperture vive (mai le gambe di chiusura) */
     n_open: number | null;
+    /** aperture regolate (mai le gambe di chiusura) */
     n_settled: number | null;
+    /** v6: P&L già bloccato dalle coperture complete ancora da regolare */
+    locked_pnl?: number | null;
+    /** v6: quota del rischio che è un ordine a esito ignoto in verifica */
+    reconciling_liability?: number | null;
     trades: MissionTrade[];
 }
 
