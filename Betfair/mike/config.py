@@ -219,6 +219,29 @@ PARAM_SPEC: dict[str, Spec] = {
     # dedup dei log ripetitivi per partita (skip / no_fill / riconciliazione):
     # lo stesso motivo non viene riscritto piu' di una volta ogni N secondi.
     "skip_log_interval_s": (300, int, 10, 3600, None),
+    # ---- quanto spesso si disturba il database (13/09) ----
+    # Il budget di IO di Supabase non e' infinito: finito quello, l'istanza viene
+    # strozzata e i tempi di risposta esplodono (guides/troubleshooting/
+    # exhaust-disk-io). Misurato: una lettura per chiave primaria arrivata a 39
+    # secondi, e la query che il ciclo fa ogni secondo che smette di rispondere.
+    # Questi parametri NON toccano la logica di trading: dicono solo ogni quanto
+    # si richiede al database una cosa che nel frattempo non e' cambiata.
+    #
+    # il FEED: lo scanner non lo aggiorna piu' in fretta di cosi', e la soglia di
+    # freschezza delle quote (``feed_max_age_s``) e' comunque 15 s
+    "feed_cache_s": (2.0, float, 0.0, 30.0, None),
+    # le PARTITE: il servizio e' l'UNICO che scrive mike_events, quindi la sua
+    # copia in memoria e' la verita'. La rilettura completa serve solo a
+    # riallinearsi dopo un riavvio o una modifica fatta da fuori.
+    "events_reload_s": (60.0, float, 0.0, 600.0, None),
+    # gli AGGREGATI governano lo stop giornaliero: non e' una decisione al secondo
+    "aggregates_cache_s": (20.0, float, 0.0, 300.0, None),
+    # la riparazione dello specchio gambe <-> righe e' una RETE DI SICUREZZA,
+    # non un passaggio del flusso: per partita basta ogni mezzo minuto
+    "reconcile_every_s": (30.0, float, 0.0, 600.0, None),
+    # quando non c'e' NIENTE che si muove (nessuna partita in gioco, nessun
+    # ordine vivo, nessuna richiesta) il ciclo rallenta da solo
+    "idle_cycle_s": (5.0, float, 1.0, 60.0, None),
 }
 
 # Parametri RIMOSSI dalla whitelist l'11/09/2026 (audit M3) perche' non avevano

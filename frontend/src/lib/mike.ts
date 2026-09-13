@@ -464,6 +464,11 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'max_liability_per_match', label: 'Cap capitale per partita (€)', kind: 'number', step: 5, min: 0, max: 100_000, hint: '0 = off; clamp anche dentro il motore', group: 'rischio' },
     { key: 'event_loss_cap_pct', label: 'Cap perdita per partita %', kind: 'number', step: 5, min: 0, max: 500, hint: 'oltre: chiusura forzata', group: 'rischio' },
     { key: 'skip_log_interval_s', label: 'Log skip ogni (s)', kind: 'number', step: 30, min: 10, max: 3600, hint: '', group: 'rischio' },
+    { key: 'feed_cache_s', label: 'Rileggi il feed ogni (s)', kind: 'number', step: 0.5, min: 0, max: 30, hint: 'lo scanner non lo aggiorna più in fretta: rileggerlo a ogni giro consuma il budget di IO del database senza dare nulla in più', group: 'rischio' },
+    { key: 'events_reload_s', label: 'Rileggi tutte le partite ogni (s)', kind: 'number', step: 10, min: 0, max: 600, hint: 'fra una rilettura e l’altra vale la copia in memoria: il servizio è l’unico che scrive le schede', group: 'rischio' },
+    { key: 'aggregates_cache_s', label: 'Ricalcola gli aggregati ogni (s)', kind: 'number', step: 5, min: 0, max: 300, hint: 'governano lo stop giornaliero, non è una decisione al secondo', group: 'rischio' },
+    { key: 'reconcile_every_s', label: 'Ripara lo specchio ordini ogni (s)', kind: 'number', step: 5, min: 0, max: 600, hint: 'rete di sicurezza fra gambe e righe di database: per partita basta ogni mezzo minuto', group: 'rischio' },
+    { key: 'idle_cycle_s', label: 'Ciclo a riposo ogni (s)', kind: 'number', step: 1, min: 1, max: 60, hint: 'senza partite in gioco né ordini vivi il ciclo rallenta da solo', group: 'rischio' },
 ];
 
 export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
@@ -490,6 +495,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     reentry_exit_until_min: 0, reentry_price_min_over_entry: true, reentry_hold_if_loss: false,
     settle_confirm_s: 60, max_open_matches: 10, daily_loss_stop: 50, max_liability_per_match: 0,
     event_loss_cap_pct: 100, skip_log_interval_s: 300,
+    feed_cache_s: 2, events_reload_s: 60, aggregates_cache_s: 20, reconcile_every_s: 30, idle_cycle_s: 5,
 };
 
 export type MikeParams = Record<string, number | boolean | string>;

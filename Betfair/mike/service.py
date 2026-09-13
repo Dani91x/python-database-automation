@@ -188,6 +188,77 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                "cover_stage", "cover_stage1_at", "cover_forced")
 
 
+# ===========================================================================
+# FAR RESPIRARE IL DATABASE (13/09/2026)
+# ===========================================================================
+# Il budget di IO di Supabase non e' infinito: finito quello l'istanza viene
+# STROZZATA, i tempi di risposta esplodono, l'autovacuum salta e alla fine il
+# database non risponde piu' (guides/troubleshooting/exhaust-disk-io). Misurato
+# sul campo il 13/09: una lettura per chiave primaria arrivata a 39 secondi, e
+# la query che questo ciclo fa ogni secondo che ha smesso di rispondere del
+# tutto. Con letture cosi' il ciclo non chiude mai, e le partite restano ferme
+# dove sono — che e' esattamente quello che si vedeva in pagina.
+#
+# Queste cache NON cambiano una virgola della logica di trading. Cambiano solo
+# ogni quanto si richiede al database una cosa che nel frattempo non e'
+# cambiata. Ognuna ha il suo parametro, quindi si stringe o si allarga dalla UI.
+#
+# Money-critical: il FEED e' l'unica lettura che influenza una decisione di
+# mercato, ed e' per questo che la sua cache e' cortissima (2 s di default,
+# contro i 15 s di ``feed_max_age_s`` oltre i quali il bot si ferma da solo).
+# La freschezza continua a essere giudicata sull'``updated_at`` della riga, non
+# su quando l'abbiamo letta: una riga vecchia resta vecchia anche se la
+# rileggiamo adesso.
+class _Cache:
+    """Un valore letto dal database, con la sua scadenza."""
+
+    __slots__ = ("valore", "letto_a")
+
+    def __init__(self) -> None:
+        self.valore: Any = None
+        self.letto_a: float = 0.0
+
+    def fresco(self, ora: float, ttl: float) -> bool:
+        return self.valore is not None and (ora - self.letto_a) < ttl
+
+    def metti(self, valore: Any, ora: float) -> Any:
+        self.valore, self.letto_a = valore, ora
+        return valore
+
+    def svuota(self) -> None:
+        self.valore, self.letto_a = None, 0.0
+
+
+# parametri dell'ULTIMO giro: il loop li usa per decidere quanto aspettare,
+# invece di rileggere il control una seconda volta a ogni secondo
+_ULTIMI_PARAMS: Optional[Dict[str, Any]] = None
+
+_CACHE_FEED = _Cache()
+_CACHE_AGGREGATI = _Cache()
+# le partite seguite: il servizio e' l'UNICO che scrive ``mike_events``, quindi
+# la copia in memoria E' la verita' fra una rilettura e l'altra. La rilettura
+# completa serve solo a riallinearsi dopo un riavvio o una modifica fatta da
+# fuori (per esempio a mano sul database).
+_CACHE_EVENTI: Dict[str, Dict[str, Any]] = {}
+_EVENTI_LETTI_A: float = 0.0
+# ultima riparazione dello specchio gambe <-> righe, per partita
+_RICONCILIATO_A: Dict[str, float] = {}
+
+
+def svuota_le_cache() -> None:
+    """Butta via tutto il letto: la prossima lettura va al database.
+
+    Serve ai test e a chi vuole forzare un riallineamento immediato.
+    """
+    global _EVENTI_LETTI_A, _ULTIMI_PARAMS
+    _ULTIMI_PARAMS = None
+    _CACHE_FEED.svuota()
+    _CACHE_AGGREGATI.svuota()
+    _CACHE_EVENTI.clear()
+    _RICONCILIATO_A.clear()
+    _EVENTI_LETTI_A = 0.0
+
+
 _MALFORMED_LOGGED: Dict[str, float] = {}   # {event_id: epoch} — dedup dell'attivita' 'leg_malformata'
 _MALFORMED_EVERY_S = 300.0
 
@@ -544,6 +615,22 @@ def settle_plan(b35: Optional[dict], b45: Optional[dict], info: F.EventInfo
 _LAST_AGG: Dict[str, Any] = {}
 
 
+def _aggregates_cached(db: Any, now: datetime, params: Dict[str, Any],
+                       forza: bool = False) -> Dict[str, Any]:
+    """Gli aggregati, ricalcolati al massimo ogni ``aggregates_cache_s``.
+
+    Governano lo stop giornaliero e i numeri in cima alla pagina: nessuno dei
+    due e' una decisione al secondo, e la RPC che li calcola scorre l'intera
+    ``mike_trades``. ``forza=True`` dopo un'azione: se qualcosa e' appena
+    cambiato il numero va rifatto subito.
+    """
+    ora = now.timestamp()
+    ttl = float(params.get("aggregates_cache_s") or 0.0)
+    if not forza and _CACHE_AGGREGATI.fresco(ora, ttl):
+        return _CACHE_AGGREGATI.valore
+    return _CACHE_AGGREGATI.metti(_aggregates(db, now), ora)
+
+
 def _aggregates(db: Any, now: datetime) -> Dict[str, Any]:
     """Aggregati con MEMORIA dell'ultima lettura buona.
 
@@ -853,6 +940,8 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     if mode not in ("paper", "live"):
         mode = "paper"
     params = C.merge_params(control.get("params"))
+    global _ULTIMI_PARAMS
+    _ULTIMI_PARAMS = params
     running = status == "running"
     eff = _params_for(params, running, mode)
     _config_warn(db, params)
@@ -864,20 +953,47 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike] fail_stale_processing KO: %s", str(ex)[:120])
 
-    # feed unico: UNA lettura per ciclo
+    # feed unico: UNA lettura ogni ``feed_cache_s``, non a ogni giro.
+    # Lo scanner non lo aggiorna piu' in fretta di cosi', e la FRESCHEZZA delle
+    # quote continua a essere giudicata sull'``updated_at`` della riga (vedi
+    # ``feed.feed_fresh``): una riga vecchia resta vecchia anche rileggendola.
     if rows is None:
-        rows = list(db.fetch_scan_rows() or [])
+        ttl_feed = float(params.get("feed_cache_s") or 0.0)
+        if _CACHE_FEED.fresco(now_ts, ttl_feed):
+            rows = _CACHE_FEED.valore
+        else:
+            rows = _CACHE_FEED.metti(list(db.fetch_scan_rows() or []), now_ts)
     rows_by_event = {str(r.get("event_id")): r for r in rows if r.get("event_id")}
     scanner_age = _scanner_age(db, now_ts)
 
     # partite seguite (stato persistito): ANCHE le terminali recenti (SKIPPED/
     # SETTLED), così non vengono ri-armate come nuove candidate
-    try:
-        since = datetime.fromtimestamp(now_ts - 48 * 3600, tz=timezone.utc).isoformat()
-        tracked = {str(e["event_id"]): e for e in (db.list_events(since_iso=since) or [])}
-    except Exception as ex:  # noqa: BLE001
-        db.log("error", {"reason": "events_failed", "err": str(ex)[:160]})
-        return {"skipped": "events_unreadable"}
+    # Rilettura COMPLETA ogni ``events_reload_s``; fra una e l'altra vale la
+    # copia in memoria, che il ciclo aggiorna scrivendoci sopra. E' corretto
+    # perche' il servizio e' l'UNICO che scrive ``mike_events``: le richieste
+    # della UI passano da ``mike_requests``, che si legge a parte a ogni giro.
+    global _EVENTI_LETTI_A
+    ttl_eventi = float(params.get("events_reload_s") or 0.0)
+    if _CACHE_EVENTI and (now_ts - _EVENTI_LETTI_A) < ttl_eventi:
+        tracked = _CACHE_EVENTI
+    else:
+        try:
+            since = datetime.fromtimestamp(now_ts - 48 * 3600, tz=timezone.utc).isoformat()
+            letti = {str(e["event_id"]): e for e in (db.list_events(since_iso=since) or [])}
+        except Exception as ex:  # noqa: BLE001
+            db.log("error", {"reason": "events_failed", "err": str(ex)[:160]})
+            # Il database non risponde. Se abbiamo gia' una copia in memoria si
+            # continua a lavorare con quella invece di fermare TUTTO: una
+            # posizione aperta non puo' restare senza nessuno che la guardi
+            # perche' una select e' andata in timeout.
+            if not _CACHE_EVENTI:
+                return {"skipped": "events_unreadable"}
+            letti = None
+        if letti is not None:
+            _CACHE_EVENTI.clear()
+            _CACHE_EVENTI.update(letti)
+            _EVENTI_LETTI_A = now_ts
+        tracked = _CACHE_EVENTI
     for ev in tracked.values():
         ev.setdefault("mode", mode)
 
@@ -885,7 +1001,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # PIAZZAMENTO — M6) = REGOLATO + BLOCCATO. Il bloccato sono i cicli già
     # chiusi/greenati non ancora pagati dal mercato: prima erano invisibili allo
     # stop e il bot continuava ad aprire dopo aver già perso il massimo.
-    agg = _aggregates(db, now)
+    agg = _aggregates_cached(db, now, params)
     day_start_ts = _operating_day_start_ts(now)
     locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     realized_today = float(agg.get("realized_today", 0.0))
@@ -979,7 +1095,7 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         status = "stopped"
 
     if n_actions or n_settled or n_requests:
-        agg = _aggregates(db, now)            # aggiornati dopo le azioni del ciclo
+        agg = _aggregates_cached(db, now, params, forza=True)   # qualcosa e' cambiato
         locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     by_state: Dict[str, int] = {}
     for e in tracked.values():
@@ -988,6 +1104,18 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # aperte, partita per partita (un back coperto da lay non e' back + lay).
     open_liability = _open_liability(tracked, params, mode)
     realized_today = float(agg.get("realized_today", 0.0))
+    # QUANTA FRETTA HA IL PROSSIMO GIRO (13/09). Il ciclo pieno serve quando c'e'
+    # qualcosa che si muove da solo: una partita in gioco (i prezzi cambiano a
+    # ogni secondo), un ordine vivo sul book, una richiesta dalla UI. Senza
+    # niente di tutto questo -- la notte, o fra una giornata di partite e
+    # l'altra -- girare ogni secondo vuol dire solo consumare il budget di IO del
+    # database per rileggere cose ferme.
+    c_e_fretta = bool(n_requests) or any(
+        (e.get("live") or {}).get("inplay")
+        or any(str(l.get("status")) in ("pending", "pending_reconcile")
+               for l in (e.get("positions") or []))
+        for e in tracked.values()
+        if str(e.get("state")) not in E.TERMINAL_STATES)
     stats = {
         "events_feed": len(rows_by_event), "events_tracked": len(tracked), "by_state": by_state,
         "trades_open": int(agg.get("open_count", 0)), "open_liability": open_liability,
@@ -1026,7 +1154,8 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
             db.set_control(stats=stats, heartbeat_at=now.isoformat())
         except Exception as ex:  # noqa: BLE001
             logger.warning("[mike] set_control KO: %s", str(ex)[:160])
-    return {"status": status, "new": n_new, "actions": n_actions, "settled": n_settled,
+    return {"status": status, "fretta": c_e_fretta,
+            "new": n_new, "actions": n_actions, "settled": n_settled,
             "requests": n_requests, "stats": stats}
 
 
@@ -1170,8 +1299,16 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     dossier = ev.get("dossier") or {}
     settled = 0
 
-    # -- H2: specchio gambe <-> righe allineato a OGNI ciclo ----------------------
-    _reconcile_trades(db, ev["event_id"], ctx, info, mode, params, cache, open_refs)
+    # -- H2: specchio gambe <-> righe -------------------------------------------
+    # E' una RETE DI SICUREZZA (ripara righe mancanti o disallineate), non un
+    # passaggio del flusso: chiedere le righe di ordine di ogni partita a OGNI
+    # giro voleva dire una query al secondo per partita viva. Ogni mezzo minuto
+    # ripara le stesse cose, e il database respira.
+    _eid = str(ev["event_id"])
+    _ogni = float(params.get("reconcile_every_s") or 0.0)
+    if now_ts - float(_RICONCILIATO_A.get(_eid) or 0.0) >= _ogni:
+        _RICONCILIATO_A[_eid] = now_ts
+        _reconcile_trades(db, ev["event_id"], ctx, info, mode, params, cache, open_refs)
 
     # -- riga sparita dal feed o mercato chiuso: settlement via REST -------------
     # Una riga ASSENTE e' "chiusa" solo se manca da >= _ROW_MISSING_GRACE_S o se
@@ -2192,10 +2329,18 @@ def main() -> None:
         while True:
             interval = 2.0
             try:
-                ctrl = _real_db.read_control() or {}
-                params = C.merge_params(ctrl.get("params"))
+                # ``run_once`` rilegge il control da sola: leggerlo anche qui
+                # voleva dire due query al secondo per lo stesso dato. I
+                # parametri del giro PRECEDENTE bastano a decidere quanto
+                # aspettare prima del prossimo.
+                params = _ULTIMI_PARAMS or C.merge_params(None)
                 interval = max(1.0, float(params.get("decide_min_interval_ms", 500)) / 1000.0 * 2)
                 res = run_once(atlas=atlas, dry=args.dry)
+                params = _ULTIMI_PARAMS or params
+                # RITMO ADATTIVO: col ciclo pieno solo quando qualcosa si muove
+                # da solo (partita in gioco, ordine vivo, richiesta dalla UI).
+                if not res.get("fretta") and not res.get("actions") and not res.get("settled"):
+                    interval = max(interval, float(params.get("idle_cycle_s") or interval))
                 if res.get("new") or res.get("actions") or res.get("settled") or res.get("requests"):
                     logger.info("[mike] ciclo: %s", {k: res[k] for k in ("new", "actions", "settled", "requests")})
                 if args.once:

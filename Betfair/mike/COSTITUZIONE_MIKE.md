@@ -1445,3 +1445,86 @@ una per una — in paper si provocano senza conseguenze, ed è lì che vanno pro
    finché è fermo la coda non è una via di riserva.
 5. **`MIKE_LIVE_ENABLED` va acceso a mano** quando si decide davvero di operare. Se il bot
    è in modalità live e l'interruttore è spento, la pagina lo dice con un banner.
+
+---
+
+## §17 IL SOFTWARE DEVE LASCIAR RESPIRARE IL DATABASE (13/09/2026)
+
+### 17.1 Cosa è successo
+
+Il 13/09, con l'app **spenta**, una lettura per chiave primaria su Supabase ha impiegato
+**da 3 a 13 secondi**, e `omega_control` è andata in **timeout a 120 s**. Non era un
+problema di query: era il **budget di IO su disco esaurito**
+(`supabase.com/docs/guides/troubleshooting/exhaust-disk-io`). Quando quel budget finisce
+l'istanza viene **strozzata**: i tempi di risposta esplodono, l'autovacuum salta, e da lì
+in poi peggiora da sola.
+
+Il contributo di Mike era questo, **ogni secondo**:
+
+| lettura | cosa costava |
+|---|---|
+| `list_events(since=48h)` | `select *` su tutte le partite di due giorni, riga intera |
+| `fetch_scan_rows()` | tutto il feed unico |
+| RPC aggregati | scansione di `mike_trades` |
+| righe ordine per partita | una query **per ogni partita viva**, a ogni giro |
+
+86.400 giri al giorno, e Mike è **uno dei trenta servizi**. Il sintomo visibile in pagina
+erano le partite ferme in `HOLD` con il calcio d'inizio passato da un'ora: il motore
+decideva correttamente, ma il ciclo non chiudeva mai perché le letture non tornavano.
+
+### 17.2 La regola
+
+> **Non si chiede al database una cosa che il database non ha ancora avuto il tempo di
+> cambiare.**
+
+Non è un'ottimizzazione: è una **condizione di produzione**. Un'app che si blocca perché
+il database è stanco non è pronta per il live.
+
+### 17.3 Come è implementata (Mike)
+
+Cinque parametri, tutti regolabili dalla UI (gruppo *rischio*), tutti con default
+conservativi. **Nessuno di essi tocca la logica di trading**: cambiano solo *ogni quanto*
+si rilegge.
+
+| parametro | default | cosa governa | perché è sicuro |
+|---|---:|---|---|
+| `feed_cache_s` | 2 s | rilettura del feed unico | lo scanner non lo aggiorna più in fretta; la **freschezza** resta giudicata sull'`updated_at` della riga (`feed_max_age_s` = 15 s), non su quando l'abbiamo letta — una riga vecchia resta vecchia anche se la rileggiamo adesso |
+| `events_reload_s` | 60 s | rilettura completa di `mike_events` | il servizio è l'**unico** che scrive quella tabella: fra una rilettura e l'altra la copia in memoria *è* la verità. Le richieste della UI passano da `mike_requests`, letta a **ogni** giro |
+| `aggregates_cache_s` | 20 s | RPC degli aggregati | governano lo stop giornaliero e i numeri di testata: non sono decisioni al secondo. Dopo un'azione si **forza** il ricalcolo (`forza=True`) |
+| `reconcile_every_s` | 30 s | riparazione specchio gambe ↔ righe, **per partita** | è una **rete di sicurezza**, non un passaggio del flusso: ripara le stesse cose ogni mezzo minuto |
+| `idle_cycle_s` | 5 s | ritmo del ciclo a riposo | il ciclo pieno serve solo quando qualcosa si muove **da solo**: partita in gioco, ordine vivo sul book, richiesta dalla UI (`c_e_fretta`) |
+
+Due scelte meritano di essere scritte, perché sono money-critical:
+
+1. **Il feed ha la cache più corta di tutte** (2 s contro i 15 s della soglia di
+   freschezza) perché è l'**unica lettura che influenza una decisione di mercato**.
+2. **Se `list_events` fallisce e abbiamo già una copia in memoria, si continua a lavorare
+   con quella** invece di fermare tutto. Una posizione aperta non può restare senza
+   nessuno che la guardi perché una `select` è andata in timeout. Senza copia in memoria,
+   il comportamento resta quello di prima: si salta il giro.
+
+Il loop non rilegge più `mike_control` due volte per giro: `run_once` lo legge già, e i
+parametri del giro precedente (`_ULTIMI_PARAMS`) bastano a decidere quanto aspettare.
+
+### 17.4 Obblighi per chi tocca il codice
+
+1. **Ogni nuova lettura periodica deve avere il suo parametro di cadenza.** Una `select`
+   dentro un ciclo senza una cadenza dichiarata è un difetto, non una svista.
+2. **Le cache sono variabili di modulo**: ogni test deve azzerarle. Per Mike lo fa
+   `Betfair/mike/tests/conftest.py` (fixture autouse), che azzera anche i parametri di
+   cadenza — quasi tutti i test simulano più cicli nello **stesso istante**, cosa che
+   nella realtà non accade, e con le cache accese misurerebbero la cache invece del
+   comportamento. Chi vuole provare le cache lo fa **apposta**, passando i parametri
+   (`test_mike_respiro_db_2026_09_13.py`).
+3. **Mai mettere in cache una scrittura, né una lettura che decide un ordine senza un
+   criterio di freschezza sul dato stesso.**
+4. `svuota_le_cache()` esiste per forzare un riallineamento immediato (riavvio,
+   modifica fatta a mano sul database).
+
+### 17.5 Resta da fare
+
+- Estendere la stessa disciplina agli **altri servizi**. Safe ha già `poll_interval_s`
+  regolabile e Omega i suoi intervalli di refresh, ma nessuno dei due ha ancora una
+  **cache di lettura** con cadenza dichiarata.
+- Misurare i tempi di risposta **dopo** il riavvio con il respiro attivo, e confrontarli
+  con i 3-13 s misurati ad app spenta.
