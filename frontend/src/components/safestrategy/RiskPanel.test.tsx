@@ -31,8 +31,25 @@ describe('RiskPanel', () => {
     it('senza stats.risk: cap dai parametri, conteggi calcolati dalla UI', () => {
         render(<RiskPanel risk={null} opps={null} fallbackCounts={{ model: 1, anomaly: 0, combo: 0, tennis: 4 }} paramDailyCap={300} paramLossStop={-20} />);
         expect(screen.getByText('impegnato oggi / cap 300,00 €')).toBeInTheDocument();
-        expect(screen.getByTestId('risk-liability')).toHaveTextContent('0,00 €');
+        // CERT. 13/09 — ASSENTE NON E' ZERO. Il cap arriva dai parametri, ma
+        // l'impegnato di oggi non lo sa nessuno: scrivere «0,00 €» vorrebbe dire
+        // «oggi non hai rischiato nulla», che e' una BUGIA e la piu' pericolosa
+        // delle due (invita ad aprire posizioni su un cap gia' consumato).
+        expect(screen.getByTestId('risk-liability')).toHaveTextContent('—');
         expect(screen.getByTestId('risk-opp-counts')).toHaveTextContent('TENNIS 4');
+    });
+
+    it("assente non e' zero: senza impegnato la percentuale non si scrive", () => {
+        render(<RiskPanel risk={null} opps={null} paramDailyCap={300} />);
+        // niente «0%»: una percentuale calcolata su un dato che non c'e'
+        // sarebbe un altro zero inventato.
+        expect(screen.queryByText('0 %')).toBeNull();
+    });
+
+    it("con l'impegnato vero il numero e la percentuale ci sono", () => {
+        render(<RiskPanel risk={{ daily_liability: 150, daily_cap: 300 }} opps={null} />);
+        expect(screen.getByTestId('risk-liability')).toHaveTextContent('150,00 €');
+        expect(screen.getByText('50 %')).toBeInTheDocument();
     });
 });
 

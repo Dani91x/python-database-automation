@@ -52,12 +52,24 @@ export function RiskPanel({
     // sola casa, la tile "Liability aperta": mostrarlo anche qui (e nella barra
     // della giornata) faceva leggere tre volte due grandezze diverse con lo
     // stesso nome — certificazione 12/09.
-    const used = Number(risk?.daily_liability ?? dayLiability ?? 0);
-    const cap = Number(risk?.daily_cap ?? paramDailyCap ?? 0);
+    // CERT. 13/09 — assente ≠ zero: senza `stats.risk` e senza aggregati il
+    // pannello scriveva «0,00 € impegnato oggi», cioè «oggi non ho rischiato
+    // nulla». Ora il numero manca e si legge «—» (fmtMoney(null)), che è la
+    // verità. Stessa regola per il cap: «cap —» era già il comportamento voluto.
+    const num = (v: unknown): number | null => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const used: number | null = num(risk?.daily_liability ?? dayLiability);
+    const cap: number | null = num(risk?.daily_cap ?? paramDailyCap);
     // il servizio legge lo stop in valore assoluto: 50 e −50 sono −50 €
     const lossStop = normalizeLossStop(risk?.daily_loss_stop ?? paramLossStop ?? null);
     const stopActive = risk?.loss_stop_active === true;
-    const pctUsed = cap > 0 ? Math.max(0, Math.min(100, (used / cap) * 100)) : 0;
+    // la barra esiste solo se ENTRAMBI i numeri esistono: una percentuale
+    // calcolata su un dato assente sarebbe un altro zero inventato.
+    const hasCap = cap != null && cap > 0;
+    const pctUsed = hasCap && used != null ? Math.max(0, Math.min(100, (used / cap) * 100)) : 0;
     const barTone = stopActive || pctUsed >= 90 ? 'bg-red-500' : pctUsed >= 70 ? 'bg-amber-400' : 'bg-emerald-500';
     // M-21: se il servizio non pubblica i conteggi si usano quelli della UI —
     // gli STESSI che contano i tab, così i due numeri non divergono mai
@@ -95,8 +107,8 @@ export function RiskPanel({
                 <span className={`text-xl md:text-2xl font-display font-black ${stopActive ? 'text-red-400' : 'text-white/90'}`} data-testid="risk-liability">
                     {fmtMoney(used)}
                 </span>
-                <span className="text-[11px] text-slate-500">impegnato oggi / cap {cap > 0 ? fmtMoney(cap) : '—'}</span>
-                {cap > 0 && <span className="ml-auto text-[11px] text-slate-400">{fmtPctPoints(pctUsed, 0)}</span>}
+                <span className="text-[11px] text-slate-500">impegnato oggi / cap {hasCap ? fmtMoney(cap) : '—'}</span>
+                {hasCap && used != null && <span className="ml-auto text-[11px] text-slate-400">{fmtPctPoints(pctUsed, 0)}</span>}
             </div>
             <div className="text-[10px] text-slate-500" data-testid="risk-explain">
                 somma delle liability PIAZZATE oggi (anche su posizioni già chiuse): è la base dei cap.
