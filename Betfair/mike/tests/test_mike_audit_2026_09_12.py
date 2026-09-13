@@ -646,3 +646,62 @@ class TestRitentativoDelDossier:
         finally:
             MS.D.build_prematch = vecchio
         assert tracked["E1"]["dossier"]["lambda_home"] is None
+
+
+# ===========================================================================
+# CERT. 13/09 - le schede non si aggiornavano in UI: updated_at restava fermo
+# ===========================================================================
+class TestLaSchedaDiceQuandoEStataScritta:
+    """Il servizio tiene in memoria la riga LETTA dal DB, che porta gia' la sua
+    ``updated_at``. Con ``setdefault`` quel valore vecchio sopravviveva a ogni
+    riscrittura: i dati cambiavano (minuto, stato, prezzi) ma il timestamp no.
+    In UI le card sono memoizzate su ``updated_at`` -> restavano ferme.
+    Caso vivo: Shatin SA v Kowloon City, stato passato a FLAT 92 secondi prima,
+    ``updated_at`` fermo da 5.965 secondi."""
+
+    @staticmethod
+    def _cattura(monkeypatch):
+        """Intercetta la riga che finirebbe su Supabase, senza toccare il DB."""
+        from Betfair.mike import db as D
+        visto = {}
+
+        class _Tab:
+            def upsert(self, row, on_conflict=None):
+                visto["row"] = row
+                return self
+            def execute(self):
+                return type("R", (), {"data": []})()
+
+        class _SB:
+            def table(self, _n):
+                return _Tab()
+
+        monkeypatch.setattr(D, "_sb", lambda: _SB())
+        return D, visto
+
+    def test_una_riga_gia_scritta_riceve_un_timestamp_NUOVO(self, monkeypatch) -> None:
+        D, visto = self._cattura(monkeypatch)
+        vecchio = "2026-09-13T07:08:00+00:00"
+        D.upsert_event({"event_id": "E1", "state": "FLAT", "updated_at": vecchio})
+        assert visto["row"]["updated_at"] != vecchio, "il timestamp deve dire ADESSO"
+        assert visto["row"]["state"] == "FLAT"
+
+    def test_due_scritture_di_seguito_hanno_timestamp_diversi(self, monkeypatch) -> None:
+        """E' il comportamento che fa ridisegnare la card a ogni cambio."""
+        import time
+        D, visto = self._cattura(monkeypatch)
+        ev = {"event_id": "E1", "state": "LIVE_COVERED"}
+        D.upsert_event(ev)
+        primo = visto["row"]["updated_at"]
+        time.sleep(0.01)
+        ev["state"] = "FLAT"
+        D.upsert_event(ev)
+        assert visto["row"]["updated_at"] != primo
+
+    def test_la_riga_passata_dal_chiamante_non_viene_modificata(self, monkeypatch) -> None:
+        """``upsert_event`` lavora su una copia: lo stato in memoria del servizio
+        non deve ritrovarsi dentro un timestamp che non ha chiesto."""
+        D, _ = self._cattura(monkeypatch)
+        originale = {"event_id": "E1", "state": "FLAT"}
+        D.upsert_event(originale)
+        assert "updated_at" not in originale

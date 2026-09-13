@@ -88,8 +88,25 @@ def get_event(event_id: str) -> Optional[dict[str, Any]]:
 
 
 def upsert_event(row: dict[str, Any]) -> None:
+    """Salva la scheda di una partita. ``updated_at`` = ADESSO, sempre.
+
+    CERT. 13/09 — LE SCHEDE NON SI AGGIORNAVANO IN UI, e la causa era qui.
+    ``row`` e' lo stato dell'evento LETTO dal DB e tenuto in memoria dal
+    servizio: contiene gia' la chiave ``updated_at`` di quando fu scritto la
+    prima volta. Con ``setdefault`` quel valore vecchio NON veniva sostituito,
+    quindi il servizio riscriveva minuto, punteggio, prezzi e stato ma lasciava
+    il timestamp fermo.
+
+    Conseguenza in UI: le card sono memoizzate su ``updated_at`` (e il realtime
+    le ricarica alla notifica), percio' i dati erano freschi nel DB ma la scheda
+    sullo schermo restava quella di ore prima. Caso vivo: Shatin SA v Kowloon
+    City, stato passato a FLAT 92 secondi prima, ``updated_at`` fermo da 5.965.
+
+    ``updated_at`` significa "quando abbiamo scritto questa riga": va imposto,
+    non proposto.
+    """
     row = dict(row)
-    row.setdefault("updated_at", _now_iso())
+    row["updated_at"] = _now_iso()
     _sb().table(T_EVENTS).upsert(row, on_conflict="event_id").execute()
 
 

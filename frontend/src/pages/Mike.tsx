@@ -27,6 +27,7 @@ import { useMike } from '@/components/mike/useMike';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { MikeMatchCard } from '@/components/mike/MikeMatchCard';
 import { MikeTradesTable } from '@/components/mike/MikeTradesTable';
+import { SectionFilter, useSectionFilter } from '@/components/trading/SectionFilter';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
 import { TradingHistory } from '@/components/trading/TradingHistory';
@@ -61,12 +62,17 @@ const fetchDailyReadable = withMikeHistoryError(fetchMikeDaily);
 const fetchDayTradesReadable = withMikeHistoryError(fetchMikeDayTrades);
 
 // =============================================================== main page
+/** id delle sezioni della scheda Partite: entrano in localStorage, stabili. */
+const SEZIONI_PARTITE = ['pre', 'live'] as const;
+
 export default function Mike() {
     const bot = useMike({ onError: (m) => toast.error('Bot Mike', { description: m }) });
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [scanStatus, setScanStatus] = useState<ScanStatusRow | null>(null);
     const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
     const [tab, setTab] = useState('partite');
+    // filtri della scheda Partite: la scelta sopravvive al ricaricamento
+    const filtro = useSectionFilter('mike.partite.nascoste', SEZIONI_PARTITE);
     const notifiedRef = useRef<Set<string>>(new Set());
     const notifiedReqRef = useRef<Set<number>>(new Set());
     // memoria "è già andata in gioco": una card non torna mai in PRE-MATCH
@@ -408,7 +414,23 @@ export default function Mike() {
                         </EmptyState>
                     ) : (
                         <div className="space-y-4" data-testid="mike-cards">
+                            {/* FILTRI (13/09, richiesta utente): con molte partite seguite la
+                                sezione che interessa finiva sotto la piega. Il CONTEGGIO resta
+                                visibile anche a sezione nascosta e l'ultima accesa non si spegne. */}
+                            <SectionFilter
+                                testId="mike-filtro-sezioni"
+                                options={[
+                                    { id: 'pre', label: '⏱ Pre-match', count: sections.pre.length,
+                                      activeCls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
+                                    { id: 'live', label: '🔴 Live', count: sections.live.length,
+                                      activeCls: 'bg-violet-500/15 text-violet-300 border-violet-500/40' },
+                                ]}
+                                hidden={filtro.hidden}
+                                onToggle={filtro.toggle}
+                            />
+
                             {/* SEZIONE 1 — sempre la prima, anche vuota: l'occhio sa dove guardare */}
+                            {filtro.isVisible('pre') && (
                             <section data-testid="mike-section-pre">
                                 <h2 className="text-[11px] uppercase tracking-wide text-teal-300 font-heading font-bold mb-1.5">
                                     ⏱ PRE-MATCH ({sections.pre.length})
@@ -420,8 +442,10 @@ export default function Mike() {
                                         {sections.pre.map(renderCard)}
                                     </div>}
                             </section>
+                            )}
 
                             {/* SEZIONE 2 — le partite in gioco: entrano qui al fischio d'inizio e restano */}
+                            {filtro.isVisible('live') && (
                             <section data-testid="mike-section-live">
                                 <h2 className="text-[11px] uppercase tracking-wide text-violet-300 font-heading font-bold mb-1.5">
                                     🔴 LIVE ({sections.live.length})
@@ -433,6 +457,7 @@ export default function Mike() {
                                         {sections.live.map(renderCard)}
                                     </div>}
                             </section>
+                            )}
 
                             {/* SEZIONE 3 — ERROR/SKIPPED: prima invisibili, "Riprendi" irraggiungibile (H6) */}
                             {sections.fix.length > 0 && (
