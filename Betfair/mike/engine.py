@@ -209,6 +209,14 @@ class MatchCtx:
     # C3 — dopo un cash out manuale pre-KO il bot NON rientra da solo: solo
     # "Riprendi" dalla UI riabilita gli ingressi su questa partita.
     no_reentry: bool = False
+    # CERT. 13/09 — PREZZO UNDER AL FISCHIO D'INIZIO, registrato UNA volta sola.
+    # Serve a misurare quanto il mercato si muove fra il nostro ingresso
+    # pre-match e l'apertura del gioco: e' la domanda "di quanti tick siamo
+    # sotto/sopra appena si parte", e fino a oggi NESSUNA fonte lo conservava
+    # (il primo ordine Under in gioco arriva al 27' nel caso piu' precoce,
+    # mediana 54': sui 111 ingressi storici non c'e' una sola osservazione
+    # vicina al fischio). None = non ancora entrata in gioco, o prezzo assente.
+    ko_price_under: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -629,6 +637,31 @@ def prune_dead_legs(legs: List[Leg], max_per_role: int = MAX_CANCELLED_PER_ROLE)
         morte_per_ruolo[r] = n + 1
     tenere.reverse()
     return [l for l, ok in zip(legs, tenere) if ok]
+
+
+def drift_ticks(prezzo_ingresso: Optional[float], prezzo_ko: Optional[float]) -> Optional[int]:
+    """Tick fra il nostro prezzo d'ingresso e quello al fischio d'inizio.
+
+    NEGATIVO = il prezzo e' SCESO, cioe' a nostro favore su un back Under
+    (l'ordine di chiusura a due tick sotto e' piu' vicino).
+    POSITIVO = il prezzo e' SALITO, quindi siamo sotto.
+    None se manca un prezzo o la scala non li collega.
+
+    ``ticks_between`` accetta solo (basso, alto): il segno lo mettiamo qui.
+    """
+    try:
+        a = float(prezzo_ingresso) if prezzo_ingresso is not None else None
+        b = float(prezzo_ko) if prezzo_ko is not None else None
+    except (TypeError, ValueError):
+        return None
+    if not a or not b or a <= 1.0 or b <= 1.0:
+        return None
+    if a == b:
+        return 0
+    t = ticks_between(min(a, b), max(a, b))
+    if t is None:
+        return None
+    return -t if b < a else t
 
 
 def active_legs(legs: List[Leg]) -> List[Leg]:
@@ -1367,8 +1400,12 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                                selection=leg.selection))
         if S > 0:
-            return Decision("LIVE_UNCOVERED", acts, "in-play con posizione Under",
-                            updates={"entry_price_initial": ctx.entry_price_initial or Pe})
+            upd = {"entry_price_initial": ctx.entry_price_initial or Pe}
+            # il prezzo del fischio si scrive UNA volta: i giri successivi non
+            # devono sovrascriverlo col prezzo del 10' o del 40'
+            if ctx.ko_price_under is None and bk is not None and price_ok(bk.best_back):
+                upd["ko_price_under"] = float(bk.best_back)
+            return Decision("LIVE_UNCOVERED", acts, "in-play con posizione Under", updates=upd)
         return Decision("IDLE_LIVE", acts, "in-play senza posizione")
 
     if st == "WATCH":

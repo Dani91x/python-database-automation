@@ -778,3 +778,43 @@ class TestPotaturaDelleGambeMorte:
         prima = E.net_pnl_by_total(legs, 0.05)
         dopo = E.net_pnl_by_total(E.prune_dead_legs(legs), 0.05)
         assert prima == dopo
+
+
+# ===========================================================================
+# CERT. 13/09 - prezzo Under al FISCHIO: lo scostamento non era misurabile
+# ===========================================================================
+class TestPrezzoAlFischioDInizio:
+    """Domanda posta e senza risposta: «di quanti tick ci muoviamo fra il nostro
+    ingresso pre-match e il prezzo in gioco?». Nessuna fonte lo conservava — il
+    primo ordine Under in gioco arriva al 27' nel caso piu' precoce (mediana
+    54'), quindi sulle 111 posizioni storiche non c'era UNA osservazione vicina
+    al fischio. Ora il prezzo si registra al passaggio in gioco, una volta sola."""
+
+    def test_negativo_vuol_dire_a_nostro_favore(self) -> None:
+        """Su un back Under un prezzo che SCENDE avvicina l'ordine di chiusura."""
+        assert E.drift_ticks(1.50, 1.45) < 0
+        assert E.drift_ticks(1.50, 1.60) > 0
+        assert E.drift_ticks(1.50, 1.50) == 0
+
+    def test_conta_i_tick_veri_della_scala_betfair(self) -> None:
+        """Fra 1,50 e 1,45 ci sono 5 tick (passo 0,01 sotto 2,00)."""
+        assert E.drift_ticks(1.50, 1.45) == -5
+        assert E.drift_ticks(1.50, 1.60) == 10
+
+    def test_dati_mancanti_o_assurdi_non_inventano_un_numero(self) -> None:
+        for a, b in ((None, 1.5), (1.5, None), (None, None), (1.0, 1.5),
+                     (1.5, 1.0), (0, 1.5), ("x", 1.5), (1.5, "y")):
+            assert E.drift_ticks(a, b) is None, (a, b)
+
+    def test_il_prezzo_del_fischio_si_scrive_UNA_volta_sola(self) -> None:
+        """Al 10' o al 40' il campo NON si aggiorna: altrimenti non sarebbe piu'
+        il prezzo del fischio."""
+        import inspect
+        src = inspect.getsource(E._decide_prematch)
+        assert "ctx.ko_price_under is None" in src, \
+            "manca la guardia: il prezzo verrebbe sovrascritto a ogni giro in gioco"
+
+    def test_il_campo_sopravvive_al_salvataggio(self) -> None:
+        """Se non e' nei campi persistiti, al riavvio del servizio si perde."""
+        from Betfair.mike import service as S
+        assert "ko_price_under" in S._CTX_FIELDS

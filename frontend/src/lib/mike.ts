@@ -161,6 +161,15 @@ export interface MikeLive {
      *  e' cieco e decide su tabella empirica e mercato. Prima era sempre 'none'
      *  su ogni partita e non c'era modo di accorgersene. */
     lambda_source?: string | null;
+    /** cert. 13/09 — prezzo Under 3.5 al FISCHIO d'inizio, registrato una volta
+     *  sola. Fino a ieri nessuna fonte lo conservava: il primo ordine Under in
+     *  gioco arriva al 27' nel caso piu' precoce (mediana 54'), quindi lo
+     *  scostamento fra ingresso pre-match e apertura del gioco non era
+     *  misurabile su nessuna delle 111 posizioni storiche. */
+    ko_price_under?: number | null;
+    /** tick fra il nostro ingresso e il prezzo al fischio. NEGATIVO = prezzo
+     *  sceso, a nostro favore su un back Under. POSITIVO = siamo sotto. */
+    ko_drift_ticks?: number | null;
     score_home?: number | null;
     score_away?: number | null;
     red_home?: number;

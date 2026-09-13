@@ -766,6 +766,23 @@ function MikeMatchCardBase({
                 <span title="quota del PRIMO ingresso Under 3.5 su questa partita">
                     ingresso <span className="tabular-nums text-white/90">@{fmtOdds(ev.entry_price_initial)}</span>
                 </span>
+                {/* CERT. 13/09 — quota al FISCHIO d'inizio e scostamento in tick
+                    rispetto al nostro ingresso. Dice in un colpo d'occhio se il
+                    mercato si e' mosso a favore o contro nel passaggio dal
+                    pre-match al gioco: negativo = sceso = a nostro favore. */}
+                {live.ko_price_under != null && (
+                    <span
+                        data-testid="mike-ko-price"
+                        title="quota Under 3.5 al fischio d’inizio, e di quanti tick si è mossa rispetto al nostro ingresso (negativo = scesa, a nostro favore)"
+                    >
+                        al fischio <span className="tabular-nums text-white/90">@{fmtOdds(live.ko_price_under)}</span>
+                        {live.ko_drift_ticks != null && (
+                            <span className={`tabular-nums ml-1 ${live.ko_drift_ticks < 0 ? 'text-emerald-400' : live.ko_drift_ticks > 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                                {live.ko_drift_ticks > 0 ? '+' : ''}{live.ko_drift_ticks} tick
+                            </span>
+                        )}
+                    </span>
+                )}
                 {/* CERT. 12/09 — `cycleNumber` = cicli chiusi + 1: su una partita
                     REGOLATA o con tutti i cicli consumati usciva "ciclo 11 di 10".
                     Senza il massimo configurato usciva "ciclo 1 di 0". */}

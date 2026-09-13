@@ -117,7 +117,10 @@ def _iso(ts: Optional[float]) -> Optional[str]:
 # Serializzazione stato partita (mike_events) ⇄ MatchCtx
 # ---------------------------------------------------------------------------
 _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed", "reentry_done",
-               "close_reason", "cover_skipped", "seq", "flatten_pending", "no_reentry")
+               "close_reason", "cover_skipped", "seq", "flatten_pending", "no_reentry",
+               # CERT. 13/09: prezzo Under al fischio d'inizio (misura dello
+               # scostamento fra ingresso pre-match e apertura del gioco)
+               "ko_price_under")
 
 
 _MALFORMED_LOGGED: Dict[str, float] = {}   # {event_id: epoch} — dedup dell'attivita' 'leg_malformata'
@@ -1493,6 +1496,11 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   # su tabella empirica e mercato. Finche' il dossier era vuoto su tutti
                   # gli eventi era sempre "none" e nessuno poteva accorgersene.
                   "lambda_source": live.get("lambda_source"),
+                  # CERT. 13/09 — prezzo Under al FISCHIO e scostamento in tick
+                  # rispetto al nostro ingresso: dice se il mercato si e' mosso
+                  # a favore o contro nel passaggio dal pre-match al gioco.
+                  "ko_price_under": ctx.ko_price_under,
+                  "ko_drift_ticks": E.drift_ticks(ev.get("entry_price_initial"), ctx.ko_price_under),
                   "cashout": cashout_live, "cover_wait": extra.get("last_cover_wait"),
                   # CERTIFICAZIONE 12/09 — stessa BASE di ``cashout`` e
                   # ``liability`` (gambe ATTIVE): con le gambe archiviate dentro,
