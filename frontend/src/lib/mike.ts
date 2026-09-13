@@ -634,6 +634,35 @@ export type FeedTone = 'ok' | 'warn' | 'stale' | 'unknown';
 export interface FeedFreshness { tone: FeedTone; label: string; cls: string }
 
 /** Freschezza del feed PER PARTITA: ≤5 s verde, ≤20 s ambra, oltre "FEED FERMO". */
+/**
+ * L'età delle quote di QUESTA partita, calcolata ADESSO.
+ *
+ * CERT. 13/09, difetto #1 — money-critical. `live.feed_age_s` è congelato al
+ * momento in cui il servizio scrive la riga: se il servizio si ferma resta lì,
+ * verde, per sempre. E quel valore è il semaforo dei bottoni che mandano ordini
+ * veri: si poteva chiudere su prezzi vecchi di minuti credendoli di adesso.
+ *
+ * `published_ts` è un istante assoluto, quindi la differenza con l'orologio di
+ * chi guarda CRESCE da sola anche se non arriva più niente. Quando il servizio
+ * non lo pubblica (backend vecchio) si torna al valore congelato, che è pur
+ * sempre meglio di niente, ma non si finge che sia fresco.
+ */
+export function etaQuoteS(live: Partial<MikeLive> | null | undefined, nowMs: number): number | null {
+    // ATTENZIONE: `Number(null)` è 0, non NaN. Trattare un'età ASSENTE come
+    // zero secondi vorrebbe dire dichiarare freschissimo un dato che non c'è —
+    // ed è esattamente l'errore che il fail-closed del 12/09 aveva chiuso.
+    const grezza = live?.feed_age_s;
+    const congelata = (grezza == null || !Number.isFinite(Number(grezza)))
+        ? null : Number(grezza);
+    const viva = etaPubblicazioneS(live, nowMs);
+    if (viva != null) {
+        // l'età del FEED della partita più il tempo passato da quando il
+        // servizio l'ha scritta: è questa la distanza vera dai prezzi
+        return congelata == null ? viva : Math.round((congelata + viva) * 10) / 10;
+    }
+    return congelata;
+}
+
 export function feedFreshness(ageS: number | null | undefined): FeedFreshness {
     const n = ageS == null ? null : Number(ageS);
     if (n === null || !Number.isFinite(n)) {
@@ -1583,7 +1612,7 @@ export function totaleRisultati(eventi: readonly MikeEventGroup[]): {
  * pubblica ancora (backend vecchio): in quel caso chi chiama NON deve fingere
  * che il dato sia fresco.
  */
-export function etaPubblicazioneS(live: MikeLive | null | undefined, nowMs: number): number | null {
+export function etaPubblicazioneS(live: Partial<MikeLive> | null | undefined, nowMs: number): number | null {
     const ts = live?.published_ts;
     if (ts == null || !Number.isFinite(Number(ts))) return null;
     return Math.max(0, Math.round((nowMs / 1000 - Number(ts)) * 10) / 10);

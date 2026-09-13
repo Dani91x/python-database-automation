@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     groupMikeTrades, groupMikeTradesByEvent, fasePerCiclo, totaleRisultati,
-    etaPubblicazioneS, type MikeTrade, type MikeLive,
+    etaPubblicazioneS, etaQuoteS, type MikeTrade, type MikeLive,
 } from './mike';
 
 let seq = 0;
@@ -213,5 +213,30 @@ describe("l'età della riga pubblicata deve CRESCERE da sola", () => {
         expect(etaPubblicazioneS({} as MikeLive, Date.now())).toBeNull();
         expect(etaPubblicazioneS(null, Date.now())).toBeNull();
         expect(etaPubblicazioneS(live({ published_ts: null }), Date.now())).toBeNull();
+    });
+});
+
+describe("l'età delle QUOTE della partita comanda i bottoni con soldi veri", () => {
+    it('cresce da sola: un servizio fermo non resta verde per sempre', () => {
+        const live = { feed_age_s: 2, published_ts: 1_800_000_000 } as MikeLive;
+        expect(etaQuoteS(live, 1_800_000_000_000)).toBe(2);
+        expect(etaQuoteS(live, 1_800_000_030_000)).toBe(32);
+        expect(etaQuoteS(live, 1_800_000_300_000)).toBe(302);
+    });
+
+    it("età ASSENTE non è zero secondi: è «non lo so», e vale fail-closed", () => {
+        expect(etaQuoteS({ feed_age_s: null } as MikeLive, Date.now())).toBeNull();
+        expect(etaQuoteS({} as MikeLive, Date.now())).toBeNull();
+        expect(etaQuoteS(null, Date.now())).toBeNull();
+        expect(etaQuoteS({ feed_age_s: NaN } as MikeLive, Date.now())).toBeNull();
+    });
+
+    it('senza istante di pubblicazione resta il valore congelato, senza fingere', () => {
+        expect(etaQuoteS({ feed_age_s: 7 } as MikeLive, Date.now())).toBe(7);
+    });
+
+    it('con il solo istante di pubblicazione conta quello', () => {
+        const live = { published_ts: 1_800_000_000 } as MikeLive;
+        expect(etaQuoteS(live, 1_800_000_010_000)).toBe(10);
     });
 });

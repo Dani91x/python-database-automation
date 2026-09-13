@@ -1294,3 +1294,154 @@ righe di attività per partita, che è esattamente la zavorra da cui è arrivato
 Copertura di test: `Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py`, 42 casi —
 tre strade, matematica delle due tranche a quote diverse, soglia del minimo piazzabile,
 uscite globali, percorso live, riavvio a metà partita.
+
+---
+
+## §16 CERTIFICAZIONE PRE-PRODUZIONE (13/09/2026) E PROTOCOLLO DI VERIFICA IN LIVE
+
+Prima del passaggio a soldi veri sono state fatte girare **quattro certificazioni
+indipendenti e in parallelo** — separazione paper/live, logiche dell'engine, ciclo di vita
+dell'ordine, componenti della UI — ognuna con l'obbligo di **provare** ogni affermazione
+eseguendo un controesempio, non di dedurla.
+
+Il verdetto iniziale è stato **NO, non si può andare live**. Quello che segue è ciò che è
+stato trovato, ciò che è stato corretto, e ciò che **resta da verificare sul campo**.
+
+### 16.1 La regola che governa tutto: paper e soldi veri non si sommano MAI
+
+Un trader che legge `+42,10 €` deve sapere se sono quarantadue euro o quarantadue finti.
+È la differenza fra uno strumento e un giocattolo.
+
+| Dove | Com'era | Com'è |
+|---|---|---|
+| Aggregati SQL | nessun filtro su `mode`: «P&L oggi» e «P&L totale» avrebbero sommato euro veri e simulati | `mike_aggregates_sql(p_mode)` filtra sulla modalità **corrente del bot**, e pubblica entrambi i realizzati |
+| Pagina | tutte le righe insieme | solo la modalità in corso; quelle dell'altra vengono **dichiarate**, non nascoste |
+| Stop giornaliero e liability | sommavano tutte le partite seguite | filtrano per modalità: il rischio di una partita in paper non è rischio |
+| Ordini reali | **nessun interruttore**: l'unica barriera era il valore di una colonna sul database | `MIKE_LIVE_ENABLED`, spento di default |
+
+**`MIKE_LIVE_ENABLED` è l'ultima barriera prima di Betfair.** Mike piazza in REST diretto,
+quindi non è coperto da `LIVE_ORDER_MODE` né dal rifiuto cross-mode del worker della coda,
+che sono gli interruttori di Omega e Safe. Finché non è acceso nel `.env`, ogni tentativo
+di piazzare un ordine reale solleva **prima** di toccare la rete. Non è una scomodità: è la
+differenza fra «ho deciso di operare in live» e «il bot ha trovato un flag acceso da ieri».
+
+**Il `mode` si congela sulla PARTITA quando viene armata.** Riportare il toggle su paper
+**non** ferma quelle già avviate in live: continuano a coprirsi, chiudere e fare cash-out
+con soldi veri. Ora è un log critico, un numero pubblicato e un banner rosso in pagina —
+prima non lo diceva nessuno.
+
+### 16.2 I difetti corretti, con la conseguenza misurata
+
+Ordinati per quanto costavano. Ognuno ha il suo test in
+`tests/test_mike_certificazione_2026_09_13.py` e `tests/test_mike_paper_vs_live_2026_09_13.py`.
+
+| # | Difetto | Conseguenza misurata |
+|---|---|---|
+| 1 | le chiusure si piazzavano senza annullare le lay già **vive** sulla stessa selezione | **−9,39 €** su 10 di stake, e sull'esito **più probabile** |
+| 2 | il regolamento contava zero una gamba a esito **ignoto** | `settled_pnl` sbagliato fino a **133 €**, e lo stop giornaliero ci crede |
+| 2b | `pnl_indipendente_dal_risultato` chiudeva a 0,00 una partita con una gamba in riconciliazione | posizione forse **viva**, archiviata |
+| 3 | con un ordine ignoto l'apertura veniva tolta ma lo **stato avanzava** lo stesso | **13,50 €** su 20 di stake, e il bot si dichiarava coperto |
+| C-1 | il place-and-trim lasciava l'ordine **a riposo**; chi chiamava lo dava per rifiutato | ordine vivo su Betfair, invisibile → **posizione doppia** |
+| C-2 | il sotto-minimo forzato sulla coda che Mike non legge | il TTL annullava la gamba mentre il runner la piazzava → **posizione doppia** |
+| 4 | una gamba in riconciliazione **parzialmente** abbinata nascondeva il rischio | **99 € su 100** dichiarati zero |
+| 6 | il flatten archiviava una perdita **già certa** | **30 €** spariti dalla liability e dal tetto per partita |
+| 5 | seconda tranche che non parte mai senza l'orologio | posizione coperta a metà fino al fischio finale |
+| 7 | la copertura ordinata comprava nei secondi del gol | ~**1 €** di sovracosto per 10 di stake |
+| 8 | una probabilità `NaN` diventava quota 1000 | cash-out anticipato su un valore atteso inventato |
+| 9 | le celle del cash-out non sommavano al totale | 1 centesimo, ma chi somma con gli occhi trova un altro numero |
+| B1 | `onRequest` non restituiva una Promise | una chiusura **fallita** sembrava riuscita |
+| B2 | in live non confermato i due click si consumavano nel nulla | il bottone diceva di aver chiuso, il servizio non riceveva niente |
+| B3 | età dello scanner **fail-open** | feed illeggibile creduto fresco, bottoni con soldi veri accesi |
+| UI#1 | l'età delle quote era **congelata** | servizio fermo, badge verde per sempre, e quel badge è il semaforo dei bottoni |
+
+### 16.3 La UI, rifatta dove mentiva
+
+* **«Operazioni»**: una riga per **partita** col netto delle sue operazioni (commissione già
+  tolta), e il dettaglio **apribile** — prima cicli, poi i singoli ordini. Verde sopra zero,
+  rosso sotto. Prima era un elenco piatto di cicli sparsi fra partite diverse, e mostrava
+  gli stessi euro **due volte** (netto del ciclo sull'apertura, netto della gamba sulle
+  chiusure) senza che niente lo dicesse.
+* **«Risultati Pre-Match»** e **«Risultati Live»**: ogni partita finisce nei risultati della
+  fase in cui ha operato, e in **entrambe** se ha operato in entrambe. La fase si deduce dal
+  **ruolo della gamba che apre il ciclo**, non dall'orologio.
+* **«Regolate» è stata rimossa**: era una terza lista di card che ripeteva le stesse partite.
+* Il servizio **pubblica** quello che la UI ricalcolava per conto suo (posizione netta,
+  prezzo medio, prezzo e size di chiusura, **eseguibilità** del cash-out, cicli col loro
+  P&L, capitale impegnato, istante di pubblicazione). Due implementazioni della stessa cosa
+  divergono sempre, e su una scheda di trading divergere vuol dire mentire.
+* L'età delle quote **cresce da sola**: si calcola da `published_ts`, che è un istante
+  assoluto. Un'età **assente** non è zero secondi — è «non lo so», e vale fail-closed.
+
+### 16.4 🔴 LE 75 CONDIZIONI VANNO VERIFICATE PRIMA IN PAPER, POI IN LIVE
+
+**Questo è il punto che chiude la certificazione, e non è ancora fatto.**
+
+Il 13/09 sono state ripercorse **75 condizioni operative** — ogni ramo del codice, dal primo
+ordine pre-match al regolamento — dando i dati all'engine vero e leggendo cosa decide. Tutte
+e 75 sono risultate corrette, e l'utente le ha confermate una per una.
+
+Ma quella era una verifica **a tavolino**: dati costruiti, passati alla funzione `decide`,
+risposta letta. Non dice niente su cosa succede quando le stesse condizioni si presentano
+**da sole**, su partite vere, con il feed vero e il servizio che gira.
+
+Servono quindi **due passaggi, in quest'ordine**:
+
+> **1. IN PAPER — su partite vere, col servizio in esecuzione.** Ogni condizione va
+> osservata mentre accade: la riga di `mike_activity` che la registra, la riga di
+> `mike_trades` che ne esce, lo stato in cui la partita finisce. Certifica che il codice
+> faccia davvero, sul campo, quello che fa in laboratorio.
+>
+> **2. IN LIVE — su soldi veri.** Il paper resta una verifica contro il **nostro modello**
+> di Betfair, non contro Betfair: non conosce le code, i rifiuti reali, la latenza vera, i
+> mercati sospesi all'improvviso, i fill parziali che arrivano in ritardo.
+
+> **REGOLA: Mike non è certificato per la produzione finché tutte e 75 le condizioni non
+> sono state osservate almeno una volta IN PAPER sul campo, e poi almeno una volta IN LIVE,
+> con l'esito atteso in entrambi i casi.**
+
+Le 75 condizioni, per blocco (l'elenco operativo completo con i numeri attesi è nella
+sessione del 13/09 e va riportato qui man mano che vengono verificate):
+
+| Blocco | Condizioni | Che cosa certifica |
+|---|---|---|
+| 1 · Pre-match, chi entra e chi no | 1-13 | banda di prezzo, liquidità, spread, finestra, cicli, pausa, feed, mercato sospeso |
+| 2 · Il ciclo pre-match | 14-22 | ingresso, TTL, fill parziale, uscita appoggiata, ciclo chiuso, rientro |
+| 3 · L'ultimo ingresso (10′ dal fischio) | 23-27 | chiusura in profitto, HOLD in perdita, rientro in PERSIST, riprezzo |
+| 4 · Il fischio d'inizio | 28-32 | passaggio in gioco, nessuna posizione, residuo PERSIST e grazia |
+| 5 · La copertura su Over 4.5 | 33-43 | quando compra, quando aspetta, liquidità, riprezzo, troppi gol |
+| 6 · Le uscite globali | 44-52 | cash-out a soglia, intelligente, HT/2T a modello, cap, finestre |
+| 7 · Chiusura e residui | 53-56 | riprezzo, abbinamento, residuo minuscolo |
+| 8 · Il re-ingresso su Under 4.5 | 57-63 | gol, minuto, prezzo, già fatto, chiusura precedente |
+| 9 · Fine partita | 64-66 | mercato chiuso, punteggio, contabilità |
+| 10 · Eccezioni e comandi | 67-75 | esito ignoto, cash out manuale, flatten, saltata, stato imprevisto |
+
+Ogni condizione ha quindi **due caselle** da riempire: `paper` e `live`.
+
+**Come si verifica una condizione.** Serve, per ognuna: la riga di `mike_activity` che la
+registra, la riga di `mike_trades` con il suo esito, lo stato in cui la partita è finita, e
+il confronto col numero che il modello aveva previsto. Uno scarto va indagato **prima** di
+passare alla condizione successiva.
+
+**Ordine consigliato.** Le condizioni 1-27 (pre-match) si verificano senza rischio in gioco:
+sono il banco di prova naturale, e in paper si riempiono in una sola giornata di partite.
+Le 28-43 richiedono di portare almeno una posizione in gioco. Le 44-66 arrivano da sole con
+le partite. Le 67-75 (le eccezioni) **non si possono aspettare**: vanno provocate a mano,
+una per una — in paper si provocano senza conseguenze, ed è lì che vanno provate tutte.
+
+**Finché la colonna `paper` non è piena, non si passa in live. Finché la colonna `live` non
+è piena, lo `stake` resta al minimo e `max_open_matches` a 1.**
+
+### 16.5 Che cosa resta aperto
+
+1. **Le 75 condizioni: prima in PAPER sul campo, poi in LIVE** (§16.4). È il lavoro
+   principale, e la verifica in paper parte subito.
+2. **`migrations/mike_aggregati_per_modalita_2026-09-13.sql` da applicare.** Senza, gli
+   aggregati continuano a mescolare le due modalità. La migrazione fa `DROP` delle vecchie
+   funzioni a zero argomenti: se in futuro qualcuno riapplicasse `mike_bot_v2.sql`, le due
+   firme coesisterebbero e ogni chiamata diventerebbe ambigua — **riapplicare poi questa**.
+3. **Lo storico non filtra per modalità** (`get_mike_daily`, `get_mike_day_trades`): il
+   giorno della transizione sommerà euro veri e simulati, e per sempre.
+4. **Il runner flumine è fermo dal 2 settembre.** Non serve al percorso REST di Mike, ma
+   finché è fermo la coda non è una via di riserva.
+5. **`MIKE_LIVE_ENABLED` va acceso a mano** quando si decide davvero di operare. Se il bot
+   è in modalità live e l'interruttore è spento, la pagina lo dice con un banner.

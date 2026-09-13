@@ -34,7 +34,8 @@ import { sideMeta, T } from '@/lib/tradeStatus';
 import { MikeCashOutButton } from '@/components/mike/MikeCashOutButton';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import {
-    activeLegs, awaitingKickoff, bookOrders, cashoutBarPct, cycleNumber, eventFlags, feedFreshness, hasModel,
+    activeLegs, awaitingKickoff, bookOrders, cashoutBarPct, cycleNumber, eventFlags, feedFreshness,
+    etaQuoteS, hasModel,
     legSelectionLabel, legStatusLabel,
     lineLabel, marketLabel, marketStatusMeta, phaseMeta, pnlByTotalCells, positionRows, requestOutcome,
     roleLabel, VOID_ALL, MIKE_AWAITING_KICKOFF_NOTE,
@@ -516,7 +517,19 @@ function MikeMatchCardBase({
     // la barra parte da ZERO: un cash out NEGATIVO non è avanzamento (audit UI 6)
     const barPct = cashoutBarPct(coPct, threshold);
     const modelKnown = hasModel(ev);
-    const freshness = feedFreshness(live.feed_age_s);
+    // CERT. 13/09, difetto #1: l'età si calcola ADESSO e cresce da sola. Il
+    // tick da un secondo è lo stesso del countdown, quindi non costa niente.
+    const adesso = useSecondTick(true);
+    const etaQuote = etaQuoteS(live, adesso);
+    const freshness = feedFreshness(etaQuote);
+    // pubblicati dal servizio dal 13/09: la card LEGGE, non ricalcola
+    const cicliChiusi = Number(live.cicli_chiusi ?? ev.cycle_no ?? 0);
+    const pnlCicliChiusi = live.pnl_cicli_chiusi ?? null;
+    const posizioniPubblicate = live.posizioni ?? [];
+    // selezioni la cui chiusura NON è coperta dalla liquidità al prezzo giusto
+    const nonEseguibili = posizioniPubblicate
+        .filter((p) => p.eseguibile === false)
+        .map((p) => `${p.market}|${p.selection}`);
     // su una partita REGOLATA/SALTATA il feed non deve più arrivare: il badge
     // rosso "FEED FERMO" e l'allarme "linea assente" erano falsi allarmi su 34
     // schede chiuse (audit UI: rumore che nasconde gli allarmi veri)
@@ -790,6 +803,22 @@ function MikeMatchCardBase({
                     ciclo <span className="tabular-nums text-white/90" data-testid="mike-cycle">{cycleText_.value}</span>
                     <span className="text-slate-500"> {cycleText_.of}</span>
                 </span>
+                {/* CERT. 13/09, richiesta esplicita dell'utente: quanti cicli
+                    sono stati CHIUSI e quanto hanno reso. Prima il numero
+                    mostrato era quello del ciclo IN CORSO, e i cicli fatti
+                    stavano solo nel `title` — cioè da nessuna parte. */}
+                {cicliChiusi > 0 && (
+                    <span data-testid="mike-cicli-chiusi"
+                          title="cicli già aperti E chiusi su questa partita: il loro risultato non dipende più da come finisce">
+                        <span className="tabular-nums text-white/90">{cicliChiusi}</span>
+                        <span className="text-slate-500"> {cicliChiusi === 1 ? 'ciclo chiuso' : 'cicli chiusi'}</span>
+                        {pnlCicliChiusi != null && (
+                            <span className={`ml-1 tabular-nums font-semibold ${pnlClass(pnlCicliChiusi)}`}>
+                                {fmtMoney(pnlCicliChiusi, { signed: true })}
+                            </span>
+                        )}
+                    </span>
+                )}
                 {ev.settled_pnl != null && (
                     <span>regolato <span className={`tabular-nums font-semibold ${pnlClass(ev.settled_pnl)}`}>{fmtMoney(ev.settled_pnl, { signed: true })}</span></span>
                 )}
@@ -1005,6 +1034,23 @@ function MikeMatchCardBase({
                             className={`h-full ${coPct != null && coPct >= threshold ? 'bg-emerald-400' : 'bg-teal-400/70'}`}
                             style={{ width: `${barPct}%` }}
                         />
+                    </div>
+                    {/* CERT. 13/09 — «se chiudo ora» è il P&L al MIGLIOR prezzo:
+                        vale se al miglior prezzo c'è abbastanza liquidità per
+                        chiudere tutto. Quando non c'è, il numero sopra è una
+                        promessa che il book non mantiene, e va detto. */}
+                    <div className="text-[10px] mt-0.5 min-h-[13px]" data-testid="mike-cashout-eseguibile">
+                        {!terminal && nonEseguibili.length > 0 ? (
+                            <span className="text-amber-300"
+                                  title="al prezzo di chiusura il book non copre l'intera posizione: il valore qui sopra è il migliore dei casi, non quello che incasseresti">
+                                ⚠️ liquidità insufficiente su {nonEseguibili.map(lineLabel).join(', ')}:
+                                {' '}il valore qui sopra è il caso migliore
+                            </span>
+                        ) : !terminal && posizioniPubblicate.length > 0 ? (
+                            <span className="text-slate-500">
+                                eseguibile ai prezzi correnti · commissione {fmtPctPoints((cashout?.commission ?? 0) * 100, 1)} già tolta
+                            </span>
+                        ) : ''}
                     </div>
                     <div className="text-[10px] text-slate-400 mt-0.5 min-h-[13px]" data-testid="mike-cashout-smart">
                         {smartLabel(cashout?.smart ?? null, threshold, cashout?.base ?? null) ?? ''}

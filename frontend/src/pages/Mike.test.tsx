@@ -144,7 +144,7 @@ const TRADES = [
       liability: 10, status: 'won', pnl: 4.75, placed_at: NOW, settled_at: NOW, signal_key: null,
       meta: { pnl_gross: 5, commission_paid: 0.25 }, closes_trade_id: null, day_placed_at: NOW },
     { id: 11, event_id: 'e1', event_name: 'Roma v Lazio', strategy: 'mike', role: 'under_green', cycle_no: 0,
-      market_type: 'OVER_UNDER_35', selection_name: 'Under 3.5', side: 'lay', mode: 'live', price: 1.48, size: 10.14,
+      market_type: 'OVER_UNDER_35', selection_name: 'Under 3.5', side: 'lay', mode: 'paper', price: 1.48, size: 10.14,
       liability: 4.87, status: 'lost', pnl: -4.62, placed_at: NOW, settled_at: NOW, signal_key: null,
       meta: { exit_kind: 'greenup', exit_reason: 'green-up a +2 tick' }, closes_trade_id: 10, day_placed_at: NOW },
 ];
@@ -392,6 +392,25 @@ describe('Mike page — Operazioni, Risultati, Attività, KPI', () => {
         expect(apri).toHaveAttribute('aria-expanded', 'true');
         expect(within(tabella).getByText(/Green-up Under 3\.5/)).toBeInTheDocument();
         expect(screen.getByTestId('equity-card')).toBeInTheDocument();
+    });
+
+    it('PAPER e SOLDI VERI non si sommano MAI: la pagina mostra una modalità sola', async () => {
+        mState.mockResolvedValue(state({
+            trades: [
+                ...TRADES,
+                { ...TRADES[0], id: 90, event_id: 'e9', event_name: 'Partita in live',
+                  mode: 'live', pnl: 100, closes_trade_id: null },
+            ],
+        }));
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
+        const tabella = await screen.findByTestId('mike-operazioni');
+        // il bot gira in paper: la partita con soldi veri NON entra nei conti
+        expect(within(tabella).queryByText('Partita in live')).toBeNull();
+        expect(within(tabella).getAllByTestId(/^netto-/)).toHaveLength(1);
+        // ma non sparisce in silenzio: viene dichiarata
+        expect(screen.getByTestId('mike-righe-altra-modalita')).toHaveTextContent('1 operazione in');
     });
 
     it('Risultati Pre-Match e Risultati Live: la stessa partita, gli euro della sua fase', async () => {

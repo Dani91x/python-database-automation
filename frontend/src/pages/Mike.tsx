@@ -164,7 +164,28 @@ export default function Mike() {
     // OPERAZIONI della giornata = CICLI (1 apertura + le sue chiusure), mai le
     // righe di database: è il numero che si legge anche nella scheda Trade e
     // nello Storico (audit UI 1).
-    const tradeGroups = useMemo(() => groupMikeTrades(bot.trades), [bot.trades]);
+    // ===================================================================
+    // PAPER e SOLDI VERI NON SI SOMMANO MAI (certificazione 13/09)
+    // ===================================================================
+    // Le righe arrivano di entrambe le modalità. Finché Mike è girato solo in
+    // paper è stato innocuo; al primo giorno in live «P&L oggi» e «P&L totale»
+    // avrebbero sommato euro veri e simulati senza che niente lo dicesse.
+    // Qui si tiene SOLO la modalità con cui il bot sta girando, e le righe
+    // dell'altra si dichiarano invece di sparire in silenzio.
+    const righeDelMio = useMemo(
+        () => bot.trades.filter((t) => String(t.mode ?? 'paper') === mode),
+        [bot.trades, mode],
+    );
+    const righeAltraModalita = bot.trades.length - righeDelMio.length;
+    // partite ancora VIVE armate nell'ALTRA modalità: il `mode` si congela
+    // all'arming, quindi riportare il toggle su paper NON ferma quelle già
+    // avviate in live — continuano a operare con SOLDI VERI mentre il banner
+    // della pagina dice PAPER. Il servizio lo conta, qui si grida.
+    const partiteAltraModalita = Number(
+        (stats as Record<string, unknown> | null)?.eventi_altra_modalita ?? 0);
+    const liveAbilitato = (stats as Record<string, unknown> | null)?.live_abilitato;
+
+    const tradeGroups = useMemo(() => groupMikeTrades(righeDelMio), [righeDelMio]);
     const dayOperations = useMemo(
         () => groupsOfDay(tradeGroups, bot.dayStartMs).length,
         [tradeGroups, bot.dayStartMs],
@@ -187,24 +208,39 @@ export default function Mike() {
     // 500 righe della RPC); senza migrazione si ripiega sul conto dal client.
     const operationsToday = agg?.cycles_today ?? dayOperations;
     // V/P della giornata: dalla RPC v2; senza migrazione dal client (dichiarato)
-    const clientCounts = useMemo(() => dayResultCounts(bot.trades, bot.dayStartMs), [bot.trades, bot.dayStartMs]);
+    const clientCounts = useMemo(
+        () => dayResultCounts(righeDelMio, bot.dayStartMs), [righeDelMio, bot.dayStartMs]);
     const countsFromClient = agg?.won_today == null && agg?.lost_today == null;
     const wonToday = agg?.won_today ?? clientCounts.won;
     const lostToday = agg?.lost_today ?? clientCounts.lost;
     // battito del servizio: oltre 45 s le `stats` sono una fotografia vecchia
     const hbMs = bot.control?.heartbeat_at ? Date.parse(bot.control.heartbeat_at) : NaN;
     const serviceAlive = Number.isFinite(hbMs) && nowMs - hbMs <= 45_000;
-    const equity = useMemo(() => mikeEquitySeries(bot.trades, bot.dayStartMs), [bot.trades, bot.dayStartMs]);
+    const equity = useMemo(
+        () => mikeEquitySeries(righeDelMio, bot.dayStartMs), [righeDelMio, bot.dayStartMs]);
     // TETTO DELLA RPC: oltre 500 righe la giornata arriva TRONCATA, e allora il
     // netto di una partita può essere parziale senza che si veda. Va detto in
     // ogni scheda che somma righe, non solo in una (audit 13/09).
-    const avvisoRighe = bot.trades.length >= MIKE_TRADES_LIMIT ? (
-        <p className="mb-2 rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200"
-           data-testid="mike-righe-troncate">
-            ⚠️ Arrivate {MIKE_TRADES_LIMIT} righe, il tetto della lettura: di qualche partita
-            potrebbero mancare operazioni e il suo netto essere incompleto. Lo Storico non ha
-            questo limite.
-        </p>
+    const avvisoRighe = (bot.trades.length >= MIKE_TRADES_LIMIT || righeAltraModalita > 0) ? (
+        <div className="mb-2 space-y-1" data-testid="mike-avvisi-righe">
+            {bot.trades.length >= MIKE_TRADES_LIMIT && (
+                <p className="rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200"
+                   data-testid="mike-righe-troncate">
+                    ⚠️ Arrivate {MIKE_TRADES_LIMIT} righe, il tetto della lettura: di qualche partita
+                    potrebbero mancare operazioni e il suo netto essere incompleto. Lo Storico non ha
+                    questo limite.
+                </p>
+            )}
+            {righeAltraModalita > 0 && (
+                <p className="rounded-md border border-sky-400/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-200"
+                   data-testid="mike-righe-altra-modalita">
+                    {righeAltraModalita} {righeAltraModalita === 1 ? 'operazione' : 'operazioni'} in{' '}
+                    <b>{mode === 'live' ? 'paper' : 'live'}</b> non {righeAltraModalita === 1 ? 'è elencata' : 'sono elencate'}:
+                    {' '}questa pagina mostra solo la modalità con cui il bot sta girando.
+                    Euro veri e simulati non si sommano mai.
+                </p>
+            )}
+        </div>
     ) : null;
 
     const activityRows: ActivityRow[] = useMemo(
@@ -346,6 +382,45 @@ export default function Mike() {
                 error={bot.control?.error ?? null}
                 migrationWarning={!bot.available && !bot.loading ? 'tabelle Mike assenti: applica migrations/mike_bot.sql' : null}
             />
+
+            {/* ===============================================================
+                DUE ALLARMI CHE NON DEVONO MAI MANCARE (certificazione 13/09)
+                ===============================================================
+                1) Il `mode` si congela sulla PARTITA quando viene armata.
+                   Riportare il toggle su paper NON ferma quelle già avviate in
+                   live: continuano a coprirsi, chiudere e fare cash-out con
+                   soldi veri mentre il banner qui sopra dice PAPER. È il modo
+                   più silenzioso che c'è di perdere denaro.
+                2) In live l'interruttore fisico del processo (MIKE_LIVE_ENABLED)
+                   deve essere acceso, altrimenti nessun ordine parte davvero:
+                   meglio saperlo prima di credere di stare operando. */}
+            {partiteAltraModalita > 0 && (
+                <div
+                    role="alert"
+                    data-testid="mike-allarme-modalita-mista"
+                    className="rounded-lg border border-red-500/50 bg-red-500/15 px-3 py-2 text-sm text-red-200"
+                >
+                    <b>⚠️ {partiteAltraModalita}{' '}
+                    {partiteAltraModalita === 1 ? 'partita sta operando' : 'partite stanno operando'}{' '}
+                    in {mode === 'live' ? 'PAPER' : 'LIVE'}</b>
+                    {mode !== 'live' && <> — con <b>soldi veri</b>, anche se il bot adesso è in paper.</>}
+                    {' '}La modalità si fissa quando la partita viene armata e non cambia più:
+                    quelle già avviate finiscono il loro ciclo con le regole di allora.
+                    {mode !== 'live' && ' Per fermarle davvero serve chiuderle a mano dalle loro schede.'}
+                </div>
+            )}
+            {mode === 'live' && liveAbilitato === false && (
+                <div
+                    role="alert"
+                    data-testid="mike-live-non-abilitato"
+                    className="rounded-lg border border-amber-400/50 bg-amber-500/15 px-3 py-2 text-sm text-amber-200"
+                >
+                    <b>Modalità LIVE, ma il processo NON è abilitato a piazzare ordini reali.</b>{' '}
+                    L'interruttore di sicurezza <code>MIKE_LIVE_ENABLED</code> è spento: il bot
+                    calcola tutto ma ogni ordine viene bloccato prima di partire. Per operare
+                    davvero impostalo a <code>1</code> nel file <code>.env</code> e riavvia l'app.
+                </div>
+            )}
 
             {/* UNA semantica, dichiarata: partite = EVENTI con almeno una posizione
                 piazzata oggi; operazioni = CICLI aperti oggi (1 ciclo = 1 riga di
