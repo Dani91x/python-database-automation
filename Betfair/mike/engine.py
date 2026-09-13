@@ -1165,15 +1165,21 @@ def liability_room(ctx: MatchCtx, params: Dict[str, Any]) -> float:
 def size_chiudibile(size: Optional[float]) -> bool:
     """La size di una CHIUSURA e' abbastanza grande da essere accettata?
 
-    Betfair rifiuta gli ordini sotto ``IT_BACK_MIN`` (2 EUR). Su una quota molto
-    salita la size che chiude la posizione puo' scendere sotto quella soglia:
-    quel residuo NON e' chiudibile, e continuare a provarci produce solo righe
-    in errore. Una posizione con un residuo cosi' piccolo vale meno del minimo
-    piazzabile: la si porta al regolamento.
+    13/09 — la soglia e' il CENTESIMO, non i 2 EUR. Due motivi, entrambi
+    verificati sul codice di esecuzione:
+
+      * Betfair accetta gia' gli ordini che RIDUCONO una posizione anche sotto
+        il minimo (per questo ``execution.place`` esenta le chiusure dal
+        controllo: ``is_closing``);
+      * e in ogni caso, dal place-and-trim in poi, qualunque importo e'
+        piazzabile (vedi ``omega_market.place_submin_live``).
+
+    La soglia a 2 EUR era il ripiego del 12/09, quando il sotto-minimo non era
+    collegato a niente: portava al regolamento residui che si potevano chiudere.
     """
     if not size_ok(size):
         return False
-    return float(size) >= IT_BACK_MIN - 0.005
+    return float(size) >= SUBMIN_FLOOR - 0.0005
 
 
 def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],

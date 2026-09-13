@@ -379,7 +379,11 @@ def test_lettura_delle_righe_fallita_non_blocca_il_regolamento():
 # minimo Betfair di 2 EUR. Il bot ci riprovava a OGNI ciclo: 64 righe 'error'
 # sulla stessa posizione in poche ore, e il residuo restava comunque aperto.
 # ===========================================================================
-def test_chiusura_sotto_il_minimo_betfair_non_viene_nemmeno_tentata():
+def test_chiusura_sotto_il_minimo_betfair_adesso_si_fa():
+    """Caso vero del 12/09: copertura da 3,08 EUR comprata a 5,10, quota salita a
+    50. Chiuderla vale 0,31 EUR. Allora si rinunciava (l'exchange rifiutava),
+    oggi si chiude: gli ordini che RIDUCONO una posizione sono esenti dal minimo,
+    e col place-and-trim qualunque importo e' comunque piazzabile."""
     over = E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_OVER,
                  side="back", price=5.10, size=3.08, ref="over_cover-0-2", cycle_no=0)
     over.matched, over.avg_price, over.status = 3.08, 5.10, "open"
@@ -387,7 +391,7 @@ def test_chiusura_sotto_il_minimo_betfair_non_viene_nemmeno_tentata():
     books = {(E.MARKET_OU45, E.SEL_OVER): E.Book(best_back=48.0, back_size=99.0,
                                                  best_lay=50.0, lay_size=99.0, inplay=True)}
     _cancels, closes = E.force_flat_plan(ctx, books, C.merge_params({"stake": 10}), goals=1)
-    assert closes == [], f"tentata una chiusura non eseguibile: {closes}"
+    assert len(closes) == 1 and 0.01 <= closes[0].size < 2.0
 
 
 def test_chiusura_sopra_il_minimo_viene_regolarmente_pianificata():
@@ -403,10 +407,14 @@ def test_chiusura_sopra_il_minimo_viene_regolarmente_pianificata():
 
 
 def test_size_chiudibile_e_la_soglia_dichiarata():
-    assert E.size_chiudibile(0.01) is False
-    assert E.size_chiudibile(0.31) is False
-    assert E.size_chiudibile(1.99) is False
+    """13/09 — la soglia di una CHIUSURA e' il centesimo, non i 2 EUR: Betfair
+    accetta gia' gli ordini che riducono una posizione, e col place-and-trim
+    qualunque importo e' piazzabile."""
+    assert E.size_chiudibile(0.01) is True
+    assert E.size_chiudibile(0.31) is True
+    assert E.size_chiudibile(1.99) is True
     assert E.size_chiudibile(2.00) is True
+    assert E.size_chiudibile(0.004) is False
     assert E.size_chiudibile(None) is False
     assert E.size_chiudibile(float("nan")) is False
 
