@@ -130,6 +130,26 @@ function renderPage() {
     );
 }
 
+/**
+ * CERT. 13/09 - SOSTITUISCE l'accesso DIRETTO alle righe di posizione.
+ *
+ * La sezione Operazioni di Safe ora mostra UNA RIGA PER PARTITA (tabella
+ * condivisa `trading/EventPnlTable`) e le singole posizioni - con quote, stati
+ * e bottoni di cash out - stanno nel DETTAGLIO, chiuso di default e apribile.
+ * E' la richiesta dell'utente del 13/09: prima era un elenco piatto di gambe in
+ * cui apertura e chiusura comparivano scollegate. I test che leggono
+ * `safe-trade-row` devono quindi aprire prima il dettaglio, come il trader.
+ *
+ * Idempotente: apre solo le partite ancora chiuse, cosi si puo' richiamare dopo
+ * un cambio di filtro senza richiudere quelle gia' aperte.
+ */
+async function apriPartite(user: ReturnType<typeof userEvent.setup>) {
+    const bottoni = await screen.findAllByTestId(/^apri-/);
+    for (const b of bottoni) {
+        if (b.getAttribute('aria-expanded') === 'false') await user.click(b);
+    }
+}
+
 describe('salute del feed: la STESSA fonte di /omega e /mike', () => {
     it('provider senza feed ma scanner vivo: feed VIVO e partite monitorate dallo scanner', async () => {
         renderPage();
@@ -242,6 +262,7 @@ describe('tabella trade: mercato in chiaro', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         const cell = await screen.findByTestId('safe-market');
         expect(cell).toHaveTextContent('Risultato Esatto');
         // l'id tecnico resta nel tooltip, per il confronto con Betfair

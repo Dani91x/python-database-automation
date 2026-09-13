@@ -49,7 +49,22 @@ export interface SafeBotView {
     operatingDay: string | null;
     /** parametri EFFETTIVI: server se il bot esiste, default altrimenti */
     params: SafeBotParams;
+    /**
+     * CERT. 13/09 — modalità EFFETTIVA, cioè quella del SERVIZIO quando la riga
+     * di controllo esiste (`control.mode`), non lo stato locale del browser.
+     * Prima era `running ? (control.mode ?? desiredMode) : desiredMode`: a bot
+     * fermo la pagina mostrava una modalità che il DB non conosceva, e ogni
+     * ordine manuale la dichiarava al servizio — che adesso RIFIUTA le richieste
+     * di una modalità diversa dalla sua (`modalita_non_corrispondente`). È anche
+     * la modalità con cui vanno etichettati KPI e barra della giornata.
+     */
     mode: SafeMode;
+    /** modalità SELEZIONATA qui (interruttore PAPER/LIVE): è quella che partirà
+     *  col prossimo Avvia. Può differire da `mode` finché non si riavvia. */
+    desiredMode: SafeMode;
+    /** true = la selezione locale non coincide con la modalità persistita sul
+     *  servizio: va detto a schermo, mai lasciato indovinare. */
+    modeMismatch: boolean;
     /** true = la modalita' LIVE e' stata CONFERMATA dall'utente in questa
      *  sessione. Un control gia' in live (da un'altra sessione/tab) mostra il
      *  banner ma NON autorizza piazzamenti finche' non si conferma qui. */
@@ -78,6 +93,15 @@ export interface SafeBotView {
 export interface SafeBotHandlers {
     onError?: (message: string) => void;
     onInfo?: (message: string, description?: string) => void;
+    /**
+     * CERT. 13/09 — l'avvio in LIVE richiede la conferma esplicita di QUESTA
+     * sessione. `safe_stop()` non riporta il control a 'paper': chi riapriva
+     * l'app il giorno dopo su un control lasciato in 'live' e premeva «Avvia»
+     * mandava il bot a piazzare con soldi veri senza passare da nessun dialog.
+     * Quando succede, `start()` NON avvia e chiama questo handler (la pagina
+     * apre la conferma).
+     */
+    onLiveConfirmRequired?: () => void;
 }
 
 export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
@@ -110,6 +134,8 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     const initialized = useRef(false);
     const onErrorRef = useRef(handlers.onError);
     onErrorRef.current = handlers.onError;
+    const onLiveConfirmRef = useRef(handlers.onLiveConfirmRequired);
+    onLiveConfirmRef.current = handlers.onLiveConfirmRequired;
     // guardie del reload: sequenza (risultati fuori ordine ignorati) e smontaggio
     const reloadSeq = useRef(0);
     const mounted = useRef(true);
@@ -256,8 +282,16 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     const running = control?.status === 'running' || control?.status === 'stopping';
 
     const start = useCallback(async () => {
+        // MAI un avvio in LIVE senza conferma esplicita in questa sessione:
+        // `stopSafe()` lascia `control.mode` a 'live', quindi al riavvio
+        // dell'app `desiredMode` viene sincronizzato a 'live' dal control e un
+        // click su «Avvia» sarebbe bastato a operare con soldi veri.
+        if (desiredMode === 'live' && !liveConfirmed) {
+            onLiveConfirmRef.current?.();
+            return;
+        }
         await wrap(() => activateSafe(desiredMode));
-    }, [wrap, desiredMode]);
+    }, [wrap, desiredMode, liveConfirmed]);
     const stop = useCallback(async () => { await wrap(() => stopSafe()); }, [wrap]);
     const setMode = useCallback(async (next: SafeMode) => {
         setDesiredMode(next);
@@ -305,7 +339,11 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
         control, trades, aggregates, requests, opportunities, activity,
         paramsEffective, operatingDay,
         params,
-        mode: running ? (control?.mode ?? desiredMode) : desiredMode,
+        // la modalità che conta è quella PERSISTITA sul servizio: a bot fermo
+        // `desiredMode` è solo una scelta del browser, che il DB non conosce.
+        mode: control?.mode ?? desiredMode,
+        desiredMode,
+        modeMismatch: control != null && control.mode !== desiredMode,
         liveConfirmed,
         reload, start, stop, setMode, saveParams, place, cashout, cancel,
         isCashOutPending,

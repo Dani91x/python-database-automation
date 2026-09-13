@@ -12,7 +12,7 @@
 import { Target } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { fmtMoney, fmtPctPoints } from '@/lib/format';
-import { T, TIP } from '@/lib/tradeStatus';
+import { T, TIP, pnlClass } from '@/lib/tradeStatus';
 
 export interface DayBarProps {
     /** etichetta della giornata (già formattata, es. "giovedì 10 settembre 2026") */
@@ -95,7 +95,7 @@ export function DayBar({
                 </div>
                 {real !== null && (
                     <div className="font-display font-black text-2xl tabular-nums">
-                        <span className={real >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtMoney(real, { signed: true })}</span>
+                        <span className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</span>
                         {hasGoal && <span className="text-slate-500 text-lg"> · {pctText}</span>}
                     </div>
                 )}
@@ -122,7 +122,7 @@ export function DayBar({
                     </>
                 )}
                 {real !== null && (
-                    <span title={TIP.realizedToday}>{T.realizedToday} <b className={real >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtMoney(real, { signed: true })}</b></span>
+                    <span title={TIP.realizedToday}>{T.realizedToday} <b className={pnlClass(real)}>{fmtMoney(real, { signed: true })}</b></span>
                 )}
                 {hasGoal && real !== null && <span className="text-slate-600" aria-hidden>·</span>}
                 {hasGoal && real !== null && (remaining > 0 ? (
@@ -147,13 +147,16 @@ export function DayBar({
                 {lockedPnl != null && (
                     <>
                         <span className="text-slate-600" aria-hidden>·</span>
-                        <span title={TIP.lockedPnl}>{T.lockedPnl} <b className={lockedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'} data-testid="day-bar-locked">{fmtMoney(lockedPnl, { signed: true })}</b></span>
+                        <span title={TIP.lockedPnl}>{T.lockedPnl} <b className={pnlClass(lockedPnl)} data-testid="day-bar-locked">{fmtMoney(lockedPnl, { signed: true })}</b></span>
                     </>
                 )}
                 {realizedTotal != null && (
                     <>
                         <span className="text-slate-600" aria-hidden>·</span>
-                        <span className="text-slate-500">totale storico <b className="text-slate-300">{fmtMoney(realizedTotal, { signed: true })}</b></span>
+                        {/* CERT. 13/09 — un totale storico NEGATIVO usciva in `text-slate-300`:
+                            grigio, indistinguibile da un utile. Il segno del P&L e' la prima
+                            informazione della pagina, anche quando e' una nota di contorno. */}
+                        <span className="text-slate-500">totale storico <b className={pnlClass(realizedTotal)}>{fmtMoney(realizedTotal, { signed: true })}</b></span>
                     </>
                 )}
             </div>

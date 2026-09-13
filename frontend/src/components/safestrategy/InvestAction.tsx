@@ -25,10 +25,26 @@ import { Badge } from '@/components/ui/badge';
 import { fmtMoney } from '@/lib/format';
 import { requestOutcome, type SafeMode, type SafeRequest, type SafeSide } from '@/lib/safeBot';
 
-/** minimo Betfair per una scommessa (il servizio lo pubblica in
- *  params_effective.min_stake): sotto questa cifra l'ordine non e' immettibile
- *  normalmente e va gestito col metodo 1000→cancella→sposta. */
+/**
+ * Minimo di GIURISDIZIONE Betfair (il servizio lo pubblica in
+ * `params_effective.min_stake`): sotto questa cifra l'ordine non entra col
+ * piazzamento NORMALE e il servizio usa il metodo 1000→cancella→sposta
+ * (place-and-trim). NON è un blocco: è una nota.
+ */
 export const BETFAIR_MIN_STAKE = 2;
+
+/**
+ * CERT. 13/09 — MINIMO REALE PIAZZABILE: 0,01 €.
+ *
+ * Prima questo componente spegneva «Piazza» sotto 2 € scrivendo «minimo
+ * Betfair 2,00 €: sotto questa cifra l'ordine non viene immesso». È FALSO: il
+ * backend implementa (ed ha collegato: REST + coda) il place-and-trim, cioè
+ * parcheggio a quota 1000 → taglio → riprezzo, con cui QUALSIASI importo fino
+ * al centesimo finisce davvero a mercato. Il `CashOutButton` lo faceva già
+ * giusto (importo da 0,01 €, nota informativa sotto 2 €): l'unica schermata
+ * che impediva l'operazione era questa, e impediva operazioni LEGITTIME.
+ */
+export const MIN_STAKE_ALLOWED = 0.01;
 
 export interface InvestActionProps {
     mode: SafeMode;
@@ -37,7 +53,9 @@ export interface InvestActionProps {
     /** EUR abbinabili al best sul lato da operare (null = fonte senza size) */
     sizeAvailable: number | null;
     defaultStake: number;
-    /** size minima ammessa (default: minimo Betfair 2 €) */
+    /** minimo di GIURISDIZIONE dichiarato dal servizio (`params_effective.min_stake`,
+     *  default 2 €): sotto si entra lo stesso col place-and-trim, si mostra solo
+     *  una NOTA. Non è mai una soglia che spegne il bottone. */
     minStake?: number;
     /** cap di responsabilità per singola operazione (params.max_liability_per_trade):
      *  oltre questo il servizio RIFIUTA ("max_liability_per_trade_superato"), quindi
@@ -155,7 +173,9 @@ export function InvestAction({
     mode, side, price, sizeAvailable, defaultStake, minStake, maxLiability, sizeLabel,
     disabled = false, disabledReason, requests, onPlace, onStakeChange,
 }: InvestActionProps) {
-    const minAllowed = Number.isFinite(Number(minStake)) && Number(minStake) > 0
+    // soglia di GIURISDIZIONE (nota), NON soglia di blocco: il minimo che il
+    // bottone impone è MIN_STAKE_ALLOWED (0,01 €), sempre.
+    const jurisdictionMin = Number.isFinite(Number(minStake)) && Number(minStake) > 0
         ? Number(minStake)
         : BETFAIR_MIN_STAKE;
     const [stakeStr, setStakeStr] = useState(() => String(defaultStake ?? 5));
@@ -184,8 +204,10 @@ export function InvestAction({
     // abbinamento ignoto. In entrambi i casi ri-cliccare significherebbe
     // rischiare una SECONDA posizione: il bottone resta spento.
     const pending = busy || outcome?.tone === 'pending' || outcome?.tone === 'awaiting';
-    // L-07: il minimo Betfair e' 2 EUR, non 0,50 — sotto, l'ordine non entra
-    const belowMin = stake > 0 && stake < minAllowed;
+    // CERT. 13/09 — sotto il minimo di giurisdizione l'ordine entra COMUNQUE
+    // (place-and-trim del servizio): `belowMin` è una NOTA informativa, non
+    // partecipa più a `invalid` e non spegne più il bottone.
+    const belowMin = stake > 0 && stake < jurisdictionMin;
     // CERT. 12/09 — LIQUIDITA': `sizeAvailable` e' l'importo abbinabile al
     // MIGLIOR prezzo, cioe' l'unico prezzo a cui questo ordine puo' entrare.
     // In live il servizio manda FILL_OR_KILL: sopra questa cifra l'ordine
@@ -208,7 +230,8 @@ export function InvestAction({
         : undefined;
     const blockReason = disabled ? disabledReason : (liquidityReason ?? capReason);
     const blocked = disabled || noBook || overBook || overCap;
-    const invalid = stake <= 0 || belowMin || price == null || price <= 1;
+    // l'UNICO minimo che blocca è 0,01 €: sotto non esiste un ordine Betfair.
+    const invalid = stake < MIN_STAKE_ALLOWED || price == null || price <= 1;
     // guardia anti doppio click: ref, non stato (lo stato e' una closure del render)
     const inFlight = useRef(false);
 
@@ -248,8 +271,10 @@ export function InvestAction({
                 <input
                     type="number"
                     inputMode="decimal"
-                    step={0.5}
-                    min={minAllowed}
+                    // passo al CENTESIMO: qualsiasi importo fino a 0,01 € è
+                    // piazzabile, quindi anche digitabile con le frecce.
+                    step={0.01}
+                    min={MIN_STAKE_ALLOWED}
                     value={stakeStr}
                     aria-label="Stake"
                     onChange={(e) => { setTouched(true); setStakeStr(e.target.value); }}
@@ -312,8 +337,11 @@ export function InvestAction({
             )}
 
             {belowMin && (
+                // NOTA, non blocco — stesso tono di CashOutButton («cashout-min-note»)
+                // e stesse parole di BotParamsSheet («Size minima Betfair €»).
                 <span className="text-[11px] text-amber-300/90" data-testid="invest-min-stake">
-                    minimo Betfair {fmtMoney(minAllowed)}: sotto questa cifra l'ordine non viene immesso
+                    sotto {fmtMoney(jurisdictionMin)} il servizio usa il metodo 1000→cancella→sposta:
+                    l&apos;ordine viene immesso lo stesso (parcheggio a quota 1000, taglio, riprezzo)
                 </span>
             )}
 

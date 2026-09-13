@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Activity, ExternalLink } from 'lucide-react';
 import { ExitBadge } from '@/components/trading/ExitBadge';
+import { ModeBadge } from '@/components/trading/ModeBadge';
 import { cappedFrom } from '@/lib/safeBot';
 import {
     dayLabel, tradeExit, summarizeDayTrades, attributionOf, WIN_LOSS_TIP,
@@ -15,7 +16,7 @@ import {
 } from '@/lib/dailyHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
 import { fmtMoney, fmtOdds, fmtTime, DASH } from '@/lib/format';
-import { statusMeta, statusMetaOf, TIP } from '@/lib/tradeStatus';
+import { statusMeta, statusMetaOf, TIP, pnlClass, pnlClassSoft } from '@/lib/tradeStatus';
 
 /**
  * §1 — un dato ASSENTE è «—», non «0,00 €». Prima `fmtEur` faceva
@@ -158,7 +159,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                         liability piazzata {noData ? DASH : fmtEur(liability)} ·
                     </span>
                     <span className="text-slate-400 mr-1 text-xs" title={TIP.realizedToday}>realizzato</span>
-                    <b className={noData ? 'text-slate-500' : totalPnl > 0 ? 'text-emerald-400' : totalPnl < 0 ? 'text-red-400' : 'text-slate-300'} data-testid="day-total-pnl">
+                    <b className={noData ? 'text-slate-500' : pnlClass(totalPnl)} data-testid="day-total-pnl">
                         {noData ? DASH : fmtSignedEur(totalPnl)}
                     </b>
                     {!noData && day0.realizedOnOpen !== 0 && (
@@ -237,9 +238,13 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                             {t.origin === 'manual' && (
                                                 <Badge variant="outline" className="mr-1.5 px-1 py-0 text-[10px] bg-violet-500/15 text-violet-300 border-violet-500/40" title="piazzato manualmente">✋</Badge>
                                             )}
-                                            {t.mode === 'live' && (
-                                                <Badge variant="outline" className="mr-1.5 px-1 py-0 text-[10px] bg-red-500/15 text-red-300 border-red-500/40" title="soldi veri">LIVE</Badge>
-                                            )}
+                                            {/* CERT. 13/09 — badge di modalità ESPLICITO anche sulle
+                                                righe PAPER. Prima compariva solo sul LIVE: l'assenza
+                                                di badge era ambigua (paper? modalità non scritta dal
+                                                servizio?) e su una tabella di soldi veri l'ambiguità
+                                                si paga. Ora PAPER è neutro, LIVE è rosso e una riga
+                                                senza `mode` lo dichiara. */}
+                                            <ModeBadge mode={t.mode} compact className="mr-1.5" testId="day-trade-mode" />
                                             {t.event_name ?? t.event_id}
                                         </td>
                                         <td className="px-3 py-2 text-center text-[11px] font-heading font-bold text-slate-300">{kindOf(t, variant)}</td>
@@ -264,7 +269,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                                 </span>
                                             )}
                                         </td>
-                                        <td className={`px-3 py-2 text-right font-bold tabular-nums ${isSettled ? (t.total_pnl > 0 ? 'text-emerald-400' : t.total_pnl < 0 ? 'text-red-400' : 'text-slate-300') : 'text-slate-500'}`} data-testid="day-trade-pnl">
+                                        <td className={`px-3 py-2 text-right tabular-nums ${isSettled ? pnlClass(t.total_pnl) : 'text-slate-500'}`} data-testid="day-trade-pnl">
                                             {isSettled
                                                 ? fmtSignedEur(t.total_pnl)
                                                 : cashedOf(t) !== 0
@@ -281,6 +286,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                             <tr key={`c${c.id}`} className="border-t border-white/5 bg-black/20 text-[12px]" data-testid="day-close-row">
                                                 <td className="px-3 py-1 text-slate-500 tabular-nums">↳ {timeLabel(c.placed_at)}</td>
                                                 <td className="px-3 py-1 text-slate-400" colSpan={2}>
+                                                    <ModeBadge mode={c.mode} compact className="mr-1.5" testId="day-close-mode" />
                                                     chiusura #{c.id} di #{t.id}
                                                     {cappedFrom({ meta: c.meta }) != null && (
                                                         <Badge variant="outline" className="ml-1 px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40" title="liquidità insufficiente: chiusura parziale">parziale</Badge>
@@ -296,7 +302,10 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                                     <ExitBadge meta={c.meta} />
                                                     {cLocked != null && <span className="ml-1 text-[11px] text-teal-300 tabular-nums">bloccato {fmtSignedEur(cLocked)}</span>}
                                                 </td>
-                                                <td className={`px-3 py-1 text-right tabular-nums ${['won', 'lost', 'void'].includes(c.status) ? (c.pnl >= 0 ? 'text-emerald-300' : 'text-red-300') : 'text-slate-500'}`}>
+                                                {/* CERT. 13/09 — la gamba di CHIUSURA e' spesso il numero che conta
+                                                (su un cash out in perdita e' l'unico): stesso peso
+                                                dell'utile, mai piu' piccolo e mai grigio. */}
+                                        <td className={`px-3 py-1 text-right tabular-nums ${['won', 'lost', 'void'].includes(c.status) ? pnlClassSoft(c.pnl) : 'text-slate-500'}`}>
                                                     {['won', 'lost', 'void'].includes(c.status) ? fmtSignedEur(c.pnl) : '—'}
                                                 </td>
                                             </tr>
@@ -319,7 +328,7 @@ export function DayDetail({ day, trades, loading = false, error = null, variant,
                                     {notPlaced > 0 ? ` · ${notPlaced} non piazzati (fuori dai totali)` : ''}
                                 </td>
                                 <td className="px-3 py-2 text-right" colSpan={3}>
-                                    totale realizzato <b className={totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedEur(totalPnl)}</b>
+                                    totale realizzato <b className={pnlClass(totalPnl)}>{fmtSignedEur(totalPnl)}</b>
                                 </td>
                             </tr>
                         </tfoot>

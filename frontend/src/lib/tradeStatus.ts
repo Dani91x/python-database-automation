@@ -22,6 +22,49 @@ export type TradeStatus =
 
 export interface Meta { label: string; cls: string }
 
+// ------------------------------------------------------------- modalità riga
+/**
+ * CERT. 13/09 — MODALITÀ di OGNI RIGA (PAPER / LIVE), badge unico.
+ *
+ * Il backend ora etichetta con `mode` ogni trade, ogni riga di attività e ogni
+ * richiesta, e tiene P&L e rischio separati per modalità. La UI deve dirlo su
+ * OGNI riga, non solo nel banner di pagina: prima il badge compariva solo sulle
+ * righe LIVE e l'ASSENZA di badge era ambigua — «riga in paper» e «riga senza
+ * modalità dichiarata» erano indistinguibili, e con un control lasciato in LIVE
+ * l'utente poteva credere che una tabella di soldi veri fosse una simulazione.
+ * PAPER = tono neutro (nessun allarme), LIVE = tono di ALLARME (soldi veri),
+ * modalità non dichiarata = si dice che non è dichiarata.
+ */
+export type RowMode = 'paper' | 'live';
+
+export interface ModeMeta extends Meta { title: string }
+
+export const MODE_META: Record<RowMode, ModeMeta> = {
+    paper: {
+        label: 'PAPER',
+        cls: 'bg-white/5 text-slate-300 border-white/15',
+        title: 'simulazione fedele: nessun denaro reale su questa riga',
+    },
+    live: {
+        label: 'LIVE',
+        cls: 'bg-red-500/15 text-red-300 border-red-500/40',
+        title: 'soldi veri: questa riga è un ordine reale su Betfair',
+    },
+};
+
+const MODE_UNKNOWN: ModeMeta = {
+    label: 'MODALITÀ N/D',
+    cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+    title: 'il servizio non ha dichiarato la modalità di questa riga: non è verificabile se sia paper o live',
+};
+
+/** Modalità di una riga → etichetta/colore/tooltip. Sconosciuta = dichiarata tale. */
+export function modeMeta(mode: string | null | undefined): ModeMeta {
+    const k = String(mode ?? '').trim().toLowerCase();
+    if (k === 'paper' || k === 'live') return MODE_META[k];
+    return MODE_UNKNOWN;
+}
+
 /** Stati di un trade: UNA etichetta italiana e UN colore per stato. */
 export const STATUS_META: Record<TradeStatus, Meta> = {
     pending: { label: 'IN CORSO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
@@ -146,7 +189,31 @@ export function statusMeta(
     if (!settled && opts.reconciling) return RECONCILING_META;
     // dopo la riconciliazione: un ordine sul book non e' una posizione
     if (!settled && opts.resting) return RESTING_META;
-    return STATUS_META[key] ?? STATUS_META.error;
+    return STATUS_META[key] ?? unknownStatusMeta(key);
+}
+
+/**
+ * CERT. 13/09 — uno stato che questa mappa non conosce NON è un errore.
+ *
+ * Prima il fallback era `STATUS_META.error`: bastava che il backend
+ * introducesse uno stato nuovo (o lo scrivesse con un refuso) perché la
+ * tabella dichiarasse «ERRORE» su posizioni perfettamente sane, e un trader
+ * chiudesse in fretta una posizione che non aveva nulla che non andasse.
+ * Si fa come `activityMeta`, che questo caso lo gestiva già bene: si mostra la
+ * chiave così com'è e si DICHIARA che è sconosciuta, senza inventarne il senso.
+ */
+export function unknownStatusMeta(status: string | null | undefined): Meta {
+    const raw = String(status ?? '').trim();
+    if (!raw) {
+        return {
+            label: 'STATO ASSENTE',
+            cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+        };
+    }
+    return {
+        label: `${raw.toUpperCase()} (stato sconosciuto)`,
+        cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+    };
 }
 
 // ----------------------------------------------------------------- bot status
@@ -198,6 +265,52 @@ export function sideMeta(side: string | null | undefined): Meta {
     return String(side ?? '').toLowerCase() === 'lay' ? SIDE_META.lay : SIDE_META.back;
 }
 
+// ------------------------------------------------------------------ P&L: colore
+/**
+ * CERT. 13/09 — IL COLORE DEL P&L, una regola sola per le tre sezioni.
+ *
+ * Richiesta testuale dell'utente: «su safe non si capisce un cazzo (le loss
+ * sono in nero e in piccolo)». Per un trader il SEGNO del P&L è
+ * l'informazione più importante della pagina: deve arrivare all'occhio prima
+ * di qualunque altra cosa, e una perdita non può essere meno visibile di un
+ * utile. Prima ogni sezione aveva la sua funzioncina locale (Mike in
+ * MikeEventPnlTable, Omega in MatchTradesTable, Safe nessuna: espressioni
+ * ternarie sparse riga per riga, che in diversi punti lasciavano la perdita in
+ * `text-slate-*` — cioè grigio/nero — e per giunta in corpo più piccolo).
+ *
+ * Regola NON negoziabile:
+ *   · positivo  → verde, GRASSETTO
+ *   · negativo  → ROSSO, GRASSETTO, stessa dimensione del positivo
+ *   · zero      → neutro ma stesso peso (un pari non è né un utile né una perdita)
+ *   · ASSENTE   → grigio tenue e NIENTE grassetto: non c'è un numero da urlare
+ *                 (e chi stampa il valore deve scrivere «—», mai «0,00 €»)
+ *
+ * Il grassetto sta QUI dentro apposta: è l'unico modo di garantire che nessun
+ * punto della UI possa stampare una perdita in corpo leggero senza accorgersene.
+ * La DIMENSIONE resta al chiamante, che però la applica alla cella — quindi è
+ * la stessa per utile e perdita per costruzione.
+ */
+export function pnlClass(v: number | null | undefined): string {
+    if (v == null || !Number.isFinite(Number(v))) return 'text-slate-400';
+    const n = Number(v);
+    if (n > 0) return 'text-emerald-400 font-bold';
+    if (n < 0) return 'text-red-400 font-bold';
+    return 'text-slate-300 font-bold';
+}
+
+/**
+ * Variante per i testi piccoli di contorno (sotto-righe, tooltip in pagina):
+ * stessa regola di segno, tonalità leggermente più chiara perché su fondo
+ * scuro il 400 su corpo 10px si legge peggio. Il grassetto resta.
+ */
+export function pnlClassSoft(v: number | null | undefined): string {
+    if (v == null || !Number.isFinite(Number(v))) return 'text-slate-400';
+    const n = Number(v);
+    if (n > 0) return 'text-emerald-300 font-bold';
+    if (n < 0) return 'text-red-300 font-bold';
+    return 'text-slate-300 font-bold';
+}
+
 // ------------------------------------------------------------------- glossario
 /**
  * GLOSSARIO UNICO: la UI deve usare SEMPRE queste parole.
@@ -227,6 +340,14 @@ export const T = {
     matches: 'partite',
     operations: 'operazioni',
     live: 'vive',
+    // CERT. 13/09 — etichette della BARRA DEI TOTALI della sezione Operazioni
+    // (le stesse cinque parole in Omega, Safe e Mike: il trader non deve
+    // tradurre a mente da una scheda all'altra).
+    totOperazioni: 'Operazioni',
+    totRealizzato: 'P&L realizzato',
+    totAperto: 'Se chiudo ora',
+    totInvestito: 'Investito',
+    totLiability: 'Responsabilità',
     // modalita'
     modePaper: 'MODALITÀ PAPER',
     modeLive: 'MODALITÀ LIVE',
@@ -259,8 +380,14 @@ export const TIP = {
     openLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive (non è il capitale impegnato oggi)',
     lockedPnl: 'risultato GIÀ bloccato dalle coperture sulle posizioni ancora vive: non cambia più, qualunque sia l’esito',
     realizedToday: 'somma dei P&L delle posizioni PIAZZATE oggi e già regolate (fuso Europe/Rome)',
-    pnlToday: 'P&L realizzato della giornata operativa di oggi (Europe/Rome)',
-    pnlTotal: 'P&L realizzato da sempre, tutte le giornate',
+    // CERT. 13/09 — due cose che il numero da solo non dice e che cambiano
+    // completamente come va letto: (1) a QUALE MODALITÀ si riferisce — il
+    // backend tiene P&L e rischio separati fra paper e live, e sommare le due
+    // contabilità non ha alcun senso; (2) che è già al NETTO della commissione
+    // registrata su OGNI trade (quella del trade, non il parametro corrente).
+    // La modalità è scritta anche nell'etichetta della tile («P&L oggi · PAPER»).
+    pnlToday: 'P&L realizzato della giornata operativa di oggi (Europe/Rome), al NETTO della commissione registrata su ogni trade. Vale SOLO per la modalità scritta nell’etichetta: paper e live sono contabilità separate e non si sommano.',
+    pnlTotal: 'P&L realizzato da sempre, tutte le giornate, al NETTO della commissione registrata su ogni trade. Vale SOLO per la modalità scritta nell’etichetta: paper e live sono contabilità separate e non si sommano.',
     // CERT. 12/09 (collaudo reportistica) — il testo precedente diceva «conta lo
     // stato, non il segno del P&L»: era FALSO. Tutte le fonti (trading_daily_history,
     // omega_aggregates_sql, safe_aggregates_sql, mike_aggregates_sql) contano per
@@ -270,6 +397,12 @@ export const TIP = {
     matches: 'partite con almeno una posizione piazzata oggi',
     operations: 'posizioni (gambe) piazzate oggi, chiusure escluse',
     liveCount: 'posizioni ancora vive: non regolate',
+    // CERT. 13/09 — barra dei totali della sezione Operazioni
+    totOperazioni: 'quante POSIZIONI (aperture) rientrano in questa vista: le gambe di chiusura stanno dentro la posizione che chiudono, non si contano due volte',
+    totRealizzato: 'somma dei P&L NETTI delle sole righe GIÀ REGOLATE di questa vista. Le posizioni ancora vive NON sono qui dentro: il loro valore è in «Se chiudo ora».',
+    totAperto: 'quanto si bloccherebbe chiudendo ADESSO a mercato tutte le posizioni ancora vive, al netto della commissione. È una STIMA sui prezzi del feed, non un incasso.',
+    totInvestito: 'capitale impegnato nelle aperture di questa vista (lo stake, non la responsabilità di una banca)',
+    totLiability: 'quanto è ancora a rischio ADESSO sulle posizioni vive di questa vista',
     equity: 'P&L cumulato realizzato, un gradino per giornata: parte da 0 il primo giorno del periodo',
     feed: 'FEED dello scanner (fonte unica delle quote): da quanti secondi non si aggiorna',
     beat: 'BATTITO del servizio del bot: se manca, il bot non sta operando',

@@ -1,6 +1,7 @@
 // ============================================================================
 // Card operative (segnali e opportunità) — audit L-07 / M-21:
-//   · lo step dello stake rispetta il MINIMO Betfair (2 €) in uso dal servizio;
+//   · lo stake accetta QUALSIASI importo fino a 0,01 € (place-and-trim del
+//     servizio); il minimo di giurisdizione resta solo come nota;
 //   · l'esito di ogni richiesta dice anche PERCHÉ (mai solo "errore");
 //   · una riga di opportunità troppo vecchia spiega perché «Piazza» è spento
 //     (prima restava elencata come "attuale" per mezz'ora senza dire nulla).
@@ -8,12 +9,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { InvestAction, BETFAIR_MIN_STAKE } from './InvestAction';
+import { InvestAction, MIN_STAKE_ALLOWED } from './InvestAction';
 import { OpportunityGroup } from './OpportunityGroup';
 import type { SafeOpportunityRow, SafeRequest } from '@/lib/safeBot';
 
-describe('InvestAction — minimo Betfair sullo stake (L-07)', () => {
-    it('sotto il minimo il bottone è spento e il motivo è scritto', async () => {
+/**
+ * CERT. 13/09 — questo blocco SOSTITUISCE «InvestAction — minimo Betfair sullo
+ * stake (L-07)», che verificava il comportamento SBAGLIATO: bottone «Piazza»
+ * SPENTO sotto 2 € e testo «minimo Betfair 2,00 €: sotto questa cifra l'ordine
+ * non viene immesso».
+ *
+ * Perché era sbagliato: il backend fa place-and-trim (parcheggio a quota 1000 →
+ * taglio → riprezzo, REST + coda, già collegato), quindi QUALSIASI importo fino
+ * a 0,01 € finisce davvero a mercato. Il vecchio test certificava un blocco che
+ * impediva operazioni legittime; il `CashOutButton` accettava già da 0,01 €.
+ * Ora: il minimo di giurisdizione resta VISIBILE come NOTA, il bottone resta
+ * ACCESO, e l'unico minimo che blocca è 0,01 €.
+ */
+describe('InvestAction — qualsiasi importo fino a 0,01 € è piazzabile (place-and-trim)', () => {
+    it('sotto il minimo di giurisdizione: NOTA informativa, bottone ACCESO', async () => {
         const user = userEvent.setup();
         const onPlace = vi.fn(async () => 1);
         render(
@@ -23,18 +37,40 @@ describe('InvestAction — minimo Betfair sullo stake (L-07)', () => {
             />,
         );
         const stake = screen.getByLabelText('Stake');
-        expect(stake).toHaveAttribute('min', String(BETFAIR_MIN_STAKE));
+        expect(stake).toHaveAttribute('min', String(MIN_STAKE_ALLOWED));
         await user.clear(stake);
         await user.type(stake, '1');
-        expect(screen.getByTestId('invest-min-stake')).toHaveTextContent('minimo Betfair 2,00 €');
-        expect(screen.getByTestId('invest-place')).toBeDisabled();
+        const note = screen.getByTestId('invest-min-stake');
+        expect(note).toHaveTextContent('1000→cancella→sposta');
+        expect(note).not.toHaveTextContent('non viene immesso');
+        expect(screen.getByTestId('invest-place')).toBeEnabled();
         await user.clear(stake);
         await user.type(stake, '2');
         expect(screen.queryByTestId('invest-min-stake')).toBeNull();
         expect(screen.getByTestId('invest-place')).toBeEnabled();
     });
 
-    it('il minimo viene dai parametri EFFETTIVI del servizio, non da una costante', async () => {
+    it('0,01 € si piazza davvero; 0 € no (non esiste un ordine da zero)', async () => {
+        const user = userEvent.setup();
+        const onPlace = vi.fn(async () => 1);
+        render(
+            <InvestAction
+                mode="paper" side="back" price={2.5} sizeAvailable={100}
+                defaultStake={5} requests={[]} onPlace={onPlace}
+            />,
+        );
+        const stake = screen.getByLabelText('Stake');
+        await user.clear(stake);
+        await user.type(stake, '0.01');
+        expect(screen.getByTestId('invest-place')).toBeEnabled();
+        await user.click(screen.getByTestId('invest-place'));
+        expect(onPlace).toHaveBeenCalledWith(0.01);
+        await user.clear(stake);
+        await user.type(stake, '0');
+        expect(screen.getByTestId('invest-place')).toBeDisabled();
+    });
+
+    it('il minimo di giurisdizione viene dai parametri EFFETTIVI del servizio', async () => {
         const user = userEvent.setup();
         render(
             <InvestAction
@@ -46,7 +82,8 @@ describe('InvestAction — minimo Betfair sullo stake (L-07)', () => {
         await user.clear(stake);
         await user.type(stake, '3');
         expect(screen.getByTestId('invest-min-stake')).toHaveTextContent('4,00 €');
-        expect(screen.getByTestId('invest-place')).toBeDisabled();
+        // nota, non blocco: si può piazzare comunque
+        expect(screen.getByTestId('invest-place')).toBeEnabled();
     });
 });
 

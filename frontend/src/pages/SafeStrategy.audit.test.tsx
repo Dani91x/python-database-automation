@@ -156,6 +156,26 @@ function renderPage() {
     );
 }
 
+/**
+ * CERT. 13/09 - SOSTITUISCE l'accesso DIRETTO alle righe di posizione.
+ *
+ * La sezione Operazioni di Safe ora mostra UNA RIGA PER PARTITA (tabella
+ * condivisa `trading/EventPnlTable`) e le singole posizioni - con quote, stati
+ * e bottoni di cash out - stanno nel DETTAGLIO, chiuso di default e apribile.
+ * E' la richiesta dell'utente del 13/09: prima era un elenco piatto di gambe in
+ * cui apertura e chiusura comparivano scollegate. I test che leggono
+ * `safe-trade-row` devono quindi aprire prima il dettaglio, come il trader.
+ *
+ * Idempotente: apre solo le partite ancora chiuse, cosi si puo' richiamare dopo
+ * un cambio di filtro senza richiudere quelle gia' aperte.
+ */
+async function apriPartite(user: ReturnType<typeof userEvent.setup>) {
+    const bottoni = await screen.findAllByTestId(/^apri-/);
+    for (const b of bottoni) {
+        if (b.getAttribute('aria-expanded') === 'false') await user.click(b);
+    }
+}
+
 describe('C-01 / H-03 — una sola giornata, una sola liability', () => {
     it('la giornata operativa è quella dichiarata dal DB (giorno di PIAZZAMENTO)', async () => {
         renderPage();
@@ -306,6 +326,7 @@ describe('M-21 — Annulla la riserva e vedi l esito', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         await user.click(await screen.findByTestId('safe-cancel'));
         await waitFor(() => expect(mRequest).toHaveBeenCalledWith('cancel', { trade_id: 40 }));
     });

@@ -30,7 +30,9 @@ import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
 import { countdownToOff, formatMinute } from '@/lib/matchClock';
 import { ticksBetween } from '@/lib/riskMath';
 import { fmtMoney, fmtNum, fmtOdds, fmtPct, fmtPctPoints, fmtTime } from '@/lib/format';
-import { sideMeta, T } from '@/lib/tradeStatus';
+// CERT. 13/09 — colore del P&L: la regola UNICA condivisa (verde/ROSSO in
+// grassetto, stessa dimensione), non piu' una copia locale per sezione.
+import { sideMeta, pnlClass, T } from '@/lib/tradeStatus';
 import { MikeCashOutButton } from '@/components/mike/MikeCashOutButton';
 import { useSecondTick } from '@/components/mike/useMikeClock';
 import {
@@ -69,11 +71,6 @@ export interface MikeMatchCardProps {
 }
 
 // ------------------------------------------------------------------ helpers
-function pnlClass(v: number | null | undefined): string {
-    if (v == null) return 'text-slate-400';
-    return v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-300';
-}
-
 const EDGE_BY_GROUP: Record<string, string> = {
     pre: 'border-l-teal-400/70',
     live: 'border-l-violet-400/70',

@@ -31,7 +31,9 @@ import { ParamsSheet } from '@/components/safestrategy/ParamsSheet';
 import { BotParamsSheet, type ParamCorrections } from '@/components/safestrategy/BotParamsSheet';
 import { OpportunityGroup, filterOpps, OPP_KIND_META, type OppKindFilter } from '@/components/safestrategy/OpportunityGroup';
 import { RiskPanel } from '@/components/safestrategy/RiskPanel';
-import { SafeTradesTable } from '@/components/safestrategy/SafeTradesTable';
+import { SafeTradesTable, safeCloseNowTotal } from '@/components/safestrategy/SafeTradesTable';
+import { EventPnlTable } from '@/components/trading/EventPnlTable';
+import { groupTradesIntoCicli } from '@/lib/eventGroups';
 import { useSafeBot } from '@/components/safestrategy/useSafeBot';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
 import { TradingHistory } from '@/components/trading/TradingHistory';
@@ -40,15 +42,16 @@ import { BotHeader } from '@/components/trading/BotHeader';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
 import { ModeToggle } from '@/components/trading/ModeToggle';
 import { ModeBanner } from '@/components/trading/ModeBanner';
+import { ModeBadge } from '@/components/trading/ModeBadge';
 import { LiveConfirmDialog } from '@/components/trading/LiveConfirmDialog';
 import { StatTile, KpiRow, toneOf } from '@/components/trading/StatTile';
 import { DayBar } from '@/components/trading/DayBar';
 import { EmptyState, SectionCard } from '@/components/trading/EmptyState';
 import { EquityCard } from '@/components/trading/EquityCard';
 import { ActivityFeed, type ActivityRow } from '@/components/trading/ActivityFeed';
-import { safeActivityLine, safeActivityMeta } from '@/components/safestrategy/safeActivity';
+import { safeActivityLine, safeActivityMeta, safeActivityMode, SAFE_SKIP_KINDS } from '@/components/safestrategy/safeActivity';
 import { fmtMoney } from '@/lib/format';
-import { T } from '@/lib/tradeStatus';
+import { T, TIP } from '@/lib/tradeStatus';
 import { toastSettlement } from '@/lib/toasts';
 import { fetchSafeDaily, fetchSafeDayTrades, romeDay, dayLabel, type SafeSportFilter } from '@/lib/dailyHistory';
 // stesse funzioni PURE (testate) della scheda Omega: gruppo per evento, P&L per
@@ -89,7 +92,20 @@ export default function SafeStrategy() {
         football, tennis, signals, scanStatus: providerScanStatus,
         params: localParams, saveParams,
     } = useSafeStrategy();
-    const bot = useSafeBot({ onError: (m) => toast.error('Bot Safe Strategy', { description: m }) });
+    // il dialog di conferma LIVE va dichiarato PRIMA del bot: `useSafeBot` lo
+    // apre da solo quando qualcuno prova ad avviare in LIVE senza conferma.
+    const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
+    const bot = useSafeBot({
+        onError: (m) => toast.error('Bot Safe Strategy', { description: m }),
+        // CERT. 13/09 — «Avvia» con modalità LIVE selezionata e conferma non
+        // data in questa sessione: NON si avvia, si chiede conferma. Il control
+        // resta a 'live' dopo uno stop, quindi senza questa guardia bastava
+        // riaprire l'app e premere Avvia per operare con soldi veri.
+        onLiveConfirmRequired: () => {
+            setLiveConfirmOpen(true);
+            toast.warning('Conferma la modalità LIVE prima di avviare il bot con soldi veri');
+        },
+    });
 
     // ------------------------------------------------------------------
     // SALUTE DELLO SCANNER: la STESSA fonte di /omega e /mike
@@ -124,7 +140,6 @@ export default function SafeStrategy() {
     }, [providerScanStatus, ownScanStatus]);
 
     const [nowMs, setNowMs] = useState(() => Date.now());
-    const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
     // tab Trade: di default SOLO la giornata operativa (+ posizioni vive di giorni
     // precedenti); "mostra tutte" = tutto il caricato (lo storico completo e' nel tab Storico)
     const [showAllTrades, setShowAllTrades] = useState(false);
@@ -366,15 +381,43 @@ export default function SafeStrategy() {
         () => tennisOppRows.filter((r) => filterOpps(r, oppMinConfidence, oppSide, oppKindFilter).length > 0),
         [tennisOppRows, oppMinConfidence, oppSide, oppKindFilter],
     );
-    const realizedToday = Number(agg?.realized_today ?? stats.realized_today ?? 0);
-    const realizedTotal = Number(agg?.realized_total ?? stats.realized_total ?? 0);
-    const openLiability = Number(agg?.open_liability ?? stats.open_liability ?? 0);
-    const reconcilingLiability = Number(
-        agg?.reconciling_liability ?? stats.reconciling_liability ?? stats.risk?.reconciling_liability ?? 0,
+    // ------------------------------------------------------------------
+    // CERT. 13/09 — un dato ASSENTE non è uno ZERO.
+    // Prima ogni grandezza finiva in `Number(... ?? 0)`: con la RPC vecchia, il
+    // servizio mai partito o la migrazione non applicata, la pagina scriveva
+    // «0,00 €» — un'affermazione precisa e FALSA su una schermata di trading
+    // ("oggi non ho realizzato nulla" invece di "non lo so"). `fmtMoney(null)`
+    // mostra «—» per progetto (lib/format.ts) e `DayBar` gestisce già i null:
+    // bastava smettere di riempirli a monte.
+    // ------------------------------------------------------------------
+    const numOrNull = (v: unknown): number | null => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const realizedToday: number | null = numOrNull(agg?.realized_today ?? stats.realized_today);
+    const realizedTotal: number | null = numOrNull(agg?.realized_total ?? stats.realized_total);
+    const openLiability: number | null = numOrNull(agg?.open_liability ?? stats.open_liability);
+    const reconcilingLiability: number | null = numOrNull(
+        agg?.reconciling_liability ?? stats.reconciling_liability ?? stats.risk?.reconciling_liability,
     );
     const openCount = agg?.open_count ?? livePositions.length;
-    const dayLiability = Number(agg?.day_liability ?? stats.risk?.daily_liability ?? openLiability);
+    const dayLiability: number | null = numOrNull(
+        agg?.day_liability ?? stats.risk?.daily_liability ?? openLiability,
+    );
     const totalActive = bySport.calcioActive.length + bySport.tennisActive.length;
+    // ------------------------------------------------------------------
+    // CERT. 13/09 — PERCHÉ BASE E PUNTA NON SCATTANO.
+    // Entrambe hanno condizioni PRE-KICKOFF (quota favorita 1.40-1.80, quota
+    // sfavorita 4-8): senza il riferimento 1X2 catturato prima del fischio
+    // d'inizio — lo scanner partito a match già iniziato — non sono nemmeno
+    // VALUTABILI, e il backend scarta la partita con `reason: pre_ko_assente`.
+    // Il dato c'era solo dentro il sub-tab Monitor, card per card: da fuori il
+    // trader vedeva soltanto «nessun segnale» e non poteva distinguere
+    // «condizioni non soddisfatte» da «non misurabili». Ora il numero sta sulla
+    // tab di default, accanto a «Partite monitorate».
+    // ------------------------------------------------------------------
+    const preKoMissing = useMemo(() => football.filter((m) => m.preMatchMissing).length, [football]);
     // PARTITE MONITORATE = quelle che lo SCANNER dichiara di seguire in questo
     // momento: lo stesso numero del chip di salute e delle pagine Omega/Mike.
     // Le righe montate da questa schermata sono solo la copia locale del feed e
@@ -453,6 +496,9 @@ export default function SafeStrategy() {
                 ts: a.ts,
                 kind: a.kind,
                 event_name: name,
+                // CERT. 13/09 — il servizio scrive `payload.mode` su OGNI riga:
+                // va portata fino al feed, che la mostra come chip PAPER/LIVE.
+                mode: safeActivityMode(p),
                 payload: name ? { ...p, event_name: name } : p,
             };
         }),
@@ -485,7 +531,12 @@ export default function SafeStrategy() {
     }, [bot.activity]);
     const status: SafeBotStatus = bot.control?.status ?? 'idle';
     const running = status === 'running' || status === 'stopping';
+    // CERT. 13/09 — `bot.mode` è ora la modalità PERSISTITA sul servizio (o la
+    // selezione locale finché il control non esiste): è quella con cui vanno
+    // dichiarati gli ordini (il servizio rifiuta le richieste di una modalità
+    // diversa dalla sua) e quella con cui vanno ETICHETTATI i KPI.
     const mode: SafeMode = bot.mode;
+    const modeTag = mode.toUpperCase();
 
     // ---- azioni
     function onToggleMode(next: SafeMode) {
@@ -690,9 +741,14 @@ export default function SafeStrategy() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-[11px]">
                     <span className="text-muted-foreground uppercase tracking-wide">Confidenza minima</span>
+                    {/* aria-pressed come ogni altro filtro della pagina: senza,
+                        uno screen reader legge quattro bottoni identici e non dice
+                        quale è quello attivo. */}
                     {[0, 0.5, 0.7, 0.85].map((c) => (
                         <button
                             key={c}
+                            type="button"
+                            aria-pressed={oppMinConfidence === c}
                             onClick={() => setOppMinConfidence(c)}
                             className={`px-2 py-0.5 rounded-full border tabular-nums ${oppMinConfidence === c ? 'bg-secondary/20 text-secondary border-secondary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
                         >
@@ -703,6 +759,8 @@ export default function SafeStrategy() {
                     {(['all', 'back', 'lay'] as const).map((s) => (
                         <button
                             key={s}
+                            type="button"
+                            aria-pressed={oppSide === s}
                             onClick={() => setOppSide(s)}
                             className={`px-2 py-0.5 rounded-full border uppercase ${oppSide === s ? 'bg-primary/20 text-primary border-primary/40' : 'border-white/10 text-muted-foreground hover:text-white'}`}
                         >
@@ -760,9 +818,33 @@ export default function SafeStrategy() {
         );
     }
 
+    /**
+     * CERT. 13/09 — SEZIONE OPERAZIONI: UNA RIGA PER PARTITA.
+     *
+     * Richiesta dell'utente, testuale: «voglio che la sezione operazioni e i
+     * dati delle operazioni sia uniformata con più informazioni possibili ed
+     * estremamente CHIARA!!! […] Io voglio i totali delle operazioni ben
+     * chiari». Prima qui c'era un elenco PIATTO di gambe: l'apertura di una
+     * posizione e la sua chiusura comparivano come due operazioni scollegate e
+     * nessuna riga diceva quanto avesse reso la PARTITA. Il riepilogo stava in
+     * una nota da 11px accanto al titolo.
+     *
+     * Adesso: la tabella condivisa `trading/EventPnlTable` (la stessa di Mike)
+     * con i totali in testa sempre visibili e il dettaglio apribile. Dentro il
+     * dettaglio si monta la tabella ricca di Safe, quella coi bottoni di cash
+     * out e le colonne operative: nessuna informazione è stata tolta, è solo
+     * arrivata al secondo livello invece che addosso al trader tutta insieme.
+     */
     function renderTrades(list: SafeTrade[], today: SafeTrade[], summary: ReturnType<typeof summarizeMatches>) {
         const shown = showAllTrades ? list : today;
-        const positions = groupClosingLegs(shown).length;   // posizioni (le chiusure stanno sotto l'apertura)
+        const commissionPct = bot.paramsEffective?.commission_pct ?? bot.params.commission_pct;
+        const cicli = groupTradesIntoCicli<SafeTrade>(shown);
+        // «Se chiudo ora»: stima sui prezzi del feed, calcolata con la STESSA
+        // funzione della colonna di riga (mai due formule per lo stesso numero)
+        const aperto = safeCloseNowTotal(shown, payloadByEvent, commissionPct);
+        const emptyText = showAllTrades
+            ? "nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot"
+            : "nessuna operazione oggi — piazza da un segnale o da un'opportunità, oppure avvia il bot (le giornate passate sono nello Storico)";
         return (
             <div className="space-y-4">
                 <EquityCard
@@ -770,42 +852,54 @@ export default function SafeStrategy() {
                     scope={showAllTrades ? `ultime ${list.length} operazioni caricate` : `giornata ${dayLabel(operatingDay, { year: false })}`}
                     label="Equity curve Safe Strategy"
                 />
-                <SectionCard
+                <EventPnlTable<SafeTrade>
+                    cicli={cicli}
                     testId="safe-trades-card"
-                    icon={<Activity className="w-4 h-4 text-primary" aria-hidden />}
-                    title={showAllTrades ? 'Tutte le operazioni' : 'Operazioni di oggi'}
-                    count={positions}
-                    note={
-                        <span data-testid="safe-trades-summary">
-                            · {summary.legs} posizioni oggi · {summary.won}V {summary.lost}P
-                            {summary.live > 0 && ` · ${summary.live} ${T.live}`}
-                            {summary.pnl_locked != null && ` · ${T.lockedPnl} ${fmtMoney(summary.pnl_locked, { signed: true })}`}
-                            {summary.open_liability > 0 && ` · ${T.openLiability} ${fmtMoney(summary.open_liability)}`}
-                        </span>
-                    }
-                    actions={
+                    icona={<Activity className="w-4 h-4 text-primary" aria-hidden />}
+                    titolo={showAllTrades ? 'Tutte le operazioni' : 'Operazioni di oggi'}
+                    // i totali valgono per la modalità ATTIVA sul servizio e lo
+                    // dichiarano nell'etichetta: paper e live non si sommano
+                    modalita={mode}
+                    apertoOra={aperto.totale}
+                    unita={{ uno: 'posizione', molti: 'posizioni' }}
+                    avviso={aperto.nonValutabili > 0 ? (
+                        <p className="px-4 py-1.5 text-[11px] text-amber-300/90" data-testid="safe-aperto-parziale">
+                            {aperto.nonValutabili} {aperto.nonValutabili === 1 ? 'posizione viva non è valutabile' : 'posizioni vive non sono valutabili'}
+                            {' '}(nessun prezzo nel feed): «{T.totAperto}» le esclude invece di contarle zero.
+                        </p>
+                    ) : undefined}
+                    azioni={
                         <>
+                            <span className="text-[11px] text-slate-500" data-testid="safe-trades-summary">
+                                {summary.legs} posizioni oggi · {summary.won}V {summary.lost}P
+                                {summary.live > 0 && ` · ${summary.live} ${T.live}`}
+                                {summary.pnl_locked != null && ` · ${T.lockedPnl} ${fmtMoney(summary.pnl_locked, { signed: true })}`}
+                            </span>
                             <span className="text-[11px] text-slate-500">{T.operatingDay} {dayLabel(operatingDay, { year: false })} · le giornate passate sono nello Storico</span>
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAllTrades((v) => !v)} data-testid="safe-trades-toggle">
                                 {showAllTrades ? 'solo oggi' : 'mostra tutte'}
                             </Button>
                         </>
                     }
-                >
-                    <SafeTradesTable
-                        trades={shown}
-                        commissionPct={bot.paramsEffective?.commission_pct ?? bot.params.commission_pct}
-                        liveFeed={payloadByEvent}
-                        isCashOutPending={bot.isCashOutPending}
-                        freshnessOf={freshnessOf}
-                        requests={bot.requests}
-                        onCashOut={cashOut}
-                        onCancel={cancelReserve}
-                        emptyText={showAllTrades
-                            ? "nessun trade ancora — piazza da un segnale o da un'opportunità, oppure avvia il bot"
-                            : "nessuna operazione oggi — piazza da un segnale o da un'opportunità, oppure avvia il bot (le giornate passate sono nello Storico)"}
-                    />
-                </SectionCard>
+                    nota={<>Una riga per PARTITA col netto delle sue operazioni, commissione già tolta. Clicca per aprire le posizioni, le quote, gli stati e i bottoni di {T.cashOut}.</>}
+                    vuoto={emptyText}
+                    renderDettaglio={(e) => (
+                        <SafeTradesTable
+                            trades={e.cicli.flatMap((g) => [g.open, ...g.closes])}
+                            // modalità ATTIVA sul servizio: le righe di un'altra
+                            // modalità restano visibili ma attenuate e col badge
+                            currentMode={mode}
+                            commissionPct={commissionPct}
+                            liveFeed={payloadByEvent}
+                            isCashOutPending={bot.isCashOutPending}
+                            freshnessOf={freshnessOf}
+                            requests={bot.requests}
+                            onCashOut={cashOut}
+                            onCancel={cancelReserve}
+                            emptyText={emptyText}
+                        />
+                    )}
+                />
             </div>
         );
     }
@@ -841,7 +935,10 @@ export default function SafeStrategy() {
                             lastError={scanStatus?.payload?.last_error ?? null}
                         />
                     }
-                    modeToggle={<ModeToggle mode={mode} onChange={onToggleMode} />}
+                    // l'interruttore mostra la SELEZIONE (quella che partirà col
+                    // prossimo Avvia); la modalità del SERVIZIO è nel banner e
+                    // nella riga di disallineamento qui sotto.
+                    modeToggle={<ModeToggle mode={bot.desiredMode} onChange={onToggleMode} />}
                     params={bot.available
                         ? (
                             <BotParamsSheet
@@ -871,6 +968,29 @@ export default function SafeStrategy() {
                     error={bot.control?.error ?? null}
                 />
 
+                {/* CERT. 13/09 — la modalità SELEZIONATA qui e quella ATTIVA sul
+                    servizio possono divergere (l'interruttore è locale finché non
+                    si riavvia il bot). Prima la pagina mostrava solo lo stato del
+                    browser: l'utente credeva di essere in PAPER mentre il servizio
+                    era armato in LIVE — e il servizio RIFIUTA gli ordini di una
+                    modalità diversa dalla sua. Ora si leggono entrambe. */}
+                {bot.modeMismatch && (
+                    <div
+                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200 flex items-center gap-2 flex-wrap"
+                        data-testid="safe-mode-mismatch"
+                        role="status"
+                    >
+                        <span>selezionata:</span>
+                        <ModeBadge mode={bot.desiredMode} testId="safe-mode-selected" />
+                        <span>· attiva sul servizio:</span>
+                        <ModeBadge mode={bot.mode} testId="safe-mode-service" />
+                        <span className="text-amber-200/80">
+                            — vale quella del servizio finché non premi «{T.stop}» e «{T.start}»:
+                            gli ordini di un&apos;altra modalità vengono rifiutati.
+                        </span>
+                    </div>
+                )}
+
                 {/* ---------------------------------------- giornata operativa */}
                 <DayBar
                     dayLabel={dayLabel(operatingDay, { weekday: true })}
@@ -886,9 +1006,14 @@ export default function SafeStrategy() {
                     // compariva tre volte (barra, tile, pannello Rischio) e due
                     // volte con un significato diverso.
                     lockedPnl={lockedToday}
-                    note={dayFromUi
-                        ? `giorno di PIAZZAMENTO della posizione — ${MIGRAZIONE_NOTA}: contati sulle righe caricate, non sull'intera giornata`
-                        : 'giorno di PIAZZAMENTO della posizione: gli stessi numeri dei KPI, del tab Trade e dello Storico'}
+                    /* CERT. 13/09 — la barra deve dire a QUALE MODALITÀ si
+                       riferisce (il backend tiene P&L e rischio separati fra
+                       paper e live) e che i P&L sono al netto della commissione
+                       registrata su ogni trade. */
+                    note={`modalità ${modeTag} · al netto della commissione registrata su ogni trade · `
+                        + (dayFromUi
+                            ? `giorno di PIAZZAMENTO della posizione — ${MIGRAZIONE_NOTA}: contati sulle righe caricate, non sull'intera giornata`
+                            : 'giorno di PIAZZAMENTO della posizione: gli stessi numeri dei KPI, del tab Trade e dello Storico')}
                 />
 
                 {/* ------------------------------------------------------ KPI */}
@@ -911,8 +1036,26 @@ export default function SafeStrategy() {
                                 </span>
                             }
                         />
-                        <StatTile label={T.pnlToday} value={fmtMoney(realizedToday, { signed: true })} tone={toneOf(realizedToday)} icon={<TrendingUp className="w-3.5 h-3.5" />} sub={<span data-testid="safe-operating-day">{T.operatingDay} {dayLabel(operatingDay, { year: false })} · Europe/Rome · {wonToday}V {lostToday}P</span>} />
-                        <StatTile label={T.pnlTotal} value={fmtMoney(realizedTotal, { signed: true })} tone={toneOf(realizedTotal)} />
+                        {/* CERT. 13/09 — l'etichetta dice la MODALITÀ ("P&L oggi · PAPER"):
+                            paper e live sono contabilità separate e sommarle non significa
+                            nulla. Il tooltip (TIP) aggiunge che è al netto della commissione
+                            registrata su OGNI trade, non del parametro corrente. */}
+                        <StatTile
+                            label={`${T.pnlToday} · ${modeTag}`}
+                            testId="safe-kpi-pnl-today"
+                            value={fmtMoney(realizedToday, { signed: true })}
+                            tone={toneOf(realizedToday)}
+                            hint={TIP.pnlToday}
+                            icon={<TrendingUp className="w-3.5 h-3.5" />}
+                            sub={<span data-testid="safe-operating-day">{T.operatingDay} {dayLabel(operatingDay, { year: false })} · Europe/Rome · {wonToday}V {lostToday}P</span>}
+                        />
+                        <StatTile
+                            label={`${T.pnlTotal} · ${modeTag}`}
+                            testId="safe-kpi-pnl-total"
+                            value={fmtMoney(realizedTotal, { signed: true })}
+                            tone={toneOf(realizedTotal)}
+                            hint={TIP.pnlTotal}
+                        />
                         <StatTile
                             label={T.openLiability}
                             value={fmtMoney(openLiability)}
@@ -922,7 +1065,7 @@ export default function SafeStrategy() {
                             sub={
                                 <span data-testid="safe-liability-sub" title="quanto puoi ancora perdere sulle posizioni APERTE in questo momento. Il capitale impegnato nella giornata (base dei cap) è nel pannello Rischio.">
                                     rischio vivo ora su {openCount} {openCount === 1 ? 'posizione' : 'posizioni'}
-                                    {reconcilingLiability > 0 && (
+                                    {reconcilingLiability != null && reconcilingLiability > 0 && (
                                         <b className="block text-fuchsia-300/90" data-testid="safe-liability-reconciling">
                                             di cui in verifica su Betfair {fmtMoney(reconcilingLiability)}
                                         </b>
@@ -948,6 +1091,16 @@ export default function SafeStrategy() {
                                     ⚽ {monitoredCalcio} · 🎾 {monitoredTennis}
                                     {monitoredFromScanner && localRows !== monitoredCalcio + monitoredTennis && (
                                         <> · {localRows} caricate qui</>
+                                    )}
+                                    {preKoMissing > 0 && (
+                                        <b
+                                            className="block text-amber-300/90"
+                                            data-testid="safe-pre-ko-missing"
+                                            title="lo scanner è partito a partita già iniziata: la quota 1X2 pre-kickoff non è stata catturata. BASE e PUNTA hanno condizioni pre-match (favorita 1,40-1,80 · sfavorita 4-8) e su queste partite non sono valutabili — il servizio le scarta con «riferimento pre-KO assente», non perché le condizioni siano false."
+                                        >
+                                            {preKoMissing} {preKoMissing === 1 ? 'partita' : 'partite'} senza riferimento pre-KO
+                                            {' '}→ BASE e PUNTA non valutabili {preKoMissing === 1 ? 'su questa' : 'su queste'}
+                                        </b>
                                     )}
                                 </span>
                             }
@@ -1167,6 +1320,14 @@ export default function SafeStrategy() {
                         metaOf={safeActivityMeta}
                         lineOf={(r) => safeActivityLine(r.payload)}
                         filterable
+                        /* CERT. 13/09 — filtro per TIPO e chip «solo NON ENTRATO»:
+                           è la risposta alla domanda «perché base non entra?».
+                           Gli `skip` sono in tono MUTED e il toggle «solo da
+                           guardare» li elimina: senza questo filtro la riga con
+                           «riferimento pre-KO assente» era irraggiungibile. */
+                        kindFilterable
+                        quickKinds={SAFE_SKIP_KINDS}
+                        currentMode={mode}
                         timeSeconds
                         testId="safe-activity"
                         emptyText="nessuna attività registrata: il servizio scrive qui ogni decisione (serve la migrazione safe_strategy_bot_v2.sql o il bot avviato)"

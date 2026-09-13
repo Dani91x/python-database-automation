@@ -22,10 +22,11 @@ import {
     CashOutButton, greenPrice, hedgeSide, netAfterCommission, partialLockedPnl,
 } from '@/components/trading/CashOutButton';
 import { ExitBadge } from '@/components/trading/ExitBadge';
+import { ModeBadge } from '@/components/trading/ModeBadge';
 import { liveScoreLabel } from '@/lib/useScanLiveFeed';
 import { tradeExit } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime, DASH } from '@/lib/format';
-import { statusMeta, T } from '@/lib/tradeStatus';
+import { statusMeta, pnlClass, pnlClassSoft, T } from '@/lib/tradeStatus';
 import { positionInfo } from '@/lib/omega';
 import { ticksBetween } from '@/lib/riskMath';
 import type { CalcioScanPayload, TennisScanPayload } from '@/lib/safeStrategyScan';
@@ -35,7 +36,7 @@ import {
     tradeCommission, tradeExposureNow, FEED_ROW_STALE_MS,
     tradeHold, holdReasonLabel, holdReasonHasP, pLoseEntry, tradeOppKind,
     groupClosingLegs, hedgeTooltip, partialHedge,
-    type FeedFreshness, type SafeRequest, type SafeTrade, type SafeTradeStatus, type TradeBook,
+    type FeedFreshness, type SafeMode, type SafeRequest, type SafeTrade, type SafeTradeStatus, type TradeBook,
 } from '@/lib/safeBot';
 import { safeMarketLabel, safeReasonLabel } from './safeActivity';
 import { OPP_KIND_META } from './OpportunityGroup';
@@ -86,6 +87,21 @@ function lockedPnlOf(t: SafeTrade): number | null {
     return Number.isFinite(v) ? v : null;
 }
 
+/**
+ * P&L della riga come NUMERO o `null`.
+ *
+ * CERT. 13/09 — il tipo dichiara `pnl: number`, ma il database restituisce
+ * `null` finché la riga non è regolata: `Number(null)` è 0, e uno zero al posto
+ * di «non ancora deciso» è la bugia più pericolosa della pagina (dice «non hai
+ * né guadagnato né perso» su una posizione che è ancora tutta a rischio).
+ */
+function pnlOf(t: SafeTrade): number | null {
+    const v = t.pnl;
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
 /** `meta.exit_hold.source` del servizio (`_p_selection_wins`) → italiano. */
 const HOLD_SOURCE_IT: Record<string, string> = {
     model: 'modello del servizio', market: 'quote di mercato', none: 'nessuna stima disponibile',
@@ -98,7 +114,12 @@ const CLS = {
     green: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50',
     red: 'bg-red-500/15 text-red-300 border-red-500/40',
     orange: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
-    violet: 'bg-violet-500/15 text-violet-300 border-violet-500/40',
+    // CERT. 13/09 — il VIOLA resta SOLO alla variante «Risultato Esatto»
+    // (variantStyles.ts): nella stessa tabella lo stesso colore indicava due
+    // cose diverse (la strategia nella colonna «Strategia», il «manuale» nelle
+    // colonne «Partita» e «Stato»). Tutto ciò che è MANUALE passa al CIANO —
+    // non all'indaco, già preso da «APPOGGIATA · NON ABBINATA» (RESTING_META).
+    cyan: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40',
     fuchsia: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40',
 };
 
@@ -170,7 +191,7 @@ export function safeRowStatus(
         const manual = exit?.kind === 'manual'
             || closes.some((c) => c.origin === 'manual' || (c.meta ?? {})['cashout'] === true);
         if (manual) {
-            return { label: 'CASH OUT MANUALE', cls: CLS.violet, edge: 'border-l-violet-500/60', title: hedgeTooltip(t, closes[0] ?? null) };
+            return { label: 'CASH OUT MANUALE', cls: CLS.cyan, edge: 'border-l-cyan-500/60', title: hedgeTooltip(t, closes[0] ?? null) };
         }
         // glossario §3: lo stato e' "CHIUSO" ("CHIUSO A MERCATO" non e' uno stato)
         const m = statusMeta('hedged');
@@ -222,6 +243,61 @@ export function exitRunLine(t: SafeTrade): string | null {
     return null;
 }
 
+/**
+ * «Se chiudo ora» NETTO di UNA posizione, con i prezzi del feed.
+ *
+ * Estratta dal corpo della tabella (13/09) perché serve in DUE posti: la
+ * colonna della riga e il TOTALE in testa alla sezione. Due formule diverse per
+ * lo stesso numero avrebbero dato due cifre diverse sullo stesso schermo — ed è
+ * proprio il genere di incoerenza che fa perdere fiducia in una pagina di soldi.
+ * `null` = non calcolabile (nessun prezzo nel feed): MAI uno zero.
+ */
+export function safeCloseNow(
+    t: SafeTrade,
+    payload: CalcioScanPayload | TennisScanPayload | null | undefined,
+    commissionPct: number,
+): number | null {
+    const book = safeTradeBook(t, payload ?? null);
+    const exp = tradeExposureNow(t);
+    const nowPrice = greenPrice(exp.win, exp.lose, book?.back ?? null, book?.lay ?? null);
+    if (nowPrice == null) return null;
+    return netAfterCommission(
+        partialLockedPnl(nowPrice, exp.win, exp.lose, 1),
+        tradeCommission(t, commissionPct),
+    );
+}
+
+/**
+ * TOTALE «se chiudo ora» delle posizioni ANCORA VIVE.
+ *
+ * `null` quando nessuna posizione viva è valutabile: la barra dei totali scrive
+ * «—». Una posizione viva senza prezzo NON contribuisce con zero — sarebbe come
+ * dichiarare che chiudere quella posizione non costa e non rende niente.
+ * Il conteggio `nonValutabili` dice quante sono rimaste fuori.
+ */
+export function safeCloseNowTotal(
+    trades: readonly SafeTrade[],
+    liveFeed: Record<string, CalcioScanPayload | TennisScanPayload>,
+    commissionPct: number,
+): { totale: number | null; valutate: number; nonValutabili: number } {
+    let totale = 0, valutate = 0, nonValutabili = 0;
+    for (const t of trades) {
+        const hedge = hedgeState(t);
+        const viva = t.status === 'open' || t.status === 'pending'
+            || (t.status === 'hedged' && hedge != null && !hedge.complete);
+        if (!viva) continue;
+        const v = safeCloseNow(t, liveFeed[t.event_id], commissionPct);
+        if (v == null) { nonValutabili += 1; continue; }
+        totale += v;
+        valutate += 1;
+    }
+    return {
+        totale: valutate > 0 ? Math.round(totale * 100) / 100 : null,
+        valutate,
+        nonValutabili,
+    };
+}
+
 export interface SafeTradesTableProps {
     trades: SafeTrade[];
     /** aliquota di fallback: la commissione VERA è quella del trade */
@@ -237,6 +313,15 @@ export interface SafeTradesTableProps {
     onCancel?: (trade: SafeTrade) => Promise<void> | void;
     /** ultime richieste operative: esito visibile sulla riga (L-07) */
     requests?: SafeRequest[];
+    /**
+     * CERT. 13/09 — modalità ATTIVA sul servizio in questo momento.
+     * Serve solo a ATTENUARE le righe di un'altra modalità: una posizione LIVE
+     * in una schermata PAPER (o viceversa) non è un errore, ma non è nemmeno
+     * quello che l'utente sta guardando, e mescolarle senza distinzione è il
+     * modo più rapido per chiudere la posizione sbagliata. Il badge di modalità
+     * c'è SEMPRE su ogni riga, anche senza questa prop.
+     */
+    currentMode?: SafeMode;
     /** testo dello stato vuoto (la pagina distingue "oggi" da "tutte") */
     emptyText?: string;
 }
@@ -245,7 +330,7 @@ const COLS = 16;
 
 export function SafeTradesTable({
     trades, commissionPct, liveFeed, isCashOutPending, freshnessOf, onCashOut, onCancel,
-    requests = [], emptyText,
+    requests = [], emptyText, currentMode,
 }: SafeTradesTableProps) {
     const groups = groupClosingLegs(trades);
     // oltre 200 righe caricate una chiusura può perdere la sua apertura: va
@@ -316,10 +401,9 @@ export function SafeTradesTable({
                         // esiti) e dello stesso CashOutButton della riga: il
                         // numero della colonna e quello del bottone non possono
                         // differire. `lockedPnlAt` (ideale) li faceva divergere.
-                        const closeNow = nowPrice != null
-                            ? netAfterCommission(partialLockedPnl(nowPrice, exp.win, exp.lose, 1), commission)
-                            : null;
+                        const closeNow = safeCloseNow(t, payload, commissionPct);
                         const locked = lockedPnlOf(t);
+                        const rowPnl = pnlOf(t);
                         const fresh = isLive ? (freshnessOf?.(t.event_id) ?? null) : null;
                         const stale = staleReason(fresh);
                         const blocked = isLive ? marketBlocked(book) : null;
@@ -340,19 +424,47 @@ export function SafeTradesTable({
                         const posInfo = positionInfo(t.meta ?? null);
                         const canCashOut = t.status === 'open'
                             || (t.status === 'hedged' && hedge != null && !hedge.complete);
+                        // CERT. 13/09 — riga di una modalità DIVERSA da quella
+                        // attiva sul servizio: resta visibile (nasconderla
+                        // sarebbe peggio: sono soldi o posizioni vere) ma in
+                        // tono attenuato e col badge, così non si confonde con
+                        // ciò che si sta operando adesso.
+                        const otherMode = currentMode != null && t.mode !== currentMode;
                         return (
                             <Fragment key={t.id}>
-                            <tr className={`border-t border-white/5 border-l-2 ${st.edge} hover:bg-white/5`} data-testid="safe-trade-row" data-status={st.label}>
+                            <tr
+                                className={`border-t border-white/5 border-l-2 ${st.edge} hover:bg-white/5 ${otherMode ? 'opacity-60' : ''}`}
+                                data-testid="safe-trade-row"
+                                data-status={st.label}
+                                data-mode={t.mode}
+                                data-other-mode={otherMode ? '1' : undefined}
+                                title={otherMode ? `riga in ${String(t.mode).toUpperCase()}: il servizio è in ${String(currentMode).toUpperCase()}` : undefined}
+                            >
                                 <td className="px-3 py-2 text-slate-400 tabular-nums">{fmtTime(t.placed_at)}</td>
                                 <td className="px-3 py-2 max-w-[200px] truncate" title={t.event_name ?? t.event_id}>
                                     {t.origin === 'manual' && (
-                                        <Badge variant="outline" className={`mr-1.5 px-1 py-0 text-[10px] ${CLS.violet}`} title="piazzato manualmente">✋</Badge>
+                                        <Badge variant="outline" className={`mr-1.5 px-1 py-0 text-[10px] ${CLS.cyan}`} title="piazzato manualmente">✋</Badge>
                                     )}
                                     {t.event_name ?? t.event_id}
                                     {realScore && (
                                         <span className="ml-1.5 text-[10px] text-slate-400 tabular-nums" data-testid="safe-real-score" title="risultato reale della partita dal feed">
                                             ({realScore})
                                         </span>
+                                    )}
+                                    {/* CERT. 13/09 — MINUTO E PUNTEGGIO D'INGRESSO: il servizio
+                                        li registra su ogni riga e nessuno li mostrava. Senza,
+                                        una posizione aperta al 12' sullo 0-0 e una aperta al
+                                        78' sul 2-2 sono indistinguibili in tabella, e sono due
+                                        scommesse completamente diverse. */}
+                                    {(t.minute_at_entry != null || t.score_at_entry) && (
+                                        <div
+                                            className="mt-0.5 text-[10px] text-slate-500 tabular-nums"
+                                            data-testid="safe-entry-context"
+                                            title="minuto e punteggio nel momento in cui la posizione è stata aperta"
+                                        >
+                                            ingresso {t.minute_at_entry != null ? `${t.minute_at_entry}′` : DASH}
+                                            {t.score_at_entry ? ` · ${t.score_at_entry}` : ''}
+                                        </div>
                                     )}
                                 </td>
                                 <td className="px-3 py-2 text-center text-[11px] font-heading font-bold text-slate-300">
@@ -367,6 +479,17 @@ export function SafeTradesTable({
                                             {OPP_KIND_META[kind].label}
                                         </Badge>
                                     ) : (STRATEGY_LABEL[t.strategy] ?? t.strategy)}
+                                    {/* CERT. 13/09 — modalità della RIGA, sempre e su ogni riga:
+                                        PAPER neutro, LIVE rosso. L'assenza di badge non deve
+                                        mai poter significare "forse paper, forse non dichiarata". */}
+                                    <ModeBadge
+                                        mode={t.mode}
+                                        compact
+                                        className="ml-1 align-middle"
+                                        testId="safe-trade-mode"
+                                        dimmed={otherMode}
+                                        title={otherMode ? `il servizio è in ${String(currentMode).toUpperCase()}` : undefined}
+                                    />
                                     {pEntry != null && (
                                         <div className="mt-0.5 text-[10px] font-normal text-slate-500 tabular-nums" data-testid="trade-p-lose-entry" title="probabilità di perdita stimata all'ingresso">
                                             P(perdita) ingresso {fmtPct(pEntry)}
@@ -417,7 +540,7 @@ export function SafeTradesTable({
                                 <td className="px-3 py-2 text-right tabular-nums" data-testid="safe-close-now">
                                     {closeNow != null ? (
                                         <span
-                                            className={closeNow >= 0 ? 'text-emerald-300' : 'text-red-300'}
+                                            className={pnlClassSoft(closeNow)}
                                             title={`chiudendo ora: ${fmtMoney(closeNow, { signed: true })} netto (commissione ${fmtPct(commission > 1 ? commission / 100 : commission)})`}
                                         >
                                             {fmtMoney(closeNow, { signed: true })}
@@ -500,19 +623,24 @@ export function SafeTradesTable({
                                         </div>
                                     )}
                                 </td>
-                                <td className={`px-3 py-2 text-right font-bold tabular-nums ${t.status === 'won' || (hedged && Number(locked ?? t.pnl) >= 0) ? 'text-emerald-400' : t.status === 'lost' || (hedged && Number(locked ?? t.pnl) < 0) ? 'text-red-400' : 'text-slate-400'}`}>
+                                {/* CERT. 13/09 — il P&L della riga passa da `pnlClass()`:
+                                    UNA regola di colore per le tre sezioni, e la perdita
+                                    è ROSSA e in GRASSETTO come l'utile, mai in grigio.
+                                    Il valore mostrato è `null` (→ «—») finché non c'è un
+                                    risultato: uno «0,00 €» direbbe «chiuso in pari». */}
+                                <td className={`px-3 py-2 text-right tabular-nums ${pnlClass(hedged ? (locked ?? rowPnl) : settled ? rowPnl : null)}`}>
                                     {hedged ? (
                                         <span data-testid="safe-locked-pnl" title={hedgeTooltip(t, closing)}>
-                                            {fmtMoney(locked ?? Number(t.pnl), { signed: true })} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
+                                            {fmtMoney(locked ?? rowPnl, { signed: true })} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
                                         </span>
                                     ) : settled ? (
                                         <span title={`al netto della commissione del trade (${fmtPct(commission > 1 ? commission / 100 : commission)})`}>
-                                            {fmtMoney(Number(t.pnl), { signed: true })}
+                                            {fmtMoney(rowPnl, { signed: true })}
                                         </span>
                                     ) : DASH}
                                     {closes.length > 0 && posInfo?.pnl != null && (
                                         <div
-                                            className={`mt-0.5 text-[10px] font-normal whitespace-nowrap ${posInfo.pnl > 0 ? 'text-emerald-300' : posInfo.pnl < 0 ? 'text-red-300' : 'text-slate-400'}`}
+                                            className={`mt-0.5 whitespace-nowrap text-[10px] ${pnlClassSoft(posInfo.pnl)}`}
                                             data-testid="safe-position-result"
                                             title="risultato della POSIZIONE (apertura + gambe di chiusura): il numero sopra è la sola gamba d'apertura"
                                         >
@@ -566,7 +694,7 @@ export function SafeTradesTable({
                                 // "parziale": dalla chiusura (size_capped_from) o dall'apertura (residuo > 0)
                                 const capped = cappedFrom(c) ?? (partial && ci === closes.length - 1 ? partial.hedged + partial.residual : null);
                                 return (
-                                    <tr key={c.id} className="bg-white/[0.03] border-t border-dashed border-white/5" data-testid="safe-closing-row" data-closes={t.id}>
+                                    <tr key={c.id} className={`bg-white/[0.03] border-t border-dashed border-white/5 ${otherMode ? 'opacity-60' : ''}`} data-testid="safe-closing-row" data-closes={t.id} data-mode={c.mode}>
                                         <td className="px-3 py-1 text-slate-500 tabular-nums text-[11px]">{fmtTime(c.placed_at)}</td>
                                         <td colSpan={12} className="pl-8 pr-3 py-1 text-[11px] text-slate-300" title={hedgeTooltip(t, c)}>
                                             <span className="text-teal-300" aria-hidden>↳ </span>
@@ -574,6 +702,9 @@ export function SafeTradesTable({
                                             {' · '}
                                             <Badge variant="outline" className={`px-1 py-0 text-[10px] font-heading font-bold mr-1 ${sideBadgeClass(c.side === 'back' ? 'BACK' : 'LAY')}`}>{c.side.toUpperCase()}</Badge>{' '}
                                             <span className="tabular-nums">{fmtMoney(c.size)} @{fmtOdds(c.price)}</span>
+                                            {/* anche la gamba di chiusura dichiara la sua modalità:
+                                                è un ordine a sé, con soldi veri o simulati */}
+                                            <ModeBadge mode={c.mode} compact className="ml-1 align-middle" testId="safe-closing-mode" dimmed={otherMode} />
                                             {c.selection_name && c.selection_name !== t.selection_name && <span className="text-slate-500"> · {c.selection_name}</span>}
                                             {c.commission != null && (
                                                 <span className="text-slate-500" title="aliquota applicata a QUESTA chiusura (non il parametro corrente)">
@@ -585,8 +716,15 @@ export function SafeTradesTable({
                                             <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${cb.cls}`}>{cb.label}</Badge>
                                             <ExitBadge meta={c.meta} className="ml-1" />
                                         </td>
-                                        <td className="px-3 py-1 text-right text-[11px] text-slate-500 tabular-nums">
-                                            {['won', 'lost', 'void', 'hedged'].includes(c.status) ? fmtMoney(Number(c.pnl), { signed: true }) : DASH}
+                                        {/* CERT. 13/09 — QUESTA cella era il difetto denunciato
+                                            dall'utente: «le loss sono in nero e in piccolo».
+                                            Il P&L della gamba di chiusura (che su un cash out
+                                            in perdita è il numero che conta) usciva in
+                                            `text-slate-500` a 11px, cioè grigio e più piccolo
+                                            dell'utile della riga sopra. Ora passa da
+                                            `pnlClass()` come ogni altro P&L della pagina. */}
+                                        <td className={`px-3 py-1 text-right text-xs tabular-nums ${pnlClass(['won', 'lost', 'void', 'hedged'].includes(c.status) ? pnlOf(c) : null)}`}>
+                                            {['won', 'lost', 'void', 'hedged'].includes(c.status) ? fmtMoney(pnlOf(c), { signed: true }) : DASH}
                                         </td>
                                         <td className="px-3 py-1 text-center">
                                             <span className="text-[11px] text-slate-400" title="gamba di copertura del cash out">

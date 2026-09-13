@@ -44,6 +44,26 @@ function renderGroup(r: SafeOpportunityRow, over: Partial<Parameters<typeof Oppo
     return { onPlace };
 }
 
+/**
+ * CERT. 13/09 — una λ non calcolata NON è «λ 0,00».
+ * Il `?? 0` trasformava un dato assente in una previsione fortissima (zero gol
+ * attesi), e il trader la leggeva come se il modello l'avesse calcolata.
+ */
+describe('OpportunityGroup — λ assente = n/d, mai 0,00', () => {
+    it('lambdas con un lato mancante: si legge «n/d» su quel lato', () => {
+        renderGroup(row({
+            payload: { ...row().payload, lambdas: { home: 1.42, away: null } } as never,
+        }));
+        expect(screen.getByText(/λ 1,42 \/ n\/d/)).toBeInTheDocument();
+        expect(screen.queryByText(/λ 1,42 \/ 0,00/)).toBeNull();
+    });
+
+    it('lambdas del tutto assenti: nessuna riga λ inventata', () => {
+        renderGroup(row());
+        expect(screen.queryByText(/λ/)).toBeNull();
+    });
+});
+
 describe('filterOpps', () => {
     it('applica confidenza minima e lato, ordina per EV × confidenza', () => {
         expect(filterOpps(row(), 0, 'all').map((o) => o.selection_id)).toEqual([1, 2]);

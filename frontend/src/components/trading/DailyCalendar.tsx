@@ -16,6 +16,7 @@ import {
     type CalendarCell, type DailyRow,
 } from '@/lib/dailyHistory';
 import { fmtMoney } from '@/lib/format';
+import { pnlClass } from '@/lib/tradeStatus';
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
@@ -174,7 +175,7 @@ export function DailyCalendar({
                     ) : (
                         <>
                             <span className="text-slate-400 mr-2">{monthRows.length} giornate</span>
-                            <span className={`font-bold ${monthPnl > 0 ? 'text-emerald-400' : monthPnl < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                            <span className={pnlClass(monthPnl)}>
                                 {fmtSignedEur(monthPnl)}
                             </span>
                         </>

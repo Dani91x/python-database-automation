@@ -363,8 +363,13 @@ export function OpportunityGroup({
     const score = isTennis
         ? (p.sets ? `set ${p.sets.p1}-${p.sets.p2}${p.games ? ` · game ${p.games.p1}-${p.games.p2}` : ''}` : 'set —')
         : (p.score_home != null && p.score_away != null ? `${p.score_home}-${p.score_away}` : '?-?');
+    // CERT. 13/09 — una λ non calcolata NON è «λ 0,00»: zero gol attesi è una
+    // previsione fortissima, e il trader la leggeva al posto di «non lo so».
+    // Il modello può pubblicare `lambdas` con un solo lato valorizzato.
+    const lamTxt = (v: number | null | undefined) =>
+        (v == null || !Number.isFinite(Number(v)) ? 'n/d' : fmtNum(Number(v), 2));
     const lam = p.lambdas
-        ? `λ ${fmtNum(p.lambdas.home ?? 0, 2)} / ${fmtNum(p.lambdas.away ?? 0, 2)}`
+        ? `λ ${lamTxt(p.lambdas.home)} / ${lamTxt(p.lambdas.away)}`
         : null;
 
     return (

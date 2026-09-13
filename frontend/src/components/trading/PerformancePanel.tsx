@@ -14,6 +14,7 @@ import {
     PERIOD_LABEL, type DailyRow, type PeriodKind, type HistoryVariant, type DailyBreakdown,
 } from '@/lib/dailyHistory';
 import { fmtMoney, fmtPct as fmtPctFrac, fmtNum } from '@/lib/format';
+import { pnlClass } from '@/lib/tradeStatus';
 
 function fmtEur(v: number | null | undefined): string {
     return fmtMoney(v);
@@ -85,7 +86,7 @@ function BreakdownTable({ title, data, labels, testId }: {
                                 <td className="px-3 py-1.5 text-right tabular-nums text-emerald-300">{b.won}</td>
                                 <td className="px-3 py-1.5 text-right tabular-nums text-red-300">{b.lost}</td>
                                 <td className="px-3 py-1.5 text-right tabular-nums">{fmtPct(wr)}</td>
-                                <td className={`px-3 py-1.5 text-right tabular-nums font-bold ${b.pnl > 0 ? 'text-emerald-400' : b.pnl < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                                <td className={`px-3 py-1.5 text-right tabular-nums ${pnlClass(b.pnl)}`}>
                                     {fmtSignedEur(b.pnl)}
                                 </td>
                             </tr>

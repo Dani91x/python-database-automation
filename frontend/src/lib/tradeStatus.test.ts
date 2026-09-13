@@ -22,9 +22,26 @@ describe('statusMeta', () => {
             expect(m.cls).toMatch(/text-/);
         }
     });
-    it('stato sconosciuto o assente = ERRORE (mai una schermata muta)', () => {
-        expect(statusMeta('boh').label).toBe('ERRORE');
-        expect(statusMeta(null).label).toBe('ERRORE');
+    /**
+     * CERT. 13/09 — SOSTITUISCE «stato sconosciuto o assente = ERRORE (mai una
+     * schermata muta)», che certificava il comportamento SBAGLIATO: qualunque
+     * stato non previsto dalla mappa veniva mostrato come «ERRORE».
+     *
+     * Perché era sbagliato: uno stato NUOVO scritto dal backend (o un refuso)
+     * faceva dichiarare in errore posizioni sane, e su una tabella di trading
+     * «ERRORE» è un invito a chiudere. La schermata non deve restare muta — e
+     * non resta: dice la chiave e DICHIARA che non la conosce, come fa già
+     * `activityMeta` per i kind sconosciuti.
+     */
+    it('stato sconosciuto: dichiarato SCONOSCIUTO, mai spacciato per ERRORE', () => {
+        expect(statusMeta('boh').label).toBe('BOH (stato sconosciuto)');
+        expect(statusMeta('boh').label).not.toBe('ERRORE');
+        // l'errore VERO resta l'errore
+        expect(statusMeta('error').label).toBe('ERRORE');
+    });
+    it('stato assente: dichiarato ASSENTE (mai una schermata muta)', () => {
+        expect(statusMeta(null).label).toBe('STATO ASSENTE');
+        expect(statusMeta('').label).toBe('STATO ASSENTE');
     });
     it('reconciling vince su tutto', () => {
         // §19: UNA sola parola per la riconciliazione, la stessa che usano

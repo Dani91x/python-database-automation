@@ -160,23 +160,43 @@ describe('il dettaglio si apre solo se lo chiedo', () => {
 });
 
 describe('il totale in cima', () => {
+    /**
+     * SOSTITUISCE il test che cercava `mike-event-pnl-totale`, cioè il totale
+     * che stava nella NOTA dell'intestazione (una riga di testo da 11px accanto
+     * al titolo).
+     *
+     * Perché è cambiato: richiesta dell'utente del 13/09 — «Io voglio i totali
+     * delle operazioni ben chiari». I totali ora sono una BARRA in testa alla
+     * sezione, sempre visibile e in corpo grande, con cinque numeri invece di
+     * uno (operazioni, realizzato, se chiudo ora, investito, responsabilità).
+     * Il componente è quello condiviso `trading/EventPnlTable`, quindi i testid
+     * seguono il suo schema: `<testId>-totali-<grandezza>`.
+     */
     it('somma solo le partite con un risultato e dichiara le aperte', () => {
         montaCon([
             ...ciclo({ event_id: 'A' }, -10, 10.13, 'under_green'),
             ...ciclo({ event_id: 'B' }, -10, 9.00, 'under_green'),
             t({ event_id: 'C', status: 'open', pnl: null }),
         ]);
-        expect(screen.getByTestId('mike-event-pnl-totale')).toHaveTextContent('−0,87');
+        expect(screen.getByTestId('mike-event-pnl-totali-realizzato')).toHaveTextContent('−0,87');
         const sezione = screen.getByTestId('mike-event-pnl');
         expect(sezione).toHaveTextContent('1 in utile');
         expect(sezione).toHaveTextContent('1 in perdita');
-        expect(sezione).toHaveTextContent('1 ancora aperte');
+        expect(sezione).toHaveTextContent('1 ancora aperta');
     });
 
-    it('senza partite mostra il messaggio di vuoto e nessun totale', () => {
+    /**
+     * SOSTITUISCE «senza partite … e nessun totale»: la barra dei totali ora
+     * c'è SEMPRE (è il punto della richiesta: non deve sparire né nascondersi
+     * dentro un accordion). Quello che non deve mai comparire è un numero
+     * inventato: senza operazioni il realizzato è «—», mai «0,00 €».
+     */
+    it('senza partite mostra il messaggio di vuoto e un totale che non mente', () => {
         montaCon([]);
         expect(screen.getByTestId('mike-event-pnl-vuoto')).toHaveTextContent('Nessuna operazione.');
-        expect(screen.queryByTestId('mike-event-pnl-totale')).toBeNull();
+        const realizzato = screen.getByTestId('mike-event-pnl-totali-realizzato');
+        expect(realizzato).toHaveTextContent('—');
+        expect(realizzato).not.toHaveTextContent('0,00');
     });
 });
 

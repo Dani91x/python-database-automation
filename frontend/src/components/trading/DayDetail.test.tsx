@@ -30,6 +30,29 @@ const LOST: DayTrade = {
     status: 'lost', pnl: -10, total_pnl: -10, settled_at: '2026-09-10T21:00:00Z', settled_in_day: true, meta: { exit_kind: 'loss' },
 };
 
+/**
+ * CERT. 13/09 — badge di modalità ESPLICITO anche sulle righe PAPER.
+ * Prima c'era solo sul LIVE: l'assenza di badge poteva voler dire «è paper»
+ * oppure «il servizio non ha scritto la modalità», e su una tabella di soldi
+ * veri quell'ambiguità si paga. Ora ogni riga lo dichiara.
+ */
+describe('DayDetail — modalità dichiarata su OGNI riga', () => {
+    it('la riga PAPER ha il suo badge, non il vuoto', () => {
+        render(<DayDetail day="2026-09-10" trades={[OPEN]} variant="safe" attribution="placed" />);
+        const badge = screen.getByTestId('day-trade-mode');
+        expect(badge).toHaveTextContent('PAPER');
+        expect(badge.className).not.toMatch(/red/);
+    });
+
+    it('la riga LIVE resta in rosso e anche la chiusura dichiara la sua modalità', () => {
+        render(<DayDetail day="2026-09-10" trades={[HEDGED_WON]} variant="safe" attribution="settled" />);
+        const badges = screen.getAllByTestId('day-trade-mode');
+        expect(badges[0]).toHaveTextContent('LIVE');
+        expect(badges[0].className).toMatch(/red/);
+        expect(screen.getByTestId('day-close-mode')).toHaveTextContent('LIVE');
+    });
+});
+
 describe('DayDetail', () => {
     it('senza giorno: invito a selezionare', () => {
         render(<DayDetail day={null} trades={null} variant="safe" />);

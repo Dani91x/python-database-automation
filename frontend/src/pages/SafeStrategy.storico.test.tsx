@@ -99,6 +99,26 @@ function renderPage() {
     return render(<HelmetProvider><MemoryRouter><SafeStrategy /></MemoryRouter></HelmetProvider>);
 }
 
+/**
+ * CERT. 13/09 - SOSTITUISCE l'accesso DIRETTO alle righe di posizione.
+ *
+ * La sezione Operazioni di Safe ora mostra UNA RIGA PER PARTITA (tabella
+ * condivisa `trading/EventPnlTable`) e le singole posizioni - con quote, stati
+ * e bottoni di cash out - stanno nel DETTAGLIO, chiuso di default e apribile.
+ * E' la richiesta dell'utente del 13/09: prima era un elenco piatto di gambe in
+ * cui apertura e chiusura comparivano scollegate. I test che leggono
+ * `safe-trade-row` devono quindi aprire prima il dettaglio, come il trader.
+ *
+ * Idempotente: apre solo le partite ancora chiuse, cosi si puo' richiamare dopo
+ * un cambio di filtro senza richiudere quelle gia' aperte.
+ */
+async function apriPartite(user: ReturnType<typeof userEvent.setup>) {
+    const bottoni = await screen.findAllByTestId(/^apri-/);
+    for (const b of bottoni) {
+        if (b.getAttribute('aria-expanded') === 'false') await user.click(b);
+    }
+}
+
 describe('Safe Strategy — giornata operativa e uscite', () => {
     it('il KPI "P&L oggi" dichiara la giornata operativa (Europe/Rome)', async () => {
         renderPage();
@@ -111,6 +131,7 @@ describe('Safe Strategy — giornata operativa e uscite', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         // la gamba di chiusura e' una SUB-RIGA attaccata all'apertura, mai un trade a se'
         const rows = await screen.findAllByTestId('safe-trade-row');
         expect(rows).toHaveLength(1);
@@ -169,21 +190,27 @@ describe('Safe Strategy — tab Trade: solo la giornata operativa (come Omega)',
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         // oggi (10/09 mockato): la vinta di oggi + la viva di ieri; la regolata di ieri NO
         const rows = await screen.findAllByTestId('safe-trade-row');
         expect(rows).toHaveLength(2);
-        expect(screen.getByText('Roma vs Lazio')).toBeInTheDocument();
-        expect(screen.getByText('Vecchia vs Viva')).toBeInTheDocument();
+        // CERT. 13/09 - il nome della partita compare ORA DUE VOLTE: sulla riga
+        // di PARTITA (livello 1) e sulla riga di posizione dentro il dettaglio.
+        // Prima esisteva solo la seconda. getAllByText, non getByText.
+        expect(screen.getAllByText('Roma vs Lazio').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Vecchia vs Viva').length).toBeGreaterThan(0);
         expect(screen.queryByText('Vecchia vs Regolata')).toBeNull();
         expect(screen.getByTestId('safe-trades-card')).toHaveTextContent('Operazioni di oggi (2)');
         expect(screen.getByTestId('safe-trades-summary')).toHaveTextContent('2 posizioni oggi · 1V 0P · 1 vive');
         expect(screen.getByRole('tab', { name: /^Trade/ })).toHaveTextContent('Trade (2)');
         // mostra tutte → anche la regolata di ieri
         await user.click(screen.getByTestId('safe-trades-toggle'));
+        await apriPartite(user);
         expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(3);
-        expect(screen.getByText('Vecchia vs Regolata')).toBeInTheDocument();
+        expect(screen.getAllByText('Vecchia vs Regolata').length).toBeGreaterThan(0);
         expect(screen.getByTestId('safe-trades-card')).toHaveTextContent('Tutte le operazioni (3)');
         await user.click(screen.getByTestId('safe-trades-toggle'));
+        await apriPartite(user);
         expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(2);
     });
 
@@ -197,8 +224,9 @@ describe('Safe Strategy — tab Trade: solo la giornata operativa (come Omega)',
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
-        expect(await screen.findByTestId('safe-trades-empty')).toHaveTextContent(/nessuna operazione oggi/);
-        expect(screen.getByTestId('safe-trades-empty')).toHaveTextContent(/Storico/);
+        // lo stato vuoto e' quello della tabella condivisa: `<testId>-vuoto`
+        expect(await screen.findByTestId('safe-trades-card-vuoto')).toHaveTextContent(/nessuna operazione oggi/);
+        expect(screen.getByTestId('safe-trades-card-vuoto')).toHaveTextContent(/Storico/);
     });
 });
 
@@ -239,6 +267,7 @@ describe('Safe Strategy — tab Storico', () => {
         await user.click(within(row).getByTestId('day-trade-live'));
         expect(await screen.findByRole('tab', { name: /Calcio/ })).toHaveAttribute('data-state', 'active');
         expect(screen.getByRole('tab', { name: /^Trade/ })).toHaveAttribute('data-state', 'active');
+        await apriPartite(user);
         expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(1);
         expect(screen.getAllByTestId('safe-closing-row')).toHaveLength(1);
     });
@@ -301,6 +330,7 @@ describe('Safe Strategy — senza la migrazione v2 (RPC vecchia)', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         expect(await screen.findAllByTestId('safe-trade-row')).toHaveLength(1);
         expect(screen.getAllByTestId('safe-closing-row')).toHaveLength(1);
     });

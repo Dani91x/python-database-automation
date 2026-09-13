@@ -623,6 +623,11 @@ export default function Mike() {
                 <TabsContent value="trade" className="mt-3 space-y-3">
                     <MikeEventPnlTable
                         gruppi={gruppiOggi}
+                        // CERT. 13/09 — i totali valgono per la modalità ATTIVA e lo
+                        // dichiarano in etichetta; «se chiudo ora» è il P&L già
+                        // bloccato sulle posizioni vive (`null` se non calcolabile).
+                        modalita={mode}
+                        apertoOra={locked.value}
                         titolo="Operazioni della giornata"
                         icona={<Layers className="w-4 h-4 text-sky-300" aria-hidden />}
                         testId="mike-operazioni"

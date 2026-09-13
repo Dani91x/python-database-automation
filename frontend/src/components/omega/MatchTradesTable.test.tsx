@@ -55,7 +55,22 @@ describe('legStatusBadge — una parola sola per ogni stato', () => {
         expect(legStatusBadge({ status: 'won' }).label).toBe('VINTO');
         expect(legStatusBadge({ status: 'lost' }).label).toBe('PERSO');
         expect(legStatusBadge({ status: 'void' }).label).toBe('VOID');
-        expect(legStatusBadge({ status: 'boh' }).label).toBe('ERRORE');
+    });
+
+    /**
+     * CERT. 13/09 — SOSTITUISCE l'asserzione
+     * `legStatusBadge({ status: 'boh' }).label === 'ERRORE'` che stava qui
+     * dentro e certificava il comportamento SBAGLIATO di `statusMeta`.
+     *
+     * Perché era sbagliato: uno stato che la mappa non conosce (uno stato NUOVO
+     * del backend, o un refuso) veniva mostrato come «ERRORE» su una riga
+     * perfettamente sana — e su una tabella di trading «ERRORE» è un invito a
+     * chiudere la posizione. Ora lo stato sconosciuto viene DICHIARATO tale,
+     * come fa già `activityMeta` con i kind che non conosce.
+     */
+    it('stato sconosciuto: dichiarato SCONOSCIUTO, non spacciato per ERRORE', () => {
+        expect(legStatusBadge({ status: 'boh' }).label).toBe('BOH (stato sconosciuto)');
+        expect(legStatusBadge({ status: 'error' }).label).toBe('ERRORE');
     });
 
     it('H-02: la verifica su Betfair vince su "IN CORSO"', () => {

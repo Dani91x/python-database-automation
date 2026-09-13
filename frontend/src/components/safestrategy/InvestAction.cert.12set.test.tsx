@@ -126,10 +126,19 @@ describe('InvestAction — liquidità e cap di rischio spengono il bottone', () 
         expect(screen.queryByText(/Liability aperta/)).toBeNull();
     });
 
-    it('sotto il minimo Betfair: spento col motivo', () => {
+    /**
+     * CERT. 13/09 — SOSTITUISCE «sotto il minimo Betfair: spento col motivo».
+     * Quel test certificava un blocco FALSO: il servizio piazza qualsiasi
+     * importo fino a 0,01 € col place-and-trim (parcheggio a 1000 → taglio →
+     * riprezzo). La soglia di giurisdizione resta a schermo come NOTA, ma non
+     * spegne più il bottone: spegnerlo impediva operazioni legittime.
+     */
+    it('sotto il minimo di giurisdizione: nota informativa, bottone ACCESO', () => {
         renderIt({ defaultStake: 1, minStake: 2 });
-        expect(screen.getByTestId('invest-place')).toBeDisabled();
-        expect(screen.getByTestId('invest-min-stake')).toHaveTextContent('minimo Betfair 2,00 €');
+        expect(screen.getByTestId('invest-place')).toBeEnabled();
+        const note = screen.getByTestId('invest-min-stake');
+        expect(note).toHaveTextContent('2,00 €');
+        expect(note).toHaveTextContent('1000→cancella→sposta');
     });
 });
 

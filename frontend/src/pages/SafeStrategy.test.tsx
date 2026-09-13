@@ -180,10 +180,27 @@ function renderPage() {
     );
 }
 
+/**
+ * CERT. 13/09 - apre il tab Trade E il dettaglio delle partite.
+ *
+ * La sezione Operazioni ora mostra UNA RIGA PER PARTITA e le posizioni (quote,
+ * stati, cash out) stanno nel dettaglio, chiuso di default e apribile: e' la
+ * richiesta dell'utente (prima era un elenco piatto di gambe scollegate).
+ * Chi vuole la riga di posizione deve aprirlo, esattamente come il trader.
+ */
 async function openTradesTab(user: ReturnType<typeof userEvent.setup>) {
     await screen.findByTestId('bot-status');
     await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+    await apriPartite(user);
     return (await screen.findAllByTestId('safe-trade-row'))[0];
+}
+
+/** Apre il dettaglio di ogni partita ancora chiusa (idempotente). */
+async function apriPartite(user: ReturnType<typeof userEvent.setup>) {
+    const bottoni = await screen.findAllByTestId(/^apri-/);
+    for (const b of bottoni) {
+        if (b.getAttribute('aria-expanded') === 'false') await user.click(b);
+    }
 }
 
 describe('pagina Safe Strategy', () => {
@@ -303,6 +320,7 @@ describe('pagina Safe Strategy', () => {
         renderPage();
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         expect(await screen.findByTestId('cashout-capped')).toHaveTextContent('parziale');
     });
 
@@ -443,6 +461,7 @@ describe('Safe Strategy — tennis (HIGH-3)', () => {
         await screen.findByTestId('bot-status');
         await user.click(await screen.findByRole('tab', { name: /Tennis/ }));
         await user.click(await screen.findByRole('tab', { name: /^Trade/ }));
+        await apriPartite(user);
         const row = await screen.findByTestId('safe-trade-row');
         expect(within(row).getByText('Sinner v Alcaraz')).toBeInTheDocument();
         expect(within(row).getByText('set 1-0 · game 3-2')).toBeInTheDocument();

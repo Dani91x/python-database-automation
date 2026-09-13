@@ -90,6 +90,31 @@ export const SAFE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     flumine_poll_error: { label: 'CODA NON RAGGIUNGIBILE (flumine)', cls: BAD, critical: true },
 };
 
+/**
+ * CERT. 13/09 — i kind che rispondono alla domanda «perché NON è entrato?».
+ * Sono le righe che il trader cerca quando BASE o PUNTA non scattano: `skip`
+ * (condizione non soddisfatta, col motivo tradotto — es. `pre_ko_assente`) e
+ * `risk_block` (entrata rifiutata dai cap di rischio). Il feed le espone come
+ * chip rapido «solo NON ENTRATO»: prima erano in tono MUTED e il toggle «solo
+ * da guardare» le eliminava, cioè la domanda più frequente non era filtrabile.
+ */
+export const SAFE_SKIP_KINDS: readonly string[] = ['skip', 'risk_block'];
+
+/**
+ * CERT. 13/09 — MODALITÀ dichiarata dal servizio su una riga di attività.
+ * Il backend ora scrive `payload.mode` su OGNI riga: senza leggerla la stessa
+ * lista mescolava decisioni prese con soldi veri e decisioni simulate.
+ * Le righe scritte PRIMA della correzione non hanno il campo: si torna `null`
+ * (modalità non dichiarata), non si inventa un 'paper'.
+ */
+export function safeActivityMode(
+    payload: Record<string, unknown> | null | undefined,
+): 'paper' | 'live' | null {
+    const raw = (payload ?? {})['mode'];
+    const k = raw != null ? String(raw).trim().toLowerCase() : '';
+    return k === 'paper' || k === 'live' ? k : null;
+}
+
 /** Etichetta di un kind Safe Strategy (con fallback del design system). */
 export function safeActivityMeta(kind: string): ActivityMeta {
     return activityMeta(kind, SAFE_ACTIVITY_EXTRA);
@@ -104,6 +129,22 @@ export function safeActivityMeta(kind: string): ActivityMeta {
  * occhi del trader ("per_event_liability_cap", "spread_anomalo"): è un bug.
  */
 const REASON_IT: Record<string, string> = {
+    // CERT. 13/09 — motivi introdotti dalle guardie nuove del servizio.
+    aggregati_non_leggibili:
+        'numeri della giornata non leggibili dal database: nuovi ingressi sospesi '
+        + '(senza quei numeri i limiti di rischio non sono verificabili)',
+    control_non_verificabile:
+        'il servizio non riesce a leggere il proprio stato: piazzamento rimandato '
+        + '(le chiusure passano comunque)',
+    control_illeggibile_da_troppo:
+        'stato del servizio non leggibile da troppo tempo: si sta lavorando con '
+        + 'parametri vecchi, controllare il database',
+    reconcile_paper_mai_piazzata:
+        'riserva simulata interrotta prima di partire: nessun ordine è mai esistito',
+    combo_gamba_sotto_minimo: 'una gamba della combinazione è troppo piccola da piazzare',
+    combo_totale_sotto_minimo: 'il totale della combinazione è sotto il minimo richiesto',
+    combo_book_non_regge_il_minimo:
+        'il mercato non ha liquidità sufficiente a reggere il minimo della combinazione',
     pre_ko_assente:
         'riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita',
     variante_non_abilitata: 'strategia non abilitata nei parametri del bot',

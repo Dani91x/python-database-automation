@@ -51,18 +51,29 @@ export function MonitorCard({ eventId, title, liveLine, inplay, evaluations, dat
                 <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                     {evaluations.map(({ evaluation }) => {
                         const style = VARIANT_STYLE[evaluation.variant];
+                        // CERT. 13/09 — «5/9» diceva UNA cosa sola (quante sono
+                        // VERE) e nascondeva la differenza che conta: 4 condizioni
+                        // FALSE (la partita non va bene) e 4 condizioni n/d (non
+                        // misurabili, tipicamente senza riferimento pre-KO)
+                        // producevano lo stesso identico chip. Ora si legge la
+                        // terna: «5 sì · 0 no · 4 n/d».
                         const okCount = evaluation.checks.filter((c) => c.ok === true).length;
+                        const koCount = evaluation.checks.filter((c) => c.ok === false).length;
+                        const ndCount = evaluation.checks.length - okCount - koCount;
                         return (
                             <Badge
                                 key={`${evaluation.variant}:${evaluation.subId ?? ''}`}
                                 variant="outline"
+                                data-testid="monitor-variant-chip"
+                                data-variant={evaluation.variant}
                                 className={`text-[10px] font-heading gap-1.5 ${style.badge}`}
-                                title={`${okCount}/${evaluation.checks.length} condizioni soddisfatte`}
+                                title={`su ${evaluation.checks.length} condizioni: ${okCount} soddisfatte, ${koCount} non soddisfatte, `
+                                    + `${ndCount} non valutabili (dato mancante${ndCount > 0 ? ' — spesso il riferimento pre-KO' : ''})`}
                             >
                                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${stateDotClass(evaluation.state)}`} />
                                 {style.chipLabel(evaluation.subId)}
                                 <span className="font-mono tabular-nums opacity-80">
-                                    {okCount}/{evaluation.checks.length}
+                                    {okCount} sì · {koCount} no · {ndCount} n/d
                                 </span>
                             </Badge>
                         );

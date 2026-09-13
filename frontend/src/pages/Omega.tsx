@@ -25,6 +25,8 @@ import MissionPanel from '@/components/omega/MissionPanel';
 import { useScanLiveFeedRows } from '@/lib/useScanLiveFeed';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { MatchTradesTable } from '@/components/omega/MatchTradesTable';
+import { TotaliBar } from '@/components/trading/EventPnlTable';
+import { groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, tradesOfMode } from '@/lib/eventGroups';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
@@ -393,6 +395,15 @@ export default function Omega() {
     }, [trades, shownMatches, showAllMatches]);
     // equity della VISTA: la giornata (default) o tutto il caricato con "mostra tutte"
     const equity = useMemo(() => buildEquitySeries(shownTrades), [shownTrades]);
+    // TOTALI della sezione Operazioni: calcolati sulle righe MOSTRATE (non sugli
+    // aggregati della RPC, che hanno un altro perimetro) con la stessa funzione
+    // pura di Safe e Mike. La barra dichiara la modalità: paper e live non si sommano.
+    const totaliOmega = useMemo(
+        // SOLO le righe della modalità attiva: un totale che somma euro veri e
+        // simulati non è un totale, è un numero che non esiste da nessuna parte
+        () => totaliOperazioni(groupCicliByEvent(groupTradesIntoCicli(tradesOfMode(shownTrades, mode)))),
+        [shownTrades, mode],
+    );
     // M-01/M-02: il nome della partita non è nel payload dell'attività (solo
     // event_id): lo risolviamo dai trade
     const eventNames = useMemo(() => eventNamesFrom(trades), [trades]);
@@ -612,6 +623,18 @@ export default function Omega() {
                                     </>
                                 }
                             >
+                                {/* CERT. 13/09 — TOTALI DELLE OPERAZIONI, sempre visibili
+                                    e in corpo grande, gli stessi cinque numeri con le
+                                    stesse parole di Safe e di Mike. La nota accanto al
+                                    titolo resta (sono i numeri della RPC, che è un'altra
+                                    fonte): qui c'è quello che si legge NELLE RIGHE sotto,
+                                    e vale per la modalità attiva, dichiarata in etichetta. */}
+                                <TotaliBar
+                                    tot={totaliOmega}
+                                    modalita={mode}
+                                    apertoOra={lockedOpen ?? null}
+                                    testId="omega-totali-operazioni"
+                                />
                                 <MatchTradesTable
                                     trades={shownTrades}
                                     liveFeed={liveFeed}

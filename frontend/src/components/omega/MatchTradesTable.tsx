@@ -36,7 +36,10 @@ import {
     tradeModelOf, greenupBadge, greenupInfo, hedgeInfo, commissionPctOf, hasOwnCommission,
     positionInfo, terminalError, type HedgeInfo,
 } from '@/lib/omega';
-import { statusMeta, T } from '@/lib/tradeStatus';
+// CERT. 13/09 — il colore del P&L viene dalla regola UNICA condivisa:
+// positivo verde grassetto, negativo ROSSO grassetto della stessa dimensione,
+// zero neutro, assente grigio tenue. Prima Omega aveva la sua copia locale.
+import { statusMeta, pnlClass, T } from '@/lib/tradeStatus';
 import { liveScoreLabel } from '@/lib/useScanLiveFeed';
 import { csSelection, htSelection, type CalcioScanPayload } from '@/lib/safeStrategyScan';
 import {
@@ -47,8 +50,15 @@ import {
 export const FEED_STALE_S = 20;
 
 // ------------------------------------------------------------------ helpers
+/**
+ * CERT. 13/09 — il `?? 0` che c'era qui dentro era una BUGIA.
+ * `fmtSigned(null)` stampava «+0,00 €», cioè «ho chiuso in pari», su un dato
+ * che semplicemente NON C'ERA. `fmtMoney` rende gia' «—» per null/NaN: si usa
+ * quello e basta, in tutta la pagina (regola del 13/09: mai «0,00 €» al posto
+ * di un dato assente).
+ */
 function fmtSigned(v: number | null | undefined): string {
-    return fmtMoney(v ?? 0, { signed: true });
+    return fmtMoney(v, { signed: true });
 }
 /** ora dell'orologio di ROMA (L-02: mai il fuso del browser) */
 function timeLabel(iso: string | null | undefined): string {
@@ -57,10 +67,7 @@ function timeLabel(iso: string | null | undefined): string {
 function pctIt(v: number | null, digits = 1): string {
     return fmtPct(v, digits);
 }
-function pnlClass(v: number | null | undefined, muted = 'text-slate-400'): string {
-    if (v == null) return muted;
-    return v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-300';
-}
+
 
 export interface StatusInput {
     status: string;
@@ -364,16 +371,16 @@ function LegCell<T extends MatchTradeLike>({
                         {b.label}
                     </Badge>
                     {pnl.state === 'settled' && (
-                        <b className={`tabular-nums ${pnlClass(pnl.value)}`} data-testid="omega-leg-pnl">{fmtSigned(pnl.value ?? 0)}</b>
+                        <b className={`tabular-nums ${pnlClass(pnl.value)}`} data-testid="omega-leg-pnl">{fmtSigned(pnl.value)}</b>
                     )}
                     {pnl.state === 'locked' && (
                         <span className={`tabular-nums font-bold ${pnlClass(pnl.value)}`} data-testid="omega-locked-pnl" title="P&L bloccato dalla copertura: identico su ogni risultato, si incassa al fischio finale">
-                            {fmtSigned(pnl.value ?? 0)} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
+                            {fmtSigned(pnl.value)} <span className="font-normal text-[10px] text-teal-300">bloccato</span>
                         </span>
                     )}
                     {pnl.state === 'partial' && (
                         <span className="text-[11px] text-amber-300 tabular-nums" data-testid="omega-leg-partial" title="copertura PARZIALE: la parte coperta è neutra, il resto vive; caso peggiore / migliore ai prezzi dei fill">
-                            parziale {pnl.hedged_size != null ? `${fmtMoney(pnl.hedged_size, { currency: '' })}/${fmtMoney(t.size, { currency: '' })}` : ''} · <span className={pnlClass(pnl.value)}>{fmtSigned(pnl.value ?? 0)}</span>{pnl.best != null ? <> / <span className={pnlClass(pnl.best)}>{fmtSigned(pnl.best)}</span></> : null}
+                            parziale {pnl.hedged_size != null ? `${fmtMoney(pnl.hedged_size, { currency: '' })}/${fmtMoney(t.size, { currency: '' })}` : ''} · <span className={pnlClass(pnl.value)}>{fmtSigned(pnl.value)}</span>{pnl.best != null ? <> / <span className={pnlClass(pnl.best)}>{fmtSigned(pnl.best)}</span></> : null}
                         </span>
                     )}
                     {pnl.state === 'open' && !leg.reconciling && (
@@ -436,7 +443,7 @@ function LegCell<T extends MatchTradeLike>({
                                 <span className="tabular-nums text-slate-200">{fmtMoney(c.size)} @{fmtOdds(c.price)}</span>
                                 <span className="text-slate-500" title="ora di Roma">{timeLabel(c.placed_at)}</span>
                                 <Badge variant="outline" className={`px-1 py-0 text-[10px] ${cb.cls}`}>{cb.label}</Badge>
-                                {settledC && <b className={`tabular-nums ${pnlClass(Number(c.pnl))}`}>{fmtSigned(Number(c.pnl))}</b>}
+                                {settledC && <b className={`tabular-nums ${pnlClass(c.pnl)}`}>{fmtSigned(c.pnl)}</b>}
                                 {capped != null && (
                                     <Badge variant="outline" className="px-1 py-0 text-[10px] bg-amber-500/15 text-amber-300 border-amber-500/40" title={`liquidità insufficiente: chiusura PARZIALE (${fmtMoney(capped)} richiesti)`}>parziale</Badge>
                                 )}
@@ -587,7 +594,7 @@ export function MatchTradesTable<T extends MatchTradeLike>({
                                 <ResultCell score={g.result_ft} leg={g.ft} label="ft" />
                                 <td className="px-3 py-2 align-top text-right whitespace-nowrap">
                                     {total != null ? (
-                                        <div className={`font-display font-black text-xl tabular-nums ${pnlClass(total, 'text-slate-300')}`} data-testid="omega-match-pnl">{fmtSigned(total)}</div>
+                                        <div className={`font-display font-black text-xl tabular-nums ${pnlClass(total)}`} data-testid="omega-match-pnl">{fmtSigned(total)}</div>
                                     ) : (
                                         <div className="font-display font-black text-xl text-slate-500" data-testid="omega-match-pnl">—</div>
                                     )}
