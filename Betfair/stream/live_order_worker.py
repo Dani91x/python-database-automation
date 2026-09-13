@@ -1040,6 +1040,17 @@ def _do_place(sb: Any, flumine: Any, request_row: Dict[str, Any], mode: str, str
         jurisdiction=_jurisdiction(),
         max_stake=_effective_cap(request_row),
         customer_order_ref=cust_ref,
+        # CERT. 13/09 — una gamba di CHIUSURA riduce la posizione: Betfair la
+        # accetta sotto il minimo di giurisdizione e senza il passo da 0,50 EUR
+        # sulle size BACK. Senza questo flag ``min_stake_rules`` SOLLEVAVA per
+        # ogni BACK di chiusura < 2,00 EUR (e troncava per difetto le altre,
+        # lasciando la posizione non pareggiata): l'uscita finiva in errore e la
+        # liability restava esposta fino al settlement. Il flag lo mette chi
+        # accoda (``safe_strategy.execution.enqueue_place``), come gia' fa
+        # ``_place_closing_leg`` per l'azione ``greenup``; per un'APERTURA non
+        # e' mai presente, quindi il minimo normale continua a valere.
+        reduces_liability=bool(isinstance(params, dict)
+                               and params.get("reduces_liability")),
     )
     # §7.2: NESSUN pre-check duplicato qui — rate-limit e max esposizione/selezione sono
     # dei control NATIVI (LiveRateControl/LiveExposureControl), che girano SINCRONI dentro

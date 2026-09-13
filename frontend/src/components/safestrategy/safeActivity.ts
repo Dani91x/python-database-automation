@@ -104,6 +104,13 @@ export function safeActivityMeta(kind: string): ActivityMeta {
  * occhi del trader ("per_event_liability_cap", "spread_anomalo"): è un bug.
  */
 const REASON_IT: Record<string, string> = {
+    pre_ko_assente:
+        'riferimento quote pre-partita non disponibile: BASE e PUNTA non valutabili su questa partita',
+    variante_non_abilitata: 'strategia non abilitata nei parametri del bot',
+    esatto_lato_gia_aperto: 'altro lato “Altro risultato” già aperto su questa partita',
+    modalita_non_corrispondente:
+        'la richiesta era di una modalità diversa da quella attiva: rifiutata',
+    richiesta_scaduta: 'richiesta troppo vecchia: scartata invece di eseguirla in ritardo',
     place_exception_reconciling: 'ordine a esito ignoto: in verifica su Betfair',
     reconcile_ordine_assente: 'nessun ordine trovato su Betfair',
     reconcile_ordine_senza_fill: 'ordine su Betfair senza alcun abbinamento',

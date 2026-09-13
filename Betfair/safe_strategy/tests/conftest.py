@@ -1,0 +1,24 @@
+# -*- coding: utf-8 -*-
+"""Ambiente dei test della Safe Strategy.
+
+CERT. 13/09 — i FRENI GLOBALI del live (``LIVE_ORDER_MODE``, ``LIVE_KILL_SWITCH``)
+valgono adesso anche per il percorso REST della Safe Strategy
+(``execution._live_brake``). Senza questo file i test che esercitano la via live
+erediterebbero il ``.env`` della macchina — dove oggi c'e' ``LIVE_ORDER_MODE=PAPER``
+— e verrebbero fermati dal freno, misurando la configurazione dello sviluppatore
+invece del codice.
+
+Qui l'ambiente e' DICHIARATO: freni aperti per difetto, cosi' i test della via
+live esercitano davvero il place. I test che verificano i freni li richiudono a
+mano con ``monkeypatch`` (vedi ``test_execution.py``).
+"""
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def freni_live_aperti(monkeypatch):
+    monkeypatch.setenv("LIVE_ORDER_MODE", "LIVE")
+    monkeypatch.setenv("LIVE_KILL_SWITCH", "false")
+    yield

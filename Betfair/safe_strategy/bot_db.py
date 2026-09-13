@@ -98,14 +98,50 @@ def list_trades(status: Optional[str] = None) -> list[dict[str, Any]]:
     return q.order("placed_at", desc=False).execute().data or []
 
 
-def open_trades() -> list[dict[str, Any]]:
+# ---------------------------------------------------------------- modalita'
+# CERT. 13/09 — SEPARAZIONE NETTA PAPER / LIVE.
+# La colonna ``mode`` esisteva dal primo giorno e non la leggeva NESSUNA query:
+# P&L, KPI, storico, cap di rischio e idempotenza mescolavano le posizioni finte
+# con quelle vere. Conseguenze reali, tutte e due pericolose:
+#   · una settimana di paper vincente gonfia il "P&L totale" di un conto che non
+#     ha guadagnato un euro;
+#   · una giornata paper negativa consuma ``daily_loss_stop`` e FERMA il live —
+#     e, al contrario, profitti paper possono mascherare perdite vere e tenere
+#     aperto il rubinetto.
+# Da qui in poi ogni lettura che alimenta numeri o decisioni accetta ``mode``.
+# ``mode=None`` = tutte le modalita' (usato solo dove serve davvero, es. il
+# settlement, che deve regolare anche le posizioni della modalita' non attiva).
+_VALID_MODES = ("paper", "live")
+
+
+def _norm_mode(mode: Optional[str]) -> Optional[str]:
+    """Modalita' normalizzata, o None se assente/non valida (= nessun filtro)."""
+    m = str(mode or "").strip().lower()
+    return m if m in _VALID_MODES else None
+
+
+def row_mode(row: dict[str, Any]) -> str:
+    """Modalita' della riga. Una riga senza ``mode`` e' trattata come LIVE:
+    fail-safe: meglio contarla fra i soldi veri (e vederla nei cap) che
+    nasconderla fra quelli finti."""
+    return _norm_mode(row.get("mode")) or "live"
+
+
+def open_trades(mode: Optional[str] = None) -> list[dict[str, Any]]:
     """Posizioni vive: 'open' e 'hedged' (chiuse a mercato ma non ancora
-    regolate — il P&L si realizza quando il mercato si chiude)."""
-    return (
+    regolate — il P&L si realizza quando il mercato si chiude).
+
+    ``mode`` filtra paper/live: passarlo quando il risultato alimenta i cap di
+    rischio o i numeri a schermo, ometterlo quando serve gestire TUTTE le
+    posizioni vive (uscite e settlement di entrambe le modalita')."""
+    q = (
         _sb().table("safe_strategy_trades").select("*")
         .in_("status", ["open", "hedged"])
-        .order("placed_at", desc=False).execute().data or []
     )
+    m = _norm_mode(mode)
+    if m:
+        q = q.eq("mode", m)
+    return q.order("placed_at", desc=False).execute().data or []
 
 
 def closing_trades_for(trade_ids: list[int]) -> list[dict[str, Any]]:
@@ -134,25 +170,45 @@ def _fetch_all(build, page_size: int = PAGE_SIZE) -> list[dict[str, Any]]:
         start += page_size
 
 
-def trade_by_idempotency_key(key: str) -> Optional[dict[str, Any]]:
-    """Trade NON in errore con ``meta.idempotency_key == key`` (dedupe del manuale)."""
-    rows = (
-        _sb().table("safe_strategy_trades").select("id,status,meta")
+def trade_by_idempotency_key(key: str, mode: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Trade NON in errore con ``meta.idempotency_key == key`` (dedupe del manuale).
+
+    Il dedupe e' PER MODALITA': senza il filtro, un "Investi" gia' fatto in
+    paper faceva rispondere ``deduplicated: true`` con l'id del trade PAPER a
+    chi premeva lo stesso bottone in LIVE — la UI diceva "fatto" e in banca non
+    succedeva nulla."""
+    q = (
+        _sb().table("safe_strategy_trades").select("id,status,meta,mode")
         .contains("meta", {"idempotency_key": str(key)})
-        .neq("status", "error").limit(1).execute().data or []
+        .neq("status", "error")
     )
+    m = _norm_mode(mode)
+    if m:
+        q = q.eq("mode", m)
+    rows = q.limit(1).execute().data or []
     return rows[0] if rows else None
 
 
-def traded_signal_keys() -> set[tuple[str, str]]:
+def traded_signal_keys(mode: Optional[str] = None) -> set[tuple[str, str]]:
     """(event_id, signal_key) già riservati/piazzati dall'AUTOMATICO: idempotenza
     per segnale (le righe 'error' non bloccano il ripiazzamento). Paginata:
-    oltre ~1000 righe una SELECT nuda perderebbe chiavi → doppi piazzamenti."""
-    rows = _fetch_all(lambda: (
-        _sb().table("safe_strategy_trades").select("event_id,signal_key")
-        .eq("origin", "auto").neq("status", "error")
-        .order("id", desc=False)
-    ))
+    oltre ~1000 righe una SELECT nuda perderebbe chiavi → doppi piazzamenti.
+
+    PER MODALITA' (13/09): senza filtro, passando da paper a live il bot vero
+    saltava in silenzio TUTTI i segnali gia' provati in paper — cioe' non
+    entrava su niente di quello che aveva appena finito di collaudare."""
+    m = _norm_mode(mode)
+
+    def _q():
+        q = (
+            _sb().table("safe_strategy_trades").select("event_id,signal_key")
+            .eq("origin", "auto").neq("status", "error")
+        )
+        if m:
+            q = q.eq("mode", m)
+        return q.order("id", desc=False)
+
+    rows = _fetch_all(_q)
     out: set[tuple[str, str]] = set()
     for r in rows:
         eid, key = r.get("event_id"), r.get("signal_key")
@@ -171,7 +227,8 @@ _AGG_KEYS = ("realized_total", "realized_today", "open_liability", "open_count",
              "day_trades", "legs_today", "events_today", "won_today", "lost_today")
 
 
-def aggregates(now: Optional[datetime] = None) -> dict[str, float]:
+def aggregates(now: Optional[datetime] = None,
+               mode: Optional[str] = None) -> dict[str, float]:
     """Realizzato, rischio APERTO (residuo dopo le coperture) e capitale
     IMPEGNATO nella giornata operativa Europe/Rome
     (``risk.operating_day_start``) = giorno di PIAZZAMENTO della posizione.
@@ -183,9 +240,15 @@ def aggregates(now: Optional[datetime] = None) -> dict[str, float]:
     ogni ciclo (2 s). Se la migrazione non e' applicata si ripiega sulla
     scansione Python: stesso risultato, solo piu' costosa."""
     now_ts = (now or datetime.now(timezone.utc)).timestamp()
+    m = _norm_mode(mode)
     if now_ts - float(_AGG_RPC["ko_ts"]) >= _AGG_RPC_RETRY_S:
         try:
-            res = _sb().rpc("get_safe_aggregates", {}).execute()
+            # con una modalita' richiesta la RPC DEVE accettarla: se la
+            # migrazione non e' applicata la vecchia firma solleva e si ripiega
+            # sulla scansione filtrata. MAI accettare un aggregato non filtrato
+            # spacciandolo per quello della modalita' chiesta (sommerebbe paper
+            # e live in un unico P&L, che e' il difetto che stiamo chiudendo).
+            res = _sb().rpc("get_safe_aggregates", {"p_mode": m} if m else {}).execute()
             data = getattr(res, "data", None)
             if isinstance(data, dict) and "open_liability" in data:
                 _AGG_RPC["ko_ts"] = 0.0
@@ -199,11 +262,17 @@ def aggregates(now: Optional[datetime] = None) -> dict[str, float]:
         # (eccezione O risposta non-dict): in entrambi i casi si apre la finestra
         # di attesa, altrimenti ogni ciclo (2 s) pagherebbe un round-trip inutile
         _AGG_RPC["ko_ts"] = now_ts
-    rows = _fetch_all(lambda: (
-        _sb().table("safe_strategy_trades")
-        .select("id,event_id,status,pnl,liability,settled_at,placed_at,strategy,bet_id,meta,closes_trade_id")
-        .order("id", desc=False)
-    ))
+    def _q():
+        q = (
+            _sb().table("safe_strategy_trades")
+            .select("id,event_id,status,pnl,liability,settled_at,placed_at,strategy,"
+                    "bet_id,meta,closes_trade_id,mode")
+        )
+        if m:
+            q = q.eq("mode", m)
+        return q.order("id", desc=False)
+
+    rows = _fetch_all(_q)
     return aggregate_rows(rows, day_start=_risk.operating_day_start(now))
 
 
@@ -270,7 +339,8 @@ def recent_activity(limit: int = 60) -> list[dict[str, Any]]:
         return []
 
 
-def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = None) -> dict[str, float]:
+def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = None,
+                   mode: Optional[str] = None) -> dict[str, float]:
     """Aggregazione PURA (testabile) delle righe trade.
 
     GIORNATA OPERATIVA = giorno di PIAZZAMENTO della POSIZIONE (C-01/H-03):
@@ -295,6 +365,12 @@ def aggregate_rows(rows: list[dict[str, Any]], day_start: Optional[datetime] = N
 
     ``won_today``/``lost_today`` contano le POSIZIONI per SEGNO del P&L totale
     (apertura + chiusure), non per lo status grezzo della gamba (M-16)."""
+    # CERT. 13/09 — filtro di MODALITA' prima di ogni conteggio: un P&L che
+    # somma paper e live e' una bugia, e un cap giornaliero consumato da
+    # posizioni finte blocca quelle vere.
+    _m = _norm_mode(mode)
+    if _m:
+        rows = [r for r in rows if row_mode(r) == _m]
     placed_by_id: dict[Any, Any] = {r.get("id"): r.get("placed_at") for r in rows
                                     if r.get("id") is not None}
     total_by_parent: dict[Any, float] = {}

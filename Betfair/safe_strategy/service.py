@@ -206,6 +206,15 @@ class Scanner:
         self.scores_ts = 0.0
         self.timelines_ts = 0.0
         self.orphan_purge_ts = -1e9  # prima pulizia subito al primo publish
+        # CERT. 13/09 — reidratazione del riferimento 1X2 pre-KO dal DB.
+        # ``pre_ko`` viveva SOLO qui dentro: a ogni riavvio (app chiusa, crash +
+        # watchdog, modifica al codice) si perdeva per tutte le partite gia' in
+        # corso, e BASE e PUNTA non potevano piu' scattare per il resto della
+        # giornata (ESATTO non usa ``pre_ko``: era l'unica a sopravvivere).
+        # Il dato era gia' su ``safe_strategy_scan.payload.pre_ko``: adesso lo si
+        # rilegge PRIMA del primo publish, che altrimenti lo sovrascrive con None.
+        # Un solo tentativo per evento, best-effort, mai nel percorso caldo.
+        self.pre_ko_tried: set = set()
         # thread punteggi (run persistente): None = poll dentro al tick
         self.score_worker: Optional["ScoreFeedWorker"] = None
         self.cs_catalogue_ts = 0.0
@@ -1082,6 +1091,58 @@ class Scanner:
                 })
         return rows, wanted
 
+    def hydrate_pre_ko(self) -> int:
+        """Rilegge dal DB il riferimento 1X2 pre-KO delle partite di calcio gia'
+        IN CORSO che non ce l'hanno in memoria (tipicamente: lo scanner e'
+        ripartito a partita iniziata).
+
+        Va chiamata PRIMA di ``publish``: il publish riscrive la riga con
+        ``pre_ko`` preso dallo stato in RAM, quindi un giro pubblicato prima
+        della reidratazione DISTRUGGE la copia sul DB.
+
+        Un solo tentativo per evento (``pre_ko_tried``): se il riferimento non
+        c'e' nemmeno sul DB, non lo si va a ricercare a ogni giro. In ``dry``
+        non si legge nulla. Torna quanti riferimenti sono stati recuperati."""
+        if self.dry:
+            return 0
+        da_cercare = [
+            eid for eid, ev in self.events.items()
+            if ev.get("sport") == "calcio"
+            and ev.get("inplay")
+            and not scan_db.is_usable_pre_ko(ev.get("pre_ko"))
+            and eid not in self.pre_ko_tried
+        ]
+        if not da_cercare:
+            return 0
+        self.pre_ko_tried.update(da_cercare)
+        try:
+            trovati = scan_db.load_scan_pre_ko(da_cercare)
+        except Exception as e:  # noqa: BLE001 - mai fatale
+            logger.warning("[safe-scan] reidratazione pre-KO KO: %s", str(e)[:140])
+            return 0
+        recuperati = 0
+        for eid, pre in trovati.items():
+            ev = self.events.get(eid)
+            if ev is None or scan_db.is_usable_pre_ko(ev.get("pre_ko")):
+                continue
+            # si conserva il ``captured_at`` originale e si dichiara che il
+            # riferimento arriva dal DB, non da una cattura in diretta
+            ev["pre_ko"] = {**pre, "rehydrated": True}
+            recuperati += 1
+        if recuperati:
+            logger.info(
+                "[safe-scan] riferimento pre-KO recuperato dal DB per %d partite in corso "
+                "(BASE e PUNTA tornano valutabili); cercato per %d",
+                recuperati, len(da_cercare),
+            )
+        elif da_cercare:
+            logger.info(
+                "[safe-scan] nessun riferimento pre-KO sul DB per %d partite in corso: "
+                "BASE e PUNTA restano n/d su queste (scanner acceso a match iniziato)",
+                len(da_cercare),
+            )
+        return recuperati
+
     def purge_orphans(self, wanted: List[str]) -> int:
         """Righe in tabella che NON appartengono a questo giro (istanze
         precedenti dello scanner, riavvii dell'app): vanno CANCELLATE, altrimenti
@@ -1272,6 +1333,8 @@ class Scanner:
                 self._safe_catalogue("pre-KO O/U", self.refresh_opp_catalogue, pre_cands,
                                      market_types=scanner.PRE_KO_OU_MARKET_TYPES)
 
+            # PRIMA del publish: il publish riscriverebbe pre_ko=None sul DB
+            self.hydrate_pre_ko()
             written, deleted = self.publish(now)
             if written or deleted:
                 logger.info(

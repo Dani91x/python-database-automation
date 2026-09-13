@@ -41,6 +41,11 @@ logger = logging.getLogger("safe.execution")
 # sentinella: esito enqueue IGNOTO in LIVE (mai il place REST subito).
 ENQUEUE_UNKNOWN = -1
 
+# Pavimento ASSOLUTO dell'exchange: sotto questo non esiste ordine Betfair, in
+# nessuna giurisdizione e con nessuna tecnica. Tutto cio' che sta SOPRA e sotto
+# il minimo di giurisdizione passa dal place-and-trim, non viene rifiutato.
+ABS_MIN_SIZE = 0.01
+
 # SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 2,00 / LAY 0,50). Sotto
 # questa soglia l'exchange rifiuta un place DIRETTO — ma NON rifiuta un ordine
 # esistente RIDOTTO sotto la soglia. E' la tecnica che usano Bet Angel, Fairbot
@@ -52,14 +57,52 @@ ENQUEUE_UNKNOWN = -1
 # Quindi QUALSIASI importo e' piazzabile, fino al centesimo. Questa soglia serve
 # solo a decidere QUALE dei due percorsi usare, non a rifiutare l'ordine.
 # Override: SAFE_MIN_SIZE_LIVE.
-def _min_size_live() -> float:
+def _min_size_live(side: str = "back") -> float:
+    """Minimo di PIAZZAMENTO per il lato dato.
+
+    CERT. 13/09: qui si tornava 2,00 per entrambi i lati. Il minimo .it del LAY
+    e' 0,50 (``omega_market``, ``live_order_build.min_stake_rules``,
+    ``submin.place_min_size``). Conseguenza del valore sbagliato: un LAY fra
+    0,50 e 2,00 EUR veniva marcato "sotto minimo" e mandato sulla macchina
+    place-and-trim, che pero' parcheggia al minimo di 0,50 e quindi SOLLEVA
+    ("target 1,20 >= minimo 0,50: usa un place normale") -> gamba persa su un
+    ordine che Betfair avrebbe accettato al primo colpo."""
     import os
 
-    raw = os.environ.get("SAFE_MIN_SIZE_LIVE", "").strip() or "2"
+    raw = os.environ.get("SAFE_MIN_SIZE_LIVE", "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            pass
+    return 0.50 if str(side).lower() == "lay" else 2.0
+
+
+def _live_brake() -> Optional[str]:
+    """Motivo per cui un ordine LIVE non deve partire, o None se puo' partire.
+
+    Legge i freni GLOBALI del progetto (``Betfair/stream/config_stream.py``),
+    gli stessi che governano il worker della coda:
+      · ``LIVE_KILL_SWITCH=true``  -> nessun ordine reale, punto;
+      · ``LIVE_ORDER_MODE`` != LIVE -> l'operatore ha dichiarato il sistema in
+        PAPER/OFF: il percorso REST non puo' scavalcarlo.
+    Se il modulo non e' importabile NON si blocca nulla (il bot non deve morire
+    perche' manca un file di configurazione): si logga e si prosegue."""
     try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return 2.0
+        from Betfair.stream import config_stream as _cfg
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.exec] config_stream non importabile, freni live non letti: %s",
+                       str(ex)[:120])
+        return None
+    try:
+        if _cfg.live_kill_switch():
+            return "live_kill_switch_attivo"
+        lom = str(_cfg.live_order_mode() or "").upper()
+        if lom != "LIVE":
+            return f"live_order_mode_non_live:{lom or 'OFF'}"
+    except Exception as ex:  # noqa: BLE001
+        logger.warning("[safe.exec] lettura freni live KO: %s", str(ex)[:120])
+    return None
 
 
 def _omega_service() -> Any:
@@ -146,7 +189,15 @@ def place(
     if size is None or float(size) <= 0:
         return PlaceOutcome("error", None, 0.0, None, "size_non_valida")
 
-    price = E.round_to_tick(float(price))  # tick Betfair valido: salvato == piazzato
+    # Tick Betfair valido: salvato == piazzato. CERT. 13/09 — la direzione conta.
+    # ``round_to_tick`` prende il tick PIU' VICINO: su un prezzo gia' valido (il
+    # caso normale, viene dal book) e' un no-op, ma su un prezzo calcolato o
+    # arrivato dalla UI puo' PEGGIORARLO oltre il necessario e far morire il FOK.
+    # Un LAY taker accetta un prezzo >= (tick_up), un BACK taker un prezzo <=
+    # (tick_down): cosi' l'ordine abbina, e mai a una quota peggiore del dovuto.
+    # Esempio reale: chiusura LAY a 51 su CORRECT_SCORE (banda 50-100, passo 5)
+    # -> round_to_tick dava 50, cioe' sotto il best lay: FOK a vuoto.
+    price = (E.tick_up(float(price)) if side == "lay" else E.tick_down(float(price)))
     size = round(float(size), 2)
     if best_size is not None:
         try:
@@ -164,7 +215,7 @@ def place(
     # --- sotto il minimo di PIAZZAMENTO? allora place-and-trim -------------------
     # Le CHIUSURE non c'entrano: Betfair accetta gia' gli ordini sotto minimo che
     # RIDUCONO una posizione (review C2), quindi passano dal percorso normale.
-    min_live = _min_size_live()
+    min_live = _min_size_live(side)
     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
 
@@ -243,6 +294,17 @@ def place(
     # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
     # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
     # la stessa tecnica di Bet Angel/Fairbot, in tre chiamate REST sincrone.
+    #
+    # CERT. 13/09 — FRENI DI SICUREZZA GLOBALI ANCHE QUI.
+    # ``LIVE_KILL_SWITCH`` e ``LIVE_ORDER_MODE`` fermavano solo il WORKER della
+    # coda. Quando il gate flumine e' chiuso (runner fermo, evento non in
+    # streaming) la Safe Strategy ripiega sul REST e chiamava direttamente
+    # ``place_order_live``: con ``LIVE_ORDER_MODE=PAPER`` nel .env — cioe' con
+    # l'operatore che ha dichiarato TUTTO il sistema in paper — un LIVE del bot
+    # passava lo stesso e muoveva soldi veri. I due freni valgono ovunque.
+    blocco = _live_brake()
+    if blocco:
+        return PlaceOutcome("error", None, 0.0, None, blocco)
     try:
         if sotto_minimo:
             res = market.place_submin_live(
@@ -418,6 +480,15 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         "persistence": "LAPSE",
         "params": {"source": "safe", "trade_id": int(trade_id)},
     }
+    # CERT. 13/09 — una CHIUSURA riduce la posizione: Betfair la accetta sotto
+    # il minimo e senza il passo da 0,50 EUR sulle size BACK. Senza questo flag
+    # ``live_order_build.min_stake_rules`` SOLLEVA per ogni BACK < 2,00 EUR e
+    # tronca per difetto le altre: la gamba di uscita finiva in errore e la
+    # posizione restava esposta fino al settlement, che e' esattamente cio' che
+    # il manuale vieta ("si esce subito e si accetta"). ``_place_closing_leg``
+    # del worker faceva gia' cosi' per l'azione ``greenup``: stesso trattamento.
+    if base_meta and (base_meta.get("cashout") or base_meta.get("closes_trade_id")):
+        payload["params"]["reduces_liability"] = True
     if action == "place_submin":
         # la sequenza place-and-trim lascia l'ordine A RIPOSO alla quota target:
         # un FILL_OR_KILL lo ucciderebbe al primo step (la quota di parcheggio non

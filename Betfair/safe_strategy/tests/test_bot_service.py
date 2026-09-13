@@ -4,7 +4,7 @@ Nessuna rete, nessun Supabase. File ASCII-only (console Windows cp1252).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -376,13 +376,49 @@ def test_richiesta_place_manuale_eseguita_anche_a_bot_fermo():
     assert t["status"] == "open" and t["mode"] == "paper"
 
 
-def test_richiesta_place_senza_mode_esplicito_resta_paper():
+def test_richiesta_place_senza_mode_esplicito_con_servizio_live_e_RIFIUTATA():
+    """CERT. 13/09 - separazione netta paper/live.
+
+    Servizio in LIVE, richiesta senza ``mode`` (quindi 'paper' per difetto): le
+    due modalita' non corrispondono e la richiesta viene RIFIUTATA. Prima
+    veniva eseguita come paper: il LIVE restava esplicito (bene), ma si creava
+    una posizione finta mentre il servizio era sui soldi veri, e nessuno lo
+    diceva. Adesso non si piazza niente e il motivo e' scritto.
+
+    (Sostituisce ``test_richiesta_place_senza_mode_esplicito_resta_paper``.)"""
     db = FakeDB(status="running", mode="live")
     db.scan_rows = [_feed_row()]
     db.requests.append({"id": 1, "kind": "place", "status": "pending",
                         "payload": _place_payload()})
     _run(db)
-    assert db.trades[0]["mode"] == "paper", "il LIVE deve essere sempre esplicito"
+    assert db.trades == [], "nessuna posizione: le modalita' non corrispondono"
+    assert _skips(db, "modalita_non_corrispondente")
+
+
+def test_richiesta_place_live_con_servizio_paper_e_RIFIUTATA():
+    """Il verso pericoloso: la UI accoda un "Piazza (LIVE)" e subito dopo si
+    torna in PAPER. Senza questa barriera il bot leggeva la richiesta al ciclo
+    dopo e piazzava SOLDI VERI con lo schermo che diceva "nessun denaro reale"."""
+    db = FakeDB(status="running", mode="paper")
+    db.scan_rows = [_feed_row()]
+    db.requests.append({"id": 1, "kind": "place", "status": "pending",
+                        "payload": _place_payload(mode="live")})
+    _run(db)
+    assert db.trades == []
+    assert _skips(db, "modalita_non_corrispondente")
+
+
+def test_richiesta_place_scaduta_non_viene_eseguita():
+    """Una 'pending' vecchia non scadeva MAI: a servizio spento restava in coda
+    e veniva eseguita al primo avvio utile, su quote di un'altra partita."""
+    db = FakeDB(status="running", mode="paper")
+    db.scan_rows = [_feed_row()]
+    vecchia = (NOW - timedelta(seconds=S._REQUEST_MAX_AGE_S + 60)).isoformat()
+    db.requests.append({"id": 1, "kind": "place", "status": "pending",
+                        "created_at": vecchia, "payload": _place_payload()})
+    _run(db)
+    assert db.trades == []
+    assert _skips(db, "richiesta_scaduta")
 
 
 def test_richiesta_place_invalida_va_in_errore():
@@ -2540,11 +2576,17 @@ def test_combo_tutte_le_gambe_o_nessuna():
     assert [t["size"] for t in db.trades] == [7.0, 3.0]
 
 
-def test_combo_gamba_sotto_il_minimo_betfair_ferma_tutta_la_combo():
-    """0.85/0.15 su 2 gambe da 5 medi -> 8.5 e 1.5: la seconda e' sotto il
-    minimo REALE Betfair (2 EUR) e in live verrebbe RIFIUTATA dopo che la prima
-    e' gia' stata piazzata -> posizione nuda da svolgere. Si ferma PRIMA della
-    riserva: nessuna gamba piazzata."""
+def test_combo_gamba_sotto_il_minimo_di_giurisdizione_SI_PIAZZA():
+    """CERT. 13/09 — 0.85/0.15 su 2 gambe da 5 medi -> 8,50 e 1,50.
+
+    La seconda gamba sta SOTTO il minimo di giurisdizione (2 EUR sul BACK .it)
+    ma SOPRA il pavimento assoluto dell'exchange (0,01 EUR): su Betfair e'
+    piazzabile con il place-and-trim (parcheggio -> cancel parziale -> replace),
+    che in questo progetto e' implementato e collegato. Prima veniva scartata e
+    si portava via l'intera combo: era la regola sbagliata, non l'ordine.
+
+    (Sostituisce ``test_combo_gamba_sotto_il_minimo_betfair_ferma_tutta_la_combo``,
+    che certificava il rifiuto a 2 EUR.)"""
     S._SKIP_LOG_STATE.clear()
     db = FakeDB(status="running", params={"auto_trade_combos": True})
     db.scan_rows = [_feed_odds_row(ts=1)]
@@ -2553,9 +2595,26 @@ def test_combo_gamba_sotto_il_minimo_betfair_ferma_tutta_la_combo():
     r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
              opps_state={"last_ts": 0.0, "hashes": {}},
              extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
+    assert r["opportunities"]["traded"] == 1
+    assert [t["size"] for t in db.trades] == [8.5, 1.5]
+    assert not _skips(db, "combo_gamba_sotto_minimo")
+
+
+def test_combo_gamba_sotto_il_pavimento_assoluto_ferma_tutta_la_combo():
+    """Sotto 0,01 EUR non esiste ordine Betfair con nessuna tecnica: li' la
+    combo si ferma ancora PRIMA della riserva ("tutte o nessuna"), altrimenti
+    la prima gamba resterebbe piazzata e nuda."""
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running", params={"auto_trade_combos": True})
+    db.scan_rows = [_feed_odds_row(ts=1)]
+    legs = _combo()["legs"]
+    # su 10 EUR totali la seconda gamba vale 0,001 EUR -> arrotondata a 0,00:
+    # non e' un ordine, con nessuna tecnica
+    legs[0]["stake_ratio"], legs[1]["stake_ratio"] = 0.9999, 0.0001
+    r = _run(db, engine=None, opp_model=FakeBookModel(), opp_mod=FAKE_OPP_MOD,
+             opps_state={"last_ts": 0.0, "hashes": {}},
+             extra_mods={"combos": FakeCombos([_combo(legs=legs)])})
     assert r["opportunities"]["traded"] == 0 and db.trades == []
-    sk = _skips(db, "combo_gamba_sotto_minimo")
-    assert sk and sk[0]["size"] == 1.5 and sk[0]["min_stake"] == 2.0
 
 
 def test_combo_riserva_incompleta_libera_le_riserve():

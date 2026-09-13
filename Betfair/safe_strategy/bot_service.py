@@ -991,9 +991,31 @@ def _commission_rate(value: Any, fallback: float) -> float:
 # ---------------------------------------------------------------------------
 # (c) richieste della UI — SEMPRE, anche a bot fermo
 # ---------------------------------------------------------------------------
+# Eta' massima di una richiesta manuale ancora eseguibile. Oltre, si scarta con
+# un motivo parlante invece di piazzare in ritardo su un mercato cambiato.
+_REQUEST_MAX_AGE_S = 120.0
+
+
+def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
+    """Secondi trascorsi dalla creazione della richiesta; None se non databile
+    (una richiesta senza data NON viene scartata: meglio eseguirla che perderla
+    per un campo mancante)."""
+    raw = row.get("created_at") or row.get("requested_at") or row.get("ts")
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return max(0.0, (now - ts).total_seconds())
+
+
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
                      params: dict[str, Any], now: datetime,
-                     risk_ctx: Optional[dict] = None) -> int:
+                     risk_ctx: Optional[dict] = None,
+                     control_mode: str = "") -> int:
     stale = getattr(db, "fail_stale_processing", None)
     if callable(stale):
         try:
@@ -1013,11 +1035,26 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
             continue
         kind = str(r.get("kind") or "")
         payload = r.get("payload") or {}
+        # CERT. 13/09 — una richiesta VECCHIA non si esegue: si scarta.
+        # ``fail_stale_processing`` copriva solo lo stato 'processing'; una
+        # 'pending' non scadeva MAI, quindi una richiesta creata ore prima (a
+        # servizio spento) veniva eseguita al primo avvio utile, su quote di
+        # un'altra partita e magari in una modalita' diversa da quella attiva.
+        eta = _request_age_s(r, now)
+        if eta is not None and eta > _REQUEST_MAX_AGE_S:
+            db.set_request_status(r["id"], "error", {
+                "message": f"rifiutato: richiesta di {int(eta // 60)} minuti fa, "
+                           f"troppo vecchia per essere eseguita adesso",
+                "reason": "richiesta_scaduta", "age_s": round(eta, 1)})
+            _log(db, "skip", {"reason": "richiesta_scaduta", "origin": "manual",
+                              "kind": kind, "age_s": round(eta, 1)})
+            n += 1
+            continue
         try:
             if kind == "place":
                 res = _request_place(db=db, market=market, rows_by_event=rows_by_event,
                                      payload=payload, params=params, now=now,
-                                     risk_ctx=risk_ctx)
+                                     risk_ctx=risk_ctx, control_mode=control_mode)
             elif kind == "cashout":
                 res = _request_cashout(db=db, market=market, rows_by_event=rows_by_event,
                                        payload=payload, params=params, now=now)
@@ -1069,7 +1106,8 @@ _MANUAL_OPP_KINDS = ("model", "anomaly", "combo", "tennis")
 
 
 def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
-                   now: datetime, risk_ctx: Optional[dict] = None) -> dict:
+                   now: datetime, risk_ctx: Optional[dict] = None,
+                   control_mode: str = "") -> dict:
     """Piazzamento MANUALE dalla UI: reserve-first, stesse barriere dell'automatico
     più il controllo MORBIDO del rischio (solo i cap di esposizione)."""
     event_id = str(payload.get("event_id") or "")
@@ -1086,6 +1124,22 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     mode = str(payload.get("mode") or "paper").lower()
     if mode not in ("paper", "live"):
         return {"error": f"mode_non_valido:{mode}"}
+    # CERT. 13/09 — SEPARAZIONE NETTA PAPER/LIVE: la modalita' del payload e' una
+    # ASSERZIONE DEL CLIENT, non un comando. L'autorita' e' ``control.mode``.
+    # Difetto chiuso qui: l'utente accodava "Piazza (LIVE)" e subito dopo toccava
+    # PAPER sul toggle; il bot leggeva la richiesta al ciclo successivo e
+    # piazzava SOLDI VERI mentre lo schermo diceva "nessun denaro reale".
+    # Le richieste ``pending`` non avevano nemmeno una scadenza: una richiesta
+    # LIVE creata ore prima, a servizio spento, veniva eseguita all'avvio
+    # successivo qualunque fosse la modalita' corrente.
+    if control_mode and mode != str(control_mode).lower():
+        _log(db, "skip", {"event_id": event_id, "origin": "manual",
+                          "reason": "modalita_non_corrispondente",
+                          "richiesta": mode, "attiva": str(control_mode).lower()})
+        return {"rejected": f"modalita' non corrispondente: richiesta {mode}, "
+                            f"attiva {str(control_mode).lower()}",
+                "message": f"rifiutato: la richiesta era in {mode.upper()} ma il "
+                           f"servizio e' in {str(control_mode).upper()}"}
     try:
         price = float(payload.get("price"))
         size = float(payload.get("size"))
@@ -1110,7 +1164,7 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     # doppio click): con la stessa chiave non si piazza due volte.
     idem = str(payload.get("idempotency_key") or "").strip() or None
     if idem:
-        dup = _trade_by_idempotency_key(db, idem)
+        dup = _trade_by_idempotency_key(db, idem, mode=mode)
         if dup is not None:
             return {"ok": True, "deduplicated": True, "trade_id": dup.get("id"),
                     "status": dup.get("status"), "idempotency_key": idem}
@@ -1125,7 +1179,7 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
     cap = float(params.get("max_liability_per_trade") or 0.0)
     if cap > 0 and liability > cap:
         return {"error": "max_liability_per_trade_superato", "liability": liability}
-    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params)
+    risk_ctx = risk_ctx if risk_ctx is not None else build_risk_ctx(db, now, params, mode=mode)
     blocked = _risk_gate(db, now, params, risk_ctx,
                          {"event_id": event_id, "market_type": market_type,
                           "liability": liability,
@@ -1191,14 +1245,45 @@ def _request_place(*, db, market, rows_by_event, payload: dict, params: dict,
             "pending_fill": out.status == "pending"}
 
 
-def _trade_by_idempotency_key(db, key: str) -> Optional[dict[str, Any]]:
+def _traded_keys(db, mode: Optional[str] = None) -> set[tuple[str, str]]:
+    """(event_id, signal_key) gia' presi dall'automatico NELLA MODALITA' data.
+
+    CERT. 13/09 — senza il filtro, il passaggio da paper a live era una trappola
+    silenziosa: tutti i segnali gia' "tradati" in prova risultavano occupati e
+    il bot con i soldi veri non entrava su NIENTE di quello che aveva appena
+    collaudato. L'accessor vecchio (senza parametro) viene comunque accettato:
+    si degrada al comportamento di prima invece di rompere il bot."""
+    fn = getattr(db, "traded_signal_keys", None)
+    if not callable(fn):
+        return set()
+    try:
+        return set(fn(mode=mode) or set())
+    except TypeError:      # accessor senza il parametro (fake dei test, versioni vecchie)
+        return set(fn() or set())
+
+
+def _trade_by_idempotency_key(db, key: str,
+                              mode: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Trade NON in errore con ``meta.idempotency_key == key`` (accessor del db
-    se c'è, altrimenti scansione delle righe)."""
+    se c'è, altrimenti scansione delle righe).
+
+    Il dedupe e' PER MODALITA' (13/09): la stessa chiave usata in paper non deve
+    far rispondere "gia' fatto" a un clic in LIVE (la UI direbbe "eseguito" e
+    non ci sarebbe nessun ordine vero)."""
+    m = str(mode or "").lower() or None
     fn = getattr(db, "trade_by_idempotency_key", None)
     if callable(fn):
-        return fn(key)
+        try:
+            return fn(key, mode=m)
+        except TypeError:      # accessor vecchio senza il parametro
+            found = fn(key)
+            if found is None or m is None:
+                return found
+            return found if str(found.get("mode") or "live").lower() == m else None
     for t in db.list_trades() or []:
         if str(t.get("status")) == "error":
+            continue
+        if m is not None and str(t.get("mode") or "live").lower() != m:
             continue
         if str((t.get("meta") or {}).get("idempotency_key") or "") == key:
             return t
@@ -2579,9 +2664,11 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
 
     12/09 — guardie di APERTURA comuni a tutti i percorsi (segnali, opportunita',
     anomalie, combo, manuale):
-      • size sotto il minimo REALE Betfair (``params.min_stake``, 2 €) = rifiuto
-        certo in live -> errore parlante ANCHE in paper (prima il paper la
-        riempiva e il live no: paper ≠ live);
+      • size sotto il minimo ASSOLUTO dell'exchange (0,01 €) = errore parlante;
+        fra 0,01 € e il minimo di giurisdizione si usa il place-and-trim, non si
+        rifiuta (13/09: prima il rifiuto era a 2 € e rendeva irraggiungibile la
+        macchina sotto-minimo, in aperta violazione della regola "qualsiasi
+        importo e' piazzabile fino al centesimo");
       • fill PAPER sul libro del feed (``_paper_ladder``): prezzo abbinabile e
         liquidita' reali, mai "al prezzo richiesto qualunque sia il mercato".
         Senza prezzi del feed (``feed_prices`` None) in paper non si simula
@@ -2592,12 +2679,22 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         size = float(row["size"])
     except (TypeError, ValueError):
         size = 0.0
-    min_stake = max(0.0, _f(params.get("min_stake"), 2.0))
-    if min_stake > 0 and size < min_stake - 1e-9:
-        _place_fail(db, trade_id, row, f"size_sotto_minimo_betfair:{size:.2f}<{min_stake:.2f}",
-                    now, params)
+    # CERT. 13/09 — il minimo di giurisdizione NON e' piu' un rifiuto qui.
+    # Su Betfair QUALSIASI importo e' piazzabile fino a 0,01 EUR con la tecnica
+    # place-and-trim (parcheggio a quota non abbinabile -> cancel parziale ->
+    # replace alla quota reale), che in questo progetto e' gia' implementata e
+    # collegata (``stream/trading/submin.py`` per la coda,
+    # ``omega_market.place_submin_live`` per il REST). Rifiutando qui, PRIMA di
+    # ``X.place``, quella macchina non veniva MAI raggiunta su un'apertura: uno
+    # stake di 1,00 EUR finiva in errore ``size_sotto_minimo_betfair`` e dopo 3
+    # tentativi il segnale era morto per tutta la partita.
+    # Resta un solo pavimento: quello dell'exchange, 0,01 EUR. Quale dei due
+    # percorsi usare (place normale o place-and-trim) lo decide ``X.place``,
+    # che conosce anche il LATO (il minimo .it e' BACK 2,00 / LAY 0,50).
+    if size < X.ABS_MIN_SIZE - 1e-9:
+        _place_fail(db, trade_id, row, f"size_sotto_il_minimo_assoluto:{size:.2f}", now, params)
         return X.PlaceOutcome("error", None, 0.0, None,
-                              f"size_sotto_minimo_betfair:{size:.2f}<{min_stake:.2f}")
+                              f"size_sotto_il_minimo_assoluto:{size:.2f}")
     if mode == "paper" and not ladder:
         lvl = _paper_ladder(side, feed_prices, best_size)
         if lvl is None:
@@ -2806,22 +2903,61 @@ def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any]
 # ---------------------------------------------------------------------------
 # RISCHIO: contesto di ciclo + gate prima di ogni riserva
 # ---------------------------------------------------------------------------
-def build_risk_ctx(db, now: datetime, params: dict[str, Any]) -> dict[str, Any]:
+def _risk_ctx_cieco(db, open_: list, ex: Exception) -> dict[str, Any]:
+    """Contesto di rischio NON UTILIZZABILE: si conoscono le posizioni vive ma
+    non i numeri della giornata. ``unavailable`` blocca i NUOVI ingressi (le
+    uscite e il settlement continuano: mai lasciare una posizione nuda)."""
+    logger.warning("[safe.bot] aggregates KO: %s — nessun nuovo ingresso in questo ciclo",
+                   str(ex)[:160])
+    _log(db, "error", {"reason": "aggregati_non_leggibili", "critical": True,
+                       "err": str(ex)[:160],
+                       "effetto": "nuovi ingressi sospesi: senza i numeri della "
+                                  "giornata i cap di rischio non sono verificabili"})
+    return {"open": open_, "realized_today": 0.0, "day_liability": 0.0,
+            "day_liability_model": 0.0, "agg": {}, "unavailable": True}
+
+
+def build_risk_ctx(db, now: datetime, params: dict[str, Any],
+                   mode: Optional[str] = None) -> dict[str, Any]:
     """{open: posizioni vive (no gambe di chiusura), realized_today, day_liability,
     day_liability_model, agg}: UNA lettura per ciclo, aggiornata in memoria a
     ogni riserva riuscita (``_risk_commit``). Letture KO → fail-closed: contesto
-    'bloccante' (loss stop finto) per non piazzare al buio."""
+    'bloccante' (loss stop finto) per non piazzare al buio.
+
+    CERT. 13/09 — ``mode`` SEPARA i budget di rischio. Prima i cap erano ciechi
+    alla modalita': ``daily_liability_cap`` veniva consumato da liability FINTE
+    e bloccava i trade veri; ``daily_loss_stop`` sommava paper e live, cosi' una
+    giornata paper negativa fermava il live e — verso piu' pericoloso — i
+    profitti paper potevano mascherare perdite vere e tenere aperto il rubinetto
+    oltre la soglia. I soldi finti non devono toccare il budget dei soldi veri."""
     try:
-        open_ = [t for t in db.open_trades() or [] if not t.get("closes_trade_id")]
+        try:
+            vive = db.open_trades(mode=mode) or []
+        except TypeError:      # accessor vecchio senza il parametro
+            vive = [t for t in (db.open_trades() or [])
+                    if mode is None or str(t.get("mode") or "live").lower() == str(mode)]
+        open_ = [t for t in vive if not t.get("closes_trade_id")]
     except Exception as ex:  # noqa: BLE001
         _log(db, "error", {"reason": "open_count_failed", "err": str(ex)[:160]})
         return {"open": [], "realized_today": 0.0, "day_liability": 0.0,
                 "day_liability_model": 0.0, "agg": {}, "unavailable": True}
     try:
-        agg = dict(db.aggregates() or {})
+        agg = dict(db.aggregates(mode=mode) or {})
+    except TypeError:          # accessor vecchio senza il parametro
+        try:
+            agg = dict(db.aggregates() or {})
+        except Exception as ex:      # noqa: BLE001
+            return _risk_ctx_cieco(db, open_, ex)
     except Exception as ex:  # noqa: BLE001
-        logger.warning("[safe.bot] aggregates KO: %s", str(ex)[:160])
-        agg = {}
+        # CERT. 13/09 — FAIL-CLOSED anche qui. Prima si proseguiva con ``agg={}``
+        # e succedeva questo, in silenzio: ``realized_today`` = 0 -> il fermo
+        # per perdita giornaliera si DISATTIVA; ``day_liability`` = 0 -> il cap
+        # giornaliero di responsabilita' e quello dei trade di modello
+        # RIPARTONO DA ZERO. Cioe': ogni volta che la lettura degli aggregati
+        # falliva (e oggi il DB va in timeout di continuo) il bot perdeva tutte
+        # le sue barriere di rischio proprio mentre era in difficolta'.
+        # Il docstring dichiarava gia' "letture KO -> fail-closed": ora e' vero.
+        return _risk_ctx_cieco(db, open_, ex)
     return {"open": open_, "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
             "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
             "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
@@ -2863,6 +2999,30 @@ def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
         ctx["day_liability_model"] = float(ctx.get("day_liability_model") or 0.0) + liab
 
 
+def _log_pre_match_missing(db, engine, params: dict[str, Any], now: datetime) -> None:
+    """Scrive nell'attivita' le partite in corso senza riferimento 1X2 pre-KO.
+
+    Sono quelle su cui BASE e PUNTA non possono scattare (``favorite_side``
+    torna None -> check ``ok=None`` -> stato "nd" -> candidato scartato). Prima
+    sparivano in silenzio ed era impossibile capire perche' il bot usasse solo
+    la variante ESATTO. Throttlato come ogni altro scarto
+    (``skip_log_interval_s``), quindi non allaga il feed."""
+    fn = getattr(engine, "pre_match_missing_events", None)
+    if not callable(fn):
+        return
+    try:
+        manca = fn() or []
+    except Exception:  # noqa: BLE001 - una diagnosi non puo' fermare il bot
+        return
+    for ev in manca:
+        _log_skip(db, now, params, {
+            "event_id": str(ev.get("event_id") or ""),
+            "event_name": ev.get("event_name"),
+            "minute": ev.get("minute"),
+            "reason": "pre_ko_assente",
+        })
+
+
 def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                    mode: str, now: datetime, risk_ctx: Optional[dict] = None,
                    scanner_ts: Optional[float] = None,
@@ -2877,15 +3037,21 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     except Exception as ex:  # noqa: BLE001 — motore rotto: nessun piazzamento
         _log(db, "error", {"reason": "engine_failed", "err": str(ex)[:160]})
         return 0, 0
+    # CERT. 13/09 — DIRE perche' BASE e PUNTA non escono. Senza il riferimento
+    # 1X2 pre-KO quelle due varianti finiscono in stato "nd" e vengono scartate
+    # PRIMA di diventare segnali: nessuna riga di attivita', nessun motivo a
+    # schermo, e l'utente vede solo ESATTO (l'unica che non usa il pre-KO).
+    # Va scritto qui, prima dell'uscita anticipata su "nessun segnale".
+    _log_pre_match_missing(db, engine, params, now)
     if not signals:
         return 0, 0
     try:
-        traded = set(db.traded_signal_keys() or set())
+        traded = set(_traded_keys(db, mode))
     except Exception as ex:  # noqa: BLE001 — FAIL-CLOSED: senza idempotenza NON si piazza
         _log(db, "error", {"reason": "traded_keys_failed", "err": str(ex)[:160]})
         return 0, len(signals)
     if risk_ctx is None:
-        risk_ctx = build_risk_ctx(db, now, params)
+        risk_ctx = build_risk_ctx(db, now, params, mode=mode)
     if risk_ctx.get("unavailable"):
         return 0, len(signals)
     open_n = len(risk_ctx.get("open") or [])
@@ -2911,6 +3077,11 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             continue
         variant = str(_sig(s, "variant") or "")
         if variants and variant not in variants:
+            # era l'UNICO scarto senza log: la UI prometteva "perche' NON e'
+            # entrato" e su questo caso non aveva niente da leggere
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "strategy": variant,
+                                        "reason": "variante_non_abilitata"})
             continue
         # 12/09: mai un ingresso su una riga del feed NON FRESCA (scanner fermo
         # o partita non riscritta da >120 s): il paper riempirebbe a quote
@@ -3529,11 +3700,11 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
                                     "reason": _stale_reason(feed_row)})
         return 0
     try:
-        traded = set(db.traded_signal_keys() or set())
+        traded = set(_traded_keys(db, mode))
     except Exception:  # noqa: BLE001 — FAIL-CLOSED
         return 0
     if risk_ctx is None:
-        risk_ctx = build_risk_ctx(db, now, params)
+        risk_ctx = build_risk_ctx(db, now, params, mode=mode)
     n = 0
     for o in opps:
         if not isinstance(o, dict):
@@ -3669,7 +3840,11 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
     stake = float(RK.risk_params(params).get("model_stake") or 0.0)
     cap = float(params.get("max_liability_per_trade") or 0.0)
     commission = float(params.get("commission_pct", 5.0)) / 100.0
-    min_stake = max(0.0, _f(params.get("min_stake"), 2.0))
+    # CERT. 13/09 — come per le aperture singole: il pavimento e' quello
+    # ASSOLUTO dell'exchange, non il minimo di giurisdizione. Una gamba da
+    # 1,20 EUR e' piazzabile col place-and-trim, quindi non deve piu' far
+    # scartare l'intera combo.
+    min_stake = X.ABS_MIN_SIZE
     if stake <= 0:
         return 0
     if not scanner_ts_known:
@@ -3680,11 +3855,11 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
                                     "reason": _stale_reason(feed_row)})
         return 0
     try:
-        traded = set(db.traded_signal_keys() or set())
+        traded = set(_traded_keys(db, mode))
     except Exception:  # noqa: BLE001
         return 0
     if risk_ctx is None:
-        risk_ctx = build_risk_ctx(db, now, params)
+        risk_ctx = build_risk_ctx(db, now, params, mode=mode)
     n = 0
     for c in combos:
         if not isinstance(c, dict):
@@ -3753,10 +3928,12 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
             if side not in ("back", "lay") or price <= 1.0 or not leg.get("market_id")                     or leg_stake <= 0:
                 ok = False
                 break
-            # 12/09: una gamba sotto il minimo REALE Betfair fa fallire _execute
-            # DOPO che le altre sono gia' state piazzate -> combo rotta e
-            # posizione nuda da svolgere. "Tutte o nessuna" si decide PRIMA
-            # della riserva, non davanti al rifiuto dell'exchange.
+            # Una gamba non piazzabile fa fallire _execute DOPO che le altre
+            # sono gia' state piazzate -> combo rotta e posizione nuda da
+            # svolgere. "Tutte o nessuna" si decide PRIMA della riserva, non
+            # davanti al rifiuto dell'exchange. Dal 13/09 la soglia e' il
+            # pavimento assoluto (0,01 EUR): sotto il minimo di giurisdizione
+            # ci pensa il place-and-trim.
             if leg_stake < min_stake - 1e-9:
                 _log_skip(db, now, params, {"event_id": event_id, "signal_key": key,
                                             "reason": "combo_gamba_sotto_minimo",
@@ -4008,11 +4185,11 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
             continue
         if traded is None:
             try:
-                traded = set(db.traded_signal_keys() or set())
+                traded = set(_traded_keys(db, mode))
             except Exception:  # noqa: BLE001 — FAIL-CLOSED
                 return out
         if risk_ctx is None:
-            risk_ctx = build_risk_ctx(db, now, params)
+            risk_ctx = build_risk_ctx(db, now, params, mode=mode)
         for o in found:
             try:
                 price = float(o.get("price"))
@@ -4073,23 +4250,49 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
 # ---------------------------------------------------------------------------
 # CICLO
 # ---------------------------------------------------------------------------
+# Ultimo ``safe_strategy_control`` letto con successo. Serve a far girare le
+# fasi di PROTEZIONE (riconciliazione, settlement, uscite) anche quando il DB non
+# risponde: senza, un'indisponibilita' di Supabase lasciava le posizioni aperte
+# senza nessuno che le guardasse.
+_LAST_CONTROL: dict[str, Any] = {}
+
+
 def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
              opp_mod: Any = None, engine_mod: Any = None,
              now: Optional[datetime] = None,
              opps_state: Optional[dict] = None,
              extra_mods: Optional[dict] = None) -> dict[str, Any]:
     now = now or _now()
+    # CERT. 13/09 — il control illeggibile NON deve piu' portarsi via l'intero
+    # ciclo. Prima si usciva subito, quindi con il DB in difficolta' non giravano
+    # nemmeno ``reconcile_pending``, ``settle_open`` e ``process_exits``: le
+    # posizioni APERTE restavano senza uscite e senza settlement per tutta la
+    # durata del disservizio. E' l'opposto della regola dichiarata del modulo
+    # ("SEMPRE, anche a bot fermo: mai posizioni nude").
+    # Adesso si riparte dall'ULTIMO control noto e si degrada in sicurezza: le
+    # fasi di PROTEZIONE girano, i NUOVI INGRESSI no (``unavailable`` nel
+    # contesto di rischio li blocca comunque, perche' i cap non sono verificabili).
+    control_degradato = False
     try:
         control = db.read_control()
     except Exception as ex:  # noqa: BLE001
-        logger.warning("[safe.bot] read_control KO: %s", str(ex)[:160])
-        return {"skipped": "control_unreadable"}
+        control = _LAST_CONTROL.get("value")
+        if control is None:
+            logger.warning("[safe.bot] read_control KO e nessun control in cache: %s",
+                           str(ex)[:160])
+            return {"skipped": "control_unreadable"}
+        control_degradato = True
+        logger.warning("[safe.bot] read_control KO (%s): ciclo in PROTEZIONE con "
+                       "l'ultimo stato noto — niente nuovi ingressi", str(ex)[:120])
     if control is None:
         return {"skipped": "no_control"}
+    if not control_degradato:
+        _LAST_CONTROL["value"] = dict(control)
     status = str(control.get("status") or "idle")
     mode = str(control.get("mode") or "paper")
     if mode not in ("paper", "live"):
         mode = "paper"
+    set_log_mode(mode)   # ogni riga di attivita' di questo ciclo nasce etichettata
     raw_params = control.get("params")
     params = resolve_params(raw_params, engine_mod=engine_mod)
     # H-14/H-15: i valori CLAMPATI/normalizzati tornano sul DB (la scheda
@@ -4122,7 +4325,12 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     seed_place_attempts(db, now.timestamp())
 
     # contesto di RISCHIO del ciclo (una lettura: posizioni vive + aggregati)
-    risk_ctx = build_risk_ctx(db, now, params)
+    risk_ctx = build_risk_ctx(db, now, params, mode=mode)
+    if control_degradato:
+        # stato del bot non verificato in questo ciclo (control illeggibile):
+        # si proteggono le posizioni esistenti — riconciliazione, settlement,
+        # uscite — ma non si apre NIENTE di nuovo.
+        risk_ctx = {**risk_ctx, "unavailable": True}
 
     # (b-bis) H-18: posizioni vive senza riga nel feed = cecità, mai silenzio
     n_blind = check_feed_blind(db, risk_ctx.get("open") or [], rows_by_event, now)
@@ -4135,7 +4343,8 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
 
     # (c) richieste della UI — SEMPRE
     n_requests = process_requests(db=db, market=market, rows_by_event=rows_by_event,
-                                  params=params, now=now, risk_ctx=risk_ctx)
+                                  params=params, now=now, risk_ctx=risk_ctx,
+                                  control_mode=mode)
 
     # (c-bis) uscite automatiche — SEMPRE (posizioni già aperte), prima dei nuovi ingressi
     n_exits = process_exits(db=db, market=market, rows_by_event=rows_by_event,
@@ -4189,6 +4398,10 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         agg = risk_ctx["agg"]
     else:
         try:
+            # stessa modalita' del ciclo: i numeri a schermo non mescolano mai
+            # posizioni finte e vere (13/09)
+            agg = db.aggregates(mode=mode)
+        except TypeError:      # accessor vecchio senza il parametro
             agg = db.aggregates()
         except Exception as ex:  # noqa: BLE001
             logger.warning("[safe.bot] aggregates KO: %s", str(ex)[:160])
@@ -4232,6 +4445,20 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
             "stats": stats}
 
 
+# MODALITA' del ciclo in corso, per etichettare l'attivita' nel punto UNICO di
+# scrittura. CERT. 13/09: solo 4 dei ~63 punti di log portavano ``mode``; tutti
+# gli altri (scarti, blocchi di rischio, attese, uscite trattenute, errori di
+# settlement, feed cieco) finivano nello storico senza dire se riguardavano
+# soldi veri o finti — e a posteriori era impossibile verificare alcunche'.
+_LOG_MODE: dict[str, str] = {"value": ""}
+
+
+def set_log_mode(mode: str) -> None:
+    """Dichiara la modalita' del ciclo: la usa ``_log`` come etichetta."""
+    m = str(mode or "").strip().lower()
+    _LOG_MODE["value"] = m if m in ("paper", "live") else ""
+
+
 def _log(db, kind: str, payload: dict[str, Any]) -> None:
     # CERTIFICAZIONE 12/09 — ogni riga di attivita' porta il NOME della partita
     # quando lo conosciamo (vedi ``remember_event_names``): nella scheda
@@ -4242,6 +4469,10 @@ def _log(db, kind: str, payload: dict[str, Any]) -> None:
             nm = event_name_for(payload.get("event_id"))
             if nm:
                 payload = {**payload, "event_name": nm}
+        # etichetta PAPER/LIVE su OGNI riga: chi scrive un payload con il suo
+        # ``mode`` (place, exit, flumine_enqueue) resta padrone del proprio.
+        if isinstance(payload, dict) and not payload.get("mode") and _LOG_MODE["value"]:
+            payload = {**payload, "mode": _LOG_MODE["value"]}
     except Exception:  # noqa: BLE001 — mai per un'etichetta
         pass
     try:

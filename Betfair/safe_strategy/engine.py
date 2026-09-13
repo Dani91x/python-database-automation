@@ -1360,6 +1360,7 @@ class SafeEngine:
         self._stab: Dict[str, ScoreStability] = {}
         self._tn_stab: Dict[str, TennisScoreStability] = {}
         self._signals: List[_Active] = []
+        self._last_monitors: List[Monitor] = []
 
     # ------------------------------------------------------------- parametri
     @property
@@ -1476,6 +1477,13 @@ class SafeEngine:
         """Valuta le righe ``safe_strategy_scan`` e ritorna i segnali ATTIVI."""
         now = float(self._clock())
         monitors = self._ingest(rows, now * 1000.0)
+        # CERT. 13/09: i monitor dell'ultimo giro restano a disposizione del bot
+        # per DIRE perche' non e' uscito nulla. Senza questo, una partita senza
+        # riferimento pre-KO faceva finire BASE e PUNTA in stato "nd" e sparire
+        # in silenzio: nessun segnale, nessuno scarto, nessuna riga a schermo.
+        # NON si puo' richiamare ``monitors(rows)`` per saperlo: ``_ingest``
+        # aggiorna i tracker di stabilita', chiamarlo due volte li falserebbe.
+        self._last_monitors = monitors
         candidates: List[_Candidate] = []
         for m in monitors:
             if m.sport == SPORT_TENNIS:
@@ -1485,6 +1493,26 @@ class SafeEngine:
         nxt, _fresh = reconcile_signals(self._signals, candidates, now)
         self._signals = nxt
         return [self._to_signal(s) for s in nxt if s.status == "active"]
+
+    def pre_match_missing_events(self) -> List[Dict[str, Any]]:
+        """Partite di calcio IN CORSO valutate nell'ultimo ``evaluate`` per cui
+        manca il riferimento 1X2 pre-KO.
+
+        Sono esattamente quelle su cui BASE e PUNTA non possono scattare:
+        ``favorite_side(None)`` torna None, i loro check escono ``ok=None`` e
+        ``state_from_checks`` produce "nd". Il bot le usa per scriverlo
+        nell'attivita' invece di non entrare senza dire niente."""
+        out: List[Dict[str, Any]] = []
+        for m in getattr(self, "_last_monitors", None) or []:
+            if m.sport != SPORT_CALCIO or not m.pre_match_missing:
+                continue
+            p = m.payload if isinstance(m.payload, dict) else {}
+            out.append({
+                "event_id": m.event_id,
+                "event_name": p.get("event_name"),
+                "minute": _int_field(p.get("minute")),
+            })
+        return out
 
     def evaluations(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Per event_id: TUTTE le valutazioni di variante (stato + check)."""

@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 _MISSING_TABLE_WARNED = False
 
+# event_id per SELECT nella rilettura del pre_ko (URL della query: mai troppo lunga)
+_PRE_KO_CHUNK = 40
+
 
 def _warn_missing_table(exc: Exception) -> None:
     global _MISSING_TABLE_WARNED  # noqa: PLW0603 - log una-tantum
@@ -52,6 +55,71 @@ def list_scan_event_ids() -> Optional[List[str]]:
         else:
             logger.warning("[safe-scan] lettura event_id KO: %s", str(e)[:160])
         return None
+
+
+def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Riferimenti 1X2 pre-KO gia' salvati, per gli event_id richiesti.
+
+    Perche' esiste (CERT. 13/09, causa radice di "base e punta non scattano
+    mai"): ``pre_ko`` viveva SOLO nella RAM dello scanner. ``freeze_pre_ko`` lo
+    cattura solo PRIMA del calcio d'inizio e lo congela al primo tick in-play;
+    a ogni riavvio del servizio (chiusura dell'app, crash + watchdog, modifica
+    al codice) lo stato si azzerava e, per tutte le partite gia' in corso, il
+    riferimento non poteva piu' nascere. Senza ``pre_ko`` non c'e' ``pre_match``,
+    senza ``pre_match`` ``favorite_side`` torna None e i check di BASE e PUNTA
+    escono ``ok=None`` -> stato "nd" -> scartate in silenzio. ESATTO non usa
+    ``pre_ko`` in nessun punto: era l'unica a sopravvivere.
+
+    Il dato era gia' sul DB (``safe_strategy_scan.payload.pre_ko``): era il
+    codice stesso a distruggerlo, riscrivendo la riga con None al primo publish
+    dopo il riavvio. Qui lo si rilegge.
+
+    Lettura MIRATA (mai tutta la tabella: il payload e' grosso e la SELECT piena
+    va in timeout) e a BLOCCHI, con la sola proiezione ``payload->pre_ko``.
+    Best-effort come tutto il modulo: su errore torna quello che ha raccolto.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    ids = [str(e) for e in (event_ids or []) if e]
+    if not ids:
+        return out
+    sb = get_supabase_client()
+    for i in range(0, len(ids), _PRE_KO_CHUNK):
+        chunk = ids[i:i + _PRE_KO_CHUNK]
+        try:
+            res = (
+                sb.table("safe_strategy_scan")
+                .select("event_id,payload->pre_ko")
+                .in_("event_id", chunk)
+                .execute()
+            )
+        except Exception as e:  # noqa: BLE001 - mai fatale: si continua senza
+            if _is_missing_table(e):
+                _warn_missing_table(e)
+            else:
+                logger.warning("[safe-scan] rilettura pre_ko KO: %s", str(e)[:160])
+            return out
+        for r in (getattr(res, "data", None) or []):
+            eid = str(r.get("event_id") or "")
+            pre = r.get("pre_ko")
+            if eid and is_usable_pre_ko(pre):
+                out[eid] = dict(pre)
+    return out
+
+
+def is_usable_pre_ko(pre: Any) -> bool:
+    """Tripla 1X2 completa e numerica: la STESSA condizione che ``engine`` usa
+    per costruire ``pre_match``. Un riferimento parziale non serve a nulla e non
+    deve essere reidratato (meglio None, cosi' ``freeze_pre_ko`` puo' ancora
+    catturarlo se la partita non e' ancora iniziata)."""
+    if not isinstance(pre, dict):
+        return False
+    for k in ("home", "draw", "away"):
+        v = pre.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return False
+        if not (v > 1.0):
+            return False
+    return True
 
 
 def upsert_scan_rows(rows: List[Dict[str, Any]]) -> bool:
