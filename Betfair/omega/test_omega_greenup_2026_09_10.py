@@ -228,20 +228,45 @@ def test_caso_vivo_trade_70_tiene_a_p_012_esce_a_016_e_a_distanza_zero(monkeypat
     assert h["ev_hold"] == pytest.approx(-12.19, abs=0.02)
     assert h["loss_if_lose"] == pytest.approx(116.64, abs=0.01) and h["hold_profit"] == pytest.approx(2.05, abs=0.01)
     assert _closings(db, tr["id"]) == []
-    # stessa situazione, p 0.16 ≥ cap 0.15 → esco
+    # CERT. 13/09 — p 0.16 SOPRA il tetto 0.15, ma al 28' il tempo e' dalla nostra
+    # parte: il premio per comprare la certezza scala col tempo GIA' giocato
+    # (28/90 = 0,31), quindi chiudere a -22,08 quando tenere vale -16,94 resta
+    # troppo caro e si TIENE. Prima il premio era pieno e si usciva.
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 2): 0.16})
-    assert _run(db, goal, p, now=NOW + timedelta(seconds=20)) == 1
-    g = _logs(db, "greenup")[0]
-    assert g["decision"] == "exit" and g["p_lose"] == 0.16 and g["ev_hold"] is not None
-    # DISTANZA 0: il bancato è il punteggio corrente → esco anche con p minuscola
+    assert _run(db, goal, p, now=NOW + timedelta(seconds=20)) == 0
+    h2 = _logs(db, "greenup_hold")[-1]
+    assert h2["decision"] == "hold" and h2["p_lose"] == 0.16
+    assert "costa troppo" in h2["msg"]
+    # stessa identica situazione a fine gara (85'): il tempo per rientrare non
+    # c'e' piu', il premio e' quasi pieno e la stessa P fa USCIRE
+    db_late = _db_with_model()
+    _trade(db_late, phase=None, sid=12, name="1 - 2", price=55.0, size=2.16, score="1-0", minute=20)
+    assert _run(db_late, _payload(85, 1, 1, cs=[_sel(12, "1 - 2", 5.0, 4.90)]), p) == 1
+    g_late = _logs(db_late, "greenup")[0]
+    assert g_late["decision"] == "exit" and g_late["minute"] == 85
+
+    # DISTANZA 0 — il punteggio bancato E' uscito sul campo.
+    # Prima: EXIT incondizionato, senza guardare nulla. Ora no: a distanza 0 il
+    # lay perde SOLO se la partita finisce esatta cosi', e basta UN GOL QUALSIASI
+    # per vincerla. Con P(resti cosi') = 1 % pagare ~68 EUR per chiudere e'
+    # assurdo: si TIENE.
     db2 = _db_with_model()
     tr2 = _trade(db2, phase=None, sid=12, name="1 - 2", price=55.0, size=2.16, score="1-0", minute=20)
     monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 2): 0.01})
-    assert _run(db2, _payload(35, 1, 2, cs=[_sel(12, "1 - 2", 1.8, 1.7)]), p) == 1
-    g2 = _logs(db2, "greenup")[0]
-    assert g2["distance"] == 0 and g2["p_lose"] == 0.01
-    assert g2["exit_kind"] == "loss" and g2["kind"] == "loss"
-    assert db2.get_trade(tr2["id"])["status"] == "hedged"
+    assert _run(db2, _payload(35, 1, 2, cs=[_sel(12, "1 - 2", 1.8, 1.7)]), p) == 0
+    h3 = _logs(db2, "greenup_hold")[-1]
+    assert h3["p_lose"] == 0.01 and h3["decision"] == "hold"
+    assert h3["score"] == "1-2" and h3["laid_score"] == "1-2"    # distanza 0
+    assert db2.get_trade(tr2["id"])["status"] == "open"
+    # ...ma se il punteggio bancato e' uscito ed e' DAVVERO probabile che resti
+    # (90 %), la regola normale chiude da sola, senza scorciatoie
+    db3 = _db_with_model()
+    tr3 = _trade(db3, phase=None, sid=12, name="1 - 2", price=55.0, size=2.16, score="1-0", minute=20)
+    monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 2): 0.90})
+    assert _run(db3, _payload(88, 1, 2, cs=[_sel(12, "1 - 2", 1.8, 1.7)]), p) == 1
+    g3 = _logs(db3, "greenup")[0]
+    assert g3["distance"] == 0 and g3["decision"] == "exit"
+    assert db3.get_trade(tr3["id"])["status"] == "hedged"
 
 
 def test_bancato_irraggiungibile_o_lontano_nessuna_azione(lambdas):

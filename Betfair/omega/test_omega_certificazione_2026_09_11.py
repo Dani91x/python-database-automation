@@ -426,8 +426,13 @@ def test_2p_f3_niente_da_chiudere_non_e_terminale(monkeypatch, lambdas):
     tr = G._trade(db, score="1-0", minute=60)
     from Betfair.safe_strategy import execution as X
     monkeypatch.setattr(X, "close_trade", lambda **kw: {"error": "niente_da_chiudere"})
-    # distanza 0 (bancato = punteggio corrente) → exit incondizionato → close_trade "niente"
-    pay = G._payload(70, 1, 3, cs=[G._sel(14, "1 - 3", 1.8, 1.7)])
+    # CERT. 13/09 — questo test certifica che "niente_da_chiudere" NON e' terminale
+    # (si riprova al ciclo dopo). Prima l'uscita la forzava la distanza 0, che era
+    # un EXIT incondizionato; ora quella scorciatoia non esiste piu' (un gol
+    # qualsiasi salva il lay, vedi `_greenup_decide`). L'uscita si ottiene con la
+    # regola normale: bancato a UN gol e P(perdita) altissima → chiudere conviene.
+    monkeypatch.setattr(M, "score_probs", lambda **kw: {(1, 3): 0.90})
+    pay = G._payload(70, 1, 2, cs=[G._sel(14, "1 - 3", 1.8, 1.7)])
     assert G._run(db, pay, G._params(greenup_settle_delay_s=0)) == 0
     g = db.get_trade(tr["id"])["meta"]["greenup"]
     assert g.get("sent") is not True and g["attempts"] == 0          # si riprova al ciclo dopo
@@ -601,3 +606,52 @@ class TestQuotaImplausibileNonForzaLUscita:
                                    half=False, prices={"back": 8.0, "back_size": 20.0},
                                    params=G._params())
         assert src == "model_floor_market" and p == pytest.approx(0.125, abs=1e-3)
+
+
+# ---------------------------------------------- 13/09 uscite: tempo e distanza 0
+class TestUsciteConsapevoliDelTempo:
+    """Le due correzioni alle uscite del 13/09, chieste dopo aver visto che il
+    bot chiudeva posizioni ancora largamente vincenti."""
+
+    def test_la_gamba_del_primo_tempo_finisce_al_45(self) -> None:
+        """DIFETTO TROVATO NEI TEST MENTALI: con l'orizzonte del 90' il bot al
+        40' di primo tempo avrebbe creduto di avere mezza partita davanti,
+        mentre restano CINQUE minuti e la gamba si regola all'intervallo."""
+        assert S._quota_di_partita_giocata(40, True) == pytest.approx(0.889, abs=0.001)
+        assert S._quota_di_partita_giocata(40, False) == pytest.approx(0.444, abs=0.001)
+        assert S._quota_di_partita_giocata(45, True) == 1.0      # intervallo: tempo finito
+        assert S._quota_di_partita_giocata(45, False) == 0.5     # meta' partita
+
+    def test_minuti_assurdi_valgono_premio_pieno(self) -> None:
+        """Prudente: se non si sa che minuto e', si assume che non resti tempo."""
+        for v in (None, -5, 999, float("nan"), "rotto"):
+            assert S._quota_di_partita_giocata(v) == 1.0
+            assert S._quota_di_partita_giocata(v, True) == 1.0
+        assert S._quota_di_partita_giocata(0) == 0.0             # fischio d'inizio
+
+    def test_a_distanza_zero_non_si_esce_piu_a_occhi_chiusi(self, lambdas) -> None:
+        """Il punteggio bancato E' uscito, ma basta UN GOL QUALSIASI per
+        vincere: con P(resti cosi') bassa si TIENE, alta si esce. La decisione
+        e' la stessa regola di EV degli altri casi, senza scorciatoie."""
+        params = G._params(greenup_risk_cap=0.10)
+        # presto, P bassa: chiudere costerebbe un capitale per evitare il 5%
+        tiene, _ = S._greenup_decide("goal", 0.05, -68.0, 2.05, 116.64, 2.16,
+                                     params, 0, 40)
+        # tardi, P alta: ora uscire ha senso
+        esce, _ = S._greenup_decide("goal", 0.85, -68.0, 2.05, 116.64, 2.16,
+                                    params, 0, 88)
+        assert tiene == "hold" and esce == "exit"
+
+    def test_stessa_situazione_esito_opposto_secondo_il_minuto(self, lambdas) -> None:
+        """La prova che il tempo entra davvero nella decisione: identici P,
+        prezzo e posizione, cambia solo il minuto."""
+        params = G._params(greenup_risk_cap=0.15)
+        presto, _ = S._greenup_decide("goal", 0.16, -22.08, 2.05, 116.64, 2.16, params, 1, 28)
+        tardi, _ = S._greenup_decide("goal", 0.16, -22.08, 2.05, 116.64, 2.16, params, 1, 85)
+        assert presto == "hold" and tardi == "exit"
+
+    def test_senza_minuto_resta_il_comportamento_storico(self, lambdas) -> None:
+        params = G._params(greenup_risk_cap=0.15)
+        senza = S._greenup_decide("goal", 0.16, -22.08, 2.05, 116.64, 2.16, params, 1)
+        pieno = S._greenup_decide("goal", 0.16, -22.08, 2.05, 116.64, 2.16, params, 1, 90)
+        assert senza == pieno

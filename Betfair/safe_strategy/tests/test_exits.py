@@ -654,3 +654,64 @@ def test_feed_is_fresh_heartbeat_scanner_ha_la_sua_tolleranza():
     assert XE.feed_is_fresh({"updated_at": now - 21.0}, now, None) is False
     # TETTO DURO 120 s: nemmeno con l'heartbeat freschissimo
     assert XE.feed_is_fresh({"updated_at": now - 121.0}, now, now - 1.0) is False
+
+
+# ===========================================================================
+# CERT. 13/09 - il premio per uscire scala col TEMPO GIA' GIOCATO
+# ===========================================================================
+class TestPremioProporzionaleAlTempo:
+    """Il premio e' quello che si paga per comprare la CERTEZZA di essere fuori.
+    Comprarla al 28' non vale quanto comprarla all'85': nel primo caso resta
+    un'ora per rientrare, nel secondo no. Con un premio fisso il bot trattava i
+    due momenti allo stesso modo e usciva troppo presto."""
+
+    # caso vivo: lay 2,16 @55 -> liability 116,64, incasso netto 2,05
+    P = {"hold_max_risk": 0.02, "risk_cap": 0.15, "ev_margin": 0.10, "risk_premium_pct": 0.05}
+    LOCKED, HOLD_PROFIT, LIAB = -22.08, 2.05, 116.64
+
+    def _decidi(self, p, tf):
+        return XE.decide_time_exit(p, self.LOCKED, self.HOLD_PROFIT, None, self.P,
+                                   loss_if_lose=self.LIAB, time_factor=tf)
+
+    def test_presto_si_tiene_tardi_si_esce_a_parita_di_rischio(self) -> None:
+        """LO STESSO rischio, lo STESSO prezzo: cambia solo il minuto."""
+        presto, _ = self._decidi(0.16, 28 / 90)
+        tardi, why = self._decidi(0.16, 85 / 90)
+        assert presto == "hold", "al 28' il tempo e' dalla nostra parte"
+        assert tardi == "exit", "all'85' non c'e' piu' tempo per rientrare"
+        assert "rischio alto" in why
+
+    def test_il_premio_cresce_col_tempo_giocato(self) -> None:
+        premi = []
+        for tf in (0.0, 0.25, 0.5, 1.0):
+            _, why = XE.decide_time_exit(0.50, -1000.0, self.HOLD_PROFIT, None, self.P,
+                                         loss_if_lose=self.LIAB, time_factor=tf)
+            premi.append(float(why.split("premio di rischio ")[1].split(" ")[0].replace(",", ".")))
+        assert premi == sorted(premi), premi
+        assert premi[0] == 0.0, "a inizio gara non si paga nulla per uscire"
+        assert premi[-1] == pytest.approx(self.LIAB * 0.05, abs=0.01), "a fine gara premio pieno"
+
+    def test_senza_fattore_il_comportamento_e_quello_storico(self) -> None:
+        """Safe e ogni altro chiamante non passano time_factor: nulla cambia."""
+        for p, locked in ((0.2072, -8.16), (0.30, -5.0), (0.05, -3.0), (0.50, -200.0)):
+            senza = XE.decide_time_exit(p, locked, 0.65, None, self.P, loss_if_lose=26.65)
+            pieno = XE.decide_time_exit(p, locked, 0.65, None, self.P, loss_if_lose=26.65,
+                                        time_factor=1.0)
+            assert senza == pieno, (p, locked)
+
+    def test_un_fattore_assurdo_non_rompe_nulla(self) -> None:
+        """Fuori da [0,1] si clampa; illeggibile = premio pieno (prudente)."""
+        atteso = self._decidi(0.50, 1.0)
+        for tf in (5.0, 99.0):
+            assert self._decidi(0.50, tf) == atteso
+        for tf in (-3.0,):
+            assert self._decidi(0.50, tf) == self._decidi(0.50, 0.0)
+        assert XE.decide_time_exit(0.50, self.LOCKED, self.HOLD_PROFIT, None, self.P,
+                                   loss_if_lose=self.LIAB, time_factor="rotto") == atteso
+
+    def test_il_premio_non_tocca_le_uscite_in_profitto(self) -> None:
+        """locked >= 0 esce sempre e subito, a qualunque minuto."""
+        for tf in (0.0, 0.5, 1.0):
+            az, why = XE.decide_time_exit(0.90, +3.0, self.HOLD_PROFIT, None, self.P,
+                                          loss_if_lose=self.LIAB, time_factor=tf)
+            assert az == "exit" and "profitto bloccato" in why

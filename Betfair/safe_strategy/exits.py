@@ -394,7 +394,8 @@ def feed_is_fresh(row: Optional[dict[str, Any]], now_ts: float,
 def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
                      hold_profit: float, stake: Any, params: dict[str, Any],
                      *, loss_if_lose: Optional[float] = None,
-                     model_blind: bool = False) -> tuple[str, str]:
+                     model_blind: bool = False,
+                     time_factor: float = 1.0) -> tuple[str, str]:
     """Decisione a MODELLO per un'uscita in PROFITTO (a tempo / take-profit):
     ('exit'|'hold', motivo). PURA.
 
@@ -424,6 +425,11 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
     della liability: si paga per la certezza, ma una cifra limitata e dichiarata.
     Il controllo del rischio vero sta all'INGRESSO (dimensionamento) e nel
     ``daily_loss_cap``, non in una chiusura in perdita a mercato.
+
+    CERT. 13/09 — ``time_factor``: il premio scala con la frazione di partita
+    GIA' GIOCATA. Pagare per uscire ha senso quando non resta tempo per
+    rientrare; al 50' il tempo e' dalla nostra parte e il premio deve essere
+    quasi nullo. Default 1.0 = premio pieno = comportamento storico.
 
     ``model_blind=True`` (dal 95': vedi ``model_is_blind``): ``p_lose`` viene
     SCARTATA. Non e' una stima, e' il pavimento della curva dei gol residui, e
@@ -467,7 +473,16 @@ def decide_time_exit(p_lose: Optional[float], locked_pnl: Optional[float],
         if pct >= 1.0:
             return "exit", (f"rischio alto: P(perdita)={p * 100:.1f}% >= "
                             f"{cap * 100:.0f}%, esco")
-        premio = round(loss * pct, 2)
+        # CERT. 13/09 — IL TEMPO E' DALLA NOSTRA PARTE, e il premio deve saperlo.
+        # Il premio e' quello che si paga per comprare la CERTEZZA. Comprarla al
+        # 50' non vale quanto comprarla all'85': nel primo caso resta mezza
+        # partita per rientrare, nel secondo no. Con un premio fisso il bot
+        # trattava i due momenti allo stesso modo e usciva troppo presto.
+        # ``time_factor`` = frazione di partita GIA' GIOCATA (0 = inizio, 1 =
+        # fine). Default 1.0 = premio pieno = comportamento storico: Safe e ogni
+        # altro chiamante restano identici finche' non lo passano.
+        tf = min(1.0, max(0.0, _f(time_factor, 1.0)))
+        premio = round(loss * pct * tf, 2)
         soglia -= premio
     if locked is not None and locked >= soglia:
         if sopra_il_tetto:

@@ -1761,3 +1761,90 @@ report su questo bot deve dichiararlo, altrimenti sta vendendo una certezza che 
 3. **Pretendere un margine minimo per entrare.** `select_k_se = 0` significa nessun margine
    di sicurezza richiesto: il bot banca qualunque selezione nella finestra 20-120. Senza
    selezione non c'è margine, si paga solo lo spread.
+
+---
+
+## 19. USCITE — IL TEMPO ENTRA NELLA DECISIONE (13/09/2026)
+
+Revisione chiesta dopo aver constatato che i **tre soli green-up della storia del
+bot** avevano chiuso in perdita altrettante posizioni che poi hanno **VINTO**.
+Le due regole che lo causavano avevano lo stesso difetto di fondo: decidevano
+senza guardare quanto tempo restava da giocare.
+
+### 19.1 Via l'uscita incondizionata quando il bancato esce
+
+**Prima**: se il punteggio bancato compariva sul tabellone, il bot chiudeva
+subito, «perché il lay sta perdendo dal vivo», senza guardare il minuto.
+
+**È sbagliato.** A distanza 0 il lay perde SOLO se la partita finisce esatta
+così, e basta **un gol qualsiasi, di chiunque**, per vincerla. Il modello lo sa
+già e lo misura — bancato 3-1 sul 3-1:
+
+| Minuto | P(finisce 3-1) | P(arriva un altro gol) |
+|---|---|---|
+| 48′ | 24,5 % | **75,5 %** |
+| 65′ | 39,2 % | 60,8 % |
+| 85′ | 70,1 % | 29,9 % |
+
+Chiudere al 48′ significava cristallizzare una perdita su una posizione con **tre
+probabilità su quattro di vincere**.
+
+**Ora** decide la stessa regola di valore atteso degli altri casi:
+`_greenup_p_lose` calcola P(il punteggio resti questo) e il prezzo dice quanto
+costa uscire. Tardi, quando quella P sale e uscire costa poco, la stessa regola
+esce da sola — senza bisogno di una scorciatoia.
+
+### 19.2 Il premio per uscire scala col tempo già giocato
+
+Sopra `greenup_risk_cap` il bot **vuole** uscire e accetta di pagare un premio
+per comprare la certezza (§18.2). Ma comprare certezza al 28′ non vale quanto
+comprarla all'85′: nel primo caso resta un'ora per rientrare, nel secondo no.
+Con un premio fisso i due momenti erano trattati allo stesso modo.
+
+**Ora** `premio = liability × risk_premium_pct × frazione di gamba già giocata`.
+A inizio gara il premio è zero: non si paga nulla per uscire, perché il tempo
+lavora per noi. A fine gara è pieno, come prima.
+
+**L'orizzonte è quello della GAMBA, non della partita**: 45′ per la gamba HT,
+90′ per la FT. Difetto trovato nei test mentali e corretto prima del rilascio:
+col 90′ per entrambe, al 40′ di primo tempo il bot avrebbe creduto di avere
+mezza partita davanti mentre gli restavano cinque minuti.
+
+`time_factor` ha default **1.0** (premio pieno = comportamento storico), quindi
+Safe Strategy e ogni altro chiamante della funzione condivisa
+`exits.decide_time_exit` restano identici finché non lo passano.
+
+### 19.3 Effetto sui casi veri
+
+Coi parametri vivi del DB (tetto 0,10 · premio 5 %):
+
+| Caso | Minuto | P(perdita) | Prima | Ora |
+|---|---|---|---|---|
+| trade 70 FK Teleoptik | 28′ | 12,0 % | uscito −22,08 | **TIENE** |
+| trade 84 VJS v Inter 2 | 91′ | 8,5 % | uscito −9,23 | **TIENE** |
+| trade 88 Lazio-Milan | 67′ | 20,7 % | uscito −8,16 | **TIENE** |
+| Gremio-Vasco (12/09) | 83′ | 12,7 % | uscito −14,31 | esce |
+
+Le tre uscite storiche, tutte su posizioni poi vincenti, ora non avverrebbero.
+Gremio-Vasco continua a uscire ed è difendibile: all'83′ non c'è più tempo.
+
+### 19.4 Cosa NON è cambiato (verificato)
+
+- **Distanza ≥ 2**: il bot non guarda nemmeno la posizione
+  (`greenup_trigger_distance` = 1). Due gol di vantaggio = nessuna valutazione.
+- **Bancato irraggiungibile**: nessuna azione, si incassa il payout pieno.
+- **Take-profit**: dall'80′, se chiudendo si blocca ≥ 90 % dell'incasso, si
+  incassa. L'ordine pareggia il risultato su entrambi gli esiti e la liquidità è
+  verificata prima di piazzarlo (senza dato certo non si chiude).
+- **Uscite in profitto** (`locked ≥ 0`): escono sempre e subito, a qualunque
+  minuto. Il premio non le tocca.
+- **Modello cieco** (P non stimabile): si tiene, mai cristallizzare una perdita
+  su un dato che non c'è.
+
+### 19.5 Rischio residuo, dichiarato
+
+Tenere invece di chiudere significa che, quando il modello sbaglia, si paga la
+**liability intera**. Oggi non c'è nessun freno a valle: `daily_loss_cap`,
+`max_open_liability`, `max_liability_per_match` e `max_events` sono **tutti a
+zero, cioè disattivati**. Con le uscite più caute di §19.1-19.2 quel freno
+diventa più importante di prima, non meno.

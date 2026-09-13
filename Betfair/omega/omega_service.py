@@ -3438,30 +3438,77 @@ def _greenup_p_lose(*, db, tr: dict[str, Any], payload: dict, laid: "tuple[int, 
     return None, "none"
 
 
+# Orizzonte della gamba: la 2T si regola al 90', la 1T all'INTERVALLO.
+# Oltre l'orizzonte si e' nel recupero e il tempo per rientrare e' finito (1.0).
+_MINUTI_PARTITA = 90.0
+_MINUTI_PRIMO_TEMPO = 45.0
+
+
+def _quota_di_partita_giocata(minute: Optional[int], half: bool = False) -> float:
+    """Frazione di gamba gia' giocata, in [0, 1].
+
+    ``half=True`` (gamba HALF TIME SCORE) l'orizzonte e' il 45', non il 90':
+    al 40' di primo tempo restano CINQUE minuti, non cinquanta, e il tempo NON
+    e' dalla nostra parte. Con l'orizzonte sbagliato il bot avrebbe creduto di
+    avere mezza partita davanti proprio quando non ne aveva piu'.
+
+    None / minuto assurdo = 1.0, il valore PRUDENTE: si assume che non resti
+    tempo, cioe' il premio pieno del comportamento storico.
+    """
+    if minute is None:
+        return 1.0
+    try:
+        m = float(minute)
+    except (TypeError, ValueError):
+        return 1.0
+    if not (m == m) or m < 0:            # NaN o minuto impossibile
+        return 1.0
+    orizzonte = _MINUTI_PRIMO_TEMPO if half else _MINUTI_PARTITA
+    return min(1.0, m / orizzonte)
+
+
 def _greenup_decide(trigger: str, p_lose: Optional[float], locked: Optional[float],
                     hold_profit: float, loss_if_lose: float, stake: Any,
-                    params: dict[str, Any], distance: Optional[int]) -> "tuple[str, str]":
+                    params: dict[str, Any], distance: Optional[int],
+                    minute: Optional[int] = None, half: bool = False) -> "tuple[str, str]":
     """('exit'|'hold', motivo). UNA decisione per tutti i trigger (caso vivo del
     10/09, trade 70: p 0.12, bloccato −22.1, EV(tengo) −12.1 → uscire buttava
     10 € di valore atteso):
-      • distanza 0 (il bancato È il punteggio corrente: il lay sta perdendo dal
-        vivo) → EXIT incondizionato;
       • bloccato ≥ 0 → EXIT (profitto);
-      • P(perdita) ≥ greenup_risk_cap → EXIT;
-      • bloccato ≥ EV(tengo) − greenup_ev_margin → EXIT (il mercato offre almeno
-        il valore atteso del tenere);
+      • bloccato ≥ EV(tengo) − margine − premio → EXIT;
       • altrimenti HOLD, rivalutato a ogni ciclo (ogni gol / mossa di prezzo lo
-        rilancia). Regole di exits.decide_time_exit, riusate tali e quali."""
+        rilancia). Regole di exits.decide_time_exit, riusate tali e quali.
+
+    CERT. 13/09 — VIA L'USCITA INCONDIZIONATA A DISTANZA 0.
+    Fino a ieri, quando il punteggio bancato USCIVA sul campo, il bot chiudeva
+    subito "perche' il lay sta perdendo dal vivo", senza guardare il minuto.
+    E' sbagliato: a distanza 0 il lay perde SOLO se la partita finisce esatta
+    cosi', e basta UN GOL QUALSIASI, di chiunque, per vincerla. Il modello lo sa
+    gia' e lo misura — bancato 3-1 sul 3-1:
+
+        48'  P(finisce 3-1) 24,5 %   ->  75,5 % che arrivi un altro gol
+        65'  P(finisce 3-1) 39,2 %   ->  60,8 %
+        85'  P(finisce 3-1) 70,1 %   ->  29,9 %
+
+    Chiudere al 48' significava cristallizzare una perdita su una posizione con
+    tre probabilita' su quattro di vincere. Ora decide la stessa regola di EV
+    degli altri casi: ``_greenup_p_lose`` calcola P(il punteggio resti questo) e
+    il prezzo dice quanto costa uscire. Tardi, quando P(perdita) sale e uscire
+    costa poco, la stessa regola esce da sola — senza bisogno di una scorciatoia.
+
+    ``minute`` e ``half`` alimentano il premio di rischio proporzionale al tempo
+    giocato (vedi ``exits.decide_time_exit``): presto si paga quasi nulla per
+    uscire, tardi si accetta di pagare. L'orizzonte e' il 45' per la gamba HT e
+    il 90' per la FT. None = premio pieno (comportamento storico)."""
     from Betfair.safe_strategy import exits as XE
 
-    if distance is not None and int(distance) == 0:
-        p_txt = "non stimabile" if p_lose is None else f"{p_lose * 100:.1f}%"
-        return "exit", f"il bancato è il punteggio corrente (P(perdita)={p_txt}): esco"
     gp = {"hold_max_risk": float(params["greenup_hold_max_risk"]),
           "risk_cap": float(params["greenup_risk_cap"]),
           "ev_margin": float(params["greenup_ev_margin"]),
           "risk_premium_pct": float(params["greenup_risk_premium_pct"])}
-    return XE.decide_time_exit(p_lose, locked, hold_profit, stake, gp, loss_if_lose=loss_if_lose)
+    return XE.decide_time_exit(p_lose, locked, hold_profit, stake, gp,
+                               loss_if_lose=loss_if_lose,
+                               time_factor=_quota_di_partita_giocata(minute, half))
 
 
 def _greenup_write_key(db, tr: dict[str, Any], meta: dict[str, Any], key: str, value: Any) -> None:
@@ -3880,7 +3927,7 @@ def _greenup_one(*, tr: dict[str, Any], params: dict[str, Any], market, db,
         p_lose, p_source = _greenup_p_lose(db=db, tr=tr, payload=payload, laid=laid,
                                            state=state, half=half, prices=prices, params=params)
         action, why = _greenup_decide(trigger, p_lose, locked, hold_profit, loss_if_lose,
-                                      tr.get("size"), params, distance)
+                                      tr.get("size"), params, distance, minute, half)
     ev_hold = None if p_lose is None else XE.ev_hold(p_lose, hold_profit, loss_if_lose)
     info = {"p_lose": p_lose, "p_source": p_source, "locked_pnl": locked, "ev_hold": ev_hold,
             "decision": action, "hold_profit": round(hold_profit, 2),
