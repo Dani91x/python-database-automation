@@ -130,6 +130,70 @@ _SPEC: dict[str, tuple[Any, Callable[[Any], Any], float | None, float | None]] =
     # -9,73 EUR su un lay che ha poi VINTO). 0 = nessun limite (vecchio
     # comportamento).
     "greenup_market_floor_max_ratio": (3.0, float, 0.0, 100.0),
+    # ---- §18 (13/09): IL SOFTWARE DEVE LASCIAR RESPIRARE IL DATABASE ----
+    # Il 13/09 Supabase e' andato giu' per esaurimento del budget di IO su disco:
+    # HTTP 503 PGRST002 su tutto, letture per chiave primaria a 37 secondi, e per
+    # rialzarlo e' servito un restart del progetto. Omega, da sola, chiedeva la
+    # riga del feed di 34 partite UNA VOLTA AL SECONDO piu' lo stato dello
+    # scanner allo stesso ritmo: non perche' servisse, ma perche' nessuno aveva
+    # mai dichiarato ogni quanto si rilegge una cosa che nel frattempo non e'
+    # cambiata. Questi parametri dichiarano quel "ogni quanto", uno per ogni
+    # lettura periodica, tutti regolabili dalla UI, tutti a ZERO = comportamento
+    # di prima (nessuna cache) senza toccare una riga di codice.
+    #
+    # NESSUNO DI ESSI CAMBIA UNA VIRGOLA DELLA LOGICA DI TRADING. La freschezza
+    # del dato continua a essere giudicata sull'``updated_at`` della RIGA
+    # (FEED_MAX_AGE_S / DECISION_MAX_AGE_S / CASHOUT_FEED_MAX_AGE_S): una riga
+    # vecchia resta vecchia anche se la rileggiamo adesso, quindi allungare la
+    # cache non puo' mai far passare per buone quote vecchie — al massimo fa
+    # saltare una decisione, che e' il lato giusto in cui sbagliare.
+    #
+    # ``feed_cache_s`` e' il piu' corto di tutti perche' il feed e' l'unica
+    # lettura che decide un ORDINE (selezione, sizing, green-up): 2 s contro i
+    # 15/25 s oltre i quali la riga viene comunque scartata.
+    "feed_cache_s": (2.0, float, 0.0, 30.0),
+    # Lo stato dello scanner serve solo a dire "lo scanner e' vivo, quindi una
+    # riga non riscritta di recente e' comunque l'ultimo stato". Il valore in
+    # cache viene INVECCHIATO del tempo passato, quindi l'eta' che ne esce e'
+    # esatta al secondo; l'unico effetto di una cache lunga e' che un heartbeat
+    # NUOVO si vede con qualche secondo di ritardo, cioe' si crede lo scanner
+    # piu' morto di quanto sia: fail-safe, mai il contrario.
+    "scanner_status_cache_s": (10.0, float, 0.0, 300.0),
+    # La RPC degli aggregati scorre l'intera omega_trades e governa stop
+    # giornaliero, cap di perdita e numeri di testata: non e' una decisione al
+    # secondo. Dopo un piazzamento / un settlement / un green-up si RICALCOLA
+    # subito (forza=True), quindi i numeri che il bot usa per fermarsi sono
+    # sempre aggiornati all'ultima cosa successa.
+    "aggregates_cache_s": (20.0, float, 0.0, 300.0),
+    # "Che cosa ho gia' fatto io": gambe gia' piazzate, eventi gia' toccati,
+    # budget dei tentativi falliti. Le scrive QUESTO stesso processo, quindi fra
+    # una rilettura e l'altra la copia in memoria E' la verita' (lo scan ci
+    # scrive dentro la gamba appena piazzata). NON copre le guardie scritte
+    # dalla UI (missioni, trade manuali): quelle restano lette a ogni giro.
+    "sets_cache_s": (30.0, float, 0.0, 600.0),
+    # Timbro dei risultati reali 1T/2T sulle posizioni recenti: e' una rete di
+    # sicurezza contabile, non un passaggio del flusso — un risultato non cambia
+    # piu' di una volta al minuto e il settlement lo completa comunque dal
+    # WINNER del mercato.
+    "results_every_s": (60.0, float, 0.0, 600.0),
+    # Missioni: punteggio/fase/suggerimenti per la pagina. E' territorio
+    # dell'utente, che legge e clicca — non un loop di trading. A 5 s la UI
+    # resta reattiva e si smette di leggere active_missions + un
+    # trades_for_event per missione a ogni giro quando il poll e' aggressivo.
+    "missions_every_s": (5.0, float, 0.0, 120.0),
+    # Rinfresco della cache eventi (una chiamata REST Betfair + una replace):
+    # era una costante nel codice, ora e' un parametro come tutti gli altri.
+    "events_refresh_s": (1800.0, float, 0.0, 86400.0),
+    # Stats a bot FERMO: era una costante nel codice. A bot fermo non c'e'
+    # niente da decidere, basta far sapere alla pagina che il servizio e' vivo.
+    "idle_stats_s": (60.0, float, 0.0, 600.0),
+    # RITMO ADATTIVO. Il ciclo pieno serve quando qualcosa si muove DA SOLO:
+    # una posizione aperta o in attesa di esito, una missione attiva, una
+    # richiesta dalla UI, una partita gia' dentro la finestra d'ingresso. La
+    # notte, o fra una giornata di partite e l'altra, girare al ritmo pieno vuol
+    # dire solo bruciare il budget di IO del database per rileggere cose ferme.
+    # Zero = disattivato (si usa sempre poll_interval_s, comportamento di prima).
+    "idle_cycle_s": (60.0, float, 0.0, 600.0),
 }
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in _SPEC.items()}

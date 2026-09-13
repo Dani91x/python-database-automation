@@ -96,6 +96,260 @@ _LEG_RETRY: dict[tuple[str, str], tuple[int, float]] = {}
 EMPIRICAL_CACHE_TTL_S = 6 * 3600.0   # tabelle empiriche ricostruite dal job: rilette ogni 6 h
 
 
+# ===========================================================================
+# §18 — IL SOFTWARE DEVE LASCIAR RESPIRARE IL DATABASE (13/09/2026)
+# ===========================================================================
+# Che cosa e' successo. Il 13/09 il progetto Supabase e' andato giu' per
+# esaurimento del BUDGET DI IO SU DISCO (guides/troubleshooting/exhaust-disk-io):
+# HTTP 503 PGRST002 su tutto, una lettura per chiave primaria a 37 secondi, e per
+# rialzarlo e' servito un restart del progetto. Non e' stata una query scritta
+# male: e' stata la SOMMA di trenta servizi che chiedevano al database, ogni
+# secondo, cose che il database non aveva ancora avuto il tempo di cambiare.
+#
+# Il contributo di Omega, misurato sul log delle 21:37 con l'app accesa, era
+# questo — in DUE secondi:
+#
+#   GET safe_strategy_scan?select=event_id,sport,payload,updated_at
+#       &event_id=in.(34 id)                                        x2
+#   GET safe_strategy_status?select=id,payload,updated_at&id=eq.scanner  x2
+#
+# cioe' UNA lettura del feed al secondo con 34 id in URL, piu' lo stato dello
+# scanner allo stesso ritmo. Non perche' il ciclo girasse ogni secondo (gira
+# ogni ``poll_interval_s``, 20 s di default): perche' DENTRO un ciclo la riga
+# del feed viene chiesta decine di volte — una per il punteggio, una per il
+# book, una per la freschezza, una per ogni gamba, una per ogni green-up, una
+# per ogni missione — e la cache condivisa dello scanner scade ogni secondo.
+# Trenta chiamate alla stessa riga dentro lo stesso ciclo sono trenta risposte
+# IDENTICHE pagate trenta volte.
+#
+# LA REGOLA. Non si chiede al database una cosa che il database non ha ancora
+# avuto il tempo di cambiare. Non e' un'ottimizzazione: e' una condizione di
+# produzione. Un'app che si blocca perche' il database e' stanco non e' pronta
+# per il live — e Omega, bloccata, lascia posizioni aperte senza nessuno che le
+# guardi: un lay a quota 75 non chiuso al momento giusto sono decine di euro.
+#
+# I PATTI, che chi tocca questo codice non puo' rompere:
+#
+#   1. La logica di trading non cambia di una virgola. Cambia solo OGNI QUANTO
+#      si rilegge una cosa che nel frattempo non e' cambiata.
+#   2. La lettura che decide un ORDINE (il feed) ha la cache piu' corta di
+#      tutte, e la FRESCHEZZA si giudica sull'``updated_at`` della riga, MAI su
+#      quando l'abbiamo letta: qui sotto si mette in cache la RIGA GREZZA e il
+#      verdetto di freschezza si ricalcola a ogni chiamata. Una riga vecchia
+#      resta vecchia anche se la rileggiamo adesso.
+#   3. Mai mettere in cache una SCRITTURA, e mai mettere in cache le righe dei
+#      trade: fra la fase di settlement e quella di green-up, dentro lo stesso
+#      ciclo, quelle righe CAMBIANO — una copia vecchia farebbe mandare un
+#      ordine di chiusura su una posizione appena regolata (soldi veri).
+#   4. Se una lettura fallisce ma abbiamo gia' una copia in memoria, si continua
+#      a lavorare con quella invece di fermare tutto: una posizione aperta non
+#      puo' restare senza nessuno che la guardi perche' una select e' andata in
+#      timeout.
+#   5. Ogni nuova lettura periodica deve avere il SUO parametro di cadenza. Una
+#      select dentro un ciclo senza una cadenza dichiarata e' un difetto, non
+#      una svista.
+#
+# Le cache qui sotto sono variabili di MODULO: ogni test deve azzerarle, e lo fa
+# ``Betfair/omega/conftest.py`` (fixture autouse) che azzera anche le cadenze —
+# quasi tutti i test simulano piu' cicli nello STESSO istante, cosa che nella
+# realta' non accade mai, e con le cache accese misurerebbero la cache invece
+# del comportamento. Chi vuole provare le cache lo fa APPOSTA, accendendole:
+# vedi ``test_omega_respiro_db_2026_09_13.py``.
+# ---------------------------------------------------------------------------
+class _Cache:
+    """Un valore letto dal database, con l'istante in cui e' stato letto."""
+
+    __slots__ = ("valore", "letto_a")
+
+    def __init__(self) -> None:
+        self.valore: Any = None
+        self.letto_a: float = 0.0
+
+    def fresco(self, ora: float, ttl: float) -> bool:
+        return self.valore is not None and ttl > 0.0 and (ora - self.letto_a) < ttl
+
+    def metti(self, valore: Any, ora: float) -> Any:
+        self.valore, self.letto_a = valore, ora
+        return valore
+
+    def svuota(self) -> None:
+        self.valore, self.letto_a = None, 0.0
+
+
+# parametri dell'ULTIMO giro. Servono a due cose: (a) dare una cadenza alle
+# funzioni che stanno in fondo alla catena e non ricevono ``params`` (il feed
+# viene letto da dieci posti diversi); (b) far decidere al loop quanto aspettare
+# senza rileggere ``omega_control`` una seconda volta al secondo — ``run_once``
+# lo legge gia' da sola.
+_ULTIMI_PARAMS: Optional[dict[str, Any]] = None
+
+# righe del feed unico: {event_id: riga GREZZA}. Si tiene la riga, non il
+# verdetto: la freschezza si ricalcola su ``updated_at`` a ogni chiamata (patto 2).
+_CACHE_FEED_RIGHE: dict[str, Any] = {}
+_CACHE_FEED_LETTO_A: dict[str, float] = {}
+_CACHE_FEED_CHIESTO_A: dict[str, float] = {}
+# un evento che nessuno chiede piu' da due minuti esce dall'insieme letto,
+# altrimenti l'URL della select crescerebbe per tutta la giornata
+_FEED_DIMENTICA_DOPO_S = 120.0
+# eta' dell'heartbeat dello scanner: {"eta": float|None, "letto_a": float}
+_CACHE_SCANNER: dict[str, Any] = {}
+# RPC degli aggregati (scorre tutta omega_trades)
+_CACHE_AGGREGATI = _Cache()
+# insiemi di "che cosa ho gia' fatto io" (gambe, eventi, tentativi falliti)
+_CACHE_INSIEMI: dict[str, _Cache] = {}
+# ultima esecuzione delle fasi a cadenza propria (risultati, missioni, eventi…)
+_FASE_ESEGUITA_A: dict[str, float] = {}
+# missioni attive viste dall'ultimo giro (ritmo adattivo: l'utente sta guardando)
+_ULTIME_MISSIONI_ATTIVE: int = 0
+
+
+def _mono() -> float:
+    """Orologio monotono delle cache che non ricevono il ``now`` del ciclo (il
+    feed, letto da dieci posti diversi). Sostituibile nei test."""
+    return time.monotonic()
+
+
+def _cadenza(nome: str) -> float:
+    """Ogni quanti secondi si rilegge ``nome``, secondo i parametri dell'ULTIMO
+    giro (o i default, prima del primo giro). Zero = nessuna cache."""
+    p = _ULTIMI_PARAMS if _ULTIMI_PARAMS is not None else omega_config.DEFAULTS
+    try:
+        return float(p.get(nome) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def svuota_le_cache() -> None:
+    """Butta via tutto il letto: la prossima lettura va al database.
+
+    Serve ai test e a chi vuole forzare un riallineamento immediato — un
+    riavvio, o una modifica fatta a mano sul database mentre il servizio gira.
+    """
+    global _ULTIMI_PARAMS, _ULTIME_MISSIONI_ATTIVE
+    _ULTIMI_PARAMS = None
+    _ULTIME_MISSIONI_ATTIVE = 0
+    _CACHE_FEED_RIGHE.clear()
+    _CACHE_FEED_LETTO_A.clear()
+    _CACHE_FEED_CHIESTO_A.clear()
+    _CACHE_SCANNER.clear()
+    _CACHE_AGGREGATI.svuota()
+    _CACHE_INSIEMI.clear()
+    _FASE_ESEGUITA_A.clear()
+
+
+def _fase_dovuta(nome: str, ora: float, ogni: float) -> bool:
+    """La fase ``nome`` non gira da almeno ``ogni`` secondi? (e allora ne timbra
+    l'esecuzione). ``ogni`` a zero = sempre, esattamente come prima."""
+    if ogni <= 0.0:
+        return True
+    if ora - float(_FASE_ESEGUITA_A.get(nome) or 0.0) < ogni:
+        return False
+    _FASE_ESEGUITA_A[nome] = ora
+    return True
+
+
+def _insieme_cached(nome: str, ora: float, ttl: float, leggi, db: Any = None) -> Any:
+    """Un insieme "di quello che ho gia' fatto io", riletto al massimo ogni ``ttl``.
+
+    Restituisce SEMPRE lo stesso oggetto finche' e' valido: e' voluto. Lo scan
+    ci aggiunge dentro la gamba appena piazzata (``traded_legs.add(...)``), e se
+    ne restituissimo una copia il giro dopo la gamba non risulterebbe fatta e
+    Omega la ripiazzerebbe — un secondo lay sulla stessa partita, soldi veri.
+
+    Se la lettura fallisce e una copia c'e' gia', si continua con quella: una
+    giornata di trading non si ferma perche' una select e' andata in timeout
+    (patto 4). Senza copia l'errore risale al chiamante, cioe' il comportamento
+    di prima.
+    """
+    c = _CACHE_INSIEMI.setdefault(nome, _Cache())
+    if c.fresco(ora, ttl):
+        return c.valore
+    try:
+        return c.metti(leggi(), ora)
+    except Exception as ex:  # noqa: BLE001
+        if c.valore is None:
+            raise
+        logger.warning("[omega] %s KO: si continua con la copia in memoria (%s)",
+                       nome, str(ex)[:120])
+        if db is not None:
+            try:
+                db.log("error", {"reason": "%s_copia_in_memoria" % nome, "err": str(ex)[:160]})
+            except Exception:  # noqa: BLE001 — il log non deve mai far cadere il ciclo
+                pass
+        return c.valore
+
+
+def _aggregati_cached(db: Any, day_start: Any, ora: float, *, forza: bool = False) -> dict[str, Any]:
+    """Gli aggregati, ricalcolati al massimo ogni ``aggregates_cache_s``.
+
+    Governano lo stop giornaliero, il cap di perdita e i numeri in cima alla
+    pagina: nessuno dei due e' una decisione al secondo, e la RPC che li calcola
+    scorre l'INTERA ``omega_trades``. ``forza=True`` dopo un'azione: se abbiamo
+    appena piazzato, regolato o chiuso qualcosa il numero va rifatto subito, o
+    lo stop giornaliero deciderebbe su un P&L di venti secondi fa.
+    """
+    if not forza and _CACHE_AGGREGATI.fresco(ora, _cadenza("aggregates_cache_s")):
+        return _CACHE_AGGREGATI.valore
+    return _CACHE_AGGREGATI.metti(dict(db.aggregates(day_start) or {}), ora)
+
+
+def _feed_riga_cached(cache: Any, event_id: str) -> Any:
+    """La RIGA GREZZA del feed per ``event_id``, riletta al massimo ogni
+    ``feed_cache_s``.
+
+    Si mette in cache la riga, non il verdetto di freschezza: il verdetto lo
+    ricalcola ``_feed_row`` su ``updated_at`` a ogni chiamata, quindi una riga
+    ferma da dieci minuti resta ferma da dieci minuti anche se la rileggiamo
+    adesso (patto 2). Allungare questa cache non puo' far passare per buone
+    quote vecchie: al massimo fa saltare una decisione, che e' il lato giusto.
+
+    Sulla scadenza si rileggono INSIEME tutte le partite gia' note, perche' lo
+    scanner risponde con UNA sola select sull'unione: chiederne trenta costa
+    come chiederne una, chiederle una alla volta costa trenta volte.
+    """
+    ora = _mono()
+    _CACHE_FEED_CHIESTO_A[event_id] = ora
+    ttl = _cadenza("feed_cache_s")
+    letto_a = _CACHE_FEED_LETTO_A.get(event_id)
+    if letto_a is not None and ttl > 0.0 and (ora - letto_a) < ttl:
+        return _CACHE_FEED_RIGHE.get(event_id)
+    for eid in [e for e, t in _CACHE_FEED_CHIESTO_A.items() if ora - t > _FEED_DIMENTICA_DOPO_S]:
+        _CACHE_FEED_CHIESTO_A.pop(eid, None)
+        _CACHE_FEED_RIGHE.pop(eid, None)
+        _CACHE_FEED_LETTO_A.pop(eid, None)
+    ids = sorted(set(_CACHE_FEED_CHIESTO_A) | {event_id})
+    righe = cache.rows_for(ids) or {}
+    for eid in ids:
+        riga = righe.get(eid)
+        if riga is not None:
+            _CACHE_FEED_RIGHE[eid] = riga
+        else:
+            _CACHE_FEED_RIGHE.pop(eid, None)
+        _CACHE_FEED_LETTO_A[eid] = ora
+    return _CACHE_FEED_RIGHE.get(event_id)
+
+
+def _scanner_eta_cached(cache: Any) -> Optional[float]:
+    """Eta' (s) dell'heartbeat dello scanner, riletta al massimo ogni
+    ``scanner_status_cache_s``.
+
+    Il valore in cache viene INVECCHIATO del tempo passato: quella che ne esce
+    e' esattamente l'eta' di quella riga, non un'approssimazione. L'unico
+    effetto di una cache lunga e' che un heartbeat NUOVO si vede con qualche
+    secondo di ritardo — cioe' si crede lo scanner piu' morto di quanto sia, e
+    si e' piu' severi sulle righe del feed. Fail-safe, mai il contrario.
+    """
+    ora = _mono()
+    letto_a = _CACHE_SCANNER.get("letto_a")
+    if letto_a is not None and _cadenza("scanner_status_cache_s") > 0.0 \
+            and (ora - letto_a) < _cadenza("scanner_status_cache_s"):
+        eta = _CACHE_SCANNER.get("eta")
+        return None if eta is None else float(eta) + (ora - float(letto_a))
+    eta = cache.scanner_age_sec()
+    _CACHE_SCANNER["eta"], _CACHE_SCANNER["letto_a"] = eta, ora
+    return eta
+
+
 def cs_snapshot_from_payload(
     event_id: str, payload: Optional[dict],
 ) -> Optional["tuple[Any, Any]"]:
@@ -167,8 +421,14 @@ def _feed_row(event_id: str, hard_max_age: Optional[float] = None) -> "tuple[Opt
     della riga, senza il bypass "scanner vivo" (decisioni money-critical)."""
     try:
         cache = _scan_feed.shared_cache()
-        row = cache.rows_for([str(event_id)]).get(str(event_id))
-        payload = _scan_feed.fresh_payload(row, FEED_MAX_AGE_S, scanner_age_sec=cache.scanner_age_sec())
+        # §18 — la riga si RILEGGE al massimo ogni ``feed_cache_s``, ma il
+        # giudizio di freschezza (``fresh_payload`` e ``row_age_sec``, entrambi
+        # basati sull'``updated_at`` della riga) si rifa' ADESSO a ogni
+        # chiamata: la cache cambia quanto spesso si chiede, non che cosa si
+        # crede di aver letto.
+        row = _feed_riga_cached(cache, str(event_id))
+        payload = _scan_feed.fresh_payload(row, FEED_MAX_AGE_S,
+                                           scanner_age_sec=_scanner_eta_cached(cache))
         if payload is not None and hard_max_age is not None:
             age = _scan_feed.row_age_sec(row)
             if age is None or age > float(hard_max_age):
@@ -4296,14 +4556,29 @@ def _mission_scores(market, event_ids: list[str], db) -> dict:
     return out
 
 
-def process_missions(*, market, db, now: datetime) -> int:
+def process_missions(*, market, db, now: datetime,
+                     control: Optional[dict[str, Any]] = None) -> int:
     """Aggiorna punteggio/fase/suggerimenti di ogni missione attiva. Ritorna
-    quante ne ha aggiornate. Un errore su una missione non ferma le altre (I6)."""
+    quante ne ha aggiornate. Un errore su una missione non ferma le altre (I6).
+
+    ``control``: il singleton ``omega_control`` GIA' letto dal ciclo. §18 — senza
+    questo il ciclo leggeva la stessa riga due volte per giro (una in ``run_once``
+    e una qui) per avere gli stessi identici parametri, letti a un decimo di
+    secondo di distanza. Chiamando la funzione da sola resta il comportamento di
+    prima: se non lo passi, se lo rilegge.
+    """
     missions = db.active_missions()
+    # §18 — quante missioni ATTIVE ha visto l'ultimo giro. Serve al ritmo
+    # adattivo: se l'utente sta seguendo una partita dalla pagina Missione, il
+    # ciclo deve restare al ritmo pieno anche se non c'e' nessuna posizione
+    # aperta, altrimenti i suggerimenti arriverebbero con un minuto di ritardo.
+    global _ULTIME_MISSIONI_ATTIVE
+    _ULTIME_MISSIONI_ATTIVE = len(missions or [])
     if not missions:
         return 0
     scores = _mission_scores(market, [str(m["event_id"]) for m in missions], db)
-    control = db.read_control() or {}
+    if control is None:
+        control = db.read_control() or {}
     params = omega_config.resolve_params(control.get("params"))
     n = 0
     for m in missions:
@@ -4332,8 +4607,12 @@ _EVENTS_REFRESH_AT: dict[str, float] = {}
 
 
 def _events_refresh_due(now: datetime) -> bool:
+    # §18: la cadenza e' un PARAMETRO (``events_refresh_s``), non piu' un numero
+    # fisso nel codice; la costante resta come ripiego se il parametro e' a zero
+    # o non risolto (prima del primo giro).
+    ogni = _cadenza("events_refresh_s") or EVENTS_REFRESH_EVERY_S
     last = _EVENTS_REFRESH_AT.get("ts")
-    if last is None or now.timestamp() - last >= EVENTS_REFRESH_EVERY_S:
+    if last is None or now.timestamp() - last >= ogni:
         _EVENTS_REFRESH_AT["ts"] = now.timestamp()
         return True
     return False
@@ -4343,9 +4622,11 @@ def _idle_stats_due(status: Any, now: datetime) -> bool:
     """A bot fermo gli aggregati (una RPC) e il set_control delle stats si
     rifanno al massimo ogni ``IDLE_STATS_EVERY_S``, o subito se lo stato del bot
     è cambiato (review M6: prima era una RPC + una UPDATE ogni 5 s per ore)."""
+    # §18: cadenza da parametro (``idle_stats_s``); la costante resta il ripiego.
+    ogni = _cadenza("idle_stats_s") or IDLE_STATS_EVERY_S
     last = _IDLE_STATS_AT.get("ts")
     prev = _IDLE_STATS_AT.get("status")
-    if last is None or prev != str(status) or now.timestamp() - last >= IDLE_STATS_EVERY_S:
+    if last is None or prev != str(status) or now.timestamp() - last >= ogni:
         _IDLE_STATS_AT["ts"] = now.timestamp()
         _IDLE_STATS_AT["status"] = str(status)
         return True
@@ -4365,7 +4646,9 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
     agg: dict[str, Any] = {}
     try:
-        agg = dict(db.aggregates(E.day_start_utc(now)) or {})
+        # §18: stessa RPC, stessa cache del ciclo attivo. A bot fermo non si apre
+        # niente: questi numeri servono solo a non far mentire la pagina.
+        agg = dict(_aggregati_cached(db, E.day_start_utc(now), now.timestamp()) or {})
     except Exception as ex:  # noqa: BLE001 — si tengono i valori precedenti
         logger.debug("[omega] aggregati a bot fermo KO: %s", str(ex)[:100])
     def _v(key: str, default: Any = 0) -> Any:
@@ -4402,6 +4685,37 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     }
 
 
+def _c_e_fretta(stats: Optional[dict[str, Any]], mossa: bool) -> bool:
+    """Il prossimo giro ha bisogno del RITMO PIENO? (§18)
+
+    Il ciclo pieno serve quando c'e' qualcosa che si muove DA SOLO: una posizione
+    aperta (il mercato cambia prezzo a ogni secondo e il green-up deve poterla
+    chiudere), una riconciliazione in sospeso, una gamba ancora piazzabile oggi,
+    una missione che l'utente sta seguendo dalla pagina, oppure qualcosa che e'
+    appena successo in questo giro.
+
+    Senza niente di tutto questo — la notte, o fra una giornata di partite e
+    l'altra — girare al ritmo pieno vuol dire solo consumare il budget di IO del
+    database per rileggere cose ferme. E quando il budget finisce non e' che
+    Omega diventa lenta: e' che una posizione aperta resta senza nessuno che la
+    guarda, ed e' cosi' che si perdono i soldi veri.
+
+    Nessuna lettura in piu': si guardano i numeri che il giro ha GIA' calcolato.
+    """
+    if mossa or _ULTIME_MISSIONI_ATTIVE:
+        return True
+    s = stats if isinstance(stats, dict) else (_CACHE_AGGREGATI.valore or {})
+
+    def _n(chiave: str) -> float:
+        try:
+            return float(s.get(chiave) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    return bool(_n("matches_open") or _n("live_now") or _n("reconciling_liability")
+                or _n("legs_remaining") or _n("open_liability"))
+
+
 def _degraded_heartbeat(db, control: dict[str, Any], now: datetime, reason: str) -> None:
     """Ciclo interrotto da un errore di lettura PRIMA dello scan: si scrive comunque
     heartbeat + stats (review M8: i rami di uscita facevano ``return`` prima del
@@ -4424,6 +4738,13 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     status = control.get("status")
     params = omega_config.resolve_params(control.get("params"))
+    # §18 — le cadenze del giro valgono anche per le funzioni in fondo alla
+    # catena che ``params`` non lo ricevono (il feed e' letto da dieci posti
+    # diversi), e per il loop, che cosi' non rilegge ``omega_control`` una
+    # seconda volta solo per sapere quanto aspettare.
+    global _ULTIMI_PARAMS
+    _ULTIMI_PARAMS = params
+    ora_ts = now.timestamp()
 
     # 0) RICONCILIAZIONE dei 'pending' orfani con la realtà Betfair (I3) — SEMPRE e
     #    per prima: un ordine reale non deve mai restare non tracciato (kill a metà
@@ -4463,8 +4784,15 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
 
     # 1-ter) RISULTATI REALI 1T/2T (§14) — SEMPRE: dal feed unico sulle
     #    posizioni recenti (il settlement completa dal WINNER del mercato).
+    #    §18 — al massimo ogni ``results_every_s``: e' una rete di sicurezza
+    #    contabile (timbra 'result_ht'/'result_ft' sulle righe), non un passaggio
+    #    del flusso, e legge 48 ore di posizioni a ogni giro. Un risultato non
+    #    cambia piu' di una volta al minuto, e il settlement lo completa comunque
+    #    dal WINNER del mercato: rileggerlo ogni venti secondi non aggiunge
+    #    niente, costa solo IO al database.
     try:
-        track_event_results(db=db, market=market, now=now, feed=greenup_feed)
+        if _fase_dovuta("risultati", ora_ts, _cadenza("results_every_s")):
+            track_event_results(db=db, market=market, now=now, feed=greenup_feed)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "results_phase_failed", "err": str(ex)[:160]})
 
@@ -4487,8 +4815,16 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "events_refresh_failed", "err": str(ex)[:160]})
 
     # 2-bis) MISSIONI — SEMPRE: punteggio live, fase, suggerimenti per gamba.
+    #    §18 — al massimo ogni ``missions_every_s``. Le missioni sono territorio
+    #    dell'utente, che LEGGE e clicca: non sono un loop di trading. Ogni giro
+    #    costano una ``active_missions`` piu' una ``trades_for_event`` PER
+    #    missione; a cinque missioni attive e poll aggressivo sono sei letture al
+    #    giro per aggiornare dei suggerimenti che nessuno guarda piu' spesso di
+    #    cosi'.
+    n_missions = 0
     try:
-        n_missions = process_missions(market=market, db=db, now=now)
+        if _fase_dovuta("missioni", ora_ts, _cadenza("missions_every_s")):
+            n_missions = process_missions(market=market, db=db, now=now, control=control)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "missions_failed", "err": str(ex)[:160]})
         n_missions = 0
@@ -4498,7 +4834,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
                        stats=_idle_stats(db, control, now))   # cambio di stato: sempre
         _IDLE_STATS_AT["status"] = "stopped"
         db.log("stop", {})
-        return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup}
+        return {"stopped": True, "settled": n_settled, "manual": n_manual, "greenup": n_greenup,
+                "fretta": _c_e_fretta(None, bool(n_settled or n_greenup or n_manual))}
     if status != "running":
         # heartbeat ANCHE a bot fermo (seconda passata MEDIUM-4): settlement, green-up e
         # risultati girano comunque — la UI deve sapere che il servizio è vivo.
@@ -4513,7 +4850,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         except Exception:  # noqa: BLE001
             pass
         return {"idle": True, "status": status, "settled": n_settled, "manual": n_manual,
-                "greenup": n_greenup}
+                "greenup": n_greenup,
+                "fretta": _c_e_fretta(None, bool(n_settled or n_greenup or n_manual))}
 
     # 2) universo eventi del giorno + aggregati freschi
     try:
@@ -4525,26 +4863,53 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     # finestra delle letture (seconda passata MEDIUM-2): le gambe si decidono in
     # giornata; oltre 3 giorni l'unique del DB resta la rete. Niente scansioni intere.
     since_iso = (now - timedelta(days=3)).isoformat()
-    load_failed_legs(db=db, since_iso=since_iso)   # review H4: budget tentativi dal DB
+    ttl_insiemi = _cadenza("sets_cache_s")
+    # review H4: budget tentativi dal DB. §18 — al massimo ogni ``sets_cache_s``:
+    # e' una scansione di tre giorni di righe per sapere quante volte una gamba
+    # ha gia' fallito, e quel conto lo alza QUESTO processo (``_LEG_RETRY``), che
+    # se lo ricorda da solo fra una rilettura e l'altra. La rilettura serve solo
+    # a ereditare il budget speso prima di un riavvio.
+    if _fase_dovuta("failed_legs", ora_ts, ttl_insiemi):
+        load_failed_legs(db=db, since_iso=since_iso)
     day_start = E.day_start_utc(now)  # §2: giornata operativa Europe/Rome
     # AUDIT 11/09 (L-06): fasi 2-3 PROTETTE — un DB/RPC KO qui faceva saltare il
     # ciclo intero (niente heartbeat, niente stats: la UI dava il servizio per morto)
+    # §18 — questa NON e' in cache, ed e' una scelta. Il motore 'single' fa
+    # ``traded_ids.add(...)`` su una UNIONE costruita qui sotto, non
+    # sull'insieme originale: con una cache la partita appena bancata non
+    # risulterebbe bancata al giro dopo, e I1 ("un solo lay per match") starebbe
+    # in piedi solo grazie all'unique del database. Si legge una volta per giro e
+    # si RIUSA piu' sotto per ``matches_remaining``, che prima la rileggeva.
+    traded_ids_db: set = set()
     try:
-        traded_ids = set() if legs_engine else db.traded_event_ids()
+        if not legs_engine:
+            traded_ids_db = set(db.traded_event_ids() or ())
+        traded_ids = set(traded_ids_db)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "traded_ids_failed", "err": str(ex)[:160]})
         _degraded_heartbeat(db, control, now, "traded_ids_failed")
         return {"skipped": "traded_ids_failed", "settled": n_settled, "manual": n_manual,
-                "missions": n_missions}
+                "missions": n_missions,
+                "fretta": _c_e_fretta(None, False)}
     try:
-        agg = db.aggregates(day_start)
+        agg = _aggregati_cached(db, day_start, ora_ts)
     except Exception as ex:  # noqa: BLE001
         db.log("error", {"reason": "aggregates_failed", "err": str(ex)[:160]})
         _degraded_heartbeat(db, control, now, "aggregates_failed")
         return {"skipped": "aggregates_failed", "settled": n_settled, "manual": n_manual,
-                "missions": n_missions}
+                "missions": n_missions,
+                "fretta": _c_e_fretta(None, False)}
     # eventi con trade MANUALI: territorio dell'utente, l'automatico non aggiunge
     # esposizione (§8, review H2 — in v2 il filtro era andato perso)
+    #
+    # §18 — QUESTE DUE LETTURE (manuali e missioni) NON SONO IN CACHE, ed e' una
+    # scelta, non una dimenticanza. Sono le GUARDIE che impediscono all'automatico
+    # di piazzare su una partita che l'utente si e' appena preso: le scrive la UI,
+    # cioe' un ALTRO processo, quindi la copia in memoria non e' la verita' come
+    # per gli insiemi qui sopra. Metterle in cache allargherebbe la finestra in
+    # cui Omega puo' bancare su un evento appena rivendicato — un secondo lay su
+    # una partita gia' esposta, decine di euro. Sono due select su una manciata
+    # di righe: si pagano volentieri a ogni giro.
     manual_fn = getattr(db, "manual_event_ids", None)
     try:
         manual_ids = set(_call_windowed(manual_fn, since_iso)) if callable(manual_fn) else set()
@@ -4552,7 +4917,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "manual_ids_failed", "err": str(ex)[:160]})
         _degraded_heartbeat(db, control, now, "manual_ids_failed")
         return {"skipped": "manual_ids_failed", "settled": n_settled, "manual": n_manual,
-                "missions": n_missions}
+                "missions": n_missions,
+                "fretta": _c_e_fretta(None, False)}
 
     # GUARDIA MISSIONI: gli eventi con missione ATTIVA sono territorio
     # dell'utente — l'automatico NON deve mai aggiungere esposizione lì.
@@ -4564,7 +4930,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         db.log("error", {"reason": "mission_ids_failed", "err": str(ex)[:160]})
         _degraded_heartbeat(db, control, now, "mission_ids_failed")
         return {"skipped": "mission_ids_failed", "settled": n_settled,
-                "manual": n_manual, "missions": n_missions}
+                "manual": n_manual, "missions": n_missions,
+                "fretta": _c_e_fretta(None, False)}
     traded_ids = traded_ids | mission_ids
 
     # 3) scan + place — v2 "legs" (2 gambe/partita, selezione per modello) di
@@ -4574,8 +4941,20 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     try:
         if legs_engine:
             legs_fn = getattr(db, "traded_legs", None)
-            traded_legs = set(_call_windowed(legs_fn, since_iso)) if callable(legs_fn) else {
-                (e, p) for e in db.traded_event_ids() for p in ("ht_cs", "ft_cs")}
+
+            def _leggi_gambe_fatte() -> set:
+                if callable(legs_fn):
+                    return set(_call_windowed(legs_fn, since_iso))
+                return {(e, p) for e in db.traded_event_ids() for p in ("ht_cs", "ft_cs")}
+
+            # §18 — l'insieme delle gambe gia' fatte si rilegge al massimo ogni
+            # ``sets_cache_s``. Attenzione: si usa l'oggetto RESTITUITO dalla
+            # cache, non una copia, perche' lo scan qui sotto ci aggiunge dentro
+            # la gamba appena piazzata; con una copia il giro dopo quella gamba
+            # non risulterebbe fatta e Omega la ripiazzerebbe — secondo lay sulla
+            # stessa partita, soldi veri.
+            traded_legs = _insieme_cached("traded_legs", ora_ts, ttl_insiemi,
+                                          _leggi_gambe_fatte, db=db)
             n_placed = scan_and_place_legs(
                 control=control, params=params, events=events, traded_ids=set(mission_ids) | manual_ids,
                 traded_legs=traded_legs, aggregates=agg, market=market, db=db, now=now,
@@ -4595,7 +4974,14 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     goal = float(control.get("daily_goal") or omega_config.DEFAULT_DAILY_GOAL)
     _snapshot_daily_goal(db, goal, now)
     try:
-        agg2 = db.aggregates(day_start)
+        # §18 — gli aggregati si RIFANNO subito se in questo giro e' successo
+        # qualcosa (un piazzamento, un settlement, una chiusura, un'azione
+        # manuale): sono i numeri su cui si fermano stop giornaliero e cap di
+        # perdita, e devono conoscere l'ultima cosa fatta. Se invece il giro non
+        # ha mosso niente, sono gli STESSI numeri di venti secondi fa e la RPC
+        # (che scorre tutta omega_trades) si puo' risparmiare.
+        agg2 = _aggregati_cached(db, day_start, ora_ts,
+                                 forza=bool(n_placed or n_settled or n_greenup or n_manual))
     except Exception as ex:  # noqa: BLE001 — L-06: si riusa l'aggregato di inizio ciclo
         logger.warning("[omega] aggregati per le stats KO: %s", str(ex)[:120])
         agg2 = agg
@@ -4611,8 +4997,12 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         target_leg = round(E.dynamic_target(goal, realized_eff, legs_left), 2) if legs_left > 0 else 0.0
         target_match = round(target_leg * 2, 2)
     else:
+        # §18: stessa lettura gia' fatta in cima a QUESTO giro — si riusa il
+        # valore invece di riscandire i trade una seconda volta per contare le
+        # partite residue (``matches_remaining`` non modifica l'insieme)
         m_rem = matches_remaining(
-            events, db.traded_event_ids(), now=now, entry_minute_max=params["entry_minute_max"],
+            events, traded_ids_db,
+            now=now, entry_minute_max=params["entry_minute_max"],
             max_events=params["max_events"], traded_count=traded_today,
         )
         legs_left = m_rem
@@ -4652,7 +5042,8 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
     except Exception as ex:  # noqa: BLE001 — L-06: il ciclo è comunque andato a buon fine
         logger.warning("[omega] set_control stats KO: %s", str(ex)[:120])
     return {"placed": n_placed, "settled": n_settled, "events": len(events),
-            "missions": n_missions, "greenup": n_greenup, "stats": stats}
+            "missions": n_missions, "greenup": n_greenup, "stats": stats,
+            "fretta": _c_e_fretta(stats, bool(n_placed or n_settled or n_greenup or n_manual))}
 
 
 # ---------------------------------------------------------------------------
@@ -4728,10 +5119,22 @@ def main() -> None:
             try:
                 last_keepalive = _maybe_keepalive(
                     _real_market, last_keepalive, now_ts=time.monotonic())
-                ctrl = _real_db.read_control()
-                params = omega_config.resolve_params((ctrl or {}).get("params"))
+                # §18 — ``run_once`` rilegge ``omega_control`` da sola: leggerlo
+                # anche qui voleva dire due select al giro sulla stessa riga, per
+                # avere gli stessi identici parametri. I parametri del giro
+                # PRECEDENTE bastano a decidere quanto aspettare; al primo giro,
+                # quando non ce ne sono ancora, valgono i default.
+                params = _ULTIMI_PARAMS or omega_config.resolve_params(None)
                 interval = int(params["poll_interval_s"])
                 result = run_once(score_lookup=score_lookup)
+                params = _ULTIMI_PARAMS or params
+                # RITMO ADATTIVO: il ciclo pieno solo quando qualcosa si muove da
+                # solo (posizione aperta, riconciliazione in sospeso, gamba ancora
+                # piazzabile oggi, missione seguita dall'utente, o qualcosa appena
+                # successo). A vuoto si rallenta: la notte sono migliaia di
+                # letture al database per rileggere cose ferme.
+                if not result.get("fretta"):
+                    interval = max(interval, int(float(params.get("idle_cycle_s") or 0.0)))
                 if result.get("placed") or result.get("settled"):
                     logger.info("[omega] ciclo: %s", {k: result[k] for k in ("placed", "settled", "events") if k in result})
             except KeyboardInterrupt:

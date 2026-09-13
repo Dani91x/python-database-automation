@@ -37,7 +37,8 @@ from . import feed as F
 logger = logging.getLogger("mike")
 
 _LOCK_PORT = C.env_int("MIKE_LOCK_PORT", C.LOCK_PORT_DEFAULT)
-_SCANNER_ALIVE_MAX_S = 30.0
+# (la deroga "scanner vivo" e' il parametro ``scanner_alive_max_s``: vedi
+#  config.PARAM_SPEC e feed.feed_fresh. Questa costante non la usava nessuno.)
 _PENDING_STALE_S = 120.0          # gamba pending senza esito da troppo: esito noto → ritirata, ignoto → riconciliazione
 _SETTLE_RETRY_S = 30.0            # ripiego se settle_confirm_s = 0 (fra due letture REST a mercato chiuso)
 _SETTLE_MAX_WAIT_S = 2 * 3600.0   # oltre: fallback sull'ultimo punteggio noto o ERROR
@@ -45,8 +46,10 @@ _DAILY_STOP_LOGGED: Dict[str, str] = {}   # {"day": iso Rome} → lo stop giorna
 _ROW_MISSING_GRACE_S = 600.0      # riga assente dal feed per meno di cosi' = transitoria (es. passaggio pre-KO → in-play)
 _MATCH_OVER_S = 3 * 3600.0        # oltre 3h dal KO la partita e' finita comunque
 _MATCH_LIKELY_OVER_S = 100 * 60.0 # vista in-play e KO + 100': la riga sparita = partita finita (regolamento subito)
-_HEARTBEAT_MIN_S = 10.0           # H5: la UI ascolta mike_control in realtime → mai un battito a ogni ciclo
-_STATS_MIN_S = 5.0                # M6: stats riscritte al massimo ogni 5 s anche se qualcosa cambia
+# 13/09 — le due cadenze del battito su ``mike_control`` sono diventate
+# PARAMETRI (``heartbeat_min_s`` / ``stats_min_s``, vedi config.py): una
+# cadenza cablata nel codice non si puo' allargare quando il database soffre.
+# Questi restano solo come ripiego se i parametri mancassero.
 _CRITICAL_LOG_EVERY_S = 45.0      # M7: i log CRITICI non vengono silenziati per 5 minuti
 _STALE_REQUEST_MIN = 10           # richieste 'processing' piu' vecchie = crash: chiuse in errore (M2)
 _STRATEGY_REF = C.CUSTOMER_STRATEGY_REF
@@ -243,6 +246,10 @@ _CACHE_EVENTI: Dict[str, Dict[str, Any]] = {}
 _EVENTI_LETTI_A: float = 0.0
 # ultima riparazione dello specchio gambe <-> righe, per partita
 _RICONCILIATO_A: Dict[str, float] = {}
+# ultima SCRITTURA di ``mike_events``, per partita: e' l'orologio del battito di
+# pubblicazione (vedi ``_persist``). Non e' una cache di dati, e' la memoria di
+# "quando ho scritto l'ultima volta": senza, ogni giro riscriverebbe.
+_SCRITTO_A: Dict[str, float] = {}
 
 
 def svuota_le_cache() -> None:
@@ -256,6 +263,8 @@ def svuota_le_cache() -> None:
     _CACHE_AGGREGATI.svuota()
     _CACHE_EVENTI.clear()
     _RICONCILIATO_A.clear()
+    _SCRITTO_A.clear()
+    _LAST_HEARTBEAT.clear()
     _EVENTI_LETTI_A = 0.0
 
 
@@ -335,11 +344,61 @@ def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -
     return out
 
 
+# ---------------------------------------------------------------------------
+# CHE COSA VUOL DIRE "E' CAMBIATO" (13/09, secondo tempo)
+# ---------------------------------------------------------------------------
+# La firma serve a una cosa sola: decidere se vale la pena RISCRIVERE la riga.
+# Perche' funzioni deve guardare i FATTI e ignorare tutto cio' che si muove da
+# solo — altrimenti risponde "cambiato" sempre, e il write-on-change non esiste
+# piu'. E' esattamente quello che era successo: dentro ``live`` c'erano
+# ``published_at`` / ``published_ts`` (l'orologio) e ``feed_age_s`` /
+# ``scanner_age_s`` (eta' che crescono da sole). Con quei quattro campi dentro,
+# DUE giri identici a un secondo di distanza producevano due firme diverse e
+# due UPSERT da decine di KB: 300 scritture al minuto con cinque partite ferme.
+#
+# Alla lista si sono aggiunti i campi che si muovono col BOOK: il miglior
+# prezzo oscilla di un tick in continuazione, e con lui il "se chiudo ora", le
+# posizioni, l'hazard. Sono diagnostica per la scheda, non fatti: viaggiano sul
+# battito di pubblicazione (``publish_heartbeat_s``), non su una POST al secondo.
+#
+# REGOLA DI SICUREZZA — la lista e' una LISTA NERA, non una lista bianca. Un
+# campo nuovo che nessuno ha classificato finisce fra i sostanziali: al massimo
+# si scrive una volta di troppo. Col criterio opposto un fatto nuovo potrebbe
+# non essere scritto MAI, e quello e' un errore che costa soldi.
+_LIVE_VOLATILI = frozenset({
+    # l'orologio puro: cambiano a ogni giro per costruzione
+    "published_at", "published_ts", "feed_age_s", "scanner_age_s",
+    # il book e tutto cio' che ne discende (un tick in piu' o in meno)
+    "books", "total_matched", "cashout", "posizioni",
+    "hazard", "hazard_atlas", "hazard_model", "pressure",
+    "p4_market", "p4_model", "p_total_model", "p_total_emp", "p_over45_model",
+    "cover_gain_pct", "model_probs", "ko_drift_ticks",
+})
+# dentro ``ctx`` la stessa cosa: sono spiegazioni per la scheda, non memoria
+# dell'engine (nessuna di queste chiavi sta in ``_CTX_FIELDS``, cioe' nessuna
+# viene riletta per decidere). ``last_reason`` in particolare contiene prezzi e
+# liquidita' — "ultimo ingresso: liquidita 12.40 < 15.00" — quindi cambia a
+# ogni tick del book pur dicendo sempre la stessa cosa.
+_CTX_VOLATILI = frozenset({"last_reason", "last_cashout", "last_cover_wait", "last_loss_exit"})
+
+
+def _corpo_sostanziale(row: Dict[str, Any]) -> Dict[str, Any]:
+    """La riga senza i campi che cambiano da soli (vedi sopra)."""
+    body = {k: v for k, v in row.items() if k != "updated_at"}
+    live = body.get("live")
+    if isinstance(live, dict):
+        body["live"] = {k: v for k, v in live.items() if k not in _LIVE_VOLATILI}
+    ctx = body.get("ctx")
+    if isinstance(ctx, dict):
+        body["ctx"] = {k: v for k, v in ctx.items() if k not in _CTX_VOLATILI}
+    return body
+
+
 def _signature(row: Dict[str, Any]) -> str:
     import hashlib
     import json
 
-    body = {k: v for k, v in row.items() if k not in ("updated_at",)}
+    body = _corpo_sostanziale(row)
     return hashlib.md5(json.dumps(body, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
@@ -874,7 +933,8 @@ def _request_flatten(db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dic
                               scanner_age_s=scanner_age)
     if snap is None:
         return _result("snapshot_assente", "Fotografia del mercato non disponibile: riprova.")
-    if not snap.feed_fresh:
+    # soglia d'ORDINE, non di lettura: qui si attraversa lo spread davvero.
+    if not snap.order_fresh:
         return _result("feed_stantio",
                        "Feed non aggiornato: chiudere ora userebbe prezzi vecchi. Riprova tra qualche secondo.")
     reconciling = E.has_unknown_orders(ctx)
@@ -1073,18 +1133,45 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
 
     # ciclo per partita
     n_actions = n_settled = 0
+    # PARTITE CHE CONSUMANO IL TETTO: quelle con soldi davvero sopra (stato
+    # operativo, oppure una gamba viva o abbinata). Si parte dal conto vero di
+    # adesso e lo si aggiorna DURANTE il giro: se una partita entra, il posto e'
+    # occupato subito e la successiva lo trova gia' preso. Senza questo, dentro
+    # lo stesso giro entrerebbero tutte insieme — che e' esattamente il difetto
+    # che stiamo chiudendo.
+    esposte = {eid for eid, e in tracked.items()
+               if E.ha_esposizione(e.get("state"), _ctx_legs_of(e))}
+    cap_partite = int(eff.get("max_open_matches") or 0)
     trades_cache: Dict[str, List[Dict[str, Any]]] = {}
-    for eid, ev in list(tracked.items()):
-        try:
-            acted, settled = _run_event(db=db, market=market, ev=ev, row=rows_by_event.get(eid),
-                                        params=eff, mode=str(ev.get("mode") or mode), now=now,
-                                        scanner_age=scanner_age, atlas=atlas, dry=dry,
-                                        cache=trades_cache, open_refs=open_refs)
-            n_actions += acted
-            n_settled += settled
-        except Exception as ex:  # noqa: BLE001 — una partita rotta non ferma le altre
-            logger.exception("[mike] evento %s KO: %s", eid, str(ex)[:160])
-            db.log("error", {"reason": "event_cycle", "err": str(ex)[:160]}, eid)
+    # le riscritture di sola CORTESIA (rinfresco dell'ora di pubblicazione) del
+    # giro: si accumulano qui e partono in UNA sola POST a fine ciclo. Le
+    # scritture che portano un fatto nuovo NON ci passano: partono subito.
+    lotto_eventi: Dict[str, Dict[str, Any]] = {}
+    try:
+        for eid, ev in list(tracked.items()):
+            try:
+                gia_dentro = eid in esposte
+                acted, settled = _run_event(db=db, market=market, ev=ev, row=rows_by_event.get(eid),
+                                            params=eff, mode=str(ev.get("mode") or mode), now=now,
+                                            scanner_age=scanner_age, atlas=atlas, dry=dry,
+                                            cache=trades_cache, open_refs=open_refs,
+                                            lotto=lotto_eventi,
+                                            # una partita GIA' esposta non e' mai bloccata: deve
+                                            # poter fare tutto, comprese le aperture del ciclo
+                                            # successivo, altrimenti resterebbe a meta' strada.
+                                            puo_aprire=(gia_dentro or cap_partite <= 0
+                                                        or len(esposte) < cap_partite))
+                if not gia_dentro and E.ha_esposizione(ev.get("state"), _ctx_legs_of(ev)):
+                    esposte.add(eid)      # il posto e' occupato da adesso
+                n_actions += acted
+                n_settled += settled
+            except Exception as ex:  # noqa: BLE001 — una partita rotta non ferma le altre
+                logger.exception("[mike] evento %s KO: %s", eid, str(ex)[:160])
+                db.log("error", {"reason": "event_cycle", "err": str(ex)[:160]}, eid)
+    finally:
+        # SEMPRE: il lotto non deve sopravvivere al giro nemmeno se il ciclo
+        # esplode a meta'. Rallentare una scrittura e' permesso, perderla no.
+        _svuota_lotto(db, lotto_eventi, params)
 
     if status == "stopping":
         try:
@@ -1142,12 +1229,27 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # H5 — la UI ascolta mike_control in REALTIME: un battito a ogni ciclo la
     # faceva ricaricare ogni secondo. M6 (review): non basta "cambiato", perche'
     # una stat cambia quasi sempre (P&L, liability) → si scriveva comunque a
-    # ogni ciclo. Regola: stats al massimo ogni _STATS_MIN_S (5 s) se qualcosa
-    # e' cambiato, e comunque un battito ogni _HEARTBEAT_MIN_S (10 s).
+    # ogni ciclo. Regola: stats al massimo ogni ``stats_min_s`` se qualcosa e'
+    # cambiato, e comunque un battito ogni ``heartbeat_min_s``.
+    #
+    # 13/09 (secondo tempo) — le due soglie erano numeri fissi nel codice (5 e
+    # 10 s) e valevano 12 PATCH al minuto su una tabella che la UI ascolta in
+    # realtime, cioe' 12 risvegli al minuto di ogni pagina aperta. Ora sono
+    # parametri: 10 s per le stats, 20 s per il battito nudo. Il margine c'e':
+    # ``ServiceHealthChip.SERVICE_STALE_S`` dichiara il servizio morto a 45 s,
+    # quindi anche saltando un battito il badge resta verde.
     beat = {k: v for k, v in stats.items() if k not in ("last_cycle", "scanner_age_s")}
+    # zero = "a ogni giro": e' la valvola per tornare al comportamento di prima
+    # senza toccare il codice (e la UI lo ammette, min 0 su entrambi). Da qui il
+    # ``if ... is None`` invece di ``or``: con ``or`` uno zero scritto apposta
+    # diventerebbe il default, cioe' l'opposto di quello che il trader ha chiesto.
+    _hb = params.get("heartbeat_min_s")
+    _st = params.get("stats_min_s")
+    stats_min_s = float(C.DEFAULTS["stats_min_s"] if _st is None else _st)
+    heartbeat_min_s = float(C.DEFAULTS["heartbeat_min_s"] if _hb is None else _hb)
     changed = _LAST_HEARTBEAT.get("sig") != _signature(beat)
     elapsed = now_ts - float(_LAST_HEARTBEAT.get("ts") or 0.0)
-    if (changed and elapsed >= _STATS_MIN_S) or elapsed >= _HEARTBEAT_MIN_S:
+    if (changed and elapsed >= stats_min_s) or elapsed >= heartbeat_min_s:
         _LAST_HEARTBEAT["sig"] = _signature(beat)
         _LAST_HEARTBEAT["ts"] = now_ts
         try:
@@ -1282,8 +1384,15 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                params: Dict[str, Any], mode: str, now: datetime, scanner_age: Optional[float],
                atlas: Optional[Dict[str, Any]], dry: bool,
                cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-               open_refs: Optional[Dict[str, set]] = None) -> "tuple[int, int]":
-    """Un giro per una partita: snapshot → decide → azioni → persistenza. (azioni, settled)."""
+               open_refs: Optional[Dict[str, set]] = None,
+               lotto: Optional[Dict[str, Dict[str, Any]]] = None,
+               puo_aprire: bool = True) -> "tuple[int, int]":
+    """Un giro per una partita: snapshot → decide → azioni → persistenza. (azioni, settled).
+
+    ``lotto`` e' il raccoglitore delle riscritture di sola CORTESIA (rinfresco
+    dell'ora di pubblicazione): il chiamante lo svuota in una sola POST a fine
+    giro. Le scritture che portano un fatto nuovo non ci passano mai (vedi
+    ``_persist``)."""
     now_ts = now.timestamp()
     if str(ev.get("state")) in E.TERMINAL_STATES:
         return (0, 0)
@@ -1330,7 +1439,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     closed = status_closed or absent_closed
     if row is None and not closed and ctx.state not in E.TERMINAL_STATES:
         ev.update(_row_from_ctx(ev, ctx, extra))          # memorizza da quando manca
-        _persist(db, ev, before_sig)
+        _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
     # falso regolamento gia' scattato (riga tornata, mercato aperto, partita in corso):
     # si torna nello stato coerente con le posizioni aperte
@@ -1357,7 +1466,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             # L2: si persiste comunque (il throttle e le riparazioni H2 di questo
             # ciclo non devono andare perse)
             ev.update(_row_from_ctx(ev, ctx, extra))
-            _persist(db, ev, before_sig)
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
             return (0, 0)
         # M3: ``settle_confirm_s`` CABLATO come intervallo fra due letture REST
         extra["settle_next_ts"] = now_ts + max(5.0, float(params.get("settle_confirm_s") or _SETTLE_RETRY_S))
@@ -1398,14 +1507,14 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             ok = _settle_trades(db, ev["event_id"], ctx, settle, params)
             if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                 ev.update(_row_from_ctx(ev, ctx, extra))
-                _persist(db, ev, before_sig)
+                _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                 return (0, 0)
             extra.pop("settle_rows_attempts", None)
             db.log("settled", {"void": True, "reason": "mercato_annullato",
                                "voided": tele.get("voided"), "winners": tele.get("winners"),
                                "pnl": res.net, "legs": len(res.per_leg)}, ev["event_id"])
             ev.update(_row_from_ctx(ev, ctx, extra))
-            _persist(db, ev, before_sig)
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
             return (0, 1)
         if total is None and now_ts - float(extra["settle_first_ts"]) > _SETTLE_MAX_WAIT_S:
             last_goals = extra.get("last_goals")
@@ -1430,13 +1539,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                     E.apply_decision(ctx, E.Decision("SETTLED", [], "nessuna esposizione: chiusa a %+.2f" % netto,
                                                      updates={"settled_pnl": netto}), now_ts)
                     ev.update(_row_from_ctx(ev, ctx, extra))
-                    _persist(db, ev, before_sig)
+                    _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                     return (0, 1)
                 db.log("error", {"reason": "settle_timeout", "critical": True}, ev["event_id"])
                 d = E.Decision(state="ERROR", actions=[], reason="regolamento non determinabile")
                 E.apply_decision(ctx, d, now_ts)
                 ev.update(_row_from_ctx(ev, ctx, extra))
-                _persist(db, ev, before_sig)
+                _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                 return (0, 0)
         snap = E.Snapshot(now=now_ts, ko_at=info_s.ko_at or now_ts, books={}, inplay=True,
                           market_status="CLOSED", final_total=total)
@@ -1453,14 +1562,14 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             ok = _settle_trades(db, ev["event_id"], ctx, d.telemetry.get("settle") or {}, s_params)
             if not ok and _retry_settle_rows(db, ev["event_id"], ctx, extra, now_ts):
                 ev.update(_row_from_ctx(ev, ctx, extra))
-                _persist(db, ev, before_sig)
+                _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
                 return (0, 0)
             extra.pop("settle_rows_attempts", None)
             settled = 1
             db.log("settled", {"total": total, "pnl": ctx.settled_pnl, **(d.telemetry.get("settle") or {})},
                    ev["event_id"])
         ev.update(_row_from_ctx(ev, ctx, extra))
-        _persist(db, ev, before_sig)
+        _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, settled)
     if row is None or info is None or not info.complete:
         # C1 — la riga c'e' ma una delle due linee NON e' nel feed (tetto dei
@@ -1482,7 +1591,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
             ev["live"] = {**(ev.get("live") or {}), "lines_missing": missing or ["selezioni"],
                           "feed_incomplete": True}
             ev.update(_row_from_ctx(ev, ctx, extra))
-            _persist(db, ev, before_sig)
+            _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
 
     # -- snapshot dal feed --------------------------------------------------------
@@ -1522,7 +1631,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                        {"reason": "snapshot_non_costruibile", "state": ctx.state,
                         "critical": bool(E.open_selections(ctx.legs))}, ev["event_id"])
         ev.update(_row_from_ctx(ev, ctx, extra))
-        _persist(db, ev, before_sig)
+        _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
         return (0, 0)
 
     # -- C1: linee MANCANTI dal feed su una partita con posizione ------------------
@@ -1586,8 +1695,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                                 "critical": True}, ev["event_id"])
                 continue
             book = snap.book(leg.market, leg.selection)
-            if not snap.feed_fresh:
-                continue        # M7: feed stantio = nessun fill simulato
+            if not snap.order_fresh:
+                # M7: feed stantio = nessun fill simulato. Qui la soglia stretta
+                # e' PIU' importante che in live: un fill inventato su un prezzo
+                # che non esiste piu' gonfia un risultato simulato, e su quel
+                # risultato si decide se passare ai soldi veri.
+                continue
             if _resting_filled(leg, book):
                 leg.matched = float(leg.size)
                 leg.avg_price = float(leg.price)
@@ -1641,6 +1754,21 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
 
     # -- decisione -----------------------------------------------------------------
     d = E.decide(ctx, snap, params)
+    # IL TETTO DELLE PARTITE, APPLICATO DOVE NASCONO I SOLDI (13/09).
+    # ``max_open_matches`` era controllato solo quando si ARMA una partita, e
+    # lo stato ``WATCH`` non contava: il conto si rifaceva da zero a ogni giro,
+    # quindi ogni giro ne armava altre dieci e nessuna soglia impediva che poi
+    # entrassero tutte. Cosi' si e' arrivati a 44 partite esposte con un tetto
+    # scritto "10" — e lo scanner serve le quote in gioco solo alle prime 40,
+    # quindi le ultime restavano senza copertura e senza uscita.
+    # Qui si toglie la sola APERTURA: tutto cio' che RIDUCE il rischio (annulli,
+    # uscite, coperture, cash out) passa sempre. Non si blocca mai una via
+    # d'uscita, solo una via d'ingresso — e al giro dopo si riprova.
+    if not puo_aprire and any(a.kind == "place" and a.role in E.OPENING_ROLES for a in d.actions):
+        d = E._strip_openings(d, "tetto partite aperte raggiunto", ctx.state)
+        _log_throttled(db, extra, params, now_ts, "tetto_partite",
+                       {"reason": "max_open_matches", "cap": int(params["max_open_matches"]),
+                        "state": ctx.state}, ev["event_id"])
     for a in d.actions:
         if a.kind == "cancel":
             leg = next((l for l in ctx.legs if l.ref == a.ref), None)
@@ -1798,7 +1926,7 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   "books": {f"{m}|{s}": dataclasses.asdict(b) for (m, s), b in snap.books.items()},
                   "feed_fresh": snap.feed_fresh}
     ev.update(_row_from_ctx(ev, ctx, extra))
-    _persist(db, ev, before_sig)
+    _persist(db, ev, before_sig, now_ts=now_ts, params=params, lotto=lotto)
     return (n_actions, settled)
 
 
@@ -2300,13 +2428,102 @@ def _retry_dossier(db: Any, tracked: Dict[str, Dict[str, Any]], now_ts: float) -
     return risolte
 
 
-def _persist(db: Any, ev: Dict[str, Any], before_sig: str) -> None:
-    if _signature(ev) == before_sig:
-        return
+def _gambe_vive(ev: Dict[str, Any]) -> bool:
+    """La partita ha SOLDI SUL TAVOLO? (una gamba non annullata, non regolata,
+    non archiviata). E' la domanda che decide con che cadenza va rinfrescata
+    l'ora di pubblicazione: dove c'e' qualcosa da chiudere, la scheda deve
+    poter accendere i bottoni; dove non c'e' niente, l'eta' e' solo cosmetica."""
+    for l in (ev.get("positions") or []):
+        if not isinstance(l, dict) or l.get("archived"):
+            continue
+        if str(l.get("status") or "") not in ("cancelled", "settled"):
+            return True
+    return False
+
+
+def _cadenza_pubblicazione(ev: Dict[str, Any], params: Optional[Dict[str, Any]]) -> float:
+    """Ogni quanto si riscrive una riga che NON e' cambiata, solo per rinfrescare
+    ``published_at``. Due velocita': stretta dove ci sono soldi o la partita e'
+    in gioco, larga su una partita che stiamo solo guardando."""
+    p = params or C.DEFAULTS
+    if str(ev.get("state")) in E.TERMINAL_STATES:
+        # regolata / saltata: non si tocca piu'. L'ultima scrittura e' gia' la
+        # verita' definitiva e una card terminale non ha bottoni da illuminare.
+        return 0.0
+    if _gambe_vive(ev) or bool((ev.get("live") or {}).get("inplay")):
+        return float(p.get("publish_heartbeat_s", C.DEFAULTS["publish_heartbeat_s"]) or 0.0)
+    return float(p.get("publish_idle_heartbeat_s", C.DEFAULTS["publish_idle_heartbeat_s"]) or 0.0)
+
+
+def _scrivi_evento(db: Any, ev: Dict[str, Any]) -> None:
     try:
         db.upsert_event(ev)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike] upsert_event %s KO: %s", ev.get("event_id"), str(ex)[:160])
+
+
+def _persist(db: Any, ev: Dict[str, Any], before_sig: str, *,
+             now_ts: Optional[float] = None, params: Optional[Dict[str, Any]] = None,
+             lotto: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+    """Scrive la scheda della partita — ma solo quando ha senso farlo.
+
+    Tre casi, in quest'ordine, e l'ordine e' la parte importante:
+
+    1. La firma SOSTANZIALE e' cambiata: e' successo qualcosa (uno stato, una
+       gamba, un gol, un regolamento). Si scrive SUBITO e da sola, senza
+       cadenze e senza lotti. Rallentare una scrittura di questo tipo vorrebbe
+       dire perdere il filo di una posizione con soldi veri dentro.
+    2. Niente di sostanziale e' cambiato ma e' passata la cadenza di
+       pubblicazione: si riscrive per rinfrescare ``published_at``, cioe' per
+       dire alla scheda "sono ancora vivo". Questa e' una scrittura di
+       cortesia: puo' viaggiare in LOTTO con quelle delle altre partite (una
+       sola POST invece di una per partita).
+    3. Niente di sostanziale e cadenza non ancora scaduta: non si scrive. Non
+       si SCARTA niente — la riga in memoria e' gia' aggiornata e verra'
+       scritta al primo dei due casi qui sopra.
+    """
+    eid = str(ev.get("event_id"))
+    if _signature(ev) != before_sig:
+        _SCRITTO_A[eid] = float(now_ts if now_ts is not None else time.time())
+        if lotto is not None:
+            lotto.pop(eid, None)          # la scrittura immediata copre il lotto
+        _scrivi_evento(db, ev)
+        return
+    ogni = _cadenza_pubblicazione(ev, params)
+    if ogni <= 0:
+        return
+    ora = float(now_ts if now_ts is not None else time.time())
+    if ora - float(_SCRITTO_A.get(eid) or 0.0) < ogni:
+        return
+    _SCRITTO_A[eid] = ora
+    if lotto is None:
+        _scrivi_evento(db, ev)
+    else:
+        lotto[eid] = ev
+
+
+def _svuota_lotto(db: Any, lotto: Dict[str, Dict[str, Any]], params: Dict[str, Any]) -> None:
+    """Le riscritture di cortesia accumulate nel giro, in UNA sola POST.
+
+    Un upsert con N righe costa al database una frazione di N upsert da una riga
+    (una sola andata e ritorno, un solo giro di indici, un solo pezzo di WAL).
+    Se l'accessore non espone la scrittura in blocco — o se il parametro e'
+    spento — si ripiega riga per riga: MAI perdere una scrittura per
+    un'ottimizzazione."""
+    if not lotto:
+        return
+    righe = list(lotto.values())
+    lotto.clear()
+    scrivi_in_blocco = getattr(db, "upsert_events", None)
+    if scrivi_in_blocco is not None and bool(params.get("events_batch_write", True)) and len(righe) > 1:
+        try:
+            scrivi_in_blocco(righe)
+            return
+        except Exception as ex:  # noqa: BLE001 — si ripiega riga per riga, niente va perso
+            logger.warning("[mike] upsert_events in blocco KO (%d righe), riga per riga: %s",
+                           len(righe), str(ex)[:160])
+    for riga in righe:
+        _scrivi_evento(db, riga)
 
 
 # ---------------------------------------------------------------------------

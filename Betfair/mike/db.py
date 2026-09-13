@@ -110,6 +110,29 @@ def upsert_event(row: dict[str, Any]) -> None:
     _sb().table(T_EVENTS).upsert(row, on_conflict="event_id").execute()
 
 
+def upsert_events(rows: list[dict[str, Any]]) -> None:
+    """Le schede di PIU' partite in UNA sola POST.
+
+    CERT. 13/09 (secondo tempo) — LE SCRITTURE. Il ciclo scriveva una POST per
+    partita: con dieci partite vive erano dieci andate e ritorno al secondo, e
+    ogni UPSERT riscrive la riga INTERA (``live``, ``ctx``, ``positions``,
+    ``dossier``, ``markets`` sono tutti JSON grossi), aggiorna gli indici,
+    produce WAL e da' lavoro all'autovacuum. Su un'istanza a corto di budget di
+    IO e' il modo piu' veloce di finirlo.
+
+    PostgREST accetta una LISTA nell'upsert: N righe costano una sola andata e
+    ritorno, un solo giro di indici, un solo pezzo di WAL. La regola di
+    ``upsert_event`` vale identica: ``updated_at`` = ADESSO, imposto e non
+    proposto, altrimenti la UI (che memoizza le card su ``updated_at``)
+    continuerebbe a mostrare la scheda di ore prima.
+    """
+    if not rows:
+        return
+    ora = _now_iso()
+    payload = [{**dict(r), "updated_at": ora} for r in rows]
+    _sb().table(T_EVENTS).upsert(payload, on_conflict="event_id").execute()
+
+
 def delete_events(event_ids: list[str]) -> None:
     if event_ids:
         _sb().table(T_EVENTS).delete().in_("event_id", [str(e) for e in event_ids]).execute()

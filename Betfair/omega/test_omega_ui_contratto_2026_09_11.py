@@ -106,6 +106,28 @@ def _ui_field_bounds() -> dict[str, tuple[float | None, float | None]]:
     return out
 
 
+# -------------------------------------------------------------------------
+# §18 (13/09) — chiavi che il servizio ha GIA' e il pannello non ancora.
+#
+# Le cadenze del "respiro del database" sono nate nel backend il 13/09, mentre
+# ``frontend/src/lib/omega.ts`` era in mano a un'altra sessione: il blocco da
+# incollare nel pannello (interfaccia, default e gruppo «Respiro del database»)
+# e' stato consegnato, ma non e' questa sessione a scriverlo.
+#
+# L'esenzione e' TEMPORANEA E SI SPEGNE DA SOLA: vale solo finche' la chiave e'
+# ASSENTE dalla UI. Appena il pannello la dichiara, i controlli su default e
+# clamp tornano a valere su di essa come su tutte le altre — non c'e' modo di
+# lasciare la UI e il servizio disallineati senza che questo file diventi rosso.
+# Quando il pannello sara' aggiornato, questo insieme va svuotato.
+# Esenzione TEMPORANEA e auto-estinguente: vale solo finche' la chiave e' assente
+# dalla pagina, e appena il pannello la dichiara i controlli su default e clamp
+# tornano a valere da soli. Il 13/09 ci sono passati i nove parametri del respiro
+# del database (§20), scritti nel servizio prima che esistesse il loro pannello.
+# ADESSO E' VUOTA, ed e' il suo stato giusto: una chiave che il servizio onora e
+# che il trader non puo' toccare e' un parametro che di fatto non esiste.
+_IN_ATTESA_DI_PANNELLO: frozenset[str] = frozenset()
+
+
 class TestWhitelistParametri:
     """§7 — la whitelist del servizio e il pannello della UI sono lo stesso
     insieme, con gli stessi limiti e gli stessi default (H-07, M-09, M-10)."""
@@ -113,7 +135,8 @@ class TestWhitelistParametri:
     def test_ogni_chiave_della_whitelist_ha_una_ui_e_viceversa(self) -> None:
         spec = set(C._SPEC)
         ui = set(_ui_param_keys())
-        assert not spec - ui, f"chiavi del servizio SENZA UI (M-10): {sorted(spec - ui)}"
+        mancanti = (spec - ui) - _IN_ATTESA_DI_PANNELLO
+        assert not mancanti, f"chiavi del servizio SENZA UI (M-10): {sorted(mancanti)}"
         assert not ui - spec, f"campi della UI che il servizio IGNORA: {sorted(ui - spec)}"
 
     def test_nessun_campo_duplicato_nel_pannello(self) -> None:
@@ -126,7 +149,15 @@ class TestWhitelistParametri:
         silenzio un calibratore o abbassa un cap con un «Salva» involontario."""
         ui = _ui_defaults()
         diff: list[str] = []
-        for key, want in C.DEFAULTS.items():
+        # I default DICHIARATI (``_SPEC``), non ``C.DEFAULTS``: quello e' un dict
+        # mutabile che il conftest azzera per spegnere le cadenze durante i test.
+        # Leggendo quello, il contratto avrebbe preteso dalla UI gli zeri della
+        # suite invece dei default veri del servizio — cioe' avrebbe certificato
+        # una pagina sbagliata.
+        for key, spec in C._SPEC.items():
+            want = spec[0]
+            if key not in ui and key in _IN_ATTESA_DI_PANNELLO:
+                continue      # §18: campo non ancora nel pannello (vedi sopra)
             assert key in ui, f"default mancante nella UI: {key}"
             got = ui[key]
             if isinstance(want, bool):
@@ -147,6 +178,8 @@ class TestWhitelistParametri:
         for key, (_default, cast, lo, hi) in C._SPEC.items():
             if cast is bool or cast is str:
                 continue
+            if key not in bounds and key in _IN_ATTESA_DI_PANNELLO:
+                continue      # §18: campo non ancora nel pannello (vedi sopra)
             assert key in bounds, f"chiave numerica senza campo number nella UI: {key}"
             ui_lo, ui_hi = bounds[key]
             if lo is not None and (ui_lo is None or abs(ui_lo - float(lo)) > 1e-9):

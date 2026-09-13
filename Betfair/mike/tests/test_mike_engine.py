@@ -28,7 +28,7 @@ def book(bb, bs=100.0, bl=None, ls=100.0, status="OPEN", inplay=False):
 
 
 def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=None,
-         ht_active=False, feed_fresh=True, hazard=None, p4_market=None,
+         ht_active=False, feed_fresh=True, order_fresh=None, hazard=None, p4_market=None,
          last_goal_ts=None, market_status="OPEN", final_total=None, pressure=1.0, model_probs=None,
          p_total_model=None, p_total_emp=None):
     books = {}
@@ -40,6 +40,9 @@ def snap(now, *, u35=None, o45=None, u45=None, inplay=False, minute=None, goals=
         books[(E.MARKET_OU45, E.SEL_UNDER)] = u45
     return E.Snapshot(now=now, ko_at=KO, books=books, inplay=inplay, minute=minute,
                       goals=goals, ht_active=ht_active, feed_fresh=feed_fresh,
+                      # se non detto, la freschezza d'ORDINE segue quella di lettura:
+                      # gli scenari scritti prima del 13/09 restano validi cosi' com'erano.
+                      order_fresh=(feed_fresh if order_fresh is None else order_fresh),
                       hazard=hazard, p4_market=p4_market, last_goal_ts=last_goal_ts,
                       market_status=market_status, final_total=final_total,
                       pressure=pressure, model_probs=model_probs,
@@ -232,8 +235,18 @@ def test_watch_entry_guards(bb, bs, bl, reason):
 
 
 def test_watch_no_entry_when_feed_stale_or_disabled():
-    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50), feed_fresh=False), params())
+    # 13/09 — la guardia d'ingresso guarda ``order_fresh``, non ``feed_fresh``:
+    # sono due cose diverse. ``feed_fresh`` dice "posso GUARDARE questa riga",
+    # ``order_fresh`` dice "posso metterci dei soldi sopra". Un prezzo si puo'
+    # valutare anche se la riga e' ferma da un minuto (lo scanner scrive solo
+    # cio' che cambia: quel prezzo E' il prezzo corrente); attraversare lo spread
+    # su un prezzo che non sappiamo se qualcuno sta ancora guardando, no.
+    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50), order_fresh=False), params())
     assert d.actions == [] and "feed" in d.reason
+    # e il contrario: riga che si puo' guardare ma non ordinare -> niente ingresso
+    d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50),
+                                    feed_fresh=True, order_fresh=False), params())
+    assert d.actions == []
     d = E.decide(E.MatchCtx(), snap(KO - 2 * H, u35=book(1.50)), params(pre_enabled=False))
     assert d.actions == []
 

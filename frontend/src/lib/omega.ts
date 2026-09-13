@@ -229,6 +229,28 @@ export interface OmegaParams {
     select_p_hedge: number;
     /** peso del costo di copertura nel ranking EV */
     select_ev_kappa: number;
+
+    // ---- §20: il respiro del database (13/09) — ogni quanto si RILEGGE ----
+    // Nessuno di questi tocca la logica di trading: la freschezza delle quote
+    // resta giudicata sull'updated_at della riga, non su quando l'abbiamo letta.
+    /** righe del feed unico: è la lettura che decide un ordine, tienila corta */
+    feed_cache_s: number;
+    /** battito dello scanner */
+    scanner_status_cache_s: number;
+    /** RPC degli aggregati (stop giornaliero, cap, testata) */
+    aggregates_cache_s: number;
+    /** gambe ed eventi già fatti, budget dei tentativi */
+    sets_cache_s: number;
+    /** timbro dei risultati reali 1T/2T */
+    results_every_s: number;
+    /** punteggio, fase e suggerimenti delle missioni */
+    missions_every_s: number;
+    /** rinfresco della cache eventi (menu Manuale e tab Missione) */
+    events_refresh_s: number;
+    /** statistiche a bot fermo */
+    idle_stats_s: number;
+    /** ritmo del ciclo quando non c'è niente che si muove */
+    idle_cycle_s: number;
 }
 
 /** P del modello di un trade Omega (meta.model.{p_model_raw,calibrated}) */
@@ -771,6 +793,15 @@ export function phaseLabel(phase: OmegaTrade['phase'] | undefined): string {
 export const OMEGA_DAILY_GOAL_MAX = 100000;
 
 export const OMEGA_PARAM_DEFAULTS: OmegaParams = {
+    feed_cache_s: 2,
+    scanner_status_cache_s: 10,
+    aggregates_cache_s: 20,
+    sets_cache_s: 30,
+    results_every_s: 60,
+    missions_every_s: 5,
+    events_refresh_s: 1800,
+    idle_stats_s: 60,
+    idle_cycle_s: 60,
     price_min: 20,
     price_max: 120,
     entry_minute_min: 30,
@@ -949,6 +980,21 @@ export const OMEGA_PARAM_GROUPS: ParamGroup[] = [
             { key: 'paper_fill_ttl_s', label: 'PAPER: TTL quasi-FOK (s)', type: 'number', step: 5, min: 5, max: 600 },
             { key: 'omega_live_via_flumine', label: 'LIVE via coda flumine (FILL_OR_KILL)', type: 'boolean' },
             { key: 'live_fill_deadline_s', label: 'LIVE: scadenza dell’esito FOK (s)', type: 'number', step: 5, min: 5, max: 300 },
+        ],
+    },
+    {
+        label: 'Respiro del database',
+        note: 'ogni quanto si rilegge una cosa che nel frattempo non è cambiata. NON cambiano la logica di trading: la freschezza delle quote resta giudicata sull’updated_at della riga. 0 = nessuna cache, cioè il comportamento di prima. Il 13/09 il database è andato giù per esaurimento del budget di IO su disco.',
+        fields: [
+            { key: 'feed_cache_s', label: 'Feed: rilettura delle quote (s)', type: 'number', step: 0.5, min: 0, max: 30, hint: 'è la lettura che decide un ordine: tienila corta. 2 s contro i 15/25 s oltre i quali la riga viene comunque scartata' },
+            { key: 'scanner_status_cache_s', label: 'Stato dello scanner (s)', type: 'number', step: 1, min: 0, max: 300, hint: 'l’età letta viene invecchiata del tempo passato: allungarla rende più severi, mai più permissivi' },
+            { key: 'aggregates_cache_s', label: 'Aggregati P&L (s)', type: 'number', step: 5, min: 0, max: 300, hint: 'dopo un piazzamento, un regolamento o un green-up si ricalcolano comunque subito' },
+            { key: 'sets_cache_s', label: 'Gambe già fatte e tentativi (s)', type: 'number', step: 5, min: 0, max: 600, hint: 'le scrive il servizio stesso: fra una rilettura e l’altra la copia in memoria è la verità' },
+            { key: 'results_every_s', label: 'Timbro dei risultati 1T/2T (s)', type: 'number', step: 10, min: 0, max: 600 },
+            { key: 'missions_every_s', label: 'Aggiornamento delle missioni (s)', type: 'number', step: 1, min: 0, max: 120 },
+            { key: 'events_refresh_s', label: 'Rinfresco della lista eventi (s)', type: 'number', step: 300, min: 0, max: 86400 },
+            { key: 'idle_stats_s', label: 'Statistiche a bot fermo (s)', type: 'number', step: 10, min: 0, max: 600 },
+            { key: 'idle_cycle_s', label: 'Ritmo del ciclo a vuoto (s)', type: 'number', step: 10, min: 0, max: 600, hint: 'usato solo quando non c’è NIENTE aperto, nessuna missione e nessuna partita in finestra' },
         ],
     },
 ];

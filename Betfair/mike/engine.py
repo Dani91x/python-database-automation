@@ -167,6 +167,11 @@ class Snapshot:
     goals: Optional[int] = None
     ht_active: bool = False
     feed_fresh: bool = True
+    # freschezza per EMETTERE UN ORDINE: piu' stretta, e misurata sul PRODUTTORE
+    # invece che sull'eta' della riga (vedi ``feed.order_fresh``). Il default e'
+    # True perche' gli scenari dei test che non la passano restano validi: chi
+    # vuole provare il rifiuto la mette a False apposta.
+    order_fresh: bool = True
     hazard: Optional[float] = None
     p4_market: Optional[float] = None
     p4_model: Optional[float] = None
@@ -1482,6 +1487,33 @@ def has_unknown_orders(ctx: MatchCtx) -> bool:
     return any(l.needs_reconcile for l in ctx.legs)
 
 
+def ha_esposizione(stato: Optional[str], gambe: Optional[List[Leg]] = None) -> bool:
+    """La partita ha DAVVERO dei soldi sopra?
+
+    Due vie, e basta una: uno stato operativo (il bot ha gia' fatto qualcosa che
+    non e' guardare), oppure una gamba viva o abbinata. Si risponde su cio' che
+    e' successo, non su cio' che potrebbe succedere.
+
+    Serve a contare le partite che consumano ``max_open_matches``: osservare non
+    costa niente e non deve occupare un posto, entrare si'.
+    """
+    st = str(stato or "")
+    if st in TERMINAL_STATES:
+        return False
+    if st not in ("WATCH", "IDLE_LIVE"):
+        return True
+    for l in (gambe or ()):
+        # una gamba ARCHIVIATA non conta: il ciclo e' stato chiuso e il capitale
+        # non e' piu' a rischio. E' la stessa regola con cui lo scanner decide
+        # chi ha diritto alle quote in gioco (``safe_strategy.db._mike_has_exposure``):
+        # due tetti che contassero cose diverse si darebbero torto a vicenda.
+        if l.archived:
+            continue
+        if l.matched > 0 or l.is_live:
+            return True
+    return False
+
+
 def _strip_openings(d: Decision, why: str, stato_ora: Optional[str] = None) -> Decision:
     """Toglie da una decisione le APERTURE, lasciando cancel e chiusure (H8).
 
@@ -1667,7 +1699,13 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
         return "chiusura manuale in corso"
     if not params["pre_enabled"]:
         return "pre_disabilitato"
-    if not snap.feed_fresh:
+    if not snap.order_fresh:
+        # 13/09 — era ``feed_fresh`` con 15 s sull'``updated_at`` della riga. Ma
+        # quell'``updated_at`` dice "quando e' cambiato qualcosa", non "quando ho
+        # guardato": su una linea pre-partita ferma non scende MAI sotto i 15 s
+        # (misurato: 24 s la piu' fresca di 57 righe, e 24 ingressi rifiutati in
+        # archivio per questo motivo). Ora la severita' sta sul battito dello
+        # scanner, che e' la cosa che dice davvero se qualcuno sta guardando.
         return "feed stantio"
     window_from = snap.ko_at - float(params["entry_hours_before_ko"]) * 3600.0
     if snap.now < window_from:
@@ -2587,7 +2625,7 @@ def _decide_flat(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float
         return Decision("FLAT", [], "flat: rientro disabilitato (chiusura manuale)")
     if not params["reentry_enabled"] or not ctx.reentry_allowed or ctx.reentry_done:
         return Decision("FLAT", [], "flat")
-    if not snap.feed_fresh or snap.goals is None or snap.minute is None:
+    if not snap.order_fresh or snap.goals is None or snap.minute is None:
         return Decision("FLAT", [], "flat: dati feed mancanti")
     g = int(snap.goals)
     if g < 1 or g > int(params["reentry_max_goals"]):

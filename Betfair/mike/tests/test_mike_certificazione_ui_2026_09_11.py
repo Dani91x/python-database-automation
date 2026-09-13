@@ -146,21 +146,39 @@ def backend_activity_kinds() -> set[str]:
 # 1. CONTRATTO DATI — parametri
 # ===========================================================================
 def test_contratto_parametri_stesse_chiavi_in_ui_e_backend():
+    """La UI deve mostrare TUTTO quello che il backend onora, e niente di piu'.
+
+    Unica deroga ammessa: ``C.BACKEND_ONLY_PARAMS``, la lista DICHIARATA dei
+    parametri che il backend ha aggiunto e che la UI non espone ancora. Non e'
+    un ammorbidimento del contratto: un parametro che non sta li' dentro e che
+    manca alla UI fa comunque rosso, ed e' la lista stessa a dover tornare
+    vuota quando il frontend si allinea.
+    """
     fields, defaults = ts_param_fields(), ts_param_defaults()
-    assert set(fields) == set(C.PARAM_SPEC), {
-        "solo_ui": sorted(set(fields) - set(C.PARAM_SPEC)),
-        "solo_backend": sorted(set(C.PARAM_SPEC) - set(fields)),
+    attesi = set(C.PARAM_SPEC) - set(C.BACKEND_ONLY_PARAMS)
+    assert set(fields) == attesi, {
+        "solo_ui": sorted(set(fields) - attesi),
+        "solo_backend": sorted(attesi - set(fields)),
     }
-    assert set(defaults) == set(C.PARAM_SPEC), {
-        "default_solo_ui": sorted(set(defaults) - set(C.PARAM_SPEC)),
-        "default_mancanti": sorted(set(C.PARAM_SPEC) - set(defaults)),
+    assert set(defaults) == attesi, {
+        "default_solo_ui": sorted(set(defaults) - attesi),
+        "default_mancanti": sorted(attesi - set(defaults)),
     }
+
+
+def test_i_parametri_solo_backend_esistono_davvero_nella_whitelist():
+    """La deroga non deve diventare un cassetto dove nascondere refusi: ogni
+    chiave elencata deve essere un parametro VERO del backend."""
+    for key in C.BACKEND_ONLY_PARAMS:
+        assert key in C.PARAM_SPEC, f"{key} e' dichiarato solo-backend ma non esiste in PARAM_SPEC"
 
 
 def test_contratto_parametri_stessi_clamp_scelte_e_default():
     fields, defaults = ts_param_fields(), ts_param_defaults()
     kind_of = {bool: "bool", int: "number", float: "number"}
     for key, (default, cast, lo, hi, choices) in C.PARAM_SPEC.items():
+        if key in C.BACKEND_ONLY_PARAMS:
+            continue                      # non ancora in UI: vedi il test sopra
         f = fields[key]
         expected_kind = kind_of.get(cast, "choice" if choices else "text")
         assert f["kind"] == expected_kind, f"{key}: kind UI {f['kind']} != {expected_kind}"

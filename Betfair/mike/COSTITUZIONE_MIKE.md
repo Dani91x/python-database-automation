@@ -1521,10 +1521,88 @@ parametri del giro precedente (`_ULTIMI_PARAMS`) bastano a decidere quanto aspet
 4. `svuota_le_cache()` esiste per forzare un riallineamento immediato (riavvio,
    modifica fatta a mano sul database).
 
-### 17.5 Resta da fare
+### 17.5 LE SCRITTURE (13/09/2026, sera) — il pezzo che mancava
+
+Sulle letture il lavoro era fatto (1680 → 198 al minuto). Ma il log dell'app accesa,
+la sera stessa, diceva che il problema vero era rimasto scoperto. In **sei secondi**:
+
+```
+21:37:46,563  POST /rest/v1/mike_events?on_conflict=event_id
+21:37:46,667  POST /rest/v1/mike_events?on_conflict=event_id
+21:37:47,769  POST /rest/v1/mike_events?on_conflict=event_id
+21:37:48,270  POST /rest/v1/mike_events?on_conflict=event_id
+21:37:49,138  POST /rest/v1/mike_events?on_conflict=event_id
+21:37:49,553  PATCH /rest/v1/mike_control?id=eq.1
+```
+
+Su un database a corto di IO **una scrittura costa più di una lettura**: l'UPSERT
+riscrive la riga intera, aggiorna gli indici, produce WAL e alimenta l'autovacuum.
+E la riga `mike_events` non è piccola: `live`, `ctx`, `positions`, `dossier`,
+`markets` sono tutti JSON.
+
+**La causa esatta, e non era una svista di progetto.** Il write-on-change c'era già:
+`_persist` confrontava la firma della riga prima e dopo il giro e scriveva solo se
+diversa. Ma `_signature` guardava **tutta** la riga, e dentro `live` c'erano:
+
+- `published_at` / `published_ts` — aggiunti perché la scheda ci calcola sopra
+  un'età che **ticca**; per costruzione valgono «adesso» a ogni giro;
+- `feed_age_s` / `scanner_age_s` — sono età, quindi **crescono da sole**;
+- `books`, `cashout`, `posizioni`, `hazard`… — si muovono col miglior prezzo, che
+  oscilla di un tick in continuazione;
+- `ctx.last_reason` — una frase che contiene prezzi e liquidità
+  («liquidità 12.40 < 15.00»): cambia a ogni tick dicendo la stessa cosa.
+
+Con quei campi dentro al confronto, **due giri identici producevano due firme
+diverse**: il write-on-change esisteva nel codice e non esisteva nei fatti.
+
+**Misura** (cinque partite, sessanta giri da un secondo, il book che oscilla di un
+tick ogni due secondi — la scena del log qui sopra):
+
+| scena | prima | dopo |
+|---|---|---|
+| pre-match, nessuna posizione | 306 scritture/min | **8** |
+| in gioco, posizione coperta | 306 scritture/min | **19** |
+
+**Come è implementato.** `service._signature` lavora su `_corpo_sostanziale`, che
+toglie dal confronto i campi elencati in `_LIVE_VOLATILI` e `_CTX_VOLATILI`. La
+lista è **nera, non bianca**: un campo nuovo che nessuno ha classificato conta come
+fatto, e al massimo si scrive una volta di troppo. Col criterio opposto un fatto
+nuovo potrebbe non essere scritto **mai**, e quello costa soldi.
+
+`published_at` **non si può togliere**: la card somma l'età congelata del feed al
+tempo passato dalla pubblicazione (`mike.ts::etaQuoteS`) e oltre 20 s diventa rossa
+«FEED FERMO», che **spegne il cash out**. Quindi si rallenta, con una cadenza sua:
+
+| parametro | default | perché |
+|---|---|---|
+| `publish_heartbeat_s` | 5.0 | partita con soldi sul tavolo o in gioco: 5 s + 1-3 s di feed restano sotto i 20 s del rosso, i bottoni non si spengono mai |
+| `publish_idle_heartbeat_s` | 60.0 | partita solo osservata: niente da chiudere, nessun bottone da illuminare, l'età è cosmetica |
+| `events_batch_write` | True | le riscritture di cortesia del giro in **una** POST (`db.upsert_events`), non una per partita |
+| `stats_min_s` | 10.0 | `mike_control` è ascoltato in realtime: ogni PATCH sveglia tutte le pagine aperte |
+| `heartbeat_min_s` | 20.0 | `ServiceHealthChip.SERVICE_STALE_S` = 45 s: due battiti di margine |
+
+Una partita **terminale** (SETTLED/ERROR/SKIPPED) non si riscrive più: cadenza 0.
+
+**Le tre regole inderogabili**, fissate dai test di
+`tests/test_mike_respiro_scritture_2026_09_13.py`:
+
+1. la logica di trading **non cambia**: cambia solo **quando** si scrive;
+2. una scrittura che porta un **fatto nuovo** (un ordine, una gamba abbinata, un gol,
+   un cambio di stato, un regolamento) parte **subito**, senza cadenze e senza lotti —
+   `_persist` la riconosce dalla firma sostanziale diversa e la manda da sola,
+   togliendola anche dal lotto se ci era già finita;
+3. **rallentare non vuol dire scartare**: il lotto si svuota in un `finally` (una
+   partita rotta non si porta dietro le scritture delle altre) e se la POST in blocco
+   fallisce si ripiega riga per riga.
+
+### 17.6 Resta da fare
 
 - Estendere la stessa disciplina agli **altri servizi**. Safe ha già `poll_interval_s`
   regolabile e Omega i suoi intervalli di refresh, ma nessuno dei due ha ancora una
-  **cache di lettura** con cadenza dichiarata.
+  **cache di lettura** con cadenza dichiarata — né un write-on-change sulle scritture.
 - Misurare i tempi di risposta **dopo** il riavvio con il respiro attivo, e confrontarli
   con i 3-13 s misurati ad app spenta.
+- I cinque parametri delle scritture sono nella whitelist frontend come tutti gli altri
+  (gruppo «rischio»): `C.BACKEND_ONLY_PARAMS` è tornata **vuota** ed è questo il suo
+  stato normale. Ogni cadenza che governa il carico sul database va messa in mano al
+  trader, non nascosta nel codice.

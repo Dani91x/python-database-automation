@@ -79,7 +79,35 @@ PARAM_SPEC: dict[str, Spec] = {
     "entry_hours_before_ko": (3.0, float, 0.25, 12.0, None),
     "competition_filter": ("", str, None, None, None),
     "decide_min_interval_ms": (500, int, 100, 5000, None),
-    "feed_max_age_s": (15.0, float, 3.0, 60.0, None),
+    # MISURA 13/09/2026 ore 21:37, 57 righe di calcio nel feed: la piu' fresca
+    # aveva 24 s, NESSUNA sotto i 15 s. Non e' un guasto. Lo scanner pubblica UNA
+    # volta per giro e il giro dura quanto il lavoro di rete che contiene (poll
+    # REST 10/20/60 s, cataloghi secondari ogni 20 s, catalogo pieno ogni 300 s).
+    # 15 s stava SOTTO il pavimento fisico del produttore: una soglia che non
+    # poteva essere soddisfatta mai, e infatti "NON entra: feed stantio" e'
+    # scattata 24 volte. 45 s = due pubblicazioni con margine.
+    "feed_max_age_s": (45.0, float, 3.0, 180.0, None),
+    # Deroga "scanner vivo". Lo scanner e' write-on-change: una riga ferma vuol
+    # dire che su QUELLA partita non si e' mosso niente, non che il feed e' rotto.
+    # Era CABLATA a 30 s nel default di ``feed.feed_fresh`` e cadeva a ogni giro
+    # lento, perche' il battito si scrive IN CODA al giro e la sua eta' misura la
+    # DURATA DEL GIRO, non la vita dello scanner. 75 s = tre battiti mancati.
+    "scanner_alive_max_s": (75.0, float, 10.0, 300.0, None),
+    # ---- soglia STRETTA: SOLO per emettere un ORDINE ----
+    # Guardare e valutare su una riga di 60 s e' corretto (il prezzo non si e'
+    # mosso). Attraversare lo spread con dei soldi no. Ma la severita' va messa
+    # sul PRODUTTORE, non sull'eta' della riga: una riga vecchia con lo scanner
+    # che batte E' il prezzo corrente, una riga giovane con lo scanner morto e'
+    # un caso che non esiste.
+    # Da quanto tempo al massimo puo' essere stato visto un BOOK perche' il suo
+    # prezzo valga ancora. E' una domanda diversa da "da quanto non cambia": lo
+    # scanner marca ogni blocco con ``seen_ms`` (ultimo book RICEVUTO) oltre a
+    # ``ts_ms`` (ultimo CAMBIO). Un mercato uscito dal feed resta in cache con
+    # l'ultimo prezzo e la riga continua ad aggiornarsi per minuto e punteggio:
+    # senza questo controllo si copre o si esce su un prezzo morto.
+    "book_seen_max_s": (90.0, float, 5.0, 600.0, None),
+    "order_max_age_s": (20.0, float, 3.0, 120.0, None),
+    "order_scanner_max_s": (30.0, float, 5.0, 120.0, None),
     # ---- pre-match ----
     "pre_enabled": (True, bool, None, None, None),
     "pre_entry_price_min": (1.30, float, 1.01, 20.0, None),
@@ -227,9 +255,13 @@ PARAM_SPEC: dict[str, Spec] = {
     # Questi parametri NON toccano la logica di trading: dicono solo ogni quanto
     # si richiede al database una cosa che nel frattempo non e' cambiata.
     #
-    # il FEED: lo scanner non lo aggiorna piu' in fretta di cosi', e la soglia di
-    # freschezza delle quote (``feed_max_age_s``) e' comunque 15 s
-    "feed_cache_s": (2.0, float, 0.0, 30.0, None),
+    # il FEED: MISURATO il 13/09 — il produttore riscrive ogni ~22 s (una sola
+    # upsert per giro). Rileggerlo ogni 2 s vuol dire dieci letture identiche per
+    # ogni pubblicazione, circa 300 KB l'una (57 righe col payload intero): 150
+    # KB al secondo di JSON serializzato tutto il giorno, per niente. La
+    # freschezza continua a giudicarsi sull'``updated_at`` (``feed.feed_fresh``):
+    # rileggere una riga non la ringiovanisce.
+    "feed_cache_s": (4.0, float, 0.0, 30.0, None),
     # le PARTITE: il servizio e' l'UNICO che scrive mike_events, quindi la sua
     # copia in memoria e' la verita'. La rilettura completa serve solo a
     # riallinearsi dopo un riavvio o una modifica fatta da fuori.
@@ -242,6 +274,45 @@ PARAM_SPEC: dict[str, Spec] = {
     # quando non c'e' NIENTE che si muove (nessuna partita in gioco, nessun
     # ordine vivo, nessuna richiesta) il ciclo rallenta da solo
     "idle_cycle_s": (5.0, float, 1.0, 60.0, None),
+    # ---- quanto spesso si SCRIVE sul database (13/09, secondo tempo) ----------
+    # Sulle LETTURE il lavoro era fatto (i parametri qui sopra). Ma su un
+    # database a corto di IO una SCRITTURA costa piu' di una lettura: l'UPSERT
+    # riscrive la riga INTERA, aggiorna gli indici, produce WAL e da' lavoro
+    # all'autovacuum. E la riga ``mike_events`` non e' piccola: dentro ci sono
+    # ``live``, ``ctx``, ``positions``, ``dossier``, ``markets``, tutti JSON.
+    # Riscriverla piu' volte al secondo, per partita, e' il modo peggiore di
+    # spendere il budget.
+    #
+    # Il freno e' il "write-on-change": si riscrive solo se e' cambiato
+    # QUALCOSA DI SOSTANZIALE (vedi service._signature). Restano fuori dal
+    # confronto i campi che si muovono DA SOLI: l'ora di pubblicazione, l'eta'
+    # del feed, il book che oscilla di un tick. Ma l'ora di pubblicazione serve
+    # davvero alla scheda — ci calcola sopra un'eta' che TICKA, ed e' il
+    # semaforo dei bottoni che mandano ordini veri — quindi non si puo'
+    # semplicemente smettere di scriverla: va rinfrescata con una CADENZA sua.
+    #
+    # 5 s e' l'equilibrio: la card somma l'eta' congelata del feed (1-3 s con lo
+    # scanner vivo) al tempo passato dalla pubblicazione, e il badge diventa
+    # ROSSO "FEED FERMO" — spegnendo il cash out — oltre i 20 s. Con 5 s il
+    # peggio che si vede e' l'ambra, i bottoni restano vivi, e le scritture a
+    # vuoto scendono da 60 a 12 al minuto per partita.
+    "publish_heartbeat_s": (5.0, float, 0.0, 120.0, None),
+    # Una partita solo OSSERVATA (nessuna gamba viva, niente da chiudere) non ha
+    # nessun bottone da illuminare: li' l'eta' e' cosmetica e il battito puo'
+    # essere molto piu' largo. E' la stragrande maggioranza delle righe nelle ore
+    # pre-partita, ed e' quello che il 13/09 riempiva il log di POST.
+    "publish_idle_heartbeat_s": (60.0, float, 0.0, 600.0, None),
+    # una sola POST con tutte le righe da rinfrescare invece di una per partita
+    # (l'upsert di PostgREST accetta una lista). A False si torna riga per riga.
+    "events_batch_write": (True, bool, None, None, None),
+    # ---- mike_control: il battito e le stats --------------------------------
+    # La UI ascolta ``mike_control`` in REALTIME: ogni PATCH sveglia tutte le
+    # pagine aperte. Le stats cambiano quasi sempre (il P&L aperto si muove col
+    # book), quindi senza una cadenza si scriverebbe a ogni giro.
+    # ``ServiceHealthChip.SERVICE_STALE_S`` dichiara il servizio morto a 45 s:
+    # un battito ogni 20 s lascia due battiti di margine.
+    "stats_min_s": (10.0, float, 0.0, 300.0, None),
+    "heartbeat_min_s": (20.0, float, 0.0, 300.0, None),
 }
 
 # Parametri RIMOSSI dalla whitelist l'11/09/2026 (audit M3) perche' non avevano
@@ -262,6 +333,28 @@ PARAM_SPEC: dict[str, Spec] = {
 #                         al BEST, gia' governata da ``pre_min_back_size_factor``.
 #                         Se servira', va reintrodotto con default 0 (= spento).
 REMOVED_PARAMS = ("max_matches", "catalogue_refresh_s", "stream_extra_lines", "min_total_matched")
+
+# Parametri che il BACKEND onora ma che la whitelist frontend
+# (``frontend/src/lib/mike.ts::MIKE_PARAM_FIELDS``) non espone ANCORA.
+#
+# Perche' esiste questa lista, invece di allineare subito la UI: aggiunti il
+# 13/09/2026 nella sessione sulle SCRITTURE, con il perimetro limitato a
+# ``Betfair/mike/*`` (``frontend/`` era in mano a un'altra sessione che ci
+# stava scrivendo nello stesso momento). Il disallineamento e' quindi
+# DICHIARATO, non nascosto: il test di contratto UI lo controlla contro questa
+# lista invece di essere semplicemente ammorbidito.
+#
+# Nel frattempo si toccano da ``mike_control.params`` (passano da
+# ``merge_params``, quindi con cast, clamp e default come tutti gli altri).
+# Chi allineera' la UI deve SVUOTARE questa tupla: il test di contratto torna
+# a pretendere la parita' piena da solo.
+# Parametri che il backend onora ma che la pagina non espone ancora.
+# DEVE RESTARE VUOTA: ogni cadenza che governa il comportamento del bot o il
+# carico sul database va messa in mano al trader, non nascosta nel codice. La
+# tupla esiste solo come valvola dichiarata per un parametro appena nato, e il
+# test di contratto (``test_mike_certificazione_ui``) fallisce se una chiave ci
+# resta dentro senza motivo scritto qui accanto.
+BACKEND_ONLY_PARAMS: tuple[str, ...] = ()
 
 DEFAULTS: dict[str, Any] = {k: v[0] for k, v in PARAM_SPEC.items()}
 

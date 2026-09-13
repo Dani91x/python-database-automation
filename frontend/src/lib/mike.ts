@@ -10,6 +10,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime } from '@/lib/format';
 import { sideMeta, T, type ActivityMeta } from '@/lib/tradeStatus';
+import {
+    groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, SETTLED_STATES,
+    type CicloGroup, type EventGroup,
+} from '@/lib/eventGroups';
 
 export type MikeStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type MikeMode = 'paper' | 'live';
@@ -387,7 +391,11 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'entry_hours_before_ko', label: 'Finestra pre-match (ore prima del KO)', kind: 'number', step: 0.25, min: 0.25, max: 12, hint: 'da quante ore prima del calcio d’inizio il bot lavora la partita', group: 'generale' },
     { key: 'competition_filter', label: 'Filtro competizioni', kind: 'text', hint: 'elenco separato da virgole (vuoto = tutte), es. "serie a, premier"', group: 'generale' },
     { key: 'decide_min_interval_ms', label: 'Cadenza decisioni (ms)', kind: 'number', step: 100, min: 100, max: 5000, hint: 'intervallo minimo fra due decisioni sulla stessa partita', group: 'generale' },
-    { key: 'feed_max_age_s', label: 'Feed: età max riga (s)', kind: 'number', step: 1, min: 3, max: 60, hint: 'riga più vecchia e scanner fermo = niente nuovi ingressi', group: 'generale' },
+    { key: 'feed_max_age_s', label: 'Feed: età max riga (s)', kind: 'number', step: 1, min: 3, max: 180, hint: 'per GUARDARE. Lo scanner scrive solo ciò che cambia: una riga ferma vuol dire che il prezzo non si è mosso, non che il feed è rotto', group: 'generale' },
+    { key: 'scanner_alive_max_s', label: 'Feed: scanner vivo entro (s)', kind: 'number', step: 5, min: 10, max: 300, hint: 'deroga: riga vecchia ma scanner che batte = prezzo corrente', group: 'generale' },
+    { key: 'book_seen_max_s', label: 'Book: visto entro (s)', kind: 'number', step: 5, min: 5, max: 600, hint: 'un mercato uscito dal feed resta in cache con l’ultimo prezzo: oltre questa età il book è trattato come ASSENTE, mai come valido', group: 'generale' },
+    { key: 'order_max_age_s', label: 'Ordine: età max riga (s)', kind: 'number', step: 1, min: 3, max: 120, hint: 'soglia STRETTA, usata solo per emettere un ordine o chiudere a mano', group: 'generale' },
+    { key: 'order_scanner_max_s', label: 'Ordine: scanner vivo entro (s)', kind: 'number', step: 5, min: 5, max: 120, hint: 'oltre l\u2019età sopra si ordina solo se lo scanner ha battuto da poco', group: 'generale' },
     { key: 'pre_enabled', label: 'Pre-match attivo', kind: 'bool', hint: 'off = nessun ingresso pre-match', group: 'pre' },
     { key: 'pre_entry_price_min', label: 'Quota Under 3.5 MIN', kind: 'number', step: 0.01, min: 1.01, max: 20, hint: 'sotto: rendimento troppo basso', group: 'pre' },
     { key: 'pre_entry_price_max', label: 'Quota Under 3.5 MAX', kind: 'number', step: 0.05, min: 1.01, max: 20, hint: 'sopra: partita troppo aperta', group: 'pre' },
@@ -469,11 +477,17 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'aggregates_cache_s', label: 'Ricalcola gli aggregati ogni (s)', kind: 'number', step: 5, min: 0, max: 300, hint: 'governano lo stop giornaliero, non è una decisione al secondo', group: 'rischio' },
     { key: 'reconcile_every_s', label: 'Ripara lo specchio ordini ogni (s)', kind: 'number', step: 5, min: 0, max: 600, hint: 'rete di sicurezza fra gambe e righe di database: per partita basta ogni mezzo minuto', group: 'rischio' },
     { key: 'idle_cycle_s', label: 'Ciclo a riposo ogni (s)', kind: 'number', step: 1, min: 1, max: 60, hint: 'senza partite in gioco né ordini vivi il ciclo rallenta da solo', group: 'rischio' },
+    { key: 'publish_heartbeat_s', label: 'Rinfresca l\u2019ora di pubblicazione ogni (s)', kind: 'number', step: 1, min: 0, max: 120, hint: 'solo cortesia per la pagina: un fatto nuovo (ordine, gamba abbinata, cambio di stato) si scrive sempre SUBITO', group: 'rischio' },
+    { key: 'publish_idle_heartbeat_s', label: 'Rinfresco a riposo ogni (s)', kind: 'number', step: 5, min: 0, max: 600, hint: 'partite senza niente in corso: si rinfresca molto più di rado', group: 'rischio' },
+    { key: 'events_batch_write', label: 'Scrivi le schede in blocco', kind: 'bool', hint: 'una sola scrittura per giro invece di una per partita', group: 'rischio' },
+    { key: 'stats_min_s', label: 'Riscrivi le statistiche ogni (s)', kind: 'number', step: 5, min: 0, max: 300, hint: 'i numeri di testata non sono una decisione al secondo', group: 'rischio' },
+    { key: 'heartbeat_min_s', label: 'Battito del servizio ogni (s)', kind: 'number', step: 5, min: 0, max: 300, hint: 'dice solo che il servizio è vivo', group: 'rischio' },
 ];
 
 export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     stake: 10, commission_pct: 5, entry_hours_before_ko: 3,
-    competition_filter: '', decide_min_interval_ms: 500, feed_max_age_s: 15,
+    competition_filter: '', decide_min_interval_ms: 500, feed_max_age_s: 45,
+    scanner_alive_max_s: 75, book_seen_max_s: 90, order_max_age_s: 20, order_scanner_max_s: 30,
     pre_enabled: true, pre_entry_price_min: 1.3, pre_entry_price_max: 3, pre_min_back_size_factor: 1,
     pre_max_spread_ticks: 6, pre_green_ticks: 2, pre_exit_mode: 'resting', pre_entry_ttl_s: 60,
     pre_max_cycles: 10, pre_reentry_cooldown_s: 60, pre_last_entry_min: 10, last_entry_persist: true,
@@ -495,7 +509,9 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     reentry_exit_until_min: 0, reentry_price_min_over_entry: true, reentry_hold_if_loss: false,
     settle_confirm_s: 60, max_open_matches: 10, daily_loss_stop: 50, max_liability_per_match: 0,
     event_loss_cap_pct: 100, skip_log_interval_s: 300,
-    feed_cache_s: 2, events_reload_s: 60, aggregates_cache_s: 20, reconcile_every_s: 30, idle_cycle_s: 5,
+    feed_cache_s: 4, events_reload_s: 60, aggregates_cache_s: 20, reconcile_every_s: 30, idle_cycle_s: 5,
+    publish_heartbeat_s: 5, publish_idle_heartbeat_s: 60, events_batch_write: true,
+    stats_min_s: 10, heartbeat_min_s: 20,
 };
 
 export type MikeParams = Record<string, number | boolean | string>;
@@ -1088,6 +1104,7 @@ export const MIKE_ACTIVITY_KINDS = [
     // cert. 12/09: il dossier rimasto cieco viene ritentato; quando si risolve
     // il modello si accende a partita in corso
     'dossier_risolto',
+    'tetto_partite',
 ] as const;
 
 /** kind specifici di Mike che si aggiungono ad ACTIVITY_BASE (design system §6). */
@@ -1101,6 +1118,9 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     loss_exit_deciso: { label: 'USCITA IN PERDITA DECISA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_gambe_non_piazzate: { label: 'GAMBE MAI PIAZZATE', cls: 'bg-white/5 text-slate-300 border-white/10' },
     dossier_risolto: { label: 'MODELLO ACCESO', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
+    // il capitale per oggi e' tutto impegnato: la partita resta a guardare e
+    // riprova al giro dopo. Non e' un errore, e' il tetto che funziona.
+    tetto_partite: { label: 'TETTO PARTITE: NON ENTRA', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_fallback: { label: 'REGOLAMENTO DA FEED', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     settle_commissione_mista: { label: 'COMMISSIONE NON UNIFORME', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40', critical: true },
     settling_reverted: { label: 'REGOLAMENTO ANNULLATO', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
@@ -1389,17 +1409,16 @@ export function lastRequestFor(
 }
 
 // --------------------------------------------- trade: chiusure sotto l'apertura
-export interface MikeTradeGroup {
-    open: MikeTrade;
-    /** chiusure/green che riferiscono questa apertura (`closes_trade_id`) */
-    closes: MikeTrade[];
-    /** P&L NETTO del ciclo: apertura + chiusure regolate */
-    netPnl: number | null;
-    /** true = chiusura senza apertura nota (riga orfana: mai nascosta) */
-    orphan: boolean;
-}
+/**
+ * CERT. 13/09 — il raggruppamento gamba → ciclo → partita è COMUNE ai tre bot
+ * e vive in `lib/eventGroups.ts`. Qui restano solo gli alias tipizzati su
+ * `MikeTrade` e le poche cose che sono davvero di Mike (le FASI, che dipendono
+ * dal vocabolario dei ruoli). Tre copie della stessa aritmetica sui soldi erano
+ * tre posti dove sbagliarla.
+ */
+export type MikeTradeGroup = CicloGroup<MikeTrade>;
 
-const SETTLED_TRADE_STATES = new Set(['won', 'lost', 'void']);
+const SETTLED_TRADE_STATES = SETTLED_STATES;
 
 /** giorno operativo di attribuzione della riga (ms): piazzamento della POSIZIONE. */
 export function tradeDayMs(t: MikeTrade): number {
@@ -1415,33 +1434,7 @@ export function tradeDayMs(t: MikeTrade): number {
  * apertura non è nel set diventa un gruppo a sé, dichiarato orfano.
  */
 export function groupMikeTrades(trades: readonly MikeTrade[]): MikeTradeGroup[] {
-    const byId = new Map<number, MikeTrade>();
-    for (const t of trades) byId.set(Number(t.id), t);
-    const closesOf = new Map<number, MikeTrade[]>();
-    const opens: MikeTrade[] = [];
-    const orphans: MikeTrade[] = [];
-    for (const t of trades) {
-        const parent = t.closes_trade_id == null ? null : Number(t.closes_trade_id);
-        if (parent == null) { opens.push(t); continue; }
-        if (!byId.has(parent)) { orphans.push(t); continue; }
-        const arr = closesOf.get(parent) ?? [];
-        arr.push(t);
-        closesOf.set(parent, arr);
-    }
-    const mk = (open: MikeTrade, orphan: boolean): MikeTradeGroup => {
-        const closes = (closesOf.get(Number(open.id)) ?? [])
-            .slice().sort((a, b) => Date.parse(a.placed_at) - Date.parse(b.placed_at));
-        const rows = [open, ...closes].filter((r) => SETTLED_TRADE_STATES.has(r.status));
-        const netPnl = rows.length
-            ? Math.round(rows.reduce((s, r) => s + Number(r.pnl ?? 0), 0) * 100) / 100
-            : null;
-        return { open, closes, netPnl, orphan };
-    };
-    const groups = [
-        ...opens.map((o) => mk(o, false)),
-        ...orphans.map((o) => mk(o, true)),
-    ];
-    return groups.sort((a, b) => Date.parse(b.open.placed_at) - Date.parse(a.open.placed_at));
+    return groupTradesIntoCicli<MikeTrade>(trades);
 }
 
 /**
@@ -1513,27 +1506,10 @@ export function fasePerCiclo(g: MikeTradeGroup): MikeFase {
     return role === 'under_green' ? 'pre' : 'live';
 }
 
-/** Una PARTITA nella scheda Operazioni / Risultati: il netto e i suoi cicli. */
-export interface MikeEventGroup {
-    event_id: string;
-    event_name: string;
-    /** cicli della partita, dal più recente */
-    cicli: MikeTradeGroup[];
-    /** P&L NETTO di commissione delle sole righe REGOLATE. `null` = niente ancora
-     *  regolato: si mostra «—», mai «0,00», che vorrebbe dire un'altra cosa. */
-    netPnl: number | null;
-    /** euro ancora in ballo: c'è almeno una riga non regolata */
-    apertaAncora: boolean;
-    /** quante righe sono già regolate e quante no */
-    righeRegolate: number;
-    righeAperte: number;
-    /** fasi presenti: una partita può comparire in pre-match E in live */
-    fasi: MikeFase[];
-    /** istante dell'operazione più recente (ms), per l'ordinamento */
-    ultimaMs: number;
-    /** modalità delle righe: 'paper', 'live', o 'mista' (non dovrebbe capitare) */
-    mode: string;
-}
+/** Una PARTITA nella scheda Operazioni / Risultati: il netto e i suoi cicli.
+ *  È il gruppo comune (`EventGroup`) più le FASI, che sono solo di Mike: una
+ *  partita può comparire in pre-match E in live, con gli euro dell'altra fase. */
+export type MikeEventGroup = EventGroup<MikeTrade> & { fasi: MikeFase[] };
 
 /**
  * I cicli raggruppati per PARTITA (richiesta dell'utente: «il P&L deve essere il
@@ -1551,41 +1527,15 @@ export function groupMikeTradesByEvent(
     groups: readonly MikeTradeGroup[],
     fase?: MikeFase,
 ): MikeEventGroup[] {
-    const perEvento = new Map<string, MikeTradeGroup[]>();
-    for (const g of groups) {
-        if (fase && fasePerCiclo(g) !== fase) continue;
-        const eid = String(g.open.event_id ?? '');
-        if (!eid) continue;
-        const arr = perEvento.get(eid) ?? [];
-        arr.push(g);
-        perEvento.set(eid, arr);
-    }
-    const out: MikeEventGroup[] = [];
-    for (const [eid, cicli] of perEvento) {
-        const righe = cicli.flatMap((g) => [g.open, ...g.closes]);
-        // le righe in 'error' non sono operazioni: sono piazzamenti mai avvenuti
-        // (o doppioni scartati). Non contano e non si mostrano nel totale.
-        const vere = righe.filter((r) => r.status !== 'error');
-        const regolate = vere.filter((r) => SETTLED_TRADE_STATES.has(r.status));
-        const aperte = vere.filter((r) => !SETTLED_TRADE_STATES.has(r.status));
-        const netPnl = regolate.length
-            ? Math.round(regolate.reduce((s, r) => s + Number(r.pnl ?? 0), 0) * 100) / 100
-            : null;
-        const modi = new Set(vere.map((r) => String(r.mode ?? '')).filter(Boolean));
-        out.push({
-            event_id: eid,
-            event_name: String(cicli[0]?.open.event_name ?? eid),
-            cicli: cicli.slice().sort((a, b) => Date.parse(b.open.placed_at) - Date.parse(a.open.placed_at)),
-            netPnl,
-            apertaAncora: aperte.length > 0,
-            righeRegolate: regolate.length,
-            righeAperte: aperte.length,
-            fasi: [...new Set(cicli.map(fasePerCiclo))].sort(),
-            ultimaMs: Math.max(...righe.map((r) => Date.parse(r.placed_at) || 0), 0),
-            mode: modi.size === 1 ? [...modi][0] : (modi.size === 0 ? '' : 'mista'),
-        });
-    }
-    return out.sort((a, b) => b.ultimaMs - a.ultimaMs);
+    const eventi = groupCicliByEvent<MikeTrade>(groups, {
+        filtro: fase ? (g) => fasePerCiclo(g) === fase : undefined,
+    });
+    // le FASI sono l'unica aggiunta di Mike: il resto (netto, capitale,
+    // responsabilità, modalità mista, ordinamento) è il calcolo comune
+    return eventi.map((e) => ({
+        ...e,
+        fasi: [...new Set(e.cicli.map(fasePerCiclo))].sort(),
+    }));
 }
 
 /**
@@ -1596,16 +1546,17 @@ export function groupMikeTradesByEvent(
 export function totaleRisultati(eventi: readonly MikeEventGroup[]): {
     netto: number; conRisultato: number; aperte: number; vinte: number; perse: number;
 } {
-    let netto = 0, conRisultato = 0, aperte = 0, vinte = 0, perse = 0;
-    for (const e of eventi) {
-        if (e.apertaAncora) aperte += 1;
-        if (e.netPnl == null) continue;
-        netto += e.netPnl;
-        conRisultato += 1;
-        if (e.netPnl > 0) vinte += 1;
-        else if (e.netPnl < 0) perse += 1;
-    }
-    return { netto: Math.round(netto * 100) / 100, conRisultato, aperte, vinte, perse };
+    const t = totaliOperazioni<MikeTrade>(eventi);
+    return {
+        // `realizzato` è `null` quando NIENTE è ancora regolato; questa firma
+        // storica espone uno zero, ma i chiamanti guardano `conRisultato`
+        // prima di stampare il numero (è quello a dire se c'è un risultato)
+        netto: t.realizzato ?? 0,
+        conRisultato: t.partiteConRisultato,
+        aperte: t.partiteAperte,
+        vinte: t.vinte,
+        perse: t.perse,
+    };
 }
 
 /**

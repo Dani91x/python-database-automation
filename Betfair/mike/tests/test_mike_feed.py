@@ -83,8 +83,24 @@ def test_snapshot_inplay_goals_ht_and_stale_feed():
                             scanner_age_s=60.0, hazard=0.07, p4_model=0.15, last_goal_ts=123.0)
     assert s.inplay and s.goals == 2 and s.minute == 45 and s.ht_active is True
     assert s.book("OU35", "UNDER").bet_delay == 5
-    assert s.feed_fresh is False                 # riga vecchia E scanner morto
+    # 13/09 — le soglie sono DUE, e questa riga (40 s, scanner muto da 60 s) le
+    # separa esattamente. Per GUARDARE va bene: 40 s sta sotto ``feed_max_age_s``
+    # (45 s, che e' due pubblicazioni dello scanner con margine; misurato: la
+    # riga piu' fresca di 57 aveva 24 s). Per ORDINARE no: oltre
+    # ``order_max_age_s`` (20 s) serve che il PRODUTTORE abbia battuto da poco, e
+    # 60 s di battito sono oltre ``order_scanner_max_s`` (30 s).
+    assert s.feed_fresh is True                  # si puo' guardare
+    assert s.order_fresh is False                # NON si puo' ordinare
     assert s.hazard == 0.07 and s.p4_model == 0.15 and s.last_goal_ts == 123.0
+    # IL CASO CHE BLOCCAVA GLI INGRESSI BUONI (13/09, 24 rifiuti in archivio):
+    # riga di 24 s con lo scanner che batte regolarmente. Con la vecchia soglia
+    # di 15 s sull'``updated_at`` era "feed stantio" e Mike non entrava, pur
+    # essendo quello il prezzo corrente — lo scanner scrive solo cio' che cambia,
+    # e nessuna riga puo' essere piu' giovane del suo giro di pubblicazione.
+    s24 = F.snapshot_from_row(row(p, updated=NOW - timedelta(seconds=24)), info,
+                              now=NOW.timestamp(), params=C.merge_params(None), scanner_age_s=8.0)
+    assert s24.feed_fresh is True and s24.order_fresh is True
+
     # scanner vivo -> la riga immutata e' fresca (write-on-change)
     s2 = F.snapshot_from_row(row(p, updated=old), info, now=NOW.timestamp(), params=C.merge_params(None),
                              scanner_age_s=10.0)

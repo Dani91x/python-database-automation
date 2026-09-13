@@ -1848,3 +1848,159 @@ Tenere invece di chiudere significa che, quando il modello sbaglia, si paga la
 `max_open_liability`, `max_liability_per_match` e `max_events` sono **tutti a
 zero, cioè disattivati**. Con le uscite più caute di §19.1-19.2 quel freno
 diventa più importante di prima, non meno.
+
+## 20. IL SOFTWARE DEVE LASCIAR RESPIRARE IL DATABASE (13/09/2026)
+
+### 20.1 Cosa è successo
+
+Il 13/09 il progetto Supabase è andato **giù**: HTTP 503 `PGRST002` su tutto,
+letture per **chiave primaria a 37 secondi**, e per rialzarlo è servito un
+**restart del progetto**. Non era una query scritta male: era il **budget di IO
+su disco esaurito** (`supabase.com/docs/guides/troubleshooting/exhaust-disk-io`).
+Quando quel budget finisce l'istanza viene **strozzata**: i tempi esplodono,
+l'autovacuum salta, e da lì in poi peggiora da sola.
+
+Il contributo di Omega, misurato sul log delle **21:37** con l'app accesa — in
+**due secondi**:
+
+```
+GET safe_strategy_scan?select=event_id,sport,payload,updated_at
+    &event_id=in.(34 id)                                         x2
+GET safe_strategy_status?select=id,payload,updated_at&id=eq.scanner    x2
+```
+
+cioè **una lettura del feed al secondo** con 34 id in URL, più lo stato dello
+scanner allo stesso ritmo. Non perché il ciclo girasse ogni secondo — gira ogni
+`poll_interval_s` — ma perché **dentro** un ciclo la riga del feed viene chiesta
+decine di volte (punteggio, freschezza, book, una per gamba, una per green-up,
+una per missione) e la cache condivisa dello scanner scade **ogni secondo**.
+Trenta domande alla stessa riga dentro lo stesso ciclo sono trenta risposte
+**identiche** pagate trenta volte.
+
+### 20.2 La regola
+
+> **Non si chiede al database una cosa che il database non ha ancora avuto il
+> tempo di cambiare.**
+
+Non è un'ottimizzazione: è una **condizione di produzione**. E per Omega non è
+nemmeno una questione di comodità — Omega bloccata non è Omega lenta: è **una
+posizione aperta a quota 75 che resta senza nessuno che la guarda**.
+
+### 20.3 Come è implementata
+
+Nove parametri (`omega_config._SPEC`), tutti regolabili, tutti a **zero =
+comportamento di prima**. Nessuno tocca la logica di trading: cambiano solo
+*ogni quanto* si rilegge.
+
+| parametro | default | cosa governa | perché è sicuro |
+|---|---:|---|---|
+| `feed_cache_s` | 2 s | righe di `safe_strategy_scan` | è l'unica lettura che decide un **ordine**, quindi ha la cache **più corta di tutte**. Si mette in cache la **riga grezza**: il verdetto di freschezza (`fresh_payload`, `row_age_sec`) si ricalcola a ogni chiamata sull'`updated_at` della riga, mai su quando l'abbiamo letta |
+| `scanner_status_cache_s` | 10 s | heartbeat dello scanner | il valore in cache viene **invecchiato** del tempo passato: l'età che ne esce è esatta al secondo. Un heartbeat *nuovo* si vede con ritardo, cioè si crede lo scanner più morto di quanto sia → **fail-safe** |
+| `aggregates_cache_s` | 20 s | RPC `aggregates` (2 per giro) | governa stop giornaliero, cap di perdita e testata: non è una decisione al secondo. Dopo un piazzamento / settlement / green-up / azione manuale si **forza** il ricalcolo |
+| `sets_cache_s` | 30 s | `traded_legs`, `traded_event_ids`, `failed_legs` | li scrive **questo stesso processo**: fra una rilettura e l'altra la copia in memoria *è* la verità, e lo scan ci scrive dentro la gamba appena piazzata (write-through, mai una copia) |
+| `results_every_s` | 60 s | `positions_for_results` (timbro 1T/2T) | rete di sicurezza contabile, non un passaggio del flusso; il settlement completa comunque dal WINNER |
+| `missions_every_s` | 5 s | `active_missions` + `trades_for_event` per missione | territorio dell'utente, che **legge**: non è un loop di trading |
+| `events_refresh_s` | 1800 s | `refresh_events` | era una costante nel codice |
+| `idle_stats_s` | 60 s | stats a bot fermo | era una costante nel codice |
+| `idle_cycle_s` | 60 s | ritmo del ciclo **a vuoto** | il ciclo pieno serve solo quando qualcosa si muove da solo: posizione aperta, riconciliazione in sospeso, gamba ancora piazzabile oggi, missione seguita dall'utente (`_c_e_fretta`) |
+
+Il loop non rilegge più `omega_control` due volte per giro (`run_once` lo legge
+già, `_ULTIMI_PARAMS` basta a decidere quanto aspettare), e `process_missions`
+riceve il control invece di rileggerlo.
+
+### 20.4 Il risultato, misurato
+
+Scenario del log: 34 partite in-play, una posizione aperta, una missione attiva.
+
+| regime | prima | dopo | fattore |
+|---|---:|---:|---:|
+| giornata piena, `poll_interval_s` = 20 | 126 letture/min | 71 | **1,8×** |
+| `poll_interval_s` = 5 (minimo) | 303 | 185 | **1,6×** |
+| notte (niente aperto, niente partite) | 45 | 14 | **3,2×** |
+| **solo il feed** (le due select del log) | 75 | 27 | **2,8×** |
+
+Sul feed *misurato in produzione* (≈60 + ≈60 letture/min) il fattore è **≈4,4×**.
+
+### 20.5 Obblighi per chi tocca il codice
+
+1. **Ogni nuova lettura periodica deve avere il suo parametro di cadenza.** Una
+   `select` dentro un ciclo senza una cadenza dichiarata è un difetto.
+2. **Le cache sono variabili di modulo**: `Betfair/omega/conftest.py` (fixture
+   autouse) le azzera *e spegne le cadenze* in tutta la suite — quasi tutti i
+   test simulano più cicli nello **stesso istante** e con le cache accese
+   misurerebbero la cache invece del comportamento. Chi vuole provare le cache
+   lo fa **apposta**: `test_omega_respiro_db_2026_09_13.py`.
+3. **Mai in cache una scrittura**, né una lettura che decide un ordine senza un
+   criterio di freschezza **sul dato stesso**.
+4. **Mai in cache le righe dei trade.** Fra la fase di settlement e quella di
+   green-up, *dentro lo stesso giro*, quelle righe cambiano: una copia vecchia
+   farebbe mandare un ordine di chiusura su una posizione appena regolata.
+5. **Mai in cache le guardie dell'utente** (`mission_event_ids`,
+   `manual_event_ids`): le scrive la UI, cioè un altro processo, e allargare la
+   finestra vuol dire un secondo lay su una partita già esposta.
+6. Se una lettura fallisce ma una copia in memoria c'è, **si continua con
+   quella** (`_insieme_cached`): una posizione aperta non può restare senza
+   nessuno che la guardi perché una `select` è andata in timeout.
+7. `svuota_le_cache()` esiste per forzare un riallineamento immediato.
+
+### 20.6 Resta da fare
+
+- Le **righe dei trade** (`open_trades` ×2, `list_trades('pending')` ×2,
+  `hedged_trades`, `closing_trades_for` per giro) restano la voce più pesante a
+  `poll_interval_s` basso: ~72 letture/min a poll 5 s. Farle respirare richiede
+  un'**invalidazione su scrittura** vera (le fasi che regolano e chiudono
+  scrivono *fra* le due letture), non un TTL.
+- I nove parametri **non sono ancora nel pannello** (`frontend/src/lib/omega.ts`):
+  il blocco è pronto, l'esenzione temporanea è in
+  `test_omega_ui_contratto_2026_09_11.py::_IN_ATTESA_DI_PANNELLO` e si spegne da
+  sola appena la UI li dichiara.
+
+### 20.7 Aggiornamento di fine serata (13/09)
+
+**Il pannello esiste.** I nove parametri del respiro sono stati aggiunti a
+`frontend/src/lib/omega.ts` (interfaccia, default e gruppo *«Respiro del
+database»*), e `_IN_ATTESA_DI_PANNELLO` è stata **svuotata**: il contratto
+UI ↔ servizio è di nuovo pieno. Quella esenzione deve restare vuota — una chiave
+che il servizio onora e che il trader non può toccare è un parametro che di fatto
+non esiste.
+
+**Un difetto del contratto stesso, corretto.** `test_default_della_ui_uguali_a_quelli_del_servizio`
+leggeva `C.DEFAULTS`, che è un dizionario **mutabile** e che il `conftest` azzera
+per spegnere le cadenze durante i test. Il contratto pretendeva quindi dalla UI
+gli **zeri della suite** invece dei default veri del servizio: avrebbe certificato
+una pagina sbagliata. Ora legge `_SPEC`, cioè i default **dichiarati**.
+
+### 20.8 Le chiusure e il flag `reduces_liability` — chi lo mette
+
+Dal 13/09 il worker della coda tratta diversamente una gamba che **riduce** una
+posizione: `params.reduces_liability = True` le fa saltare il minimo di
+giurisdizione e il passo da 0,50 € sulle size BACK, e la esenta dal kill-switch
+del live. Senza quel flag una chiusura sotto i 2,00 € finisce in **errore** e la
+liability resta esposta fino al regolamento — che è esattamente ciò che il
+manuale vieta («si esce subito e si accetta»).
+
+**Omega è coperto per costruzione, e non deve dichiarare niente.** La catena è:
+
+```
+omega_service._manual_cashout  →  safe_strategy.execution.close_trade
+                               →  meta["cashout"] = True
+                               →  execution.enqueue_place  →  params.reduces_liability
+```
+
+`_flumine_enqueue_place` (l'unica via di accodamento di Omega) costruisce sempre
+`action: "place"` per delle **APERTURE**: i suoi quattro punti di chiamata sono i
+due ingressi automatici e i due manuali, e il payload del manuale
+(`selection_id`, `side`, `price`, `size`…) non contiene `closes_trade_id`. È
+corretto che non marchi nulla.
+
+> **Obbligo per chi tocca il codice.** Le chiusure di Omega passano da
+> `close_trade`, che marca la gamba. **Chi aprisse un'altra via di chiusura — una
+> che non passa da `close_trade` — deve mettere `params.reduces_liability` da
+> sé.** Non si eredita: si dichiara.
+
+Per completezza, due cose che Omega **non** fa e che quindi non lo espongono al
+punto aperto §7-quater della certificazione di Safe Strategy (sequenza
+`place_submin` di coda lasciata a riposo, senza ritiro del residuo): Omega non
+accoda **mai** `place_submin` — in tutto `Betfair/omega/*.py` la parola compare
+solo in `omega_market.py`, cioè il percorso REST, che è già FILL_OR_KILL — e non
+piazza importi sotto il minimo per via di coda.

@@ -70,11 +70,44 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def ou_blocks(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """{OU35: blocco, OU45: blocco} dalla lista ``ou`` del payload."""
+def blocco_osservato(blk: Dict[str, Any], now: float, max_age_s: float) -> bool:
+    """Qualcuno sta ancora guardando questo mercato?
+
+    ``seen_ms`` (13/09) e' il momento dell'ULTIMO BOOK RICEVUTO dallo scanner,
+    diverso da ``ts_ms`` che e' l'ultimo CAMBIO DI PREZZO. La distinzione e'
+    money-critical: un prezzo fermo da dieci minuti su un mercato che stiamo
+    guardando E' il prezzo corrente e ci si opera; lo stesso prezzo su un mercato
+    uscito dal feed e' un ricordo, e comprarci sopra una copertura vuol dire
+    credere di essere coperti quando non lo si e'.
+
+    Uno scanner vecchio che non scrive ancora ``seen_ms`` non deve far sparire i
+    book: in quel caso (campo assente) si risponde "osservato", cioe' il
+    comportamento di prima. Il rischio si chiude quando il produttore e'
+    aggiornato, non rompendo il bot nel frattempo.
+    """
+    ms = blk.get("seen_ms")
+    if ms is None:
+        return True
+    try:
+        return (now - float(ms) / 1000.0) <= float(max_age_s)
+    except (TypeError, ValueError):
+        return True
+
+
+def ou_blocks(payload: Dict[str, Any], *, now: Optional[float] = None,
+              seen_max_s: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
+    """{OU35: blocco, OU45: blocco} dalla lista ``ou`` del payload.
+
+    Con ``now`` e ``seen_max_s`` i blocchi NON PIU' OSSERVATI vengono scartati
+    come se non ci fossero: Mike sa gia' non fare niente quando un book manca,
+    mentre non aveva nessun modo di sospettare di un book presente ma morto.
+    """
     out: Dict[str, Dict[str, Any]] = {}
     for blk in payload.get("ou") or []:
         if not isinstance(blk, dict):
+            continue
+        if (now is not None and seen_max_s is not None
+                and not blocco_osservato(blk, now, seen_max_s)):
             continue
         line = _num(blk.get("line"))
         market = _LINE_TO_MARKET.get(line) if line is not None else None
@@ -207,7 +240,7 @@ def _hard_max_age() -> float:
 
 
 def feed_fresh(row: Dict[str, Any], now: float, max_age_s: float, scanner_age_s: Optional[float],
-               scanner_alive_max_s: float = 30.0) -> bool:
+               scanner_alive_max_s: float = 75.0) -> bool:
     """Riga fresca (età ≤ max_age) OPPURE scanner vivo (write-on-change: riga
     immutata = nulla e' cambiato) — stessa regola di scan_feed.fresh_payload.
 
@@ -229,6 +262,41 @@ def feed_fresh(row: Dict[str, Any], now: float, max_age_s: float, scanner_age_s:
     return scanner_age_s is not None and scanner_age_s <= scanner_alive_max_s
 
 
+def order_fresh(row: Dict[str, Any], now: float, params: Dict[str, Any],
+                scanner_age_s: Optional[float]) -> bool:
+    """Freschezza per EMETTERE UN ORDINE: piu' stretta di ``feed_fresh``, ma
+    stretta sulla cosa GIUSTA.
+
+    MISURA 13/09 ore 21:37 — ``safe_strategy_scan.updated_at`` non dice "quando
+    ho guardato": dice "quando e' cambiato qualcosa", perche' lo scanner scrive
+    solo cio' che cambia. Su una linea O/U pre-partita che nessuno scambia la
+    riga resta ferma per minuti ed e' CORRETTO: quel prezzo E' il prezzo
+    corrente. Su 57 righe nessuna era sotto i 24 s — e Mike apre SOLO su quelle
+    linee (``is_candidate``: non in gioco, fischio entro
+    ``entry_hours_before_ko``). La vecchia soglia di 15 s sull'eta' della riga
+    era irraggiungibile per costruzione, e rifiutava ingressi buoni.
+
+    Quindi: prima il tetto assoluto, che non si deroga mai (oltre
+    ``HARD_MAX_AGE_SEC`` una riga non e' un prezzo, e' un ricordo). Poi o la riga
+    e' davvero recente, oppure il PRODUTTORE ha battuto da poco.
+
+    Perche' due soglie e non una piu' severa per tutti: in live l'ordine parte
+    comunque FILL_OR_KILL a prezzo LIMIT, quindi un prezzo mosso non si abbina —
+    non si abbina MALE. Il danno vero di un prezzo vecchio e' altrove: nella
+    fedelta' del PAPER (fill inventati su un prezzo che non esiste piu', che
+    gonfiano un risultato simulato su cui poi si decide di andare in live) e nel
+    CASH OUT, dove si attraversa lo spread davvero.
+    """
+    ts = parse_iso_epoch(row.get("updated_at"))
+    age = None if ts is None else now - ts
+    if age is None or age > _hard_max_age():
+        return False
+    if age <= float(params.get("order_max_age_s") or 20.0):
+        return True
+    return (scanner_age_s is not None
+            and scanner_age_s <= float(params.get("order_scanner_max_s") or 30.0))
+
+
 def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, params: Dict[str, Any],
                       scanner_age_s: Optional[float], hazard: Optional[float] = None,
                       p4_model: Optional[float] = None, last_goal_ts: Optional[float] = None,
@@ -240,7 +308,15 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
     payload = row.get("payload") if isinstance(row, dict) else None
     if not isinstance(payload, dict) or info.ko_at is None:
         return None
-    blocks = ou_blocks(payload)
+    # I book su cui si DECIDE: un blocco non piu' osservato viene scartato come
+    # se non ci fosse (vedi ``blocco_osservato``). Mike sa gia' non fare niente
+    # quando un book manca; non sapeva sospettare di un book presente ma morto,
+    # e ci comprava sopra la copertura credendo di essersi coperto.
+    # Attenzione: ``event_info`` NON filtra — i market_id e i selection_id devono
+    # restare disponibili anche per un mercato che abbiamo smesso di guardare,
+    # altrimenti non potremmo nemmeno ANNULLARE un ordine ancora vivo li' sopra.
+    blocks = ou_blocks(payload, now=now,
+                       seen_max_s=float(params.get("book_seen_max_s") or 90.0))
     books: Dict[Tuple[str, str], E.Book] = {}
     for key in ((E.MARKET_OU35, E.SEL_UNDER), (E.MARKET_OU45, E.SEL_OVER), (E.MARKET_OU45, E.SEL_UNDER)):
         bk = _book_for(blocks.get(key[0]), info.selection_id(*key))
@@ -254,7 +330,9 @@ def snapshot_from_row(row: Dict[str, Any], info: EventInfo, *, now: float, param
         minute=payload.get("minute") if isinstance(payload.get("minute"), int) else None,
         goals=goals_from_payload(payload),
         ht_active=ht_active_from_payload(payload),
-        feed_fresh=feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s),
+        feed_fresh=feed_fresh(row, now, float(params["feed_max_age_s"]), scanner_age_s,
+                              float(params.get("scanner_alive_max_s") or 75.0)),
+        order_fresh=order_fresh(row, now, params, scanner_age_s),
         hazard=hazard, p4_market=implied_p4(blocks, info), p4_model=p4_model,
         last_goal_ts=last_goal_ts, market_status=status, final_total=None,
         total_matched=_num(blk35.get("total_matched")),   # diagnostica, nessun gate

@@ -1031,6 +1031,10 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         "loss_exit_deciso", "settle_gambe_non_piazzate",
         # il dossier cieco viene RITENTATO: quando si risolve, il modello si accende
         "dossier_risolto",
+        # il capitale per oggi e' tutto impegnato: la partita non entra e riprova
+        # al giro dopo. Va DETTO in pagina, altrimenti il trader vede una partita
+        # ferma senza capire perche' (13/09: 44 esposte con un tetto di 10).
+        "tetto_partite",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 
