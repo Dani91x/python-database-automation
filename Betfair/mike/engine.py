@@ -66,6 +66,11 @@ EXIT_KINDS = ("greenup", "profit", "loss", "time", "forced", "manual", "other")
 
 IT_BACK_MIN = 2.0
 IT_BACK_STEP = 0.5
+# Floor ASSOLUTO di un ordine, col place-and-trim: un centesimo. Sotto il minimo
+# di PIAZZAMENTO (IT_BACK_MIN) l'ordine esiste comunque — si parcheggia il minimo
+# a una quota non abbinabile, si taglia e si riprezza. Vedi
+# ``omega_market.place_submin_live`` e ``Betfair/stream/trading/submin.py``.
+SUBMIN_FLOOR = 0.01
 _EPS = 1e-9
 _FLAT_EPS = 0.01
 
@@ -379,25 +384,25 @@ def legalize_back_size(size: float, rounding: str = "ceil",
 
 
 def cover_legal_size(x: float, params: Dict[str, Any]) -> Tuple[float, float]:
-    """Size effettiva della copertura: ESATTA al centesimo (exact_sizes, default) oppure
-    legalizzata .it (min 2.00 / passo 0.50) come ripiego. Ritorna (size, overshoot %).
+    """Size effettiva della copertura: ESATTA al centesimo (``exact_sizes``, il
+    default) oppure legalizzata .it (min 2.00 / passo 0.50) se si sceglie cosi'.
+    Ritorna (size, overshoot %).
 
-    CERTIFICAZIONE 12/09 (osservata dal vivo) — la size ESATTA puo' scendere
-    SOTTO il minimo Betfair (2 EUR) quando la quota dell'Over e' alta: in quel
-    caso l'exchange rifiuta l'ordine e la partita resta SCOPERTA. Caso reale
-    (Koper v Olimpija): la copertura serviva gia' a 1,91 EUR, il bot l'ha
-    ritentata 172 volte — tutte rifiutate — e la partita e' finita a 4 gol
-    perdendo il massimo (-16,16 EUR) senza essere mai stata coperta.
-    Si alza quindi al minimo piazzabile: si copre un pelo di piu' (l'overshoot
-    e' dichiarato al chiamante) invece di non coprire affatto. Restare scoperti
-    per 9 centesimi non e' un risparmio, e' il rischio pieno.
+    13/09 — L'IMPORTO ESATTO E' L'IMPORTO GIUSTO, e da oggi e' anche piazzabile.
+    Il minimo di Betfair riguarda il place DIRETTO, non l'ordine in se': col
+    place-and-trim (parcheggio a quota non abbinabile, taglio parziale,
+    riprezzo) si piazza qualunque cifra fino al centesimo. Vedi
+    ``omega_market.place_submin_live`` e ``Betfair/stream/trading/submin.py``.
+
+    Il rialzo al minimo era un ripiego del 12/09, nato da un caso vero (Koper v
+    Olimpija: copertura da 1,91 EUR rifiutata 172 volte, partita finita a 4 gol
+    e -16,16 EUR senza copertura). Quel ripiego non serve piu': adesso 1,91 EUR
+    e' un ordine valido, e comprare 2,00 di Over quando ne servono 1,35 e' solo
+    sovracopertura pagata.
     """
     x = float(x)
     if params.get("exact_sizes", True):
-        size = round(x, 2)
-        if 0 < size < IT_BACK_MIN:
-            return (IT_BACK_MIN, round((IT_BACK_MIN / size - 1.0) * 100.0, 4))
-        return (size, 0.0)
+        return (round(x, 2), 0.0)
     return legalize_back_size(x, str(params.get("cover_rounding", "ceil")))
 
 
@@ -1904,13 +1909,15 @@ def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[flo
     proprio quello: senza altri gol la quota dell'Over 4.5 sale e la seconda
     meta' costa meno.
 
-    ECCEZIONE money-critical: se la frazione esatta finisce sotto il minimo
-    piazzabile di Betfair, alzarla al minimo comprerebbe Over di troppo su
-    ENTRAMBE le tranche (su un rischio di 15 EUR con l'Over a 8,00 la tranche
-    vale 1,35: alzarla a 2,00 vuol dire pagare 4,00 invece di 2,71, il 48% in
-    piu' e una sovracopertura che costa a 0-3 gol). In quel caso NON si divide:
-    si compra tutto in una volta, all'ora della prima tranche. Meglio una
-    copertura giusta subito che due tranche sbagliate.
+    Il minimo di Betfair NON e' piu' un ostacolo: con gli importi esatti
+    (``exact_sizes``, il default) una tranche da 1,35 EUR — o da 5 centesimi —
+    si piazza col place-and-trim (``omega_market.place_submin_live``). L'unico
+    limite che resta e' il centesimo, che e' il floor assoluto dell'exchange.
+
+    Se invece gli importi esatti sono SPENTI dalla UI, gli ordini vengono
+    legalizzati al minimo .it: li' dividere avrebbe senso solo se ciascuna metà
+    ci arriva da sola, altrimenti si comprerebbe Over di troppo su ENTRAMBE le
+    tranche. In quel caso non si divide e si copre in una volta (``True``).
     """
     if int(stage or 0) != 1:
         return (1.0, False)
@@ -1920,7 +1927,8 @@ def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[flo
         return (1.0, False)
     if x_pieno is None:
         return (f, False)
-    if float(x_pieno) * f >= IT_BACK_MIN - 0.005:
+    piu_piccola_piazzabile = SUBMIN_FLOOR if params.get("exact_sizes", True) else IT_BACK_MIN
+    if float(x_pieno) * f >= piu_piccola_piazzabile - 0.0005:
         return (f, False)
     return (1.0, True)
 

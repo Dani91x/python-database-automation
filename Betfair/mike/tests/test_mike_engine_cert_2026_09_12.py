@@ -189,7 +189,10 @@ def test_pnl_netto_per_ogni_totale_gol_con_portafoglio_completo():
 # 5. Uscita in perdita a modello: i cicli ARCHIVIATI non spostano la soglia
 # ---------------------------------------------------------------------------
 def test_uscita_a_modello_non_conta_i_cicli_archiviati():
-    p = params(loss_exit_mode="model", h2_loss_exit_enabled=True, cashout_smart_enabled=False)
+    # ``ht_loss_goals_min=2``: dal 13/09 il default e' 3, ma qui si misura l'EV
+    # del modello, non la finestra dei gol (che ha il suo test dedicato)
+    p = params(loss_exit_mode="model", h2_loss_exit_enabled=True, cashout_smart_enabled=False,
+               ht_loss_goals_min=2)
     ctx = E.MatchCtx(state="LIVE_COVERED")
     # ciclo pre-match gia' chiuso in green (+0.66 bloccati): non e' capitale a rischio
     ctx.legs.append(leg("under_entry", E.MARKET_OU35, E.SEL_UNDER, "back", 1.50, 20.0,

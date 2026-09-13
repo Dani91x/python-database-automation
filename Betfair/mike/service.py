@@ -87,6 +87,20 @@ class _RealMarket:
         return omega_market.place_order_live(**kw)
 
     @staticmethod
+    def place_submin_live(**kw: Any) -> Any:
+        """Importi SOTTO il minimo di piazzamento Betfair (place-and-trim).
+
+        Mike lavora con importi esatti al centesimo (``exact_sizes``): una
+        copertura da 1,35 EUR o uno stake da 0,73 EUR devono poter esistere.
+        La sequenza (parcheggio a quota non abbinabile, taglio parziale,
+        riprezzo) e' in ``omega_market.place_submin_live``.
+        """
+        from Betfair.omega import omega_market
+
+        _RealMarket._bind_strategy_ref(omega_market)
+        return omega_market.place_submin_live(**kw)
+
+    @staticmethod
     def list_current_orders() -> List[dict]:
         """Ordini VIVI marchiati 'mike' (riconciliazione C3)."""
         from Betfair.omega import omega_market
@@ -337,9 +351,10 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
                                "size": leg.size, "persistence": leg.persistence}, info.event_id)
         return "cancelled"
     if leg.side == "back" and not params.get("exact_sizes", True) and E.needs_submin(leg.side, leg.size):
-        # importi esatti SPENTI: le aperture BACK vanno legalizzate (.it min 2.00, passo 0.50)
-        # come fa l'engine per la copertura (review F1 #2). Con exact_sizes=True la size
-        # resta al centesimo: in paper passa cosi', in live e' il place-and-trim (F6).
+        # importi esatti SPENTI (scelta esplicita dalla UI): le aperture BACK
+        # vengono legalizzate (.it min 2.00, passo 0.50). Con exact_sizes=True —
+        # il default — la size resta al CENTESIMO e viene piazzata davvero: in
+        # paper dal fill simulato, in live dal place-and-trim.
         legal, _ = E.legalize_back_size(leg.size, str(params.get("cover_rounding", "ceil")))
         db.log("size_legalized", {"leg": leg.ref, "from": leg.size, "to": legal}, info.event_id)
         leg.size = legal

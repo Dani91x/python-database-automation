@@ -418,10 +418,15 @@ def test_size_chiudibile_e_la_soglia_dichiarata():
 # rifiutate, e la partita e' finita a 4 gol — l'unico esito che perde —
 # incassando -16,16 EUR senza essere MAI stata coperta.
 # ===========================================================================
-def test_copertura_sotto_il_minimo_viene_alzata_al_minimo_piazzabile():
+def test_copertura_sotto_il_minimo_si_piazza_per_il_suo_importo_esatto():
+    """13/09 — l'importo esatto e' anche l'importo PIAZZABILE.
+
+    Il rialzo al minimo era il ripiego del 12/09, quando il sotto-minimo non era
+    collegato a niente. Ora c'e' il place-and-trim (parcheggio a quota non
+    abbinabile, taglio parziale, riprezzo): 1,91 EUR e' un ordine valido, e
+    comprarne 2,00 sarebbe solo sovracopertura pagata."""
     size, over = E.cover_legal_size(1.91, {"exact_sizes": True})
-    assert size == E.IT_BACK_MIN, "una copertura da 1,91 non e' piazzabile: va alzata a 2,00"
-    assert over > 0, "l'overshoot deve essere dichiarato al chiamante"
+    assert size == 1.91 and over == 0.0, "nessun rialzo, nessun overshoot da dichiarare"
 
 
 def test_copertura_gia_sopra_il_minimo_resta_esatta():
@@ -433,24 +438,21 @@ def test_copertura_nulla_resta_nulla():
     assert E.cover_legal_size(0.0, {"exact_sizes": True}) == (0.0, 0.0)
 
 
-def test_la_copertura_si_arrotonda_solo_se_costa_poco():
-    """Il comportamento risultante, con il tetto di overshoot gia' esistente.
+def test_la_copertura_costa_esattamente_quello_che_serve():
+    """Stessi numeri VERI di Koper v Olimpija, esito nuovo.
 
-    Numeri VERI della partita Koper v Olimpija osservata dal vivo:
-      · copertura 1,91 EUR (Over a 7,60) -> si alza a 2,00: overshoot 4,7%,
-        sotto il tetto (30%) -> SI COPRE, e prima non si copriva affatto;
-      · copertura 0,29 EUR (Over a 44,00) -> alzarla a 2,00 costerebbe il 590%
-        in piu' -> NON si copre, lo si DICHIARA e si aspetta, invece di
-        ritentare un ordine che l'exchange rifiuta a ogni ciclo.
-    Pagare 1,71 EUR per coprire un rischio che il mercato prezza 0,29 non e'
-    prudenza, e' spreco: il tetto esistente lo impedisce.
+    Il 12/09 il problema era che 1,91 EUR non erano piazzabili: si alzava a 2,00
+    (overshoot 4,7%) e 0,29 EUR non si coprivano affatto (alzarli a 2,00 sarebbe
+    costato il 590% in piu'). Oggi entrambe si piazzano per quello che valgono:
+    nessuna sovracopertura, nessun rischio scoperto, nessun overshoot da tollerare.
     """
     params = C.merge_params({"stake": 10})
-    cap = float(params["cover_max_overshoot_pct"])
     size_a, over_a = E.cover_legal_size(1.91, params)
-    assert size_a == E.IT_BACK_MIN and over_a <= cap, "una copertura quasi al minimo va arrotondata"
+    assert size_a == 1.91 and over_a == 0.0
+    # 0,29 EUR: prima non si copriva affatto (alzarla a 2,00 costava il 590%),
+    # adesso si compra per 29 centesimi
     size_b, over_b = E.cover_legal_size(0.29, params)
-    assert size_b == E.IT_BACK_MIN and over_b > cap, "una copertura 7x piu' cara va rifiutata dal tetto"
+    assert size_b == 0.29 and over_b == 0.0
     size_c, over_c = E.cover_legal_size(6.16, params)
     assert size_c == 6.16 and over_c == 0.0, "sopra il minimo la size resta ESATTA"
 

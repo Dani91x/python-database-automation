@@ -887,18 +887,54 @@ def test_close_trade_eredita_sempre_l_aliquota_del_trade():
 # ===========================================================================
 # CERTIFICAZIONE 12/09 — PAPER = LIVE sul minimo Betfair di 2 EUR.
 # ===========================================================================
-def test_place_paper_rifiuta_l_apertura_sotto_il_minimo_come_il_live():
+def test_place_sotto_il_minimo_senza_coda_paper_si_live_no():
+    """Senza la coda del runner (qui ``follow='NONE'``) il place-and-trim non e'
+    eseguibile: in LIVE si dichiara che manca la coda, in PAPER l'ordine si
+    abbina lo stesso perche' l'esecuzione e' simulata e non esiste nessun minimo
+    da aggirare. La differenza e' dichiarata nel motivo, non nascosta."""
     db, mk = FakeDB(), FakeMarket()
     db.follow = "NONE"
     common = dict(db=db, market=mk, event_id="1.1", market_id="m1", selection_id=7,
                   side="back", price=3.0, best_size=100.0, trade_id=1, now=NOW, params={})
     paper = X.place(mode="paper", size=1.5, client_ref="safe-t1", **common)
     live = X.place(mode="live", size=1.5, client_ref="safe-t1", **common)
-    assert paper.status == "error" and live.status == "error"
-    assert paper.fill_note.startswith("size_sotto_minimo_betfair")
-    assert paper.fill_note == live.fill_note, "paper e live devono dire la stessa cosa"
-    # a 2,00 EUR esatti passano entrambi
+    assert paper.status == "open" and paper.size == 1.5
+    assert live.status == "error"
+    assert live.fill_note.startswith("submin_non_disponibile")
+    # a 2,00 EUR esatti passano entrambi dal percorso normale
     assert X.place(mode="paper", size=2.0, client_ref="safe-t1", **common).status == "open"
+
+
+def test_place_sotto_il_minimo_in_live_usa_il_place_and_trim():
+    """Con un mercato che sa fare il place-and-trim (il mercato REALE lo sa), un
+    ordine da 1,35 EUR in live NON viene rifiutato: passa dalla sequenza
+    parcheggio/taglio/riprezzo e torna abbinato per il suo importo esatto."""
+    class MercatoConSubmin(FakeMarket):
+        def __init__(self):
+            super().__init__()
+            self.submin = []
+
+        def place_submin_live(self, **kw):
+            self.submin.append(kw)
+            from Betfair.omega.omega_market import PlaceResult
+            return PlaceResult(ok=True, order_status="EXECUTION_COMPLETE", bet_id="b-sub",
+                               size_matched=float(kw["size"]),
+                               avg_price_matched=float(kw["price"]), raw={})
+
+    db, mk = FakeDB(), MercatoConSubmin()
+    db.follow = "NONE"
+    out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
+                  selection_id=7, side="back", price=8.0, size=1.35, best_size=100.0,
+                  client_ref="safe-t5", trade_id=5, now=NOW, params={})
+    assert out.status == "open"
+    assert out.size == 1.35, "l'importo esatto, non il minimo gonfiato"
+    assert out.fill_note.startswith("live_submin")
+    assert len(mk.submin) == 1 and mk.placed == []
+    # sopra il minimo si usa il percorso normale, non il place-and-trim
+    out2 = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
+                   selection_id=7, side="back", price=8.0, size=3.0, best_size=100.0,
+                   client_ref="safe-t6", trade_id=6, now=NOW, params={})
+    assert out2.status == "open" and len(mk.submin) == 1 and len(mk.placed) == 1
 
 
 def test_place_paper_minimo_non_blocca_la_gamba_di_chiusura():

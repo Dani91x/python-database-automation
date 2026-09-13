@@ -384,28 +384,44 @@ def test_prima_tranche_compra_meta_copertura_al_minuto_giusto():
     assert tele["stage"] == 1 and tele["split_declassato"] is False
 
 
-def test_soglia_oltre_la_quale_la_divisione_non_e_piazzabile():
-    """LIMITE DICHIARATO, non un dettaglio nascosto: con stake 10+5 e fattore 1,2
-    la meta' della copertura scende sotto i 2,00 EUR di Betfair appena l'Over
-    supera 5,74 -- cioe' nel caso TIPICO pochi minuti dopo un gol precoce.
-
-    Sopra quella quota la divisione in due tempi non e' eseguibile finche' gli
-    ordini sotto-minimo non passano dal place-and-trim (``Betfair/stream/trading/
-    submin.py``), che la coda di Mike oggi non richiede: il bot copre in una
-    volta sola. Questo test esiste per rendere il limite VISIBILE, non per
-    benedirlo.
-    """
+def test_la_divisione_si_fa_a_qualunque_quota():
+    """Il vecchio limite (meta' copertura sotto i 2,00 EUR di Betfair) NON esiste
+    piu': col place-and-trim si piazza qualunque cifra fino al centesimo, quindi
+    la divisione in due tempi si fa sempre. Prima si fermava sopra quota 5,74,
+    cioe' quasi sempre."""
     liab, fattore, c = 15.0, 1.2, 0.05
-    soglia = 1.0 + (fattore * liab / 2.0) / (E.IT_BACK_MIN * (1.0 - c))
-    assert soglia == pytest.approx(5.74, abs=0.01)
-    for quota in (3.0, 4.0, 5.0, 5.7):
-        frazione, declassato = E.frazione_copertura(
-            1, params(), E.cover_residual(liab, quota, c, fattore, 0.0))
+    for quota in (3.0, 5.0, 5.8, 8.0, 12.0, 30.0, 100.0):
+        x = E.cover_residual(liab, quota, c, fattore, 0.0)
+        frazione, declassato = E.frazione_copertura(1, params(), x)
         assert (frazione, declassato) == (pytest.approx(0.5), False), quota
-    for quota in (5.8, 6.5, 8.0, 12.0):
-        frazione, declassato = E.frazione_copertura(
-            1, params(), E.cover_residual(liab, quota, c, fattore, 0.0))
-        assert (frazione, declassato) == (pytest.approx(1.0), True), quota
+        assert round(x * frazione, 2) >= E.SUBMIN_FLOOR
+
+
+def test_con_importi_esatti_spenti_la_divisione_si_ferma_al_minimo():
+    """Se dalla UI si spengono gli "importi esatti", gli ordini tornano
+    legalizzati al minimo .it: li' dividere avrebbe senso solo se ciascuna meta'
+    ci arriva da sola, altrimenti si comprerebbe Over di troppo su ENTRAMBE. In
+    quel caso non si divide."""
+    p = params(exact_sizes=False)
+    liab, fattore, c = 15.0, 1.2, 0.05
+    frazione, declassato = E.frazione_copertura(
+        1, p, E.cover_residual(liab, 4.0, c, fattore, 0.0))
+    assert (frazione, declassato) == (pytest.approx(0.5), False)
+    frazione, declassato = E.frazione_copertura(
+        1, p, E.cover_residual(liab, 8.0, c, fattore, 0.0))
+    assert (frazione, declassato) == (pytest.approx(1.0), True)
+
+
+def test_finestra_uscita_parte_dal_terzo_gol():
+    """13/09, richiesta dell'utente: la regola di uscita in perdita HT/2T parte
+    dal TERZO gol, non dal secondo. Con due gol la partita non e' compromessa --
+    ne servono altri due per perdere l'Under 3.5 -- e chiudere li' e' prematuro."""
+    p = params()
+    assert p["ht_loss_goals_min"] == 3 and p["ht_loss_goals_max"] == 4
+    assert E.loss_exit_ok(-2.0, 24.0, 25.0, goals=2, gmin=3, gmax=4) is False
+    assert E.loss_exit_ok(-2.0, 24.0, 25.0, goals=3, gmin=3, gmax=4) is True
+    assert E.loss_exit_ok(-2.0, 24.0, 25.0, goals=4, gmin=3, gmax=4) is True
+    assert E.loss_exit_ok(-2.0, 24.0, 25.0, goals=5, gmin=3, gmax=4) is False
 
 
 def test_seconda_tranche_si_ricalcola_sulla_quota_del_momento():
@@ -465,25 +481,26 @@ def test_la_protezione_totale_regge_a_qualunque_quota_della_seconda_tranche(prez
     assert ((x1 + x2) > 2.71) is piu_caro
 
 
-def test_niente_split_se_la_tranche_finirebbe_sotto_il_minimo():
-    """Con l'Over molto alto la meta' esatta scende sotto i 2 EUR piazzabili:
-    alzarla al minimo comprerebbe Over di troppo su ENTRAMBE le tranche, quindi
-    si copre in UNA volta. Meglio una copertura giusta che due sbagliate."""
+def test_la_tranche_sotto_il_minimo_si_piazza_lo_stesso():
+    """Il caso che prima bloccava tutto: meta' copertura = 1,35 EUR, sotto i 2,00
+    di Betfair. Col place-and-trim si piazza per quello che vale."""
     ctx, p, _ = con_seconda_puntata_abbinata()
     # Over a 8,00 -- il caso TIPICO pochi minuti dopo un gol precoce: la meta'
-    # esatta vale 1,35 EUR. Alzarla al minimo su entrambe le tranche costerebbe
-    # 4,00 invece di 2,71 (il 48% in piu') e sovracoprirebbe con 0-3 gol.
+    # esatta vale 1,35 EUR. Prima non era piazzabile e si copriva tutto in una
+    # volta; col place-and-trim 1,35 e' un ordine valido e la divisione si fa.
     s = snap(KO + 240, u35=book(1.95, inplay=True), o45=book(8.0), minute=4, goals=1,
              last_goal_ts=KO + 120)
     d = E.decide(ctx, s, p)
     assert d.state == "LIVE_COVER_PENDING"
     tele = d.telemetry["cover"]
-    assert tele["split_declassato"] is True
-    assert tele["frazione"] == pytest.approx(1.0)
-    assert d.updates["cover_stage"] == 0        # niente seconda tranche
-    # e l'importo e' quello pieno ESATTO, non il minimo gonfiato
-    assert tele["x"] == pytest.approx(18.0 / (7.0 * 0.95), abs=0.01)
-    assert tele["x"] == pytest.approx(2.71, abs=0.02)
+    assert tele["split_declassato"] is False
+    assert tele["frazione"] == pytest.approx(0.5)
+    assert d.updates["cover_stage"] == 1        # la seconda tranche arrivera'
+    assert tele["x_pieno"] == pytest.approx(18.0 / (7.0 * 0.95), abs=0.01)
+    assert tele["x"] == pytest.approx(1.35, abs=0.02)
+    # e l'ordine piazzato porta l'importo ESATTO, non il minimo gonfiato
+    ordine = [a for a in d.actions if a.kind == "place"][0]
+    assert ordine.size == pytest.approx(1.35, abs=0.02)
 
 
 def test_split_attivo_quando_la_tranche_e_piazzabile():

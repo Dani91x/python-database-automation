@@ -588,6 +588,184 @@ def place_order_live(
     )
 
 
+# ---------------------------------------------------------------------------
+# PLACE-AND-TRIM su REST: QUALSIASI importo, anche 0,05 EUR
+# ---------------------------------------------------------------------------
+# Betfair rifiuta un place DIRETTO sotto il minimo di giurisdizione (.it BACK
+# 2,00 / LAY 0,50), ma NON rifiuta un ordine gia' esistente RIDOTTO sotto quella
+# soglia. E' la tecnica che usano Bet Angel, Fairbot e Betting Toolkit:
+#
+#   1. placeOrders   del MINIMO a una quota NON abbinabile (BACK 1000 / LAY 1.01),
+#                    persistenza LAPSE e SENZA fill-or-kill (deve restare a riposo);
+#   2. cancelOrders  con ``sizeReduction`` = minimo - importo voluto: resta a
+#                    mercato esattamente l'importo voluto, sotto il minimo;
+#   3. replaceOrders alla quota reale.
+#
+# La stessa sequenza esiste gia' come macchina a stati asincrona in
+# ``Betfair/stream/trading/submin.py`` per il runner flumine. Questa e' la
+# versione REST, sincrona, che non dipende da nessun runner acceso.
+#
+# GUARDIE money-critical, identiche a quelle della macchina:
+#   * se lo step 1 si ABBINA (non deve: la quota non e' abbinabile) -> si ritira
+#     tutto e si solleva. Nessun ritento automatico: siamo entrati a mercato in
+#     modo non previsto e va guardato a mano.
+#   * il passaggio allo step 3 avviene SOLO se Betfair CONFERMA il taglio
+#     (``sizeCancelled`` == la riduzione chiesta). Senza questa verifica un
+#     replace porterebbe la size PIENA del parcheggio alla quota reale.
+#   * qualunque fallimento dopo lo step 1 ritira il residuo prima di propagare:
+#     mai un ordine a riposo non tracciato sul conto.
+
+SUBMIN_PARK_PRICE_BACK = 1000.0
+SUBMIN_PARK_PRICE_LAY = 1.01
+SUBMIN_MIN_BACK = 2.00      # .it
+SUBMIN_MIN_LAY = 0.50       # .it
+SUBMIN_ABS_MIN = 0.01       # floor assoluto del residuo dopo il taglio
+
+
+def _submin_cancel(market_id: str, bet_id: str, size_reduction: Optional[float]) -> dict:
+    """cancelOrders: parziale con ``size_reduction``, totale con None."""
+    instr: dict = {"betId": str(bet_id)}
+    if size_reduction is not None:
+        instr["sizeReduction"] = round(float(size_reduction), 2)
+    return call_mutating(
+        lambda c: c.betting_rpc(
+            method="SportsAPING/v1.0/cancelOrders",
+            params={"marketId": str(market_id), "instructions": [instr]},
+        )
+    ) or {}
+
+
+def _submin_ritira(market_id: str, bet_id: Optional[str]) -> None:
+    """Ritiro best-effort del residuo: non deve mai far fallire la propagazione."""
+    if not bet_id:
+        return
+    try:
+        _submin_cancel(market_id, bet_id, None)
+    except Exception as ex:  # noqa: BLE001
+        logger.critical("[submin] RITIRO FALLITO bet %s su %s: %s — controllare a mano",
+                        bet_id, market_id, str(ex)[:160])
+
+
+def place_submin_live(
+    *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
+    side: str = "back", customer_ref: Optional[str] = None,
+) -> PlaceResult:
+    """Piazza un importo SOTTO il minimo di Betfair col place-and-trim (REST).
+
+    L'ordine resta A RIPOSO alla quota richiesta: se il mercato la copre gia',
+    Betfair lo abbina subito e ``size_matched`` lo riporta; altrimenti resta sul
+    book come qualunque ordine limite.
+    """
+    side_l = str(side).lower()
+    if side_l not in ("back", "lay"):
+        raise ValueError(f"side non valido: {side!r}")
+    try:
+        target = round(float(size), 2)
+    except (TypeError, ValueError):
+        raise ValueError(f"size non numerica: {size!r}") from None
+    if not math.isfinite(target) or target < SUBMIN_ABS_MIN:
+        raise ValueError(f"size non piazzabile nemmeno col place-and-trim: {size!r} "
+                         f"(minimo assoluto {SUBMIN_ABS_MIN:.2f})")
+    minimo = SUBMIN_MIN_BACK if side_l == "back" else SUBMIN_MIN_LAY
+    if target >= minimo - 1e-9:
+        # non serve nessun trucco: e' un ordine normale
+        return place_order_live(market_id=market_id, selection_id=selection_id, price=price,
+                                size=target, event_id=event_id, side=side_l,
+                                customer_ref=customer_ref)
+    target_tick = E.round_to_tick(float(price))
+    if not (E.MIN_PRICE <= target_tick <= E.MAX_PRICE):
+        raise ValueError(f"prezzo fuori scala Betfair: {price!r}")
+    riduzione = round(minimo - target, 2)
+    if riduzione < 0.01:
+        raise ValueError(f"riduzione nulla: minimo {minimo} target {target}")
+    parcheggio = SUBMIN_PARK_PRICE_BACK if side_l == "back" else SUBMIN_PARK_PRICE_LAY
+    ref = (customer_ref or f"submin-{event_id}")[:32]
+
+    # -- step 1: parcheggio del minimo a quota non abbinabile --------------------
+    report = call_mutating(
+        lambda c: c.place_orders(
+            str(market_id),
+            [{
+                "selectionId": int(selection_id), "handicap": 0,
+                "side": "BACK" if side_l == "back" else "LAY",
+                "orderType": "LIMIT", "customerOrderRef": ref,
+                # NIENTE timeInForce: l'ordine DEVE restare a riposo per poter
+                # essere tagliato. Un fill-or-kill lo ucciderebbe subito.
+                "limitOrder": {"size": round(minimo, 2), "price": parcheggio,
+                               "persistenceType": "LAPSE"},
+            }],
+            customer_ref=ref,
+            customer_strategy_ref=CUSTOMER_STRATEGY_REF,
+        )
+    ) or {}
+    reports = report.get("instructionReports") or []
+    ir = reports[0] if reports else {}
+    if not report or report.get("status") == "TIMEOUT" or ir.get("status") == "TIMEOUT":
+        raise RuntimeError(f"place-and-trim: esito IGNOTO al parcheggio ref={ref}")
+    if report.get("status") != "SUCCESS" or ir.get("status") != "SUCCESS":
+        raise RuntimeError(f"place-and-trim: parcheggio rifiutato "
+                           f"({ir.get('errorCode') or report.get('errorCode')})")
+    bet_id = ir.get("betId")
+    if not bet_id:
+        raise RuntimeError("place-and-trim: parcheggio senza betId")
+    abbinato_al_parcheggio = float(ir.get("sizeMatched") or 0.0)
+    if abbinato_al_parcheggio > 0:
+        # non deve succedere: a 1000 / 1.01 non c'e' controparte. Se succede
+        # siamo entrati a mercato in modo NON previsto: stop, niente ritento.
+        _submin_ritira(market_id, bet_id)
+        raise RuntimeError(f"place-and-trim ABORT: il parcheggio si e' abbinato "
+                           f"({abbinato_al_parcheggio:.2f} EUR a {parcheggio}) — "
+                           f"riconciliare a mano, bet {bet_id}")
+
+    # -- step 2: taglio fino all'importo voluto ----------------------------------
+    try:
+        canc = _submin_cancel(market_id, bet_id, riduzione)
+    except Exception:
+        _submin_ritira(market_id, bet_id)
+        raise
+    creps = canc.get("instructionReports") or []
+    cir = creps[0] if creps else {}
+    tagliato = float(cir.get("sizeCancelled") or 0.0)
+    if canc.get("status") != "SUCCESS" or cir.get("status") != "SUCCESS" or \
+            abs(tagliato - riduzione) > 0.005:
+        # money-critical: senza il taglio CONFERMATO da Betfair non si riprezza,
+        # altrimenti la size piena del parcheggio finirebbe alla quota reale
+        _submin_ritira(market_id, bet_id)
+        raise RuntimeError(f"place-and-trim: taglio non confermato "
+                           f"(chiesti {riduzione:.2f}, tagliati {tagliato:.2f}) — ritirato")
+
+    # -- step 3: riprezzo alla quota reale ---------------------------------------
+    try:
+        rep = call_mutating(
+            lambda c: c.betting_rpc(
+                method="SportsAPING/v1.0/replaceOrders",
+                params={"marketId": str(market_id),
+                        "instructions": [{"betId": str(bet_id), "newPrice": target_tick}]},
+            )
+        ) or {}
+    except Exception:
+        _submin_ritira(market_id, bet_id)
+        raise
+    rreps = rep.get("instructionReports") or []
+    rir = rreps[0] if rreps else {}
+    if rep.get("status") != "SUCCESS" or rir.get("status") != "SUCCESS":
+        _submin_ritira(market_id, bet_id)
+        raise RuntimeError(f"place-and-trim: riprezzo rifiutato "
+                           f"({rir.get('errorCode') or rep.get('errorCode')}) — ritirato")
+    pir = rir.get("placeInstructionReport") or {}
+    nuovo_bet = pir.get("betId") or bet_id
+    matched = float(pir.get("sizeMatched") or 0.0)
+    logger.info("[submin] %s %s %.2f EUR @ %.2f su %s (bet %s) — place-and-trim completato",
+                side_l, selection_id, target, target_tick, market_id, nuovo_bet)
+    return PlaceResult(
+        ok=True,
+        order_status=pir.get("orderStatus") or "EXECUTABLE",
+        bet_id=nuovo_bet,
+        size_matched=matched,
+        avg_price_matched=pir.get("averagePriceMatched") or (target_tick if matched > 0 else None),
+        raw=rep if isinstance(rep, dict) else {},
+    )
+
 def place_lay_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     customer_ref: Optional[str] = None,

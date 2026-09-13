@@ -421,6 +421,12 @@ def test_live_cover_skipped_when_too_many_goals():
 
 def _live_covered():
     ctx, p = _live_uncovered()
+    # 13/09 — il default della finestra di uscita e' passato a 3-4 gol (con DUE
+    # gol la partita non e' compromessa: ne servono altri due per perdere
+    # l'Under 3.5). Questi test misurano la MACCHINA dell'uscita, non la
+    # finestra: la riportano a 2 per conservare i loro numeri. La finestra nuova
+    # ha il suo test dedicato, test_finestra_uscita_parte_dal_terzo_gol.
+    p["ht_loss_goals_min"] = 2
     ctx.state = "LIVE_COVERED"
     ctx.legs.append(fill(E.Leg(role="over_cover", market=E.MARKET_OU45, selection=E.SEL_OVER,
                                side="back", price=8.0, size=4.0)))

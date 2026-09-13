@@ -190,7 +190,10 @@ PARAM_SPEC: dict[str, Spec] = {
     "loss_exit_emp_min_n": (200, int, 20, 5000, None),
     "ht_loss_exit_enabled": (True, bool, None, None, None),
     "ht_loss_pct": (25.0, float, 0.0, 100.0, None),
-    "ht_loss_goals_min": (2, int, 0, 8, None),
+    # 13/09 — da 2 a 3 su richiesta dell'utente: con DUE gol la partita non e'
+    # ancora compromessa (ne servono altri due per perdere l'Under 3.5) e
+    # chiudere in perdita li' e' prematuro. La regola parte dal TERZO gol.
+    "ht_loss_goals_min": (3, int, 0, 8, None),
     "ht_loss_goals_max": (4, int, 0, 8, None),
     "h2_loss_exit_enabled": (True, bool, None, None, None),
     "h2_loss_pct": (25.0, float, 0.0, 100.0, None),

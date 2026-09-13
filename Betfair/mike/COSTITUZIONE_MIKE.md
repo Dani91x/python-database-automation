@@ -1189,7 +1189,8 @@ gol, né a finestra scaduta. `second_entry_done` la rende irripetibile.
    momento** e su quanto la prima tranche ha già garantito. **Non** è «l'altra metà dello
    stesso importo»: su 15 € di rischio, con la prima tranche a 1,35 € (Over 8,00), la
    seconda vale 2,37 € se l'Over è sceso a 5,00 e 0,68 € se è salito a 15,00. In ogni caso
-   la protezione totale resta quella dichiarata da `cover_profit_factor`.
+   la protezione totale resta quella dichiarata da `cover_profit_factor`. Entrambe le
+tranche si piazzano per il loro importo esatto (§15.5).
 
 La seconda puntata **non ritarda mai la copertura**: se non si abbina entro i due minuti
 viene annullata e si compra la copertura piena.
@@ -1203,31 +1204,54 @@ Per questo la copertura a tranche **passa da `LIVE_COVERED`** fra una tranche e 
 è lì che vivono le uscite globali, e hanno la **precedenza** sulla seconda tranche — se la
 posizione si chiude non c'è più niente da coprire.
 
-### 15.5 LIMITE NOTO E DICHIARATO: la divisione in due tranche oggi non è sempre eseguibile
+### 15.5 QUALSIASI IMPORTO È PIAZZABILE — place-and-trim collegato (13/09)
 
-Con stake 10 + 5 e `cover_profit_factor` 1,2, la metà della copertura scende **sotto i
-2,00 € minimi di Betfair appena la quota Over supera 5,74** — cioè nel caso tipico pochi
-minuti dopo un gol precoce (Over 4.5 a 7-12).
+**Regola definitiva: su Betfair si piazza qualunque cifra, fino al centesimo.**
+Il minimo di giurisdizione (.it BACK 2,00 € / LAY 0,50 €) riguarda il place **diretto**, non
+l'ordine in sé: un ordine già esistente può essere **ridotto** sotto quella soglia. È la
+tecnica di Bet Angel, Fairbot e Betting Toolkit, e si chiama **place-and-trim**:
 
-Alzare ciascuna tranche al minimo costerebbe **4,00 € invece di 2,71** (il 48 % in più) e
-sovracoprirebbe con 0-3 gol. Il bot quindi **non divide**: compra la copertura intera
-all'ora della prima tranche (`split_declassato` in telemetria, e la scheda lo dice).
-Meglio una copertura giusta subito che due tranche sbagliate.
+1. si **parcheggia** il minimo a una quota NON abbinabile (BACK 1000 / LAY 1.01), persistenza
+   LAPSE e **senza** fill-or-kill (deve restare a riposo per poter essere tagliato);
+2. si **taglia** con un cancel parziale (`sizeReduction`): resta esattamente l'importo voluto;
+3. si **riprezza** (`replaceOrders`) alla quota reale.
 
-**Perché il place-and-trim non risolve, oggi.** La tecnica esiste ed è implementata
-(`Betfair/stream/trading/submin.py`, macchina a stati idempotente, azione di coda
-`place_submin`), ma **nessun bot la richiede**: `safe_strategy/execution.py::enqueue_place`
-accoda sempre `action: "place"`, e Mike gira per giunta con `execution_mode="rest"`
-(`MIKE_USE_FLUMINE_QUEUE` non impostata), quindi non passa nemmeno dalla coda. Finché quel
-collegamento non c'è, `exact_sizes=True` non ha effetto sotto i 2,00 €.
+**Com'era prima del 13/09.** La macchina esisteva già in `Betfair/stream/trading/submin.py`,
+ma **nessuno la chiamava**: `execution.py::enqueue_place` accodava sempre `action: "place"`, e
+per giunta il runner flumine che esegue quella coda è **fermo dal 2 settembre**. Risultato:
+`exact_sizes=True` non aveva alcun effetto sotto i 2,00 € e il bot comprava 2,00 € di Over
+dove ne servivano 1,35 (il 48 % in più, tutto sovracopertura pagata).
 
-**Cosa serve per abilitare la divisione sempre** (da decidere, non fatto):
-1. `enqueue_place` deve poter accodare `action: "place_submin"` con prezzo e size obiettivo;
-2. l'apertura BACK sotto-minima deve prendere quella strada invece dell'errore
-   `size_sotto_minimo_betfair`;
-3. Mike deve usare la coda flumine per quegli ordini (o almeno per quelli).
-È una modifica al **livello di esecuzione condiviso con Safe**: va fatta e certificata a
-parte, non insieme a una modifica di strategia.
+**Com'è adesso.** Tre percorsi, in ordine:
+
+| Dove | Come |
+|---|---|
+| **paper** | l'esecuzione è simulata: non esiste nessun minimo da aggirare, l'importo esatto si abbina |
+| **live, coda del runner accesa** | azione `place_submin` sulla coda (macchina a stati asincrona, ripristinabile dopo un crash) |
+| **live, coda spenta** | `omega_market.place_submin_live` — la **stessa** sequenza in tre chiamate REST sincrone: nessun runner, nessuna dipendenza |
+
+Il terzo percorso è quello che rende la regola vera sempre: non dipende da nessun processo
+acceso. `cover_legal_size` non alza più niente al minimo, e la divisione in due tranche si fa
+a **qualunque** quota dell'Over (prima si fermava sopra 5,74, cioè quasi sempre).
+
+**Guardie money-critical della sequenza REST** (le stesse della macchina asincrona, testate
+in `Betfair/omega/test_place_and_trim_2026_09_13.py`):
+
+* il **parcheggio non deve mai abbinarsi** — a quota 1000 / 1.01 non c'è controparte. Se si
+  abbina siamo entrati a mercato in modo non previsto: si ritira tutto, si solleva, **nessun
+  ritento automatico**;
+* **senza il taglio confermato da Betfair non si riprezza.** È la guardia più importante:
+  `sizeCancelled` deve combaciare con la riduzione chiesta. Senza questa verifica un replace
+  porterebbe la size **piena** del parcheggio (2,00 €) alla quota reale;
+* **ogni fallimento dopo il parcheggio ritira il residuo** prima di propagare l'errore: mai un
+  ordine a riposo non tracciato sul conto.
+
+Il floor assoluto è **0,01 €** (`engine.SUBMIN_FLOOR`): sotto il centesimo non esiste ordine,
+e la richiesta viene rifiutata **prima** di toccare la rete.
+
+Unica eccezione, ed è una scelta esplicita dell'utente: se dalla UI si spengono gli **importi
+esatti** (`exact_sizes = false`), gli ordini tornano legalizzati al minimo .it e la divisione
+in tranche si ferma quando ciascuna metà non ci arriva da sola.
 
 ### 15.6 Nota sul percorso LIVE
 

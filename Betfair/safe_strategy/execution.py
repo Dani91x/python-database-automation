@@ -41,10 +41,17 @@ logger = logging.getLogger("safe.execution")
 # sentinella: esito enqueue IGNOTO in LIVE (mai il place REST subito).
 ENQUEUE_UNKNOWN = -1
 
-# SIZE MINIMA reale di Betfair (M-31): sotto questa soglia l'exchange RIFIUTA
-# l'ordine. In live non si prova nemmeno: si dichiara l'errore (il sotto-minimo
-# ufficiale — place min @1.01 + sizeReduction — vive nella macchina 'submin' del
-# worker della coda, MAI nel place REST del bot). Override: SAFE_MIN_SIZE_LIVE.
+# SIZE MINIMA di PIAZZAMENTO di Betfair (.it: BACK 2,00 / LAY 0,50). Sotto
+# questa soglia l'exchange rifiuta un place DIRETTO — ma NON rifiuta un ordine
+# esistente RIDOTTO sotto la soglia. E' la tecnica che usano Bet Angel, Fairbot
+# e Betting Toolkit, si chiama PLACE-AND-TRIM ed e' implementata in
+# ``Betfair/stream/trading/submin.py`` (azione di coda ``place_submin``):
+#   1. place del minimo a una quota NON abbinabile (BACK 1000 / LAY 1.01);
+#   2. cancel PARZIALE: resta esattamente la size voluta, sotto il minimo;
+#   3. replace alla quota reale.
+# Quindi QUALSIASI importo e' piazzabile, fino al centesimo. Questa soglia serve
+# solo a decidere QUALE dei due percorsi usare, non a rifiutare l'ordine.
+# Override: SAFE_MIN_SIZE_LIVE.
 def _min_size_live() -> float:
     import os
 
@@ -154,17 +161,33 @@ def place(
 
     tid = trade_id if trade_id is not None else _trade_id_from_ref(client_ref)
 
+    # --- sotto il minimo di PIAZZAMENTO? allora place-and-trim -------------------
+    # Le CHIUSURE non c'entrano: Betfair accetta gia' gli ordini sotto minimo che
+    # RIDUCONO una posizione (review C2), quindi passano dal percorso normale.
+    min_live = _min_size_live()
+    is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
+    sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
+
     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
-    use_flumine, gate_reason = _gate(event_id, db=db, mode=mode, params=params, now=now)
+    gate_params = params
+    if sotto_minimo:
+        # Un ordine sotto-minimo NON ha alternativa REST: o passa dalla macchina
+        # place-and-trim sulla coda, o non esiste. Quindi il gate si valuta come
+        # 'auto' anche se il chiamante ha scelto il percorso REST per gli ordini
+        # normali — non e' un bypass: e' l'UNICO percorso possibile per questa size.
+        gate_params = dict(params, execution_mode="auto")
+    use_flumine, gate_reason = _gate(event_id, db=db, mode=mode, params=gate_params, now=now)
     if use_flumine and tid is not None:
         rid = enqueue_place(
             db=db, trade_id=tid, client_ref=client_ref, event_id=event_id,
             market_id=market_id, selection_id=selection_id, side=side,
             price=price, size=size, base_meta=meta, now=now, mode=mode,
+            action="place_submin" if sotto_minimo else "place",
         )
         if rid:
+            nota = "submin" if sotto_minimo else mode
             return PlaceOutcome("pending", price, size, None,
-                                f"flumine_{mode}:{rid if rid > 0 else 'unknown'}")
+                                f"flumine_{nota}:{rid if rid > 0 else 'unknown'}")
         gate_reason = "enqueue_failed"
 
     # --- percorso legacy (fallback SEMPRE disponibile) ---
@@ -177,11 +200,18 @@ def place(
     # size CAPPATA a ``best_size``) veniva riempita in paper e RIFIUTATA in
     # live. Paper = live senza soldi: lo stesso ordine deve avere lo stesso
     # esito, altrimenti il paper dichiara posizioni che il live non avrebbe mai.
-    min_live = _min_size_live()
-    is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
-    if min_live > 0 and size < min_live - 1e-9 and not is_closing:
-        return PlaceOutcome("error", None, 0.0, None,
-                            f"size_sotto_minimo_betfair:{size:.2f}<{min_live:.2f}")
+    if sotto_minimo:
+        # La coda non era disponibile (runner fermo, evento non in streaming...).
+        # In PAPER non esiste nessun minimo da aggirare: l'esecuzione e' simulata e
+        # il fill di 0,73 EUR e' fedele a quello che il place-and-trim otterrebbe
+        # davvero in live. In LIVE, senza coda, la sequenza non e' eseguibile: si
+        # dichiara l'errore col MOTIVO, cosi' si vede che manca il runner e non
+        # che "l'importo e' troppo piccolo".
+        if mode != "paper" and not hasattr(market, "place_submin_live"):
+            # nessuna coda E nessun place-and-trim su questo mercato: si dichiara
+            # il MOTIVO, non "l'importo e' troppo piccolo"
+            return PlaceOutcome("error", None, 0.0, None,
+                                f"submin_non_disponibile:{gate_reason}")
     if mode == "paper":
         try:
             # ``best_size`` = liquidita' abbinabile al best price dichiarata dal
@@ -209,12 +239,20 @@ def place(
         return PlaceOutcome("open", fill.avg_price, fill.matched_size, None,
                             f"paper_fill:{gate_reason}")
 
-    # LIVE — soldi veri: REST FOK generico (side esplicito).
+    # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
+    # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
+    # la stessa tecnica di Bet Angel/Fairbot, in tre chiamate REST sincrone.
     try:
-        res = market.place_order_live(
-            market_id=str(market_id), selection_id=int(selection_id), price=price,
-            size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
-        )
+        if sotto_minimo:
+            res = market.place_submin_live(
+                market_id=str(market_id), selection_id=int(selection_id), price=price,
+                size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
+            )
+        else:
+            res = market.place_order_live(
+                market_id=str(market_id), selection_id=int(selection_id), price=price,
+                size=size, event_id=str(event_id), side=side, customer_ref=client_ref[:32],
+            )
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
     # rifiuto PROVATO dall'exchange (risposta ricevuta, nessun fill): 'error' legittimo
@@ -223,7 +261,7 @@ def place(
                             f"live_not_matched:{res.order_status}")
     return PlaceOutcome("open", float(res.avg_price_matched or price),
                         round(float(res.size_matched), 2), res.bet_id,
-                        f"live_rest:{res.order_status}")
+                        f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}")
 
 
 def _reconciling(db, trade_id: Optional[int], *, meta: dict[str, Any], mode: str,
@@ -338,7 +376,7 @@ def _gate(event_id: str, *, db, mode: str, params: dict[str, Any],
 def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_id: str,
                   selection_id: int, side: str, price: float, size: float,
                   base_meta: Optional[dict], now: datetime,
-                  mode: str = "paper") -> Optional[int]:
+                  mode: str = "paper", action: str = "place") -> Optional[int]:
     """Accoda il place sulla coda del runner col ``client_ref`` dato.
 
     PORT fedele di ``omega_service._flumine_enqueue_place`` (ref parametrico):
@@ -353,6 +391,10 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
     if mode not in ("paper", "live"):  # INVARIANTE SUPREMO
         logger.error("[safe.exec] enqueue rifiutato: mode %r fuori whitelist", mode)
         return None
+    action = str(action)
+    if action not in ("place", "place_submin"):   # whitelist: nessuna azione a sorpresa
+        logger.error("[safe.exec] enqueue rifiutato: action %r fuori whitelist", action)
+        return None
     ref = str(client_ref)
     pre = dict(base_meta or {})
     pre.update({"phase": "flumine_wait", "flumine_client_ref": ref,
@@ -364,7 +406,7 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         return None
     payload: dict[str, Any] = {
         "client_ref": ref,
-        "action": "place",
+        "action": action,
         "mode": mode,
         "market_id": str(market_id),
         "selection_id": int(selection_id),
@@ -375,7 +417,13 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         "persistence": "LAPSE",
         "params": {"source": "safe", "trade_id": int(trade_id)},
     }
-    if mode == "live":
+    if action == "place_submin":
+        # la sequenza place-and-trim lascia l'ordine A RIPOSO alla quota target:
+        # un FILL_OR_KILL lo ucciderebbe al primo step (la quota di parcheggio non
+        # e' abbinabile per costruzione). La size esatta viaggia anche in
+        # ``params.target_size``, che e' cio' che il worker legge per primo.
+        payload["params"]["target_size"] = float(size)
+    elif mode == "live":
         payload["time_in_force"] = "FILL_OR_KILL"
     try:
         rid = db.enqueue_live_order(payload)

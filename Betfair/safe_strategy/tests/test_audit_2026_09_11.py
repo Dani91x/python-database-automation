@@ -882,13 +882,18 @@ def test_m30_firma_dei_parametri_cambia_con_i_parametri():
 # M-31 - size minima Betfair 2 EUR in live
 # ===========================================================================
 def test_m31_size_sotto_il_minimo_non_arriva_a_betfair():
+    """M-31 rivisto il 13/09 — un place DIRETTO sotto minimo non parte MAI verso
+    Betfair (sarebbe un rifiuto certo). Ma non e' piu' un muro: l'ordine esiste
+    lo stesso, per la via del place-and-trim (``place_submin`` sulla coda). Qui
+    la coda non c'e' (runner fermo), quindi in live l'errore dice proprio quello:
+    manca il runner, non "l'importo e' troppo piccolo"."""
     db = FakeDB(status="stopped")
     mk = FakeMarket()
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=1.5,
                   client_ref="safe-t1", trade_id=1, now=NOW, params={})
     assert out.status == "error"
-    assert out.fill_note.startswith("size_sotto_minimo_betfair")
+    assert out.fill_note.startswith("submin_non_disponibile")
     assert mk.placed == [], "nessuna chiamata buttata"
     out = X.place(db=db, market=mk, mode="live", event_id="1.1", market_id="m1",
                   selection_id=7, side="back", price=3.0, size=2.0,
@@ -896,32 +901,39 @@ def test_m31_size_sotto_il_minimo_non_arriva_a_betfair():
     assert out.status == "open" and len(mk.placed) == 1
 
 
-def test_m31_il_minimo_vale_anche_in_paper():
-    """CERTIFICAZIONE 12/09 — PAPER = LIVE anche sul minimo di 2 EUR.
+def test_m31_in_paper_qualsiasi_importo_si_abbina():
+    """13/09 — QUALSIASI importo e' piazzabile, anche 0,50 o 0,05 EUR.
 
-    Fino all'11/09 il controllo M-31 stava SOLO nel ramo live: un'apertura da
-    0,50 EUR (stake piccolo, oppure size CAPPATA a ``best_size``) veniva
-    riempita in paper e RIFIUTATA in live. Il paper dichiarava cosi' posizioni
-    che il live non avrebbe mai avuto: e' una scorciatoia che regala fill.
-    Le CHIUSURE restano esenti (Betfair accetta il sotto-minimo che riduce)."""
+    Il minimo di Betfair riguarda il place DIRETTO, non l'ordine in se': col
+    place-and-trim (``submin.py``) si piazza il minimo a una quota non
+    abbinabile, si riduce col cancel parziale e si riprezza. In paper non c'e'
+    nessun minimo da aggirare — l'esecuzione e' simulata — quindi il fill da
+    0,50 EUR e' FEDELE a quello che il place-and-trim ottiene in live.
+
+    Il vincolo di fedelta' paper=live della certificazione 12/09 resta, ma ora
+    e' soddisfatto dal verso giusto: non rifiutando in paper cio' che il live
+    non sapeva fare, bensi' insegnandolo al live."""
     db = FakeDB(status="stopped")
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
                   best_size=100.0, client_ref="safe-t1", trade_id=1, now=NOW, params={})
-    assert out.status == "error"
-    assert out.fill_note.startswith("size_sotto_minimo_betfair")
-    # stessa size, ma e' una gamba di CHIUSURA: passa (come in live)
+    assert out.status == "open" and out.size == 0.5
+    # anche cinque centesimi
+    out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
+                  market_id="m1", selection_id=7, side="back", price=3.0, size=0.05,
+                  best_size=100.0, client_ref="safe-t1b", trade_id=11, now=NOW, params={})
+    assert out.status == "open" and out.size == 0.05
+    # gamba di CHIUSURA: passava gia' prima (Betfair accetta cio' che riduce)
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=0.5,
                   best_size=100.0, client_ref="safe-t2", trade_id=2, now=NOW, params={},
                   meta={"cashout": True, "closes_trade_id": 1})
     assert out.status == "open"
-    # size CAPPATA dalla liquidita' sotto il minimo: rifiutata come in live
+    # size CAPPATA dalla liquidita' sotto il minimo: si piazza quella disponibile
     out = X.place(db=db, market=FakeMarket(), mode="paper", event_id="1.1",
                   market_id="m1", selection_id=7, side="back", price=3.0, size=5.0,
                   best_size=1.2, client_ref="safe-t3", trade_id=3, now=NOW, params={})
-    assert out.status == "error"
-    assert out.fill_note.startswith("size_sotto_minimo_betfair")
+    assert out.status == "open" and out.size == 1.2
 
 
 # ===========================================================================
