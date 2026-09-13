@@ -17,7 +17,8 @@ export type MikeRequestKind = 'cashout' | 'flatten' | 'skip_event' | 'resume_eve
 
 export const MIKE_STATES = [
     'WATCH', 'PRE_ENTRY_PENDING', 'PRE_OPEN', 'PRE_GREEN_PENDING', 'HOLD',
-    'PRE_LAST_ENTRY_PENDING', 'IDLE_LIVE', 'LIVE_UNCOVERED', 'LIVE_COVER_PENDING',
+    'PRE_LAST_ENTRY_PENDING', 'IDLE_LIVE', 'LIVE_KO_GREEN', 'LIVE_SECOND_ENTRY',
+    'LIVE_UNCOVERED', 'LIVE_COVER_PENDING',
     'LIVE_COVERED', 'LIVE_CLOSING', 'FLAT', 'REENTRY_PENDING', 'REENTRY_OPEN',
     'REENTRY_GREEN_PENDING', 'SETTLING', 'SETTLED', 'ERROR', 'SKIPPED',
 ] as const;
@@ -302,7 +303,7 @@ export interface MikeStateView {
 }
 
 // ------------------------------------------------------------- parametri
-export type MikeParamGroup = 'generale' | 'pre' | 'cover' | 'cashout' | 'uscite' | 'reentry' | 'rischio';
+export type MikeParamGroup = 'generale' | 'pre' | 'fischio' | 'cover' | 'cashout' | 'uscite' | 'reentry' | 'rischio';
 
 export type MikeParamField =
     | { key: string; label: string; kind: 'number'; step: number; min: number; max: number; hint: string; group: MikeParamGroup }
@@ -311,7 +312,7 @@ export type MikeParamField =
     | { key: string; label: string; kind: 'text'; hint: string; group: MikeParamGroup };
 
 export const MIKE_PARAM_GROUP_LABEL: Record<MikeParamGroup, string> = {
-    generale: 'Generale', pre: 'Pre-match', cover: 'Copertura Over 4.5', cashout: 'Cash-out globale',
+    generale: 'Generale', pre: 'Pre-match', fischio: 'Dal fischio d’inizio', cover: 'Copertura Over 4.5', cashout: 'Cash-out globale',
     uscite: 'Uscite HT / 2T', reentry: 'Re-ingresso (gol + 3.5)', rischio: 'Rischio',
 };
 
@@ -337,6 +338,15 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'last_entry_persist', label: 'Ultimo ingresso in PERSIST', kind: 'bool', hint: 'la posizione entra in live', group: 'pre' },
     { key: 'last_entry_ticks_above', label: 'Ultimo ingresso: tick sopra il best', kind: 'number', step: 1, min: 0, max: 3, hint: '0 = taker al best', group: 'pre' },
     { key: 'cancel_unmatched_after_ko_s', label: 'Cancella residuo PERSIST dopo KO (s)', kind: 'number', step: 10, min: 0, max: 900, hint: 'evita fill su spike dopo un gol', group: 'pre' },
+    { key: 'ko_green_enabled', label: 'Uscita al fischio attiva', kind: 'bool', hint: 'la posizione portata in gioco prova PRIMA a uscire in profitto; off = si copre e basta', group: 'fischio' },
+    { key: 'ko_green_ticks', label: 'Uscita a (+tick dall’ingresso)', kind: 'number', step: 1, min: 1, max: 10, hint: 'lay N tick sotto il nostro prezzo d’ingresso: è un limite, se il mercato offre meglio si abbina meglio', group: 'fischio' },
+    { key: 'ko_green_window_s', label: 'Finestra dell’uscita (s dal fischio)', kind: 'number', step: 30, min: 0, max: 900, hint: 'scaduta senza abbinamento: ordine annullato e copertura piena sull’Over 4.5', group: 'fischio' },
+    { key: 'ko_green_retry_s', label: 'Uscita: ritenta ogni (s)', kind: 'number', step: 1, min: 1, max: 60, hint: 'vale solo in live, dove l’ordine appoggiato non esiste: il limite viene ri-presentato al mercato a questo ritmo', group: 'fischio' },
+    { key: 'second_entry_enabled', label: 'Seconda puntata dopo un gol precoce', kind: 'bool', hint: 'solo se il gol arriva dentro la finestra, ancora scoperti e non usciti', group: 'fischio' },
+    { key: 'second_entry_stake_pct', label: 'Seconda puntata: % dello stake', kind: 'number', step: 5, min: 0, max: 200, hint: '50 = metà dello stake iniziale, al miglior prezzo disponibile: alza la quota media', group: 'fischio' },
+    { key: 'early_goal_cover_delay_s', label: 'Prima tranche dopo (s dal gol)', kind: 'number', step: 15, min: 0, max: 900, hint: 'tempo lasciato al mercato per riprezzare prima di comprare la prima parte di copertura', group: 'fischio' },
+    { key: 'early_goal_cover_pct', label: 'Prima tranche: % della copertura', kind: 'number', step: 5, min: 0, max: 100, hint: 'sotto il minimo piazzabile non si divide: si copre in una volta (dividere costerebbe di più)', group: 'fischio' },
+    { key: 'early_goal_cover2_delay_s', label: 'Seconda tranche dopo (s dalla prima abbinata)', kind: 'number', step: 15, min: 0, max: 900, hint: 'il residuo si ricalcola sulla quota Over di quel momento e su quanto la prima ha già garantito', group: 'fischio' },
     { key: 'cover_enabled', label: 'Copertura attiva', kind: 'bool', hint: 'off = Under nudo in live', group: 'cover' },
     { key: 'cover_profit_factor', label: 'Fattore copertura', kind: 'number', step: 0.05, min: 1, max: 3, hint: '1.2 = se vince l’Over 4.5 il netto è +20% dello stake Under', group: 'cover' },
     { key: 'cover_policy', label: 'Quando coprire', kind: 'choice', choices: ['auto', 'immediate', 'wait'], hint: 'auto = subito o attesa secondo hazard/P(4); immediate = subito; wait = fino al minuto max', group: 'cover' },
@@ -399,6 +409,9 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     pre_max_spread_ticks: 6, pre_green_ticks: 2, pre_exit_mode: 'resting', pre_entry_ttl_s: 60,
     pre_max_cycles: 10, pre_reentry_cooldown_s: 60, pre_last_entry_min: 10, last_entry_persist: true,
     last_entry_ticks_above: 0, cancel_unmatched_after_ko_s: 120,
+    ko_green_enabled: true, ko_green_ticks: 2, ko_green_window_s: 180, ko_green_retry_s: 5,
+    second_entry_enabled: true, second_entry_stake_pct: 50,
+    early_goal_cover_delay_s: 120, early_goal_cover_pct: 50, early_goal_cover2_delay_s: 180,
     cover_enabled: true, cover_profit_factor: 1.2, cover_policy: 'auto', cover_wait_hazard_max: 0.06,
     cover_wait_max_min: 10, cover_wait_p4_max: 0.16, cover_good_price: 7, cover_wait_min_gain_pct: 8,
     cover_wait_step_min: 5, cover_postgoal_delay_s: 45, cover_max_goals: 2,
@@ -460,6 +473,8 @@ export const MIKE_PHASE_META: Record<MikeState, PhaseMeta> = {
     HOLD: { label: 'TIENE FINO AL FISCHIO', what: 'chiudere adesso sarebbe in perdita: tiene l’Under 3.5 e lo porta in gioco', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50', dot: 'bg-amber-400', group: 'pre' },
     PRE_LAST_ENTRY_PENDING: { label: 'ULTIMO INGRESSO', what: 'ultimo ingresso prima del fischio: l’ordine resta valido anche in gioco', cls: 'bg-teal-500/25 text-teal-100 border-teal-300/60', dot: 'bg-teal-300', group: 'pre' },
     IDLE_LIVE: { label: 'IN GIOCO · NESSUNA POSIZIONE', what: 'partita iniziata senza posizione: Mike non opera più su questa partita', cls: 'bg-slate-600/30 text-slate-300 border-slate-500/40', dot: 'bg-white/30', group: 'live' },
+    LIVE_KO_GREEN: { label: 'USCITA AL FISCHIO', what: 'lay appoggiata a +N tick dal nostro ingresso: se si abbina si esce in profitto senza coprire', cls: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50 animate-pulse', dot: 'bg-emerald-400 animate-pulse', group: 'live' },
+    LIVE_SECOND_ENTRY: { label: 'GOL PRECOCE · SECONDA PUNTATA', what: 'gol dentro la finestra: seconda puntata sull’Under 3.5 al miglior prezzo, poi copertura a tranche', cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50 animate-pulse', dot: 'bg-amber-400 animate-pulse', group: 'live' },
     LIVE_UNCOVERED: { label: 'IN GIOCO · SCOPERTO', what: 'Under 3.5 aperto senza copertura: valuta quando comprare l’Over 4.5', cls: 'bg-sky-500/20 text-sky-200 border-sky-400/50', dot: 'bg-sky-400', group: 'live' },
     LIVE_COVER_PENDING: { label: 'COPERTURA IN CORSO', what: 'ordine Over 4.5 sul book: aspetta l’abbinamento della copertura', cls: 'bg-violet-500/20 text-violet-200 border-violet-400/50 animate-pulse', dot: 'bg-violet-400 animate-pulse', group: 'live' },
     LIVE_COVERED: { label: 'IN GIOCO · COPERTO', what: 'Under 3.5 + Over 4.5 abbinati: aspetta la soglia di cash out o il fischio finale', cls: 'bg-violet-500/25 text-violet-100 border-violet-300/60', dot: 'bg-violet-300', group: 'live' },
@@ -821,12 +836,13 @@ export function activeLegs(ev: MikeEvent): MikeLeg[] {
 }
 
 export function investedOf(ev: MikeEvent): number {
-    const roles = new Set(['under_entry', 'under_last', 'over_cover', 'reentry']);
+    const roles = new Set(['under_entry', 'under_last', 'under_second', 'over_cover', 'reentry']);
     return activeLegs(ev).filter((l) => l.side === 'back' && roles.has(l.role)).reduce((s, l) => s + Number(l.matched || 0), 0);
 }
 
 export const MIKE_ROLE_LABEL: Record<string, string> = {
     under_entry: 'Ingresso Under 3.5', under_green: 'Green-up Under 3.5', under_last: 'Ultimo ingresso (PERSIST)',
+    under_second: 'Seconda puntata Under 3.5', ko_green: 'Uscita al fischio',
     over_cover: 'Copertura Over 4.5', under_close: 'Chiusura Under 3.5', over_close: 'Chiusura Over 4.5',
     reentry: 'Re-ingresso Under 4.5', reentry_green: 'Green re-ingresso', manual_close: 'Chiusura manuale',
 };

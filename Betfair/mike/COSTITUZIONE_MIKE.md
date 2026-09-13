@@ -1140,3 +1140,133 @@ il mercato — ed è esattamente perché il modello era spento che non poteva fa
    dove 5,13 bastavano.
 3. Il rialzo al minimo Betfair su quote Over alte **conviene** (verificato: +0,05 € di EV):
    l'extra costa 0,46 € nell'87,5 % dei casi e rende +3,58 € nel 12,5 %. Non toccarlo.
+
+---
+
+## §15 IL FLUSSO DAL FISCHIO D'INIZIO (13/09/2026)
+
+Specifica dettata dall'utente e confermata prima di scrivere una riga di codice.
+Riguarda **solo** la posizione Under 3.5 che il pre-match non è riuscito a chiudere e che
+entra in gioco. Tutti i cicli pre-match già chiusi restano chiusi: questa è un'operazione
+nuova, che parte dal calcio d'inizio.
+
+### 15.1 Premessa verificata sulla documentazione Betfair
+
+`persistenceType` riguarda **solo la parte ineseguita** di un ordine: `LAPSE` la fa
+annullare al passaggio in gioco, `PERSIST` la porta dentro. Una gamba **già abbinata** non
+è toccata da nessuno dei due: entra in gioco comunque. Quindi la posizione Under 3.5
+abbinata prima del fischio è in gioco per costruzione, e l'ultimo ingresso in `PERSIST`
+serve a portare dentro anche l'eventuale **residuo** non ancora abbinato.
+
+### 15.2 Le tre strade
+
+Al fischio il bot appoggia l'**ordine opposto** (lay) a `ko_green_ticks` tick **sotto il
+nostro prezzo di ingresso** — la media delle gambe Under abbinate e ancora a rischio, non
+il prezzo di mercato. È un **limite**: se il mercato offre di meglio si abbina meglio, mai
+peggio. L'ordine resta per `ko_green_window_s` **contati dal fischio visto in gioco**, non
+dal `ko_at` di calendario.
+
+| | Condizione | Cosa fa il bot | Stato |
+|---|---|---|---|
+| **A** | l'ordine si abbina entro la finestra | profitto bloccato, **nessuna copertura**, capitale libero | `FLAT` |
+| **B** | la finestra scade senza gol e senza abbinamento | annulla l'ordine e compra la copertura **piena** sull'Over 4.5 | `LIVE_COVER_PENDING` |
+| **C** | arriva un gol dentro la finestra, ancora scoperti e non usciti | annulla l'ordine, **seconda puntata** sull'Under 3.5, poi copertura in **due tranche** | `LIVE_SECOND_ENTRY` |
+
+La strada C **non** si apre in nessun altro caso: né dopo la copertura, né su un secondo
+gol, né a finestra scaduta. `second_entry_done` la rende irripetibile.
+
+### 15.3 La strada C, passo per passo
+
+1. **Seconda puntata** `second_entry_stake_pct`% dello stake (50 % = 5 € su 10) sull'Under
+   3.5 **al miglior prezzo disponibile**. Dopo un gol la quota è salita: la seconda puntata
+   alza la **quota media** e sfrutta il tempo che resta senza gol.
+   Esempio della specifica: 10 € a 1,50 + 5 € a 1,95 = **15 € a 1,65**; vincendo si incassa
+   **+9,75** invece di +5,00, con un rischio di 15 invece di 10.
+2. **Prima tranche** di copertura dopo `early_goal_cover_delay_s` **dal gol** (2 minuti):
+   `early_goal_cover_pct`% della copertura necessaria.
+3. **Seconda tranche** dopo `early_goal_cover2_delay_s` **dall'abbinamento della prima**
+   (3 minuti): il **residuo**, ricalcolato da `cover_residual` sulla quota Over di **quel
+   momento** e su quanto la prima tranche ha già garantito. **Non** è «l'altra metà dello
+   stesso importo»: su 15 € di rischio, con la prima tranche a 1,35 € (Over 8,00), la
+   seconda vale 2,37 € se l'Over è sceso a 5,00 e 0,68 € se è salito a 15,00. In ogni caso
+   la protezione totale resta quella dichiarata da `cover_profit_factor`.
+
+La seconda puntata **non ritarda mai la copertura**: se non si abbina entro i due minuti
+viene annullata e si compra la copertura piena.
+
+### 15.4 Dal momento in cui ci sono due gambe a mercato, le uscite sono GLOBALI
+
+Regola esplicita dell'utente. Appena Under 3.5 e Over 4.5 sono entrambi a mercato, le
+decisioni di uscita riguardano la **posizione intera** (cash-out globale, cash-out
+intelligente, uscite HT/2T a modello, cap di perdita evento), **mai la singola gamba**.
+Per questo la copertura a tranche **passa da `LIVE_COVERED`** fra una tranche e l'altra:
+è lì che vivono le uscite globali, e hanno la **precedenza** sulla seconda tranche — se la
+posizione si chiude non c'è più niente da coprire.
+
+### 15.5 LIMITE NOTO E DICHIARATO: la divisione in due tranche oggi non è sempre eseguibile
+
+Con stake 10 + 5 e `cover_profit_factor` 1,2, la metà della copertura scende **sotto i
+2,00 € minimi di Betfair appena la quota Over supera 5,74** — cioè nel caso tipico pochi
+minuti dopo un gol precoce (Over 4.5 a 7-12).
+
+Alzare ciascuna tranche al minimo costerebbe **4,00 € invece di 2,71** (il 48 % in più) e
+sovracoprirebbe con 0-3 gol. Il bot quindi **non divide**: compra la copertura intera
+all'ora della prima tranche (`split_declassato` in telemetria, e la scheda lo dice).
+Meglio una copertura giusta subito che due tranche sbagliate.
+
+**Perché il place-and-trim non risolve, oggi.** La tecnica esiste ed è implementata
+(`Betfair/stream/trading/submin.py`, macchina a stati idempotente, azione di coda
+`place_submin`), ma **nessun bot la richiede**: `safe_strategy/execution.py::enqueue_place`
+accoda sempre `action: "place"`, e Mike gira per giunta con `execution_mode="rest"`
+(`MIKE_USE_FLUMINE_QUEUE` non impostata), quindi non passa nemmeno dalla coda. Finché quel
+collegamento non c'è, `exact_sizes=True` non ha effetto sotto i 2,00 €.
+
+**Cosa serve per abilitare la divisione sempre** (da decidere, non fatto):
+1. `enqueue_place` deve poter accodare `action: "place_submin"` con prezzo e size obiettivo;
+2. l'apertura BACK sotto-minima deve prendere quella strada invece dell'errore
+   `size_sotto_minimo_betfair`;
+3. Mike deve usare la coda flumine per quegli ordini (o almeno per quelli).
+È una modifica al **livello di esecuzione condiviso con Safe**: va fatta e certificata a
+parte, non insieme a una modifica di strategia.
+
+### 15.6 Nota sul percorso LIVE
+
+In live la lay **appoggiata** non esiste su nessun percorso di Mike (nota H3 in
+`service._live_exit_override`: niente fill simulati su soldi veri). L'ordine di uscita
+quindi non è marcato «resting» in live: viene **ri-presentato al mercato** ogni
+`ko_green_retry_s` secondi e si abbina appena il prezzo c'è — l'equivalente pratico di un
+ordine appoggiato. Il ritmo esiste perché 180 secondi a mezzo secondo produrrebbero 360
+righe di attività per partita, che è esattamente la zavorra da cui è arrivato lo
+`statement timeout` del 13/09.
+
+### 15.7 Guardie money-critical introdotte
+
+* **mai due lay vive sull'Under 3.5**: se la lay del ciclo pre-match non è ancora annullata
+  per davvero, l'ordine di uscita aspetta. Un doppio abbinamento ribalterebbe la posizione
+  da back netto a lay netto;
+* **baseline dei gol**: senza il punteggio al fischio la strada C non parte. Meglio perdere
+  la seconda puntata che aprirla su un gol che non c'è stato;
+* **orologi persistiti** (`live_since`, `ko_goals`, `early_goal_at`, `cover_stage`,
+  `cover_stage1_at`, `cover_forced`): un riavvio a metà partita non perde i tempi. Se il
+  momento del gol manca comunque, la copertura si compra **in una volta** invece di restare
+  in attesa di un'attesa che non finisce mai;
+* **la copertura ordinata dal flusso non ripassa dall'attesa "intelligente"** di
+  `cover_timing`: finestra scaduta e gol precoce sono decisioni già prese.
+
+### 15.8 Parametri nuovi (gruppo «Dal fischio d'inizio» nella UI)
+
+| Parametro | Default | Che cosa governa |
+|---|---|---|
+| `ko_green_enabled` | `true` | off = si copre e basta, nessun tentativo di uscita |
+| `ko_green_ticks` | 2 | tick sotto il nostro ingresso |
+| `ko_green_window_s` | 180 | durata della finestra, dal fischio |
+| `ko_green_retry_s` | 5 | ritmo di ri-presentazione (solo live) |
+| `second_entry_enabled` | `true` | seconda puntata dopo un gol precoce |
+| `second_entry_stake_pct` | 50 | % dello stake iniziale |
+| `early_goal_cover_delay_s` | 120 | prima tranche, dal gol |
+| `early_goal_cover_pct` | 50 | % della copertura nella prima tranche |
+| `early_goal_cover2_delay_s` | 180 | seconda tranche, dall'abbinamento della prima |
+
+Copertura di test: `Betfair/mike/tests/test_mike_flusso_fischio_2026_09_13.py`, 42 casi —
+tre strade, matematica delle due tranche a quote diverse, soglia del minimo piazzabile,
+uscite globali, percorso live, riavvio a metà partita.

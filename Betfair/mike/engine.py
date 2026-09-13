@@ -36,19 +36,27 @@ LINE = {MARKET_OU35: 3.5, MARKET_OU45: 4.5}
 
 STATES = (
     "WATCH", "PRE_ENTRY_PENDING", "PRE_OPEN", "PRE_GREEN_PENDING", "HOLD",
-    "PRE_LAST_ENTRY_PENDING", "IDLE_LIVE", "LIVE_UNCOVERED", "LIVE_COVER_PENDING",
+    "PRE_LAST_ENTRY_PENDING", "IDLE_LIVE", "LIVE_KO_GREEN", "LIVE_SECOND_ENTRY",
+    "LIVE_UNCOVERED", "LIVE_COVER_PENDING",
     "LIVE_COVERED", "LIVE_CLOSING", "FLAT", "REENTRY_PENDING", "REENTRY_OPEN",
     "REENTRY_GREEN_PENDING", "SETTLING", "SETTLED", "ERROR", "SKIPPED",
 )
 TERMINAL_STATES = ("SETTLED", "ERROR", "SKIPPED")
 
 ROLES = (
-    "under_entry", "under_green", "under_last", "over_cover", "under_close",
-    "over_close", "reentry", "reentry_green", "manual_close",
+    "under_entry", "under_green", "under_last", "under_second", "ko_green",
+    "over_cover", "under_close", "over_close", "reentry", "reentry_green", "manual_close",
 )
-OPENING_ROLES = ("under_entry", "under_last", "over_cover", "reentry")
+OPENING_ROLES = ("under_entry", "under_last", "under_second", "over_cover", "reentry")
 # gambe di CHIUSURA: sul DB portano ``closes_trade_id`` = riga dell'apertura (H4)
-CLOSING_ROLES = ("under_green", "under_close", "over_close", "reentry_green", "manual_close")
+CLOSING_ROLES = ("under_green", "ko_green", "under_close", "over_close", "reentry_green",
+                 "manual_close")
+
+# BACK di apertura che compongono la posizione Under 3.5 portata in gioco:
+# l'ingresso del ciclo, l'ultimo ingresso PERSIST e la SECONDA PUNTATA dopo un
+# gol precoce. Il prezzo medio di queste gambe e' il "punto di ingresso" su cui
+# si calcola l'uscita a +N tick.
+UNDER_ROLES = ("under_entry", "under_last", "under_second")
 
 # status della gamba il cui ordine ha esito IGNOTO (C3)
 STATUS_RECONCILE = "pending_reconcile"
@@ -217,6 +225,30 @@ class MatchCtx:
     # mediana 54': sui 111 ingressi storici non c'e' una sola osservazione
     # vicina al fischio). None = non ancora entrata in gioco, o prezzo assente.
     ko_price_under: Optional[float] = None
+    # ---- FLUSSO DAL FISCHIO D'INIZIO (specifica utente 13/09) --------------
+    # Momento in cui la partita e' stata VISTA in gioco con una posizione Under
+    # aperta: da qui partono i ``ko_green_window_s`` dell'ordine di uscita.
+    live_since: Optional[float] = None
+    # Gol sul tabellone al fischio: la baseline contro cui si riconosce il "gol
+    # precoce". None = il feed non li dava ancora (nessun confronto possibile).
+    ko_goals: Optional[int] = None
+    # Momento del gol precoce: da qui partono i minuti di attesa della PRIMA
+    # tranche di copertura.
+    early_goal_at: Optional[float] = None
+    # La seconda puntata Under 3.5 e' gia' stata tentata: MAI due volte.
+    second_entry_done: bool = False
+    # Copertura a tranche dopo un gol precoce:
+    #   0 = copertura normale (in una volta)
+    #   1 = prima tranche da comprare / sul book
+    #   2 = prima tranche abbinata, si aspettano i minuti prima della seconda
+    #   3 = seconda tranche (il RESIDUO, ricalcolato al prezzo del momento)
+    cover_stage: int = 0
+    # Momento in cui la prima tranche si e' abbinata: da qui partono i minuti
+    # di attesa della seconda.
+    cover_stage1_at: Optional[float] = None
+    # La copertura e' stata ORDINATA dal flusso (finestra di uscita scaduta, gol
+    # precoce): l'attesa "intelligente" di ``cover_timing`` non si applica piu'.
+    cover_forced: bool = False
 
 
 @dataclass(frozen=True)
@@ -716,7 +748,7 @@ def exit_kind_for(role: str, close_reason: Optional[str]) -> str:
     reason = str(close_reason or "")
     if role == "manual_close" or reason == "manual":
         return "manual"
-    if role in ("under_green", "reentry_green"):
+    if role in ("under_green", "ko_green", "reentry_green"):
         return "time" if reason == "reentry_time" else "greenup"
     if reason == "profit":
         return "profit"
@@ -1081,7 +1113,7 @@ def _place(role: str, market: str, selection: str, side: str, price: float, size
 
 
 def _under_position(ctx: MatchCtx) -> Tuple[float, Optional[float]]:
-    return position(ctx.legs, MARKET_OU35, SEL_UNDER, ("under_entry", "under_last"))
+    return position(ctx.legs, MARKET_OU35, SEL_UNDER, UNDER_ROLES)
 
 
 def cashout_base(ctx: MatchCtx, params: Dict[str, Any]) -> float:
@@ -1321,6 +1353,10 @@ def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision
             # nulla potra' piu' succedere → chiusa subito, senza P&L
             return Decision("SETTLED", [], "nessuna operazione", updates={"settled_pnl": 0.0})
         return Decision(st, [], "nessuna posizione")
+    if st == "LIVE_KO_GREEN":
+        return _decide_ko_green(ctx, snap, params, c)
+    if st == "LIVE_SECOND_ENTRY":
+        return _decide_second_entry(ctx, snap, params, c)
     if st == "LIVE_UNCOVERED":
         return _decide_uncovered(ctx, snap, params, c)
     if st == "LIVE_COVER_PENDING":
@@ -1400,11 +1436,24 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
                                selection=leg.selection))
         if S > 0:
-            upd = {"entry_price_initial": ctx.entry_price_initial or Pe}
+            upd: Dict[str, Any] = {"entry_price_initial": ctx.entry_price_initial or Pe}
             # il prezzo del fischio si scrive UNA volta: i giri successivi non
             # devono sovrascriverlo col prezzo del 10' o del 40'
             if ctx.ko_price_under is None and bk is not None and price_ok(bk.best_back):
                 upd["ko_price_under"] = float(bk.best_back)
+            # FLUSSO 13/09 — l'orologio della finestra di uscita parte QUI, alla
+            # prima volta che vediamo la partita in gioco con la posizione aperta
+            # (non al ``ko_at`` di calendario, che puo' essere anticipato o
+            # posticipato rispetto al fischio vero).
+            if ctx.live_since is None:
+                upd["live_since"] = snap.now
+                if snap.goals is not None:
+                    upd["ko_goals"] = int(snap.goals)
+            if params.get("ko_green_enabled", True) and price_ok(Pe):
+                return Decision("LIVE_KO_GREEN", acts,
+                                "in gioco: provo l'uscita a +%d tick" % int(params["ko_green_ticks"]),
+                                updates=upd)
+            upd["cover_forced"] = True
             return Decision("LIVE_UNCOVERED", acts, "in-play con posizione Under", updates=upd)
         return Decision("IDLE_LIVE", acts, "in-play senza posizione")
 
@@ -1588,13 +1637,315 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
 
 
 # ---- live -----------------------------------------------------------------------
+# ---- flusso dal fischio d'inizio (specifica utente 13/09) -------------------
+#
+# La posizione Under 3.5 abbinata nel pre-match entra in gioco cosi' com'e' (la
+# persistenza riguarda solo l'INESEGUITO: una gamba gia' abbinata non viene
+# toccata dal cambio di stato). Da li' il bot ha tre strade, e una sola si
+# realizza:
+#
+#   A) l'uscita a +N tick dal nostro punto di ingresso si abbina entro la
+#      finestra -> profitto bloccato, NESSUNA copertura, capitale libero;
+#   B) la finestra scade senza gol e senza abbinamento -> si annulla l'ordine e
+#      si compra la copertura PIENA sull'Over 4.5;
+#   C) arriva un gol mentre siamo ancora scoperti e non usciti -> si annulla
+#      l'ordine di uscita, si entra una SECONDA volta sull'Under 3.5 al miglior
+#      prezzo disponibile (la quota e' salita: alza la media e sfrutta il tempo
+#      senza gol), poi ci si copre in DUE tranche distanziate nel tempo.
+#
+# Dal momento in cui Under 3.5 e Over 4.5 sono entrambi a mercato valgono le
+# uscite GLOBALI sulla posizione (``_decide_covered``), non piu' le regole di
+# singola gamba: e' per questo che la copertura a tranche passa da LIVE_COVERED
+# fra una tranche e l'altra.
+
+
+def gol_dopo_il_fischio(ctx: MatchCtx, snap: Snapshot) -> bool:
+    """Il tabellone dice piu' gol di quanti ce n'erano al fischio?
+
+    Senza baseline (feed muto al calcio d'inizio) la risposta e' NO: meglio
+    perdere la seconda puntata che inventarsi un gol che non c'e' stato.
+    """
+    if snap.goals is None or ctx.ko_goals is None:
+        return False
+    return int(snap.goals) > int(ctx.ko_goals)
+
+
+def momento_del_gol(snap: Snapshot) -> float:
+    """Istante da cui contare i minuti di attesa della prima tranche.
+
+    Si usa l'orario del gol dichiarato dal feed quando e' plausibile (entro
+    l'ultimo quarto d'ora e non nel futuro), altrimenti ADESSO: il feed ha un
+    ritardo di 2-3 secondi, non di minuti.
+    """
+    ts = snap.last_goal_ts
+    if ts is not None:
+        try:
+            eta = float(snap.now) - float(ts)
+        except (TypeError, ValueError):
+            return float(snap.now)
+        if 0.0 <= eta <= 900.0:
+            return float(ts)
+    return float(snap.now)
+
+
+def finestra_uscita_scaduta(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> bool:
+    """Sono passati i minuti concessi all'ordine di uscita al fischio?"""
+    if ctx.live_since is None:
+        return False
+    return float(snap.now) - float(ctx.live_since) >= float(params["ko_green_window_s"])
+
+
+def piano_uscita_ko(ctx: MatchCtx, params: Dict[str, Any],
+                    prezzo_ingresso: Optional[float]) -> Optional[GreenupPlan]:
+    """Lay di uscita a ``ko_green_ticks`` tick SOTTO il nostro prezzo d'ingresso.
+
+    E' un LIMITE: se il mercato offre di meglio l'ordine si abbina meglio, mai
+    peggio. Il prezzo di riferimento e' la MEDIA delle gambe Under abbinate e
+    ancora a rischio, cioe' il punto di ingresso reale della posizione.
+    """
+    if not price_ok(prezzo_ingresso):
+        return None
+    target = green_target(round_to_tick(float(prezzo_ingresso)), int(params["ko_green_ticks"]))
+    w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
+    plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
+                           best_lay_price=None, fraction=1.0, target_price=target)
+    return plan if plan.actionable else None
+
+
+def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
+    """Uscita a +N tick appoggiata dal fischio, per la finestra concessa."""
+    S, Pe = _under_position(ctx)
+    if S <= 0:
+        return Decision("IDLE_LIVE", _cancel_live(ctx), "nessuna posizione Under")
+    acts = _late_persist_cancel(ctx, snap, params)
+    base: Dict[str, Any] = {}
+    if ctx.live_since is None:
+        base["live_since"] = snap.now
+    if ctx.ko_goals is None and snap.goals is not None:
+        base["ko_goals"] = int(snap.goals)
+    uscita = _last(ctx, "ko_green")
+
+    def _annulla(leg: Optional[Leg]) -> None:
+        if leg is not None and leg.is_live:
+            acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role,
+                               market=leg.market, selection=leg.selection))
+
+    # -- A) uscita abbinata ---------------------------------------------------
+    if uscita is not None and float(uscita.matched) > 0 and not uscita.is_live:
+        if not live_open_selections(ctx.legs, snap.goals):
+            bloccato = locked_pnl(ctx.legs, c)
+            tele = {"ko_green": {"esito": "abbinata", "prezzo": uscita.fill_price,
+                                 "size": round(float(uscita.matched), 2),
+                                 "ingresso": Pe, "bloccato": bloccato,
+                                 "minuto": snap.minute}}
+            testo = "%+.2f" % bloccato if bloccato is not None else "chiusa"
+            return Decision("FLAT", acts, "uscita al fischio: %s" % testo,
+                            updates={"close_reason": "profit", "reentry_allowed": True,
+                                     "attempts": 0, **base},
+                            telemetry=tele)
+        # fill PARZIALE consolidato: resta esposizione scoperta -> si copre il
+        # residuo, che ``under_liability`` calcola gia' al netto della lay abbinata
+        return Decision("LIVE_UNCOVERED", acts, "uscita al fischio parziale: copro il residuo",
+                        updates={"cover_forced": True, **base})
+
+    # -- C) gol precoce -------------------------------------------------------
+    if gol_dopo_il_fischio(ctx, snap):
+        _annulla(uscita)
+        upd = dict(base)
+        upd["early_goal_at"] = momento_del_gol(snap)
+        tele = {"ko_green": {"esito": "gol", "gol": snap.goals, "minuto": snap.minute,
+                             "ingresso": Pe}}
+        if params.get("second_entry_enabled", True) and not ctx.second_entry_done:
+            return Decision("LIVE_SECOND_ENTRY", acts,
+                            "gol precoce: seconda puntata sull'Under 3.5",
+                            updates=upd, telemetry=tele)
+        upd["cover_forced"] = True
+        return Decision("LIVE_UNCOVERED", acts, "gol precoce: copertura Over 4.5",
+                        updates=upd, telemetry=tele)
+
+    # -- B) finestra scaduta --------------------------------------------------
+    if finestra_uscita_scaduta(ctx, snap, params):
+        _annulla(uscita)
+        tele = {"ko_green": {"esito": "scaduta", "finestra_s": int(params["ko_green_window_s"]),
+                             "ingresso": Pe, "minuto": snap.minute}}
+        return Decision("LIVE_UNCOVERED", acts,
+                        "uscita non abbinata in %d': copertura Over 4.5"
+                        % int(float(params["ko_green_window_s"]) // 60),
+                        updates={"cover_forced": True, **base}, telemetry=tele)
+
+    # -- l'ordine di uscita: si piazza o si riallinea --------------------------
+    plan = piano_uscita_ko(ctx, params, Pe)
+    if plan is None:
+        return Decision("LIVE_UNCOVERED", acts, "uscita al fischio non calcolabile: copertura",
+                        updates={"cover_forced": True, **base})
+    # money-critical: con DUE lay vive sull'Under 3.5 un doppio abbinamento
+    # ribalterebbe la posizione (da back netto a lay netto). Se una lay di un
+    # altro ruolo e' ancora viva (il resting del pre-match in attesa che
+    # l'annullamento sia confermato) si aspetta il giro dopo.
+    altre_lay = [l for l in ctx.legs
+                 if l.is_live and l.side == "lay" and l.market == MARKET_OU35
+                 and l.selection == SEL_UNDER and l.role != "ko_green"]
+    if altre_lay:
+        return Decision("LIVE_KO_GREEN", acts, "attendo l'annullamento della lay precedente",
+                        updates=base)
+    vivo = uscita if (uscita is not None and uscita.is_live) else None
+    if vivo is not None:
+        if abs(float(vivo.price) - float(plan.price)) < 1e-9 and \
+                abs(float(vivo.size) - float(plan.size)) < 0.01:
+            return Decision("LIVE_KO_GREEN", acts, "uscita a +%d tick sul book"
+                            % int(params["ko_green_ticks"]), updates=base)
+        # la posizione e' cambiata (fill del residuo PERSIST): il prezzo di uscita
+        # si ricalcola sulla NUOVA media, altrimenti si chiuderebbe al prezzo sbagliato
+        _annulla(vivo)
+    if uscita is not None and not uscita.is_live and float(uscita.matched) <= 0 and \
+            snap.now - float(uscita.placed_at) < float(params.get("ko_green_retry_s", 5)):
+        # il tentativo precedente non e' entrato (in live il prezzo non c'era
+        # ancora): si ritenta, ma non a ogni giro del servizio -- 180 secondi a
+        # mezzo secondo farebbero 360 righe di attivita' per partita, ed e'
+        # esattamente la zavorra che il 13/09 ha causato lo statement timeout
+        return Decision("LIVE_KO_GREEN", acts, "uscita: ritento fra poco", updates=base)
+    acts.append(_place("ko_green", MARKET_OU35, SEL_UNDER, plan.side, plan.price, plan.size,
+                       note="uscita al fischio: %d tick sotto %.2f"
+                            % (int(params["ko_green_ticks"]), Pe)))
+    resta = max(0.0, round(float(params["ko_green_window_s"])
+                           - (snap.now - float(ctx.live_since or snap.now)), 1))
+    tele = {"ko_green": {"esito": "appoggiata", "prezzo": plan.price, "size": plan.size,
+                         "ingresso": Pe, "tick": int(params["ko_green_ticks"]),
+                         "scade_fra_s": resta}}
+    return Decision("LIVE_KO_GREEN", acts, "uscita appoggiata a %.2f" % plan.price,
+                    updates=base, telemetry=tele)
+
+
+def _decide_second_entry(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
+    """Seconda puntata Under 3.5 dopo un gol precoce, al miglior prezzo disponibile.
+
+    Non deve MAI ritardare la copertura: allo scadere dell'attesa prevista per la
+    prima tranche si passa comunque a coprire, con o senza seconda puntata.
+    """
+    S, Pe = _under_position(ctx)
+    if S <= 0:
+        return Decision("IDLE_LIVE", _cancel_live(ctx), "nessuna posizione Under")
+    acts = _late_persist_cancel(ctx, snap, params)
+    leg = _last(ctx, "under_second")
+    scaduta = ctx.early_goal_at is not None and \
+        snap.now - float(ctx.early_goal_at) >= float(params["early_goal_cover_delay_s"])
+
+    if leg is not None and float(leg.matched) > 0 and not leg.is_live:
+        s2, media = _under_position(ctx)
+        tele = {"second_entry": {"esito": "abbinata", "prezzo": leg.fill_price,
+                                 "size": round(float(leg.matched), 2),
+                                 "posizione": s2, "media": media, "minuto": snap.minute}}
+        return Decision("LIVE_UNCOVERED", acts,
+                        "seconda puntata abbinata a %.2f (media %.2f su %.2f EUR)"
+                        % (leg.fill_price, media or 0.0, s2),
+                        updates={"second_entry_done": True, "cover_stage": 1,
+                                 "cover_forced": True, "attempts": 0},
+                        telemetry=tele)
+
+    if leg is not None and leg.is_live:
+        if scaduta:
+            acts.append(Action(kind="cancel", ref=leg.ref, role=leg.role, market=leg.market,
+                               selection=leg.selection))
+            return Decision("LIVE_UNCOVERED", acts,
+                            "seconda puntata non abbinata in tempo: copertura piena",
+                            updates={"second_entry_done": True, "cover_stage": 0,
+                                     "cover_forced": True, "attempts": 0})
+        return Decision("LIVE_SECOND_ENTRY", acts, "seconda puntata sul book")
+
+    # nessun ordine vivo: si piazza (o si rinuncia se il tempo e' finito)
+    rinuncia = {"second_entry_done": True, "cover_stage": 0, "cover_forced": True, "attempts": 0}
+    if scaduta:
+        return Decision("LIVE_UNCOVERED", acts, "seconda puntata non piazzabile: copertura piena",
+                        updates=rinuncia)
+    if ctx.attempts >= int(params["close_max_attempts"]):
+        return Decision("LIVE_UNCOVERED", acts, "seconda puntata: tentativi esauriti",
+                        updates=rinuncia)
+    bk = snap.book(MARKET_OU35, SEL_UNDER)
+    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN":
+        return Decision("LIVE_SECOND_ENTRY", acts, "seconda puntata: book Under 3.5 assente")
+    quota = float(params.get("second_entry_stake_pct", 50.0)) / 100.0
+    size = round(float(params["stake"]) * quota, 2)
+    if not size_ok(size):
+        return Decision("LIVE_UNCOVERED", acts, "seconda puntata: importo nullo", updates=rinuncia)
+    if size > liability_room(ctx, params) + _EPS:
+        return Decision("LIVE_UNCOVERED", acts, "seconda puntata: cap liability partita",
+                        updates=rinuncia)
+    if float(bk.back_size) + _EPS < size:
+        return Decision("LIVE_SECOND_ENTRY", acts,
+                        "seconda puntata: liquidita %.2f < %.2f" % (bk.back_size, size))
+    acts.append(_place("under_second", MARKET_OU35, SEL_UNDER, "back", bk.best_back, size,
+                       note="seconda puntata dopo gol precoce"))
+    return Decision("LIVE_SECOND_ENTRY", acts,
+                    "seconda puntata %.2f EUR a %.2f" % (size, bk.best_back),
+                    updates={"attempts": ctx.attempts + 1},
+                    telemetry={"second_entry": {"esito": "piazzata", "prezzo": bk.best_back,
+                                                "size": size, "minuto": snap.minute,
+                                                "gol": snap.goals}})
+
+
+def attesa_prima_tranche(ctx: MatchCtx, snap: Snapshot,
+                         params: Dict[str, Any]) -> Optional[float]:
+    """Secondi che mancano ai minuti di attesa dal gol prima della PRIMA tranche.
+
+    None = si puo' comprare (attesa finita, o momento del gol sconosciuto).
+    """
+    if ctx.early_goal_at is None:
+        return None
+    manca = float(params["early_goal_cover_delay_s"]) - (float(snap.now) - float(ctx.early_goal_at))
+    return round(manca, 1) if manca > 0 else None
+
+
+def frazione_copertura(stage: int, params: Dict[str, Any], x_pieno: Optional[float]
+                       ) -> Tuple[float, bool]:
+    """(frazione della copertura da comprare ORA, split declassato?).
+
+    Dopo un gol precoce la copertura si compra in due tempi: prima una frazione,
+    poi il RESIDUO al prezzo che l'Over avra' in quel momento. Il senso e'
+    proprio quello: senza altri gol la quota dell'Over 4.5 sale e la seconda
+    meta' costa meno.
+
+    ECCEZIONE money-critical: se la frazione esatta finisce sotto il minimo
+    piazzabile di Betfair, alzarla al minimo comprerebbe Over di troppo su
+    ENTRAMBE le tranche (su un rischio di 15 EUR con l'Over a 8,00 la tranche
+    vale 1,35: alzarla a 2,00 vuol dire pagare 4,00 invece di 2,71, il 48% in
+    piu' e una sovracopertura che costa a 0-3 gol). In quel caso NON si divide:
+    si compra tutto in una volta, all'ora della prima tranche. Meglio una
+    copertura giusta subito che due tranche sbagliate.
+    """
+    if int(stage or 0) != 1:
+        return (1.0, False)
+    f = float(params.get("early_goal_cover_pct", 50.0)) / 100.0
+    f = max(0.0, min(1.0, f))
+    if f <= 0.0 or f >= 1.0:
+        return (1.0, False)
+    if x_pieno is None:
+        return (f, False)
+    if float(x_pieno) * f >= IT_BACK_MIN - 0.005:
+        return (f, False)
+    return (1.0, True)
+
+
 def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float) -> Decision:
     S, Pe = _under_position(ctx)
     if S <= 0:
         return Decision("IDLE_LIVE", _cancel_live(ctx), "nessuna posizione Under")
     acts = _late_persist_cancel(ctx, snap, params)
+    stage = int(ctx.cover_stage or 0)
+    # ripiego pulito: se la partita e' stata ripresa senza il momento del gol
+    # (riavvio a meta' strada) la copertura a tranche non ha piu' un orologio →
+    # si copre in una volta invece di restare scoperti in attesa di niente
+    if stage in (1, 2) and ctx.early_goal_at is None:
+        stage = 0
     if not params["cover_enabled"]:
-        return Decision("LIVE_COVERED", acts, "copertura disabilitata", updates={"cover_skipped": True})
+        return Decision("LIVE_COVERED", acts, "copertura disabilitata",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
+    if stage == 1:
+        manca = attesa_prima_tranche(ctx, snap, params)
+        if manca is not None:
+            return Decision("LIVE_UNCOVERED", acts,
+                            "prima tranche fra %d s (attesa dal gol)" % int(manca),
+                            telemetry={"cover_staged": {"stage": 1, "manca_s": manca,
+                                                        "minuto": snap.minute}})
     # §4.1 — la copertura si dimensiona sull'esposizione NETTA: se una lay di green
     # e' stata abbinata (anche solo in parte) la liability Under e' minore dello
     # stake e coprire lo stake intero comprerebbe Over di troppo (perdita maggiore
@@ -1622,14 +1973,25 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                           now=snap.now, params=params,
                           price_over=price_over,
                           cover_gain_pct=snap.cover_gain_pct)
-    x_now = None
+    # la copertura ORDINATA dal flusso (finestra di uscita scaduta, gol precoce)
+    # non passa piu' dall'attesa "intelligente": e' gia' stata decisa
+    if timing == "wait" and ctx.cover_forced:
+        timing = "cover"
+    x_pieno = None
     if price_over is not None:
-        x_now = cover_residual(liab, price_over, c, float(params["cover_profit_factor"]), already)
+        x_pieno = cover_residual(liab, price_over, c, float(params["cover_profit_factor"]), already)
+    frazione, split_declassato = frazione_copertura(stage, params, x_pieno)
+    if split_declassato:
+        stage = 0
+    # piena precisione: l'arrotondamento al centesimo lo fa cover_legal_size,
+    # qui una size troncata entrerebbe sotto l'obiettivo di protezione
+    x_now = None if x_pieno is None else float(x_pieno) * frazione
     if timing == "skip":
-        return Decision("LIVE_COVERED", acts, "copertura saltata: troppi gol", updates={"cover_skipped": True})
+        return Decision("LIVE_COVERED", acts, "copertura saltata: troppi gol",
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
     if liab <= 0.0:
         return Decision("LIVE_COVERED", acts, "nessuna liability Under da coprire",
-                        updates={"cover_skipped": True})
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
     if timing == "wait" or price_over is None or bk.status != "OPEN":
         tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals, "hazard": snap.hazard,
                                "p4_market": snap.p4_market, "price_over": price_over,
@@ -1638,7 +2000,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
         return Decision("LIVE_UNCOVERED", acts, "attendo per coprire", telemetry=tele)
     if not size_ok(x_now):
         return Decision("LIVE_COVERED", acts, "copertura gia' sufficiente",
-                        updates={"cover_skipped": True})
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
     size, over = cover_legal_size(x_now, params)
     # M3: ``cover_max_overshoot_pct`` CABLATO — con importi legalizzati .it
     # l'arrotondamento per eccesso puo' gonfiare la copertura: oltre il tetto si
@@ -1656,7 +2018,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     room = liability_room(ctx, params)
     if room < 0.01:
         return Decision("LIVE_COVERED", acts, "copertura saltata: cap liability partita",
-                        updates={"cover_skipped": True})
+                        updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
     if size > room:
         size = round(room, 2)   # clamp difensivo (mai oltre il tetto per partita)
     if float(bk.back_size) + _EPS < size:
@@ -1671,10 +2033,18 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     acts.append(_place("over_cover", MARKET_OU45, SEL_OVER, "back",
                        price_limite if price_limite is not None else price_over, size,
                        note=f"X={x_now:.2f} legal={size:.2f} over={over:.1f}% buf={n_buf}t"))
-    return Decision("LIVE_COVER_PENDING", acts, "copertura Over 4.5",
+    etichetta = {1: "copertura Over 4.5: prima tranche",
+                 3: "copertura Over 4.5: seconda tranche (residuo)"}.get(stage, "copertura Over 4.5")
+    if split_declassato:
+        etichetta = "copertura Over 4.5 in una volta (la tranche sarebbe sotto il minimo)"
+    return Decision("LIVE_COVER_PENDING", acts, etichetta,
+                    updates={"cover_stage": stage},
                     telemetry={"cover": {"x": round(x_now, 2), "size": size, "overshoot_pct": over,
                                          "price": price_over, "liability": liab,
-                                         "already": round(already, 2), "minute": snap.minute}})
+                                         "already": round(already, 2), "minute": snap.minute,
+                                         "stage": stage, "frazione": round(frazione, 3),
+                                         "x_pieno": None if x_pieno is None else round(x_pieno, 2),
+                                         "split_declassato": split_declassato}})
 
 
 def _late_persist_cancel(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> List[Action]:
@@ -1695,7 +2065,16 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
         return Decision("LIVE_UNCOVERED", [], "copertura non abbinata: ritento",
                         updates={"attempts": ctx.attempts + 1})
     if leg.filled and not leg.is_live:
-        return Decision("LIVE_COVERED", [], "copertura abbinata", updates={"attempts": 0})
+        upd: Dict[str, Any] = {"attempts": 0, "cover_forced": False}
+        if int(ctx.cover_stage or 0) == 1:
+            # prima tranche dentro: da qui partono i minuti prima della seconda.
+            # Nel frattempo si passa da LIVE_COVERED, dove valgono le uscite
+            # GLOBALI sulla posizione (Under 3.5 + Over 4.5 sono entrambi a mercato).
+            upd["cover_stage"] = 2
+            upd["cover_stage1_at"] = snap.now
+            return Decision("LIVE_COVERED", [], "prima tranche di copertura abbinata", updates=upd)
+        upd["cover_stage"] = 0
+        return Decision("LIVE_COVERED", [], "copertura abbinata", updates=upd)
     if leg.is_live and snap.now - leg.placed_at >= float(params["close_retry_s"]) and \
             ctx.attempts < int(params["close_max_attempts"]):
         bk = snap.book(MARKET_OU45, SEL_OVER)
@@ -1712,6 +2091,11 @@ def _decide_cover_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
             prezzo_cop = cover_place_price(bk.best_back, params) or bk.best_back
             # size sul BEST (prezzo di abbinamento), limite col cuscinetto
             x = cover_residual(liab, bk.best_back, c, float(params["cover_profit_factor"]), already)
+            # sulla PRIMA tranche il riprezzo insegue la stessa frazione, non la
+            # copertura piena: altrimenti il riprezzo comprerebbe tutto e la
+            # seconda tranche non avrebbe piu' ragione di esistere
+            frazione, _declassato = frazione_copertura(int(ctx.cover_stage or 0), params, x)
+            x = round(float(x) * frazione, 4)
             if not size_ok(x):
                 return Decision("LIVE_COVERED", [Action(kind="cancel", ref=leg.ref, role=leg.role)],
                                 "copertura sufficiente", updates={"attempts": 0})
@@ -1809,6 +2193,17 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
         return Decision("LIVE_CLOSING", acts + _close_actions(ctx, cv, params),
                         f"cap perdita evento: {cv.net:.2f}",
                         updates={"close_reason": "loss_cap", "attempts": 0}, telemetry=tele)
+    # SECONDA TRANCHE — le uscite globali qui sopra hanno la precedenza: se la
+    # posizione si chiude non c'e' piu' niente da coprire. Solo se si tiene, e
+    # solo quando l'attesa e' finita, si completa la copertura sul RESIDUO, che
+    # ``cover_residual`` ricalcola al prezzo dell'Over di QUEL momento e a quanto
+    # la prima tranche ha gia' garantito (mai "l'altra meta' dello stesso importo").
+    if int(ctx.cover_stage or 0) == 2 and ctx.cover_stage1_at is not None and \
+            snap.now - float(ctx.cover_stage1_at) >= float(params["early_goal_cover2_delay_s"]):
+        tele["cover_staged"] = {"stage": 2, "atteso_s": round(snap.now - float(ctx.cover_stage1_at), 1),
+                                "minuto": snap.minute}
+        return Decision("LIVE_UNCOVERED", acts, "seconda tranche: completo la copertura",
+                        updates={"cover_stage": 3, "cover_forced": True}, telemetry=tele)
     return Decision("LIVE_COVERED", acts, "tengo", telemetry=tele)
 
 

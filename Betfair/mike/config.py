@@ -99,6 +99,30 @@ PARAM_SPEC: dict[str, Spec] = {
     "last_entry_persist": (True, bool, None, None, None),
     "last_entry_ticks_above": (0, int, 0, 3, None),
     "cancel_unmatched_after_ko_s": (120, int, 0, 900, None),
+    # ---- dal fischio d'inizio: uscita a +N tick e gol precoce (13/09) ----
+    # La posizione Under 3.5 portata in gioco tenta PRIMA di uscire in profitto:
+    # lay a ko_green_ticks tick sotto il nostro prezzo d'ingresso, tenuta per
+    # ko_green_window_s dal fischio. Non si abbina -> copertura piena sull'Over 4.5.
+    "ko_green_enabled": (True, bool, None, None, None),
+    "ko_green_ticks": (2, int, 1, 10, None),
+    "ko_green_window_s": (180, int, 0, 900, None),
+    # In LIVE la lay appoggiata non esiste (vedi service._live_exit_override): il
+    # limite viene ri-presentato al mercato a intervalli e si abbina appena il
+    # prezzo c'e'. Questo e' l'intervallo. In paper non ha effetto: la lay resta
+    # sul book e non va mai ri-piazzata.
+    "ko_green_retry_s": (5, int, 1, 60, None),
+    # Gol PRECOCE (dentro la finestra, ancora scoperti e non usciti): si annulla
+    # l'uscita e si entra una SECONDA volta sull'Under 3.5 al miglior prezzo —
+    # la quota e' salita, quindi alza la media e sfrutta il tempo senza gol.
+    "second_entry_enabled": (True, bool, None, None, None),
+    "second_entry_stake_pct": (50.0, float, 0.0, 200.0, None),
+    # Copertura a DUE tranche: la prima dopo early_goal_cover_delay_s dal GOL,
+    # la seconda dopo early_goal_cover2_delay_s dall'abbinamento della prima.
+    # La seconda NON e' "l'altra meta'": e' il RESIDUO ricalcolato sulla quota
+    # dell'Over di quel momento e su quanto la prima ha gia' garantito.
+    "early_goal_cover_delay_s": (120, int, 0, 900, None),
+    "early_goal_cover_pct": (50.0, float, 0.0, 100.0, None),
+    "early_goal_cover2_delay_s": (180, int, 0, 900, None),
     # ---- copertura live ----
     "cover_enabled": (True, bool, None, None, None),
     "cover_profit_factor": (1.2, float, 1.0, 3.0, None),

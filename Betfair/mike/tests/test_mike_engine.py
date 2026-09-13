@@ -326,7 +326,8 @@ def test_last_entry_in_profit_greens_then_places_persist():
     E.apply_decision(ctx, d2, s2.now)
     fill(ctx.legs[-1])
     d3 = E.decide(ctx, snap(KO + 30, u35=book(1.44, inplay=True), inplay=True, minute=0, goals=0), p)
-    assert d3.state == "LIVE_UNCOVERED"
+    # dal 13/09 la posizione portata in gioco prova PRIMA a uscire a +N tick
+    assert d3.state == "LIVE_KO_GREEN"
 
 
 def test_last_entry_in_loss_holds_into_live():
@@ -337,7 +338,7 @@ def test_last_entry_in_loss_holds_into_live():
     assert [a.kind for a in d.actions] == ["cancel"]
     E.apply_decision(ctx, d, s.now)
     d2 = E.decide(ctx, snap(KO + 30, u35=book(1.54, inplay=True), inplay=True, minute=0, goals=0), p)
-    assert d2.state == "LIVE_UNCOVERED"
+    assert d2.state == "LIVE_KO_GREEN"
 
 
 def test_last_entry_persist_disabled_goes_idle_live():
@@ -361,7 +362,7 @@ def test_unmatched_persist_cancelled_after_ko_grace():
     last.matched = 10.0; last.avg_price = 1.44; last.status = "pending"   # meta' abbinata
     d = E.decide(ctx, snap(KO + 130, u35=book(1.44, inplay=True), inplay=True, minute=2, goals=0), p)
     assert any(a.kind == "cancel" and a.ref == last.ref for a in d.actions)
-    assert d.state == "LIVE_UNCOVERED"
+    assert d.state == "LIVE_KO_GREEN"
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import {
     type MikeParamGroup, type MikeParams,
 } from '@/lib/mike';
 
-const GROUPS: MikeParamGroup[] = ['generale', 'pre', 'cover', 'cashout', 'uscite', 'reentry', 'rischio'];
+const GROUPS: MikeParamGroup[] = ['generale', 'pre', 'fischio', 'cover', 'cashout', 'uscite', 'reentry', 'rischio'];
 
 const GROUP_NOTE: Partial<Record<MikeParamGroup, string>> = {
     generale: 'finestra di lavoro, importo e commissione: valgono per tutte le partite.',

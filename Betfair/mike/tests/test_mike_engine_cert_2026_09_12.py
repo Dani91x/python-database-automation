@@ -381,9 +381,12 @@ def test_exit_kind_sempre_dentro_il_contratto():
 
 
 def test_stati_e_ruoli_sono_quelli_dichiarati():
-    assert len(E.STATES) == 19 and len(set(E.STATES)) == 19
+    # 19 stati storici + LIVE_KO_GREEN e LIVE_SECOND_ENTRY (flusso dal fischio, 13/09)
+    assert len(E.STATES) == 21 and len(set(E.STATES)) == 21
     assert set(E.TERMINAL_STATES) <= set(E.STATES)
-    assert len(E.ROLES) == 9
+    # 9 ruoli storici + under_second (seconda puntata) e ko_green (uscita al fischio)
+    assert len(E.ROLES) == 11
+    assert set(E.UNDER_ROLES) <= set(E.OPENING_ROLES)
     assert set(E.OPENING_ROLES) | set(E.CLOSING_ROLES) == set(E.ROLES)
     assert not (set(E.OPENING_ROLES) & set(E.CLOSING_ROLES))
 

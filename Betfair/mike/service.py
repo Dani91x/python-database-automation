@@ -120,7 +120,14 @@ _CTX_FIELDS = ("last_green_at", "last_action_at", "attempts", "reentry_allowed",
                "close_reason", "cover_skipped", "seq", "flatten_pending", "no_reentry",
                # CERT. 13/09: prezzo Under al fischio d'inizio (misura dello
                # scostamento fra ingresso pre-match e apertura del gioco)
-               "ko_price_under")
+               "ko_price_under",
+               # FLUSSO 13/09 dal fischio: orologio della finestra di uscita,
+               # baseline dei gol, momento del gol precoce e stato della
+               # copertura a tranche. Senza questi un riavvio a meta' partita
+               # perderebbe i timer e ricomincerebbe da capo (o resterebbe
+               # scoperto in attesa di un'attesa che non finisce mai).
+               "live_since", "ko_goals", "early_goal_at", "second_entry_done",
+               "cover_stage", "cover_stage1_at", "cover_forced")
 
 
 _MALFORMED_LOGGED: Dict[str, float] = {}   # {event_id: epoch} — dedup dell'attivita' 'leg_malformata'
@@ -563,7 +570,7 @@ def _log_throttled(db: Any, extra: Dict[str, Any], params: Dict[str, Any], now_t
 
 def _is_resting_leg(leg: E.Leg, params: Dict[str, Any]) -> bool:
     """Lay di green-up appoggiata sul book (take-profit): NON e' un ordine taker."""
-    return (leg.side == "lay" and leg.role in ("under_green", "reentry_green")
+    return (leg.side == "lay" and leg.role in ("under_green", "ko_green", "reentry_green")
             and str(params.get("pre_exit_mode")) == "resting" and not leg.final)
 
 

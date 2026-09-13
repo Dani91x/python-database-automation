@@ -209,7 +209,8 @@ def test_contratto_stati_evento_identici_e_con_gruppo():
     expected = {
         "WATCH": "pre", "PRE_ENTRY_PENDING": "pre", "PRE_OPEN": "pre", "PRE_GREEN_PENDING": "pre",
         "HOLD": "pre", "PRE_LAST_ENTRY_PENDING": "pre",
-        "IDLE_LIVE": "live", "LIVE_UNCOVERED": "live", "LIVE_COVER_PENDING": "live",
+        "IDLE_LIVE": "live", "LIVE_KO_GREEN": "live", "LIVE_SECOND_ENTRY": "live",
+        "LIVE_UNCOVERED": "live", "LIVE_COVER_PENDING": "live",
         "LIVE_COVERED": "live", "LIVE_CLOSING": "live", "REENTRY_PENDING": "live",
         "REENTRY_OPEN": "live", "REENTRY_GREEN_PENDING": "live",
         "FLAT": "flat", "SETTLING": "done", "SETTLED": "done", "ERROR": "off", "SKIPPED": "off",
