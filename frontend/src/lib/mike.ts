@@ -10,10 +10,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { fmtMoney, fmtOdds, fmtPct, fmtTime } from '@/lib/format';
 import { sideMeta, T, type ActivityMeta } from '@/lib/tradeStatus';
-import {
-    groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, SETTLED_STATES,
-    type CicloGroup, type EventGroup,
-} from '@/lib/eventGroups';
 
 export type MikeStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'error';
 export type MikeMode = 'paper' | 'live';
@@ -1409,16 +1405,17 @@ export function lastRequestFor(
 }
 
 // --------------------------------------------- trade: chiusure sotto l'apertura
-/**
- * CERT. 13/09 — il raggruppamento gamba → ciclo → partita è COMUNE ai tre bot
- * e vive in `lib/eventGroups.ts`. Qui restano solo gli alias tipizzati su
- * `MikeTrade` e le poche cose che sono davvero di Mike (le FASI, che dipendono
- * dal vocabolario dei ruoli). Tre copie della stessa aritmetica sui soldi erano
- * tre posti dove sbagliarla.
- */
-export type MikeTradeGroup = CicloGroup<MikeTrade>;
+export interface MikeTradeGroup {
+    open: MikeTrade;
+    /** chiusure/green che riferiscono questa apertura (`closes_trade_id`) */
+    closes: MikeTrade[];
+    /** P&L NETTO del ciclo: apertura + chiusure regolate */
+    netPnl: number | null;
+    /** true = chiusura senza apertura nota (riga orfana: mai nascosta) */
+    orphan: boolean;
+}
 
-const SETTLED_TRADE_STATES = SETTLED_STATES;
+const SETTLED_TRADE_STATES = new Set(['won', 'lost', 'void']);
 
 /** giorno operativo di attribuzione della riga (ms): piazzamento della POSIZIONE. */
 export function tradeDayMs(t: MikeTrade): number {
@@ -1434,7 +1431,33 @@ export function tradeDayMs(t: MikeTrade): number {
  * apertura non è nel set diventa un gruppo a sé, dichiarato orfano.
  */
 export function groupMikeTrades(trades: readonly MikeTrade[]): MikeTradeGroup[] {
-    return groupTradesIntoCicli<MikeTrade>(trades);
+    const byId = new Map<number, MikeTrade>();
+    for (const t of trades) byId.set(Number(t.id), t);
+    const closesOf = new Map<number, MikeTrade[]>();
+    const opens: MikeTrade[] = [];
+    const orphans: MikeTrade[] = [];
+    for (const t of trades) {
+        const parent = t.closes_trade_id == null ? null : Number(t.closes_trade_id);
+        if (parent == null) { opens.push(t); continue; }
+        if (!byId.has(parent)) { orphans.push(t); continue; }
+        const arr = closesOf.get(parent) ?? [];
+        arr.push(t);
+        closesOf.set(parent, arr);
+    }
+    const mk = (open: MikeTrade, orphan: boolean): MikeTradeGroup => {
+        const closes = (closesOf.get(Number(open.id)) ?? [])
+            .slice().sort((a, b) => Date.parse(a.placed_at) - Date.parse(b.placed_at));
+        const rows = [open, ...closes].filter((r) => SETTLED_TRADE_STATES.has(r.status));
+        const netPnl = rows.length
+            ? Math.round(rows.reduce((s, r) => s + Number(r.pnl ?? 0), 0) * 100) / 100
+            : null;
+        return { open, closes, netPnl, orphan };
+    };
+    const groups = [
+        ...opens.map((o) => mk(o, false)),
+        ...orphans.map((o) => mk(o, true)),
+    ];
+    return groups.sort((a, b) => Date.parse(b.open.placed_at) - Date.parse(a.open.placed_at));
 }
 
 /**
@@ -1506,10 +1529,27 @@ export function fasePerCiclo(g: MikeTradeGroup): MikeFase {
     return role === 'under_green' ? 'pre' : 'live';
 }
 
-/** Una PARTITA nella scheda Operazioni / Risultati: il netto e i suoi cicli.
- *  È il gruppo comune (`EventGroup`) più le FASI, che sono solo di Mike: una
- *  partita può comparire in pre-match E in live, con gli euro dell'altra fase. */
-export type MikeEventGroup = EventGroup<MikeTrade> & { fasi: MikeFase[] };
+/** Una PARTITA nella scheda Operazioni / Risultati: il netto e i suoi cicli. */
+export interface MikeEventGroup {
+    event_id: string;
+    event_name: string;
+    /** cicli della partita, dal più recente */
+    cicli: MikeTradeGroup[];
+    /** P&L NETTO di commissione delle sole righe REGOLATE. `null` = niente ancora
+     *  regolato: si mostra «—», mai «0,00», che vorrebbe dire un'altra cosa. */
+    netPnl: number | null;
+    /** euro ancora in ballo: c'è almeno una riga non regolata */
+    apertaAncora: boolean;
+    /** quante righe sono già regolate e quante no */
+    righeRegolate: number;
+    righeAperte: number;
+    /** fasi presenti: una partita può comparire in pre-match E in live */
+    fasi: MikeFase[];
+    /** istante dell'operazione più recente (ms), per l'ordinamento */
+    ultimaMs: number;
+    /** modalità delle righe: 'paper', 'live', o 'mista' (non dovrebbe capitare) */
+    mode: string;
+}
 
 /**
  * I cicli raggruppati per PARTITA (richiesta dell'utente: «il P&L deve essere il
@@ -1527,15 +1567,41 @@ export function groupMikeTradesByEvent(
     groups: readonly MikeTradeGroup[],
     fase?: MikeFase,
 ): MikeEventGroup[] {
-    const eventi = groupCicliByEvent<MikeTrade>(groups, {
-        filtro: fase ? (g) => fasePerCiclo(g) === fase : undefined,
-    });
-    // le FASI sono l'unica aggiunta di Mike: il resto (netto, capitale,
-    // responsabilità, modalità mista, ordinamento) è il calcolo comune
-    return eventi.map((e) => ({
-        ...e,
-        fasi: [...new Set(e.cicli.map(fasePerCiclo))].sort(),
-    }));
+    const perEvento = new Map<string, MikeTradeGroup[]>();
+    for (const g of groups) {
+        if (fase && fasePerCiclo(g) !== fase) continue;
+        const eid = String(g.open.event_id ?? '');
+        if (!eid) continue;
+        const arr = perEvento.get(eid) ?? [];
+        arr.push(g);
+        perEvento.set(eid, arr);
+    }
+    const out: MikeEventGroup[] = [];
+    for (const [eid, cicli] of perEvento) {
+        const righe = cicli.flatMap((g) => [g.open, ...g.closes]);
+        // le righe in 'error' non sono operazioni: sono piazzamenti mai avvenuti
+        // (o doppioni scartati). Non contano e non si mostrano nel totale.
+        const vere = righe.filter((r) => r.status !== 'error');
+        const regolate = vere.filter((r) => SETTLED_TRADE_STATES.has(r.status));
+        const aperte = vere.filter((r) => !SETTLED_TRADE_STATES.has(r.status));
+        const netPnl = regolate.length
+            ? Math.round(regolate.reduce((s, r) => s + Number(r.pnl ?? 0), 0) * 100) / 100
+            : null;
+        const modi = new Set(vere.map((r) => String(r.mode ?? '')).filter(Boolean));
+        out.push({
+            event_id: eid,
+            event_name: String(cicli[0]?.open.event_name ?? eid),
+            cicli: cicli.slice().sort((a, b) => Date.parse(b.open.placed_at) - Date.parse(a.open.placed_at)),
+            netPnl,
+            apertaAncora: aperte.length > 0,
+            righeRegolate: regolate.length,
+            righeAperte: aperte.length,
+            fasi: [...new Set(cicli.map(fasePerCiclo))].sort(),
+            ultimaMs: Math.max(...righe.map((r) => Date.parse(r.placed_at) || 0), 0),
+            mode: modi.size === 1 ? [...modi][0] : (modi.size === 0 ? '' : 'mista'),
+        });
+    }
+    return out.sort((a, b) => b.ultimaMs - a.ultimaMs);
 }
 
 /**
@@ -1546,17 +1612,16 @@ export function groupMikeTradesByEvent(
 export function totaleRisultati(eventi: readonly MikeEventGroup[]): {
     netto: number; conRisultato: number; aperte: number; vinte: number; perse: number;
 } {
-    const t = totaliOperazioni<MikeTrade>(eventi);
-    return {
-        // `realizzato` è `null` quando NIENTE è ancora regolato; questa firma
-        // storica espone uno zero, ma i chiamanti guardano `conRisultato`
-        // prima di stampare il numero (è quello a dire se c'è un risultato)
-        netto: t.realizzato ?? 0,
-        conRisultato: t.partiteConRisultato,
-        aperte: t.partiteAperte,
-        vinte: t.vinte,
-        perse: t.perse,
-    };
+    let netto = 0, conRisultato = 0, aperte = 0, vinte = 0, perse = 0;
+    for (const e of eventi) {
+        if (e.apertaAncora) aperte += 1;
+        if (e.netPnl == null) continue;
+        netto += e.netPnl;
+        conRisultato += 1;
+        if (e.netPnl > 0) vinte += 1;
+        else if (e.netPnl < 0) perse += 1;
+    }
+    return { netto: Math.round(netto * 100) / 100, conRisultato, aperte, vinte, perse };
 }
 
 /**
