@@ -64,8 +64,16 @@ export function DayBar({
         remaining: ids?.remaining ?? 'day-bar-remaining',
         goalHit: ids?.goalHit ?? 'day-bar-goal-hit',
     };
-    const real = realized == null ? null : Number(realized);
-    const g = Number(goal ?? 0);
+    // CERT. 13/09 — un numero illeggibile NON e' zero e non e' un traguardo:
+    // con `realized` NaN la barra scriveva «obiettivo CENTRATO» in verde, e
+    // `pct` NaN finiva in `style width:"NaN%"` e in `aria-valuenow="NaN"`.
+    const numero = (v: unknown): number | null => {
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const real = numero(realized);
+    const g = numero(goal) ?? 0;
     const hasGoal = g > 0;
     const pct = hasGoal && real !== null ? Math.max(0, Math.min(100, (real / g) * 100)) : 0;
     const remaining = hasGoal && real !== null ? Math.max(0, g - real) : 0;

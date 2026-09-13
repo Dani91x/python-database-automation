@@ -736,3 +736,35 @@ def test_la_finestra_scade_anche_se_l_ordine_non_e_mai_entrato():
     d = E.decide(ctx, snap(KO + 200, u35=book(1.55, inplay=True), o45=book(8.0),
                            minute=3, goals=0), p)
     assert d.state == "LIVE_UNCOVERED" and d.updates["cover_forced"] is True
+
+
+# ---------------------------------------------------------------------------
+# Una partita senza esposizione non puo' finire "DA SISTEMARE"
+# ---------------------------------------------------------------------------
+def test_senza_posizioni_il_punteggio_finale_non_serve():
+    """Caso vero del 13/09 (FC Maardu v Tallinna Kalev): la finestra pre-match si
+    e' chiusa senza nessun ingresso, a mercato chiuso il book non era piu'
+    leggibile e la scheda e' finita in ERRORE -- una partita da sistemare a mano
+    su cui non era successo niente. Il punteggio serve solo se il P&L DIPENDE dal
+    punteggio."""
+    assert E.pnl_indipendente_dal_risultato([], COMM) == 0.0
+
+
+def test_con_soli_cicli_chiusi_il_conto_e_gia_noto():
+    """Ingresso e uscita si compensano: il risultato e' lo stesso su 0 gol come
+    su 8, quindi non c'e' niente da aspettare."""
+    legs = [E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back",
+                  price=1.50, size=10.0, matched=10.0, avg_price=1.50, ref="a"),
+            E.Leg(role="under_green", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="lay",
+                  price=1.48, size=10.14, matched=10.14, avg_price=1.48, ref="b")]
+    netto = E.pnl_indipendente_dal_risultato(legs, COMM)
+    assert netto is not None and netto == pytest.approx(0.13, abs=0.02)
+    for totale in range(0, 9):
+        assert E.settle_legs(legs, totale, COMM).net == pytest.approx(netto, abs=0.02)
+
+
+def test_con_una_posizione_aperta_il_punteggio_serve_davvero():
+    """Qui invece il risultato cambia tutto: nessuna scorciatoia, si aspetta."""
+    legs = [E.Leg(role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER, side="back",
+                  price=1.50, size=10.0, matched=10.0, avg_price=1.50, ref="a")]
+    assert E.pnl_indipendente_dal_risultato(legs, COMM) is None

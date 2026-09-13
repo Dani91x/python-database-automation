@@ -325,7 +325,7 @@ describe('Mike page — profondità dei dati sulla card', () => {
     });
 });
 
-describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
+describe('Mike page — Operazioni, Risultati, Attività, KPI', () => {
     beforeEach(() => {
         mState.mockReset();
         mState.mockResolvedValue(state());
@@ -345,9 +345,10 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
     it('UNA semantica per i conteggi: barra, linguette e KPI non contano cose diverse', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('kpi-row')).toBeInTheDocument());
-        // operazioni = CICLI della giornata: stesso numero nella barra e nella linguetta
+        // operazioni = CICLI della giornata nella barra; la linguetta conta le
+        // PARTITE, che è quello che si vede aprendola (13/09)
         expect(screen.getByTestId('day-bar-counts')).toHaveTextContent('operazioni 4');
-        expect(screen.getByRole('tab', { name: /Operazioni/ })).toHaveTextContent('Operazioni (4)');
+        expect(screen.getByRole('tab', { name: /Operazioni/ })).toHaveTextContent('Operazioni (1)');
         // partite seguite ORA != partite piazzate oggi: due etichette diverse
         expect(screen.getByTestId('mike-kpi-matches')).toHaveTextContent('Partite seguite ora');
         expect(screen.getByTestId('day-bar')).toHaveTextContent('partite 2');
@@ -374,25 +375,33 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         expect(screen.queryByTestId('day-bar-locked')).toBeNull();
     });
 
-    it('tab Trade: chiusure annidate, uscita, LIVE, P&L netto del ciclo e toggle della giornata', async () => {
+    it('Operazioni: una riga per PARTITA col netto, dettaglio chiuso fino al clic', async () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
         await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
-        const table = await screen.findByTestId('mike-trades-table');
-        const opens = within(table).getAllByTestId('mike-trade-row');
-        expect(opens).toHaveLength(1);
-        expect(opens[0]).toHaveTextContent('Ingresso Under 3.5');
-        // il P&L della riga di apertura è il NETTO del ciclo (apertura + chiusure)
-        expect(within(opens[0]).getByTestId('mike-trade-pnl')).toHaveTextContent('+0,13 €');
-        const closes = within(table).getAllByTestId('mike-trade-close');
-        expect(closes).toHaveLength(1);
-        expect(closes[0]).toHaveTextContent('Green-up Under 3.5');
-        expect(within(closes[0]).getByTestId('exit-badge')).toBeInTheDocument();
-        expect(closes[0]).toHaveTextContent('LAY');
-        expect(screen.getByTestId('mike-trades')).toHaveTextContent('giornata operativa');
-        await userEvent.click(screen.getByTestId('mike-trades-toggle'));
-        expect(screen.getByTestId('mike-trades')).toHaveTextContent('Tutte le operazioni caricate');
+        const tabella = await screen.findByTestId('mike-operazioni');
+        // il netto della PARTITA, non quello delle singole gambe
+        const netti = within(tabella).getAllByTestId(/^netto-/);
+        expect(netti).toHaveLength(1);
+        expect(netti[0]).toHaveTextContent('+0,13 €');
+        // il dettaglio è nascosto finché non lo si apre (richiesta dell'utente)
+        expect(within(tabella).queryByText('Green-up Under 3.5')).toBeNull();
+        const apri = within(tabella).getAllByTestId(/^apri-/)[0];
+        expect(apri).toHaveAttribute('aria-expanded', 'false');
+        await userEvent.click(apri);
+        expect(apri).toHaveAttribute('aria-expanded', 'true');
+        expect(within(tabella).getByText(/Green-up Under 3\.5/)).toBeInTheDocument();
         expect(screen.getByTestId('equity-card')).toBeInTheDocument();
+    });
+
+    it('Risultati Pre-Match e Risultati Live: la stessa partita, gli euro della sua fase', async () => {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
+        await userEvent.click(screen.getByRole('tab', { name: /Risultati Pre-Match/ }));
+        const pre = await screen.findByTestId('mike-risultati-pre');
+        expect(within(pre).getAllByTestId(/^netto-/)[0]).toHaveTextContent('+0,13 €');
+        await userEvent.click(screen.getByRole('tab', { name: /Risultati Live/ }));
+        expect(await screen.findByTestId('mike-risultati-live')).toBeInTheDocument();
     });
 
     it('tab Attività: ogni kind in italiano, i critici in rosso, filtro per partita', async () => {
@@ -410,7 +419,7 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         expect(screen.getByTestId('activity-filter')).toBeInTheDocument();
     });
 
-    it('tab Regolate: SOLO le partite regolate su cui si è operato oggi, senza azioni', async () => {
+    it.skip('tab Regolate: rimosso il 13/09, le partite chiuse stanno nei Risultati', async () => {
         // e6 = partita seguita e regolata ma MAI giocata: non deve comparire
         // (prima la scheda ne elencava 34 con "regolato +0,00 €" e due giornate
         // operative mescolate).
@@ -475,13 +484,12 @@ describe('Mike page — tab Trade, Attività, Regolate, KPI', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
         await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
-        expect(await screen.findByTestId('mike-trades-capped')).toHaveTextContent('mostrate le ultime 500');
-        const rows = screen.getAllByTestId('mike-trade-row');
-        // VOID dichiarato sulla SOLA gamba del mercato annullato
-        expect(within(rows[0]).getByTestId('mike-trade-status')).toHaveTextContent('VOID (Under 3.5)');
-        // ✋ sulle righe decise dall'utente
-        expect(within(rows[1]).getByLabelText('manuale')).toBeInTheDocument();
-        expect(within(rows[1]).getByTestId('mike-trade-status')).not.toHaveTextContent('VOID');
+        expect(await screen.findByTestId('mike-righe-troncate')).toHaveTextContent('Arrivate 500 righe');
+        // il dettaglio della partita porta VOID per mercato e il marchio manuale
+        await userEvent.click(screen.getAllByTestId(/^apri-/)[0]);
+        const dettaglio = screen.getAllByTestId(/^dettaglio-/)[0];
+        expect(dettaglio).toHaveTextContent('VOID');
+        expect(within(dettaglio).getAllByText('manuale').length).toBeGreaterThan(0);
     });
 
     it('senza migrazione la pagina resta leggibile', async () => {
@@ -684,8 +692,9 @@ describe('Mike page — RPC v1, senza migrazione mike_bot_v2', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
         await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
-        await waitFor(() => expect(screen.getByTestId('mike-trades-noday')).toBeInTheDocument());
-        expect(screen.getByTestId('mike-trades-noday')).toHaveTextContent('mike_bot_v2.sql');
+        // senza la migrazione la giornata la calcola il client: la scheda si
+        // mostra comunque, con i cicli filtrati sul giorno di Roma
+        await waitFor(() => expect(screen.getByTestId('mike-operazioni')).toBeInTheDocument());
     });
 });
 
@@ -724,8 +733,7 @@ describe('Mike page — dalla tabella Trade alla scheda', () => {
         renderPage();
         await waitFor(() => expect(screen.getByTestId('mike-status')).toBeInTheDocument());
         await userEvent.click(screen.getByRole('tab', { name: /Operazioni/ }));
-        const link = await screen.findByTestId('mike-trade-goto-card');
-        expect(link).toHaveAttribute('data-event-id', 'e1');
+        const link = await screen.findByTestId('vai-alla-scheda-e1');
         await userEvent.click(link);
         await waitFor(() => expect(screen.getByTestId('mike-cards')).toBeInTheDocument());
         expect(screen.getAllByTestId('mike-match-card')

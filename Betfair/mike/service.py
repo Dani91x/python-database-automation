@@ -57,6 +57,48 @@ ACTIVE_STATES = tuple(s for s in E.STATES if s not in E.TERMINAL_STATES)
 
 
 # ---------------------------------------------------------------------------
+# L'ULTIMA BARRIERA PRIMA DI BETFAIR
+# ---------------------------------------------------------------------------
+# Mike piazza in REST diretto: non passa dalla coda flumine, quindi NON e'
+# coperto da ``LIVE_ORDER_MODE`` ne' dal rifiuto cross-mode del worker, che sono
+# gli interruttori di Omega e Safe. Fino al 13/09 l'unica cosa che separava il
+# bot dai soldi veri era il valore di una colonna sul database: bastava un
+# ``mike_control.mode`` rimasto a 'live' dalla sessione prima, e il primo
+# "Avvia" armava fino a ``max_open_matches`` partite con denaro reale.
+#
+# ``MIKE_LIVE_ENABLED`` e' l'interruttore che mancava. Sta nel .env, si tocca a
+# mano, e vale per il PROCESSO: finche' non e' acceso, ogni tentativo di
+# piazzare un ordine reale solleva PRIMA di toccare la rete. Non e' una
+# scomodita': e' la differenza fra "ho deciso di operare in live" e "il bot ha
+# trovato un flag acceso da ieri".
+#
+# Il paper non lo vede nemmeno: la simulazione non passa da qui.
+def mike_live_abilitato() -> bool:
+    """Il processo e' autorizzato a piazzare ordini con SOLDI VERI?
+
+    Ri-letta a ogni chiamata (come i kill-switch di Omega): spegnerla deve avere
+    effetto SUBITO, senza riavviare niente.
+    """
+    return C.env_bool("MIKE_LIVE_ENABLED", False)
+
+
+class _LiveNonAbilitato(RuntimeError):
+    """Ordine reale tentato col kill-switch spento. NON e' un rifiuto
+    dell'exchange: l'ordine non e' mai partito e non esiste da nessuna parte."""
+
+
+def _pretendi_live_abilitato(che_cosa: str) -> None:
+    if mike_live_abilitato():
+        return
+    logger.critical("[mike] ORDINE REALE BLOCCATO (%s): MIKE_LIVE_ENABLED non e' attiva. "
+                    "Nessun ordine e' partito. Per operare davvero con soldi veri "
+                    "impostare MIKE_LIVE_ENABLED=1 nel .env e riavviare l'app.", che_cosa)
+    raise _LiveNonAbilitato(
+        "MIKE_LIVE_ENABLED non attiva: nessun ordine reale e' stato inviato. "
+        "E' l'interruttore di sicurezza del live, si accende a mano nel .env.")
+
+
+# ---------------------------------------------------------------------------
 # Market REST (solo settlement / fallback): sessione CONDIVISA di omega_market
 # ---------------------------------------------------------------------------
 class _RealMarket:
@@ -83,6 +125,7 @@ class _RealMarket:
     def place_order_live(**kw: Any) -> Any:
         from Betfair.omega import omega_market
 
+        _pretendi_live_abilitato("place_order_live")
         _RealMarket._bind_strategy_ref(omega_market)
         return omega_market.place_order_live(**kw)
 
@@ -97,6 +140,7 @@ class _RealMarket:
         """
         from Betfair.omega import omega_market
 
+        _pretendi_live_abilitato("place_submin_live")
         _RealMarket._bind_strategy_ref(omega_market)
         return omega_market.place_submin_live(**kw)
 
@@ -843,9 +887,18 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # stop e il bot continuava ad aprire dopo aver già perso il massimo.
     agg = _aggregates(db, now)
     day_start_ts = _operating_day_start_ts(now)
-    locked_open = _locked_open_pnl(tracked, params, day_start_ts)
+    locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     realized_today = float(agg.get("realized_today", 0.0))
     day_pnl = round(realized_today + locked_open, 2)
+    # ALLARME: partite ancora vive armate nella modalita' OPPOSTA. Il `mode` si
+    # congela sulla partita quando viene armata, quindi riportare il toggle su
+    # paper NON ferma quelle gia' avviate in live: continuano a coprirsi,
+    # chiudere e fare cash-out con soldi VERI mentre la pagina dice PAPER.
+    divergenti = partite_di_modalita_diversa(tracked, mode)
+    if divergenti:
+        logger.critical("[mike] %d partite ancora VIVE in modalita' diversa da '%s': %s — "
+                        "continuano a operare con le regole di QUELLA modalita'",
+                        len(divergenti), mode, ", ".join(divergenti[:6]))
     stop = float(params.get("daily_loss_stop") or 0.0)
     daily_stop = stop > 0 and day_pnl <= -stop
     if daily_stop:
@@ -927,17 +980,23 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
 
     if n_actions or n_settled or n_requests:
         agg = _aggregates(db, now)            # aggiornati dopo le azioni del ciclo
-        locked_open = _locked_open_pnl(tracked, params, day_start_ts)
+        locked_open = _locked_open_pnl(tracked, params, day_start_ts, mode)
     by_state: Dict[str, int] = {}
     for e in tracked.values():
         by_state[str(e.get("state"))] = by_state.get(str(e.get("state")), 0) + 1
     # M4 — capitale a rischio VERO: perdita peggiore delle posizioni NETTE
     # aperte, partita per partita (un back coperto da lay non e' back + lay).
-    open_liability = _open_liability(tracked, params)
+    open_liability = _open_liability(tracked, params, mode)
     realized_today = float(agg.get("realized_today", 0.0))
     stats = {
         "events_feed": len(rows_by_event), "events_tracked": len(tracked), "by_state": by_state,
         "trades_open": int(agg.get("open_count", 0)), "open_liability": open_liability,
+        # partite ancora vive armate nella modalita' OPPOSTA a quella corrente:
+        # la pagina ci mette sopra un avviso rosso, perche' altrimenti il banner
+        # direbbe PAPER mentre quelle partite spendono davvero
+        "eventi_altra_modalita": len(divergenti),
+        # il live e' fisicamente abilitato su questo processo?
+        "live_abilitato": mike_live_abilitato(),
         "open_liability_rows": round(float(agg.get("open_liability", 0.0)), 2),
         "realized_today": round(realized_today, 2),
         "realized_total": round(float(agg.get("realized_total", 0.0)), 2),
@@ -992,15 +1051,36 @@ def _ctx_legs_of(ev: Dict[str, Any]) -> List[E.Leg]:
     return _legs_from_json(ev.get("positions"), None, ev.get("event_id"))
 
 
-def _open_liability(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any]) -> float:
-    """Somma delle liability NETTE delle partite non terminali (M4)."""
+def _open_liability(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any],
+                    mode: Optional[str] = None) -> float:
+    """Somma delle liability NETTE delle partite non terminali (M4).
+
+    13/09 — con ``mode`` si contano SOLO le partite di quella modalita'. Il
+    rischio di una partita in paper non e' rischio, e sommarlo a quello vero
+    falsa il cap e lo stop giornaliero.
+    """
     c = C.commission_rate(params)
     tot = 0.0
     for ev in tracked.values():
         if str(ev.get("state")) in E.TERMINAL_STATES:
             continue
+        if mode is not None and str(ev.get("mode") or "paper") != str(mode):
+            continue
         tot += E.event_liability(_ctx_legs_of(ev), c)
     return round(tot, 2)
+
+
+def partite_di_modalita_diversa(tracked: Dict[str, Dict[str, Any]], mode: str) -> List[str]:
+    """Partite ancora VIVE armate in una modalita' diversa da quella corrente.
+
+    E' il caso pericoloso: il `mode` si congela sulla partita quando viene
+    armata, quindi riportare il toggle su paper NON ferma le partite gia'
+    avviate in live — continuano a coprirsi, chiudere e fare cash-out con soldi
+    veri mentre il banner della pagina dice PAPER. Chi le trova deve gridarlo.
+    """
+    return [str(ev.get("event_id")) for ev in tracked.values()
+            if str(ev.get("state")) not in E.TERMINAL_STATES
+            and str(ev.get("mode") or "paper") != str(mode)]
 
 
 def _first_placed_at(legs: List[E.Leg]) -> Optional[float]:
@@ -1010,7 +1090,8 @@ def _first_placed_at(legs: List[E.Leg]) -> Optional[float]:
 
 
 def _locked_open_pnl(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any],
-                     day_start_ts: Optional[float] = None) -> float:
+                     day_start_ts: Optional[float] = None,
+                     mode: Optional[str] = None) -> float:
     """P&L già BLOCCATO sulle partite non ancora regolate (L3): cicli chiusi in
     green o in perdita che il mercato non ha ancora pagato. Le partite con
     esposizione viva NON contano (nulla e' deciso).
@@ -1024,6 +1105,10 @@ def _locked_open_pnl(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any],
     tot = 0.0
     for ev in tracked.values():
         if str(ev.get("state")) in E.TERMINAL_STATES:
+            continue
+        # 13/09 — mai il bloccato di una partita in paper dentro lo stop del
+        # live (e viceversa): sono due contabilita' diverse
+        if mode is not None and str(ev.get("mode") or "paper") != str(mode):
             continue
         legs = _ctx_legs_of(ev)
         if day_start_ts is not None:
@@ -1192,6 +1277,24 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 db.log("settle_fallback", {"reason": "book_non_leggibile", "total_from_feed": total},
                        ev["event_id"])
             else:
+                # Il punteggio serve solo se il P&L DIPENDE dal punteggio. Senza
+                # posizioni (finestra pre-match chiusa senza ingressi) o con soli
+                # cicli gia' chiusi, il conto e' gia' noto: si chiude e basta,
+                # invece di mandare in ERRORE una partita su cui non c'e' niente
+                # da sistemare.
+                comm = C.commission_rate(_settle_params(db, ev["event_id"], params))
+                netto = E.pnl_indipendente_dal_risultato(ctx.legs, comm)
+                if netto is not None:
+                    db.log("settled", {"reason": "punteggio non recuperabile, ma il risultato "
+                                                 "non dipende dal punteggio",
+                                       "pnl": netto, "gambe_abbinate":
+                                           sum(1 for l in ctx.legs if float(l.matched or 0) > 0)},
+                           ev["event_id"])
+                    E.apply_decision(ctx, E.Decision("SETTLED", [], "nessuna esposizione: chiusa a %+.2f" % netto,
+                                                     updates={"settled_pnl": netto}), now_ts)
+                    ev.update(_row_from_ctx(ev, ctx, extra))
+                    _persist(db, ev, before_sig)
+                    return (0, 1)
                 db.log("error", {"reason": "settle_timeout", "critical": True}, ev["event_id"])
                 d = E.Decision(state="ERROR", actions=[], reason="regolamento non determinabile")
                 E.apply_decision(ctx, d, now_ts)
@@ -1530,8 +1633,31 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                   # totali" calcolati su insiemi diversi, e i due numeri non
                   # tornavano fra loro. I cicli archiviati sono gia' chiusi: il
                   # loro risultato sta nel realizzato, non nel rischio aperto.
-                  "pnl_by_total": E.net_pnl_by_total(E.active_legs(ctx.legs),
-                                                     C.commission_rate(params)),
+                  "pnl_by_total": E.net_pnl_by_total(E.active_legs(ctx.legs), c_rate),
+                  # 13/09 — il risultato della PARTITA per numero di gol: cicli
+                  # gia' chiusi COMPRESI. ``pnl_by_total`` qui sopra e' la sola
+                  # posizione ancora aperta (stessa base di ``cashout`` e
+                  # ``liability``): i due servono a domande diverse e la scheda
+                  # deve poterli mostrare senza che il trader li confonda.
+                  "pnl_totale_by_total": E.net_pnl_by_total(ctx.legs, c_rate),
+                  "pnl_cicli_chiusi": E.pnl_cicli_chiusi(ctx.legs, c_rate),
+                  # quanti cicli, con che prezzi e con che risultato: richiesta
+                  # esplicita dell'utente, il dato c'era ma non usciva
+                  "cicli": E.riepilogo_cicli(ctx.legs, c_rate),
+                  "cicli_chiusi": int(ctx.cycle_no or 0),
+                  "investito": E.invested(ctx.legs),
+                  # una riga per selezione aperta, CALCOLATA QUI: lato netto,
+                  # prezzo medio, prezzo e size con cui il bot chiuderebbe, e
+                  # soprattutto se al book c'e' abbastanza liquidita' per farlo
+                  "posizioni": E.posizione_per_selezione(
+                      ctx.legs, snap.books, c_rate,
+                      int(params["cashout_place_at_ticks"]), goals=snap.goals),
+                  # ORA di pubblicazione: la scheda ci calcola sopra un'eta' che
+                  # TICKA. ``feed_age_s`` qui sopra e' congelato al momento della
+                  # scrittura: se il servizio si ferma resta verde per sempre, e
+                  # i bottoni che mandano ordini veri lo usano come semaforo.
+                  "published_at": _iso(now_ts),
+                  "published_ts": round(now_ts, 1),
                   "books": {f"{m}|{s}": dataclasses.asdict(b) for (m, s), b in snap.books.items()},
                   "feed_fresh": snap.feed_fresh}
     ev.update(_row_from_ctx(ev, ctx, extra))

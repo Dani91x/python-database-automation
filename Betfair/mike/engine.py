@@ -625,8 +625,18 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
         if locked > 0 and pos > 0 and comm_market.get(key[0], 0.0) > 0:
             share = comm_market[key[0]] * (locked / pos)
         per_net[key] = round(locked - share, 2)
-    net = sum(_net(v, commission) for v in gross_market.values())
-    return CashoutValue(net=round(net, 2), gross=round(gross, 2), per_selection=per,
+    net = round(sum(_net(v, commission) for v in gross_market.values()), 2)
+    # difetto 9 (cert. 13/09): la somma delle celle "se chiudo questa selezione"
+    # poteva non fare il totale "se chiudo tutto" per un centesimo, e chi somma
+    # con gli occhi trova un numero diverso da quello dichiarato. Il residuo di
+    # arrotondamento si sposta sulla selezione di peso maggiore, come gia' fa
+    # ``settle_legs_by_market`` per le righe.
+    if per_net:
+        scarto = round(net - round(sum(per_net.values()), 2), 2)
+        if scarto:
+            pesante = max(per_net, key=lambda k: abs(per_net[k]))
+            per_net[pesante] = round(per_net[pesante] + scarto, 2)
+    return CashoutValue(net=net, gross=round(gross, 2), per_selection=per,
                         plans=plans, complete=complete, decided=tuple(decided),
                         per_selection_net=per_net)
 
@@ -634,6 +644,41 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
 # Quante gambe ANNULLATE e mai abbinate si tengono per ruolo nello stato
 # dell'evento. Servono solo a leggere "l'ultimo tentativo": oltre sono zavorra.
 MAX_CANCELLED_PER_ROLE = 5
+
+
+def pnl_indipendente_dal_risultato(legs: List[Leg], commission: float,
+                                   max_total: int = 8) -> Optional[float]:
+    """Il P&L della partita, SE non dipende da come e' finita. Altrimenti None.
+
+    Serve a chiudere le partite su cui il punteggio finale non e' piu'
+    recuperabile (book non leggibile a mercato chiuso, partita mai vista in
+    gioco). Due casi, entrambi reali:
+
+      * NESSUNA posizione: la finestra pre-match si e' chiusa senza ingressi.
+        Il conto e' zero, qualunque cosa sia successo in campo;
+      * solo CICLI GIA' CHIUSI: ingresso e uscita si compensano, il risultato e'
+        lo stesso su 0 gol come su 8.
+
+    In entrambi i casi aspettare il punteggio non serve a niente, e mandare la
+    scheda in ERRORE costringe l'utente a sistemare a mano una partita su cui
+    non c'e' nulla da sistemare (caso vero del 13/09: FC Maardu v Tallinna
+    Kalev, zero gambe, finita "DA SISTEMARE").
+    """
+    # difetto 2-bis: una gamba a esito IGNOTO puo' essere viva su Betfair con
+    # una size che non conosciamo. Dichiarare "non dipende dal risultato" e
+    # archiviare la partita a 0,00 vorrebbe dire perdere di vista una posizione
+    # reale. Meglio l'attesa, e in ultima istanza l'errore dichiarato.
+    if any(l.needs_reconcile for l in legs):
+        return None
+    if not any(float(l.matched or 0.0) > 0 for l in legs):
+        return 0.0
+    per_totale = net_pnl_by_total(legs, commission, max_total=max_total)
+    if not per_totale:
+        return None
+    valori = list(per_totale.values())
+    if max(valori) - min(valori) > 0.005:
+        return None          # il risultato conta davvero: il punteggio serve
+    return round(valori[0], 2)
 
 
 def prune_dead_legs(legs: List[Leg], max_per_role: int = MAX_CANCELLED_PER_ROLE) -> List[Leg]:
@@ -712,10 +757,17 @@ def _assume_matched(legs: List[Leg]) -> List[Leg]:
     rischio (C3, mai una posizione invisibile)."""
     out: List[Leg] = []
     for l in legs:
-        if l.needs_reconcile and float(l.matched) <= 0:
-            out.append(replace(l, matched=float(l.size), avg_price=float(l.price), status="open"))
-        else:
-            out.append(l)
+        if l.needs_reconcile:
+            # difetto 4: la condizione era ``matched <= 0``, quindi un solo
+            # centesimo gia' abbinato NASCONDEVA il resto della gamba — 99 EUR
+            # su 100 dichiarati zero rischio. Il peggior caso e' sempre la size
+            # PIENA, qualunque cosa risulti abbinato finora.
+            piena = max(float(l.matched or 0.0), float(l.size or 0.0))
+            if piena > float(l.matched or 0.0):
+                out.append(replace(l, matched=piena,
+                                   avg_price=float(l.avg_price or l.price), status="open"))
+                continue
+        out.append(l)
     return out
 
 
@@ -735,7 +787,17 @@ def locked_pnl(legs: List[Leg], commission: float) -> Optional[float]:
     """P&L NETTO gia' BLOCCATO: identico su ogni somma gol perche' non c'e' piu'
     esposizione aperta (ciclo greenato o chiuso, mercato non ancora pagato).
     ``None`` se qualche selezione e' ancora viva (nulla e' deciso). L3: lo stop
-    giornaliero deve vedere anche questo, non solo il regolato."""
+    giornaliero deve vedere anche questo, non solo il regolato.
+
+    13/09 — ``None`` anche su una partita su cui non si e' MAI puntato. Prima
+    tornava 0,00: nessuna selezione aperta (non ce n'e' nessuna) e una
+    distribuzione di soli zeri. Il servizio pubblica questo valore per OGNI
+    partita seguita, quindi la pagina sommava decine di zeri e scriveva
+    "+0,00 EUR gia' bloccato su 34 partite" mentre non c'era un euro bloccato da
+    nessuna parte. Zero bloccato e NIENTE bloccato sono due cose diverse, e per
+    chi guarda il rischio la differenza conta."""
+    if not any(float(l.matched or 0.0) > 0 for l in legs):
+        return None
     if open_selections(legs) or any(l.needs_reconcile for l in legs):
         return None
     dist = net_pnl_by_total(legs, commission)
@@ -793,6 +855,21 @@ _PROB_KEY = {(MARKET_OU35, SEL_UNDER): "u35", (MARKET_OU45, SEL_OVER): "o45", (M
 _DEAD_PRICE = 1000.0
 
 
+def _prob_utilizzabile(p: Any) -> bool:
+    """Probabilita' usabile per costruire una quota: finita e dentro (0, 1].
+
+    Difetto 8 (cert. 13/09): con ``p = NaN`` il confronto ``p <= 0`` e' False e
+    ``min(1000, NaN)`` restituisce 1000 — la selezione diventava una quota 1000,
+    cioe' "praticamente morta", e il cash-out intelligente chiudeva in anticipo
+    su un valore atteso inventato.
+    """
+    try:
+        v = float(p)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(v) and 0.0 < v <= 1.0
+
+
 def projected_books(books: Dict[Tuple[str, str], Book], model_probs: Optional[Dict[str, float]],
                     scenario: str) -> Optional[Dict[Tuple[str, str], Book]]:
     """Book PROIETTATI nello scenario ``goal`` | ``later``.
@@ -809,9 +886,20 @@ def projected_books(books: Dict[Tuple[str, str], Book], model_probs: Optional[Di
         if k is None:
             continue
         p_now, p_new = model_probs.get(f"{k}_now"), model_probs.get(f"{k}_{scenario}")
-        if p_now is None or p_new is None or float(p_now) <= 0:
+        # difetto 8: ``NaN <= 0`` e' False e ``min(1000, NaN)`` da' 1000, quindi
+        # una probabilita' rotta diventava una selezione "morta" e il cash-out
+        # intelligente chiudeva in anticipo su un valore atteso inventato.
+        if not _prob_utilizzabile(p_now):
             return None
-        ratio = _DEAD_PRICE if float(p_new) <= 1e-6 else float(p_now) / float(p_new)
+        if p_new is None:
+            return None
+        try:
+            pn = float(p_new)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(pn) or pn < 0.0:
+            return None
+        ratio = _DEAD_PRICE if pn <= 1e-6 else float(p_now) / pn
 
         def _sc(x: Optional[float]) -> Optional[float]:
             return None if x is None else max(1.01, min(_DEAD_PRICE, float(x) * ratio))
@@ -1087,6 +1175,128 @@ def settle_legs_by_market(legs: List[Leg], winners: Dict[str, Optional[str]],
 # ---------------------------------------------------------------------------
 # Helper di stato
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Quello che la SCHEDA deve mostrare, calcolato UNA volta sola qui
+# ---------------------------------------------------------------------------
+# L'audit del 13/09 ha trovato la UI che ricalcolava lato client lato netto,
+# prezzo medio e prezzo di chiusura. Due implementazioni della stessa cosa
+# divergono sempre, e su una scheda di trading divergere vuol dire mentire.
+# Da qui in poi il servizio pubblica, la UI mostra.
+
+
+def pnl_cicli_chiusi(legs: List[Leg], commission: float) -> Optional[float]:
+    """Contributo dei cicli GIA' CHIUSI al risultato della partita.
+
+    E' la differenza fra il P&L di TUTTE le gambe e quello della sola posizione
+    ancora aperta: per costruzione e' additiva (nessun problema di commissione
+    contata due volte) e, se i cicli sono davvero chiusi, e' la STESSA su ogni
+    numero di gol. Se non lo fosse — non deve succedere — ritorna None invece di
+    dichiarare un numero che non regge.
+    """
+    tutte = net_pnl_by_total(legs, commission)
+    attive = net_pnl_by_total(active_legs(legs), commission)
+    if not tutte:
+        return None
+    diff = [round(tutte[t] - attive.get(t, 0.0), 2) for t in sorted(tutte)]
+    if max(diff) - min(diff) > 0.015:
+        return None
+    return diff[0]
+
+
+def riepilogo_cicli(legs: List[Leg], commission: float) -> List[Dict[str, Any]]:
+    """Un riepilogo per CICLO: quanto si e' entrati, a che prezzo, come e' finito.
+
+    L'utente ha chiesto esplicitamente di vedere quanti cicli sono stati fatti e
+    con che risultato: il dato c'era (``cycle_no`` su ogni gamba) ma non usciva
+    da nessuna parte. Un ciclo e' CHIUSO quando la sua esposizione e' piatta —
+    allora il suo P&L non dipende piu' dal risultato della partita ed e' un
+    numero definitivo.
+    """
+    per_ciclo: Dict[int, List[Leg]] = {}
+    for l in legs:
+        if float(l.matched or 0.0) <= 0:
+            continue
+        per_ciclo.setdefault(int(l.cycle_no or 0), []).append(l)
+    out: List[Dict[str, Any]] = []
+    for n in sorted(per_ciclo):
+        gambe = per_ciclo[n]
+        dist = net_pnl_by_total(gambe, commission)
+        valori = list(dist.values()) if dist else [0.0]
+        chiuso = (max(valori) - min(valori)) <= 0.015
+        aperture = [l for l in gambe if l.role in OPENING_ROLES and l.side == "back"]
+        chiusure = [l for l in gambe if l.role in CLOSING_ROLES]
+        stake = round(sum(float(l.matched) for l in aperture), 2)
+        p_in = (round(sum(float(l.matched) * l.fill_price for l in aperture) / stake, 4)
+                if stake > 0 else None)
+        size_out = round(sum(float(l.matched) for l in chiusure), 2)
+        p_out = (round(sum(float(l.matched) * l.fill_price for l in chiusure) / size_out, 4)
+                 if size_out > 0 else None)
+        out.append({
+            "ciclo": cycle_label(n),
+            "stake": stake,
+            "prezzo_ingresso": p_in,
+            "prezzo_uscita": p_out,
+            "chiuso": bool(chiuso),
+            # su un ciclo chiuso il P&L e' definitivo; su uno aperto e' il
+            # risultato PEGGIORE possibile, dichiarato come tale dal flag
+            "pnl": round(min(valori), 2) if chiuso else None,
+            "gambe": len(gambe),
+            "ruoli": sorted({str(l.role) for l in gambe}),
+        })
+    return out
+
+
+def posizione_per_selezione(legs: List[Leg], books: Dict[Tuple[str, str], Book],
+                            commission: float, place_at_ticks: int = 0,
+                            goals: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Una riga per selezione APERTA, con tutto quello che serve a leggerla.
+
+    Comprende la parte che mancava del tutto: se il cash-out e' ESEGUIBILE, cioe'
+    se al prezzo di chiusura c'e' abbastanza liquidita' per chiudere l'intera
+    posizione. Senza questo, "se chiudo ora +2,31" e' una promessa che il book
+    puo' non mantenere.
+    """
+    cv = cashout_value(legs, books, commission, place_at_ticks, goals=goals)
+    righe: List[Dict[str, Any]] = []
+    for key in open_selections(legs):
+        market, selection = key
+        w, l = exposure(legs, market, selection)
+        abbinato = round(sum(float(x.matched) for x in legs
+                             if x.market == market and x.selection == selection
+                             and not x.archived and float(x.matched) > 0), 2)
+        medio = None
+        back = [x for x in legs if x.market == market and x.selection == selection
+                and x.side == "back" and not x.archived and float(x.matched) > 0]
+        tot_back = sum(float(x.matched) for x in back)
+        if tot_back > 0:
+            medio = round(sum(float(x.matched) * x.fill_price for x in back) / tot_back, 4)
+        piano = cv.plans.get(key)
+        bk = books.get(key)
+        # liquidita' disponibile DAL LATO su cui si chiuderebbe
+        disp = None
+        if piano is not None and piano.actionable and bk is not None:
+            disp = float(bk.lay_size if piano.side == "lay" else bk.back_size)
+        righe.append({
+            "market": market, "selection": selection,
+            "lato": "back" if (w - l) > 0 else "lay",
+            "netto": round(abs(w - l), 2),
+            "abbinato": abbinato,
+            "prezzo_medio": medio,
+            "se_vince": round(w, 2), "se_perde": round(l, 2),
+            "decisa": selection_decided(market, selection, goals),
+            # la chiusura COME LA FAREBBE IL BOT: stesso prezzo, stessa size
+            "chiusura_lato": piano.side if (piano and piano.actionable) else None,
+            "chiusura_prezzo": piano.price if (piano and piano.actionable) else None,
+            "chiusura_size": piano.size if (piano and piano.actionable) else None,
+            "se_chiudo_ora": cv.per_selection_net.get(key),
+            "liquidita_al_prezzo": None if disp is None else round(disp, 2),
+            # eseguibile = il book copre l'intera size di chiusura
+            "eseguibile": (None if (disp is None or piano is None or not piano.actionable)
+                           else bool(disp + 1e-9 >= float(piano.size))),
+        })
+    return righe
+
+
 def _legs(ctx: MatchCtx, role: Optional[str] = None, live: Optional[bool] = None) -> List[Leg]:
     out = []
     for leg in ctx.legs:
@@ -1182,6 +1392,23 @@ def size_chiudibile(size: Optional[float]) -> bool:
     return float(size) >= SUBMIN_FLOOR - 0.0005
 
 
+def ordini_vivi_su(ctx: MatchCtx, market: str, selection: str,
+                   escludi: Tuple[str, ...] = ()) -> List[Leg]:
+    """Ordini ancora VIVI su una selezione, di ruolo diverso da quelli esclusi.
+
+    CERT. 13/09, difetto 1 — money-critical. Prima di appoggiare un ordine su
+    una selezione bisogna sapere se ce n'e' gia' uno vivo nella stessa
+    direzione: se abbinano ENTRAMBI la posizione si ribalta (da back netto a lay
+    netto). Il caso reale: la lay di green-up del ciclo pre-match a cui e' stato
+    mandato il cancel ma che l'exchange non ha ancora confermato, piu' la lay di
+    chiusura del cash-out. Misurato su 10 EUR di stake: -9,39 EUR invece di
+    +1,41, e sull'esito piu' probabile.
+    """
+    return [l for l in ctx.legs
+            if l.is_live and l.market == market and l.selection == selection
+            and l.role not in escludi]
+
+
 def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
                    role_map: Optional[Dict[Tuple[str, str], str]] = None) -> List[Action]:
     role_map = role_map or {
@@ -1203,6 +1430,12 @@ def _close_actions(ctx: MatchCtx, cv: CashoutValue, params: Dict[str, Any],
         # possibile, e il servizio lo dichiara una volta sola.
         if not size_chiudibile(plan.size):
             continue
+        # difetto 1: prima di appoggiare la chiusura si ANNULLA qualunque altro
+        # ordine vivo sulla stessa selezione. Due ordini nella stessa direzione
+        # che abbinano entrambi ribaltano la posizione.
+        for viva in ordini_vivi_su(ctx, key[0], key[1], escludi=(role_map[key],)):
+            acts.append(Action(kind="cancel", ref=viva.ref, role=viva.role,
+                               market=viva.market, selection=viva.selection))
         acts.append(_place(role_map[key], key[0], key[1], plan.side, plan.price, plan.size,
                            note=plan.note))
     return acts
@@ -1249,18 +1482,32 @@ def has_unknown_orders(ctx: MatchCtx) -> bool:
     return any(l.needs_reconcile for l in ctx.legs)
 
 
-def _strip_openings(d: Decision, why: str) -> Decision:
+def _strip_openings(d: Decision, why: str, stato_ora: Optional[str] = None) -> Decision:
     """Toglie da una decisione le APERTURE, lasciando cancel e chiusure (H8).
 
     Con un ordine a esito IGNOTO l'esposizione reale non e' nota: si continua a
     valutare tutto cio' che RIDUCE il rischio (annulli, cash-out, uscite, cap di
     perdita) e si bloccano solo gli ordini che ne aggiungono.
+
+    CERT. 13/09, difetto 3 — money-critical. Togliere l'ordine non basta: se lo
+    STATO avanza lo stesso, il bot si comporta come se l'ordine ci fosse. Caso
+    misurato: la seconda tranche di copertura viene tolta, lo stato passa
+    comunque a LIVE_COVER_PENDING, e al giro dopo il motore trova la PRIMA
+    tranche (abbinata) e conclude "copertura abbinata" azzerando la fase. La
+    copertura residua non viene MAI comprata e niente lo dice: 13,50 EUR di
+    differenza su 20 di stake con 5+ gol.
+
+    Quindi: se dopo la potatura non resta NESSUN ordine da piazzare, lo stato
+    resta quello di adesso e si riproverà al giro successivo.
     """
     kept = [a for a in d.actions if not (a.kind == "place" and a.role in OPENING_ROLES)]
     if len(kept) == len(d.actions):
         return d
-    return Decision(state=d.state, actions=kept, reason=f"{d.reason} ({why})",
-                    updates=dict(d.updates), telemetry=dict(d.telemetry))
+    restano_place = any(a.kind == "place" for a in kept)
+    stato = d.state if (restano_place or stato_ora is None) else stato_ora
+    return Decision(state=stato, actions=kept, reason=f"{d.reason} ({why})",
+                    updates=dict(d.updates) if stato == d.state else {},
+                    telemetry=dict(d.telemetry))
 
 
 def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
@@ -1305,6 +1552,19 @@ def _decide_flatten(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> De
         # Chiudere il ciclo qui archivierebbe una posizione aperta (capitale a
         # rischio invisibile) — mai.
         return Decision(ctx.state, [], "chiusura manuale: prezzi non disponibili, attendo")
+    if open_selections(ctx.legs):
+        # CERT. 13/09, difetto 6. ``live_open_selections`` non vede le selezioni
+        # il cui esito e' GIA' DECISO (linea superata): con 4 gol l'Under 3.5 e'
+        # perso e sparisce dal filtro, ma la gamba e' ancora a mercato e la
+        # perdita e' certa. Archiviarla toglieva 30 EUR di perdita dalla
+        # liability e dal tetto per partita, che si riapriva per un capitale che
+        # non c'era. Si chiude la fase SENZA archiviare: il regolamento pagera'.
+        stato_finale = "FLAT" if snap.inplay else "WATCH"
+        return Decision(stato_finale, [], "chiusura manuale: resta una posizione gia' decisa, "
+                                          "si porta al regolamento",
+                        updates={"flatten_pending": False, "no_reentry": not snap.inplay,
+                                 "reentry_allowed": False, "reentry_done": True,
+                                 "attempts": 0})
     if snap.inplay:
         return Decision("FLAT", [], "chiusura manuale completata",
                         updates={"flatten_pending": False, "reentry_allowed": False,
@@ -1334,7 +1594,7 @@ def decide(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision:
     d = _dispatch(ctx, snap, params)
     if has_unknown_orders(ctx):
         # H8 — ordine a esito ignoto: via le APERTURE, restano le riduzioni di rischio
-        d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura")
+        d = _strip_openings(d, "ordine a esito ignoto: nessuna apertura", ctx.state)
     return d
 
 
@@ -1346,6 +1606,16 @@ def _dispatch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Decision
     if snap.market_status == "CLOSED" or st == "SETTLING":
         if st != "SETTLING":
             return Decision("SETTLING", _cancel_live(ctx), "mercato chiuso")
+        # CERT. 13/09, difetto 2 — money-critical. Con un ordine a esito IGNOTO
+        # il regolamento e' FALSO: ``settle_legs`` conta solo l'abbinato, quindi
+        # una gamba che potrebbe essere viva su Betfair esce "void 0,00". Su un
+        # cover da 20 EUR il P&L dichiarato sbagliava di 133. E lo stop
+        # giornaliero e lo storico si fidano di quel numero.
+        if has_unknown_orders(ctx):
+            return Decision("SETTLING", [], "regolamento sospeso: un ordine ha esito ignoto",
+                            telemetry={"settle_bloccato": {
+                                "gambe": [l.ref for l in ctx.legs if l.needs_reconcile],
+                                "critical": True}})
         if snap.final_total is None:
             return Decision("SETTLING", [], "attesa punteggio finale")
         res = settle_legs(ctx.legs, int(snap.final_total), c)
@@ -1987,9 +2257,15 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
                           now=snap.now, params=params,
                           price_over=price_over,
                           cover_gain_pct=snap.cover_gain_pct)
-    # la copertura ORDINATA dal flusso (finestra di uscita scaduta, gol precoce)
-    # non passa piu' dall'attesa "intelligente": e' gia' stata decisa
-    if timing == "wait" and ctx.cover_forced:
+    # La copertura ORDINATA dal flusso (finestra di uscita scaduta, gol precoce)
+    # non passa piu' dall'attesa "intelligente": e' gia' stata decisa.
+    # MA (difetto 7) non scavalca l'attesa di RIPREZZO dopo un gol: nei secondi
+    # del gol la quota Over crolla, e comprare li' costa il differenziale pieno
+    # (misurato: 3,16 EUR invece di ~2,10 su 10 di stake). Quella e' un'attesa
+    # tecnica di mercato, non una valutazione da rifare.
+    dopo_gol = (snap.last_goal_ts is not None
+                and snap.now - float(snap.last_goal_ts) < float(params["cover_postgoal_delay_s"]))
+    if timing == "wait" and ctx.cover_forced and not dopo_gol:
         timing = "cover"
     x_pieno = None
     if price_over is not None:
@@ -2212,10 +2488,18 @@ def _decide_covered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: fl
     # solo quando l'attesa e' finita, si completa la copertura sul RESIDUO, che
     # ``cover_residual`` ricalcola al prezzo dell'Over di QUEL momento e a quanto
     # la prima tranche ha gia' garantito (mai "l'altra meta' dello stesso importo").
-    if int(ctx.cover_stage or 0) == 2 and ctx.cover_stage1_at is not None and \
-            snap.now - float(ctx.cover_stage1_at) >= float(params["early_goal_cover2_delay_s"]):
-        tele["cover_staged"] = {"stage": 2, "atteso_s": round(snap.now - float(ctx.cover_stage1_at), 1),
-                                "minuto": snap.minute}
+    # difetto 5: se l'orologio della prima tranche manca (contesto scritto prima
+    # del 13/09, o JSON scritto a meta') la condizione non si avverava MAI e la
+    # partita restava coperta a meta' fino al fischio finale. Senza orologio si
+    # completa subito: meglio coprire ora che non coprire piu'.
+    if int(ctx.cover_stage or 0) == 2 and (
+            ctx.cover_stage1_at is None
+            or snap.now - float(ctx.cover_stage1_at) >= float(params["early_goal_cover2_delay_s"])):
+        tele["cover_staged"] = {
+            "stage": 2, "minuto": snap.minute,
+            "atteso_s": (None if ctx.cover_stage1_at is None
+                         else round(snap.now - float(ctx.cover_stage1_at), 1)),
+            "senza_orologio": ctx.cover_stage1_at is None}
         return Decision("LIVE_UNCOVERED", acts, "seconda tranche: completo la copertura",
                         updates={"cover_stage": 3, "cover_forced": True}, telemetry=tele)
     return Decision("LIVE_COVERED", acts, "tengo", telemetry=tele)

@@ -169,14 +169,15 @@ def place(
     sotto_minimo = bool(min_live > 0 and size < min_live - 1e-9 and not is_closing)
 
     # --- gate flumine (PAPER e LIVE): riuso 1:1 di omega_service._flumine_gate ---
-    gate_params = params
-    if sotto_minimo:
-        # Un ordine sotto-minimo NON ha alternativa REST: o passa dalla macchina
-        # place-and-trim sulla coda, o non esiste. Quindi il gate si valuta come
-        # 'auto' anche se il chiamante ha scelto il percorso REST per gli ordini
-        # normali — non e' un bypass: e' l'UNICO percorso possibile per questa size.
-        gate_params = dict(params, execution_mode="auto")
-    use_flumine, gate_reason = _gate(event_id, db=db, mode=mode, params=gate_params, now=now)
+    # CERT. 13/09, difetto C-2: qui il gate veniva FORZATO ad 'auto' per gli
+    # ordini sotto-minimo, per mandarli sulla macchina place-and-trim della coda.
+    # Ma un bot che gira in REST la coda non la LEGGE: l'ordine finiva sulla
+    # coda, il worker lo piazzava davvero, e dopo 120 secondi il TTL del bot
+    # dichiarava la gamba annullata — posizione doppia con soldi veri.
+    # Adesso il sotto-minimo segue la STESSA strada di tutto il resto: chi usa la
+    # coda fa il place-and-trim sulla coda, chi usa il REST lo fa in REST
+    # (``market.place_submin_live``, sincrono e tracciato riga per riga).
+    use_flumine, gate_reason = _gate(event_id, db=db, mode=mode, params=params, now=now)
     if use_flumine and tid is not None:
         rid = enqueue_place(
             db=db, trade_id=tid, client_ref=client_ref, event_id=event_id,

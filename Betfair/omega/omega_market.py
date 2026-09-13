@@ -649,12 +649,24 @@ def _submin_ritira(market_id: str, bet_id: Optional[str]) -> None:
 def place_submin_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     side: str = "back", customer_ref: Optional[str] = None,
+    fill_or_kill: bool = True,
 ) -> PlaceResult:
     """Piazza un importo SOTTO il minimo di Betfair col place-and-trim (REST).
 
-    L'ordine resta A RIPOSO alla quota richiesta: se il mercato la copre gia',
-    Betfair lo abbina subito e ``size_matched`` lo riporta; altrimenti resta sul
-    book come qualunque ordine limite.
+    ``fill_or_kill`` (default, ed e' il comportamento che serve a Mike): finito
+    il riprezzo, la parte NON abbinata viene ritirata subito. Cosi' questa
+    funzione si comporta esattamente come il place normale — o si abbina, o non
+    esiste — e non lascia mai sul conto un ordine che il bot non sa di avere.
+
+    CERT. 13/09, difetto C-1. Senza questo ritiro il riprezzo lascia un ordine
+    LIMITE a riposo alla quota richiesta; il chiamante legge "size_matched = 0",
+    lo interpreta come un rifiuto e marca la gamba annullata. L'ordine pero' e'
+    VIVO su Betfair: piu' tardi si abbina, nessuno lo contabilizza, e l'engine
+    nel frattempo rientra — posizione doppia con soldi veri. Con gli importi
+    esatti (default) quasi ogni copertura passa da questa strada.
+
+    Con ``fill_or_kill=False`` l'ordine resta a riposo: usarlo SOLO da un
+    chiamante che sa seguirlo (ha il bet_id e lo riconcilia).
     """
     side_l = str(side).lower()
     if side_l not in ("back", "lay"):
@@ -754,12 +766,25 @@ def place_submin_live(
                            f"({rir.get('errorCode') or rep.get('errorCode')}) — ritirato")
     pir = rir.get("placeInstructionReport") or {}
     nuovo_bet = pir.get("betId") or bet_id
-    matched = float(pir.get("sizeMatched") or 0.0)
+    matched = round(float(pir.get("sizeMatched") or 0.0), 2)
+
+    # C-1: la parte non abbinata NON resta sul book. O si abbina, o non esiste.
+    if fill_or_kill and matched < target - 0.005:
+        _submin_ritira(market_id, nuovo_bet)
+        if matched <= 0:
+            logger.info("[submin] %s %s %.2f EUR @ %.2f: nessuna controparte, ritirato",
+                        side_l, selection_id, target, target_tick)
+            return PlaceResult(ok=False, order_status="LAPSED", bet_id=nuovo_bet,
+                               size_matched=0.0, avg_price_matched=None,
+                               raw=rep if isinstance(rep, dict) else {})
+        logger.info("[submin] %s %s abbinati %.2f di %.2f EUR @ %.2f, residuo ritirato",
+                    side_l, selection_id, matched, target, target_tick)
+
     logger.info("[submin] %s %s %.2f EUR @ %.2f su %s (bet %s) — place-and-trim completato",
-                side_l, selection_id, target, target_tick, market_id, nuovo_bet)
+                side_l, selection_id, matched or target, target_tick, market_id, nuovo_bet)
     return PlaceResult(
         ok=True,
-        order_status=pir.get("orderStatus") or "EXECUTABLE",
+        order_status=pir.get("orderStatus") or "EXECUTION_COMPLETE",
         bet_id=nuovo_bet,
         size_matched=matched,
         avg_price_matched=pir.get("averagePriceMatched") or (target_tick if matched > 0 else None),

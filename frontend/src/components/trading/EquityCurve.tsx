@@ -27,6 +27,12 @@ export function EquityCurve({ series, emptyLabel = 'nessun trade ancora regolato
     }
     const W = 820, H = 240;
     const pad = { l: 10, r: 60, t: 18, b: 26 };
+    // CERT. 13/09 — un solo punto con data o valore non finito faceva diventare
+    // NaN l'intera scala: il path usciva "M NaN NaN" e la curva spariva senza
+    // dire niente, oppure `lastV >= 0` era falso e un'equity POSITIVA veniva
+    // dipinta di rosso. I punti rotti si scartano prima di toccare la scala.
+    series = series.filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v));
+    if (series.length === 0) return null;
     let t0 = series[0].t;
     let t1 = series[series.length - 1].t;
     if (t1 - t0 < 60_000) { t0 -= 15 * 60_000; t1 += 15 * 60_000; }

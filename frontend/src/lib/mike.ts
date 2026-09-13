@@ -187,9 +187,70 @@ export interface MikeLive {
     p4_model: number | null;
     cashout: MikeCashout | null;
     cover_wait: Record<string, unknown> | null;
+    /** come finisce la POSIZIONE ANCORA APERTA, per numero di gol totali (netto).
+     *  Stessa base di `cashout` e `liability`: i cicli già chiusi NON sono qui. */
     pnl_by_total: Record<string, number>;
+    /** come finisce la PARTITA INTERA, cicli già chiusi compresi (netto). È questo
+     *  il numero che il trader incassa davvero a fine gara. */
+    pnl_totale_by_total?: Record<string, number> | null;
+    /** quanto hanno già reso i cicli chiusi: la differenza fra i due qui sopra.
+     *  `null` se per qualche motivo non è costante sui gol (non deve succedere). */
+    pnl_cicli_chiusi?: number | null;
+    /** un riepilogo per ciclo: stake, prezzo d'ingresso, d'uscita, esito */
+    cicli?: MikeCicloRiepilogo[] | null;
+    /** cicli GIÀ CHIUSI sulla partita (`ctx.cycle_no`), non quello in corso */
+    cicli_chiusi?: number | null;
+    /** capitale impegnato ora nei back di apertura ancora aperti */
+    investito?: number | null;
+    /** una riga per selezione aperta, calcolata dal SERVIZIO (mai dal client):
+     *  lato netto, prezzo medio, prezzo/size con cui il bot chiuderebbe e se al
+     *  book c'è abbastanza liquidità per farlo davvero */
+    posizioni?: MikePosizione[] | null;
+    /** quando il servizio ha scritto questa riga: la scheda ci calcola sopra
+     *  un'età che TICKA. `feed_age_s` invece è congelato alla scrittura. */
+    published_at?: string | null;
+    published_ts?: number | null;
     books: Record<string, MikeBook>;
     feed_fresh: boolean;
+}
+
+/** Riepilogo di UN ciclo: quanto si è entrati, a che prezzo, com'è finito. */
+export interface MikeCicloRiepilogo {
+    /** numero come lo legge il trader, 1-based */
+    ciclo: number;
+    stake: number;
+    prezzo_ingresso: number | null;
+    prezzo_uscita: number | null;
+    /** true = esposizione piatta: il P&L è definitivo */
+    chiuso: boolean;
+    /** P&L netto del ciclo, solo se chiuso; `null` se ancora aperto */
+    pnl: number | null;
+    gambe: number;
+    ruoli: string[];
+}
+
+/** Una selezione ancora aperta, con l'eseguibilità della sua chiusura. */
+export interface MikePosizione {
+    market: string;
+    selection: string;
+    lato: 'back' | 'lay';
+    /** esposizione netta in euro */
+    netto: number;
+    abbinato: number;
+    prezzo_medio: number | null;
+    se_vince: number;
+    se_perde: number;
+    /** esito già certo (linea superata): true vinta, false persa, null in gioco */
+    decisa: boolean | null;
+    chiusura_lato: 'back' | 'lay' | null;
+    chiusura_prezzo: number | null;
+    chiusura_size: number | null;
+    /** P&L netto bloccabile chiudendo QUESTA selezione ora */
+    se_chiudo_ora: number | null;
+    /** euro disponibili al prezzo di chiusura, dal lato giusto del book */
+    liquidita_al_prezzo: number | null;
+    /** il book copre l'intera size di chiusura? `null` = non calcolabile */
+    eseguibile: boolean | null;
 }
 
 export interface MikeDossier {
@@ -239,8 +300,11 @@ export interface MikeTrade {
     size: number | null;
     liability: number | null;
     status: 'pending' | 'open' | 'hedged' | 'won' | 'lost' | 'void' | 'error';
-    /** P&L NETTO commissione (H4): la somma delle righe fa `settled_pnl` */
-    pnl: number;
+    /** P&L NETTO commissione (H4): la somma delle righe fa `settled_pnl`.
+     *  `null` finché la riga non è REGOLATA — ed è un'informazione, non uno
+     *  zero: «non ancora deciso» e «pari» sono due cose diverse (cert. 13/09,
+     *  il tipo diceva `number` ma il database restituisce null). */
+    pnl: number | null;
     placed_at: string;
     settled_at: string | null;
     signal_key: string | null;
@@ -1380,6 +1444,149 @@ export function dayResultCounts(trades: readonly MikeTrade[], dayStartMs: number
 export function groupsOfDay(groups: readonly MikeTradeGroup[], dayStartMs: number | null): MikeTradeGroup[] {
     if (dayStartMs == null || !Number.isFinite(dayStartMs)) return [...groups];
     return groups.filter((g) => tradeDayMs(g.open) >= dayStartMs);
+}
+
+// ---------------------------------------------------------------------------
+// PRE-MATCH o LIVE: a quale fase appartiene un ciclo
+// ---------------------------------------------------------------------------
+// Non si guarda l'orologio ma il RUOLO della gamba che apre il ciclo, che è un
+// dato strutturale e non dipende da quanto sia preciso il calcio d'inizio di
+// calendario:
+//   · `under_entry`  è l'ingresso del ciclo pre-match, che si chiude in green
+//     prima del fischio;
+//   · `under_last`   è l'ultimo ingresso, quello messo in PERSIST a 10 minuti
+//     dal via: nasce prima del fischio ma è la posizione che va IN GIOCO, e
+//     tutto quello che le succede intorno (uscita al fischio, seconda puntata,
+//     copertura, chiusure) è operatività live;
+//   · `under_second`, `over_cover`, `reentry` sono live per definizione.
+// Le chiusure ereditano la fase della loro apertura: un ciclo non si spezza.
+
+/** Ruoli che aprono un ciclo PRE-MATCH (si apre e si chiude prima del fischio). */
+export const MIKE_RUOLI_APERTURA_PRE = new Set(['under_entry']);
+/** Ruoli che aprono operatività LIVE (o che la portano in gioco). */
+export const MIKE_RUOLI_APERTURA_LIVE = new Set(['under_last', 'under_second', 'over_cover', 'reentry']);
+
+export type MikeFase = 'pre' | 'live';
+
+/** La fase di un ciclo, dal ruolo della gamba che lo apre. */
+export function fasePerCiclo(g: MikeTradeGroup): MikeFase {
+    const role = String(g.open.role ?? '');
+    if (MIKE_RUOLI_APERTURA_PRE.has(role)) return 'pre';
+    if (MIKE_RUOLI_APERTURA_LIVE.has(role)) return 'live';
+    // riga orfana (chiusura senza apertura nota): `under_green` chiude un ciclo
+    // pre-match, tutto il resto è live
+    return role === 'under_green' ? 'pre' : 'live';
+}
+
+/** Una PARTITA nella scheda Operazioni / Risultati: il netto e i suoi cicli. */
+export interface MikeEventGroup {
+    event_id: string;
+    event_name: string;
+    /** cicli della partita, dal più recente */
+    cicli: MikeTradeGroup[];
+    /** P&L NETTO di commissione delle sole righe REGOLATE. `null` = niente ancora
+     *  regolato: si mostra «—», mai «0,00», che vorrebbe dire un'altra cosa. */
+    netPnl: number | null;
+    /** euro ancora in ballo: c'è almeno una riga non regolata */
+    apertaAncora: boolean;
+    /** quante righe sono già regolate e quante no */
+    righeRegolate: number;
+    righeAperte: number;
+    /** fasi presenti: una partita può comparire in pre-match E in live */
+    fasi: MikeFase[];
+    /** istante dell'operazione più recente (ms), per l'ordinamento */
+    ultimaMs: number;
+    /** modalità delle righe: 'paper', 'live', o 'mista' (non dovrebbe capitare) */
+    mode: string;
+}
+
+/**
+ * I cicli raggruppati per PARTITA (richiesta dell'utente: «il P&L deve essere il
+ * netto delle operazioni di QUELLA partita, col dettaglio apribile»).
+ *
+ * Il netto si ottiene sommando i `pnl` delle righe regolate, che il servizio
+ * scrive già NETTI di commissione (garanzia H4: la loro somma per evento è
+ * esattamente `mike_events.settled_pnl`, verificata sul DB reale su 132 partite
+ * su 132). Apertura e chiusura sono due scommesse distinte, ognuna col suo
+ * esito: sommarle non è un doppio conteggio.
+ *
+ * `fase` filtra sui cicli PRE-MATCH o LIVE; senza filtro entrano tutti.
+ */
+export function groupMikeTradesByEvent(
+    groups: readonly MikeTradeGroup[],
+    fase?: MikeFase,
+): MikeEventGroup[] {
+    const perEvento = new Map<string, MikeTradeGroup[]>();
+    for (const g of groups) {
+        if (fase && fasePerCiclo(g) !== fase) continue;
+        const eid = String(g.open.event_id ?? '');
+        if (!eid) continue;
+        const arr = perEvento.get(eid) ?? [];
+        arr.push(g);
+        perEvento.set(eid, arr);
+    }
+    const out: MikeEventGroup[] = [];
+    for (const [eid, cicli] of perEvento) {
+        const righe = cicli.flatMap((g) => [g.open, ...g.closes]);
+        // le righe in 'error' non sono operazioni: sono piazzamenti mai avvenuti
+        // (o doppioni scartati). Non contano e non si mostrano nel totale.
+        const vere = righe.filter((r) => r.status !== 'error');
+        const regolate = vere.filter((r) => SETTLED_TRADE_STATES.has(r.status));
+        const aperte = vere.filter((r) => !SETTLED_TRADE_STATES.has(r.status));
+        const netPnl = regolate.length
+            ? Math.round(regolate.reduce((s, r) => s + Number(r.pnl ?? 0), 0) * 100) / 100
+            : null;
+        const modi = new Set(vere.map((r) => String(r.mode ?? '')).filter(Boolean));
+        out.push({
+            event_id: eid,
+            event_name: String(cicli[0]?.open.event_name ?? eid),
+            cicli: cicli.slice().sort((a, b) => Date.parse(b.open.placed_at) - Date.parse(a.open.placed_at)),
+            netPnl,
+            apertaAncora: aperte.length > 0,
+            righeRegolate: regolate.length,
+            righeAperte: aperte.length,
+            fasi: [...new Set(cicli.map(fasePerCiclo))].sort(),
+            ultimaMs: Math.max(...righe.map((r) => Date.parse(r.placed_at) || 0), 0),
+            mode: modi.size === 1 ? [...modi][0] : (modi.size === 0 ? '' : 'mista'),
+        });
+    }
+    return out.sort((a, b) => b.ultimaMs - a.ultimaMs);
+}
+
+/**
+ * Quanto ha reso davvero un insieme di partite: somma dei netti già REGOLATI.
+ * Le partite ancora in corso contribuiscono solo con la parte già regolata, e il
+ * chiamante sa quante sono (`aperte`) per poterlo dichiarare.
+ */
+export function totaleRisultati(eventi: readonly MikeEventGroup[]): {
+    netto: number; conRisultato: number; aperte: number; vinte: number; perse: number;
+} {
+    let netto = 0, conRisultato = 0, aperte = 0, vinte = 0, perse = 0;
+    for (const e of eventi) {
+        if (e.apertaAncora) aperte += 1;
+        if (e.netPnl == null) continue;
+        netto += e.netPnl;
+        conRisultato += 1;
+        if (e.netPnl > 0) vinte += 1;
+        else if (e.netPnl < 0) perse += 1;
+    }
+    return { netto: Math.round(netto * 100) / 100, conRisultato, aperte, vinte, perse };
+}
+
+/**
+ * Età in secondi della riga pubblicata dal servizio, calcolata ADESSO.
+ *
+ * `live.feed_age_s` è congelato al momento della scrittura: se il servizio si
+ * ferma resta lì, verde, per sempre — e i bottoni che mandano ordini veri lo
+ * usano come semaforo. Questa invece cresce da sola perché parte da
+ * `published_ts`, che è un istante assoluto. `null` = il servizio non lo
+ * pubblica ancora (backend vecchio): in quel caso chi chiama NON deve fingere
+ * che il dato sia fresco.
+ */
+export function etaPubblicazioneS(live: MikeLive | null | undefined, nowMs: number): number | null {
+    const ts = live?.published_ts;
+    if (ts == null || !Number.isFinite(Number(ts))) return null;
+    return Math.max(0, Math.round((nowMs / 1000 - Number(ts)) * 10) / 10);
 }
 
 export interface MikeEquityPoint { t: number; v: number; iso: string }

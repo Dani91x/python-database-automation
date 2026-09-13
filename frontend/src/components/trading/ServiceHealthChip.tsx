@@ -68,8 +68,16 @@ export function ServiceHealthChip({
     const feedAge = ageSeconds(feedUpdatedAt, nowMs);
     const feedAlive = feedAge !== null && feedAge * 1000 <= feedStaleMs;
     const hbAge = ageSeconds(heartbeatAt, nowMs);
+    // CERT. 13/09 — un battito NEL FUTURO (orologi non allineati, ISO senza
+    // fuso) veniva schiacciato a 0 s e il pallino restava VERDE su un servizio
+    // fermo. Un orario che non ha senso non certifica niente.
+    const battitoAssurdo = (() => {
+        if (heartbeatAt == null) return false;
+        const ms = typeof heartbeatAt === 'number' ? heartbeatAt : Date.parse(String(heartbeatAt));
+        return !Number.isFinite(ms) || ms - nowMs > 60_000;
+    })();
     const beatJudged = heartbeatAt !== undefined;
-    const botAlive = hbAge !== null && hbAge <= SERVICE_STALE_S;
+    const botAlive = hbAge !== null && hbAge <= SERVICE_STALE_S && !battitoAssurdo;
     const beatBad = beatJudged && !botAlive;
     const bad = !feedAlive || beatBad;
     // che cosa fare, nominando il guasto: mai un allarme senza rimedio e mai

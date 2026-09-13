@@ -26,7 +26,7 @@ import { Activity, Layers, ShieldAlert, TrendingUp, Zap } from 'lucide-react';
 import { useMike } from '@/components/mike/useMike';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { MikeMatchCard } from '@/components/mike/MikeMatchCard';
-import { MikeTradesTable } from '@/components/mike/MikeTradesTable';
+import { MikeEventPnlTable } from '@/components/mike/MikeEventPnlTable';
 import { SectionFilter, useSectionFilter } from '@/components/trading/SectionFilter';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
@@ -49,7 +49,8 @@ import { romeDay, dayLabel, fetchMikeDaily, fetchMikeDayTrades } from '@/lib/dai
 import {
     splitMikeEvents, rememberLive, lastRequestFor, requestOutcome, mikeActivityLine,
     mikeEquitySeries, activeLegs, voidedMarketsOf, withMikeHistoryError, MIKE_ACTIVITY_EXTRA,
-    dayResultCounts, groupMikeTrades, groupsOfDay, lockedPnlTotal, settledOperated,
+    dayResultCounts, groupMikeTrades, groupsOfDay, lockedPnlTotal, groupMikeTradesByEvent,
+    MIKE_TRADES_LIMIT,
     type MikeEvent, type MikeMode, type MikeRequestKind, type MikeStatus,
 } from '@/lib/mike';
 
@@ -117,7 +118,17 @@ export default function Mike() {
     const running = status === 'running' || status === 'stopping';
     const mode: MikeMode = bot.mode;
     const stats = bot.control?.stats ?? null;
-    const scannerAge = scanStatus?.updated_at ? (nowMs - Date.parse(scanStatus.updated_at)) / 1000 : null;
+    // CERT. 13/09, difetto B3 — fail-CLOSED. Con `updated_at` non parsabile
+    // `Date.parse` da' NaN, e `NaN > soglia` e' false: il feed risultava FRESCO e
+    // i bottoni con soldi veri restavano tutti accesi su prezzi di chissà quando.
+    // Un dato illeggibile e' un dato vecchio, non un dato buono.
+    const scannerAge = useMemo(() => {
+        const iso = scanStatus?.updated_at;
+        if (!iso) return null;
+        const ms = Date.parse(iso);
+        if (!Number.isFinite(ms)) return null;
+        return Math.max(0, (nowMs - ms) / 1000);
+    }, [scanStatus?.updated_at, nowMs]);
     const feedStale = scannerAge === null || scannerAge * 1000 > SCANNER_STALE_MS;
 
     rememberLive(bot.events, liveSeen.current);
@@ -158,14 +169,19 @@ export default function Mike() {
         () => groupsOfDay(tradeGroups, bot.dayStartMs).length,
         [tradeGroups, bot.dayStartMs],
     );
-    // REGOLATE = partite regolate su cui Mike ha OPERATO nella giornata: senza
-    // questo filtro la scheda elencava anche le partite solo seguite (card con
-    // "regolato +0,00 €") e mescolava due giornate operative.
-    const settledShown = useMemo(
-        () => settledOperated(sections.settled, bot.trades),
-        [sections.settled, bot.trades],
+    // I CICLI DELLA GIORNATA, una volta sola: li usano la scheda Operazioni e le
+    // due schede Risultati, che sono la stessa domanda con un filtro diverso.
+    const gruppiOggi = useMemo(
+        () => groupsOfDay(tradeGroups, bot.dayStartMs),
+        [tradeGroups, bot.dayStartMs],
     );
-    const settledHidden = sections.settled.length - settledShown.length;
+    // le linguette contano PARTITE, non righe: è quello che si vede aprendole
+    const partiteOperate = useMemo(
+        () => groupMikeTradesByEvent(gruppiOggi).length, [gruppiOggi]);
+    const risultatiPre = useMemo(
+        () => groupMikeTradesByEvent(gruppiOggi, 'pre'), [gruppiOggi]);
+    const risultatiLive = useMemo(
+        () => groupMikeTradesByEvent(gruppiOggi, 'live'), [gruppiOggi]);
     // UN SOLO numero di "operazioni di oggi" in tutta la pagina: barra giornata,
     // linguetta e riepilogo della scheda. Il DB è la fonte (non ha il tetto di
     // 500 righe della RPC); senza migrazione si ripiega sul conto dal client.
@@ -179,6 +195,17 @@ export default function Mike() {
     const hbMs = bot.control?.heartbeat_at ? Date.parse(bot.control.heartbeat_at) : NaN;
     const serviceAlive = Number.isFinite(hbMs) && nowMs - hbMs <= 45_000;
     const equity = useMemo(() => mikeEquitySeries(bot.trades, bot.dayStartMs), [bot.trades, bot.dayStartMs]);
+    // TETTO DELLA RPC: oltre 500 righe la giornata arriva TRONCATA, e allora il
+    // netto di una partita può essere parziale senza che si veda. Va detto in
+    // ogni scheda che somma righe, non solo in una (audit 13/09).
+    const avvisoRighe = bot.trades.length >= MIKE_TRADES_LIMIT ? (
+        <p className="mb-2 rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200"
+           data-testid="mike-righe-troncate">
+            ⚠️ Arrivate {MIKE_TRADES_LIMIT} righe, il tetto della lettura: di qualche partita
+            potrebbero mancare operazioni e il suo netto essere incompleto. Lo Storico non ha
+            questo limite.
+        </p>
+    ) : null;
 
     const activityRows: ActivityRow[] = useMemo(
         () => bot.activity.map((a) => {
@@ -205,13 +232,30 @@ export default function Mike() {
         setLiveConfirmOpen(false);
         toast.error(`🔴 ${T.modeLive} — soldi veri`);
     }
-    const onRequest = useCallback((kind: MikeRequestKind, eventId: string) => {
-        if ((kind === 'cashout' || kind === 'flatten') && mode === 'live' && !bot.liveConfirmed) {
+    // CERT. 13/09, difetti B1 e B2 — money-critical, tutti e due sul percorso
+    // che manda ordini veri.
+    //
+    // B1: questa funzione non restituiva una Promise. I bottoni fanno
+    // `await onCashOut()`, che quindi risolveva SUBITO su `undefined`: il
+    // dialogo si chiudeva come se fosse andato tutto bene, il `catch` non
+    // scattava mai e il messaggio «la posizione è ancora aperta, controlla su
+    // Betfair» era codice irraggiungibile. Una chiusura FALLITA sembrava
+    // riuscita. Ora la Promise viene restituita e l'errore RILANCIATO.
+    //
+    // B2: in live non confermato si usciva con un `return` silenzioso, ma
+    // l'utente aveva gia' fatto i due click di conferma e il dialogo si
+    // chiudeva: il bottone diceva di aver chiuso, il servizio non riceveva
+    // niente. Ora si lancia, cosi' il dialogo resta aperto e lo dice.
+    const onRequest = useCallback(async (kind: MikeRequestKind, eventId: string) => {
+        // TUTTE le azioni che toccano la partita, non solo cash out e flatten:
+        // `resume_event` in live rimette in gioco una partita con soldi veri e
+        // `cancel` ritira ordini reali dal book (audit paper/live, difetto P7).
+        if (mode === 'live' && !bot.liveConfirmed) {
             setLiveConfirmOpen(true);
             toast.warning('Conferma la modalità LIVE prima di operare con soldi veri');
-            return;
+            throw new Error('Modalità LIVE non confermata: nessun ordine è stato inviato.');
         }
-        void bot.request(kind, eventId);
+        await bot.request(kind, eventId);
     }, [mode, bot.liveConfirmed, bot.request]);
 
     const pendingKindsOf = useCallback(
@@ -396,13 +440,19 @@ export default function Mike() {
             <Tabs value={tab} onValueChange={setTab} className="w-full">
                 <TabsList className="sticky z-30" style={{ top: navH }}>
                     {/* ogni contatore è lo STESSO numero della scheda che apre:
-                        Partite = seguite ora, Operazioni = cicli della giornata
-                        (come "operazioni" nella barra), Regolate = partite chiuse
-                        su cui si è operato oggi. Mai conteggi di righe (audit UI 1). */}
+                        Partite = seguite ora, Operazioni = PARTITE con operazioni
+                        nella giornata, Risultati = partite con cicli chiusi prima
+                        del fischio / in gioco. Mai conteggi di righe (audit UI 1).
+
+                        13/09 — «Regolate» non esiste più: era una terza lista di
+                        card che ripeteva le stesse partite. Adesso ogni partita
+                        finisce nei Risultati della fase in cui ha operato, e in
+                        ENTRAMBE se ha operato in entrambe. */}
                     <TabsTrigger value="partite" aria-label={`Partite (${active.length})`}>⚽ Partite ({active.length})</TabsTrigger>
-                    <TabsTrigger value="trade" aria-label={`Operazioni (${operationsToday})`}>📋 Operazioni ({operationsToday})</TabsTrigger>
+                    <TabsTrigger value="trade" aria-label={`Operazioni (${partiteOperate})`}>📋 Operazioni ({partiteOperate})</TabsTrigger>
+                    <TabsTrigger value="risultati-pre" aria-label={`Risultati Pre-Match (${risultatiPre.length})`}>⏱ Risultati Pre-Match ({risultatiPre.length})</TabsTrigger>
+                    <TabsTrigger value="risultati-live" aria-label={`Risultati Live (${risultatiLive.length})`}>🔴 Risultati Live ({risultatiLive.length})</TabsTrigger>
                     <TabsTrigger value="attivita" aria-label="Attività">🧾 Attività</TabsTrigger>
-                    <TabsTrigger value="regolate" aria-label={`Regolate (${settledShown.length})`}>✅ Regolate ({settledShown.length})</TabsTrigger>
                     <TabsTrigger value="storico" aria-label="Storico">📅 Storico</TabsTrigger>
                 </TabsList>
 
@@ -476,27 +526,63 @@ export default function Mike() {
                 </TabsContent>
 
                 <TabsContent value="trade" className="mt-3 space-y-3">
-                    <MikeTradesTable
-                        trades={bot.trades}
-                        dayStartMs={bot.dayStartMs}
-                        dayStartSource={bot.dayStartSource}
-                        dayLabel={dayLabel(operatingDay, { weekday: true })}
-                        summary={{
-                            operationsToday: operationsToday,
-                            openCount: agg?.open_count ?? stats?.trades_open ?? 0,
-                            won: wonToday ?? agg?.won ?? 0,
-                            lost: lostToday ?? agg?.lost ?? 0,
-                            lockedPnl,
-                            openLiability,
-                            reconciling,
-                        }}
-                        onOpenEvent={openEventCard}
+                    <MikeEventPnlTable
+                        gruppi={gruppiOggi}
+                        titolo="Operazioni della giornata"
+                        icona={<Layers className="w-4 h-4 text-sky-300" aria-hidden />}
+                        testId="mike-operazioni"
+                        onApriScheda={openEventCard}
+                        avviso={avvisoRighe}
+                        nota={
+                            <>Una riga per PARTITA col netto delle sue operazioni, commissione già tolta.
+                            Clicca per aprire i cicli e gli ordini. {T.operatingDay}{' '}
+                            {dayLabel(operatingDay, { weekday: true })} · {operationsToday}{' '}
+                            {operationsToday === 1 ? 'ciclo' : 'cicli'} in totale.</>
+                        }
+                        vuoto={<>Nessuna operazione nella {T.operatingDay} ({dayLabel(operatingDay, { weekday: true })}).</>}
                     />
                     <EquityCard
                         series={equity}
                         scope={`${T.operatingDay} ${dayLabel(operatingDay, { year: false })}`}
                         emptyLabel="nessun trade ancora regolato oggi — la curva compare al primo incasso"
                         label="Equity curve di Mike"
+                    />
+                </TabsContent>
+
+                <TabsContent value="risultati-pre" className="mt-3 space-y-3">
+                    <MikeEventPnlTable
+                        gruppi={gruppiOggi}
+                        fase="pre"
+                        titolo="Risultati Pre-Match"
+                        icona={<span aria-hidden>⏱</span>}
+                        testId="mike-risultati-pre"
+                        onApriScheda={openEventCard}
+                        avviso={avvisoRighe}
+                        nota={
+                            <>Cicli aperti e chiusi PRIMA del fischio d'inizio: ingresso sull'Under 3.5 e
+                            uscita a +{String(bot.params.pre_green_ticks ?? 2)} tick. Una partita che ha
+                            operato anche in gioco compare pure in «Risultati Live», con gli euro
+                            dell'altra fase.</>
+                        }
+                        vuoto={<>Nessun ciclo pre-match chiuso nella {T.operatingDay}.</>}
+                    />
+                </TabsContent>
+
+                <TabsContent value="risultati-live" className="mt-3 space-y-3">
+                    <MikeEventPnlTable
+                        gruppi={gruppiOggi}
+                        fase="live"
+                        titolo="Risultati Live"
+                        icona={<span aria-hidden>🔴</span>}
+                        testId="mike-risultati-live"
+                        onApriScheda={openEventCard}
+                        avviso={avvisoRighe}
+                        nota={
+                            <>Tutto quello che è successo a partita iniziata: la posizione portata in
+                            gioco, l'uscita al fischio, la seconda puntata dopo un gol precoce, la
+                            copertura sull'Over 4.5 e le chiusure.</>
+                        }
+                        vuoto={<>Nessuna operazione in gioco nella {T.operatingDay}.</>}
                     />
                 </TabsContent>
 
@@ -518,26 +604,6 @@ export default function Mike() {
                             rowTestId="mike-activity-row"
                         />
                     </SectionCard>
-                </TabsContent>
-
-                <TabsContent value="regolate" className="mt-3 space-y-2">
-                    <p className="text-[11px] text-slate-500" data-testid="mike-settled-note">
-                        Partite CHIUSE su cui Mike ha operato nella {T.operatingDay} ({dayLabel(operatingDay, { weekday: true })}).
-                        {settledHidden > 0 && ` ${settledHidden} ${settledHidden === 1 ? 'partita seguita ma mai giocata non è elencata' : 'partite seguite ma mai giocate non sono elencate'}.`}
-                        {' '}Le giornate precedenti stanno nella scheda Storico.
-                    </p>
-                    {settledShown.length === 0 ? (
-                        <EmptyState>Nessuna partita regolata nella {T.operatingDay}.</EmptyState>
-                    ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start" data-testid="mike-cards-settled">
-                            {settledShown.map((e) => (
-                                <MikeMatchCard
-                                    key={e.event_id} ev={e} params={bot.params} mode={mode}
-                                    voidedMarkets={voidedOf(e.event_id)}
-                                />
-                            ))}
-                        </div>
-                    )}
                 </TabsContent>
 
                 <TabsContent value="storico" className="mt-3">

@@ -113,7 +113,7 @@ export function SectionFilter({ options, hidden, onToggle, testId = 'section-fil
                             visibile ? o.activeCls : 'bg-white/5 text-slate-500 border-white/10 line-through'
                         } ${ultima ? 'cursor-not-allowed opacity-70' : 'hover:brightness-125'}`}
                     >
-                        {o.label} ({o.count})
+                        {o.label} ({Number.isFinite(Number(o.count)) ? Number(o.count) : '—'})
                     </button>
                 );
             })}

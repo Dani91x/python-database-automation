@@ -155,12 +155,47 @@ def test_sopra_il_minimo_non_si_usa_nessun_trucco(client):
     assert res.ok
 
 
-def test_l_ordine_resta_a_riposo_se_il_mercato_non_lo_copre(client):
-    """Il place-and-trim lascia un ordine LIMITE: se la quota non c'e' ancora,
-    resta sul book. Non e' un errore."""
+def test_se_il_mercato_non_copre_l_ordine_viene_RITIRATO(client):
+    """CERT. 13/09, difetto C-1 — il piu' pericoloso di tutti.
+
+    Il riprezzo lascerebbe un ordine LIMITE a riposo alla quota richiesta. Chi
+    chiama legge "size_matched = 0", lo interpreta come un rifiuto e marca la
+    gamba annullata: ma l'ordine e' VIVO su Betfair, piu' tardi si abbina,
+    nessuno lo contabilizza, e nel frattempo il bot rientra — posizione doppia
+    con soldi veri. Quindi la parte non abbinata si RITIRA: o si abbina, o non
+    esiste, esattamente come il place normale."""
     client.matched_finale = 0.0
     res = piazza()
-    assert res.ok and res.size_matched == 0.0 and res.order_status == "EXECUTABLE"
+    assert res.ok is False and res.size_matched == 0.0
+    assert res.order_status == "LAPSED"
+    assert client.passi() == ["place", "cancelOrders", "replaceOrders", "cancelOrders"]
+    _, _, ritiro = client.chiamate[3]
+    assert "sizeReduction" not in ritiro, "il ritiro del residuo deve essere TOTALE"
+
+
+def test_un_fill_PARZIALE_tiene_la_parte_abbinata_e_ritira_il_resto(client):
+    """Quello che si e' abbinato sono soldi veri e va contabilizzato; il residuo
+    non deve restare sul book a insaputa del bot."""
+    client.matched_finale = 0.80        # su 1,35 richiesti
+    res = piazza()
+    assert res.ok is True and res.size_matched == 0.80
+    assert client.passi() == ["place", "cancelOrders", "replaceOrders", "cancelOrders"]
+
+
+def test_se_si_abbina_TUTTO_non_si_ritira_niente(client):
+    client.matched_finale = 1.35
+    res = piazza()
+    assert res.ok is True and res.size_matched == 1.35
+    assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
+
+
+def test_chi_sa_seguire_l_ordine_puo_lasciarlo_a_riposo(client):
+    """``fill_or_kill=False`` e' per un chiamante che ha il bet_id e lo
+    riconcilia: l'ordine resta sul book e non viene ritirato."""
+    client.matched_finale = 0.0
+    res = piazza(fill_or_kill=False)
+    assert res.ok is True and res.size_matched == 0.0
+    assert client.passi() == ["place", "cancelOrders", "replaceOrders"]
 
 
 # ---------------------------------------------------------------------------

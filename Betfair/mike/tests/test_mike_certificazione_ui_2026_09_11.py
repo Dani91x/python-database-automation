@@ -319,8 +319,10 @@ def test_contratto_ctx_le_bandiere_lette_dalla_ui_sono_persistite():
 
 
 def test_contratto_meta_di_riga_lette_dalla_tabella_trade():
-    """Le chiavi di `meta` che la tabella Trade mostra le scrive il servizio."""
-    table = (FRONTEND / "components" / "mike" / "MikeTradesTable.tsx").read_text(encoding="utf-8")
+    """Le chiavi di `meta` che la tabella delle operazioni mostra le scrive il
+    servizio. 13/09: la tabella ora e' ``MikeEventPnlTable`` (una riga per
+    PARTITA col dettaglio apribile), che ha sostituito ``MikeTradesTable``."""
+    table = (FRONTEND / "components" / "mike" / "MikeEventPnlTable.tsx").read_text(encoding="utf-8")
     read = set(re.findall(r"meta\.([a-z_]+)", table)) | set(re.findall(r"meta \?\? \{\}\)\['([a-z_]+)'\]", table))
     src = Path(S.__file__).read_text(encoding="utf-8")
     written = set(re.findall(r'meta(?:_d)?\["([a-z_]+)"\]', src)) | set(re.findall(r'"([a-z_]+)":', src))
