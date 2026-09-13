@@ -38,12 +38,20 @@ sonda sul DB reale (stato 11/09 sera, prima di applicare nulla).
 3. **`migrations/safe_strategy_bot_v2.sql`**
 4. **`migrations/omega_models_v5.sql`**
 5. **`migrations/omega_models_v6.sql`** *(aggiunta 12/09 — certificazione chirurgica Omega)*
+6. **`migrations/safe_strategy_paper_live_2026-09-13.sql`** *(aggiunta 13/09 — separazione paper/live di Safe Strategy)*
 
 `omega_models_v5.sql` è indipendente dalla catena Mike/Safe (tocca solo
 `omega_*`) e potrebbe stare ovunque nell'elenco; la sequenza sopra è quella
 con il minor numero di stati intermedi "a metà" (Mike prima, poi Safe che
 lo richiede esplicitamente in testa, poi Omega).
-**`omega_models_v6.sql` va per ULTIMA**: la sua verifica finale pretende che
+**`safe_strategy_paper_live_2026-09-13.sql` va DOPO `safe_strategy_bot_v2.sql`**
+(punto 3): ridefinisce le stesse funzioni aggiungendo il parametro `p_mode`, e
+se il v2 venisse applicato dopo rimetterebbe in vita le firme SENZA parametro
+ricreando l'overload ambiguo. Rispetto a `omega_models_v6.sql` (punto 5) è
+indipendente: tocca solo `safe_*` e non ridefinisce
+`trading_daily_history`/`trading_day_trades`, le richiama soltanto.
+
+**`omega_models_v6.sql` va per ULTIMA fra le migrazioni Omega**: la sua verifica finale pretende che
 `trading_daily_history` / `trading_day_trades` abbiano UNA sola firma (quella
 a 8/4 argomenti di `mike_history_v2.sql`) e solleva un'eccezione con il
 rimedio se non è così — applicarla prima del punto 2 fallirebbe di proposito.
@@ -169,8 +177,75 @@ select count(*) from pg_proc where proname = 'trading_daily_history';  -- 1
 select count(*) from pg_proc where proname = 'trading_day_trades';     -- 1
 ```
 
+### 6. `safe_strategy_paper_live_2026-09-13.sql` (aggiunta 13/09)
+**Fa**: chiude la mescolanza PAPER/LIVE della sezione Safe Strategy trovata
+dalla certificazione del 13/09 (la colonna `safe_strategy_trades.mode` esisteva
+dal primo giorno e non la leggeva nessuna query).
+1. `safe_aggregates_sql` / `get_safe_aggregates` / `get_safe_state` /
+   `get_safe_trades` / `get_safe_daily` / `get_safe_day_trades` prendono un
+   `p_mode text DEFAULT NULL` (`NULL` = tutte le modalità, cioè il comportamento
+   di oggi) e filtrano le righe; le firme PRECEDENTI vengono **droppate** con la
+   firma esatta, così la chiamata a zero argomenti non diventa ambigua. Gli
+   aggregati espongono in più `mode`, `realized_paper_total`,
+   `realized_live_total`.
+2. Nuovo indice unico parziale `uq_safe_trades_closing_inflight`
+   `(closes_trade_id) WHERE closes_trade_id IS NOT NULL AND status = 'pending'`:
+   **una sola chiusura IN VOLO per apertura**. I cash out parziali ripetuti
+   restano possibili (le chiusure già fillate sono `'open'`, non `'pending'`).
+3. `uq_safe_trades_signal` sostituito da `uq_safe_trades_signal_mode` (stesse
+   colonne **più `mode`**): paper e live hanno spazi di idempotenza separati. Il
+   nuovo indice è creato PRIMA e il vecchio rimosso DOPO, e solo se il nuovo
+   esiste: il nuovo è strettamente più debole del vecchio, quindi non può
+   fallire su dati che il vecchio sta già imponendo.
+4. `safe_stop()` riporta `control.mode` a `'paper'` (fail-safe: il LIVE non si
+   eredita da una sessione precedente).
+5. Nuova RPC `safe_set_mode(p_mode text)`: persiste la modalità **anche a bot
+   fermo**, owner-only, `SECURITY DEFINER` con `search_path` fissato.
+6. `safe_request` rifiuta (in italiano) una richiesta la cui modalità non
+   coincide con `safe_strategy_control.mode`.
+Chiude con un `DO` di verifica che ogni funzione Safe toccata abbia **una sola**
+firma, e avvisa se uno dei due indici unici non è stato creato.
+**Se non applicata**: il Python continua a funzionare (le firme vecchie non
+accettano `p_mode`, `bot_db.aggregates` se ne accorge e ripiega sulla scansione
+Python **già filtrata per modalità**, quindi i cap di rischio sono comunque
+separati), ma: la UI continua a sommare euro veri e simulati in «P&L oggi»,
+«P&L totale», «liability aperta» e storico; un trade paper su un segnale
+continua a impedire lo stesso trade in live; due processi possono ancora creare
+due chiusure contemporanee sulla stessa apertura e **invertire** la posizione;
+fermando il bot in LIVE la modalità resta `'live'` sul control; a bot fermo la
+modalità vive solo nel browser e nessun'altra sessione la conosce.
+**Perché va dopo `safe_strategy_bot_v2.sql`**: ridefinisce le stesse funzioni.
+Applicata PRIMA, il v2 le riporterebbe alla firma senza `p_mode` e il DB
+tornerebbe allo stato di partenza (o, peggio, con l'overload doppio).
+**Verifica**:
+```sql
+select public.get_safe_aggregates();          -- tutte le modalità (come oggi)
+select public.get_safe_aggregates('live');    -- SOLO soldi veri
+select public.get_safe_aggregates('paper');   -- SOLO simulato
+select public.get_safe_state() -> 'mode';     -- null = nessun filtro
+select public.safe_set_mode('paper');         -- persiste la modalità a bot fermo
+select indexname from pg_indexes where schemaname = 'public'
+  and indexname in ('uq_safe_trades_signal_mode','uq_safe_trades_closing_inflight');
+                                              -- devono esserci ENTRAMBI
+select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'get_safe_state';   -- deve dare 1
+```
+
 ## Avvertenze
 
+- **`safe_strategy_paper_live_2026-09-13.sql` va rieseguito ogni volta che si
+  riapplica `safe_strategy_bot_v2.sql`, `safe_strategy_bot.sql`,
+  `daily_history.sql` o `omega_daily_v2.sql`**: quei file ricreano
+  `get_safe_state()`, `get_safe_aggregates()`, `safe_aggregates_sql()`,
+  `get_safe_trades(integer)`, `get_safe_daily(date,date,text)` e
+  `get_safe_day_trades(date,text)` **senza** `p_mode`, e si torna all'overload
+  ambiguo (42725 «is not unique») più alla mescolanza paper/live. È la stessa
+  regola già valida per `trading_daily_history`/`trading_day_trades`.
+- Gli altri due file del 12–13/09 presenti in `migrations/`
+  (`omega_activity_realtime_2026-09-12.sql`, che aggiunge solo tabelle alla
+  publication Realtime, e `mike_aggregati_per_modalita_2026-09-13.sql`, che
+  tocca solo le funzioni `mike_*`) **non definiscono nessuna funzione `safe_*`**
+  né le funzioni condivise: il loro ordine rispetto al punto 6 è libero.
 - **Nessuna delle 4 migrazioni fa DROP/ricrea `trading_daily_history` /
   `trading_day_trades` eccetto `mike_history_v2.sql`.** Se in futuro si
   RIAPPLICA `omega_models_v4.sql` (che ricrea l'8-arg SENZA la whitelist
@@ -210,6 +285,7 @@ select count(*) from pg_proc where proname = 'trading_day_trades';     -- 1
 | `migrations/omega_models_v5.sql` | **OK** | Dollar-quoting bilanciato (4× `$$`); firme `omega_aggregates_sql()` e `get_omega_state(integer)` identiche a `omega_daily_v2.sql`/`omega_models_v4.sql`/`omega_bot.sql`/`omega_cashout.sql`; nessun `DROP FUNCTION` necessario (nessun cambio di tipo/numero argomenti); colonne (`phase`, `origin`, `meta`, `closes_trade_id`, `bet_id`, `liability`, `event_id`, `market_id`, `selection_id`, `side`, `status`, `pnl`, `placed_at`) tutte presenti in `omega_bot.sql`+`omega_v2.sql`+`omega_manual.sql`+`omega_cashout.sql`+`omega_missions.sql`; `SECURITY DEFINER`+`search_path` presenti; `REVOKE/GRANT` coerenti; indici con `IF NOT EXISTS`/`DROP INDEX IF EXISTS` corretti. |
 | `migrations/safe_strategy_bot_v2.sql` | **OK** | Dollar-quoting bilanciato (14× `$$` + 4× `$e$`); tutte le firme (`get_safe_daily(date,date,text)`, `get_safe_day_trades(date,text)`, `safe_request(text,jsonb)`, `get_safe_state()`) identiche alle versioni precedenti in `daily_history.sql`/`omega_daily_v2.sql`/`safe_strategy_bot.sql`; `get_safe_aggregates()`/`safe_aggregates_sql()`/`get_safe_activity()` sono nuove (nessun conflitto); colonne di `safe_strategy_trades`/`safe_strategy_requests`/`safe_strategy_activity` tutte verificate contro `safe_strategy_bot.sql`; NON ridefinisce `trading_daily_history`/`trading_day_trades` (corretto: dipende da `mike_history_v2.sql` applicata prima, come dichiarato in testa al file). |
 | `migrations/mike_bot_v2.sql` | **OK**, con 1 osservazione | Dollar-quoting bilanciato (8× `$$`); `get_mike_state()` a firma invariata rispetto a `mike_bot.sql`; `mike_aggregates_sql()`/`get_mike_aggregates()` nuove; colonne (`closes_trade_id`, `result`) aggiunte con `IF NOT EXISTS` (già presenti da `mike_bot.sql`, no-op sicuro); CHECK su `mike_requests.status` in DO-block con DROP+ADD, nessun valore esistente fuori whitelist. Osservazione (non bloccante): `get_mike_aggregates()` — righe 127-134 — manca il controllo `betfair_live_is_owner()` presente nelle funzioni gemelle `get_omega_aggregates`/`get_safe_aggregates` (vedi Avvertenze). |
+| `migrations/safe_strategy_paper_live_2026-09-13.sql` | **OK** (revisione statica 13/09, NO esecuzione) | Dollar-quoting bilanciato (18× `$$` = 9 corpi di funzione, 6× `$mig$` = 3 blocchi `DO`, 4× `$e$` = 2 coppie dentro `get_safe_daily`); nessun `$$` accidentale dentro le regex `'^-?[0-9]+(\.[0-9]+)?$'`. Overload: ogni funzione è preceduta dal `DROP FUNCTION IF EXISTS` della firma ESATTA precedente (`safe_aggregates_sql()`, `get_safe_aggregates()`, `get_safe_state()`, `get_safe_trades(integer)`, `get_safe_daily(date,date,text)`, `get_safe_day_trades(date,text)`) — verificate una per una contro `safe_strategy_bot.sql`/`safe_strategy_bot_v2.sql`/`daily_history.sql`/`omega_daily_v2.sql`; `safe_stop()`/`safe_request(text,jsonb)` restano a firma INVARIATA (`CREATE OR REPLACE` puro); `safe_set_mode(text)` è nuova. Colonne verificate contro i `CREATE TABLE` di `safe_strategy_bot.sql` (`mode`, `closes_trade_id`, `status`, `pnl`, `liability`, `origin`, `signal_key`, `meta`, `placed_at`, `bet_id`, `strategy`, `sport`, `event_id` su `safe_strategy_trades`; `mode`/`status`/`updated_at` su `safe_strategy_control`). `RETURNS` invariato ovunque (jsonb, bigint). `SECURITY DEFINER` + `SET search_path = public, pg_temp` su tutte; `REVOKE/GRANT` riscritti sulle nuove firme con gli stessi destinatari di prima (`service_role` per `safe_aggregates_sql`, `authenticated, service_role` per le RPC). Nessun `DELETE`/`TRUNCATE`/`DROP TABLE`/`DROP COLUMN`; RLS non toccata. Frammenti SQL passati a `trading_daily_history`/`trading_day_trades` costruiti con `format(%L)` **dopo** la whitelist `('paper','live')`: nessuna iniezione. In `RAISE` usato solo `%` (niente `%I`/`%L`, che PL/pgSQL non interpreta). |
 | `migrations/mike_history_v2.sql` | **OK** | Dollar-quoting bilanciato (8× `$$` + 4× `$e$` + 4× `$q$`); **contiene i `DROP FUNCTION IF EXISTS`** mancanti altrove per risolvere l'overload (`trading_daily_history(text,text,text,text,date,date,numeric)` e `trading_day_trades(text,text,date)`), firme esatte verificate contro `daily_history.sql`/`mike_history.sql`; le nuove firme a 8/4 argomenti sono IDENTICHE a quelle già live da `omega_daily_v2.sql`/`omega_models_v4.sql` (stesso ordine/tipo parametri, stesso DEFAULT su `p_day_by`); whitelist tabelle estesa correttamente a `'mike_trades'`; cast `nullif(meta->>'commission_paid','')::numeric` protetto da `nullif`; `get_mike_daily`/`get_mike_day_trades` chiamano SEMPRE tutti gli argomenti → nessuna nuova ambiguità. |
 
 ## Parser SQL locale

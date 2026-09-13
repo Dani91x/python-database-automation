@@ -718,7 +718,19 @@ def _track_calcio(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, 
     rh, ra = _int(payload.get("red_home")), _int(payload.get("red_away"))
     if rh is not None and ra is not None:
         if "entry_red_home" not in tr:
-            tr["entry_red_home"], tr["entry_red_away"] = rh, ra
+            # CERT. 13/09 — la BASE dei rossi e' quella dell'INGRESSO, non la
+            # prima osservazione utile. Se il feed comincia a pubblicare i
+            # cartellini tre minuti dopo l'apertura e nel frattempo la favorita
+            # ne ha preso uno, quel rosso entrava nella base e non innescava
+            # MAI l'uscita: la regola "rosso alla favorita -> esci" restava
+            # muta proprio nel caso che deve coprire. Il piazzamento scrive
+            # ``meta.red_home/red_away`` quando il dato c'era; la prima
+            # osservazione resta il ripiego.
+            meta_tr = trade.get("meta") or {}
+            e_rh, e_ra = _int(meta_tr.get("red_home")), _int(meta_tr.get("red_away"))
+            if e_rh is None or e_ra is None:
+                e_rh, e_ra = rh, ra
+            tr["entry_red_home"], tr["entry_red_away"] = e_rh, e_ra
         prev_rh = tr.get("red_home", tr["entry_red_home"])
         prev_ra = tr.get("red_away", tr["entry_red_away"])
         if (rh, ra) != (prev_rh, prev_ra):
@@ -760,6 +772,7 @@ def _track_tennis(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, 
             tr["consecutive_lost"] = 0
             tr["set_games_won"] = 0
             tr["set_games_lost"] = 0
+            tr["set_lead_max"] = 0     # nuovo set: il vantaggio riparte da zero
         elif games != prev_games:
             d_lead = games[li] - prev_games[li]
             d_opp = games[oi] - prev_games[oi]
@@ -772,6 +785,27 @@ def _track_tennis(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, 
     tr["last_sets"], tr["last_games"] = list(sets), list(games)
     tr["set_index"] = sets[0] + sets[1]
     tr["games_level"] = games[0] == games[1]
+    # CERT. 13/09 — il VANTAGGIO NEL SET PERSO, non "essere sotto".
+    #
+    # ``games_level`` e' l'uguaglianza ESATTA nell'istante osservato. Se la
+    # parita' viene SUPERATA senza essere mai vista in quello stato (5-3 -> 5-4
+    # -> 5-6: il 5-5 non compare nel feed), l'uscita obbligatoria non scattava
+    # PIU' per tutto il set — e per la strategia tennis, con i default, non
+    # esiste nessun'altra regola di perdita.
+    #
+    # Correzione della prima versione (review 13/09): NON basta "essere a pari o
+    # sotto", perche' a inizio set il leader e' 0-0 e perdendo i primi due game
+    # sarebbe uscito d'obbligo a 0-2, dove il manuale non chiede niente — un
+    # cambio di REGOLA, non una riparazione. La condizione giusta e': nel set in
+    # corso il leader AVEVA un vantaggio e adesso non ce l'ha piu'. Cosi' il
+    # caso del 5-5 saltato e' coperto e il 0-2 di inizio set resta fuori, come
+    # prima.
+    if leader in ("p1", "p2"):
+        vantaggio = games[li] - games[oi]
+        tr["set_lead_max"] = max(int(tr.get("set_lead_max") or 0), vantaggio)
+        tr["set_lead_lost"] = bool(tr["set_lead_max"] > 0 and vantaggio <= 0)
+    else:
+        tr["set_lead_lost"] = tr["games_level"]
 
 
 def _game_result(tr: dict[str, Any], result: str, now_ts: float) -> None:
@@ -876,7 +910,15 @@ def _decide_tennis(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitD
     if "entry_sets" not in tr or tr.get("last_games") is None:
         return None
     consecutive = int(tr.get("consecutive_lost") or 0)
-    if consecutive >= 2 and bool(tr.get("games_level")):
+    # il manuale: "due game di fila persi E pareggio nel set -> uscita
+    # OBBLIGATORIA, senza eccezioni". Le due condizioni restano in AND; la
+    # seconda accetta la parita' o il vantaggio PERSO (vedi ``_track_tennis``):
+    # se si e' passati da 5-4 a 5-6 senza mai vedere il 5-5, il vantaggio nel
+    # set non c'e' comunque piu'.
+    livello = tr.get("set_lead_lost")
+    if livello is None:                      # tracciamenti vecchi senza il campo
+        livello = bool(tr.get("games_level"))
+    if consecutive >= 2 and bool(livello):
         return ExitDecision("mandatory", "due_game_persi_di_fila_e_parita", 0.0)
     last = tr.get("last_game")
     if last == "won" and _bool(params.get("tennis_take_profit_next_game"), True):

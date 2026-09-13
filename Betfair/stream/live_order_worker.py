@@ -57,6 +57,21 @@ CUSTOMER_STRATEGY_REF = "live"
 _CLOSING_ACTIONS = frozenset({"cancel", "greenup", "cashout_all", "cashout_event"})
 
 
+def _is_closing_row(action: str, params: Any) -> bool:
+    """La riga CHIUDE (o riduce) una posizione?
+
+    Oltre alle azioni dedicate, vale anche un ``place`` che porta
+    ``params.reduces_liability``: e' cosi' che la Safe Strategy accoda le sue
+    gambe di uscita (``safe_strategy.execution.enqueue_place``).
+    CERT. 13/09 (review): senza questo, a kill-switch attivo una CHIUSURA della
+    Safe Strategy veniva rifiutata come se fosse un'apertura — e la posizione
+    restava a sanguinare senza nessuna via di uscita, ne' per coda ne' per REST.
+    Il kill-switch ferma i soldi che ESCONO, non quelli che rientrano."""
+    if str(action or "") in _CLOSING_ACTIONS:
+        return True
+    return bool(isinstance(params, dict) and params.get("reduces_liability"))
+
+
 # ---------------------------------------------------------------------------
 # Config (letta da config_stream se presente, altrimenti da .env). Wrappata in
 # funzioni così che il runner E i test possano sovrascriverla deterministicamente.
@@ -2838,7 +2853,7 @@ def _process_local_requests(sb: Any, flumine: Any, mode_l: str, strategy: Any) -
                 continue
             # kill-switch RI-LETTO PER-COMANDO: stessa semantica del path DB
             # (aperture bloccate, chiusure sempre permesse).
-            if (_kill_switch() or _db_kill_switch()) and action not in _CLOSING_ACTIONS:
+            if (_kill_switch() or _db_kill_switch())                     and not _is_closing_row(action, cmd.get("params")):
                 ch.respond(req, False, error="kill-switch ATTIVO: solo chiusure permesse")
                 continue
             # fix review HIGH: dedup per client_ref — un reinvio identico risponde
@@ -3069,7 +3084,7 @@ def _process_once(sb: Any, flumine: Any, session: Any = None, strategy: Any = No
         # nel test), quando l'utente la credeva morta (timeout UI "NON reinviare").
         # Ora l'apertura è RIFIUTATA con esito esplicito (stessa semantica del canale
         # locale): errore in UI subito, e nessun ordine parte "da solo" a freno spento.
-        if (kill_cycle or _kill_switch()) and str(r.get("action") or "") not in _CLOSING_ACTIONS:
+        if (kill_cycle or _kill_switch())                 and not _is_closing_row(str(r.get("action") or ""), r.get("params")):
             rid_k = r.get("id")
             if _claim(sb, rid_k):
                 try:

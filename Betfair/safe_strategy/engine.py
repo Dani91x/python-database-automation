@@ -31,7 +31,10 @@ Differenze DICHIARATE rispetto al TS (nessuna e' un cambio di semantica):
 
 I caratteri tipografici del TS (minuto 58', >=, EUR, separatori) sono raccolti
 in costanti in cima al modulo: le stringhe prodotte a runtime sono IDENTICHE a
-quelle del motore web, byte per byte.
+quelle del motore web, byte per byte — numeri compresi (formato italiano:
+virgola decimale, simbolo di valuta DOPO l'importo, come ``lib/format.ts``).
+Fino al 13/09 questa frase era falsa sui numeri: il Python scriveva "8.40" e
+"<euro>152" dove il TS scriveva "8,40" e "152 <euro>".
 """
 from __future__ import annotations
 
@@ -106,15 +109,28 @@ def js_num(v: Any) -> str:
 
 
 def fmt_odds(v: Optional[float]) -> str:
-    return _to_fixed(v, 2) if is_finite_number(v) else "n/d"
+    """Quota in formato ITALIANO: "8,40".
+
+    CERT. 13/09 — prima stampava "8.40" col punto, mentre il gemello TS
+    (``lib/format.ts``, ``itFixed``) usa la virgola. La docstring del modulo
+    dichiarava stringhe "identiche byte per byte" fra i due motori: non era
+    vero, e le due meta' del sistema scrivevano lo stesso numero in due modi.
+    La decisione non cambiava (il formato e' solo un'etichetta), ma il formato
+    italiano e' la regola del progetto e la dichiarazione di parita' deve
+    essere onesta."""
+    return _to_fixed(v, 2).replace(".", ",") if is_finite_number(v) else "n/d"
 
 
 def fmt_eur(v: Optional[float]) -> Optional[str]:
-    """importo EUR abbinabile, compatto (es. "<euro>152", "<euro>41.26")."""
+    """Importo abbinabile in formato ITALIANO: "152 EUR", "41,26 EUR".
+
+    CERT. 13/09 — prima "<euro>152" (simbolo PRIMA, punto decimale), mentre il
+    TS produce "152 <euro>" (simbolo DOPO, virgola), che e' lo standard del
+    design system del progetto (``lib/format.ts``)."""
     if not is_finite_number(v):
         return None
     body = _to_fixed(v, 0) if float(v).is_integer() else _to_fixed(v, 2)
-    return f"{EURO}{body}"
+    return f"{body.replace('.', ',')} {EURO}"
 
 
 def fmt_odds_with_size(odds: Optional[float], size: Optional[float]) -> str:

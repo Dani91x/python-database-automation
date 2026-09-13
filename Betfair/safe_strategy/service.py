@@ -127,7 +127,7 @@ _OPPORTUNITIES_ENV = "SAFE_SCAN_OPPORTUNITIES"
 _PRE_KO_OU_ENV = "SAFE_PRE_KO_OU_HOURS"
 # chiavi che _prune_opp_blocks aggiunge ai blocchi a gol in cache (H6): non
 # sono prezzo, non contano nel confronto "book invariato" di _apply_opp_book
-_OPP_MARKER_KEYS = ("ts_ms", "decided", "for_mike")
+_OPP_MARKER_KEYS = ("ts_ms", "seen_ms", "decided", "for_mike")
 # una chiamata Betfair fallita NON si ripete a ogni tick (0,5 s): catalogo
 # ritentato dopo 30 s, poll REST dei book dopo la sua cadenza normale
 _CATALOGUE_RETRY_SEC = 30.0
@@ -248,7 +248,8 @@ class Scanner:
         # partite SEGUITE da Mike (mike_events non terminali): esenti dal tetto
         # dei 20 eventi e con le linee 3.5/4.5 sempre vive (audit 11/09 C1/C2).
         # Cache di 10 s: una query leggera, mai nel percorso caldo dello stream.
-        self._mike_followed_ids: set = set()
+        # LISTA, non insieme: l'ordine (soldi a rischio decrescente) e' un dato
+        self._mike_followed_ids: List[str] = []
         self._mike_followed_ts: float = -1e9
 
     # ------------------------------------------------------------- catalogo MO
@@ -567,7 +568,18 @@ class Scanner:
             isinstance(prev, dict) and prev_ts is not None
             and {k: v for k, v in prev.items() if k not in _OPP_MARKER_KEYS} == blk
         )
-        blk["ts_ms"] = int(prev_ts) if unchanged else int(time.time() * 1000)
+        ora_ms = int(time.time() * 1000)
+        blk["ts_ms"] = int(prev_ts) if unchanged else ora_ms
+        # CERT. 13/09 — ULTIMA OSSERVAZIONE, distinta dall'ultimo CAMBIO.
+        # ``ts_ms`` dice quando il prezzo si e' mosso l'ultima volta; da solo non
+        # permette di distinguere "mercato fermo ma sotto osservazione" da
+        # "mercato che non guardiamo piu'". Nel secondo caso il blocco resta in
+        # cache col PREZZO VECCHIO e viene ripubblicato come se fosse valido:
+        # chi ci si copre o ci esce lo fa su un prezzo morto, che e' peggio che
+        # non coprirsi. ``seen_ms`` e' il momento dell'ultimo book ricevuto, e
+        # sta FUORI dalla firma del write-on-change (``scanner._FUORI_FIRMA``),
+        # altrimenti riscriverebbe la riga a ogni poll.
+        blk["seen_ms"] = ora_ms
         store[meta["market_id"]] = blk
 
     # ------------------------------------------------------------- quote (REST)
@@ -737,21 +749,29 @@ class Scanner:
 
     _MIKE_FOLLOWED_TTL_S = 10.0
 
-    def _mike_followed(self, now_mono: Optional[float] = None) -> set:
+    def _mike_followed(self, now_mono: Optional[float] = None) -> List[str]:
         """event_id delle partite seguite da Mike (cache 10 s). In caso di
         errore di lettura resta valida l'ultima lista buona: meglio tenere una
-        linea in più che togliere le quote a una posizione aperta."""
+        linea in più che togliere le quote a una posizione aperta.
+
+        CERT. 13/09 — torna una LISTA, non un insieme, e l'ORDINE È UN DATO:
+        le partite arrivano ordinate per soldi a rischio decrescente
+        (``db.list_mike_followed_event_ids``) e quando il tetto
+        ``MIKE_MAX_FOLLOWED`` morde si taglia dal fondo. Conservandole in un
+        ``set`` l'ordine si perdeva e il taglio tornava casuale: chi restava
+        senza quote — quindi senza copertura e senza uscita — poteva essere la
+        partita con più denaro sopra."""
         if self.dry:
             # collaudo/dry: nessuna lettura DB (nessuna posizione Mike può
             # dipendere da uno scanner che non pubblica)
-            return self._mike_followed_ids
+            return list(self._mike_followed_ids)
         t = time.monotonic() if now_mono is None else now_mono
         if t - self._mike_followed_ts >= self._MIKE_FOLLOWED_TTL_S:
             self._mike_followed_ts = t
             ids = scan_db.list_mike_followed_event_ids()
             if ids is not None:
-                self._mike_followed_ids = {str(e) for e in ids}
-        return self._mike_followed_ids
+                self._mike_followed_ids = [str(e) for e in ids]
+        return list(self._mike_followed_ids)
 
     def opp_candidates(self) -> List[str]:
         """Eventi calcio in-play (dal 1') per cui tenere sotto quote i mercati a
@@ -914,7 +934,7 @@ class Scanner:
         if not isinstance(blocks, dict):
             return {}
         pre_ko = self._is_pre_ko_ou_event(eid, ev, now)
-        mike = bool(eid) and str(eid) in self._mike_followed()
+        mike = bool(eid) and str(eid) in set(self._mike_followed())
         live = {
             mid: blk for mid, blk in blocks.items()
             if scanner.is_opp_market_live(
@@ -1114,14 +1134,27 @@ class Scanner:
         ]
         if not da_cercare:
             return 0
-        self.pre_ko_tried.update(da_cercare)
+        # CERT. 13/09 (review) — si segna "gia' tentato" SOLO cio' che e' stato
+        # davvero interrogato con esito. Prima si marcava PRIMA della lettura:
+        # un solo timeout del DB (e il DB oggi va in timeout spesso) bruciava il
+        # tentativo per TUTTE le partite in corso, per il resto della giornata —
+        # cioe' il difetto che questa funzione esiste per chiudere si richiudeva
+        # da solo al primo intoppo.
         try:
             trovati = scan_db.load_scan_pre_ko(da_cercare)
-        except Exception as e:  # noqa: BLE001 - mai fatale
-            logger.warning("[safe-scan] reidratazione pre-KO KO: %s", str(e)[:140])
+        except Exception as e:  # noqa: BLE001 - mai fatale, e si ritenta al giro dopo
+            logger.warning("[safe-scan] reidratazione pre-KO KO (si ritenta): %s", str(e)[:140])
             return 0
+        if trovati is None:
+            return 0
+        # ``load_scan_pre_ko`` ritorna un dizionario con una chiave per OGNI
+        # evento interrogato (valore None = cercato e non trovato): quelli che
+        # non compaiono non sono stati chiesti e restano da ritentare.
+        self.pre_ko_tried.update(k for k in trovati)
         recuperati = 0
         for eid, pre in trovati.items():
+            if pre is None:
+                continue
             ev = self.events.get(eid)
             if ev is None or scan_db.is_usable_pre_ko(ev.get("pre_ko")):
                 continue
@@ -1341,7 +1374,17 @@ class Scanner:
                     "[safe-scan] pubblicate %d righe, rimosse %d (monitorati %d)",
                     written, deleted, len(self.written_sig),
                 )
-            if now_mono - self.status_ts > _STATUS_PERIOD_SEC:
+            # CERT. 13/09 — il BATTITO lo scrive il thread punteggi, non il tick.
+            # Qui era IN CODA al tick, dentro lo stesso try: la sua eta' non
+            # misurava "lo scanner e' vivo", misurava LA DURATA DEL GIRO. Con
+            # giri da 24 s (poll REST dei book a lotti di 25) il battito nasceva
+            # gia' vecchio di 24 s, durante un refresh del catalogo superava i
+            # 30 s e faceva cadere la deroga di freschezza di Mike — cioe' lo
+            # stesso rallentamento che invecchiava le righe disarmava la valvola
+            # che doveva coprirle. E una qualunque eccezione prima di questa
+            # riga lo saltava del tutto. Nel run persistente lo fa il thread
+            # (ogni 2 s, mai dietro alla rete); qui resta solo per --once/test.
+            if self.score_worker is None and now_mono - self.status_ts > _STATUS_PERIOD_SEC:
                 self.publish_status(len(self.written_sig))
             self.last_error = None
         except Exception as e:  # noqa: BLE001 - lo scanner non muore mai per un giro storto
@@ -1375,6 +1418,16 @@ class ScoreFeedWorker(threading.Thread):
                     self.scan.poll_timelines()
             except Exception as e:  # noqa: BLE001 - il feed punteggi non muore mai
                 logger.warning("[safe-scan] giro punteggi KO: %s", str(e)[:140])
+            # BATTITO dello scanner (CERT. 13/09): sta QUI e non nel tick perche'
+            # deve dire "il processo e' vivo", non "quanto e' durato il giro".
+            # E' in un try suo: se il giro punteggi esplode, il battito esce lo
+            # stesso — chi legge (Mike) deve poter distinguere "scanner morto"
+            # da "scanner lento".
+            try:
+                if time.monotonic() - self.scan.status_ts > _STATUS_PERIOD_SEC:
+                    self.scan.publish_status(len(self.scan.written_sig))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[safe-scan] battito KO: %s", str(e)[:140])
             # cadenza fissa: attesa = periodo meno il tempo speso (mai negativa)
             self._stop.wait(max(0.2, _SCORES_PERIOD_SEC - (time.monotonic() - started)))
 

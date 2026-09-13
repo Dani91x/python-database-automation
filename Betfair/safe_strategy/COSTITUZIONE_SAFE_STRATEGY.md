@@ -6,11 +6,15 @@ cosa è stato verificato dal vivo, cosa NON funziona ancora e la strada per il l
 successivo. Nessuna parte del lavoro del 10/09 e dell'11/09 è omessa: quello che è stato
 superato porta la nota «superato il …», non viene cancellato.
 
-**Stato operativo in una riga**: audit `Betfair/AUDIT_2026-09-11_omega_safe_mike.md`
-applicato per intero su backend e UI, review indipendenti chiuse, certificazione con dati
-reali eseguita; **migrazione `migrations/safe_strategy_bot_v2.sql` ANCORA DA APPLICARE**
-(ordine in `migrations/APPLY_ORDER_2026-09-11.md`), servizi da riavviare, **LIVE
-BLOCCATO**. Dettaglio completo in §12.
+**Stato operativo in una riga** (aggiornato il **13/09**): audit
+`Betfair/AUDIT_2026-09-11_omega_safe_mike.md` applicato per intero su backend e UI,
+review indipendenti chiuse; **`safe_strategy_bot_v2.sql` È APPLICATA** (verificato sul DB
+il 13/09: `get_safe_aggregates` e `get_safe_activity` rispondono — la vecchia nota
+"ANCORA DA APPLICARE" era superata); **🔴 DA APPLICARE:
+`migrations/safe_strategy_paper_live_2026-09-13.sql`**; servizi da riavviare, **LIVE
+BLOCCATO**. La certificazione del 13/09 — causa per cui BASE e PUNTA non scattavano mai,
+esecuzione al centesimo, separazione netta paper/live — è in
+`Betfair/safe_strategy/CERTIFICAZIONE_2026-09-13.md`. Dettaglio in §12.
 
 Regola di naming: nel codice si chiama sempre "Safe Strategy". Il manuale operativo
 delle 4 strategie (ingressi, uscite, minutaggi) è il file
@@ -56,7 +60,10 @@ UI  ─ pages/SafeStrategy.tsx (PageShell → BotHeader → ModeBanner → DayBa
     ─ lib/safeBot.ts (contratto DB↔UI), lib/format.ts, lib/tradeStatus.ts, lib/dailyHistory.ts
 DB  ─ migrations applicate il 10/09: safe_strategy_bot.sql, betfair_live_cashout_v3.sql,
       omega_cashout.sql, daily_history.sql
-    ─ 🔴 DA APPLICARE: safe_strategy_bot_v2.sql (ordine in APPLY_ORDER_2026-09-11.md)
+    ─ applicata l'11/09: safe_strategy_bot_v2.sql (verificato sul DB il 13/09)
+    ─ 🔴 DA APPLICARE: safe_strategy_paper_live_2026-09-13.sql — filtro `p_mode` su tutte
+      le RPC di lettura, indice unico sulla chiusura in volo, `mode` nella chiave di
+      idempotenza, `safe_stop` che riporta la modalità a paper, `safe_set_mode`
 exe ─ desktop/main.js: runner `safe-strategy-bot` sotto watchdog, lock 127.0.0.1:47318
 ```
 
@@ -150,10 +157,22 @@ parziale), anti-blip `scoreConfirmSec`, e da 11/09:
   (`base, esatto, punta, tennis`). Prima una lista vuota sul DB spegneva il bot in
   silenzio mentre la UI mostrava 4 strategie attive.
 
-Nota (ancora valida al 12/09): Base e Punta NON scattano per le partite già in corso
-all'avvio dello scanner, perché manca la quota pre-match congelata (`pre_ko`). Il motore
-non entra "a occhi chiusi": corretto, ma limita le strategie 1 e 3 alle partite viste dal
-calcio d'inizio (§9.2 punto 3).
+**SUPERATA IL 13/09** — la nota diceva: «Base e Punta NON scattano per le partite già
+in corso all'avvio dello scanner, perché manca la quota pre-match congelata (`pre_ko`)».
+Era vera, ed era **la ragione per cui quelle due strategie erano di fatto spente**: nello
+storico di 240 trade avevano prodotto **un trade ciascuna**, contro 152 di `esatto` (che
+è l'unica a non usare `pre_ko`). Il riferimento viveva solo nella RAM dello scanner e si
+perdeva a ogni riavvio; peggio, al primo `publish` il codice sovrascriveva con `None` la
+copia che aveva già sul DB.
+
+Dal 13/09 `pre_ko` viene **riletto dal DB** all'avvio, per le sole partite in corso che
+non ce l'hanno, una volta per evento (`db.load_scan_pre_ko` +
+`Scanner.hydrate_pre_ko`, chiamata PRIMA del publish). Il valore recuperato è marcato
+`rehydrated: true` e non sovrascrive mai un riferimento catturato dal vivo. Il motore non
+entra comunque "a occhi chiusi": se il riferimento non c'è nemmeno sul DB (partita
+iniziata ad app spenta) lo stato resta n/d — ma adesso **lo si legge a schermo**, con lo
+scarto `pre_ko_assente` nell'attività, invece di non vedere niente.
+Dettaglio in `CERTIFICAZIONE_2026-09-13.md` §0.
 
 ---
 
@@ -605,7 +624,11 @@ terminale, netto di commissione, tetto duro del feed, combo solidale). Restano a
 7. **Certificazione liquidità lato back** (dal 09/09): ancora parziale; la sonda
    `liquidity_probe` è solo report; usare le registrazioni REC.
 8. **Live**: BLOCCATO — mai prima di una settimana di paper con settlement e uscite tutte
-   verificate, e mai prima di aver applicato `safe_strategy_bot_v2.sql` (§12.7).
+   verificate. `safe_strategy_bot_v2.sql` è applicata; adesso il prerequisito di
+   migrazione è `safe_strategy_paper_live_2026-09-13.sql`. Restano da riattivare i cap di
+   rischio (`daily_liability_cap` era 0,0 = disattivo il 13/09, `max_open_trades` null) e
+   da osservare qualche giorno di paper con BASE e PUNTA finalmente attive: fino al 13/09
+   avevano prodotto **un trade ciascuna** su 240.
 
 ---
 

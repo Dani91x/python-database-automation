@@ -57,7 +57,7 @@ def list_scan_event_ids() -> Optional[List[str]]:
         return None
 
 
-def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Optional[Dict[str, Any]]]:
     """Riferimenti 1X2 pre-KO gia' salvati, per gli event_id richiesti.
 
     Perche' esiste (CERT. 13/09, causa radice di "base e punta non scattano
@@ -78,7 +78,7 @@ def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     va in timeout) e a BLOCCHI, con la sola proiezione ``payload->pre_ko``.
     Best-effort come tutto il modulo: su errore torna quello che ha raccolto.
     """
-    out: Dict[str, Dict[str, Any]] = {}
+    out: Dict[str, Optional[Dict[str, Any]]] = {}
     ids = [str(e) for e in (event_ids or []) if e]
     if not ids:
         return out
@@ -97,12 +97,17 @@ def load_scan_pre_ko(event_ids: List[str]) -> Dict[str, Dict[str, Any]]:
                 _warn_missing_table(e)
             else:
                 logger.warning("[safe-scan] rilettura pre_ko KO: %s", str(e)[:160])
+            # si torna cio' che si e' raccolto: i blocchi NON interrogati non
+            # compaiono nel risultato, quindi il chiamante li ritenta (review 13/09)
             return out
-        for r in (getattr(res, "data", None) or []):
-            eid = str(r.get("event_id") or "")
-            pre = r.get("pre_ko")
-            if eid and is_usable_pre_ko(pre):
-                out[eid] = dict(pre)
+        # ogni evento del blocco entra nel risultato, anche quando il
+        # riferimento non c'e': "cercato e non trovato" e' un esito, e non va
+        # confuso con "non ancora cercato"
+        trovati = {str(r.get("event_id") or ""): r.get("pre_ko")
+                   for r in (getattr(res, "data", None) or [])}
+        for eid in chunk:
+            pre = trovati.get(eid)
+            out[eid] = dict(pre) if is_usable_pre_ko(pre) else None
     return out
 
 
@@ -198,6 +203,33 @@ def _mike_has_exposure(row: dict) -> bool:
     return state not in _MIKE_IDLE_STATES
 
 
+def _mike_exposure(row: dict) -> float:
+    """Quanto denaro Mike ha DAVVERO sopra questa partita.
+
+    Somma le gambe con un ordine vivo o una posizione abbinata, prendendo la
+    grandezza piu' grande fra ``liability`` e ``matched``/``size``: serve solo a
+    ORDINARE, non a fare conti, quindi si sbaglia per eccesso invece che per
+    difetto (una partita non deve mai finire in coda per un campo mancante)."""
+    tot = 0.0
+    for leg in row.get("positions") or []:
+        if not isinstance(leg, dict) or leg.get("archived"):
+            continue
+        if str(leg.get("status") or "") not in _MIKE_LIVE_LEG_STATUS:
+            try:
+                if float(leg.get("matched") or 0.0) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        peso = 0.0
+        for campo in ("liability", "matched", "size"):
+            try:
+                peso = max(peso, abs(float(leg.get(campo) or 0.0)))
+            except (TypeError, ValueError):
+                continue
+        tot += peso
+    return tot
+
+
 def list_mike_followed_event_ids() -> Optional[List[str]]:
     """event_id delle partite di Mike con ESPOSIZIONE (ordini vivi o posizione).
 
@@ -215,8 +247,17 @@ def list_mike_followed_event_ids() -> Optional[List[str]]:
             .not_.in_("state", list(_MIKE_TERMINAL_STATES))
             .execute()
         )
-        return [str(r["event_id"]) for r in (getattr(res, "data", None) or [])
-                if r.get("event_id") and _mike_has_exposure(r)]
+        righe = [r for r in (getattr(res, "data", None) or [])
+                 if r.get("event_id") and _mike_has_exposure(r)]
+        # CERT. 13/09 — ORDINE PER SOLDI A RISCHIO, decrescente.
+        # La lista viene TRONCATA a valle (tetto ``MIKE_MAX_FOLLOWED``) e prima
+        # il taglio seguiva l'ordine dei candidati dello scanner, cioe' "minuti
+        # piu' avanzati per primi": cadevano le partite APPENA INIZIATE, che
+        # sono esattamente quelle dove la copertura Over 4.5 serve di piu'.
+        # Il tetto non si puo' togliere (pesa sul pool dello stream), ma chi
+        # resta fuori dev'essere chi ha MENO denaro sopra, mai il contrario.
+        righe.sort(key=lambda r: _mike_exposure(r), reverse=True)
+        return [str(r["event_id"]) for r in righe]
     except Exception as e:  # noqa: BLE001 - best effort, mai fatale
         if not _is_missing_table(e):
             logger.warning("[safe-scan] lettura mike_events KO: %s", str(e)[:160])

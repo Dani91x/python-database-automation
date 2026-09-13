@@ -130,8 +130,13 @@ def test_build_cs_block_riconosce_any_other():
     ]
     blk = scanner.build_cs_block("1.23", "OPEN", sels)
     assert blk is not None
-    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": None, "lay_size": None}
-    assert blk["any_other_away"] == {"back": 48.0, "lay": 50.0, "back_size": None, "lay_size": None}
+    # CERT. 13/09: il pair porta anche il ``selection_id`` (qui assente nelle
+    # selezioni di prova, quindi None) — prezzo e selezione devono viaggiare
+    # insieme, mai risolti da due passaggi indipendenti.
+    assert blk["any_other_home"] == {"selection_id": None, "back": 44.0, "lay": 46.0,
+                                     "back_size": None, "lay_size": None}
+    assert blk["any_other_away"] == {"selection_id": None, "back": 48.0, "lay": 50.0,
+                                     "back_size": None, "lay_size": None}
     assert blk["selections"] == []  # senza selection_id nessuna selezione completa
     assert scanner.build_cs_block(None, "OPEN", sels) is None
 
@@ -147,7 +152,8 @@ def test_build_cs_block_completo_per_omega():
     assert [s["selection_id"] for s in blk["selections"]] == [1, 2, 3]
     assert blk["selections"][1] == {"selection_id": 2, "name": "3 - 0", "runner_status": "ACTIVE",
                                     "back": 90.0, "lay": 110.0, "back_size": 2.0, "lay_size": 7.5}
-    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}
+    assert blk["any_other_home"] == {"selection_id": 3, "back": 44.0, "lay": 46.0,
+                                     "back_size": 3.5, "lay_size": 12.0}
 
 
 class _Lvl:
@@ -170,10 +176,12 @@ def test_price_pair_con_size_abbinabili():
     assert scanner.price_pair(None) == empty
 
 
-def test_build_cs_block_porta_le_size():
-    sels = [{"name": "Any Other Home Win", "back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}]
+def test_build_cs_block_porta_le_size_e_il_selection_id():
+    sels = [{"selection_id": 77, "name": "Any Other Home Win", "back": 44.0, "lay": 46.0,
+             "back_size": 3.5, "lay_size": 12.0}]
     blk = scanner.build_cs_block("1.23", "OPEN", sels)
-    assert blk["any_other_home"] == {"back": 44.0, "lay": 46.0, "back_size": 3.5, "lay_size": 12.0}
+    assert blk["any_other_home"] == {"selection_id": 77, "back": 44.0, "lay": 46.0,
+                                     "back_size": 3.5, "lay_size": 12.0}
 
 
 def test_critical_signature_ignora_le_quote():

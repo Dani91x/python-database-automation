@@ -408,6 +408,34 @@ def test_richiesta_place_live_con_servizio_paper_e_RIFIUTATA():
     assert _skips(db, "modalita_non_corrispondente")
 
 
+def test_ciclo_degradato_protegge_ma_non_apre_niente():
+    """CERT. 13/09 — control ILLEGGIBILE.
+
+    Prima ``run_once`` usciva subito: con posizioni aperte e il DB
+    indisponibile non giravano ne' settlement, ne' uscite, ne' riconciliazione,
+    per tutta la durata del guasto. Adesso si riparte dall'ultimo control noto
+    e le fasi di PROTEZIONE girano — ma NIENTE viene aperto, nemmeno se la
+    copia in cache diceva "running": l'utente potrebbe aver premuto STOP
+    proprio mentre il DB non rispondeva, e noi non lo sapremmo.
+    """
+    def aperture(d):
+        return [t for t in d.trades if not t.get("closes_trade_id")]
+
+    db = FakeDB(status="running")
+    db.scan_rows = [_feed_row()]
+    _run(db, engine=FakeEngine([_signal()]))          # un ciclo buono: riempie la cache
+    aperte_prima = len(aperture(db))
+    assert aperte_prima == 1
+
+    db.read_control = lambda: (_ for _ in ()).throw(RuntimeError("schema cache"))
+    res = _run(db, engine=FakeEngine([_signal(key="1.1:base:2-0")]))
+    assert res.get("skipped") != "control_unreadable", "il ciclo deve girare, degradato"
+    assert len(aperture(db)) == aperte_prima, "in ciclo degradato non si apre NIENTE"
+    # ...ma le fasi di PROTEZIONE girano: la posizione aperta e' stata gestita
+    # (gamba di chiusura creata), che e' esattamente lo scopo del ciclo degradato
+    assert any(t.get("closes_trade_id") for t in db.trades)
+
+
 def test_richiesta_place_scaduta_non_viene_eseguita():
     """Una 'pending' vecchia non scadeva MAI: a servizio spento restava in coda
     e veniva eseguita al primo avvio utile, su quote di un'altra partita."""
@@ -872,9 +900,34 @@ def test_reconcile_paper_in_riconciliazione_non_inventa_un_fill():
     assert "reconciled_error" in db.kinds()
 
 
-def test_reconcile_paper_senza_marker_conferma_con_i_dati_della_riserva():
+def test_reconcile_paper_riserva_mai_piazzata_va_in_errore_non_diventa_posizione():
+    """CERT. 13/09 — riga PAPER ferma a ``phase='reserved'`` e senza NESSUN
+    segno di esecuzione (niente ``meta.fill``, niente ``bet_id``, niente
+    marcatori di coda): il processo e' morto fra l'insert e il place, quindi
+    nessun ordine — nemmeno simulato — e' mai partito.
+
+    Prima veniva confermata "al prezzo della riserva", cioe' si INVENTAVA una
+    posizione paper che il live non avrebbe mai avuto: i numeri del paper non
+    possono valere come prova se contengono posizioni mai esistite. In live lo
+    stesso caso finisce in 'free'/'error': stessa severita'.
+
+    (Sostituisce ``test_reconcile_paper_senza_marker_conferma_con_i_dati_della_riserva``.)"""
     db = FakeDB(status="stopped")
     tid = _pending_live(db, mode="paper", meta={"phase": "reserved"})
+    res = _run(db)
+    assert res["reconciled"] == 1
+    t = db.get_trade(tid)
+    assert t["status"] == "error"
+    assert t["meta"]["reason"] == "reconcile_paper_mai_piazzata"
+    assert t["meta"]["error_final"] is True
+
+
+def test_reconcile_paper_riga_storica_senza_fase_si_conferma_ancora():
+    """Il ripiego per le righe STORICHE resta: una riga senza ``meta.phase``
+    viene da una versione precedente del servizio, non da una riserva
+    interrotta, e si conferma coi dati della riserva come prima."""
+    db = FakeDB(status="stopped")
+    tid = _pending_live(db, mode="paper", meta={})
     res = _run(db)
     assert res["reconciled"] == 1
     t = db.get_trade(tid)
@@ -2174,11 +2227,28 @@ def test_loss_stop_giornaliero_blocca_i_segnali_con_log_deduplicato():
     assert db2.control["stats"]["risk"]["loss_stop_active"] is False
 
 
+def test_esatto_non_banca_due_volte_la_stessa_partita():
+    """CERT. 13/09 — il motore valuta ESATTO su ENTRAMBI i lati e a 0-0/1-0/1-1
+    passano tutti e due ("al massimo 1 gol"): senza questa guardia il bot banca
+    due volte lo stesso Correct Score, con il DOPPIO della responsabilita' e lo
+    stesso profitto massimo. Il manuale parla di UNA squadra da bancare."""
+    S._SKIP_LOG_STATE.clear()
+    db = FakeDB(status="running")
+    _auto_trade(db, "esatto", market_type="CORRECT_SCORE", liability=60.0,
+                signal_key="1.1:esatto:home:1-1")
+    db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
+    res = _run(db, engine=FakeEngine([_cs_signal(key="1.1:esatto:away:1-1")]))
+    assert res["placed"] == 0
+    assert _skips(db, "esatto_lato_gia_aperto")
+
+
 def test_cap_per_evento_correlato_sui_segnali():
     S._SKIP_LOG_STATE.clear()
     # aperto 60 di liability sul CS dell'evento: il lay CS 2@60 (118) -> 178 > 170
+    # (posizione di MODELLO, non ESATTO: dal 13/09 un secondo lato ESATTO sulla
+    # stessa partita e' scartato prima, e qui si vuole misurare il CAP)
     db = FakeDB(status="running", params={"risk": {"per_event_liability_cap": 170}})
-    _auto_trade(db, "esatto", market_type="CORRECT_SCORE", liability=60.0, signal_key="1.1:esatto:x")
+    _auto_trade(db, "model", market_type="CORRECT_SCORE", liability=60.0, signal_key="1.1:model:x")
     db.scan_rows = [_cs_row(50, back=55.0, lay=60.0, back_size=50.0)]
     res = _run(db, engine=FakeEngine([_cs_signal()]))
     assert res["placed"] == 0 and _blocks(db, "per_event_liability_cap")

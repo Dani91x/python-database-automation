@@ -756,7 +756,7 @@ def test_size_base_lay_sfavorita():
     assert ev.state == "signal"
     assert ev.entry_odds == 8.4
     assert ev.entry_size == 120
-    assert check(ev, "dogLay").value == "8.40 " + eng.MIDDOT + " " + eng.EURO + "120 abbinabili"
+    assert check(ev, "dogLay").value == "8,40 " + eng.MIDDOT + " 120 " + eng.EURO + " abbinabili"
 
 
 def test_size_esatto_lay_altro_risultato_anche_decimale():
@@ -764,7 +764,7 @@ def test_size_esatto_lay_altro_risultato_anche_decimale():
     assert ev.state == "signal"
     assert ev.entry_odds == 45
     assert ev.entry_size == 2.25
-    assert check(ev, "entry").value == "45.00 " + eng.MIDDOT + " " + eng.EURO + "2.25 abbinabili"
+    assert check(ev, "entry").value == "45,00 " + eng.MIDDOT + " 2,25 " + eng.EURO + " abbinabili"
 
 
 def test_size_punta_back_squadra_in_vantaggio():
@@ -800,8 +800,8 @@ def test_size_tennis_back_leader_e_lay_perdente_informativo():
     assert ev.state == "signal"
     assert ev.entry_size == 812.5
     expected = (
-        "back 1.03 " + eng.MIDDOT + " " + eng.EURO + "812.50 abbinabili "
-        + eng.MIDDOT + " lay perdente 30.00 " + eng.MIDDOT + " " + eng.EURO + "6 abbinabili"
+        "back 1,03 " + eng.MIDDOT + " 812,50 " + eng.EURO + " abbinabili "
+        + eng.MIDDOT + " lay perdente 30,00 " + eng.MIDDOT + " 6 " + eng.EURO + " abbinabili"
     )
     assert check(ev, "odds").value == expected
 
@@ -810,7 +810,7 @@ def test_size_fonte_senza_size_entry_size_none():
     ev = eng.evaluate_base(ctx_of(), eng.DEFAULT_PARAMS["base"])
     assert ev.state == "signal"
     assert ev.entry_size is None
-    assert check(ev, "dogLay").value == "8.40"
+    assert check(ev, "dogLay").value == "8,40"
 
 
 def test_size_quota_assente_niente_size_senza_prezzo():
@@ -1024,14 +1024,17 @@ def test_engine_payload_vuoto_non_lancia_e_non_produce_segnali():
 # ------------------------------------------------------------- formattazioni
 @pytest.mark.parametrize(
     "value,expected",
-    [(120, eng.EURO + "120"), (2.25, eng.EURO + "2.25"), (812.5, eng.EURO + "812.50"), (None, None)],
+    # CERT. 13/09: formato italiano (virgola, simbolo DOPO), identico al TS
+    [(120, "120 " + eng.EURO), (2.25, "2,25 " + eng.EURO),
+     (812.5, "812,50 " + eng.EURO), (None, None)],
 )
 def test_fmt_eur(value, expected):
     assert eng.fmt_eur(value) == expected
 
 
 def test_fmt_odds_e_minute():
-    assert eng.fmt_odds(8.4) == "8.40"
+    # CERT. 13/09: formato italiano, identico al gemello TS (lib/format.ts)
+    assert eng.fmt_odds(8.4) == "8,40"
     assert eng.fmt_odds(None) == "n/d"
     assert eng.fmt_minute(None) == "n/d"
     assert eng.fmt_minute(58) == "58" + eng.PRIME

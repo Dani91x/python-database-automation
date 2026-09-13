@@ -53,7 +53,10 @@ DEFAULT_COMBO_PARAMS: Dict[str, Any] = {
     "conf_single_market": 0.85,
     "conf_multi_market": 0.65,
     "ternary_iters": 70,
-    # size minima REALE Betfair per GAMBA (bot_service.DEFAULT_PARAMS.min_stake):
+    # CERT. 13/09: soglia INFORMATIVA, non un rifiuto. Sotto il minimo di
+    # giurisdizione la gamba si piazza lo stesso col place-and-trim (fino a
+    # 0,01 EUR); qui serve solo a dire se il book regge il minimo normale.
+    # size minima di giurisdizione per GAMBA:
     # sotto questa cifra l'exchange rifiuta l'apertura e la combinazione resta
     # monca (una gamba abbinata e una no = posizione NUDA). Serve a calcolare
     # ``min_total_stake`` e ``executable_whole``.

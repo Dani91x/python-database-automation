@@ -29,7 +29,7 @@ def test_dry_scanner_never_touches_db(monkeypatch):
     def boom():
         raise AssertionError("query in dry")
     monkeypatch.setattr(S.scan_db, "list_mike_followed_event_ids", boom)
-    assert sc._mike_followed() == set()
+    assert sc._mike_followed() == []
 
 
 def _inplay(minute: int) -> dict:
@@ -40,12 +40,24 @@ def _inplay(minute: int) -> dict:
 def test_mike_followed_cached_and_tolerant(scan, monkeypatch):
     calls = []
     monkeypatch.setattr(S.scan_db, "list_mike_followed_event_ids", lambda: calls.append(1) or ["M1"])
-    assert scan._mike_followed(now_mono=100.0) == {"M1"}
-    assert scan._mike_followed(now_mono=105.0) == {"M1"}      # entro il TTL: nessuna query
+    # CERT. 13/09: LISTA, non insieme — l'ordine (soldi a rischio decrescente)
+    # e' un dato, perche' quando il tetto MIKE_MAX_FOLLOWED morde si taglia dal
+    # fondo e chi resta fuori dev'essere chi ha meno denaro sopra.
+    assert scan._mike_followed(now_mono=100.0) == ["M1"]
+    assert scan._mike_followed(now_mono=105.0) == ["M1"]      # entro il TTL: nessuna query
     assert len(calls) == 1
     # lettura fallita → resta l'ultima lista buona (mai togliere quote a una posizione aperta)
     monkeypatch.setattr(S.scan_db, "list_mike_followed_event_ids", lambda: None)
-    assert scan._mike_followed(now_mono=120.0) == {"M1"}
+    assert scan._mike_followed(now_mono=120.0) == ["M1"]
+
+
+def test_ordine_per_esposizione_conservato_dalla_cache(scan, monkeypatch):
+    """L'ordine arriva da ``list_mike_followed_event_ids`` (esposizione
+    decrescente) e NON deve essere rimescolato dalla cache: prima era un
+    ``set`` e il taglio del tetto tornava casuale."""
+    monkeypatch.setattr(S.scan_db, "list_mike_followed_event_ids",
+                        lambda: ["GROSSA", "MEDIA", "PICCOLA"])
+    assert scan._mike_followed(now_mono=200.0) == ["GROSSA", "MEDIA", "PICCOLA"]
 
 
 def test_c1_followed_event_exempt_from_cap(scan, monkeypatch):

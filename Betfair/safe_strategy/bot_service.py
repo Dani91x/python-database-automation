@@ -86,13 +86,20 @@ DEFAULT_PARAMS: dict[str, Any] = {
     # ESECUZIONE via coda flumine: chiavi lette dal codice CONDIVISO con Omega
     # (``omega_service._flumine_gate`` / ``poll_flumine_pending``). Prima non
     # erano dichiarate qui e la Safe Strategy ereditava in silenzio i default di
-    # Omega — compreso ``min_stake`` 0,50 € invece del minimo REALE Betfair di
-    # 2 € (L-audit "chiavi Omega usate dal codice condiviso" + M-31).
+    # Omega (L-audit "chiavi Omega usate dal codice condiviso" + M-31).
     "execution_mode": "auto",           # 'auto' = coda quando possibile, 'rest' = solo REST
     "omega_live_via_flumine": True,     # nome della chiave del gate condiviso
     "paper_fill_ttl_s": 45,             # quasi-FOK del paper: poi cancel del residuo
     "live_fill_deadline_s": 20,         # oltre: riconciliazione REST / revoca
-    "min_stake": 2.0,                   # minimo REALE Betfair (M-31)
+    # Minimo di GIURISDIZIONE, valore INFORMATIVO (CERT. 13/09).
+    # Non e' piu' una soglia di RIFIUTO: sotto questa cifra l'ordine non viene
+    # scartato, si usa il place-and-trim (parcheggio -> taglio -> riprezzo), che
+    # scende fino a 0,01 EUR. Serve alla UI per dire all'utente da dove in giu'
+    # il servizio cambia tecnica. La soglia che il codice usa DAVVERO per
+    # scegliere il percorso e' ``execution._min_size_live(side)``, che conosce il
+    # lato (il minimo .it e' BACK 2,00 / LAY 0,50) ed e' un FATTO dell'exchange,
+    # non una preferenza. L'unico pavimento vero e' ``execution.ABS_MIN_SIZE``.
+    "min_stake": 2.0,
     # regole di uscita automatica (sezione fusa in profondità: exits.merge_exit_params)
     "exits": dict(XE.DEFAULT_EXIT_PARAMS),
     # motore di rischio di tutti i piazzamenti (sezione fusa: risk.merge_risk_params)
@@ -555,12 +562,33 @@ def poll_flumine(*, db, params: dict[str, Any], now: datetime, market=None) -> i
 # omega_service.reconcile_pending su bot_db): esito REST ignoto / conferma DB
 # fallita → si legge lo stato REALE su Betfair. Mai un fill reale non tracciato.
 # ---------------------------------------------------------------------------
+def _riserva_mai_piazzata(tr: dict[str, Any]) -> bool:
+    """Riga ancora nella fase di RISERVA e senza alcun segno di esecuzione.
+
+    ``phase == 'reserved'`` e' scritto da ``_reserve_row`` e viene sostituito
+    appena il place produce un esito (``meta.fill``) o entra in coda
+    (``flumine_client_ref``). Se e' ancora li' e non c'e' nient'altro, l'ordine
+    non e' mai partito."""
+    meta = tr.get("meta") or {}
+    if str(meta.get("phase") or "") != "reserved":
+        return False
+    return not (meta.get("fill") or tr.get("bet_id")
+                or meta.get("flumine_client_ref") or meta.get("flumine_request_id"))
+
+
 def reconcile_pending(*, market, db, now: datetime) -> int:
     try:
         pendings = list(db.list_trades("pending") or [])
     except Exception as ex:  # noqa: BLE001
         _log(db, "reconcile_error", {"reason": "list_failed", "err": str(ex)[:160]})
+        _PENDING_CICLO.clear()
         return 0
+    # le righe 'pending' di QUESTO giro restano a disposizione di chi ne ha
+    # bisogno piu' avanti nello stesso ciclo (la guardia "un solo lato ESATTO"),
+    # invece di rileggere la stessa identica query pochi millisecondi dopo:
+    # regola del progetto, nessuna lettura duplicata per giro.
+    _PENDING_CICLO["ts"] = now.timestamp()
+    _PENDING_CICLO["rows"] = pendings
     legacy = [t for t in pendings if not X.has_flumine_marker(t)]
     if not legacy:
         return 0
@@ -579,6 +607,24 @@ def reconcile_pending(*, market, db, now: datetime) -> int:
                 _log(db, "reconciled_error", {"trade_id": tr.get("id"),
                                               "event_id": tr.get("event_id"),
                                               "reason": "reconcile_paper_senza_fill",
+                                              "how": "paper"})
+                _sync_parent_of(db, tr, now)
+            elif _riserva_mai_piazzata(tr):
+                # CERT. 13/09 — riserva PAPER rimasta a meta': la riga esiste
+                # (``phase='reserved'``) ma non c'e' nessun marcatore di
+                # esecuzione — ne' ``meta.fill``, ne' ``bet_id``, ne' marcatori
+                # di coda. Vuol dire che il processo e' morto FRA l'insert e il
+                # place: nessun ordine, nemmeno simulato, e' mai partito.
+                # Confermarla "al prezzo della riserva" creava una posizione
+                # paper INVENTATA, che il live non avrebbe mai avuto — e i
+                # numeri del paper non possono valere come prova se contengono
+                # posizioni che non sono mai esistite. In live lo stesso caso
+                # finisce in 'free'/'error': stessa severita'.
+                _terminal_error(db, tr, reason="reconcile_paper_mai_piazzata", now=now,
+                                extra={"how": "paper"})
+                _log(db, "reconciled_error", {"trade_id": tr.get("id"),
+                                              "event_id": tr.get("event_id"),
+                                              "reason": "reconcile_paper_mai_piazzata",
                                               "how": "paper"})
                 _sync_parent_of(db, tr, now)
             else:
@@ -1015,7 +1061,7 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
                      params: dict[str, Any], now: datetime,
                      risk_ctx: Optional[dict] = None,
-                     control_mode: str = "") -> int:
+                     control_mode: str = "", degradato: bool = False) -> int:
     stale = getattr(db, "fail_stale_processing", None)
     if callable(stale):
         try:
@@ -1051,7 +1097,18 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
             n += 1
             continue
         try:
-            if kind == "place":
+            if kind == "place" and degradato:
+                # CERT. 13/09 (review) — la modalita' con cui validare la
+                # richiesta arriverebbe dalla CACHE, e la cache puo' essere
+                # vecchia: l'utente potrebbe aver accodato un LIVE e poi essere
+                # tornato in PAPER mentre il DB smetteva di rispondere. Un
+                # piazzamento si rimanda; una CHIUSURA no, quella deve passare
+                # sempre (mai una posizione senza via d'uscita).
+                res = {"rejected": "stato del servizio non verificabile",
+                       "message": "rifiutato: il servizio non riesce a leggere il "
+                                  "proprio stato, riprova fra poco"}
+                _log(db, "skip", {"reason": "control_non_verificabile", "origin": "manual"})
+            elif kind == "place":
                 res = _request_place(db=db, market=market, rows_by_event=rows_by_event,
                                      payload=payload, params=params, now=now,
                                      risk_ctx=risk_ctx, control_mode=control_mode)
@@ -1703,7 +1760,18 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
     else:
         decision = XE.decide(trade, payload, meta, now_ts, xp)
         if decision is None:
+            # CERT. 13/09 — CECITA' PARZIALE: la riga c'e' ma il DATO che serve
+            # a decidere no. ``XE.decide`` torna None sia quando "non c'e' nulla
+            # da fare" sia quando il punteggio (calcio) o i game (tennis) non
+            # sono nel payload: nel secondo caso NESSUNA regola gira — niente
+            # uscita a tempo, niente uscita in perdita — e finora non compariva
+            # nemmeno un log. Una posizione poteva andare a settlement con la
+            # responsabilita' intera e nello storico non c'era traccia del
+            # perche'. La guardia esistente (``note_feed_blind``) copriva solo
+            # la riga ASSENTE dal feed, non la riga presente e muta.
+            _nota_dato_mancante(db, trade, meta, payload, now, now_ts)
             return False
+        _pulisci_dato_mancante(db, trade, meta)
         if now_ts < float(decision.not_before_ts or 0.0):
             return False   # assestamento post-evento: si aspetta
     if not XE.feed_is_fresh(row, now_ts, scanner_ts):
@@ -2095,12 +2163,48 @@ def _p_tennis(payload: dict[str, Any], side: Optional[str]) -> Optional[float]:
         sa, sb, ga, gb = s1, s2, g1, g2
     else:
         sa, sb, ga, gb = s2, s1, g2, g1
+    # CERT. 13/09 — UN SOLO modello di probabilita' per il tennis.
+    # Qui si chiamava ``estimate_holds(0, 0, 0, 0)``, che con zero game e zero
+    # break legge "nessun break subito" e ALZA il prior di hold a 0,792 invece
+    # di 0,75. Un hold piu' alto rende il break piu' decisivo e GONFIA la
+    # P(vittoria) del leader. Il difetto era gia' stato corretto il 12/09 in
+    # ``tennis_opportunity._holds`` ma non era stato riportato qui — e questa e'
+    # la funzione che alimenta il gate a modello delle USCITE. Misurato su 1 set
+    # + 4-2: 0,9311 qui contro 0,9038 del modello corretto, cioe' P(perdita)
+    # 0,069 contro 0,096 con un tetto di rischio a 0,10: la stessa posizione
+    # risultava "dentro il tetto" o "al limite" a seconda di quale delle due
+    # funzioni la guardava. In piu' qui mancava il rischio di RITIRO, che nel
+    # tennis e' l'unico modo di perdere tutto lo stake.
+    # Si usa quindi il modello vero, con questo calcolo come ripiego.
+    p = _p_tennis_dal_modello(payload, side)
+    if p is not None:
+        return p
     ha, hb = estimate_holds(0, 0, 0, 0)
     best_of = _best_of(payload, (s1, s2))
     # servizio ignoto: media fra "serve A" e "serve B"
     p = 0.5 * (p_match(sa, sb, ga, gb, True, ha, hb, best_of)
                + p_match(sa, sb, ga, gb, False, ha, hb, best_of))
     return round(min(1.0, max(0.0, float(p))), 4)
+
+
+def _p_tennis_dal_modello(payload: dict[str, Any], side: str) -> Optional[float]:
+    """P(vittoria) dal modello tennis del progetto (prior corretto + rischio di
+    ritiro), o None se il modulo non e' disponibile o non sa rispondere."""
+    mod = _import_optional("tennis_opportunity")
+    if mod is None:
+        return None
+    try:
+        modello = getattr(mod, "TennisOpportunityModel")()
+        p = modello.p_win(payload, side)
+    except Exception as ex:  # noqa: BLE001 — si ripiega sul calcolo locale
+        logger.debug("[safe.bot] modello tennis non utilizzabile: %s", str(ex)[:120])
+        return None
+    if p is None:
+        return None
+    try:
+        return round(min(1.0, max(0.0, float(p))), 4)
+    except (TypeError, ValueError):
+        return None
 
 
 def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
@@ -2245,6 +2349,84 @@ def _write_exit_state(db, trade: dict[str, Any], meta: dict[str, Any],
 # H-18 — CECITÀ del feed: posizione viva e nessuna riga dell'evento.
 FEED_BLIND_LOG_EVERY_S = 60.0
 _FEED_BLIND_LOG: dict[int, float] = {}
+
+
+# stessa cadenza dell'allarme di feed cieco: un log ogni 60 s per posizione
+_DATO_MANCANTE_LOG: dict[int, float] = {}
+
+
+def _dato_che_manca(trade: dict[str, Any], payload: Optional[dict[str, Any]]) -> Optional[str]:
+    """Quale dato indispensabile alle uscite manca nel payload, o None.
+
+    Calcio: senza punteggio non gira nessuna regola (perdita, profitto, tempo).
+    Tennis: senza set/game non gira l'uscita obbligatoria."""
+    if not isinstance(payload, dict):
+        return "riga_senza_payload"
+    sport = str(trade.get("sport") or "calcio")
+    if sport == "tennis":
+        if not isinstance(payload.get("sets"), dict) or not isinstance(payload.get("games"), dict):
+            return "punteggio_tennis_assente"
+        return None
+    sh, sa = payload.get("score_home"), payload.get("score_away")
+    if isinstance(sh, bool) or isinstance(sa, bool)             or not isinstance(sh, (int, float)) or not isinstance(sa, (int, float)):
+        return "punteggio_assente"
+    if not isinstance(payload.get("minute"), (int, float)) or isinstance(payload.get("minute"), bool):
+        return "minuto_assente"
+    return None
+
+
+def _nota_dato_mancante(db, trade: dict[str, Any], meta: dict[str, Any],
+                        payload: Optional[dict[str, Any]], now: datetime, now_ts: float) -> None:
+    """Segnala che la posizione e' viva ma il feed non porta il dato per decidere."""
+    # CERT. 13/09 (review) — le righe PRE-KO non hanno ne' punteggio ne' minuto
+    # PER NATURA (il feed pubblica anche gli eventi non iniziati, ramo O/U di
+    # Mike). Allarmare su quelle sarebbe un allarme critico continuo per un dato
+    # che non deve esserci. E' la stessa guardia gia' applicata alla riga
+    # ASSENTE (``is_blind_relevant``), qui mancava.
+    if isinstance(payload, dict) and payload.get("inplay") is not True:
+        return
+    if not is_blind_relevant(trade, {}):
+        return
+    motivo = _dato_che_manca(trade, payload)
+    if motivo is None:
+        # il dato e' tornato: si toglie il marcatore anche quando non c'e'
+        # nessuna decisione da prendere (prima si puliva solo insieme a
+        # un'uscita, quindi una posizione tranquilla restava marcata "cieca")
+        _pulisci_dato_mancante(db, trade, meta)
+        return
+    tid = int(trade.get("id") or 0)
+    if not meta.get("dato_mancante_da"):
+        meta = {**meta, "dato_mancante_da": now.isoformat()}
+        try:
+            db.update_trade(tid, meta=meta)
+            trade["meta"] = meta
+        except Exception:  # noqa: BLE001
+            pass
+    last = _DATO_MANCANTE_LOG.get(tid)
+    if last is not None and now_ts - last < FEED_BLIND_LOG_EVERY_S:
+        return
+    _DATO_MANCANTE_LOG[tid] = now_ts
+    da = XE.parse_ts((trade.get("meta") or {}).get("dato_mancante_da"))
+    _log(db, "feed_blind", {"trade_id": tid, "event_id": trade.get("event_id"),
+                            "event_name": trade.get("event_name"),
+                            "reason": motivo, "critical": True,
+                            "da_s": round(now_ts - da, 1) if da else None,
+                            "effetto": "nessuna regola di uscita puo' girare su "
+                                       "questa posizione finche' il dato manca"})
+
+
+def _pulisci_dato_mancante(db, trade: dict[str, Any], meta: dict[str, Any]) -> None:
+    """Il dato e' tornato: si toglie il marcatore."""
+    if not meta.get("dato_mancante_da"):
+        return
+    tid = int(trade.get("id") or 0)
+    _DATO_MANCANTE_LOG.pop(tid, None)
+    nuovo = {k: v for k, v in meta.items() if k != "dato_mancante_da"}
+    try:
+        db.update_trade(tid, meta=nuovo)
+        trade["meta"] = nuovo
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def is_blind_relevant(trade: dict[str, Any], rows_by_event: dict[str, dict]) -> bool:
@@ -2903,17 +3085,78 @@ def _log_skip(db, now: datetime, params: dict[str, Any], payload: dict[str, Any]
 # ---------------------------------------------------------------------------
 # RISCHIO: contesto di ciclo + gate prima di ogni riserva
 # ---------------------------------------------------------------------------
-def _risk_ctx_cieco(db, open_: list, ex: Exception) -> dict[str, Any]:
+def _agg_recente(mode: Optional[str], now_ts: float) -> Optional[dict[str, float]]:
+    """Ultimi aggregati letti bene, se non piu' vecchi di ``_AGG_TTL_S``."""
+    voce = _AGG_ULTIMO_BUONO.get(str(mode or "*"))
+    if voce is None:
+        return None
+    ts, agg = voce
+    return agg if (now_ts - ts) <= _AGG_TTL_S else None
+
+
+# righe 'pending' lette da ``reconcile_pending`` in questo ciclo (nessuna
+# lettura duplicata: è la regola del progetto sulle chiamate al DB)
+_PENDING_CICLO: dict[str, Any] = {}
+_PENDING_CICLO_TTL_S = 5.0
+
+
+def _pending_esatto(db, now_ts: Optional[float] = None) -> list[dict[str, Any]]:
+    """Riserve della variante ESATTO ancora 'pending' (ordine in volo).
+
+    Servono alla guardia "un solo lato Altro risultato per partita": fra un
+    ciclo e l'altro la riga vive in 'pending' e ``open_trades`` non la
+    restituisce. Riusa le righe gia' lette da ``reconcile_pending`` nello stesso
+    giro; solo se non ci sono (o sono vecchie) rilegge. Best-effort: se fallisce,
+    la guardia si limita alle posizioni gia' aperte, come prima."""
+    righe: Any = None
+    ts = _PENDING_CICLO.get("ts")
+    if ts is not None and (now_ts is None or abs(float(now_ts) - float(ts)) <= _PENDING_CICLO_TTL_S):
+        righe = _PENDING_CICLO.get("rows")
+    if righe is None:
+        try:
+            righe = db.list_trades("pending") or []
+        except Exception:  # noqa: BLE001 - mai fatale
+            return []
+    return [t for t in righe
+            if isinstance(t, dict)
+            and str(t.get("strategy") or "") == "esatto"
+            and not t.get("closes_trade_id")]
+
+
+# Ultimi aggregati LETTI BENE, per modalita', con il momento della lettura.
+# CERT. 13/09 (review): senza questa copia, con il DB che va in timeout il bot
+# smetteva di entrare ad OGNI ciclo e, peggio, scriveva un'attivita' critica ogni
+# 2 secondi sullo stesso DB in ginocchio (~1800 righe l'ora).
+_AGG_ULTIMO_BUONO: dict[str, tuple[float, dict[str, float]]] = {}
+# Entro questo tempo si continua a valutare i cap sui numeri appena precedenti:
+# la responsabilita' del giorno puo' solo essere SOTTOSTIMATA, e la si compensa
+# con le riserve del ciclo (``_risk_commit``). Oltre, si blocca davvero.
+_AGG_TTL_S = 120.0
+_AGG_LOG_OGNI_S = 60.0
+_AGG_LOG_TS: dict[str, float] = {}
+
+
+def _risk_ctx_cieco(db, open_: list, ex: Exception,
+                    open_all: Optional[list] = None,
+                    mode: Optional[str] = None,
+                    now_ts: Optional[float] = None) -> dict[str, Any]:
     """Contesto di rischio NON UTILIZZABILE: si conoscono le posizioni vive ma
     non i numeri della giornata. ``unavailable`` blocca i NUOVI ingressi (le
     uscite e il settlement continuano: mai lasciare una posizione nuda)."""
     logger.warning("[safe.bot] aggregates KO: %s — nessun nuovo ingresso in questo ciclo",
                    str(ex)[:160])
-    _log(db, "error", {"reason": "aggregati_non_leggibili", "critical": True,
-                       "err": str(ex)[:160],
-                       "effetto": "nuovi ingressi sospesi: senza i numeri della "
-                                  "giornata i cap di rischio non sono verificabili"})
-    return {"open": open_, "realized_today": 0.0, "day_liability": 0.0,
+    # il log e' throttlato: l'allarme serve, non l'inondazione
+    chiave = str(mode or "*")
+    ora = float(now_ts or 0.0)
+    ultimo = _AGG_LOG_TS.get(chiave)
+    if ultimo is None or ora - ultimo >= _AGG_LOG_OGNI_S:
+        _AGG_LOG_TS[chiave] = ora
+        _log(db, "error", {"reason": "aggregati_non_leggibili", "critical": True,
+                           "err": str(ex)[:160],
+                           "effetto": "nuovi ingressi sospesi: senza i numeri della "
+                                      "giornata i cap di rischio non sono verificabili"})
+    return {"open": open_, "open_all": open_all if open_all is not None else open_,
+            "realized_today": 0.0, "day_liability": 0.0,
             "day_liability_model": 0.0, "agg": {}, "unavailable": True}
 
 
@@ -2931,15 +3174,23 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
     profitti paper potevano mascherare perdite vere e tenere aperto il rubinetto
     oltre la soglia. I soldi finti non devono toccare il budget dei soldi veri."""
     try:
-        try:
-            vive = db.open_trades(mode=mode) or []
-        except TypeError:      # accessor vecchio senza il parametro
-            vive = [t for t in (db.open_trades() or [])
-                    if mode is None or str(t.get("mode") or "live").lower() == str(mode)]
-        open_ = [t for t in vive if not t.get("closes_trade_id")]
+        # CERT. 13/09 (review) — UNA lettura, DUE liste.
+        # Il filtro di modalita' serve ai CAP DI RISCHIO e ai numeri a schermo,
+        # NON alla protezione delle posizioni. Filtrando qui e passando la lista
+        # filtrata a ``process_exits`` si era creato un difetto peggiore di
+        # quello che si voleva chiudere: con ``control.mode='paper'`` una
+        # posizione LIVE aperta smetteva di essere gestita — niente uscita in
+        # perdita, niente uscita obbligatoria, niente rosso — e arrivava al
+        # settlement con la responsabilita' intera. Una posizione viva si
+        # protegge SEMPRE, qualunque sia la modalita' del servizio.
+        tutte = db.open_trades() or []
+        open_all = [t for t in tutte if not t.get("closes_trade_id")]
+        m = str(mode).lower() if mode else None
+        open_ = ([t for t in open_all if str(t.get("mode") or "live").lower() == m]
+                 if m else list(open_all))
     except Exception as ex:  # noqa: BLE001
         _log(db, "error", {"reason": "open_count_failed", "err": str(ex)[:160]})
-        return {"open": [], "realized_today": 0.0, "day_liability": 0.0,
+        return {"open": [], "open_all": [], "realized_today": 0.0, "day_liability": 0.0,
                 "day_liability_model": 0.0, "agg": {}, "unavailable": True}
     try:
         agg = dict(db.aggregates(mode=mode) or {})
@@ -2947,8 +3198,20 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         try:
             agg = dict(db.aggregates() or {})
         except Exception as ex:      # noqa: BLE001
-            return _risk_ctx_cieco(db, open_, ex)
+            return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp())
     except Exception as ex:  # noqa: BLE001
+        # Prima di bloccare: se abbiamo una lettura buona recentissima la si
+        # riusa. I numeri possono solo essere piu' BASSI del vero (le riserve
+        # del ciclo li alzano via ``_risk_commit``), quindi e' conservativo.
+        recente = _agg_recente(mode, now.timestamp())
+        if recente is not None:
+            agg = dict(recente)
+            return {"open": open_, "open_all": open_all,
+                    "pending_esatto": _pending_esatto(db, now.timestamp()),
+                    "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
+                    "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
+                    "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
+                    "agg": agg, "agg_stantio": True}
         # CERT. 13/09 — FAIL-CLOSED anche qui. Prima si proseguiva con ``agg={}``
         # e succedeva questo, in silenzio: ``realized_today`` = 0 -> il fermo
         # per perdita giornaliera si DISATTIVA; ``day_liability`` = 0 -> il cap
@@ -2957,8 +3220,13 @@ def build_risk_ctx(db, now: datetime, params: dict[str, Any],
         # falliva (e oggi il DB va in timeout di continuo) il bot perdeva tutte
         # le sue barriere di rischio proprio mentre era in difficolta'.
         # Il docstring dichiarava gia' "letture KO -> fail-closed": ora e' vero.
-        return _risk_ctx_cieco(db, open_, ex)
-    return {"open": open_, "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
+        return _risk_ctx_cieco(db, open_, ex, open_all, mode, now.timestamp())
+    if agg:
+        _AGG_ULTIMO_BUONO[str(mode or "*")] = (now.timestamp(), dict(agg))
+        _AGG_LOG_TS.pop(str(mode or "*"), None)
+    return {"open": open_, "open_all": open_all,
+            "pending_esatto": _pending_esatto(db, now.timestamp()),
+            "realized_today": float(agg.get("realized_today", 0.0) or 0.0),
             "day_liability": float(agg.get("day_liability", 0.0) or 0.0),
             "day_liability_model": float(agg.get("day_liability_model", 0.0) or 0.0),
             "agg": agg}
@@ -3023,6 +3291,58 @@ def _log_pre_match_missing(db, engine, params: dict[str, Any], now: datetime) ->
         })
 
 
+def _rossi_al_piazzamento(feed_row: Any) -> dict[str, Any]:
+    """``{"red_home": n, "red_away": n}`` dal feed, o ``{}`` se il dato manca.
+
+    Finisce nel ``meta`` della riserva e diventa la BASE dei rossi per le
+    uscite: solo un cartellino ARRIVATO DOPO l'ingresso deve far uscire."""
+    payload = (feed_row or {}).get("payload") if isinstance(feed_row, dict) else None
+    if not isinstance(payload, dict):
+        return {}
+    rh, ra = payload.get("red_home"), payload.get("red_away")
+    if isinstance(rh, bool) or isinstance(ra, bool):
+        return {}
+    if not isinstance(rh, (int, float)) or not isinstance(ra, (int, float)):
+        return {}
+    return {"red_home": int(rh), "red_away": int(ra)}
+
+
+def _esatto_gia_su_evento(risk_ctx: dict[str, Any], event_id: Any) -> bool:
+    """C'e' gia' una posizione VIVA della variante ESATTO su questa partita?
+
+    Il motore valuta la variante su entrambi i lati e a punteggio pari (0-0,
+    1-1) o 1-0 passano tutti e due: senza questo controllo si banca due volte lo
+    stesso mercato, con il doppio della responsabilita' e lo stesso profitto."""
+    eid = str(event_id or "")
+    # CERT. 13/09 (review) — anche i PENDING.
+    # ``risk_ctx["open"]`` viene da ``open_trades``, che ritorna solo
+    # 'open'/'hedged'. In LIVE via coda il fill richiede almeno un ciclo: la
+    # riga del primo lato resta 'pending' e al ciclo dopo la guardia non la
+    # vedeva -> il secondo lato passava. Il difetto si manifestava proprio dove
+    # costa (soldi veri), mentre in paper il fill immediato lo nascondeva.
+    # ``_risk_commit`` aggiunge la riserva al contesto, quindi i due lati dello
+    # STESSO ciclo erano gia' coperti: il buco era fra un ciclo e l'altro.
+    for t in (risk_ctx.get("open_all") or risk_ctx.get("open") or []):
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("event_id") or "") != eid:
+            continue
+        if str(t.get("strategy") or "") != "esatto":
+            continue
+        if t.get("closes_trade_id"):
+            continue
+        return True
+    return bool(_esatto_pending_su_evento(risk_ctx, eid))
+
+
+def _esatto_pending_su_evento(risk_ctx: dict[str, Any], eid: str) -> bool:
+    """Riserve ESATTO ancora in volo ('pending') sulla stessa partita."""
+    for t in (risk_ctx.get("pending_esatto") or []):
+        if isinstance(t, dict) and str(t.get("event_id") or "") == eid:
+            return True
+    return False
+
+
 def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                    mode: str, now: datetime, risk_ctx: Optional[dict] = None,
                    scanner_ts: Optional[float] = None,
@@ -3082,6 +3402,20 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "strategy": variant,
                                         "reason": "variante_non_abilitata"})
+            continue
+        # CERT. 13/09 — UN SOLO lato "Altro risultato" per partita.
+        # Il motore valuta la variante ESATTO su ENTRAMBI i lati (casa e ospite)
+        # e a 0-0, 1-0 e 1-1 passano tutti e due il filtro "al massimo 1 gol":
+        # nascono due segnali con chiavi diverse (``ev:esatto:home:1-1`` e
+        # ``ev:esatto:away:1-1``) e il bot bancava DUE volte lo stesso mercato.
+        # Numeri reali: due lay a 35 e 34 con stake 2 EUR = 134 EUR di
+        # responsabilita' sulla stessa partita per 4 EUR lordi di profitto
+        # massimo, e ne' ``per_event_liability_cap`` ne' ``per_event_max_trades``
+        # lo fermavano. Il manuale parla di UNA squadra da bancare, al singolare.
+        if variant == "esatto" and _esatto_gia_su_evento(risk_ctx, event_id):
+            _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
+                                        "strategy": variant,
+                                        "reason": "esatto_lato_gia_aperto"})
             continue
         # 12/09: mai un ingresso su una riga del feed NON FRESCA (scanner fermo
         # o partita non riscritta da >120 s): il paper riempirebbe a quote
@@ -3176,7 +3510,13 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             origin="auto", signal_key=str(key),
             meta={"variant": variant, "headline": _sig(s, "headline"),
                   "checks": _sig(s, "checks"),
-                  "first_seen_ts": _sig(s, "first_seen_ts")},
+                  "first_seen_ts": _sig(s, "first_seen_ts"),
+                  # CERT. 13/09 — CARTELLINI ROSSI AL MOMENTO DELL'INGRESSO.
+                  # Le uscite usavano come base la PRIMA osservazione utile del
+                  # tracciamento: se il feed iniziava a pubblicare i rossi dopo
+                  # l'apertura, un rosso preso nel frattempo finiva nella base e
+                  # la regola "rosso alla favorita -> esci" non scattava mai.
+                  **_rossi_al_piazzamento(feed_row)},
         )
         try:
             trade_id = db.insert_trade(row)  # RISERVA: l'unique index fa da lock
@@ -3823,6 +4163,26 @@ def _leg_matchable(leg: dict, stake: float, rows_by_event: dict, event_id: str) 
         return False
 
 
+def _combo_market_type(legs: list, leg_stakes: list) -> str:
+    """``market_type`` della gamba con la responsabilita' piu' grande.
+
+    Serve al gate di rischio per valutare la CORRELAZIONE: due posizioni sullo
+    stesso mercato si sommano per intero, su mercati diversi pesano meno. Con
+    l'etichetta "COMBO" nessuna posizione risultava mai correlata."""
+    peggiore, mt = -1.0, ""
+    for leg, stake in zip(legs or [], leg_stakes or []):
+        if not isinstance(leg, dict):
+            continue
+        try:
+            liab = X.liability_of(str(leg.get("side") or ""), float(stake),
+                                  float(leg.get("price") or 0.0))
+        except (TypeError, ValueError):
+            continue
+        if liab > peggiore:
+            peggiore, mt = liab, str(leg.get("market_type") or "")
+    return mt or "COMBO"
+
+
 def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list,
                        params: dict, mode: str, now: datetime, rows_by_event: dict,
                        risk_ctx: Optional[dict] = None,
@@ -3961,8 +4321,18 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
                       "combo_legs": len(legs), "combo_rationale": c.get("rationale")}))
         if not ok:
             continue
+        # CERT. 13/09 — il gate di rischio deve vedere il mercato VERO delle
+        # gambe, non l'etichetta "COMBO". ``risk.event_exposure`` confronta
+        # ``market_type`` per decidere se una posizione e' CORRELATA (stesso
+        # mercato = pesa 100%) o no (pesa ``correlated_cap``, 0,7). Nessuna
+        # posizione ha mai ``market_type == "COMBO"``, quindi TUTTE risultavano
+        # non correlate e pesavano il 70%: con un cap per evento di 150 EUR si
+        # arrivava a ~179 EUR reali sullo stesso mercato, cioe' il 19% oltre.
+        # Si usa il mercato della gamba piu' pesante: e' quello che determina
+        # davvero la correlazione dell'esposizione.
+        mt_combo = _combo_market_type(legs, leg_stakes)
         if _risk_gate(db, now, params, risk_ctx,
-                      {"event_id": event_id, "market_type": "COMBO",
+                      {"event_id": event_id, "market_type": mt_combo,
                        "liability": round(total_liab, 2), "strategy": "model"},
                       signal_key=f"combo:{cid}"):
             continue
@@ -4255,6 +4625,11 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
 # risponde: senza, un'indisponibilita' di Supabase lasciava le posizioni aperte
 # senza nessuno che le guardasse.
 _LAST_CONTROL: dict[str, Any] = {}
+# Oltre questo tempo l'ultimo control noto non e' piu' una base accettabile:
+# i parametri possono essere cambiati (soglie di uscita, commissione, tentativi)
+# proprio perche' l'utente stava reagendo a qualcosa. Si continua comunque a
+# proteggere le posizioni, ma lo si DICE, forte, una volta al minuto.
+_CONTROL_CACHE_MAX_AGE_S = 600.0
 
 
 def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
@@ -4282,12 +4657,20 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
                            str(ex)[:160])
             return {"skipped": "control_unreadable"}
         control_degradato = True
+        eta = now.timestamp() - float(_LAST_CONTROL.get("ts") or 0.0)
         logger.warning("[safe.bot] read_control KO (%s): ciclo in PROTEZIONE con "
-                       "l'ultimo stato noto — niente nuovi ingressi", str(ex)[:120])
+                       "l'ultimo stato noto di %.0fs fa — niente nuovi ingressi",
+                       str(ex)[:120], eta)
+        if eta > _CONTROL_CACHE_MAX_AGE_S:
+            _log(db, "error", {"reason": "control_illeggibile_da_troppo", "critical": True,
+                               "eta_s": round(eta, 1), "err": str(ex)[:160],
+                               "effetto": "si protegge con parametri vecchi di "
+                                          f"{int(eta // 60)} minuti: verificare il DB"})
     if control is None:
         return {"skipped": "no_control"}
     if not control_degradato:
         _LAST_CONTROL["value"] = dict(control)
+        _LAST_CONTROL["ts"] = now.timestamp()
     status = str(control.get("status") or "idle")
     mode = str(control.get("mode") or "paper")
     if mode not in ("paper", "live"):
@@ -4333,26 +4716,36 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         risk_ctx = {**risk_ctx, "unavailable": True}
 
     # (b-bis) H-18: posizioni vive senza riga nel feed = cecità, mai silenzio
-    n_blind = check_feed_blind(db, risk_ctx.get("open") or [], rows_by_event, now)
+    # ``open_all``: la cecita' del feed e' un allarme su QUALUNQUE posizione viva,
+    # non solo su quelle della modalita' attiva (review 13/09).
+    n_blind = check_feed_blind(db, risk_ctx.get("open_all") or [], rows_by_event, now)
 
     # (b-ter) H6: gambe di COMBO rotte il cui fill è appena stato confermato
     # dalla coda → si svolgono subito (mai una posizione nuda per un ciclo)
     n_unwound = unwind_incomplete_combos(
         db=db, market=market, rows_by_event=rows_by_event, params=params, now=now,
-        open_rows=risk_ctx.get("open") if not risk_ctx.get("unavailable") else None)
+        open_rows=risk_ctx.get("open_all") if not risk_ctx.get("unavailable") else None)
 
     # (c) richieste della UI — SEMPRE
     n_requests = process_requests(db=db, market=market, rows_by_event=rows_by_event,
                                   params=params, now=now, risk_ctx=risk_ctx,
-                                  control_mode=mode)
+                                  control_mode=mode, degradato=control_degradato)
 
     # (c-bis) uscite automatiche — SEMPRE (posizioni già aperte), prima dei nuovi ingressi
     n_exits = process_exits(db=db, market=market, rows_by_event=rows_by_event,
                             params=params, now=now, opp_mod=opp_mod,
                             opps_state=opps_state,
                             # M1: le posizioni vive sono già state lette per il
-                            # contesto di rischio: una SELECT, non tre
-                            open_rows=risk_ctx.get("open")
+                            # contesto di rischio: una SELECT, non tre.
+                            # CERT. 13/09 (review) — qui va ``open_all``, NON la
+                            # lista filtrata per modalita': una posizione LIVE
+                            # aperta deve continuare a essere gestita anche
+                            # quando il servizio e' passato a PAPER. Con la
+                            # lista filtrata smetteva di avere uscite e
+                            # arrivava al settlement con la responsabilita'
+                            # intera — un difetto peggiore di quello che il
+                            # filtro voleva chiudere.
+                            open_rows=risk_ctx.get("open_all")
                             if not risk_ctx.get("unavailable") else None)
 
     if status == "stopping":
@@ -4363,14 +4756,20 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
             pass
         status = "stopped"
 
-    # (d) segnali automatici — SOLO se in esecuzione
+    # (d) segnali automatici — SOLO se in esecuzione E con lo stato VERIFICATO.
+    # CERT. 13/09: in un ciclo DEGRADATO (control illeggibile, si lavora con
+    # l'ultimo stato noto) non si apre NIENTE di nuovo, nemmeno se la copia in
+    # cache diceva "running": l'utente potrebbe aver premuto STOP o cambiato i
+    # parametri proprio mentre il DB non risponde, e noi non lo sapremmo. Le
+    # fasi di protezione (riconciliazione, settlement, uscite) girano comunque:
+    # una posizione aperta non deve mai restare senza nessuno che la guardi.
+    running = status == "running" and not control_degradato
     n_placed = n_signals = 0
-    if status == "running":
+    if running:
         n_placed, n_signals = scan_and_place(db=db, market=market, engine=engine,
                                              rows=rows, params=params, mode=mode,
                                              now=now, risk_ctx=risk_ctx)
 
-    running = status == "running"
     mods = _extra_mods(extra_mods)
     # (d-bis) ANOMALIE: cecchino a ogni ciclo sulle righe con quote cambiate
     anomalies = process_anomalies(
@@ -4451,6 +4850,31 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
 # settlement, feed cieco) finivano nello storico senza dire se riguardavano
 # soldi veri o finti — e a posteriori era impossibile verificare alcunche'.
 _LOG_MODE: dict[str, str] = {"value": ""}
+
+
+_CICLO_IN_ERRORE = {"value": False}
+
+
+def _segnala_errore_di_ciclo(ex: Exception) -> None:
+    """Scrive l'errore sul control, una sola volta finche' dura."""
+    if _CICLO_IN_ERRORE["value"]:
+        return
+    try:
+        _real_db.set_control(error=f"{type(ex).__name__}: {str(ex)[:180]}")
+        _CICLO_IN_ERRORE["value"] = True
+    except Exception:  # noqa: BLE001 — se non si puo' scrivere, pazienza: c'e' il log
+        pass
+
+
+def _pulisci_errore_di_ciclo() -> None:
+    """Primo ciclo riuscito dopo un errore: si toglie la bandiera."""
+    if not _CICLO_IN_ERRORE["value"]:
+        return
+    try:
+        _real_db.set_control(error=None)
+    except Exception:  # noqa: BLE001
+        return
+    _CICLO_IN_ERRORE["value"] = False
 
 
 def set_log_mode(mode: str) -> None:
@@ -4564,9 +4988,18 @@ def main() -> None:
             except Exception as ex:  # noqa: BLE001 — il loop non deve morire
                 logger.exception("[safe.bot] errore di ciclo: %s", str(ex)[:200])
                 try:
-                    _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200]})
+                    _real_db.log("error", {"reason": "cycle_exception", "err": str(ex)[:200],
+                                           "critical": True})
                 except Exception:  # noqa: BLE001
                     pass
+                # CERT. 13/09 — lo si DICE anche sul control. La colonna ``error``
+                # e lo stato 'error' esistono dallo schema iniziale e non venivano
+                # scritti da nessuno: un ciclo che esplodeva a ripetizione lasciava
+                # la dashboard con un tranquillo "in esecuzione". Chi guarda deve
+                # vedere che il servizio non sta lavorando.
+                _segnala_errore_di_ciclo(ex)
+            else:
+                _pulisci_errore_di_ciclo()
             time.sleep(max(interval, 1.0))
     finally:
         try:

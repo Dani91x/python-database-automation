@@ -203,6 +203,12 @@ def traded_signal_keys(mode: Optional[str] = None) -> set[tuple[str, str]]:
         q = (
             _sb().table("safe_strategy_trades").select("event_id,signal_key")
             .eq("origin", "auto").neq("status", "error")
+            # allineato all'indice unico del DB ``uq_safe_trades_signal``, che
+            # e' parziale anche su ``closes_trade_id IS NULL``: i due guardiani
+            # dello stesso invariante devono filtrare le STESSE righe, altrimenti
+            # una gamba di chiusura che eredita il ``signal_key`` del padre
+            # risulterebbe "gia' tradata" per Python e libera per il DB.
+            .is_("closes_trade_id", "null")
         )
         if m:
             q = q.eq("mode", m)

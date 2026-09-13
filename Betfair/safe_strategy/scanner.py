@@ -80,8 +80,14 @@ MIKE_OU_MARKET_TYPES = PRE_KO_OU_MARKET_TYPES
 # l'ingresso e il regolamento e l'attivita' "linee assenti dal feed".
 #
 # Il costo di alzarlo e' trascurabile: ogni partita Mike pesa 2 mercati, quindi
-# 40 partite = 80 mercati su una capacita' di 2000 (200 per connessione x 10).
-# Il rischio di NON alzarlo e' la perdita piena su una posizione aperta.
+# 40 partite = 80 mercati.
+# CORREZIONE 13/09: la capacita' VIVA non e' 2000. 2000 (200 x 10 connessioni) e'
+# il massimo teorico di Betfair; la configurazione in uso e' 4 connessioni x 180
+# mercati = 720 slot (``stream.py``, nessuna variabile d'ambiente che la alzi).
+# Il rischio di NON alzare il tetto e' comunque la perdita piena su una
+# posizione aperta — ma dal 13/09 il taglio non e' piu' casuale: le partite
+# arrivano ordinate per SOLDI A RISCHIO decrescente (``select_opp_candidates``),
+# quindi se il tetto morde restano fuori quelle con meno denaro sopra.
 # Override: MIKE_MAX_FOLLOWED (env vuota = default, mai `??`).
 def _mike_max_followed() -> int:
     import os
@@ -132,7 +138,15 @@ def select_opp_candidates(
     cap = OPP_MAX_EVENTS if max_events is None else int(max_events)
     cap_f = MIKE_MAX_FOLLOWED if max_followed is None else int(max_followed)
     keep_set = {str(e) for e in (followed or ())}
-    keep = [e for e in candidates if str(e) in keep_set][: max(0, cap_f)]
+    # CERT. 13/09 — quando il tetto MORDE, l'ordine che conta e' quello di
+    # ``followed`` (le partite arrivano gia' ordinate per SOLDI A RISCHIO
+    # decrescente, ``db.list_mike_followed_event_ids``), NON quello dei
+    # candidati dello scanner. Prima si scorrevano i ``candidates``, ordinati
+    # per "minuti piu' avanzati": il tetto tagliava le partite APPENA INIZIATE,
+    # cioe' proprio quelle dove la copertura Over 4.5 serve di piu'.
+    # Alzare il numero non basterebbe: sposterebbe il problema piu' in la'.
+    in_gioco = {str(e) for e in candidates}
+    keep = [str(e) for e in (followed or ()) if str(e) in in_gioco][: max(0, cap_f)]
     kept = set(keep)
     if len(keep_set) > len(keep):
         # una partita con SOLDI A RISCHIO tagliata dal tetto resta senza quote:
@@ -140,7 +154,9 @@ def select_opp_candidates(
         # il tetto si alza prima che costi una perdita piena.
         logger.warning(
             "[scanner] %d partite seguite da Mike OLTRE il tetto %d: restano senza "
-            "quote in gioco (nessuna copertura ne' uscita). Alzare MIKE_MAX_FOLLOWED.",
+            "quote in gioco (nessuna copertura ne' uscita). Fuori restano quelle con "
+            "MENO denaro sopra (ordine per esposizione), ma il tetto va alzato: "
+            "MIKE_MAX_FOLLOWED.",
             len(keep_set) - len(keep), cap_f)
     rest = [e for e in candidates if e not in kept]
     return keep + rest[: max(0, cap)]
@@ -360,9 +376,39 @@ def books_period_tennis(any_inplay: bool) -> float:
     return 10.0 if any_inplay else 60.0
 
 
+# Campi che NON contano per decidere se riscrivere la riga: cambiano di continuo
+# e non sono un gate per nessuno.
+# CERT. 13/09 — ``total_matched`` (e il gemello del 1X2) si muove a OGNI scambio.
+# Tenendolo nella firma, una partita in gioco molto scambiata riscriveva ~12 KB
+# di JSONB ogni pochi secondi per un contatore che nessuno usa come condizione:
+# Mike lo dichiara "diagnostica, nessun gate", Safe/Omega/frontend lo mostrano e
+# basta. La tabella e' TOASTata e pubblicata su realtime, quindi ogni UPDATE
+# costa heap + TOAST + indice + WAL + decodifica logica: l'amplificazione e' di
+# 3-5 volte. Il valore resta NEL payload (viaggia alla prima riscrittura vera),
+# esce solo dalla FIRMA.
+# ``seen_ms`` (momento dell'ultimo book ricevuto per quel mercato) cambia a
+# ogni poll per costruzione: sta nel payload perche' chi legge deve poter
+# distinguere "prezzo fermo" da "mercato non piu' osservato", ma nella firma
+# riscriverebbe la riga a ogni giro.
+_FUORI_FIRMA = ("total_matched", "mo_total_matched", "seen_ms")
+
+
+def _senza_campi_rumorosi(value: Any) -> Any:
+    """Copia del payload senza i campi che non devono innescare una riscrittura
+    (ricorsiva: ``total_matched`` sta anche dentro i blocchi cs/ou/btts)."""
+    if isinstance(value, dict):
+        return {k: _senza_campi_rumorosi(v) for k, v in value.items()
+                if k not in _FUORI_FIRMA}
+    if isinstance(value, (list, tuple)):
+        return [_senza_campi_rumorosi(v) for v in value]
+    return value
+
+
 def payload_signature(payload: Dict[str, Any]) -> str:
-    """Firma stabile del payload per il write-on-change (niente updated_at qui)."""
-    canon = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    """Firma stabile del payload per il write-on-change (niente updated_at qui,
+    e niente contatori di scambiato: vedi ``_FUORI_FIRMA``)."""
+    canon = json.dumps(_senza_campi_rumorosi(payload), sort_keys=True,
+                       separators=(",", ":"), default=str)
     return hashlib.md5(canon.encode("utf-8")).hexdigest()
 
 
@@ -513,6 +559,18 @@ def build_cs_block(
     for s in selections:
         name = str(s.get("name") or "")
         pair = {
+            # CERT. 13/09 — il ``selection_id`` VIAGGIA COL PREZZO.
+            # Prima il pair portava solo le quote e l'id veniva ri-risolto a
+            # valle (``engine._any_other_selection_ids``) ri-scandendo le stesse
+            # selezioni con una regola di precedenza OPPOSTA (qui vince l'ULTIMO
+            # nome che matcha, la' il PRIMO). Prezzo dell'ordine e selezione su
+            # cui si piazza arrivavano quindi da due passaggi indipendenti: se
+            # due runner matchassero lo stesso schema si piazzerebbe il prezzo
+            # di uno sulla selezione di un altro. Money-critical, e chiuso alla
+            # radice tenendoli insieme. Effetto collaterale risolto:
+            # ``exits.position_side`` leggeva ``blk.get("selection_id")`` e
+            # trovava sempre None — il suo percorso primario era codice morto.
+            "selection_id": s.get("selection_id"),
             "back": s.get("back"), "lay": s.get("lay"),
             "back_size": s.get("back_size"), "lay_size": s.get("lay_size"),
         }

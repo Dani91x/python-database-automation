@@ -29,6 +29,7 @@ riusato tale e quale da ``omega_service._flumine_gate``.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
@@ -302,7 +303,14 @@ def place(
     # ``place_order_live``: con ``LIVE_ORDER_MODE=PAPER`` nel .env — cioe' con
     # l'operatore che ha dichiarato TUTTO il sistema in paper — un LIVE del bot
     # passava lo stesso e muoveva soldi veri. I due freni valgono ovunque.
-    blocco = _live_brake()
+    # CERT. 13/09 (review) — il freno vale SOLO sulle APERTURE.
+    # Bloccare anche le CHIUSURE sarebbe l'opposto della protezione: una
+    # posizione live resterebbe a sanguinare senza via di fuga, e dopo
+    # ``exit_max_retries`` il bot smetterebbe pure di provarci. E' la stessa
+    # regola che il worker della coda applica e documenta da sempre
+    # (``live_order_worker``: "il kill-switch blocca le aperture, non le
+    # uscite"). ``is_closing`` e' gia' calcolato piu' sopra.
+    blocco = None if is_closing else _live_brake()
     if blocco:
         return PlaceOutcome("error", None, 0.0, None, blocco)
     try:
@@ -786,10 +794,42 @@ def known_closings(db, trade: dict[str, Any]) -> Optional[list[dict[str, Any]]]:
         return None
 
 
+# Uscite per cui NON uscire e' peggio che pagare un tick (il manuale: "si esce
+# subito e si accetta"). Vedi ``close_plan(place_at_ticks=...)``.
+URGENT_EXIT_KINDS = ("loss", "mandatory", "red_card")
+EXIT_TICKS_URGENT = 1
+
+
+def ticks_for_exit(exit_kind: Optional[str]) -> int:
+    """Tick di scostamento verso la controparte per questa uscita."""
+    return EXIT_TICKS_URGENT if str(exit_kind or "") in URGENT_EXIT_KINDS else 0
+
+
+def _su_tick(price: Optional[float], side: str) -> Optional[float]:
+    """Prezzo portato al tick valido nella direzione che ABBINA per chi lo usa.
+
+    Il ``best_back`` serve a chi deve piazzare un BACK di chiusura (taker:
+    ``tick_down``), il ``best_lay`` a chi piazza un LAY (taker: ``tick_up``).
+    Su un prezzo gia' valido — il caso normale — sono no-op esatti."""
+    if price is None:
+        return None
+    try:
+        v = float(price)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v) or v <= 1.0:
+        return None
+    try:
+        return E.tick_down(v) if side == "back" else E.tick_up(v)
+    except (ValueError, TypeError):
+        return None
+
+
 def close_plan(trade: dict[str, Any], *, best_back: Optional[float],
                best_lay: Optional[float], amount: Optional[float] = None,
                fraction: float = 1.0,
-               closings: Optional[list[dict[str, Any]]] = None) -> GreenupPlan:
+               closings: Optional[list[dict[str, Any]]] = None,
+               place_at_ticks: int = 0) -> GreenupPlan:
     """Ordine UNICO che chiude (tutta o in parte) la gamba, al best opposto.
 
     Riusa ``compute_greenup`` (matematica pura e testata del runner live). Il
@@ -799,14 +839,37 @@ def close_plan(trade: dict[str, Any], *, best_back: Optional[float],
     fillate: il piano lavora sull'esposizione RESIDUA (cash-out ripetuti).
     """
     win, lose = net_exposures(trade, closings)
+    # CERT. 13/09 (review) — il piano nasce su TICK VALIDI.
+    # ``place`` porta il prezzo al tick con ``tick_up``/``tick_down``, ma la size
+    # del piano e' ``diff/p`` calcolata sul prezzo ORIGINALE: se lo snap sposta
+    # il prezzo, la copertura non pareggia piu'. Oggi i prezzi vengono dal book
+    # (gia' tick validi) e lo snap e' inerte, ma non per costruzione: basta un
+    # prezzo calcolato o arrivato dalla UI. Snappando QUI, prima del calcolo,
+    # prezzo e size restano coerenti per definizione.
     kw = dict(matched_if_win=win, matched_if_lose=lose,
-              best_back_price=best_back, best_lay_price=best_lay)
+              best_back_price=_su_tick(best_back, "back"),
+              best_lay_price=_su_tick(best_lay, "lay"))
+    # CERT. 13/09 — BET DELAY. In-play Betfair valuta l'ordine DOPO il ritardo
+    # (1-5 s nel calcio): un FILL_OR_KILL mandato esattamente al best di adesso
+    # trova un mercato gia' diverso e viene UCCISO. Sulle uscite URGENTI —
+    # perdita, uscita obbligatoria, rosso — il manuale dice "esci subito e
+    # accetta": non uscire e' molto peggio che pagare un tick. Quindi solo li'
+    # si offre un tick in piu' verso la controparte (``_place_through`` della
+    # libreria: LAY piu' alto, BACK piu' basso). Sulle uscite a profitto/tempo
+    # resta 0: li' ritentare costa poco e il prezzo conta.
+    if place_at_ticks:
+        kw["place_at_ticks"] = int(place_at_ticks)
     if amount is not None:
         try:
             return compute_greenup(**kw, amount=float(amount), fraction=_frac(fraction))
-        except TypeError:  # libreria senza 'amount': degrada alla frazione
+        except TypeError:  # libreria senza 'amount'/'place_at_ticks': degrada
             logger.warning("[safe.exec] compute_greenup senza 'amount': uso fraction=%s", fraction)
-    return compute_greenup(**kw, fraction=_frac(fraction))
+            kw.pop("place_at_ticks", None)
+    try:
+        return compute_greenup(**kw, fraction=_frac(fraction))
+    except TypeError:      # libreria senza 'place_at_ticks'
+        kw.pop("place_at_ticks", None)
+        return compute_greenup(**kw, fraction=_frac(fraction))
 
 
 def _frac(fraction: Optional[float]) -> float:
@@ -859,7 +922,8 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     best_back = _num(prices.get("back"))
     best_lay = _num(prices.get("lay"))
     plan = close_plan(trade, best_back=best_back, best_lay=best_lay,
-                      amount=amount, fraction=fraction, closings=legs)
+                      amount=amount, fraction=fraction, closings=legs,
+                      place_at_ticks=ticks_for_exit(exit_kind))
     if not plan.actionable:
         return {"error": "niente_da_chiudere", "note": plan.note}
 
