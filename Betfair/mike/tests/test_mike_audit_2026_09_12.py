@@ -705,3 +705,76 @@ class TestLaSchedaDiceQuandoEStataScritta:
         originale = {"event_id": "E1", "state": "FLAT"}
         D.upsert_event(originale)
         assert "updated_at" not in originale
+
+
+# ===========================================================================
+# CERT. 13/09 - le gambe morte non devono zavorrare la scheda
+# ===========================================================================
+class TestPotaturaDelleGambeMorte:
+    """La scheda dell'evento portava TUTTE le gambe mai create. Il difetto della
+    copertura (corretto il 12/09) ne ha lasciate 180 su una sola partita: Koper
+    v Olimpija pesava 60 KB, di cui 56 di sole gambe annullate. ``get_mike_state``
+    ne aggrega fino a 200 di eventi e arrivava a 7,6 s contro un timeout di 8:
+    da li' l'alert «canceling statement due to statement timeout»."""
+
+    @staticmethod
+    def _leg(ref, role, status="cancelled", matched=0.0):
+        return E.Leg(ref=ref, role=role, market=E.MARKET_OU45, selection=E.SEL_OVER,
+                     side="back", price=5.0, size=2.0, status=status, matched=matched)
+
+    def test_il_caso_vero_da_180_gambe(self) -> None:
+        legs = [self._leg(f"over_cover-0-{i}", "over_cover") for i in range(180)]
+        legs.append(self._leg("under_entry-0-1", "under_entry", "open", 10.0))
+        out = E.prune_dead_legs(legs)
+        assert len(out) == 6, [l.ref for l in out]
+        assert out[-1].ref == "under_entry-0-1"
+
+    def test_i_soldi_non_si_toccano_MAI(self) -> None:
+        """Una gamba annullata ma PARZIALMENTE abbinata e' denaro: resta."""
+        legs = [self._leg(f"over_cover-0-{i}", "over_cover") for i in range(50)]
+        legs.insert(0, self._leg("over_cover-0-x", "over_cover", "cancelled", matched=1.5))
+        out = E.prune_dead_legs(legs)
+        assert any(l.ref == "over_cover-0-x" for l in out)
+
+    def test_le_gambe_vive_non_si_toccano(self) -> None:
+        for stato in ("pending", "open", "settled", E.STATUS_RECONCILE):
+            legs = [self._leg(f"c-{i}", "over_cover") for i in range(20)]
+            legs.append(self._leg("viva", "over_cover", stato))
+            out = E.prune_dead_legs(legs)
+            assert any(l.ref == "viva" for l in out), stato
+
+    def test_si_tiene_l_ULTIMO_tentativo_per_ruolo(self) -> None:
+        """Chi legge «l'ultimo tentativo» deve continuare a trovarlo."""
+        legs = ([self._leg(f"a-{i}", "over_cover") for i in range(30)]
+                + [self._leg(f"b-{i}", "under_green") for i in range(30)])
+        out = E.prune_dead_legs(legs)
+        per_ruolo = {}
+        for l in out:
+            per_ruolo.setdefault(l.role, []).append(l.ref)
+        assert per_ruolo["over_cover"][-1] == "a-29"
+        assert per_ruolo["under_green"][-1] == "b-29"
+        assert len(per_ruolo["over_cover"]) == 5 and len(per_ruolo["under_green"]) == 5
+
+    def test_l_ordine_relativo_non_cambia(self) -> None:
+        legs = [self._leg("x1", "r1", "open", 1.0), self._leg("d1", "r1"),
+                self._leg("x2", "r2", "open", 1.0), self._leg("d2", "r2")]
+        assert [l.ref for l in E.prune_dead_legs(legs)] == ["x1", "d1", "x2", "d2"]
+
+    def test_poche_gambe_restano_tutte(self) -> None:
+        legs = [self._leg(f"c-{i}", "over_cover") for i in range(3)]
+        assert len(E.prune_dead_legs(legs)) == 3
+
+    def test_lista_vuota_e_tetto_zero(self) -> None:
+        assert E.prune_dead_legs([]) == []
+        legs = [self._leg("d", "r"), self._leg("v", "r", "open", 1.0)]
+        assert [l.ref for l in E.prune_dead_legs(legs, 0)] == ["v"]
+
+    def test_il_PNL_non_cambia_dopo_la_potatura(self) -> None:
+        """La prova che conta: le gambe tolte non valevano nulla."""
+        legs = [E.Leg(ref="u", role="under_entry", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                      side="back", price=1.5, size=10.0, status="open", matched=10.0,
+                      avg_price=1.5)]
+        legs += [self._leg(f"c-{i}", "over_cover") for i in range(100)]
+        prima = E.net_pnl_by_total(legs, 0.05)
+        dopo = E.net_pnl_by_total(E.prune_dead_legs(legs), 0.05)
+        assert prima == dopo

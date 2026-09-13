@@ -586,6 +586,51 @@ def cashout_value(legs: List[Leg], books: Dict[Tuple[str, str], Book], commissio
                         per_selection_net=per_net)
 
 
+# Quante gambe ANNULLATE e mai abbinate si tengono per ruolo nello stato
+# dell'evento. Servono solo a leggere "l'ultimo tentativo": oltre sono zavorra.
+MAX_CANCELLED_PER_ROLE = 5
+
+
+def prune_dead_legs(legs: List[Leg], max_per_role: int = MAX_CANCELLED_PER_ROLE) -> List[Leg]:
+    """Toglie le gambe ANNULLATE e MAI ABBINATE oltre le ultime ``max_per_role``
+    per ruolo. L'ordine relativo delle superstiti non cambia.
+
+    CERT. 13/09 — perche' esiste. La scheda dell'evento porta con se' TUTTE le
+    gambe mai create, comprese quelle annullate. Il difetto della copertura
+    corretto il 12/09 (size sotto il minimo Betfair, ritentata a ogni giro) ne
+    ha lasciate 180 su una sola partita: Koper v Olimpija pesava **60 KB**, di
+    cui 56 di sole gambe annullate. ``get_mike_state`` ne aggrega fino a 200 di
+    eventi: la RPC arrivava a 7,6 secondi, contro un timeout di 8 — da cui gli
+    alert «canceling statement due to statement timeout» sulla pagina Mike.
+
+    Cosa NON si tocca mai:
+      * ogni gamba con ``matched > 0`` — sono soldi veri, entrano nel P&L;
+      * ogni gamba non annullata (pending, aperta, da riconciliare, regolata).
+    Una gamba annullata con abbinato zero non entra in nessun conto
+    (``_market_pnl_by_total`` salta ``matched <= 0``) e il suo ``ref`` non serve
+    piu': la numerazione viene da ``ctx.seq``, non dalla lunghezza della lista.
+    Se ne tengono comunque le ultime per ruolo, cosi' chi legge "l'ultimo
+    tentativo" continua a trovarlo.
+    """
+    if max_per_role < 0:
+        return list(legs)
+    morte_per_ruolo: Dict[str, int] = {}
+    tenere: List[bool] = []
+    # si scorre dal fondo: le ULTIME per ruolo sono quelle da conservare
+    for leg in reversed(legs):
+        morta = (str(getattr(leg, "status", "")) == "cancelled"
+                 and float(getattr(leg, "matched", 0.0) or 0.0) <= 0.0)
+        if not morta:
+            tenere.append(True)
+            continue
+        r = str(getattr(leg, "role", ""))
+        n = morte_per_ruolo.get(r, 0)
+        tenere.append(n < max_per_role)
+        morte_per_ruolo[r] = n + 1
+    tenere.reverse()
+    return [l for l, ok in zip(legs, tenere) if ok]
+
+
 def active_legs(legs: List[Leg]) -> List[Leg]:
     """Gambe che portano ancora rischio: i cicli archiviati sono chiusi e bloccati."""
     return [l for l in legs if not l.archived]

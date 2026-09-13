@@ -182,7 +182,11 @@ def _row_from_ctx(row: Dict[str, Any], ctx: E.MatchCtx, extra: Dict[str, Any]) -
     out["state"] = ctx.state
     out["cycle_no"] = int(ctx.cycle_no)
     out["entry_price_initial"] = ctx.entry_price_initial
-    out["positions"] = [dataclasses.asdict(l) for l in ctx.legs]
+    # CERT. 13/09 — si salvano le gambe POTATE: quelle annullate e mai abbinate
+    # oltre le ultime per ruolo sono zavorra (vedi engine.prune_dead_legs).
+    # Una riga da 60 KB di sole gambe morte faceva sforare il timeout di
+    # get_mike_state e produceva l'alert «statement timeout» sulla pagina Mike.
+    out["positions"] = [dataclasses.asdict(l) for l in E.prune_dead_legs(ctx.legs)]
     out["settled_pnl"] = ctx.settled_pnl
     # i campi dell'engine VINCONO sui valori stantii di extra (bug: last_green_at
     # sovrascritto dal ctx precedente → cooldown ignorato)
