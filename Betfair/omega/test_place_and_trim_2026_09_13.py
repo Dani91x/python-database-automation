@@ -267,3 +267,46 @@ def test_size_non_numerica_o_prezzo_assurdo(client):
     with pytest.raises(ValueError, match="non piazzabile"):
         piazza(size=float("nan"))
     assert client.chiamate == []
+
+
+# ---------------------------------------------------------------------------
+# Il ritiro finale NON puo' fallire in silenzio (code review 13/09)
+# ---------------------------------------------------------------------------
+def test_se_il_ritiro_finale_fallisce_si_solleva(client, monkeypatch):
+    """CRITICO della code review. Qui il riprezzo e' RIUSCITO: senza ritiro
+    resta un ordine vivo a un prezzo REALE, non piu' al parcheggio. Dichiararlo
+    annullato vorrebbe dire non contabilizzarlo mai — e nel frattempo il bot
+    rientra: posizione doppia con soldi veri.
+
+    Se il ritiro fallisce si SOLLEVA, cosi' la gamba finisce in riconciliazione
+    e l'ordine viene cercato su Betfair invece di essere dato per morto.
+    """
+    client.matched_finale = 0.0
+    vero_cancel = M._submin_cancel
+
+    def cancel_che_fallisce(market_id, bet_id, size_reduction):
+        if size_reduction is None:        # e' il RITIRO totale
+            raise RuntimeError("rete caduta")
+        return vero_cancel(market_id, bet_id, size_reduction)
+
+    monkeypatch.setattr(M, "_submin_cancel", cancel_che_fallisce)
+    with pytest.raises(RuntimeError, match="ritiro del residuo FALLITO"):
+        piazza()
+
+
+def test_un_ritiro_best_effort_non_copre_un_errore_gia_in_corso(client, monkeypatch):
+    """Quando si sta gia' propagando un errore il ritiro resta best-effort: il
+    chiamante fallira' comunque e la gamba andra' in riconciliazione, quindi un
+    ritiro fallito in piu' non cambia l'esito — e non deve nascondere il motivo
+    vero del fallimento."""
+    client.tagliato = 0.0                  # il taglio non viene confermato
+    vero_cancel = M._submin_cancel
+
+    def cancel_che_fallisce(market_id, bet_id, size_reduction):
+        if size_reduction is None:
+            raise RuntimeError("rete caduta")
+        return vero_cancel(market_id, bet_id, size_reduction)
+
+    monkeypatch.setattr(M, "_submin_cancel", cancel_che_fallisce)
+    with pytest.raises(RuntimeError, match="taglio non confermato"):
+        piazza()

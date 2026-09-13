@@ -635,8 +635,19 @@ def _submin_cancel(market_id: str, bet_id: str, size_reduction: Optional[float])
     ) or {}
 
 
-def _submin_ritira(market_id: str, bet_id: Optional[str]) -> None:
-    """Ritiro best-effort del residuo: non deve mai far fallire la propagazione."""
+def _submin_ritira(market_id: str, bet_id: Optional[str], obbligatorio: bool = False) -> None:
+    """Ritira il residuo di un ordine.
+
+    ``obbligatorio=False`` (default): best-effort. Si usa quando si sta gia'
+    propagando un errore — il chiamante fallira' comunque e la gamba finira' in
+    riconciliazione, quindi un ritiro fallito in piu' non cambia l'esito.
+
+    ``obbligatorio=True``: un fallimento SOLLEVA. Si usa nel fill-or-kill, dove
+    il riprezzo e' RIUSCITO e senza ritiro l'ordine resta vivo su Betfair a un
+    prezzo REALE. Li' un "non ci sono riuscito" silenzioso vorrebbe dire
+    dichiarare annullato un ordine che si abbinera' piu' tardi, e che nessuno
+    contabilizzera': posizione doppia con soldi veri (code review 13/09).
+    """
     if not bet_id:
         return
     try:
@@ -644,6 +655,11 @@ def _submin_ritira(market_id: str, bet_id: Optional[str]) -> None:
     except Exception as ex:  # noqa: BLE001
         logger.critical("[submin] RITIRO FALLITO bet %s su %s: %s — controllare a mano",
                         bet_id, market_id, str(ex)[:160])
+        if obbligatorio:
+            raise RuntimeError(
+                "place-and-trim: riprezzo riuscito ma ritiro del residuo FALLITO "
+                "(bet %s su %s): l'ordine puo' essere ancora VIVO, si riconcilia. %s"
+                % (bet_id, market_id, str(ex)[:120])) from ex
 
 
 def place_submin_live(
@@ -770,7 +786,11 @@ def place_submin_live(
 
     # C-1: la parte non abbinata NON resta sul book. O si abbina, o non esiste.
     if fill_or_kill and matched < target - 0.005:
-        _submin_ritira(market_id, nuovo_bet)
+        # OBBLIGATORIO: qui il riprezzo e' andato a buon fine, quindi senza
+        # ritiro resta un ordine vivo a un prezzo reale. Se il ritiro fallisce
+        # si solleva, la gamba va in riconciliazione e l'ordine viene cercato
+        # su Betfair invece di essere dato per annullato.
+        _submin_ritira(market_id, nuovo_bet, obbligatorio=True)
         if matched <= 0:
             logger.info("[submin] %s %s %.2f EUR @ %.2f: nessuna controparte, ritirato",
                         side_l, selection_id, target, target_tick)

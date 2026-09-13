@@ -394,6 +394,24 @@ describe('Mike page — Operazioni, Risultati, Attività, KPI', () => {
         expect(screen.getByTestId('equity-card')).toBeInTheDocument();
     });
 
+    it('una partita armata in LIVE resta LIVE anche col toggle su paper', async () => {
+        // CODE REVIEW 13/09, CRITICO: il `mode` si congela quando la partita
+        // viene armata. Il backend la esegue con soldi veri comunque, quindi la
+        // card deve dirlo e i bottoni devono chiedere la doppia conferma — anche
+        // se il toggle della pagina è tornato su paper.
+        mState.mockResolvedValue(state({
+            events: [{ ...LIVE, event_id: 'eLive', event_name: 'Partita con soldi veri',
+                       mode: 'live' }],
+        }));
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('mike-cards')).toBeInTheDocument());
+        const card = screen.getAllByTestId('mike-match-card')
+            .find((c) => c.getAttribute('data-event-id') === 'eLive');
+        expect(card).toBeTruthy();
+        // la card sa di essere su soldi veri, indipendentemente dal toggle
+        expect(card!).toHaveTextContent(/LIVE|soldi veri/i);
+    });
+
     it('PAPER e SOLDI VERI non si sommano MAI: la pagina mostra una modalità sola', async () => {
         mState.mockResolvedValue(state({
             trades: [

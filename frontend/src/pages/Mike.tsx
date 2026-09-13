@@ -158,7 +158,14 @@ export default function Mike() {
     // partite vive. `locked` assente = "niente ancora bloccato su questa
     // partita", NON zero: sommarlo come 0 faceva scrivere "+0,00 €" nella barra
     // mentre ogni card diceva "—" (audit UI 3).
-    const locked = useMemo(() => lockedPnlTotal(active), [active]);
+    // CODE REVIEW 13/09, ALTO: le RIGHE erano filtrate per modalità, gli EVENTI
+    // no. Il «P&L bloccato» della barra sommava quindi euro veri e simulati —
+    // proprio il difetto che la certificazione dichiarava chiuso, ma solo a metà.
+    const attiveDelMio = useMemo(
+        () => active.filter((e) => String(e.mode ?? 'paper') === mode),
+        [active, mode],
+    );
+    const locked = useMemo(() => lockedPnlTotal(attiveDelMio), [attiveDelMio]);
     const lockedPnl = locked.value;
     const dailyStop = Number(bot.params.daily_loss_stop ?? 0);
     // OPERAZIONI della giornata = CICLI (1 apertura + le sue chiusure), mai le
@@ -286,13 +293,20 @@ export default function Mike() {
         // TUTTE le azioni che toccano la partita, non solo cash out e flatten:
         // `resume_event` in live rimette in gioco una partita con soldi veri e
         // `cancel` ritira ordini reali dal book (audit paper/live, difetto P7).
-        if (mode === 'live' && !bot.liveConfirmed) {
+        //
+        // CODE REVIEW 13/09, CRITICO: la modalità che conta è quella della
+        // PARTITA, non il toggle della pagina. Il `mode` si congela all'arming:
+        // una partita armata in live resta live anche col toggle su paper, e
+        // il backend la esegue con soldi veri. Chiavare la conferma sul toggle
+        // significava lasciar passare un ordine reale con UN SOLO clic.
+        const modePartita = bot.events.find((e) => e.event_id === eventId)?.mode ?? mode;
+        if ((modePartita === 'live' || mode === 'live') && !bot.liveConfirmed) {
             setLiveConfirmOpen(true);
             toast.warning('Conferma la modalità LIVE prima di operare con soldi veri');
             throw new Error('Modalità LIVE non confermata: nessun ordine è stato inviato.');
         }
         await bot.request(kind, eventId);
-    }, [mode, bot.liveConfirmed, bot.request]);
+    }, [mode, bot.liveConfirmed, bot.request, bot.events]);
 
     const pendingKindsOf = useCallback(
         (eventId: string) => REQUEST_KINDS.filter((k) => bot.isRequestPending(eventId, k)).join(','),
@@ -324,7 +338,13 @@ export default function Mike() {
             key={e.event_id}
             ev={e}
             params={bot.params}
-            mode={mode}
+            /* CODE REVIEW 13/09, CRITICO: la modalità della PARTITA, non il
+               toggle della pagina. Il `mode` si congela quando la partita viene
+               armata: una partita in live resta live anche col toggle su paper,
+               e il backend la esegue con soldi veri. Passare il toggle qui
+               significava mostrare una card "paper" e bottoni senza doppia
+               conferma su una posizione reale. */
+            mode={(e.mode as MikeMode) ?? mode}
             busy={bot.busy}
             stale={feedStale}
             staleReason={feedStale ? 'scanner fermo' : undefined}
