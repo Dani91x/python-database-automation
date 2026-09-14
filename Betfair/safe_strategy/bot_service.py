@@ -2724,6 +2724,42 @@ _LETTURA_FEED: dict[str, float] = {"ms": 0.0}
 # uscite per cui non approvare COSTA: sono quelle che il manuale dichiara
 # obbligatorie o urgenti. La proposta le marca cosi' la pagina puo' urlarle.
 _USCITE_URGENTI = ("loss", "mandatory", "red_card")
+# Ogni quanto si ricontrolla che la proposta sia ANCORA in attesa di firma.
+# E' anche l'intervallo minimo fra una proposta ignorata e la successiva: un
+# INTERVALLO, non un blocco. L'utente ha deciso che le proposte ignorate «devono
+# ripresentarsi all'occasione successiva», e senza questo ricontrollo il
+# marcatore sulla riga restava valorizzato per sempre — una sola proposta per
+# posizione, e chi ignorava una volta restava senza bottone.
+_RICONTROLLO_PROPOSTA_S = 20.0
+# Quando si RIPROPONE una chiusura che l'utente ha ignorato. Decisione
+# dell'utente: «se rifiuto, riproporre quando cambia qualcosa IN BENE O MALE».
+# Non a tempo fisso — sarebbe una raffica che si impara a ignorare — e non una
+# volta sola: su un CAMBIAMENTO, in una direzione o nell'altra.
+_RIPROPOSTA_TICK = 2        # il prezzo di chiusura si e' mosso di almeno N tick
+_RIPROPOSTA_EUR = 0.10      # ...oppure il P&L bloccabile e' cambiato di almeno tanto
+
+
+def _cambiamento_sostanziale(rifiutata: dict[str, Any], prezzo: Optional[float],
+                             punteggio: Optional[str], locked: Optional[float],
+                             side: str) -> Optional[str]:
+    """La situazione e' DIVERSA da quella che l'utente ha gia' visto e scartato?
+
+    Ritorna il motivo (da mostrare in pagina) oppure None. «Diverso» vale in
+    entrambe le direzioni: se ignoro a −0,32 € e dieci minuti dopo la stessa
+    uscita costa −1,08, quella e' una situazione nuova e va rivista. Ma anche il
+    contrario — se nel frattempo e' migliorata, l'utente vuole saperlo.
+    """
+    if str(punteggio or "") != str(rifiutata.get("score") or ""):
+        return "il punteggio e' cambiato"
+    vecchio_eur, nuovo_eur = rifiutata.get("locked"), locked
+    if isinstance(vecchio_eur, (int, float)) and isinstance(nuovo_eur, (int, float)):
+        if abs(float(nuovo_eur) - float(vecchio_eur)) >= _RIPROPOSTA_EUR - 1e-9:
+            verso = "migliorato" if float(nuovo_eur) > float(vecchio_eur) else "peggiorato"
+            return f"il P&L bloccabile e' {verso}"
+    passi = X.scorrimento(rifiutata.get("price"), prezzo, side)
+    if passi is not None and abs(int(passi)) >= _RIPROPOSTA_TICK:
+        return "il prezzo di chiusura si e' mosso"
+    return None
 
 
 def _catena_dei_tempi(feed_row: Optional[dict[str, Any]], now: datetime) -> dict[str, Any]:
@@ -2781,9 +2817,55 @@ def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
     # traffico inutile su un database che a settembre e' gia' andato giu' una
     # volta per esaurimento di I/O.
     sostanza = (str(decision.kind), str(decision.reason), size_ora)
-    if (int(prima.get("request_id") or 0) > 0
-            and tuple(prima.get("sostanza") or ()) == sostanza):
-        return True          # proposta gia' viva e invariata: nessuna scrittura
+    invariata = (int(prima.get("request_id") or 0) > 0
+                 and tuple(prima.get("sostanza") or ()) == sostanza)
+    if invariata:
+        # CERT. 14/09 — IL MARCATORE NON BASTA A DIRE CHE LA PROPOSTA E' VIVA.
+        # Prima si usciva qui e basta: se nel frattempo l'utente aveva IGNORATO
+        # la proposta (richiesta -> 'rejected'), il marcatore restava sulla riga
+        # e non ne nasceva mai piu' una. Chi ignorava una volta si ritrovava
+        # senza bottone su una posizione aperta, mentre il prezzo si muoveva
+        # contro. Ogni ``_RICONTROLLO_PROPOSTA_S`` si va a VEDERE se e' ancora
+        # in attesa di firma, invece di dedurlo da un campo scritto tempo prima.
+        eta = now.timestamp() - (XE.parse_ts(prima.get("ts")) or 0.0)
+        if eta < _RICONTROLLO_PROPOSTA_S:
+            return True      # ricontrollata da poco: nessuna lettura, nessuna scrittura
+        try:
+            viva = db.proposta_di_chiusura_viva(int(trade["id"]))
+        except Exception:  # noqa: BLE001 — nel dubbio si RIPROPONE: una proposta
+            viva = None     # in piu' non costa, una in meno lascia senza uscita
+        if viva is not None:
+            # ancora in attesa di firma: si rinfresca solo il marcatore, la
+            # richiesta non si riscrive (il prezzo vivo lo pesca la pagina)
+            nuovo = {**meta, PROPOSTA_KEY: {**prima, "ts": now.isoformat()}}
+            db.update_trade(int(trade["id"]), meta=nuovo)
+            trade["meta"] = nuovo
+            return True
+        # IGNORATA (o finita in errore). Non si ripropone subito e nemmeno a
+        # tempo: si ripropone quando la SITUAZIONE e' cambiata, in bene o in
+        # male. Alla prima volta si fotografa cio' che l'utente ha scartato.
+        sit_ora = XE.situation(trade, payload)
+        conti_ora = _conti_di_chiusura(db, trade, prices, params)
+        lato_ora = "lay" if str(trade.get("side") or "").lower() == "back" else "back"
+        prezzo_ora_ = _f(prices.get(lato_ora), None)
+        rifiutata = prima.get("rifiutata")
+        if not isinstance(rifiutata, dict):
+            rifiutata = {"price": prezzo_ora_, "score": sit_ora.get("score"),
+                         "locked": conti_ora["locked"], "ts": now.isoformat()}
+            nuovo = {**meta, PROPOSTA_KEY: {**prima, "ts": now.isoformat(),
+                                            "rifiutata": rifiutata}}
+            db.update_trade(int(trade["id"]), meta=nuovo)
+            trade["meta"] = nuovo
+            return True      # scartata adesso: si aspetta che cambi qualcosa
+        perche = _cambiamento_sostanziale(rifiutata, prezzo_ora_, sit_ora.get("score"),
+                                          conti_ora["locked"], lato_ora)
+        if perche is None:
+            nuovo = {**meta, PROPOSTA_KEY: {**prima, "ts": now.isoformat()}}
+            db.update_trade(int(trade["id"]), meta=nuovo)
+            trade["meta"] = nuovo
+            return True      # tutto come l'aveva vista: non si insiste
+        # qualcosa e' cambiato: si ricomincia, col prezzo di ADESSO
+        prima = {**prima, "riproposta_perche": perche}
     sit = XE.situation(trade, payload)
     conti = _conti_di_chiusura(db, trade, prices, params)
     # l'istante della DECISIONE si conserva: se lo si rinfrescasse, la latenza
@@ -2850,6 +2932,11 @@ def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
         # approvata a mano — che e' quella che l'utente vuole vedere.
         "decided_at": decided_at,
         "proposed_at": now.isoformat(),
+        # perche' questa chiusura si ripresenta dopo che l'utente l'aveva
+        # ignorata: la pagina deve dirlo, o sembra insistenza invece che una
+        # situazione nuova.
+        **({"riproposta_perche": prima["riproposta_perche"]}
+           if prima.get("riproposta_perche") else {}),
     }
     try:
         rid = db.scrivi_proposta_di_chiusura(int(trade["id"]), corpo)

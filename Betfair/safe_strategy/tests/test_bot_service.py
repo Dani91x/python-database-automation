@@ -3313,3 +3313,118 @@ def test_i_due_stake_del_tennis_sono_di_DUE_MOTORI_diversi():
     assert float(p["risk"]["model_stake"]) == 7.0
     # e il motore delle 4 strategie usa il PRIMO, non il secondo
     assert EN.merge_params({"stake": {"backSize": 3.0}})["stake"]["backSize"] == 3.0
+
+
+# ---------------------------------------------------------------------------
+# CERT. 14/09 — IGNORARE UNA PROPOSTA NON DEVE TOGLIERE IL BOTTONE
+# Difetto trovato SU POSIZIONE LIVE APERTA: il marcatore `exit_proposal` restava
+# sulla riga anche dopo che la richiesta era finita 'rejected', quindi non ne
+# nasceva mai piu' una. Chi ignorava UNA volta si ritrovava senza modo di
+# chiudere dal cancelletto, mentre il prezzo si muoveva contro.
+# Decisione dell'utente: «se le ignoro devono ripresentarsi all'occasione
+# successiva».
+# ---------------------------------------------------------------------------
+from datetime import timedelta as _td
+
+
+def _porta_alla_proposta(db):
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+
+
+def test_una_proposta_IGNORATA_si_ripresenta_QUANDO_CAMBIA_QUALCOSA():
+    """Decisione dell'utente: «se rifiuto, riproporre quando cambia qualcosa in
+    bene o male». Non a tempo fisso — sarebbe una raffica che si impara a
+    ignorare — e non una volta sola.
+
+    Il caso vero, gia' successo su soldi veri: ignorata a lay 1,14 (chiudere
+    costava -0,32 EUR), 276 s dopo il prezzo era 1,59 e la stessa chiusura
+    costava -1,08. L'utente aveva ignorato UNA volta e non ha piu' rivisto
+    niente."""
+    db, tid = _db_tennis_con_cancelletto()
+    _porta_alla_proposta(db)
+    prima = _proposte(db)[0]
+
+    prima["status"] = "rejected"          # quello che fa `safe_request_ignore`
+    prima["result"] = {"ignorata_dall_utente": True, "motivo": "aspetto"}
+    assert _proposte(db) == []
+
+    # primo ricontrollo: si fotografa cio' che ha scartato, non si insiste
+    t1 = NOW + _td(seconds=S._RICONTROLLO_PROPOSTA_S + 1)
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4), updated_at=t1), at=t1)
+    assert _proposte(db) == [], "appena scartata: non si insiste"
+
+    # situazione INVARIATA: non si ripropone, o diventa una raffica
+    t2 = NOW + _td(seconds=S._RICONTROLLO_PROPOSTA_S * 2 + 2)
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4), updated_at=t2), at=t2)
+    assert _proposte(db) == [], "niente e' cambiato: non si insiste"
+
+    # IL PREZZO SI MUOVE CONTRO -> situazione nuova, va rivista
+    t3 = NOW + _td(seconds=S._RICONTROLLO_PROPOSTA_S * 3 + 3)
+    peggio = _tennis_feed_row((1, 0), (4, 4), updated_at=t3)
+    peggio["payload"]["odds"]["p1"].update({"back": 1.50, "lay": 1.56})
+    _cycle(db, peggio, at=t3)
+    vive = _proposte(db)
+    assert len(vive) == 1, "ignorata una volta NON vuol dire mai piu'"
+    assert vive[0]["id"] != prima["id"], "e' una richiesta NUOVA"
+    assert vive[0]["payload"]["riproposta_perche"], "la pagina deve poter dire PERCHE'"
+    assert vive[0]["payload"]["price_at_decision"] != prima["payload"]["price_at_decision"]
+    assert _closings(db, tid) == [], "a mercato non e' andato niente: serve la firma"
+
+
+def test_si_ripropone_anche_se_la_situazione_MIGLIORA():
+    """«in bene o male»: se nel frattempo chiudere conviene di piu', l'utente
+    vuole saperlo tanto quanto se conviene di meno."""
+    rif = {"price": 1.30, "score": "g", "locked": -0.32}
+    assert S._cambiamento_sostanziale(rif, 1.30, "g", -0.10, "lay")   # migliorato
+    assert S._cambiamento_sostanziale(rif, 1.30, "g", -0.60, "lay")   # peggiorato
+    assert S._cambiamento_sostanziale(rif, 1.30, "g", -0.35, "lay") is None   # sotto soglia
+
+
+def test_il_punteggio_che_cambia_e_sempre_una_situazione_nuova():
+    rif = {"price": 1.30, "score": "game 4-4", "locked": -0.32}
+    perche = S._cambiamento_sostanziale(rif, 1.30, "game 4-5", -0.32, "lay")
+    assert perche and "punteggio" in perche
+
+
+def test_il_prezzo_che_si_muove_di_due_tick_basta():
+    rif = {"price": 1.30, "score": "x", "locked": None}
+    assert S._cambiamento_sostanziale(rif, 1.32, "x", None, "lay")            # 2 tick
+    assert S._cambiamento_sostanziale(rif, 1.31, "x", None, "lay") is None    # 1 tick
+
+
+def test_finche_la_proposta_e_viva_non_si_duplica_e_non_si_riscrive():
+    """L'altro verso: il ricontrollo non deve trasformarsi in una riscrittura a
+    ripetizione di una proposta che nessuno ha ancora toccato."""
+    db, tid = _db_tennis_con_cancelletto()
+    _porta_alla_proposta(db)
+    prima = dict(_proposte(db)[0]["payload"])
+    n_prima = len(db.requests)
+    for k in (1, 2, 3):
+        t = NOW + _td(seconds=S._RICONTROLLO_PROPOSTA_S * k + 1)
+        _cycle(db, _tennis_feed_row((1, 0), (4, 4), updated_at=t), at=t)
+    assert len(db.requests) == n_prima, "nessuna richiesta in piu'"
+    assert len(_proposte(db)) == 1
+    # la fotografia NON si rinfresca: e' il riferimento dello scostamento
+    assert _proposte(db)[0]["payload"]["price_at_decision"] == prima["price_at_decision"]
+    assert _proposte(db)[0]["payload"]["decided_at"] == prima["decided_at"]
+
+
+def test_col_database_rotto_la_posizione_NON_resta_senza_uscita():
+    """Direzione del ripiego, ed e' la cosa che conta: se la tabella delle
+    proposte non risponde, la chiusura VA A MERCATO invece di sparire. Una
+    proposta persa e' un fastidio; una posizione aperta che nessuno chiude e'
+    un danno."""
+    db, tid = _db_tennis_con_cancelletto()
+
+    def esplode(*_a, **_k):
+        raise RuntimeError("database irraggiungibile")
+
+    db.scrivi_proposta_di_chiusura = esplode
+    _porta_alla_proposta(db)
+    assert _proposte(db) == []
+    assert len(_closings(db, tid)) == 1, "col cancelletto rotto si CHIUDE, non si tace"
+    errori = [p for k2, p in db.activity if k2 == "error"
+              and p.get("reason") == "proposta_chiusura_fallita"]
+    assert errori and errori[0]["critical"] is True
