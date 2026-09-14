@@ -1185,3 +1185,70 @@ def test_paper_size_cappata_alla_liquidita_resta_un_fill_completo():
                   selection_id=7, side="back", price=3.0, size=50.0, best_size=12.0,
                   client_ref=f"safe-t{tid}", trade_id=tid, now=NOW, params={})
     assert out.status == "open" and out.size == 12.0
+
+
+# ---------------------------------------------------------------------------
+# CERT. 14/09 — LA STORIA DELL'ORDINE
+# Domanda dell'utente: «a che prezzo si abbinano rispetto al segnale, o se
+# scorrono il book falsando l'uscita». Va DIMOSTRATA con i numeri, non supposta.
+# ---------------------------------------------------------------------------
+def test_scorrimento_positivo_vuol_dire_ho_pagato_di_piu():
+    """Un solo verso per entrambi i lati: positivo = peggio del chiesto.
+    Su un BACK peggio vuol dire prezzo piu' BASSO, su un LAY piu' ALTO, e
+    confondere i due segni farebbe leggere un peggioramento come un vantaggio."""
+    assert X.scorrimento(1.30, 1.32, "lay") == 2      # lay abbinato piu' alto: peggio
+    assert X.scorrimento(1.05, 1.03, "back") == 2     # back abbinato piu' basso: peggio
+    assert X.scorrimento(1.05, 1.07, "back") == -2    # meglio del chiesto: si dice
+    assert X.scorrimento(1.30, 1.30, "lay") == 0      # abbinato al segnale
+
+
+def test_scorrimento_senza_un_prezzo_non_inventa_un_numero():
+    assert X.scorrimento(None, 1.30, "lay") is None
+    assert X.scorrimento(1.30, None, "lay") is None
+    assert X.scorrimento(0.5, 1.30, "lay") is None    # fuori scala
+
+
+def test_livelli_attraversati_dimostra_lo_scorrimento():
+    lad = ((1.30, 1.0), (1.31, 5.0), (1.32, 100.0))
+    # tutto al primo livello: UNA riga, ed e' il caso sano
+    assert X.livelli_attraversati(lad, 0.5, None, "lay") == [{"price": 1.3, "size": 0.5}]
+    # size piu' grande della punta: il book SCORRE, e si vede dove
+    assert X.livelli_attraversati(lad, 4.0, None, "lay") == [
+        {"price": 1.3, "size": 1.0}, {"price": 1.31, "size": 3.0}]
+    # un ordine LIMITE non cammina oltre il proprio prezzo
+    assert X.livelli_attraversati(lad, 50.0, 1.31, "lay") == [
+        {"price": 1.3, "size": 1.0}, {"price": 1.31, "size": 5.0}]
+    # niente book o niente size: nessuna riga inventata
+    assert X.livelli_attraversati((), 5.0, None, "lay") == []
+    assert X.livelli_attraversati(lad, 0.0, None, "lay") == []
+
+
+def test_il_piazzamento_in_paper_racconta_come_e_andato():
+    db, mk = FakeDB(), FakeMarket()
+    tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "lay"})
+    out = X.place(db=db, market=mk, mode="paper", event_id="1.1", market_id="m1",
+                  selection_id=7, side="lay", price=1.32, size=4.0,
+                  ladder=((1.30, 1.0), (1.31, 5.0)),
+                  client_ref=f"safe-t{tid}", trade_id=tid, now=NOW,
+                  # gate flumine CHIUSO: qui si collauda il percorso locale, che
+                  # e' quello che simula il fill e quindi l'unico che conosce i
+                  # livelli del book
+                  params={"execution_mode": "rest"})
+    assert out.status == "open"
+    e = out.esecuzione
+    assert e is not None
+    assert e["price_richiesto"] == 1.32
+    assert e["livelli"] == [{"price": 1.3, "size": 1.0}, {"price": 1.31, "size": 3.0}]
+    assert e["price_medio"] == out.price
+    assert e["t4_inviato"] > 0 and e["t5_risposta"] >= e["t4_inviato"]
+    assert e["percorso"] == "paper"
+
+
+def test_la_chiusura_scrive_il_prezzo_del_SEGNALE_prima_di_piazzare():
+    """Senza, confrontare l'abbinato con «quello che volevamo» sarebbe
+    impossibile: la riga porterebbe solo il prezzo ottenuto."""
+    import inspect
+    src = inspect.getsource(X.close_trade)
+    assert 'reserve["meta"]["price_segnale"] = plan.price' in src
+    # ...e la storia dell'ordine finisce sulla riga, non solo nel ritorno
+    assert '"esecuzione": out.esecuzione' in src and '"t6_fill"' in src

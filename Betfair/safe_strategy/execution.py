@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
@@ -58,6 +59,13 @@ ABS_MIN_SIZE = 0.01
 # Quindi QUALSIASI importo e' piazzabile, fino al centesimo. Questa soglia serve
 # solo a decidere QUALE dei due percorsi usare, non a rifiutare l'ordine.
 # Override: SAFE_MIN_SIZE_LIVE.
+def _ora_ms() -> float:
+    """Orologio in millisecondi per la catena dei tempi. ``time.time`` e non
+    ``monotonic``: questi istanti vanno CONFRONTATI con quelli del feed e di
+    Betfair, che sono ore del mondo, non di questo processo."""
+    return round(time.time() * 1000.0, 1)
+
+
 def _min_size_live(side: str = "back") -> float:
     """Minimo di PIAZZAMENTO per il lato dato.
 
@@ -146,10 +154,81 @@ class PlaceOutcome:
     size: float
     bet_id: Optional[str]
     fill_note: str
+    # CERT. 14/09 — COME E' ANDATA DAVVERO, non solo se e' andata.
+    # ``esecuzione`` porta i due istanti attorno alla chiamata a Betfair e
+    # l'analisi dello SCORRIMENTO DEL BOOK: a che prezzo si e' abbinato
+    # rispetto a quello chiesto, e su quanti livelli. Senza, "l'uscita e'
+    # peggiore del segnale" resta un sospetto invece che un numero.
+    # Ha un default: nessun chiamante esistente deve cambiare.
+    esecuzione: Optional[dict[str, Any]] = None
 
     @property
     def ok(self) -> bool:
         return self.status in ("open", "pending")
+
+
+def livelli_attraversati(ladder: Any, size: float, limit_price: Optional[float],
+                         side: str) -> list[dict[str, Any]]:
+    """Quanta size entra a CIASCUN livello del book, camminandolo come farebbe
+    l'ordine. Replica pura della passeggiata di ``paper_fill``: serve a
+    DIMOSTRARE lo scorrimento invece di supporlo.
+
+    Un ordine che si abbina tutto al primo livello ha una riga sola: e' il caso
+    sano. Due o piu' righe vogliono dire che l'uscita ha pagato piu' del prezzo
+    del segnale, ed e' esattamente la domanda dell'utente."""
+    liv = _ladder_tuple(ladder)
+    if not liv or not (size and size > 0):
+        return []
+    rimasto = float(size)
+    out: list[dict[str, Any]] = []
+    for prezzo, disponibile in liv:
+        if rimasto <= 1e-9:
+            break
+        p = float(prezzo)
+        # un ordine LIMITE non cammina oltre il proprio prezzo
+        if limit_price is not None and (
+                (side == "lay" and p > float(limit_price) + 1e-9)
+                or (side == "back" and p < float(limit_price) - 1e-9)):
+            break
+        preso = min(rimasto, float(disponibile))
+        if preso <= 0:
+            continue
+        out.append({"price": round(p, 4), "size": round(preso, 2)})
+        rimasto -= preso
+    return out
+
+
+def scorrimento(prezzo_chiesto: Optional[float], prezzo_medio: Optional[float],
+                side: str) -> Optional[int]:
+    """Di quanti TICK l'abbinamento e' PEGGIORE del prezzo chiesto.
+
+    Positivo = si e' pagato di piu' (un BACK abbinato piu' BASSO, un LAY piu'
+    ALTO). Zero = abbinato al prezzo del segnale. Negativo = meglio del chiesto,
+    che capita e va detto lo stesso. None = uno dei due prezzi non c'e'.
+
+    Usa ``risk_engine.ticks_between``, che conosce la ladder Betfair vera. Il
+    primo tentativo qui camminava con ``tick_up``/``tick_down``, che pero' sono
+    uno SNAP al tick valido e non un passo: chiamate in fila restituivano sempre
+    lo stesso prezzo e la misura era muta. Un conteggio di tick fatto a mano e'
+    il modo piu' facile di scrivere un numero che sembra giusto e non lo e'.
+    """
+    if prezzo_chiesto is None or prezzo_medio is None:
+        return None
+    try:
+        a, b = float(prezzo_chiesto), float(prezzo_medio)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(a) and math.isfinite(b)) or a <= 1.0 or b <= 1.0:
+        return None
+    try:
+        from Betfair.stream.trading.risk_engine import ticks_between
+        passi = int(ticks_between(a, b))
+    except Exception:  # noqa: BLE001 — fuori ladder o modulo assente: nessun numero
+        return None
+    # ticks_between e' positivo verso le quote PIU' ALTE. Per un BACK il
+    # peggioramento e' verso il BASSO, per un LAY verso l'alto: si gira il segno
+    # cosi' che "positivo = ho pagato di piu'" valga per entrambi i lati.
+    return -passi if side == "back" else passi
 
 
 def place(
@@ -289,8 +368,17 @@ def place(
         if not fill.fully_matched:
             return PlaceOutcome("error", None, 0.0, None,
                                 f"paper_fok_parziale:{round(fill.matched_size, 2)}/{size}")
-        return PlaceOutcome("open", fill.avg_price, fill.matched_size, None,
-                            f"paper_fill:{gate_reason}")
+        return PlaceOutcome(
+            "open", fill.avg_price, fill.matched_size, None,
+            f"paper_fill:{gate_reason}",
+            esecuzione={
+                "t4_inviato": _ora_ms(), "t5_risposta": _ora_ms(),
+                "price_richiesto": price,
+                "price_medio": fill.avg_price,
+                "scorrimento_tick": scorrimento(price, fill.avg_price, side),
+                "livelli": livelli_attraversati(ladder, size, price, side),
+                "percorso": "paper",
+            })
 
     # LIVE — soldi veri: REST FOK generico (side esplicito). Sotto il minimo di
     # PIAZZAMENTO si usa il place-and-trim (parcheggio + taglio + riprezzo): e'
@@ -313,6 +401,11 @@ def place(
     blocco = None if is_closing else _live_brake()
     if blocco:
         return PlaceOutcome("error", None, 0.0, None, blocco)
+    # CERT. 14/09 — I DUE ISTANTI ATTORNO ALLA CHIAMATA A BETFAIR.
+    # Sono t4 (ordine inviato) e t5 (risposta ricevuta): la loro differenza e'
+    # il tempo che ci mette l'exchange, l'unico pezzo della catena che non
+    # dipende da noi. Senza, "il bot e' lento" resta un'opinione.
+    t4 = _ora_ms()
     try:
         if sotto_minimo:
             res = market.place_submin_live(
@@ -326,13 +419,29 @@ def place(
             )
     except Exception as ex:  # noqa: BLE001 — esito IGNOTO: MAI ripiazzare
         return _reconciling(db, tid, meta=meta, mode=mode, price=price, size=size, ex=ex)
+    t5 = _ora_ms()
     # rifiuto PROVATO dall'exchange (risposta ricevuta, nessun fill): 'error' legittimo
     if not res.ok or res.size_matched <= 0:
         return PlaceOutcome("error", None, 0.0, None,
                             f"live_not_matched:{res.order_status}")
-    return PlaceOutcome("open", float(res.avg_price_matched or price),
-                        round(float(res.size_matched), 2), res.bet_id,
-                        f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}")
+    medio = float(res.avg_price_matched or price)
+    return PlaceOutcome(
+        "open", medio, round(float(res.size_matched), 2), res.bet_id,
+        f"live_{'submin' if sotto_minimo else 'rest'}:{res.order_status}",
+        esecuzione={
+            "t4_inviato": t4, "t5_risposta": t5,
+            "betfair_ms": round(t5 - t4, 1),
+            "price_richiesto": price,
+            "price_medio": medio,
+            # la domanda dell'utente: l'uscita e' peggiore del segnale?
+            "scorrimento_tick": scorrimento(price, medio, side),
+            # Betfair non restituisce il dettaglio per livello: si conserva la
+            # foto del book al momento dell'invio, che dice su quanti livelli
+            # QUELLA size sarebbe dovuta passare. Non e' la stessa cosa del
+            # fill reale, ed e' etichettata come previsione, non come fatto.
+            "livelli_previsti": livelli_attraversati(ladder, size, price, side),
+            "percorso": "submin" if sotto_minimo else "rest",
+        })
 
 
 def _reconciling(db, trade_id: Optional[int], *, meta: dict[str, Any], mode: str,
@@ -987,6 +1096,10 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
     if exit_kind:
         reserve["meta"]["exit_kind"] = str(exit_kind)
         reserve["meta"]["exit_reason"] = str(exit_reason or "")
+    # PREZZO DEL SEGNALE: quello che il piano ha chiesto, conservato PRIMA di
+    # piazzare. Senza, confrontare il prezzo abbinato con "quello che volevamo"
+    # non sarebbe possibile — la riga porterebbe solo il prezzo ottenuto.
+    reserve["meta"]["price_segnale"] = plan.price
     reserve.update(extra_row or {})
     try:
         closing_id = db.insert_trade(reserve)
@@ -1037,7 +1150,19 @@ def close_trade(*, db, market, trade: dict[str, Any], prices: dict[str, Any],
                             bet_id=out.bet_id,
                             meta={**(reserve.get("meta") or {}), "cashout": True,
                                   "closes_trade_id": trade.get("id"),
-                                  "fill": out.fill_note, "plan_note": plan.note})
+                                  "fill": out.fill_note, "plan_note": plan.note,
+                                  # CERT. 14/09 — LA STORIA DELL'ORDINE: i due
+                                  # istanti attorno a Betfair, il prezzo chiesto
+                                  # contro quello davvero abbinato, e su quanti
+                                  # livelli del book e' passato. E' la risposta
+                                  # alla domanda «l'uscita scorre il book e
+                                  # falsa il segnale?», con i numeri.
+                                  **({"esecuzione": out.esecuzione}
+                                     if out.esecuzione else {}),
+                                  # t6: il fill e' confermato ADESSO (percorso
+                                  # sincrono). Sul percorso a coda arriva dopo,
+                                  # e lo scrive chi riconcilia.
+                                  "t6_fill": _ora_ms()})
         except Exception as ex:  # noqa: BLE001 — ordine eseguito, riga non confermata
             logger.critical("[safe.exec] conferma chiusura FALLITA (trade %s, mode %s): %s",
                             closing_id, mode, str(ex)[:160])

@@ -2709,6 +2709,8 @@ def _exit_wait(db, trade: dict[str, Any], meta: dict[str, Any], decision: XE.Exi
 # Marker sulla riga del trade: senza, per sapere se esiste gia' una proposta
 # viva servirebbe una query per trade per ciclo.
 PROPOSTA_KEY = "exit_proposal"
+# istante dell'ultima lettura del feed da parte del bot (t2 della catena)
+_LETTURA_FEED: dict[str, float] = {"ms": 0.0}
 # uscite per cui non approvare COSTA: sono quelle che il manuale dichiara
 # obbligatorie o urgenti. La proposta le marca cosi' la pagina puo' urlarle.
 _USCITE_URGENTI = ("loss", "mandatory", "red_card")
@@ -2790,6 +2792,10 @@ def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
         "loss_if_lose": conti["loss_if_lose"],
         "mode": str(trade.get("mode") or "paper"),
         "feed_updated_at": (row or {}).get("updated_at"),
+        # t2: quando il bot ha avuto in mano questa riga. Con t0 (odds_ts_ms) e
+        # t1 (updated_at del feed) si vede DOVE va il tempo prima ancora che il
+        # bot decida — che e' meta' della catena, e la meta' che nessuno guarda.
+        "t2_letto_ms": _LETTURA_FEED["ms"] or None,
         # eta' del PREZZO su cui si opererebbe (non dello scritto sul feed):
         # e' il numero che conta prima di piazzare
         "odds_ts_ms": payload.get("odds_ts_ms"),
@@ -5089,6 +5095,11 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     except Exception as ex:  # noqa: BLE001
         _log(db, "error", {"reason": "feed_failed", "err": str(ex)[:160]})
         rows = []
+    # CERT. 14/09 — t2 DELLA CATENA DEI TEMPI: l'istante in cui il bot ha in
+    # mano la riga. Fra t1 (il feed l'ha scritta) e t2 c'e' il ritardo del
+    # database piu' la cadenza del ciclo, che e' un pezzo di latenza invisibile
+    # a chiunque guardi solo l'eta' delle quote.
+    _LETTURA_FEED["ms"] = round(time.time() * 1000.0, 1)
     rows_by_event = {str(r.get("event_id")): r for r in rows if r.get("event_id")}
     # nomi delle partite per l'ATTIVITA' (cert. 12/09): il feed ce li ha, i log
     # no — senza questo il trader legge "NON ENTRATO 36050104" e non sa di che
