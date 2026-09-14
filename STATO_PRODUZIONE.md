@@ -57,6 +57,84 @@
 
 ---
 
+# 🆘 TROVATI DOPO LE 13:00 — non erano in nessuna lista prima
+
+## 🔴🔴 P1 — L'USCITA AL FISCHIO DI MIKE NON HA MAI FUNZIONATO. NEMMENO UNA VOLTA.
+**Cosa succede:** Mike prova a chiudere ogni ~5 s e **il database rifiuta ogni tentativo**. Il motore
+dichiara `state = LIVE_KO_GREEN` (`engine.py:38-39`) e `strategy = ko_green` (`engine.py:47`); i vincoli
+`CHECK` creati da `migrations/mike_bot.sql:54-59` e `:84-86` **non contengono quei valori** (mancano anche
+`LIVE_SECOND_ENTRY` e `under_second`).
+**Quanto è grande:** `mike_trades` non ha **NESSUNA** riga `strategy='ko_green'`, mai. `mike_events` non ha
+**MAI** contenuto `LIVE_KO_GREEN`. **3.893 rifiuti `strategy_check` dal 13/09 su 12 partite** (220 su
+36070034, 215 su 36070055 mentre scrivo).
+**Conseguenza:** **ogni partita entrata in gioco con una posizione aperta è rimasta scoperta fino al
+fischio finale** — senza uscita, senza copertura Over 4.5, senza cash out, senza cap di perdita.
+**Perché è un loop eterno:** l'upsert rifiutato non salva `ctx.live_since`; `finestra_uscita_scaduta`
+(`engine.py:2014`) misura i `ko_green_window_s = 180 s` da lì; ogni `events_reload_s = 60 s` il servizio
+rilegge e ritrova tutto com'era. **180 > 60: la finestra non scade mai**, e il ramo successivo
+(`engine.py:2088-2092`, copertura Over 4.5) non viene mai raggiunto.
+**Serve:** migrazione idempotente `DROP/ADD CONSTRAINT` (modello: `migrations/betfair_live_greenup.sql:37-44`)
+→ **la scrive admin-07, la applica l'utente, poi riavvio dell'app.**
+· *Chi:* admin-07 · *Utente:* applicare la migrazione + riavvio
+
+## 🔴 P2 — Il fallimento della scrittura di stato è declassato ad avviso
+`service.py:2612-2616`: `_scrivi_evento` inghiotte il rifiuto dell'upsert con un `logger.warning`. È per
+questo che P1 è passato **inosservato per dodici giorni**. La riga di `mike_events` è rimasta **congelata
+alle 09:58:27 con `feed_age_s: 4.3` verde**: la pagina ha mostrato «HOLD, feed fresco» per 53 minuti su una
+partita con 10 € scoperti. **Money-critical: deve diventare errore critico**, come già fa `_piazza_resting_live`.
+· *Chi:* admin-07
+
+## 🔴 P3 — La certificazione ha contato il SINTOMO del guasto come prova che funzionava
+`COSTITUZIONE_MIKE.md:1699` segna la condizione 28 («in gioco con posizione: prova l'uscita») come
+**✓ paper (421)**. Quei 421 **non sono 421 uscite riuscite: sono la firma del loop bloccato di P1**, la
+stessa frase riscritta ogni pochi secondi. La 29 è ✓ *(1)*, e anche quello viene dal testo del motivo.
+**Il criterio «riconosciuta da: stringa nel motivo» NON BASTA**: serve la riga di `mike_trades` con il suo
+esito, come §16.4 stessa prescrive. **Vanno ricontrollate TUTTE le spunte già messe con questo metro.**
+· *Chi:* admin-07
+
+## 🔴 P4 — OMEGA IN PAPER NON APPLICA IL BET DELAY → **DECISIONE UTENTE**
+`omega_engine.paper_fill` (`:280`) riempie sul book corrente, **istantaneo**. Mike invece il ritardo lo
+applica (`mike/service.py:1964`): **il metro di paragone è in casa**. Quindi **il paper di Omega è più
+VELOCE del live**: entra ed esce a prezzi che in live, dopo 1-8 s, potrebbero non esserci più.
+⚠️ **Applicare il ritardo CAMBIA I NUMERI STORICI DI OMEGA.** Non si fa di slancio.
+· *Utente: decidere*
+
+## 🟠 P5 — Quanto è costato P1 sulle altre 10 partite: NON MISURATO
+Sono stati contati gli errori (3.893 su 12 partite), **non è stato ricostruito il P&L** di ciascuna.
+È la misura vera di quanto il difetto è costato, e nessuno l'ha fatta.
+· *Chi:* admin-07
+
+## 🟡 P6 — Le finali del tennis: **non è lavoro che manca, è un dato che Betfair non pubblica**
+Interrogati **399 mercati tennis su 3 giorni: ZERO** con una parola di turno (`final`, `semi`, `quarter`,
+`round`, `R16`, `QF`, `SF`). L'oggetto `event` ha solo `id, name, openDate, timezone`; il nome è
+«Giocatore A v Giocatore B». **Nella scala di certificazione è un ⊘ con causa «Betfair non espone il turno».**
+Esiste una via euristica (la finale è l'ultima partita rimasta di quella competizione) **ma è pericolosa**:
+Betfair pubblica i mercati con pochi giorni di anticipo, quindi **un quarto di finale sembrerebbe una
+finale** e si escluderebbero partite buone.
+· *Utente: decidere se si vuole l'euristica*
+
+## 🟡 P7 — QUATTRO COSE TOCCATE OGGI CHE NESSUNO HA ANCORA VISTO GIRARE
+*(dichiarate da admin-fa alla fermata — è l'elenco che di solito nessuno scrive)*
+1. **Il FOK in paper sulla coda non è mai stato esercitato**: il runner è giù, **zero ordini sono passati
+   dalla coda** da quando è stato corretto. Il primo ordine paper accodato sarà il primo collaudo vero.
+   *(Se sbagliato, l'effetto è meno fill in paper — direzione prudente, non ordini fantasma.)*
+2. **`strategy_modes` non è mai stato usato in un ciclo LIVE**: contesti di rischio separati, idempotenza
+   per modalità, `mode_s` sulla riga — tutto provato solo con un DB finto. **Il primo ciclo `mode=live`
+   sarà il primo collaudo reale, e tocca il percorso dei soldi.**
+3. **`_avvisa_ereditarieta`** scrive un `kind` nuovo che si attiva **solo** a servizio live: mai visto girare.
+4. **L'uscita Base «il controllo passa alla sfavorita» non è mai scattata**: nasce spenta, ma è **codice
+   che chiude posizioni** e nessuno l'ha visto chiudere niente.
+
+## 🟡 P8 — Il runner NON è stato riavviato col codice del battito
+`ad68253` fa battere il runner anche da fermo, ma **il processo vivo ha ancora il codice vecchio**: il
+battito è di **11 giorni fa** e i follow `STREAMING` sono **zero**. Finché non si riavvia, la fase resta
+«spento» e si va comunque in REST. **Al primo riavvio diventerà «vivo, in attesa»** — ed è esattamente lì
+che, senza la correzione di `ebbeb71`, la pagina avrebbe detto «coda (stream)» mentre la coda non ha
+nessuno dall'altro capo.
+· *Utente: riavvio dell'app*
+
+---
+
 ## ✅ CHIUSO OGGI — con commit ed evidenza
 
 | Cosa | Commit | Evidenza |
