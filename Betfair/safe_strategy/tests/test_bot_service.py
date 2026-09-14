@@ -3575,3 +3575,45 @@ def test_attesa_non_si_sveglia_due_volte_per_la_stessa_richiesta(monkeypatch):
         t["v"] += s
     monkeypatch.setattr(S.time, "sleep", scorre)
     assert S._attesa_interrompibile(2.0, aperte=1) is False
+
+
+# ===========================================================================
+# CATENA DEI TEMPI — un cronometro che sbaglia a nostro favore e' peggio di
+# nessun cronometro (cert. 14/09).
+# ===========================================================================
+
+def test_t3_e_l_istante_della_decisione_non_l_inizio_del_ciclo():
+    """t3 deve venire DOPO t2, sempre.
+
+    Prima t3 era `now`, l'istante di inizio ciclo — che precede persino la
+    lettura del feed. Misurato sui trade veri: t3 cadeva 216, 238 e 282 ms
+    PRIMA di t2. Il salto «bot -> decisione» risultava negativo e la Control
+    Room lo mostrava come «—»: un pezzo di catena impossibile da guardare."""
+    import time as _t
+
+    inizio_ciclo = S._now()                      # il ciclo comincia...
+    _t.sleep(0.01)
+    S._LETTURA_FEED["ms"] = round(_t.time() * 1000.0, 1)   # ...poi legge il feed
+    _t.sleep(0.01)
+    c = S._catena_dei_tempi({"payload": {"odds_ts_ms": 1}, "updated_at": None},
+                            inizio_ciclo)["tempi"]
+    assert c["t2_letto_ms"] is not None
+    assert c["t3_deciso_ms"] >= c["t2_letto_ms"], (
+        "t3 precede t2: il cronometro misura all'indietro")
+
+
+def test_prezzo_to_decisione_non_accorcia_la_catena():
+    """`prezzo_to_decisione_ms` deve coprire fino alla decisione VERA.
+
+    Con t3 = inizio ciclo il cronometro si fermava prima che il bot avesse in
+    mano la riga: sul trade #287 dichiarava 3,2 s contro 4,7 s reali."""
+    import time as _t
+
+    t0 = round(_t.time() * 1000.0, 1)
+    inizio_ciclo = S._now()
+    _t.sleep(0.02)
+    S._LETTURA_FEED["ms"] = round(_t.time() * 1000.0, 1)
+    c = S._catena_dei_tempi({"payload": {"odds_ts_ms": t0}, "updated_at": None},
+                            inizio_ciclo)["tempi"]
+    assert c["prezzo_to_decisione_ms"] >= (c["t2_letto_ms"] - t0), (
+        "la catena dichiarata e' piu' corta del tempo gia' trascorso")

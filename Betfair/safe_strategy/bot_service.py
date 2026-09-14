@@ -2790,7 +2790,8 @@ def _cambiamento_sostanziale(rifiutata: dict[str, Any], prezzo: Optional[float],
     return None
 
 
-def _catena_dei_tempi(feed_row: Optional[dict[str, Any]], now: datetime) -> dict[str, Any]:
+def _catena_dei_tempi(feed_row: Optional[dict[str, Any]],
+                      now: Optional[datetime] = None) -> dict[str, Any]:
     """t0..t3 di un'APERTURA, dal prezzo alla decisione.
 
     Sono i quattro istanti che stanno PRIMA dell'ordine; t4/t5/t6 (invio,
@@ -2798,7 +2799,10 @@ def _catena_dei_tempi(feed_row: Optional[dict[str, Any]], now: datetime) -> dict
     posto che li conosce. Uniti sulla riga del trade danno la catena intera.
 
     Tutto in millisecondi di orologio del mondo, perche' vanno confrontati con
-    istanti che vengono dal feed e da Betfair, non da questo processo."""
+    istanti che vengono dal feed e da Betfair, non da questo processo.
+
+    ``now`` e' accettato per compatibilita' con i chiamanti ma NON si usa piu'
+    per t3: l'istante della decisione e' adesso, non l'inizio del ciclo."""
     p = (feed_row or {}).get("payload") or {}
     t0 = p.get("odds_ts_ms")
     t1 = None
@@ -2809,7 +2813,20 @@ def _catena_dei_tempi(feed_row: Optional[dict[str, Any]], now: datetime) -> dict
         except (TypeError, ValueError):
             t1 = None
     t2 = _LETTURA_FEED["ms"] or None
-    t3 = round(now.timestamp() * 1000.0, 1)
+    # CERT. 14/09 — t3 e' l'istante in cui si DECIDE, e si prende ADESSO.
+    #
+    # Prima qui c'era ``now``, cioe' l'istante in cui e' COMINCIATO il ciclo:
+    # un momento che precede persino la lettura del feed. Ne uscivano tre bugie
+    # in fila, tutte a nostro favore:
+    #   · t3 risultava PRIMA di t2 (misurato: 216, 238, 282 ms prima), quindi
+    #     il salto «bot -> decisione» era negativo e la Control Room lo mostrava
+    #     come «—»: un pezzo di catena che non si poteva guardare;
+    #   · «feed -> bot» si prendeva anche il tempo della lettura del feed;
+    #   · ``prezzo_to_decisione_ms`` fermava il cronometro prima che il bot
+    #     avesse in mano la riga, e faceva sembrare la catena piu' corta di
+    #     quanto sia (sul trade #287: 3,2 s dichiarati contro 4,7 s reali).
+    # Un cronometro che sbaglia a nostro favore e' peggio di nessun cronometro.
+    t3 = round(time.time() * 1000.0, 1)
     tempi: dict[str, Any] = {
         "t0_quote_ms": t0 if isinstance(t0, (int, float)) and not isinstance(t0, bool) else None,
         "t1_feed_ms": t1, "t2_letto_ms": t2, "t3_deciso_ms": t3,
