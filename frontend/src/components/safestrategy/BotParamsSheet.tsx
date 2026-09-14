@@ -46,6 +46,18 @@ export interface ExitsParams {
     tennis_take_profit_next_game: boolean;
     /** tennis: uscita se il leader perde due game o il set torna in parità */
     tennis_exit_on_lost_game: boolean;
+    /**
+     * Tennis: quota MINIMA d'ingresso perché l'incasso al game successivo abbia
+     * senso. Sotto questa soglia il profitto massimo è più piccolo dello spread
+     * che si paga per uscire, quindi chiudere è una perdita GARANTITA: si porta
+     * a termine. Misurato su operazioni reali a 1,01-1,02: 17 uscite su 17
+     * sarebbero state migliori tenute, nessuna avrebbe perso.
+     * Lo STOP LOSS non c'entra e resta sempre attivo.
+     */
+    tennis_take_profit_min_odds: number;
+    /** Tennis: profitto netto MINIMO (€) perché l'incasso venga accettato —
+     *  un «take profit» che blocca una perdita non è un take profit. */
+    tennis_take_profit_min_eur: number;
     /** tentativi massimi di chiusura prima dell'uscita obbligatoria a mercato */
     exit_max_retries: number;
     // ---- uscite dei trade di MODELLO (modello / anomalia / combo / tennis)
@@ -77,6 +89,8 @@ export const EXITS_DEFAULTS: ExitsParams = {
     red_card_fav_exit: true,
     tennis_take_profit_next_game: true,
     tennis_exit_on_lost_game: false,     // = exits.DEFAULT_EXIT_PARAMS del servizio (review M1)
+    tennis_take_profit_min_odds: 1.03,   // CERT. 14/09
+    tennis_take_profit_min_eur: 0.01,
     exit_max_retries: 3,
     hold_max_risk: 0.02,
     risk_cap: 0.10,
@@ -103,6 +117,8 @@ export function mergeExits(raw: unknown): ExitsParams {
         red_card_fav_exit: b(r.red_card_fav_exit, EXITS_DEFAULTS.red_card_fav_exit),
         tennis_take_profit_next_game: b(r.tennis_take_profit_next_game, EXITS_DEFAULTS.tennis_take_profit_next_game),
         tennis_exit_on_lost_game: b(r.tennis_exit_on_lost_game, EXITS_DEFAULTS.tennis_exit_on_lost_game),
+        tennis_take_profit_min_odds: n(r.tennis_take_profit_min_odds, EXITS_DEFAULTS.tennis_take_profit_min_odds),
+        tennis_take_profit_min_eur: n(r.tennis_take_profit_min_eur, EXITS_DEFAULTS.tennis_take_profit_min_eur),
         exit_max_retries: n(r.exit_max_retries, EXITS_DEFAULTS.exit_max_retries),
         hold_max_risk: n(r.hold_max_risk, EXITS_DEFAULTS.hold_max_risk),
         risk_cap: n(r.risk_cap, EXITS_DEFAULTS.risk_cap),
@@ -187,6 +203,8 @@ const EXIT_NUM_FIELDS: Num[] = [
     { key: 'exits.punta_exit_minute', label: 'PUNTA · uscita a tempo dal minuto', step: 1, min: 1, max: 120, hint: 'back a quota bassissima: esce prima che una rimonta annulli il profitto' },
     { key: 'exits.loss_settle_delay_s', label: 'Perdita · attesa prima di chiudere (s)', step: 5, min: 0, max: 600, hint: 'gol contro / set perso: aspetta che il punteggio sia confermato (VAR, correzioni) e poi chiude in perdita' },
     { key: 'exits.exit_max_retries', label: 'Tentativi max di chiusura', step: 1, min: 1, max: 20, hint: "chiusure non abbinate: dopo questi tentativi l'uscita diventa OBBLIGATORIA al prezzo disponibile" },
+    { key: 'exits.tennis_take_profit_min_odds', label: 'TENNIS · incassa solo da quota', step: 0.01, min: 1, max: 2, hint: 'sotto questa quota il profitto massimo è più piccolo dello spread: chiudere sarebbe una perdita garantita, quindi si porta a termine (lo stop loss resta)' },
+    { key: 'exits.tennis_take_profit_min_eur', label: 'TENNIS · profitto minimo per incassare (€)', step: 0.01, min: 0, max: 100, hint: 'si incassa solo se il P&L bloccato, al netto della commissione, è almeno questo: un «take profit» che blocca una perdita non è un take profit' },
 ];
 
 const STRATEGY_FIELDS: Num[] = [

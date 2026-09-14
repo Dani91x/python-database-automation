@@ -2100,6 +2100,9 @@ def test_parametri_decisione_a_modello_e_chiavi_della_scheda():
     sheet = {"enabled": True, "base_exit_minute": 81, "esatto_exit_minute": 73,
              "punta_exit_minute": 84, "loss_settle_delay_s": 25, "red_card_fav_exit": False,
              "tennis_take_profit_next_game": False, "tennis_exit_on_lost_game": True,
+             # CERT. 14/09: il take profit del tennis ha senso solo sopra una
+             # certa quota, e solo se blocca davvero un profitto
+             "tennis_take_profit_min_odds": 1.05, "tennis_take_profit_min_eur": 0.05,
              "exit_max_retries": 5, "hold_max_risk": 0.05, "risk_cap": 0.2,
              "ev_margin": 0.5, "risk_premium_pct": 0.02,
              "residual_retry_s": 30, "residual_max_attempts": 4,

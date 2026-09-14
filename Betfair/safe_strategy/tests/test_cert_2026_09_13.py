@@ -613,3 +613,122 @@ def test_il_momento_dell_ultima_osservazione_non_riscrive_la_riga():
     assert SC.payload_signature(a) == SC.payload_signature(b)
     mosso = {"ou": [{"line": 3.5, "ts_ms": 5000, "seen_ms": 1000}]}
     assert SC.payload_signature(a) != SC.payload_signature(mosso)
+
+
+# ---------------------------------------------------------------------------
+# 7. TENNIS: il take profit non ha senso a QUALSIASI quota (decisione 14/09)
+# ---------------------------------------------------------------------------
+def _tr_tennis(**kw):
+    base = {"side": "p1", "entry_sets": [1, 0], "entry_games": [2, 0],
+            "last_games": [3, 0], "last_game": "won", "consecutive_lost": 0,
+            "set_lead_lost": False}
+    base.update(kw)
+    return base
+
+
+def test_sotto_la_soglia_di_quota_il_take_profit_non_scatta():
+    """Misurato su operazioni reali: a 1,01-1,02 il profitto massimo (2-4
+    centesimi su 2 EUR) e' piu' piccolo dello spread che si paga per uscire,
+    quindi chiudere e' una perdita GARANTITA. Su 17 uscite osservate a quelle
+    quote, TUTTE E 17 sarebbero state migliori tenute e nessuna avrebbe perso.
+    Sotto la soglia si porta a termine.
+    """
+    par = dict(XE.DEFAULT_EXIT_PARAMS)
+    assert par["tennis_take_profit_min_odds"] == 1.03
+    for q in (1.01, 1.02):
+        assert XE._decide_tennis(_tr_tennis(entry_price=q), par) is None, q
+    for q in (1.03, 1.05, 1.10):
+        d = XE._decide_tennis(_tr_tennis(entry_price=q), par)
+        assert d is not None and d.kind == "profit", q
+
+
+def test_lo_stop_loss_resta_attivo_anche_sotto_la_soglia():
+    """La soglia di quota tocca SOLO l'incasso volontario. L'uscita obbligatoria
+    (due game persi di fila + vantaggio perso nel set) non e' condizionata a
+    niente: e' lo stop loss e deve poter scattare sempre."""
+    par = dict(XE.DEFAULT_EXIT_PARAMS)
+    tr = _tr_tennis(entry_price=1.01, consecutive_lost=2, set_lead_lost=True,
+                    last_game="lost")
+    d = XE._decide_tennis(tr, par)
+    assert d is not None and d.kind == "mandatory"
+
+
+def test_la_quota_di_ingresso_finisce_nel_tracciamento():
+    """Senza la quota d'ingresso la regola non sarebbe applicabile."""
+    tr = {}
+    trade = {"price": 1.02, "score_at_entry": "set 1-0 · game 2-0"}
+    XE._track_tennis(tr, trade, {"sets": {"p1": 1, "p2": 0}, "games": {"p1": 2, "p2": 0}}, 0.0)
+    assert tr.get("entry_price") == 1.02
+
+
+def test_la_soglia_e_configurabile_e_clampata():
+    par = XE.merge_exit_params({"tennis_take_profit_min_odds": 1.20,
+                                "tennis_take_profit_min_eur": 0.50})
+    assert par["tennis_take_profit_min_odds"] == 1.20
+    assert par["tennis_take_profit_min_eur"] == 0.50
+    assert XE._decide_tennis(_tr_tennis(entry_price=1.10), par) is None
+    # valori assurdi non passano
+    assert XE.merge_exit_params({"tennis_take_profit_min_odds": 99})["tennis_take_profit_min_odds"] == 2.0
+    assert XE.merge_exit_params({"tennis_take_profit_min_eur": -5})["tennis_take_profit_min_eur"] == 0.0
+
+
+def _gate_tennis(best_lay, minimo=0.01):
+    """Chiama ``_model_gate`` su un incasso tennis, con le sole finte necessarie."""
+    trade = {"id": 1, "strategy": "tennis", "side": "back", "size": 2.0, "price": 1.05,
+             "selection_id": 7, "market_id": "m1", "mode": "paper", "commission": 0.05,
+             "event_id": "e1", "meta": {}}
+
+    class _Db:
+        @staticmethod
+        def closing_trades_for(_ids):
+            return []
+
+        @staticmethod
+        def log(kind, payload):
+            pass
+
+        @staticmethod
+        def update_trade(*a, **k):
+            pass
+
+    xp = XE.merge_exit_params({"tennis_take_profit_min_eur": minimo})
+    return S._model_gate(
+        db=_Db(), trade=trade, meta={},
+        decision=XE.ExitDecision("profit", "leader_vince_il_game", 0.0),
+        prices={"back": 1.04, "lay": best_lay}, payload={},
+        params={"commission_pct": 5.0}, xp=xp, now=NOW, opp_mod=None, opps_state=None)
+
+
+def test_incasso_tennis_rifiutato_se_non_blocca_un_profitto():
+    """Decisione dell'utente, 14/09: "il take profit deve garantire un profitto".
+
+    La decisione a modello confronta VALORI ATTESI, quindi poteva accettare una
+    chiusura con il P&L bloccato NEGATIVO se l'alternativa sembrava peggio. Su
+    un incasso VOLONTARIO non ha senso: un «take profit» che porta a casa una
+    perdita non e' un take profit.
+    """
+    # back 2,00 @1.05 chiuso a lay 1.10: si bloccherebbe una PERDITA -> si tiene
+    tenere, info = _gate_tennis(best_lay=1.10)
+    assert tenere is True, "un incasso in perdita non deve essere accettato"
+    assert "incasso rifiutato" in str(info.get("why"))
+    assert float(info["locked"]) < 0
+
+    # stesso trade chiuso a lay 1.02: profitto vero -> si incassa
+    tenere, info = _gate_tennis(best_lay=1.02)
+    assert tenere is False, "un profitto vero va incassato"
+    assert float(info["locked"]) > 0
+
+
+def test_la_soglia_di_profitto_minimo_e_rispettata():
+    """Con una soglia alta, un profitto piccolo non basta a giustificare
+    l'uscita: si continua."""
+    tenere, info = _gate_tennis(best_lay=1.02, minimo=5.00)
+    assert tenere is True
+    assert "almeno" in str(info.get("why"))
+
+
+def test_lo_stop_loss_non_passa_MAI_dal_gate_del_profitto():
+    """Invariante: le uscite in perdita e quelle obbligatorie non sono in
+    ``PROFIT_KINDS``, quindi nessuna condizione di profitto puo' trattenerle."""
+    for kind in ("loss", "mandatory", "red_card"):
+        assert kind not in XE.PROFIT_KINDS

@@ -2241,6 +2241,21 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
     p_lose = None if p_sel is None else round(p_sel if is_lay else 1.0 - p_sel, 4)
     action, why = XE.decide_time_exit(p_lose, locked, hold_profit, trade.get("size"), xp,
                                       loss_if_lose=loss_if_lose)
+    # CERT. 14/09 — UN TAKE PROFIT DEVE PORTARE A CASA UN PROFITTO.
+    # La decisione a modello confronta VALORI ATTESI, quindi poteva accettare
+    # una chiusura con il bloccato NEGATIVO (se l'alternativa sembrava peggio).
+    # Su un incasso volontario al game successivo non ha senso: se il P&L
+    # bloccato non e' almeno ``tennis_take_profit_min_eur`` al netto della
+    # commissione, non si incassa e si continua. Le uscite in PERDITA e quella
+    # OBBLIGATORIA non passano di qui (non sono in PROFIT_KINDS) e restano
+    # intoccate: lo stop loss non e' mai condizionato al profitto.
+    if (action == "exit" and decision.kind == "profit"
+            and str(trade.get("strategy") or "") == "tennis"):
+        minimo = _f(xp.get("tennis_take_profit_min_eur"), 0.01)
+        if locked is None or float(locked) < minimo - 1e-9:
+            action = "hold"
+            quanto = "un importo non calcolabile" if locked is None else XE._eur(locked)
+            why = f"incasso rifiutato: bloccherebbe {quanto} invece di almeno {XE._eur(minimo)}"
     info = {"p_lose": p_lose, "source": source, "locked": locked,
             "ev_hold": None if p_lose is None else XE.ev_hold(p_lose, hold_profit, loss_if_lose),
             "hold_profit": round(hold_profit, 2), "loss_if_lose": round(loss_if_lose, 2),

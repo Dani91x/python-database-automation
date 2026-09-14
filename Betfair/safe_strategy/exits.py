@@ -72,6 +72,23 @@ DEFAULT_EXIT_PARAMS: dict[str, Any] = {
     "loss_settle_delay_s": 30,       # manuale: 20-60 s
     "red_card_fav_exit": True,
     "tennis_take_profit_next_game": True,
+    # CERT. 14/09 — IL TAKE PROFIT NON HA SENSO A QUALSIASI QUOTA.
+    # Misurato su 29 uscite reali: sotto 1,03 il profitto massimo e' piu' piccolo
+    # dello spread che si paga per uscire, quindi chiudere e' una perdita
+    # GARANTITA. A quota 1,01 con 2 EUR di stake il guadagno lordo massimo e' 2
+    # centesimi e attraversare lo spread ne costa 2-4: sulle 17 uscite osservate
+    # a 1,01-1,02, TUTTE E 17 sarebbero state migliori tenute, e nessuna avrebbe
+    # perso (a quelle quote il giocatore ha sempre vinto la partita).
+    # Sotto questa soglia si porta a termine. Lo STOP LOSS non c'entra e resta:
+    # l'uscita obbligatoria (2 game persi + vantaggio perso nel set) non passa
+    # di qui e non e' toccata.
+    "tennis_take_profit_min_odds": 1.03,
+    # ...e sopra la soglia il take profit deve GARANTIRE un profitto: si esce
+    # solo se il P&L bloccato, al netto della commissione, e' almeno questo.
+    # Prima poteva chiudere anche a un bloccato NEGATIVO (la decisione a modello
+    # confronta valori attesi, non il segno): un "take profit" che incassa una
+    # perdita non e' un take profit.
+    "tennis_take_profit_min_eur": 0.01,
     "tennis_exit_on_lost_game": False,
     "exit_max_retries": 3,
     # RESIDUO dopo una chiusura cappata dalla liquidità (fill parziale): si
@@ -251,6 +268,10 @@ def merge_exit_params(raw: Any) -> dict[str, Any]:
                 out[k] = raw[k]
     for k in ("base_exit_minute", "esatto_exit_minute", "punta_exit_minute"):
         out[k] = int(min(120, max(1, _f(out.get(k), DEFAULT_EXIT_PARAMS[k]))))
+    out["tennis_take_profit_min_odds"] = float(
+        min(2.0, max(1.0, _f(out.get("tennis_take_profit_min_odds"), 1.03))))
+    out["tennis_take_profit_min_eur"] = float(
+        max(0.0, _f(out.get("tennis_take_profit_min_eur"), 0.01)))
     out["loss_settle_delay_s"] = float(min(600.0, max(0.0, _f(out.get("loss_settle_delay_s"), 30.0))))
     out["exit_max_retries"] = int(min(20, max(1, _f(out.get("exit_max_retries"), 3))))
     # residual_retry_s 2-600 s; residual_max_attempts 0 (= mai) - 100
@@ -750,6 +771,10 @@ def _track_tennis(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, 
             e_games = games
         if e_sets is not None and e_games is not None:
             tr["entry_sets"], tr["entry_games"] = list(e_sets), list(e_games)
+            # quota di ingresso: serve a decidere se il take profit ha senso
+            pr = _f(trade.get("price"), 0.0)
+            if pr > 1.0:
+                tr["entry_price"] = pr
             tr.setdefault("games_won", 0)
             tr.setdefault("games_lost", 0)
             tr.setdefault("consecutive_lost", 0)
@@ -922,6 +947,12 @@ def _decide_tennis(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitD
         return ExitDecision("mandatory", "due_game_persi_di_fila_e_parita", 0.0)
     last = tr.get("last_game")
     if last == "won" and _bool(params.get("tennis_take_profit_next_game"), True):
+        # sotto la soglia di quota il take profit e' aritmeticamente perdente:
+        # si porta a termine (vedi ``tennis_take_profit_min_odds``)
+        q = _f(tr.get("entry_price"), 0.0)
+        soglia = _f(params.get("tennis_take_profit_min_odds"), 1.03)
+        if q > 1.0 and q < soglia - 1e-9:
+            return None
         return ExitDecision("profit", "leader_vince_il_game", 0.0)
     if last == "lost" and _bool(params.get("tennis_exit_on_lost_game"), False):
         return ExitDecision("loss", "leader_perde_il_game", 0.0)
