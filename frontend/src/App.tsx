@@ -24,6 +24,7 @@ import MatchReplay from "@/pages/MatchReplay";
 import Omega from "@/pages/Omega";
 import SafeStrategy from "@/pages/SafeStrategy";
 import Mike from "@/pages/Mike";
+import ControlRoom from "@/pages/ControlRoom";
 import { SafeStrategyProvider } from "@/components/safestrategy/SafeStrategyProvider";
 import CheckEmail from "@/pages/CheckEmail";
 import ResetPassword from "@/pages/ResetPassword";
@@ -189,6 +190,14 @@ function App() {
                                 element={
                                     <ProtectedRoute>
                                         <Mike />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/control-room"
+                                element={
+                                    <ProtectedRoute>
+                                        <ControlRoom />
                                     </ProtectedRoute>
                                 }
                             />
