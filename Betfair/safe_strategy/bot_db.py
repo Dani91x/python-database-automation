@@ -464,7 +464,65 @@ def pending_requests(limit: int = 50) -> list[dict[str, Any]]:
     )
 
 
-REQUEST_STATES = ("pending", "processing", "done", "rejected", "error")
+REQUEST_STATES = ("proposed", "pending", "processing", "done", "rejected", "error")
+
+
+def proposta_di_chiusura_viva(trade_id: int) -> Optional[dict[str, Any]]:
+    """La proposta di chiusura ancora IN ATTESA DI APPROVAZIONE per questo trade.
+
+    Serve a non creare un duplicato a ogni ciclo: finche' la condizione di
+    uscita regge, la proposta e' UNA e si aggiorna (prezzo, liquidita', motivo).
+    E' quello che la rende viva sotto gli occhi di chi deve decidere."""
+    rows = (
+        _sb().table("safe_strategy_requests").select("*")
+        .eq("status", "proposed").eq("payload->>trade_id", str(int(trade_id)))
+        .limit(1).execute().data or []
+    )
+    return rows[0] if rows else None
+
+
+def scrivi_proposta_di_chiusura(trade_id: int, payload: dict[str, Any]) -> Optional[int]:
+    """Crea o AGGIORNA la proposta di chiusura di ``trade_id``.
+
+    Non passa da ``safe_request``: quella nasce 'pending' ed e' per le richieste
+    manuali dell'utente, che vanno eseguite subito. Questa nasce 'proposed' e
+    resta ferma finche' un essere umano non la promuove.
+    Ritorna l'id, oppure None se la scrittura non e' riuscita (il chiamante NON
+    deve interpretarlo come "proposta fatta": senza id non c'e' proposta)."""
+    corpo = {**payload, "trade_id": int(trade_id)}
+    viva = proposta_di_chiusura_viva(trade_id)
+    if viva is not None:
+        (
+            _sb().table("safe_strategy_requests")
+            .update({"payload": corpo, "updated_at": _now_iso()})
+            .eq("id", int(viva["id"])).execute()
+        )
+        return int(viva["id"])
+    res = (
+        _sb().table("safe_strategy_requests")
+        .insert({"kind": "cashout", "status": "proposed", "payload": corpo}).execute()
+    )
+    dati = getattr(res, "data", None) or []
+    return int(dati[0]["id"]) if dati and dati[0].get("id") is not None else None
+
+
+def chiudi_proposta(trade_id: int, motivo: str) -> None:
+    """La condizione di uscita non regge piu': la proposta viva decade.
+
+    Non e' un rifiuto dell'utente — e' il mercato che e' cambiato. Si marca
+    'rejected' col motivo, cosi' resta la traccia di una chiusura PROPOSTA e mai
+    avvenuta: senza, sparirebbe e nessuno saprebbe che era stata offerta."""
+    viva = proposta_di_chiusura_viva(trade_id)
+    if viva is None:
+        return
+    (
+        _sb().table("safe_strategy_requests")
+        .update({"status": "rejected",
+                 "result": {**(viva.get("result") or {}), "decaduta": True,
+                            "motivo": str(motivo)[:200]},
+                 "updated_at": _now_iso()})
+        .eq("id", int(viva["id"])).execute()
+    )
 
 
 def set_request_status(req_id: int, status: str,

@@ -102,6 +102,10 @@ export interface SafeParamsEffective {
      *  soldi veri. E' l'unica cosa che non si puo' lasciare dedurre a chi
      *  guarda lo schermo: dice DA QUALE strategia escono soldi veri. */
     strategy_modes?: Record<string, string> | null;
+    /** CERT. 14/09 — cancelletto di approvazione sulle CHIUSURE del tennis.
+     *  Se e' false la pagina DEVE dirlo: altrimenti l'utente crede di avere il
+     *  controllo delle chiusure e non ce l'ha. */
+    tennis_exit_approval?: boolean;
 }
 
 /** CERT. 14/09 — strategie che stanno operando a SOLDI VERI adesso.

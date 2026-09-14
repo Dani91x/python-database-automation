@@ -111,6 +111,31 @@ class FakeDB:
     def pending_requests(self, limit=50):
         return [r for r in self.requests if r.get("status") == "pending"]
 
+    # --- proposte di chiusura (cancelletto di approvazione) ---
+    def proposta_di_chiusura_viva(self, trade_id):
+        for r in self.requests:
+            if (r.get("status") == "proposed"
+                    and int((r.get("payload") or {}).get("trade_id") or 0) == int(trade_id)):
+                return r
+        return None
+
+    def scrivi_proposta_di_chiusura(self, trade_id, payload):
+        corpo = {**payload, "trade_id": int(trade_id)}
+        viva = self.proposta_di_chiusura_viva(trade_id)
+        if viva is not None:
+            viva["payload"] = corpo
+            return int(viva["id"])
+        self._id += 1
+        self.requests.append({"id": self._id, "kind": "cashout", "status": "proposed",
+                              "payload": corpo, "result": None})
+        return self._id
+
+    def chiudi_proposta(self, trade_id, motivo):
+        viva = self.proposta_di_chiusura_viva(trade_id)
+        if viva is not None:
+            viva["status"] = "rejected"
+            viva["result"] = {**(viva.get("result") or {}), "decaduta": True, "motivo": motivo}
+
     def set_request_status(self, req_id, status, result=None):
         for r in self.requests:
             if r["id"] == req_id:
@@ -3090,3 +3115,164 @@ def test_manuale_su_partita_non_nel_feed_viene_rifiutato():
     assert db.requests[0]["status"] == "error"
     assert db.requests[0]["result"]["error"] == "feed_assente"
     assert not db.trades
+
+
+# ---------------------------------------------------------------------------
+# CERT. 14/09 — CANCELLETTO DI APPROVAZIONE SULLE CHIUSURE DEL TENNIS
+# Ordine dell'utente: le APERTURE restano automatiche, le CHIUSURE gli vengono
+# PROPOSTE e le approva lui. Solo il tennis, solo le chiusure.
+# ---------------------------------------------------------------------------
+def _db_tennis_con_cancelletto(acceso=True):
+    db = FakeDB(status="running", params={"tennis_exit_approval": bool(acceso)})
+    tid = _auto_trade(db, "tennis", event_id="2.1", market_id="mt", selection_id=11,
+                      side="back", price=1.3, sport="tennis",
+                      score_at_entry="set 1-0 · game 4-2", minute_at_entry=None,
+                      signal_key="2.1:tennis:set 1-0")
+    return db, tid
+
+
+def _proposte(db):
+    return [r for r in db.requests if r.get("status") == "proposed"]
+
+
+def test_col_cancelletto_la_chiusura_si_PROPONE_e_non_parte():
+    """Il caso che l'utente ha chiesto: l'uscita matura, ma a mercato non va
+    niente finche' non la approva lui."""
+    db, tid = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    r = _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert r["exits"] == 0, "NIENTE deve essere andato a mercato"
+    assert _closings(db, tid) == [], "nessuna gamba di chiusura"
+    prop = _proposte(db)
+    assert len(prop) == 1
+    p = prop[0]["payload"]
+    assert p["trade_id"] == tid and prop[0]["kind"] == "cashout"
+    assert p["exit_kind"] == "mandatory"
+    assert p["urgente"] is True, "l'uscita obbligatoria va marcata: non approvarla costa"
+    # il lato e il prezzo sono quelli DELL'ORDINE DI CHIUSURA, non dell'apertura
+    assert p["side"] == "lay" and p["entry_side"] == "back"
+    # la CHIAVE con cui la pagina pesca il prezzo vivo dal feed
+    assert p["market_id"] and p["selection_id"]
+    # la FOTOGRAFIA al momento della decisione, non il prezzo su cui si piazza
+    assert p["price_at_decision"] is not None and p["size"] is not None
+    assert "locked_at_decision" in p and "hold_profit" in p
+    assert p["decided_at"]
+
+
+def test_senza_cancelletto_NIENTE_cambia():
+    """Il default non tocca il comportamento di oggi."""
+    assert S.resolve_params(None)["tennis_exit_approval"] is False
+    db, tid = _db_tennis_con_cancelletto(acceso=False)
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    r = _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert r["exits"] == 1 and len(_closings(db, tid)) == 1
+    assert _proposte(db) == []
+
+
+def test_il_cancelletto_NON_tocca_il_calcio():
+    """Perimetro: solo il tennis. Una base col cancelletto acceso chiude come
+    sempre — allargarlo sarebbe una decisione che nessuno ha preso."""
+    db = FakeDB(status="running", params={"tennis_exit_approval": True})
+    tid = _auto_trade(db, "base", event_id="1.1", market_id="m1", selection_id=8,
+                      side="lay", price=8.0, score_at_entry="1-0", minute_at_entry=60)
+    _cycle(db, _exit_feed_row(minute=60, sh=1, sa=0))
+    r = _cycle(db, _exit_feed_row(minute=81, sh=1, sa=0))
+    assert r["exits"] == 1 and len(_closings(db, tid)) == 1
+    assert _proposte(db) == []
+
+
+def test_la_proposta_e_UNA_e_il_prezzo_che_si_muove_NON_la_riscrive():
+    """Una proposta per posizione, e il prezzo NON e' sostanza.
+
+    Il prezzo vivo la pagina lo pesca dal feed di scansione, che le arriva in
+    push: riscrivere la riga a ogni giro per aggiornare un numero che la pagina
+    ha gia' sarebbe traffico su un database che a settembre e' gia' andato giu'
+    una volta per esaurimento di I/O."""
+    db, tid = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    primo = dict(_proposte(db)[0]["payload"])
+    mosso = _tennis_feed_row((1, 0), (4, 4))
+    mosso["payload"]["odds"]["p1"].update({"back": 1.40, "lay": 1.45})
+    _cycle(db, mosso)
+    assert len(_proposte(db)) == 1, "una proposta per posizione, non una per ciclo"
+    dopo = _proposte(db)[0]["payload"]
+    # la FOTOGRAFIA resta quella della decisione: e' il riferimento con cui la
+    # pagina calcola lo scostamento del prezzo vivo
+    assert dopo["price_at_decision"] == primo["price_at_decision"]
+    assert dopo["decided_at"] == primo["decided_at"]
+
+
+def test_l_uscita_obbligatoria_una_volta_scattata_NON_si_ritira():
+    """Il manuale dice «uscita OBBLIGATORIA, senza eccezioni»: una volta che il
+    leader ha perso il vantaggio nel set, la proposta resta anche se il game
+    successivo lo rivince. Non decade e non si duplica — resta UNA, la stessa,
+    in attesa di una firma."""
+    db, tid = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert len(_proposte(db)) == 1
+    primo = dict(_proposte(db)[0]["payload"])
+    _cycle(db, _tennis_feed_row((1, 0), (5, 4)))   # il leader rivince il game
+    vive = _proposte(db)
+    assert len(vive) == 1, "sempre UNA proposta per posizione"
+    assert vive[0]["payload"]["exit_kind"] == "mandatory" == primo["exit_kind"]
+    assert vive[0]["payload"]["decided_at"] == primo["decided_at"],         "l'istante della decisione non si rinfresca, o la latenza direbbe zero"
+    assert _closings(db, tid) == [], "e a mercato non e' andato niente"
+
+
+def test_una_proposta_non_viene_drenata_da_nessuno():
+    """E' il perno di tutto il cancelletto: il servizio prende solo 'pending'.
+    Se un domani qualcuno allargasse quel filtro, il cancelletto sparirebbe in
+    silenzio — e questo test diventerebbe rosso."""
+    db, _ = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert len(_proposte(db)) == 1
+    assert db.pending_requests() == [], "una proposta NON e' una richiesta da eseguire"
+    # e nemmeno dopo altri giri: nessuno la promuove da solo
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert db.pending_requests() == []
+
+
+def test_approvare_porta_a_pending_e_da_li_il_percorso_e_quello_di_sempre():
+    """L'approvazione e' solo un cambio di stato: da 'pending' in poi non
+    cambia una riga rispetto a una chiusura manuale della UI."""
+    db, tid = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    prop = _proposte(db)[0]
+    prop["status"] = "pending"          # cio' che fa `safe_request_approve`
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    assert len(_closings(db, tid)) == 1, "approvata: la chiusura va a mercato"
+    assert _proposte(db) == []
+
+
+def test_niente_proposta_quando_non_c_e_niente_da_chiudere():
+    """La proposta nasce solo quando l'uscita e' matura davvero: finche' il
+    leader conduce non c'e' niente da approvare e la pagina resta pulita."""
+    db, _ = _db_tennis_con_cancelletto()
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    assert _proposte(db) == []
+
+
+def test_il_cancelletto_non_puo_essere_aggirato_dal_residuo():
+    """Il residuo salta l'approvazione di proposito — ma SOLO dopo che una
+    chiusura e' stata approvata e inviata. Su una posizione mai approvata non
+    esiste residuo, quindi non esiste scorciatoia."""
+    db, tid = _db_tennis_con_cancelletto()
+    for _ in range(2):
+        _cycle(db, _tennis_feed_row((1, 0), (4, 2)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 3)))
+    _cycle(db, _tennis_feed_row((1, 0), (4, 4)))
+    # nessuna gamba di chiusura -> nessun residuo possibile
+    assert _closings(db, tid) == []
+    tr = [t for t in db.trades if t["id"] == tid][0]
+    assert not (tr.get("meta") or {}).get(XE.REQUEST_KEY, {}).get("sent")

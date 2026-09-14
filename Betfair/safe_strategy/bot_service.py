@@ -71,6 +71,15 @@ DEFAULT_PARAMS: dict[str, Any] = {
     # veri — la conferma LIVE resta l'unico ingresso al denaro vero, e un
     # parametro non deve poterla aggirare.
     "strategy_modes": {},
+    # CERT. 14/09 — CANCELLETTO DI APPROVAZIONE SULLE CHIUSURE DEL TENNIS.
+    # Ordine dell'utente: le aperture restano automatiche, le chiusure gliele
+    # si PROPONE e le approva lui dalla Control Room.
+    # Nasce SPENTO. Non e' un'attenuazione dell'ordine: acceso, ogni chiusura
+    # del tennis — compresa l'uscita OBBLIGATORIA del manuale — resta ferma
+    # finche' un essere umano non la promuove. Accenderlo prima che la pagina
+    # sappia mostrare le proposte vorrebbe dire fermare le chiusure senza che
+    # nessuno le veda: si accende quando c'e' chi guarda.
+    "tennis_exit_approval": False,
     "max_open_trades": 20,
     "max_liability_per_trade": 300,
     "min_size_available_factor": 1.0,
@@ -246,6 +255,7 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
     # e vuol dire "vale il ``mode`` del control per tutti", cioe' il comportamento
     # di sempre.
     out["strategy_modes"] = normalize_strategy_modes(out.get("strategy_modes"))
+    out["tennis_exit_approval"] = bool(out.get("tennis_exit_approval"))
     # ``exits`` parziale dell'utente → sezione completa (default + override + clamp)
     out["exits"] = XE.merge_exit_params(raw.get("exits"))
     out["risk"] = RK.merge_risk_params(raw.get("risk"))
@@ -355,6 +365,9 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
     # che decide da quale strategia escono soldi veri, ed e' l'unica cosa che
     # non si puo' lasciare dedurre da chi guarda lo schermo.
     out["strategy_modes"] = dict(resolved.get("strategy_modes") or {})
+    # se il cancelletto e' spento la pagina deve dirlo: altrimenti l'utente
+    # crede di avere il controllo delle chiusure e non ce l'ha.
+    out["tennis_exit_approval"] = bool(resolved.get("tennis_exit_approval"))
     return out
 
 
@@ -1841,6 +1854,12 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
             # responsabilita' intera e nello storico non c'era traccia del
             # perche'. La guardia esistente (``note_feed_blind``) copriva solo
             # la riga ASSENTE dal feed, non la riga presente e muta.
+            # una proposta viva su una condizione che NON REGGE PIU' e' una
+            # bugia sotto gli occhi di chi deve decidere: decade, col motivo.
+            # Va qui, nel ramo "nessuna uscita da fare": metterla dopo
+            # `_pulisci_dato_mancante` la cancellerebbe a ogni ciclo proprio
+            # mentre la condizione regge, cioe' ucciderebbe la proposta viva.
+            _decadi_proposta(db, trade, meta, "la condizione di uscita non regge piu'")
             _nota_dato_mancante(db, trade, meta, payload, now, now_ts)
             return False
         _pulisci_dato_mancante(db, trade, meta)
@@ -1895,6 +1914,19 @@ def _process_exit_one(*, db, market, trade: dict[str, Any], row: Optional[dict],
         if sib_prices is None:
             _exit_wait(db, trade, meta, decision, "combo_prezzi_incompleti")
             return False
+    # CERT. 14/09 — CANCELLETTO DI APPROVAZIONE (SOLO TENNIS, SOLO CHIUSURE).
+    # Qui l'uscita e' matura e passerebbe a mercato. Col cancelletto acceso si
+    # PROPONE invece di eseguire, e non parte niente.
+    # Il RESIDUO non ripassa di qui: l'utente ha gia' approvato QUELLA chiusura,
+    # e il residuo la sta solo finendo — richiedere una seconda approvazione
+    # lascerebbe mezza posizione scoperta in attesa di un clic.
+    if (residual is None
+            and bool(params.get("tennis_exit_approval"))
+            and str(trade.get("strategy") or "") == "tennis"
+            and _proponi_chiusura(db=db, trade=trade, meta=meta, decision=decision,
+                                  prices=prices, payload=payload, params=params,
+                                  row=row, now=now)):
+        return False
     sent = _send_exit(db=db, market=market, trade=trade, meta=meta, decision=decision,
                       prices=prices, payload=payload, params=params, xp=xp, now=now,
                       residual=residual, model_info=info)
@@ -2279,18 +2311,18 @@ def _p_tennis_dal_modello(payload: dict[str, Any], side: str) -> Optional[float]
         return None
 
 
-def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
-                decision: XE.ExitDecision, prices: dict[str, Any], payload: dict[str, Any],
-                params: dict[str, Any], xp: dict[str, Any], now: datetime,
-                opp_mod: Any, opps_state: Optional[dict]) -> tuple[bool, dict[str, Any]]:
-    """(tenere?, numeri usati). Solo per le uscite in PROFITTO (time/profit);
-    le uscite in perdita passano senza gate. Il P&L bloccato e le esposizioni
-    sono al netto delle gambe già fillate (vale anche per il residuo).
-    HOLD → log 'exit_hold' una volta per motivo + ``meta.exit_hold`` per la UI
-    (riscritto al cambio motivo o ogni 30 s); EXIT → ``meta.exit_hold`` rimosso.
-    Un HOLD non blocca mai una successiva uscita in perdita (non gated)."""
-    if decision.kind not in XE.PROFIT_KINDS:
-        return False, {}
+def _conti_di_chiusura(db, trade: dict[str, Any], prices: dict[str, Any],
+                       params: dict[str, Any]) -> dict[str, Any]:
+    """Quanto vale CHIUDERE adesso e quanto vale TENERE, al netto della
+    commissione. Matematica pura dei soldi, estratta da ``_model_gate`` perche'
+    la usa anche la PROPOSTA di chiusura: due copie della stessa formula sono
+    due formule che prima o poi divergono, e qui divergerebbero sui numeri che
+    l'utente guarda per decidere.
+
+    - ``locked``: P&L bloccato se si chiude ORA (None = piano non calcolabile)
+    - ``hold_profit``: P&L se si tiene e la posizione va a buon fine
+    - ``loss_if_lose``: quanto si perde se va male (positivo)
+    """
     locked: Optional[float] = None
     legs = X.known_closings(db, trade) or []
     try:
@@ -2304,9 +2336,33 @@ def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
     exp_win, exp_lose = X.net_exposures(trade, legs)   # P&L se la selezione vince / perde
     is_lay = str(trade.get("side") or "").lower() == "lay"
     comm = _commission_of(trade, params)               # M-27: tutto al NETTO
-    locked = XE.net_of_commission(locked, comm)
-    hold_profit = float(XE.net_of_commission(exp_lose if is_lay else exp_win, comm) or 0.0)
-    loss_if_lose = max(0.0, -float(exp_win if is_lay else exp_lose))
+    return {
+        "legs": legs,
+        "locked": XE.net_of_commission(locked, comm),
+        "hold_profit": float(XE.net_of_commission(exp_lose if is_lay else exp_win, comm) or 0.0),
+        "loss_if_lose": max(0.0, -float(exp_win if is_lay else exp_lose)),
+        "is_lay": is_lay,
+    }
+
+
+def _model_gate(*, db, trade: dict[str, Any], meta: dict[str, Any],
+                decision: XE.ExitDecision, prices: dict[str, Any], payload: dict[str, Any],
+                params: dict[str, Any], xp: dict[str, Any], now: datetime,
+                opp_mod: Any, opps_state: Optional[dict]) -> tuple[bool, dict[str, Any]]:
+    """(tenere?, numeri usati). Solo per le uscite in PROFITTO (time/profit);
+    le uscite in perdita passano senza gate. Il P&L bloccato e le esposizioni
+    sono al netto delle gambe già fillate (vale anche per il residuo).
+    HOLD → log 'exit_hold' una volta per motivo + ``meta.exit_hold`` per la UI
+    (riscritto al cambio motivo o ogni 30 s); EXIT → ``meta.exit_hold`` rimosso.
+    Un HOLD non blocca mai una successiva uscita in perdita (non gated)."""
+    if decision.kind not in XE.PROFIT_KINDS:
+        return False, {}
+    conti = _conti_di_chiusura(db, trade, prices, params)
+    legs = conti["legs"]
+    is_lay = conti["is_lay"]
+    locked = conti["locked"]
+    hold_profit = conti["hold_profit"]
+    loss_if_lose = conti["loss_if_lose"]
     p_sel, source = _p_selection_wins(db=db, trade=trade, payload=payload, prices=prices,
                                       meta=meta, params=params, now=now, opp_mod=opp_mod,
                                       opps_state=opps_state)
@@ -2647,6 +2703,142 @@ def _exit_wait(db, trade: dict[str, Any], meta: dict[str, Any], decision: XE.Exi
         pass
     _log(db, "exit_wait", {"trade_id": trade.get("id"), "kind": decision.kind,
                            "reason": decision.reason, "wait": why})
+
+
+# CERT. 14/09 — CANCELLETTO DI APPROVAZIONE SULLE CHIUSURE DEL TENNIS.
+# Marker sulla riga del trade: senza, per sapere se esiste gia' una proposta
+# viva servirebbe una query per trade per ciclo.
+PROPOSTA_KEY = "exit_proposal"
+# uscite per cui non approvare COSTA: sono quelle che il manuale dichiara
+# obbligatorie o urgenti. La proposta le marca cosi' la pagina puo' urlarle.
+_USCITE_URGENTI = ("loss", "mandatory", "red_card")
+
+
+def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
+                      decision: XE.ExitDecision, prices: dict[str, Any],
+                      payload: dict[str, Any], params: dict[str, Any],
+                      row: Optional[dict[str, Any]], now: datetime) -> bool:
+    """Scrive (o aggiorna) la PROPOSTA di chiusura invece di mandare l'ordine.
+
+    Ritorna True se la proposta esiste: il chiamante allora NON invia niente.
+    Ritorna False se la scrittura non e' riuscita — e in quel caso il chiamante
+    procede come sempre. E' la direzione giusta del ripiego: il guasto di una
+    tabella di proposte non puo' lasciare una posizione aperta senza uscita,
+    che e' la cosa che costa davvero. La pagina lo vede lo stesso, perche'
+    l'uscita finisce nel log come tutte le altre.
+    """
+    prima = (meta.get(PROPOSTA_KEY) or {}) if isinstance(meta.get(PROPOSTA_KEY), dict) else {}
+    size_ora = _f(trade.get("size"), None)
+    # SOSTANZA della proposta: il motivo dell'uscita e quanto c'e' da chiudere.
+    # Il PREZZO non e' sostanza: la pagina lo pesca vivo dal feed di scansione
+    # (che le arriva in push) usando market_id + selection_id + lato. Riscrivere
+    # la riga a ogni giro per aggiornare un prezzo che la pagina ha gia' sarebbe
+    # traffico inutile su un database che a settembre e' gia' andato giu' una
+    # volta per esaurimento di I/O.
+    sostanza = (str(decision.kind), str(decision.reason), size_ora)
+    if (int(prima.get("request_id") or 0) > 0
+            and tuple(prima.get("sostanza") or ()) == sostanza):
+        return True          # proposta gia' viva e invariata: nessuna scrittura
+    sit = XE.situation(trade, payload)
+    conti = _conti_di_chiusura(db, trade, prices, params)
+    # l'istante della DECISIONE si conserva: se lo si rinfrescasse, la latenza
+    # misurata sarebbe sempre ~zero e il numero direbbe il contrario del vero.
+    decided_at = str(prima.get("decided_at") or now.isoformat())
+    back, lay = _f(prices.get("back"), None), _f(prices.get("lay"), None)
+    # per chiudere si attraversa lo spread: chi ha un BACK aperto chiude LAYando
+    lato_chiusura = "lay" if str(trade.get("side") or "").lower() == "back" else "back"
+    prezzo_ora = lay if lato_chiusura == "lay" else back
+    corpo = {
+        "trade_id": int(trade["id"]),
+        "event_id": trade.get("event_id"),
+        "event_name": trade.get("event_name"),
+        "sport": trade.get("sport"),
+        "strategy": trade.get("strategy"),
+        "selection_name": trade.get("selection_name"),
+        "market_id": trade.get("market_id"),
+        "market_type": trade.get("market_type"),
+        # stessa selezione dell'apertura: si chiude scommettendo il lato
+        # OPPOSTO sulla STESSA selezione. Insieme a market_id e side e' la
+        # chiave con cui la pagina pesca il prezzo vivo dal feed.
+        "selection_id": trade.get("selection_id"),
+        # lato e prezzo DELL'ORDINE DI CHIUSURA, non dell'apertura: e' quello
+        # che verrebbe piazzato premendo APPROVA
+        "side": lato_chiusura,
+        # CHIAVE con cui la pagina pesca il PREZZO VIVO dal feed di scansione:
+        # market_id + selection_id + lato. Il prezzo qui sotto e' la
+        # FOTOGRAFIA al momento della decisione, e serve a due cose — sapere su
+        # cosa il bot ha deciso, e misurare lo scostamento. Non e' il prezzo su
+        # cui si piazza: quello lo guarda l'utente, vivo, un istante prima.
+        "price_at_decision": prezzo_ora,
+        "size_available_at_decision": _f(prices.get(f"{lato_chiusura}_size"), None),
+        "entry_side": str(trade.get("side") or "").lower(),
+        "entry_price": _f(trade.get("price"), None),
+        "size": _f(trade.get("size"), None),
+        # CODICI, non testo: la frase in italiano vive in UN solo posto
+        # (`frontend/safeActivity.ts`: `safeExitKindLabel` / `safeReasonLabel`)
+        # e la Control Room riusa quella. Tradurre anche qui vorrebbe dire due
+        # tabelle che prima o poi dicono due cose diverse della stessa uscita.
+        "exit_kind": decision.kind,
+        "exit_reason": decision.reason,
+        "urgente": decision.kind in _USCITE_URGENTI,
+        "minute": sit.get("minute"),
+        "score": sit.get("score"),
+        # quanto vale chiudere ORA e quanto vale tenere, al netto della
+        # commissione: sono i due numeri su cui si decide
+        "locked_at_decision": conti["locked"],
+        "hold_profit": conti["hold_profit"],
+        "loss_if_lose": conti["loss_if_lose"],
+        "mode": str(trade.get("mode") or "paper"),
+        "feed_updated_at": (row or {}).get("updated_at"),
+        # eta' del PREZZO su cui si opererebbe (non dello scritto sul feed):
+        # e' il numero che conta prima di piazzare
+        "odds_ts_ms": payload.get("odds_ts_ms"),
+        # CERT. 14/09 — I DUE ISTANTI CHE RENDONO MISURABILE LA LATENZA.
+        # `decided_at` NON si rinfresca a ogni aggiornamento della proposta: e'
+        # il momento in cui la regola del manuale e' scattata, e resta fermo.
+        # `proposed_at` invece e' l'ultimo aggiornamento. La differenza fra
+        # `decided_at` e il piazzamento e' la latenza vera di una chiusura
+        # approvata a mano — che e' quella che l'utente vuole vedere.
+        "decided_at": decided_at,
+        "proposed_at": now.isoformat(),
+    }
+    try:
+        rid = db.scrivi_proposta_di_chiusura(int(trade["id"]), corpo)
+    except Exception as ex:  # noqa: BLE001
+        _log(db, "error", {"reason": "proposta_chiusura_fallita",
+                           "trade_id": trade.get("id"), "err": str(ex)[:160],
+                           "critical": True})
+        return False
+    if not rid:
+        return False
+    nuovo = {**meta, PROPOSTA_KEY: {"request_id": int(rid), "ts": now.isoformat(),
+                                    "decided_at": decided_at,
+                                    "sostanza": list(sostanza),
+                                    "kind": decision.kind}}
+    db.update_trade(int(trade["id"]), meta=nuovo)
+    trade["meta"] = nuovo
+    _log(db, "exit_hold", {"reason": "in_attesa_di_approvazione",
+                           "trade_id": trade.get("id"), "request_id": int(rid),
+                           "exit_kind": decision.kind, "exit_reason": decision.reason,
+                           "critical": bool(corpo["urgente"])})
+    return True
+
+
+def _decadi_proposta(db, trade: dict[str, Any], meta: dict[str, Any], motivo: str) -> None:
+    """La condizione di uscita non regge piu': la proposta viva decade.
+
+    Si guarda il MARKER sulla riga, non il database: senza, servirebbe una
+    query per trade a ogni ciclo per una cosa che quasi sempre non c'e'."""
+    if not isinstance(meta.get(PROPOSTA_KEY), dict):
+        return
+    try:
+        db.chiudi_proposta(int(trade["id"]), motivo)
+    except Exception as ex:  # noqa: BLE001 — non e' money-critical
+        logger.warning("[safe.bot] decadenza proposta KO (trade %s): %s",
+                       trade.get("id"), str(ex)[:120])
+    nuovo = {k: v for k, v in meta.items() if k != PROPOSTA_KEY}
+    db.update_trade(int(trade["id"]), meta=nuovo)
+    trade["meta"] = nuovo
 
 
 def _send_exit(*, db, market, trade: dict[str, Any], meta: dict[str, Any],

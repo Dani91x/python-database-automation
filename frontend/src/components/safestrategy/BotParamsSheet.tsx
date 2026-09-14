@@ -510,6 +510,11 @@ export function BotParamsSheet({
                 { key: 'base.requireControl', label: 'BASE: richiedi il controllo del gioco', type: 'boolean' as const, hint: 'la favorita protetta deve premere (corner e cartellini). Se il dato non arriva la strategia NON entra: accendilo solo dopo aver visto la copertura nelle attività' },
                 { key: 'esatto.requireControl', label: 'R. ESATTO: la bancata NON deve avere il controllo', type: 'boolean' as const, hint: 'condizione INVERTITA rispetto alle altre due: se la squadra bancata comanda il gioco è più probabile che segni ancora, ed è il gol che fa perdere' },
                 { key: 'punta.requireControl', label: 'PUNTA: richiedi il controllo del gioco', type: 'boolean' as const, hint: 'la favorita deve continuare a spingere' },
+                // CERT. 14/09 — cancelletto di approvazione sulle CHIUSURE del
+                // tennis. Le aperture restano automatiche. Acceso, OGNI chiusura
+                // del tennis — compresa l'uscita obbligatoria del manuale —
+                // resta ferma finché non la approvi tu dalla Control Room.
+                { key: 'tennis_exit_approval', label: 'TENNIS: le chiusure le approvo io', type: 'boolean' as const, hint: 'le aperture restano automatiche; ogni chiusura ti viene PROPOSTA e parte solo quando la approvi. Vale anche per l’uscita obbligatoria del manuale: finché non approvi, la posizione resta aperta' },
             ],
         },
         {
