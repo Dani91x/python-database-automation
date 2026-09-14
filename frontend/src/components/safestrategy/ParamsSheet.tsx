@@ -126,6 +126,12 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
                 .map((x) => x.trim().toLowerCase())
                 .filter(Boolean),
             excludeDoubles: d.tennis.excludeDoubles,
+            // CERT. 14/09 — questo pannello e' quello LEGACY (montato solo
+            // quando il bot non esiste ancora) e non li espone: si tengono i
+            // default del motore, cosi' le due esclusioni del manuale restano
+            // attive invece di sparire passando di qui.
+            excludeBestOf5: DEFAULT_PARAMS.tennis.excludeBestOf5,
+            setsPlayedMax: DEFAULT_PARAMS.tennis.setsPlayedMax,
         },
     };
     checkRange('Base · favorita pre-match', params.base.favPreMin, params.base.favPreMax, errors);

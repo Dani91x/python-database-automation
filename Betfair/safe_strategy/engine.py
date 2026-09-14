@@ -49,6 +49,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 # ------------------------------------------------------------ caratteri speciali
 PRIME = "′"      # minuto: 58'
 GEQ = "≥"        # >=
+LEQ = "≤"        # <=
 RSQUO = "’"      # apostrofo tipografico
 EGRAVE = "è"     # e accentata
 IGRAVE = "ì"     # i accentata (il "si" affermativo)
@@ -214,6 +215,15 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "backMin": 1.01,
         "backMax": 1.1,
         "excludeDoubles": True,
+        # CERT. 14/09 — il manuale: "evita gli Slam maschili (al meglio dei 5
+        # set, piu' rischio fisico)". Il rilevatore esisteva ma era usato SOLO
+        # nelle uscite: all'ingresso non filtrava niente.
+        "excludeBestOf5": True,
+        # "1 set vinto + 2-3 game di vantaggio nel 2 set": il vantaggio di UN set
+        # deve venire dall'UNICO set gia' giocato. In bo3 e' automatico (2-0
+        # chiude la partita), in bo5 no: 2-1 passava come "un set avanti" pur
+        # avendone gia' perso uno. 0 = controllo spento.
+        "setsPlayedMax": 1,
         # vuoto di default: il filtro per nome torneo non distingue tabellone
         # maschile/femminile - la lista la compila l'utente.
         "excludeCompetitions": [],
@@ -311,6 +321,8 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "backMin": _num(t.get("backMin"), d["tennis"]["backMin"]),
             "backMax": _num(t.get("backMax"), d["tennis"]["backMax"]),
             "excludeDoubles": _bool(t.get("excludeDoubles"), d["tennis"]["excludeDoubles"]),
+            "excludeBestOf5": _bool(t.get("excludeBestOf5"), d["tennis"]["excludeBestOf5"]),
+            "setsPlayedMax": _num(t.get("setsPlayedMax"), d["tennis"]["setsPlayedMax"]),
             "excludeCompetitions": _keyword_list(
                 t.get("excludeCompetitions"), d["tennis"]["excludeCompetitions"]
             ),
@@ -619,6 +631,39 @@ def favorite_side(pre_match: Optional[Dict[str, float]]) -> Optional[str]:
     if pre_match["home"] == pre_match["away"]:
         return None
     return "home" if pre_match["home"] < pre_match["away"] else "away"
+
+
+# ------------------------------------------------------- formato del match
+# CERT. 14/09 — questi vivevano in ``tennis_opportunity``, che importa QUESTO
+# modulo: l'ingresso non poteva usarli senza una dipendenza circolare, e infatti
+# il manuale chiede di "evitare gli Slam maschili (al meglio dei 5 set, piu'
+# rischio fisico)" ma il filtro non esisteva all'ingresso — solo nelle uscite.
+# Stanno qui perche' ``engine`` e' il modulo puro di base; ``tennis_opportunity``
+# li reimporta da qui, cosi' la regola resta UNA SOLA.
+BO5_KEYWORDS = ("australian open", "roland garros", "french open",
+                "wimbledon", "us open")
+# marcatori che riportano a 3 set anche dentro uno Slam (tabellone femminile,
+# juniores, qualificazioni, doppio, carrozzina, esibizioni)
+BO3_MARKERS = ("women", "wta", "ladies", "girl", "boy", "junior",
+               "wheelchair", "qualif", "mixed", "legend", "doubles")
+
+
+def detect_best_of(competition: Optional[str], sets: Tuple[int, int],
+                   params: Optional[Dict[str, Any]] = None) -> int:
+    """5 se forzato, se sono gia' stati giocati >= 3 set, o se e' uno Slam
+    maschile (euristica sul nome del torneo: parola chiave Slam senza un
+    marcatore femminile/juniores/qualificazioni). PURA."""
+    params = params or {}
+    forced = params.get("best_of")
+    if forced in (3, 5):
+        return int(forced)
+    if sets[0] + sets[1] >= 3:
+        return 5
+    comp = (competition or "").lower()
+    if comp and any(k in comp for k in params.get("bo5_keywords", BO5_KEYWORDS)):
+        if not any(m in comp for m in params.get("bo3_markers", BO3_MARKERS)):
+            return 5
+    return 3
 
 
 def leader_side(score_home: int, score_away: int) -> Optional[str]:
@@ -1060,6 +1105,32 @@ def evaluate_tennis(ctx: TennisMatchCtx, params: Dict[str, Any]) -> VariantEvalu
                 g_lead >= params["gamesLeadMin"],
             )
         )
+
+    # CERT. 14/09 — FORMATO DEL MATCH. Il manuale chiede di evitare gli Slam
+    # maschili (al meglio dei 5 set: piu' rischio fisico, e il rischio fisico e'
+    # l'unico modo di perdere TUTTO lo stake in questa strategia). Il rilevatore
+    # esisteva gia' ma serviva solo alle uscite.
+    # Senza il nome della competizione non si inventa niente: ``ok=None`` -> n/d,
+    # e ``state_from_checks`` impedisce il segnale. Mai un ingresso al buio.
+    if params.get("excludeBestOf5"):
+        if ctx.competition is None:
+            checks.append(ConditionCheck("bestOf", "Al meglio dei 3 set", "n/d", None))
+        else:
+            sets_pair = ((ctx.sets["p1"], ctx.sets["p2"]) if ctx.sets is not None else (0, 0))
+            bo = detect_best_of(ctx.competition, sets_pair)
+            checks.append(ConditionCheck(
+                "bestOf", "Al meglio dei 3 set", f"al meglio dei {js_num(bo)}", bo != 5))
+
+    # "1 set vinto + 2-3 game di vantaggio nel 2 set": il vantaggio di UN set
+    # deve venire dall'UNICO set gia' giocato. In bo3 e' automatico; in bo5 un
+    # 2-1 passava come "un set avanti" pur avendone gia' perso uno.
+    max_set = int(params.get("setsPlayedMax") or 0)
+    if max_set > 0:
+        giocati = None if ctx.sets is None else int(ctx.sets["p1"]) + int(ctx.sets["p2"])
+        checks.append(ConditionCheck(
+            "setsPlayed", f"Set gia' giocati {LEQ}{js_num(max_set)}",
+            "n/d" if giocati is None else js_num(giocati),
+            None if giocati is None else giocati <= max_set))
 
     checks.append(_score_confirm_check(ctx.score_observed_sec, params["scoreConfirmSec"]))
 

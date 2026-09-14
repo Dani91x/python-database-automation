@@ -226,6 +226,7 @@ const STRATEGY_FIELDS: Num[] = [
     { key: 'tennis.backMin', label: 'TENNIS · quota leader MIN', step: 0.01, min: 1 },
     { key: 'tennis.backMax', label: 'TENNIS · quota leader MAX', step: 0.01, min: 1 },
     { key: 'tennis.scoreConfirmSec', label: 'TENNIS · punteggio stabile (s)', step: 5, min: 0 },
+    { key: 'tennis.setsPlayedMax', label: 'TENNIS · set già giocati MAX', step: 1, min: 0, max: 5, hint: 'il vantaggio di un set deve venire dal solo set disputato (regola del manuale). 0 = controllo spento' },
 ];
 
 const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
@@ -442,7 +443,14 @@ export function BotParamsSheet({
         {
             label: 'Condizioni delle strategie',
             note: 'Il minuto delle strategie calcio è una SOGLIA: "dal minuto X in poi".',
-            fields: numFields(STRATEGY_FIELDS, flat, effective, corrections),
+            fields: [
+                ...numFields(STRATEGY_FIELDS, flat, effective, corrections),
+                // CERT. 14/09 — il manuale chiede di evitare gli Slam maschili
+                // (5 set, più rischio fisico): il rischio fisico è l'unico modo
+                // di perdere TUTTO lo stake in questa strategia.
+                { key: 'tennis.excludeBestOf5', label: 'TENNIS: escludi gli Slam maschili (5 set)', type: 'boolean' as const, hint: 'più rischio fisico, e il ritiro è il solo modo di perdere tutto lo stake; il tabellone femminile dello stesso Slam resta ammesso' },
+                { key: 'tennis.excludeDoubles', label: 'TENNIS: escludi i doppi', type: 'boolean' as const, hint: 'il manuale li esclude' },
+            ],
         },
         {
             label: 'Uscite automatiche',

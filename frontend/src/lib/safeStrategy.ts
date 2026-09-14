@@ -130,6 +130,20 @@ export interface TennisParams {
     backMax: number;
     /** esclude i doppi (nomi con "/") */
     excludeDoubles: boolean;
+    /**
+     * Esclude gli Slam MASCHILI (al meglio dei 5 set). Il manuale: «evita gli
+     * Slam maschili, più rischio fisico» — e il rischio fisico (ritiro) è
+     * l'unico modo di perdere TUTTO lo stake in questa strategia.
+     * Senza il nome del torneo la condizione è n/d: mai un ingresso al buio.
+     */
+    excludeBestOf5: boolean;
+    /**
+     * Set già giocati al massimo. «1° set vinto + 2-3 game di vantaggio nel 2°»:
+     * il vantaggio di UN set deve venire dall'UNICO set giocato. In bo3 è
+     * automatico, in bo5 un 2-1 passerebbe pur avendone già perso uno.
+     * 0 = controllo spento.
+     */
+    setsPlayedMax: number;
     /** parole chiave di competizioni da ESCLUDERE (match su competition_name,
      *  case-insensitive; es. gli Slam maschili best-of-5). Vuoto = nessun filtro. */
     excludeCompetitions: string[];
@@ -177,6 +191,8 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         backMin: 1.01,
         backMax: 1.1,
         excludeDoubles: true,
+        excludeBestOf5: true,
+        setsPlayedMax: 1,
         // vuoto di default: il filtro per nome torneo non distingue tabellone
         // maschile/femminile (gli Slam femminili sono best-of-3 e NON da evitare)
         // — la lista la compila l'utente secondo il suo criterio.
@@ -256,6 +272,8 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             backMin: num(t.backMin, d.tennis.backMin),
             backMax: num(t.backMax, d.tennis.backMax),
             excludeDoubles: bool(t.excludeDoubles, d.tennis.excludeDoubles),
+            excludeBestOf5: bool(t.excludeBestOf5, d.tennis.excludeBestOf5),
+            setsPlayedMax: num(t.setsPlayedMax, d.tennis.setsPlayedMax),
             excludeCompetitions: keywordList(t.excludeCompetitions, d.tennis.excludeCompetitions),
             scoreConfirmSec: num(t.scoreConfirmSec, d.tennis.scoreConfirmSec),
         },
@@ -541,6 +559,24 @@ export function favoriteSide(preMatch: FootballMatchCtx['preMatch']): SideId | n
     if (!preMatch) return null;
     if (preMatch.home === preMatch.away) return null;
     return preMatch.home < preMatch.away ? 'home' : 'away';
+}
+
+/**
+ * Al meglio di quanti set — gemello di ``engine.detect_best_of`` (stesse parole
+ * chiave, stesso ordine di valutazione). 5 se sono già stati giocati ≥3 set, o
+ * se è uno Slam senza un marcatore femminile/juniores/qualificazioni.
+ */
+const BO5_KEYWORDS = ['australian open', 'roland garros', 'french open', 'wimbledon', 'us open'];
+const BO3_MARKERS = ['women', 'wta', 'ladies', 'girl', 'boy', 'junior',
+    'wheelchair', 'qualif', 'mixed', 'legend', 'doubles'];
+
+export function detectBestOf(competition: string | null, setsPlayed: number): number {
+    if (setsPlayed >= 3) return 5;
+    const comp = (competition ?? '').toLowerCase();
+    if (comp && BO5_KEYWORDS.some((k) => comp.includes(k))) {
+        if (!BO3_MARKERS.some((m) => comp.includes(m))) return 5;
+    }
+    return 3;
 }
 
 function leaderSide(scoreHome: number, scoreAway: number): SideId | null {
@@ -994,6 +1030,35 @@ export function evaluateTennis(ctx: TennisMatchCtx, params: TennisParams): Varia
             label: `${params.gamesLeadMin}+ game di vantaggio nel set corrente`,
             value: `${ctx.games.p1}-${ctx.games.p2}`,
             ok: gLead >= params.gamesLeadMin,
+        });
+    }
+
+    // CERT. 14/09 — FORMATO DEL MATCH, gemello di ``engine.detect_best_of``.
+    // Il manuale chiede di evitare gli Slam maschili; il filtro non esisteva
+    // all'ingresso, né qui né nel motore Python.
+    if (params.excludeBestOf5) {
+        if (ctx.competition === null) {
+            checks.push({ id: 'bestOf', label: 'Al meglio dei 3 set', value: 'n/d', ok: null });
+        } else {
+            const played = ctx.sets === null ? 0 : ctx.sets.p1 + ctx.sets.p2;
+            const bo = detectBestOf(ctx.competition, played);
+            checks.push({
+                id: 'bestOf',
+                label: 'Al meglio dei 3 set',
+                value: `al meglio dei ${bo}`,
+                ok: bo !== 5,
+            });
+        }
+    }
+
+    // «1° set vinto»: il vantaggio di UN set deve venire dall'UNICO set giocato
+    if (params.setsPlayedMax > 0) {
+        const played = ctx.sets === null ? null : ctx.sets.p1 + ctx.sets.p2;
+        checks.push({
+            id: 'setsPlayed',
+            label: `Set già giocati ≤${params.setsPlayedMax}`,
+            value: played === null ? 'n/d' : String(played),
+            ok: played === null ? null : played <= params.setsPlayedMax,
         });
     }
 

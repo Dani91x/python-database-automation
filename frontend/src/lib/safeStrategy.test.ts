@@ -384,7 +384,14 @@ describe('evaluatePunta', () => {
 });
 
 // ---------------------------------------------------------------- 4 · Tennis
-const TENNIS_FOLLOW = { event_id: 'tv1', player1_name: 'Rossi M.', player2_name: 'Bianchi L.' };
+// CERT. 14/09 — il nome del torneo c'è SEMPRE nel feed reale (verificato: 10
+// righe tennis su 10). Senza, il nuovo check sul formato del match (al meglio
+// dei 3 o dei 5 set) resta n/d e blocca il segnale: era una fixture che
+// misurava una situazione che in produzione non esiste. 'ATP Rome' = 3 set.
+const TENNIS_FOLLOW = {
+    event_id: 'tv1', player1_name: 'Rossi M.', player2_name: 'Bianchi L.',
+    competition_name: 'ATP Rome',
+};
 
 function tennisNow(over: {
     sets?: { p1: number; p2: number } | null;

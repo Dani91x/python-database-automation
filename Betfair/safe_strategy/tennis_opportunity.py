@@ -147,19 +147,11 @@ def devig_pair(back1: Optional[float], back2: Optional[float]) -> Tuple[Optional
     return (i1, i2)
 
 
-def detect_best_of(competition: Optional[str], sets: Tuple[int, int], params: Dict[str, Any]) -> int:
-    """5 se forzato, se gia' giocati >= 3 set, o se Slam maschile (euristica sul
-    nome torneo: keyword Slam senza marker femminile/junior/qualificazioni)."""
-    forced = params.get("best_of")
-    if forced in (3, 5):
-        return int(forced)
-    if sets[0] + sets[1] >= 3:
-        return 5
-    comp = (competition or "").lower()
-    if comp and any(k in comp for k in params.get("bo5_keywords", [])):
-        if not any(m in comp for m in params.get("bo3_markers", [])):
-            return 5
-    return 3
+# CERT. 14/09 — ``detect_best_of`` vive ora in ``engine`` (modulo puro di base),
+# perche' serve anche ALL'INGRESSO della strategia 3 e questo modulo non puo'
+# essere importato da ``engine`` (dipendenza circolare). Qui si ri-esporta: la
+# regola resta UNA SOLA, e chi importava da qui continua a funzionare.
+detect_best_of = E.detect_best_of
 
 
 def _age_s(updated_at: Any, now_ts: float) -> Optional[float]:

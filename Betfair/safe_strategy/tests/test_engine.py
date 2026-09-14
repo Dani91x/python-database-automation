@@ -105,7 +105,11 @@ def tennis_payload(
     mo_status: Optional[str] = "OPEN",
     p1: str = "Rossi M.",
     p2: str = "Bianchi L.",
-    competition: Optional[str] = None,
+    # CERT. 14/09 — nel feed REALE il nome del torneo c'e' SEMPRE (verificato:
+    # 10 righe tennis su 10). Il default era None e rendeva "n/d" il nuovo check
+    # sul formato del match (al meglio dei 3 o dei 5 set), cioe' misurava una
+    # situazione che in produzione non esiste. Default: un torneo a 3 set.
+    competition: Optional[str] = "ATP Rome",
     with_sizes: bool = False,
 ) -> Dict[str, Any]:
     """Equivalente scanner della fixture ``tennisNow`` del TS."""

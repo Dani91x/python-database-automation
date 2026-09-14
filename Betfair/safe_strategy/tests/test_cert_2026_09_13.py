@@ -732,3 +732,71 @@ def test_lo_stop_loss_non_passa_MAI_dal_gate_del_profitto():
     ``PROFIT_KINDS``, quindi nessuna condizione di profitto puo' trattenerle."""
     for kind in ("loss", "mandatory", "red_card"):
         assert kind not in XE.PROFIT_KINDS
+
+
+# ---------------------------------------------------------------------------
+# 8. TENNIS: le esclusioni che il manuale chiede e non c'erano (14/09)
+# ---------------------------------------------------------------------------
+def test_rilevatore_del_formato_del_match():
+    """Vive in ``engine`` (modulo puro) perche' serve anche ALL'INGRESSO;
+    ``tennis_opportunity`` lo ri-esporta, cosi' la regola resta UNA SOLA."""
+    from Betfair.safe_strategy import tennis_opportunity as TO
+    assert TO.detect_best_of is EN.detect_best_of, "nessuna duplicazione"
+    for slam in ("Wimbledon", "ATP US Open", "Roland Garros", "Australian Open"):
+        assert EN.detect_best_of(slam, (1, 0)) == 5, slam
+    # dentro lo Slam, il tabellone femminile/juniores/qualificazioni resta a 3
+    for tre in ("Wimbledon Women", "US Open Junior", "Roland Garros Qualifying",
+                "ATP Rome", "WTA Ljubljana 2026", "Biella Challenger 2026"):
+        assert EN.detect_best_of(tre, (1, 0)) == 3, tre
+    # tre set gia' giocati = per forza bo5, qualunque sia il torneo
+    assert EN.detect_best_of("ATP Rome", (2, 1)) == 5
+    assert EN.detect_best_of(None, (1, 0)) == 3
+
+
+def _ctx_tennis(competition="ATP Rome", sets=(1, 0), games=(3, 0), back=1.05):
+    return EN.build_tennis_ctx_from_scan("tv1", {
+        "event_name": "Rossi v Bianchi", "p1": "Rossi", "p2": "Bianchi",
+        "competition": competition, "inplay": True,
+        "mo_market_id": "1.9", "mo_status": "OPEN",
+        "odds": {"p1": {"back": back, "lay": back + 0.01},
+                 "p2": {"back": 15, "lay": 20}},
+        "sets": {"p1": sets[0], "p2": sets[1]},
+        "games": {"p1": games[0], "p2": games[1]},
+    }, 60)
+
+
+def test_gli_slam_maschili_sono_esclusi_allingresso():
+    """Il manuale: "evita gli Slam maschili (al meglio dei 5 set, piu' rischio
+    fisico)". Il rilevatore esisteva ma era usato SOLO nelle uscite: nessuno
+    filtrava niente all'ingresso. E il rischio fisico e' l'unico modo di
+    perdere TUTTO lo stake in questa strategia (visto una volta su 54).
+    """
+    par = EN.DEFAULT_PARAMS["tennis"]
+    assert EN.evaluate_tennis(_ctx_tennis("ATP Rome"), par).state == "signal"
+    assert EN.evaluate_tennis(_ctx_tennis("Wimbledon"), par).state == "no"
+    # il tabellone femminile dello stesso Slam e' a 3 set: passa
+    assert EN.evaluate_tennis(_ctx_tennis("Wimbledon Women"), par).state == "signal"
+
+
+def test_senza_il_nome_del_torneo_non_si_entra_al_buio():
+    """Dato mancante -> n/d, mai un falso positivo. Nel feed reale il torneo
+    c'e' sempre, quindi non blocca nulla in produzione."""
+    par = EN.DEFAULT_PARAMS["tennis"]
+    assert EN.evaluate_tennis(_ctx_tennis(None), par).state == "nd"
+
+
+def test_un_solo_set_giocato():
+    """«1 set vinto + 2-3 game di vantaggio nel 2»: il vantaggio di UN set deve
+    venire dall'UNICO set giocato. In bo3 e' automatico; in bo5 un 2-1 passava
+    come "un set avanti" pur avendone gia' perso uno."""
+    par = EN.DEFAULT_PARAMS["tennis"]
+    assert EN.evaluate_tennis(_ctx_tennis(sets=(1, 0)), par).state == "signal"
+    # 2-1: tre set giocati -> e' anche bo5 per costruzione, doppio motivo di no
+    assert EN.evaluate_tennis(_ctx_tennis(sets=(2, 1)), par).state == "no"
+
+
+def test_le_esclusioni_sono_spegnibili():
+    par = EN.merge_params({"tennis": {"excludeBestOf5": False, "setsPlayedMax": 0}})["tennis"]
+    assert EN.evaluate_tennis(_ctx_tennis("Wimbledon"), par).state == "signal"
+    assert not any(c.id in ("bestOf", "setsPlayed")
+                   for c in EN.evaluate_tennis(_ctx_tennis("Wimbledon"), par).checks)
