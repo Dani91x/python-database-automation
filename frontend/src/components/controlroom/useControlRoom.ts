@@ -31,9 +31,11 @@ import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
-    etaSecondi, freschezza,
+    etaSecondi, freschezza, realizzatoGiornata,
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
+    type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
+import { romeDay, fetchSafeDaily, type DailyRow, type DailyBreakdown } from '@/lib/dailyHistory';
 import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
 import {
     catenaOperazione, catenaSchermo,
@@ -71,6 +73,27 @@ export interface StatoBot {
      * vera è «LIVE · solo tennis».
      */
     varianti: string[] | null;
+}
+
+// ------------------------------------------------ operazioni per partita
+
+/** Una riga operativa su una partita, qualunque bot l'abbia fatta. Serve alla
+ *  scheda: cliccando il simbolo del bot si vede **cosa ha fatto davvero**,
+ *  non solo che «ha operato». */
+export interface OperazionePartita {
+    bot: Bot;
+    id: number;
+    selezione: string | null;
+    lato: 'back' | 'lay' | null;
+    prezzo: number | null;
+    size: number | null;
+    stato: string;
+    /** netto di commissione; null = non ancora regolata (≠ zero) */
+    pnl: number | null;
+    modalita: Modalita | null;
+    at: string;
+    /** strategia/gamba che l'ha prodotta, per capire QUALE regola ha operato */
+    quale: string | null;
 }
 
 // ------------------------------------------------------------- posizioni
@@ -137,6 +160,39 @@ export interface ControlRoomVM {
     obiettivo: number | null;
     obiettivoStoricizzato: boolean;
     realizzato: number | null;
+    /**
+     * IL REALIZZATO DI OGGI, diviso come serve davvero: **live e paper mai
+     * sommati in un numero solo**, e diviso **per sport** — perché con il
+     * tennis in live e il calcio in paper, «quanto ho guadagnato col tennis»
+     * senza la divisione non ha risposta.
+     *
+     * È questo che fa muovere la barra quando una posizione si chiude: prima
+     * leggeva solo il realizzato di OMEGA, quindi una vincita del tennis (che
+     * è di Safe) non la spostava di un pixel.
+     */
+    realizzatoOggi: Realizzato;
+
+    /**
+     * IL REALIZZATO CHE FA MUOVERE LA BARRA, preso dagli **AGGREGATI dei tre
+     * servizi** e non ricontato dal client.
+     *
+     * Prima leggeva `realized_today` del solo OMEGA: una vincita del tennis
+     * (che è di Safe) **non muoveva la barra per costruzione**. E il conto
+     * fatto dal client produce numeri diversi da quelli del servizio — è già
+     * successo su Omega, che per questo legge gli aggregati.
+     */
+    soldiGiornata: {
+        /** somma dei realizzati dei tre bot */
+        realizzato: number | null;
+        perBot: Record<Bot, number | null>;
+        /** responsabilità aperta, sommata */
+        liability: number | null;
+        /** P&L per SPORT, dal server (`get_safe_daily.by_sport`): mai ricontato qui */
+        perSport: Record<string, DailyBreakdown> | null;
+        operazioni: number | null;
+        vinte: number | null;
+        perse: number | null;
+    };
     /** target per partita calcolato dal SERVIZIO (Omega). Se manca, la pagina lo dichiara. */
     targetServizio: number | null;
 
@@ -186,6 +242,9 @@ export interface ControlRoomVM {
     /** la catena dell'ULTIMA operazione: da Betfair al fill, salto per salto */
     ultimaCatena: { salti: Salto[]; trade: number | null; evento: string | null };
 
+    /** operazioni per partita: la scheda le apre al clic sul simbolo del bot */
+    operazioni: Map<string, OperazionePartita[]>;
+
     proposte: PropostaVista[];
     slippagePct: number;
     setSlippagePct: (v: number) => void;
@@ -216,6 +275,9 @@ export function useControlRoom(): ControlRoomVM {
     /** istante dell'ultima lettura completa dal database: serve a dire al
      *  trader quanto è vecchio quello che vede, non quanto è vecchio il feed. */
     const [lettoAlle, setLettoAlle] = useState<number | null>(null);
+    /** riga di oggi dal server, con `by_sport` gia' calcolato: e' la fonte del
+     *  «quanto ha reso il tennis» — non si riconta niente lato client. */
+    const [safeOggi, setSafeOggi] = useState<DailyRow | null>(null);
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
@@ -237,9 +299,10 @@ export function useControlRoom(): ControlRoomVM {
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
             fetchSafeState(), fetchMikeState(), fetchRunnerState(), fetchProposte(),
+            (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g); })(),
         ]).then((r) => {
             if (!vivo) return;
-            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp] = r;
+            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp, rDaily] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -248,11 +311,12 @@ export function useControlRoom(): ControlRoomVM {
             if (rMike.status === 'fulfilled') setMike(rMike.value);
             if (rRunner.status === 'fulfilled') setRunner(rRunner.value);
             if (rProp.status === 'fulfilled') setProposte(rProp.value);
+            if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura'][i] : null))
+                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -483,6 +547,35 @@ export function useControlRoom(): ControlRoomVM {
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
+    // ── OPERAZIONI PER PARTITA ───────────────────────────────────────────────
+    const operazioni = useMemo(() => {
+        const m = new Map<string, OperazionePartita[]>();
+        const agg = (bot: Bot, t: {
+            id: number; event_id: string; selection_name?: string | null; runner_name?: string | null;
+            side?: string | null; price?: number | null; size?: number | null; status: string;
+            pnl?: number | null; mode?: string | null; placed_at: string;
+            strategy?: string | null; phase?: string | null; role?: string | null;
+        }) => {
+            if (isErrorRow(t.status)) return;           // non e' un'operazione
+            const k = String(t.event_id);
+            const riga: OperazionePartita = {
+                bot, id: t.id,
+                selezione: t.selection_name ?? t.runner_name ?? null,
+                lato: latoDi(t.side), prezzo: t.price ?? null, size: t.size ?? null,
+                stato: t.status, pnl: typeof t.pnl === 'number' ? t.pnl : null,
+                modalita: modalitaDi(t.mode), at: t.placed_at,
+                quale: t.strategy ?? t.phase ?? t.role ?? null,
+            };
+            const arr = m.get(k);
+            if (arr) arr.push(riga); else m.set(k, [riga]);
+        };
+        for (const t of omegaTrades) agg('omega', t);
+        for (const t of safe?.trades ?? []) agg('safe', t);
+        for (const t of mike?.trades ?? []) agg('mike', t);
+        for (const arr of m.values()) arr.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+        return m;
+    }, [omegaTrades, safe?.trades, mike?.trades]);
+
     const chiudi = useCallback(async (tradeId: number) => {
         // chiusura PIENA: il P&L diventa identico sui due esiti (green-up)
         await requestSafe('cashout', { trade_id: tradeId, fraction: 1 });
@@ -521,6 +614,53 @@ export function useControlRoom(): ControlRoomVM {
         };
     }, [safe?.trades]);
 
+    // ── IL REALIZZATO DI OGGI, da TUTTI E TRE i bot ──────────────────────────
+    // La barra leggeva `realized_today` di Omega: una vincita del tennis (Safe)
+    // non la muoveva. Qui si sommano le righe REGOLATE dei tre bot, tenendo
+    // separati soldi veri e simulati e dividendo per sport.
+    const realizzatoOggi = useMemo(() => {
+        const oggi = romeDay(new Date(nowMs));
+        const delGiorno = (placedAt: string | null | undefined) =>
+            !!placedAt && romeDay(new Date(placedAt)) === oggi;
+        const righe: RigaRealizzato[] = [];
+        for (const t of omegaTrades) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
+        }
+        for (const t of safe?.trades ?? []) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: t.sport });
+        }
+        for (const t of mike?.trades ?? []) {
+            if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
+        }
+        return realizzatoGiornata(righe);
+    }, [omegaTrades, safe?.trades, mike?.trades, nowMs]);
+
+    // ── LA GIORNATA, dagli AGGREGATI dei tre servizi ─────────────────────────
+    const giornataSoldi = useMemo(() => {
+        const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        const oA = omega?.aggregates ?? null;
+        const sA = safe?.aggregates ?? null;
+        const mA = mike?.aggregates ?? null;
+        const perBot: Record<Bot, number | null> = {
+            omega: n(oA?.realized_today),
+            safe: n(sA?.realized_today),
+            mike: n(mA?.realized_today),
+        };
+        const noti = Object.values(perBot).filter((v): v is number => v != null);
+        const liab = [n(oA?.open_liability), n(sA?.open_liability), n(mA?.open_liability)]
+            .filter((v): v is number => v != null);
+        const r2 = (x: number) => Math.round(x * 100) / 100;
+        return {
+            realizzato: noti.length ? r2(noti.reduce((a, b) => a + b, 0)) : null,
+            perBot,
+            liability: liab.length ? r2(liab.reduce((a, b) => a + b, 0)) : null,
+            perSport: safeOggi?.by_sport ?? null,
+            operazioni: n(safeOggi?.trades_placed),
+            vinte: n(safeOggi?.won),
+            perse: n(safeOggi?.lost),
+        };
+    }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi]);
+
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
 
     return {
@@ -529,12 +669,15 @@ export function useControlRoom(): ControlRoomVM {
         obiettivo,
         obiettivoStoricizzato: omega?.goal_snapshot === true,
         realizzato,
+        realizzatoOggi,
+        soldiGiornata: giornataSoldi,
         targetServizio,
         bots, posizioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
         schermo, ultimaCatena,
+        operazioni,
         proposte: proposteVista,
         slippagePct, setSlippagePct, approva, ignora, chiudi,
         feedSorgente: scanStatus?.payload?.source ?? null,

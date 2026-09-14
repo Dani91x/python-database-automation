@@ -36,6 +36,12 @@ const AREE = [
     'components/omega',
     'components/safestrategy',
     'components/mike',
+    // 14/09 — la CONTROL ROOM entra sotto la stessa guardia. Era l'unica
+    // superficie di trading che nessuno controllava, e infatti era andata alla
+    // deriva: `pink` al posto di `rose`, P&L senza `pnlClass` e senza segno,
+    // una barra di avanzamento senza `role="progressbar"`. Una regola che non
+    // ha chi la fa rispettare non e' una regola.
+    'components/controlroom',
 ];
 /** file singoli del guscio condiviso (fondamenta pure) */
 const LIB = ['lib/format.ts', 'lib/tradeStatus.ts', 'lib/toasts.ts'];

@@ -27,11 +27,17 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Radio, ShieldAlert, Target, Circle } from 'lucide-react';
 import { PageShell } from '@/components/trading/PageShell';
 import { EmptyState } from '@/components/trading/EmptyState';
+import { DayBar } from '@/components/trading/DayBar';
+import { ModeBanner } from '@/components/trading/ModeBanner';
+import { SplitSport, type SportKey } from '@/components/controlroom/SplitSport';
+import { SchedaPartita } from '@/components/controlroom/SchedaPartita';
+import { pnlClass } from '@/lib/tradeStatus';
+import { dayLabel as etichettaGiorno } from '@/lib/dailyHistory';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
     BOT_LABEL, affidabilePerPiazzare,
-    type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza, type StatoQuote,
+    type Bot, type GruppoCampionato, type Freschezza,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
@@ -41,11 +47,14 @@ import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } fr
 // --------------------------------------------------------------- vocabolario
 // Le parole del trader, in italiano, in un posto solo.
 
-const LATO_LABEL: Record<'back' | 'lay', string> = { back: 'Punta', lay: 'Banca' };
+// Lato: le stesse parole e gli stessi colori del resto della piattaforma —
+// BACK sky, LAY **rose** (non pink: il design system dichiara rose, e due
+// rosa diversi per la stessa cosa rallentano la lettura).
+const LATO_LABEL: Record<'back' | 'lay', string> = { back: 'BACK', lay: 'LAY' };
 
 const LATO_CLS: Record<'back' | 'lay', string> = {
     back: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    lay: 'bg-pink-500/15 text-pink-300 border-pink-500/30',
+    lay: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
 };
 
 const BOT_CLS: Record<Bot, string> = {
@@ -54,14 +63,6 @@ const BOT_CLS: Record<Bot, string> = {
     mike: 'text-teal-300',
 };
 
-const BOT_SIGLA: Record<Bot, string> = { omega: 'Ω', safe: 'S', mike: 'M' };
-
-const FRESCHEZZA_TESTO: Record<Freschezza, string> = {
-    fresca: 'fresco',
-    lenta: 'in ritardo',
-    vecchia: 'vecchio',
-    ignota: 'età sconosciuta',
-};
 
 /** I TRE STATI DEL RUNNER — «vivo» non basta.
  *  14/09: il battito diceva «2 settembre» mentre il processo girava (corretto in
@@ -85,18 +86,10 @@ const FASE_RUNNER: Record<RunnerPhase, string> = {
  * che stava benissimo. I due casi si distinguono solo incrociando con la
  * vitalità dello SCANNER.
  */
-const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
-    fresco: (s) => s,
-    fermo: (s) => `fermo da ${s}`,
-    vecchio: (s) => `vecchio ${s}`,
-    ignoto: () => 'età ignota',
-};
 
-const QUOTE_CLS: Record<StatoQuote, string> = {
-    fresco: 'text-emerald-400',
-    fermo: 'text-white/60',        // NON è un allarme: è un mercato che non si muove
-    vecchio: 'text-orange-400',
-    ignoto: 'text-orange-400',
+
+const FRESCHEZZA_TESTO: Record<Freschezza, string> = {
+    fresca: 'fresco', lenta: 'in ritardo', vecchia: 'vecchio', ignota: 'età sconosciuta',
 };
 
 const FRESCHEZZA_CLS: Record<Freschezza, string> = {
@@ -123,17 +116,46 @@ export default function ControlRoom() {
             header={<Testata vm={vm} inLive={inLive} />}
             footer="I numeri vengono dai tre servizi: il P&L è il netto di commissione che scrive il servizio, il target per partita lo calcola Omega. Questa pagina non ricalcola nulla."
         >
-            {inLive && (
-                <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-3 flex items-start gap-3" data-testid="cr-banner-live">
-                    <ShieldAlert className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                        <div className="font-semibold text-orange-300">Sono in gioco soldi veri</div>
-                        <div className="text-white/70">
-                            {vm.bots.filter((b) => b.modalita === 'live').map((b) => descriviModalita(b)).join(' · ')}
-                        </div>
-                    </div>
-                </Card>
-            )}
+            {/* MODALITA' — role="alert" e le parole del design system, non un
+                riquadro fatto a mano. Dice QUALI strategie usano soldi veri. */}
+            <ModeBanner
+                mode={inLive ? 'live' : 'paper'}
+                testId="cr-banner-modalita"
+                liveText={
+                    <>Ordini REALI su Betfair per: <b>{
+                        vm.bots.filter((b) => b.modalita === 'live')
+                            .map((b) => descriviModalita(b)).join(' · ') || 'nessun bot'
+                    }</b>. Tutto il resto opera in prova.</>
+                }
+                paperText="Nessun bot sta usando soldi veri: tutte le operazioni sono simulate sui prezzi live."
+            />
+
+            {/* LA GIORNATA — la barra vera: obiettivo, contatori, liability,
+                role="progressbar". Il realizzato viene dagli AGGREGATI dei tre
+                servizi: prima leggeva solo Omega, e una vincita del tennis non
+                la muoveva di un pixel. */}
+            <DayBar
+                testId="cr-giornata"
+                dayLabel={etichettaGiorno(romeDay(new Date(vm.nowMs)))}
+                realized={vm.soldiGiornata.realizzato}
+                goal={vm.obiettivo}
+                matches={vm.totali.partite}
+                operations={vm.soldiGiornata.operazioni}
+                won={vm.soldiGiornata.vinte}
+                lost={vm.soldiGiornata.perse}
+                live={vm.totali.live}
+                openLiability={vm.soldiGiornata.liability ?? vm.totali.liability}
+                note={vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
+                ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
+            />
+
+            {/* CALCIO E TENNIS, SEPARATI: oggi uno opera con soldi veri e
+                l'altro in prova. Sommarli sarebbe una bugia. */}
+            <SplitSport
+                perSport={vm.soldiGiornata.perSport}
+                modalita={modalitaPerSport(vm)}
+                aperte={apertePerSport(vm)}
+            />
 
             <Catena vm={vm} />
 
@@ -158,6 +180,7 @@ export default function ControlRoom() {
 
             <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)_330px] items-start">
                 <ColonnaPartite
+                    operazioni={vm.operazioni}
                     gruppi={giornata}
                     totali={vm.totali}
                     caricamento={vm.caricamento}
@@ -170,6 +193,33 @@ export default function ControlRoom() {
             </div>
         </PageShell>
     );
+}
+
+/** Con che soldi opera ciascuno sport ADESSO. Il tennis segue la modalità
+ *  della strategia `tennis` di Safe; il calcio quella delle sue tre varianti —
+ *  se anche una sola è in live, il calcio è in live. */
+function modalitaPerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKey, 'paper' | 'live' | null> {
+    const safe = vm.bots.find((b) => b.bot === 'safe') ?? null;
+    const varianti = safe?.varianti ?? null;
+    const m = safe?.modalita ?? null;
+    if (m == null) return { calcio: null, tennis: null };
+    // `varianti` elenca chi può APRIRE: fuori da lì quello sport non opera
+    const apre = (v: string) => varianti == null || varianti.includes(v);
+    return {
+        tennis: apre('tennis') ? m : 'paper',
+        calcio: (apre('base') || apre('esatto') || apre('punta')) ? m : 'paper',
+    };
+}
+
+function apertePerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKey, number> {
+    let calcio = 0, tennis = 0;
+    for (const g of vm.giornata) {
+        for (const p of g.partite) {
+            if (!p.soldi?.aperta) continue;
+            if (p.sport === 'tennis') tennis += 1; else calcio += 1;
+        }
+    }
+    return { calcio, tennis };
 }
 
 // ------------------------------------------------------------------- catena
@@ -437,7 +487,9 @@ function descriviModalita(b: StatoBot): string {
 
 function ColonnaPartite({
     gruppi, totali, caricamento, soloLive, setSoloLive, soloConSegnali, setSoloConSegnali, copertura,
+    operazioni,
 }: {
+    operazioni: ReturnType<typeof useControlRoom>['operazioni'];
     gruppi: GruppoCampionato[];
     totali: ReturnType<typeof useControlRoom>['totali'];
     caricamento: boolean;
@@ -470,18 +522,27 @@ function ColonnaPartite({
             )}
 
             <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-4">
-                {caricamento && gruppi.length === 0 && <div className="text-sm text-white/40">lettura del programma di oggi…</div>}
+                {caricamento && gruppi.length === 0 && (
+                    <div className="text-sm text-white/40">lettura del programma di oggi…</div>
+                )}
                 {!caricamento && gruppi.length === 0 && (
-                    <EmptyState>Il feed non ha partite di calcio per oggi, o i filtri le escludono tutte.</EmptyState>
+                    <EmptyState>Il feed non ha partite per oggi, o i filtri le escludono tutte.</EmptyState>
                 )}
                 {gruppi.map((g) => (
                     <section key={g.campionato}>
                         <h3 className="text-[11px] uppercase tracking-wider text-white/50 mb-1.5 flex items-center gap-2">
                             {g.campionato}
+                            <span className="text-white/25 font-mono">{g.partite.length}</span>
                             <span className="flex-1 h-px bg-white/10" />
                         </h3>
                         <div className="space-y-1.5">
-                            {g.partite.map((p) => <RigaPartita key={p.event_id} p={p} />)}
+                            {g.partite.map((p) => (
+                                <SchedaPartita
+                                    key={p.event_id}
+                                    p={p}
+                                    operazioni={operazioni.get(p.event_id) ?? []}
+                                />
+                            ))}
                         </div>
                     </section>
                 ))}
@@ -498,97 +559,6 @@ function Filtro({ attivo, onClick, children }: { attivo: boolean; onClick: () =>
                 attivo ? 'border-primary/60 text-primary bg-primary/10' : 'border-white/15 text-white/50 hover:text-white/80'
             }`}
         >{children}</button>
-    );
-}
-
-function RigaPartita({ p }: { p: PartitaGiornata }) {
-    const soldi = p.soldi;
-    const net = soldi?.netPnl ?? null;
-    const bordo = p.stato === 'live' ? 'border-l-secondary' : soldi?.aperta ? 'border-l-primary' : 'border-l-white/15';
-
-    return (
-        <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02] px-2.5 py-2`} data-testid="cr-partita">
-            <div className="flex items-start justify-between gap-2">
-                <span className="text-[13px] font-medium leading-tight">
-                    <span className="text-white/30 mr-1" aria-label={p.sport === 'tennis' ? 'tennis' : 'calcio'}>
-                        {p.sport === 'tennis' ? '🎾' : '⚽'}
-                    </span>
-                    {p.nome}
-                </span>
-                <StatoPill p={p} />
-            </div>
-
-            <div className="flex items-end justify-between gap-2 mt-1.5">
-                <Mini etichetta="Target" valore={p.target ? fmtMoney(p.target.valore) : DASH}
-                    nota={p.target?.fonte === 'ripiego' ? 'calcolato dalla pagina: il servizio non lo pubblica' : undefined} />
-                <Mini etichetta="P&L" valore={net == null ? DASH : fmtMoney(net)}
-                    cls={net == null ? 'text-white/40' : net >= 0 ? 'text-emerald-400' : 'text-red-400'} />
-                {p.stato === 'live' && (
-                    <span className="flex flex-col" data-testid="cr-latenza"
-                        title={
-                            p.statoQuote === 'fermo'
-                                ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE di Betfair'
-                                : p.statoQuote === 'vecchio'
-                                    ? 'prezzo vecchio E scanner fermo: non sappiamo cosa stia facendo il mercato'
-                                    : 'da quando il prezzo è cambiato l’ultima volta'
-                        }>
-                        <span className="text-[9px] uppercase tracking-wider text-white/40">Prezzo</span>
-                        <span className={`font-mono text-[13px] font-semibold ${QUOTE_CLS[p.statoQuote]}`}>
-                            {p.latenzaQuoteS == null
-                                ? QUOTE_TESTO[p.statoQuote]('')
-                                : QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
-                        </span>
-                    </span>
-                )}
-                <span className="flex gap-1" title="bot che hanno operato su questa partita">
-                    {(['omega', 'safe', 'mike'] as Bot[]).map((b) => (
-                        <span key={b}
-                            className={`w-4 h-4 rounded-sm grid place-items-center text-[9px] font-bold ${
-                                soldi?.bots.includes(b) ? `bg-white/10 ${BOT_CLS[b]}` : 'bg-white/[0.04] text-white/20'
-                            }`}
-                        >{BOT_SIGLA[b]}</span>
-                    ))}
-                </span>
-            </div>
-
-            {p.avanzamento != null && (
-                <div className="h-1 mt-1.5 rounded-sm bg-white/10 overflow-hidden">
-                    <div className={`h-full ${net != null && net < 0 ? 'bg-red-400' : 'bg-emerald-400'}`}
-                        style={{ width: `${p.avanzamento}%` }} />
-                </div>
-            )}
-        </div>
-    );
-}
-
-function StatoPill({ p }: { p: PartitaGiornata }) {
-    if (p.stato === 'live') {
-        // tennis: nessun minuto, il punteggio E' l'informazione (set · game)
-        const testa = p.minuto != null ? `${p.minuto}′` : p.punteggio ? '' : 'in gioco';
-        return (
-            <span className="shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded bg-secondary/15 text-secondary">
-                <Circle className="w-1.5 h-1.5 fill-current" />
-                {testa}
-                {p.punteggio && <span>{testa ? ' ' : ''}{p.punteggio}</span>}
-            </span>
-        );
-    }
-    if (p.stato === 'pre') {
-        return (
-            <span className="shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">
-                {p.koMs != null ? fmtTime(p.koMs) : 'orario ignoto'}
-            </span>
-        );
-    }
-    return <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-white/30">conclusa</span>;
-}
-
-function Mini({ etichetta, valore, cls, nota }: { etichetta: string; valore: string; cls?: string; nota?: string }) {
-    return (
-        <span className="flex flex-col" title={nota}>
-            <span className="text-[9px] uppercase tracking-wider text-white/40">{etichetta}{nota ? ' *' : ''}</span>
-            <span className={`font-mono text-[13px] font-semibold tabular-nums ${cls ?? ''}`}>{valore}</span>
-        </span>
     );
 }
 
@@ -725,9 +695,11 @@ function ColonnaPosizioni({ posizioni, onChiudi }: {
                                             p.chiusura.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
                                         }`}>{p.chiusura.lato === 'lay' ? 'banca' : 'punta'}</span>
                                         <span className="font-mono text-[12px]">{fmtOdds(p.chiusura.prezzo)}</span>
-                                        <span className={`font-mono text-[13px] font-bold tabular-nums ${
-                                            (p.chiusura.bloccabile ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
-                                        }`} data-testid="cr-bloccabile">{fmtMoney(p.chiusura.bloccabile)}</span>
+                                        <span className={`font-mono text-[13px] tabular-nums ${pnlClass(p.chiusura.bloccabile)}`}
+                                            data-testid="cr-bloccabile"
+                                            title="P&L garantito chiudendo per intero adesso: identico sui due esiti">
+                                            {fmtMoney(p.chiusura.bloccabile, { signed: true })}
+                                        </span>
                                         {p.chiusura.abbinabile != null && (
                                             <span className="text-[10px] text-white/35">
                                                 {fmtMoney(p.chiusura.abbinabile)} abbinabili

@@ -22,7 +22,10 @@
 //      locali diversi fu un bug.
 //   4. Un'età assente non è zero secondi: è «non lo so», e vale fail-closed.
 // ============================================================================
-import { groupTradesIntoCicli, groupCicliByEvent, type PnlTradeLike, type EventGroup } from './eventGroups';
+import {
+    groupTradesIntoCicli, groupCicliByEvent, isSettled, isErrorRow,
+    type PnlTradeLike, type EventGroup,
+} from './eventGroups';
 
 // ---------------------------------------------------------------- vocabolario
 
@@ -129,6 +132,10 @@ export interface PartitaFeedLike {
     sets?: { p1: number; p2: number } | null;
     games?: { p1: number; p2: number } | null;
     pressure_index?: number | null;
+    /** disponibilita' video/statistiche dichiarata da Betfair (IPS) */
+    media?: { video?: boolean | null; viz?: boolean | null } | null;
+    /** mercato Match Odds: serve al pulsante che apre il terminale di trading */
+    mo_market_id?: string | null;
     /**
      * Istante (ms epoch) in cui lo scanner ha LETTO le quote di questa partita.
      * È la LATENZA VERA del prezzo, e non è la stessa cosa dell'`updated_at`
@@ -384,6 +391,10 @@ export interface PartitaGiornata {
     freschezzaQuote: Freschezza;
     /** il giudizio vero, incrociato con la vitalità dello scanner */
     statoQuote: StatoQuote;
+    /** video/statistiche Betfair: il pulsante esiste già, qui passa solo il dato */
+    media: { video: boolean | null; viz: boolean | null } | null;
+    /** Match Odds, per aprire il terminale di trading su QUESTA partita */
+    marketId: string | null;
     soldi: PartitaSoldi | null;
     target: TargetPartita | null;
     avanzamento: number | null;
@@ -445,6 +456,8 @@ export function costruisciGiornata(args: {
             latenzaQuoteS: lat,
             freschezzaQuote: freschezza(lat),
             statoQuote: statoQuote(lat, etaScannerS ?? null),
+            media: p?.media ? { video: p.media.video ?? null, viz: p.media.viz ?? null } : null,
+            marketId: p?.mo_market_id ?? null,
             soldi: s,
             target,
             avanzamento: avanzamentoPartita(s?.netPnl ?? null, target?.valore ?? null),
@@ -500,6 +513,69 @@ export function etaSecondi(iso: string | null | undefined, nowMs: number): numbe
     const t = Date.parse(iso);
     if (!Number.isFinite(t)) return null;
     return Math.max(0, Math.round((nowMs - t) / 1000));
+}
+
+// ------------------------------------------- il realizzato, diviso come serve
+
+export type Sport2 = 'calcio' | 'tennis' | 'ignoto';
+
+/** Una riga di trade con quello che serve per dividere il realizzato. */
+export interface RigaRealizzato {
+    status: string;
+    pnl?: number | null;
+    mode?: string | null;
+    sport?: string | null;
+}
+
+export interface Realizzato {
+    /** somma dei NETTI delle righe REGOLATE; null = nessun risultato ancora */
+    totale: number | null;
+    live: number | null;
+    paper: number | null;
+    perSport: Record<Sport2, number | null>;
+    /** quante righe regolate hanno prodotto questi numeri */
+    righe: number;
+}
+
+function somma(a: number | null, b: number): number { return (a ?? 0) + b; }
+
+/**
+ * IL REALIZZATO DELLA GIORNATA, diviso per modalità e per sport.
+ *
+ * Due regole, e sono la stessa cosa detta due volte:
+ *  · **soldi veri e simulati non si sommano MAI** in un numero solo. Un totale
+ *    che li mescola è la bugia più costosa che una pagina di trading possa dire;
+ *  · **si divide anche per sport**, perché oggi il tennis è in live e il calcio
+ *    in paper: senza la divisione «quanto ho guadagnato col tennis» non ha
+ *    risposta.
+ *
+ * Una riga NON regolata non vale zero: non entra. `null` significa «nessun
+ * risultato ancora», che è diverso da «ho chiuso in pari».
+ */
+export function realizzatoGiornata(righe: readonly RigaRealizzato[]): Realizzato {
+    const out: Realizzato = {
+        totale: null, live: null, paper: null,
+        perSport: { calcio: null, tennis: null, ignoto: null },
+        righe: 0,
+    };
+    for (const r of righe) {
+        if (!isSettled(r.status) || isErrorRow(r.status)) continue;
+        const v = r.pnl;
+        if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+        out.righe += 1;
+        out.totale = somma(out.totale, v);
+        const m = String(r.mode ?? '').toLowerCase();
+        if (m === 'live') out.live = somma(out.live, v);
+        else if (m === 'paper') out.paper = somma(out.paper, v);
+        const sp = String(r.sport ?? '').toLowerCase();
+        const chiave: Sport2 = sp === 'tennis' ? 'tennis' : sp === 'calcio' ? 'calcio' : 'ignoto';
+        out.perSport[chiave] = somma(out.perSport[chiave], v);
+    }
+    // arrotondamento al centesimo una volta sola, alla fine
+    const r2 = (x: number | null) => (x == null ? null : Math.round(x * 100) / 100);
+    out.totale = r2(out.totale); out.live = r2(out.live); out.paper = r2(out.paper);
+    for (const k of Object.keys(out.perSport) as Sport2[]) out.perSport[k] = r2(out.perSport[k]);
+    return out;
 }
 
 // ------------------------------------------------------------ totali di giornata

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
     freschezza, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
     haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
-    marca, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili,
+    marca, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili, realizzatoGiornata,
     SENZA_CAMPIONATO, TARGET_MIN_EUR,
     type PartitaFeedLike,
 } from './controlRoom';
@@ -327,6 +327,61 @@ describe('costruisciGiornata — campionati e orologio', () => {
         const senzaOrario = g[0].partite[2];
         expect(senzaOrario.etaFeedS).toBeNull();
         expect(senzaOrario.freschezza).toBe('ignota');
+    });
+});
+
+describe('realizzatoGiornata - soldi veri e simulati non si sommano MAI', () => {
+    const righe = [
+        { status: 'won',  pnl: 0.29, mode: 'live',  sport: 'tennis' },
+        { status: 'lost', pnl: -0.21, mode: 'live',  sport: 'tennis' },
+        { status: 'won',  pnl: 1.50, mode: 'paper', sport: 'calcio' },
+        { status: 'open', pnl: null, mode: 'live',  sport: 'tennis' },
+        { status: 'error', pnl: -99, mode: 'live',  sport: 'tennis' },
+    ];
+
+    it('divide per modalita: il live non tocca il paper', () => {
+        const r = realizzatoGiornata(righe);
+        expect(r.live).toBe(0.08);
+        expect(r.paper).toBe(1.5);
+    });
+
+    it('divide per SPORT: «quanto ho guadagnato col tennis» ha una risposta', () => {
+        const r = realizzatoGiornata(righe);
+        expect(r.perSport.tennis).toBe(0.08);
+        expect(r.perSport.calcio).toBe(1.5);
+    });
+
+    it('le righe NON REGOLATE non valgono zero: non entrano', () => {
+        const r = realizzatoGiornata(righe);
+        expect(r.righe).toBe(3);
+    });
+
+    it('le righe in ERRORE non sono operazioni e non contano', () => {
+        const r = realizzatoGiornata([{ status: 'error', pnl: -99, mode: 'live', sport: 'tennis' }]);
+        expect(r.totale).toBeNull();
+        expect(r.righe).toBe(0);
+    });
+
+    it('senza nessuna riga regolata tutto e null, mai zero', () => {
+        const r = realizzatoGiornata([{ status: 'open', pnl: null, mode: 'live', sport: 'tennis' }]);
+        expect(r.totale).toBeNull();
+        expect(r.live).toBeNull();
+        expect(r.perSport.tennis).toBeNull();
+    });
+
+    it('uno sport sconosciuto finisce in «ignoto», non sparisce e non si somma al calcio', () => {
+        const r = realizzatoGiornata([{ status: 'won', pnl: 1, mode: 'live', sport: null }]);
+        expect(r.perSport.ignoto).toBe(1);
+        expect(r.perSport.calcio).toBeNull();
+        expect(r.totale).toBe(1);
+    });
+
+    it('arrotonda al centesimo UNA volta sola, alla fine', () => {
+        const r = realizzatoGiornata([
+            { status: 'won', pnl: 0.005, mode: 'live', sport: 'tennis' },
+            { status: 'won', pnl: 0.005, mode: 'live', sport: 'tennis' },
+        ]);
+        expect(r.totale).toBe(0.01);
     });
 });
 

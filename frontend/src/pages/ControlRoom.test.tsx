@@ -29,6 +29,7 @@ function partita(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
         koMs: Date.parse('2026-09-14T13:00:00Z'), stato: 'live',
         minuto: 58, punteggio: '1-0', controlloDisponibile: true,
         etaFeedS: 2, freschezza: 'fresca', latenzaQuoteS: 1, freschezzaQuote: 'fresca', statoQuote: 'fresco',
+        media: { video: true, viz: true }, marketId: '1.24',
         soldi: { netPnl: 12.5, liability: 40, investito: 10, aperta: true, bots: ['omega'] },
         target: { valore: 31.2, fonte: 'servizio' },
         avanzamento: 40,
@@ -56,8 +57,19 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         freni: { daily_loss_stop: -50, loss_stop_active: false },
         runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
         mikeRestingLive: true,
+        soldiGiornata: {
+            realizzato: 96.4,
+            perBot: { omega: 90, safe: 6.4, mike: 0 },
+            liability: 40,
+            perSport: {
+                calcio: { n: 3, pnl: 1.5, won: 2, lost: 1 },
+                tennis: { n: 2, pnl: 0.08, won: 1, lost: 1 },
+            },
+            operazioni: 5, vinte: 3, perse: 2,
+        },
         schermo: { feedMs: 800, pushMs: 1200, letturaMs: 4000, schermoMs: 4000 },
         ultimaCatena: { salti: [], trade: null, evento: null },
+        operazioni: new Map(),
         proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
         approva: vi.fn(), ignora: vi.fn(), chiudi: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
@@ -77,10 +89,11 @@ beforeEach(() => { vi.clearAllMocks(); });
 // ---------------------------------------------------------------- modalità
 
 describe('modalità — soldi veri o simulati, senza possibilità di equivoco', () => {
-    it('tutto in paper: nessun avviso di soldi veri', () => {
+    it('tutto in paper: il banner lo dice, e NON parla di soldi veri', () => {
         mVm.mockReturnValue(vm());
-        mostra();
-        expect(screen.queryByTestId('cr-banner-live')).toBeNull();
+        const b = mostra().getByTestId('cr-banner-modalita');
+        expect(b.textContent).toMatch(/simulate/i);
+        expect(b.textContent).not.toMatch(/REALI/);
     });
 
     it('un solo bot in live: l\'avviso c\'è e NOMINA quel bot', () => {
@@ -88,9 +101,9 @@ describe('modalità — soldi veri o simulati, senza possibilità di equivoco', 
         v.bots[1] = { ...v.bots[1], modalita: 'live' };
         mVm.mockReturnValue(v);
         mostra();
-        const banner = screen.getByTestId('cr-banner-live');
-        expect(within(banner).getByText(/soldi veri/i)).toBeTruthy();
-        expect(within(banner).getByText(/Safe: LIVE/)).toBeTruthy();
+        const banner = screen.getByTestId('cr-banner-modalita');
+        expect(banner.textContent).toMatch(/REALI/);
+        expect(banner.textContent).toMatch(/Safe: LIVE/);
     });
 
     it('in live con varianti: dice QUALI apre, perché «LIVE» da solo sarebbe fuorviante', () => {
@@ -98,7 +111,7 @@ describe('modalità — soldi veri o simulati, senza possibilità di equivoco', 
         v.bots[1] = { ...v.bots[1], modalita: 'live', varianti: ['tennis'] };
         mVm.mockReturnValue(v);
         mostra();
-        expect(within(screen.getByTestId('cr-banner-live')).getByText(/apre solo tennis/)).toBeTruthy();
+        expect(screen.getByTestId('cr-banner-modalita').textContent).toMatch(/apre solo tennis/);
     });
 
     it('modalità sconosciuta non si mostra come paper: si dichiara ignota', () => {
@@ -185,13 +198,15 @@ describe('partite — quello che la riga dice e quello che non deve dire', () =>
     it('un target CALCOLATO dalla pagina è marcato: non si spaccia per quello del servizio', () => {
         mVm.mockReturnValue(vm({ giornata: gruppo([partita({ target: { valore: 20, fonte: 'ripiego' } })]) }));
         const riga = mostra().getByTestId('cr-partita');
-        expect(within(riga).getByText(/Target \*/)).toBeTruthy();
+        expect(riga.textContent).toContain('target');
+        expect(riga.textContent).toContain('*');
     });
 
     it('un target del SERVIZIO non porta l\'asterisco', () => {
         mVm.mockReturnValue(vm());
         const riga = mostra().getByTestId('cr-partita');
-        expect(within(riga).getByText('Target')).toBeTruthy();
+        expect(riga.textContent).toMatch(/target/);
+        expect(riga.textContent).not.toMatch(/\*/);
     });
 
     it('i campionati si leggono nell\'ordine in cui il modello li consegna', () => {
@@ -202,7 +217,7 @@ describe('partite — quello che la riga dice e quello che non deve dire', () =>
             ],
         }));
         const { container } = mostra();
-        const titoli = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent?.trim());
+        const titoli = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent?.replace(/\d+$/, '').trim());
         expect(titoli).toEqual(['Serie A', 'Liga']);
     });
 });
@@ -242,7 +257,7 @@ describe('posizioni aperte', () => {
         }));
         const col = mostra().getByTestId('cr-posizioni');
         expect(within(col).getByText(/1 posizione con soldi veri/)).toBeTruthy();
-        expect(within(col).getByText('Punta')).toBeTruthy();
+        expect(within(col).getByText('BACK')).toBeTruthy();
     });
 
     it('senza posizioni lo dice invece di mostrare una tabella vuota', () => {
@@ -472,6 +487,6 @@ describe('onestà sulle fonti', () => {
     it('obiettivo non storicizzato: la pagina lo dice invece di spacciarlo per quello del giorno', () => {
         mVm.mockReturnValue(vm({ obiettivoStoricizzato: false }));
         mostra();
-        expect(screen.getByText(/non ancora storicizzato/)).toBeTruthy();
+        expect(screen.getAllByText(/non ancora storicizzato/).length).toBeGreaterThan(0);
     });
 });
