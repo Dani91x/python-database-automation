@@ -22,7 +22,7 @@ import {
     type ScanRow, type ScanStatusRow, type CalcioScanPayload,
 } from '@/lib/safeStrategyScan';
 import { fetchOmegaState, fetchOmegaTrades, type OmegaState, type OmegaTrade, type OmegaStats } from '@/lib/omega';
-import { fetchSafeState, type SafeState, type SafeRiskStats } from '@/lib/safeBot';
+import { fetchSafeState, fetchRunnerState, type SafeState, type SafeRiskStats, type RunnerState } from '@/lib/safeBot';
 import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
@@ -114,6 +114,23 @@ export interface ControlRoomVM {
      */
     freni: SafeRiskStats | null;
 
+    /**
+     * Stato del runner flumine. 14/09 — il battito diceva «2 settembre» mentre
+     * il processo girava: `heartbeat_worker` vive dentro il framework e non
+     * parte finché il runner è parcheggiato in attesa di eventi. Ora il runner
+     * batte anche da fermo, quindi **battito fresco = processo vivo**, che è
+     * l'unica cosa che un battito dovrebbe voler dire.
+     */
+    runner: RunnerState | null;
+
+    /**
+     * 🔴 L'UNICO INTERRUTTORE che può far divergere demo e live su Mike.
+     * `live_resting_enabled = false` → in live l'uscita torna «taker» e Mike
+     * esegue una strategia DIVERSA da quella provata in paper. Quando è spento
+     * va gridato in testata, non sepolto in un pannello.
+     */
+    mikeRestingLive: boolean | null;
+
     /** sorgente del feed: fra `stream` e `rest` c'è un ordine di grandezza */
     feedSorgente: string | null;
     feedEtaS: number | null;
@@ -128,6 +145,7 @@ export function useControlRoom(): ControlRoomVM {
     const [omega, setOmega] = useState<OmegaState | null>(null);
     const [omegaTrades, setOmegaTrades] = useState<OmegaTrade[]>([]);
     const [safe, setSafe] = useState<SafeState | null>(null);
+    const [runner, setRunner] = useState<RunnerState | null>(null);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
     const [caricamento, setCaricamento] = useState(true);
@@ -147,21 +165,22 @@ export function useControlRoom(): ControlRoomVM {
         Promise.allSettled([
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
-            fetchSafeState(), fetchMikeState(),
+            fetchSafeState(), fetchMikeState(), fetchRunnerState(),
         ]).then((r) => {
             if (!vivo) return;
-            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike] = r;
+            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
             if (rOmegaT.status === 'fulfilled') setOmegaTrades(rOmegaT.value);
             if (rSafe.status === 'fulfilled') setSafe(rSafe.value);
             if (rMike.status === 'fulfilled') setMike(rMike.value);
+            if (rRunner.status === 'fulfilled') setRunner(rRunner.value);
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike'][i] : null))
+                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setCaricamento(false);
@@ -322,6 +341,8 @@ export function useControlRoom(): ControlRoomVM {
         targetServizio,
         bots, posizioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
+        runner,
+        mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),
@@ -330,6 +351,14 @@ export function useControlRoom(): ControlRoomVM {
 }
 
 // ------------------------------------------------------------------ utilità
+
+/** Legge un booleano dai parametri di un bot. Assente → `null`, che NON è
+ *  `false`: «non lo so» e «spento» sono due cose diverse, e solo una delle due
+ *  merita un allarme. */
+export function leggiBool(params: Record<string, unknown> | null | undefined, chiave: string): boolean | null {
+    const v = params?.[chiave];
+    return typeof v === 'boolean' ? v : null;
+}
 
 function modalitaDi(v: unknown): Modalita | null {
     const s = String(v ?? '').toLowerCase();

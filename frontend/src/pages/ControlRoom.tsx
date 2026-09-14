@@ -96,6 +96,19 @@ export default function ControlRoom() {
                 </Card>
             )}
 
+            {vm.mikeRestingLive === false && (
+                <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-3 flex items-start gap-3" data-testid="cr-mike-resting">
+                    <ShieldAlert className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                        <div className="font-semibold text-orange-300">Mike: uscita appoggiata SPENTA in live</div>
+                        <div className="text-white/70">
+                            In live l'uscita torna «a mercato»: Mike esegue una strategia <strong>diversa</strong> da
+                            quella provata in paper, e il ciclo che in demo chiude in profitto lì chiude in perdita.
+                        </div>
+                    </div>
+                </Card>
+            )}
+
             {vm.errore && (
                 <Card className="glass-card border-orange-500/30 p-3 text-sm text-orange-300" data-testid="cr-errore">
                     {vm.errore}. I riquadri che dipendono da queste fonti mostrano l'ultimo dato letto, non uno più recente.
@@ -164,6 +177,7 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                 <Dato etichetta="Esposizione" valore={fmtMoney(vm.totali.liability)} />
                 <Dato etichetta="Con posizione" valore={`${vm.totali.conPosizione} / ${vm.totali.partite}`} />
                 <Freni freni={vm.freni} />
+                <Runner r={vm.runner} />
 
                 <div className="flex items-stretch gap-3" data-testid="cr-bots">
                     {vm.bots.map((b) => <ChipBot key={b.bot} b={b} />)}
@@ -183,6 +197,32 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                 </Button>
             </div>
         </header>
+    );
+}
+
+/**
+ * STATO DEL RUNNER — tre stati, non due.
+ *
+ * 14/09: il battito diceva «2 settembre» mentre il processo girava, perché chi
+ * lo scrive vive dentro il framework e il runner era parcheggiato in attesa di
+ * eventi. Tre sessioni hanno inseguito un runner morto che stava benissimo.
+ * Adesso il runner batte anche da fermo: battito fresco = processo vivo.
+ * «Vivo ma senza lavoro» è uno stato LEGITTIMO e si scrive così — un
+ * indicatore che grida guasto su un comportamento normale fa ignorare anche i
+ * guasti veri.
+ */
+function Runner({ r }: { r: ReturnType<typeof useControlRoom>['runner'] }) {
+    const stato = r == null ? 'ignoto' : r.up ? 'vivo' : r.ageS == null ? 'mai avviato' : 'spento';
+    const cls = stato === 'vivo' ? 'text-emerald-400' : stato === 'ignoto' ? 'text-white/60' : 'text-orange-400';
+    return (
+        <div className="flex flex-col" data-testid="cr-runner"
+            title={r?.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
+            <span className="text-[10px] uppercase tracking-wider text-white/40">Runner</span>
+            <span className={`font-mono text-sm font-semibold ${cls}`}>
+                {stato}
+                {r?.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
+            </span>
+        </div>
     );
 }
 

@@ -54,6 +54,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         posizioni: [],
         copertura: { conDato: 1, senzaDato: 0, totale: 1, pct: 100 },
         freni: { daily_loss_stop: -50, loss_stop_active: false },
+        runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true },
+        mikeRestingLive: true,
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
         ricarica: vi.fn(),
         ...over,
@@ -241,6 +243,53 @@ describe('posizioni aperte', () => {
     it('senza posizioni lo dice invece di mostrare una tabella vuota', () => {
         mVm.mockReturnValue(vm());
         expect(within(mostra().getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
+    });
+});
+
+// ------------------------------------------------------------------- runner
+
+describe('runner — tre stati, non due', () => {
+    it('battito fresco = processo VIVO, anche se non sta streammando', () => {
+        mVm.mockReturnValue(vm());
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo/)).toBeTruthy();
+    });
+
+    it('battito vecchio = spento', () => {
+        mVm.mockReturnValue(vm({ runner: { ts: '2026-09-02T17:55:00Z', mode: 'PAPER', ageS: 1_000_000, up: false } }));
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/spento/)).toBeTruthy();
+    });
+
+    it('MAI battuto non si confonde con spento: si dice «mai avviato»', () => {
+        mVm.mockReturnValue(vm({ runner: { ts: null, mode: null, ageS: null, up: false } }));
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/mai avviato/)).toBeTruthy();
+    });
+
+    it('stato non letto = «ignoto», e non si spaccia per spento', () => {
+        mVm.mockReturnValue(vm({ runner: null }));
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/ignoto/)).toBeTruthy();
+    });
+});
+
+// ----------------------------------------------- la valvola che fa divergere
+
+describe('Mike: uscita appoggiata in live', () => {
+    it('SPENTA: lo grida, perché demo e live diventano due strategie diverse', () => {
+        mVm.mockReturnValue(vm({ mikeRestingLive: false }));
+        const avviso = mostra().getByTestId('cr-mike-resting');
+        expect(avviso.textContent).toMatch(/diversa/);
+        expect(avviso.textContent).toMatch(/perdita/);
+    });
+
+    it('accesa: nessun allarme', () => {
+        mVm.mockReturnValue(vm({ mikeRestingLive: true }));
+        mostra();
+        expect(screen.queryByTestId('cr-mike-resting')).toBeNull();
+    });
+
+    it('valore SCONOSCIUTO non vale «spento»: non si allarma su un dato assente', () => {
+        mVm.mockReturnValue(vm({ mikeRestingLive: null }));
+        mostra();
+        expect(screen.queryByTestId('cr-mike-resting')).toBeNull();
     });
 });
 

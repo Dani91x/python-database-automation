@@ -1596,6 +1596,25 @@ def setup_and_run(only_event: Optional[str] = None, auto_subscribe: bool = True)
                     if (_now_i - getattr(session, "_idle_log_ts", -1e9)) >= 30.0:
                         session._idle_log_ts = _now_i
                         logger.info("[runner] nessun evento da streammare: attendo (keep-alive desktop).")
+                    # 14/09 — IL BATTITO DEVE DIRE «IL PROCESSO E' VIVO», NON
+                    # «la subscription e' su». `heartbeat_worker` e' un
+                    # BackgroundWorker e nasce solo dentro `framework.run()`:
+                    # finche' il runner resta parcheggiato qui, NESSUNO scrive il
+                    # battito. Il 14/09 questo ha fatto credere a tre sessioni che
+                    # il runner fosse morto dal 2 settembre — mentre girava, in
+                    # attesa di eventi da agganciare. «Vivo ma senza lavoro» e' uno
+                    # stato LEGITTIMO e va dichiarato come tale: un indicatore che
+                    # grida guasto su un comportamento normale fa ignorare anche i
+                    # guasti veri. Chi legge distingue i tre stati cosi':
+                    #   battito VECCHIO                      -> runner spento
+                    #   battito FRESCO + nessun follow STREAMING -> vivo, in attesa
+                    #   battito FRESCO + follow STREAMING        -> in streaming
+                    if (_now_i - getattr(session, "_idle_hb_ts", -1e9)) >= float(HEARTBEAT_SEC or 10.0):
+                        session._idle_hb_ts = _now_i
+                        try:
+                            db.upsert_live_heartbeat(runner=True, pid=os.getpid(), mode=live_order_mode())
+                        except Exception as _hb:  # noqa: BLE001 - best-effort come nel worker
+                            logger.debug("[runner] heartbeat idle KO: %s", str(_hb)[:120])
                     time.sleep(IDLE_FOLLOW_POLL_SEC)
                     # SESSIONE Betfair .it: scade dopo ~20 min di INATTIVITA' —
                     # senza keepAlive periodico il primo Segui live fallirebbe
