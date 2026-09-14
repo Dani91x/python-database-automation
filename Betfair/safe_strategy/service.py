@@ -49,7 +49,9 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from collections import deque
+from contextlib import contextmanager
+from typing import Any, Deque, Dict, List, Optional, Sequence
 
 from Betfair.stream.auth import build_client, keep_alive, safe_logout
 from Betfair.stream.scores.betfair_inplay import normalize_timeline, parse_score_dict
@@ -222,6 +224,10 @@ class Scanner:
         self.ht_catalogue_ts = 0.0
         self.status_ts = 0.0
         self.keepalive_ts = time.monotonic()
+        # CERT. 14/09 - quanto dura il giro e dove se ne va il tempo.
+        # Finche' la pubblicazione dei prezzi sta dentro un giro lento, una
+        # pagina che scrive "tempo reale" al trader gli mente.
+        self.crono = Cronometro()
         self.written_sig: Dict[str, str] = {}
         self.last_error: Optional[str] = None
         self.started_at = scanner.now_iso()
@@ -1242,6 +1248,12 @@ class Scanner:
             "opp_markets": sum(len(m) for m in self.opp_markets.values()),
             "last_error": self.last_error,
             "started_at": self.started_at,
+            # CERT. 14/09 - DURATA DEL GIRO, per fase. Va sullo stato e non nel
+            # log perche' una misura che vive solo nel terminale non la legge
+            # nessuno, e questa deve poter essere confrontata prima e dopo un
+            # intervento. Nessuna scrittura in piu': viaggia sulla riga di stato
+            # che si scrive comunque.
+            "tick": self.crono.riassunto(),
         }
         if self.dry:
             logger.info("[safe-scan] status: %s", payload)
@@ -1273,6 +1285,7 @@ class Scanner:
     def tick(self) -> None:
         now_mono = time.monotonic()
         now = datetime.now(timezone.utc)
+        self.crono.apri_giro(now_mono)
         try:
             if now_mono - self.keepalive_ts > _KEEPALIVE_PERIOD_SEC:
                 keep_alive(self.client)
@@ -1282,7 +1295,8 @@ class Scanner:
                 if now_mono - st.catalogue_ts > _CATALOGUE_TTL_SEC \
                         and now_mono - st.catalogue_fail_ts > _CATALOGUE_RETRY_SEC:
                     try:
-                        self.refresh_catalogue(sport)
+                        with self.crono.fase("catalogo"):
+                            self.refresh_catalogue(sport)
                     except Exception as e:  # noqa: BLE001 - backoff, il resto del giro continua
                         # prima: eccezione → giro abortito (nessuna pubblicazione) e
                         # NUOVA listMarketCatalogue ogni 0,5 s finché Betfair non
@@ -1302,10 +1316,11 @@ class Scanner:
             # QUOTE: stream ufficiale (push, conflate 1s) sui mercati rilevanti;
             # poll REST come FALLBACK per i mercati rilevanti che lo stream non
             # copre (oltre il cap, o stream non in salute) — mai un buco dati.
-            self.refresh_stream_set(now)
-            if self.stream is not None:
-                for b in self.stream.drain():
-                    self._apply_market_book(b)
+            with self.crono.fase("stream"):
+                self.refresh_stream_set(now)
+                if self.stream is not None:
+                    for b in self.stream.drain():
+                        self._apply_market_book(b)
             stream_ok = self.stream is not None and self.stream.healthy()
             self.last_source = "stream" if stream_ok else "rest"
             covered = self.stream.covered_ids() if self.stream is not None else set()
@@ -1328,7 +1343,8 @@ class Scanner:
                 ]
                 if uncovered:
                     try:
-                        self.poll_books(sport, uncovered)
+                        with self.crono.fase("book"):
+                            self.poll_books(sport, uncovered)
                     except Exception as e:  # noqa: BLE001 - si riprova alla cadenza normale
                         # prima: eccezione → giro abortito e listMarketBook ripetuta
                         # a ogni tick (0,5 s) con Betfair già in difficoltà
@@ -1377,8 +1393,10 @@ class Scanner:
                                      market_types=scanner.PRE_KO_OU_MARKET_TYPES)
 
             # PRIMA del publish: il publish riscriverebbe pre_ko=None sul DB
-            self.hydrate_pre_ko()
-            written, deleted = self.publish(now)
+            with self.crono.fase("pre_ko"):
+                self.hydrate_pre_ko()
+            with self.crono.fase("scrittura"):
+                written, deleted = self.publish(now)
             if written or deleted:
                 logger.info(
                     "[safe-scan] pubblicate %d righe, rimosse %d (monitorati %d)",
@@ -1400,6 +1418,93 @@ class Scanner:
         except Exception as e:  # noqa: BLE001 - lo scanner non muore mai per un giro storto
             self.last_error = f"{type(e).__name__}: {str(e)[:140]}"
             logger.warning("[safe-scan] ciclo KO: %s", self.last_error)
+        finally:
+            # anche un giro finito male e' un giro: escluderlo falserebbe la
+            # misura proprio nei momenti peggiori, che sono quelli da misurare.
+            self.crono.chiudi_giro(time.monotonic())
+
+
+class Cronometro:
+    """Quanto dura il giro dello scanner, e DOVE se ne va il tempo.
+
+    Un totale da solo non serve a niente: se il giro dura 40 s bisogna sapere
+    se sono il poll dei book, il catalogo o la scrittura sul database, perche'
+    le tre cose si curano in modi diversi. Tiene una finestra scorrevole degli
+    ultimi giri (in memoria, nessuna scrittura in piu') e ne pubblica mediana,
+    95esimo percentile e massimo, per fase.
+
+    Il 95esimo si legge cosi': "un giro su venti e' piu' lento di questo". La
+    mediana descrive la giornata normale, il 95esimo il momento in cui il
+    trader ha bisogno del prezzo e non ce l'ha.
+    """
+
+    FINESTRA = 120          # ~ gli ultimi 120 giri
+    FASI = ("catalogo", "stream", "book", "pre_ko", "scrittura", "altro")
+
+    def __init__(self) -> None:
+        self.giri: Deque[float] = deque(maxlen=self.FINESTRA)
+        self.fasi: Dict[str, Deque[float]] = {
+            f: deque(maxlen=self.FINESTRA) for f in self.FASI
+        }
+        self._parziali: Dict[str, float] = {}
+        self._inizio_giro: Optional[float] = None
+
+    # -- misura
+    def apri_giro(self, ora: float) -> None:
+        self._inizio_giro = ora
+        self._parziali = {}
+
+    @contextmanager
+    def fase(self, nome: str):
+        """Somma il tempo speso in una fase, anche se ci si passa piu' volte
+        nello stesso giro (il poll dei book, per esempio)."""
+        t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            self._parziali[nome] = self._parziali.get(nome, 0.0) + (time.monotonic() - t0)
+
+    def chiudi_giro(self, ora: float) -> None:
+        if self._inizio_giro is None:
+            return
+        totale = max(0.0, ora - self._inizio_giro)
+        self.giri.append(totale * 1000.0)
+        misurato = 0.0
+        for nome in self.FASI:
+            if nome == "altro":
+                continue
+            v = self._parziali.get(nome, 0.0)
+            misurato += v
+            self.fasi[nome].append(v * 1000.0)
+        # "altro" e' il tempo NON attribuito: se cresce, la strumentazione sta
+        # guardando dalla parte sbagliata e va spostata. Meglio vederlo che
+        # crederlo zero.
+        self.fasi["altro"].append(max(0.0, totale - misurato) * 1000.0)
+        self._inizio_giro = None
+
+    # -- lettura
+    @staticmethod
+    def _pct(valori: Sequence[float], q: float) -> Optional[float]:
+        if not valori:
+            return None
+        ordinati = sorted(valori)
+        i = min(len(ordinati) - 1, max(0, int(round(q * (len(ordinati) - 1)))))
+        return round(ordinati[i], 1)
+
+    def riassunto(self) -> Dict[str, Any]:
+        if not self.giri:
+            return {}
+        out: Dict[str, Any] = {
+            "giri": len(self.giri),
+            "p50": self._pct(self.giri, 0.50),
+            "p95": self._pct(self.giri, 0.95),
+            "max": round(max(self.giri), 1),
+        }
+        out["fasi_p95"] = {
+            nome: self._pct(valori, 0.95)
+            for nome, valori in self.fasi.items() if valori
+        }
+        return out
 
 
 class ScoreFeedWorker(threading.Thread):

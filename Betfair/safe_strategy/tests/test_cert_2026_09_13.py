@@ -1070,3 +1070,100 @@ def test_il_controllo_invertito_dentro_la_valutazione_del_risultato_esatto():
     assert len(base_control) == 1
     assert base_control[0].ok is True      # la favorita e' la casa, e preme
     assert base_control[0].label == "Controllo del gioco alla favorita"
+
+
+# ---------------------------------------------------------------------------
+# 12. CERT. 14/09 - QUANTO DURA IL GIRO DELLO SCANNER, E DOVE SE NE VA IL TEMPO
+#     Un totale da solo non serve: se il giro dura 40 s bisogna sapere se sono
+#     il poll dei book, il catalogo o la scrittura, perche' si curano in modi
+#     diversi. La misura viaggia sulla riga di stato che si scrive comunque:
+#     zero scritture in piu'.
+# ---------------------------------------------------------------------------
+def test_il_cronometro_misura_il_giro_e_le_sue_fasi():
+    import time as _t
+    c = SV.Cronometro()
+    c.apri_giro(_t.monotonic())
+    with c.fase("book"):
+        _t.sleep(0.03)
+    with c.fase("scrittura"):
+        _t.sleep(0.01)
+    c.chiudi_giro(_t.monotonic())
+
+    r = c.riassunto()
+    assert r["giri"] == 1
+    assert r["p50"] >= 40.0, "il totale deve comprendere tutte le fasi"
+    assert r["fasi_p95"]["book"] >= 30.0
+    assert r["fasi_p95"]["scrittura"] >= 10.0
+    # il tempo NON attribuito e' piccolo, ma esiste ed e' visibile
+    assert r["fasi_p95"]["altro"] >= 0.0
+
+
+def test_una_fase_attraversata_piu_volte_si_somma():
+    """Il poll dei book avviene una volta per sport: se ogni passaggio
+    sovrascrivesse il precedente, la fase piu' costosa risulterebbe la meta'
+    di quello che e'."""
+    import time as _t
+    c = SV.Cronometro()
+    c.apri_giro(_t.monotonic())
+    for _ in range(3):
+        with c.fase("book"):
+            _t.sleep(0.01)
+    c.chiudi_giro(_t.monotonic())
+    assert c.riassunto()["fasi_p95"]["book"] >= 28.0
+
+
+def test_il_tempo_non_attribuito_e_dichiarato_non_nascosto():
+    """Se la strumentazione guarda dalla parte sbagliata, ``altro`` cresce.
+    Meglio vederlo che crederlo zero: e' la spia che dice "sposta le sonde"."""
+    import time as _t
+    c = SV.Cronometro()
+    c.apri_giro(_t.monotonic())
+    _t.sleep(0.03)          # tempo speso FUORI da ogni fase
+    c.chiudi_giro(_t.monotonic())
+    r = c.riassunto()
+    assert r["fasi_p95"]["altro"] >= 25.0
+    assert r["fasi_p95"]["book"] == 0.0
+
+
+def test_il_percentile_e_quello_giusto():
+    """Il 95esimo si legge "un giro su venti e' piu' lento di questo": se fosse
+    calcolato male, un intervento verrebbe giudicato riuscito quando non lo e'."""
+    c = SV.Cronometro()
+    c.giri.extend(range(1, 101))           # 1..100 ms
+    r = c.riassunto()
+    assert r["p50"] in (50.0, 51.0)
+    assert r["p95"] in (95.0, 96.0)
+    assert r["max"] == 100.0
+
+
+def test_senza_nemmeno_un_giro_il_riassunto_e_vuoto_non_zero():
+    """Zero millisecondi vorrebbe dire "velocissimo". Un riassunto vuoto vuole
+    dire "non misurato": sono due cose diverse e non vanno confuse."""
+    assert SV.Cronometro().riassunto() == {}
+
+
+def test_la_finestra_e_scorrevole_e_non_cresce_all_infinito():
+    """Gira in un processo che sta su per ore: la misura non deve diventare una
+    perdita di memoria."""
+    c = SV.Cronometro()
+    for _ in range(SV.Cronometro.FINESTRA * 3):
+        c.giri.append(1.0)
+        for f in c.fasi.values():
+            f.append(1.0)
+    assert len(c.giri) == SV.Cronometro.FINESTRA
+    assert all(len(f) <= SV.Cronometro.FINESTRA for f in c.fasi.values())
+
+
+def test_un_giro_finito_male_viene_comunque_misurato():
+    """Escludere i giri andati storti falserebbe la misura proprio nei momenti
+    peggiori, che sono quelli che interessano."""
+    import time as _t
+    c = SV.Cronometro()
+    c.apri_giro(_t.monotonic())
+    try:
+        with c.fase("book"):
+            raise RuntimeError("Betfair KO")
+    except RuntimeError:
+        pass
+    c.chiudi_giro(_t.monotonic())
+    assert c.riassunto()["giri"] == 1, "il giro storto deve contare"
