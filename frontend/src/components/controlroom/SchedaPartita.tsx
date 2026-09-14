@@ -60,12 +60,19 @@ export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
 
     const soldi = p.soldi;
-    const net = soldi?.netPnl ?? null;
+    // IL NUMERO GRANDE E' QUELLO DEI SOLDI VERI. Il paper esiste, si vede, ma
+    // sta sotto e non si somma: sul tennis la stessa partita può avere righe
+    // di entrambe le modalità, e un solo numero sarebbe la media di due mondi.
+    const net = soldi?.live.netPnl ?? null;
+    const netPaper = soldi?.paper.netPnl ?? null;
+    const apertaLive = soldi?.live.aperta ?? false;
+    const apertaPaper = soldi?.paper.aperta ?? false;
     const target = p.target?.valore ?? null;
     const manca = target != null && net != null ? Math.max(0, target - net) : target;
 
     const bordo = p.stato === 'live' ? 'border-l-secondary'
-        : soldi?.aperta ? 'border-l-primary' : 'border-l-white/12';
+        : apertaLive ? 'border-l-primary'
+            : apertaPaper ? 'border-l-white/25' : 'border-l-white/12';
 
     const apriTrading = () => {
         // stessa rotta che usano gia' MissionPanel (calcio) e la lista tennis
@@ -134,6 +141,13 @@ export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
                         )}
                     </span>
                 </div>
+                {netPaper != null && (
+                    <div className="text-[10px] text-white/35 mt-0.5" data-testid="cr-pnl-partita-paper">
+                        in prova <span className={`font-mono ${netPaper >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+                            {fmtMoney(netPaper, { signed: true })}
+                        </span> — non entra nel target
+                    </div>
+                )}
                 {p.avanzamento != null && (
                     <div className="h-1 mt-1 rounded-sm bg-white/8 overflow-hidden">
                         <div className={`h-full ${net != null && net < 0 ? 'bg-red-400' : 'bg-emerald-400'}`}
@@ -164,9 +178,18 @@ export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
                         >{BOT_SIGLA[b]}</button>
                     );
                 })}
-                {soldi?.liability ? (
-                    <span className="ml-auto text-[10px] text-white/40">
-                        responsabilità <span className="font-mono text-white/65">{fmtMoney(soldi.liability)}</span>
+                {soldi && (soldi.live.liability > 0 || soldi.paper.liability > 0) ? (
+                    <span className="ml-auto text-[10px] text-white/40 flex items-baseline gap-1.5">
+                        {soldi.live.liability > 0 && (
+                            <span title="responsabilità impegnata con SOLDI VERI">
+                                resp. <span className="font-mono text-white/65">{fmtMoney(soldi.live.liability)}</span>
+                            </span>
+                        )}
+                        {soldi.paper.liability > 0 && (
+                            <span className="text-white/30" title="responsabilità impegnata in PROVA: non sono soldi veri e non si sommano">
+                                prova <span className="font-mono">{fmtMoney(soldi.paper.liability)}</span>
+                            </span>
+                        )}
                     </span>
                 ) : null}
             </div>

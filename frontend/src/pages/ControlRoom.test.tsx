@@ -30,7 +30,11 @@ function partita(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
         minuto: 58, punteggio: '1-0', controlloDisponibile: true,
         etaFeedS: 2, freschezza: 'fresca', latenzaQuoteS: 1, freschezzaQuote: 'fresca', statoQuote: 'fresco',
         media: { video: true, viz: true }, marketId: '1.24',
-        soldi: { netPnl: 12.5, liability: 40, investito: 10, aperta: true, bots: ['omega'] },
+        soldi: {
+            live: { netPnl: 12.5, liability: 40, investito: 10, aperta: true },
+            paper: { netPnl: null, liability: 0, investito: 0, aperta: false },
+            modi: ['live'], bots: ['omega'],
+        },
         target: { valore: 31.2, fonte: 'servizio' },
         avanzamento: 40,
         ...over,
@@ -45,7 +49,10 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
     return {
         caricamento: false, errore: null, nowMs: Date.parse('2026-09-14T15:00:00Z'),
         giornata: gruppo([partita()]),
-        totali: { partite: 1, live: 1, pre: 0, conPosizione: 1, liability: 40, netPnl: 12.5 },
+        totali: {
+            partite: 1, live: 1, pre: 0, conPosizione: 1, conPosizioneLive: 1,
+            liability: 40, liabilityPaper: 0, netPnl: 12.5, netPnlPaper: null,
+        },
         obiettivo: 250, obiettivoStoricizzato: true, realizzato: 96.4, targetServizio: 31.2,
         bots: [
             { bot: 'omega', modalita: 'paper', inCorsa: true, battitoAt: null, canale: 'connected', etaPushS: 2, freschezzaPush: 'fresca', varianti: null },
@@ -59,13 +66,16 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         mikeRestingLive: true,
         soldiGiornata: {
             realizzato: 96.4,
+            realizzatoPaper: null,
+            discordanza: null,
             perBot: { omega: 90, safe: 6.4, mike: 0 },
             liability: 40,
             perSport: {
                 calcio: { n: 3, pnl: 1.5, won: 2, lost: 1 },
                 tennis: { n: 2, pnl: 0.08, won: 1, lost: 1 },
             },
-            operazioni: 5, vinte: 3, perse: 2,
+            perSportPaper: null,
+            operazioni: 5, vinte: 3, perse: 2, operazioniPaper: null,
         },
         schermo: { feedMs: 800, pushMs: 1200, letturaMs: 4000, schermoMs: 4000 },
         ultimaCatena: { salti: [], trade: null, evento: null },
@@ -508,7 +518,10 @@ function vmDueSport(over: Partial<ReturnType<typeof useControlRoom>> = {}) {
             { campionato: 'Serie A', primoKoMs: calcio.koMs, partite: [calcio] },
             { campionato: 'ATP', primoKoMs: tennis.koMs, partite: [tennis] },
         ],
-        totali: { partite: 2, live: 2, pre: 0, conPosizione: 2, liability: 80, netPnl: 25 },
+        totali: {
+            partite: 2, live: 2, pre: 0, conPosizione: 2, conPosizioneLive: 2,
+            liability: 80, liabilityPaper: 0, netPnl: 25, netPnlPaper: null,
+        },
         posizioni: [pos(1, 'C1', 'Milan – Inter'), pos(2, 'T1', 'Rune – Musetti')] as never,
         ...over,
     });
@@ -598,5 +611,122 @@ describe('tessere calcio/tennis — sono il filtro del banco', () => {
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-calcio'));
         expect(within(s.getByTestId('cr-posizioni')).getByText('Tizio – Caio')).toBeTruthy();
+    });
+});
+
+// ========================================================================
+// «NON VOGLIO DATI MISCHIATI» (utente, 14/09).
+//
+// Questi test guardano i PIXEL, non le funzioni: la matematica puo' essere
+// giusta e la pagina mostrare lo stesso un numero misto.
+// ========================================================================
+
+describe('la pagina non mostra MAI un numero che somma paper e live', () => {
+    it('la BARRA dell’obiettivo porta i soldi veri, e il paper ha una riga sua', () => {
+        mVm.mockReturnValue(vm({
+            soldiGiornata: {
+                realizzato: 0.44,          // soldi veri
+                realizzatoPaper: -4.83,    // prova: NON deve entrare nella barra
+                discordanza: null,
+                perBot: { omega: null, safe: 0.44, mike: null },
+                liability: 3,
+                perSport: { tennis: { n: 5, pnl: 0.44, won: 5, lost: 0 } },
+                perSportPaper: { calcio: { n: 2, pnl: -4.83, won: 0, lost: 2 } },
+                operazioni: 5, vinte: 5, perse: 0, operazioniPaper: 2,
+            },
+        }));
+        const s = mostra();
+        const barra = s.getByTestId('cr-giornata');
+        expect(barra.textContent).toContain('0,44');
+        // il numero misto (-4,39) non deve comparire da nessuna parte
+        expect(barra.textContent).not.toContain('4,39');
+        // il paper si vede, ma fuori dalla barra e dichiarato tale
+        const riga = s.getByTestId('cr-riga-paper');
+        expect(riga.textContent).toMatch(/4,83/);
+        expect(riga.textContent).toMatch(/non entra nell/i);
+    });
+
+    it('L’ESPOSIZIONE in testata e’ quella VERA; la prova e’ una nota separata', () => {
+        mVm.mockReturnValue(vm({
+            totali: {
+                partite: 59, live: 14, pre: 45,
+                conPosizione: 14, conPosizioneLive: 2,
+                liability: 77.71, liabilityPaper: 315.97,
+                netPnl: 0.44, netPnlPaper: -4.83,
+            },
+        }));
+        const s = mostra();
+        const testo = s.container.textContent ?? '';
+        expect(testo).toContain('77,71');
+        // 393,68 = 77,71 + 315,97: il totale mischiato non deve esistere
+        expect(testo).not.toContain('393,68');
+        // e le partite con soldi veri sono 2, non 14
+        expect(testo).toContain('2 / 59');
+    });
+
+    it('quando server e pagina non concordano la pagina LO DICE', () => {
+        mVm.mockReturnValue(vm({
+            soldiGiornata: {
+                ...vm().soldiGiornata,
+                discordanza: 'il servizio dice 0.44 € e la pagina 0.41 €',
+            },
+        }));
+        const avviso = mostra().getByTestId('cr-discordanza');
+        expect(avviso.textContent).toMatch(/due conti diversi/i);
+        expect(avviso.textContent).toMatch(/0\.44/);
+    });
+
+    it('senza niente in prova non compare nessuna riga della prova (niente rumore)', () => {
+        mVm.mockReturnValue(vm({
+            soldiGiornata: {
+                ...vm().soldiGiornata, realizzatoPaper: null, operazioniPaper: null,
+            },
+        }));
+        expect(mostra().queryByTestId('cr-riga-paper')).toBeNull();
+    });
+
+    it('LA SCHEDA PARTITA: numero grande = soldi veri, prova sotto e mai sommata', () => {
+        mVm.mockReturnValue(vm({
+            giornata: gruppo([partita({
+                soldi: {
+                    live: { netPnl: 0.12, liability: 3, investito: 3, aperta: false },
+                    paper: { netPnl: -40, liability: 0, investito: 20, aperta: false },
+                    modi: ['live', 'paper'], bots: ['safe'],
+                } as never,
+            })]),
+        }));
+        const s = mostra();
+        expect(s.getByTestId('cr-pnl-partita').textContent).toContain('0,12');
+        const prova = s.getByTestId('cr-pnl-partita-paper');
+        expect(prova.textContent).toMatch(/40,00/);
+        expect(prova.textContent).toMatch(/non entra nel target/i);
+        // -39,88 (la somma) non deve esistere
+        expect(s.container.textContent ?? '').not.toContain('39,88');
+    });
+
+    it('LE TESSERE: «2 aperte» dice sempre con che soldi', () => {
+        mVm.mockReturnValue(vm({
+            giornata: gruppo([
+                partita({
+                    event_id: 'T9', sport: 'tennis',
+                    soldi: {
+                        live: { netPnl: null, liability: 3, investito: 3, aperta: true },
+                        paper: { netPnl: null, liability: 0, investito: 0, aperta: false },
+                        modi: ['live'], bots: ['safe'],
+                    } as never,
+                }),
+                partita({
+                    event_id: 'C9', sport: 'calcio',
+                    soldi: {
+                        live: { netPnl: null, liability: 0, investito: 0, aperta: false },
+                        paper: { netPnl: null, liability: 50, investito: 50, aperta: true },
+                        modi: ['paper'], bots: ['omega'],
+                    } as never,
+                }),
+            ]),
+        }));
+        const s = mostra();
+        expect(within(s.getByTestId('cr-sport-tennis')).getByText(/1 aperta/)).toBeTruthy();
+        expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 in prova/)).toBeTruthy();
     });
 });

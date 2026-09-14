@@ -37,8 +37,9 @@ export interface SplitSportProps {
     perSport: Record<string, DailyBreakdown> | null;
     /** modalità con cui quello sport sta operando ADESSO (dal servizio) */
     modalita: Record<SportKey, 'paper' | 'live' | null>;
-    /** posizioni aperte per sport, dal vivo */
-    aperte?: Record<SportKey, number>;
+    /** posizioni aperte per sport, **divise per modalità**: «2 aperte» senza
+     *  dire con che soldi non è un'informazione, è un'ambiguità */
+    aperte?: Record<SportKey, { live: number; paper: number }>;
     testId?: string;
 }
 
@@ -53,7 +54,7 @@ export function SplitSport({
                     sport={k}
                     dato={perSport?.[k] ?? null}
                     modalita={modalita[k]}
-                    aperte={aperte?.[k] ?? 0}
+                    aperte={aperte?.[k] ?? { live: 0, paper: 0 }}
                     letto={perSport != null}
                     scelto={selezionato === k}
                     spento={selezionato != null && selezionato !== k}
@@ -68,7 +69,7 @@ function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick
     sport: SportKey;
     dato: DailyBreakdown | null;
     modalita: 'paper' | 'live' | null;
-    aperte: number;
+    aperte: { live: number; paper: number };
     letto: boolean;
     scelto: boolean;
     spento: boolean;
@@ -111,9 +112,18 @@ function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick
                 ) : (
                     <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-white/45">{T.modePaper}</span>
                 )}
-                {aperte > 0 && (
-                    <span className="ml-auto text-[10px] text-white/45">
-                        {aperte} {aperte === 1 ? 'aperta' : 'aperte'}
+                {(aperte.live > 0 || aperte.paper > 0) && (
+                    <span className="ml-auto text-[10px] flex items-baseline gap-1.5">
+                        {aperte.live > 0 && (
+                            <span className="text-red-300" title="posizioni con soldi veri">
+                                {aperte.live} {aperte.live === 1 ? 'aperta' : 'aperte'}
+                            </span>
+                        )}
+                        {aperte.paper > 0 && (
+                            <span className="text-white/35" title="posizioni simulate">
+                                {aperte.paper} in prova
+                            </span>
+                        )}
                     </span>
                 )}
             </div>

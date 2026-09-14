@@ -219,8 +219,27 @@ export async function fetchOmegaDaily(from: string, to: string): Promise<DailyRo
     return normalizeDailyRows(data);
 }
 
-export async function fetchSafeDaily(from: string, to: string, sport: SafeSportFilter = null): Promise<DailyRow[]> {
-    const { data, error } = await supabase.rpc('get_safe_daily', { p_from: from, p_to: to, p_sport: sport });
+/** Modalità con cui filtrare la giornata. `null` = TUTTE, cioè paper e live
+ *  **sommati**: quasi mai quello che si vuole mostrare a un trader. */
+export type SafeModeFilter = 'paper' | 'live' | null;
+
+/**
+ * La giornata di Safe dal server.
+ *
+ * ⚠️ `mode` non è un dettaglio. La RPC accetta `p_mode` dal 13/09 e il
+ * frontend non glielo passava: il risultato sommava soldi veri e simulati in
+ * un numero solo. Il 14/09 la card del tennis mostrava **+0,25 €** — che non
+ * esisteva da nessuna parte: era +0,41 € di live più −0,16 € di paper.
+ * Chiedere «tutte le modalità» va fatto **apposta**, non per distrazione.
+ */
+export async function fetchSafeDaily(
+    from: string, to: string,
+    sport: SafeSportFilter = null,
+    mode: SafeModeFilter = null,
+): Promise<DailyRow[]> {
+    const { data, error } = await supabase.rpc('get_safe_daily', {
+        p_from: from, p_to: to, p_sport: sport, p_mode: mode,
+    });
     if (error) throw new Error(error.message);
     return normalizeDailyRows(data);
 }

@@ -24,7 +24,7 @@
 // ============================================================================
 import {
     groupTradesIntoCicli, groupCicliByEvent, isSettled, isErrorRow,
-    type PnlTradeLike, type EventGroup,
+    type PnlTradeLike,
 } from './eventGroups';
 
 // ---------------------------------------------------------------- vocabolario
@@ -327,7 +327,8 @@ export function marca<T extends PnlTradeLike>(trades: readonly T[], bot: Bot): T
     return trades.map((t) => ({ ...t, __bot: bot }));
 }
 
-export interface PartitaSoldi {
+/** I soldi di UNA modalità su una partita. */
+export interface SoldiModo {
     /** netto di commissione delle righe REGOLATE; `null` = nessun risultato ancora */
     netPnl: number | null;
     /** responsabilità impegnata dalle righe ancora aperte */
@@ -336,8 +337,36 @@ export interface PartitaSoldi {
     investito: number;
     /** c'è almeno una posizione ancora a mercato */
     aperta: boolean;
+}
+
+const SOLDI_VUOTI: SoldiModo = { netPnl: null, liability: 0, investito: 0, aperta: false };
+
+/**
+ * I soldi di una partita, **separati per modalità e mai sommati**.
+ *
+ * Qui c'era un solo `netPnl` che sommava tutto. Sul tennis esistono righe
+ * paper e righe live sulla STESSA partita: quel numero era la media di due
+ * mondi diversi, e la scheda lo mostrava come se fosse un risultato.
+ * Non esiste piu' un campo che li unisca: chi legge deve SCEGLIERE, e il
+ * compilatore lo costringe.
+ */
+export interface PartitaSoldi {
+    /** soldi veri */
+    live: SoldiModo;
+    /** simulazione */
+    paper: SoldiModo;
+    /** quali modalità hanno operato qui (per sapere che cosa mostrare) */
+    modi: Modo[];
     /** quali bot hanno operato su questa partita, in ordine fisso */
     bots: Bot[];
+}
+
+export type Modo = 'live' | 'paper';
+
+/** La modalità di una riga. Sconosciuta = **paper**: ai soldi veri si arriva
+ *  solo dichiarandolo, mai per un campo vuoto (fail-closed). */
+export function modoDi(t: { mode?: string | null }): Modo {
+    return String(t?.mode ?? '').toLowerCase() === 'live' ? 'live' : 'paper';
 }
 
 const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike'];
@@ -348,22 +377,46 @@ const ORDINE_BOT: Bot[] = ['omega', 'safe', 'mike'];
  * l'elenco dei bot coinvolti.
  */
 export function soldiPerPartita(trades: readonly TradeConBot[]): Map<string, PartitaSoldi> {
-    const cicli = groupTradesIntoCicli(trades);
-    const eventi: EventGroup<TradeConBot>[] = groupCicliByEvent(cicli);
-
-    const out = new Map<string, PartitaSoldi>();
-    for (const ev of eventi) {
-        const visti = new Set<Bot>();
-        for (const c of ev.cicli) {
-            visti.add(c.open.__bot);
-            for (const ch of c.closes) visti.add(ch.__bot);
+    // DUE raggruppamenti sulle stesse righe, uno per modalità. Si riusa la
+    // stessa funzione di aggregazione (già collaudata) invece di insegnarle
+    // una dimensione in più: un ciclo apertura→chiusura vive dentro UNA
+    // modalità, quindi dividere prima di raggruppare è corretto e non spezza
+    // nessun ciclo.
+    const perModo = (m: Modo) => {
+        const righe = trades.filter((t) => modoDi(t) === m);
+        const mappa = new Map<string, { soldi: SoldiModo; bots: Set<Bot> }>();
+        for (const ev of groupCicliByEvent(groupTradesIntoCicli(righe))) {
+            const visti = new Set<Bot>();
+            for (const c of ev.cicli) {
+                visti.add(c.open.__bot);
+                for (const ch of c.closes) visti.add(ch.__bot);
+            }
+            mappa.set(String(ev.event_id), {
+                soldi: {
+                    netPnl: ev.netPnl, liability: ev.liability,
+                    investito: ev.investito, aperta: ev.apertaAncora,
+                },
+                bots: visti,
+            });
         }
-        out.set(String(ev.event_id), {
-            netPnl: ev.netPnl,
-            liability: ev.liability,
-            investito: ev.investito,
-            aperta: ev.apertaAncora,
-            bots: ORDINE_BOT.filter((b) => visti.has(b)),
+        return mappa;
+    };
+
+    const vivi = perModo('live');
+    const finti = perModo('paper');
+    const out = new Map<string, PartitaSoldi>();
+    for (const id of new Set([...vivi.keys(), ...finti.keys()])) {
+        const l = vivi.get(id);
+        const p = finti.get(id);
+        const bots = new Set<Bot>([...(l?.bots ?? []), ...(p?.bots ?? [])]);
+        const modi: Modo[] = [];
+        if (l) modi.push('live');
+        if (p) modi.push('paper');
+        out.set(id, {
+            live: l?.soldi ?? SOLDI_VUOTI,
+            paper: p?.soldi ?? SOLDI_VUOTI,
+            modi,
+            bots: ORDINE_BOT.filter((b) => bots.has(b)),
         });
     }
     return out;
@@ -460,7 +513,9 @@ export function costruisciGiornata(args: {
             marketId: p?.mo_market_id ?? null,
             soldi: s,
             target,
-            avanzamento: avanzamentoPartita(s?.netPnl ?? null, target?.valore ?? null),
+            // il target di giornata si insegue con i SOLDI VERI: una vincita
+            // simulata non deve riempire la barra di un pixel.
+            avanzamento: avanzamentoPartita(s?.live.netPnl ?? null, target?.valore ?? null),
         };
     });
 
@@ -582,18 +637,36 @@ export function realizzatoGiornata(righe: readonly RigaRealizzato[]): Realizzato
 
 export interface TotaliGiornata {
     partite: number;
+    /** partite IN GIOCO adesso (nome storico: non è la modalità) */
     live: number;
     pre: number;
+    /** partite con almeno una posizione aperta, in QUALSIASI modalità */
     conPosizione: number;
-    /** responsabilità impegnata adesso su tutte le partite */
+    /** partite con una posizione aperta con SOLDI VERI */
+    conPosizioneLive: number;
+
+    /** responsabilità impegnata adesso con SOLDI VERI */
     liability: number;
-    /** netto delle righe regolate; `null` se non c'è ancora nessun risultato */
+    /** responsabilità impegnata adesso in PROVA. Mai sommata alla precedente. */
+    liabilityPaper: number;
+    /** netto delle righe regolate con SOLDI VERI; `null` = nessun risultato */
     netPnl: number | null;
+    /** netto delle righe regolate in PROVA. Mai sommato al precedente. */
+    netPnlPaper: number | null;
 }
 
+/**
+ * I totali della colonna partite, **per modalità**.
+ *
+ * `liability` e `netPnl` sono i SOLDI VERI. Prima erano un unico numero che
+ * sommava paper e live: l'esposizione dichiarata comprendeva denaro che non
+ * esiste, e su un banco reale è il numero più pericoloso della pagina.
+ */
 export function totaliGiornata(gruppi: readonly GruppoCampionato[]): TotaliGiornata {
-    let partite = 0, live = 0, pre = 0, conPosizione = 0, liability = 0;
+    let partite = 0, live = 0, pre = 0, conPosizione = 0, conPosizioneLive = 0;
+    let liability = 0, liabilityPaper = 0;
     let net: number | null = null;
+    let netPaper: number | null = null;
 
     for (const g of gruppi) {
         for (const m of g.partite) {
@@ -602,10 +675,19 @@ export function totaliGiornata(gruppi: readonly GruppoCampionato[]): TotaliGiorn
             else if (m.stato === 'pre') pre += 1;
             const s = m.soldi;
             if (!s) continue;
-            if (s.aperta) conPosizione += 1;
-            liability += s.liability;
-            if (s.netPnl != null) net = (net ?? 0) + s.netPnl;
+            if (s.live.aperta || s.paper.aperta) conPosizione += 1;
+            if (s.live.aperta) conPosizioneLive += 1;
+            liability += s.live.liability;
+            liabilityPaper += s.paper.liability;
+            if (s.live.netPnl != null) net = (net ?? 0) + s.live.netPnl;
+            if (s.paper.netPnl != null) netPaper = (netPaper ?? 0) + s.paper.netPnl;
         }
     }
-    return { partite, live, pre, conPosizione, liability, netPnl: net };
+    const r2 = (x: number | null) => (x == null ? null : Math.round(x * 100) / 100);
+    return {
+        partite, live, pre, conPosizione, conPosizioneLive,
+        liability: Math.round(liability * 100) / 100,
+        liabilityPaper: Math.round(liabilityPaper * 100) / 100,
+        netPnl: r2(net), netPnlPaper: r2(netPaper),
+    };
 }

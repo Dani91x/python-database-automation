@@ -22,7 +22,14 @@ function feed(over: Partial<PartitaFeedLike> = {}): PartitaFeedLike {
 }
 
 function trade(over: Partial<PnlTradeLike> & { id: number; event_id: string; status: string }): PnlTradeLike {
+    // `mode` NON ha default qui apposta: chi scrive un test deve dichiararlo,
+    // esattamente come deve dichiararlo il servizio. Senza, vale 'paper'.
     return { placed_at: '2026-09-14T14:00:00Z', ...over } as PnlTradeLike;
+}
+
+/** una riga con SOLDI VERI */
+function tradeLive(over: Partial<PnlTradeLike> & { id: number; event_id: string; status: string }): PnlTradeLike {
+    return trade({ mode: 'live', ...over } as never);
 }
 
 // ---------------------------------------------------------------- freschezza
@@ -250,30 +257,30 @@ describe('avanzamentoPartita — la barra non va all\'indietro', () => {
 describe('soldiPerPartita — tre bot, una riga per partita', () => {
     it('somma i tre bot sulla stessa partita e ne elenca la provenienza', () => {
         const trades = [
-            ...marca([trade({ id: 1, event_id: 'E1', status: 'won', pnl: 10 })], 'omega'),
-            ...marca([trade({ id: 2, event_id: 'E1', status: 'won', pnl: 5 })], 'mike'),
-            ...marca([trade({ id: 3, event_id: 'E2', status: 'lost', pnl: -4 })], 'safe'),
+            ...marca([tradeLive({ id: 1, event_id: 'E1', status: 'won', pnl: 10 })], 'omega'),
+            ...marca([tradeLive({ id: 2, event_id: 'E1', status: 'won', pnl: 5 })], 'mike'),
+            ...marca([tradeLive({ id: 3, event_id: 'E2', status: 'lost', pnl: -4 })], 'safe'),
         ];
         const m = soldiPerPartita(trades);
-        expect(m.get('E1')?.netPnl).toBe(15);
+        expect(m.get('E1')?.live.netPnl).toBe(15);
         expect(m.get('E1')?.bots).toEqual(['omega', 'mike']);   // ordine fisso Ω·S·M
-        expect(m.get('E2')?.netPnl).toBe(-4);
+        expect(m.get('E2')?.live.netPnl).toBe(-4);
         expect(m.get('E2')?.bots).toEqual(['safe']);
     });
 
     it('una partita SENZA righe regolate vale null, non 0', () => {
-        const m = soldiPerPartita(marca([trade({ id: 1, event_id: 'E1', status: 'open', liability: 30 })], 'safe'));
-        expect(m.get('E1')?.netPnl).toBeNull();
-        expect(m.get('E1')?.aperta).toBe(true);
-        expect(m.get('E1')?.liability).toBe(30);
+        const m = soldiPerPartita(marca([tradeLive({ id: 1, event_id: 'E1', status: 'open', liability: 30 })], 'safe'));
+        expect(m.get('E1')?.live.netPnl).toBeNull();
+        expect(m.get('E1')?.live.aperta).toBe(true);
+        expect(m.get('E1')?.live.liability).toBe(30);
     });
 
     it('le righe in error non sono operazioni: non entrano nel netto', () => {
         const m = soldiPerPartita(marca([
-            trade({ id: 1, event_id: 'E1', status: 'won', pnl: 7 }),
-            trade({ id: 2, event_id: 'E1', status: 'error', pnl: -100 }),
+            tradeLive({ id: 1, event_id: 'E1', status: 'won', pnl: 7 }),
+            tradeLive({ id: 2, event_id: 'E1', status: 'error', pnl: -100 }),
         ], 'omega'));
-        expect(m.get('E1')?.netPnl).toBe(7);
+        expect(m.get('E1')?.live.netPnl).toBe(7);
     });
 });
 
@@ -388,8 +395,8 @@ describe('realizzatoGiornata - soldi veri e simulati non si sommano MAI', () => 
 describe('totaliGiornata', () => {
     it('conta partite, live, pre, posizioni e responsabilità', () => {
         const soldi = soldiPerPartita([
-            ...marca([trade({ id: 1, event_id: 'E1', status: 'open', liability: 40 })], 'omega'),
-            ...marca([trade({ id: 2, event_id: 'E2', status: 'won', pnl: 12 })], 'safe'),
+            ...marca([tradeLive({ id: 1, event_id: 'E1', status: 'open', liability: 40 })], 'omega'),
+            ...marca([tradeLive({ id: 2, event_id: 'E2', status: 'won', pnl: 12 })], 'safe'),
         ]);
         const g = costruisciGiornata({
             righe: [
@@ -399,7 +406,10 @@ describe('totaliGiornata', () => {
             soldi, nowMs: T0,
         });
         expect(totaliGiornata(g)).toEqual({
-            partite: 2, live: 1, pre: 1, conPosizione: 1, liability: 40, netPnl: 12,
+            partite: 2, live: 1, pre: 1,
+            conPosizione: 1, conPosizioneLive: 1,
+            liability: 40, liabilityPaper: 0,
+            netPnl: 12, netPnlPaper: null,
         });
     });
 
@@ -409,5 +419,107 @@ describe('totaliGiornata', () => {
             soldi: new Map(), nowMs: T0,
         });
         expect(totaliGiornata(g).netPnl).toBeNull();
+    });
+});
+
+// ========================================================================
+// SOLDI VERI E SOLDI FINTI NON SI SOMMANO MAI.
+//
+// 14/09, parole dell'utente: «NON VOGLIO DATI MISCHIATI». Sul tennis la
+// stessa partita puo' avere righe paper e righe live: un numero solo
+// sarebbe la media di due mondi, mostrata come se fosse un risultato.
+// ========================================================================
+
+describe('soldiPerPartita - le due modalita restano separate', () => {
+    it('sulla STESSA partita tiene i due conti distinti e non li somma MAI', () => {
+        const m = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'won', pnl: 5, mode: 'live' } as never),
+            trade({ id: 2, event_id: 'E1', status: 'lost', pnl: -40, mode: 'paper' } as never),
+        ], 'safe'));
+        expect(m.get('E1')?.live.netPnl).toBe(5);
+        expect(m.get('E1')?.paper.netPnl).toBe(-40);
+        // il numero misto (-35) non deve esistere da nessuna parte
+        expect(JSON.stringify(m.get('E1'))).not.toContain('-35');
+        expect(m.get('E1')?.modi).toEqual(['live', 'paper']);
+    });
+
+    it('la responsabilita simulata NON entra in quella vera', () => {
+        const m = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'open', liability: 3, mode: 'live' } as never),
+            trade({ id: 2, event_id: 'E1', status: 'open', liability: 300, mode: 'paper' } as never),
+        ], 'safe'));
+        expect(m.get('E1')?.live.liability).toBe(3);
+        expect(m.get('E1')?.paper.liability).toBe(300);
+    });
+
+    it('una modalita NON DICHIARATA vale paper: ai soldi veri si arriva scrivendolo', () => {
+        const m = soldiPerPartita(marca([trade({ id: 1, event_id: 'E1', status: 'won', pnl: 9 })], 'safe'));
+        expect(m.get('E1')?.paper.netPnl).toBe(9);
+        expect(m.get('E1')?.live.netPnl).toBeNull();
+        expect(m.get('E1')?.modi).toEqual(['paper']);
+    });
+
+    it('un mode scritto storto non diventa mai soldi veri per caso', () => {
+        const m = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'won', pnl: 1, mode: 'LIVE' } as never),
+            trade({ id: 2, event_id: 'E2', status: 'won', pnl: 1, mode: 'vivo' } as never),
+        ], 'safe'));
+        expect(m.get('E1')?.live.netPnl).toBe(1);      // maiuscolo: e' live
+        expect(m.get('E2')?.live.netPnl).toBeNull();   // parola ignota: paper
+        expect(m.get('E2')?.paper.netPnl).toBe(1);
+    });
+
+    it('una partita solo in prova non ha nulla nel ramo dei soldi veri', () => {
+        const m = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'open', liability: 50, mode: 'paper' } as never),
+        ], 'omega'));
+        expect(m.get('E1')?.live).toEqual({ netPnl: null, liability: 0, investito: 0, aperta: false });
+        expect(m.get('E1')?.paper.aperta).toBe(true);
+    });
+});
+
+describe('totali di giornata - esposizione e avanzamento sono soldi VERI', () => {
+    it("L'ESPOSIZIONE DICHIARATA e' solo quella vera: il paper sta a parte", () => {
+        // caso reale del 14/09: la testata diceva 393,68 EUR di esposizione
+        // sommando la responsabilita' delle posizioni simulate del calcio,
+        // mentre i soldi veri impegnati erano 77,71 EUR.
+        const soldi = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'open', liability: 3, mode: 'live' } as never),
+            trade({ id: 2, event_id: 'E1', status: 'open', liability: 316, mode: 'paper' } as never),
+        ], 'safe'));
+        const g = costruisciGiornata({
+            righe: [{ event_id: 'E1', payload: feed({ inplay: true }), updated_at: '2026-09-14T15:00:00Z' }],
+            soldi, nowMs: T0,
+        });
+        const t = totaliGiornata(g);
+        expect(t.liability).toBe(3);
+        expect(t.liabilityPaper).toBe(316);
+        expect(t.conPosizioneLive).toBe(1);
+    });
+
+    it('una partita aperta SOLO in prova non conta fra quelle con soldi veri', () => {
+        const soldi = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'open', liability: 20, mode: 'paper' } as never),
+        ], 'omega'));
+        const g = costruisciGiornata({
+            righe: [{ event_id: 'E1', payload: feed({ inplay: true }), updated_at: '2026-09-14T15:00:00Z' }],
+            soldi, nowMs: T0,
+        });
+        const t = totaliGiornata(g);
+        expect(t.conPosizione).toBe(1);
+        expect(t.conPosizioneLive).toBe(0);
+        expect(t.liability).toBe(0);
+    });
+
+    it('LA BARRA DELLA PARTITA si riempie con i soldi veri, non con la prova', () => {
+        const soldi = soldiPerPartita(marca([
+            trade({ id: 1, event_id: 'E1', status: 'won', pnl: 100, mode: 'paper' } as never),
+        ], 'safe'));
+        const g = costruisciGiornata({
+            righe: [{ event_id: 'E1', payload: feed({ inplay: true }), updated_at: '2026-09-14T15:00:00Z' }],
+            soldi, nowMs: T0, obiettivo: 100, realizzato: 0, targetServizio: 10,
+        });
+        // 100 EUR vinti IN PROVA non devono muovere l'avanzamento di un pixel
+        expect(g[0].partite[0].avanzamento).toBeNull();
     });
 });

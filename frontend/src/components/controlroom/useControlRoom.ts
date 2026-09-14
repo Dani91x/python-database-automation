@@ -35,6 +35,7 @@ import {
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
+import { fmtMoney } from '@/lib/format';
 import { romeDay, fetchSafeDaily, type DailyRow, type DailyBreakdown } from '@/lib/dailyHistory';
 import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
 import {
@@ -176,29 +177,43 @@ export interface ControlRoomVM {
      * È questo che fa muovere la barra quando una posizione si chiude: prima
      * leggeva solo il realizzato di OMEGA, quindi una vincita del tennis (che
      * è di Safe) non la spostava di un pixel.
+     *
+     * Tre conti sulle STESSE righe dei tre bot. Chi legge deve SCEGLIERE:
+     * `live` sono soldi veri, `paper` è esercitazione, `tutto` è la somma delle
+     * due e serve solo alle diagnosi — non si mostra mai a un trader.
      */
-    realizzatoOggi: Realizzato;
+    realizzatoOggi: { tutto: Realizzato; live: Realizzato; paper: Realizzato };
 
     /**
-     * IL REALIZZATO CHE FA MUOVERE LA BARRA, preso dagli **AGGREGATI dei tre
-     * servizi** e non ricontato dal client.
+     * IL REALIZZATO CHE FA MUOVERE LA BARRA — e **sono soldi veri, solo quelli**.
      *
-     * Prima leggeva `realized_today` del solo OMEGA: una vincita del tennis
-     * (che è di Safe) **non muoveva la barra per costruzione**. E il conto
-     * fatto dal client produce numeri diversi da quelli del servizio — è già
-     * successo su Omega, che per questo legge gli aggregati.
+     * Storia di due errori, entrambi visti a schermo:
+     *  1. leggeva `realized_today` del solo OMEGA: una vincita del tennis (che
+     *     è di Safe) non muoveva la barra per costruzione;
+     *  2. poi sommava i tre servizi — ma ciascuno pubblica il realizzato NELLA
+     *     PROPRIA modalità (`bot_service.py:5445`). Con Safe in live e gli
+     *     altri due in prova, la somma metteva insieme un numero vero e due
+     *     simulati: il 14/09 la barra diceva −4,83 € mentre il tennis con soldi
+     *     veri aveva fatto +0,41 €, e andava all'indietro per perdite finte.
      */
     soldiGiornata: {
-        /** somma dei realizzati dei tre bot */
+        /** SOLDI VERI realizzati oggi dai tre bot. È il numero della barra. */
         realizzato: number | null;
+        /** lo stesso conto in PROVA, tenuto separato e mai sommato */
+        realizzatoPaper: number | null;
+        /** server e pagina non concordano sul realizzato live: si dichiara */
+        discordanza: string | null;
         perBot: Record<Bot, number | null>;
         /** responsabilità aperta, sommata */
         liability: number | null;
-        /** P&L per SPORT, dal server (`get_safe_daily.by_sport`): mai ricontato qui */
+        /** P&L per SPORT con i SOLDI VERI (`get_safe_daily` con `p_mode='live'`) */
         perSport: Record<string, DailyBreakdown> | null;
+        /** P&L per SPORT in PROVA. Mai sommato al precedente. */
+        perSportPaper: Record<string, DailyBreakdown> | null;
         operazioni: number | null;
         vinte: number | null;
         perse: number | null;
+        operazioniPaper: number | null;
     };
     /** target per partita calcolato dal SERVIZIO (Omega). Se manca, la pagina lo dichiara. */
     targetServizio: number | null;
@@ -284,7 +299,10 @@ export function useControlRoom(): ControlRoomVM {
     const [lettoAlle, setLettoAlle] = useState<number | null>(null);
     /** riga di oggi dal server, con `by_sport` gia' calcolato: e' la fonte del
      *  «quanto ha reso il tennis» — non si riconta niente lato client. */
+    /** la giornata di Safe con i SOLDI VERI (`p_mode='live'`) */
     const [safeOggi, setSafeOggi] = useState<DailyRow | null>(null);
+    /** la stessa giornata in PROVA. Tenuta a parte: non si somma mai all'altra. */
+    const [safeOggiPaper, setSafeOggiPaper] = useState<DailyRow | null>(null);
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
@@ -306,10 +324,15 @@ export function useControlRoom(): ControlRoomVM {
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
             fetchSafeState(), fetchMikeState(), fetchRunnerState(), fetchProposte(),
-            (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g); })(),
+            // DUE letture, non una. La RPC accetta `p_mode` e senza di esso
+            // somma soldi veri e simulati: il 14/09 la card del tennis diceva
+            // +0,25 €, un numero che non esisteva (era +0,41 live -0,16 paper).
+            (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'live'); })(),
+            (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'paper'); })(),
         ]).then((r) => {
             if (!vivo) return;
-            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp, rDaily] = r;
+            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
+                rDaily, rDailyPaper] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -319,11 +342,12 @@ export function useControlRoom(): ControlRoomVM {
             if (rRunner.status === 'fulfilled') setRunner(rRunner.value);
             if (rProp.status === 'fulfilled') setProposte(rProp.value);
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
+            if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe'][i] : null))
+                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -644,7 +668,16 @@ export function useControlRoom(): ControlRoomVM {
         for (const t of mike?.trades ?? []) {
             if (delGiorno(t.placed_at)) righe.push({ status: t.status, pnl: t.pnl, mode: t.mode, sport: 'calcio' });
         }
-        return realizzatoGiornata(righe);
+        // DUE conti separati sulle STESSE righe. `realizzatoGiornata` sa gia'
+        // dividere per modalita', ma il chiamante deve DECIDERE quale mostrare:
+        // un numero che somma le due e' un numero che non esiste.
+        const soloLive = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'live');
+        const soloPaper = righe.filter((x) => String(x.mode ?? '').toLowerCase() === 'paper');
+        return {
+            tutto: realizzatoGiornata(righe),
+            live: realizzatoGiornata(soloLive),
+            paper: realizzatoGiornata(soloPaper),
+        };
     }, [omegaTrades, safe?.trades, mike?.trades, nowMs]);
 
     // ── LA GIORNATA, dagli AGGREGATI dei tre servizi ─────────────────────────
@@ -658,20 +691,49 @@ export function useControlRoom(): ControlRoomVM {
             safe: n(sA?.realized_today),
             mike: n(mA?.realized_today),
         };
-        const noti = Object.values(perBot).filter((v): v is number => v != null);
         const liab = [n(oA?.open_liability), n(sA?.open_liability), n(mA?.open_liability)]
             .filter((v): v is number => v != null);
         const r2 = (x: number) => Math.round(x * 100) / 100;
+
+        // ⚠️ IL REALIZZATO DELLA BARRA E' QUELLO CON I SOLDI VERI, E BASTA.
+        //
+        // Prima si sommava `realized_today` dei tre servizi. Ma ogni servizio
+        // pubblica il PROPRIO (`bot_service.py:5445`: `aggregates(mode=mode)`),
+        // e oggi Safe e' in live mentre Omega e Mike sono in prova: la somma
+        // metteva insieme un numero vero e due simulati. Il risultato non era
+        // ne' live ne' paper — il 14/09 diceva -4,83 € mentre il tennis con
+        // soldi veri aveva guadagnato +0,41 €, e la barra andava all'indietro
+        // per colpa di perdite finte.
+        const realizzato = realizzatoOggi.live.totale;
+        const realizzatoPaper = realizzatoOggi.paper.totale;
+
+        // CONTROPROVA sul tennis: il server (`get_safe_daily` con p_mode=live)
+        // e il conto fatto qui sulle righe devono dire la stessa cosa. Se non
+        // la dicono NON si sceglie il piu' bello: lo si DICHIARA.
+        const serverLive = n(safeOggi?.pnl_realized);
+        const nostroSafeLive = realizzatoOggi.live.perSport.tennis;
+        const discordanza = (serverLive != null && nostroSafeLive != null
+            && Math.abs(serverLive - nostroSafeLive) > 0.01)
+            ? `il servizio dice ${fmtMoney(serverLive)} e la pagina ${fmtMoney(nostroSafeLive)}`
+            : null;
+
         return {
-            realizzato: noti.length ? r2(noti.reduce((a, b) => a + b, 0)) : null,
+            realizzato,
+            realizzatoPaper,
+            discordanza,
             perBot,
             liability: liab.length ? r2(liab.reduce((a, b) => a + b, 0)) : null,
+            /** per sport, SOLDI VERI (server, `p_mode='live'`) */
             perSport: safeOggi?.by_sport ?? null,
+            /** per sport, in PROVA. Mai sommato al precedente. */
+            perSportPaper: safeOggiPaper?.by_sport ?? null,
             operazioni: n(safeOggi?.trades_placed),
             vinte: n(safeOggi?.won),
             perse: n(safeOggi?.lost),
+            operazioniPaper: n(safeOggiPaper?.trades_placed),
         };
-    }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi]);
+    }, [omega?.aggregates, safe?.aggregates, mike?.aggregates, safeOggi, safeOggiPaper,
+        realizzatoOggi]);
 
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
 

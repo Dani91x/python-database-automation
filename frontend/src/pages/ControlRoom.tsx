@@ -163,10 +163,41 @@ export default function ControlRoom() {
                 won={vm.soldiGiornata.vinte}
                 lost={vm.soldiGiornata.perse}
                 live={vm.totali.live}
-                openLiability={vm.soldiGiornata.liability ?? vm.totali.liability}
+                openLiability={vm.totali.liability}
                 note={vm.obiettivoStoricizzato ? undefined : 'obiettivo non ancora storicizzato per oggi: è quello corrente del servizio'}
+                countsNote="Solo SOLDI VERI. Le operazioni in prova hanno una riga tutta loro qui sotto e non entrano mai in questo conto."
                 ids={{ day: 'cr-giornata-giorno', line: 'cr-giornata-riga' }}
             />
+
+            {/* LA PROVA, SEPARATA. La barra sopra misura l'obiettivo con soldi
+                veri; il paper e' esercitazione e non deve spostarla di un
+                pixel — il 14/09 la spostava all'indietro. Ma nemmeno si
+                nasconde: se il calcio sta perdendo in prova, il trader lo deve
+                vedere, in un riquadro che non somma niente. */}
+            {(vm.soldiGiornata.realizzatoPaper != null || vm.soldiGiornata.operazioniPaper) && (
+                <div className="flex items-baseline gap-2 text-[11px] text-white/45 px-1"
+                    data-testid="cr-riga-paper">
+                    <span className="uppercase tracking-wider text-[9.5px] px-1.5 py-0.5 rounded bg-white/10">in prova</span>
+                    <span className={pnlClass(vm.soldiGiornata.realizzatoPaper)}>
+                        {fmtMoney(vm.soldiGiornata.realizzatoPaper, { signed: true })}
+                    </span>
+                    {vm.soldiGiornata.operazioniPaper != null && (
+                        <span>su {vm.soldiGiornata.operazioniPaper} operazioni simulate</span>
+                    )}
+                    <span className="text-white/25">— non entra nell&apos;obiettivo</span>
+                </div>
+            )}
+
+            {/* Due conti sullo stesso denaro che non coincidono: si DICHIARA.
+                Scegliere il piu' bello sarebbe la bugia peggiore della pagina. */}
+            {vm.soldiGiornata.discordanza && (
+                <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-2.5 text-[11.5px] text-orange-200"
+                    data-testid="cr-discordanza">
+                    <strong className="text-orange-300">Realizzato live: due conti diversi.</strong>{' '}
+                    {vm.soldiGiornata.discordanza}. Finché non coincidono, il numero qui sopra è
+                    quello calcolato dalla pagina sulle righe dei trade: verifica prima di operarci sopra.
+                </Card>
+            )}
 
             {/* CALCIO E TENNIS, SEPARATI: oggi uno opera con soldi veri e
                 l'altro in prova. Sommarli sarebbe una bugia. */}
@@ -247,15 +278,21 @@ function modalitaPerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKe
     };
 }
 
-function apertePerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKey, number> {
-    let calcio = 0, tennis = 0;
+/** Posizioni aperte per sport, **separate per modalità**: la tessera dice
+ *  «2 aperte» e il trader deve sapere se sono soldi veri o una prova. */
+function apertePerSport(vm: ReturnType<typeof useControlRoom>):
+    Record<SportKey, { live: number; paper: number }> {
+    const out = { calcio: { live: 0, paper: 0 }, tennis: { live: 0, paper: 0 } };
     for (const g of vm.giornata) {
         for (const p of g.partite) {
-            if (!p.soldi?.aperta) continue;
-            if (p.sport === 'tennis') tennis += 1; else calcio += 1;
+            const s = p.soldi;
+            if (!s) continue;
+            const k: SportKey = p.sport === 'tennis' ? 'tennis' : 'calcio';
+            if (s.live.aperta) out[k].live += 1;
+            if (s.paper.aperta) out[k].paper += 1;
         }
     }
-    return { calcio, tennis };
+    return out;
 }
 
 // ------------------------------------------------------------------- catena
@@ -386,8 +423,19 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
                     )}
                 </div>
 
-                <Dato etichetta="Esposizione" valore={fmtMoney(vm.totali.liability)} />
-                <Dato etichetta="Con posizione" valore={`${vm.totali.conPosizione} / ${vm.totali.partite}`} />
+                {/* ESPOSIZIONE = SOLDI VERI IMPEGNATI. Prima sommava anche la
+                    responsabilità delle posizioni simulate: dichiarava un
+                    rischio che non esisteva (393,68 € contro 77,71 € reali).
+                    Su un banco vero è il numero più pericoloso della pagina. */}
+                <Dato etichetta="Esposizione" valore={fmtMoney(vm.totali.liability)}
+                    nota={vm.totali.liabilityPaper > 0
+                        ? `+ ${fmtMoney(vm.totali.liabilityPaper)} in prova, non sono soldi veri`
+                        : undefined} />
+                <Dato etichetta="Con posizione"
+                    valore={`${vm.totali.conPosizioneLive} / ${vm.totali.partite}`}
+                    nota={vm.totali.conPosizione > vm.totali.conPosizioneLive
+                        ? `${vm.totali.conPosizione - vm.totali.conPosizioneLive} in prova`
+                        : undefined} />
                 <Freni freni={vm.freni} />
                 <Runner r={vm.runner} />
 
@@ -471,11 +519,16 @@ function Freni({ freni }: { freni: ReturnType<typeof useControlRoom>['freni'] })
     );
 }
 
-function Dato({ etichetta, valore }: { etichetta: string; valore: string }) {
+function Dato({ etichetta, valore, nota }: {
+    etichetta: string; valore: string;
+    /** seconda riga, per quello che NON va sommato al valore principale */
+    nota?: string;
+}) {
     return (
         <div className="flex flex-col">
             <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
             <span className="font-mono text-sm font-semibold tabular-nums">{valore}</span>
+            {nota && <span className="text-[9.5px] text-white/30 leading-tight">{nota}</span>}
         </div>
     );
 }
