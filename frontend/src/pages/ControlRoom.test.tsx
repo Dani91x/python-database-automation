@@ -54,7 +54,7 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         posizioni: [],
         copertura: { conDato: 1, senzaDato: 0, totale: 1, pct: 100 },
         freni: { daily_loss_stop: -50, loss_stop_active: false },
-        runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true },
+        runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
         mikeRestingLive: true,
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
         ricarica: vi.fn(),
@@ -249,9 +249,19 @@ describe('posizioni aperte', () => {
 // ------------------------------------------------------------------- runner
 
 describe('runner — tre stati, non due', () => {
-    it('battito fresco = processo VIVO, anche se non sta streammando', () => {
+    it('battito fresco + follow STREAMING = in streaming', () => {
         mVm.mockReturnValue(vm());
-        expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo/)).toBeTruthy();
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/in streaming/)).toBeTruthy();
+    });
+
+    it('battito fresco SENZA follow = «vivo, in attesa»: il processo c’è, la coda no', () => {
+        mVm.mockReturnValue(vm({ runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 0 } }));
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo, in attesa/)).toBeTruthy();
+    });
+
+    it('streaming NON LETTO vale attesa, mai streaming: il dubbio non concede la coda', () => {
+        mVm.mockReturnValue(vm({ runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: null } }));
+        expect(within(mostra().getByTestId('cr-runner')).getByText(/vivo, in attesa/)).toBeTruthy();
     });
 
     it('battito vecchio = spento', () => {

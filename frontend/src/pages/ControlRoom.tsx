@@ -33,6 +33,7 @@ import {
     BOT_LABEL, affidabilePerPiazzare,
     type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza,
 } from '@/lib/controlRoom';
+import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
 
 // --------------------------------------------------------------- vocabolario
@@ -58,6 +59,18 @@ const FRESCHEZZA_TESTO: Record<Freschezza, string> = {
     lenta: 'in ritardo',
     vecchia: 'vecchio',
     ignota: 'età sconosciuta',
+};
+
+/** I TRE STATI DEL RUNNER — «vivo» non basta.
+ *  14/09: il battito diceva «2 settembre» mentre il processo girava (corretto in
+ *  `ad68253`: ora batte anche da fermo). Ma «vivo» e «utilizzabile» restano due
+ *  cose diverse: `live_order_worker` nasce dentro il framework, quindi con il
+ *  runner IN ATTESA la coda non ha nessuno dall'altro capo. Il dubbio non
+ *  concede mai la coda (`runnerPhase`, fail-closed). */
+const FASE_RUNNER: Record<RunnerPhase, string> = {
+    off: 'spento',
+    idle: 'vivo, in attesa',
+    streaming: 'in streaming',
 };
 
 const FRESCHEZZA_CLS: Record<Freschezza, string> = {
@@ -212,15 +225,26 @@ function Testata({ vm, inLive }: { vm: ReturnType<typeof useControlRoom>; inLive
  * guasti veri.
  */
 function Runner({ r }: { r: ReturnType<typeof useControlRoom>['runner'] }) {
-    const stato = r == null ? 'ignoto' : r.up ? 'vivo' : r.ageS == null ? 'mai avviato' : 'spento';
-    const cls = stato === 'vivo' ? 'text-emerald-400' : stato === 'ignoto' ? 'text-white/60' : 'text-orange-400';
+    if (r == null) {
+        return (
+            <div className="flex flex-col" data-testid="cr-runner" title="stato del runner non letto">
+                <span className="text-[10px] uppercase tracking-wider text-white/40">Runner</span>
+                <span className="font-mono text-sm font-semibold text-white/60">ignoto</span>
+            </div>
+        );
+    }
+    // «mai battuto» vale GIU', non «non lo so»: un runner che non ha mai dato
+    // segno di vita non sta eseguendo niente.
+    const fase: RunnerPhase = runnerPhase(r);
+    const testo = r.ageS == null ? 'mai avviato' : FASE_RUNNER[fase];
+    const cls = fase === 'streaming' ? 'text-emerald-400' : fase === 'idle' ? 'text-secondary' : 'text-orange-400';
     return (
         <div className="flex flex-col" data-testid="cr-runner"
-            title={r?.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
+            title={r.ageS != null ? `ultimo battito ${fmtAge(Math.round(r.ageS))} fa` : 'il runner non ha mai battuto'}>
             <span className="text-[10px] uppercase tracking-wider text-white/40">Runner</span>
             <span className={`font-mono text-sm font-semibold ${cls}`}>
-                {stato}
-                {r?.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
+                {testo}
+                {r.mode && <span className="text-white/40"> · {r.mode.toLowerCase()}</span>}
             </span>
         </div>
     );
