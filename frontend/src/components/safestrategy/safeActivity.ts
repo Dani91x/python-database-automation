@@ -167,7 +167,11 @@ const REASON_IT: Record<string, string> = {
     spread_anomalo: 'spread troppo largo fra back e lay',
     // cert. 12/09: prima anche questo caso diceva "spread troppo largo", ma con
     // meta' book mancante il rapporto non e' nemmeno calcolabile
-    book_senza_lato_back: 'book senza lato back: spread non misurabile',
+    book_senza_lato_back: 'book senza lato back: non c’è nessuno che offra, spread non misurabile',
+    // CERT. 14/09 — su un leader a 1,01-1,02 è normale che nessuno offra di
+    // bancare: prima questo caso veniva etichettato «senza lato back» e mandava
+    // a cercare il guasto dal lato sbagliato.
+    book_senza_lato_lay: 'book senza lato lay: nessuno offre di bancare (normale su quote bassissime), spread non misurabile',
     size_minima: 'sotto la size minima Betfair',
     market_o_selezione_mancante: 'mercato o selezione non presenti nel feed',
     already_reserved: 'già riservato: nessun doppio ingresso sullo stesso segnale',

@@ -2726,6 +2726,39 @@ _LETTURA_FEED: dict[str, float] = {"ms": 0.0}
 _USCITE_URGENTI = ("loss", "mandatory", "red_card")
 
 
+def _catena_dei_tempi(feed_row: Optional[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    """t0..t3 di un'APERTURA, dal prezzo alla decisione.
+
+    Sono i quattro istanti che stanno PRIMA dell'ordine; t4/t5/t6 (invio,
+    risposta di Betfair, fill) li scrive ``execution.place``, che e' l'unico
+    posto che li conosce. Uniti sulla riga del trade danno la catena intera.
+
+    Tutto in millisecondi di orologio del mondo, perche' vanno confrontati con
+    istanti che vengono dal feed e da Betfair, non da questo processo."""
+    p = (feed_row or {}).get("payload") or {}
+    t0 = p.get("odds_ts_ms")
+    t1 = None
+    upd = (feed_row or {}).get("updated_at")
+    if upd:
+        try:
+            t1 = round(datetime.fromisoformat(str(upd).replace("Z", "+00:00")).timestamp() * 1000.0, 1)
+        except (TypeError, ValueError):
+            t1 = None
+    t2 = _LETTURA_FEED["ms"] or None
+    t3 = round(now.timestamp() * 1000.0, 1)
+    tempi: dict[str, Any] = {
+        "t0_quote_ms": t0 if isinstance(t0, (int, float)) and not isinstance(t0, bool) else None,
+        "t1_feed_ms": t1, "t2_letto_ms": t2, "t3_deciso_ms": t3,
+    }
+    # i due tratti che interessano davvero, gia' calcolati: chi legge la riga
+    # non deve rifare sottrazioni per sapere dove se ne e' andato il tempo.
+    if tempi["t0_quote_ms"] is not None:
+        tempi["prezzo_to_decisione_ms"] = round(t3 - float(tempi["t0_quote_ms"]), 1)
+    if t1 is not None and t2:
+        tempi["feed_to_bot_ms"] = round(float(t2) - t1, 1)
+    return {"tempi": tempi}
+
+
 def _proponi_chiusura(*, db, trade: dict[str, Any], meta: dict[str, Any],
                       decision: XE.ExitDecision, prices: dict[str, Any],
                       payload: dict[str, Any], params: dict[str, Any],
@@ -3195,6 +3228,21 @@ def _execute(*, db, market, trade_id: int, row: dict[str, Any], params: dict,
         # il meta della riserva (variant, idempotency_key, manual...) si CONSERVA
         meta = {k: v for k, v in (row.get("meta") or {}).items() if k != "phase"}
         meta["fill"] = out.fill_note
+        # CERT. 14/09 — t4/t5/t6 DELL'APERTURA: i due istanti attorno alla
+        # chiamata a Betfair e il momento del fill. Con t0..t3 che il piazzamento
+        # ha gia' scritto nel meta della riserva, la riga porta la catena INTERA
+        # dal prezzo all'abbinamento — che e' la condizione 2 dell'utente.
+        if out.esecuzione:
+            meta["esecuzione"] = out.esecuzione
+            meta["t6_fill_ms"] = round(time.time() * 1000.0, 1)
+            t3 = ((meta.get("tempi") or {}).get("t3_deciso_ms")
+                  if isinstance(meta.get("tempi"), dict) else None)
+            t5 = out.esecuzione.get("t5_risposta")
+            if isinstance(t3, (int, float)) and isinstance(t5, (int, float)):
+                # il tratto che l'utente chiama "latenza del bot": da quando ha
+                # deciso a quando Betfair ha risposto.
+                meta["tempi"] = {**(meta.get("tempi") or {}),
+                                 "decisione_to_risposta_ms": round(float(t5) - float(t3), 1)}
         try:
             db.update_trade(trade_id, status="open", price=out.price, size=out.size,
                             liability=X.liability_of(str(row["side"]), out.size,
@@ -3878,11 +3926,24 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                                       selection_id=selection_id, market_id=str(market_id))
         ratio = XE.spread_ratio(feed_prices)
         if ratio is None or ratio > max_spread:
-            # CERT. 12/09 — due cose diverse avevano la STESSA etichetta. Con il
-            # lato back assente il rapporto non e' calcolabile e scrivere
+            # CERT. 12/09 — due cose diverse avevano la STESSA etichetta. Con un
+            # lato del book assente il rapporto non e' calcolabile e scrivere
             # "spread anomalo · rapporto n/d" dice al trader una cosa che non e'
             # stata misurata. Il motivo vero e' che meta' del book non c'e'.
-            motivo = "spread_anomalo" if ratio is not None else "book_senza_lato_back"
+            # CERT. 14/09 — ...ma diceva sempre "senza lato BACK anche quando a
+            # mancare era il LAY. ``spread_ratio`` torna None in DUE casi, e
+            # l'etichetta ne nominava uno solo: su un leader a 1,01-1,02 e'
+            # normale che nessuno offra di bancare, e il messaggio accusava il
+            # lato sbagliato proprio nel caso centrale della strategia tennis.
+            # Misurato su 142 scarti: 40 senza back, 4 senza lay, 98 con
+            # entrambi e rapporto alto. Pochi, ma nominare il lato sbagliato
+            # manda a cercare il guasto dove non c'e'.
+            if ratio is not None:
+                motivo = "spread_anomalo"
+            elif (feed_prices or {}).get("back") in (None, 0):
+                motivo = "book_senza_lato_back"
+            else:
+                motivo = "book_senza_lato_lay"
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "reason": motivo,
                                         "back": (feed_prices or {}).get("back"),
@@ -3922,6 +3983,17 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             meta={"variant": variant, "headline": _sig(s, "headline"),
                   "checks": _sig(s, "checks"),
                   "first_seen_ts": _sig(s, "first_seen_ts"),
+                  # CERT. 14/09 — LA CATENA DEI TEMPI SULL'APERTURA.
+                  # La condizione dell'utente e' «la latenza dai dati di Betfair
+                  # alle decisioni del bot»: quella si misura DOVE LA DECISIONE
+                  # NASCE, cioe' qui. L'avevo messa solo sulle chiusure, dove
+                  # serve per un'altra cosa (il tempo fra la proposta e la firma
+                  # dell'utente), e sull'entrata non restava un solo istante.
+                  #   t0 = quando Betfair ha cambiato il prezzo
+                  #   t1 = quando il feed ha scritto la riga
+                  #   t2 = quando il bot l'ha letta
+                  #   t3 = adesso: la decisione e' presa e si sta piazzando
+                  **_catena_dei_tempi(feed_row, now),
                   # CERT. 13/09 — CARTELLINI ROSSI AL MOMENTO DELL'INGRESSO.
                   # Le uscite usavano come base la PRIMA osservazione utile del
                   # tracciamento: se il feed iniziava a pubblicare i rossi dopo
