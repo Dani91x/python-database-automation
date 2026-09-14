@@ -127,9 +127,14 @@ BEGIN
     IF v_mode NOT IN ('paper', 'live') THEN
         RAISE EXCEPTION 'modalità non valida: % (ammesse: paper, live)', p_mode;
     END IF;
-    -- il filtro va nello STESSO posto in cui lo mette Safe: nel `p_filter_expr`
-    -- di `trading_day_trades`, che lo applica con l'alias `t`.
-    RETURN public.trading_day_trades('mike_trades', format('t.mode = %L', v_mode),
+    -- ALIAS `o`, non `t`. Le due funzioni condivise usano alias DIVERSI:
+    --   trading_daily_history -> `t`      trading_day_trades -> `o` (aperture)
+    -- Scrivere `t` qui faceva fallire OGNI chiamata con
+    --   ERROR 42P01: missing FROM-clause entry for table "t"
+    -- cioe' l'elenco delle operazioni del giorno era ROTTO, non impreciso.
+    -- Corretto il 14/09 dopo averlo PROVATO: un filtro passato come testo e' un
+    -- contratto che il compilatore non controlla.
+    RETURN public.trading_day_trades('mike_trades', format('o.mode = %L', v_mode),
                                      p_day, 'placed');
 END;
 $$;
