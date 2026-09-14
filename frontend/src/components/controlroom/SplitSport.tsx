@@ -29,6 +29,10 @@ const SPORT = {
 export type SportKey = keyof typeof SPORT;
 
 export interface SplitSportProps {
+    /** sport selezionato: filtra tutto il resto della pagina. `null` = tutti */
+    selezionato: SportKey | null;
+    /** clic sulla tessera: seleziona, o deseleziona se già selezionata */
+    onSeleziona: (s: SportKey | null) => void;
     /** aggregati per sport dal server; `null` = non ancora letti */
     perSport: Record<string, DailyBreakdown> | null;
     /** modalità con cui quello sport sta operando ADESSO (dal servizio) */
@@ -38,7 +42,9 @@ export interface SplitSportProps {
     testId?: string;
 }
 
-export function SplitSport({ perSport, modalita, aperte, testId = 'cr-split-sport' }: SplitSportProps) {
+export function SplitSport({
+    perSport, modalita, aperte, selezionato, onSeleziona, testId = 'cr-split-sport',
+}: SplitSportProps) {
     return (
         <div className="grid gap-2 sm:grid-cols-2" data-testid={testId}>
             {(Object.keys(SPORT) as SportKey[]).map((k) => (
@@ -49,18 +55,24 @@ export function SplitSport({ perSport, modalita, aperte, testId = 'cr-split-spor
                     modalita={modalita[k]}
                     aperte={aperte?.[k] ?? 0}
                     letto={perSport != null}
+                    scelto={selezionato === k}
+                    spento={selezionato != null && selezionato !== k}
+                    onClick={() => onSeleziona(selezionato === k ? null : k)}
                 />
             ))}
         </div>
     );
 }
 
-function Tessera({ sport, dato, modalita, aperte, letto }: {
+function Tessera({ sport, dato, modalita, aperte, letto, scelto, spento, onClick }: {
     sport: SportKey;
     dato: DailyBreakdown | null;
     modalita: 'paper' | 'live' | null;
     aperte: number;
     letto: boolean;
+    scelto: boolean;
+    spento: boolean;
+    onClick: () => void;
 }) {
     const s = SPORT[sport];
     const live = modalita === 'live';
@@ -71,8 +83,22 @@ function Tessera({ sport, dato, modalita, aperte, letto }: {
     const winRate = dato && esiti > 0 ? dato.won / esiti : null;
 
     return (
-        <Card className={`glass-card p-2.5 ${s.bordo} ${live ? s.fondo : 'bg-white/[0.02]'}`}
-            data-testid={`cr-sport-${sport}`}>
+        <Card
+            className={`glass-card p-2.5 transition-all ${s.bordo} ${live ? s.fondo : 'bg-white/[0.02]'} ${
+                scelto ? 'ring-2 ring-white/50' : spento ? 'opacity-45' : 'hover:brightness-125'
+            }`}
+            data-testid={`cr-sport-${sport}`}
+        >
+            {/* la tessera E' il filtro: clic = «mostrami solo questo sport»,
+                secondo clic = torna a vedere tutto. Le proposte di chiusura
+                restano visibili comunque: un'uscita non si nasconde dietro un
+                filtro. */}
+            <button
+                type="button" onClick={onClick} aria-pressed={scelto}
+                data-testid={`cr-filtro-${sport}`}
+                className="w-full text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/60 rounded"
+                title={scelto ? 'mostra di nuovo tutti gli sport' : `mostra solo ${s.nome.toLowerCase()}`}
+            >
             <div className="flex items-baseline gap-2">
                 <span aria-hidden="true">{s.icona}</span>
                 <span className={`text-[12px] font-bold uppercase tracking-wider ${s.accento}`}>{s.nome}</span>
@@ -113,6 +139,10 @@ function Tessera({ sport, dato, modalita, aperte, letto }: {
                     </>
                 )}
             </div>
+            <div className="text-[9.5px] uppercase tracking-wider mt-1.5 text-white/30">
+                {scelto ? 'stai vedendo solo questo — clicca per tutti' : 'clicca per vedere solo questo sport'}
+            </div>
+            </button>
         </Card>
     );
 }

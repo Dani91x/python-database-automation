@@ -73,6 +73,13 @@ export interface StatoBot {
      * vera è «LIVE · solo tennis».
      */
     varianti: string[] | null;
+    /**
+     * Solo Safe: **con che soldi** opera ciascuna strategia (`strategy_modes`).
+     * NON è `varianti`: quella dice CHI PUÒ APRIRE, questa dice CON CHE SOLDI.
+     * Confonderle scrive «LIVE» accanto al calcio mentre il calcio è in prova —
+     * ed è successo.
+     */
+    modiStrategia: Record<string, 'paper' | 'live'> | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -442,6 +449,10 @@ export function useControlRoom(): ControlRoomVM {
 
     const bots = useMemo<StatoBot[]>(() => {
         const varianti = leggiVarianti(safe?.control?.params, safe?.params_effective as Record<string, unknown> | null);
+        const modi = leggiModiStrategia(
+            safe?.control?.stats?.params_effective as Record<string, unknown> | null | undefined,
+            safe?.control?.params,
+        );
         const riga = (bot: Bot, modalita: Modalita | null, inCorsa: boolean, battitoAt: string | null): StatoBot => {
             const at = ultimoPush[bot];
             const eta = at == null ? null : Math.max(0, Math.round((nowMs - at) / 1000));
@@ -451,6 +462,7 @@ export function useControlRoom(): ControlRoomVM {
                 etaPushS: eta,
                 freschezzaPush: freschezza(eta),
                 varianti: bot === 'safe' ? varianti : null,
+                modiStrategia: bot === 'safe' ? modi : null,
             };
         };
         return [
@@ -695,6 +707,30 @@ export function useControlRoom(): ControlRoomVM {
 export function leggiBool(params: Record<string, unknown> | null | undefined, chiave: string): boolean | null {
     const v = params?.[chiave];
     return typeof v === 'boolean' ? v : null;
+}
+
+/**
+ * `strategy_modes`: con che soldi opera ogni strategia. Si legge dai parametri
+ * EFFETTIVI del servizio — sono quelli con cui il bot gira davvero — e solo in
+ * ripiego da quelli salvati. Una voce illeggibile si scarta invece di
+ * indovinarla: al denaro vero si arriva solo scrivendolo.
+ */
+export function leggiModiStrategia(
+    effettivi: Record<string, unknown> | null | undefined,
+    params: Record<string, unknown> | null | undefined,
+): Record<string, 'paper' | 'live'> | null {
+    for (const src of [effettivi, params]) {
+        const v = src?.strategy_modes;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+            const out: Record<string, 'paper' | 'live'> = {};
+            for (const [k, m] of Object.entries(v as Record<string, unknown>)) {
+                const s = String(m ?? '').toLowerCase();
+                if (s === 'live' || s === 'paper') out[k] = s;
+            }
+            if (Object.keys(out).length) return out;
+        }
+    }
+    return null;
 }
 
 function modalitaDi(v: unknown): Modalita | null {

@@ -490,3 +490,113 @@ describe('onestà sulle fonti', () => {
         expect(screen.getAllByText(/non ancora storicizzato/).length).toBeGreaterThan(0);
     });
 });
+
+// ------------------------------------------------- filtro per sport (tessere)
+
+/** Una giornata con una partita per sport e una posizione aperta ciascuna. */
+function vmDueSport(over: Partial<ReturnType<typeof useControlRoom>> = {}) {
+    const calcio = partita({ event_id: 'C1', sport: 'calcio', nome: 'Milan – Inter', campionato: 'Serie A' });
+    const tennis = partita({ event_id: 'T1', sport: 'tennis', nome: 'Rune – Musetti', campionato: 'ATP' });
+    const pos = (id: number, eventId: string, partitaNome: string) => ({
+        bot: 'safe' as const, id, eventId, partita: partitaNome, selezione: 'X',
+        lato: 'back' as const, prezzo: 1.03, size: 3, liability: 3, modalita: 'live' as const,
+        piazzataAt: '2026-09-14T14:50:00Z',
+        chiusura: { lato: 'lay', prezzo: 1.02, abbinabile: 88, bloccabile: 0.24 },
+    });
+    return vm({
+        giornata: [
+            { campionato: 'Serie A', primoKoMs: calcio.koMs, partite: [calcio] },
+            { campionato: 'ATP', primoKoMs: tennis.koMs, partite: [tennis] },
+        ],
+        totali: { partite: 2, live: 2, pre: 0, conPosizione: 2, liability: 80, netPnl: 25 },
+        posizioni: [pos(1, 'C1', 'Milan – Inter'), pos(2, 'T1', 'Rune – Musetti')] as never,
+        ...over,
+    });
+}
+
+describe('tessere calcio/tennis — sono il filtro del banco', () => {
+    it('senza filtro si vedono ENTRAMBI gli sport', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        const partite = s.getByTestId('cr-partite');
+        expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
+        expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
+    });
+
+    it('cliccando TENNIS resta solo il tennis, fra le partite e fra le posizioni', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+
+        const partite = s.getByTestId('cr-partite');
+        expect(within(partite).queryByText('Milan – Inter')).toBeNull();
+        expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
+
+        const posizioni = s.getByTestId('cr-posizioni');
+        expect(within(posizioni).queryByText('Milan – Inter')).toBeNull();
+        expect(within(posizioni).getByText('Rune – Musetti')).toBeTruthy();
+    });
+
+    it('cliccando CALCIO resta solo il calcio', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-calcio'));
+        const partite = s.getByTestId('cr-partite');
+        expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
+        expect(within(partite).queryByText('Rune – Musetti')).toBeNull();
+    });
+
+    it('il secondo clic sulla stessa tessera RIMETTE tutti gli sport', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        const partite = s.getByTestId('cr-partite');
+        expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
+        expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
+    });
+
+    it('la tessera scelta lo dichiara con aria-pressed', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        const t = s.getByTestId('cr-filtro-tennis');
+        expect(t.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.click(t);
+        expect(s.getByTestId('cr-filtro-tennis').getAttribute('aria-pressed')).toBe('true');
+        expect(s.getByTestId('cr-filtro-calcio').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('LE USCITE NON SI FILTRANO MAI: la proposta di tennis resta visibile col filtro sul calcio', () => {
+        mVm.mockReturnValue(vmDueSport({ proposte: [propostaVista()] }));
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-calcio'));
+        const nastro = s.getByTestId('cr-nastro');
+        // la proposta e' di tennis (`sport: 'tennis'` nel payload) e c'e' ancora
+        expect(within(nastro).getByText(/Rossi v Bianchi/)).toBeTruthy();
+        // e la pagina lo DICHIARA, invece di lasciarlo intuire
+        expect(s.getByTestId('cr-nastro-non-filtrato').textContent).toMatch(/entrambi gli sport/i);
+    });
+
+    it('il contatore delle partite conta QUELLO CHE SI VEDE, col totale accanto', () => {
+        mVm.mockReturnValue(vmDueSport());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.getByTestId('cr-partite-conteggio').textContent).toMatch(/1\s*di\s*2/);
+    });
+
+    it('una posizione su un evento SCONOSCIUTO non sparisce mai dietro un filtro', () => {
+        const base = vmDueSport();
+        mVm.mockReturnValue(vm({
+            ...base,
+            posizioni: [{
+                bot: 'safe', id: 9, eventId: 'IGNOTO', partita: 'Tizio – Caio', selezione: 'Tizio',
+                lato: 'back', prezzo: 1.05, size: 3, liability: 3, modalita: 'live',
+                piazzataAt: '2026-09-14T14:50:00Z',
+                chiusura: { lato: 'lay', prezzo: 1.04, abbinabile: 50, bloccabile: 0.1 },
+            }] as never,
+        }));
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-calcio'));
+        expect(within(s.getByTestId('cr-posizioni')).getByText('Tizio – Caio')).toBeTruthy();
+    });
+});

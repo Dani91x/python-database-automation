@@ -105,8 +105,27 @@ export default function ControlRoom() {
     const vm = useControlRoom();
     const [soloConSegnali, setSoloConSegnali] = useState(false);
     const [soloLive, setSoloLive] = useState(false);
+    // LO SPORT SCELTO filtra il banco: `null` = tutti e due.
+    const [sport, setSport] = useState<SportKey | null>(null);
 
-    const giornata = useMemo(() => filtra(vm.giornata, { soloLive, soloConSegnali }), [vm.giornata, soloLive, soloConSegnali]);
+    const giornata = useMemo(
+        () => filtra(vm.giornata, { soloLive, soloConSegnali, sport }),
+        [vm.giornata, soloLive, soloConSegnali, sport],
+    );
+
+    // Lo sport di una posizione non sta sulla posizione: si ricava dalla
+    // partita. Un evento che NON conosciamo resta VISIBILE — una posizione con
+    // soldi veri non sparisce mai per colpa di un filtro (fail-open voluto).
+    const sportDiEvento = useMemo(() => {
+        const m = new Map<string, SportKey>();
+        for (const g of vm.giornata) for (const p of g.partite) m.set(p.event_id, p.sport === 'tennis' ? 'tennis' : 'calcio');
+        return m;
+    }, [vm.giornata]);
+
+    const posizioni = useMemo(() => {
+        if (sport == null) return vm.posizioni;
+        return vm.posizioni.filter((p) => (sportDiEvento.get(p.eventId) ?? sport) === sport);
+    }, [vm.posizioni, sport, sportDiEvento]);
 
     const inLive = vm.bots.some((b) => b.modalita === 'live');
 
@@ -155,6 +174,8 @@ export default function ControlRoom() {
                 perSport={vm.soldiGiornata.perSport}
                 modalita={modalitaPerSport(vm)}
                 aperte={apertePerSport(vm)}
+                selezionato={sport}
+                onSeleziona={setSport}
             />
 
             <Catena vm={vm} />
@@ -188,8 +209,8 @@ export default function ControlRoom() {
                     soloConSegnali={soloConSegnali} setSoloConSegnali={setSoloConSegnali}
                     copertura={vm.copertura}
                 />
-                <NastroSegnali vm={vm} />
-                <ColonnaPosizioni posizioni={vm.posizioni} onChiudi={vm.chiudi} />
+                <NastroSegnali vm={vm} filtroSport={sport} />
+                <ColonnaPosizioni posizioni={posizioni} onChiudi={vm.chiudi} sport={sport} />
             </div>
         </PageShell>
     );
@@ -200,14 +221,29 @@ export default function ControlRoom() {
  *  se anche una sola è in live, il calcio è in live. */
 function modalitaPerSport(vm: ReturnType<typeof useControlRoom>): Record<SportKey, 'paper' | 'live' | null> {
     const safe = vm.bots.find((b) => b.bot === 'safe') ?? null;
+    const servizio = safe?.modalita ?? null;
+    if (servizio == null) return { calcio: null, tennis: null };
+
+    // ⚠️ `strategy_modes` dice CON CHE SOLDI, `varianti` dice CHI PUÒ APRIRE.
+    // Confonderle scriveva «LIVE» accanto al calcio mentre il calcio era in
+    // prova — la bugia peggiore che questa tessera possa dire.
+    const modi = safe?.modiStrategia ?? null;
     const varianti = safe?.varianti ?? null;
-    const m = safe?.modalita ?? null;
-    if (m == null) return { calcio: null, tennis: null };
-    // `varianti` elenca chi può APRIRE: fuori da lì quello sport non opera
     const apre = (v: string) => varianti == null || varianti.includes(v);
+
+    // il `mode` del servizio e' un TETTO: in paper nessuna voce puo' far
+    // uscire un euro vero. E una strategia non dichiarata vale PAPER: ai soldi
+    // veri si arriva scrivendolo, mai ereditandolo.
+    const con = (v: string): 'paper' | 'live' => {
+        if (servizio !== 'live') return 'paper';
+        if (!apre(v)) return 'paper';
+        return modi?.[v] === 'live' ? 'live' : 'paper';
+    };
+
     return {
-        tennis: apre('tennis') ? m : 'paper',
-        calcio: (apre('base') || apre('esatto') || apre('punta')) ? m : 'paper',
+        tennis: con('tennis'),
+        // il calcio e' in live solo se ALMENO UNA delle sue tre varianti lo e'
+        calcio: (['base', 'esatto', 'punta'] as const).some((v) => con(v) === 'live') ? 'live' : 'paper',
     };
 }
 
@@ -497,11 +533,17 @@ function ColonnaPartite({
     soloConSegnali: boolean; setSoloConSegnali: (v: boolean) => void;
     copertura: ReturnType<typeof useControlRoom>['copertura'];
 }) {
+    // il contatore deve contare QUELLO CHE SI VEDE: con un filtro acceso,
+    // scrivere il totale della giornata accanto a quindici righe e' un numero
+    // che non torna con lo schermo.
+    const viste = gruppi.reduce((n, g) => n + g.partite.length, 0);
+    const filtrato = viste !== totali.partite;
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-partite">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">
-                    Partite di oggi · {totali.partite}
+                <span className="text-[11px] uppercase tracking-wider text-white/60" data-testid="cr-partite-conteggio">
+                    Partite di oggi · {viste}
+                    {filtrato && <span className="text-white/35"> di {totali.partite}</span>}
                 </span>
                 <span className="text-[11px] text-white/40">{totali.live} in gioco</span>
             </div>
@@ -571,7 +613,11 @@ function Filtro({ attivo, onClick, children }: { attivo: boolean; onClick: () =>
  * stanno aggiungendo: finché non c'è, la pagina lo DICHIARA invece di
  * mostrare un nastro vuoto che sembrerebbe «nessun segnale».
  */
-function NastroSegnali({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
+function NastroSegnali({ vm, filtroSport }: {
+    vm: ReturnType<typeof useControlRoom>;
+    /** serve SOLO a dirlo a schermo: il nastro non si filtra mai. */
+    filtroSport: SportKey | null;
+}) {
     const bloccati = vm.bots.filter((b) => b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush));
     const urgenti = vm.proposte.filter((p) => p.proposta.payload?.urgente === true).length;
 
@@ -584,6 +630,18 @@ function NastroSegnali({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
                     {urgenti > 0 && <span className="text-orange-300 font-semibold"> · {urgenti} urgenti</span>}
                 </span>
             </div>
+
+            {/* IL NASTRO NON SI FILTRA MAI. Un'uscita matura su una posizione
+                con soldi veri: nasconderla perché il trader sta guardando
+                l'altro sport sarebbe il modo piu' veloce di perdere un
+                profitto. Qui si DICHIARA che restano tutte. */}
+            {filtroSport != null && (
+                <div className="px-3 py-1.5 border-b border-white/10 text-[10.5px] text-white/45"
+                    data-testid="cr-nastro-non-filtrato">
+                    Il filtro <span className="text-white/70">{filtroSport}</span> non tocca questo nastro:
+                    le uscite compaiono da entrambi gli sport.
+                </div>
+            )}
 
             {bloccati.length > 0 && (
                 <div className="px-3 py-2 border-b border-white/10 text-[11px] text-orange-300" data-testid="cr-bot-muti">
@@ -634,15 +692,18 @@ function NastroSegnali({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
 
 // ------------------------------------------------------- colonna posizioni
 
-function ColonnaPosizioni({ posizioni, onChiudi }: {
+function ColonnaPosizioni({ posizioni, onChiudi, sport }: {
     posizioni: PosizioneAperta[];
     onChiudi: (tradeId: number) => Promise<void>;
+    sport: SportKey | null;
 }) {
     const live = posizioni.filter((p) => p.modalita === 'live');
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-posizioni">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">Posizioni aperte</span>
+                <span className="text-[11px] uppercase tracking-wider text-white/60">
+                    Posizioni aperte{sport && <span className="text-white/35 normal-case tracking-normal"> · solo {sport}</span>}
+                </span>
                 <span className="text-[11px] text-white/40">{posizioni.length}</span>
             </div>
 
@@ -654,7 +715,9 @@ function ColonnaPosizioni({ posizioni, onChiudi }: {
 
             <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2">
                 {posizioni.length === 0 && (
-                    <EmptyState>Nessuna posizione aperta. Quando un bot va a mercato, compare qui.</EmptyState>
+                    <EmptyState>{sport
+                        ? `Nessuna posizione aperta sul ${sport}. Clicca di nuovo la tessera per rivedere tutti gli sport.`
+                        : 'Nessuna posizione aperta. Quando un bot va a mercato, compare qui.'}</EmptyState>
                 )}
                 {posizioni.map((p) => (
                     <div key={`${p.bot}-${p.id}`} className="rounded border border-white/10 bg-white/[0.02] px-2.5 py-2" data-testid="cr-posizione">
@@ -726,12 +789,13 @@ function ColonnaPosizioni({ posizioni, onChiudi }: {
 
 function filtra(
     gruppi: GruppoCampionato[],
-    opt: { soloLive: boolean; soloConSegnali: boolean },
+    opt: { soloLive: boolean; soloConSegnali: boolean; sport?: SportKey | null },
 ): GruppoCampionato[] {
-    if (!opt.soloLive && !opt.soloConSegnali) return gruppi;
+    if (!opt.soloLive && !opt.soloConSegnali && opt.sport == null) return gruppi;
     const out: GruppoCampionato[] = [];
     for (const g of gruppi) {
         const partite = g.partite.filter((p) => {
+            if (opt.sport != null && (p.sport === 'tennis' ? 'tennis' : 'calcio') !== opt.sport) return false;
             if (opt.soloLive && p.stato !== 'live') return false;
             if (opt.soloConSegnali && !(p.soldi && p.soldi.bots.length > 0)) return false;
             return true;
