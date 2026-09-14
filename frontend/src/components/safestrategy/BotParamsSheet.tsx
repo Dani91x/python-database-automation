@@ -154,8 +154,8 @@ const BOT_FIELDS: Num[] = [
     { key: 'place_max_attempts', label: 'Tentativi max di piazzamento', step: 1, min: 1, max: 20 },
     { key: 'paper_fill_ttl_s', label: 'Paper · TTL abbinamento (s)', step: 5, min: 5, max: 600 },
     { key: 'live_fill_deadline_s', label: 'Live · attesa abbinamento (s)', step: 5, min: 5, max: 300 },
-    { key: 'stake.laySize', label: 'Stake LAY di default €', step: 0.5, min: 0, hint: 'usato dal motore e proposto sui segnali LAY' },
-    { key: 'stake.backSize', label: 'Stake BACK di default €', step: 0.5, min: 0, hint: 'usato dal motore e proposto sui segnali BACK' },
+    { key: 'stake.laySize', label: 'Stake LAY di default €', step: 0.5, min: 0, hint: 'importo con cui entrano BASE e RISULTATO ESATTO, che bancano. È lo stake REALE, non un suggerimento' },
+    { key: 'stake.backSize', label: 'Stake BACK di default €', step: 0.5, min: 0, hint: 'importo con cui entrano TENNIS e PUNTA, che puntano. È lo stake REALE con cui il tennis opera, anche in live — da non confondere con «stake dei trade di modello», che è di un altro motore' },
 ];
 
 const OPPS_FIELDS: Num[] = [

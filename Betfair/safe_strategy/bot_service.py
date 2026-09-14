@@ -368,6 +368,16 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
     # se il cancelletto e' spento la pagina deve dirlo: altrimenti l'utente
     # crede di avere il controllo delle chiusure e non ce l'ha.
     out["tennis_exit_approval"] = bool(resolved.get("tennis_exit_approval"))
+    # CERT. 14/09 — LO STAKE DELLE 4 STRATEGIE DEL MANUALE, che qui non c'era.
+    # `stake.backSize` e' l'importo con cui entrano TENNIS e PUNTA (che puntano)
+    # e `stake.laySize` quello di BASE ed ESATTO (che bancano): e' l'importo che
+    # muove i soldi veri, e non compariva fra i valori effettivi. Quindi la
+    # pagina non poteva dire con che stake sta operando il bot — e un valore
+    # scritto male ripiega in silenzio su 2,00 € senza che nessuno lo veda.
+    # E' l'opposto della "manopola inerte": un valore che conta ed e' invisibile.
+    # NON confondere con `risk.model_stake`, che e' di un ALTRO motore (le
+    # opportunita' di modello, `strategy='model'`).
+    out["stake"] = dict(resolved.get("stake") or {})
     return out
 
 

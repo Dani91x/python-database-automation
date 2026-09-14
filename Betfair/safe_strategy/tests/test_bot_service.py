@@ -3276,3 +3276,40 @@ def test_il_cancelletto_non_puo_essere_aggirato_dal_residuo():
     assert _closings(db, tid) == []
     tr = [t for t in db.trades if t["id"] == tid][0]
     assert not (tr.get("meta") or {}).get(XE.REQUEST_KEY, {}).get("sent")
+
+
+# ---------------------------------------------------------------------------
+# CERT. 14/09 — LO STAKE CHE MUOVE I SOLDI VERI DEVE ESSERE VISIBILE
+# `stake.backSize` e' l'importo con cui entrano TENNIS e PUNTA, `stake.laySize`
+# quello di BASE ed ESATTO. Non compariva fra i valori effettivi: la pagina non
+# poteva dire con che stake sta operando il bot. E' l'opposto della «manopola
+# inerte» — un valore che conta ed e' invisibile.
+# ---------------------------------------------------------------------------
+def test_lo_stake_delle_strategie_e_fra_i_valori_effettivi():
+    from Betfair.safe_strategy import engine as EN
+    pe = S.params_effective(S.resolve_params({"stake": {"backSize": 3.0}}, engine_mod=EN))
+    assert pe["stake"] == {"laySize": 2.0, "backSize": 3.0}
+
+
+def test_uno_stake_scritto_male_NON_arriva_alla_pagina_come_se_fosse_in_uso():
+    """Il ripiego silenzioso e' il difetto vero: un valore illeggibile torna a
+    2,00 EUR e il bot opera con quello. Se la pagina mostrasse il testo scritto
+    dall'utente, l'utente crederebbe di operare con un importo che non esiste."""
+    from Betfair.safe_strategy import engine as EN
+    pe = S.params_effective(S.resolve_params({"stake": {"backSize": "tre"}}, engine_mod=EN))
+    assert pe["stake"]["backSize"] == 2.0, "si mostra quello VERO, non quello scritto"
+
+
+def test_i_due_stake_del_tennis_sono_di_DUE_MOTORI_diversi():
+    """Non sono due manopole per la stessa cosa, e toglierne una romperebbe un
+    motore:
+      · `stake.backSize`   -> la STRATEGIA tennis del manuale (strategy='tennis')
+      · `risk.model_stake` -> le OPPORTUNITA' di modello (strategy='model')
+    Governano soldi diversi e vanno tenute entrambe."""
+    from Betfair.safe_strategy import engine as EN
+    p = S.resolve_params({"stake": {"backSize": 3.0},
+                          "risk": {"model_stake": 7.0}}, engine_mod=EN)
+    assert p["stake"]["backSize"] == 3.0
+    assert float(p["risk"]["model_stake"]) == 7.0
+    # e il motore delle 4 strategie usa il PRIMO, non il secondo
+    assert EN.merge_params({"stake": {"backSize": 3.0}})["stake"]["backSize"] == 3.0

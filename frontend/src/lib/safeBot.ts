@@ -106,6 +106,12 @@ export interface SafeParamsEffective {
      *  Se e' false la pagina DEVE dirlo: altrimenti l'utente crede di avere il
      *  controllo delle chiusure e non ce l'ha. */
     tennis_exit_approval?: boolean;
+    /** CERT. 14/09 — stake REALE delle 4 strategie del manuale, normalizzato dal
+     *  servizio. `backSize` entra su TENNIS e PUNTA (che puntano), `laySize` su
+     *  BASE ed ESATTO (che bancano). NON e' `risk.model_stake`, che e' di un
+     *  altro motore (le opportunita' di modello). Un valore scritto male
+     *  ripiega in silenzio su 2,00 EUR: questo campo mostra quello VERO. */
+    stake?: { laySize?: number; backSize?: number } | null;
 }
 
 /** CERT. 14/09 — strategie che stanno operando a SOLDI VERI adesso.
