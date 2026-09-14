@@ -672,20 +672,25 @@ def test_l_uscita_al_fischio_e_marcata_come_greenup_nello_storico():
 # ---------------------------------------------------------------------------
 # Percorso LIVE: nessun fill simulato, nessuna zavorra di log
 # ---------------------------------------------------------------------------
-def test_in_live_l_uscita_non_e_una_lay_simulata():
-    """In live la lay APPOGGIATA non esiste su nessun percorso di Mike (nota H3
-    in ``service._live_exit_override``): se ``ko_green`` fosse marcata resting il
-    servizio l'annullerebbe con ``resting_live_unsupported`` e la strada A non
-    avverrebbe MAI su soldi veri. In live l'ordine passa dal piazzamento normale
-    e si abbina quando il mercato offre il nostro prezzo (o meglio).
+def test_in_live_l_uscita_appoggiata_e_LA_STESSA_del_paper():
+    """14/09 — l'uscita appoggiata in live è CABLATA, e la strada A avviene anche
+    su soldi veri: stesso lato, stesso prezzo, stessa size del paper.
+
+    Prima di oggi ``_live_exit_override`` forzava 'taker' e questa strada non
+    accadeva mai in live: il paper certificava un comportamento che il live non
+    eseguiva. L'invariante che resta, e che non è negoziabile, è un'altra: in
+    live l'abbinamento non si SIMULA mai — si legge dal book ordini di Betfair.
     """
     from Betfair.mike import service as S
     gamba = E.Leg(role="ko_green", market=E.MARKET_OU35, selection=E.SEL_UNDER,
                   side="lay", price=1.48, size=10.14, ref="k1")
-    assert S._is_resting_leg(gamba, params(pre_exit_mode="resting")) is True     # paper
-    assert S._is_resting_leg(gamba, params(pre_exit_mode="taker")) is False      # live
-    # e il mode della partita forza davvero il taker
-    assert S._live_exit_override(params(), "live")["pre_exit_mode"] == "taker"
+    assert S._is_resting_leg(gamba, params(pre_exit_mode="resting")) is True
+    assert S._is_resting_leg(gamba, params(pre_exit_mode="taker")) is False
+    # la modalità della partita NON dirotta più l'uscita: live == paper
+    assert S._live_exit_override(params(), "live")["pre_exit_mode"] == "resting"
+    # ma la valvola, spenta di proposito, riporta al comportamento di prima
+    spenta = dict(params(), live_resting_enabled=False)
+    assert S._live_exit_override(spenta, "live")["pre_exit_mode"] == "taker"
 
 
 def test_in_live_l_ordine_si_ripresenta_a_ritmo_non_a_ogni_giro():

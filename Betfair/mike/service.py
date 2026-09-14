@@ -733,7 +733,17 @@ def _live_exit_override(params: Dict[str, Any], mode: str) -> Dict[str, Any]:
     veri (l'engine pianificava una lay appoggiata che il servizio poi annullava,
     lasciando la posizione senza green-up).
     """
-    if str(mode) == "live" and str(params.get("pre_exit_mode")) == "resting":
+    # 14/09 — CABLATO. L'uscita appoggiata in live adesso esiste davvero
+    # (``place_order_live(fill_or_kill=False)`` + riconciliazione dal book
+    # ordini), quindi il dirottamento NON si applica piu' per difetto: in live
+    # il bot piazza lo STESSO ordine che piazza in paper, allo stesso prezzo,
+    # con lo stesso tipo di esecuzione. Era l'unica cosa che rendeva la demo
+    # diversa dal live su questa strategia.
+    # Resta la valvola ``live_resting_enabled``: spenta, si torna al
+    # dirottamento di prima. Serve a poter tornare indietro dalla UI senza
+    # toccare il codice, non a cambiare strategia.
+    if (str(mode) == "live" and str(params.get("pre_exit_mode")) == "resting"
+            and not bool(params.get("live_resting_enabled", True))):
         return dict(params, pre_exit_mode="taker")
     return params
 
@@ -778,6 +788,112 @@ def _is_resting_leg(leg: E.Leg, params: Dict[str, Any]) -> bool:
     """Lay di green-up appoggiata sul book (take-profit): NON e' un ordine taker."""
     return (leg.side == "lay" and leg.role in ("under_green", "ko_green", "reentry_green")
             and str(params.get("pre_exit_mode")) == "resting" and not leg.final)
+
+
+def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
+                         params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
+                         chiude: Optional[int], motivo: Optional[str],
+                         ev: Dict[str, Any]) -> None:
+    """Piazza in LIVE la lay appoggiata e la lascia sul book.
+
+    Nessuna differenza di STRATEGIA rispetto al paper: stessa selezione, stesso
+    lato, stesso prezzo, stessa size. Cambia solo che i soldi sono veri — che e'
+    l'unica differenza che ci deve essere.
+
+    ORDINE DELLE OPERAZIONI, e conta: prima si SCRIVE la riga di riserva, poi si
+    piazza. Se il processo muore in mezzo resta una riga 'pending' che la
+    riconciliazione ritrova e chiude; l'ordine contrario — piazzare e morire
+    prima di scrivere — lascerebbe su Betfair un ordine VIVO che nessuno sa di
+    avere, e piu' tardi si abbinerebbe mentre il bot e' gia' rientrato:
+    posizione doppia con soldi veri. Fra i due rischi si sceglie sempre quello
+    che si puo' riparare.
+    """
+    eid = str(ev["event_id"])
+    try:
+        _insert_trade_row(db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo), eid)
+    except Exception as ex:  # noqa: BLE001 — riserva fallita: NESSUN ordine reale
+        leg.status = "cancelled"
+        db.log("error", {"leg": leg.ref, "reason": "reserve_failed", "err": str(ex)[:160]}, eid)
+        return
+    try:
+        res = market.place_order_live(
+            market_id=info.market_id(leg.market),
+            selection_id=info.selection_id(leg.market, leg.selection),
+            price=float(leg.price), size=float(leg.size), event_id=eid,
+            side="lay", customer_ref=leg.ref, fill_or_kill=False)
+    except Exception as ex:  # noqa: BLE001
+        # Esito IGNOTO: l'ordine POTREBBE esistere. Non si annulla la riga e non
+        # si rientra — si manda in riconciliazione, che e' l'unico modo onesto
+        # di dire "non lo so" senza scommettere due volte.
+        leg.status = E.STATUS_RECONCILE
+        logger.critical("[mike] %s: resting live a esito IGNOTO (%s) -> riconciliazione",
+                        eid, str(ex)[:120])
+        db.log("reconcile_pending", {"leg": leg.ref, "role": leg.role,
+                                     "reason": "resting_place_unknown", "critical": True}, eid)
+        return
+    matched = float(getattr(res, "size_matched", 0.0) or 0.0)
+    if matched > 0:
+        # puo' succedere: il book si e' mosso fra la decisione e il piazzamento.
+        # E' un abbinamento VERO e va contabilizzato subito.
+        leg.matched = matched
+        leg.avg_price = float(getattr(res, "avg_price", None) or leg.price)
+        if matched >= float(leg.size) - 1e-9:
+            leg.status = "open"
+        _aggiorna_riga_resting(db, eid, leg, "live_resting_immediato")
+    db.log("place_resting", {"leg": leg.ref, "role": leg.role, "price": leg.price,
+                             "size": leg.size, "matched": round(matched, 2),
+                             "live": True}, eid)
+
+
+def _aggiorna_riga_resting(db: Any, event_id: str, leg: E.Leg, come: str) -> None:
+    """Porta l'abbinamento sulla riga di ``mike_trades``. Stessa strada del paper."""
+    r = _trade_row_for_leg(db, event_id, leg)
+    if r is None:
+        return
+    try:
+        db.update_trade(int(r["id"]), status=("open" if leg.status == "open" else "pending"),
+                        price=leg.avg_price or leg.price, size=leg.matched,
+                        meta={**(r.get("meta") or {}), "phase": "open", "fill": come})
+    except Exception as ex:  # noqa: BLE001
+        db.log("error", {"leg": leg.ref, "reason": "fill_update_failed",
+                         "err": str(ex)[:160]}, event_id)
+
+
+def _segui_resting_live(*, db: Any, market: Any, leg: E.Leg, extra: Dict[str, Any],
+                        params: Dict[str, Any], now_ts: float, ev: Dict[str, Any]) -> None:
+    """Quanto si e' abbinato della lay appoggiata? Lo dice BETFAIR, non il prezzo.
+
+    In paper la simulazione guarda il book e decide. Qui no: un ordine reale ha
+    una CODA davanti, e l'unico modo di sapere se e' toccato a noi e' chiederlo.
+    Si riconosce l'ordine dal ``customerOrderRef``, che e' ``leg.ref`` e che
+    Betfair restituisce in ``listCurrentOrders``.
+    """
+    eid = str(ev["event_id"])
+    try:
+        vivi = market.list_current_orders() or []
+    except Exception as ex:  # noqa: BLE001 — rete: si riprova al giro dopo, senza inventare
+        logger.debug("[mike] list_current_orders KO: %s", str(ex)[:120])
+        return
+    o = next((x for x in vivi if str(x.get("customerOrderRef") or "") == str(leg.ref)), None)
+    if o is None:
+        # Non e' piu' fra i vivi: o si e' abbinato del tutto, o e' stato
+        # annullato, o non e' mai arrivato. Non si indovina fra tre casi che
+        # hanno conseguenze opposte: riconciliazione.
+        leg.status = E.STATUS_RECONCILE
+        _log_throttled(db, extra, params, now_ts, "reconcile_pending",
+                       {"leg": leg.ref, "role": leg.role,
+                        "reason": "resting_uscito_dagli_ordini_vivi", "critical": True}, eid)
+        return
+    matched = float(o.get("sizeMatched") or 0.0)
+    if matched <= float(leg.matched) + 1e-9:
+        return                      # nessun progresso: si aspetta, come in paper
+    leg.matched = matched
+    leg.avg_price = float(o.get("averagePriceMatched") or leg.price)
+    if matched >= float(leg.size) - 1e-9:
+        leg.status = "open"         # abbinata del tutto
+    _aggiorna_riga_resting(db, eid, leg, "live_resting")
+    db.log("fill_resting", {"leg": leg.ref, "role": leg.role, "matched": round(matched, 2),
+                            "price": leg.avg_price, "live": True}, eid)
 
 
 def _resting_filled(leg: E.Leg, book: Optional[E.Book]) -> bool:
@@ -1723,10 +1839,12 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
     for leg in ctx.legs:
         if leg.is_live and _is_resting_leg(leg, params):
             if mode != "paper":
-                _log_throttled(db, extra, params, now_ts, "resting_live_unsupported",
-                               {"leg": leg.ref, "role": leg.role,
-                                "reason": "lay appoggiata non cablata in live: nessun fill simulato",
-                                "critical": True}, ev["event_id"])
+                # In LIVE l'abbinamento non si simula e non si deduce dal
+                # prezzo: si LEGGE dal book ordini di Betfair. Un ordine vivo
+                # che nessuno contabilizza diventa una posizione doppia con
+                # soldi veri quando piu' tardi si abbina da solo.
+                _segui_resting_live(db=db, market=market, leg=leg, extra=extra,
+                                    params=params, now_ts=now_ts, ev=ev)
                 continue
             book = snap.book(leg.market, leg.selection)
             if not snap.order_fresh:
@@ -1824,11 +1942,13 @@ def _run_event(*, db: Any, market: Any, ev: Dict[str, Any], row: Optional[Dict[s
                 db.log("would_place", {"leg": leg.ref, "role": leg.role, "side": "lay", "price": leg.price,
                                        "size": leg.size, "resting": True}, ev["event_id"])
             elif mode != "paper":
-                # H3: in live non esiste una resting simulata (non ci si arriva:
-                # _params_for forza 'taker') → mai una riga fantasma
-                leg.status = "cancelled"
-                db.log("resting_live_unsupported", {"leg": leg.ref, "role": leg.role,
-                                                    "critical": True}, ev["event_id"])
+                # 14/09 — IN LIVE SI PIAZZA DAVVERO. Stesso ordine del paper:
+                # stessa selezione, stesso lato, stesso prezzo, stessa size.
+                # L'unica differenza e' che qui i soldi sono veri — che e'
+                # l'unica differenza che ci deve essere.
+                _piazza_resting_live(db=db, market=market, info=info, leg=leg, mode=mode,
+                                     params=params, minuto=snap.minute, score=score_str,
+                                     chiude=closes_id(leg), motivo=ctx.close_reason, ev=ev)
             else:
                 try:
                     _insert_trade_row(db, _trade_row(info, leg, mode, params, snap.minute, score_str,

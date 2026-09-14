@@ -683,8 +683,29 @@ def test_l2_il_throttle_del_regolamento_persiste_lo_stato():
     assert db.events["E1"]["ctx"]["ht_score"] == [1, 1]
 
 
+def test_l3_una_chiusura_manuale_non_resta_MAI_sul_book():
+    """Se l'utente chiede di chiudere, si chiude ORA. Mai un ordine che aspetta.
+
+    Fino al 13/09 questa proprietà era garantita di rimbalzo: in live
+    ``pre_exit_mode`` veniva forzato a 'taker', quindi nulla poteva restare
+    appoggiato. Dal 14/09 l'uscita appoggiata in live è cablata e quel
+    dirottamento non c'è più — quindi la garanzia va verificata dove vive
+    davvero, che è più solido: ``_is_resting_leg`` ammette SOLO i ruoli di
+    green-up (``under_green``, ``ko_green``, ``reentry_green``), e
+    ``manual_close`` non è fra quelli.
+
+    È la stessa regola del manuale: «si esce subito e si accetta».
+    """
+    manuale = E.Leg(role="manual_close", market=E.MARKET_OU35, selection=E.SEL_UNDER,
+                    side="lay", price=1.48, size=10.0, ref="m1")
+    for modo in ("resting", "taker"):
+        assert S._is_resting_leg(manuale, {"pre_exit_mode": modo}) is False, modo
+
+
 def test_l3_la_chiusura_manuale_usa_i_parametri_effettivi():
-    """In LIVE la lay appoggiata e' spenta: la chiusura manuale deve essere taker."""
+    """I parametri della chiusura manuale sono quelli EFFETTIVI del ciclo, cioè
+    calcolati sul ``mode`` della partita (L3). Dal 14/09 in live sono gli stessi
+    del paper: la strategia non cambia fra le due modalità."""
     seen = {}
     db = FakeDB(mode="live", params={"stake": 10, "pre_exit_mode": "resting"})
     mk = FakeMarket()
@@ -703,7 +724,10 @@ def test_l3_la_chiusura_manuale_usa_i_parametri_effettivi():
         run(db, mk, NOW, [row(payload())])
     finally:
         S._request_flatten = orig
-    assert seen["pre_exit_mode"] == "taker"
+    # 14/09: in live la strategia è LA STESSA del paper, quindi i parametri
+    # effettivi portano 'resting'. Che la chiusura manuale non si appoggi è
+    # garantito dal RUOLO, non dal parametro — vedi il test qui sopra.
+    assert seen["pre_exit_mode"] == "resting"
 
 
 def test_is_placed_dello_storico_conta_le_righe_in_riconciliazione():

@@ -160,11 +160,21 @@ class TestModalitaDellaPartita:
     def test_una_partita_live_resta_live_anche_a_control_in_paper(self):
         """Il `mode` si congela all'arming: e' il motivo per cui serve l'allarme.
         Qui si certifica il comportamento, cosi' nessuno lo cambia per sbaglio
-        credendo di semplificare."""
+        credendo di semplificare.
+
+        14/09 — cambia CHE COSA riceve una partita in live, non su QUALE modalita'
+        si calcola: l'uscita appoggiata e' cablata, quindi live e paper ricevono
+        gli STESSI parametri di strategia. La valvola ``live_resting_enabled``
+        agisce ancora sulla modalita' della PARTITA, che e' il punto del test.
+        """
         p = S._live_exit_override({"pre_exit_mode": "resting"}, "live")
-        assert p["pre_exit_mode"] == "taker", "in live non esiste la lay simulata"
+        assert p["pre_exit_mode"] == "resting", "in live si esegue la STESSA strategia"
         p2 = S._live_exit_override({"pre_exit_mode": "resting"}, "paper")
         assert p2["pre_exit_mode"] == "resting"
+        # con la valvola spenta il dirottamento guarda il mode della PARTITA
+        spenta = {"pre_exit_mode": "resting", "live_resting_enabled": False}
+        assert S._live_exit_override(spenta, "live")["pre_exit_mode"] == "taker"
+        assert S._live_exit_override(spenta, "paper")["pre_exit_mode"] == "resting"
 
     def test_in_live_una_lay_appoggiata_non_e_mai_simulata(self):
         """Un fill simulato in live e' un profitto che non esiste."""

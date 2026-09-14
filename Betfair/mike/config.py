@@ -120,6 +120,15 @@ PARAM_SPEC: dict[str, Spec] = {
     # resting = lay a +N tick appoggiata SUBITO dopo il fill dell'ingresso (profitto
     # spalmato, nessuno spread pagato); taker = chiude al best quando i tick ci sono
     "pre_exit_mode": ("resting", str, None, None, ("resting", "taker")),
+    # L'USCITA APPOGGIATA IN LIVE (14/09). ACCESA per difetto: la strategia in
+    # live deve essere la STESSA del paper, e appoggiare la lay a -2 tick e'
+    # tutto il suo margine. Fino al 14/09 questo ramo non era cablato e il live
+    # veniva dirottato sull'uscita a mercato: in paper il ciclo chiudeva in
+    # profitto, in live lo stesso ciclo poteva chiudere in perdita.
+    # Spegnendola si torna a quel comportamento — ma DICHIARATO in pagina, non
+    # in silenzio. Non e' un parametro di strategia: e' una valvola di
+    # sicurezza sul percorso di esecuzione.
+    "live_resting_enabled": (True, bool, None, None, None),
     "pre_entry_ttl_s": (60, int, 5, 3600, None),
     "pre_max_cycles": (10, int, 0, 100, None),
     "pre_reentry_cooldown_s": (60, int, 0, 3600, None),

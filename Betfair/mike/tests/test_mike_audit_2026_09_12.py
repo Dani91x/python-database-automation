@@ -152,14 +152,46 @@ def test_regolamento_normale_azzera_il_contatore_dei_tentativi():
 # ===========================================================================
 # H3 — pre_exit_mode dipende dal mode della PARTITA, non solo dal control
 # ===========================================================================
-def test_live_exit_override_forza_taker_solo_in_live():
+def test_live_exit_override_non_dirotta_piu_per_difetto():
+    """14/09 — l'uscita appoggiata in live è CABLATA, quindi il dirottamento non
+    si applica più: in live si piazza lo stesso ordine del paper.
+
+    La valvola ``live_resting_enabled`` resta per poter tornare indietro dalla
+    UI senza toccare il codice — ma spenta di proposito, mai in silenzio.
+    """
     p = {"pre_exit_mode": "resting"}
-    assert S._live_exit_override(p, "live")["pre_exit_mode"] == "taker"
+    assert S._live_exit_override(p, "live") is p            # nessun dirottamento
     assert S._live_exit_override(p, "paper") is p           # nessuna copia inutile
-    assert p["pre_exit_mode"] == "resting"                   # originale non mutato
+    spenta = {"pre_exit_mode": "resting", "live_resting_enabled": False}
+    assert S._live_exit_override(spenta, "live")["pre_exit_mode"] == "taker"
+    assert spenta["pre_exit_mode"] == "resting"             # originale non mutato
 
 
-def test_partita_live_non_riceve_resting_con_control_in_paper(monkeypatch):
+def test_la_modalita_che_conta_e_quella_della_PARTITA_non_del_control(monkeypatch):
+    """Il difetto del 12/09 che questo test difende non è cambiato: i parametri
+    vanno calcolati sul ``mode`` della PARTITA, non del control.
+
+    Cambia solo cosa si osserva: prima la prova era «in live diventa taker», ora
+    che l'uscita appoggiata in live è cablata la prova è che la partita riceve i
+    parametri della SUA modalità — e che la valvola, se spenta, agisce su quella.
+    """
+    db = FakeDB(mode="paper", params={"stake": 10, "live_resting_enabled": False})
+    mk = FakeMarket()
+    db.events["E1"] = live_event([asdict(under_leg())], state_="LIVE_UNCOVERED", mode="live")
+    seen: dict = {}
+    real = E.decide
+
+    def spy(ctx, snap, params):
+        seen["pre_exit_mode"] = params.get("pre_exit_mode")
+        return real(ctx, snap, params)
+
+    monkeypatch.setattr(E, "decide", spy)
+    run(db, mk, NOW, [row(payload(inplay=True, minute=30, sh=0, sa=0, ko=NOW - timedelta(hours=1)))])
+    # valvola SPENTA + partita in LIVE -> dirottamento, anche se il control è paper
+    assert seen["pre_exit_mode"] == "taker"
+
+
+def test_partita_live_riceve_resting_come_il_paper(monkeypatch):
     db = FakeDB(mode="paper", params={"stake": 10})
     mk = FakeMarket()
     db.events["E1"] = live_event([asdict(under_leg())], state_="LIVE_UNCOVERED", mode="live")
@@ -172,7 +204,9 @@ def test_partita_live_non_riceve_resting_con_control_in_paper(monkeypatch):
 
     monkeypatch.setattr(E, "decide", spy)
     run(db, mk, NOW, [row(payload(inplay=True, minute=30, sh=0, sa=0, ko=NOW - timedelta(hours=1)))])
-    assert seen["pre_exit_mode"] == "taker"
+    # 14/09: la strategia in live è LA STESSA del paper — l'uscita appoggiata è
+    # cablata, quindi non si dirotta più su 'taker'.
+    assert seen["pre_exit_mode"] == "resting"
     assert "resting_live_unsupported" not in db.kinds()
 
 

@@ -382,14 +382,33 @@ def test_h2_in_live_una_riga_orfana_non_viene_mai_chiusa_in_silenzio():
 # ===========================================================================
 # H3 — gambe resting mai simulate in live
 # ===========================================================================
-def test_h3_in_live_nessuna_lay_appoggiata_simulata(monkeypatch):
+def test_h3_in_live_la_strategia_e_LA_STESSA_del_paper(monkeypatch):
+    """14/09 — regola dell'utente: «le strategie testate in demo devono essere le
+    stesse identiche che andranno in live, l'unica differenza è live o paper».
+
+    Fino al 13/09 non era così: in live ``pre_exit_mode`` veniva forzato a
+    'taker' perché l'ordine appoggiato non era cablato. In paper il bot
+    appoggiava la lay a −2 tick e il ciclo chiudeva in profitto; in live avrebbe
+    attraversato lo spread e lo stesso ciclo poteva chiudere in perdita. Non era
+    il paper a essere troppo buono: era il LIVE a eseguire un'altra strategia.
+
+    Ora l'ordine appoggiato in live esiste davvero (``place_order_live`` senza
+    FILL_OR_KILL, abbinamento letto dal book ordini), e i due rami coincidono.
+    """
     monkeypatch.setenv("MIKE_USE_FLUMINE_QUEUE", "1")
-    p = C._coerce("pre_exit_mode", "resting")
-    assert p == "resting"
-    eff = S._params_for(C.merge_params({"pre_exit_mode": "resting"}), True, "live")
-    assert eff["pre_exit_mode"] == "taker"          # anche con la coda flumine
+    assert C._coerce("pre_exit_mode", "resting") == "resting"
+    eff_live = S._params_for(C.merge_params({"pre_exit_mode": "resting"}), True, "live")
     eff_paper = S._params_for(C.merge_params({"pre_exit_mode": "resting"}), True, "paper")
-    assert eff_paper["pre_exit_mode"] == "resting"
+    assert eff_live["pre_exit_mode"] == eff_paper["pre_exit_mode"] == "resting"
+
+
+def test_h3_la_valvola_riporta_al_comportamento_di_prima():
+    """``live_resting_enabled`` NON è un parametro di strategia: è una valvola di
+    sicurezza sul percorso di ESECUZIONE. Spenta, il live torna al dirottamento
+    su 'taker' — ma per scelta dichiarata in pagina, non in silenzio."""
+    spenta = C.merge_params({"pre_exit_mode": "resting", "live_resting_enabled": False})
+    assert S._params_for(spenta, True, "live")["pre_exit_mode"] == "taker"
+    assert S._params_for(spenta, True, "paper")["pre_exit_mode"] == "resting"
 
 
 def test_h3_gamba_resting_gia_esistente_non_si_riempie_in_live():
@@ -399,7 +418,13 @@ def test_h3_gamba_resting_gia_esistente_non_si_riempie_in_live():
                     price=1.48, size=10.14, ref="under_green-1-2", status="pending")
     db.events["E1"] = live_event([asdict(under_leg()), asdict(resting)], state_="PRE_OPEN",
                                  mode="live", ko=NOW + timedelta(hours=2))
-    # mercato che scambia SOTTO il prezzo della lay: in paper si riempirebbe
+    # Mercato che scambia SOTTO il prezzo della lay: in PAPER si riempirebbe.
+    # In LIVE no, e la ragione è cambiata ma l'invariante è la stessa: adesso
+    # l'ordine appoggiato in live si piazza davvero, ma l'abbinamento si LEGGE
+    # dal book ordini di Betfair — e il mercato finto non ha nessun ordine vivo
+    # col nostro riferimento.
+    # L'INVARIANTE, immutata dall'11/09 e non negoziabile: in live non si
+    # contabilizza MAI un abbinamento che Betfair non ha confermato.
     p = payload(u35=(1.40, 1.42, 30.0, 25.0))
     run(db, mk, NOW, [row(p)])
     got = [l for l in legs(db) if l["ref"] == "under_green-1-2"][0]
@@ -1019,7 +1044,7 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         "fill_resting", "cancel", "skip", "no_fill", "would_place", "size_legalized",
         "pre_cycle", "cover", "cover_wait", "settled", "settle_fallback", "settling_reverted",
         "error", "stop", "daily_stop", "loss_exit", "cashout", "close_retries_exhausted",
-        "reconcile_pending", "reconcile_fix", "resting_live_unsupported", "feed_line_missing",
+        "reconcile_pending", "reconcile_fix", "feed_line_missing",
         "config_warn", "schema_warn", "skip_event", "resume_event",
         # cert. 12/09: aliquote di commissione diverse sulle righe della stessa
         # partita (parametro cambiato a posizione aperta) -> dichiarato, mai

@@ -259,8 +259,12 @@ describe('mike attivita: tutti i kind in italiano', () => {
         }
     });
     it('i kind money-critical sono CRITICI (rossi, mai sepolti)', () => {
+        // 14/09: `resting_live_unsupported` è USCITO dall'elenco perché il
+        // servizio non lo scrive più — l'uscita appoggiata in live è cablata.
+        // Un tipo dichiarato in UI e mai scritto è un avviso che non arriverà
+        // mai, e il contratto backend↔UI ora lo intercetta da solo.
         for (const k of ['error', 'feed_line_missing', 'reconcile_pending', 'close_retries_exhausted',
-                         'daily_stop', 'resting_live_unsupported']) {
+                         'daily_stop']) {
             expect(activityMeta(k, MIKE_ACTIVITY_EXTRA).critical, k).toBe(true);
         }
     });

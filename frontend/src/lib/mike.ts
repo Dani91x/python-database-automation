@@ -389,6 +389,7 @@ export const MIKE_PARAM_FIELDS: readonly MikeParamField[] = [
     { key: 'decide_min_interval_ms', label: 'Cadenza decisioni (ms)', kind: 'number', step: 100, min: 100, max: 5000, hint: 'intervallo minimo fra due decisioni sulla stessa partita', group: 'generale' },
     { key: 'feed_max_age_s', label: 'Feed: età max riga (s)', kind: 'number', step: 1, min: 3, max: 180, hint: 'per GUARDARE. Lo scanner scrive solo ciò che cambia: una riga ferma vuol dire che il prezzo non si è mosso, non che il feed è rotto', group: 'generale' },
     { key: 'scanner_alive_max_s', label: 'Feed: scanner vivo entro (s)', kind: 'number', step: 5, min: 10, max: 300, hint: 'deroga: riga vecchia ma scanner che batte = prezzo corrente', group: 'generale' },
+    { key: 'live_resting_enabled', label: 'LIVE: uscita appoggiata attiva', kind: 'bool', hint: 'ACCESA = in live il bot piazza lo STESSO ordine del paper (lay appoggiata a −2 tick, lasciata sul book). SPENTA = torna a uscire a mercato, come faceva prima del 14/09: la strategia in live diventa diversa da quella provata in paper, e il margine del ciclo pre-match sparisce', group: 'generale' },
     { key: 'book_seen_max_s', label: 'Book: visto entro (s)', kind: 'number', step: 5, min: 5, max: 600, hint: 'un mercato uscito dal feed resta in cache con l’ultimo prezzo: oltre questa età il book è trattato come ASSENTE, mai come valido', group: 'generale' },
     { key: 'order_max_age_s', label: 'Ordine: età max riga (s)', kind: 'number', step: 1, min: 3, max: 120, hint: 'soglia STRETTA, usata solo per emettere un ordine o chiudere a mano', group: 'generale' },
     { key: 'order_scanner_max_s', label: 'Ordine: scanner vivo entro (s)', kind: 'number', step: 5, min: 5, max: 120, hint: 'oltre l\u2019età sopra si ordina solo se lo scanner ha battuto da poco', group: 'generale' },
@@ -484,6 +485,7 @@ export const MIKE_PARAM_DEFAULTS: Record<string, number | boolean | string> = {
     stake: 10, commission_pct: 5, entry_hours_before_ko: 3,
     competition_filter: '', decide_min_interval_ms: 500, feed_max_age_s: 45,
     scanner_alive_max_s: 75, book_seen_max_s: 90, order_max_age_s: 20, order_scanner_max_s: 30,
+    live_resting_enabled: true,
     pre_enabled: true, pre_entry_price_min: 1.3, pre_entry_price_max: 3, pre_min_back_size_factor: 1,
     pre_max_spread_ticks: 6, pre_green_ticks: 2, pre_exit_mode: 'resting', pre_entry_ttl_s: 60,
     pre_max_cycles: 10, pre_reentry_cooldown_s: 60, pre_last_entry_min: 10, last_entry_persist: true,
@@ -1086,7 +1088,7 @@ export const MIKE_ACTIVITY_KINDS = [
     'cancel', 'skip', 'no_fill', 'would_place', 'size_legalized', 'pre_cycle', 'cover',
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
-    'resting_live_unsupported', 'feed_line_missing', 'config_warn', 'schema_warn', 'error',
+    'feed_line_missing', 'config_warn', 'schema_warn', 'error',
     // cert. 12/09: il regolamento usa l'aliquota FISSATA sulle righe; se le
     // righe della stessa partita hanno aliquote diverse (parametro cambiato a
     // posizione aperta) lo si dichiara invece di sceglierne una in silenzio
@@ -1124,7 +1126,6 @@ export const MIKE_ACTIVITY_EXTRA: Record<string, ActivityMeta> = {
     resume_event: { label: 'PARTITA RIPRESA (utente)', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
     reconcile_pending: { label: 'ORDINE IN VERIFICA', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     reconcile_fix: { label: 'RICONCILIAZIONE · corretto', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
-    resting_live_unsupported: { label: 'APPOGGIATA NON SUPPORTATA IN LIVE', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     feed_line_missing: { label: 'LINEA ASSENTE NEL FEED', cls: 'bg-red-500/15 text-red-300 border-red-500/40', critical: true },
     schema_warn: { label: 'SCHEMA DB', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40' },
     cover: { label: 'COPERTURA OVER 4.5', cls: 'bg-teal-500/15 text-teal-300 border-teal-500/40' },
@@ -1222,8 +1223,6 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `ordine con esito ignoto su Betfair${p.leg ? ` (${String(p.leg)})` : ''}${p.legs ? ` · ${String(p.legs)} gambe` : ''}${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}${p.action ? ` · ${reasonLabel(p.action)}` : ''}`;
         case 'reconcile_fix':
             return `${String(p.leg ?? '')} · ${reasonLabel(p.action)}${p.status ? ` · stato ${String(p.status)}` : ''}${Number.isFinite(n('size')) ? ` · ${money('size')}` : ''}${Number.isFinite(n('price')) ? ` @ ${odds('price')}` : ''}`;
-        case 'resting_live_unsupported':
-            return `lay appoggiata non supportata in live (${role()}): si chiude al best${p.reason ? ` · ${reasonLabel(p.reason)}` : ''}`;
         case 'feed_line_missing':
             return `linee assenti nel feed: ${[...(Array.isArray(p.markets) ? p.markets : []), ...(Array.isArray(p.selections) ? p.selections : [])].map((x) => lineLabel(String(x))).join(', ') || reasonLabel(p.reason)} · fase ${stateLabel(p.state)}`;
         case 'config_warn':

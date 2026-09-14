@@ -521,6 +521,7 @@ class PlaceResult:
 def place_order_live(
     *, market_id: str, selection_id: int, price: float, size: float, event_id: str,
     side: str = "lay", customer_ref: Optional[str] = None,
+    fill_or_kill: bool = True,
 ) -> PlaceResult:
     """Piazza un ordine REALE (lay/back). customerRef deterministico = de-dup Betfair (I1).
 
@@ -557,7 +558,13 @@ def place_order_live(
             # viene cancellata da Betfair. Senza, un fill parziale lascerebbe un
             # residuo VIVO sul book che, matchando più tardi, sfuggirebbe alla
             # contabilità (la riga è già 'open' con la size congelata → I8 violato).
-            "timeInForce": "FILL_OR_KILL",
+            # 14/09 — ``fill_or_kill=False`` toglie questa riga e l'ordine RESTA
+            # SUL BOOK alla quota chiesta, che e' cio' che la strategia di Mike
+            # ha sempre voluto per l'uscita appoggiata (si entra pagando lo
+            # spread, si esce facendoselo pagare). Chi lo usa DEVE seguirlo: ha
+            # il bet_id e lo riconcilia, altrimenti un ordine vivo che nessuno
+            # contabilizza diventa una posizione doppia con soldi veri.
+            **({"timeInForce": "FILL_OR_KILL"} if fill_or_kill else {}),
         },
     }
     report = call_mutating(
