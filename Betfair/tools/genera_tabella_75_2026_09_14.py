@@ -119,6 +119,20 @@ righe = ["", "### 16.4-bis L'ELENCO OPERATIVO 1→75 (ricostruito il 14/09/2026)
          "**nessuna riga di questa tabella può essere spuntata in live finché non lo si",
          "apre deliberatamente.**", ""]
 
+# ⊘ NON ESERCITABILI IN LIVE — con la CAUSA per nome, come chiede la regola.
+# Non basta che una condizione sia stata osservata in paper: se il ramo che la
+# realizza e' DISATTIVATO in live, quella spunta verde non dice niente sul live,
+# e fra tre settimane fara' credere che il bot sia pronto.
+NON_ESERCITABILI = {
+    18: "`_live_exit_override` (service.py:736) forza `pre_exit_mode='taker'` in live: "
+        "l'uscita APPOGGIATA non e' cablata ne' su REST ne' sulla coda flumine",
+    19: "come la 18: senza uscita appoggiata non esiste nemmeno il caso «l'uscita resta sul book»",
+    20: "come la 18: senza uscita appoggiata non esiste un residuo da riappoggiare",
+    21: "il ciclo si chiude in green GRAZIE all'uscita appoggiata (entri pagando lo spread, "
+        "esci facendotelo pagare). Con l'uscita taker forzata in live il segno puo' invertirsi",
+    25: "come la 18, sull'ultimo ingresso: la chiusura finale in live e' taker",
+}
+
 blocco_corrente = None
 for c in sorted(conds, key=lambda x: x["n"]):
     if c["blocco"] != blocco_corrente:
@@ -135,8 +149,15 @@ for c in sorted(conds, key=lambda x: x["n"]):
     else:
         stato = "·"
     rami = "<br>".join("`%s`" % p for p in c["punti"]) or "**da individuare a mano**"
-    righe.append("| %d | %s | %s | `%s` | %s | |"
-                 % (n, c["testo"], rami, c["riconosciuta_da"], stato))
+    causa = NON_ESERCITABILI.get(n)
+    live = ("⊘ %s" % causa) if causa else ""
+    if causa and vis > 0:
+        # la spunta in paper RESTA (il ramo e' stato davvero esercitato), ma va
+        # detto subito che in live quel ramo non esiste: altrimenti il verde
+        # viene letto come «pronto».
+        stato += " ⚠"
+    righe.append("| %d | %s | %s | `%s` | %s | %s |"
+                 % (n, c["testo"], rami, c["riconosciuta_da"], stato, live))
 
 io.open(os.path.join(QUI, "tabella75.md"), "w", encoding="utf8").write("\n".join(righe) + "\n")
 print("\nscritto tabella75.md (%d righe)" % len(righe))
