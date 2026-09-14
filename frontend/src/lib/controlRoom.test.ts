@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     freschezza, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
-    haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita,
+    haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
     marca, costruisciGiornata, totaliGiornata, etaSecondi, SENZA_CAMPIONATO, TARGET_MIN_EUR,
     type PartitaFeedLike,
 } from './controlRoom';
@@ -89,6 +89,47 @@ describe('statoPartita', () => {
         expect(campionato(feed({ competition: '   ' }))).toBe(SENZA_CAMPIONATO);
         expect(campionato(feed({ competition: null }))).toBe(SENZA_CAMPIONATO);
         expect(campionato(null)).toBe(SENZA_CAMPIONATO);
+    });
+});
+
+// ------------------------------------------------------------------- tennis
+
+describe('tennis — punteggio, nome, e nessun minuto', () => {
+    it('set e game insieme', () => {
+        expect(punteggio(feed({ sets: { p1: 1, p2: 0 }, games: { p1: 3, p2: 0 } }))).toBe('1-0 · 3-0');
+    });
+
+    it('solo set quando i game non ci sono', () => {
+        expect(punteggio(feed({ sets: { p1: 2, p2: 1 } }))).toBe('2-1');
+    });
+
+    it('0-0 nel tennis È un punteggio: non si confonde con «non lo so»', () => {
+        expect(punteggio(feed({ sets: { p1: 0, p2: 0 }, games: { p1: 0, p2: 0 } }))).toBe('0-0 · 0-0');
+    });
+
+    it('il nome ripiega sui due giocatori', () => {
+        expect(nomePartita(feed({ event_name: null, p1: 'Rune', p2: 'Musetti' }), 'T1')).toBe('Rune – Musetti');
+    });
+
+    it('il tennis non ha `pressure_index`: non entra nella copertura', () => {
+        expect(haControlloGioco(feed({ sets: { p1: 1, p2: 0 } }))).toBe(false);
+    });
+});
+
+describe('latenzaQuoteS — quanto è vecchio il prezzo su cui si opera', () => {
+    it('misura dall’istante in cui lo scanner ha letto le quote', () => {
+        expect(latenzaQuoteS(feed({ odds_ts_ms: T0 - 4000 }), T0)).toBe(4);
+    });
+
+    it('ASSENTE vale null, MAI zero: un prezzo di età ignota non è un prezzo fresco', () => {
+        expect(latenzaQuoteS(feed(), T0)).toBeNull();
+        expect(latenzaQuoteS(feed({ odds_ts_ms: null }), T0)).toBeNull();
+        expect(latenzaQuoteS(feed({ odds_ts_ms: 0 }), T0)).toBeNull();
+        expect(freschezza(latenzaQuoteS(feed(), T0))).toBe('ignota');
+    });
+
+    it('non torna mai negativa se l’orologio dello scanner è avanti', () => {
+        expect(latenzaQuoteS(feed({ odds_ts_ms: T0 + 5000 }), T0)).toBe(0);
     });
 });
 

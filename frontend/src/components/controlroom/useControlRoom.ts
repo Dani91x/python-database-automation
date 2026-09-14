@@ -28,7 +28,7 @@ import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza,
-    type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike,
+    type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
 } from '@/lib/controlRoom';
 import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
 
@@ -241,10 +241,13 @@ export function useControlRoom(): ControlRoomVM {
     }, []);
 
     // ------------------------------------------------------- il modello di vista
-    const calcioRows = useMemo(
-        () => scan.filter((r) => r.sport === 'calcio'),
+    // 14/09 — il TENNIS va in live oggi: la pagina deve mostrarlo. Prima
+    // filtrava `sport === 'calcio'` e il tennis semplicemente non compariva.
+    const righeFeed = useMemo(
+        () => scan.filter((r) => r.sport === 'calcio' || r.sport === 'tennis'),
         [scan],
     );
+    const calcioRows = useMemo(() => scan.filter((r) => r.sport === 'calcio'), [scan]);
 
     const soldi = useMemo(() => soldiPerPartita([
         ...marca(omegaTrades as unknown as PnlTradeLike[], 'omega'),
@@ -260,13 +263,14 @@ export function useControlRoom(): ControlRoomVM {
     const targetServizio = oStats?.target_match ?? null;
 
     const giornata = useMemo(() => costruisciGiornata({
-        righe: calcioRows.map((r) => ({
+        righe: righeFeed.map((r) => ({
             event_id: r.event_id,
+            sport: r.sport as Sport,
             payload: r.payload as PartitaFeedLike,
             updated_at: r.updated_at,
         })),
         soldi, nowMs, obiettivo, realizzato, targetServizio,
-    }), [calcioRows, soldi, nowMs, obiettivo, realizzato, targetServizio]);
+    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio]);
 
     const totali = useMemo(() => totaliGiornata(giornata), [giornata]);
 

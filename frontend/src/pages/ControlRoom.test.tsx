@@ -25,10 +25,10 @@ const mVm = vi.mocked(useControlRoom);
 
 function partita(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
     return {
-        event_id: 'E1', nome: 'Milan – Inter', campionato: 'Serie A',
+        event_id: 'E1', sport: 'calcio', nome: 'Milan – Inter', campionato: 'Serie A',
         koMs: Date.parse('2026-09-14T13:00:00Z'), stato: 'live',
         minuto: 58, punteggio: '1-0', controlloDisponibile: true,
-        etaFeedS: 2, freschezza: 'fresca',
+        etaFeedS: 2, freschezza: 'fresca', latenzaQuoteS: 1, freschezzaQuote: 'fresca',
         soldi: { netPnl: 12.5, liability: 40, investito: 10, aperta: true, bots: ['omega'] },
         target: { valore: 31.2, fonte: 'servizio' },
         avanzamento: 40,

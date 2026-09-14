@@ -396,7 +396,12 @@ function RigaPartita({ p }: { p: PartitaGiornata }) {
     return (
         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02] px-2.5 py-2`} data-testid="cr-partita">
             <div className="flex items-start justify-between gap-2">
-                <span className="text-[13px] font-medium leading-tight">{p.nome}</span>
+                <span className="text-[13px] font-medium leading-tight">
+                    <span className="text-white/30 mr-1" aria-label={p.sport === 'tennis' ? 'tennis' : 'calcio'}>
+                        {p.sport === 'tennis' ? '🎾' : '⚽'}
+                    </span>
+                    {p.nome}
+                </span>
                 <StatoPill p={p} />
             </div>
 
@@ -405,6 +410,15 @@ function RigaPartita({ p }: { p: PartitaGiornata }) {
                     nota={p.target?.fonte === 'ripiego' ? 'calcolato dalla pagina: il servizio non lo pubblica' : undefined} />
                 <Mini etichetta="P&L" valore={net == null ? DASH : fmtMoney(net)}
                     cls={net == null ? 'text-white/40' : net >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+                {p.stato === 'live' && (
+                    <span className="flex flex-col" data-testid="cr-latenza"
+                        title="da quanto è vecchio il prezzo su cui si opererebbe (istante in cui lo scanner ha letto le quote)">
+                        <span className="text-[9px] uppercase tracking-wider text-white/40">Quote</span>
+                        <span className={`font-mono text-[13px] font-semibold ${FRESCHEZZA_CLS[p.freschezzaQuote]}`}>
+                            {p.latenzaQuoteS == null ? DASH : fmtAge(p.latenzaQuoteS)}
+                        </span>
+                    </span>
+                )}
                 <span className="flex gap-1" title="bot che hanno operato su questa partita">
                     {(['omega', 'safe', 'mike'] as Bot[]).map((b) => (
                         <span key={b}
@@ -428,11 +442,13 @@ function RigaPartita({ p }: { p: PartitaGiornata }) {
 
 function StatoPill({ p }: { p: PartitaGiornata }) {
     if (p.stato === 'live') {
+        // tennis: nessun minuto, il punteggio E' l'informazione (set · game)
+        const testa = p.minuto != null ? `${p.minuto}′` : p.punteggio ? '' : 'in gioco';
         return (
             <span className="shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded bg-secondary/15 text-secondary">
                 <Circle className="w-1.5 h-1.5 fill-current" />
-                {p.minuto != null ? `${p.minuto}′` : 'in gioco'}
-                {p.punteggio && <> {p.punteggio}</>}
+                {testa}
+                {p.punteggio && <span>{testa ? ' ' : ''}{p.punteggio}</span>}
             </span>
         );
     }

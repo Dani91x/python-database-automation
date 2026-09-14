@@ -81,15 +81,30 @@ export function affidabilePerPiazzare(f: Freschezza): boolean {
  *  `CalcioScanPayload` così com'è, senza adattatori. */
 export interface PartitaFeedLike {
     event_name?: string | null;
+    /** calcio */
     home?: string | null;
     away?: string | null;
+    /** tennis */
+    p1?: string | null;
+    p2?: string | null;
     competition?: string | null;
     open_date?: string | null;
     inplay?: boolean;
     minute?: number | null;
     score_home?: number | null;
     score_away?: number | null;
+    /** tennis: set e game della partita in corso */
+    sets?: { p1: number; p2: number } | null;
+    games?: { p1: number; p2: number } | null;
     pressure_index?: number | null;
+    /**
+     * Istante (ms epoch) in cui lo scanner ha LETTO le quote di questa partita.
+     * È la LATENZA VERA del prezzo, e non è la stessa cosa dell'`updated_at`
+     * della riga: quello dice «quando è cambiato qualcosa», questo dice
+     * «quanto è vecchio il prezzo su cui sto per operare». Due fatti diversi,
+     * due etichette diverse — non due verità sulla stessa cosa.
+     */
+    odds_ts_ms?: number | null;
 }
 
 /**
@@ -117,22 +132,42 @@ export function koMs(p: PartitaFeedLike | null | undefined): number | null {
     return Number.isFinite(t) ? t : null;
 }
 
-/** `'1-0'`, oppure `null` quando il punteggio non c'è. Non si stampa `'0-0'`
- *  per una partita di cui non sappiamo il punteggio. */
+/** Calcio `'1-0'` · tennis `'1-0 · 4-2'` (set · game). `null` quando il
+ *  punteggio non c'è: non si stampa `'0-0'` per una partita di cui non
+ *  sappiamo il punteggio. */
 export function punteggio(p: PartitaFeedLike | null | undefined): string | null {
+    const set = p?.sets;
+    if (set && typeof set.p1 === 'number' && typeof set.p2 === 'number') {
+        const g = p?.games;
+        const gioco = g && typeof g.p1 === 'number' && typeof g.p2 === 'number' ? ` · ${g.p1}-${g.p2}` : '';
+        return `${set.p1}-${set.p2}${gioco}`;
+    }
     const h = p?.score_home;
     const a = p?.score_away;
     if (typeof h !== 'number' || typeof a !== 'number') return null;
     return `${h}-${a}`;
 }
 
-/** Nome leggibile: `event_name`, altrimenti `home – away`, altrimenti l'id. */
+/**
+ * LATENZA DELLE QUOTE in secondi: da quanto è vecchio il prezzo su cui il bot
+ * sta per operare. `null` = non lo sappiamo, e vale fail-closed come ogni altra
+ * età assente. Diversa dall'età della RIGA (`etaFeedS`), che dice quando il
+ * feed ha scritto l'ultimo cambiamento.
+ */
+export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: number): number | null {
+    const t = p?.odds_ts_ms;
+    if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0) return null;
+    return Math.max(0, Math.round((nowMs - t) / 1000));
+}
+
+/** Nome leggibile: `event_name`, altrimenti i due contendenti (calcio o
+ *  tennis), altrimenti l'id. Non resta mai vuoto. */
 export function nomePartita(p: PartitaFeedLike | null | undefined, eventId: string): string {
     const n = p?.event_name?.trim();
     if (n) return n;
-    const h = p?.home?.trim();
-    const a = p?.away?.trim();
-    if (h && a) return `${h} – ${a}`;
+    const a = p?.home?.trim() || p?.p1?.trim();
+    const b = p?.away?.trim() || p?.p2?.trim();
+    if (a && b) return `${a} – ${b}`;
     return eventId;
 }
 
@@ -290,8 +325,11 @@ export function soldiPerPartita(trades: readonly TradeConBot[]): Map<string, Par
 
 // ------------------------------------------------------- la giornata, in ordine
 
+export type Sport = 'calcio' | 'tennis';
+
 export interface PartitaGiornata {
     event_id: string;
+    sport: Sport;
     nome: string;
     campionato: string;
     koMs: number | null;
@@ -302,6 +340,9 @@ export interface PartitaGiornata {
     controlloDisponibile: boolean;
     etaFeedS: number | null;
     freschezza: Freschezza;
+    /** latenza delle QUOTE: quanto è vecchio il prezzo su cui si opererebbe */
+    latenzaQuoteS: number | null;
+    freschezzaQuote: Freschezza;
     soldi: PartitaSoldi | null;
     target: TargetPartita | null;
     avanzamento: number | null;
@@ -326,7 +367,7 @@ const PESO_STATO: Record<StatoPartita, number> = { live: 0, pre: 1, chiusa: 2 };
  * un orario per farle stare in ordine.
  */
 export function costruisciGiornata(args: {
-    righe: readonly { event_id: string; payload: PartitaFeedLike | null; updated_at?: string | null }[];
+    righe: readonly { event_id: string; sport?: Sport; payload: PartitaFeedLike | null; updated_at?: string | null }[];
     soldi: Map<string, PartitaSoldi>;
     nowMs: number;
     obiettivo?: number | null;
@@ -345,8 +386,10 @@ export function costruisciGiornata(args: {
         const p = r.payload;
         const s = soldi.get(String(r.event_id)) ?? null;
         const eta = etaSecondi(r.updated_at, nowMs);
+        const lat = latenzaQuoteS(p, nowMs);
         return {
             event_id: String(r.event_id),
+            sport: r.sport ?? 'calcio',
             nome: nomePartita(p, String(r.event_id)),
             campionato: campionato(p),
             koMs: koMs(p),
@@ -356,6 +399,8 @@ export function costruisciGiornata(args: {
             controlloDisponibile: haControlloGioco(p),
             etaFeedS: eta,
             freschezza: freschezza(eta),
+            latenzaQuoteS: lat,
+            freschezzaQuote: freschezza(lat),
             soldi: s,
             target,
             avanzamento: avanzamentoPartita(s?.netPnl ?? null, target?.valore ?? null),
