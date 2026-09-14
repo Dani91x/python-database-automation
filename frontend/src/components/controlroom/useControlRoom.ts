@@ -31,6 +31,11 @@ import {
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
 } from '@/lib/controlRoom';
 import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
+import {
+    fetchProposte, subscribeProposte, approvaProposta, ignoraProposta,
+    prezzoVivo, ordinaProposte, SLIPPAGE_PCT_DEFAULT,
+    type PropostaChiusura, type PrezzoVivo,
+} from '@/lib/controlRoomProposte';
 
 /** UNA lettura completa ogni 30 s. Il resto arriva in push. */
 export const RICARICA_MS = 30_000;
@@ -82,6 +87,14 @@ function aMercato(t: { status: string }): boolean {
     return !isSettled(t.status) && !isErrorRow(t.status);
 }
 
+/** Una proposta con accanto il presente: prezzo e liquidità di ADESSO. */
+export interface PropostaVista {
+    proposta: PropostaChiusura;
+    vivo: PrezzoVivo;
+    /** età del prezzo su cui si piazzerebbe; null = non lo sappiamo */
+    etaQuoteS: number | null;
+}
+
 // ------------------------------------------------------------------ il modello
 
 export interface ControlRoomVM {
@@ -131,6 +144,17 @@ export interface ControlRoomVM {
      */
     mikeRestingLive: boolean | null;
 
+    /**
+     * LE PROPOSTE DI CHIUSURA che aspettano il sì, le urgenti in cima.
+     * Ognuna porta con sé il PREZZO VIVO preso dal feed — non quello congelato
+     * nella proposta — e l'età di quel prezzo.
+     */
+    proposte: PropostaVista[];
+    slippagePct: number;
+    setSlippagePct: (v: number) => void;
+    approva: (id: number) => Promise<void>;
+    ignora: (id: number) => Promise<void>;
+
     /** sorgente del feed: fra `stream` e `rest` c'è un ordine di grandezza */
     feedSorgente: string | null;
     feedEtaS: number | null;
@@ -146,6 +170,8 @@ export function useControlRoom(): ControlRoomVM {
     const [omegaTrades, setOmegaTrades] = useState<OmegaTrade[]>([]);
     const [safe, setSafe] = useState<SafeState | null>(null);
     const [runner, setRunner] = useState<RunnerState | null>(null);
+    const [proposte, setProposte] = useState<PropostaChiusura[]>([]);
+    const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
     const [caricamento, setCaricamento] = useState(true);
@@ -165,10 +191,10 @@ export function useControlRoom(): ControlRoomVM {
         Promise.allSettled([
             fetchScanRows(), fetchScanStatus(),
             fetchOmegaState(1), fetchOmegaTrades(2000),
-            fetchSafeState(), fetchMikeState(), fetchRunnerState(),
+            fetchSafeState(), fetchMikeState(), fetchRunnerState(), fetchProposte(),
         ]).then((r) => {
             if (!vivo) return;
-            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner] = r;
+            const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -176,11 +202,12 @@ export function useControlRoom(): ControlRoomVM {
             if (rSafe.status === 'fulfilled') setSafe(rSafe.value);
             if (rMike.status === 'fulfilled') setMike(rMike.value);
             if (rRunner.status === 'fulfilled') setRunner(rRunner.value);
+            if (rProp.status === 'fulfilled') setProposte(rProp.value);
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner'][i] : null))
+                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setCaricamento(false);
@@ -233,6 +260,13 @@ export function useControlRoom(): ControlRoomVM {
         });
         return () => { for (const c of chiusure) c(); };
     }, []);
+
+    // -------------------------------------------------- proposte in realtime
+    // Una proposta di chiusura che comparisse 30 s dopo sarebbe inutile: il
+    // prezzo su cui il bot ha deciso non c'e' piu'.
+    useEffect(() => subscribeProposte(() => {
+        fetchProposte().then(setProposte).catch(() => { /* il giro di ricarica riprova */ });
+    }), []);
 
     // --------------------------------------------------------------- orologio
     useEffect(() => {
@@ -334,6 +368,42 @@ export function useControlRoom(): ControlRoomVM {
         return out;
     }, [omegaTrades, safe?.trades, mike?.trades]);
 
+    // Il prezzo della scheda viene dal FEED, non dalla proposta: e' questo che
+    // la rende viva senza che il bot riscriva la riga.
+    const feedPerEvento = useMemo(() => {
+        const m = new Map<string, { payload: unknown; updated_at: string | null }>();
+        for (const r of scan) m.set(String(r.event_id), { payload: r.payload, updated_at: r.updated_at });
+        return m;
+    }, [scan]);
+
+    const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(proposte).map((pr) => {
+        const p = pr.payload;
+        const riga = feedPerEvento.get(String(p.event_id));
+        const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+        const vivo = prezzoVivo(payload, p.market_id, p.selection_id, p.side ?? null);
+        // eta' del PREZZO: `odds_ts_ms` se c'e', altrimenti l'eta' della riga.
+        // Mai zero per «non lo so».
+        const odds = (payload as { odds_ts_ms?: number | null } | null)?.odds_ts_ms;
+        const etaQuoteS = typeof odds === 'number' && Number.isFinite(odds) && odds > 0
+            ? Math.max(0, Math.round((nowMs - odds) / 1000))
+            : etaSecondi(riga?.updated_at ?? null, nowMs);
+        return { proposta: pr, vivo, etaQuoteS };
+    }), [proposte, feedPerEvento, nowMs]);
+
+    const ricaricaProposte = useCallback(async () => {
+        try { setProposte(await fetchProposte()); } catch { /* il giro riprova */ }
+    }, []);
+
+    const approva = useCallback(async (id: number) => {
+        await approvaProposta(id);
+        await ricaricaProposte();
+    }, [ricaricaProposte]);
+
+    const ignora = useCallback(async (id: number) => {
+        await ignoraProposta(id);
+        await ricaricaProposte();
+    }, [ricaricaProposte]);
+
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
 
     return {
@@ -347,6 +417,8 @@ export function useControlRoom(): ControlRoomVM {
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
+        proposte: proposteVista,
+        slippagePct, setSlippagePct, approva, ignora,
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),

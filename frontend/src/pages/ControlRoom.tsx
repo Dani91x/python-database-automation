@@ -34,6 +34,7 @@ import {
     type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
+import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
 
 // --------------------------------------------------------------- vocabolario
@@ -482,34 +483,60 @@ function Mini({ etichetta, valore, cls, nota }: { etichetta: string; valore: str
  */
 function NastroSegnali({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
     const bloccati = vm.bots.filter((b) => b.canale !== 'connected' || !affidabilePerPiazzare(b.freschezzaPush));
+    const urgenti = vm.proposte.filter((p) => p.proposta.payload?.urgente === true).length;
 
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-nastro">
-            <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">Segnali — approva o ignora</span>
-                <span className="text-[11px] text-white/40">0 in attesa</span>
+            <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
+                <span className="text-[11px] uppercase tracking-wider text-white/60">Uscite — decidi tu</span>
+                <span className="text-[11px] text-white/40">
+                    {vm.proposte.length} in attesa
+                    {urgenti > 0 && <span className="text-orange-300 font-semibold"> · {urgenti} urgenti</span>}
+                </span>
             </div>
 
             {bloccati.length > 0 && (
                 <div className="px-3 py-2 border-b border-white/10 text-[11px] text-orange-300" data-testid="cr-bot-muti">
                     {bloccati.map((b) => BOT_LABEL[b.bot]).join(', ')}: nessuna spinta recente.
-                    Le proposte di {bloccati.length > 1 ? 'questi bot' : 'questo bot'} non saranno approvabili finché il dato non torna —
-                    non si piazza su numeri di cui non conosciamo l'età.
+                    I numeri di {bloccati.length > 1 ? 'questi bot' : 'questo bot'} potrebbero essere vecchi —
+                    non si piazza su dati di cui non conosciamo l&apos;età.
                 </div>
             )}
 
-            <div className="p-4">
-                <EmptyState>
-                    <span className="font-semibold block mb-1">Il cancelletto non è ancora acceso</span>
-                    I tre bot oggi piazzano da soli. Perché le proposte arrivino qui e aspettino il tuo sì, serve
-                    lo stato «proposed» nelle code di Omega, Safe e Mike: è in lavorazione. Nel frattempo questa
-                    pagina mostra la giornata, le partite e le posizioni con i dati veri dei tre servizi.
-                </EmptyState>
-                <p className="text-[11px] text-white/40 mt-3">
-                    Quando sarà acceso: ogni proposta resterà viva finché non vai a mercato o la ignori — nessuna scadenza a tempo —
-                    con prezzo, importo abbinabile e responsabilità aggiornati mentre il mercato si muove.
-                    Le uscite staranno sempre in cima, e nessun freno potrà impedirti di chiudere.
-                </p>
+            {/* tolleranza: oltre questo scostamento dal prezzo della proposta
+                l&apos;approvazione si spegne. È una leva del trader, non una
+                costante sepolta. */}
+            <div className="px-3 py-1.5 border-b border-white/10 flex items-center gap-2 text-[11px] text-white/50">
+                <label htmlFor="cr-slippage">scostamento massimo dal prezzo della proposta</label>
+                <input
+                    id="cr-slippage" type="number" step="0.5" min="0.5" max="20"
+                    value={vm.slippagePct}
+                    onChange={(e) => vm.setSlippagePct(Math.max(0.5, Number(e.target.value) || 2))}
+                    className="w-16 px-1.5 py-0.5 rounded border border-white/15 bg-white/5 font-mono text-right text-white/90"
+                />
+                <span>%</span>
+            </div>
+
+            <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-2.5">
+                {vm.proposte.length === 0 && (
+                    <EmptyState>
+                        <span className="font-semibold block mb-1">Nessuna uscita da decidere</span>
+                        Il bot apre da solo. Quando matura un&apos;uscita non la esegue: la propone qui, con il prezzo
+                        che si aggiorna da solo, l&apos;importo davvero abbinabile e il confronto fra chiudere e tenere.
+                        Le urgenti stanno in cima.
+                    </EmptyState>
+                )}
+                {vm.proposte.map((pv) => (
+                    <SchedaChiusura
+                        key={pv.proposta.id}
+                        proposta={pv.proposta}
+                        vivo={pv.vivo}
+                        etaQuoteS={pv.etaQuoteS}
+                        slippagePct={vm.slippagePct}
+                        onApprova={vm.approva}
+                        onIgnora={vm.ignora}
+                    />
+                ))}
             </div>
         </Card>
     );

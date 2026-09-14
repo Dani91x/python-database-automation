@@ -11,7 +11,7 @@
 //   · una partita senza risultato con «—», mai «0,00 €».
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -56,6 +56,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         freni: { daily_loss_stop: -50, loss_stop_active: false },
         runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
         mikeRestingLive: true,
+        proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
+        approva: vi.fn(), ignora: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
         ricarica: vi.fn(),
         ...over,
@@ -137,7 +139,7 @@ describe('bot muto — fail-closed dichiarato', () => {
         mostra();
         expect(within(screen.getByTestId('cr-bot-mike')).getByText(/senza spinta/)).toBeTruthy();
         expect(within(screen.getByTestId('cr-bot-muti')).getByText(/Mike/)).toBeTruthy();
-        expect(screen.getByTestId('cr-bot-muti').textContent).toMatch(/non saranno approvabili/);
+        expect(screen.getByTestId('cr-bot-muti').textContent).toMatch(/non conosciamo l/);
     });
 
     it('dato vecchio oltre soglia: muto anche col canale connesso', () => {
@@ -243,6 +245,105 @@ describe('posizioni aperte', () => {
     it('senza posizioni lo dice invece di mostrare una tabella vuota', () => {
         mVm.mockReturnValue(vm());
         expect(within(mostra().getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
+    });
+});
+
+// -------------------------------------------------------- uscite da decidere
+
+function propostaVista(over: Record<string, unknown> = {}, vivoOver: Record<string, unknown> = {}, eta: number | null = 2) {
+    return {
+        proposta: {
+            id: 1, kind: 'cashout', status: 'proposed', created_at: '2026-09-14T14:50:00Z',
+            payload: {
+                trade_id: 271, event_id: 'T1', event_name: 'Rossi v Bianchi', sport: 'tennis',
+                strategy: 'tennis', selection_name: 'Rossi', market_id: '1.24', selection_id: 11,
+                side: 'lay', entry_side: 'back', entry_price: 1.03, size: 3,
+                price_at_decision: 1.32, size_available_at_decision: 116.38,
+                locked_at_decision: -0.21, hold_profit: 0.06, loss_if_lose: 3,
+                exit_kind: 'mandatory', exit_reason: 'due_game_persi_di_fila_e_parita',
+                urgente: true, score: 'set 1-0 · game 4-4', mode: 'paper',
+                ...over,
+            },
+        },
+        vivo: { prezzo: 1.32, abbinabile: 116.38, ...vivoOver },
+        etaQuoteS: eta,
+    } as unknown as ReturnType<typeof useControlRoom>['proposte'][number];
+}
+
+describe('uscite — la scheda che decide un ordine vero', () => {
+    it('senza proposte spiega cosa comparirà, invece di restare muta', () => {
+        mVm.mockReturnValue(vm());
+        expect(within(mostra().getByTestId('cr-nastro')).getByText(/Nessuna uscita da decidere/)).toBeTruthy();
+    });
+
+    it('mostra il PREZZO VIVO e il confronto con la proposta', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({}, { prezzo: 1.28 })] }));
+        mostra();
+        expect(within(screen.getByTestId('cr-prezzo-vivo')).getByText(/1,28/)).toBeTruthy();
+        expect(screen.getByTestId('cr-scostamento').textContent).toMatch(/1,32/);
+    });
+
+    it('URGENTE è marcata e lo dice: non approvarla costa', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista()] }));
+        const card = mostra().getByTestId('cr-proposta');
+        expect(card.getAttribute('data-urgente')).toBe('1');
+        expect(card.textContent).toMatch(/non approvarla ha un costo/);
+    });
+
+    it('PREZZO CORRENTE ASSENTE: bottone spento e ragione scritta', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({}, { prezzo: null, abbinabile: null })] }));
+        const { getByTestId } = mostra();
+        expect(getByTestId('cr-proposta-bloccata').textContent).toMatch(/non disponibile/);
+        expect((getByTestId('cr-approva') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('ETÀ DELLE QUOTE IGNOTA: non si piazza', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({}, {}, null)] }));
+        expect(mostra().getByTestId('cr-proposta-bloccata').textContent).toMatch(/età/);
+    });
+
+    it('MERCATO CHE NON ABBINA ABBASTANZA: blocca e spiega la conseguenza', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({ size: 50 }, { abbinabile: 4 })] }));
+        expect(mostra().getByTestId('cr-proposta-bloccata').textContent).toMatch(/annullato per intero/);
+    });
+
+    it('tutto a posto: si può chiudere, e il bottone non è muto', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista()] }));
+        const { getByTestId, queryByTestId } = mostra();
+        expect(queryByTestId('cr-proposta-bloccata')).toBeNull();
+        expect((getByTestId('cr-approva') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('in PAPER un clic basta; in LIVE serve la seconda conferma', async () => {
+        const approva = vi.fn(async () => {});
+        mVm.mockReturnValue(vm({ proposte: [propostaVista()], approva }));
+        fireEvent.click(mostra().getByTestId('cr-approva'));
+        expect(approva).toHaveBeenCalledWith(1);
+
+        cleanup();
+        vi.clearAllMocks();
+        const approvaLive = vi.fn(async () => {});
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({ mode: 'live' })], approva: approvaLive }));
+        const r = mostra();
+        fireEvent.click(r.getByTestId('cr-approva'));
+        expect(approvaLive).not.toHaveBeenCalled();          // il primo clic ARMA soltanto
+        expect(r.getByTestId('cr-conferma-live')).toBeTruthy();
+    });
+
+    it('IGNORA è sempre possibile, anche quando non si può chiudere', () => {
+        const ignora = vi.fn(async () => {});
+        mVm.mockReturnValue(vm({ proposte: [propostaVista({}, { prezzo: null })], ignora }));
+        const b = mostra().getByTestId('cr-ignora') as HTMLButtonElement;
+        expect(b.disabled).toBe(false);
+        fireEvent.click(b);
+        expect(ignora).toHaveBeenCalledWith(1);
+    });
+
+    it('il motivo dell’uscita è in italiano, e l’ingresso è ricordato', () => {
+        mVm.mockReturnValue(vm({ proposte: [propostaVista()] }));
+        const card = mostra().getByTestId('cr-proposta');
+        expect(card.textContent).toMatch(/Perché:/);
+        expect(card.textContent).toMatch(/1,03/);
     });
 });
 
