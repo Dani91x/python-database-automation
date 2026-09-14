@@ -99,6 +99,11 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             favLiveMin: parseNum('Base · quota live min', d.base.favLiveMin, errors),
             favLiveMax: parseNum('Base · quota live max', d.base.favLiveMax, errors),
             scoreConfirmSec: parseNum('Base · conferma punteggio (s)', d.base.scoreConfirmSec, errors),
+            // CERT. 14/09 — "controllo del gioco": pannello LEGACY, non lo
+            // espone. Si tengono i default del motore (oggi OFF) invece di
+            // inventare un valore: vedi la stessa scelta per il tennis sotto.
+            requireControl: DEFAULT_PARAMS.base.requireControl,
+            controlMin: DEFAULT_PARAMS.base.controlMin,
         },
         esatto: {
             minuteMin: parseNum('R.E. · dal minuto', d.esatto.minuteMin, errors),
@@ -107,6 +112,8 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             entryMin: parseNum('R.E. · quota min', d.esatto.entryMin, errors),
             entryMax: parseNum('R.E. · quota max', d.esatto.entryMax, errors),
             scoreConfirmSec: parseNum('R.E. · conferma punteggio (s)', d.esatto.scoreConfirmSec, errors),
+            requireControl: DEFAULT_PARAMS.esatto.requireControl,
+            controlMin: DEFAULT_PARAMS.esatto.controlMin,
         },
         punta: {
             minuteMin: parseNum('Punta · dal minuto', d.punta.minuteMin, errors),
@@ -114,6 +121,8 @@ function fromDraft(d: Draft): { params: SafeStrategyParams | null; errors: strin
             entryMin: parseNum('Punta · quota min', d.punta.entryMin, errors),
             entryMax: parseNum('Punta · quota max', d.punta.entryMax, errors),
             minMinutesAfterGoal: parseNum('Punta · minuti post-gol', d.punta.minMinutesAfterGoal, errors),
+            requireControl: DEFAULT_PARAMS.punta.requireControl,
+            controlMin: DEFAULT_PARAMS.punta.controlMin,
         },
         tennis: {
             setsLeadMin: parseNum('Tennis · set di vantaggio', d.tennis.setsLeadMin, errors),

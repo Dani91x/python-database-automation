@@ -438,6 +438,9 @@ export const ACTIVITY_BASE: Record<string, ActivityMeta> = {
     cancel: { label: 'ANNULLO', cls: WARN },
     no_fill: { label: 'NON ABBINATO', cls: WARN },
     skip: { label: 'SALTO', cls: MUTED },
+    // CERT. 14/09 — misure che il servizio scrive per SE STESSO (es. copertura
+    // del dato di controllo del gioco): informative, mai un'azione sui soldi.
+    diagnosi: { label: 'MISURA', cls: MUTED },
     // chiusure
     cashout: { label: 'CASH OUT', cls: CLOSE },
     cashout_done: { label: 'CASH OUT ESEGUITO', cls: CLOSE },

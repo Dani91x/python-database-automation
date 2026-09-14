@@ -22,6 +22,7 @@ import {
     evaluateBase,
     evaluateEsatto,
     evaluatePunta,
+    controlCheck,
     buildTennisCtx,
     evaluateTennis,
     trackScoreStability,
@@ -709,5 +710,93 @@ describe('entrySize — importo abbinabile alla quota del segnale', () => {
         const ctx = scanCalcio();
         const cands = footballCandidates(ctx, [evaluateBase(ctx, DEFAULT_PARAMS.base)]);
         expect(cands[0].entrySize).toBe(120);
+    });
+});
+
+// ---------------------------------- CERT. 14/09: "controllo del gioco" (calcio)
+// Gemello del test Python `test_cert_2026_09_13.py`, sugli STESSI numeri: i due
+// motori devono dire la stessa cosa sulla stessa riga, altrimenti la pagina
+// mostrerebbe un segnale che il bot non prende.
+describe('controllo del gioco — la condizione INVERTITA del Risultato Esatto', () => {
+    const scanControllo = (over: Partial<Parameters<typeof buildFootballCtxFromScan>[1]> = {}) =>
+        buildFootballCtxFromScan('evC', {
+            event_name: 'Nord FC v Sud FC', home: 'Nord FC', away: 'Sud FC',
+            competition: 'Serie A', open_date: null,
+            inplay: true, mo_market_id: '1.1', mo_status: 'OPEN',
+            odds: {
+                home: { back: 1.28, lay: 1.3, back_size: 152.4, lay_size: 41.26 },
+                draw: { back: 5.0, lay: 5.2, back_size: 10, lay_size: 12 },
+                away: { back: 8.0, lay: 8.4, back_size: 7.5, lay_size: 120 },
+            },
+            minute: 60, score_home: 1, score_away: 0, red_home: 0, red_away: 0,
+            pre_ko: { home: 1.65, draw: 4.0, away: 5.5 },
+            cs: {
+                market_id: '1.2', status: 'OPEN',
+                any_other_home: { back: 44, lay: 45, back_size: 3.5, lay_size: 2.25 },
+                any_other_away: { back: 48, lay: 50, back_size: 1, lay_size: 9 },
+            },
+            ...over,
+        }, 50, 60);
+
+    it('stesso indice, esito OPPOSTO fra Base/Punta e Risultato Esatto', () => {
+        const idx = 0.4; // positivo = preme la CASA
+        expect(controlCheck(idx, 'home', true, 0.1).ok).toBe(true);
+        expect(controlCheck(idx, 'away', true, 0.1).ok).toBe(false);
+        // R.E.: si banca la casa, che sta comandando il gioco -> NON passa
+        expect(controlCheck(idx, 'home', false, 0.1).ok).toBe(false);
+        expect(controlCheck(idx, 'away', false, 0.1).ok).toBe(true);
+    });
+
+    it('dato assente → n/d: mai uno zero inventato, mai un falso positivo', () => {
+        expect(controlCheck(null, 'home', true, 0.1).ok).toBeNull();
+        expect(controlCheck(null, 'home', true, 0.1).value).toBe('n/d');
+        expect(controlCheck(0.4, null, true, 0.1).ok).toBeNull();
+    });
+
+    it('nasce SPENTO; acceso, il check compare e blocca davvero', () => {
+        expect(DEFAULT_PARAMS.base.requireControl).toBe(false);
+        const ctx = scanControllo({ pressure_index: -0.4 }); // preme l'OSPITE
+        expect(ctx.pressureIndex).toBe(-0.4);
+        expect(evaluateBase(ctx, DEFAULT_PARAMS.base).checks.some((c) => c.id === 'control')).toBe(false);
+
+        const acceso = mergeParams({ base: { requireControl: true } }).base;
+        const ev = evaluateBase(ctx, acceso);
+        const control = ev.checks.filter((c) => c.id === 'control');
+        expect(control).toHaveLength(1);
+        expect(control[0].ok).toBe(false);
+        expect(ev.state).toBe('no');
+    });
+
+    it("l'indice arriva dal payload dello scanner, non da un calcolo locale", () => {
+        // nessuna statistica nel payload: lo 0,42 puo' venire SOLO dal campo
+        // pubblicato, che e' lo stesso numero che legge il motore Python.
+        expect(scanControllo({ pressure_index: 0.42 }).pressureIndex).toBe(0.42);
+        expect(scanControllo().pressureIndex).toBeNull();
+    });
+
+    it('la Punta chiede il controllo alla favorita, come la Base', () => {
+        const acceso = mergeParams({ punta: { requireControl: true } }).punta;
+        const ctx = scanControllo({
+            minute: 70, score_home: 3, score_away: 1, pressure_index: 0.4,
+            odds: { home: { back: 1.05, lay: 1.06 }, draw: { back: 20, lay: 22 }, away: { back: 30, lay: 34 } },
+        });
+        const ok = evaluatePunta(ctx, acceso).checks.find((c) => c.id === 'control');
+        expect(ok?.ok).toBe(true);
+        expect(ok?.label).toBe('Controllo del gioco alla favorita');
+        const ctxContro = scanControllo({
+            minute: 70, score_home: 3, score_away: 1, pressure_index: -0.4,
+            odds: { home: { back: 1.05, lay: 1.06 }, draw: { back: 20, lay: 22 }, away: { back: 30, lay: 34 } },
+        });
+        expect(evaluatePunta(ctxContro, acceso).checks.find((c) => c.id === 'control')?.ok).toBe(false);
+    });
+
+    it('il Risultato Esatto etichetta la condizione come rovesciata', () => {
+        const acceso = mergeParams({ esatto: { requireControl: true } }).esatto;
+        const ctx = scanControllo({ pressure_index: 0.4 });
+        const c = evaluateEsatto(ctx, acceso, 'home').checks.find((x) => x.id === 'control');
+        expect(c?.label).toBe('La bancata NON ha il controllo');
+        expect(c?.ok).toBe(false);
+        // bancando l'OSPITE, che sta subendo, la condizione e' soddisfatta
+        expect(evaluateEsatto(ctx, acceso, 'away').checks.find((x) => x.id === 'control')?.ok).toBe(true);
     });
 });

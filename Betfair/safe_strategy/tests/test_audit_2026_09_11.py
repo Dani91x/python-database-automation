@@ -1053,6 +1053,9 @@ def test_h16_catalogo_dei_kind_di_attivita():
     attesi = {
         # ciclo e parametri
         "stop", "error", "params_invalid", "params_clamped",
+        # misure del servizio (CERT. 14/09): copertura del dato di CONTROLLO
+        # del gioco, per sapere se la condizione si puo' accendere
+        "diagnosi",
         # piazzamento
         "place", "place_pending", "place_retry", "place_exhausted",
         "place_exception", "skip", "risk_block", "confirm_failed",

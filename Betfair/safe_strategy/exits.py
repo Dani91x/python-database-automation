@@ -71,6 +71,12 @@ DEFAULT_EXIT_PARAMS: dict[str, Any] = {
     "punta_exit_minute": 83,
     "loss_settle_delay_s": 30,       # manuale: 20-60 s
     "red_card_fav_exit": True,
+    # CERT. 14/09 - uscita "il controllo passa alla sfavorita" (BASE). SPENTA:
+    # e' l'unica uscita che dipende da un dato di cui non conosciamo ancora la
+    # copertura, e chiude posizioni. La soglia e' sulla squadra PROTETTA: -0,20
+    # vuol dire "la favorita subisce nettamente", non "non domina piu'".
+    "base_control_exit": False,
+    "base_control_exit_max": -0.20,
     "tennis_take_profit_next_game": True,
     # CERT. 14/09 — IL TAKE PROFIT NON HA SENSO A QUALSIASI QUOTA.
     # Misurato su 29 uscite reali: sotto 1,03 il profitto massimo e' piu' piccolo
@@ -294,8 +300,13 @@ def merge_exit_params(raw: Any) -> dict[str, Any]:
     out["model_exit_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_exit_p_lose"), 0.10))))
     out["model_take_profit_frac"] = float(min(1.0, max(0.0, _f(out.get("model_take_profit_frac"), 0.8))))
     out["model_free_cashout_p_lose"] = float(min(1.0, max(0.0, _f(out.get("model_free_cashout_p_lose"), 0.005))))
+    # soglia del "controllo passato alla sfavorita": e' un indice in [-1, 1]
+    # orientato sulla squadra protetta, e deve restare NEGATIVO — a zero o sopra
+    # si uscirebbe da una partita in equilibrio, che il manuale non chiede.
+    out["base_control_exit_max"] = float(
+        min(-0.01, max(-1.0, _f(out.get("base_control_exit_max"), -0.20))))
     for k in ("enabled", "red_card_fav_exit", "tennis_take_profit_next_game",
-              "tennis_exit_on_lost_game"):
+              "tennis_exit_on_lost_game", "base_control_exit"):
         out[k] = _bool(out.get(k), DEFAULT_EXIT_PARAMS[k])
     return out
 
@@ -757,6 +768,22 @@ def _track_calcio(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, 
         if (rh, ra) != (prev_rh, prev_ra):
             tr["last_red_ts"] = now_ts
         tr["red_home"], tr["red_away"] = rh, ra
+    # CERT. 14/09 - indice di "controllo del gioco" pubblicato dallo scanner
+    # (``payload.pressure_index``, orientato sulla squadra di CASA). Serve
+    # all'uscita "il controllo passa alla sfavorita" del manuale. Un valore
+    # assente NON azzera quello gia' visto: si tiene l'ultimo buono e lo si
+    # marca, cosi' un buco momentaneo del feed non viene letto come "equilibrio".
+    idx = payload.get("pressure_index")
+    if isinstance(idx, (int, float)) and not isinstance(idx, bool):
+        tr["control_idx"] = float(idx)
+        tr["control_ts"] = now_ts
+        if "entry_control_idx" not in tr:
+            meta_tr = trade.get("meta") or {}
+            e_idx = meta_tr.get("control_idx")
+            tr["entry_control_idx"] = (float(e_idx)
+                                       if isinstance(e_idx, (int, float))
+                                       and not isinstance(e_idx, bool)
+                                       else float(idx))
 
 
 def _track_tennis(tr: dict[str, Any], trade: dict[str, Any], payload: dict[str, Any],
@@ -895,6 +922,30 @@ def _red_to(tr: dict[str, Any], side: str) -> bool:
     return isinstance(cur, int) and isinstance(ent, int) and cur > ent
 
 
+def _controllo_perso(tr: dict[str, Any], params: dict[str, Any]) -> bool:
+    """CERT. 14/09 - "il controllo passa alla sfavorita" (manuale, uscita in
+    profitto della BASE: «esci in pari o piccola perdita, non rischiare oltre»).
+
+    L'indice e' orientato sulla squadra di CASA: lo si gira sulla squadra
+    PROTETTA (``tr["side"]``, la favorita). La condizione e' vera quando la
+    favorita e' passata SOTTO la soglia negativa, cioe' non e' piu' lei a fare
+    la partita. Dato assente -> False: non si esce mai su un dato che non c'e'.
+
+    NASCE SPENTA (``base_control_exit`` = False). Non e' timidezza: e'
+    un'uscita che CHIUDE posizioni su un dato (corner e cartellini dell'IPS) di
+    cui non e' ancora stata misurata la copertura. Accenderla al buio
+    significherebbe chiudere in pari operazioni sane per colpa di un feed
+    silenzioso. Si accende quando la copertura si vede.
+    """
+    if not _bool(params.get("base_control_exit"), False):
+        return False
+    idx = tr.get("control_idx")
+    if not isinstance(idx, (int, float)) or isinstance(idx, bool):
+        return False
+    proprio = float(idx) if str(tr.get("side")) == "home" else -float(idx)
+    return proprio <= float(params.get("base_control_exit_max") or -0.20)
+
+
 def _decide_base(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitDecision]:
     fav, dog, fav_e, dog_e, _ = _calcio_state(tr)
     if fav <= dog:
@@ -903,6 +954,11 @@ def _decide_base(tr: dict[str, Any], params: dict[str, Any]) -> Optional[ExitDec
         return ExitDecision("profit", "favorita_segna_ancora", _after(tr, "last_goal_ts", params))
     if _bool(params.get("red_card_fav_exit"), True) and _red_to(tr, str(tr["side"])):
         return ExitDecision("red_card", "rosso_alla_favorita", _after(tr, "last_red_ts", params))
+    if _controllo_perso(tr, params):
+        # kind "profit": il manuale la mette fra le uscite in PROFITTO («esci in
+        # pari o piccola perdita»), non fra quelle in perdita. Passa quindi dalla
+        # decisione a modello come le altre uscite non forzate.
+        return ExitDecision("profit", "controllo_passato_alla_sfavorita", 0.0)
     minute = tr.get("minute")
     if isinstance(minute, int) and minute >= int(params.get("base_exit_minute") or 80):
         return ExitDecision("time", f"minuto_{minute}_senza_altri_gol", 0.0)

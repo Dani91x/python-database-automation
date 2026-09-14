@@ -2107,7 +2107,10 @@ def test_parametri_decisione_a_modello_e_chiavi_della_scheda():
              "ev_margin": 0.5, "risk_premium_pct": 0.02,
              "residual_retry_s": 30, "residual_max_attempts": 4,
              "model_exit_p_lose": 0.2, "model_take_profit_frac": 0.7,
-             "model_free_cashout_p_lose": 0.01}
+             "model_free_cashout_p_lose": 0.01,
+             # CERT. 14/09: l'uscita "il controllo passa alla sfavorita" del
+             # manuale (BASE), spenta di default e regolabile dalla scheda
+             "base_control_exit": True, "base_control_exit_max": -0.35}
     m = S.resolve_params({"exits": sheet})["exits"]
     for k, v in sheet.items():
         assert m[k] == v, k

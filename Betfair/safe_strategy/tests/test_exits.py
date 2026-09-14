@@ -167,6 +167,88 @@ def test_base_rosso_alla_favorita_esce_alla_sfavorita_no():
 
 
 # ---------------------------------------------------------------------------
+# CERT. 14/09 - BASE: «il controllo passa alla sfavorita -> esci in pari o
+# piccola perdita, non rischiare oltre». Terza uscita in profitto del manuale,
+# che mancava del tutto: fra l'ingresso e il pareggio della sfavorita non
+# esisteva nessuna via d'uscita anticipata.
+# ---------------------------------------------------------------------------
+def _pressione(minute, idx, sh=1, sa=0):
+    f = _calcio(minute, sh, sa)
+    f["pressure_index"] = idx
+    return f
+
+
+def test_base_esce_quando_il_controllo_passa_alla_sfavorita():
+    """La favorita e' la CASA: un indice molto negativo vuol dire che preme
+    l'ospite, cioe' la squadra bancata. La regola va ACCESA."""
+    acceso = XE.merge_exit_params({"base_control_exit": True})
+    _, dec = _step(_trade("base"), [_pressione(60, 0.30), _pressione(70, -0.40)],
+                   params=acceso)
+    assert dec is not None and dec.kind == "profit"
+    assert dec.reason == "controllo_passato_alla_sfavorita"
+    assert dec.not_before_ts == 0.0, "non e' innescata da un gol: nessuna attesa"
+
+
+def test_base_controllo_nasce_SPENTA_e_non_chiude_niente():
+    """Il default non deve cambiare il comportamento di oggi: e' un'uscita che
+    CHIUDE posizioni su un dato di cui non e' ancora misurata la copertura."""
+    assert XE.DEFAULT_EXIT_PARAMS["base_control_exit"] is False
+    _, dec = _step(_trade("base"), [_pressione(60, 0.30), _pressione(70, -0.90)])
+    assert dec is None, "spenta, non deve chiudere nulla"
+
+
+def test_base_controllo_non_esce_se_la_favorita_comanda_o_e_in_equilibrio():
+    acceso = XE.merge_exit_params({"base_control_exit": True})
+    for idx in (0.40, 0.0, -0.19):   # soglia di default: -0,20
+        _, dec = _step(_trade("base"), [_pressione(60, 0.10), _pressione(70, idx)],
+                       params=acceso)
+        assert dec is None, f"uscita non dovuta con indice {idx}"
+
+
+def test_base_controllo_il_verso_dipende_da_CHI_si_protegge():
+    """Stesso indice, esito opposto a seconda di quale squadra e' la favorita.
+    Con la favorita in TRASFERTA (si banca la casa) un indice POSITIVO significa
+    che preme la casa, cioe' la bancata: e' quello il caso da chiudere."""
+    acceso = XE.merge_exit_params({"base_control_exit": True})
+    # favorita casa (si banca l'ospite, selezione 8): +0,40 = la favorita comanda
+    _, dec = _step(_trade("base", "lay", 8), [_pressione(60, 0.10), _pressione(70, 0.40)],
+                   params=acceso)
+    assert dec is None
+    # favorita trasferta (si banca la casa, selezione 7): +0,40 = preme la bancata
+    _, dec = _step(_trade("base", "lay", 7, "0-1"),
+                   [_pressione(60, 0.10, 0, 1), _pressione(70, 0.40, 0, 1)], params=acceso)
+    assert dec is not None and dec.reason == "controllo_passato_alla_sfavorita"
+
+
+def test_base_controllo_senza_il_dato_non_si_chiude_mai():
+    """Dato assente -> nessuna uscita. Un feed muto non deve poter chiudere una
+    posizione sana: e' l'errore opposto e speculare a quello del pre-KO."""
+    acceso = XE.merge_exit_params({"base_control_exit": True})
+    _, dec = _step(_trade("base"), [_calcio(60), _calcio(70)], params=acceso)
+    assert dec is None
+    # e un buco MOMENTANEO non cancella l'ultimo valore buono
+    _, dec = _step(_trade("base"), [_pressione(60, -0.40), _calcio(70)], params=acceso)
+    assert dec is not None and dec.reason == "controllo_passato_alla_sfavorita"
+
+
+def test_base_controllo_la_soglia_resta_negativa_per_costruzione():
+    """A zero o sopra si uscirebbe da una partita in equilibrio, che il manuale
+    non chiede: il clamp lo impedisce anche se l'utente scrive un numero."""
+    assert XE.merge_exit_params({"base_control_exit_max": 0.5})["base_control_exit_max"] == -0.01
+    assert XE.merge_exit_params({"base_control_exit_max": -5})["base_control_exit_max"] == -1.0
+    assert XE.merge_exit_params({"base_control_exit_max": -0.35})["base_control_exit_max"] == -0.35
+
+
+def test_base_controllo_non_scavalca_le_regole_che_vengono_prima():
+    """Un gol che fa perdere ha la precedenza: la perdita si prende subito, non
+    si trasforma in un'uscita "in pari" perche' nel frattempo preme l'altro."""
+    acceso = XE.merge_exit_params({"base_control_exit": True})
+    _, dec = _step(_trade("base"), [_pressione(60, 0.30), _pressione(70, -0.40, 1, 1)],
+                   params=acceso)
+    assert dec is not None and dec.kind == "loss" and dec.reason == "sfavorita_pareggia"
+
+
+# ---------------------------------------------------------------------------
 # ESATTO
 # ---------------------------------------------------------------------------
 def _esatto(sel=501, score="1-0"):

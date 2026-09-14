@@ -101,12 +101,12 @@ const AGG = {
 };
 
 /** partita in corso SENZA riferimento pre-KO: BASE e PUNTA non valutabili */
-function monitor(eventId: string, preMatchMissing: boolean) {
+function monitor(eventId: string, preMatchMissing: boolean, pressureIndex: number | null = 0.2) {
     return {
         eventId,
         updatedAt: secondsAgo(2),
         payload: { event_name: `Partita ${eventId}`, competition: 'Serie A', open_date: '2026-09-13T18:00:00Z', media: null },
-        ctx: { home: 'Casa', away: 'Ospite', minute: 58, scoreHome: 1, scoreAway: 0, inplay: true, preMatch: preMatchMissing ? null : { fav: 1.6 } },
+        ctx: { home: 'Casa', away: 'Ospite', minute: 58, scoreHome: 1, scoreAway: 0, inplay: true, preMatch: preMatchMissing ? null : { fav: 1.6 }, pressureIndex },
         evaluations: [],
         preMatchMissing,
     };
@@ -322,5 +322,56 @@ describe('CERT. 13/09 — i filtri dicono quale è attivo', () => {
         expect(c70).toHaveAttribute('aria-pressed', 'false');
         await user.click(c70);
         expect(screen.getByRole('button', { name: '70%' })).toHaveAttribute('aria-pressed', 'true');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — «implementata» e «attiva» non sono la stessa cosa.
+// La condizione di controllo del gioco esiste nel codice ma nasce SPENTA:
+// finche' lo e', BASE e PUNTA aprono SENZA una condizione che il manuale
+// dichiara vincolante. Il trader deve vederlo dalla tab di default, non
+// dedurlo. Una scheda di segnale non puo' vantare un filtro che non ha girato.
+describe('CERT. 14/09 — il controllo del gioco dichiara di NON essere applicato', () => {
+    it('condizione spenta: lo dice, e dice su quante partite il dato ci sarebbe', async () => {
+        provider.football = [monitor('1', false, 0.3), monitor('2', false, null), monitor('3', false, null)];
+        renderPage();
+        const nota = await screen.findByTestId('safe-controllo-non-applicato');
+        expect(nota).toHaveTextContent('controllo del gioco: NON applicato');
+        expect(nota).toHaveTextContent('dato presente su 1 partite su 3');
+        // sta nella riga KPI, accanto al contatore pre-KO
+        expect(within(screen.getByTestId('safe-kpi-monitored')).getByTestId('safe-controllo-non-applicato')).toBeTruthy();
+    });
+
+    it('condizione accesa e dato completo: nessuna nota (niente rumore)', async () => {
+        mState.mockResolvedValue({
+            control: control({ params: { base: { requireControl: true } } }) as never,
+            trades: [] as never, aggregates: AGG as never, activity: [] as never,
+            params_effective: null as never, operating_day: romeDay(),
+        });
+        provider.football = [monitor('1', false, 0.3)];
+        renderPage();
+        await screen.findByTestId('safe-kpi-monitored');
+        expect(screen.queryByTestId('safe-controllo-non-applicato')).toBeNull();
+        expect(screen.queryByTestId('safe-controllo-dato-assente')).toBeNull();
+    });
+
+    it('condizione accesa ma dato assente: lo dichiara, il calcio non si puo valutare la', async () => {
+        mState.mockResolvedValue({
+            control: control({ params: { punta: { requireControl: true } } }) as never,
+            trades: [] as never, aggregates: AGG as never, activity: [] as never,
+            params_effective: null as never, operating_day: romeDay(),
+        });
+        provider.football = [monitor('1', false, 0.3), monitor('2', false, null)];
+        renderPage();
+        const nota = await screen.findByTestId('safe-controllo-dato-assente');
+        expect(nota).toHaveTextContent('il dato manca su 1 partita su 2');
+        expect(nota).toHaveTextContent('calcio non valutabile');
+    });
+
+    it('nessuna partita in corso: nessuna nota (non si allarma sul vuoto)', async () => {
+        provider.football = [];
+        renderPage();
+        await screen.findByTestId('safe-kpi-monitored');
+        expect(screen.queryByTestId('safe-controllo-non-applicato')).toBeNull();
     });
 });

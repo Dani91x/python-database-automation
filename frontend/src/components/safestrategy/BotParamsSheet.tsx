@@ -205,6 +205,10 @@ const EXIT_NUM_FIELDS: Num[] = [
     { key: 'exits.exit_max_retries', label: 'Tentativi max di chiusura', step: 1, min: 1, max: 20, hint: "chiusure non abbinate: dopo questi tentativi l'uscita diventa OBBLIGATORIA al prezzo disponibile" },
     { key: 'exits.tennis_take_profit_min_odds', label: 'TENNIS · incassa solo da quota', step: 0.01, min: 1, max: 2, hint: 'sotto questa quota il profitto massimo è più piccolo dello spread: chiudere sarebbe una perdita garantita, quindi si porta a termine (lo stop loss resta)' },
     { key: 'exits.tennis_take_profit_min_eur', label: 'TENNIS · profitto minimo per incassare (€)', step: 0.01, min: 0, max: 100, hint: 'si incassa solo se il P&L bloccato, al netto della commissione, è almeno questo: un «take profit» che blocca una perdita non è un take profit' },
+    // CERT. 14/09 — soglia dell'uscita «il controllo è passato alla sfavorita»
+    // (regola del manuale per la BASE). Resta negativa per costruzione: a zero
+    // si uscirebbe da una partita in equilibrio, che il manuale non chiede.
+    { key: 'exits.base_control_exit_max', label: 'BASE · esci se la favorita subisce oltre', step: 0.05, min: -1, max: -0.01, hint: 'indice di controllo del gioco visto dalla favorita: −0,20 vuol dire «la subisce nettamente». Vale solo se la regola qui sotto è accesa' },
 ];
 
 const STRATEGY_FIELDS: Num[] = [
@@ -227,6 +231,12 @@ const STRATEGY_FIELDS: Num[] = [
     { key: 'tennis.backMax', label: 'TENNIS · quota leader MAX', step: 0.01, min: 1 },
     { key: 'tennis.scoreConfirmSec', label: 'TENNIS · punteggio stabile (s)', step: 5, min: 0 },
     { key: 'tennis.setsPlayedMax', label: 'TENNIS · set già giocati MAX', step: 1, min: 0, max: 5, hint: 'il vantaggio di un set deve venire dal solo set disputato (regola del manuale). 0 = controllo spento' },
+    // CERT. 14/09 — soglia dell'indice di "controllo del gioco" (corner in
+    // finestra mobile + cartellini), da 0 a 1. Vale solo se l'interruttore
+    // sotto è acceso.
+    { key: 'base.controlMin', label: 'BASE · soglia controllo del gioco', step: 0.05, min: 0, max: 1, hint: 'quanto la favorita deve premere: 0 = basta non subire, 1 = dominio assoluto' },
+    { key: 'esatto.controlMin', label: 'R. ESATTO · soglia controllo (INVERTITA)', step: 0.05, min: -1, max: 1, hint: 'qui la condizione è ROVESCIATA: la squadra BANCATA deve stare SOTTO questa soglia, cioè non deve comandare il gioco' },
+    { key: 'punta.controlMin', label: 'PUNTA · soglia controllo del gioco', step: 0.05, min: 0, max: 1, hint: 'quanto la favorita deve continuare a spingere' },
 ];
 
 const AUTO_TRADE_TOGGLES: { key: string; label: string; note: string }[] = [
@@ -450,6 +460,15 @@ export function BotParamsSheet({
                 // di perdere TUTTO lo stake in questa strategia.
                 { key: 'tennis.excludeBestOf5', label: 'TENNIS: escludi gli Slam maschili (5 set)', type: 'boolean' as const, hint: 'più rischio fisico, e il ritiro è il solo modo di perdere tutto lo stake; il tabellone femminile dello stesso Slam resta ammesso' },
                 { key: 'tennis.excludeDoubles', label: 'TENNIS: escludi i doppi', type: 'boolean' as const, hint: 'il manuale li esclude' },
+                // CERT. 14/09 — "controllo del gioco". Nasce SPENTO di
+                // proposito: è l'unica condizione che dipende da un dato
+                // (corner e cartellini) che il provider può non mandare, e una
+                // condizione accesa su un dato assente spegne la strategia in
+                // silenzio. Si accende dopo aver letto la copertura, che il
+                // servizio misura da solo e scrive fra le attività come MISURA.
+                { key: 'base.requireControl', label: 'BASE: richiedi il controllo del gioco', type: 'boolean' as const, hint: 'la favorita protetta deve premere (corner e cartellini). Se il dato non arriva la strategia NON entra: accendilo solo dopo aver visto la copertura nelle attività' },
+                { key: 'esatto.requireControl', label: 'R. ESATTO: la bancata NON deve avere il controllo', type: 'boolean' as const, hint: 'condizione INVERTITA rispetto alle altre due: se la squadra bancata comanda il gioco è più probabile che segni ancora, ed è il gol che fa perdere' },
+                { key: 'punta.requireControl', label: 'PUNTA: richiedi il controllo del gioco', type: 'boolean' as const, hint: 'la favorita deve continuare a spingere' },
             ],
         },
         {
@@ -470,6 +489,12 @@ export function BotParamsSheet({
                 { key: 'exits.red_card_fav_exit', label: 'Rosso alla favorita: esci subito', type: 'boolean' as const, hint: 'la quota si muove contro prima del gol' },
                 { key: 'exits.tennis_take_profit_next_game', label: 'Tennis: incassa al game successivo', type: 'boolean' as const, hint: 'il leader tiene il servizio → profitto bloccato' },
                 { key: 'exits.tennis_exit_on_lost_game', label: 'Tennis: esci dopo due game persi o set in parità', type: 'boolean' as const, hint: 'perdita contenuta prima del ribaltone' },
+                // CERT. 14/09 — la terza uscita in profitto che il manuale
+                // chiede per la BASE («il controllo passa alla sfavorita →
+                // esci in pari o piccola perdita, non rischiare oltre»).
+                // SPENTA: è l'unica uscita che CHIUDE posizioni su un dato di
+                // cui non è ancora misurata la copertura.
+                { key: 'exits.base_control_exit', label: 'BASE: esci se il controllo passa alla sfavorita', type: 'boolean' as const, hint: 'regola del manuale. Dipende dal dato di pressione (corner e cartellini): finché la sua copertura non è misurata, accenderla rischia di chiudere in pari operazioni sane per colpa di un feed silenzioso' },
             ],
         },
     ];

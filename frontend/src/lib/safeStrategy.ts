@@ -89,6 +89,13 @@ export interface BaseParams {
     /** anti-blip: il punteggio corrente deve essere osservato stabile da ≥N secondi
      *  (l'in-play service Betfair occasionalmente manda punteggi errati) */
     scoreConfirmSec: number;
+    /** CERT. 14/09 - "controllo del gioco": attiva la condizione della specifica.
+     *  Default OFF: e' una condizione che puo' BLOCCARE gli ingressi quando il
+     *  dato non arriva, e si accende solo dopo aver misurato la copertura. */
+    requireControl: boolean;
+    /** soglia dell'indice di pressione (corner + cartellini), orientato sulla
+     *  squadra guardata: >= soglia = comanda il gioco. */
+    controlMin: number;
 }
 export interface EsattoParams {
     /** soglia "dal minuto in poi" (vedi BaseParams.minuteMin) */
@@ -104,6 +111,13 @@ export interface EsattoParams {
      *  appena superata la soglia minuto: un punteggio IPS errato per pochi
      *  secondi pesa di più) */
     scoreConfirmSec: number;
+    /** CERT. 14/09 - "controllo del gioco": attiva la condizione della specifica.
+     *  Default OFF: e' una condizione che puo' BLOCCARE gli ingressi quando il
+     *  dato non arriva, e si accende solo dopo aver misurato la copertura. */
+    requireControl: boolean;
+    /** soglia dell'indice di pressione (corner + cartellini), orientato sulla
+     *  squadra guardata: >= soglia = comanda il gioco. */
+    controlMin: number;
 }
 export interface PuntaParams {
     /** soglia "dal minuto in poi" (vedi BaseParams.minuteMin) */
@@ -115,6 +129,13 @@ export interface PuntaParams {
     entryMax: number;
     /** minuti di assestamento dopo l'ultimo gol osservato */
     minMinutesAfterGoal: number;
+    /** CERT. 14/09 - "controllo del gioco": attiva la condizione della specifica.
+     *  Default OFF: e' una condizione che puo' BLOCCARE gli ingressi quando il
+     *  dato non arriva, e si accende solo dopo aver misurato la copertura. */
+    requireControl: boolean;
+    /** soglia dell'indice di pressione (corner + cartellini), orientato sulla
+     *  squadra guardata: >= soglia = comanda il gioco. */
+    controlMin: number;
 }
 export interface TennisParams {
     /** vantaggio minimo in set (default: 1 set vinto) */
@@ -169,6 +190,8 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         favLiveMin: 1.2,
         favLiveMax: 1.34,
         scoreConfirmSec: 30,
+        requireControl: false,
+        controlMin: 0.1,
     },
     esatto: {
         minuteMin: 48,
@@ -177,6 +200,8 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         entryMin: 30,
         entryMax: 70,
         scoreConfirmSec: 30,
+        requireControl: false,
+        controlMin: 0.1,
     },
     punta: {
         minuteMin: 66,
@@ -184,6 +209,8 @@ export const DEFAULT_PARAMS: SafeStrategyParams = {
         entryMin: 1.03,
         entryMax: 1.1,
         minMinutesAfterGoal: 3,
+        requireControl: false,
+        controlMin: 0.1,
     },
     tennis: {
         setsLeadMin: 1,
@@ -250,6 +277,8 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             favLiveMin: num(b.favLiveMin, d.base.favLiveMin),
             favLiveMax: num(b.favLiveMax, d.base.favLiveMax),
             scoreConfirmSec: num(b.scoreConfirmSec, d.base.scoreConfirmSec),
+            requireControl: bool(b.requireControl, d.base.requireControl),
+            controlMin: num(b.controlMin, d.base.controlMin),
         },
         esatto: {
             minuteMin: num(e.minuteMin, d.esatto.minuteMin),
@@ -258,6 +287,8 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             entryMin: num(e.entryMin, d.esatto.entryMin),
             entryMax: num(e.entryMax, d.esatto.entryMax),
             scoreConfirmSec: num(e.scoreConfirmSec, d.esatto.scoreConfirmSec),
+            requireControl: bool(e.requireControl, d.esatto.requireControl),
+            controlMin: num(e.controlMin, d.esatto.controlMin),
         },
         punta: {
             minuteMin: num(u.minuteMin, d.punta.minuteMin),
@@ -265,6 +296,8 @@ export function mergeParams(partial: unknown): SafeStrategyParams {
             entryMin: num(u.entryMin, d.punta.entryMin),
             entryMax: num(u.entryMax, d.punta.entryMax),
             minMinutesAfterGoal: num(u.minMinutesAfterGoal, d.punta.minMinutesAfterGoal),
+            requireControl: bool(u.requireControl, d.punta.requireControl),
+            controlMin: num(u.controlMin, d.punta.controlMin),
         },
         tennis: {
             setsLeadMin: num(t.setsLeadMin, d.tennis.setsLeadMin),
@@ -380,6 +413,12 @@ export interface FootballMatchCtx {
      *  dal provider punteggio corrente — in tal caso il check viene SALTATO,
      *  non bloccato (il dato manca per il provider, non per la partita) */
     red: { home: number; away: number } | null;
+    /** CERT. 14/09 - indice di "controllo del gioco" orientato sulla squadra di
+     *  CASA, in [-1, 1] (negativo = preme l'ospite). Lo calcola lo SCANNER e
+     *  viaggia nel payload: questo motore e quello del bot leggono lo stesso
+     *  numero, altrimenti la pagina mostrerebbe un segnale che il bot non
+     *  prende. null = dato non disponibile (mai zero). */
+    pressureIndex: number | null;
 }
 
 /** Estrae il 1X2 pre-match dal payload di get_betfair_odds ({"1x2": {H,D,A|X}}). */
@@ -463,6 +502,9 @@ export function buildFootballCtx(
         scoreStableSinceMinute,
         scoreObservedSec,
         red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
+        // l'indice di controllo lo pubblica lo SCANNER: da live_now non c'e',
+        // e un dato assente resta assente (il check diventa "n/d", non falso).
+        pressureIndex: null,
     };
 }
 
@@ -519,6 +561,7 @@ export function buildFootballCtxFromScan(
         correctScoreOpen: p.cs ? scanMarketOpen(p.cs.status) : null,
         oddsNameMismatch: false, // nomi e selezioni vengono dallo STESSO catalogo
         red: redH !== null && redA !== null ? { home: redH, away: redA } : null,
+        pressureIndex: numOrNull(p.pressure_index),
         scoreStableSinceMinute,
         scoreObservedSec,
     };
@@ -608,6 +651,37 @@ function marketOpenCheck(label: string, open: boolean | null): ConditionCheck {
     };
 }
 
+/**
+ * CERT. 14/09 - check «controllo del gioco» per una squadra ('home'/'away').
+ *
+ * `deveAvere = true`  -> la squadra DEVE dominare (BASE e PUNTA: la favorita
+ *                        protetta deve avere il controllo).
+ * `deveAvere = false` -> la squadra NON deve dominare (RISULTATO ESATTO: la
+ *                        condizione e' INVERTITA, la bancata non deve comandare
+ *                        il gioco, altrimenti e' piu' probabile che segni
+ *                        ancora — ed e' proprio il gol che fa perdere).
+ *
+ * `idx` e' orientato sulla squadra di CASA: positivo = preme la casa.
+ * Dato assente -> `ok: null`: nessun segnale su un dato che non c'e'.
+ * Gemello esatto di `engine.control_check` (Python): i due motori devono dire
+ * la stessa cosa sulla stessa riga.
+ */
+export function controlCheck(
+    idx: number | null,
+    lato: SideId | null,
+    deveAvere: boolean,
+    soglia: number,
+): ConditionCheck {
+    const label = deveAvere ? 'Controllo del gioco alla favorita' : 'La bancata NON ha il controllo';
+    if (idx === null || (lato !== 'home' && lato !== 'away')) {
+        return { id: 'control', label, value: 'n/d', ok: null };
+    }
+    const proprio = lato === 'home' ? idx : -idx;
+    const ok = deveAvere ? proprio >= soglia : proprio <= soglia;
+    const verso = proprio > 0 ? 'preme' : proprio < 0 ? 'subisce' : 'equilibrio';
+    return { id: 'control', label, value: `${verso} (${proprio.toFixed(2)})`, ok };
+}
+
 /** 1 · Calcio Base — banca (lay) la squadra che perde sul mercato 1X2. */
 export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): VariantEvaluation {
     const checks: ConditionCheck[] = [];
@@ -618,6 +692,10 @@ export function evaluateBase(ctx: FootballMatchCtx, params: BaseParams): Variant
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
+    // BASE: "la favorita deve avere il controllo del gioco" (specifica).
+    if (params.requireControl) {
+        checks.push(controlCheck(ctx.pressureIndex, fav, true, params.controlMin));
+    }
 
     // punteggio: la FAVORITA deve essere in vantaggio con uno dei punteggi ammessi
     if (sh === null || sa === null) {
@@ -729,6 +807,12 @@ export function evaluateEsatto(ctx: FootballMatchCtx, params: EsattoParams, side
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
+    // RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
+    // squadra BANCATA non deve avere il controllo. Se comanda il gioco e' piu'
+    // probabile che segni ancora, ed e' proprio il gol che fa perdere.
+    if (params.requireControl) {
+        checks.push(controlCheck(ctx.pressureIndex, side, false, params.controlMin));
+    }
 
     if (sh === null || sa === null) {
         checks.push({ id: 'score', label: `Punteggio ${params.scores.join(' · ')}`, value: 'n/d', ok: null });
@@ -796,6 +880,11 @@ export function evaluatePunta(ctx: FootballMatchCtx, params: PuntaParams): Varia
 
     checks.push({ id: 'inplay', label: 'Partita in-play', value: ctx.inplay ? 'sì' : 'no', ok: ctx.inplay ? true : false });
     checks.push(minuteCheck('minute', ctx.minute, params.minuteMin));
+    // PUNTA: "la favorita deve continuare a spingere" (specifica). Stessa
+    // semantica della BASE: la squadra PROTETTA deve avere il controllo.
+    if (params.requireControl) {
+        checks.push(controlCheck(ctx.pressureIndex, fav, true, params.controlMin));
+    }
 
     if (sh === null || sa === null) {
         checks.push({ id: 'score', label: `In vantaggio ${params.scores.join(' · ')}`, value: 'n/d', ok: null });

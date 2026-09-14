@@ -59,6 +59,7 @@ NDASH = "–"      # range quote (1.4-1.8) e separatore squadre
 EMDASH = "—"     # placeholder nome mancante
 SI = "s" + IGRAVE     # "si" affermativo dei check
 
+
 SPORT_CALCIO = "calcio"
 SPORT_TENNIS = "tennis"
 
@@ -184,6 +185,8 @@ def in_range(v: float, vmin: float, vmax: float) -> bool:
 # ------------------------------------------------------------------- parametri
 DEFAULT_PARAMS: Dict[str, Any] = {
     "base": {
+        "requireControl": False,
+        "controlMin": 0.10,
         "minuteMin": 55,
         "scores": ["1-0", "2-1", "2-0"],
         "favPreMin": 1.4,
@@ -195,6 +198,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "scoreConfirmSec": 30,
     },
     "esatto": {
+        "requireControl": False,
+        "controlMin": 0.10,
         "minuteMin": 48,
         "scores": ["0-0", "1-0", "1-1", "2-1"],
         "maxGoalsLaySide": 1,
@@ -203,6 +208,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
         "scoreConfirmSec": 30,
     },
     "punta": {
+        "requireControl": False,
+        "controlMin": 0.10,
         "minuteMin": 66,
         "scores": ["2-0", "3-1", "3-0"],
         "entryMin": 1.03,
@@ -289,6 +296,8 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {
         "base": {
             "minuteMin": _num(b.get("minuteMin"), d["base"]["minuteMin"]),
+            "requireControl": _bool(b.get("requireControl"), d["base"]["requireControl"]),
+            "controlMin": _num(b.get("controlMin"), d["base"]["controlMin"]),
             "scores": _score_list(b.get("scores"), d["base"]["scores"]),
             "favPreMin": _num(b.get("favPreMin"), d["base"]["favPreMin"]),
             "favPreMax": _num(b.get("favPreMax"), d["base"]["favPreMax"]),
@@ -300,6 +309,8 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         },
         "esatto": {
             "minuteMin": _num(e.get("minuteMin"), d["esatto"]["minuteMin"]),
+            "requireControl": _bool(e.get("requireControl"), d["esatto"]["requireControl"]),
+            "controlMin": _num(e.get("controlMin"), d["esatto"]["controlMin"]),
             "scores": _score_list(e.get("scores"), d["esatto"]["scores"]),
             "maxGoalsLaySide": _num(e.get("maxGoalsLaySide"), d["esatto"]["maxGoalsLaySide"]),
             "entryMin": _num(e.get("entryMin"), d["esatto"]["entryMin"]),
@@ -308,6 +319,8 @@ def merge_params(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         },
         "punta": {
             "minuteMin": _num(u.get("minuteMin"), d["punta"]["minuteMin"]),
+            "requireControl": _bool(u.get("requireControl"), d["punta"]["requireControl"]),
+            "controlMin": _num(u.get("controlMin"), d["punta"]["controlMin"]),
             "scores": _score_list(u.get("scores"), d["punta"]["scores"]),
             "entryMin": _num(u.get("entryMin"), d["punta"]["entryMin"]),
             "entryMax": _num(u.get("entryMax"), d["punta"]["entryMax"]),
@@ -419,6 +432,9 @@ class FootballMatchCtx:
     score_stable_since_minute: Optional[int]
     score_observed_sec: Optional[float]
     red: Optional[Dict[str, int]]
+    # indice di CONTROLLO del gioco in [-1, 1] (positivo = casa preme);
+    # None = nessun dato utilizzabile, MAI zero per finta
+    pressure_index: Optional[float] = None
     correct_score_market_id: Optional[str] = None
     any_other_home_selection_id: Optional[int] = None
     any_other_away_selection_id: Optional[int] = None
@@ -569,6 +585,18 @@ def build_football_ctx_from_scan(
         any_other_away_selection_id=any_away_sid,
         competition=_text_or_none(p.get("competition")),
         event_name=p.get("event_name"),
+        # CERT. 14/09 — "controllo del gioco": la specifica lo chiede per BASE e
+        # PUNTA (la squadra protetta deve averlo) e INVERTITO per il RISULTATO
+        # ESATTO (la bancata NON deve averlo). Il dato arriva da corner e
+        # cartellini dell'IPS; ``pressure_index`` torna None quando non c'e'
+        # nulla di utilizzabile, e None non diventa mai zero.
+        # Si legge SOLO il valore pubblicato dallo scanner (``service.py``, dove
+        # viene calcolato una volta sola con ``pressure.pressure_index``).
+        # NIENTE ricalcolo locale di ripiego: il motore della UI non puo' farlo
+        # — non ha il modulo — e una rete di sicurezza che esiste da un lato
+        # solo non e' una rete, e' una DIVERGENZA. Su una riga vecchia, senza il
+        # campo, i due motori devono dire la stessa cosa: "dato assente".
+        pressure_index=_num(p.get("pressure_index"), None),
     )
 
 
@@ -673,6 +701,31 @@ def leader_side(score_home: int, score_away: int) -> Optional[str]:
 
 
 # ------------------------------------------------------- valutatori CALCIO
+def control_check(idx: Optional[float], lato: Optional[str], *, deve_avere: bool,
+                  soglia: float) -> ConditionCheck:
+    """Check «controllo del gioco» per una squadra ('home'/'away').
+
+    ``deve_avere=True``  -> la squadra DEVE dominare (BASE, PUNTA: la favorita
+                            protetta deve avere il controllo).
+    ``deve_avere=False`` -> la squadra NON deve dominare (RISULTATO ESATTO: la
+                            condizione e' INVERTITA, la bancata non deve
+                            comandare il gioco, altrimenti e' piu' probabile che
+                            segni ancora).
+
+    ``idx`` e' orientato sulla squadra di CASA: positivo = preme la casa.
+    Dato assente -> ``ok=None``: nessun segnale su un dato che non c'e', mai un
+    falso positivo (stessa regola del resto del modulo).
+    """
+    etichetta = ("Controllo del gioco alla favorita" if deve_avere
+                 else "La bancata NON ha il controllo")
+    if idx is None or lato not in ("home", "away"):
+        return ConditionCheck("control", etichetta, "n/d", None)
+    proprio = idx if lato == "home" else -idx
+    ok = proprio >= soglia if deve_avere else proprio <= soglia
+    verso = "preme" if proprio > 0 else ("subisce" if proprio < 0 else "equilibrio")
+    return ConditionCheck("control", etichetta, f"{verso} ({_to_fixed(proprio, 2)})", ok)
+
+
 def minute_check(check_id: str, minute: Optional[int], from_minute: Any) -> ConditionCheck:
     """SOGLIA minuto: vera dal minuto indicato IN POI, mai un intervallo chiuso
     - con un range fisso (es. 48-50') quasi nessun segnale passerebbe; il tetto
@@ -725,6 +778,10 @@ def evaluate_base(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEvalu
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
+    # BASE: "la favorita deve avere il controllo del gioco" (specifica).
+    if params.get("requireControl"):
+        checks.append(control_check(ctx.pressure_index, fav,
+                                    deve_avere=True, soglia=params["controlMin"]))
 
     # punteggio: la FAVORITA deve essere avanti con uno dei punteggi ammessi
     score_label = f"Favorita avanti {scores_label}"
@@ -842,6 +899,12 @@ def evaluate_esatto(ctx: FootballMatchCtx, params: Dict[str, Any], side: str) ->
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
+    # RISULTATO ESATTO: condizione INVERTITA rispetto a BASE e PUNTA — la
+    # squadra BANCATA non deve avere il controllo. Se comanda il gioco e'
+    # piu' probabile che segni ancora, ed e' proprio il gol che fa perdere.
+    if params.get("requireControl"):
+        checks.append(control_check(ctx.pressure_index, side,
+                                    deve_avere=False, soglia=params["controlMin"]))
 
     goals_label = f"{side_label} con max {js_num(params['maxGoalsLaySide'])} gol"
     if sh is None or sa is None:
@@ -918,6 +981,11 @@ def evaluate_punta(ctx: FootballMatchCtx, params: Dict[str, Any]) -> VariantEval
 
     checks.append(_inplay_check("Partita in-play", ctx.inplay))
     checks.append(minute_check("minute", ctx.minute, params["minuteMin"]))
+    # PUNTA: "la favorita deve continuare a spingere" (specifica). Stessa
+    # semantica della BASE: la squadra PROTETTA deve avere il controllo.
+    if params.get("requireControl"):
+        checks.append(control_check(ctx.pressure_index, fav,
+                                    deve_avere=True, soglia=params["controlMin"]))
 
     if sh is None or sa is None:
         checks.append(ConditionCheck("score", f"In vantaggio {scores_label}", "n/d", None))
@@ -1600,6 +1668,24 @@ class SafeEngine:
                 "minute": _int_field(p.get("minute")),
             })
         return out
+
+    def control_data_coverage(self) -> Dict[str, int]:
+        """Quante partite di calcio IN CORSO hanno il dato di CONTROLLO del
+        gioco (corner/cartellini dall'IPS) e quante no, nell'ultimo giro.
+
+        Serve a decidere se il controllo si puo' ACCENDERE: e' una condizione
+        che, se attivata su un dato che non arriva, spegnerebbe in silenzio
+        BASE, ESATTO e PUNTA — esattamente come e' successo con il riferimento
+        pre-KO. Prima si misura, poi si accende."""
+        con = senza = 0
+        for m in getattr(self, "_last_monitors", None) or []:
+            if m.sport != SPORT_CALCIO or not getattr(m.ctx, "inplay", False):
+                continue
+            if getattr(m.ctx, "pressure_index", None) is None:
+                senza += 1
+            else:
+                con += 1
+        return {"con_dato": con, "senza_dato": senza}
 
     def evaluations(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Per event_id: TUTTE le valutazioni di variante (stato + check)."""

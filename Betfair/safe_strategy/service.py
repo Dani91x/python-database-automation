@@ -57,6 +57,7 @@ from Betfair.stream.single_instance import acquire_single_instance_lock
 from Betfair.stream.tennis_scalper.tennis_score import parse_tennis_scores
 
 from . import db as scan_db
+from . import pressure as _pressure
 from . import scanner
 from .stream import MarketStreamPool
 
@@ -1056,6 +1057,15 @@ class Scanner:
                         # ou = [{line, market_id, status, selections…}], btts, ht_result
                         **scanner.split_opportunity_blocks(self._prune_opp_blocks(ev, eid, now)),
                     }
+                    # CERT. 14/09 - "controllo del gioco": indice unico calcolato
+                    # QUI, una volta sola, da corner (finestra mobile sulla
+                    # timeline) e cartellini. Va nel payload perche' il motore
+                    # della UI e quello del bot devono leggere lo STESSO numero:
+                    # se lo ricalcolassero ognuno per conto proprio, la pagina
+                    # potrebbe mostrare un segnale che il bot non prende.
+                    # Deriva solo da campi gia' nella firma (minute, score_raw,
+                    # timeline): non aggiunge una sola riscrittura.
+                    payload["pressure_index"] = _pressure.pressure_index(payload)
                 else:
                     p1, p2 = scanner.split_event_name(meta.get("event_name"))
                     payload = {

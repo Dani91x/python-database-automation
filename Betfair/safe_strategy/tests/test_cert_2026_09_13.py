@@ -7,7 +7,10 @@ regressione generici: sono la prova che quel difetto non puo' tornare.
 """
 from __future__ import annotations
 
+import ast
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -800,3 +803,270 @@ def test_le_esclusioni_sono_spegnibili():
     assert EN.evaluate_tennis(_ctx_tennis("Wimbledon"), par).state == "signal"
     assert not any(c.id in ("bestOf", "setsPlayed")
                    for c in EN.evaluate_tennis(_ctx_tennis("Wimbledon"), par).checks)
+
+
+# ---------------------------------------------------------------------------
+# 9. CERT. 14/09 — "controllo del gioco": la condizione INVERTITA del Risultato
+#    Esatto, e il numero unico che i due motori devono leggere
+# ---------------------------------------------------------------------------
+def _payload_controllo(idx, **extra):
+    p = {
+        "event_name": "Nord FC v Sud FC",
+        "home": "Nord FC",
+        "away": "Sud FC",
+        "inplay": True,
+        "minute": 60,
+        "score_home": 1,
+        "score_away": 0,
+        "pre_ko": {"home": 1.6, "draw": 3.8, "away": 5.5},
+    }
+    if idx is not None:
+        p["pressure_index"] = idx
+    p.update(extra)
+    return p
+
+
+def test_il_controllo_e_invertito_nel_risultato_esatto():
+    """La trappola della specifica: BASE e PUNTA vogliono che la squadra
+    PROTETTA comandi il gioco; il RISULTATO ESATTO vuole l'opposto — se la
+    squadra BANCATA comanda e' piu' probabile che segni ancora, ed e' proprio il
+    gol che fa perdere. Stesso indice, esito opposto."""
+    idx = 0.40  # positivo = preme la CASA
+    # BASE / PUNTA: la favorita e' la casa -> ha il controllo -> passa
+    assert EN.control_check(idx, "home", deve_avere=True, soglia=0.10).ok is True
+    assert EN.control_check(idx, "away", deve_avere=True, soglia=0.10).ok is False
+    # RISULTATO ESATTO: si banca la casa, che sta comandando -> NON passa
+    assert EN.control_check(idx, "home", deve_avere=False, soglia=0.10).ok is False
+    assert EN.control_check(idx, "away", deve_avere=False, soglia=0.10).ok is True
+
+
+def test_senza_il_dato_di_controllo_non_si_inventa_uno_zero():
+    """Dato assente -> ok=None ("n/d"), mai un falso positivo e mai uno zero
+    finto: e' la regola del modulo, ed e' esattamente come e' nato il disastro
+    di ``pre_ko`` (uno scarto muto su un dato che non c'era)."""
+    for lato in ("home", "away"):
+        c = EN.control_check(None, lato, deve_avere=True, soglia=0.10)
+        assert c.ok is None and c.value == "n/d"
+    # squadra ignota (favorita non determinabile): stessa cosa
+    assert EN.control_check(0.40, None, deve_avere=True, soglia=0.10).ok is None
+
+
+def test_il_controllo_nasce_spento_e_acceso_blocca_davvero():
+    """Nasce SPENTO di proposito: accendere una condizione il cui dato puo' non
+    arrivare spegnerebbe tre strategie in silenzio. Ma quando si accende deve
+    contare: il check compare, e con il controllo dalla parte sbagliata la
+    variante non produce segnale."""
+    par = EN.DEFAULT_PARAMS["base"]
+    assert par["requireControl"] is False
+    ctx = EN.build_football_ctx_from_scan("ev1", _payload_controllo(-0.40), 50, 60)
+    assert ctx.pressure_index == -0.40
+    # spento: il check non esiste proprio
+    assert not any(c.id == "control" for c in EN.evaluate_base(ctx, par).checks)
+    # acceso: c'e', ed e' rosso (preme l'OSPITE, la favorita e' la casa)
+    acceso = EN.merge_params({"base": {"requireControl": True}})["base"]
+    ev = EN.evaluate_base(ctx, acceso)
+    control = [c for c in ev.checks if c.id == "control"]
+    assert len(control) == 1 and control[0].ok is False
+    assert ev.state == "no"
+
+
+def test_il_numero_del_controllo_e_quello_PUBBLICATO_dallo_scanner():
+    """PARITA' DEI DUE MOTORI. L'indice lo calcola lo scanner UNA volta e lo
+    mette nel payload: cosi' il motore del bot e quello della pagina leggono
+    per forza lo stesso numero. Se ognuno lo ricalcolasse per conto suo, la UI
+    potrebbe mostrare un segnale che il bot non prende.
+    Qui il payload non ha ne' statistiche ne' timeline: il ricalcolo locale
+    darebbe None, quindi lo 0,42 puo' venire SOLO dal campo pubblicato."""
+    ctx = EN.build_football_ctx_from_scan("ev1", _payload_controllo(0.42), 50, 60)
+    assert ctx.pressure_index == 0.42
+
+
+def test_su_una_riga_vecchia_i_due_motori_dicono_LA_STESSA_cosa():
+    """NIENTE ricalcolo locale di ripiego, nemmeno qui.
+
+    Una riga senza il campo pubblicato porta tutti i dati grezzi da cui
+    l'indice si calcolerebbe: e' proprio la tentazione. Ma il motore della UI
+    non puo' ricalcolarlo — non ha il modulo — quindi una rete di sicurezza che
+    esiste da un lato solo non e' una rete, e' una DIVERGENZA: la pagina
+    direbbe "n/d" e il bot userebbe un numero. Su una riga vecchia i due devono
+    dire la stessa cosa, e la cosa vera e' "dato assente"."""
+    payload = _payload_controllo(
+        None,
+        score_raw={"score": {"home": {"numberOfCorners": 8, "numberOfYellowCards": 0},
+                             "away": {"numberOfCorners": 2, "numberOfYellowCards": 2}}},
+    )
+    assert "pressure_index" not in payload
+    # i dati grezzi CI SONO e basterebbero: il ricalcolo darebbe un numero
+    from Betfair.safe_strategy import pressure as _P
+    assert _P.pressure_index(payload) is not None
+    # ...e il motore lo ignora lo stesso
+    ctx = EN.build_football_ctx_from_scan("ev1", payload, 50, 60)
+    assert ctx.pressure_index is None
+
+
+def test_lo_scanner_pubblica_lindice_nel_payload_calcio():
+    """Il campo deve esistere davvero nel feed, altrimenti la parita' e' solo
+    una buona intenzione: qui si controlla il punto in cui viene scritto."""
+    import inspect
+    src = inspect.getsource(SV)
+    assert 'payload["pressure_index"] = _pressure.pressure_index(payload)' in src
+
+
+# ---------------------------------------------------------------------------
+# 10. CERT. 14/09 - PARITA' STRUTTURALE DEI DUE MOTORI
+#     Finora la parita' dei numeri fra il motore Python (il bot) e quello
+#     TypeScript (la pagina) era mantenuta A MANO, con due suite gemelle. Due
+#     verifiche indipendenti, lo stesso giorno, hanno trovato una divergenza
+#     introdotta dalla correzione stessa che doveva garantirla. Questo test la
+#     rende MECCANICA: legge i default dal sorgente TypeScript e li confronta
+#     con i propri. Se qualcuno cambia una banda da un lato solo, diventa rosso.
+# ---------------------------------------------------------------------------
+_TS_ENGINE = (Path(__file__).resolve().parents[3]
+              / "frontend" / "src" / "lib" / "safeStrategy.ts")
+
+
+def _ts_default_params() -> dict:
+    """Estrae ``DEFAULT_PARAMS`` dal sorgente TS e lo rende un dict Python.
+
+    Niente esecuzione di JavaScript: si isola il letterale e lo si traduce con
+    ``ast.literal_eval`` dopo aver normalizzato le differenze di sintassi
+    (chiavi nude, ``true``/``false``, virgole finali, commenti).
+    """
+    src = _TS_ENGINE.read_text(encoding="utf-8")
+    inizio = src.index("export const DEFAULT_PARAMS")
+    inizio = src.index("{", inizio)
+    livello, fine = 0, None
+    for i in range(inizio, len(src)):
+        if src[i] == "{":
+            livello += 1
+        elif src[i] == "}":
+            livello -= 1
+            if livello == 0:
+                fine = i + 1
+                break
+    assert fine is not None, "letterale DEFAULT_PARAMS non chiuso"
+    blocco = src[inizio:fine]
+    blocco = re.sub(r"//[^\n]*", "", blocco)                 # commenti
+    blocco = re.sub(r"(\w+)\s*:", r"'\1':", blocco)          # chiavi nude
+    blocco = re.sub(r",(\s*[}\]])", r"\1", blocco)           # virgole finali
+    blocco = re.sub(r"\btrue\b", "True", blocco)
+    blocco = re.sub(r"\bfalse\b", "False", blocco)
+    return ast.literal_eval(blocco)
+
+
+def test_i_due_motori_hanno_esattamente_gli_stessi_numeri():
+    """Ogni parametro di strategia deve valere LO STESSO nei due motori.
+
+    Se divergono, la pagina mostra un segnale che il bot non prende (o
+    viceversa): il trader vede una checklist verde su una operazione che non
+    verra' mai aperta, e non ha modo di accorgersene.
+    """
+    ts = _ts_default_params()
+    py = EN.DEFAULT_PARAMS
+    # ``stake`` esiste solo in Python (la UI non piazza ordini): e' dichiarato
+    # in testa a engine.py come differenza voluta.
+    assert set(ts) == set(py) - {"stake"}, "le VARIANTI non coincidono"
+    for variante in sorted(ts):
+        assert set(ts[variante]) == set(py[variante]), (
+            f"{variante}: chiavi diverse fra i due motori")
+        for chiave in sorted(ts[variante]):
+            assert ts[variante][chiave] == py[variante][chiave], (
+                f"{variante}.{chiave}: TS={ts[variante][chiave]!r} "
+                f"PY={py[variante][chiave]!r}")
+
+
+# ---------------------------------------------------------------------------
+# 11. CERT. 14/09 - I BORDI CHE NESSUN TEST FISSAVA
+#     Tre verifiche indipendenti contro la specifica hanno trovato, ognuna per
+#     conto suo, la stessa cosa: alcune bande del manuale non erano coperte da
+#     nessun test. Non erano sbagliate - erano INDIFESE. Azzerando
+#     ``dogPreMin/Max`` o allargando la banda della Punta, la suite restava
+#     tutta verde e il bot cambiava le partite su cui entra.
+# ---------------------------------------------------------------------------
+def _ctx_base(**over):
+    from Betfair.safe_strategy.tests.test_engine import ctx_of
+    return ctx_of(**over)
+
+
+def test_banda_della_sfavorita_pre_match_4_8_isolata():
+    """Manuale: sfavorita pre-match 4-8. Il test che c'era usava una fixture
+    che violava CONTEMPORANEAMENTE la banda della favorita, quindi non provava
+    niente su questa. Qui la favorita resta sempre dentro 1,40-1,80."""
+    par = EN.DEFAULT_PARAMS["base"]
+
+    def stato(away):
+        pre = {"home": 1.65, "draw": 4.0, "away": away}
+        return EN.evaluate_base(_ctx_base(pre_match=pre), par)
+
+    # dentro la banda, estremi inclusi
+    assert stato(4.0).state == "signal"
+    assert stato(8.0).state == "signal"
+    # appena fuori, da una parte e dall'altra
+    assert stato(3.9).state == "no"
+    assert stato(8.1).state == "no"
+    # e il check che si accende e' proprio quello, non un altro
+    fuori = [c for c in stato(8.1).checks if c.id == "dogPre"]
+    assert len(fuori) == 1 and fuori[0].ok is False
+    assert all(c.ok is not False for c in stato(8.1).checks if c.id != "dogPre")
+
+
+def test_banda_di_entrata_della_punta_1_03_1_10_isolata():
+    """Manuale: quota di entrata 1.03-1.10. Tutte le fixture della Punta usavano
+    1,06 - un valore comodamente in mezzo: i due bordi non erano mai stati
+    toccati, e spostarli non faceva fallire niente."""
+    par = EN.DEFAULT_PARAMS["punta"]
+
+    def stato(back):
+        return EN.evaluate_punta(
+            _ctx_base(minute=70, sh=2, sa=0, fav_back=back,
+                      fav_lay=round(back + 0.01, 2)), par)
+
+    assert stato(1.03).state == "signal"   # bordo inferiore incluso
+    assert stato(1.10).state == "signal"   # bordo superiore incluso
+    assert stato(1.02).state == "no"
+    assert stato(1.11).state == "no"
+    fuori = [c for c in stato(1.11).checks if c.id == "entry"]
+    assert len(fuori) == 1 and fuori[0].ok is False
+
+
+def test_tutti_i_punteggi_della_punta_non_solo_il_2_0():
+    """Manuale: 2-0, 3-1, 3-0. Solo il 2-0 era testato; gli altri due potevano
+    sparire dalla lista senza che nessun test se ne accorgesse."""
+    par = EN.DEFAULT_PARAMS["punta"]
+
+    def stato(sh, sa):
+        return EN.evaluate_punta(
+            _ctx_base(minute=70, sh=sh, sa=sa, fav_back=1.06, fav_lay=1.07), par)
+
+    for sh, sa in ((2, 0), (3, 1), (3, 0)):
+        assert stato(sh, sa).state == "signal", f"{sh}-{sa} rifiutato"
+    # margine di UN gol: il manuale non lo ammette (un back non ha rete)
+    for sh, sa in ((1, 0), (2, 1), (3, 2)):
+        assert stato(sh, sa).state == "no", f"{sh}-{sa} accettato per sbaglio"
+
+
+def test_il_controllo_invertito_dentro_la_valutazione_del_risultato_esatto():
+    """L'inversione era fissata solo sullo unit di ``control_check`` e, end to
+    end, solo sulla BASE. Qui si prova dentro ``evaluate_esatto``: e' la
+    variante in cui l'inversione puo' essere copiata per sbaglio dalla Base, ed
+    e' anche quella che gira davvero in produzione."""
+    acceso = EN.merge_params({"esatto": {"requireControl": True}})["esatto"]
+    ctx = EN.build_football_ctx_from_scan("ev1", _payload_controllo(0.40), 50, 60)
+
+    def check(lato):
+        trovati = [c for c in EN.evaluate_esatto(ctx, acceso, lato).checks
+                   if c.id == "control"]
+        assert len(trovati) == 1
+        return trovati[0]
+
+    # preme la CASA: bancare la casa e' VIETATO, bancare l'ospite e' permesso
+    assert check("home").ok is False
+    assert check("away").ok is True
+    assert check("home").label == "La bancata NON ha il controllo"
+    # ...ed e' il verso OPPOSTO a quello della Base sullo stesso indice
+    base_acceso = EN.merge_params({"base": {"requireControl": True}})["base"]
+    base_control = [c for c in EN.evaluate_base(ctx, base_acceso).checks
+                    if c.id == "control"]
+    assert len(base_control) == 1
+    assert base_control[0].ok is True      # la favorita e' la casa, e preme
+    assert base_control[0].label == "Controllo del gioco alla favorita"

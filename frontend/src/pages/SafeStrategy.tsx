@@ -418,6 +418,32 @@ export default function SafeStrategy() {
     // tab di default, accanto a «Partite monitorate».
     // ------------------------------------------------------------------
     const preKoMissing = useMemo(() => football.filter((m) => m.preMatchMissing).length, [football]);
+    // ------------------------------------------------------------------
+    // CERT. 14/09 — CONTROLLO DEL GIOCO: dichiarare che NON sta filtrando.
+    // La specifica lo mette allo stesso livello di punteggio e minutaggio per
+    // BASE e PUNTA (e invertito per il RISULTATO ESATTO). Il codice ce l'ha, ma
+    // nasce SPENTO finche' non si misura la copertura del dato IPS: quindi oggi
+    // il bot puo' aprire operazioni che il manuale avrebbe rifiutato.
+    // «Implementata» e «attiva» non sono la stessa cosa, e il trader deve
+    // vedere quale delle due sta guardando: una scheda di segnale non puo'
+    // vantare un filtro che non ha girato.
+    const controllo = useMemo(() => {
+        const vive = football.filter((m) => m.ctx.inplay);
+        // `typeof === 'number'` e non `!== null`: una riga montata da una fonte
+        // che non conosce il campo lo lascia `undefined`, e `undefined !== null`
+        // conterebbe come dato PRESENTE — cioe' direbbe al trader il contrario.
+        const conDato = vive.filter((m) => typeof m.ctx.pressureIndex === 'number').length;
+        // quando il bot esiste le SUE condizioni sono la fonte unica (la
+        // sincronizzazione sopra le riversa sul radar, ma e' un effetto: per un
+        // render i due valori possono divergere, e qui si parla di soldi).
+        const fonte = bot.available ? botStrategyParams : localParams;
+        const attivo = Boolean(
+            fonte.base.requireControl ||
+            fonte.esatto.requireControl ||
+            fonte.punta.requireControl,
+        );
+        return { attivo, conDato, vive: vive.length };
+    }, [football, localParams, botStrategyParams, bot.available]);
     // PARTITE MONITORATE = quelle che lo SCANNER dichiara di seguire in questo
     // momento: lo stesso numero del chip di salute e delle pagine Omega/Mike.
     // Le righe montate da questa schermata sono solo la copia locale del feed e
@@ -1100,6 +1126,27 @@ export default function SafeStrategy() {
                                         >
                                             {preKoMissing} {preKoMissing === 1 ? 'partita' : 'partite'} senza riferimento pre-KO
                                             {' '}→ BASE e PUNTA non valutabili {preKoMissing === 1 ? 'su questa' : 'su queste'}
+                                        </b>
+                                    )}
+                                    {controllo.vive > 0 && !controllo.attivo && (
+                                        <b
+                                            className="block text-amber-300/90"
+                                            data-testid="safe-controllo-non-applicato"
+                                            title="Il manuale chiede, per BASE e PUNTA, che la squadra protetta abbia il controllo del gioco, e per il RISULTATO ESATTO l'opposto (la bancata NON deve averlo). La condizione esiste nel codice ma è SPENTA finché non si misura quanto spesso il dato (corner e cartellini dall'in-play Betfair) arriva davvero: accenderla su un dato assente spegnerebbe tre strategie in silenzio. Finché è spenta, il bot può aprire operazioni che il manuale avrebbe rifiutato. Si accende da «Parametri del bot»."
+                                        >
+                                            controllo del gioco: NON applicato
+                                            {' '}→ dato presente su {controllo.conDato} {controllo.vive === 1 ? 'partita' : 'partite'} su {controllo.vive}
+                                        </b>
+                                    )}
+                                    {controllo.attivo && controllo.vive > controllo.conDato && (
+                                        <b
+                                            className="block text-amber-300/90"
+                                            data-testid="safe-controllo-dato-assente"
+                                            title="La condizione di controllo del gioco è ATTIVA, ma su queste partite il dato (corner e cartellini) non arriva: la condizione risulta «n/d» e le varianti calcio non sono valutabili — scartate per dato mancante, non perché le condizioni siano false."
+                                        >
+                                            controllo del gioco attivo, ma il dato manca su
+                                            {' '}{controllo.vive - controllo.conDato} {controllo.vive - controllo.conDato === 1 ? 'partita' : 'partite'} su {controllo.vive}
+                                            {' '}→ calcio non valutabile {controllo.vive - controllo.conDato === 1 ? 'su quella' : 'su quelle'}
                                         </b>
                                     )}
                                 </span>

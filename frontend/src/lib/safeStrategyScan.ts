@@ -89,6 +89,11 @@ export interface CalcioScanPayload {
     score_away: number | null;
     red_home: number | null;
     red_away: number | null;
+    /** CERT. 14/09 - indice di "controllo del gioco" in [-1, 1], orientato sulla
+     *  squadra di CASA (negativo = preme l'ospite). Lo calcola lo SCANNER da
+     *  corner (finestra mobile sulla timeline) e cartellini, cosi' la UI e il
+     *  bot leggono lo STESSO numero. Assente sulle righe scritte prima. */
+    pressure_index?: number | null;
     pre_ko: { home: number; draw: number; away: number; captured_at?: string } | null;
     cs: {
         market_id: string | null;
