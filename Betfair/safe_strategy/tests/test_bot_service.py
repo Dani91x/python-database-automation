@@ -3428,3 +3428,150 @@ def test_col_database_rotto_la_posizione_NON_resta_senza_uscita():
     errori = [p for k2, p in db.activity if k2 == "error"
               and p.get("reason") == "proposta_chiusura_fallita"]
     assert errori and errori[0]["critical"] is True
+
+
+# ===========================================================================
+# CORSIA PREFERENZIALE DELLE CHIUSURE (cert. 14/09)
+#
+# Misurato dal vivo sulla richiesta #10: fra il clic del trader e l'ordine
+# partito passavano 4,2 secondi NOSTRI, spesi ad aspettare che il ciclo
+# arrivasse al punto (c). Qui si difende il rimedio: le chiusure passano
+# prima, le aperture NON vengono toccate dalla passata veloce.
+# ===========================================================================
+
+def _richiesta(db, kind, payload=None):
+    db._id += 1
+    db.requests.append({"id": db._id, "kind": kind, "status": "pending",
+                        "payload": payload or {}, "result": None,
+                        "created_at": S._now().isoformat()})
+    return db._id
+
+
+def test_corsia_veloce_non_tocca_le_aperture():
+    """Una `place` in coda resta PENDING: la vedra' la passata completa.
+
+    Se la passata veloce la marcasse 'processing' senza eseguirla, resterebbe
+    appesa fino allo scadere del timeout — un ordine perso, non un ordine
+    ritardato."""
+    db = FakeDB()
+    rid = _richiesta(db, "place", {"event_id": "E1"})
+    n = S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                           params=S.resolve_params(None), now=S._now(),
+                           solo_chiusure=True)
+    assert n == 0
+    assert db.requests[-1]["status"] == "pending", "la place e' stata toccata"
+    assert db.requests[-1]["id"] == rid
+
+
+def test_corsia_veloce_esegue_le_chiusure(monkeypatch):
+    """Una `cashout` in coda viene eseguita dalla passata veloce."""
+    db = FakeDB()
+    _richiesta(db, "cashout", {"trade_id": 1})
+    visto = {}
+
+    def finto_cashout(**kw):
+        visto["payload"] = kw.get("payload")
+        return {"ok": True}
+
+    monkeypatch.setattr(S, "_request_cashout", finto_cashout)
+    n = S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                           params=S.resolve_params(None), now=S._now(),
+                           solo_chiusure=True)
+    assert n == 1
+    assert visto["payload"] == {"trade_id": 1}
+    assert db.requests[-1]["status"] == "done"
+
+
+def test_corsia_veloce_non_ha_bisogno_del_contesto_di_rischio(monkeypatch):
+    """Una chiusura si esegue con `risk_ctx=None`: nessun cap la riguarda.
+
+    E' la ragione per cui puo' stare PRIMA di `build_risk_ctx` nel ciclo."""
+    db = FakeDB()
+    _richiesta(db, "cashout", {"trade_id": 7})
+    monkeypatch.setattr(S, "_request_cashout", lambda **kw: {"ok": True})
+    monkeypatch.setattr(S, "build_risk_ctx",
+                        lambda *a, **k: pytest.fail("la chiusura ha costruito il rischio"))
+    assert S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                              params=S.resolve_params(None), now=S._now(),
+                              risk_ctx=None, solo_chiusure=True) == 1
+
+
+def test_passata_completa_riprende_la_place_lasciata_indietro(monkeypatch):
+    """Dopo la passata veloce, quella completa esegue la `place` rimasta."""
+    db = FakeDB()
+    _richiesta(db, "place", {"event_id": "E1"})
+    _richiesta(db, "cashout", {"trade_id": 2})
+    monkeypatch.setattr(S, "_request_cashout", lambda **kw: {"ok": True})
+    fatte = []
+    monkeypatch.setattr(S, "_request_place",
+                        lambda **kw: fatte.append(kw.get("payload")) or {"ok": True})
+    par = S.resolve_params(None)
+    S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                       params=par, now=S._now(), solo_chiusure=True)
+    assert fatte == [], "la veloce ha aperto"
+    S.process_requests(db=db, market=SimpleNamespace(), rows_by_event={},
+                       params=par, now=S._now(), risk_ctx={})
+    assert fatte == [{"event_id": "E1"}]
+    assert [r["status"] for r in db.requests] == ["done", "done"]
+
+
+# --------------------------------------------------- attesa interrompibile
+
+def test_attesa_senza_posizioni_non_sbircia(monkeypatch):
+    """Banco vuoto = nessuna query in piu'. Il costo si paga solo se serve."""
+    monkeypatch.setattr(S._real_db, "pending_requests",
+                        lambda **k: pytest.fail("ha sbirciato a banco vuoto"))
+    dormito = []
+    monkeypatch.setattr(S.time, "sleep", lambda s: dormito.append(s))
+    assert S._attesa_interrompibile(2.0, aperte=0) is False
+    assert dormito == [2.0]
+
+
+def test_attesa_si_interrompe_appena_arriva_una_richiesta(monkeypatch):
+    """Con una posizione aperta, il clic sveglia il ciclo invece di aspettarlo."""
+    chiamate = {"n": 0}
+
+    def coda(**k):
+        chiamate["n"] += 1
+        return [{"id": 1}] if chiamate["n"] >= 2 else []
+
+    monkeypatch.setattr(S._real_db, "pending_requests", coda)
+    dormito = []
+    monkeypatch.setattr(S.time, "sleep", lambda s: dormito.append(s))
+    monkeypatch.setattr(S.time, "monotonic", lambda: 0.0)   # il tempo non scorre
+    assert S._attesa_interrompibile(2.0, aperte=1) is True
+    # si e' svegliato alla seconda sbirciata, non dopo i 2 secondi pieni
+    assert sum(dormito) <= 0.5 + 1e-9
+    assert chiamate["n"] == 2
+
+
+def test_attesa_un_guasto_nel_sbirciare_non_ferma_il_bot(monkeypatch):
+    """Se la sbirciata esplode si torna al comportamento di prima, non si muore."""
+    def esplode(**k):
+        raise RuntimeError("db giu'")
+
+    monkeypatch.setattr(S._real_db, "pending_requests", esplode)
+    monkeypatch.setattr(S.time, "sleep", lambda s: None)
+    monkeypatch.setattr(S.time, "monotonic", lambda: 0.0)
+    assert S._attesa_interrompibile(2.0, aperte=1) is False
+
+
+def test_attesa_non_si_sveglia_due_volte_per_la_stessa_richiesta(monkeypatch):
+    """Una richiesta incagliata non deve far girare un ciclo ogni 250 ms.
+
+    E' la forma esatta del guasto del 13/09: il DB messo in ginocchio da un
+    ciclo che si ripete senza concludere niente."""
+    S._SVEGLIA_FATTA["req_id"] = 0
+    monkeypatch.setattr(S._real_db, "pending_requests", lambda **k: [{"id": 42}])
+    dormito = []
+    monkeypatch.setattr(S.time, "sleep", lambda s: dormito.append(s))
+    t = {"v": 0.0}
+    monkeypatch.setattr(S.time, "monotonic", lambda: t["v"])
+    # prima volta: si sveglia
+    assert S._attesa_interrompibile(2.0, aperte=1) is True
+    # la richiesta e' ancora li': la seconda attesa va fino in fondo
+    def scorre(s):
+        dormito.append(s)
+        t["v"] += s
+    monkeypatch.setattr(S.time, "sleep", scorre)
+    assert S._attesa_interrompibile(2.0, aperte=1) is False

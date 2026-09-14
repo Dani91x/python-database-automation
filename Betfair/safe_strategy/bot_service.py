@@ -1153,12 +1153,35 @@ def _request_age_s(row: dict[str, Any], now: datetime) -> Optional[float]:
     return max(0.0, (now - ts).total_seconds())
 
 
+#: I ``kind`` che CHIUDONO una posizione. Sono gli unici ammessi in corsia
+#: preferenziale: riducono l'esposizione, non hanno bisogno del contesto di
+#: rischio (i cap valgono sulle APERTURE) e sono quelli su cui il trader ha
+#: appena cliccato per bloccare un profitto o una perdita.
+CHIUSURE = ("cashout", "cancel")
+
+
 def process_requests(*, db, market, rows_by_event: dict[str, dict],
                      params: dict[str, Any], now: datetime,
                      risk_ctx: Optional[dict] = None,
-                     control_mode: str = "", degradato: bool = False) -> int:
+                     control_mode: str = "", degradato: bool = False,
+                     solo_chiusure: bool = False) -> int:
+    """Esegue la coda delle richieste della UI.
+
+    ``solo_chiusure`` = CORSIA PREFERENZIALE (cert. 14/09). Misurato dal vivo
+    sulla richiesta #10: fra il clic del trader e l'ordine partito passavano
+    **4,2 secondi nostri**, spesi ad aspettare che il ciclo arrivasse al punto
+    (c) dopo coda flumine, riconciliazione, settlement, contesto di rischio,
+    cecita' del feed e combo rotte — tutte fasi che possono chiamare Betfair.
+    Con questa modalita' le CHIUSURE si eseguono prima di tutto il resto.
+
+    Le APERTURE restano dove sono, e non e' una svista: un piazzamento ha
+    bisogno del contesto di rischio condiviso del ciclo, perche' due aperture
+    nello stesso giro devono vedersi a vicenda per rispettare i cap. Una
+    chiusura no: non esiste un cap che una chiusura possa sfondare.
+    """
     stale = getattr(db, "fail_stale_processing", None)
-    if callable(stale):
+    if callable(stale) and not solo_chiusure:
+        # una sola volta per ciclo: la passata veloce non ripaga la query
         try:
             stale()
         except Exception as ex:  # noqa: BLE001
@@ -1170,11 +1193,16 @@ def process_requests(*, db, market, rows_by_event: dict[str, dict],
         return 0
     n = 0
     for r in reqs or []:
+        kind = str(r.get("kind") or "")
+        # La passata veloce lascia le altre richieste ESATTAMENTE come sono:
+        # niente 'processing', o la passata completa non le vedrebbe piu' e
+        # resterebbero appese fino allo scadere del timeout.
+        if solo_chiusure and kind not in CHIUSURE:
+            continue
         try:
             db.set_request_status(r["id"], "processing")
         except Exception:  # noqa: BLE001
             continue
-        kind = str(r.get("kind") or "")
         payload = r.get("payload") or {}
         # CERT. 13/09 — una richiesta VECCHIA non si esegue: si scarta.
         # ``fail_stale_processing`` copriva solo lo stato 'processing'; una
@@ -5199,6 +5227,10 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
 # risponde: senza, un'indisponibilita' di Supabase lasciava le posizioni aperte
 # senza nessuno che le guardasse.
 _LAST_CONTROL: dict[str, Any] = {}
+#: Posizioni aperte viste dall'ultimo ciclo. Serve SOLO a decidere se vale la
+#: pena sbirciare la coda mentre si aspetta: a banco vuoto non c'e' niente da
+#: chiudere, quindi non parte nessuna query in piu'.
+_APERTE: dict[str, int] = {"n": 0}
 # Oltre questo tempo l'ultimo control noto non e' piu' una base accettabile:
 # i parametri possono essere cambiati (soglie di uscita, commissione, tentativi)
 # proprio perche' l'utente stava reagendo a qualcosa. Si continua comunque a
@@ -5275,6 +5307,20 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     # partita si parli. Costo: nessuna lettura in piu'.
     remember_event_names(rows)
 
+    # (a-0) CORSIA PREFERENZIALE DELLE CHIUSURE — cert. 14/09.
+    # Quando il trader clicca «chiudi», il prezzo che ha visto sulla scheda
+    # vive sul mercato, non sul nostro orologio: ogni decimo di secondo speso
+    # qui e' un decimo in cui quel prezzo puo' andarsene. Prima questa fase
+    # stava al punto (c), dopo coda flumine + riconciliazione + settlement +
+    # contesto di rischio + cecita' del feed + combo rotte: 4,2 secondi
+    # misurati sulla richiesta #10, tutti nostri e tutti invisibili.
+    # Le chiusure passano PRIMA. Le aperture restano al punto (c), dove hanno
+    # il contesto di rischio condiviso che serve ai cap.
+    n_req_veloci = process_requests(db=db, market=market, rows_by_event=rows_by_event,
+                                    params=params, now=now, risk_ctx=None,
+                                    control_mode=mode, degradato=control_degradato,
+                                    solo_chiusure=True)
+
     # (a) coda flumine — SEMPRE (anche a bot fermo: mai posizioni nude)
     n_polled = poll_flumine(db=db, params=params, now=now, market=market)
     # (a-bis) pending SENZA marker flumine (esito REST ignoto) → stato reale Betfair
@@ -5306,9 +5352,10 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         open_rows=risk_ctx.get("open_all") if not risk_ctx.get("unavailable") else None)
 
     # (c) richieste della UI — SEMPRE
-    n_requests = process_requests(db=db, market=market, rows_by_event=rows_by_event,
-                                  params=params, now=now, risk_ctx=risk_ctx,
-                                  control_mode=mode, degradato=control_degradato)
+    n_requests = n_req_veloci + process_requests(
+        db=db, market=market, rows_by_event=rows_by_event,
+        params=params, now=now, risk_ctx=risk_ctx,
+        control_mode=mode, degradato=control_degradato)
 
     # (c-bis) uscite automatiche — SEMPRE (posizioni già aperte), prima dei nuovi ingressi
     n_exits = process_exits(db=db, market=market, rows_by_event=rows_by_event,
@@ -5417,6 +5464,9 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
     # ``safe_strategy_control`` fallisse o fosse lenta, il trader vedrebbe
     # comunque i numeri di questo giro. La scrittura resta e resta obbligatoria:
     # il socket e' un'accelerazione, non una sostituzione.
+    # quante posizioni ci sono da chiudere: decide se l'attesa del prossimo
+    # ciclo va sorvegliata (vedi ``_attesa_interrompibile``)
+    _APERTE["n"] = int(stats.get("trades_open") or 0)
     _pubblica_stato(stats, now.isoformat())
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())
@@ -5562,6 +5612,56 @@ def _pubblica_stato(stats: dict, now_iso: str) -> None:
         logger.debug("[safe.bot] publish stato KO: %s", str(ex)[:120])
 
 
+#: Ogni quanto si sbircia la coda mentre si aspetta il prossimo ciclo.
+#: Vale SOLO quando ci sono posizioni aperte, cioe' quando un clic e'
+#: davvero possibile: a banco vuoto non parte nemmeno una query in piu'.
+_SBIRCIATA_S = 0.25
+#: L'ultima richiesta per cui si e' gia' anticipato il ciclo. Senza questo, una
+#: richiesta che per qualunque motivo non riuscisse a uscire dallo stato
+#: 'pending' farebbe svegliare il bot a ogni sbirciata: un ciclo completo ogni
+#: 250 ms contro il database. E' la forma esatta del guasto del 13/09 (budget
+#: IO esaurito), e va resa impossibile, non improbabile.
+_SVEGLIA_FATTA: dict[str, int] = {"req_id": 0}
+
+
+def _attesa_interrompibile(interval: float, aperte: int) -> bool:
+    """Dorme fino a ``interval``, ma si sveglia appena arriva una richiesta.
+
+    Il ciclo a 2 secondi e' giusto per il lavoro di fondo e va lasciato com'e':
+    e' la cadenza con cui il DB regge (13/09, budget IO esaurito). Ma un clic
+    del trader non e' lavoro di fondo — e farlo aspettare in media un secondo
+    prima ancora di COMINCIARE e' un secondo regalato al mercato.
+
+    Con almeno una posizione aperta si sbircia la coda ogni 250 ms con la query
+    piu' piccola possibile (una riga, un indice) e si rientra subito nel ciclo.
+    Senza posizioni aperte non c'e' niente da chiudere, quindi si dorme e basta:
+    zero letture in piu'. Ritorna True se si e' usciti in anticipo.
+    """
+    if aperte <= 0 or interval <= _SBIRCIATA_S:
+        time.sleep(max(interval, 0.0))
+        return False
+    scaduta = time.monotonic() + interval
+    while True:
+        restante = scaduta - time.monotonic()
+        if restante <= 0:
+            return False
+        time.sleep(min(_SBIRCIATA_S, restante))
+        try:
+            righe = _real_db.pending_requests(limit=1) or []
+        except Exception as ex:  # noqa: BLE001 — sbirciare non deve mai fermare il bot
+            logger.debug("[safe.bot] sbirciata coda KO: %s", str(ex)[:120])
+            return False
+        if not righe:
+            continue
+        rid = int(righe[0].get("id") or 0)
+        if rid and rid == _SVEGLIA_FATTA["req_id"]:
+            # gia' anticipato per questa richiesta e sta ancora li': il ciclo
+            # normale se ne occupera'. Si dorme, non si martella.
+            continue
+        _SVEGLIA_FATTA["req_id"] = rid
+        return True
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -5628,7 +5728,10 @@ def main() -> None:
                 _segnala_errore_di_ciclo(ex)
             else:
                 _pulisci_errore_di_ciclo()
-            time.sleep(max(interval, 1.0))
+            # l'attesa si interrompe appena il trader clicca: il ciclo dopo
+            # parte dalla corsia preferenziale delle chiusure.
+            if _attesa_interrompibile(max(interval, 1.0), _APERTE.get("n", 0)):
+                logger.info("[safe.bot] richiesta in coda: ciclo anticipato")
     finally:
         try:
             lock.close()
