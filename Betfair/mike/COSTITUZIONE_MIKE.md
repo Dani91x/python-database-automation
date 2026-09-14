@@ -1439,8 +1439,19 @@ una per una — in paper si provocano senza conseguenze, ed è lì che vanno pro
    aggregati continuano a mescolare le due modalità. La migrazione fa `DROP` delle vecchie
    funzioni a zero argomenti: se in futuro qualcuno riapplicasse `mike_bot_v2.sql`, le due
    firme coesisterebbero e ogni chiamata diventerebbe ambigua — **riapplicare poi questa**.
-3. **Lo storico non filtra per modalità** (`get_mike_daily`, `get_mike_day_trades`): il
-   giorno della transizione sommerà euro veri e simulati, e per sempre.
+3. ~~**Lo storico non filtra per modalità**~~ — **CHIUSO il 14/09**, ma la migrazione
+   `migrations/mike_storico_per_modalita_2026-09-14.sql` **VA ANCORA APPLICATA**.
+   `get_mike_daily` passava `NULL` come filtro e `get_mike_day_trades` pure: nessuna
+   delle due guardava `mike_trades.mode`. Ora prendono `p_mode`, e senza argomento
+   usano la modalità **corrente del bot** — mai «tutte», perché sommare paper e live in
+   silenzio era proprio il difetto. Stesso alfabeto degli aggregati
+   (`mike_aggregati_per_modalita`) e di Safe (`safe_strategy_paper_live`): chi legge una
+   pagina non deve chiedersi se quel bot filtra o no.
+   **Perché è diventato urgente il 14/09**: da oggi la piattaforma tiene soldi veri e
+   soldi simulati *nello stesso momento* (tennis in live, calcio in paper). Finché Mike
+   resta in paper il rischio è zero; il giorno in cui passa in live, senza questa
+   migrazione il «P&L totale» resta inquinato **per sempre** dai mesi di paper che lo
+   precedono — e non è un errore che si corregge dopo, è un dato che si perde.
 4. **Il runner flumine è fermo dal 2 settembre.** Non serve al percorso REST di Mike, ma
    finché è fermo la coda non è una via di riserva.
 5. **`MIKE_LIVE_ENABLED` va acceso a mano** quando si decide davvero di operare. Se il bot
