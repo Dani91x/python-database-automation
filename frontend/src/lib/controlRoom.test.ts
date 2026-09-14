@@ -9,7 +9,8 @@ import { describe, it, expect } from 'vitest';
 import {
     freschezza, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
     haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
-    marca, costruisciGiornata, totaliGiornata, etaSecondi, SENZA_CAMPIONATO, TARGET_MIN_EUR,
+    marca, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili,
+    SENZA_CAMPIONATO, TARGET_MIN_EUR,
     type PartitaFeedLike,
 } from './controlRoom';
 import type { PnlTradeLike } from './eventGroups';
@@ -130,6 +131,35 @@ describe('latenzaQuoteS — quanto è vecchio il prezzo su cui si opera', () => 
 
     it('non torna mai negativa se l’orologio dello scanner è avanti', () => {
         expect(latenzaQuoteS(feed({ odds_ts_ms: T0 + 5000 }), T0)).toBe(0);
+    });
+});
+
+describe('statoQuote — «fermo» e «vecchio» sono due cose diverse', () => {
+    it('prezzo recente: fresco, a prescindere dallo scanner', () => {
+        expect(statoQuote(3, 2)).toBe('fresco');
+        expect(statoQuote(3, 9999)).toBe('fresco');
+    });
+
+    it('prezzo vecchio MA scanner vivo = FERMO: il mercato non si muove, il prezzo è corrente', () => {
+        expect(statoQuote(120, 4)).toBe('fermo');
+        expect(statoQuote(600, 15)).toBe('fermo');
+    });
+
+    it('prezzo vecchio E scanner fermo = VECCHIO: non sappiamo cosa fa il mercato', () => {
+        expect(statoQuote(120, 300)).toBe('vecchio');
+        expect(statoQuote(120, null)).toBe('vecchio');
+    });
+
+    it('età del prezzo assente = IGNOTO, mai fresco', () => {
+        expect(statoQuote(null, 2)).toBe('ignoto');
+        expect(statoQuote(undefined, 2)).toBe('ignoto');
+    });
+
+    it('su FERMO si opera (è il prezzo corrente); su VECCHIO e IGNOTO no', () => {
+        expect(quoteAffidabili('fresco')).toBe(true);
+        expect(quoteAffidabili('fermo')).toBe(true);
+        expect(quoteAffidabili('vecchio')).toBe(false);
+        expect(quoteAffidabili('ignoto')).toBe(false);
     });
 });
 

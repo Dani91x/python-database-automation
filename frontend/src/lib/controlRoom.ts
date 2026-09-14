@@ -75,6 +75,38 @@ export function affidabilePerPiazzare(f: Freschezza): boolean {
     return f === 'fresca' || f === 'lenta';
 }
 
+/**
+ * Che cosa dire davvero di un prezzo, incrociando la sua età con quella dello
+ * SCANNER. È la differenza fra «non lo guardiamo» e «non si muove».
+ *
+ *   `fresco`  il prezzo è recente: nessun dubbio
+ *   `fermo`   il prezzo è vecchio **ma lo scanner è vivo**: il mercato non si
+ *             muove, e quel prezzo è ancora quello corrente
+ *   `vecchio` il prezzo è vecchio **e anche lo scanner** lo è: non sappiamo
+ *             cosa stia facendo il mercato → fail-closed
+ *   `ignoto`  manca un'età: vale come `vecchio` per ogni decisione sui soldi
+ */
+export type StatoQuote = 'fresco' | 'fermo' | 'vecchio' | 'ignoto';
+
+export function statoQuote(
+    etaQuoteS: number | null | undefined,
+    etaScannerS: number | null | undefined,
+): StatoQuote {
+    const q = freschezza(etaQuoteS);
+    if (q === 'ignota') return 'ignoto';
+    if (q === 'fresca' || q === 'lenta') return 'fresco';
+    // il prezzo è vecchio: decide lo SCANNER
+    const sc = freschezza(etaScannerS);
+    if (sc === 'fresca' || sc === 'lenta') return 'fermo';
+    return 'vecchio';
+}
+
+/** Su un prezzo `fermo` si può ancora operare — è il prezzo corrente, solo che
+ *  nessuno lo muove. Su `vecchio` e `ignoto` no. */
+export function quoteAffidabili(s: StatoQuote): boolean {
+    return s === 'fresco' || s === 'fermo';
+}
+
 // ------------------------------------------------------------- stato partita
 
 /** Il minimo che serve per collocare una partita nella giornata. Lo soddisfa
@@ -149,10 +181,17 @@ export function punteggio(p: PartitaFeedLike | null | undefined): string | null 
 }
 
 /**
- * LATENZA DELLE QUOTE in secondi: da quanto è vecchio il prezzo su cui il bot
- * sta per operare. `null` = non lo sappiamo, e vale fail-closed come ogni altra
- * età assente. Diversa dall'età della RIGA (`etaFeedS`), che dice quando il
- * feed ha scritto l'ultimo cambiamento.
+ * LATENZA DELLE QUOTE in secondi. `null` = non lo sappiamo, fail-closed.
+ *
+ * ⚠️ ATTENZIONE A COSA SIGNIFICA DAVVERO — segnalato dall'utente il 14/09 su una
+ * partita che mostrava «2 min». Lo scanner scrive **solo quando qualcosa
+ * cambia**: quindi questo numero dice «da quanto quel prezzo non si muove»,
+ * NON «da quanto non lo guardiamo». Su un mercato poco scambiato una riga ferma
+ * da minuti è **corretta**: quel prezzo È il prezzo corrente.
+ *
+ * I due casi si distinguono solo incrociando con la vitalità del PRODUTTORE
+ * (`statoQuote` qui sotto). Chiamare «vecchio» un prezzo semplicemente fermo è
+ * lo stesso errore che ha fatto credere morto un runner che stava benissimo.
  */
 export function latenzaQuoteS(p: PartitaFeedLike | null | undefined, nowMs: number): number | null {
     const t = p?.odds_ts_ms;
@@ -340,9 +379,11 @@ export interface PartitaGiornata {
     controlloDisponibile: boolean;
     etaFeedS: number | null;
     freschezza: Freschezza;
-    /** latenza delle QUOTE: quanto è vecchio il prezzo su cui si opererebbe */
+    /** da quanto quel prezzo non si muove (≠ «da quanto non lo guardiamo») */
     latenzaQuoteS: number | null;
     freschezzaQuote: Freschezza;
+    /** il giudizio vero, incrociato con la vitalità dello scanner */
+    statoQuote: StatoQuote;
     soldi: PartitaSoldi | null;
     target: TargetPartita | null;
     avanzamento: number | null;
@@ -373,8 +414,10 @@ export function costruisciGiornata(args: {
     obiettivo?: number | null;
     realizzato?: number | null;
     targetServizio?: number | null;
+    /** età dello SCANNER: serve a distinguere «prezzo fermo» da «prezzo vecchio» */
+    etaScannerS?: number | null;
 }): GruppoCampionato[] {
-    const { righe, soldi, nowMs, obiettivo, realizzato, targetServizio } = args;
+    const { righe, soldi, nowMs, obiettivo, realizzato, targetServizio, etaScannerS } = args;
 
     // Le partite UTILI per spalmare l'obiettivo sono quelle su cui si può
     // ancora operare: le chiuse non possono più rendere niente, e contarle
@@ -401,6 +444,7 @@ export function costruisciGiornata(args: {
             freschezza: freschezza(eta),
             latenzaQuoteS: lat,
             freschezzaQuote: freschezza(lat),
+            statoQuote: statoQuote(lat, etaScannerS ?? null),
             soldi: s,
             target,
             avanzamento: avanzamentoPartita(s?.netPnl ?? null, target?.valore ?? null),

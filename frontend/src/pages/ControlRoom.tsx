@@ -31,7 +31,7 @@ import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { romeDay, dayLabel } from '@/lib/dailyHistory';
 import {
     BOT_LABEL, affidabilePerPiazzare,
-    type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza,
+    type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza, type StatoQuote,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
@@ -72,6 +72,30 @@ const FASE_RUNNER: Record<RunnerPhase, string> = {
     off: 'spento',
     idle: 'vivo, in attesa',
     streaming: 'in streaming',
+};
+
+/**
+ * COSA DIRE DI UN PREZZO — segnalato dall'utente il 14/09 su «Quote 2 min».
+ *
+ * Lo scanner scrive **solo quando qualcosa cambia**: l'età della riga dice «da
+ * quanto quel prezzo non si muove», NON «da quanto non lo guardiamo». Su un
+ * mercato poco scambiato un prezzo fermo da minuti è **corretto e corrente** —
+ * chiamarlo «vecchio» è la stessa bugia che ha fatto credere morto un runner
+ * che stava benissimo. I due casi si distinguono solo incrociando con la
+ * vitalità dello SCANNER.
+ */
+const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
+    fresco: (s) => s,
+    fermo: (s) => `fermo da ${s}`,
+    vecchio: (s) => `vecchio ${s}`,
+    ignoto: () => 'età ignota',
+};
+
+const QUOTE_CLS: Record<StatoQuote, string> = {
+    fresco: 'text-emerald-400',
+    fermo: 'text-white/60',        // NON è un allarme: è un mercato che non si muove
+    vecchio: 'text-orange-400',
+    ignoto: 'text-orange-400',
 };
 
 const FRESCHEZZA_CLS: Record<Freschezza, string> = {
@@ -413,10 +437,18 @@ function RigaPartita({ p }: { p: PartitaGiornata }) {
                     cls={net == null ? 'text-white/40' : net >= 0 ? 'text-emerald-400' : 'text-red-400'} />
                 {p.stato === 'live' && (
                     <span className="flex flex-col" data-testid="cr-latenza"
-                        title="da quanto è vecchio il prezzo su cui si opererebbe (istante in cui lo scanner ha letto le quote)">
-                        <span className="text-[9px] uppercase tracking-wider text-white/40">Quote</span>
-                        <span className={`font-mono text-[13px] font-semibold ${FRESCHEZZA_CLS[p.freschezzaQuote]}`}>
-                            {p.latenzaQuoteS == null ? DASH : fmtAge(p.latenzaQuoteS)}
+                        title={
+                            p.statoQuote === 'fermo'
+                                ? 'il prezzo non cambia da questo tempo, ma lo scanner sta guardando: è il prezzo CORRENTE di Betfair'
+                                : p.statoQuote === 'vecchio'
+                                    ? 'prezzo vecchio E scanner fermo: non sappiamo cosa stia facendo il mercato'
+                                    : 'da quando il prezzo è cambiato l’ultima volta'
+                        }>
+                        <span className="text-[9px] uppercase tracking-wider text-white/40">Prezzo</span>
+                        <span className={`font-mono text-[13px] font-semibold ${QUOTE_CLS[p.statoQuote]}`}>
+                            {p.latenzaQuoteS == null
+                                ? QUOTE_TESTO[p.statoQuote]('')
+                                : QUOTE_TESTO[p.statoQuote](fmtAge(p.latenzaQuoteS))}
                         </span>
                     </span>
                 )}

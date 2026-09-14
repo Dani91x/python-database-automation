@@ -304,7 +304,11 @@ export function useControlRoom(): ControlRoomVM {
             updated_at: r.updated_at,
         })),
         soldi, nowMs, obiettivo, realizzato, targetServizio,
-    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio]);
+        // serve a distinguere «prezzo fermo» da «prezzo vecchio»: lo scanner
+        // scrive solo quando qualcosa cambia, quindi l'eta' della riga NON dice
+        // «da quanto non guardiamo».
+        etaScannerS: etaSecondi(scanStatus?.updated_at, nowMs),
+    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio, scanStatus?.updated_at]);
 
     const totali = useMemo(() => totaliGiornata(giornata), [giornata]);
 
