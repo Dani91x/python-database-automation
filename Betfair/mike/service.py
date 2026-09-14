@@ -2610,10 +2610,39 @@ def _cadenza_pubblicazione(ev: Dict[str, Any], params: Optional[Dict[str, Any]])
 
 
 def _scrivi_evento(db: Any, ev: Dict[str, Any]) -> None:
+    """Scrive la scheda della partita. Se non ci riesce, lo GRIDA.
+
+    14/09 — questa funzione ha nascosto per DODICI GIORNI il difetto piu' grave
+    della storia del bot. Il vincolo del database rifiutava gli stati
+    ``LIVE_KO_GREEN`` e ``LIVE_SECOND_ENTRY`` (nati nel motore il 13/09 e mai
+    aggiunti alla migrazione), l'upsert falliva, e qui il rifiuto veniva
+    annotato con un ``logger.warning`` fra migliaia di righe di log.
+    Conseguenza: l'uscita al fischio d'inizio non e' MAI partita — zero righe,
+    zero partite in quello stato, mai — e ogni partita entrata in gioco con una
+    posizione aperta e' rimasta scoperta fino al fischio finale.
+
+    Non poter scrivere lo stato di una partita CON UNA POSIZIONE APERTA e'
+    money-critical: il bot perde la memoria di dove si trova, e al giro
+    successivo ricomincia da capo — per sempre, perche' i contatori che
+    dovrebbero far scadere le finestre non vengono mai salvati.
+
+    Quindi: log CRITICO, e una riga di attivita' che arriva in pagina. Chi
+    guarda deve poterlo vedere senza leggere i log del processo.
+    """
     try:
         db.upsert_event(ev)
     except Exception as ex:  # noqa: BLE001
-        logger.warning("[mike] upsert_event %s KO: %s", ev.get("event_id"), str(ex)[:160])
+        eid = str(ev.get("event_id") or "?")
+        aperta = bool(ev.get("positions")) and str(ev.get("state")) not in E.TERMINAL_STATES
+        logger.critical("[mike] SCRITTURA DI STATO FALLITA su %s (stato=%s, posizione aperta=%s): %s "
+                        "— il bot non ricorda dove si trova e ricomincera' da capo",
+                        eid, ev.get("state"), aperta, str(ex)[:200])
+        try:
+            db.log("error", {"reason": "stato_non_scritto", "state": ev.get("state"),
+                             "posizione_aperta": aperta, "err": str(ex)[:200],
+                             "critical": True}, eid)
+        except Exception:  # noqa: BLE001 — se non si puo' nemmeno loggare, resta il critical
+            pass
 
 
 def _persist(db: Any, ev: Dict[str, Any], before_sig: str, *,
