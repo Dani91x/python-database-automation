@@ -32,6 +32,10 @@ import {
 } from '@/lib/controlRoom';
 import { isSettled, isErrorRow, type PnlTradeLike } from '@/lib/eventGroups';
 import {
+    catenaOperazione, catenaSchermo,
+    type Salto, type CatenaSchermo, type TempiTrade, type EsecuzioneTrade,
+} from '@/lib/controlRoomCatena';
+import {
     fetchProposte, subscribeProposte, approvaProposta, ignoraProposta,
     prezzoVivo, ordinaProposte, SLIPPAGE_PCT_DEFAULT,
     type PropostaChiusura, type PrezzoVivo,
@@ -149,6 +153,16 @@ export interface ControlRoomVM {
      * Ognuna porta con sé il PREZZO VIVO preso dal feed — non quello congelato
      * nella proposta — e l'età di quel prezzo.
      */
+    /**
+     * LA CATENA FINO ALLO SCHERMO: quanto è vecchio quello che il trader sta
+     * guardando ADESSO. Si prende il peggiore dei tre canali (feed · spinta dal
+     * bot · ultima lettura dal database), non il migliore: la pagina è vecchia
+     * quanto il suo pezzo più vecchio.
+     */
+    schermo: CatenaSchermo;
+    /** la catena dell'ULTIMA operazione: da Betfair al fill, salto per salto */
+    ultimaCatena: { salti: Salto[]; trade: number | null; evento: string | null };
+
     proposte: PropostaVista[];
     slippagePct: number;
     setSlippagePct: (v: number) => void;
@@ -171,6 +185,9 @@ export function useControlRoom(): ControlRoomVM {
     const [safe, setSafe] = useState<SafeState | null>(null);
     const [runner, setRunner] = useState<RunnerState | null>(null);
     const [proposte, setProposte] = useState<PropostaChiusura[]>([]);
+    /** istante dell'ultima lettura completa dal database: serve a dire al
+     *  trader quanto è vecchio quello che vede, non quanto è vecchio il feed. */
+    const [lettoAlle, setLettoAlle] = useState<number | null>(null);
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
@@ -210,6 +227,7 @@ export function useControlRoom(): ControlRoomVM {
                 .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
+            setLettoAlle(Date.now());
             setCaricamento(false);
         });
         return () => { vivo = false; };
@@ -408,6 +426,38 @@ export function useControlRoom(): ControlRoomVM {
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
+    // ── LA CATENA ────────────────────────────────────────────────────────────
+    const schermo = useMemo(() => {
+        const spinte = (['omega', 'safe', 'mike'] as const)
+            .map((b) => ultimoPush[b]).filter((v): v is number => v != null);
+        return catenaSchermo({
+            feedMs: scanStatus?.updated_at ? nowMs - Date.parse(scanStatus.updated_at) : null,
+            // la spinta PIÙ VECCHIA fra i bot vivi: se uno tace, la pagina è
+            // vecchia quanto lui
+            pushMs: spinte.length ? nowMs - Math.min(...spinte) : null,
+            letturaMs: lettoAlle == null ? null : nowMs - lettoAlle,
+        });
+    }, [scanStatus?.updated_at, ultimoPush, lettoAlle, nowMs]);
+
+    const ultimaCatena = useMemo(() => {
+        const vivi = (safe?.trades ?? []).filter((t) => t.mode === 'live');
+        // la più recente che PORTA i tempi: una senza non dice niente
+        const conTempi = vivi.find((t) => {
+            const m = (t.meta ?? {}) as Record<string, unknown>;
+            return m.tempi != null || m.esecuzione != null;
+        }) ?? vivi[0] ?? null;
+        const m = (conTempi?.meta ?? {}) as Record<string, unknown>;
+        return {
+            salti: catenaOperazione(
+                m.tempi as TempiTrade | null,
+                m.esecuzione as EsecuzioneTrade | null,
+                (m.t6_fill_ms as number | null) ?? null,
+            ),
+            trade: conTempi?.id ?? null,
+            evento: conTempi?.event_name ?? null,
+        };
+    }, [safe?.trades]);
+
     const feedEtaS = etaSecondi(scanStatus?.updated_at, nowMs);
 
     return {
@@ -421,6 +471,7 @@ export function useControlRoom(): ControlRoomVM {
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
+        schermo, ultimaCatena,
         proposte: proposteVista,
         slippagePct, setSlippagePct, approva, ignora,
         feedSorgente: scanStatus?.payload?.source ?? null,

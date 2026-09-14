@@ -56,6 +56,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         freni: { daily_loss_stop: -50, loss_stop_active: false },
         runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
         mikeRestingLive: true,
+        schermo: { feedMs: 800, pushMs: 1200, letturaMs: 4000, schermoMs: 4000 },
+        ultimaCatena: { salti: [], trade: null, evento: null },
         proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
         approva: vi.fn(), ignora: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
@@ -344,6 +346,53 @@ describe('uscite — la scheda che decide un ordine vero', () => {
         const card = mostra().getByTestId('cr-proposta');
         expect(card.textContent).toMatch(/Perché:/);
         expect(card.textContent).toMatch(/1,03/);
+    });
+});
+
+// ------------------------------------------------------------------- catena
+
+describe('catena dei tempi - da Betfair al pixel', () => {
+    const salti = [
+        { id: 'feed', nome: 'Betfair al feed', ms: 120, spiega: '', nostro: true },
+        { id: 'lettura', nome: 'feed al bot', ms: 780, spiega: '', nostro: true },
+        { id: 'decisione', nome: 'bot alla decisione', ms: 50, spiega: '', nostro: true },
+        { id: 'invio', nome: 'decisione all invio', ms: 50, spiega: '', nostro: true },
+        { id: 'betfair', nome: 'Betfair risponde', ms: 180, spiega: '', nostro: false },
+        { id: 'fill', nome: 'risposta al fill', ms: 20, spiega: '', nostro: true },
+    ];
+
+    it('mostra quanto e vecchio quello che il trader vede', () => {
+        mVm.mockReturnValue(vm());
+        expect(mostra().getByTestId('cr-schermo').textContent).toMatch(/4[.,]0 s/);
+    });
+
+    it('senza istanti lo DICHIARA, invece di mostrare degli zero', () => {
+        mVm.mockReturnValue(vm());
+        const el = mostra().getByTestId('cr-catena-operazione');
+        expect(el.textContent).toMatch(/nessun istante registrato/);
+        expect(el.textContent).not.toMatch(/0 ms/);
+    });
+
+    it('con gli istanti mostra i salti e indica il PIU LENTO', () => {
+        mVm.mockReturnValue(vm({ ultimaCatena: { salti, trade: 285, evento: 'X v Y' } }));
+        const r = mostra();
+        const el = r.getByTestId('cr-catena-operazione');
+        expect(el.textContent).toMatch(/120 ms/);
+        expect(el.textContent).toMatch(/780 ms/);
+        expect(r.getByTestId('cr-collo').textContent).toMatch(/feed al bot/);
+    });
+
+    it('separa il tempo NOSTRO da quello totale: Betfair non e colpa nostra', () => {
+        mVm.mockReturnValue(vm({ ultimaCatena: { salti, trade: 285, evento: 'X v Y' } }));
+        const el = mostra().getByTestId('cr-catena-operazione');
+        expect(el.textContent).toMatch(/1[.,]0 s/);
+        expect(el.textContent).toMatch(/1[.,]2 s/);
+    });
+
+    it('un salto non misurato e un trattino, mai zero', () => {
+        const parziali = salti.map((s) => (s.id === 'fill' ? { ...s, ms: null } : s));
+        mVm.mockReturnValue(vm({ ultimaCatena: { salti: parziali, trade: 285, evento: null } }));
+        expect(mostra().getByTestId('cr-catena-operazione').textContent).toContain('—');
     });
 });
 

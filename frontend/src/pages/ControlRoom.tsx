@@ -34,6 +34,7 @@ import {
     type Bot, type GruppoCampionato, type PartitaGiornata, type Freschezza, type StatoQuote,
 } from '@/lib/controlRoom';
 import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
+import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
 
@@ -134,6 +135,8 @@ export default function ControlRoom() {
                 </Card>
             )}
 
+            <Catena vm={vm} />
+
             {vm.mikeRestingLive === false && (
                 <Card className="glass-card border-orange-500/40 bg-orange-500/10 p-3 flex items-start gap-3" data-testid="cr-mike-resting">
                     <ShieldAlert className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
@@ -166,6 +169,91 @@ export default function ControlRoom() {
                 <ColonnaPosizioni posizioni={vm.posizioni} />
             </div>
         </PageShell>
+    );
+}
+
+// ------------------------------------------------------------------- catena
+
+/**
+ * DA BETFAIR AL PIXEL. Due righe: sopra quanto e' vecchio cio' che il trader
+ * sta guardando ADESSO, preso come il PEGGIORE dei tre canali (mostrare il
+ * migliore sarebbe un semaforo verde acceso da un sensore su tre); sotto la
+ * catena dell'ultima operazione, salto per salto, col collo di bottiglia
+ * indicato. Un salto non misurato vale «—», MAI zero: «istantaneo» e «non lo
+ * so» sono due affermazioni diverse.
+ */
+function Catena({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
+    const { schermo, ultimaCatena } = vm;
+    const totale = totaleCatena(ultimaCatena.salti);
+    const nostro = totaleNostro(ultimaCatena.salti);
+    const collo = colloDiBottiglia(ultimaCatena.salti);
+    const misurati = ultimaCatena.salti.filter((s) => s.ms != null).length;
+
+    return (
+        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-catena">
+            <div className="px-3 py-2 border-b border-white/10 flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                <span className="text-[11px] uppercase tracking-wider text-white/60">Da Betfair al tuo schermo</span>
+                <Tratto etichetta="feed" ms={schermo.feedMs} />
+                <Tratto etichetta="spinta dai bot" ms={schermo.pushMs} />
+                <Tratto etichetta="lettura database" ms={schermo.letturaMs} />
+                <span className="ml-auto flex items-baseline gap-1.5" data-testid="cr-schermo">
+                    <span className="text-[10px] uppercase tracking-wider text-white/40">quello che vedi e vecchio di</span>
+                    <span className={`font-mono text-sm font-bold tabular-nums ${
+                        schermo.schermoMs == null ? 'text-orange-400'
+                            : schermo.schermoMs <= 5000 ? 'text-emerald-400'
+                            : schermo.schermoMs <= 30000 ? 'text-secondary' : 'text-orange-400'
+                    }`}>{fmtMs(schermo.schermoMs)}</span>
+                </span>
+            </div>
+
+            <div className="px-3 py-2 flex flex-wrap items-baseline gap-x-4 gap-y-1" data-testid="cr-catena-operazione">
+                <span className="text-[11px] uppercase tracking-wider text-white/60">
+                    Ultima operazione
+                    {ultimaCatena.trade != null && <span className="text-white/35"> · #{ultimaCatena.trade}</span>}
+                </span>
+                {misurati === 0 ? (
+                    <span className="text-[11px] text-white/40">
+                        nessun istante registrato su questa operazione — i tempi si scrivono dalle prossime
+                    </span>
+                ) : (
+                    <>
+                        {ultimaCatena.salti.map((s) => (
+                            <span key={s.id} className="flex flex-col" title={s.spiega}>
+                                <span className={`text-[9px] uppercase tracking-wider ${
+                                    s.nostro ? 'text-white/40' : 'text-secondary/70'
+                                }`}>{s.nome}</span>
+                                <span className={`font-mono text-[13px] font-semibold tabular-nums ${
+                                    s.ms == null ? 'text-white/30'
+                                        : collo && s.id === collo.id ? 'text-orange-400' : 'text-white/85'
+                                }`}>{fmtMs(s.ms)}</span>
+                            </span>
+                        ))}
+                        <span className="ml-auto flex items-baseline gap-3">
+                            {collo?.ms != null && (
+                                <span className="text-[10.5px] text-orange-300" data-testid="cr-collo">
+                                    piu lento: <b>{collo.nome}</b>
+                                </span>
+                            )}
+                            <span className="flex flex-col text-right">
+                                <span className="text-[9px] uppercase tracking-wider text-white/40">nostro / totale</span>
+                                <span className="font-mono text-[13px] font-semibold tabular-nums">
+                                    {fmtMs(nostro)} <span className="text-white/35">/ {fmtMs(totale)}</span>
+                                </span>
+                            </span>
+                        </span>
+                    </>
+                )}
+            </div>
+        </Card>
+    );
+}
+
+function Tratto({ etichetta, ms }: { etichetta: string; ms: number | null }) {
+    return (
+        <span className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-white/40">{etichetta}</span>
+            <span className="font-mono text-[12px] font-semibold tabular-nums text-white/80">{fmtMs(ms)}</span>
+        </span>
     );
 }
 
