@@ -915,6 +915,10 @@ export default function SeguiLive() {
     const pendingEventRef = useRef<string | null>(searchParams.get('event'));
     const [pendingEvent, setPendingEvent] = useState<string | null>(pendingEventRef.current);
     const [cameFromOmega] = useState(() => searchParams.get('from') === 'omega');
+    // CERT. 14/09 — «ogni pulsante che mi manda da altre parti deve poi
+    // permettermi di tornare indietro in quell'esatto punto». La Control Room
+    // si e' segnata scheda, partita e scorrimento prima di mandarci qui.
+    const [daControlRoom] = useState(() => searchParams.get('from') === 'control-room');
     useEffect(() => {
         const pending = pendingEventRef.current;
         if (!pending) return;
@@ -1132,6 +1136,14 @@ export default function SeguiLive() {
                             <Button variant="outline" size="sm" onClick={() => navigate('/omega')}
                                 className="border-secondary/30 text-secondary hover:bg-secondary/10">
                                 <ChevronLeft className="w-4 h-4 mr-1" /> Torna a Omega
+                            </Button>
+                        )}
+                        {daControlRoom && (
+                            <Button variant="outline" size="sm" onClick={() => navigate('/control-room')}
+                                data-testid="torna-control-room"
+                                title="torna alla Control Room, alla scheda e alla partita da cui sei partito"
+                                className="border-primary/30 text-primary hover:bg-primary/10">
+                                <ChevronLeft className="w-4 h-4 mr-1" /> Torna alla Control Room
                             </Button>
                         )}
                         {selected && (

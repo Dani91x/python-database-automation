@@ -31,6 +31,11 @@ import {
  */
 export default function TennisTerminal() {
     const [params] = useSearchParams();
+    // CERT. 14/09 — la Control Room manda qui col pulsante «Trading» e si e'
+    // segnata scheda, partita e scorrimento. Il tasto «indietro» della barra
+    // deve riportare LA, non alla lista tennis: e il punto da cui si e partiti.
+    const daControlRoom = params.get('from') === 'control-room';
+    const indietro = () => navigate(daControlRoom ? '/control-room' : '/tennis');
     const navigate = useNavigate();
 
     const eventId = params.get('event') ?? '';
@@ -116,7 +121,7 @@ export default function TennisTerminal() {
         return (
             <div className="min-h-screen bg-background relative">
                 <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-30" />
-                <TennisNav sectionLabel="TERMINAL" onBack={() => navigate('/tennis')} />
+                <TennisNav sectionLabel="TERMINAL" onBack={indietro} />
                 <main className="container mx-auto px-6 py-20 relative z-10 text-center">
                     <p className="text-muted-foreground">
                         Nessun match selezionato. Torna alle{' '}
@@ -138,7 +143,7 @@ export default function TennisTerminal() {
 
             <div className="fixed inset-0 pointer-events-none z-0 grid-pattern opacity-20" />
 
-            <TennisNav sectionLabel="TERMINAL" onBack={() => navigate('/tennis')} />
+            <TennisNav sectionLabel="TERMINAL" onBack={indietro} />
 
             {/* Header match compatto */}
             <div className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-16 z-40">

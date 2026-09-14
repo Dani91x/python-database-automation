@@ -34,6 +34,9 @@ export default function Dashboard() {
     const [cameFromWatchlist] = useState(() => searchParams.get('from') === 'watchlist');
     // idem per Omega: "Vai alle statistiche" da /omega → bottone "Torna a Omega"
     const [cameFromOmega] = useState(() => searchParams.get('from') === 'omega');
+    // CERT. 14/09 — la Control Room manda qui col pulsante «Statistiche» e si e'
+    // segnata scheda, partita e scorrimento: il ritorno deve esistere davvero.
+    const [daControlRoom] = useState(() => searchParams.get('from') === 'control-room');
 
     // Fetch a specific fixture by ID
     const loadFixture = async (fixtureId: string) => {
@@ -133,6 +136,19 @@ export default function Dashboard() {
                                     >
                                         <ChevronLeft className="w-4 h-4" />
                                         Torna a Omega
+                                    </Button>
+                                )}
+                                {daControlRoom && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => navigate('/control-room')}
+                                        data-testid="torna-control-room"
+                                        title="torna alla Control Room, alla scheda e alla partita da cui sei partito"
+                                        className="flex items-center gap-2 border-primary/30 text-primary hover:bg-primary/10"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        Torna alla Control Room
                                     </Button>
                                 )}
                             </>

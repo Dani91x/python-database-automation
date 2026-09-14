@@ -19,9 +19,10 @@
 // LAYOUT: testata con la giornata · partite per campionato in ordine
 // cronologico · nastro dei segnali · posizioni aperte.
 // ============================================================================
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Radio, ShieldAlert, Target, Circle } from 'lucide-react';
@@ -44,6 +45,9 @@ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/contr
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
+import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
+import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
+import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
 import { creaComandi, importiDi } from '@/components/controlroom/comandiBot';
 import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
@@ -109,14 +113,17 @@ const FRESCHEZZA_CLS: Record<Freschezza, string> = {
 
 export default function ControlRoom() {
     const vm = useControlRoom();
-    const [soloConSegnali, setSoloConSegnali] = useState(false);
-    const [soloLive, setSoloLive] = useState(false);
     // LO SPORT SCELTO filtra il banco: `null` = tutti e due.
     const [sport, setSport] = useState<SportKey | null>(null);
 
+    // LA SCHEDA APERTA. Si riapre da sola se si torna qui da un'altra pagina:
+    // «torna indietro» deve riportare al punto esatto, non in cima.
+    const [scheda, setScheda] = useState<string>(() => leggiRitorno()?.scheda ?? 'live');
+
+    // ora filtra SOLO lo sport: lo stato della partita lo decide la scheda
     const giornata = useMemo(
-        () => filtra(vm.giornata, { soloLive, soloConSegnali, sport }),
-        [vm.giornata, soloLive, soloConSegnali, sport],
+        () => filtra(vm.giornata, { sport }),
+        [vm.giornata, sport],
     );
 
     // Lo sport di una posizione non sta sulla posizione: si ricava dalla
@@ -134,6 +141,36 @@ export default function ControlRoom() {
     }, [vm.posizioni, sport, sportDiEvento]);
 
     const inLive = vm.bots.some((b) => b.modalita === 'live');
+
+    // quante righe ha ogni scheda: un numero sulla linguetta evita di doverle
+    // aprire tutte per scoprire quale ha qualcosa dentro.
+    const [contaPre, contaLive] = useMemo(() => {
+        let pre = 0, live = 0;
+        for (const g of giornata) for (const p of g.partite) {
+            if (p.stato === 'live') live += 1; else if (p.stato === 'pre') pre += 1;
+        }
+        return [pre, live];
+    }, [giornata]);
+    const contaChiuse = useMemo(
+        () => vm.chiuse.filter((c) => (sport == null || c.sport === sport) && c.modo === 'live').length,
+        [vm.chiuse, sport],
+    );
+
+    // RITORNO AL PUNTO ESATTO: si consuma UNA volta sola, quando le righe ci
+    // sono. Consumarlo prima riporterebbe su una lista ancora vuota.
+    const [ritornoFatto, setRitornoFatto] = useState(false);
+    useEffect(() => {
+        if (ritornoFatto || vm.caricamento) return;
+        const r = leggiRitorno();
+        if (!r) { setRitornoFatto(true); return; }
+        setRitornoFatto(true);
+        dimenticaRitorno();
+        const t = window.setTimeout(() => {
+            if (r.eventId && portaInVista(r.eventId)) return;
+            window.scrollTo({ top: r.scorrimento, behavior: 'smooth' });
+        }, 80);
+        return () => window.clearTimeout(t);
+    }, [ritornoFatto, vm.caricamento]);
 
     // ── COMANDO DEI BOT ──────────────────────────────────────────────────────
     // I parametri li legge dallo STATO GIA' CARICATO: il comando non fa una
@@ -301,18 +338,46 @@ export default function ControlRoom() {
                 </Card>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)_330px] items-start">
-                <ColonnaPartite
-                    operazioni={vm.operazioni}
-                    gruppi={giornata}
-                    totali={vm.totali}
-                    caricamento={vm.caricamento}
-                    soloLive={soloLive} setSoloLive={setSoloLive}
-                    soloConSegnali={soloConSegnali} setSoloConSegnali={setSoloConSegnali}
-                    copertura={vm.copertura}
-                />
+            {/* IL BANCO — quattro schede, e a destra il nastro delle uscite che
+                NON si nasconde mai: una chiusura matura su soldi veri mentre il
+                trader sta guardando un'altra scheda, e deve vederla lo stesso. */}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+                <Tabs value={scheda} onValueChange={setScheda} className="min-w-0">
+                    <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-white/[0.03] p-1">
+                        <Scheda valore="pre" conta={contaPre} testId="cr-tab-pre">Pre-match</Scheda>
+                        <Scheda valore="live" conta={contaLive} testId="cr-tab-live">Live</Scheda>
+                        <Scheda valore="aperte" conta={posizioni.length} testId="cr-tab-aperte"
+                            evidenzia={posizioni.some((x) => x.modalita === 'live')}>Posizioni aperte</Scheda>
+                        <Scheda valore="chiuse" conta={contaChiuse} testId="cr-tab-chiuse">Posizioni chiuse</Scheda>
+                    </TabsList>
+
+                    <TabsContent value="pre" className="mt-3">
+                        <ElencoPartite
+                            gruppi={giornata} stato="pre" scheda={scheda}
+                            caricamento={vm.caricamento} nowMs={vm.nowMs}
+                            registrazioni={vm.registrazioni} operazioni={vm.operazioni}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="live" className="mt-3">
+                        <ElencoPartite
+                            gruppi={giornata} stato="live" scheda={scheda}
+                            caricamento={vm.caricamento} nowMs={vm.nowMs}
+                            registrazioni={vm.registrazioni} operazioni={vm.operazioni}
+                            copertura={vm.copertura}
+                        />
+                    </TabsContent>
+
+                    <TabsContent value="aperte" className="mt-3">
+                        <ColonnaPosizioni posizioni={posizioni} onChiudi={vm.chiudi} sport={sport} />
+                    </TabsContent>
+
+                    <TabsContent value="chiuse" className="mt-3">
+                        <PosizioniChiuse chiuse={vm.chiuse} sport={sport} />
+                    </TabsContent>
+                </Tabs>
+
                 <NastroSegnali vm={vm} filtroSport={sport} />
-                <ColonnaPosizioni posizioni={posizioni} onChiudi={vm.chiudi} sport={sport} />
             </div>
         </PageShell>
     );
@@ -643,70 +708,114 @@ function descriviModalita(b: StatoBot): string {
     return `${BOT_LABEL[b.bot]}: ${m}`;
 }
 
-// ------------------------------------------------------- colonna delle partite
+// ------------------------------------------------------- elenco delle partite
 
-function ColonnaPartite({
-    gruppi, totali, caricamento, soloLive, setSoloLive, soloConSegnali, setSoloConSegnali, copertura,
-    operazioni,
-}: {
-    operazioni: ReturnType<typeof useControlRoom>['operazioni'];
-    gruppi: GruppoCampionato[];
-    totali: ReturnType<typeof useControlRoom>['totali'];
-    caricamento: boolean;
-    soloLive: boolean; setSoloLive: (v: boolean) => void;
-    soloConSegnali: boolean; setSoloConSegnali: (v: boolean) => void;
-    copertura: ReturnType<typeof useControlRoom>['copertura'];
+/** Una linguetta con il suo conteggio: si vede quale scheda ha qualcosa
+ *  dentro senza doverle aprire tutte. */
+function Scheda({ valore, conta, children, testId, evidenzia = false }: {
+    valore: string; conta: number; children: React.ReactNode;
+    testId: string; evidenzia?: boolean;
 }) {
-    // il contatore deve contare QUELLO CHE SI VEDE: con un filtro acceso,
-    // scrivere il totale della giornata accanto a quindici righe e' un numero
-    // che non torna con lo schermo.
-    const viste = gruppi.reduce((n, g) => n + g.partite.length, 0);
-    const filtrato = viste !== totali.partite;
     return (
-        <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-partite">
-            <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-white/60" data-testid="cr-partite-conteggio">
-                    Partite di oggi · {viste}
-                    {filtrato && <span className="text-white/35"> di {totali.partite}</span>}
-                </span>
-                <span className="text-[11px] text-white/40">{totali.live} in gioco</span>
-            </div>
+        <TabsTrigger value={valore} data-testid={testId}
+            className="text-[11px] uppercase tracking-wider data-[state=active]:bg-white/10">
+            {children}
+            <span className={`ml-1.5 font-mono text-[10px] ${
+                evidenzia ? 'text-red-300 font-bold' : 'text-white/40'
+            }`}>{conta}</span>
+        </TabsTrigger>
+    );
+}
 
-            <div className="px-3 py-2 border-b border-white/10 flex flex-wrap gap-1.5">
-                <Filtro attivo={soloLive} onClick={() => setSoloLive(!soloLive)}>in gioco</Filtro>
-                <Filtro attivo={soloConSegnali} onClick={() => setSoloConSegnali(!soloConSegnali)}>con operazioni</Filtro>
+/**
+ * LE PARTITE DI UNA SCHEDA, raggruppate per campionato e in ordine di orario.
+ *
+ * Una sola lista per due schede: «Pre-match» e «Live» mostrano le stesse
+ * partite in due stati diversi, e duplicare il componente avrebbe voluto dire
+ * mantenere due volte le stesse regole di raggruppamento.
+ */
+function ElencoPartite({
+    gruppi, stato, scheda, caricamento, nowMs, registrazioni, operazioni, copertura,
+}: {
+    gruppi: GruppoCampionato[];
+    stato: 'pre' | 'live';
+    scheda: string;
+    caricamento: boolean;
+    nowMs: number;
+    registrazioni: Set<string>;
+    operazioni: ReturnType<typeof useControlRoom>['operazioni'];
+    copertura?: ReturnType<typeof useControlRoom>['copertura'];
+}) {
+    const filtrati = useMemo(() => {
+        const out: GruppoCampionato[] = [];
+        for (const g of gruppi) {
+            const partite = g.partite.filter((p) => p.stato === stato);
+            if (partite.length) out.push({ ...g, partite });
+        }
+        return out;
+    }, [gruppi, stato]);
+
+    const quante = filtrati.reduce((n, g) => n + g.partite.length, 0);
+
+    return (
+        <Card className="glass-card border-white/10 p-0 overflow-hidden"
+            data-testid={stato === 'pre' ? 'cr-elenco-pre' : 'cr-elenco-live'}>
+            <div className="px-3 py-2 border-b border-white/10 flex items-baseline justify-between gap-2">
+                <span className="text-[11px] uppercase tracking-wider text-white/60">
+                    {stato === 'pre' ? 'Non ancora cominciate' : 'In gioco adesso'}
+                </span>
+                <span className="text-[11px] text-white/40">
+                    {quante} {quante === 1 ? 'partita' : 'partite'} in {filtrati.length}{' '}
+                    {filtrati.length === 1 ? 'competizione' : 'competizioni'}
+                </span>
             </div>
 
             {/* CERT. 14/09 — spia del «controllo del gioco»: finché il dato non
-                copre le partite, Base e Punta aprono SENZA una condizione che
-                il manuale dichiara vincolante. Non compare se non c'è niente
-                da dire (nessuna partita in gioco). */}
-            {copertura.totale > 0 && copertura.senzaDato > 0 && (
+                copre le partite, Base e Punta aprono SENZA una condizione che il
+                manuale dichiara vincolante. */}
+            {copertura && copertura.totale > 0 && copertura.senzaDato > 0 && (
                 <div className="px-3 py-2 border-b border-white/10 text-[11px] text-secondary" data-testid="cr-copertura">
                     controllo del gioco: dato presente su {copertura.conDato} partite in gioco su {copertura.totale}
+                    {copertura.pct != null && <> ({copertura.pct}%)</>}. Dove manca, quella condizione
+                    non ha potuto girare.
                 </div>
             )}
 
-            <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-3 space-y-4">
-                {caricamento && gruppi.length === 0 && (
+            <div className="max-h-[calc(100vh-300px)] overflow-y-auto p-3 space-y-3">
+                {caricamento && quante === 0 && (
                     <div className="text-sm text-white/40">lettura del programma di oggi…</div>
                 )}
-                {!caricamento && gruppi.length === 0 && (
-                    <EmptyState>Il feed non ha partite per oggi, o i filtri le escludono tutte.</EmptyState>
+                {!caricamento && quante === 0 && (
+                    <EmptyState>
+                        {stato === 'pre'
+                            ? 'Nessuna partita in attesa: o sono tutte in gioco, o la giornata è finita.'
+                            : 'Nessuna partita in gioco adesso. Le prossime sono nella scheda Pre-match.'}
+                    </EmptyState>
                 )}
-                {gruppi.map((g) => (
+
+                {filtrati.map((g) => (
                     <section key={g.campionato}>
                         <h3 className="text-[11px] uppercase tracking-wider text-white/50 mb-1.5 flex items-center gap-2">
-                            {g.campionato}
+                            <span className="truncate">{g.campionato}</span>
                             <span className="text-white/25 font-mono">{g.partite.length}</span>
-                            <span className="flex-1 h-px bg-white/10" />
+                            {g.primoKoMs != null && (
+                                <span className="ml-auto text-white/25 font-mono normal-case tracking-normal">
+                                    dalle {fmtTime(g.primoKoMs)}
+                                </span>
+                            )}
                         </h3>
                         <div className="space-y-1.5">
-                            {g.partite.map((p) => (
+                            {g.partite.map((p) => stato === 'pre' ? (
+                                <SchedaPreMatch
+                                    key={p.event_id} p={p} scheda={scheda}
+                                    mancaS={p.koMs == null ? null : Math.max(0, Math.round((p.koMs - nowMs) / 1000))}
+                                    registra={registrazioni.has(p.event_id)}
+                                />
+                            ) : (
                                 <SchedaPartita
-                                    key={p.event_id}
-                                    p={p}
+                                    key={p.event_id} p={p} scheda={scheda}
                                     operazioni={operazioni.get(p.event_id) ?? []}
+                                    registra={registrazioni.has(p.event_id)}
                                 />
                             ))}
                         </div>
@@ -714,17 +823,6 @@ function ColonnaPartite({
                 ))}
             </div>
         </Card>
-    );
-}
-
-function Filtro({ attivo, onClick, children }: { attivo: boolean; onClick: () => void; children: React.ReactNode }) {
-    return (
-        <button
-            type="button" onClick={onClick} aria-pressed={attivo}
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
-                attivo ? 'border-primary/60 text-primary bg-primary/10' : 'border-white/15 text-white/50 hover:text-white/80'
-            }`}
-        >{children}</button>
     );
 }
 
@@ -913,17 +1011,14 @@ function ColonnaPosizioni({ posizioni, onChiudi, sport }: {
 
 function filtra(
     gruppi: GruppoCampionato[],
-    opt: { soloLive: boolean; soloConSegnali: boolean; sport?: SportKey | null },
+    opt: { sport?: SportKey | null },
 ): GruppoCampionato[] {
-    if (!opt.soloLive && !opt.soloConSegnali && opt.sport == null) return gruppi;
+    if (opt.sport == null) return gruppi;
     const out: GruppoCampionato[] = [];
     for (const g of gruppi) {
-        const partite = g.partite.filter((p) => {
-            if (opt.sport != null && (p.sport === 'tennis' ? 'tennis' : 'calcio') !== opt.sport) return false;
-            if (opt.soloLive && p.stato !== 'live') return false;
-            if (opt.soloConSegnali && !(p.soldi && p.soldi.bots.length > 0)) return false;
-            return true;
-        });
+        const partite = g.partite.filter(
+            (p) => (p.sport === 'tennis' ? 'tennis' : 'calcio') === opt.sport,
+        );
         if (partite.length) out.push({ ...g, partite });
     }
     return out;

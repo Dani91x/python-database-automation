@@ -12,6 +12,7 @@
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, cleanup, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -37,6 +38,7 @@ function partita(over: Partial<PartitaGiornata> = {}): PartitaGiornata {
         },
         target: { valore: 31.2, fonte: 'servizio' },
         avanzamento: 40,
+        extra: null,
         ...over,
     };
 }
@@ -60,6 +62,8 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
             { bot: 'mike', modalita: 'paper', inCorsa: true, battitoAt: null, canale: 'connected', etaPushS: 3, freschezzaPush: 'fresca', varianti: null },
         ],
         posizioni: [],
+        chiuse: [],
+        registrazioni: new Set<string>(),
         copertura: { conDato: 1, senzaDato: 0, totale: 1, pct: 100 },
         freni: { daily_loss_stop: -50, loss_stop_active: false },
         runner: { ts: '2026-09-14T14:59:30Z', mode: 'PAPER', ageS: 30, up: true, streaming: 2 },
@@ -92,6 +96,17 @@ function mostra() {
     return render(
         <HelmetProvider><MemoryRouter><ControlRoom /></MemoryRouter></HelmetProvider>,
     );
+}
+
+/** Le partite e le posizioni ora vivono in SCHEDE: per guardarci dentro
+ *  bisogna aprirle, come fa il trader.
+ *
+ *  `userEvent` e non `fireEvent`: Radix Tabs ascolta eventi di puntatore veri,
+ *  e con fireEvent la linguetta non cambia (il test fallirebbe per il motivo
+ *  sbagliato). Stesso pattern dei test di Safe Strategy e Mike. */
+async function apri(s: ReturnType<typeof mostra>, tab: 'pre' | 'live' | 'aperte' | 'chiuse') {
+    await userEvent.click(s.getByTestId(`cr-tab-${tab}`));
+    return s;
 }
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -185,17 +200,29 @@ describe('bot muto — fail-closed dichiarato', () => {
 // ------------------------------------------------------------------ partite
 
 describe('partite — quello che la riga dice e quello che non deve dire', () => {
-    it('in gioco: minuto e punteggio; pre-match: l\'orario', () => {
+    it('in gioco: minuto e punteggio; pre-match: l\'orario', async () => {
         mVm.mockReturnValue(vm({
             giornata: [
                 ...gruppo([partita()]),
                 { campionato: 'Liga', primoKoMs: Date.parse('2026-09-14T19:00:00Z'), partite: [partita({ event_id: 'E2', nome: 'Girona – Betis', campionato: 'Liga', stato: 'pre', minuto: null, punteggio: null, koMs: Date.parse('2026-09-14T19:00:00Z'), soldi: null, avanzamento: null })] },
             ],
         }));
-        mostra();
-        expect(screen.getByText(/58′/)).toBeTruthy();
-        expect(screen.getByText(/1-0/)).toBeTruthy();
-        expect(screen.getByText('Girona – Betis')).toBeTruthy();
+        const s = mostra();
+        // in gioco sta nella scheda Live, col minuto e il punteggio...
+        const live = (await apri(s, 'live')).getByTestId('cr-elenco-live');
+        expect(within(live).getByText(/58′/)).toBeTruthy();
+        expect(within(live).getByText(/1-0/)).toBeTruthy();
+        expect(within(live).queryByText('Girona – Betis')).toBeNull();
+
+        // ...e la pre-match nella sua, con l'orario. È il senso della divisione:
+        // due stati diversi non stanno nella stessa lista.
+        //
+        // Nella scheda pre-match i due nomi stanno su righe separate (ognuna
+        // col suo logo): si cercano separatamente, non come una stringa sola.
+        const pre = (await apri(s, 'pre')).getByTestId('cr-elenco-pre');
+        expect(within(pre).getByText('Girona')).toBeTruthy();
+        expect(within(pre).getByText('Betis')).toBeTruthy();
+        expect(within(pre).queryByText(/58′/)).toBeNull();
     });
 
     it('PARTITA SENZA RISULTATO: «—», mai «0,00 €»', () => {
@@ -219,15 +246,18 @@ describe('partite — quello che la riga dice e quello che non deve dire', () =>
         expect(riga.textContent).not.toMatch(/\*/);
     });
 
-    it('i campionati si leggono nell\'ordine in cui il modello li consegna', () => {
+    it('i campionati si leggono nell\'ordine in cui il modello li consegna', async () => {
         mVm.mockReturnValue(vm({
             giornata: [
                 { campionato: 'Serie A', primoKoMs: 1, partite: [partita()] },
                 { campionato: 'Liga', primoKoMs: 2, partite: [partita({ event_id: 'E2', campionato: 'Liga' })] },
             ],
         }));
-        const { container } = mostra();
-        const titoli = Array.from(container.querySelectorAll('h3')).map((h) => h.textContent?.replace(/\d+$/, '').trim());
+        const elenco = (await apri(mostra(), 'live')).getByTestId('cr-elenco-live');
+        // il titolo del campionato e' il PRIMO span dell'h3: accanto ci sono
+        // il conteggio e l'orario di apertura, che non fanno parte del nome.
+        const titoli = Array.from(elenco.querySelectorAll('h3'))
+            .map((h) => h.querySelector('span')?.textContent?.trim());
         expect(titoli).toEqual(['Serie A', 'Liga']);
     });
 });
@@ -256,7 +286,7 @@ describe('spia del controllo del gioco', () => {
 // ---------------------------------------------------------------- posizioni
 
 describe('posizioni aperte', () => {
-    it('una posizione LIVE è marcata live e contata a parte', () => {
+    it('una posizione LIVE è marcata live e contata a parte', async () => {
         mVm.mockReturnValue(vm({
             posizioni: [{
                 bot: 'safe', id: 1, eventId: 'E1', partita: 'Rune – Musetti', selezione: 'Rune',
@@ -265,14 +295,14 @@ describe('posizioni aperte', () => {
                 chiusura: { lato: 'lay', prezzo: 1.02, abbinabile: 88, bloccabile: 0.24 },
             }],
         }));
-        const col = mostra().getByTestId('cr-posizioni');
+        const col = (await apri(mostra(), 'aperte')).getByTestId('cr-posizioni');
         expect(within(col).getByText(/1 posizione con soldi veri/)).toBeTruthy();
         expect(within(col).getByText('BACK')).toBeTruthy();
     });
 
-    it('senza posizioni lo dice invece di mostrare una tabella vuota', () => {
+    it('senza posizioni lo dice invece di mostrare una tabella vuota', async () => {
         mVm.mockReturnValue(vm());
-        expect(within(mostra().getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
+        expect(within((await apri(mostra(), 'aperte')).getByTestId('cr-posizioni')).getByText(/Nessuna posizione aperta/)).toBeTruthy();
     });
 });
 
@@ -528,43 +558,43 @@ function vmDueSport(over: Partial<ReturnType<typeof useControlRoom>> = {}) {
 }
 
 describe('tessere calcio/tennis — sono il filtro del banco', () => {
-    it('senza filtro si vedono ENTRAMBI gli sport', () => {
+    it('senza filtro si vedono ENTRAMBI gli sport', async () => {
         mVm.mockReturnValue(vmDueSport());
         const s = mostra();
-        const partite = s.getByTestId('cr-partite');
+        const partite = (await apri(s, 'live')).getByTestId('cr-elenco-live');
         expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
         expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
     });
 
-    it('cliccando TENNIS resta solo il tennis, fra le partite e fra le posizioni', () => {
+    it('cliccando TENNIS resta solo il tennis, fra le partite e fra le posizioni', async () => {
         mVm.mockReturnValue(vmDueSport());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
 
-        const partite = s.getByTestId('cr-partite');
-        expect(within(partite).queryByText('Milan – Inter')).toBeNull();
-        expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
+        const partite = (await apri(s, 'live')).getByTestId('cr-elenco-live');
+        expect(within(partite).queryByText('Milan \u2013 Inter')).toBeNull();
+        expect(within(partite).getByText('Rune \u2013 Musetti')).toBeTruthy();
 
-        const posizioni = s.getByTestId('cr-posizioni');
-        expect(within(posizioni).queryByText('Milan – Inter')).toBeNull();
-        expect(within(posizioni).getByText('Rune – Musetti')).toBeTruthy();
+        const posizioni = (await apri(s, 'aperte')).getByTestId('cr-posizioni');
+        expect(within(posizioni).queryByText('Milan \u2013 Inter')).toBeNull();
+        expect(within(posizioni).getByText('Rune \u2013 Musetti')).toBeTruthy();
     });
 
-    it('cliccando CALCIO resta solo il calcio', () => {
+    it('cliccando CALCIO resta solo il calcio', async () => {
         mVm.mockReturnValue(vmDueSport());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-calcio'));
-        const partite = s.getByTestId('cr-partite');
+        const partite = (await apri(s, 'live')).getByTestId('cr-elenco-live');
         expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
         expect(within(partite).queryByText('Rune – Musetti')).toBeNull();
     });
 
-    it('il secondo clic sulla stessa tessera RIMETTE tutti gli sport', () => {
+    it('il secondo clic sulla stessa tessera RIMETTE tutti gli sport', async () => {
         mVm.mockReturnValue(vmDueSport());
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        const partite = s.getByTestId('cr-partite');
+        const partite = (await apri(s, 'live')).getByTestId('cr-elenco-live');
         expect(within(partite).getByText('Milan – Inter')).toBeTruthy();
         expect(within(partite).getByText('Rune – Musetti')).toBeTruthy();
     });
@@ -590,14 +620,19 @@ describe('tessere calcio/tennis — sono il filtro del banco', () => {
         expect(s.getByTestId('cr-nastro-non-filtrato').textContent).toMatch(/entrambi gli sport/i);
     });
 
-    it('il contatore delle partite conta QUELLO CHE SI VEDE, col totale accanto', () => {
+    it('IL CONTATORE DELLA LINGUETTA segue il filtro: 2 sport -> 1', async () => {
         mVm.mockReturnValue(vmDueSport());
         const s = mostra();
+        expect(s.getByTestId('cr-tab-live').textContent).toMatch(/2/);
         fireEvent.click(s.getByTestId('cr-filtro-tennis'));
-        expect(s.getByTestId('cr-partite-conteggio').textContent).toMatch(/1\s*di\s*2/);
+        expect(s.getByTestId('cr-tab-live').textContent).toMatch(/1/);
+        // e l'elenco mostra davvero una sola partita
+        const elenco = (await apri(s, 'live')).getByTestId('cr-elenco-live');
+        expect(within(elenco).queryByText('Milan \u2013 Inter')).toBeNull();
+        expect(within(elenco).getByText('Rune \u2013 Musetti')).toBeTruthy();
     });
 
-    it('una posizione su un evento SCONOSCIUTO non sparisce mai dietro un filtro', () => {
+    it('una posizione su un evento SCONOSCIUTO non sparisce mai dietro un filtro', async () => {
         const base = vmDueSport();
         mVm.mockReturnValue(vm({
             ...base,
@@ -610,7 +645,7 @@ describe('tessere calcio/tennis — sono il filtro del banco', () => {
         }));
         const s = mostra();
         fireEvent.click(s.getByTestId('cr-filtro-calcio'));
-        expect(within(s.getByTestId('cr-posizioni')).getByText('Tizio – Caio')).toBeTruthy();
+        expect(within((await apri(s, 'aperte')).getByTestId('cr-posizioni')).getByText('Tizio – Caio')).toBeTruthy();
     });
 });
 

@@ -32,6 +32,9 @@ import {
 import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
 import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
+import { fetchMissions } from '@/lib/omegaMissions';
+import { fetchTennisFollows } from '@/lib/tennis';
+import { posizioniChiuse, type PosizioneChiusa, type TradeChiudibile } from '@/lib/posizioniChiuse';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
     etaSecondi, freschezza, realizzatoGiornata, arricchimentoDa, type ArricchimentoPartita,
@@ -236,6 +239,11 @@ export interface ControlRoomVM {
 
     bots: StatoBot[];
     posizioni: PosizioneAperta[];
+    /** posizioni GIA' CHIUSE: apertura + coperture, con il P&L della posizione
+     *  intera. Le gambe di copertura non sono posizioni proprie. */
+    chiuse: PosizioneChiusa[];
+    /** event_id delle partite che stanno REGISTRANDO adesso */
+    registrazioni: Set<string>;
 
     /** copertura del dato di «controllo del gioco» sulle partite di oggi */
     copertura: { conDato: number; senzaDato: number; totale: number; pct: number | null };
@@ -321,6 +329,10 @@ export function useControlRoom(): ControlRoomVM {
     const [safeOggiPaper, setSafeOggiPaper] = useState<DailyRow | null>(null);
     /** eventi di Omega: campionato, loghi e `fixture_id` che il feed non ha */
     const [eventiOmega, setEventiOmega] = useState<OmegaEvent[]>([]);
+    /** partite che stanno REGISTRANDO adesso. Senza questo il pulsante REC
+     *  ripartirebbe spento dopo un ricaricamento su una partita che registra:
+     *  una spia che mente e peggio di una spia assente. */
+    const [registrazioni, setRegistrazioni] = useState<Set<string>>(new Set());
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
@@ -348,10 +360,12 @@ export function useControlRoom(): ControlRoomVM {
             (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'live'); })(),
             (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'paper'); })(),
             fetchOmegaEvents(),
+            fetchMissions(),
+            fetchTennisFollows(),
         ]).then((r) => {
             if (!vivo) return;
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
-                rDaily, rDailyPaper, rEventi] = r;
+                rDaily, rDailyPaper, rEventi, rMissioni, rFollowT] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -363,12 +377,26 @@ export function useControlRoom(): ControlRoomVM {
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
             if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
+            if (rMissioni.status === 'fulfilled' || rFollowT.status === 'fulfilled') {
+                const attive = new Set<string>();
+                if (rMissioni.status === 'fulfilled') {
+                    for (const m of rMissioni.value?.missions ?? []) {
+                        if (m?.recording === true && m.event_id) attive.add(String(m.event_id));
+                    }
+                }
+                if (rFollowT.status === 'fulfilled') {
+                    for (const f of rFollowT.value ?? []) {
+                        if (f?.record === true && f.event_id) attive.add(String(f.event_id));
+                    }
+                }
+                setRegistrazioni(attive);
+            }
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
                 .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)',
-                        'campionati e loghi'][i] : null))
+                        'campionati e loghi', 'registrazioni calcio', 'registrazioni tennis'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -543,6 +571,23 @@ export function useControlRoom(): ControlRoomVM {
                 (mike?.control?.params ?? null) as Record<string, unknown> | null),
         ];
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control, canali, ultimoPush, nowMs]);
+
+    // ── LE POSIZIONI GIA' CHIUSE, vinte e perse ──────────────────────────────
+    // Una posizione e apertura + coperture: sul green-up del 14/09 le righe da
+    // sole dicono «una vinta e una persa», la POSIZIONE ha guadagnato +0,03.
+    const chiuse = useMemo<PosizioneChiusa[]>(() => {
+        const righe: TradeChiudibile[] = [];
+        const aggiungi = (lista: readonly Record<string, unknown>[] | undefined, bot: Bot, sport?: string) => {
+            for (const t of lista ?? []) {
+                if (typeof t?.id !== 'number') continue;
+                righe.push({ ...(t as object), __bot: bot, sport: (t.sport as string) ?? sport } as TradeChiudibile);
+            }
+        };
+        aggiungi(omegaTrades as unknown as Record<string, unknown>[], 'omega', 'calcio');
+        aggiungi(safe?.trades as unknown as Record<string, unknown>[] | undefined, 'safe');
+        aggiungi(mike?.trades as unknown as Record<string, unknown>[] | undefined, 'mike', 'calcio');
+        return posizioniChiuse(righe);
+    }, [omegaTrades, safe?.trades, mike?.trades]);
 
     const posizioni = useMemo<PosizioneAperta[]>(() => {
         const out: PosizioneAperta[] = [];
@@ -794,7 +839,7 @@ export function useControlRoom(): ControlRoomVM {
         realizzatoOggi,
         soldiGiornata: giornataSoldi,
         targetServizio,
-        bots, posizioni, copertura,
+        bots, posizioni, chiuse, registrazioni, copertura,
         freni: safe?.control?.stats?.risk ?? null,
         runner,
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),

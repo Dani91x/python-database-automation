@@ -21,9 +21,8 @@
 // del trader, e un valore che non c'è è `—`, mai `0,00 €`.
 // ============================================================================
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Circle, LineChart } from 'lucide-react';
-import { BetfairMediaButtons } from '@/components/BetfairMediaButtons';
+import { ChevronRight, Circle } from 'lucide-react';
+import { AzioniPartita } from '@/components/controlroom/AzioniPartita';
 import { fmtMoney, fmtOdds, fmtAge, fmtTime, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot, type PartitaGiornata, type StatoQuote } from '@/lib/controlRoom';
 import type { OperazionePartita } from '@/components/controlroom/useControlRoom';
@@ -53,10 +52,13 @@ const QUOTE_TESTO: Record<StatoQuote, (s: string) => string> = {
 export interface SchedaPartitaProps {
     p: PartitaGiornata;
     operazioni: OperazionePartita[];
+    /** la scheda aperta adesso: serve a tornare ESATTAMENTE qui */
+    scheda?: string;
+    /** questa partita sta registrando? */
+    registra?: boolean | null;
 }
 
-export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
-    const navigate = useNavigate();
+export function SchedaPartita({ p, operazioni, scheda = 'live', registra = null }: SchedaPartitaProps) {
     const [aperto, setAperto] = useState<Bot | null>(null);
 
     const soldi = p.soldi;
@@ -74,21 +76,11 @@ export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
         : apertaLive ? 'border-l-primary'
             : apertaPaper ? 'border-l-white/25' : 'border-l-white/12';
 
-    const apriTrading = () => {
-        // stessa rotta che usano gia' MissionPanel (calcio) e la lista tennis
-        if (p.sport === 'tennis' && p.marketId) {
-            navigate(`/tennis/terminal?event=${encodeURIComponent(p.event_id)}`
-                + `&market=${encodeURIComponent(p.marketId)}&name=Match%20Odds`);
-        } else {
-            navigate(`/segui-live?event=${encodeURIComponent(p.event_id)}&from=control-room`);
-        }
-    };
-
     const perBot = (b: Bot) => operazioni.filter((o) => o.bot === b);
 
     return (
         <div className={`rounded border border-white/10 border-l-[3px] ${bordo} bg-white/[0.02]`}
-            data-testid="cr-partita">
+            data-testid="cr-partita" data-event-id={p.event_id}>
             {/* ── riga 1: chi gioca, stato, e gli strumenti ── */}
             <div className="px-2.5 pt-2 flex items-start gap-2">
                 <span className="text-white/25 text-[13px] leading-none mt-0.5"
@@ -100,15 +92,10 @@ export function SchedaPartita({ p, operazioni }: SchedaPartitaProps) {
             </div>
 
             <div className="px-2.5 pt-1 flex items-center gap-1.5 flex-wrap">
-                <BetfairMediaButtons eventId={p.event_id} media={p.media} compact />
-                <button
-                    type="button" onClick={apriTrading}
-                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-white/15 text-white/60 hover:text-white hover:border-primary/50 transition-colors"
-                    data-testid="cr-trading"
-                    title="apri il terminale di trading su questa partita"
-                >
-                    <LineChart className="w-3 h-3" />Trading
-                </button>
+                {/* la STESSA riga di pulsanti di ogni altra scheda: video,
+                    statistiche, trading, segui live — e ognuno si segna il
+                    punto di ritorno prima di portare il trader altrove. */}
+                <AzioniPartita p={p} scheda={scheda} registra={registra} />
                 {p.stato === 'live' && (
                     <span className={`text-[10px] font-mono ml-auto ${QUOTE_CLS[p.statoQuote]}`}
                         data-testid="cr-latenza"
