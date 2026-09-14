@@ -1606,3 +1606,186 @@ Una partita **terminale** (SETTLED/ERROR/SKIPPED) non si riscrive più: cadenza 
   (gruppo «rischio»): `C.BACKEND_ONLY_PARAMS` è tornata **vuota** ed è questo il suo
   stato normale. Ogni cadenza che governa il carico sul database va messa in mano al
   trader, non nascosta nel codice.
+
+---
+
+
+### 16.4-bis L'ELENCO OPERATIVO 1→75 (ricostruito il 14/09/2026)
+
+Fino a oggi §16.4 aveva **solo i dieci blocchi**, e diceva che «l'elenco
+operativo completo va riportato qui». Non c'era. Questa tabella lo è, ed è
+**generata dallo strumento** `Betfair/tools/verifica_75_condizioni_2026_09_13.py`,
+non scritta a mano: se domani una condizione cambia nello strumento, la tabella
+si rigenera diversa e la differenza si vede. Strumento e costituzione non possono
+divergere in silenzio.
+
+**I quattro stati.** «Non osservata» e «osservata e passata» non sono la stessa
+cosa, e fra tre settimane la differenza non se la ricorda nessuno.
+
+| | significato |
+|---|---|
+| **✓** | osservata sul campo, ramo esercitato, esito quello atteso |
+| **·** | **mai osservata**: non sappiamo niente |
+| **⊗** | **non arriva da sola**: il ramo c'è ed è esercitabile, ma va PROVOCATO a mano. È lavoro che possiamo fare oggi |
+| **⊘** | **non esercitabile**: dipende da un dato che il provider non manda. Non si chiude scrivendo codice — la causa è scritta accanto alla riga |
+
+La distinzione fra ⊗ e ⊘ è operativa: **⊗ misura quanto lavoro resta a noi, ⊘
+quanto dipende da altri.** Metterle nello stesso mucchio vorrebbe dire non sapere
+quanto manca davvero.
+
+La colonna **live** è vuota per tutte e 75: il live è bloccato
+(`MIKE_LIVE_ENABLED` assente, `LIVE_ORDER_MODE=PAPER`, i tre control in paper) e
+**nessuna riga di questa tabella può essere spuntata in live finché non lo si
+apre deliberatamente.**
+
+
+#### 1 - PRE-MATCH: chi entra e chi no
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 1 | entra: prezzo, liquidita' e spread nei limiti | `Betfair/mike/engine.py:1784` | `under_entry` | ✓ *(158)* | |
+| 2 | NON entra: prezzo sotto la banda | `Betfair/mike/engine.py:1723` | `fuori banda` | · | |
+| 3 | NON entra: prezzo sopra la banda | `Betfair/mike/engine.py:1723` | `fuori banda` | · | |
+| 4 | NON entra: liquidita' al best insufficiente | `Betfair/mike/engine.py:1260`<br>`Betfair/mike/engine.py:1297` | `liquidita` | · | |
+| 5 | NON entra: spread troppo largo | `Betfair/mike/engine.py:1732`<br>`Betfair/mike/engine.py:1733` | `spread` | · | |
+| 6 | NON entra: fuori dalla finestra pre-match | `Betfair/mike/engine.py:1712` | `fuori finestra` | · | |
+| 7 | NON entra: finestra chiusa (ultimi minuti) | `Betfair/mike/engine.py:1714` | `finestra pre-match chiusa` | ✓ *(5)* | |
+| 8 | NON entra: feed stantio | `Betfair/mike/engine.py:1709`<br>`Betfair/mike/service.py:486` | `feed stantio` | ✓ *(26)* | |
+| 9 | NON entra: cicli massimi raggiunti | `Betfair/mike/engine.py:1716` | `max cicli` | · | |
+| 10 | NON entra: pausa dopo un green | `Betfair/mike/engine.py:1717`<br>`Betfair/mike/engine.py:1718` | `cooldown` | · | |
+| 11 | NON entra: pre-match spento dalla UI | `Betfair/mike/engine.py:1701` | `pre_disabilitato` | · | |
+| 12 | NON entra: partita saltata a mano | `Betfair/mike/engine.py:1697`<br>`Betfair/mike/engine.py:2625` | `rientro disabilitato` | · | |
+| 13 | NON entra: mercato non OPEN | `Betfair/mike/engine.py:1721`<br>`Betfair/mike/engine.py:1939` | `book assente` | ✓ *(1)* | |
+
+#### 2 - IL CICLO PRE-MATCH
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 14 | piazza l'ingresso del ciclo | `Betfair/mike/engine.py:266` | `place` | ✓ *(19)* | |
+| 15 | aspetta il fill dell'ingresso | `Betfair/mike/engine.py:1802`<br>`Betfair/mike/engine.py:1889` | `attesa fill ingresso` | · | |
+| 16 | TTL scaduto: ritira l'ordine mai abbinato | `Betfair/mike/engine.py:1799` | `ttl scaduto` | ⊗ | |
+| 17 | TTL scaduto su un fill PARZIALE: tiene la parte abbinata | **da individuare a mano** | `ttl, tengo` | ⊗ | |
+| 18 | ingresso abbinato: appoggia subito l'uscita a +N tick | `Betfair/mike/service.py:1837` | `place_resting, place` | ✓ *(19)* | |
+| 19 | prezzo salito: non tocca niente, l'uscita resta sul book | `Betfair/mike/engine.py:1842` | `green resting sul book` | ✓ *(2)* | |
+| 20 | uscita abbinata a meta': riappoggia il residuo | `Betfair/mike/engine.py:333`<br>`Betfair/mike/engine.py:345` | `residuo` | ✓ *(3)* | |
+| 21 | ciclo CHIUSO in green | `Betfair/mike/engine.py:1918`<br>`Betfair/mike/service.py:1860` | `pre_cycle` | ✓ *(10)* | |
+| 22 | passata la pausa: rientra col ciclo successivo | `Betfair/mike/engine.py:427`<br>`Betfair/mike/engine.py:1215` | `cycle_no` | ✓ *(29)* | |
+
+#### 3 - L'ULTIMO INGRESSO (10' dal fischio)
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 23 | a 10' dal fischio, in PROFITTO: chiude al mercato | `Betfair/mike/engine.py:1818`<br>`Betfair/mike/engine.py:1824` | `ultimo ingresso, locked` | ✓ *(51)* | |
+| 24 | a 10' dal fischio, in PERDITA: tiene e porta in live | `Betfair/mike/engine.py:707`<br>`Betfair/mike/engine.py:1798` | `tengo, HOLD` | ✓ *(74)* | |
+| 25 | chiusura finale abbinata: rientra in PERSIST | `Betfair/mike/engine.py:1953` | `under_last` | · | |
+| 26 | ultimo ingresso PERSIST spento dalla UI | `Betfair/mike/engine.py:1937` | `ultimo ingresso disabilitato` | ⊗ | |
+| 27 | chiusura finale non abbinata: riprezza | `Betfair/mike/engine.py:1882` | `green taker: riprezzo` | · | |
+
+#### 4 - IL FISCHIO D'INIZIO
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 28 | in gioco con posizione: prova l'uscita a +N tick | `Betfair/mike/engine.py:1773` | `provo l'uscita` | ✓ *(420)* | |
+| 29 | uscita al fischio appoggiata sul book | `Betfair/mike/engine.py:2134` | `uscita appoggiata, ko_green` | ✓ *(1)* | |
+| 30 | in gioco SENZA posizione: la partita si chiude | `Betfair/mike/engine.py:1777`<br>`Betfair/mike/engine.py:1667` | `in-play senza posizione, nessuna operazione` | ✓ *(53)* | |
+| 31 | residuo PERSIST vivo: grazia rispettata | `Betfair/mike/engine.py:520`<br>`Betfair/mike/engine.py:1773` | `in gioco` | ✓ *(420)* | |
+| 32 | residuo PERSIST annullato dopo la grazia | `Betfair/mike/engine.py:104` | `cancel` | · | |
+
+#### 5 - LA COPERTURA SU OVER 4.5
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 33 | finestra scaduta: compra la copertura piena | `Betfair/mike/engine.py:2082`<br>`Betfair/mike/engine.py:2091` | `copertura Over 4.5` | · | |
+| 34 | ASPETTA per coprire (hazard e P(4) bassi) | `Betfair/mike/engine.py:2328`<br>`Betfair/mike/engine.py:927` | `attendo per coprire, cover_wait` | · | |
+| 35 | copre subito perche' la quota Over e' gia' buona | **da individuare a mano** | `cover` | · | |
+| 36 | copre subito perche' il rischio gol e' alto | **da individuare a mano** | `cover` | · | |
+| 37 | copre comunque: oltre il minuto massimo di attesa | **da individuare a mano** | `cover` | · | |
+| 38 | NON copre: troppi gol | `Betfair/mike/engine.py:2318` | `troppi gol` | ⊗ | |
+| 39 | attende il riprezzo dopo un gol | `Betfair/mike/engine.py:927`<br>`Betfair/mike/engine.py:961` | `cover_wait` | · | |
+| 40 | copertura rimandata: liquidita' insufficiente | `Betfair/mike/engine.py:2355` | `copertura: liquidita` | · | |
+| 41 | copertura sul book, in attesa di fill | `Betfair/mike/engine.py:2438` | `attesa fill copertura` | · | |
+| 42 | copertura riprezzata | `Betfair/mike/engine.py:2437` | `copertura: riprezzo` | · | |
+| 43 | copertura ABBINATA | `Betfair/mike/engine.py:1528`<br>`Betfair/mike/engine.py:2403` | `copertura abbinata` | · | |
+
+#### 6 - LE USCITE GLOBALI
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 44 | cash-out globale a soglia di profitto | `Betfair/mike/engine.py:813` | `exit_kind` | ✓ *(72)* | |
+| 45 | tiene: profitto sotto la soglia | `Betfair/mike/engine.py:707`<br>`Betfair/mike/engine.py:1798` | `tengo` | ✓ *(74)* | |
+| 46 | tiene: in perdita, fuori dalle finestre di uscita | `Betfair/mike/engine.py:707`<br>`Betfair/mike/engine.py:1798` | `tengo` | ✓ *(74)* | |
+| 47 | uscita all'INTERVALLO a modello | `Betfair/mike/engine.py:2504`<br>`Betfair/mike/engine.py:2512` | `loss_exit_deciso` | · | |
+| 48 | intervallo con pochi gol: non chiude | `Betfair/mike/engine.py:707`<br>`Betfair/mike/engine.py:1798` | `tengo` | ✓ *(74)* | |
+| 49 | tiene con l'Under gia' perso (serve il quinto gol) | `Betfair/mike/engine.py:707`<br>`Betfair/mike/engine.py:1798` | `tengo` | ✓ *(74)* | |
+| 50 | nessuna esposizione gestibile: aspetta l'incasso | `Betfair/mike/engine.py:2453` | `nessuna esposizione gestibile` | · | |
+| 51 | cap di perdita per partita | `Betfair/mike/engine.py:2522` | `cap perdita evento` | ⊗ | |
+| 52 | uscita del secondo tempo a modello | `Betfair/mike/engine.py:2504`<br>`Betfair/mike/engine.py:2512` | `loss_exit_deciso` | · | |
+
+#### 7 - CHIUSURA E RESIDUI
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 53 | chiusure sul book, in attesa | `Betfair/mike/engine.py:2591`<br>`Betfair/mike/engine.py:2726` | `attesa fill chiusura` | · | |
+| 54 | chiusura riprezzata | `Betfair/mike/engine.py:2590` | `chiusura: riprezzo` | · | |
+| 55 | tutte le chiusure abbinate: posizione chiusa | `Betfair/mike/engine.py:2566` | `chiuso (` | · | |
+| 56 | residuo minuscolo portato al regolamento | `Betfair/mike/engine.py:2622` | `residuo sotto il minimo` | ✓ *(3)* | |
+
+#### 8 - IL RE-INGRESSO SU UNDER 4.5
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 57 | re-ingresso su Under 4.5 | `Betfair/mike/engine.py:2647` | `reentry` | · | |
+| 58 | niente re-ingresso: nessun gol | `Betfair/mike/engine.py:2632` | `gol fuori range` | ✓ *(1)* | |
+| 59 | niente re-ingresso: troppi gol | `Betfair/mike/engine.py:2632` | `gol fuori range` | ✓ *(1)* | |
+| 60 | niente re-ingresso: oltre il minuto limite | `Betfair/mike/engine.py:2634` | `oltre il minuto di re-ingresso` | · | |
+| 61 | niente re-ingresso: prezzo non migliore dell'ingresso | `Betfair/mike/engine.py:2640` | `<= ingresso` | · | |
+| 62 | niente re-ingresso: gia' fatto su questa partita | `Betfair/mike/engine.py:1598`<br>`Betfair/mike/engine.py:1603` | `reentry_done` | · | |
+| 63 | niente re-ingresso: chiusura precedente in perdita | `Betfair/mike/engine.py:1458` | `flat` | ✓ *(11)* | |
+
+#### 9 - FINE PARTITA
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 64 | mercato chiuso: si passa al regolamento | `Betfair/mike/engine.py:1640` | `mercato chiuso` | · | |
+| 65 | attesa del punteggio finale | `Betfair/mike/engine.py:1652` | `attesa punteggio finale` | · | |
+| 66 | partita REGOLATA e contabilizzata | **da individuare a mano** | `settled` | ✓ *(24)* | |
+
+#### 10 - ECCEZIONI E COMANDI
+
+| # | condizione | ramo di codice | riconosciuta da | paper | live |
+|---:|---|---|---|:---:|:---:|
+| 67 | ordine a esito IGNOTO: riconciliazione | `Betfair/mike/service.py:571`<br>`Betfair/mike/service.py:1696` | `reconcile_pending` | ⊗ | |
+| 68 | con un esito ignoto NON si apre niente di nuovo | `Betfair/mike/engine.py:144`<br>`Betfair/mike/engine.py:760` | `esito ignoto` | ⊗ | |
+| 69 | CASH OUT dalla UI | **da individuare a mano** | `manual_close` | ⊗ | |
+| 70 | CASH OUT in pre-match | `Betfair/mike/engine.py:1546`<br>`Betfair/mike/engine.py:1562` | `chiusura manuale` | ⊗ | |
+| 71 | dopo un cash out manuale non rientra da solo | `Betfair/mike/engine.py:1550`<br>`Betfair/mike/engine.py:1597` | `no_reentry` | ⊗ | |
+| 72 | partita regolata: nessuna azione | **da individuare a mano** | `SETTLED` | ✓ *(180)* | |
+| 73 | partita saltata dalla UI | `Betfair/mike/service.py:841`<br>`Betfair/mike/service.py:851` | `skip_event, SKIPPED` | ⊗ | |
+| 74 | stato imprevisto: va in errore e annulla tutto | **da individuare a mano** | `ERROR` | ⊗ | |
+| 75 | in gioco senza mai aver operato: scheda chiusa a zero | `Betfair/mike/engine.py:654`<br>`Betfair/mike/service.py:1566` | `pnl_indipendente_dal_risultato` | ✓ *(65)* | |
+
+#### Il conto di oggi (14/09/2026, paper)
+
+| stato | quante | che cosa vuol dire |
+|---|---:|---|
+| **✓ osservate** | **28** | ramo esercitato su partite vere, esito quello atteso |
+| **⊗ da provocare** | **12** | il ramo c'è, ma non scatta da solo: **lavoro nostro, si può fare oggi** |
+| **· mai viste** | **35** | arrivano con le partite: si riempiono giocando |
+| **⊘ non esercitabili** | **0** | nessuna condizione di Mike dipende oggi da un dato che il provider non manda |
+| **live** | **0 su 75** | il live è bloccato e nessuna riga può essere spuntata |
+
+**Le 28 non sono 39.** Il 13/09 lo stesso strumento ne contava 39: il numero si
+muove con la **finestra di archivio**, e fra le due misure ci sono state dieci ore
+di app spenta. Non è una regressione del bot, è la prova che *questa tabella
+fotografa un periodo, non una verità permanente* — e che va rifatta dopo ogni
+giornata di gioco, non una volta sola.
+
+**Otto righe non hanno ancora un ramo di codice.** Sono quelle che lo strumento
+riconosce da una parola che nel motore compare solo fra le costanti (`settled`,
+`SETTLED`, `manual_close`, le tre di copertura): il riferimento automatico
+sarebbe stato fuorviante, quindi è scritto **da individuare a mano** invece di
+inventarne uno. Una riga senza ramo verificato è una riga da guardare, e va detto.
+
+**Come si rigenera.** La tabella non si scrive a mano: si rigenera dallo
+strumento. Chi cambia una condizione nello strumento vede la tabella cambiare, e
+chi cambia la tabella senza toccare lo strumento sta scrivendo un desiderio.
