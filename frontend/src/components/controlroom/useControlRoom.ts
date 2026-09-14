@@ -81,6 +81,19 @@ export interface StatoBot {
      * ed è successo.
      */
     modiStrategia: Record<string, 'paper' | 'live'> | null;
+
+    /**
+     * Lo stato ESATTO scritto dal servizio ('running', 'stopping', 'stopped',
+     * 'idle', 'error'…). `inCorsa` è un sì/no e non basta al pannello di
+     * comando: «stopping» e «stopped» vanno detti in modo diverso, e chi
+     * preme un pulsante deve sapere se il servizio ha già recepito.
+     */
+    stato: string | null;
+    /** i parametri grezzi dalla riga di control: il foglio parametri li vuole
+     *  interi, comprese le chiavi che nessun tipo conosce */
+    params: Record<string, unknown> | null;
+    /** solo Omega: l'obiettivo del giorno vive fuori da `params` */
+    obiettivoGiorno: number | null;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -477,7 +490,11 @@ export function useControlRoom(): ControlRoomVM {
             safe?.control?.stats?.params_effective as Record<string, unknown> | null | undefined,
             safe?.control?.params,
         );
-        const riga = (bot: Bot, modalita: Modalita | null, inCorsa: boolean, battitoAt: string | null): StatoBot => {
+        const riga = (
+            bot: Bot, modalita: Modalita | null, inCorsa: boolean, battitoAt: string | null,
+            stato: string | null, params: Record<string, unknown> | null,
+            obiettivoGiorno: number | null = null,
+        ): StatoBot => {
             const at = ultimoPush[bot];
             const eta = at == null ? null : Math.max(0, Math.round((nowMs - at) / 1000));
             return {
@@ -487,12 +504,22 @@ export function useControlRoom(): ControlRoomVM {
                 freschezzaPush: freschezza(eta),
                 varianti: bot === 'safe' ? varianti : null,
                 modiStrategia: bot === 'safe' ? modi : null,
+                stato, params, obiettivoGiorno,
             };
         };
+        const testo = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+        const numero = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
         return [
-            riga('omega', modalitaDi(omega?.control?.mode), inCorsaDi(omega?.control?.status), omega?.control?.heartbeat_at ?? null),
-            riga('safe', modalitaDi(safe?.control?.mode), inCorsaDi(safe?.control?.status), safe?.control?.heartbeat_at ?? null),
-            riga('mike', modalitaDi(mike?.control?.mode), inCorsaDi(mike?.control?.status), mike?.control?.heartbeat_at ?? null),
+            riga('omega', modalitaDi(omega?.control?.mode), inCorsaDi(omega?.control?.status),
+                omega?.control?.heartbeat_at ?? null, testo(omega?.control?.status),
+                (omega?.control?.params ?? null) as Record<string, unknown> | null,
+                numero((omega?.control as { daily_goal?: unknown } | undefined)?.daily_goal)),
+            riga('safe', modalitaDi(safe?.control?.mode), inCorsaDi(safe?.control?.status),
+                safe?.control?.heartbeat_at ?? null, testo(safe?.control?.status),
+                (safe?.control?.params ?? null) as Record<string, unknown> | null),
+            riga('mike', modalitaDi(mike?.control?.mode), inCorsaDi(mike?.control?.status),
+                mike?.control?.heartbeat_at ?? null, testo(mike?.control?.status),
+                (mike?.control?.params ?? null) as Record<string, unknown> | null),
         ];
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control, canali, ultimoPush, nowMs]);
 

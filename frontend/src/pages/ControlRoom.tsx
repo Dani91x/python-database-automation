@@ -19,7 +19,7 @@
 // LAYOUT: testata con la giornata · partite per campionato in ordine
 // cronologico · nastro dei segnali · posizioni aperte.
 // ============================================================================
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +43,12 @@ import { runnerPhase, type RunnerPhase } from '@/lib/safeBot';
 import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/controlRoomCatena';
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
+import { PannelloBot } from '@/components/controlroom/PannelloBot';
+import { creaComandi, importiDi } from '@/components/controlroom/comandiBot';
+import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
+import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
+import { mergeBotParams, updateSafeParams } from '@/lib/safeBot';
+import { mergeMikeParams, updateMikeParams } from '@/lib/mike';
 
 // --------------------------------------------------------------- vocabolario
 // Le parole del trader, in italiano, in un posto solo.
@@ -129,6 +135,60 @@ export default function ControlRoom() {
 
     const inLive = vm.bots.some((b) => b.modalita === 'live');
 
+    // ── COMANDO DEI BOT ──────────────────────────────────────────────────────
+    // I parametri li legge dallo STATO GIA' CARICATO: il comando non fa una
+    // lettura sua, o potrebbe salvare partendo da una versione diversa da
+    // quella che il trader sta guardando.
+    const paramsDi = useCallback(
+        (b: Bot) => vm.bots.find((x) => x.bot === b)?.params ?? null,
+        [vm.bots],
+    );
+    const [erroreComando, setErroreComando] = useState<string | null>(null);
+    const comandi = useMemo(() => {
+        const base = creaComandi({
+            params: paramsDi,
+            obiettivoOmega: () => vm.bots.find((x) => x.bot === 'omega')?.obiettivoGiorno ?? vm.obiettivo,
+        }, vm.ricarica);
+        // un comando che fallisce in silenzio e' peggio di un comando assente:
+        // il trader crede di aver fermato un bot che sta ancora operando.
+        const avvolgi = <A extends unknown[]>(f: (...a: A) => Promise<void>) => async (...a: A) => {
+            setErroreComando(null);
+            try { await f(...a); } catch (e) {
+                setErroreComando(e instanceof Error ? e.message : String(e));
+                throw e;
+            }
+        };
+        return {
+            avvia: avvolgi(base.avvia), ferma: avvolgi(base.ferma),
+            cambiaModalita: avvolgi(base.cambiaModalita), cambiaImporto: avvolgi(base.cambiaImporto),
+        };
+    }, [paramsDi, vm.bots, vm.obiettivo, vm.ricarica]);
+
+    const importi = useMemo(() => ({
+        omega: importiDi('omega', paramsDi('omega')),
+        safe: importiDi('safe', paramsDi('safe')),
+        mike: importiDi('mike', paramsDi('mike')),
+    }), [paramsDi]);
+
+    // i fogli parametri sono ESATTAMENTE quelli delle pagine dei bot: due
+    // schede diverse per lo stesso servizio sarebbero due verita'.
+    const fogliParametri = useMemo(() => ({
+        safe: (
+            <BotParamsSheet
+                params={mergeBotParams(paramsDi('safe'))}
+                rawParams={paramsDi('safe')}
+                onSave={async (p) => { await updateSafeParams(p); vm.ricarica(); }}
+            />
+        ),
+        mike: (
+            <MikeParamsSheet
+                params={mergeMikeParams(paramsDi('mike'))}
+                busy={false}
+                onSave={async (p) => { await updateMikeParams(p); vm.ricarica(); }}
+            />
+        ),
+    }), [paramsDi, vm.ricarica]);
+
     return (
         <PageShell
             title="Control Room"
@@ -208,6 +268,17 @@ export default function ControlRoom() {
                 selezionato={sport}
                 onSeleziona={setSport}
             />
+
+            <PannelloBot bots={vm.bots} importi={importi} parametri={fogliParametri} comandi={comandi} />
+
+            {erroreComando && (
+                <Card className="glass-card border-red-500/40 bg-red-500/10 p-2.5 text-[11.5px] text-red-200"
+                    data-testid="cr-errore-comando">
+                    <strong className="text-red-300">Il comando non è andato a buon fine:</strong>{' '}
+                    {erroreComando}. Lo stato qui sopra è quello che dice il servizio: se non è
+                    cambiato, <strong>il bot sta ancora facendo quello che faceva</strong>.
+                </Card>
+            )}
 
             <Catena vm={vm} />
 

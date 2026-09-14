@@ -730,3 +730,112 @@ describe('la pagina non mostra MAI un numero che somma paper e live', () => {
         expect(within(s.getByTestId('cr-sport-calcio')).getByText(/1 in prova/)).toBeTruthy();
     });
 });
+
+// ========================================================================
+// LA PLANCIA DI COMANDO.
+// «Devo poter fermare uno o tutti i bot come e quando voglio» (14/09).
+// Accendere in live e' l'unico gesto della pagina che mette a rischio
+// denaro vero da fermo: si conferma due volte.
+// ========================================================================
+
+function botFermo(over: Record<string, unknown> = {}) {
+    return {
+        bot: 'safe', modalita: 'paper', inCorsa: false, battitoAt: null,
+        canale: 'connected', etaPushS: 1, freschezzaPush: 'fresca',
+        varianti: null, modiStrategia: null,
+        stato: 'stopped', params: { stake: { backSize: 3 } }, obiettivoGiorno: null,
+        ...over,
+    };
+}
+
+describe('comando dei bot', () => {
+    it('mostra lo stato ESATTO del servizio: «sta fermandosi» non e’ «fermo»', () => {
+        mVm.mockReturnValue(vm({
+            bots: [botFermo({ bot: 'safe', inCorsa: true, stato: 'stopping' })] as never,
+        }));
+        expect(mostra().getByTestId('cr-bot-stato-safe').textContent).toMatch(/sta fermandosi/i);
+    });
+
+    it('FERMA TUTTI e’ spento se non c’e’ niente da fermare', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo()] as never }));
+        expect(mostra().getByTestId('cr-ferma-tutti')).toHaveProperty('disabled', true);
+    });
+
+    it('FERMA TUTTI e’ acceso e non chiede conferme: e’ un freno d’emergenza', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo({ inCorsa: true, stato: 'running' })] as never }));
+        const b = mostra().getByTestId('cr-ferma-tutti');
+        expect(b).toHaveProperty('disabled', false);
+        expect(b.textContent).toMatch(/ferma tutti/i);
+    });
+
+    it('AVVIARE CON SOLDI VERI chiede una seconda conferma', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo()] as never }));
+        const s = mostra();
+        // al primo clic non parte niente: compare la conferma
+        fireEvent.click(s.getByTestId('cr-avvia-live-safe'));
+        expect(s.getByTestId('cr-conferma-avvio-live-safe').textContent).toMatch(/ordini reali/i);
+        expect(s.getByTestId('cr-avviso-live-safe').textContent).toMatch(/ordini reali su Betfair/i);
+    });
+
+    it('avviare IN PROVA non chiede nessuna conferma: non ci sono soldi in gioco', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo()] as never }));
+        const s = mostra();
+        expect(s.getByTestId('cr-avvia-paper-safe')).toBeTruthy();
+        expect(s.queryByTestId('cr-avviso-live-safe')).toBeNull();
+    });
+
+    it('anche PASSARE a soldi veri a bot acceso vuole la seconda conferma', () => {
+        mVm.mockReturnValue(vm({
+            bots: [botFermo({ inCorsa: true, stato: 'running', modalita: 'paper' })] as never,
+        }));
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-a-live-safe'));
+        expect(s.getByTestId('cr-conferma-live-safe').textContent).toMatch(/sono soldi veri/i);
+    });
+
+    it('tornare in prova NON chiede conferma: si toglie rischio, non si aggiunge', () => {
+        mVm.mockReturnValue(vm({
+            bots: [botFermo({ inCorsa: true, stato: 'running', modalita: 'live' })] as never,
+        }));
+        const s = mostra();
+        expect(s.getByTestId('cr-a-paper-safe')).toBeTruthy();
+        expect(s.queryByTestId('cr-conferma-live-safe')).toBeNull();
+    });
+
+    it('QUANTI BOT usano soldi veri si vede in cima al pannello', () => {
+        mVm.mockReturnValue(vm({
+            bots: [
+                botFermo({ bot: 'omega', inCorsa: true, stato: 'running', modalita: 'paper' }),
+                botFermo({ bot: 'safe', inCorsa: true, stato: 'running', modalita: 'live' }),
+            ] as never,
+        }));
+        expect(mostra().getByTestId('cr-quanti-live').textContent).toMatch(/1 con soldi veri/);
+    });
+
+    it('l’importo mostra il valore VERO del servizio e non si salva a ogni tasto', () => {
+        mVm.mockReturnValue(vm({
+            bots: [botFermo({ params: { stake: { backSize: 3, laySize: 2 } } })] as never,
+        }));
+        const s = mostra();
+        const campo = s.getByTestId('cr-importo-safe-stake-backSize') as HTMLInputElement;
+        expect(campo.placeholder).toBe('3');
+        // finche' non cambia niente, nessun pulsante «salva»
+        expect(s.queryByTestId('cr-importo-safe-stake-backSize-salva')).toBeNull();
+        fireEvent.change(campo, { target: { value: '5' } });
+        expect(s.getByTestId('cr-importo-safe-stake-backSize-salva')).toBeTruthy();
+    });
+
+    it('l’importo di Omega dichiara che e’ un MINIMO, non l’importo di lavoro', () => {
+        mVm.mockReturnValue(vm({
+            bots: [botFermo({ bot: 'omega', params: { min_stake: 0.5 } })] as never,
+        }));
+        const s = mostra();
+        const eti = s.getByTestId('cr-bot-riga-omega');
+        expect(eti.textContent).toMatch(/stake minimo/i);
+    });
+
+    it('un bot senza scheda parametri lo dice, invece di mostrare un pulsante morto', () => {
+        mVm.mockReturnValue(vm({ bots: [botFermo({ bot: 'omega' })] as never }));
+        expect(mostra().getByTestId('cr-parametri-omega').textContent).toMatch(/dalla sua pagina/i);
+    });
+});
