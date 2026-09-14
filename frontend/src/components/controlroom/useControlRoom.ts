@@ -21,7 +21,10 @@ import {
     fetchScanRows, subscribeScanRows, fetchScanStatus,
     type ScanRow, type ScanStatusRow, type CalcioScanPayload,
 } from '@/lib/safeStrategyScan';
-import { fetchOmegaState, fetchOmegaTrades, type OmegaState, type OmegaTrade, type OmegaStats } from '@/lib/omega';
+import {
+    fetchOmegaState, fetchOmegaTrades, fetchOmegaEvents,
+    type OmegaState, type OmegaTrade, type OmegaStats, type OmegaEvent,
+} from '@/lib/omega';
 import {
     fetchSafeState, fetchRunnerState, requestSafe, tradeExposureNow,
     type SafeState, type SafeRiskStats, type RunnerState,
@@ -31,7 +34,7 @@ import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
     costruisciGiornata, soldiPerPartita, marca, totaliGiornata, coperturaControllo,
-    etaSecondi, freschezza, realizzatoGiornata,
+    etaSecondi, freschezza, realizzatoGiornata, arricchimentoDa, type ArricchimentoPartita,
     type Bot, type GruppoCampionato, type TotaliGiornata, type Freschezza, type PartitaFeedLike, type Sport,
     type Realizzato, type RigaRealizzato,
 } from '@/lib/controlRoom';
@@ -316,6 +319,8 @@ export function useControlRoom(): ControlRoomVM {
     const [safeOggi, setSafeOggi] = useState<DailyRow | null>(null);
     /** la stessa giornata in PROVA. Tenuta a parte: non si somma mai all'altra. */
     const [safeOggiPaper, setSafeOggiPaper] = useState<DailyRow | null>(null);
+    /** eventi di Omega: campionato, loghi e `fixture_id` che il feed non ha */
+    const [eventiOmega, setEventiOmega] = useState<OmegaEvent[]>([]);
     const [slippagePct, setSlippagePct] = useState(SLIPPAGE_PCT_DEFAULT);
     const [mike, setMike] = useState<MikeStateView | null>(null);
 
@@ -342,10 +347,11 @@ export function useControlRoom(): ControlRoomVM {
             // +0,25 €, un numero che non esisteva (era +0,41 live -0,16 paper).
             (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'live'); })(),
             (() => { const g = romeDay(new Date()); return fetchSafeDaily(g, g, null, 'paper'); })(),
+            fetchOmegaEvents(),
         ]).then((r) => {
             if (!vivo) return;
             const [rScan, rStatus, rOmega, rOmegaT, rSafe, rMike, rRunner, rProp,
-                rDaily, rDailyPaper] = r;
+                rDaily, rDailyPaper, rEventi] = r;
             if (rScan.status === 'fulfilled') setScan(rScan.value);
             if (rStatus.status === 'fulfilled') setScanStatus(rStatus.value);
             if (rOmega.status === 'fulfilled') setOmega(rOmega.value);
@@ -356,11 +362,13 @@ export function useControlRoom(): ControlRoomVM {
             if (rProp.status === 'fulfilled') setProposte(rProp.value);
             if (rDaily.status === 'fulfilled') setSafeOggi((rDaily.value ?? [])[0] ?? null);
             if (rDailyPaper.status === 'fulfilled') setSafeOggiPaper((rDailyPaper.value ?? [])[0] ?? null);
+            if (rEventi.status === 'fulfilled') setEventiOmega(rEventi.value ?? []);
 
             // Un errore su UNA fonte non deve svuotare la pagina: si mostra
             // quello che è arrivato e si dichiara che cosa manca.
             const caduti = r
-                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)'][i] : null))
+                .map((x, i) => (x.status === 'rejected' ? ['feed', 'stato feed', 'Omega', 'trade Omega', 'Safe', 'Mike', 'runner', 'proposte di chiusura', 'giornata Safe (live)', 'giornata Safe (paper)',
+                        'campionati e loghi'][i] : null))
                 .filter((x): x is string => x !== null);
             setErrore(caduti.length ? `fonti non raggiunte: ${caduti.join(', ')}` : null);
             setLettoAlle(Date.now());
@@ -459,6 +467,18 @@ export function useControlRoom(): ControlRoomVM {
     const realizzato = oStats?.realized_today ?? null;
     const targetServizio = oStats?.target_match ?? null;
 
+    // CAMPIONATO, LOGHI E FIXTURE — il feed dello scanner non li ha (verificato
+    // sui dati veri il 14/09: porta `mo_market_id` e `open_date`, e basta).
+    // Esistono pero' gia' nel software, nella tabella eventi di Omega. Qui si
+    // UNISCONO per event_id: quello che manca resta null e la scheda lo dice.
+    const arricchimento = useMemo(() => {
+        const m = new Map<string, ArricchimentoPartita>();
+        for (const e of eventiOmega) {
+            if (e?.event_id) m.set(String(e.event_id), arricchimentoDa(e));
+        }
+        return m;
+    }, [eventiOmega]);
+
     const giornata = useMemo(() => costruisciGiornata({
         righe: righeFeed.map((r) => ({
             event_id: r.event_id,
@@ -466,12 +486,13 @@ export function useControlRoom(): ControlRoomVM {
             payload: r.payload as PartitaFeedLike,
             updated_at: r.updated_at,
         })),
-        soldi, nowMs, obiettivo, realizzato, targetServizio,
+        soldi, nowMs, obiettivo, realizzato, targetServizio, arricchimento,
         // serve a distinguere «prezzo fermo» da «prezzo vecchio»: lo scanner
         // scrive solo quando qualcosa cambia, quindi l'eta' della riga NON dice
         // «da quanto non guardiamo».
         etaScannerS: etaSecondi(scanStatus?.updated_at, nowMs),
-    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio, scanStatus?.updated_at]);
+    }), [righeFeed, soldi, nowMs, obiettivo, realizzato, targetServizio,
+        scanStatus?.updated_at, arricchimento]);
 
     const totali = useMemo(() => totaliGiornata(giornata), [giornata]);
 

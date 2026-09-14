@@ -222,6 +222,49 @@ export function campionato(p: PartitaFeedLike | null | undefined): string {
     return p?.competition?.trim() || SENZA_CAMPIONATO;
 }
 
+/**
+ * ARRICCHIMENTO DI UNA PARTITA — quello che il feed dello scanner NON ha.
+ *
+ * Verificato il 14/09 sui dati veri: il payload di `safe_strategy_scan` porta
+ * `mo_market_id` e `open_date`, e basta. Niente campionato, niente loghi,
+ * niente `fixture_id`. Quei dati esistono pero' gia' nel software, nella
+ * tabella eventi di Omega (`get_omega_events`): 55 campionati su 55, loghi e
+ * fixture su 27 su 55.
+ *
+ * Qui si UNISCONO, non si inventano: quello che manca resta `null` e la
+ * scheda lo dichiara spegnendo il pulsante che non puo' funzionare.
+ */
+export interface ArricchimentoPartita {
+    campionato: string | null;
+    leagueId: number | null;
+    homeTeamId: number | null;
+    awayTeamId: number | null;
+    /** serve al pulsante «Statistiche»: senza, quel pulsante non ha dove andare */
+    fixtureId: number | null;
+}
+
+function numeroPositivo(v: unknown): number | null {
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/** Normalizza una riga di `get_omega_events` in un arricchimento. */
+export function arricchimentoDa(e: {
+    competition_name?: string | null;
+    league_id?: number | null;
+    home_team_id?: number | null;
+    away_team_id?: number | null;
+    fixture_id?: number | null;
+} | null | undefined): ArricchimentoPartita {
+    return {
+        campionato: typeof e?.competition_name === 'string' && e.competition_name.trim()
+            ? e.competition_name.trim() : null,
+        leagueId: numeroPositivo(e?.league_id),
+        homeTeamId: numeroPositivo(e?.home_team_id),
+        awayTeamId: numeroPositivo(e?.away_team_id),
+        fixtureId: numeroPositivo(e?.fixture_id),
+    };
+}
+
 // --------------------------------------------------------- controllo del gioco
 
 /**
@@ -446,6 +489,9 @@ export interface PartitaGiornata {
     statoQuote: StatoQuote;
     /** video/statistiche Betfair: il pulsante esiste già, qui passa solo il dato */
     media: { video: boolean | null; viz: boolean | null } | null;
+    /** loghi e `fixture_id` dalla tabella eventi di Omega; `null` = non
+     *  arricchita, e la scheda lo dichiara invece di mostrare pulsanti morti */
+    extra: ArricchimentoPartita | null;
     /** Match Odds, per aprire il terminale di trading su QUESTA partita */
     marketId: string | null;
     soldi: PartitaSoldi | null;
@@ -480,8 +526,12 @@ export function costruisciGiornata(args: {
     targetServizio?: number | null;
     /** età dello SCANNER: serve a distinguere «prezzo fermo» da «prezzo vecchio» */
     etaScannerS?: number | null;
+    /** campionato/loghi/fixture per event_id, dalla tabella eventi di Omega.
+     *  Facoltativo: senza, la pagina funziona e lo dichiara. */
+    arricchimento?: Map<string, ArricchimentoPartita>;
 }): GruppoCampionato[] {
     const { righe, soldi, nowMs, obiettivo, realizzato, targetServizio, etaScannerS } = args;
+    const extra = args.arricchimento ?? new Map<string, ArricchimentoPartita>();
 
     // Le partite UTILI per spalmare l'obiettivo sono quelle su cui si può
     // ancora operare: le chiuse non possono più rendere niente, e contarle
@@ -498,7 +548,10 @@ export function costruisciGiornata(args: {
             event_id: String(r.event_id),
             sport: r.sport ?? 'calcio',
             nome: nomePartita(p, String(r.event_id)),
-            campionato: campionato(p),
+            // il nome del campionato lo sa Omega, non il feed: si preferisce
+            // quello vero e si ripiega sul feed solo se manca.
+            campionato: extra.get(String(r.event_id))?.campionato ?? campionato(p),
+            extra: extra.get(String(r.event_id)) ?? null,
             koMs: koMs(p),
             stato: statoPartita(p, nowMs),
             minuto: typeof p?.minute === 'number' ? p.minute : null,
