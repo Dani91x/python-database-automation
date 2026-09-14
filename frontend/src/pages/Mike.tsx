@@ -33,6 +33,7 @@ import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
+import { Badge } from '@/components/ui/badge';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
 import { ModeToggle } from '@/components/trading/ModeToggle';
 import { ModeBanner } from '@/components/trading/ModeBanner';
@@ -372,7 +373,21 @@ export default function Mike() {
                     onStart={() => { void bot.start(); }}
                     onStop={() => { void bot.stop(); }}
                     onHeight={setNavH}
-                    health={
+                    health={<>
+                        {/* CANALE LOCALE (14/09) — il trader deve sapere se sta
+                            guardando dati spinti dal bot sul PC o letti dal
+                            database. Stessa convenzione di Segui Live e del
+                            Board, che lo dichiarano da luglio. */}
+                        {bot.canaleLocale === 'connected' ? (
+                            <Badge
+                                variant="outline"
+                                className="text-[10px] bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                title="Canale LOCALE attivo (ws://127.0.0.1:47333): quote, P&L e stato arrivano direttamente dal bot sul PC, senza passare dal database. Se cade, fallback automatico al DB: i numeri restano veri, solo piu' vecchi di qualche secondo."
+                                data-testid="mike-canale-locale"
+                            >
+                                canale locale
+                            </Badge>
+                        ) : null}
                         <ServiceHealthChip
                             botName="Mike"
                             nowMs={nowMs}
@@ -386,7 +401,7 @@ export default function Mike() {
                             dry={stats?.dry}
                             lastError={scanStatus?.payload?.last_error ?? null}
                         />
-                    }
+                    </>}
                     modeToggle={<ModeToggle mode={mode} onChange={onToggleMode} />}
                     params={<MikeParamsSheet params={bot.params} busy={bot.busy || !bot.available} onSave={bot.saveParams} />}
                 />

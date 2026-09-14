@@ -23,6 +23,7 @@ import json
 import logging
 import queue
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_METHODS = frozenset({"order", "snapshot"})
 _MAX_QUEUE = 200  # anti-runaway: mai accumulare comandi all'infinito
+# invii non ancora completati oltre i quali si smette di pubblicare: con pochi
+# client su 127.0.0.1 non ci si arriva mai, e se ci si arriva vuol dire che il
+# consumatore e' fermo — mandargli altra roba non lo aiuta.
+_MAX_INVII_IN_VOLO = 64
 
 
 @dataclass
@@ -45,13 +50,26 @@ class LocalRequest:
 class LocalChannel:
     """Server WS su localhost. publish/respond sono THREAD-SAFE (call_soon_threadsafe)."""
 
-    def __init__(self, port: int, sport: str = "calcio") -> None:
+    def __init__(self, port: int, sport: str = "calcio", solo_lettura: bool = False) -> None:
         self.port = int(port)
         self.sport = sport
+        # CANALE DI SOLA USCITA (14/09). I canali dei BOT (Mike, Omega, Safe)
+        # servono a mostrare, non a comandare: nessuno drena la loro coda, e una
+        # richiesta che arrivasse resterebbe li' senza risposta finche' la coda
+        # non si riempie (200) e comincia a rifiutare in silenzio.
+        # Meglio dirlo subito e chiaramente.
+        #
+        # E c'e' una ragione piu' importante del garbo: il canale del runner
+        # ESEGUE ORDINI VERI. Tenere i due livelli di fiducia separati — chi
+        # comanda e chi mostra — vuol dire che aggiungere uno schermo non
+        # aggiunge mai una via per mandare soldi.
+        self.solo_lettura = bool(solo_lettura)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._clients: set = set()          # toccato SOLO dal thread del loop
         self._requests: "queue.Queue[LocalRequest]" = queue.Queue(maxsize=_MAX_QUEUE)
         self._n_clients = 0                 # letto cross-thread (int: atomico)
+        self._in_volo = 0               # invii non ancora completati (contropressione)
+        self._ultimo_avviso = 0.0
         self._started = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._hello_extra: Dict[str, Any] = {}
@@ -103,6 +121,10 @@ class LocalChannel:
             msg = json.loads(raw)
             method = str(msg.get("m") or "")
             msg_id = msg.get("id")
+            if self.solo_lettura:
+                self._send(ws, {"id": msg_id, "ok": False,
+                                "e": "canale di sola lettura: nessun comando accettato"})
+                return
             if method not in _ALLOWED_METHODS:
                 self._send(ws, {"id": msg_id, "ok": False, "e": f"metodo sconosciuto: {method}"})
                 return
@@ -127,12 +149,14 @@ class LocalChannel:
             return
         self._loop.create_task(self._safe_send(ws, text))
 
-    @staticmethod
-    async def _safe_send(ws: Any, text: str) -> None:
+    async def _safe_send(self, ws: Any, text: str) -> None:
+        self._in_volo += 1              # solo dal thread del loop: nessuna corsa
         try:
             await ws.send(text)
         except Exception:  # noqa: BLE001 - client andato: ignora
             pass
+        finally:
+            self._in_volo -= 1
 
     # ------------------------------------------------------- API thread-safe
     def is_active(self) -> bool:
@@ -143,9 +167,25 @@ class LocalChannel:
         self._hello_extra.update(extra)
 
     def publish(self, topic: str, payload: Any) -> None:
-        """Broadcast a tutti i client. No-op senza client/loop. MAI solleva."""
+        """Broadcast a tutti i client. No-op senza client/loop. MAI solleva.
+
+        CONTROPRESSIONE (14/09): se il consumatore rallenta, gli invii in volo si
+        accumulano DENTRO il processo che gestisce i soldi. Finche' qui passavano
+        ladder piccole non contava; ora i bot spingono la scheda intera a ogni
+        giro, quindi si mette un tetto: oltre ``_MAX_INVII_IN_VOLO`` si SALTA il
+        giro. Mostrare un fotogramma in meno e' sempre meglio che far crescere
+        la memoria del bot — e il fotogramma dopo arriva comunque, perche' si
+        pubblica lo stato corrente, non un differenziale.
+        """
         loop = self._loop
         if loop is None or self._n_clients == 0:
+            return
+        if self._in_volo > _MAX_INVII_IN_VOLO:
+            ora = time.monotonic()
+            if ora - self._ultimo_avviso > 30.0:
+                self._ultimo_avviso = ora
+                logger.warning("[local-ws] %d invii in volo sulla porta %d: salto i push "
+                               "finche' il client non recupera.", self._in_volo, self.port)
             return
         try:
             text = json.dumps({"t": topic, "d": payload}, default=str)
@@ -196,12 +236,16 @@ class LocalChannel:
 _CHANNEL: Optional[LocalChannel] = None
 
 
-def start_channel(port: int, sport: str) -> Optional[LocalChannel]:
-    """Avvia (una volta) il canale locale del processo. None se non parte."""
+def start_channel(port: int, sport: str, solo_lettura: bool = False) -> Optional[LocalChannel]:
+    """Avvia (una volta) il canale locale del processo. None se non parte.
+
+    ``solo_lettura=True`` per i canali dei BOT: mostrano e basta, non accettano
+    comandi. Vedi ``LocalChannel.__init__``.
+    """
     global _CHANNEL
     if _CHANNEL is not None:
         return _CHANNEL
-    ch = LocalChannel(port, sport)
+    ch = LocalChannel(port, sport, solo_lettura=solo_lettura)
     if ch.start():
         _CHANNEL = ch
         return ch

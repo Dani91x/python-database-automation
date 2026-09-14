@@ -3282,6 +3282,44 @@ def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
         ctx["day_liability_model"] = float(ctx.get("day_liability_model") or 0.0) + liab
 
 
+# la copertura del dato di controllo si misura una volta ogni tanto, non a ogni giro
+_COPERTURA_LOG = {"ts": 0.0}
+_COPERTURA_OGNI_S = 300.0
+
+
+def _log_copertura_controllo(db, engine, params: dict[str, Any], now: datetime) -> None:
+    """Scrive quante partite in corso hanno il dato di CONTROLLO del gioco.
+
+    La condizione di controllo che la specifica chiede per BASE, ESATTO e PUNTA
+    e' implementata ma SPENTA di default (``requireControl``). Accenderla su un
+    dato che non arriva spegnerebbe in silenzio tre strategie su quattro — e'
+    esattamente cosi' che BASE e PUNTA sono rimaste ferme per giorni con il
+    riferimento pre-KO. Questa riga serve a sapere, prima di accendere, se il
+    dato c'e' davvero e su quante partite."""
+    fn = getattr(engine, "control_data_coverage", None)
+    if not callable(fn):
+        return
+    ora = now.timestamp()
+    if ora - float(_COPERTURA_LOG["ts"]) < _COPERTURA_OGNI_S:
+        return
+    try:
+        cop = fn() or {}
+    except Exception:  # noqa: BLE001 - una misura non ferma il bot
+        return
+    tot = int(cop.get("con_dato", 0)) + int(cop.get("senza_dato", 0))
+    if tot <= 0:
+        return
+    _COPERTURA_LOG["ts"] = ora
+    _log(db, "diagnosi", {
+        "reason": "copertura_controllo_gioco",
+        "con_dato": cop.get("con_dato"), "senza_dato": cop.get("senza_dato"),
+        "percentuale": round(100.0 * int(cop.get("con_dato", 0)) / tot, 1),
+        "attivo": bool((params.get("base") or {}).get("requireControl")),
+        "nota": "condizione di controllo del gioco: copertura del dato IPS "
+                "(corner/cartellini). Si accende solo se la copertura e' alta.",
+    })
+
+
 def _log_pre_match_missing(db, engine, params: dict[str, Any], now: datetime) -> None:
     """Scrive nell'attivita' le partite in corso senza riferimento 1X2 pre-KO.
 
@@ -3378,6 +3416,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     # schermo, e l'utente vede solo ESATTO (l'unica che non usa il pre-KO).
     # Va scritto qui, prima dell'uscita anticipata su "nessun segnale".
     _log_pre_match_missing(db, engine, params, now)
+    _log_copertura_controllo(db, engine, params, now)
     if not signals:
         return 0, 0
     try:
@@ -4848,6 +4887,12 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         # H-15: i parametri REALMENTE in uso (clampati), per la scheda parametri
         "params_effective": params_effective(params),
     }
+    # LO SCHERMO PRIMA DEL DISCO (14/09). Spingere sul socket locale non costa
+    # un byte di IO, quindi si fa SEMPRE e per primo: se la scrittura su
+    # ``safe_strategy_control`` fallisse o fosse lenta, il trader vedrebbe
+    # comunque i numeri di questo giro. La scrittura resta e resta obbligatoria:
+    # il socket e' un'accelerazione, non una sostituzione.
+    _pubblica_stato(stats, now.isoformat())
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())
     except Exception as ex:  # noqa: BLE001
@@ -4950,6 +4995,48 @@ def _build_model(opp_mod: Any, params: dict) -> Any:
         return None
 
 
+# ===========================================================================
+# IL CANALE LOCALE VERSO LO SCHERMO (14/09/2026)
+# ===========================================================================
+# Porta 47335, accanto a 47331 (calcio), 47332 (tennis), 47333 (Mike) e 47334
+# (Omega). Un canale PER BOT e non uno condiviso: quello del runner accetta
+# comandi ordine, e non va allargato per farci passare dati di visualizzazione.
+_PORTA_CANALE = 47335
+
+
+def _avvia_canale() -> None:
+    """Accende il canale locale. Non solleva MAI: senza canale il bot lavora."""
+    import os
+
+    from Betfair.stream import local_channel as _lc
+
+    try:
+        porta = int((os.environ.get("SAFE_LOCAL_WS_PORT") or "").strip() or _PORTA_CANALE)
+    except ValueError:
+        porta = _PORTA_CANALE
+    try:
+        ch = _lc.start_channel(porta, "safe", solo_lettura=True)
+        if ch is None:
+            logger.warning("[safe.bot] canale locale NON attivo su %d (porta occupata?): "
+                           "la pagina continuera' a leggere dal database.", porta)
+    except Exception as ex:  # noqa: BLE001 — il canale e' opzionale, sempre
+        logger.warning("[safe.bot] canale locale KO: %s", str(ex)[:160])
+
+
+def _pubblica_stato(stats: dict, now_iso: str) -> None:
+    """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
+
+    E' lo STESSO oggetto che va in ``set_control``: schermo e database non
+    possono divergere perche' non sono due calcoli, e' uno solo.
+    """
+    from Betfair.stream import local_channel as _lc
+
+    try:
+        _lc.publish("safe_stato", {"stats": stats, "last_cycle": now_iso})
+    except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
+        logger.debug("[safe.bot] publish stato KO: %s", str(ex)[:120])
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -4959,6 +5046,7 @@ def main() -> None:
     )
     lock = acquire_single_instance_lock(_SINGLE_INSTANCE_PORT, "safe-bot")
     logger.info("[safe.bot] servizio avviato (lock %s)", _SINGLE_INSTANCE_PORT)
+    _avvia_canale()
     engine_mod = _import_engine_module()
     opp_mod = _import_opportunity_module()
     engine = model = None

@@ -29,6 +29,7 @@ import { TotaliBar } from '@/components/trading/EventPnlTable';
 import { groupTradesIntoCicli, groupCicliByEvent, totaliOperazioni, tradesOfMode } from '@/lib/eventGroups';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
+import { Badge } from '@/components/ui/badge';
 import { ServiceHealthChip } from '@/components/trading/ServiceHealthChip';
 import { ModeToggle } from '@/components/trading/ModeToggle';
 import { ModeBanner } from '@/components/trading/ModeBanner';
@@ -48,6 +49,7 @@ import { toastSettlement } from '@/lib/toasts';
 import { SCANNER_STALE_MS } from '@/lib/safeBot';
 import { fetchScanStatus, type ScanStatusRow } from '@/lib/safeStrategyScan';
 import { fetchOmegaDaily, fetchOmegaDayTrades, romeDay, dayLabel } from '@/lib/dailyHistory';
+import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
     Zap, ShieldAlert, Activity, Lock,
 } from 'lucide-react';
@@ -76,6 +78,14 @@ const REALTIME_DEBOUNCE_MS = 1200;
 // =============================================================== main page
 export default function Omega() {
     const [control, setControl] = useState<OmegaControl | null>(null);
+    // CANALE LOCALE (14/09) — i numeri di testata spinti dal servizio su
+    // ws://127.0.0.1:47334 a ogni giro, senza passare dal database.
+    // SOVRAPPONGONO `control.stats`, non sostituiscono `control`: modalità,
+    // stato e parametri restano quelli di Postgres. Se il socket cade questa
+    // torna null e si vedono di nuovo i numeri del database — più vecchi di
+    // qualche secondo, mai assenti.
+    const [statsSpinte, setStatsSpinte] = useState<Record<string, unknown> | null>(null);
+    const [canaleLocale, setCanaleLocale] = useState<LocalStatus>('off');
     const [aggregates, setAggregates] = useState<OmegaAggregates | null>(null);
     const [trades, setTrades] = useState<OmegaTrade[]>([]);
     // attività del servizio (green-up, attese, ritenti…) dall'RPC di stato
@@ -132,7 +142,10 @@ export default function Omega() {
 
     const status: OmegaStatus = control?.status ?? 'idle';
     const mode: OmegaMode = control?.mode ?? 'paper';
-    const stats = control?.stats ?? {};
+    // il socket vince campo per campo; ciò che non manda resta del database.
+    // Il tipo resta quello del servizio: la sovrapposizione non deve allargare
+    // il contratto, altrimenti si perde ogni controllo sui numeri della testata.
+    const stats = { ...(control?.stats ?? {}), ...(statsSpinte ?? {}) } as NonNullable<OmegaControl['stats']>;
 
     async function reload() {
         const firstLoad = !initialized.current;
@@ -185,6 +198,29 @@ export default function Omega() {
             });
         }
     }
+
+    // ---- CANALE LOCALE (desktop): i numeri di testata arrivano PUSHATI ----
+    // Il database resta la verità durevole e continua a essere letto come
+    // prima: questo è solo un'accelerazione. Fuori dall'app desktop il socket
+    // non si connette mai e non cambia nulla.
+    useEffect(() => {
+        const ch = getLocalChannel('omega');
+        setCanaleLocale(ch.getStatus());
+        const offStato = ch.onStatus((st) => {
+            setCanaleLocale(st);
+            // caduto il socket si buttano i numeri spinti: meglio quelli del
+            // database, veri anche se vecchi, di una foto congelata di cui non
+            // sappiamo più l'età.
+            if (st !== 'connected') setStatsSpinte(null);
+        });
+        const offPush = ch.subscribe('omega_stato', (d) => {
+            const msg = d as { stats?: Record<string, unknown> } | null;
+            if (msg && typeof msg === 'object' && msg.stats && typeof msg.stats === 'object') {
+                setStatsSpinte(msg.stats);
+            }
+        });
+        return () => { offStato(); offPush(); };
+    }, []);
 
     useEffect(() => {
         reload().catch(e => { toast.error('Errore caricamento Omega', { description: String(e?.message ?? e) }); setLoading(false); });
@@ -441,7 +477,23 @@ export default function Omega() {
                     // di lasciare "IN CORSA" su un servizio spento da ore.
                     heartbeatAt={control?.heartbeat_at}
                     nowMs={nowMs}
-                    health={
+                    health={<>
+                        {/* CANALE LOCALE (14/09) — stessa convenzione di Mike,
+                            di Segui Live e del Board: se la pagina sta leggendo
+                            dati spinti dal bot sul PC, lo deve DIRE. Omega
+                            respira ogni 20 s (è il suo ritmo, non un ritardo):
+                            il titolo lo dichiara, così un numero fermo non
+                            sembra un guasto. */}
+                        {canaleLocale === 'connected' ? (
+                            <Badge
+                                variant="outline"
+                                className="text-[10px] bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                title="Canale LOCALE attivo (ws://127.0.0.1:47334): i numeri di testata arrivano direttamente dal bot sul PC, senza passare dal database. Omega aggiorna ogni ~20 s, che è il suo ritmo di ciclo. Se il canale cade, fallback automatico al DB: i numeri restano veri, solo più vecchi."
+                                data-testid="omega-canale-locale"
+                            >
+                                canale locale
+                            </Badge>
+                        ) : null}
                         <ServiceHealthChip
                             botName="Omega"
                             nowMs={nowMs}
@@ -458,7 +510,7 @@ export default function Omega() {
                             // fallita (avviso ambra, non "servizio morto")
                             degraded={stats.degraded ?? null}
                         />
-                    }
+                    </>}
                     modeToggle={<ModeToggle mode={mode} onChange={onToggleMode} />}
                     params={
                         <ParamsSheetBase

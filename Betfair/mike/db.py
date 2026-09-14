@@ -357,6 +357,38 @@ def pending_requests(limit: int = 50) -> list[dict[str, Any]]:
             .order("created_at", desc=False).limit(int(limit)).execute().data or [])
 
 
+def requests_da_lavorare(limit: int = 50) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Le richieste in attesa E quelle bloccate, in UNA sola lettura.
+
+    Misurato il 14/09 sul log dell'app viva: il ciclo faceva due select al giro
+    sulla stessa tabella — una per ``pending`` e una per ``processing`` — cioe'
+    68 letture al minuto per una tabella che quasi sempre e' vuota. Sono la
+    stessa domanda («c'e' qualcosa da fare?») fatta due volte.
+
+    Ritorna ``(in_attesa, bloccate)``. La finestra di lettura e' ``limit + 200``
+    ed e' CONDIVISA fra i due stati: le bloccate non hanno un limite proprio, ma
+    nemmeno sono illimitate. L'ordinamento per ``created_at`` crescente fa si'
+    che le bloccate piu' VECCHIE — le uniche che la spazzata M2 deve chiudere —
+    entrino sempre nella finestra.
+
+    IL SALVAGENTE in fondo esiste per un caso che prima non poteva succedere:
+    con due stati nella stessa lettura, una valanga di righe ``processing`` piu'
+    vecchie di ogni ``pending`` potrebbe saturare la finestra e far tornare
+    ZERO richieste in attesa — cioe' nessun cash out manuale partirebbe, in
+    silenzio. Una richiesta dell'utente non si perde per un'ottimizzazione: se la
+    finestra e' piena e le attese sono vuote, si rilegge il solo ``pending`` come
+    si e' sempre fatto. E' una lettura in piu' solo in un caso patologico.
+    """
+    finestra = int(limit) + 200
+    rows = (_sb().table(T_REQUESTS).select("*").in_("status", ["pending", "processing"])
+            .order("created_at", desc=False).limit(finestra).execute().data or [])
+    attesa = [r for r in rows if str(r.get("status")) == "pending"][: int(limit)]
+    bloccate = [r for r in rows if str(r.get("status")) == "processing"]
+    if not attesa and len(rows) >= finestra:
+        attesa = pending_requests(limit)
+    return attesa, bloccate
+
+
 def set_request_status(req_id: int, status: str, result: Optional[dict[str, Any]] = None) -> None:
     """M1: ogni richiesta viene CHIUSA con un esito leggibile.
 
@@ -377,14 +409,21 @@ def set_request_status(req_id: int, status: str, result: Optional[dict[str, Any]
         _sb().table(T_REQUESTS).update(fields).eq("id", int(req_id)).execute()
 
 
-def fail_stale_processing(max_age_min: int = 10) -> int:
+def fail_stale_processing(max_age_min: int = 10,
+                          rows: Optional[list[dict[str, Any]]] = None) -> int:
     """Richieste rimaste in 'processing' (crash del servizio dopo la presa in
     carico): chiuse in errore. M2 — va chiamata a OGNI ciclo, altrimenti un
-    crash blocca per sempre il cash out di quella partita."""
+    crash blocca per sempre il cash out di quella partita.
+
+    ``rows`` = righe gia' lette dal chiamante (``requests_da_lavorare``): evita
+    la seconda select sulla stessa tabella nello stesso giro. Se non arrivano,
+    se le legge da sola come ha sempre fatto.
+    """
     n = 0
     try:
         cutoff = datetime.now(timezone.utc).timestamp() - max_age_min * 60
-        rows = _sb().table(T_REQUESTS).select("id,updated_at").eq("status", "processing").execute().data or []
+        if rows is None:
+            rows = _sb().table(T_REQUESTS).select("id,updated_at").eq("status", "processing").execute().data or []
         for r in rows:
             ts = r.get("updated_at")
             try:

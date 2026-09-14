@@ -27,6 +27,7 @@ from datetime import timezone
 from typing import Any, Dict, List, Optional
 
 from Betfair.safe_strategy import execution as X
+from Betfair.stream import local_channel as _lc
 
 from . import config as C
 from . import db as _real_db
@@ -806,16 +807,18 @@ _REJECT_CODES = ("evento_non_seguito", "stato_terminale", "posizione_aperta", "s
 def process_requests(*, db: Any, market: Any, events: Dict[str, Dict[str, Any]],
                      rows_by_event: Dict[str, Dict[str, Any]], params: Dict[str, Any],
                      now: datetime, dry: bool, scanner_age: Optional[float] = None,
-                     eff: Optional[Dict[str, Any]] = None) -> int:
+                     eff: Optional[Dict[str, Any]] = None,
+                     reqs: Optional[List[Dict[str, Any]]] = None) -> int:
     # L3: le chiusure manuali usano i parametri EFFETTIVI del ciclo (in live la
     # lay appoggiata e' spenta: la chiusura deve essere taker)
     eff = eff if eff is not None else params
     n = 0
-    try:
-        reqs = db.pending_requests()
-    except Exception as ex:  # noqa: BLE001
-        db.log("error", {"reason": "requests_failed", "err": str(ex)[:160]})
-        return 0
+    if reqs is None:
+        try:
+            reqs = db.pending_requests()
+        except Exception as ex:  # noqa: BLE001
+            db.log("error", {"reason": "requests_failed", "err": str(ex)[:160]})
+            return 0
     for req in reqs:
         rid = int(req["id"])
         kind = str(req.get("kind") or "")
@@ -1006,10 +1009,33 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     eff = _params_for(params, running, mode)
     _config_warn(db, params)
 
+    # LE RICHIESTE SI LEGGONO UNA VOLTA SOLA (14/09). Erano due select al giro
+    # sulla stessa tabella — le richieste in attesa e quelle rimaste appese —
+    # cioe' 68 letture al minuto per una tabella quasi sempre vuota. E' la stessa
+    # domanda posta due volte. Nessuna delle due va in cache: una richiesta della
+    # UI deve partire SUBITO, ed e' il motivo per cui questa lettura e' rimasta
+    # fuori da tutte le cache del respiro (COSTITUZIONE §17).
+    richieste_in_attesa: Optional[List[Dict[str, Any]]] = None
+    richieste_bloccate: Optional[List[Dict[str, Any]]] = None
+    leggi_insieme = getattr(db, "requests_da_lavorare", None)
+    if callable(leggi_insieme):
+        try:
+            richieste_in_attesa, richieste_bloccate = leggi_insieme()
+        except Exception as ex:  # noqa: BLE001 — si ripiega sulle due letture separate
+            logger.warning("[mike] lettura richieste KO: %s", str(ex)[:120])
+            richieste_in_attesa = richieste_bloccate = None
+
     # M2: richieste rimaste in 'processing' (crash) chiuse a OGNI ciclo, altrimenti
     # quella partita non accetta piu' nessun cash out.
+    # L'ombrello sta FUORI e copre entrambe le chiamate: in Python un'eccezione
+    # sollevata DENTRO una clausola ``except`` non viene catturata dalle clausole
+    # successive dello stesso ``try``, quindi il ripiego era scoperto e una sua
+    # eccezione avrebbe fatto saltare l'intero giro.
     try:
-        db.fail_stale_processing(_STALE_REQUEST_MIN)
+        try:
+            db.fail_stale_processing(_STALE_REQUEST_MIN, rows=richieste_bloccate)
+        except TypeError:      # accessore vecchio senza il parametro (fake dei test)
+            db.fail_stale_processing(_STALE_REQUEST_MIN)
     except Exception as ex:  # noqa: BLE001
         logger.warning("[mike] fail_stale_processing KO: %s", str(ex)[:120])
 
@@ -1091,7 +1117,8 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
                                   "day": day_key})
 
     n_requests = process_requests(db=db, market=market, events=tracked, rows_by_event=rows_by_event,
-                                  params=params, eff=eff, now=now, dry=dry, scanner_age=scanner_age)
+                                  params=params, eff=eff, now=now, dry=dry, scanner_age=scanner_age,
+                                  reqs=richieste_in_attesa)
     open_refs = _open_refs_by_event(db)      # H5: una query per il pre-controllo H2
 
     # nuove candidate (solo a bot in esecuzione, sotto il tetto partite)
@@ -1226,6 +1253,13 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
                            if any(str((l or {}).get("status")) == E.STATUS_RECONCILE
                                   for l in (e.get("positions") or []))),
     }
+    # I NUMERI DI TESTATA VANNO SULLO SCHERMO A OGNI GIRO (14/09). La scrittura
+    # su ``mike_control`` resta rallentata qui sotto — e' ascoltata in realtime da
+    # tutte le pagine aperte e ogni PATCH le sveglia tutte — ma il socket locale
+    # non ha nessuno di quei costi: P&L, liability e KPI si aggiornano al ritmo
+    # del bot. Se l'app desktop non e' collegata questa riga non fa nulla.
+    _pubblica_stato(control, agg, stats, now_ts)
+
     # H5 — la UI ascolta mike_control in REALTIME: un battito a ogni ciclo la
     # faceva ricaricare ogni secondo. M6 (review): non basta "cambiato", perche'
     # una stat cambia quasi sempre (P&L, liability) → si scriveva comunque a
@@ -2483,6 +2517,11 @@ def _persist(db: Any, ev: Dict[str, Any], before_sig: str, *,
        scritta al primo dei due casi qui sopra.
     """
     eid = str(ev.get("event_id"))
+    # LO SCHERMO SI AGGIORNA A OGNI GIRO, il database no. E' tutto il punto:
+    # spingere sul socket non costa un byte di disco, quindi non c'e' nessuna
+    # ragione di rallentarlo. La riga che si pubblica e' la STESSA che verrebbe
+    # scritta, quindi pagina e database non possono divergere.
+    _pubblica_evento(ev)
     if _signature(ev) != before_sig:
         _SCRITTO_A[eid] = float(now_ts if now_ts is not None else time.time())
         if lotto is not None:
@@ -2529,6 +2568,81 @@ def _svuota_lotto(db: Any, lotto: Dict[str, Dict[str, Any]], params: Dict[str, A
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+# ===========================================================================
+# IL CANALE LOCALE VERSO LO SCHERMO (14/09/2026)
+# ===========================================================================
+# Porta di default 47333, accanto a quelle gia' in uso dal runner (47331 calcio,
+# 47332 tennis). Un canale PER BOT e non uno condiviso: quello del runner accetta
+# comandi ordine, e non va allargato per farci passare dati di visualizzazione.
+_PORTA_CANALE = 47333
+
+
+def _avvia_canale() -> None:
+    """Accende il canale locale. Non solleva MAI: senza canale il bot lavora."""
+    import os
+
+    try:
+        porta = int((os.environ.get("MIKE_LOCAL_WS_PORT") or "").strip() or _PORTA_CANALE)
+    except ValueError:
+        porta = _PORTA_CANALE
+    try:
+        ch = _lc.start_channel(porta, "mike", solo_lettura=True)
+        if ch is None:
+            logger.warning("[mike] canale locale NON attivo su %d (porta occupata?): "
+                           "la pagina continuera' a leggere dal database.", porta)
+    except Exception as ex:  # noqa: BLE001 — il canale e' opzionale, sempre
+        logger.warning("[mike] canale locale KO: %s", str(ex)[:160])
+
+
+# Campi PESANTI e FERMI della scheda: non servono allo schermo a ogni giro e
+# gonfierebbero il messaggio per niente (il dossier e' il modello pre-partita,
+# i markets sono gli identificativi dei mercati: non cambiano mai durante la
+# partita). Restano nel database, dove la pagina li ha gia' presi una volta.
+# E ``updated_at``, che merita la sua riga perche' e' un difetto CRITICO che ho
+# introdotto io e che la review ha trovato prima che costasse qualcosa.
+#
+# ``updated_at`` significa "QUANDO IL DATABASE HA SCRITTO QUESTA RIGA". In
+# memoria, pero', il servizio ha ancora quello dell'ULTIMA RILETTURA: ``db.
+# upsert_event`` fa ``row = dict(row)`` prima di imporre l'ora nuova, quindi la
+# copia del ciclo non la vede mai, e le riletture complete avvengono ogni
+# ``events_reload_s`` (60 s).
+#
+# Mandarlo vorrebbe dire riportare INDIETRO l'orologio della scheda, e la card
+# e' memoizzata proprio su quel campo (``MikeMatchCard``: `a.ev.updated_at ===
+# b.ev.updated_at`). Conseguenza a catena, verificata riga per riga:
+#   1. il merge lato pagina fa vincere il campo spinto -> updated_at torna vecchio
+#   2. React.memo scarta tutti i push successivi -> la card si CONGELA
+#   3. ma la card si ridisegna lo stesso ogni secondo per conto suo (orologio
+#      interno), e confronta un tempo che avanza con un ``published_ts`` fermo
+#   4. oltre 20 s il semaforo del feed diventa rosso
+#   5. e il bottone di CASH OUT viene DISABILITATO — su una posizione aperta.
+# Cioe': la funzione nata per rendere la pagina viva l'avrebbe resa 12 volte
+# piu' vecchia (da ~5 s a 60 s) e avrebbe tolto al trader l'unico bottone che
+# chiude una posizione dalla scheda.
+#
+# L'ora che serve alla pagina viaggia gia' dentro il payload: ``live.published_at``,
+# che per costruzione e' l'istante in cui il servizio ha calcolato la scheda.
+_FUORI_DAL_PUSH = ("dossier", "markets", "ctx", "updated_at")
+
+
+def _pubblica_evento(ev: Dict[str, Any]) -> None:
+    """Spinge la scheda della partita sullo schermo. No-op senza app collegata."""
+    try:
+        _lc.publish("mike_event", {k: v for k, v in ev.items() if k not in _FUORI_DAL_PUSH})
+    except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
+        logger.debug("[mike] publish evento KO: %s", str(ex)[:120])
+
+
+def _pubblica_stato(control: Dict[str, Any], agg: Dict[str, Any],
+                    stats: Dict[str, Any], now_ts: float) -> None:
+    """Spinge i numeri di testata (P&L, liability, KPI) sullo schermo."""
+    try:
+        _lc.publish("mike_stato", {"control": control, "aggregates": agg,
+                                   "stats": stats, "published_ts": round(now_ts, 1)})
+    except Exception as ex:  # noqa: BLE001
+        logger.debug("[mike] publish stato KO: %s", str(ex)[:120])
+
+
 def main() -> None:
     from Betfair.stream.single_instance import acquire_single_instance_lock
 
@@ -2541,6 +2655,12 @@ def main() -> None:
     if not args.once:
         lock = acquire_single_instance_lock(_LOCK_PORT, "mike")
     logger.info("[mike] servizio avviato (lock %s, dry=%s)", _LOCK_PORT, args.dry)
+    # CANALE LOCALE verso l'app desktop (14/09): quote, P&L e stato viaggiano su
+    # 127.0.0.1 invece che passare dal disco. Se la porta e' occupata o il
+    # modulo non parte, ``start_channel`` torna None e il servizio continua
+    # esattamente come prima: il canale e' un'accelerazione, non una dipendenza.
+    if not args.once:
+        _avvia_canale()
     atlas = D.load_atlas()
     try:
         while True:

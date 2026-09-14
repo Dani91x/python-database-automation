@@ -1812,3 +1812,78 @@ export function detectSettledEvents(events: readonly MikeEvent[], seen: Set<stri
     }
     return fresh;
 }
+
+// ============================================================================
+// CANALE LOCALE — la sovrapposizione (14/09/2026)
+// ============================================================================
+// Il servizio Mike spinge le schede su ws://127.0.0.1:47333 a OGNI giro, mentre
+// su Postgres scrive solo quando cambia qualcosa di sostanziale (COSTITUZIONE
+// §17.5). Il socket è quindi più FRESCO, ma non più COMPLETO: il push non porta
+// `dossier`, `markets` e `ctx`, che sono fermi e pesanti e la pagina li ha già.
+//
+// Da qui la regola della fusione, che è l'unica cosa che conta:
+//
+//     il push SOVRAPPONE, non sostituisce.
+//
+// Campo per campo: quello che arriva dal socket vince, quello che il socket non
+// manda resta quello del database. Se il socket cade, non sparisce NIENTE — la
+// pagina torna semplicemente a essere vecchia di qualche secondo. Un P&L che
+// sparisce perché è caduto un WebSocket sarebbe peggio di un P&L in ritardo.
+
+/** Una scheda partita arrivata dal canale locale (parziale per costruzione). */
+export type MikeEventoSpinto = Partial<MikeEvent> & { event_id: string };
+
+/**
+ * Schede del database + schede spinte dal socket, fuse campo per campo.
+ *
+ * - presente in entrambi  → i campi del push vincono, gli altri restano
+ * - solo nel database     → invariata (il socket non l'ha ancora mandata)
+ * - solo nel push         → aggiunta in fondo: è una partita vera che il bot
+ *                           sta seguendo e che il database non ha ancora scritto
+ */
+export function fondiEventiLocali(
+    daDb: readonly MikeEvent[],
+    spinti: ReadonlyMap<string, MikeEventoSpinto>,
+): MikeEvent[] {
+    if (!spinti.size) return daDb as MikeEvent[];
+    const visti = new Set<string>();
+    const out = daDb.map((e) => {
+        const p = spinti.get(String(e.event_id));
+        if (!p) return e;
+        visti.add(String(e.event_id));
+        return { ...e, ...p, updated_at: oraPiuRecente(e.updated_at, p) } as MikeEvent;
+    });
+    for (const [eid, p] of spinti) {
+        // un push senza `event_id` non e' una partita: scartarlo qui e non solo
+        // a monte vuol dire che questa funzione e' sicura da sola, ovunque la si usi
+        if (!eid || visti.has(eid)) continue;
+        out.push({ ...p, updated_at: oraPiuRecente(undefined, p) } as MikeEvent);
+    }
+    return out;
+}
+
+/**
+ * L'ora da mostrare per una scheda: la piu' RECENTE fra quella del database e
+ * quella del push. **Non torna mai indietro**, ed e' la correzione di un difetto
+ * critico trovato in review il 14/09.
+ *
+ * Perche' serve: `updated_at` significa «quando il database ha scritto questa
+ * riga», e la copia che il servizio ha in memoria e' quella dell'ultima
+ * rilettura completa — fino a 60 s fa. La card e' memoizzata proprio su quel
+ * campo, quindi un `updated_at` che arretra la CONGELA; e siccome la card si
+ * ridisegna comunque ogni secondo per conto suo, il semaforo del feed diventa
+ * rosso e **spegne il bottone di cash out** su una posizione aperta.
+ *
+ * L'ora giusta viaggia gia' nel push: `live.published_at`, cioe' l'istante in
+ * cui il servizio ha calcolato la scheda. Se manca o non e' leggibile, si tiene
+ * quella del database: mai un valore inventato, mai `undefined` (che farebbe
+ * scattare lo stesso blocco del cash out, per prudenza).
+ */
+function oraPiuRecente(daDb: string | undefined, spinto: MikeEventoSpinto): string | undefined {
+    const pub = (spinto.live as { published_at?: unknown } | undefined)?.published_at;
+    const msPush = typeof pub === 'string' ? Date.parse(pub) : NaN;
+    const msDb = typeof daDb === 'string' ? Date.parse(daDb) : NaN;
+    if (!Number.isFinite(msPush)) return daDb;
+    if (Number.isFinite(msDb) && msDb >= msPush) return daDb;
+    return new Date(msPush).toISOString();
+}

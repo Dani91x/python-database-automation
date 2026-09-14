@@ -12,14 +12,20 @@
 //   * il battito del servizio (`heartbeat_at` / `stats.last_cycle`) NON fa
 //     ricaricare nulla: il filtro sta in `subscribeMike` (controlSignature).
 // ============================================================================
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     activateMike, stopMike, updateMikeParams, fetchMikeState, fetchMikeRequests, requestMike,
     subscribeMike, mergeMikeParams, detectSettledEvents, requestInFlight, MIKE_PARAM_DEFAULTS,
-    romeDayStartMs,
+    romeDayStartMs, fondiEventiLocali, MIKE_TERMINAL_STATES,
+    type MikeEventoSpinto, type MikeState,
     type MikeActivity, type MikeAggregates, type MikeControl, type MikeEvent, type MikeMode,
     type MikeParams, type MikeRequest, type MikeRequestKind, type MikeTrade,
 } from '@/lib/mike';
+import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
+
+/** stati in cui una partita non cambia piu': una scheda spinta in uno di questi
+ *  e non piu' restituita dal database e' una card fantasma, e va potata. */
+const TERMINALI = new Set<MikeState>(MIKE_TERMINAL_STATES);
 
 const POLL_MS = 15_000;
 /** finestra minima fra due ricariche scatenate dal realtime (richiesta: ≥ 1,5 s) */
@@ -36,6 +42,13 @@ export interface MikeView {
     activity: MikeActivity[];
     aggregates: MikeAggregates | null;
     requests: MikeRequest[];
+    /**
+     * Stato del canale locale (app desktop): 'connected' = quote, P&L e stato
+     * arrivano PUSHATI da 127.0.0.1 a ogni giro del bot, senza passare dal
+     * database. 'off' = si legge dal database come sempre — piu' lento di
+     * qualche secondo, mai meno vero.
+     */
+    canaleLocale: LocalStatus;
     /** inizio della giornata operativa (ms): dal DB (RPC v2) o mezzanotte di Roma stimata qui */
     dayStartMs: number | null;
     /** 'rpc' = day_start dal DB (mike_bot_v2); 'client' = mezzanotte di Roma stimata dal client */
@@ -62,6 +75,16 @@ export interface MikeHandlers {
 export function useMike(handlers: MikeHandlers = {}): MikeView {
     const [control, setControl] = useState<MikeControl | null>(null);
     const [events, setEvents] = useState<MikeEvent[]>([]);
+    // schede spinte dal canale locale, per event_id. Sovrappongono quelle del
+    // database campo per campo (vedi `fondiEventiLocali`): non le sostituiscono,
+    // quindi se il socket cade non sparisce niente.
+    const [spinti, setSpinti] = useState<Map<string, MikeEventoSpinto>>(() => new Map());
+    const [statsSpinte, setStatsSpinte] = useState<Record<string, unknown> | null>(null);
+    const [aggSpinti, setAggSpinti] = useState<Record<string, unknown> | null>(null);
+    const [canaleLocale, setCanaleLocale] = useState<LocalStatus>('off');
+    // cassetto dei push in arrivo, svuotato una volta per lotto (vedi sotto)
+    const inArrivo = useRef<Map<string, MikeEventoSpinto>>(new Map());
+    const svuota = useRef<number | null>(null);
     const [trades, setTrades] = useState<MikeTrade[]>([]);
     const [activity, setActivity] = useState<MikeActivity[]>([]);
     const [aggregates, setAggregates] = useState<MikeAggregates | null>(null);
@@ -211,12 +234,105 @@ export function useMike(handlers: MikeHandlers = {}): MikeView {
             value: control?.params ? mergeMikeParams(control.params) : { ...MIKE_PARAM_DEFAULTS },
         };
     }
+    // ---- CANALE LOCALE (desktop): le schede arrivano PUSHATE, a ogni giro ----
+    // Il database resta la verita' durevole e continua a essere letto come
+    // prima: questo e' solo un'accelerazione. Fuori dall'app desktop il socket
+    // non si connette mai, `canaleLocale` resta 'off' e non cambia nulla.
+    useEffect(() => {
+        const ch = getLocalChannel('mike');
+        setCanaleLocale(ch.getStatus());
+        const offStato = ch.onStatus((st) => {
+            setCanaleLocale(st);
+            // caduto il socket si BUTTANO le schede spinte: meglio i numeri del
+            // database, che sono veri anche se vecchi, che una foto congelata
+            // di cui non sappiamo piu' l'eta'.
+            if (st !== 'connected') {
+                setSpinti(new Map());
+                setStatsSpinte(null);
+                setAggSpinti(null);
+                inArrivo.current = new Map();
+            }
+        });
+        // I push arrivano UNO PER PARTITA a ogni giro del bot (1 s). Scrivere lo
+        // stato a ogni messaggio vorrebbe dire, con 30 partite, 30 re-render
+        // della pagina al secondo: ogni `onmessage` e' un task separato del
+        // browser e React non li unisce da solo. Si accumulano in un cassetto e
+        // si svuota una volta sola — 250 ms sono sotto la soglia percettiva e
+        // portano i risvegli da 30/s a 4/s.
+        const offEvento = ch.subscribe('mike_event', (d) => {
+            const row = d as MikeEventoSpinto | null;
+            const eid = row && typeof row === 'object' ? String(row.event_id ?? '') : '';
+            if (!eid) return;
+            inArrivo.current.set(eid, row as MikeEventoSpinto);
+            if (svuota.current != null) return;
+            svuota.current = window.setTimeout(() => {
+                svuota.current = null;
+                const lotto = inArrivo.current;
+                inArrivo.current = new Map();
+                setSpinti((prev) => {
+                    const next = new Map(prev);
+                    for (const [k, v] of lotto) next.set(k, v);
+                    return next;
+                });
+            }, 250);
+        });
+        // i NUMERI DI TESTATA (P&L, liability, KPI): senza questo il servizio li
+        // pubblicava e nessuno li ascoltava, e il commento nel codice prometteva
+        // un aggiornamento che non avveniva.
+        const offStatoBot = ch.subscribe('mike_stato', (d) => {
+            const msg = d as { stats?: unknown; aggregates?: unknown } | null;
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.stats && typeof msg.stats === 'object') {
+                setStatsSpinte(msg.stats as Record<string, unknown>);
+            }
+            if (msg.aggregates && typeof msg.aggregates === 'object') {
+                setAggSpinti(msg.aggregates as Record<string, unknown>);
+            }
+        });
+        return () => {
+            offStato(); offEvento(); offStatoBot();
+            if (svuota.current != null) window.clearTimeout(svuota.current);
+        };
+    }, []);
+
     const params = paramsRef.current.value;
+    // POTATURA (M3): una scheda spinta che il database non restituisce piu'
+    // resterebbe appesa in pagina per sempre come card fantasma — il servizio
+    // tiene 48 ore di storia, la RPC ne mostra 24. Si tengono solo le partite
+    // che il database conosce ancora, piu' quelle appena nate che il database
+    // non ha ancora scritto (`state` fra quelli operativi, non terminali).
+    const spintiVivi = useMemo(() => {
+        if (!spinti.size) return spinti;
+        const noti = new Set(events.map((e) => String(e.event_id)));
+        const out = new Map<string, MikeEventoSpinto>();
+        for (const [eid, p] of spinti) {
+            const st = String((p as { state?: unknown }).state ?? '');
+            if (noti.has(eid) || !TERMINALI.has(st as MikeState)) out.set(eid, p);
+        }
+        return out;
+    }, [events, spinti]);
+    const eventiVisibili = useMemo(() => fondiEventiLocali(events, spintiVivi), [events, spintiVivi]);
+    // i numeri di testata: stessa regola di sovrapposizione, campo per campo.
+    // Solo `stats` e `aggregates`; modalita', stato e parametri restano del
+    // database. Se il socket cade tornano null e si vedono di nuovo i numeri
+    // del database: piu' vecchi di qualche secondo, mai assenti.
+    const controlVisibile = useMemo(
+        () => (control && statsSpinte
+            ? ({ ...control, stats: { ...(control.stats ?? {}), ...statsSpinte } } as MikeControl)
+            : control),
+        [control, statsSpinte]);
+    const aggregatiVisibili = useMemo(
+        () => (aggregates && aggSpinti
+            ? ({ ...aggregates, ...aggSpinti } as MikeAggregates)
+            : aggregates),
+        [aggregates, aggSpinti]);
 
     return {
         available: control !== null,
         loading, busy, error,
-        control, events, trades, activity, aggregates, requests, dayStartMs, dayStartSource,
+        control: controlVisibile, events: eventiVisibili, trades, activity,
+        aggregates: aggregatiVisibili, requests,
+        dayStartMs, dayStartSource, canaleLocale,
         params,
         mode: running ? (control?.mode ?? desiredMode) : desiredMode,
         liveConfirmed,

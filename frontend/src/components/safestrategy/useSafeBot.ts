@@ -19,6 +19,7 @@ import {
     type SafeControl, type SafeMode, type SafeOpportunityRow, type SafeParamsEffective,
     type SafeRequest, type SafeTrade,
 } from '@/lib/safeBot';
+import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 
 const POLL_MS = 15_000;
 /** Finestra minima fra due ricariche scatenate dal REALTIME (>= 1 s, come
@@ -37,6 +38,13 @@ export interface SafeBotView {
     busy: boolean;
     error: string | null;
     control: SafeControl | null;
+    /**
+     * Stato del canale locale (app desktop): 'connected' = P&L, rischio e
+     * conteggi arrivano PUSHATI da 127.0.0.1 a ogni giro del bot, senza passare
+     * dal database. 'off' = si legge dal database come sempre: piu' lento di
+     * qualche secondo, mai meno vero.
+     */
+    canaleLocale: LocalStatus;
     trades: SafeTrade[];
     aggregates: SafeAggregates | null;
     requests: SafeRequest[];
@@ -106,6 +114,12 @@ export interface SafeBotHandlers {
 
 export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
     const [control, setControl] = useState<SafeControl | null>(null);
+    // numeri di testata spinti dal canale locale. SOVRAPPONGONO `control.stats`,
+    // non sostituiscono `control`: modalita', stato e parametri restano quelli
+    // del database. Se il socket cade questa torna null e si vedono di nuovo le
+    // stats del database — piu' vecchie, mai assenti.
+    const [statsSpinte, setStatsSpinte] = useState<Record<string, unknown> | null>(null);
+    const [canaleLocale, setCanaleLocale] = useState<LocalStatus>('off');
     const [trades, setTrades] = useState<SafeTrade[]>([]);
     const [aggregates, setAggregates] = useState<SafeAggregates | null>(null);
     const [requests, setRequests] = useState<SafeRequest[]>([]);
@@ -333,10 +347,39 @@ export function useSafeBot(handlers: SafeBotHandlers = {}): SafeBotView {
 
     const params = control?.params ? mergeBotParams(control.params) : SAFE_BOT_DEFAULTS;
 
+    // ---- CANALE LOCALE (desktop): i numeri arrivano PUSHATI, a ogni giro ----
+    // Il database resta la verita' durevole e continua a essere letto come
+    // prima: questo e' solo un'accelerazione. Fuori dall'app desktop il socket
+    // non si connette mai e non cambia nulla.
+    useEffect(() => {
+        const ch = getLocalChannel('safe');
+        setCanaleLocale(ch.getStatus());
+        const offStato = ch.onStatus((st) => {
+            setCanaleLocale(st);
+            // caduto il socket si BUTTANO le stats spinte: meglio i numeri del
+            // database, veri anche se vecchi, di una foto congelata di cui non
+            // sappiamo piu' l'eta'.
+            if (st !== 'connected') setStatsSpinte(null);
+        });
+        const offPush = ch.subscribe('safe_stato', (d) => {
+            const msg = d as { stats?: Record<string, unknown> } | null;
+            if (msg && typeof msg === 'object' && msg.stats && typeof msg.stats === 'object') {
+                setStatsSpinte(msg.stats);
+            }
+        });
+        return () => { offStato(); offPush(); };
+    }, []);
+
+    // la sovrapposizione: solo `stats`, e solo se il socket sta davvero parlando
+    const controlVisibile: SafeControl | null = (control && statsSpinte)
+        ? ({ ...control, stats: { ...(control.stats ?? {}), ...statsSpinte } } as SafeControl)
+        : control;
+
     return {
         available: control !== null,
         loading, busy, error,
-        control, trades, aggregates, requests, opportunities, activity,
+        control: controlVisibile, trades, aggregates, requests, opportunities, activity,
+        canaleLocale,
         paramsEffective, operatingDay,
         params,
         // la modalità che conta è quella PERSISTITA sul servizio: a bot fermo

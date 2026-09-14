@@ -22,6 +22,7 @@ from Betfair.omega import omega_advisor, omega_config, omega_engine as E
 from Betfair.omega import omega_model as M
 from Betfair.omega import omega_db as _real_db
 from Betfair.omega import omega_market as _real_market
+from Betfair.stream import local_channel as _lc
 from Betfair.stream.scores import scan_feed as _scan_feed
 from Betfair.stream.scores.betfair_inplay import parse_score_dict as _parse_score_dict
 
@@ -5037,6 +5038,12 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         "bot_running": True,
         "last_cycle": now.isoformat(),
     }
+    # LO SCHERMO PRIMA DEL DISCO (14/09). Spingere sul socket locale non costa
+    # un byte di IO, quindi si fa SEMPRE e per primo: se la scrittura su
+    # ``omega_control`` fallisse o fosse lenta, il trader vedrebbe comunque i
+    # numeri di questo giro. La scrittura resta e resta obbligatoria: il socket
+    # e' un'accelerazione, non una sostituzione.
+    _pubblica_stato(stats, now.isoformat())
     try:
         db.set_control(stats=stats, heartbeat_at=now.isoformat())
     except Exception as ex:  # noqa: BLE001 — L-06: il ciclo è comunque andato a buon fine
@@ -5101,6 +5108,44 @@ def _acquire_single_instance_lock():
         return None
 
 
+# ===========================================================================
+# IL CANALE LOCALE VERSO LO SCHERMO (14/09/2026)
+# ===========================================================================
+# Porta 47334, accanto a 47331 (calcio), 47332 (tennis) e 47333 (Mike). Un
+# canale PER BOT e non uno condiviso: quello del runner accetta comandi ordine,
+# e non va allargato per farci passare dati di visualizzazione.
+_PORTA_CANALE = 47334
+
+
+def _avvia_canale() -> None:
+    """Accende il canale locale. Non solleva MAI: senza canale il bot lavora."""
+    import os
+
+    try:
+        porta = int((os.environ.get("OMEGA_LOCAL_WS_PORT") or "").strip() or _PORTA_CANALE)
+    except ValueError:
+        porta = _PORTA_CANALE
+    try:
+        ch = _lc.start_channel(porta, "omega", solo_lettura=True)
+        if ch is None:
+            logger.warning("[omega] canale locale NON attivo su %d (porta occupata?): "
+                           "la pagina continuera' a leggere dal database.", porta)
+    except Exception as ex:  # noqa: BLE001 — il canale e' opzionale, sempre
+        logger.warning("[omega] canale locale KO: %s", str(ex)[:160])
+
+
+def _pubblica_stato(stats: dict, now_iso: str) -> None:
+    """Spinge i numeri di testata sullo schermo. No-op senza app collegata.
+
+    E' lo STESSO oggetto che va in ``set_control``: schermo e database non
+    possono divergere perche' non sono due calcoli, sono uno solo.
+    """
+    try:
+        _lc.publish("omega_stato", {"stats": stats, "last_cycle": now_iso})
+    except Exception as ex:  # noqa: BLE001 — mostrare non deve mai fermare il bot
+        logger.debug("[omega] publish stato KO: %s", str(ex)[:120])
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -5111,6 +5156,7 @@ def main() -> None:
         logger.error("[omega] un'altra istanza è già in esecuzione (porta %s) — esco.", _SINGLE_INSTANCE_PORT)
         return
     logger.info("[omega] servizio avviato")
+    _avvia_canale()
     score_lookup = _build_score_lookup()
     last_keepalive = float("-inf")  # primo ciclo: keepAlive subito (scalda la sessione)
     try:

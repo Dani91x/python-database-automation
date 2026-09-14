@@ -17,7 +17,15 @@
 // eseguito). Il canale NON ritenta mai una richiesta da solo.
 // ============================================================================
 
-export type LocalSport = 'calcio' | 'tennis';
+// Ogni canale ha il SUO processo e la SUA porta. Non è una duplicazione: i
+// canali dei runner (calcio, tennis) ACCETTANO COMANDI ORDINE, quelli dei bot
+// (mike, omega, safe) sono di SOLA LETTURA — mostrano e basta. Tenere separati
+// chi comanda e chi mostra vuol dire che aggiungere uno schermo non aggiunge
+// mai una via per mandare soldi.
+export type LocalSport = 'calcio' | 'tennis' | 'mike' | 'omega' | 'safe';
+
+/** I canali di sola lettura: nessun comando viaggia su questi. */
+export const CANALI_SOLA_LETTURA: readonly LocalSport[] = ['mike', 'omega', 'safe'] as const;
 export type LocalStatus = 'connected' | 'off';
 
 /** Ultimo hello ricevuto dal server ({sport, mode, ...}). */
@@ -35,7 +43,10 @@ export interface LocalResponse {
 }
 
 // porte fisse del runner (vedi local_channel.py: calcio 47331 · tennis 47332).
-const PORTS: Record<LocalSport, number> = { calcio: 47331, tennis: 47332 };
+const PORTS: Record<LocalSport, number> = {
+    calcio: 47331, tennis: 47332,     // runner (comandi + push)
+    mike: 47333, omega: 47334, safe: 47335,   // bot (solo push)
+};
 
 const RECONNECT_MIN_MS = 1_000;   // backoff iniziale
 const RECONNECT_STEP_MS = 1_000;  // incremento lineare
