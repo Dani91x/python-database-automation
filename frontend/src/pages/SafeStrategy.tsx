@@ -36,6 +36,7 @@ import { EventPnlTable } from '@/components/trading/EventPnlTable';
 import { groupTradesIntoCicli } from '@/lib/eventGroups';
 import { useSafeBot } from '@/components/safestrategy/useSafeBot';
 import { VARIANT_STYLE } from '@/components/safestrategy/variantStyles';
+import type { VariantId } from '@/lib/safeStrategy';
 import { TradingHistory } from '@/components/trading/TradingHistory';
 import { PageShell } from '@/components/trading/PageShell';
 import { BotHeader } from '@/components/trading/BotHeader';
@@ -62,6 +63,7 @@ import {
     sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, groupClosingLegs, isCurrentOppRow,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
+    liveStrategies,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
@@ -556,6 +558,22 @@ export default function SafeStrategy() {
         return Array.isArray(p) ? p.map(String) : null;
     }, [bot.activity]);
     const status: SafeBotStatus = bot.control?.status ?? 'idle';
+    const etichettaVariante = (v: string) =>
+        VARIANT_STYLE[v as VariantId]?.chipLabel() ?? v.toUpperCase();
+    // CERT. 14/09 — quali strategie spendono davvero adesso. Si legge dai
+    // parametri EFFETTIVI del servizio (quelli con cui gira), non da quelli
+    // salvati: fra i due può esserci una differenza, e su una frase che dice
+    // «qui escono soldi veri» la differenza non è accettabile.
+    const liveNow = useMemo(
+        () => liveStrategies(bot.mode, bot.paramsEffective?.variants ?? bot.params.variants,
+                             bot.paramsEffective?.strategy_modes),
+        [bot.mode, bot.paramsEffective, bot.params.variants],
+    );
+    const paperNow = useMemo(
+        () => (bot.paramsEffective?.variants ?? bot.params.variants ?? [])
+            .filter((v) => !liveNow.includes(String(v))).map((v) => String(v)),
+        [bot.paramsEffective, bot.params.variants, liveNow],
+    );
     const running = status === 'running' || status === 'stopping';
     // CERT. 13/09 — `bot.mode` è ora la modalità PERSISTITA sul servizio (o la
     // selezione locale finché il control non esiste): è quella con cui vanno
@@ -1014,6 +1032,39 @@ export default function SafeStrategy() {
                             — vale quella del servizio finché non premi «{T.stop}» e «{T.start}»:
                             gli ordini di un&apos;altra modalità vengono rifiutati.
                         </span>
+                    </div>
+                )}
+
+                {/* CERT. 14/09 — CON QUALI STRATEGIE STANNO USCENDO SOLDI VERI.
+                    La modalità è una sola per il servizio, ma da oggi ogni
+                    strategia può essere riportata a paper: «LIVE» da solo
+                    sarebbe fuorviante, la frase vera è «LIVE · solo tennis».
+                    Sta qui in testata e non dentro i parametri, perché è la cosa
+                    che chi guarda lo schermo non deve poter dedurre. */}
+                {bot.mode === 'live' && (
+                    <div
+                        className={`rounded-lg border px-3 py-2 text-[12px] flex items-center gap-2 flex-wrap ${
+                            liveNow.length === 0
+                                ? 'border-white/10 bg-white/5 text-slate-300'
+                                : 'border-red-500/40 bg-red-500/10 text-red-200'
+                        }`}
+                        data-testid="safe-live-strategies"
+                        role="status"
+                    >
+                        <b>SOLDI VERI:</b>
+                        {liveNow.length === 0 ? (
+                            <span>nessuna strategia — il servizio è armato in LIVE ma tutte
+                                sono riportate a PAPER dai parametri</span>
+                        ) : (
+                            <>
+                                <span>{liveNow.map(etichettaVariante).join(' · ')}</span>
+                                {paperNow.length > 0 && (
+                                    <span className="text-slate-300">
+                                        · in prova (paper): {paperNow.map(etichettaVariante).join(' · ')}
+                                    </span>
+                                )}
+                            </>
+                        )}
                     </div>
                 )}
 

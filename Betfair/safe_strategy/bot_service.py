@@ -60,6 +60,17 @@ DEFAULT_PARAMS: dict[str, Any] = {
     "poll_interval_s": 2,
     "commission_pct": 5,
     "variants": ["base", "esatto", "punta", "tennis"],
+    # CERT. 14/09 — MODALITA' PER STRATEGIA. Serve a certificare una strategia
+    # sul campo senza trascinare a soldi veri quelle ancora in verifica:
+    # l'interruttore del servizio e' uno solo, e senza questa mappa accendere il
+    # tennis accendeva anche le tre varianti del calcio.
+    # Mappa PARZIALE: una strategia non nominata eredita il ``mode`` del control,
+    # quindi una configurazione vecchia si comporta esattamente come prima.
+    # REGOLA NON NEGOZIABILE: il ``mode`` del control e' un TETTO, non un default
+    # scavalcabile. Con il servizio in PAPER nessuna mappa puo' far uscire soldi
+    # veri — la conferma LIVE resta l'unico ingresso al denaro vero, e un
+    # parametro non deve poterla aggirare.
+    "strategy_modes": {},
     "max_open_trades": 20,
     "max_liability_per_trade": 300,
     "min_size_available_factor": 1.0,
@@ -230,6 +241,11 @@ def resolve_params(raw: Optional[dict[str, Any]], engine_mod: Any = None) -> dic
     # lista vuota (o con soli valori ignoti) spegneva il bot in silenzio mentre
     # la UI mostrava 4 strategie attive → si torna ai default.
     out["variants"] = normalize_variants(out.get("variants"))
+    # ``strategy_modes``: mappa parziale strategia -> "paper"/"live". Le chiavi
+    # ignote e i valori non validi cadono (prudenza), la mappa VUOTA e' legittima
+    # e vuol dire "vale il ``mode`` del control per tutti", cioe' il comportamento
+    # di sempre.
+    out["strategy_modes"] = normalize_strategy_modes(out.get("strategy_modes"))
     # ``exits`` parziale dell'utente → sezione completa (default + override + clamp)
     out["exits"] = XE.merge_exit_params(raw.get("exits"))
     out["risk"] = RK.merge_risk_params(raw.get("risk"))
@@ -249,6 +265,58 @@ def _f(v: Any, default: float) -> float:
 
 # varianti ammesse nel campo ``variants`` (le 4 strategie del manuale)
 VALID_VARIANTS = ("base", "esatto", "punta", "tennis")
+
+
+def normalize_strategy_modes(raw: Any) -> dict[str, str]:
+    """Mappa PARZIALE strategia -> ``"paper"`` | ``"live"``, in ordine stabile.
+
+    Si scarta tutto quello che non si capisce: chiave non fra ``_STRATEGIES``,
+    valore diverso da paper/live. Una configurazione sporca non deve poter
+    spostare soldi, e il silenzio qui e' prudente per costruzione — una chiave
+    caduta significa "eredita il ``mode`` del control", che in paper vuol dire
+    paper.
+
+    La mappa **vuota** e' legittima e vuol dire "vale il ``mode`` del control per
+    tutti": e' il comportamento di sempre, ed e' il default.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k in _STRATEGIES:
+        v = str(raw.get(k) or "").lower()
+        if v in ("paper", "live"):
+            out[k] = v
+    return out
+
+
+def modalita_di_strategia(strategy: str, mode: str, params: dict[str, Any]) -> str:
+    """Modalita' con cui la strategia ``strategy`` deve PIAZZARE in questo ciclo.
+
+    DUE REGOLE, e insieme non lasciano scoperta nessuna direzione:
+
+    1. Il ``mode`` del servizio e' un TETTO: in paper si resta in paper, sempre.
+       Cosi' la conferma LIVE resta l'unico ingresso ai soldi veri e nessun
+       parametro salvato settimane prima puo' aggirarla.
+    2. **I SOLDI VERI SI RAGGIUNGONO SOLO SCRIVENDOLO, MAI EREDITANDOLO.** Con
+       il servizio in LIVE, una voce assente o illeggibile vale **paper**.
+
+    La seconda regola e' arrivata dopo la prima, e corregge un errore vero:
+    avevo scritto che "la direzione dell'errore e' sempre verso la prudenza",
+    ma lo era solo a servizio in paper. Per mandare in live UNA strategia il
+    servizio DEVE essere armato in live — ed e' esattamente li' che una mappa
+    incompleta o sporca avrebbe mandato a spendere soldi veri le strategie che
+    nessuno aveva nominato. La prudenza non puo' dipendere dallo stato in cui
+    ci si trova: o vale sempre, o non e' prudenza.
+
+    Costo accettato: una configurazione vecchia che arma il servizio in live
+    senza nominare niente non manda piu' niente in live. E' un'aspettativa che
+    conviene rompere una volta, rumorosamente (vedi ``_avvisa_ereditarieta``),
+    invece di onorarla in silenzio con i soldi di qualcun altro.
+    """
+    if str(mode).lower() != "live":
+        return "paper"
+    scelto = str((params.get("strategy_modes") or {}).get(str(strategy)) or "").lower()
+    return "live" if scelto == "live" else "paper"
 
 
 def normalize_variants(raw: Any) -> list[str]:
@@ -283,6 +351,10 @@ def params_effective(resolved: dict[str, Any]) -> dict[str, Any]:
         out[k] = bool(resolved.get(k))
     out["exits"] = dict(resolved.get("exits") or {})
     out["risk"] = dict(resolved.get("risk") or {})
+    # CERT. 14/09 — la mappa delle modalita' va DICHIARATA alla UI: e' quella
+    # che decide da quale strategia escono soldi veri, ed e' l'unica cosa che
+    # non si puo' lasciare dedurre da chi guarda lo schermo.
+    out["strategy_modes"] = dict(resolved.get("strategy_modes") or {})
     return out
 
 
@@ -3282,6 +3354,39 @@ def _risk_commit(ctx: Optional[dict[str, Any]], row: dict[str, Any]) -> None:
         ctx["day_liability_model"] = float(ctx.get("day_liability_model") or 0.0) + liab
 
 
+_EREDITA_LOG: dict[str, float] = {"ts": 0.0}
+_EREDITA_OGNI_S = 300.0
+
+
+def _avvisa_ereditarieta(db, params: dict[str, Any], mode: str, now: datetime) -> None:
+    """Con il servizio in LIVE, dice quali strategie ABILITATE non hanno una
+    modalita' scritta e quindi restano in paper.
+
+    Serve a rompere RUMOROSAMENTE l'aspettativa "armo il servizio e va tutto
+    live". Romperla in silenzio sarebbe peggio che non romperla: l'utente
+    crederebbe di star operando con soldi veri su quattro strategie mentre ne
+    opera una, e se ne accorgerebbe dai numeri a fine giornata.
+    """
+    if str(mode).lower() != "live":
+        return
+    mappa = params.get("strategy_modes") or {}
+    mute = [v for v in (params.get("variants") or [])
+            if str(mappa.get(str(v)) or "").lower() not in ("paper", "live")]
+    if not mute:
+        return
+    ora = now.timestamp()
+    if ora - float(_EREDITA_LOG["ts"]) < _EREDITA_OGNI_S:
+        return
+    _EREDITA_LOG["ts"] = ora
+    _log(db, "diagnosi", {
+        "reason": "modalita_non_dichiarata",
+        "strategie": list(mute),
+        "nota": "servizio in LIVE: queste strategie NON hanno una modalita' "
+                "scritta e restano in PAPER. I soldi veri si raggiungono solo "
+                "scrivendo 'live' nella scheda parametri, mai per eredita'.",
+    })
+
+
 # la copertura del dato di controllo si misura una volta ogni tanto, non a ogni giro
 _COPERTURA_LOG = {"ts": 0.0}
 _COPERTURA_OGNI_S = 300.0
@@ -3417,6 +3522,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     # Va scritto qui, prima dell'uscita anticipata su "nessun segnale".
     _log_pre_match_missing(db, engine, params, now)
     _log_copertura_controllo(db, engine, params, now)
+    _avvisa_ereditarieta(db, params, mode, now)
     if not signals:
         return 0, 0
     try:
@@ -3429,6 +3535,40 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     if risk_ctx.get("unavailable"):
         return 0, len(signals)
     open_n = len(risk_ctx.get("open") or [])
+
+    # CERT. 14/09 — MODALITA' PER VARIANTE. In un ciclo LIVE le varianti fuori da
+    # ``live_variants`` piazzano in PAPER. Cap, idempotenza e conteggi restano
+    # SEPARATI per modalita': se il tetto di responsabilita' del live venisse
+    # consumato da posizioni finte (o viceversa) il limite che protegge i soldi
+    # veri sarebbe sbagliato — ed e' proprio il difetto che la separazione
+    # paper/live del 13/09 era nata per chiudere.
+
+    _ctx_per_modalita: dict[str, dict] = {str(mode): risk_ctx}
+    _traded_per_modalita: dict[str, set] = {str(mode): traded}
+    _placed_per_modalita: dict[str, int] = {}
+
+    def _modalita_di(variante: str) -> str:
+        return modalita_di_strategia(variante, mode, params)
+
+    def _ctx_di(m: str) -> Optional[dict]:
+        """Contesto di rischio della modalita' ``m``, letto una volta per ciclo.
+        ``None`` = lettura KO: in quella modalita' non si piazza (fail-closed),
+        ma l'altra continua a lavorare."""
+        if m not in _ctx_per_modalita:
+            c = build_risk_ctx(db, now, params, mode=m)
+            _ctx_per_modalita[m] = c
+        c = _ctx_per_modalita[m]
+        return None if c.get("unavailable") else c
+
+    def _traded_di(m: str) -> Optional[set]:
+        if m not in _traded_per_modalita:
+            try:
+                _traded_per_modalita[m] = set(_traded_keys(db, m))
+            except Exception as ex:  # noqa: BLE001 — senza idempotenza NON si piazza
+                _log(db, "error", {"reason": "traded_keys_failed",
+                                   "mode": m, "err": str(ex)[:160]})
+                _traded_per_modalita[m] = None   # type: ignore[assignment]
+        return _traded_per_modalita[m]
 
     variants = {str(v) for v in (params.get("variants") or [])}
     max_open = int(params.get("max_open_trades") or 0)
@@ -3447,8 +3587,6 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         event_id = _sig(s, "event_id")
         if not key or not event_id:
             continue
-        if (str(event_id), str(key)) in traded:
-            continue
         variant = str(_sig(s, "variant") or "")
         if variants and variant not in variants:
             # era l'UNICO scarto senza log: la UI prometteva "perche' NON e'
@@ -3457,6 +3595,17 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                                         "strategy": variant,
                                         "reason": "variante_non_abilitata"})
             continue
+        # da qui in poi la MODALITA' e' quella della variante, non del servizio
+        mode_s = _modalita_di(variant)
+        traded_s = _traded_di(mode_s)
+        if traded_s is None:
+            continue                      # idempotenza illeggibile: non si piazza
+        if (str(event_id), str(key)) in traded_s:
+            continue
+        risk_ctx_s = _ctx_di(mode_s)
+        if risk_ctx_s is None:
+            continue                      # rischio illeggibile in quella modalita'
+        open_n_s = len(risk_ctx_s.get("open") or [])
         # CERT. 13/09 — UN SOLO lato "Altro risultato" per partita.
         # Il motore valuta la variante ESATTO su ENTRAMBI i lati (casa e ospite)
         # e a 0-0, 1-0 e 1-1 passano tutti e due il filtro "al massimo 1 gol":
@@ -3466,7 +3615,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         # responsabilita' sulla stessa partita per 4 EUR lordi di profitto
         # massimo, e ne' ``per_event_liability_cap`` ne' ``per_event_max_trades``
         # lo fermavano. Il manuale parla di UNA squadra da bancare, al singolare.
-        if variant == "esatto" and _esatto_gia_su_evento(risk_ctx, event_id):
+        if variant == "esatto" and _esatto_gia_su_evento(risk_ctx_s, event_id):
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                         "strategy": variant,
                                         "reason": "esatto_lato_gia_aperto"})
@@ -3487,7 +3636,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
                                             "signal_key": str(key),
                                             "reason": blocked_place})
             continue
-        if max_open and (open_n + placed) >= max_open:
+        if max_open and (open_n_s + _placed_per_modalita.get(mode_s, 0)) >= max_open:
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                        "reason": "max_open_trades"})
             break
@@ -3547,7 +3696,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                        "reason": "max_liability_per_trade", "liability": liability})
             continue
-        if _risk_gate(db, now, params, risk_ctx,
+        if _risk_gate(db, now, params, risk_ctx_s,
                       {"event_id": str(event_id), "market_type": _sig(s, "market_type"),
                        "liability": liability, "strategy": variant},
                       signal_key=str(key)):
@@ -3558,7 +3707,7 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
             strategy=variant if variant in _STRATEGIES else "base",
             market_id=str(market_id), market_type=_sig(s, "market_type"),
             selection_id=selection_id,
-            selection_name=_sig(s, "selection_name"), side=side, mode=mode,
+            selection_name=_sig(s, "selection_name"), side=side, mode=mode_s,
             price=price, size=size, liability=liability, commission=commission,
             minute=_sig(s, "minute"), score=_sig(s, "score"),
             origin="auto", signal_key=str(key),
@@ -3577,16 +3726,17 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         except Exception as ex:  # noqa: BLE001 — conflitto = già riservato altrove
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                        "reason": "already_reserved", "err": str(ex)[:120]})
-            traded.add((str(event_id), str(key)))
+            traded_s.add((str(event_id), str(key)))
             continue
         if not trade_id:
             continue
-        traded.add((str(event_id), str(key)))
-        _risk_commit(risk_ctx, {**row, "id": trade_id})
+        traded_s.add((str(event_id), str(key)))
+        _risk_commit(risk_ctx_s, {**row, "id": trade_id})
         out = _execute(db=db, market=market, trade_id=trade_id, row=row, params=params,
                        now=now, best_size=avail, ladder=(), feed_prices=feed_prices)
         if out.status != "error":
             placed += 1
+            _placed_per_modalita[mode_s] = _placed_per_modalita.get(mode_s, 0) + 1
     return placed, len(signals)
 
 
@@ -4137,7 +4287,8 @@ def _auto_trade_opps(*, db, market, payload: dict, event_id: str, opps: list,
             event_id=event_id, event_name=payload.get("event_name"), sport=sport,
             strategy="model", market_id=o.get("market_id"), market_type=market_type,
             selection_id=selection_id, selection_name=o.get("selection_name"),
-            side=side, mode=mode, price=price, size=stake, liability=liability,
+            side=side, mode=modalita_di_strategia("model", mode, params),
+            price=price, size=stake, liability=liability,
             commission=commission, minute=payload.get("minute"),
             score=_score_of(payload, sport),
             origin="auto", signal_key=key, meta=_model_meta(o, kind, side),
@@ -4368,7 +4519,8 @@ def _auto_trade_combos(*, db, market, payload: dict, event_id: str, combos: list
                 event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
                 strategy="model", market_id=leg.get("market_id"),
                 market_type=str(leg.get("market_type") or ""), selection_id=sid,
-                selection_name=leg.get("selection_name"), side=side, mode=mode, price=price,
+                selection_name=leg.get("selection_name"), side=side,
+                mode=modalita_di_strategia("model", mode, params), price=price,
                 size=leg_stake, liability=liab, commission=commission, minute=payload.get("minute"),
                 score=_score_of(payload, "calcio"), origin="auto", signal_key=key,
                 meta={**_model_meta(leg, "combo", side), "combo_id": cid,
@@ -4643,7 +4795,8 @@ def process_anomalies(*, db, market, rows: list[dict], params: dict, model: Any,
             res_row = _reserve_row(
                 event_id=event_id, event_name=payload.get("event_name"), sport="calcio",
                 strategy="model", market_id=mid, market_type=mt, selection_id=sid,
-                selection_name=o.get("selection_name"), side=side, mode=mode, price=price,
+                selection_name=o.get("selection_name"), side=side,
+                mode=modalita_di_strategia("model", mode, params), price=price,
                 size=stake, liability=liability, commission=commission,
                 minute=payload.get("minute"), score=_score_of(payload, "calcio"),
                 origin="auto", signal_key=key,

@@ -502,8 +502,24 @@ def enqueue_place(*, db, trade_id: int, client_ref: str, event_id: str, market_i
         # un FILL_OR_KILL lo ucciderebbe al primo step (la quota di parcheggio non
         # e' abbinabile per costruzione). La size esatta viaggia anche in
         # ``params.target_size``, che e' cio' che il worker legge per primo.
+        # Vale per ENTRAMBE le modalita': e' una tecnica di piazzamento, non una
+        # differenza fra prova e soldi veri.
         payload["params"]["target_size"] = float(size)
-    elif mode == "live":
+    else:
+        # CERT. 14/09 — FILL OR KILL ANCHE IN PAPER, sulla coda.
+        # Il FOK era impostato SOLO in live: l'ordine PAPER partiva come limite
+        # semplice e l'esecuzione simulata di flumine lo lasciava A RIPOSO sul
+        # book, dove poteva abbinarsi anche molto dopo. Quello live, allo stesso
+        # istante e sullo stesso mercato, veniva invece ANNULLATO se il book non
+        # copriva tutta la size (``simulatedorder.py``: senza FOK l'ordine lavora
+        # il book nel tempo, con FOK viene cancellato subito).
+        # Cosi' la prova mostrava ingressi che i soldi veri non avrebbero mai
+        # avuto, e i suoi numeri non potevano valere come prova di niente.
+        # Non e' un cambio di strategia: stesso ordine, stesso prezzo, stessa
+        # size. E' la simulazione che smette di essere piu' generosa della
+        # realta'. E' la stessa correzione gia' fatta il 12/09 sul percorso
+        # REST/locale ("il paper uccide come il live"), che pero' non era stata
+        # portata sul percorso della coda.
         payload["time_in_force"] = "FILL_OR_KILL"
     try:
         rid = db.enqueue_live_order(payload)

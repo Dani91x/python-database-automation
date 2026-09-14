@@ -254,6 +254,20 @@ const VARIANTS: { id: VariantId; label: string }[] = [
 ];
 const VARIANT_KEY = (id: VariantId) => `variants.${id}`;
 
+// CERT. 14/09 — MODALITA' PER STRATEGIA. L'interruttore live del servizio e'
+// uno solo: senza questa mappa, accendere il tennis a soldi veri accendeva
+// anche le tre varianti del calcio. Il servizio in PAPER resta un TETTO — qui
+// non si puo' far uscire un euro vero da un bot che l'utente ha messo in prova.
+const MODE_STRATEGIES: { id: string; label: string }[] = [
+    { id: 'base', label: 'Calcio · Base (banca 1X2)' },
+    { id: 'esatto', label: 'Calcio · Risultato Esatto' },
+    { id: 'punta', label: 'Calcio · Punta' },
+    { id: 'tennis', label: 'Tennis' },
+    { id: 'model', label: 'Opportunità di modello / anomalie / combo' },
+    { id: 'manual', label: 'Ordini manuali dalla schermata' },
+];
+const MODE_KEY = (id: string) => `strategy_modes.${id}`;
+
 // ----------------------------------------------------------------- helpers
 function getPath(obj: Record<string, unknown>, path: string): unknown {
     return path.split('.').reduce<unknown>((acc, k) => (acc as Record<string, unknown> | undefined)?.[k], obj);
@@ -430,6 +444,33 @@ export function BotParamsSheet({
             })),
         },
         {
+            label: 'Modalità per strategia (paper / live)',
+            note: (
+                <>
+                    Con quale modalità piazza <b>ogni</b> strategia. Valgono solo
+                    quando il servizio è in <b>LIVE</b>: se il servizio è in PAPER
+                    resta tutto in paper, perché la conferma LIVE deve restare
+                    l'unico ingresso ai soldi veri e nessun parametro può
+                    aggirarla. <b>I soldi veri si raggiungono solo scrivendoli,
+                    mai per eredità:</b> una strategia <b>non dichiarata</b> resta in
+                    PAPER anche a servizio armato in LIVE — va a soldi veri solo ciò
+                    che è scritto <b>LIVE</b> qui sopra. Le posizioni già
+                    aperte non cambiano mai modalità: si chiudono con quella con
+                    cui sono nate.
+                </>
+            ),
+            fields: MODE_STRATEGIES.map((st) => ({
+                key: MODE_KEY(st.id),
+                label: st.label,
+                type: 'select' as const,
+                options: [
+                    { value: '', label: 'Non dichiarata → PAPER' },
+                    { value: 'paper', label: 'PAPER — prova, mai soldi veri' },
+                    { value: 'live', label: 'LIVE — soldi veri' },
+                ],
+            })),
+        },
+        {
             label: 'Opportunità di modello',
             fields: numFields(OPPS_FIELDS, flat, effective, corrections),
         },
@@ -585,6 +626,15 @@ export function toValues(
     }
     for (const t of AUTO_TRADE_TOGGLES) out[t.key] = Boolean(getPath(src, t.key));
     for (const v of VARIANTS) out[VARIANT_KEY(v.id)] = p.variants.includes(v.id);
+    // mappa PARZIALE: la chiave assente si mostra come «Non dichiarata», che
+    // e' esattamente quello che fa il servizio — e che in live vale PAPER.
+    {
+        const mappa = (getPath(src, 'strategy_modes') ?? {}) as Record<string, unknown>;
+        for (const st of MODE_STRATEGIES) {
+            const scelto = String(mappa?.[st.id] ?? '');
+            out[MODE_KEY(st.id)] = scelto === 'paper' || scelto === 'live' ? scelto : '';
+        }
+    }
     for (const [k, v] of Object.entries(exits)) out[`exits.${k}`] = v as number | boolean;
     return out;
 }
@@ -596,10 +646,20 @@ export function fromValues(
     // chiavi ignote del servizio preservate: safe_update_params SOSTITUISCE
     // l'intero oggetto, un salvataggio parziale le cancellerebbe
     const out: Record<string, unknown> = { ...(raw ?? {}) };
+    const modi: Record<string, string> = {};
     for (const [key, value] of Object.entries(v)) {
         if (key.startsWith('variants.')) continue;
+        if (key.startsWith('strategy_modes.')) {
+            // '' = «come il servizio»: la chiave NON si scrive, cosi' il
+            // significato resta "eredita" invece di diventare un valore fisso
+            // che poi nessuno ricorda di aver messo.
+            const scelto = String(value ?? '');
+            if (scelto === 'paper' || scelto === 'live') modi[key.slice('strategy_modes.'.length)] = scelto;
+            continue;
+        }
         setPath(out, key, value);
     }
+    out.strategy_modes = modi;
     out.variants = variants;
     return out as Partial<SafeBotParams>;
 }

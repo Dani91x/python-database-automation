@@ -472,7 +472,10 @@ def test_h20_combo_incompleta_dopo_il_fill_chiude_subito_la_gamba_fillata():
     mk = HalfMarket()
     n = S._auto_trade_combos(db=db, market=mk, payload=row["payload"],
                              event_id="1.1", combos=[_combo()],
-                             params=S.resolve_params({}), mode="live", now=NOW,
+                             # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
+                             # altrimenti questo test collauderebbe il ramo paper.
+                             params=S.resolve_params({"strategy_modes": {"model": "live"}}),
+                             mode="live", now=NOW,
                              rows_by_event={"1.1": row})
     assert n == 0, "la combo non e' andata"
     assert _kinds(db, "combo_incomplete")
@@ -1315,7 +1318,10 @@ def test_rev_h6_marker_scritto_su_tutte_le_gambe_vive():
     row = _combo_feed_row()
     S._auto_trade_combos(db=db, market=QueueMarket(), payload=row["payload"],
                          event_id="1.1", combos=[_combo()],
-                         params=S.resolve_params({}), mode="live", now=NOW,
+                         # CERT. 14/09: in LIVE la modalita' va DICHIARATA anche per il modello,
+                         # altrimenti questo test collauderebbe il ramo paper.
+                         params=S.resolve_params({"strategy_modes": {"model": "live"}}),
+                         mode="live", now=NOW,
                          rows_by_event={"1.1": row})
     assert _kinds(db, "combo_incomplete"), "combo incompleta non segnalata"
     marcate = [t for t in db.trades

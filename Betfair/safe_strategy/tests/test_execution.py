@@ -173,7 +173,13 @@ def test_place_con_gate_aperto_accoda_su_flumine_e_resta_pending():
     q = db.queue[0]
     assert q["client_ref"] == f"safe-t{tid}", "il ref deve essere quello del bot Safe"
     assert q["mode"] == "paper" and q["action"] == "place"
-    assert "time_in_force" not in q, "il FOK vero e' solo per il live"
+    # CERT. 14/09 — IL FOK C'E' ANCHE IN PAPER, e questa riga diceva il
+    # contrario. Senza, l'esecuzione simulata di flumine lasciava l'ordine A
+    # RIPOSO sul book e poteva abbinarlo molto dopo, mentre quello live allo
+    # stesso istante veniva annullato: la prova mostrava ingressi che i soldi
+    # veri non avrebbero mai avuto. Stesso ordine, stesso prezzo, stessa size:
+    # cambia solo che la simulazione smette di essere piu' generosa della realta'.
+    assert q["time_in_force"] == "FILL_OR_KILL", "paper e live devono piazzare lo STESSO ordine"
     meta = db.get_trade(tid)["meta"]
     assert meta["flumine_client_ref"] == f"safe-t{tid}"
     assert meta["flumine_request_id"] == 1
@@ -190,6 +196,54 @@ def test_place_live_con_gate_aperto_porta_il_fok_vero():
     assert out.status == "pending"
     assert db.queue[0]["time_in_force"] == "FILL_OR_KILL"
     assert db.queue[0]["mode"] == "live"
+
+
+def test_paper_e_live_accodano_lo_STESSO_ordine():
+    """La sola differenza ammessa fra prova e soldi veri e' che i soldi sono
+    veri. Mai quale ordine si piazza, a che prezzo, con che tipo di esecuzione.
+
+    Qui si confrontano le due righe di coda campo per campo: devono coincidere
+    su tutto tranne ``mode`` e il riferimento del trade."""
+    def accoda(mode, hb):
+        db, mk = FakeDB(), FakeMarket()
+        db.heartbeat = {"ts": NOW.isoformat(), "mode": hb}
+        tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+        X.place(db=db, market=mk, mode=mode, event_id="1.1", market_id="m1",
+                selection_id=7, side="back", price=2.5, size=8.0, best_size=100.0,
+                client_ref=f"safe-t{tid}", trade_id=tid, now=NOW,
+                params=_gate_open_params())
+        return db.queue[0]
+
+    pap = accoda("paper", "PAPER")
+    liv = accoda("live", "LIVE")
+    ignora = {"mode", "client_ref", "params"}
+    for k in set(pap) | set(liv):
+        if k in ignora:
+            continue
+        assert pap.get(k) == liv.get(k), f"{k}: paper={pap.get(k)!r} live={liv.get(k)!r}"
+    assert pap["time_in_force"] == liv["time_in_force"] == "FILL_OR_KILL"
+    assert pap["order_type"] == liv["order_type"] == "LIMIT"
+    assert pap["persistence"] == liv["persistence"] == "LAPSE"
+    assert pap["price"] == liv["price"] and pap["size"] == liv["size"]
+
+
+def test_il_place_and_trim_resta_senza_fok_in_ENTRAMBE_le_modalita():
+    """Eccezione dichiarata e simmetrica: la sequenza di parcheggio lascia
+    l'ordine a riposo alla quota target per costruzione, e un FOK lo
+    ucciderebbe al primo passo. E' una tecnica di piazzamento, non una
+    differenza fra prova e soldi veri: quindi vale per tutte e due."""
+    for mode, hb in (("paper", "PAPER"), ("live", "LIVE")):
+        db, mk = FakeDB(), FakeMarket()
+        db.heartbeat = {"ts": NOW.isoformat(), "mode": hb}
+        tid = db.insert_trade({"event_id": "1.1", "status": "pending", "side": "back"})
+        rid = X.enqueue_place(db=db, trade_id=tid, client_ref=f"safe-t{tid}",
+                              event_id="1.1", market_id="m1", selection_id=7,
+                              side="back", price=2.5, size=0.30, base_meta=None,
+                              now=NOW, mode=mode, action="place_submin")
+        assert rid
+        q = db.queue[0]
+        assert "time_in_force" not in q, f"{mode}: il parcheggio non puo' essere FOK"
+        assert q["params"]["target_size"] == 0.30
 
 
 def test_place_live_ripiega_sul_rest_quando_il_gate_e_chiuso():

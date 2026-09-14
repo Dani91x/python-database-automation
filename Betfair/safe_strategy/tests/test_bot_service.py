@@ -24,8 +24,16 @@ class FakeDB:
     """Specchio in memoria di safe_strategy_* (stesse regole del DB reale)."""
 
     def __init__(self, status="running", mode="paper", params=None):
+        params = dict(params or {})
+        # CERT. 14/09 — con il servizio in LIVE i soldi veri si raggiungono SOLO
+        # scrivendo la modalita' della strategia: una voce assente vale paper.
+        # I test che collaudano il PERCORSO live (REST, coda, errori) vogliono
+        # davvero il live, quindi qui lo si dichiara — chi vuole collaudare
+        # l'ereditarieta' passa un ``strategy_modes`` proprio.
+        if mode == "live" and "strategy_modes" not in params:
+            params["strategy_modes"] = {k: "live" for k in S._STRATEGIES}
         self.control = {"id": 1, "status": status, "mode": mode,
-                        "params": params or {}}
+                        "params": params}
         self.trades: list[dict] = []
         self.activity: list[tuple] = []
         self.requests: list[dict] = []
@@ -341,6 +349,182 @@ def test_mode_live_del_control_arriva_al_trade():
     assert res["placed"] == 1
     assert db.trades[0]["mode"] == "live"
     assert mk.placed[0]["side"] == "back", "LIVE: passa dal REST quando il gate e' chiuso"
+
+
+# ---------------------------------------------------------------------------
+# CERT. 14/09 — MODALITA' PER STRATEGIA
+# L'interruttore live del servizio e' UNO SOLO: accendere il tennis accendeva
+# anche base, esatto e punta. ``strategy_modes`` dice, strategia per strategia,
+# con che modalita' si piazza; nello STESSO CICLO possono convivere posizioni
+# vere e finte. Il ``mode`` del servizio resta un TETTO: in paper nessuna mappa
+# puo' far uscire soldi veri.
+# ---------------------------------------------------------------------------
+def test_in_live_solo_le_varianti_abilitate_vanno_a_soldi_veri():
+    """Il caso che serve oggi: tennis a soldi veri, calcio in prova, insieme."""
+    db = FakeDB(mode="live")
+    db.control["params"] = {"strategy_modes": {"base": "paper", "esatto": "paper",
+                                               "punta": "paper", "tennis": "live"}}
+    db.scan_rows = [_feed_row()]
+    res = _run(db, engine=FakeEngine([
+        _signal(key="t1", variant="tennis", sport="tennis"),
+        _signal(key="b1", variant="base"),
+    ]))
+    assert res["placed"] == 2
+    per_variante = {t["strategy"]: t["mode"] for t in db.trades}
+    assert per_variante["tennis"] == "live", "il tennis deve andare a soldi veri"
+    assert per_variante["base"] == "paper", "il calcio NON deve seguirlo in live"
+
+
+def test_in_paper_nessuna_variante_va_in_live_qualunque_sia_l_elenco():
+    """La direzione pericolosa e' una sola: nessun elenco puo' far uscire soldi
+    veri da un servizio che l'utente ha messo in prova."""
+    db = FakeDB(mode="paper")
+    db.control["params"] = {"strategy_modes": {"base": "live", "tennis": "live"}}
+    db.scan_rows = [_feed_row()]
+    res = _run(db, engine=FakeEngine([_signal(variant="base")]))
+    assert res["placed"] == 1
+    assert db.trades[0]["mode"] == "paper"
+
+
+def test_senza_configurazione_il_comportamento_e_quello_di_prima():
+    """I SOLDI VERI SI RAGGIUNGONO SOLO SCRIVENDOLO, MAI EREDITANDOLO.
+
+    Correzione di una mia regola sbagliata dello stesso giorno: avevo scritto
+    che "la direzione dell'errore e' sempre verso la prudenza", ma lo era solo a
+    servizio in paper. Per mandare in live UNA strategia il servizio DEVE essere
+    armato in live — ed e' li' che una mappa incompleta avrebbe mandato a
+    spendere soldi veri le strategie che nessuno aveva nominato."""
+    assert S.resolve_params(None)["strategy_modes"] == {}
+    db = FakeDB(mode="live", params={"strategy_modes": {"tennis": "live"}})
+    db.scan_rows = [_feed_row()]
+    _run(db, engine=FakeEngine([_signal(variant="base")]))
+    assert db.trades[0]["mode"] == "paper", "base non e' nominata: NON va a soldi veri"
+
+
+def test_una_configurazione_sporca_non_puo_spostare_soldi():
+    """Chiavi ignote e valori incomprensibili CADONO. Una mappa sporca non deve
+    poter mandare in live qualcosa che nessuno ha chiesto, e nemmeno rompere il
+    bot: quello che non si capisce eredita il ``mode`` del servizio."""
+    p = S.resolve_params({"strategy_modes": {"tennis": "live", "base": "paper",
+                                             "pippo": "live", "punta": "ciao"}})
+    assert p["strategy_modes"] == {"base": "paper", "tennis": "live"}
+    assert S.resolve_params({"strategy_modes": "non-una-mappa"})["strategy_modes"] == {}
+
+
+def test_i_soldi_veri_si_raggiungono_solo_scrivendolo_mai_ereditandolo():
+    """La regola che non ha eccezioni, e che corregge un mio errore.
+
+    Avevo fatto ereditare il ``mode`` del servizio alle strategie non nominate,
+    scrivendo che "la direzione dell'errore e' sempre verso la prudenza". Era
+    vero SOLO a servizio in paper. Ma per mandare in live una strategia il
+    servizio DEVE essere armato in live, ed e' esattamente nella configurazione
+    che si usa davvero che una mappa incompleta, con una chiave scritta male o
+    con un valore incomprensibile, avrebbe mandato a spendere soldi veri le
+    strategie che nessuno aveva nominato. La prudenza non puo' dipendere dallo
+    stato in cui ci si trova: o vale sempre, o non e' prudenza."""
+    p = S.resolve_params({"strategy_modes": {"tennis": "live"}})
+    assert S.modalita_di_strategia("tennis", "live", p) == "live"
+    for muta in ("base", "esatto", "punta", "model", "manual"):
+        assert S.modalita_di_strategia(muta, "live", p) == "paper", muta
+    # mappa del tutto assente: in live non va live NIENTE
+    vuoti = S.resolve_params(None)
+    for st in ("base", "esatto", "punta", "tennis", "model", "manual"):
+        assert S.modalita_di_strategia(st, "live", vuoti) == "paper", st
+    # valore illeggibile: vale paper, non "quello che capita"
+    sporchi = S.resolve_params({"strategy_modes": {"tennis": "LIVE!", "base": 1}})
+    assert S.modalita_di_strategia("tennis", "live", sporchi) == "paper"
+    assert S.modalita_di_strategia("base", "live", sporchi) == "paper"
+
+
+def test_rompere_l_aspettativa_in_silenzio_sarebbe_peggio_che_non_romperla():
+    """Chi arma il servizio in live aspettandosi "va tutto live" si trova tutto
+    in paper: giusto, ma DEVE saperlo. Altrimenti crede di operare con soldi
+    veri su quattro strategie e se ne accorge dai numeri a fine giornata."""
+    db = FakeDB(mode="live", params={"strategy_modes": {"tennis": "live"}})
+    db.scan_rows = [_feed_row()]
+    S._EREDITA_LOG["ts"] = 0.0
+    _run(db, engine=FakeEngine([_signal(variant="base")]))
+    righe = [a for a in db.activity if a[0] == "diagnosi"
+             and (a[1] or {}).get("reason") == "modalita_non_dichiarata"]
+    assert righe, "il silenzio qui costerebbe una giornata di malinteso"
+    mute = set(righe[0][1]["strategie"])
+    assert mute == {"base", "esatto", "punta"}, mute
+    assert "tennis" not in mute, "quella dichiarata non va segnalata"
+
+
+def test_nessun_avviso_quando_non_c_e_niente_da_dire():
+    """Servizio in paper, o mappa completa: nessun rumore."""
+    for mode, modi in (("paper", {}),
+                       ("live", {k: "live" for k in S._STRATEGIES})):
+        db = FakeDB(mode=mode, params={"strategy_modes": modi})
+        db.scan_rows = [_feed_row()]
+        S._EREDITA_LOG["ts"] = 0.0
+        _run(db, engine=FakeEngine([_signal(variant="base")]))
+        assert not [a for a in db.activity if (a[1] or {}).get("reason") == "modalita_non_dichiarata"]
+
+
+def test_variants_ha_la_precedenza_su_strategy_modes():
+    """Due elenchi, un ordine solo e dichiarato: ``variants`` decide CHI apre,
+    ``strategy_modes`` CON CHE SOLDI. Una strategia in live ma non abilitata non
+    apre niente — il controllo su ``variants`` viene prima, nel codice e non per
+    effetto dell'ordine in cui si leggono i due parametri."""
+    db = FakeDB(mode="live", params={"variants": ["tennis"],
+                                     "strategy_modes": {"base": "live", "tennis": "live"}})
+    db.scan_rows = [_feed_row()]
+    res = _run(db, engine=FakeEngine([_signal(variant="base")]))
+    assert res["placed"] == 0 and db.trades == []
+    motivi = [a[1].get("reason") for a in db.activity if a[0] == "skip"]
+    assert "variante_non_abilitata" in motivi
+
+
+def test_il_servizio_in_paper_e_un_TETTO_non_un_default_scavalcabile():
+    """La conferma LIVE deve restare l'unico ingresso ai soldi veri: nessun
+    parametro puo' aggirarla. In paper, tutto paper."""
+    for st in ("base", "esatto", "punta", "tennis", "model", "manual"):
+        p = S.resolve_params({"strategy_modes": {st: "live"}})
+        assert S.modalita_di_strategia(st, "paper", p) == "paper"
+        assert S.modalita_di_strategia(st, "live", p) == "live"
+
+
+def test_ogni_strategia_puo_essere_riportata_a_paper_dentro_un_servizio_live():
+    p = S.resolve_params({"strategy_modes": {
+        "base": "paper", "esatto": "paper", "punta": "paper",
+        "tennis": "live", "model": "paper", "manual": "paper"}})
+    atteso = {"base": "paper", "esatto": "paper", "punta": "paper",
+              "tennis": "live", "model": "paper", "manual": "paper"}
+    for st, m in atteso.items():
+        assert S.modalita_di_strategia(st, "live", p) == m, st
+
+
+def test_il_tetto_di_posizioni_aperte_e_separato_per_modalita():
+    """Se i due tetti si confondessero, le posizioni finte consumerebbero il
+    limite di quelle vere — cioe' il limite che protegge i soldi smetterebbe di
+    proteggerli. E' lo stesso difetto che la separazione paper/live del 13/09
+    era nata per chiudere."""
+    db = FakeDB(mode="live")
+    db.control["params"] = {"strategy_modes": {"base": "paper", "tennis": "live"},
+                            "max_open_trades": 1}
+    # una posizione PAPER gia' aperta: non deve occupare il posto del live
+    db.trades.append({"id": 900, "status": "open", "mode": "paper", "strategy": "base",
+                      "event_id": "9.9", "signal_key": "vecchia", "origin": "auto",
+                      "side": "back", "price": 2.0, "size": 2.0, "liability": 2.0,
+                      "market_type": "MATCH_ODDS", "sport": "calcio"})
+    db.scan_rows = [_feed_row()]
+    res = _run(db, engine=FakeEngine([_signal(key="t1", variant="tennis", sport="tennis")]))
+    assert res["placed"] == 1, "il tetto del LIVE non deve essere consumato dal PAPER"
+    assert db.trades[-1]["mode"] == "live"
+
+
+def test_la_variante_disabilitata_del_tutto_resta_disabilitata():
+    """``variants`` (chi opera) e ``live_variants`` (chi opera con soldi veri)
+    sono due cose diverse e non devono interferire."""
+    db = FakeDB(mode="live")
+    db.control["params"] = {"variants": ["tennis"],
+                            "strategy_modes": {"base": "live", "tennis": "live"}}
+    db.scan_rows = [_feed_row()]
+    res = _run(db, engine=FakeEngine([_signal(variant="base")]))
+    assert res["placed"] == 0
+    assert db.trades == []
 
 
 # ---------------------------------------------------------------------------

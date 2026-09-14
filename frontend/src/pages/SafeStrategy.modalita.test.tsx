@@ -375,3 +375,53 @@ describe('CERT. 14/09 — il controllo del gioco dichiara di NON essere applicat
         expect(screen.queryByTestId('safe-controllo-non-applicato')).toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — DA QUALE STRATEGIA ESCONO SOLDI VERI
+// La modalità è una sola per il servizio, ma ogni strategia può essere
+// riportata a paper: «LIVE» da solo sarebbe fuorviante. Sta in testata e non
+// nei parametri, perché è la cosa che chi guarda lo schermo non deve dedurre.
+// ---------------------------------------------------------------------------
+describe('CERT. 14/09 — la testata dichiara quali strategie spendono davvero', () => {
+    const conModi = (modi: Record<string, string>, variants = ['base', 'esatto', 'punta', 'tennis']) => {
+        mState.mockResolvedValue({
+            control: control({
+                mode: 'live',
+                stats: { params_effective: { variants, strategy_modes: modi } },
+            }) as never,
+            trades: [] as never, aggregates: AGG as never, activity: [] as never,
+            params_effective: { variants, strategy_modes: modi } as never,
+            operating_day: romeDay(),
+        });
+    };
+
+    it('tennis live e calcio in prova: lo dice, e separa i due elenchi', async () => {
+        conModi({ base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'live' });
+        renderPage();
+        const riga = await screen.findByTestId('safe-live-strategies');
+        expect(riga).toHaveTextContent('SOLDI VERI');
+        expect(riga).toHaveTextContent('TENNIS');
+        expect(riga).toHaveTextContent('in prova (paper)');
+        expect(riga).toHaveTextContent('BASE');
+    });
+
+    it('servizio armato in LIVE ma tutte riportate a paper: lo dichiara', async () => {
+        conModi({ base: 'paper', esatto: 'paper', punta: 'paper', tennis: 'paper' });
+        renderPage();
+        const riga = await screen.findByTestId('safe-live-strategies');
+        expect(riga).toHaveTextContent('nessuna strategia');
+        expect(riga).toHaveTextContent('armato in LIVE');
+    });
+
+    it('servizio in PAPER: nessuna riga (non si allarma dove non ci sono soldi)', async () => {
+        mState.mockResolvedValue({
+            control: control({ mode: 'paper' }) as never, trades: [] as never,
+            aggregates: AGG as never, activity: [] as never,
+            params_effective: { variants: ['tennis'], strategy_modes: { tennis: 'live' } } as never,
+            operating_day: romeDay(),
+        });
+        renderPage();
+        await screen.findByTestId('safe-kpi-monitored');
+        expect(screen.queryByTestId('safe-live-strategies')).toBeNull();
+    });
+});

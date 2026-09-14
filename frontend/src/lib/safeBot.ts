@@ -96,6 +96,32 @@ export interface SafeParamsEffective {
     omega_live_via_flumine?: boolean;
     exits?: Record<string, unknown> | null;
     risk?: Record<string, unknown> | null;
+    /** CERT. 14/09 — modalita' PER STRATEGIA realmente in uso dal servizio.
+     *  Mappa parziale: una strategia assente eredita `control.mode`. Il `mode`
+     *  del servizio resta un TETTO — in paper nessuna voce qui puo' far uscire
+     *  soldi veri. E' l'unica cosa che non si puo' lasciare dedurre a chi
+     *  guarda lo schermo: dice DA QUALE strategia escono soldi veri. */
+    strategy_modes?: Record<string, string> | null;
+}
+
+/** CERT. 14/09 — strategie che stanno operando a SOLDI VERI adesso.
+ *  Vuoto = nessuna (servizio in paper, o tutte riportate a paper dalla mappa).
+ *  `mode` del servizio = TETTO: in paper la risposta e' sempre vuota. */
+export function liveStrategies(
+    mode: string | null | undefined,
+    variants: readonly string[] | null | undefined,
+    strategyModes: Record<string, string> | null | undefined,
+): string[] {
+    if (String(mode ?? '').toLowerCase() !== 'live') return [];
+    const mappa = strategyModes ?? {};
+    // CERT. 14/09 — i soldi veri si raggiungono SOLO scrivendolo: una voce
+    // assente o illeggibile vale PAPER anche a servizio armato in live.
+    // Se questa riga ereditasse 'live' come faceva prima, la pagina
+    // dichiarerebbe soldi veri su strategie che il servizio tiene in prova.
+    // E solo le strategie ABILITATE a operare: una variante spenta non spende,
+    // qualunque cosa dica la mappa.
+    return (variants ?? []).filter((v) => String(mappa[v] ?? '').toLowerCase() === 'live')
+        .map((v) => String(v));
 }
 
 /** conteggio opportunità per tipo (control.stats.opps) */

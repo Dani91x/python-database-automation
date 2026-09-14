@@ -248,3 +248,56 @@ describe('BotParamsSheet — valori in uso non disponibili', () => {
         expect(screen.getByTestId('params-variants-effective')).toHaveTextContent('base, tennis');
     });
 });
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — MODALITA' PER STRATEGIA
+// L'interruttore live del servizio e' uno solo: senza questa mappa, accendere
+// il tennis a soldi veri accendeva anche le tre varianti del calcio.
+// ---------------------------------------------------------------------------
+describe('BotParamsSheet — modalita per strategia', () => {
+    it('mostra una scelta per ogni strategia, col valore salvato sul DB', async () => {
+        await openSheet(vi.fn(), {
+            ...RAW,
+            strategy_modes: { tennis: 'live', base: 'paper' },
+        });
+        const sheet = screen.getByTestId('params-sheet');
+        expect(within(sheet).getByText(/Modalità per strategia/)).toBeTruthy();
+        // il salvato si rilegge, non si perde per strada
+        const tendina = (nome: RegExp) => within(sheet).getByRole('combobox', { name: nome });
+        expect(tendina(/^Tennis$/)).toHaveValue('live');
+        expect(tendina(/Base \(banca 1X2\)/)).toHaveValue('paper');
+        // una strategia non nominata resta «come il servizio», non diventa un
+        // valore fisso che poi nessuno ricorda di aver messo
+        expect(tendina(/Ordini manuali/)).toHaveValue('');
+    });
+
+    it('dichiara che il servizio in PAPER e un TETTO', async () => {
+        await openSheet();
+        const sheet = screen.getByTestId('params-sheet');
+        expect(sheet.textContent).toMatch(/se il servizio è in PAPER\s+resta tutto in paper/);
+        expect(sheet.textContent).toMatch(/conferma LIVE/);
+        // ...e che il live NON si eredita: e' la regola che vale nella
+        // configurazione che si usa davvero (servizio armato in live)
+        expect(sheet.textContent).toMatch(/solo scrivendoli,\s+mai per eredità/);
+        expect(sheet.textContent).toMatch(/non dichiarata<\/b>? ?resta in\s+PAPER|non dichiarata.{0,30}resta in\s+PAPER/);
+        // e che una posizione aperta non cambia mai modalita'
+        expect(sheet.textContent).toMatch(/si chiudono con quella con cui sono nate/);
+    });
+
+    it('salva la mappa; «come il servizio» NON scrive la chiave', async () => {
+        const { user, onSave } = await openSheet(vi.fn(), {
+            ...RAW,
+            strategy_modes: { tennis: 'live', base: 'paper' },
+        });
+        const sheet = screen.getByTestId('params-sheet');
+        await user.selectOptions(
+            within(sheet).getByRole('combobox', { name: /Risultato Esatto/ }), 'paper');
+        await user.click(within(sheet).getByTestId('params-save'));
+        await waitFor(() => expect(onSave).toHaveBeenCalled());
+        const payload = onSave.mock.calls[0][0] as Record<string, unknown>;
+        expect(payload.strategy_modes).toEqual({ base: 'paper', esatto: 'paper', tennis: 'live' });
+        // le chiavi ignote del servizio restano intatte: safe_update_params
+        // SOSTITUISCE l'intero oggetto, un salvataggio parziale le cancellerebbe
+        expect(payload.unknown_key_from_service).toEqual({ keep: 'me' });
+    });
+});
