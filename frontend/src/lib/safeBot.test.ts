@@ -26,6 +26,7 @@ import {
     oppKind, oppKindCounts, comboLegStakes, comboLock, anomalyRefLabel, comboIdempotencyPrefix,
     tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind, SAFE_RISK_DEFAULTS,
     groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
+    runnerStateFrom, executionRoute, RUNNER_HB_MAX_AGE_S,
     type SafeTrade,
 } from './safeBot';
 import { DEFAULT_PARAMS } from './safeStrategy';
@@ -703,5 +704,81 @@ describe('trade di modello — meta', () => {
         expect(tradeOppKind({ strategy: 'model', meta: { kind: 'combo' } })).toBe('combo');
         expect(tradeOppKind({ strategy: 'model', meta: null })).toBe('model');
         expect(tradeOppKind({ strategy: 'base', meta: { kind: 'combo' } })).toBeNull();
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — PERCORSO DI ESECUZIONE E STATO DEL RUNNER
+// Coda del runner e REST sono due comportamenti diversi: solo la coda sa
+// lasciare un ordine A RIPOSO sul book e solo lei riceve il fill spinto
+// dall'order stream. Il trader deve sapere quale sta guidando.
+// ---------------------------------------------------------------------------
+describe('runnerStateFrom — quando il runner e vivo', () => {
+    const T0 = Date.parse('2026-09-14T12:00:00Z');
+
+    it('battito fresco: vivo, con eta e modalita', () => {
+        const r = runnerStateFrom({ ts: '2026-09-14T11:59:57Z', mode: 'paper' }, T0);
+        expect(r.up).toBe(true);
+        expect(r.mode).toBe('PAPER');
+        expect(r.ageS).toBe(3);
+    });
+
+    it('battito vecchio oltre la soglia del BACKEND: giu', () => {
+        expect(RUNNER_HB_MAX_AGE_S).toBe(90);
+        const r = runnerStateFrom({ ts: '2026-09-14T11:58:00Z', mode: 'LIVE' }, T0);
+        expect(r.ageS).toBe(120);
+        expect(r.up).toBe(false);
+    });
+
+    it('mai battuto: GIU, non «non lo so»', () => {
+        // un runner che non ha mai dato segno di vita non sta eseguendo niente:
+        // chiamarlo "ignoto" lascerebbe credere che forse sta lavorando
+        const r = runnerStateFrom(null, T0);
+        expect(r.ageS).toBeNull();
+        expect(r.up).toBe(false);
+    });
+});
+
+describe('executionRoute — le stesse condizioni del gate del backend', () => {
+    const vivo = (mode: string) => ({ ts: 'x', mode, ageS: 2, up: true });
+
+    it('runner spento: REST, e lo dice col numero', () => {
+        const r = executionRoute({ ts: 'x', mode: 'PAPER', ageS: 3600, up: false }, 'paper');
+        expect(r.route).toBe('rest');
+        expect(r.restingOrders).toBe(false);
+        expect(r.why).toMatch(/spento.*3600 s fa/);
+    });
+
+    it('runner mai avviato: REST, con la causa giusta', () => {
+        const r = executionRoute({ ts: null, mode: null, ageS: null, up: false }, 'paper');
+        expect(r.route).toBe('rest');
+        expect(r.why).toMatch(/mai avviato/);
+    });
+
+    it('modalita del runner diversa da quella del bot: REST (niente cross-mode)', () => {
+        const r = executionRoute(vivo('PAPER'), 'live');
+        expect(r.route).toBe('rest');
+        expect(r.why).toMatch(/PAPER.*chiede LIVE/);
+    });
+
+    it('runner vivo e coerente: coda, e gli ordini a riposo tornano possibili', () => {
+        expect(executionRoute(vivo('PAPER'), 'paper')).toEqual({
+            route: 'queue', restingOrders: true, label: 'coda (stream)', why: null,
+        });
+        expect(executionRoute(vivo('LIVE'), 'live').route).toBe('queue');
+    });
+
+    it('partita non in streaming: REST anche col runner vivo', () => {
+        expect(executionRoute(vivo('PAPER'), 'paper', 'STREAMING').route).toBe('queue');
+        const r = executionRoute(vivo('PAPER'), 'paper', 'UPLOADED');
+        expect(r.route).toBe('rest');
+        expect(r.why).toMatch(/non in streaming/);
+    });
+
+    it('lo stato della partita non passato NON chiude il percorso', () => {
+        // la testata parla del servizio, non di una partita: senza il follow
+        // non si deve dichiarare REST per una condizione che non si e' guardata
+        expect(executionRoute(vivo('PAPER'), 'paper').route).toBe('queue');
     });
 });

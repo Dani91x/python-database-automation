@@ -63,7 +63,7 @@ import {
     sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, groupClosingLegs, isCurrentOppRow,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
-    liveStrategies,
+    liveStrategies, fetchRunnerState, executionRoute, type RunnerState,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
@@ -558,6 +558,28 @@ export default function SafeStrategy() {
         return Array.isArray(p) ? p.map(String) : null;
     }, [bot.activity]);
     const status: SafeBotStatus = bot.control?.status ?? 'idle';
+    // CERT. 14/09 — PERCORSO DI ESECUZIONE. Coda del runner o REST sono due
+    // comportamenti diversi (solo la coda sa lasciare un ordine A RIPOSO, e
+    // solo lei riceve il fill spinto dall'order stream): il trader deve sapere
+    // quale sta guidando, non scoprirlo dai numeri.
+    const [runner, setRunner] = useState<RunnerState | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        const leggi = () => {
+            fetchRunnerState()
+                .then((r) => { if (vivo) setRunner(r); })
+                // il battito non e' money-critical: se non si legge si dice
+                // "non lo so", non si inventa uno stato
+                .catch(() => { if (vivo) setRunner(null); });
+        };
+        leggi();
+        const t = window.setInterval(leggi, 15_000);
+        return () => { vivo = false; window.clearInterval(t); };
+    }, []);
+    const percorso = useMemo(
+        () => (runner ? executionRoute(runner, bot.mode) : null),
+        [runner, bot.mode],
+    );
     const etichettaVariante = (v: string) =>
         VARIANT_STYLE[v as VariantId]?.chipLabel() ?? v.toUpperCase();
     // CERT. 14/09 — quali strategie spendono davvero adesso. Si legge dai
@@ -1064,6 +1086,39 @@ export default function SafeStrategy() {
                                     </span>
                                 )}
                             </>
+                        )}
+                    </div>
+                )}
+
+                {/* CERT. 14/09 — COME ESCE DAVVERO L'ORDINE.
+                    Due percorsi, due comportamenti. Quando il runner è spento
+                    va detto che gli ordini A RIPOSO non sono disponibili: le
+                    quattro strategie del manuale sono taker e non ne hanno
+                    bisogno, ma il place-and-trim degli importi sotto il minimo
+                    sì, e chi guarda lo schermo non può dedurlo. */}
+                {percorso && (
+                    <div
+                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-slate-300 flex items-center gap-2 flex-wrap"
+                        data-testid="safe-execution-route"
+                        role="status"
+                    >
+                        <span>esecuzione:</span>
+                        <b className={percorso.route === 'queue' ? 'text-emerald-300' : 'text-slate-200'}>
+                            {percorso.label}
+                        </b>
+                        {percorso.why && <span className="text-slate-400">— {percorso.why}</span>}
+                        {!percorso.restingOrders && (
+                            <span className="text-amber-300/90">
+                                · ordini appoggiati non disponibili: le 4 strategie del manuale
+                                sono taker e non ne hanno bisogno, ma gli importi sotto il minimo
+                                usano la sequenza REST invece della coda
+                            </span>
+                        )}
+                        {runner?.mode && (
+                            <span className="text-slate-400">
+                                · runner {runner.mode}
+                                {runner.ageS !== null && ` · battito ${Math.round(runner.ageS)} s fa`}
+                            </span>
                         )}
                     </div>
                 )}

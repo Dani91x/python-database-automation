@@ -47,8 +47,15 @@ vi.mock('@/lib/safeBot', async (orig) => {
         activateSafe: vi.fn(async () => ({})),
         stopSafe: vi.fn(),
         updateSafeParams: vi.fn(),
+        fetchRunnerState: vi.fn(async () => runner.state),
     };
 });
+
+const runner = vi.hoisted(() => ({
+    state: { ts: null, mode: null, ageS: null, up: false } as {
+        ts: string | null; mode: string | null; ageS: number | null; up: boolean;
+    },
+}));
 
 const scan = vi.hoisted(() => ({ status: null as unknown }));
 vi.mock('@/lib/safeStrategyScan', async (orig) => {
@@ -423,5 +430,33 @@ describe('CERT. 14/09 — la testata dichiara quali strategie spendono davvero',
         renderPage();
         await screen.findByTestId('safe-kpi-monitored');
         expect(screen.queryByTestId('safe-live-strategies')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — COME ESCE DAVVERO L'ORDINE
+// Coda del runner e REST sono due comportamenti diversi: solo la coda sa
+// lasciare un ordine A RIPOSO sul book. Il trader deve sapere quale sta
+// guidando, non scoprirlo dai numeri.
+// ---------------------------------------------------------------------------
+describe('CERT. 14/09 — la testata dichiara il percorso di esecuzione', () => {
+    it('runner spento: REST, col motivo, e dice che gli ordini appoggiati non ci sono', async () => {
+        runner.state = { ts: '2026-09-02T17:55:40Z', mode: 'PAPER', ageS: 1_009_000, up: false };
+        renderPage();
+        const riga = await screen.findByTestId('safe-execution-route');
+        expect(riga).toHaveTextContent('REST (fill or kill)');
+        expect(riga).toHaveTextContent(/runner flumine spento/);
+        expect(riga).toHaveTextContent(/ordini appoggiati non disponibili/);
+        // ...e dice anche perché non è un problema per le 4 strategie
+        expect(riga).toHaveTextContent(/sono taker/);
+    });
+
+    it('runner vivo e coerente: coda, e nessun avviso sugli ordini appoggiati', async () => {
+        runner.state = { ts: '2026-09-14T12:00:00Z', mode: 'PAPER', ageS: 3, up: true };
+        renderPage();
+        const riga = await screen.findByTestId('safe-execution-route');
+        expect(riga).toHaveTextContent('coda (stream)');
+        expect(riga).toHaveTextContent(/battito 3 s fa/);
+        expect(riga).not.toHaveTextContent(/ordini appoggiati non disponibili/);
     });
 });

@@ -1644,3 +1644,99 @@ export function resolveSignalPlacement(
     const runner = moRunner(payload, { name: signal.selection });
     return runner ? pick(runner, marketId, 'MATCH_ODDS') : null;
 }
+
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — PERCORSO DI ESECUZIONE: come esce davvero l'ordine
+// Due percorsi diversi, e il trader deve sapere quale sta guidando:
+//   · CODA (stream): l'ordine passa dal runner flumine. E' l'unico che sa
+//     lasciare un ordine A RIPOSO sul book (place-and-trim per gli importi
+//     sotto il minimo) e l'unico che riceve il fill spinto dall'order stream.
+//   · REST: chiamata diretta a Betfair, FILL OR KILL. Immediato o annullato.
+// Le quattro strategie del manuale sono TAKER su ingresso e uscita, quindi su
+// REST eseguono identiche. Cambia solo il place-and-trim, che su REST usa la
+// sequenza sincrona a tre chiamate invece della coda.
+// ---------------------------------------------------------------------------
+
+/** oltre questa eta' il runner e' considerato GIU' (stesso numero del backend:
+ *  `omega_service.RUNNER_HB_MAX_AGE_S`). Se i due divergono, la pagina dice una
+ *  cosa e il servizio ne fa un'altra. */
+export const RUNNER_HB_MAX_AGE_S = 90;
+
+export interface RunnerState {
+    /** ultimo battito del runner flumine (ISO) o null se non ha mai battuto */
+    ts: string | null;
+    /** modalita' ordini del runner: 'PAPER' | 'LIVE' | null */
+    mode: string | null;
+    /** eta' del battito in secondi; null = mai battuto */
+    ageS: number | null;
+    /** true = battito fresco entro la soglia del backend */
+    up: boolean;
+}
+
+export function runnerStateFrom(
+    row: { ts?: string | null; mode?: string | null } | null | undefined,
+    nowMs: number = Date.now(),
+): RunnerState {
+    const ts = row?.ts ?? null;
+    const t = ts ? Date.parse(ts) : NaN;
+    const ageS = Number.isFinite(t) ? Math.max(0, (nowMs - t) / 1000) : null;
+    return {
+        ts,
+        mode: row?.mode ? String(row.mode).toUpperCase() : null,
+        ageS,
+        // null = mai battuto: GIU', non "non lo so". Un runner che non ha mai
+        // dato segno di vita non sta eseguendo niente.
+        up: ageS !== null && ageS <= RUNNER_HB_MAX_AGE_S,
+    };
+}
+
+export async function fetchRunnerState(): Promise<RunnerState> {
+    const { data, error } = await supabase
+        .from('betfair_live_heartbeat')
+        .select('ts,mode')
+        .eq('id', 1)
+        .maybeSingle();
+    if (error) throw error;
+    return runnerStateFrom(data as { ts?: string | null; mode?: string | null } | null);
+}
+
+export interface ExecutionRoute {
+    /** 'queue' = coda del runner (stream) · 'rest' = chiamata diretta FOK */
+    route: 'queue' | 'rest';
+    /** true = un ordine puo' restare A RIPOSO sul book (serve al place-and-trim) */
+    restingOrders: boolean;
+    /** etichetta breve da mostrare */
+    label: string;
+    /** motivo per cui NON si usa la coda; null quando la si usa */
+    why: string | null;
+}
+
+/**
+ * Percorso che il servizio usera' davvero, con le STESSE condizioni del gate del
+ * backend (`omega_service._flumine_gate`): runner vivo, in modalita' ordini
+ * coerente con quella del bot, ed evento in follow STREAMING.
+ * Qualunque dubbio -> REST, come il gate, che e' fail-closed.
+ */
+export function executionRoute(
+    runner: RunnerState,
+    botMode: string | null | undefined,
+    followStatus?: string | null,
+): ExecutionRoute {
+    const rest = (why: string): ExecutionRoute => ({
+        route: 'rest', restingOrders: false, label: 'REST (fill or kill)', why,
+    });
+    if (!runner.up) {
+        return rest(runner.ageS === null
+            ? 'runner flumine mai avviato'
+            : `runner flumine spento (ultimo battito ${Math.round(runner.ageS)} s fa)`);
+    }
+    const atteso = String(botMode ?? '').toLowerCase() === 'live' ? 'LIVE' : 'PAPER';
+    if (runner.mode !== atteso) {
+        return rest(`runner in modalita' ${runner.mode ?? 'ignota'}, il bot chiede ${atteso}`);
+    }
+    if (followStatus !== undefined && String(followStatus ?? '').toUpperCase() !== 'STREAMING') {
+        return rest(`partita non in streaming (${String(followStatus ?? 'assente').toLowerCase()})`);
+    }
+    return { route: 'queue', restingOrders: true, label: 'coda (stream)', why: null };
+}
