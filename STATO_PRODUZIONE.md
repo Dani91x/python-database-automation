@@ -59,7 +59,14 @@
 
 # 🆘 TROVATI DOPO LE 13:00 — non erano in nessuna lista prima
 
-## 🔴🔴 P1 — L'USCITA AL FISCHIO DI MIKE NON HA MAI FUNZIONATO. NEMMENO UNA VOLTA.
+## ✅🔴🔴 P1 — L'USCITA AL FISCHIO DI MIKE NON HA MAI FUNZIONATO — **CORRETTO, MIGRAZIONE DA APPLICARE**
+**CHIUSO in `67ca50d`.** Migrazione: **`migrations/mike_vincoli_flusso_fischio_2026-09-14.sql`** — allarga i due
+`CHECK` ai valori che il motore già dichiara (`engine.STATES` 21, `engine.ROLES` 11). Nessun dato toccato,
+nessuna logica cambiata, idempotente. 🔴 **LA APPLICA L'UTENTE, poi riavvio dell'app.**
+**Evidenza raccolta prima di correggere:** `strategy='ko_green'` → 0 righe MAI · `state='LIVE_KO_GREEN'` → 0
+partite MAI · su 2000 righe di errore lette, **2000 erano rifiuti di questo vincolo: il 100%** · 3.953 rifiuti
+su 12 partite (768 sulla peggiore).
+
 **Cosa succede:** Mike prova a chiudere ogni ~5 s e **il database rifiuta ogni tentativo**. Il motore
 dichiara `state = LIVE_KO_GREEN` (`engine.py:38-39`) e `strategy = ko_green` (`engine.py:47`); i vincoli
 `CHECK` creati da `migrations/mike_bot.sql:54-59` e `:84-86` **non contengono quei valori** (mancano anche
@@ -77,7 +84,13 @@ rilegge e ritrova tutto com'era. **180 > 60: la finestra non scade mai**, e il r
 → **la scrive admin-07, la applica l'utente, poi riavvio dell'app.**
 · *Chi:* admin-07 · *Utente:* applicare la migrazione + riavvio
 
-## 🔴 P2 — Il fallimento della scrittura di stato è declassato ad avviso
+## ✅ P2 — Il fallimento della scrittura di stato era declassato ad avviso — **CORRETTO**
+**CHIUSO in `67ca50d`.** `_scrivi_evento` ora scrive un `logger.critical` **e** una riga di attività che arriva
+in pagina, dichiarando se la partita aveva una posizione aperta. **Ed è stata aggiunta la rete che mancava:**
+`test_mike_contratto_db_2026_09_14.py` (9 test) confronta `engine.STATES`/`ROLES` con i `CHECK` della
+migrazione, **nei due versi**. I contratti esistenti confrontavano il motore con la **UI**: la pagina era
+allineata, il database no, e nessuno confrontava quei due. Un elenco scritto a mano in tre posti diverge sempre.
+
 `service.py:2612-2616`: `_scrivi_evento` inghiotte il rifiuto dell'upsert con un `logger.warning`. È per
 questo che P1 è passato **inosservato per dodici giorni**. La riga di `mike_events` è rimasta **congelata
 alle 09:58:27 con `feed_age_s: 4.3` verde**: la pagina ha mostrato «HOLD, feed fresco» per 53 minuti su una
@@ -99,7 +112,13 @@ VELOCE del live**: entra ed esce a prezzi che in live, dopo 1-8 s, potrebbero no
 ⚠️ **Applicare il ritardo CAMBIA I NUMERI STORICI DI OMEGA.** Non si fa di slancio.
 · *Utente: decidere*
 
-## 🟠 P5 — Quanto è costato P1 sulle altre 10 partite: NON MISURATO
+## ✅ P5 — Quanto è costato P1 — **MISURATO**
+12 partite colpite, **10 regolate: P&L complessivo +29,62 €**, di cui **una a −10,00 €** (lo stake intero,
+senza nessuna protezione: né uscita, né copertura, né cap). Le altre 2 sono ancora in `HOLD`.
+**Il danno vero non sono gli euro:** in paper è andata bene perché a 0-0 tenere ha spesso valore atteso
+positivo. Il danno è che **il bot non ha scelto: ha inciampato** — e su un punteggio contro lo stesso
+inciampo lascia scoperti fino al fischio finale.
+~~NON MISURATO~~
 Sono stati contati gli errori (3.893 su 12 partite), **non è stato ricostruito il P&L** di ciascuna.
 È la misura vera di quanto il difetto è costato, e nessuno l'ha fatta.
 · *Chi:* admin-07
