@@ -22,7 +22,11 @@ import {
     type ScanRow, type ScanStatusRow, type CalcioScanPayload,
 } from '@/lib/safeStrategyScan';
 import { fetchOmegaState, fetchOmegaTrades, type OmegaState, type OmegaTrade, type OmegaStats } from '@/lib/omega';
-import { fetchSafeState, fetchRunnerState, type SafeState, type SafeRiskStats, type RunnerState } from '@/lib/safeBot';
+import {
+    fetchSafeState, fetchRunnerState, requestSafe, tradeExposureNow,
+    type SafeState, type SafeRiskStats, type RunnerState,
+} from '@/lib/safeBot';
+import { hedgeSide, greenPrice, partialLockedPnl } from '@/components/trading/CashOutButton';
 import { fetchMikeState, type MikeStateView } from '@/lib/mike';
 import { getLocalChannel, type LocalStatus } from '@/lib/localChannel';
 import {
@@ -83,6 +87,25 @@ export interface PosizioneAperta {
     liability: number | null;
     modalita: Modalita | null;
     piazzataAt: string;
+    /**
+     * QUANTO VALE CHIUDERE ADESSO. Il bot propone un'uscita **solo quando la
+     * regola del manuale scatta** — e fa bene. Ma una posizione può essere in
+     * profitto molto prima, e il trader deve **vederlo in continuo** invece di
+     * scoprirlo per caso. Questo non cambia la strategia: la mostra.
+     *
+     * La matematica è quella condivisa di `CashOutButton` (specchio del
+     * `trading/greenup.py` del backend): qui non si ricalcola niente.
+     */
+    chiusura: {
+        /** lato dell'ordine di copertura */
+        lato: 'back' | 'lay';
+        /** prezzo corrente a cui si chiuderebbe; null = non chiudibile ora */
+        prezzo: number | null;
+        /** EUR abbinabili a quel prezzo */
+        abbinabile: number | null;
+        /** P&L GARANTITO chiudendo per intero adesso; null = non calcolabile */
+        bloccabile: number | null;
+    } | null;
 }
 
 /** Una riga è «a mercato» se non è regolata e non è un piazzamento mai
@@ -168,6 +191,11 @@ export interface ControlRoomVM {
     setSlippagePct: (v: number) => void;
     approva: (id: number) => Promise<void>;
     ignora: (id: number) => Promise<void>;
+    /** chiusura MANUALE di una posizione, per intero: accoda una richiesta
+     *  `cashout` sul percorso di sempre. Non passa dal cancelletto — una
+     *  chiusura decisa dall'operatore non ha bisogno di essere approvata da
+     *  lui stesso. */
+    chiudi: (tradeId: number) => Promise<void>;
 
     /** sorgente del feed: fra `stream` e `rest` c'è un ordine di grandezza */
     feedSorgente: string | null;
@@ -301,6 +329,15 @@ export function useControlRoom(): ControlRoomVM {
     );
     const calcioRows = useMemo(() => scan.filter((r) => r.sport === 'calcio'), [scan]);
 
+    // Il prezzo della scheda viene dal FEED, non dalla proposta: e' questo che
+    // la rende viva senza che il bot riscriva la riga.
+    const feedPerEvento = useMemo(() => {
+        const m = new Map<string, { payload: unknown; updated_at: string | null }>();
+        for (const r of scan) m.set(String(r.event_id), { payload: r.payload, updated_at: r.updated_at });
+        return m;
+    }, [scan]);
+
+
     const soldi = useMemo(() => soldiPerPartita([
         ...marca(omegaTrades as unknown as PnlTradeLike[], 'omega'),
         ...marca((safe?.trades ?? []) as unknown as PnlTradeLike[], 'safe'),
@@ -361,12 +398,38 @@ export function useControlRoom(): ControlRoomVM {
 
     const posizioni = useMemo<PosizioneAperta[]>(() => {
         const out: PosizioneAperta[] = [];
+
+        /** Quanto vale chiudere ADESSO, con la matematica condivisa del green-up.
+         *  `null` quando il prezzo corrente non c'e': non si inventa. */
+        const chiusuraViva = (t: {
+            side: string | null; price: number | null; size: number | null;
+            meta: Record<string, unknown> | null;
+            event_id: string; market_id?: string | null; selection_id?: number | null;
+        }): PosizioneAperta['chiusura'] => {
+            const { win, lose } = tradeExposureNow({
+                side: t.side, price: t.price, size: t.size, meta: t.meta ?? null,
+            });
+            const lato = hedgeSide(win, lose);
+            const riga = feedPerEvento.get(String(t.event_id));
+            const payload = (riga?.payload ?? null) as Parameters<typeof prezzoVivo>[0];
+            // il prezzo del lato su cui si CHIUDE, non quello di ingresso
+            const vivo = prezzoVivo(payload, t.market_id ?? null, t.selection_id ?? null, lato);
+            const prezzo = greenPrice(win, lose, lato === 'back' ? vivo.prezzo : null,
+                                      lato === 'lay' ? vivo.prezzo : null);
+            return {
+                lato,
+                prezzo,
+                abbinabile: vivo.abbinabile,
+                bloccabile: prezzo == null ? null : partialLockedPnl(prezzo, win, lose, 1),
+            };
+        };
         for (const t of omegaTrades) {
             if (!aMercato(t)) continue;
             out.push({
                 bot: 'omega', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.runner_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
+                chiusura: null,
             });
         }
         for (const t of safe?.trades ?? []) {
@@ -375,6 +438,7 @@ export function useControlRoom(): ControlRoomVM {
                 bot: 'safe', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.selection_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
+                chiusura: chiusuraViva(t),
             });
         }
         for (const t of mike?.trades ?? []) {
@@ -383,20 +447,13 @@ export function useControlRoom(): ControlRoomVM {
                 bot: 'mike', id: t.id, eventId: t.event_id, partita: t.event_name ?? t.event_id,
                 selezione: t.selection_name, lato: latoDi(t.side), prezzo: t.price, size: t.size,
                 liability: t.liability, modalita: modalitaDi(t.mode), piazzataAt: t.placed_at,
+                chiusura: null,
             });
         }
         // le più recenti in cima: è l'ordine in cui un trader le cerca
         out.sort((a, b) => Date.parse(b.piazzataAt) - Date.parse(a.piazzataAt));
         return out;
-    }, [omegaTrades, safe?.trades, mike?.trades]);
-
-    // Il prezzo della scheda viene dal FEED, non dalla proposta: e' questo che
-    // la rende viva senza che il bot riscriva la riga.
-    const feedPerEvento = useMemo(() => {
-        const m = new Map<string, { payload: unknown; updated_at: string | null }>();
-        for (const r of scan) m.set(String(r.event_id), { payload: r.payload, updated_at: r.updated_at });
-        return m;
-    }, [scan]);
+    }, [omegaTrades, safe?.trades, mike?.trades, feedPerEvento]);
 
     const proposteVista = useMemo<PropostaVista[]>(() => ordinaProposte(proposte).map((pr) => {
         const p = pr.payload;
@@ -423,6 +480,12 @@ export function useControlRoom(): ControlRoomVM {
 
     const ignora = useCallback(async (id: number) => {
         await ignoraProposta(id);
+        await ricaricaProposte();
+    }, [ricaricaProposte]);
+
+    const chiudi = useCallback(async (tradeId: number) => {
+        // chiusura PIENA: il P&L diventa identico sui due esiti (green-up)
+        await requestSafe('cashout', { trade_id: tradeId, fraction: 1 });
         await ricaricaProposte();
     }, [ricaricaProposte]);
 
@@ -473,7 +536,7 @@ export function useControlRoom(): ControlRoomVM {
         mikeRestingLive: leggiBool(mike?.control?.params, 'live_resting_enabled'),
         schermo, ultimaCatena,
         proposte: proposteVista,
-        slippagePct, setSlippagePct, approva, ignora,
+        slippagePct, setSlippagePct, approva, ignora, chiudi,
         feedSorgente: scanStatus?.payload?.source ?? null,
         feedEtaS,
         feedFreschezza: freschezza(feedEtaS),

@@ -166,7 +166,7 @@ export default function ControlRoom() {
                     copertura={vm.copertura}
                 />
                 <NastroSegnali vm={vm} />
-                <ColonnaPosizioni posizioni={vm.posizioni} />
+                <ColonnaPosizioni posizioni={vm.posizioni} onChiudi={vm.chiudi} />
             </div>
         </PageShell>
     );
@@ -664,7 +664,10 @@ function NastroSegnali({ vm }: { vm: ReturnType<typeof useControlRoom> }) {
 
 // ------------------------------------------------------- colonna posizioni
 
-function ColonnaPosizioni({ posizioni }: { posizioni: PosizioneAperta[] }) {
+function ColonnaPosizioni({ posizioni, onChiudi }: {
+    posizioni: PosizioneAperta[];
+    onChiudi: (tradeId: number) => Promise<void>;
+}) {
     const live = posizioni.filter((p) => p.modalita === 'live');
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid="cr-posizioni">
@@ -706,6 +709,40 @@ function ColonnaPosizioni({ posizioni }: { posizioni: PosizioneAperta[] }) {
                             importo <span className="font-mono">{fmtMoney(p.size)}</span>
                             {p.liability != null && <> · responsabilità <span className="font-mono">{fmtMoney(p.liability)}</span></>}
                         </div>
+                        {/* QUANTO VALE CHIUDERE ADESSO — il bot propone solo quando la
+                            regola del manuale scatta, e fa bene. Ma una posizione può
+                            essere in profitto molto prima, e va VISTO in continuo invece
+                            che scoperto per caso. Mostrarlo non cambia la strategia. */}
+                        {p.chiusura && (
+                            <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-baseline gap-2 flex-wrap"
+                                data-testid="cr-chiusura-viva">
+                                <span className="text-[10px] uppercase tracking-wider text-white/40">chiudi ora</span>
+                                {p.chiusura.prezzo == null ? (
+                                    <span className="text-[11px] text-orange-400">prezzo non disponibile</span>
+                                ) : (
+                                    <>
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1 rounded ${
+                                            p.chiusura.lato === 'lay' ? 'bg-pink-500/15 text-pink-300' : 'bg-sky-500/15 text-sky-300'
+                                        }`}>{p.chiusura.lato === 'lay' ? 'banca' : 'punta'}</span>
+                                        <span className="font-mono text-[12px]">{fmtOdds(p.chiusura.prezzo)}</span>
+                                        <span className={`font-mono text-[13px] font-bold tabular-nums ${
+                                            (p.chiusura.bloccabile ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                        }`} data-testid="cr-bloccabile">{fmtMoney(p.chiusura.bloccabile)}</span>
+                                        {p.chiusura.abbinabile != null && (
+                                            <span className="text-[10px] text-white/35">
+                                                {fmtMoney(p.chiusura.abbinabile)} abbinabili
+                                            </span>
+                                        )}
+                                        <Button
+                                            size="sm" variant="ghost"
+                                            onClick={() => void onChiudi(p.id)}
+                                            className="ml-auto h-6 px-2 text-[10px] uppercase tracking-wider border border-white/15 text-white/70 hover:text-white hover:border-emerald-500/50"
+                                            data-testid="cr-chiudi"
+                                        >Chiudi</Button>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

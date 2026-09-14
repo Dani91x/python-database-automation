@@ -59,7 +59,7 @@ function vm(over: Partial<ReturnType<typeof useControlRoom>> = {}): ReturnType<t
         schermo: { feedMs: 800, pushMs: 1200, letturaMs: 4000, schermoMs: 4000 },
         ultimaCatena: { salti: [], trade: null, evento: null },
         proposte: [], slippagePct: 2, setSlippagePct: vi.fn(),
-        approva: vi.fn(), ignora: vi.fn(),
+        approva: vi.fn(), ignora: vi.fn(), chiudi: vi.fn(),
         feedSorgente: 'stream', feedEtaS: 1, feedFreschezza: 'fresca',
         ricarica: vi.fn(),
         ...over,
@@ -237,6 +237,7 @@ describe('posizioni aperte', () => {
                 bot: 'safe', id: 1, eventId: 'E1', partita: 'Rune – Musetti', selezione: 'Rune',
                 lato: 'back', prezzo: 1.03, size: 2, liability: 2, modalita: 'live',
                 piazzataAt: '2026-09-14T14:50:00Z',
+                chiusura: { lato: 'lay', prezzo: 1.02, abbinabile: 88, bloccabile: 0.24 },
             }],
         }));
         const col = mostra().getByTestId('cr-posizioni');
