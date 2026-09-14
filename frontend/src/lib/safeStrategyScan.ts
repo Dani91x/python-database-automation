@@ -65,11 +65,20 @@ export interface CalcioScanPayload {
     media?: ScanMediaFlags | null;
     /** Istante (ms epoch) in cui lo scanner ha letto le quote di questa partita.
      *  Lo scrive `safe_strategy/service.py` ed e' il gate di freschezza del
-     *  backend. La UI NON lo usa di proposito: l'eta' del feed la dichiara gia'
-     *  `feedFreshness` sull'`updated_at` della riga, con le stesse soglie
-     *  (5 s / 20 s). Due numeri per la stessa cosa sarebbero due verita'
-     *  diverse sotto gli occhi del trader. Resta il punto aperto vero, che
-     *  nessuno dei due risolve: l'eta' PER SINGOLO MERCATO non e' pubblicata. */
+     *  backend.
+     *
+     *  CERT. 14/09 — CORREZIONE A UNA MIA NOTA TROPPO RIGIDA. Qui c'era scritto
+     *  che la UI non lo usa di proposito, perche' «due numeri per la stessa
+     *  cosa sarebbero due verita' diverse». Non sono due numeri per la stessa
+     *  cosa, sono DUE FATTI DIVERSI:
+     *    · `updated_at` = quando il feed ha scritto l'ultimo CAMBIAMENTO;
+     *    · `odds_ts_ms` = quanto e' vecchio il PREZZO su cui si sta per piazzare.
+     *  Il secondo e' l'unico che conti nell'istante prima di un ordine, ed e'
+     *  giusto mostrarlo. La regola vera non e' «uno solo», e' **etichette
+     *  diverse in posti diversi**: «feed» in testata per la riga, «quote» sulla
+     *  partita per il prezzo — cosi' non si leggono come lo stesso dato.
+     *  Resta il punto aperto vero, che nessuno dei due risolve: l'eta' PER
+     *  SINGOLO MERCATO non e' pubblicata. */
     odds_ts_ms?: number | null;
     event_name: string | null;
     home: string | null;
