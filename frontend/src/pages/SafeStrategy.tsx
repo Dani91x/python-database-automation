@@ -63,7 +63,7 @@ import {
     sameStrategyParams, strategyParamsOf, SCANNER_STALE_MS, groupClosingLegs, isCurrentOppRow,
     oppKind, oppKindCounts, comboLegStakes, comboIdempotencyPrefix, SAFE_OPP_KINDS,
     hedgeState, isLivePosition, isReconciling, positionOutcome, aggregatesHaveDay,
-    liveStrategies, fetchRunnerState, executionRoute, type RunnerState,
+    liveStrategies, fetchRunnerState, executionRoute, runnerPhase, type RunnerState,
     type FeedFreshness, type SafeBotStatus, type SafeMode, type SafeOpportunity, type SafeOpportunityRow,
     type SafeSport, type SafeTrade, type SignalPlacement,
 } from '@/lib/safeBot';
@@ -1114,10 +1114,19 @@ export default function SafeStrategy() {
                                 usano la sequenza REST invece della coda
                             </span>
                         )}
-                        {runner?.mode && (
+                        {runner && (
                             <span className="text-slate-400">
-                                · runner {runner.mode}
+                                {/* i tre stati sono TRE: spento · vivo ma in attesa ·
+                                    in streaming. "vivo" da solo non dice se la coda
+                                    ordini ha qualcuno dall'altro capo. */}
+                                · runner {{
+                                    off: 'SPENTO',
+                                    idle: 'vivo, IN ATTESA',
+                                    streaming: 'in streaming',
+                                }[runnerPhase(runner)]}
+                                {runner.mode && ` (${runner.mode})`}
                                 {runner.ageS !== null && ` · battito ${Math.round(runner.ageS)} s fa`}
+                                {runner.streaming !== null && ` · ${runner.streaming} partite agganciate`}
                             </span>
                         )}
                     </div>

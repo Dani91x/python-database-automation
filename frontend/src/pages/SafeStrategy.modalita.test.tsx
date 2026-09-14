@@ -52,8 +52,9 @@ vi.mock('@/lib/safeBot', async (orig) => {
 });
 
 const runner = vi.hoisted(() => ({
-    state: { ts: null, mode: null, ageS: null, up: false } as {
+    state: { ts: null, mode: null, ageS: null, up: false, streaming: null } as {
         ts: string | null; mode: string | null; ageS: number | null; up: boolean;
+        streaming: number | null;
     },
 }));
 
@@ -441,7 +442,7 @@ describe('CERT. 14/09 — la testata dichiara quali strategie spendono davvero',
 // ---------------------------------------------------------------------------
 describe('CERT. 14/09 — la testata dichiara il percorso di esecuzione', () => {
     it('runner spento: REST, col motivo, e dice che gli ordini appoggiati non ci sono', async () => {
-        runner.state = { ts: '2026-09-02T17:55:40Z', mode: 'PAPER', ageS: 1_009_000, up: false };
+        runner.state = { ts: '2026-09-02T17:55:40Z', mode: 'PAPER', ageS: 1_009_000, up: false, streaming: 0 };
         renderPage();
         const riga = await screen.findByTestId('safe-execution-route');
         expect(riga).toHaveTextContent('REST (fill or kill)');
@@ -452,11 +453,33 @@ describe('CERT. 14/09 — la testata dichiara il percorso di esecuzione', () => 
     });
 
     it('runner vivo e coerente: coda, e nessun avviso sugli ordini appoggiati', async () => {
-        runner.state = { ts: '2026-09-14T12:00:00Z', mode: 'PAPER', ageS: 3, up: true };
+        runner.state = { ts: '2026-09-14T12:00:00Z', mode: 'PAPER', ageS: 3, up: true, streaming: 4 };
         renderPage();
         const riga = await screen.findByTestId('safe-execution-route');
         expect(riga).toHaveTextContent('coda (stream)');
+        expect(riga).toHaveTextContent('runner in streaming');
+        expect(riga).toHaveTextContent('4 partite agganciate');
         expect(riga).toHaveTextContent(/battito 3 s fa/);
         expect(riga).not.toHaveTextContent(/ordini appoggiati non disponibili/);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// CERT. 14/09 — IL BATTITO FRESCO NON BASTA
+// Dal 14/09 il runner scrive il battito anche mentre è PARCHEGGIATO nel loop
+// idle, e in quello stato `live_order_worker` non esiste: la coda non ha
+// nessuno dall'altro capo. «processo vivo» e «coda utilizzabile» sono due cose
+// diverse, e prima di questa distinzione il codice era giusto solo per caso.
+// ---------------------------------------------------------------------------
+describe('CERT. 14/09 — runner vivo ma in attesa', () => {
+    it('battito fresco e ZERO partite agganciate: REST, e lo dichiara', async () => {
+        runner.state = { ts: '2026-09-14T12:00:00Z', mode: 'PAPER', ageS: 2, up: true, streaming: 0 };
+        renderPage();
+        const riga = await screen.findByTestId('safe-execution-route');
+        expect(riga).toHaveTextContent('REST (fill or kill)');
+        expect(riga).toHaveTextContent(/IN ATTESA/);
+        expect(riga).toHaveTextContent('0 partite agganciate');
+        // e NON deve dire che si sta usando la coda
+        expect(riga).not.toHaveTextContent('coda (stream)');
     });
 });

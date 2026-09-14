@@ -1670,13 +1670,42 @@ export interface RunnerState {
     mode: string | null;
     /** eta' del battito in secondi; null = mai battuto */
     ageS: number | null;
-    /** true = battito fresco entro la soglia del backend */
+    /**
+     * true = il PROCESSO e' vivo (battito fresco).
+     *
+     * ⚠️ NON vuol dire che la coda ordini funzioni. Dal 14/09 il runner scrive
+     * il battito anche mentre e' parcheggiato nel loop idle, e in quello stato
+     * `live_order_worker` — che nasce dentro il framework, come il battito
+     * prima — NON esiste: la coda non ha nessuno dall'altro capo. Per sapere
+     * se la coda e' utilizzabile serve `streaming`, non questo.
+     */
     up: boolean;
+    /**
+     * quante partite sono davvero agganciate allo stream (`live_follow` in
+     * STREAMING). 0 con `up` true = runner VIVO MA IN ATTESA.
+     *
+     * OPZIONALE di proposito: chi costruisce uno stato senza questo campo non
+     * deve rompersi, e l'assenza vale ATTESA (`runnerPhase`), mai streaming.
+     * Il verso del ripiego e' quello prudente: un campo dimenticato non puo'
+     * far credere che la coda ordini sia utilizzabile quando non lo e'.
+     */
+    streaming?: number | null;
+}
+
+/** I tre stati del runner, che non sono due. */
+export type RunnerPhase = 'off' | 'idle' | 'streaming';
+
+export function runnerPhase(r: RunnerState): RunnerPhase {
+    if (!r.up) return 'off';
+    // `null` = non l'abbiamo letto: si assume ATTESA, non streaming. Fail-closed
+    // come il gate del backend: un dubbio non puo' concedere la coda.
+    return (r.streaming ?? 0) > 0 ? 'streaming' : 'idle';
 }
 
 export function runnerStateFrom(
     row: { ts?: string | null; mode?: string | null } | null | undefined,
     nowMs: number = Date.now(),
+    streaming: number | null = null,
 ): RunnerState {
     const ts = row?.ts ?? null;
     const t = ts ? Date.parse(ts) : NaN;
@@ -1688,6 +1717,7 @@ export function runnerStateFrom(
         // null = mai battuto: GIU', non "non lo so". Un runner che non ha mai
         // dato segno di vita non sta eseguendo niente.
         up: ageS !== null && ageS <= RUNNER_HB_MAX_AGE_S,
+        streaming,
     };
 }
 
@@ -1698,7 +1728,24 @@ export async function fetchRunnerState(): Promise<RunnerState> {
         .eq('id', 1)
         .maybeSingle();
     if (error) throw error;
-    return runnerStateFrom(data as { ts?: string | null; mode?: string | null } | null);
+    // quante partite sono agganciate allo stream: senza nessuna, il runner e'
+    // vivo ma PARCHEGGIATO e la coda ordini non ha nessuno dall'altro capo.
+    // Un errore qui lascia `streaming` a null, che `runnerPhase` legge come
+    // ATTESA: il dubbio non concede mai la coda.
+    let streaming: number | null = null;
+    try {
+        const res = await supabase
+            .from('live_follow')
+            .select('event_id', { count: 'exact', head: true })
+            .eq('status', 'STREAMING');
+        if (!res.error) streaming = res.count ?? 0;
+    } catch {
+        streaming = null;
+    }
+    return runnerStateFrom(
+        data as { ts?: string | null; mode?: string | null } | null,
+        Date.now(), streaming,
+    );
 }
 
 export interface ExecutionRoute {
@@ -1726,10 +1773,20 @@ export function executionRoute(
     const rest = (why: string): ExecutionRoute => ({
         route: 'rest', restingOrders: false, label: 'REST (fill or kill)', why,
     });
-    if (!runner.up) {
+    const fase = runnerPhase(runner);
+    if (fase === 'off') {
         return rest(runner.ageS === null
             ? 'runner flumine mai avviato'
             : `runner flumine spento (ultimo battito ${Math.round(runner.ageS)} s fa)`);
+    }
+    // CERT. 14/09 — IL BATTITO FRESCO NON BASTA. Il runner scrive il battito
+    // anche mentre e' parcheggiato nel loop idle, e in quello stato
+    // `live_order_worker` non esiste: la coda non ha nessuno dall'altro capo.
+    // «processo vivo» e «coda utilizzabile» sono due cose diverse, e usare la
+    // prima per rispondere alla seconda direbbe al trader che gli ordini
+    // passano da una strada che non c'e'.
+    if (fase === 'idle') {
+        return rest('runner flumine vivo ma IN ATTESA: nessuna partita agganciata allo stream');
     }
     const atteso = String(botMode ?? '').toLowerCase() === 'live' ? 'LIVE' : 'PAPER';
     if (runner.mode !== atteso) {

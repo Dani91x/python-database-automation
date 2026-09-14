@@ -26,7 +26,7 @@ import {
     oppKind, oppKindCounts, comboLegStakes, comboLock, anomalyRefLabel, comboIdempotencyPrefix,
     tradeHold, holdReasonLabel, pLoseEntry, tradeOppKind, SAFE_RISK_DEFAULTS,
     groupClosingLegs, fmtEurIt, fmtOddsIt, hedgeTooltip,
-    runnerStateFrom, executionRoute, RUNNER_HB_MAX_AGE_S,
+    runnerStateFrom, executionRoute, runnerPhase, RUNNER_HB_MAX_AGE_S,
     type SafeTrade,
 } from './safeBot';
 import { DEFAULT_PARAMS } from './safeStrategy';
@@ -741,17 +741,19 @@ describe('runnerStateFrom — quando il runner e vivo', () => {
 });
 
 describe('executionRoute — le stesse condizioni del gate del backend', () => {
-    const vivo = (mode: string) => ({ ts: 'x', mode, ageS: 2, up: true });
+    // «vivo» non basta piu': serve almeno una partita agganciata allo stream,
+    // altrimenti il runner e' parcheggiato e la coda non ha consumatore.
+    const vivo = (mode: string) => ({ ts: 'x', mode, ageS: 2, up: true, streaming: 3 });
 
     it('runner spento: REST, e lo dice col numero', () => {
-        const r = executionRoute({ ts: 'x', mode: 'PAPER', ageS: 3600, up: false }, 'paper');
+        const r = executionRoute({ ts: 'x', mode: 'PAPER', ageS: 3600, up: false, streaming: 0 }, 'paper');
         expect(r.route).toBe('rest');
         expect(r.restingOrders).toBe(false);
         expect(r.why).toMatch(/spento.*3600 s fa/);
     });
 
     it('runner mai avviato: REST, con la causa giusta', () => {
-        const r = executionRoute({ ts: null, mode: null, ageS: null, up: false }, 'paper');
+        const r = executionRoute({ ts: null, mode: null, ageS: null, up: false, streaming: null }, 'paper');
         expect(r.route).toBe('rest');
         expect(r.why).toMatch(/mai avviato/);
     });
@@ -777,8 +779,38 @@ describe('executionRoute — le stesse condizioni del gate del backend', () => {
     });
 
     it('lo stato della partita non passato NON chiude il percorso', () => {
-        // la testata parla del servizio, non di una partita: senza il follow
-        // non si deve dichiarare REST per una condizione che non si e' guardata
+        // la testata parla del SERVIZIO: se ci sono partite agganciate allo
+        // stream la coda esiste, e non si deve dichiarare REST per una
+        // condizione (il follow di UNA partita) che non si e' guardata
         expect(executionRoute(vivo('PAPER'), 'paper').route).toBe('queue');
+    });
+
+    // -----------------------------------------------------------------------
+    // CERT. 14/09 — IL BATTITO FRESCO NON BASTA.
+    // Dal 14/09 il runner scrive il battito anche mentre e' PARCHEGGIATO nel
+    // loop idle. In quello stato `live_order_worker` non esiste: la coda non ha
+    // nessuno dall'altro capo. «processo vivo» e «coda utilizzabile» sono due
+    // cose diverse, e prima di questa distinzione il codice era corretto solo
+    // per caso, perche' un runner parcheggiato non batteva.
+    // -----------------------------------------------------------------------
+    it('runner VIVO MA IN ATTESA: REST, non coda', () => {
+        const r = executionRoute({ ts: 'x', mode: 'PAPER', ageS: 2, up: true, streaming: 0 }, 'paper');
+        expect(r.route).toBe('rest');
+        expect(r.restingOrders).toBe(false);
+        expect(r.why).toMatch(/IN ATTESA/);
+    });
+
+    it('streaming NON LETTO vale attesa: il dubbio non concede mai la coda', () => {
+        const r = executionRoute({ ts: 'x', mode: 'PAPER', ageS: 2, up: true, streaming: null }, 'paper');
+        expect(r.route).toBe('rest');
+    });
+
+    it('i tre stati sono tre, non due', () => {
+        expect(runnerPhase({ ts: 'x', mode: 'PAPER', ageS: 9999, up: false, streaming: 5 })).toBe('off');
+        expect(runnerPhase({ ts: 'x', mode: 'PAPER', ageS: 2, up: true, streaming: 0 })).toBe('idle');
+        expect(runnerPhase({ ts: 'x', mode: 'PAPER', ageS: 2, up: true, streaming: 1 })).toBe('streaming');
+        // battito vecchio con follow in streaming: resta SPENTO. Un follow
+        // dichiarato da un processo morto non esegue niente.
+        expect(runnerPhase({ ts: 'x', mode: 'PAPER', ageS: 9999, up: false, streaming: 9 })).toBe('off');
     });
 });
