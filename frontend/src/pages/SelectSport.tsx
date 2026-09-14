@@ -105,6 +105,18 @@ export default function SelectSport() {
                     </div>
                     <div className="flex items-center gap-4">
                         <span className="text-xs text-muted-foreground hidden md:inline-block">{user?.email}</span>
+                        {/* CONTROL ROOM — il banco della giornata: i tre bot, un
+                            obiettivo, una pagina. Raggiungibile da qui perche' e'
+                            la prima schermata dopo l'accesso. */}
+                        <Button
+                            size="sm"
+                            onClick={() => navigate('/control-room')}
+                            className="bg-secondary text-black hover:bg-secondary/90 font-semibold"
+                            data-testid="nav-control-room"
+                            aria-label="Apri la Control Room"
+                        >
+                            CONTROL ROOM
+                        </Button>
                         <Button
                             variant="ghost"
                             size="sm"

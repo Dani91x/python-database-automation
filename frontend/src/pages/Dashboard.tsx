@@ -140,6 +140,18 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {/* CONTROL ROOM — il banco della giornata: i tre bot, un
+                            obiettivo, una pagina. Sta per prima perche' e' da li'
+                            che si opera. */}
+                        <Button
+                            size="sm"
+                            onClick={() => navigate('/control-room')}
+                            className="bg-secondary text-black hover:bg-secondary/90 font-semibold"
+                            data-testid="nav-control-room"
+                            aria-label="Apri la Control Room"
+                        >
+                            CONTROL ROOM
+                        </Button>
                         {/* come TennisNav: ritorno rapido allo Sport Selector */}
                         <Button variant="outline" size="sm" onClick={() => navigate('/select-sport')}
                             className="border-secondary/30 text-secondary hover:bg-secondary/10" aria-label="Cambia sport">
