@@ -30,7 +30,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2 } from 'lucide-react';
+import { Power, Square, SlidersHorizontal, AlertTriangle, Loader2, Ban } from 'lucide-react';
 import { fmtMoney, fmtAge, DASH } from '@/lib/format';
 import { BOT_LABEL, type Bot } from '@/lib/controlRoom';
 import type { StatoBot } from '@/components/controlroom/useControlRoom';
@@ -281,6 +281,24 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                 </span>
             </div>
 
+            {/* PERCHÉ NON STA APRENDO — dichiarato dal servizio, non dedotto
+                qui. ⚠️ 15/09: il trader ha visto Mike «fermo» mentre era
+                perfettamente vivo; il tetto delle partite era pieno (e quel
+                tetto sommava paper e live). Un bot acceso che non apre e non
+                dice perché è indistinguibile da un bot rotto. */}
+            {b.inCorsa && b.motivoBlocco && (
+                <div className="mt-1.5 text-[10px] text-amber-300 flex items-center gap-1.5"
+                    data-testid={`cr-motivo-blocco-${b.bot}`}>
+                    <Ban className="w-3 h-3 shrink-0" />
+                    <span>acceso ma non apre: <strong>{b.motivoBlocco}</strong></span>
+                    {b.tettoPartite != null && b.partiteEsposte != null && (
+                        <span className="text-white/35 font-mono">
+                            {b.partiteEsposte}/{b.tettoPartite}
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* GLI IMPORTI, con i nomi del bot. Compaiono solo se esistono
                 davvero: un campo inventato è peggio di un campo assente. */}
             {importi.length > 0 && (
@@ -316,8 +334,25 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
                             disabled={occupato}
                             onClick={() => void esegui(() => comandi.ferma(b.bot))}
                             data-testid={`cr-ferma-${b.bot}`}
+                            // ⚠️ 15/09 — FERMA toglie le APERTURE, non le
+                            // uscite: coperture, green-up, cash-out e
+                            // settlement continuano, ed è giusto (una posizione
+                            // aperta non si abbandona). Ma il pulsante deve
+                            // dirlo: durante il loop del 15/09 premerlo non
+                            // avrebbe fermato niente, perché il loop era su una
+                            // gamba di uscita. Lo dichiara il servizio.
+                            title={b.stopFermaSoloAperture
+                                ? 'ferma le APERTURE. Le posizioni già aperte restano sorvegliate: coperture, green-up, cash out e regolamento continuano'
+                                : 'ferma il bot'}
                             className="h-6 px-2 text-[10px] uppercase tracking-wider border-red-400/40 text-red-300 hover:bg-red-500/15"
                         >{mio ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Square className="w-3 h-3 mr-1" />ferma</>}</Button>
+
+                        {b.stopFermaSoloAperture && (
+                            <span className="text-[9px] text-white/30"
+                                data-testid={`cr-cosa-ferma-${b.bot}`}>
+                                ferma le aperture, non le uscite
+                            </span>
+                        )}
 
                         {b.modalita != null && (
                             live ? (

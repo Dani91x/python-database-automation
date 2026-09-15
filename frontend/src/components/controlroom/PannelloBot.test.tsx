@@ -18,6 +18,10 @@ function bot(over: Partial<StatoBot> = {}): StatoBot {
         canale: 'connected', etaPushS: 1, freschezzaPush: 'fresca',
         varianti: null, modiStrategia: null,
         stato: 'stopped', params: { stake: { backSize: 3 } }, obiettivoGiorno: null,
+        // quello che il SERVIZIO dichiara: di serie non dichiara niente, ed è
+        // giusto che la pagina in quel caso non scriva niente.
+        motivoBlocco: null, tettoPartite: null, partiteEsposte: null,
+        stopFermaSoloAperture: false,
         ...over,
     } as StatoBot;
 }
@@ -213,5 +217,67 @@ describe('quello che il pannello DICE dello stato', () => {
     it('nessun bot in live: nessun contatore rosso (niente rumore inutile)', () => {
         const s = mostra([bot({ inCorsa: true, stato: 'running' })], comandiFinti());
         expect(s.queryByTestId('cr-quanti-live')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ 15/09 — PERCHÉ IL BOT NON APRE
+//
+// Il trader ha visto Mike «fermo» mentre era vivissimo: il tetto delle partite
+// era pieno, e quel tetto sommava paper e live. Il motivo non era scritto da
+// nessuna parte, e un bot acceso che non apre e non dice perché è
+// indistinguibile da un bot rotto. Il motivo lo DICHIARA il servizio: la
+// pagina lo riporta e basta, non lo deduce.
+// ---------------------------------------------------------------------------
+
+describe('un bot acceso che non apre deve dire perché', () => {
+    it('riporta il motivo dichiarato dal servizio, parola per parola', () => {
+        const s = mostra([bot({
+            bot: 'mike', inCorsa: true, stato: 'running',
+            motivoBlocco: 'tetto partite raggiunto: 2 su 2 in live',
+            tettoPartite: 2, partiteEsposte: 2,
+        })], comandiFinti());
+        const riga = s.getByTestId('cr-motivo-blocco-mike');
+        expect(riga.textContent).toMatch(/tetto partite raggiunto: 2 su 2 in live/);
+        expect(riga.textContent).toMatch(/2\/2/);
+    });
+
+    it('nessun blocco dichiarato: la pagina non inventa niente', () => {
+        const s = mostra([bot({ bot: 'mike', inCorsa: true, stato: 'running' })], comandiFinti());
+        expect(s.queryByTestId('cr-motivo-blocco-mike')).toBeNull();
+    });
+
+    it('un bot FERMO non parla di blocchi: non sta aprendo perché è spento', () => {
+        const s = mostra([bot({
+            bot: 'mike', inCorsa: false, stato: 'stopped',
+            motivoBlocco: 'tetto partite raggiunto: 2 su 2 in live',
+        })], comandiFinti());
+        expect(s.queryByTestId('cr-motivo-blocco-mike')).toBeNull();
+    });
+
+    it('il tetto non letto non diventa uno 0/0 inventato', () => {
+        const s = mostra([bot({
+            bot: 'mike', inCorsa: true, stato: 'running',
+            motivoBlocco: 'tetto partite raggiunto',
+            tettoPartite: null, partiteEsposte: null,
+        })], comandiFinti());
+        expect(s.getByTestId('cr-motivo-blocco-mike').textContent).not.toMatch(/0\/0/);
+    });
+});
+
+describe('«ferma» deve dire che cosa ferma davvero', () => {
+    it('quando il servizio dichiara che toglie solo le aperture, il pannello lo scrive', () => {
+        const s = mostra([bot({
+            bot: 'mike', inCorsa: true, stato: 'running', stopFermaSoloAperture: true,
+        })], comandiFinti());
+        expect(s.getByTestId('cr-cosa-ferma-mike').textContent)
+            .toMatch(/ferma le aperture, non le uscite/i);
+        expect(s.getByTestId('cr-ferma-mike').getAttribute('title'))
+            .toMatch(/green.?up|cash out|regolamento/i);
+    });
+
+    it('se il servizio non lo dichiara, non si promette niente', () => {
+        const s = mostra([bot({ bot: 'mike', inCorsa: true, stato: 'running' })], comandiFinti());
+        expect(s.queryByTestId('cr-cosa-ferma-mike')).toBeNull();
     });
 });

@@ -1395,9 +1395,14 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     # occupato subito e la successiva lo trova gia' preso. Senza questo, dentro
     # lo stesso giro entrerebbero tutte insieme — che e' esattamente il difetto
     # che stiamo chiudendo.
-    esposte = {eid for eid, e in tracked.items()
-               if E.ha_esposizione(e.get("state"), _ctx_legs_of(e))}
+    #
+    # ⚠️ 15/09 — e i posti sono SEPARATI PER MODALITA': vedi
+    # `posti_occupati_per_modo`, che dice perche' sommarli fermava il live.
+    esposte_per_modo = posti_occupati_per_modo(tracked, mode)
     cap_partite = int(eff.get("max_open_matches") or 0)
+    # quante partite il tetto ha fermato in questo giro: serve a SCRIVERLO in
+    # pagina, non a decidere.
+    bloccate_dal_tetto = 0
     trades_cache: Dict[str, List[Dict[str, Any]]] = {}
     # le riscritture di sola CORTESIA (rinfresco dell'ora di pubblicazione) del
     # giro: si accumulano qui e partono in UNA sola POST a fine ciclo. Le
@@ -1406,19 +1411,25 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
     try:
         for eid, ev in list(tracked.items()):
             try:
-                gia_dentro = eid in esposte
+                # il tetto si misura SOLO fra partite della STESSA modalita'
+                modo_ev = str(ev.get("mode") or mode)
+                pari_modo = esposte_per_modo.setdefault(modo_ev, set())
+                gia_dentro = str(eid) in pari_modo
+                puo_aprire = (gia_dentro or cap_partite <= 0
+                              or len(pari_modo) < cap_partite)
+                if not puo_aprire:
+                    bloccate_dal_tetto += 1
                 acted, settled = _run_event(db=db, market=market, ev=ev, row=rows_by_event.get(eid),
-                                            params=eff, mode=str(ev.get("mode") or mode), now=now,
+                                            params=eff, mode=modo_ev, now=now,
                                             scanner_age=scanner_age, atlas=atlas, dry=dry,
                                             cache=trades_cache, open_refs=open_refs,
                                             lotto=lotto_eventi,
                                             # una partita GIA' esposta non e' mai bloccata: deve
                                             # poter fare tutto, comprese le aperture del ciclo
                                             # successivo, altrimenti resterebbe a meta' strada.
-                                            puo_aprire=(gia_dentro or cap_partite <= 0
-                                                        or len(esposte) < cap_partite))
+                                            puo_aprire=puo_aprire)
                 if not gia_dentro and E.ha_esposizione(ev.get("state"), _ctx_legs_of(ev)):
-                    esposte.add(eid)      # il posto e' occupato da adesso
+                    pari_modo.add(str(eid))   # il posto e' occupato da adesso
                 n_actions += acted
                 n_settled += settled
             except Exception as ex:  # noqa: BLE001 — una partita rotta non ferma le altre
@@ -1477,6 +1488,28 @@ def run_once(*, db: Any = _real_db, market: Any = _real_market, now: Optional[da
         "cycles_today": int(agg.get("cycles_today", 0)), "events_today": int(agg.get("events_today", 0)),
         "live_now": sum(1 for e in tracked.values() if (e.get("live") or {}).get("inplay")),
         "scanner_age_s": round(scanner_age, 1) if scanner_age is not None else None,
+        # ── QUELLO CHE IL BOT DECIDE, SCRITTO (15/09) ────────────────────────
+        # Un trader non deve dedurre perche' il bot non apre: deve leggerlo.
+        # Il tetto e' PER MODALITA' — i soldi finti non occupano il posto dei
+        # soldi veri — quindi si pubblicano tutti e due i conti, mai la somma.
+        "tetto_partite": cap_partite,
+        "partite_esposte": len(esposte_per_modo.get(mode, ())),
+        "partite_esposte_live": len(esposte_per_modo.get("live", ())),
+        "partite_esposte_paper": len(esposte_per_modo.get("paper", ())),
+        "aperture_bloccate": int(bloccate_dal_tetto),
+        "motivo_blocco": (
+            f"tetto partite raggiunto: {len(esposte_per_modo.get(mode, ()))} "
+            f"su {cap_partite} in {mode}"
+        ) if bloccate_dal_tetto else None,
+        # Con che passo questo battito si ripete: la pagina deve giudicare la
+        # vitalita' con la cadenza VERA del servizio, non con una costante
+        # scritta nel frontend (che sarebbe una seconda verita').
+        "cadenza_battito_s": _cadenza_battito(params),
+        # FERMARE il bot toglie le APERTURE, non le uscite: coperture, green-up,
+        # cash-out e settlement continuano, ed e' giusto — una posizione aperta
+        # non si abbandona. Ma il pulsante deve dirlo, o promette una cosa che
+        # non fa.
+        "stop_ferma_solo_aperture": True,
         "last_cycle": now.isoformat(), "dry": bool(dry), "mode": mode, "daily_stop": bool(daily_stop),
         "reconciling": sum(1 for e in tracked.values()
                            if any(str((l or {}).get("status")) == E.STATUS_RECONCILE
@@ -1562,6 +1595,63 @@ def _open_liability(tracked: Dict[str, Dict[str, Any]], params: Dict[str, Any],
             continue
         tot += E.event_liability(_ctx_legs_of(ev), c)
     return round(tot, 2)
+
+
+def posti_occupati_per_modo(tracked: Dict[str, Dict[str, Any]],
+                            mode: str) -> Dict[str, set]:
+    """Le partite che OCCUPANO UN POSTO, tenute separate per modalita'.
+
+    ⚠️ 15/09 — QUESTO CONTO SOMMAVA PAPER E LIVE.
+
+    Il ``mode`` si congela sulla partita quando viene armata, quindi nel
+    ``tracked`` convivono partite delle due modalita'. Contandole insieme, una
+    vecchia posizione PAPER rimasta viva occupava un posto REALE: col tetto a 1
+    il bot in live non apriva piu' nulla — e in pagina non c'era scritto da
+    nessuna parte perche'. Un trader non puo' dedurlo: vede un bot fermo.
+
+    I soldi finti non possono occupare il posto dei soldi veri, ne' viceversa:
+    il tetto vale DENTRO una modalita'. Chi non dichiara la sua eredita quella
+    corrente del servizio.
+    """
+    fuori: Dict[str, set] = {}
+    for eid, ev in (tracked or {}).items():
+        if E.ha_esposizione(ev.get("state"), _ctx_legs_of(ev)):
+            fuori.setdefault(str(ev.get("mode") or mode), set()).add(str(eid))
+    return fuori
+
+
+def _cadenza_battito(params: Optional[Dict[str, Any]]) -> float:
+    """Ogni QUANTI SECONDI, nel caso peggiore, questo servizio batte.
+
+    ⚠️ 15/09 — la pagina giudicava la vitalita' dei bot con una costante
+    scritta nel frontend. Era una SECONDA VERITA': se qui dentro si allarga la
+    cadenza (ed e' successo il 13/09, per far respirare il database), il
+    frontend non lo sa e continua a misurare col metro vecchio — o chiama morto
+    un bot vivo, o chiama vivo un bot morto. La cadenza la dichiara CHI BATTE.
+
+    Due cose la determinano insieme, e vince la piu' lenta:
+      * il passo del ciclo quando non si muove niente (``idle_cycle_s``, e
+        comunque mai sotto il doppio di ``decide_min_interval_ms``);
+      * il freno sulle scritture: un battito al massimo ogni
+        ``heartbeat_min_s`` (13/09, per non svegliare le pagine aperte).
+    """
+    p = params or {}
+
+    def _num(chiave: str, difetto: float) -> float:
+        v = p.get(chiave)
+        if v is None:
+            v = C.DEFAULTS.get(chiave)
+            if isinstance(v, tuple):       # (default, tipo, min, max, ...)
+                v = v[0]
+        try:
+            f = float(v)                   # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return difetto
+        return f if f > 0 else difetto
+
+    passo = max(1.0, _num("decide_min_interval_ms", 500.0) / 1000.0 * 2.0)
+    passo = max(passo, _num("idle_cycle_s", 5.0))
+    return round(max(passo, _num("heartbeat_min_s", 20.0)), 1)
 
 
 def partite_di_modalita_diversa(tracked: Dict[str, Dict[str, Any]], mode: str) -> List[str]:

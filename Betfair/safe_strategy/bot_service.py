@@ -3923,6 +3923,9 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
     """(piazzati, segnali_attivi). Un segnale già tradato non si ripiazza (I1
     per (event_id, signal_key)); le barriere di rischio sono le stesse del
     manuale più il motore ``risk`` (gate prima della riserva)."""
+    # ⚠️ 15/09 — il motivo del blocco vale per UN giro: si riazzera qui, o la
+    # pagina continuerebbe a mostrare un freno che non c'è più.
+    _BLOCCO.update({"motivo": None, "tetto": None, "aperte": None})
     if engine is None:
         return 0, 0
     try:
@@ -4054,6 +4057,14 @@ def scan_and_place(*, db, market, engine, rows: list[dict], params: dict,
         if max_open and (open_n_s + _placed_per_modalita.get(mode_s, 0)) >= max_open:
             _log_skip(db, now, params, {"event_id": str(event_id), "signal_key": str(key),
                                        "reason": "max_open_trades"})
+            # ⚠️ 15/09 — e lo si DICE anche in pagina, non solo nel registro
+            # degli scarti: il trader guarda la Control Room, non i log.
+            aperte_ora = open_n_s + _placed_per_modalita.get(mode_s, 0)
+            _BLOCCO.update({
+                "motivo": (f"tetto operazioni aperte raggiunto: {aperte_ora} "
+                           f"su {max_open} in {mode_s}"),
+                "tetto": int(max_open), "aperte": int(aperte_ora),
+            })
             break
         side = str(_sig(s, "side") or "").lower()
         if side not in ("back", "lay"):
@@ -5275,6 +5286,37 @@ _LAST_CONTROL: dict[str, Any] = {}
 #: pena sbirciare la coda mentre si aspetta: a banco vuoto non c'e' niente da
 #: chiudere, quindi non parte nessuna query in piu'.
 _APERTE: dict[str, int] = {"n": 0}
+
+# ⚠️ 15/09 — PERCHE' IL BOT NON APRE, scritto dove il trader lo legge.
+# Un bot acceso che non piazza e non dice perche' e' indistinguibile da un bot
+# rotto: e' successo con Mike, fermato da un tetto pieno senza che in pagina ci
+# fosse una parola. Qui si tiene il motivo dell'ULTIMO giro, e le statistiche lo
+# pubblicano. Non decide niente: serve solo a dirlo.
+_BLOCCO: dict[str, Any] = {"motivo": None, "tetto": None, "aperte": None}
+
+
+def _cadenza_battito(params: Optional[dict]) -> float:
+    """Ogni QUANTI SECONDI, nel caso peggiore, questo servizio batte.
+
+    ⚠️ 15/09 — la pagina giudicava la vitalita' dei bot con una costante scritta
+    nel frontend. Era una SECONDA VERITA': se qui il passo si allarga, il
+    frontend non lo sa e continua a misurare col metro vecchio — o chiama morto
+    un bot vivo, o (peggio) chiama vivo un bot morto. La cadenza la dichiara
+    CHI BATTE.
+
+    Safe scrive stato e battito a ogni giro, quindi la cadenza e' il passo del
+    ciclo: ``poll_interval_s``.
+    """
+    try:
+        v = float((params or {}).get("poll_interval_s") or 2.0)
+    except (TypeError, ValueError):
+        v = 2.0
+    # un passo nullo o negativo e' un valore ROTTO, non un passo velocissimo:
+    # si torna a quello di serie, non al pavimento (dichiarare 1 s per un ciclo
+    # che gira ogni 2 farebbe lampeggiare «lento» a ogni giro regolare).
+    if v <= 0.0:
+        v = 2.0
+    return round(max(1.0, v), 1)
 # Oltre questo tempo l'ultimo control noto non e' piu' una base accettabile:
 # i parametri possono essere cambiati (soglie di uscita, commissione, tentativi)
 # proprio perche' l'utente stava reagendo a qualcosa. Si continua comunque a
@@ -5509,6 +5551,19 @@ def run_once(*, db=_real_db, market=_real_market, engine=None, opp_model=None,
         "legs_today": int(agg.get("legs_today", 0) or 0),
         "events_today": int(agg.get("events_today", 0) or 0),
         "feed_blind": n_blind,
+        # ── QUELLO CHE IL BOT DECIDE, SCRITTO (15/09) ────────────────────────
+        # Un trader non deve dedurre perché il bot non apre: deve leggerlo.
+        "motivo_blocco": _BLOCCO.get("motivo"),
+        "tetto_partite": _BLOCCO.get("tetto"),
+        "partite_esposte": _BLOCCO.get("aperte"),
+        # con che passo si ripete questo battito: la pagina deve giudicare la
+        # vitalità con la cadenza VERA del servizio, non con una costante
+        # scritta nel frontend (che sarebbe una seconda verità).
+        "cadenza_battito_s": _cadenza_battito(params),
+        # FERMARE toglie le APERTURE, non le uscite: coperture, cash out e
+        # regolamento continuano. Il pulsante deve dirlo, o promette una cosa
+        # che non fa.
+        "stop_ferma_solo_aperture": True,
         "last_cycle": now.isoformat(),
         "risk": {"daily_liability": round(float(agg.get("day_liability", 0.0) or 0.0), 2),
                  "daily_cap": float(rp.get("daily_liability_cap") or 0.0),

@@ -65,17 +65,29 @@ export type Freschezza = 'fresca' | 'lenta' | 'vecchia' | 'ignota';
  * riguarda soldi.
  */
 /**
- * La freschezza del BATTITO di un bot, che NON e' l'eta' di una quota.
+ * La freschezza del BATTITO di un bot, che NON è l'età di una quota.
  *
  * ⚠️ REVIEW 15/09 — `freschezza()` usa le soglie delle QUOTE (5 s / 20 s),
- * giuste per un prezzo. Ma il battito di un bot ha la cadenza del suo CICLO:
- * Omega a riposo pubblica ogni 60 s, Mike idem. Con le soglie dei prezzi il
- * pallino restava «muto» due terzi del tempo, e l'utente ha visto Mike
- * «spento» mentre stava operando.
+ * giuste per un prezzo. Ma il battito di un bot ha la cadenza del suo CICLO, e
+ * col metro dei prezzi il pallino restava «muto» due terzi del tempo: l'utente
+ * ha visto Mike «spento» mentre stava operando.
  *
- * `cadenzaS` = il passo dichiarato dal bot. Si concede il doppio del passo
+ * ⚠️ E LA CADENZA LA DICHIARA CHI BATTE (`stats.cadenza_battito_s`): qui c'era
+ * una costante, cioè una SECONDA VERITÀ. I tre bot battono a passi diversi —
+ * Safe ogni 2 s, Mike fino a 20, Omega fino a 60 — e il 13/09 quei passi erano
+ * già stati allargati per far respirare il database senza che la pagina lo
+ * sapesse. Con un metro unico o si chiama morto un bot vivo, o (molto peggio)
+ * si chiama vivo un bot morto.
+ *
+ * `cadenzaS` = il passo dichiarato dal servizio. Si concede il doppio del passo
  * prima di chiamarlo lento, il triplo prima di chiamarlo vecchio: un ciclo
- * saltato non e' un bot morto.
+ * saltato non è un bot morto.
+ */
+/**
+ * Ripiego per un servizio che NON dichiara il proprio passo (versione vecchia
+ * in esecuzione, o statistiche non ancora scritte). È volutamente il più lento
+ * dei tre, perché sbagliare qui dichiarando «vecchio» un bot sano manderebbe il
+ * trader a riavviare un servizio che sta operando.
  */
 export const CADENZA_SERVIZIO_S = 60;
 

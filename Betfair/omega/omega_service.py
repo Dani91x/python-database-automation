@@ -4634,6 +4634,43 @@ def _idle_stats_due(status: Any, now: datetime) -> bool:
     return False
 
 
+def _cadenza_battito(params: Any) -> float:
+    """Ogni QUANTI SECONDI, nel caso peggiore, questo servizio batte.
+
+    ⚠️ 15/09 — la pagina giudicava la vitalità dei bot con una costante scritta
+    nel frontend. Era una SECONDA VERITÀ: se qui il passo si allarga (ed è
+    successo il 13/09, per far respirare il database), il frontend non lo sa e
+    continua a misurare col metro vecchio — o chiama morto un bot vivo, o
+    chiama vivo un bot morto. La cadenza la dichiara CHI BATTE.
+
+    Omega scrive il battito a ogni giro, e a vuoto il giro rallenta da solo:
+    vale il più lento fra ``poll_interval_s`` e ``idle_cycle_s``.
+    """
+    p = params if isinstance(params, dict) else {}
+
+    def _num(chiave: str, difetto: float, zero_valido: bool = False) -> float:
+        v = p.get(chiave)
+        if v is None:
+            return difetto
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return difetto
+        if f > 0.0:
+            return f
+        # ``idle_cycle_s`` puo' valere ZERO e vuol dire «non rallentare a
+        # vuoto»: e' una scelta, non un valore mancante, e confonderla con
+        # «assente» dichiarerebbe una cadenza piu' lenta di quella vera — cioe'
+        # terrebbe per vivo un bot gia' morto da un minuto. ``poll_interval_s``
+        # invece non puo' essere zero (il minimo di configurazione e' 5): li'
+        # uno zero e' un valore rotto e si torna al difetto.
+        return 0.0 if (zero_valido and f == 0.0) else difetto
+
+    passo = max(_num("poll_interval_s", 20.0),
+                _num("idle_cycle_s", 60.0, zero_valido=True))
+    return round(max(1.0, passo), 1)
+
+
 def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
     """``stats`` da scrivere a bot FERMO (AUDIT 11/09 L-03).
 
@@ -4660,6 +4697,9 @@ def _idle_stats(db, control: dict[str, Any], now: datetime) -> dict[str, Any]:
         "events_total": 0, "matches_remaining": 0, "legs_remaining": 0,
         "target_match": 0.0, "target_leg": 0.0,
         "bot_running": False,
+        # a bot FERMO il servizio batte lo stesso (settlement e green-up
+        # girano): la pagina deve poter giudicare quel battito col passo vero.
+        "cadenza_battito_s": _cadenza_battito(_ULTIMI_PARAMS),
         "matches_traded": int(_v("matches_traded") or 0),
         "matches_traded_today": int(_v("matches_traded_today") or 0),
         "matches_open": int(_v("matches_open") or 0),
@@ -5036,6 +5076,15 @@ def run_once(*, market=_real_market, db=_real_db, now: Optional[datetime] = None
         "goal": goal,
         "goal_pct": round(min(realized_today / goal * 100.0, 100.0), 1) if goal > 0 else 0.0,
         "bot_running": True,
+        # ── QUELLO CHE IL SERVIZIO DICHIARA DI SÉ (15/09) ────────────────────
+        # con che passo si ripete questo battito: la pagina deve giudicare la
+        # vitalità con la cadenza VERA, non con una costante scritta nel
+        # frontend (che sarebbe una seconda verità).
+        "cadenza_battito_s": _cadenza_battito(params),
+        # FERMARE toglie le APERTURE, non le uscite: settlement, green-up,
+        # chiusure manuali e missioni continuano anche a bot fermo (vedi il
+        # ramo `status != "running"` di `run_once`). Il pulsante deve dirlo.
+        "stop_ferma_solo_aperture": True,
         "last_cycle": now.isoformat(),
     }
     # LO SCHERMO PRIMA DEL DISCO (14/09). Spingere sul socket locale non costa

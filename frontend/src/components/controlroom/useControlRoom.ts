@@ -102,6 +102,31 @@ export interface StatoBot {
     params: Record<string, unknown> | null;
     /** solo Omega: l'obiettivo del giorno vive fuori da `params` */
     obiettivoGiorno: number | null;
+
+    /**
+     * PERCHÉ il bot non sta aprendo, **dichiarato dal servizio**, non dedotto
+     * qui (`stats.motivo_blocco`). null = nessun blocco in corso.
+     *
+     * ⚠️ 15/09 — il trader ha visto Mike «fermo» senza nessun motivo scritto da
+     * nessuna parte: il tetto delle partite era pieno, e il tetto sommava paper
+     * e live. Correggere il conto nel servizio non basta, se poi la pagina
+     * continua a non dire niente.
+     */
+    motivoBlocco: string | null;
+    /**
+     * Il tetto delle partite e quante ne occupano un posto **nella modalità in
+     * cui il bot sta operando**. Sono due conti separati, mai la somma: i soldi
+     * finti non occupano il posto dei soldi veri.
+     */
+    tettoPartite: number | null;
+    partiteEsposte: number | null;
+    /**
+     * FERMARE questo bot toglie le APERTURE, non le uscite: coperture,
+     * green-up, cash-out e settlement continuano. Lo dichiara il servizio
+     * (`stats.stop_ferma_solo_aperture`); il pulsante deve dirlo, o promette
+     * una cosa che non fa.
+     */
+    stopFermaSoloAperture: boolean;
 }
 
 // ------------------------------------------------ operazioni per partita
@@ -633,10 +658,16 @@ export function useControlRoom(): ControlRoomVM {
         const riga = (
             bot: Bot, modalita: Modalita | null, inCorsa: boolean, battitoAt: string | null,
             stato: string | null, params: Record<string, unknown> | null,
+            stats: Record<string, unknown> | null = null,
             obiettivoGiorno: number | null = null,
         ): StatoBot => {
             const at = ultimoPush[bot];
             const eta = at == null ? null : Math.max(0, Math.round((nowMs - at) / 1000));
+            // ⚠️ REVIEW 15/09 — la CADENZA del battito la dichiara chi batte.
+            // Prima stava scritta qui come costante: era una seconda verità, e
+            // il 13/09 il servizio l'aveva allargata per far respirare il
+            // database senza che la pagina lo sapesse.
+            const cadenza = numero(stats?.cadenza_battito_s);
             return {
                 bot, modalita, inCorsa, battitoAt,
                 canale: canali[bot],
@@ -646,10 +677,15 @@ export function useControlRoom(): ControlRoomVM {
                 // (che e' opzionale) non ha mai parlato si ripiega sul
                 // `heartbeat_at` del database, che c'e' sempre. Prima un bot
                 // vivissimo senza WebSocket risultava muto.
-                freschezzaPush: freschezzaBattito(eta ?? etaSecondi(battitoAt, nowMs)),
+                freschezzaPush: freschezzaBattito(eta ?? etaSecondi(battitoAt, nowMs), cadenza),
                 varianti: bot === 'safe' ? varianti : null,
                 modiStrategia: bot === 'safe' ? modi : null,
                 stato, params, obiettivoGiorno,
+                // ── quello che il SERVIZIO dichiara, non quello che deduciamo ──
+                motivoBlocco: testo(stats?.motivo_blocco),
+                tettoPartite: numero(stats?.tetto_partite),
+                partiteEsposte: numero(stats?.partite_esposte),
+                stopFermaSoloAperture: stats?.stop_ferma_solo_aperture === true,
             };
         };
         const testo = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -658,13 +694,16 @@ export function useControlRoom(): ControlRoomVM {
             riga('omega', modalitaDi(omega?.control?.mode), inCorsaDi(omega?.control?.status),
                 omega?.control?.heartbeat_at ?? null, testo(omega?.control?.status),
                 (omega?.control?.params ?? null) as Record<string, unknown> | null,
+                (omega?.control?.stats ?? null) as Record<string, unknown> | null,
                 numero((omega?.control as { daily_goal?: unknown } | undefined)?.daily_goal)),
             riga('safe', modalitaDi(safe?.control?.mode), inCorsaDi(safe?.control?.status),
                 safe?.control?.heartbeat_at ?? null, testo(safe?.control?.status),
-                (safe?.control?.params ?? null) as Record<string, unknown> | null),
+                (safe?.control?.params ?? null) as Record<string, unknown> | null,
+                (safe?.control?.stats ?? null) as Record<string, unknown> | null),
             riga('mike', modalitaDi(mike?.control?.mode), inCorsaDi(mike?.control?.status),
                 mike?.control?.heartbeat_at ?? null, testo(mike?.control?.status),
-                (mike?.control?.params ?? null) as Record<string, unknown> | null),
+                (mike?.control?.params ?? null) as Record<string, unknown> | null,
+                (mike?.control?.stats ?? null) as Record<string, unknown> | null),
         ];
     }, [omega?.control, safe?.control, safe?.params_effective, mike?.control, canali, ultimoPush, nowMs]);
 

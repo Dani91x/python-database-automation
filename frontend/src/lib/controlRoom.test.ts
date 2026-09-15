@@ -7,7 +7,7 @@
 // ============================================================================
 import { describe, it, expect } from 'vitest';
 import {
-    freschezza, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
+    freschezza, freschezzaBattito, affidabilePerPiazzare, statoPartita, koMs, punteggio, nomePartita, campionato,
     haControlloGioco, coperturaControllo, targetPartita, avanzamentoPartita, soldiPerPartita, latenzaQuoteS,
     marca, costruisciGiornata, totaliGiornata, etaSecondi, statoQuote, quoteAffidabili, realizzatoGiornata,
     SENZA_CAMPIONATO, TARGET_MIN_EUR,
@@ -567,5 +567,52 @@ describe('totali NON LETTI: assenza dichiarata, non zero', () => {
         });
         expect(totaliGiornata(g, false).letti).toBe(false);
         expect(totaliGiornata(g).letti).toBe(true);   // difetto: letti
+    });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ 15/09 — IL BATTITO SI GIUDICA COL PASSO CHE IL SERVIZIO DICHIARA
+//
+// Qui c'era una costante: una seconda verità. I tre bot battono a passi
+// diversi (Safe ~2 s, Mike fino a 20, Omega fino a 60), e il 13/09 quei passi
+// erano stati allargati per far respirare il database senza che la pagina lo
+// sapesse. Con un metro unico o si chiama morto un bot vivo — ed è successo,
+// il trader ha visto Mike «spento» mentre operava — o si chiama vivo un bot
+// morto, che è molto peggio.
+// ---------------------------------------------------------------------------
+describe('freschezzaBattito — il passo lo dichiara chi batte', () => {
+    it('un bot veloce fermo da 10 s è VECCHIO, anche se 10 s sembrano pochi', () => {
+        // Safe batte ogni 2 s: dieci secondi di silenzio sono cinque giri persi
+        expect(freschezzaBattito(10, 2)).toBe('vecchia');
+    });
+
+    it('un bot lento fermo dagli stessi 10 s è invece FRESCO', () => {
+        // Omega a riposo batte ogni 60 s: non ha ancora saltato niente
+        expect(freschezzaBattito(10, 60)).toBe('fresca');
+    });
+
+    it('un ciclo saltato non è un bot morto', () => {
+        expect(freschezzaBattito(40, 20)).toBe('fresca');   // due passi
+        expect(freschezzaBattito(55, 20)).toBe('lenta');    // fra due e tre
+        expect(freschezzaBattito(61, 20)).toBe('vecchia');  // oltre tre
+    });
+
+    it('cadenza non dichiarata: si ripiega sul passo più lento dei tre', () => {
+        // sbagliare qui dichiarando «vecchio» un bot sano manderebbe il trader
+        // a riavviare un servizio che sta operando
+        expect(freschezzaBattito(100)).toBe('fresca');
+        expect(freschezzaBattito(100, null)).toBe('fresca');
+    });
+
+    it('una cadenza assurda non azzera il giudizio: vale il ripiego', () => {
+        expect(freschezzaBattito(100, 0)).toBe('fresca');
+        expect(freschezzaBattito(100, -5)).toBe('fresca');
+        expect(freschezzaBattito(100, Number.NaN)).toBe('fresca');
+    });
+
+    it('età ignota resta IGNOTA, non diventa «fresca»', () => {
+        expect(freschezzaBattito(null, 20)).toBe('ignota');
+        expect(freschezzaBattito(undefined, 20)).toBe('ignota');
+        expect(freschezzaBattito(-1, 20)).toBe('ignota');
     });
 });
