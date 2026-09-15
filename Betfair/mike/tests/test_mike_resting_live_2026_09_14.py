@@ -59,6 +59,12 @@ class DbFinto:
         self.log_scritti: List[tuple] = []
         self.aggiornate: List[dict] = []
 
+    def trades_for_event(self, event_id: str, **_kw) -> List[dict]:
+        """15/09 — serve al freno anti-duplicato (`_gia_appoggiata`), che e'
+        FAIL-CLOSED: righe illeggibili = non si piazza. Senza questo metodo il
+        finto sembrava un database rotto e ogni piazzamento veniva bloccato."""
+        return list(self.righe)
+
     def log(self, kind: str, payload: dict, event_id: Optional[str] = None) -> None:
         self.log_scritti.append((kind, payload))
 

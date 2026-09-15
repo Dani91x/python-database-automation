@@ -62,6 +62,22 @@ def _salto(da, a) -> str:
     return f"{d:.0f} ms" if d < 1000 else f"{d / 1000:.1f} s"
 
 
+def _ms(v) -> str:
+    """Millisecondi, o «—». Un ordine passato dalla CODA flumine non ha
+    `betfair_ms`: scrivere «None ms» fa sembrare rotto un percorso che
+    semplicemente non misura quel tratto."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "\u2014"
+    return f"{f:.1f} ms"
+
+
+def _testo(v) -> str:
+    """Una stringa, o «—». Mai la parola «None» sotto gli occhi di chi legge."""
+    return str(v) if isinstance(v, str) and v.strip() else "\u2014"
+
+
 def _giudizio(tick) -> str:
     if tick is None:
         return "scostamento non misurato"
@@ -85,8 +101,8 @@ def racconta(t: dict, uscite: dict, richieste: dict) -> None:
     print("  -- INGRESSO --")
     print(f"     chiesto {e.get('price_richiesto')}  ->  abbinato medio {e.get('price_medio')}"
           f"   [{_giudizio(e.get('scorrimento_tick'))}]")
-    print(f"     percorso {e.get('percorso')}  ·  Betfair ha risposto in "
-          f"{e.get('betfair_ms')} ms")
+    print(f"     percorso {_testo(e.get('percorso'))}  ·  Betfair ha risposto in "
+          f"{_ms(e.get('betfair_ms'))}")
     print("     catena dei tempi:")
     print(f"       prezzo cambiato su Betfair   {_ora(tp.get('t0_quote_ms'))}")
     print(f"       riga scritta dallo scanner   {_ora(tp.get('t1_feed_ms'))}"
@@ -129,7 +145,7 @@ def racconta(t: dict, uscite: dict, richieste: dict) -> None:
             print(f"       dal clic all'invio: "
                   f"{_salto(datetime.fromisoformat((r['payload']['approved_at']).replace('Z', '+00:00')).timestamp() * 1000, ue.get('t4_inviato'))}"
                   "   <-- tempo NOSTRO")
-        print(f"       Betfair ha risposto in {ue.get('betfair_ms')} ms   <-- bet delay, non nostro")
+        print(f"       Betfair ha risposto in {_ms(ue.get('betfair_ms'))}   <-- bet delay, non nostro")
 
 
 def main() -> None:

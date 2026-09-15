@@ -3615,7 +3615,10 @@ def test_prezzo_to_decisione_non_accorcia_la_catena():
     S._LETTURA_FEED["ms"] = round(_t.time() * 1000.0, 1)
     c = S._catena_dei_tempi({"payload": {"odds_ts_ms": t0}, "updated_at": None},
                             inizio_ciclo)["tempi"]
-    assert c["prezzo_to_decisione_ms"] >= (c["t2_letto_ms"] - t0), (
+    # tolleranza di mezzo millisecondo: i due termini nascono da sottrazioni
+    # fra epoch in millisecondi (numeri grandi), e la differenza fra 20.1 e
+    # 20.099999... non e' un difetto del cronometro ma del binario.
+    assert c["prezzo_to_decisione_ms"] >= (c["t2_letto_ms"] - t0) - 0.5, (
         "la catena dichiarata e' piu' corta del tempo gia' trascorso")
 
 
