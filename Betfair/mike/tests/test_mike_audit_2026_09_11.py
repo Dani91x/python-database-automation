@@ -1060,6 +1060,12 @@ def test_l5_tutti_i_kind_di_attivita_sono_dichiarati():
         # al giro dopo. Va DETTO in pagina, altrimenti il trader vede una partita
         # ferma senza capire perche' (13/09: 44 esposte con un tetto di 10).
         "tetto_partite",
+        # 15/09: il FRENO ANTI-DUPLICATO. Mike ha piazzato 32 volte lo stesso
+        # green-up appoggiato con soldi veri (61 EUR su un budget di 35) perche'
+        # la riconciliazione non ritrovava l'ordine e il motore ne creava uno
+        # nuovo a ogni ciclo. Un piazzamento rifiutato dal freno DEVE essere
+        # visibile: dice che il bot ha evitato di ripetersi.
+        "place_saltato",
     }
     assert found - declared == set(), f"kind non dichiarati: {sorted(found - declared)}"
 

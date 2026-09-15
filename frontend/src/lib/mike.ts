@@ -1085,6 +1085,9 @@ export function pnlByTotalCells(
 /** TUTTI i kind scritti dal servizio Mike (COSTITUZIONE §8 + audit L5). */
 export const MIKE_ACTIVITY_KINDS = [
     'armed', 'state', 'place', 'place_pending', 'place_deferred', 'place_resting', 'fill_resting',
+    // 15/09: un piazzamento RIFIUTATO dal freno anti-duplicato. Deve essere
+    // visibile: dice che il bot ha evitato di ripetere una gamba gia' in volo.
+    'place_saltato',
     'cancel', 'skip', 'no_fill', 'would_place', 'size_legalized', 'pre_cycle', 'cover',
     'close_retries_exhausted', 'settled', 'settle_fallback', 'settling_reverted', 'daily_stop',
     'stop', 'skip_event', 'resume_event', 'reconcile_pending', 'reconcile_fix',
@@ -1160,6 +1163,9 @@ export function mikeActivityLine(kind: string, payload: Record<string, unknown> 
             return `${role()} ${money('size')} @ ${odds('price')} · rinviato per betDelay ${String(p.bet_delay ?? '?')} s`;
         case 'place_resting':
             return `${role()} appoggiata sul book ${money('size')} @ ${odds('price')}`;
+        case 'place_saltato':
+            return `${role()} NON piazzata: una gamba con lo stesso ruolo è già in attesa`
+                + `${p.gia_in_volo ? ` (riga #${String(p.gia_in_volo)})` : ''}`;
         case 'fill_resting':
             return `${role()} appoggiata ABBINATA ${money('size')} @ ${odds('price')}${Number.isFinite(n('best_back')) ? ` · best back ${odds('best_back')}` : ''}`;
         case 'would_place':

@@ -790,6 +790,47 @@ def _is_resting_leg(leg: E.Leg, params: Dict[str, Any]) -> bool:
             and str(params.get("pre_exit_mode")) == "resting" and not leg.final)
 
 
+def _gia_appoggiata(db: Any, event_id: str, leg: E.Leg,
+                    cache: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> Optional[dict]:
+    """C'e' GIA' una gamba appoggiata in attesa, per lo stesso ruolo e ciclo?
+
+    ⚠️ 15/09 — IL FRENO CHE MANCAVA, e che e' costato un loop con soldi veri.
+    Il 15/09 Mike ha piazzato TRENTADUE volte lo stesso green-up (lay 5,07 @
+    1,43) su Beijing Guoan v Pohang Steelers, una ogni tre secondi, arrivando a
+    61 EUR impegnati su un budget di 35. La catena era:
+
+        piazza la lay appoggiata  ->  `_segui_resting_live` la cerca su Betfair
+        per `customerOrderRef` e NON la trova  ->  la marca
+        'reconciled_not_placed'  ->  il motore non vede piu' nessuna gamba di
+        green-up  ->  ne crea una NUOVA con un ref nuovo  ->  si ricomincia.
+
+    Ogni anello aveva un suo perche'; quello che mancava era la domanda piu'
+    semplice: «ne ho gia' una in volo?». La strategia dice UNA lay appoggiata,
+    non trentadue: questo freno non la cambia, la fa rispettare.
+
+    Si confronta ruolo + ciclo + mercato + lato, NON il ref: il ref e' diverso a
+    ogni giro, ed e' esattamente il motivo per cui il duplicato passava.
+    """
+    righe = _event_rows(db, event_id, cache)
+    if righe is None:
+        # FAIL-CLOSED: righe illeggibili = non sappiamo se ce n'e' gia' una in
+        # volo, e nel dubbio non si piazza. E' la stessa regola di
+        # `_trade_unknown_outcome`: un dubbio non si risolve mai mandando un
+        # ordine reale in piu'.
+        return {"id": None, "role": leg.role, "illeggibile": True}
+    for r in righe:
+        if str(r.get("status")) != "pending":
+            continue
+        if str(r.get("role")) != str(leg.role):
+            continue
+        if int(r.get("cycle_no") or 0) != int(leg.cycle_no):
+            continue
+        if str(r.get("side")) != str(leg.side):
+            continue
+        return r
+    return None
+
+
 def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: str,
                          params: Dict[str, Any], minuto: Optional[int], score: Optional[str],
                          chiude: Optional[int], motivo: Optional[str],
@@ -809,6 +850,20 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
     che si puo' riparare.
     """
     eid = str(ev["event_id"])
+
+    # ⚠️ IL FRENO (15/09): mai due gambe protettive identiche in volo.
+    doppia = _gia_appoggiata(db, eid, leg)
+    if doppia is not None:
+        leg.status = "cancelled"
+        db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                 "reason": "gamba_gia_appoggiata",
+                                 "gia_in_volo": doppia.get("id"),
+                                 "nota": "una gamba con lo stesso ruolo e ciclo e' gia' "
+                                         "in attesa: non se ne piazza una seconda"}, eid)
+        logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
+                        "ciclo e' gia' pending", eid, leg.ref, doppia.get("id"))
+        return
+
     try:
         _insert_trade_row(db, _trade_row(info, leg, mode, params, minuto, score, chiude, motivo), eid)
     except Exception as ex:  # noqa: BLE001 — riserva fallita: NESSUN ordine reale
@@ -831,6 +886,26 @@ def _piazza_resting_live(*, db: Any, market: Any, info: Any, leg: E.Leg, mode: s
         db.log("reconcile_pending", {"leg": leg.ref, "role": leg.role,
                                      "reason": "resting_place_unknown", "critical": True}, eid)
         return
+    # ⚠️ IL BET_ID SI SCRIVE SEMPRE (15/09), non solo quando l'ordine si abbina.
+    # Un ordine appoggiato che resta sul book e' il caso NORMALE: senza il suo
+    # identificativo la riconciliazione puo' cercarlo solo per
+    # `customerOrderRef`, e se quella ricerca fallisce la riga risulta «mai
+    # piazzata» mentre su Betfair l'ordine e' vivo. E' l'anello da cui e' partito
+    # il loop del 15/09.
+    bet_id = getattr(res, "bet_id", None)
+    if bet_id:
+        try:
+            r0 = _trade_row_for_leg(db, eid, leg)
+            if r0 is not None:
+                db.update_trade(int(r0["id"]), bet_id=str(bet_id))
+        except Exception as ex:  # noqa: BLE001 — il bet_id non si perde in silenzio
+            db.log("error", {"leg": leg.ref, "reason": "bet_id_non_salvato",
+                             "err": str(ex)[:160], "critical": True}, eid)
+    else:
+        db.log("error", {"leg": leg.ref, "reason": "resting_senza_bet_id", "critical": True,
+                         "nota": "Betfair non ha restituito un identificativo: la riga "
+                                 "resta pending e la riconciliazione la risolve"}, eid)
+
     matched = float(getattr(res, "size_matched", 0.0) or 0.0)
     if matched > 0:
         # puo' succedere: il book si e' mosso fra la decisione e il piazzamento.

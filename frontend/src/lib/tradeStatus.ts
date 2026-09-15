@@ -434,6 +434,7 @@ export const ACTIVITY_BASE: Record<string, ActivityMeta> = {
     // ordini
     place: { label: 'ORDINE', cls: INFO },
     place_deferred: { label: 'ORDINE (betDelay)', cls: INFO },
+    place_saltato: { label: 'DUPLICATO EVITATO', cls: WARN },
     would_place: { label: 'ORDINE (dry)', cls: MUTED },
     cancel: { label: 'ANNULLO', cls: WARN },
     no_fill: { label: 'NON ABBINATO', cls: WARN },
