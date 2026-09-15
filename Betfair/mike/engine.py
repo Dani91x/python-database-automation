@@ -437,6 +437,57 @@ def cycle_label(cycle_no: int) -> int:
     return n + 1 if n >= 0 else 1
 
 
+# ---------------------------------------------------------------------------
+# LO STATO DI UN MERCATO — SOSPESO NON E' CHIUSO (15/09)
+# ---------------------------------------------------------------------------
+# Regola dell'utente, testuale: «SOSPESO, il mercato puo' riaprirsi; CHIUSO, il
+# mercato e' chiuso e non si puo' piu' operare. Sono stati diversi e vanno
+# gestiti guardando e chiedendo a Betfair.»
+#
+# Fino al 15/09 sei percorsi diversi scrivevano `bk.status != "OPEN"`, che fa un
+# fascio unico di SUSPENDED, CLOSED, INACTIVE e di qualunque stato ignoto. Le
+# conseguenze le ha mostrate il replay sulle registrazioni vere:
+#   * l'ULTIMO INGRESSO rinunciava per sempre (IDLE_LIVE, gambe archiviate) per
+#     una sospensione che sarebbe durata pochi secondi;
+#   * la finestra dell'uscita al fischio scorreva DURANTE la sospensione, cioe'
+#     il bot mollava la presa per un tempo in cui non poteva operare.
+# Da qui in avanti i tre casi si chiamano per nome, e l'ignoto non e' mai "chiuso".
+STATO_APERTO = "aperto"
+STATO_SOSPESO = "sospeso"        # adesso no, ma riapre: si ASPETTA
+STATO_CHIUSO = "chiuso"          # e' finita: si regola
+STATO_IGNOTO = "ignoto"          # non si sa: non si opera E non si rinuncia
+
+
+def stato_mercato(bk: Optional["Book"]) -> str:
+    """I tre stati che contano, piu' l'ignoto. Mai una scorciatoia booleana."""
+    if bk is None:
+        return STATO_IGNOTO
+    st = str(getattr(bk, "status", "") or "").strip().upper()
+    if st == "OPEN":
+        return STATO_APERTO
+    if st == "SUSPENDED":
+        return STATO_SOSPESO
+    if st in ("CLOSED", "INACTIVE"):
+        # INACTIVE non e' un void (§13.1 C-4) ma non e' nemmeno operabile:
+        # ai fini di "posso piazzare adesso?" vale come chiuso.
+        return STATO_CHIUSO
+    return STATO_IGNOTO
+
+
+def operabile(bk: Optional["Book"]) -> bool:
+    """Si puo' mandare un ordine ADESSO? Solo a mercato aperto, mai nel dubbio."""
+    return stato_mercato(bk) == STATO_APERTO
+
+
+def riaprira(bk: Optional["Book"]) -> bool:
+    """Vale la pena aspettare? Su sospeso si', su chiuso no.
+
+    L'ignoto risponde SI': aspettare costa un ciclo, rinunciare per sbaglio
+    costa un'uscita mancata.
+    """
+    return stato_mercato(bk) in (STATO_SOSPESO, STATO_IGNOTO)
+
+
 def price_ok(price: Optional[float]) -> bool:
     """Prezzo utilizzabile: presente, finito e > 1.0.
 
@@ -1717,7 +1768,7 @@ def _entry_guard(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> Optio
     if ctx.last_green_at is not None and snap.now - ctx.last_green_at < float(params["pre_reentry_cooldown_s"]):
         return "cooldown"
     bk = snap.book(MARKET_OU35, SEL_UNDER)
-    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN" or bk.inplay:
+    if bk is None or not price_ok(bk.best_back) or not operabile(bk) or bk.inplay:
         return "book assente"
     if bk.best_back < float(params["pre_entry_price_min"]) or bk.best_back > float(params["pre_entry_price_max"]):
         return f"prezzo {bk.best_back} fuori banda"
@@ -1871,7 +1922,7 @@ def _decide_prematch(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
             return _cycle_done(ctx, snap, S, Pe, green, w)
         if green.is_live and snap.now - green.placed_at >= float(params["close_retry_s"]) and \
                 ctx.attempts < int(params["close_max_attempts"]):
-            if bk is not None and bk.best_lay is not None:
+            if bk is not None and bk.best_lay is not None and operabile(bk):
                 w, l = exposure(ctx.legs, MARKET_OU35, SEL_UNDER)
                 plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                        best_lay_price=bk.best_lay, fraction=1.0)
@@ -1935,7 +1986,16 @@ def _after_final_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any],
     upd = {"cycle_no": ctx.cycle_no + 1, "last_green_at": snap.now, "attempts": 0, "_archive_legs": True}
     if not params["last_entry_persist"]:
         return Decision("IDLE_LIVE", [], "ultimo ingresso disabilitato", updates=upd)
-    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN":
+    # ⚠️ 15/09 — UNA SOSPENSIONE NON E' UNA RINUNCIA.
+    # Prima qualunque stato diverso da OPEN mandava in IDLE_LIVE archiviando le
+    # gambe e incrementando il ciclo: il bot non riprovava PIU'. Ma a KO-10' una
+    # sospensione dura secondi, e l'ultimo ingresso e' l'unica gamba che porta
+    # la posizione in-play. Su sospeso (o ignoto) si aspetta il giro dopo senza
+    # toccare niente; solo su mercato CHIUSO ha senso chiudere la partita.
+    if bk is not None and price_ok(bk.best_back) and not operabile(bk) and riaprira(bk):
+        return Decision(ctx.state, [], "ultimo ingresso: mercato %s, aspetto"
+                        % stato_mercato(bk))
+    if bk is None or not price_ok(bk.best_back) or not operabile(bk):
         return Decision("IDLE_LIVE", [], "ultimo ingresso: book assente", updates=upd)
     need = stake * float(params["pre_min_back_size_factor"])
     if float(bk.back_size) < need:
@@ -2010,6 +2070,14 @@ def momento_del_gol(snap: Snapshot) -> float:
 def finestra_uscita_scaduta(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any]) -> bool:
     """Sono passati i minuti concessi all'ordine di uscita al fischio?"""
     if ctx.live_since is None:
+        return False
+    # ⚠️ 15/09 — LA FINESTRA NON SCORRE SE NON SI PUO' OPERARE.
+    # Al calcio d'inizio Betfair SOSPENDE il mercato, ed e' esattamente il
+    # momento in cui questa finestra vive. Lasciandola correre, il bot
+    # dichiarava scaduta l'uscita al fischio per un tempo in cui non poteva
+    # piazzare niente, e ripiegava sulla copertura invece di uscire in green.
+    # Rinunciare mentre non si poteva operare non e' una decisione: e' un caso.
+    if not operabile(snap.book(MARKET_OU35, SEL_UNDER)):
         return False
     return float(snap.now) - float(ctx.live_since) >= float(params["ko_green_window_s"])
 
@@ -2091,6 +2159,23 @@ def _decide_ko_green(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: f
                         "uscita non abbinata in %d': copertura Over 4.5"
                         % int(float(params["ko_green_window_s"]) // 60),
                         updates={"cover_forced": True, **base}, telemetry=tele)
+
+    # ⚠️ 15/09 — PRIMA DI PIAZZARE SI GUARDA IL MERCATO.
+    # Questo ramo non consultava il book AFFATTO: `piano_uscita_ko` calcola il
+    # prezzo dal nostro prezzo d'INGRESSO, quindi lo stato del mercato non lo
+    # vedeva nessuno e l'ordine partiva anche a mercato SOSPESO (visto otto
+    # volte su quattro partite registrate, sempre al fischio d'inizio).
+    # Sospeso non e' chiuso: si ASPETTA la riapertura, non si rinuncia.
+    bk_uscita = snap.book(MARKET_OU35, SEL_UNDER)
+    if not operabile(bk_uscita):
+        if riaprira(bk_uscita):
+            return Decision("LIVE_KO_GREEN", acts,
+                            "mercato %s: aspetto la riapertura per uscire"
+                            % stato_mercato(bk_uscita), updates=base)
+        # chiuso davvero: qui non si esce piu', decide il regolamento
+        return Decision("LIVE_UNCOVERED", acts,
+                        "mercato chiuso: l'uscita al fischio non e' piu' possibile",
+                        updates={"cover_forced": True, **base})
 
     # -- l'ordine di uscita: si piazza o si riallinea --------------------------
     plan = piano_uscita_ko(ctx, params, Pe)
@@ -2180,8 +2265,9 @@ def _decide_second_entry(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
         return Decision("LIVE_UNCOVERED", acts, "seconda puntata: tentativi esauriti",
                         updates=rinuncia)
     bk = snap.book(MARKET_OU35, SEL_UNDER)
-    if bk is None or not price_ok(bk.best_back) or bk.status != "OPEN":
-        return Decision("LIVE_SECOND_ENTRY", acts, "seconda puntata: book Under 3.5 assente")
+    if bk is None or not price_ok(bk.best_back) or not operabile(bk):
+        return Decision("LIVE_SECOND_ENTRY", acts, "seconda puntata: mercato %s"
+                        % stato_mercato(bk))
     quota = float(params.get("second_entry_stake_pct", 50.0)) / 100.0
     size = round(float(params["stake"]) * quota, 2)
     if not size_ok(size):
@@ -2320,7 +2406,7 @@ def _decide_uncovered(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: 
     if liab <= 0.0:
         return Decision("LIVE_COVERED", acts, "nessuna liability Under da coprire",
                         updates={"cover_skipped": True, "cover_stage": 0, "cover_forced": False})
-    if timing == "wait" or price_over is None or bk.status != "OPEN":
+    if timing == "wait" or price_over is None or not operabile(bk):
         tele = {"cover_wait": {"minute": snap.minute, "goals": snap.goals, "hazard": snap.hazard,
                                "p4_market": snap.p4_market, "price_over": price_over,
                                "max_min": int(params["cover_wait_max_min"]),
@@ -2633,8 +2719,8 @@ def _decide_flat(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], c: float
     if int(snap.minute) > int(params["reentry_until_min"]):
         return Decision("FLAT", [], "flat: oltre il minuto di re-ingresso")
     bk = snap.book(MARKET_OU45, SEL_UNDER)          # linea gol+3.5 con 1 gol = Under 4.5
-    if bk is None or bk.best_back is None or bk.status != "OPEN":
-        return Decision("FLAT", [], "flat: book Under 4.5 assente")
+    if bk is None or bk.best_back is None or not operabile(bk):
+        return Decision("FLAT", [], "flat: mercato Under 4.5 %s" % stato_mercato(bk))
     if params["reentry_price_min_over_entry"] and ctx.entry_price_initial is not None and \
             bk.best_back <= float(ctx.entry_price_initial) + _EPS:
         return Decision("FLAT", [], f"flat: U4.5 {bk.best_back} <= ingresso {ctx.entry_price_initial}")
@@ -2659,6 +2745,16 @@ def _decide_reentry_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any
         w, l = exposure(ctx.legs, MARKET_OU45, SEL_UNDER)
         plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
                                best_lay_price=None, fraction=1.0, target_price=target)
+        # ⚠️ 15/09 — LO STESSO DIFETTO DEL `ko_green`, su un altro ramo.
+        # Anche qui il prezzo viene dal FILL del re-ingresso e non dal book,
+        # quindi il mercato non lo guardava nessuno e la lay partiva anche a
+        # mercato SOSPESO (tre volte sulla registrazione 35674515). Sospeso non
+        # e' chiuso: si aspetta la riapertura, la posizione resta com'e'.
+        bk_green = snap.book(MARKET_OU45, SEL_UNDER)
+        if not operabile(bk_green):
+            return Decision("REENTRY_PENDING", [],
+                            "re-ingresso abbinato, mercato %s: aspetto per il green"
+                            % stato_mercato(bk_green))
         acts = [_place("reentry_green", MARKET_OU45, SEL_UNDER, "lay", plan.price, plan.size)] \
             if plan.actionable else []
         return Decision("REENTRY_OPEN", acts, "re-ingresso abbinato")
@@ -2684,7 +2780,7 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
         if params["reentry_hold_if_loss"]:
             return Decision("REENTRY_OPEN", [], "oltre il limite: tengo (hold_if_loss)")
         acts = _cancel_live(ctx, ("reentry_green",))
-        if bk is not None and bk.best_lay is not None:
+        if bk is not None and bk.best_lay is not None and operabile(bk):
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
@@ -2694,6 +2790,12 @@ def _decide_reentry_open(ctx: MatchCtx, snap: Snapshot, params: Dict[str, Any], 
         return Decision("REENTRY_OPEN", acts, "re-ingresso: prezzo assente")
     if green is None or not green.is_live:
         S, Pe = position(ctx.legs, MARKET_OU45, SEL_UNDER, ("reentry",))
+        # 15/09: come il `ko_green`, questa lay nasce dal prezzo d'INGRESSO e
+        # non dal book — quindi lo stato del mercato non lo vedeva nessuno, e
+        # partiva anche a mercato SOSPESO (tre volte su 35674515).
+        if Pe and not operabile(bk):
+            return Decision("REENTRY_OPEN", [], "mercato %s: aspetto per la green "
+                            "del re-ingresso" % stato_mercato(bk))
         if Pe:
             target = green_target(Pe, int(params["reentry_green_ticks"]))
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=None,
@@ -2715,7 +2817,7 @@ def _decide_reentry_green_pending(ctx: MatchCtx, snap: Snapshot, params: Dict[st
     if green is not None and green.is_live and snap.now - green.placed_at >= float(params["close_retry_s"]) \
             and ctx.attempts < int(params["close_max_attempts"]):
         bk = snap.book(MARKET_OU45, SEL_UNDER)
-        if bk is not None and bk.best_lay is not None:
+        if bk is not None and bk.best_lay is not None and operabile(bk):
             plan = compute_greenup(matched_if_win=w, matched_if_lose=l, best_back_price=bk.best_back,
                                    best_lay_price=bk.best_lay, fraction=1.0)
             if plan.actionable:
