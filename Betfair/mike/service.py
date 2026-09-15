@@ -494,6 +494,31 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         leg.status = "cancelled"
         db.log("skip", {"leg": leg.ref, "reason": "mercato/selezione assenti"}, info.event_id)
         return "cancelled"
+
+    # ⚠️ IL FRENO, ANCHE QUI (15/09 pomeriggio).
+    # Il freno del mattino stava solo su `_piazza_resting_live`, cioe' sulla lay
+    # appoggiata. Ma le gambe di CHIUSURA passano di qua, e qui non c'era
+    # niente: un errore ripetuto sul piazzamento ha prodotto SESSANTA righe
+    # `under_close` identiche in pochi minuti (0,20 € l'una, Trinec v Mlada
+    # Boleslav). Ogni giro la riga restava 'pending' in riconciliazione e il
+    # motore ne creava una nuova col `seq` successivo.
+    # Si frena solo sulle gambe di CHIUSURA: la copertura (`over_cover`) va a
+    # tranche, e due righe con lo stesso ruolo e ciclo li' sono legittime.
+    # Come il freno del mattino, NON cambia la strategia: la strategia dice UNA
+    # gamba di chiusura per ciclo, non sessanta.
+    if leg.role in E.CLOSING_ROLES:
+        doppia = _gia_appoggiata(db, info.event_id, leg)
+        if doppia is not None:
+            leg.status = "cancelled"
+            db.log("place_saltato", {"leg": leg.ref, "role": leg.role, "critical": True,
+                                     "reason": "gamba_di_chiusura_gia_in_volo",
+                                     "gia_in_volo": doppia.get("id"),
+                                     "nota": "una gamba di chiusura con lo stesso ruolo e "
+                                             "ciclo e' gia' in attesa: non se ne piazza "
+                                             "una seconda"}, info.event_id)
+            logger.critical("[mike] %s: NON piazzo %s, la riga #%s con lo stesso ruolo e "
+                            "ciclo e' gia' pending", info.event_id, leg.ref, doppia.get("id"))
+            return "cancelled"
     if book is None or book.status != "OPEN":
         leg.status = "cancelled"
         db.log("skip", {"leg": leg.ref, "reason": f"book non OPEN ({book.status if book else 'assente'})"},
@@ -542,10 +567,45 @@ def execute_place(*, db: Any, market: Any, info: F.EventInfo, leg: E.Leg, book: 
         return "cancelled"
     exec_params = dict(params)
     exec_params["execution_mode"] = "rest" if not C.env_bool("MIKE_USE_FLUMINE_QUEUE", False) else "auto"
+    # ⚠️ 15/09 — «QUESTA GAMBA CHIUDE» VA DETTO A CHI ESEGUE, e Mike non lo diceva.
+    #
+    # `execution.place` riconosce una chiusura COSI':
+    #     is_closing = bool(meta.get("cashout") or meta.get("closes_trade_id"))
+    # ma Mike scriveva `closes_trade_id` nella COLONNA della riga e passava il
+    # solo `row["meta"]`, che quella chiave non l'ha mai avuta. Per chi eseguiva,
+    # NESSUNA chiusura di Mike era una chiusura. Ancora una volta: un dato
+    # scritto in un posto e letto in un altro. Due conseguenze, tutte e due sui
+    # soldi:
+    #
+    #   1. `sotto_minimo = ... and not is_closing` restava VERO, quindi una
+    #      chiusura da 0,20 € finiva nel place-and-trim invece di essere piazzata
+    #      diretta. Il parcheggio della lay (il minimo a quota 1,01) su una
+    #      selezione dove abbiamo gia' un back RIDUCE la liability, e Betfair lo
+    #      misura con la banda del profit-ratio: rifiutato, `INVALID_PROFIT_RATIO`.
+    #      Ogni giro. E' il loop delle 60 righe `under_close` del 15/09.
+    #   2. `blocco = None if is_closing else _live_brake()` — il freno live si
+    #      applicava anche alle USCITE di Mike. Col freno attivo una posizione
+    #      aperta non si sarebbe potuta chiudere: l'opposto della protezione,
+    #      e il commento di `execution.place` lo dice a chiare lettere.
+    #
+    # Safe e Omega lo fanno giusto da sempre (`execution.close_position` mette
+    # `closes_trade_id` NEL META). Mike era l'unico fuori riga, di nuovo.
+    meta_exec = dict(row["meta"])
+    if row.get("closes_trade_id") is not None:
+        meta_exec["closes_trade_id"] = int(row["closes_trade_id"])
+    elif leg.role in E.CLOSING_ROLES:
+        # la colonna puo' mancare (migrazione non applicata: il riferimento resta
+        # in `meta.closes_trade_id_pending`). Il RUOLO pero' lo sappiamo sempre, e
+        # una gamba di chiusura e' una chiusura anche senza il numero della riga
+        # che chiude: `-1` dice «chiude, riferimento ignoto» e resta un numero,
+        # perche' chi legge questa chiave la usa come vero/falso ma se la ritrova
+        # scritta nel meta della riga.
+        meta_exec["closes_trade_id"] = int(
+            (row.get("meta") or {}).get("closes_trade_id_pending") or -1)
     out = X.place(db=db, market=market, mode=mode, event_id=info.event_id, market_id=mid,
                   selection_id=int(sid), side=leg.side, price=leg.price, size=leg.size,
                   best_size=avail_size, ladder=(), client_ref=f"mike-t{trade_id}",
-                  trade_id=int(trade_id), meta=dict(row["meta"]), now=now, params=exec_params)
+                  trade_id=int(trade_id), meta=meta_exec, now=now, params=exec_params)
     if out.status == "open":
         leg.matched = float(out.size)
         leg.avg_price = float(out.price or leg.price)
