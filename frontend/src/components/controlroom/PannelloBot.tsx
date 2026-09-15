@@ -97,18 +97,56 @@ export interface PannelloBotProps {
      */
     parametri?: Partial<Record<Bot, ReactNode>>;
     comandi: ComandiBot;
+    /** il titolo della plancia: cambia quando la plancia e' ristretta a uno
+     *  sport («Bot del tennis»), perche' «Comando dei bot» al plurale davanti
+     *  a una riga sola e' una promessa che la pagina non sta mantenendo. */
+    titolo?: string;
+    /** una riga sotto la testata: che cosa fara' DAVVERO il pulsante avvia.
+     *  Quando la plancia e' ristretta al tennis, «avvia» non vuol dire
+     *  «accendi il servizio»: vuol dire «accendi il tennis e lascia tutto il
+     *  resto in prova». Si dice PRIMA del clic. */
+    nota?: ReactNode;
+    /** come chiamare un bot in questo contesto: nella scheda tennis il bot
+     *  Safe si chiama «Tennis», che e' il nome con cui il trader lo comanda. */
+    etichette?: Partial<Record<Bot, string>>;
+    /**
+     * ⚠️ REVIEW 15/09, CRITICO — L'AMBITO IN CUI SI STA COMANDANDO.
+     *
+     * Entra nella `key` delle righe, e serve a UNA cosa sola: quando il
+     * significato dei pulsanti cambia (dalla scheda tennis «avvia in live»
+     * vuol dire «solo il tennis», dalla pagina intera vuol dire «il servizio
+     * com'e'»), la riga viene RIMONTATA e la conferma rossa gia' armata si
+     * disarma.
+     *
+     * Senza, la sequenza era: armo «confermi? ordini reali» nella scheda
+     * tennis, cambio scheda, il pulsante rosso resta li' identico ma adesso
+     * esegue l'avvio NON ristretto — e il calcio parte a soldi veri da un
+     * gesto armato sotto la promessa «solo tennis».
+     */
+    ambito?: string;
+    /**
+     * TUTTI i bot, anche quelli non mostrati. «Ferma tutti» e' un freno
+     * d'emergenza: deve fermare tutto quello che c'e', non quello che il
+     * filtro sta facendo vedere. Assente = `bots`.
+     */
+    tutti?: StatoBot[];
     testId?: string;
 }
 
 export function PannelloBot({
-    bots, importi, comandi, parametri, testId = 'cr-pannello-bot',
+    bots, importi, comandi, parametri, titolo = 'Comando dei bot', nota,
+    etichette, ambito = 'tutti', tutti, testId = 'cr-pannello-bot',
 }: PannelloBotProps) {
     const [inCorso, setInCorso] = useState<Bot | 'tutti' | null>(null);
     /** chi NON si è fermato: un freno d'emergenza deve dire che cosa ha
      *  mancato, o il trader crede che sia tutto spento. */
     const [nonFermati, setNonFermati] = useState<Bot[]>([]);
-    const accesi = bots.filter((b) => b.inCorsa);
-    const inLive = bots.filter((b) => b.inCorsa && b.modalita === 'live');
+    // ⚠️ REVIEW 15/09 — il freno d'emergenza guarda TUTTI i bot, non quelli
+    // che il filtro mostra: nella scheda tennis «ferma tutti» avrebbe lasciato
+    // correre Mike e Omega, e il badge rosso non li avrebbe nemmeno contati.
+    const censiti = tutti ?? bots;
+    const accesi = censiti.filter((b) => b.inCorsa);
+    const inLive = censiti.filter((b) => b.inCorsa && b.modalita === 'live');
 
     const fermaTutti = async () => {
         setInCorso('tutti'); setNonFermati([]);
@@ -136,7 +174,8 @@ export function PannelloBot({
     return (
         <Card className="glass-card border-white/10 p-0 overflow-hidden" data-testid={testId}>
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-white/60">Comando dei bot</span>
+                <span className="text-[11px] uppercase tracking-wider text-white/60"
+                    data-testid={`${testId}-titolo`}>{titolo}</span>
                 <div className="flex items-center gap-2">
                     {inLive.length > 0 && (
                         <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300"
@@ -161,10 +200,22 @@ export function PannelloBot({
                 </div>
             </div>
 
+            {nota && bots.length > 0 && (
+                <div className="px-3 py-1.5 border-b border-white/10 bg-white/[0.02] text-[10.5px] text-white/55"
+                    data-testid={`${testId}-nota`}>
+                    {nota}
+                </div>
+            )}
+
             <div className="divide-y divide-white/8">
-                {bots.map((b) => (
+                {bots.length === 0 ? (
+                    <div className="px-3 py-3 text-[11px] text-white/35" data-testid={`${testId}-vuoto`}>
+                        Nessun bot da comandare qui.
+                    </div>
+                ) : bots.map((b) => (
                     <RigaBot
-                        key={b.bot} b={b}
+                        key={`${ambito}:${b.bot}`} b={b}
+                        etichetta={etichette?.[b.bot] ?? BOT_LABEL[b.bot]}
                         importi={importi[b.bot] ?? []}
                         parametri={parametri?.[b.bot] ?? null}
                         comandi={comandi}
@@ -180,7 +231,7 @@ export function PannelloBot({
                     <strong className="text-red-300">
                         {nonFermati.length === 1 ? 'Un bot NON si è fermato' : `${nonFermati.length} bot NON si sono fermati`}:
                     </strong>{' '}
-                    {nonFermati.map((b) => BOT_LABEL[b]).join(', ')}. Gli altri sì.
+                    {nonFermati.map((b) => etichette?.[b] ?? BOT_LABEL[b]).join(', ')}. Gli altri sì.
                     Riprova, o fermali dalla loro pagina: <strong>finché lo stato non cambia stanno ancora operando</strong>.
                 </div>
             )}
@@ -205,8 +256,10 @@ export function PannelloBot({
  */
 const ATTESA_CONFERMA_MS = 400;
 
-function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
+function RigaBot({ b, etichetta, importi, parametri, comandi, bloccato, segnalaInCorso }: {
     b: StatoBot;
+    /** come si chiama il bot QUI: nella scheda tennis, «Tennis» */
+    etichetta: string;
     importi: CampoImporto[];
     parametri: ReactNode;
     comandi: ComandiBot;
@@ -247,7 +300,7 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
     return (
         <div className="px-3 py-2" data-testid={`cr-bot-riga-${b.bot}`}>
             <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[12px] font-bold uppercase tracking-wider w-16 shrink-0">{BOT_LABEL[b.bot]}</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider w-16 shrink-0">{etichetta}</span>
 
                 <span className={`text-[11px] ${STATO_CLS[stato] ?? 'text-white/40'}`}
                     data-testid={`cr-bot-stato-${b.bot}`}>
@@ -417,7 +470,7 @@ function RigaBot({ b, importi, parametri, comandi, bloccato, segnalaInCorso }: {
 
                 {armato && (
                     <span className="text-[10px] text-red-300" data-testid={`cr-avviso-live-${b.bot}`}>
-                        Da qui in poi {BOT_LABEL[b.bot]} manda ordini reali su Betfair.
+                        Da qui in poi {etichetta} manda ordini reali su Betfair.
                     </span>
                 )}
 

@@ -45,10 +45,13 @@ import { fmtMs, totaleCatena, totaleNostro, colloDiBottiglia } from '@/lib/contr
 import { SchedaChiusura } from '@/components/controlroom/SchedaChiusura';
 import { useControlRoom, type StatoBot, type PosizioneAperta, type Modalita } from '@/components/controlroom/useControlRoom';
 import { PannelloBot } from '@/components/controlroom/PannelloBot';
+import {
+    STAKE_TENNIS, CHIAVE_STAKE_TENNIS, differenzeSoloTennis, altreInLiveAdesso,
+} from '@/components/controlroom/soloTennis';
 import { PosizioniChiuse } from '@/components/controlroom/PosizioniChiuse';
 import { SchedaPreMatch } from '@/components/controlroom/SchedaPreMatch';
 import { leggiRitorno, dimenticaRitorno, portaInVista } from '@/lib/ritorno';
-import { creaComandi, importiDi } from '@/components/controlroom/comandiBot';
+import { creaComandi, creaComandiTennis, importiDi } from '@/components/controlroom/comandiBot';
 import { BotParamsSheet } from '@/components/safestrategy/BotParamsSheet';
 import { MikeParamsSheet } from '@/components/mike/MikeParamsSheet';
 import { mergeBotParams, updateSafeParams } from '@/lib/safeBot';
@@ -199,7 +202,13 @@ export default function ControlRoom() {
     );
     const [erroreComando, setErroreComando] = useState<string | null>(null);
     const comandi = useMemo(() => {
-        const base = creaComandi({
+        // ⚠️ NELLA SCHEDA TENNIS «AVVIA» VUOL DIRE UN'ALTRA COSA.
+        // Safe è un servizio solo e porta dentro sia il tennis sia le tre
+        // strategie del calcio: accenderlo «com'è» dalla scheda del tennis
+        // accenderebbe anche il calcio. Da qui parte SOLO il tennis, a 3,00 €,
+        // e tutto il resto resta in prova (`creaComandiTennis`).
+        const fabbrica = sport === 'tennis' ? creaComandiTennis : creaComandi;
+        const base = fabbrica({
             params: paramsDi,
             obiettivoOmega: () => vm.bots.find((x) => x.bot === 'omega')?.obiettivoGiorno ?? vm.obiettivo,
         }, vm.ricarica);
@@ -216,13 +225,58 @@ export default function ControlRoom() {
             avvia: avvolgi(base.avvia), ferma: avvolgi(base.ferma),
             cambiaModalita: avvolgi(base.cambiaModalita), cambiaImporto: avvolgi(base.cambiaImporto),
         };
-    }, [paramsDi, vm.bots, vm.obiettivo, vm.ricarica]);
+    }, [paramsDi, sport, vm.bots, vm.obiettivo, vm.ricarica]);
 
     const importi = useMemo(() => ({
         omega: importiDi('omega', paramsDi('omega')),
-        safe: importiDi('safe', paramsDi('safe')),
+        // nella scheda tennis resta il SOLO importo che muove il tennis:
+        // `laySize` è di chi banca, cioè del calcio (base ed esatto).
+        safe: sport === 'tennis'
+            ? importiDi('safe', paramsDi('safe'))
+                .filter((c) => c.chiave === CHIAVE_STAKE_TENNIS)
+                .map((c) => ({ ...c, etichetta: 'stake tennis' }))
+            : importiDi('safe', paramsDi('safe')),
         mike: importiDi('mike', paramsDi('mike')),
-    }), [paramsDi]);
+    }), [paramsDi, sport]);
+
+    // ── LA PLANCIA, RISTRETTA ALLO SPORT SCELTO ──────────────────────────────
+    // «Nella scheda tennis voglio vedere SOLO il bot di tennis» (utente,
+    // 15/09). Il tennis lo fa unicamente Safe, con la strategia `tennis`:
+    // Mike (Under 3.5) e Omega (risultato esatto) sono calcio e qui non hanno
+    // niente da dire. Senza filtro sarebbe l'operatore a doversi ricordare
+    // quale delle tre righe riguarda la partita che sta guardando.
+    const soloTennis = sport === 'tennis';
+    const botVisibili = useMemo(
+        () => (soloTennis ? vm.bots.filter((b) => b.bot === 'safe') : vm.bots),
+        [vm.bots, soloTennis],
+    );
+    /**
+     * Che cosa cambia l'avvio dalla scheda tennis, detto PRIMA del clic.
+     * Si chiede in `'paper'` di proposito: cosi' l'elenco contiene solo i
+     * cambiamenti di CONFIGURAZIONE, che avvengono con tutti e due i pulsanti.
+     * Chiedendolo in `'live'` ci finirebbe dentro anche «tennis -> soldi veri»,
+     * che pero' e' vero solo per uno dei due — e comparirebbe sopra il
+     * pulsante «avvia in prova».
+     */
+    const cambiTennis = useMemo(
+        () => (soloTennis ? differenzeSoloTennis(paramsDi('safe'), 'paper') : []),
+        [soloTennis, paramsDi],
+    );
+    /**
+     * Che cosa sta uscendo con soldi veri ADESSO, oltre al tennis. Una plancia
+     * ristretta a una riga non deve nascondere il calcio che opera davvero
+     * dentro lo stesso servizio.
+     */
+    const altreLive = useMemo(() => {
+        if (!soloTennis) return [];
+        const safe = vm.bots.find((b) => b.bot === 'safe') ?? null;
+        return altreInLiveAdesso(safe?.modalita, safe?.modiStrategia);
+    }, [soloTennis, vm.bots]);
+    /** le chiusure del tennis passano dalla tua approvazione? (ieri sì) */
+    const approvazioneUscite = useMemo(
+        () => (soloTennis ? paramsDi('safe')?.tennis_exit_approval : undefined),
+        [soloTennis, paramsDi],
+    );
 
     // i fogli parametri sono ESATTAMENTE quelli delle pagine dei bot: due
     // schede diverse per lo stesso servizio sarebbero due verita'.
@@ -345,7 +399,50 @@ export default function ControlRoom() {
                 onSeleziona={setSport}
             />
 
-            <PannelloBot bots={vm.bots} importi={importi} parametri={fogliParametri} comandi={comandi} />
+            <PannelloBot
+                bots={botVisibili} importi={importi} parametri={fogliParametri} comandi={comandi}
+                titolo={soloTennis ? 'Bot del tennis' : 'Comando dei bot'}
+                etichette={soloTennis ? { safe: 'Tennis' } : undefined}
+                ambito={sport ?? 'tutti'}
+                tutti={vm.bots}
+                nota={soloTennis ? (
+                    <>
+                        {/* al FUTURO, perché è quello che il pulsante farà: al
+                            presente sarebbe una promessa su uno stato che qui
+                            non si controlla. */}
+                        <strong className="text-white/80">Avviando da qui</strong> parte solo la
+                        strategia tennis a <strong className="text-white/80">{fmtMoney(STAKE_TENNIS)}</strong> con
+                        entrate automatiche, e tutte le altre strategie di Safe (calcio,
+                        opportunità di modello, ordini manuali) <strong className="text-white/80">vengono
+                        messe in prova</strong>. Mike e Omega non si toccano. Lo stake torna
+                        a {fmtMoney(STAKE_TENNIS)} a ogni avvio da qui.
+                        <span className="block mt-0.5 text-white/35">
+                            «Ferma» invece spegne le aperture di <strong>tutto Safe</strong>, calcio in
+                            prova compreso: il servizio è uno solo.
+                        </span>
+                        {cambiTennis.length > 0 && (
+                            <span className="block mt-0.5 text-amber-300/90">
+                                Rispetto a com&apos;è adesso cambierebbe: {cambiTennis.join(' · ')}.
+                            </span>
+                        )}
+                        {approvazioneUscite === false && (
+                            <span className="block mt-0.5 text-amber-300/90" data-testid="cr-tennis-uscite">
+                                Le chiusure NON passano dalla tua approvazione: il 14/09 ci passavano.
+                                Si cambia dalla scheda parametri, non da qui.
+                            </span>
+                        )}
+                        {/* IL PRESENTE, quando è brutto: una riga sola chiamata
+                            «Tennis» non deve nascondere il calcio che sta
+                            piazzando ordini veri dentro lo stesso servizio. */}
+                        {altreLive.length > 0 && (
+                            <span className="block mt-1 text-red-300 font-semibold" data-testid="cr-tennis-altre-live">
+                                ⚠ ADESSO Safe sta operando con soldi veri anche su: {altreLive.join(', ')}.
+                                Sono nello stesso servizio e da questa scheda non si vedono.
+                            </span>
+                        )}
+                    </>
+                ) : undefined}
+            />
 
             {erroreComando && (
                 <Card className="glass-card border-red-500/40 bg-red-500/10 p-2.5 text-[11.5px] text-red-200"

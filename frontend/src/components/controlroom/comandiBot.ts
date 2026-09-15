@@ -26,6 +26,7 @@ import { activateSafe, stopSafe, updateSafeParams, type SafeBotParams } from '@/
 import { activateMike, stopMike, updateMikeParams, type MikeParams } from '@/lib/mike';
 import type { Bot } from '@/lib/controlRoom';
 import type { CampoImporto, Modalita } from '@/components/controlroom/PannelloBot';
+import { paramsSoloTennis } from '@/components/controlroom/soloTennis';
 
 /** Le chiavi d'importo che ciascun servizio legge DAVVERO, con le sue parole. */
 export const IMPORTI_DI: Record<Bot, readonly { chiave: string; etichetta: string; nota?: string }[]> = {
@@ -223,4 +224,67 @@ export function creaComandi(sorgente: SorgenteParametri, dopo: () => void) {
     };
 
     return { avvia, ferma, cambiaModalita, cambiaImporto };
+}
+
+// ============================================================================
+// LA SCHEDA TENNIS — «deve partire solo lui, come ieri, a 3 euro»
+// ============================================================================
+
+/**
+ * I comandi **della scheda tennis**. Sono gli stessi di sopra tranne che per
+ * i due gesti che possono far uscire denaro: `avvia` e `cambiaModalita` su
+ * Safe passano da `paramsSoloTennis`, cioè accendono il tennis e lasciano
+ * TUTTE le altre strategie in prova.
+ *
+ * PERCHÉ NON UN PARAMETRO IN PIÙ DENTRO `creaComandi`: qui cambia il
+ * SIGNIFICATO del pulsante, non un dettaglio. «Avvia in live» dalla pagina
+ * intera vuol dire «accendi il servizio così com'è»; dalla scheda tennis vuol
+ * dire «accendi il tennis e SPEGNI il resto». Due significati nello stesso
+ * nome, distinti da un flag, si confondono alla prima lettura distratta — e
+ * questo è il punto della pagina dove confondersi costa denaro.
+ *
+ * Mike e Omega restano com'erano: dalla scheda tennis non compaiono nemmeno,
+ * e se qualcuno li chiamasse lo farebbero con i comandi normali.
+ */
+export function creaComandiTennis(sorgente: SorgenteParametri, dopo: () => void) {
+    const base = creaComandi(sorgente, dopo);
+
+    /** accende Safe col tennis nella modalità scelta e il resto in prova */
+    const accendiSoloTennis = async (modalita: Modalita) => {
+        const correnti = sorgente.params('safe');
+        // ...e se non li abbiamo letti NON si scrive: vedi ParametriNonLetti.
+        // Qui vale doppio: senza i parametri correnti non sapremmo nemmeno
+        // quali strategie stiamo spegnendo.
+        if (correnti == null || Object.keys(correnti).length === 0) {
+            throw new ParametriNonLetti('safe');
+        }
+        await activateSafe(modalita, paramsSoloTennis(correnti, modalita) as Partial<SafeBotParams>);
+        dopo();
+    };
+
+    return {
+        ...base,
+        avvia: async (bot: Bot, modalita: Modalita) => {
+            if (bot !== 'safe') return base.avvia(bot, modalita);
+            await accendiSoloTennis(modalita);
+        },
+        cambiaModalita: async (bot: Bot, modalita: Modalita) => {
+            if (bot !== 'safe') return base.cambiaModalita(bot, modalita);
+            // la modalità di Safe si cambia riattivandolo (è così anche nella
+            // sua pagina): riattivarlo qui vuol dire riattivare SOLO il tennis.
+            if (modalita === 'live') return accendiSoloTennis('live');
+
+            // ⚠️ REVIEW 15/09 — «PASSA A PROVA» NON CONFIGURA NIENTE.
+            // È un gesto di de-escalation: portava con sé lo stake a 3 e
+            // ACCENDEVA le entrate automatiche, che l'operatore può avere
+            // spento apposta. In prova il `mode` del servizio è già un tetto
+            // su tutto: basta riattivarlo com'è.
+            const correnti = sorgente.params('safe');
+            if (correnti == null || Object.keys(correnti).length === 0) {
+                throw new ParametriNonLetti('safe');
+            }
+            await activateSafe('paper', correnti as Partial<SafeBotParams>);
+            dopo();
+        },
+    };
 }

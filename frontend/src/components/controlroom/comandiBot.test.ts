@@ -25,7 +25,7 @@ vi.mock('@/lib/mike', () => ({
 
 import {
     leggiChiave, scriviChiave, importiDi, creaComandi, ObiettivoOmegaIgnoto,
-    ParametriOmegaIgnoti, ParametriNonLetti, IMPORTI_DI,
+    ParametriOmegaIgnoti, ParametriNonLetti, IMPORTI_DI, creaComandiTennis,
 } from './comandiBot';
 import { activateOmega, stopOmega, updateOmegaParams } from '@/lib/omega';
 import { activateSafe, stopSafe, updateSafeParams } from '@/lib/safeBot';
@@ -348,5 +348,77 @@ describe('parametri non letti: nessuna scrittura, su nessun bot', () => {
         const c = creaComandi(sorgente(null), vi.fn());
         await expect(c.cambiaImporto('safe', 'stake.backSize', 3))
             .rejects.toThrow(/sostituirebbe TUTTI gli altri/i);
+    });
+});
+
+// ===========================================================================
+// LA SCHEDA TENNIS — «deve partire solo lui, come ieri, a 3 euro» (15/09)
+// ===========================================================================
+
+describe('creaComandiTennis — da qui parte SOLO il tennis', () => {
+    const CORRENTI = {
+        stake: { backSize: 5, laySize: 2 },
+        strategy_modes: { tennis: 'paper', base: 'live' },
+        variants: ['base', 'tennis'],
+        auto_trade_tennis: false,
+        daily_loss_stop: -50,
+    };
+
+    it('AVVIA in live: tennis live, tutto il resto in prova, stake 3', async () => {
+        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
+        await c.avvia('safe', 'live');
+        const [modo, inviati] = mActSafe.mock.calls[0] as [string, Record<string, unknown>];
+        expect(modo).toBe('live');
+        const modi = inviati.strategy_modes as Record<string, string>;
+        expect(modi.tennis).toBe('live');
+        expect(modi.base).toBe('paper');
+        expect((inviati.stake as Record<string, number>).backSize).toBe(3);
+        expect(inviati.auto_trade_tennis).toBe(true);
+        expect(inviati.daily_loss_stop).toBe(-50);
+    });
+
+    it('PASSA A SOLDI VERI fa la stessa cosa: non accende il calcio di rimbalzo', async () => {
+        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
+        await c.cambiaModalita('safe', 'live');
+        const inviati = mActSafe.mock.calls[0][1] as Record<string, unknown>;
+        expect((inviati.strategy_modes as Record<string, string>).base).toBe('paper');
+    });
+
+    it('senza i parametri letti NON parte: non sapremmo che cosa stiamo spegnendo', async () => {
+        const c = creaComandiTennis(sorgente(null), vi.fn());
+        await expect(c.avvia('safe', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
+        await expect(c.cambiaModalita('safe', 'live')).rejects.toBeInstanceOf(ParametriNonLetti);
+        expect(mActSafe).not.toHaveBeenCalled();
+    });
+
+    // ⚠️ REVIEW 15/09 — «passa a prova» è una DE-ESCALATION: portava con sé
+    // lo stake a 3 e ACCENDEVA le entrate automatiche.
+    it('PASSA A PROVA non riconfigura niente: riattiva Safe com’e’', async () => {
+        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
+        await c.cambiaModalita('safe', 'paper');
+        const [modo, inviati] = mActSafe.mock.calls[0] as [string, Record<string, unknown>];
+        expect(modo).toBe('paper');
+        expect(inviati.auto_trade_tennis).toBe(false);
+        expect((inviati.stake as Record<string, number>).backSize).toBe(5);
+    });
+
+    it('FERMA resta quello normale: spegne Safe e basta', async () => {
+        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
+        await c.ferma('safe');
+        expect(mStopSafe).toHaveBeenCalled();
+    });
+
+    it('la pagina rilegge lo stato dopo un avvio riuscito', async () => {
+        const dopo = vi.fn();
+        const c = creaComandiTennis(sorgente(CORRENTI), dopo);
+        await c.avvia('safe', 'paper');
+        expect(dopo).toHaveBeenCalled();
+    });
+
+    it('Mike, se mai chiamato, passa dai comandi normali', async () => {
+        const c = creaComandiTennis(sorgente(CORRENTI), vi.fn());
+        await c.avvia('mike', 'paper');
+        expect(mActMike).toHaveBeenCalledWith('paper');
+        expect(mActSafe).not.toHaveBeenCalled();
     });
 });

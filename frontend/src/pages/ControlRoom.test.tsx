@@ -936,3 +936,146 @@ describe('«Chiudere adesso»: il numero vivo, o l’etichetta lo dichiara', () 
         expect(scheda.textContent).not.toMatch(/Chiudere adesso/);
     });
 });
+
+// ===========================================================================
+// LA SCHEDA TENNIS — «voglio vedere SOLO il bot di tennis» (utente, 15/09)
+// ===========================================================================
+
+describe('scheda tennis: una plancia sola, e quella giusta', () => {
+    /** Safe con i parametri letti: il tennis in prova, il calcio in live,
+     *  stake 5 — cioè esattamente quello che l'avvio dalla scheda tennis deve
+     *  raddrizzare. */
+    function vmConSafe() {
+        const v = vm();
+        v.bots[1] = {
+            ...v.bots[1], stato: 'stopped', inCorsa: false,
+            params: {
+                stake: { backSize: 5, laySize: 2 },
+                strategy_modes: { tennis: 'paper', base: 'live' },
+                variants: ['base', 'tennis'],
+                auto_trade_tennis: false,
+            },
+        } as typeof v.bots[1];
+        return v;
+    }
+
+    it('senza filtro si comandano tutti e tre', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        expect(s.queryByTestId('cr-bot-riga-omega')).not.toBeNull();
+        expect(s.queryByTestId('cr-bot-riga-mike')).not.toBeNull();
+        expect(s.getByTestId('cr-pannello-bot-titolo').textContent).toMatch(/Comando dei bot/i);
+    });
+
+    it('scelto il tennis, restano SOLO le sue righe: Mike e Omega sono calcio e spariscono', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.queryByTestId('cr-bot-riga-safe')).not.toBeNull();
+        expect(s.queryByTestId('cr-bot-riga-omega')).toBeNull();
+        expect(s.queryByTestId('cr-bot-riga-mike')).toBeNull();
+        expect(s.getByTestId('cr-pannello-bot-titolo').textContent).toMatch(/Bot del tennis/i);
+    });
+
+    it('il bot si chiama TENNIS, che è il nome con cui lo si comanda', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.getByTestId('cr-bot-riga-safe').textContent).toMatch(/TENNIS/i);
+    });
+
+    it('dice PRIMA del clic che parte solo il tennis, a 3,00 €', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        const nota = s.getByTestId('cr-pannello-bot-nota').textContent ?? '';
+        expect(nota).toMatch(/solo la strategia tennis/i);
+        expect(nota).toMatch(/3,00/);
+        expect(nota).toMatch(/Mike e Omega/);
+    });
+
+    it('e dichiara che cosa cambierebbe rispetto a com’è adesso', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        const nota = s.getByTestId('cr-pannello-bot-nota').textContent ?? '';
+        expect(nota).toMatch(/base/);
+        expect(nota).toMatch(/entrate automatiche/);
+    });
+
+    it('resta il solo importo che muove il tennis: «banca» è del calcio', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.queryByTestId('cr-importo-safe-stake-backSize')).not.toBeNull();
+        expect(s.queryByTestId('cr-importo-safe-stake-laySize')).toBeNull();
+    });
+
+    it('tolto il filtro tornano tutti: la plancia non resta ristretta per sbaglio', () => {
+        mVm.mockReturnValue(vmConSafe());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.queryByTestId('cr-bot-riga-mike')).not.toBeNull();
+        expect(s.queryByTestId('cr-pannello-bot-nota')).toBeNull();
+    });
+});
+
+// ===========================================================================
+// REVIEW 15/09, CRITICO — la conferma rossa NON sopravvive al cambio scheda.
+// Armata sotto la promessa «solo tennis», fuori da quella scheda lo stesso
+// pulsante avvia il servizio com'è: il calcio partirebbe a soldi veri.
+// ===========================================================================
+
+describe('scheda tennis: la conferma «soldi veri» non cambia significato sotto il dito', () => {
+    function vmSafeFermo() {
+        const v = vm();
+        v.bots[1] = {
+            ...v.bots[1], stato: 'stopped', inCorsa: false,
+            params: {
+                stake: { backSize: 5, laySize: 2 },
+                strategy_modes: { tennis: 'paper', base: 'live' },
+                variants: ['base', 'tennis'],
+                auto_trade_tennis: false,
+            },
+        } as typeof v.bots[1];
+        return v;
+    }
+
+    it('armata nella scheda tennis, uscendo dalla scheda si DISARMA', () => {
+        mVm.mockReturnValue(vmSafeFermo());
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        fireEvent.click(s.getByTestId('cr-avvia-live-safe'));
+        expect(s.queryByTestId('cr-conferma-avvio-live-safe')).not.toBeNull();
+
+        // via il filtro: i pulsanti tornano a voler dire «il servizio com'è»
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.queryByTestId('cr-conferma-avvio-live-safe')).toBeNull();
+        expect(s.queryByTestId('cr-avvia-live-safe')).not.toBeNull();
+    });
+
+    it('il freno d’emergenza resta su TUTTI i bot, anche quelli nascosti dal filtro', () => {
+        const v = vmSafeFermo();
+        v.bots[0] = { ...v.bots[0], modalita: 'live', inCorsa: true, stato: 'running' } as typeof v.bots[0];
+        mVm.mockReturnValue(v);
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        // Omega non ha una riga, ma è acceso: il freno lo deve vedere
+        expect(s.queryByTestId('cr-bot-riga-omega')).toBeNull();
+        expect((s.getByTestId('cr-ferma-tutti') as HTMLButtonElement).disabled).toBe(false);
+        expect(s.getByTestId('cr-quanti-live').textContent).toMatch(/1 con soldi veri/);
+    });
+
+    it('se il calcio sta gia’ operando con soldi veri, la scheda tennis LO DICE', () => {
+        const v = vmSafeFermo();
+        v.bots[1] = {
+            ...v.bots[1], modalita: 'live', inCorsa: true, stato: 'running',
+            modiStrategia: { tennis: 'live', base: 'live' },
+        } as typeof v.bots[1];
+        mVm.mockReturnValue(v);
+        const s = mostra();
+        fireEvent.click(s.getByTestId('cr-filtro-tennis'));
+        expect(s.getByTestId('cr-tennis-altre-live').textContent).toMatch(/base/);
+    });
+});
