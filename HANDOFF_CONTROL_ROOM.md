@@ -1,7 +1,7 @@
 # HANDOFF — CONTROL ROOM e primo bot validato in LIVE
 
 > **Se sei un agente che riprende questo lavoro, questo è il file da leggere per primo.**
-> Aggiornato: **15 settembre 2026**. Ultimo commit: `cbb1f4c`. Tutto pushato su `master`.
+> Aggiornato: **15 settembre 2026**. Ultimo commit: `5cedc38`. Tutto pushato su `master`.
 >
 > Se hai tempo per leggere una sola cosa, leggi **§2B — l'incidente del loop**:
 > è il giorno in cui questo progetto ha piazzato trentadue ordini veri che non
@@ -475,9 +475,9 @@ allo stesso identico punto, ne uscivano trentadue.
    restano — ma **nessuno li sta sorvegliando**, e non partirà nessun settlement
    finché l'app non torna su. L'app la avvia **l'utente**: non chiuderla e non
    ricompilarla mai (è solo l'avviatore del `main.js` vivo).
-2. **Il frontend va ricostruito** perché la Control Room mostri il lavoro di
-   oggi: l'exe carica il bundle compilato, non i sorgenti. **Ricostruito il
-   15/09 dopo `9143717`.**
+2. **Il frontend è stato ricostruito** il 15/09 dopo `9143717` (l'exe carica il
+   bundle compilato, non i sorgenti): al riavvio la Control Room mostra il
+   lavoro di oggi. Se tocchi `frontend/src`, rifai `npm run build`.
 
 ---
 
