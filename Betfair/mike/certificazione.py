@@ -61,12 +61,24 @@ class Violazione:
 # partenza, d e' cio' che il motore ha deciso di fare.
 Controllo = Callable[[E.MatchCtx, E.Snapshot, E.Decision, Dict[str, Any]], Optional[str]]
 
-_REGISTRO: List[Tuple[str, str, Controllo]] = []
+_REGISTRO: List[Tuple[str, str, Controllo, Optional[Controllo]]] = []
 
 
-def _controllo(codice: str, regola: str):
+def _controllo(codice: str, regola: str, quando: Optional[Controllo] = None):
+    """Registra un controllo, e con `quando` dichiara QUANDO ha davvero un caso.
+
+    ⚠️ Senza questo, un referto «zero violazioni» e' ambiguo: non si distingue
+    un controllo che ha guardato e approvato da uno che non ha mai avuto
+    l'occasione di guardare. Sono due cose diversissime — la prima e' una
+    garanzia, la seconda e' un buco — e finche' si contano solo le violazioni
+    sembrano identiche.
+
+    `quando` e' una condizione pura sugli stessi argomenti del controllo:
+    vera = «questo caso mi riguarda», e allora il controllo viene contato fra i
+    SOLLECITATI. Assente = il controllo giudica sempre.
+    """
     def _reg(fn: Controllo) -> Controllo:
-        _REGISTRO.append((codice, regola, fn))
+        _REGISTRO.append((codice, regola, fn, quando))
         return fn
     return _reg
 
@@ -95,14 +107,16 @@ def _book(snap: E.Snapshot, mercato: str, selezione: str) -> Optional[E.Book]:
 # ===========================================================================
 # A. LA MACCHINA A STATI (§3)
 # ===========================================================================
-@_controllo("A1", "lo stato prodotto deve essere uno stato dichiarato (§3)")
+@_controllo("A1", "lo stato prodotto deve essere uno stato dichiarato (§3)",
+            quando=lambda ctx, snap, d, p: True)
 def _a1(ctx, snap, d, params):
     if d.state not in E.STATES:
         return f"stato sconosciuto '{d.state}'"
     return None
 
 
-@_controllo("A2", "da uno stato TERMINALE non esce nessuna azione (§3)")
+@_controllo("A2", "da uno stato TERMINALE non esce nessuna azione (§3)",
+            quando=lambda ctx, snap, d, p: ctx.state in E.TERMINAL_STATES)
 def _a2(ctx, snap, d, params):
     if ctx.state in E.TERMINAL_STATES and d.actions:
         return (f"stato terminale '{ctx.state}' ma {len(d.actions)} azioni: "
@@ -110,7 +124,8 @@ def _a2(ctx, snap, d, params):
     return None
 
 
-@_controllo("A3", "ogni decisione dichiara un motivo leggibile (§8)")
+@_controllo("A3", "ogni decisione dichiara un motivo leggibile (§8)",
+            quando=lambda ctx, snap, d, p: bool(d.actions))
 def _a3(ctx, snap, d, params):
     if d.actions and not str(getattr(d, "reason", "") or "").strip():
         return f"{len(d.actions)} azioni senza motivo dichiarato"
@@ -121,7 +136,8 @@ def _a3(ctx, snap, d, params):
 # B. GLI INGRESSI (§3 Fasi 1-2, §5, §11)
 # ===========================================================================
 @_controllo("B1", "Mike non entra MAI in-play da zero: l'unico ingresso live e' "
-                  "il re-ingresso (§11)")
+                  "il re-ingresso (§11)",
+            quando=lambda ctx, snap, d, p: bool(snap.inplay and _aperture(d)))
 def _b1(ctx, snap, d, params):
     if not snap.inplay:
         return None
@@ -151,7 +167,8 @@ def _b1(ctx, snap, d, params):
     return None
 
 
-@_controllo("B2", "feed stantio: nessun ingresso, le chiusure restano permesse (§5)")
+@_controllo("B2", "feed stantio: nessun ingresso, le chiusure restano permesse (§5)",
+            quando=lambda ctx, snap, d, p: not (snap.feed_fresh and snap.order_fresh))
 def _b2(ctx, snap, d, params):
     if snap.feed_fresh and snap.order_fresh:
         return None
@@ -163,7 +180,8 @@ def _b2(ctx, snap, d, params):
 
 
 @_controllo("B3", "ordine a esito IGNOTO: via le APERTURE, restano le riduzioni "
-                  "di rischio (§5, §4.11)")
+                  "di rischio (§5, §4.11)",
+            quando=lambda ctx, snap, d, p: E.has_unknown_orders(ctx))
 def _b3(ctx, snap, d, params):
     if not E.has_unknown_orders(ctx):
         return None
@@ -176,7 +194,8 @@ def _b3(ctx, snap, d, params):
 
 
 @_controllo("B4", "ingresso pre-match solo con la quota BACK Under 3.5 nella "
-                  "banda dei parametri (§3 Fase 1)")
+                  "banda dei parametri (§3 Fase 1)",
+            quando=lambda ctx, snap, d, p: any(a.role == 'under_entry' for a in _piazzamenti(d)))
 def _b4(ctx, snap, d, params):
     lo = float(params.get("pre_entry_price_min") or 0.0)
     hi = float(params.get("pre_entry_price_max") or 0.0)
@@ -195,7 +214,8 @@ def _b4(ctx, snap, d, params):
     return None
 
 
-@_controllo("B5", "i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)")
+@_controllo("B5", "i cicli pre-match non superano `pre_max_cycles` (§3 Fase 1)",
+            quando=lambda ctx, snap, d, p: any(a.role == 'under_entry' for a in _piazzamenti(d)))
 def _b5(ctx, snap, d, params):
     tetto = int(params.get("pre_max_cycles") or 0)
     if tetto <= 0:
@@ -209,7 +229,8 @@ def _b5(ctx, snap, d, params):
 # C. PREZZI E ORDINI (§4.6, §11)
 # ===========================================================================
 @_controllo("C1", "ogni ordine ha un prezzo dentro la scala Betfair e una size "
-                  "positiva (§4.6)")
+                  "positiva (§4.6)",
+            quando=lambda ctx, snap, d, p: bool(_piazzamenti(d)))
 def _c1(ctx, snap, d, params):
     for a in _piazzamenti(d):
         p, s = float(a.price), float(a.size)
@@ -226,7 +247,8 @@ def _c1(ctx, snap, d, params):
 
 
 @_controllo("C2", "Mike non inventa prezzi: nessun ordine su una linea assente "
-                  "dal feed (§11)")
+                  "dal feed (§11)",
+            quando=lambda ctx, snap, d, p: bool(_piazzamenti(d)))
 def _c2(ctx, snap, d, params):
     for a in _piazzamenti(d):
         if _book(snap, a.market, a.selection) is None:
@@ -234,7 +256,8 @@ def _c2(ctx, snap, d, params):
     return None
 
 
-@_controllo("C3", "nessun ordine su un mercato che non e' APERTO (§3 Fase 1)")
+@_controllo("C3", "nessun ordine su un mercato che non e' APERTO (§3 Fase 1)",
+            quando=lambda ctx, snap, d, p: bool(_piazzamenti(d)))
 def _c3(ctx, snap, d, params):
     for a in _piazzamenti(d):
         bk = _book(snap, a.market, a.selection)
@@ -247,7 +270,8 @@ def _c3(ctx, snap, d, params):
 # D. IL GREEN-UP (§3 Fase 1, §4.1, §4.2)
 # ===========================================================================
 @_controllo("D1", "le esposizioni vengono dai FILL, mai dalla size chiesta: la "
-                  "gamba di green non supera l'abbinato (§4.1)")
+                  "gamba di green non supera l'abbinato (§4.1)",
+            quando=lambda ctx, snap, d, p: any(a.role in ('under_green', 'ko_green', 'reentry_green') for a in _piazzamenti(d)))
 def _d1(ctx, snap, d, params):
     for a in _piazzamenti(d):
         if a.role not in ("under_green", "ko_green", "reentry_green"):
@@ -267,7 +291,8 @@ def _d1(ctx, snap, d, params):
 
 
 @_controllo("D2", "pre-match non si chiude mai in perdita: il green e' a quota "
-                  "MIGLIORE dell'ingresso (§3 Fase 1)")
+                  "MIGLIORE dell'ingresso (§3 Fase 1)",
+            quando=lambda ctx, snap, d, p: (not snap.inplay) and any(a.role == 'under_green' for a in _piazzamenti(d)))
 def _d2(ctx, snap, d, params):
     if snap.inplay:
         return None                        # in-play le uscite in perdita esistono (§3 Fase 5)
@@ -290,7 +315,8 @@ def _d2(ctx, snap, d, params):
 # E. LA COPERTURA (§3 Fase 3, §4.3)
 # ===========================================================================
 @_controllo("E1", "con 3+ gol non si copre piu': la gestione passa al cash-out "
-                  "(§3 Fase 3)")
+                  "(§3 Fase 3)",
+            quando=lambda ctx, snap, d, p: snap.goals is not None and int(snap.goals) >= 3)
 def _e1(ctx, snap, d, params):
     if snap.goals is None or int(snap.goals) < 3:
         return None
@@ -301,7 +327,8 @@ def _e1(ctx, snap, d, params):
 
 
 @_controllo("E2", "la copertura si dimensiona con X = factor*S/((Po-1)(1-c)) "
-                  "(§4.3)")
+                  "(§4.3)",
+            quando=lambda ctx, snap, d, p: any(a.role == 'over_cover' for a in _piazzamenti(d)))
 def _e2(ctx, snap, d, params):
     for a in _piazzamenti(d):
         if a.role != "over_cover" or a.side != "back":
@@ -329,7 +356,8 @@ def _e2(ctx, snap, d, params):
 # ===========================================================================
 # F. IL RISCHIO (§4.9, §5)
 # ===========================================================================
-@_controllo("F1", "`max_liability_per_match` e' un tetto DENTRO il motore (§4.9)")
+@_controllo("F1", "`max_liability_per_match` e' un tetto DENTRO il motore (§4.9)",
+            quando=lambda ctx, snap, d, p: bool(float(p.get('max_liability_per_match') or 0) > 0 and _aperture(d)))
 def _f1(ctx, snap, d, params):
     tetto = float(params.get("max_liability_per_match") or 0.0)
     if tetto <= 0:
@@ -344,7 +372,8 @@ def _f1(ctx, snap, d, params):
     return None
 
 
-@_controllo("F2", "a bot fermo / stop giornaliero non si apre niente (§5, §11)")
+@_controllo("F2", "a bot fermo / stop giornaliero non si apre niente (§5, §11)",
+            quando=lambda ctx, snap, d, p: p.get('pre_enabled') is False and p.get('reentry_enabled') is False)
 def _f2(ctx, snap, d, params):
     if params.get("pre_enabled") is False and params.get("reentry_enabled") is False:
         ap = [a for a in _aperture(d) if a.role in ("under_entry", "under_last", "reentry")]
@@ -357,7 +386,8 @@ def _f2(ctx, snap, d, params):
 # G. LE USCITE (§3 Fase 5)
 # ===========================================================================
 @_controllo("G1", "l'uscita in perdita esiste solo con 2, 3 o 4 gol totali "
-                  "(§3 Fase 5)")
+                  "(§3 Fase 5)",
+            quando=lambda ctx, snap, d, p: d.state == 'LIVE_CLOSING' and ctx.state != 'LIVE_CLOSING')
 def _g1(ctx, snap, d, params):
     # si giudica SOLO l'istante in cui si ENTRA in chiusura, e solo sul motivo
     # di QUESTA decisione: `ctx.close_reason` e' persistente e resta scritto da
@@ -386,7 +416,8 @@ def _g1(ctx, snap, d, params):
 # H. IL RE-INGRESSO (§3 Fase 6)
 # ===========================================================================
 @_controllo("H1", "il re-ingresso live avviene UNA volta sola per partita "
-                  "(§3 Fase 6)")
+                  "(§3 Fase 6)",
+            quando=lambda ctx, snap, d, p: any(a.role == 'reentry' for a in _piazzamenti(d)))
 def _h1(ctx, snap, d, params):
     if ctx.reentry_done and any(a.role == "reentry" for a in _piazzamenti(d)):
         return "secondo re-ingresso sulla stessa partita"
@@ -394,7 +425,8 @@ def _h1(ctx, snap, d, params):
 
 
 @_controllo("H2", "il re-ingresso vuole ESATTAMENTE 1 gol e il primo tempo "
-                  "(§3 Fase 6)")
+                  "(§3 Fase 6)",
+            quando=lambda ctx, snap, d, p: any(a.role == 'reentry' for a in _piazzamenti(d)))
 def _h2(ctx, snap, d, params):
     if not any(a.role == "reentry" for a in _piazzamenti(d)):
         return None
@@ -409,7 +441,8 @@ def _h2(ctx, snap, d, params):
 # J. GLI ORDINI IN VOLO — i cinque difetti del 15/09
 # ===========================================================================
 @_controllo("J1", "mai due gambe VIVE con lo stesso ruolo, ciclo e lato "
-                  "(freno anti-duplicato, 15/09)")
+                  "(freno anti-duplicato, 15/09)",
+            quando=lambda ctx, snap, d, p: bool(_vive(ctx)))
 def _j1(ctx, snap, d, params):
     visti: Dict[tuple, str] = {}
     for l in _vive(ctx):
@@ -422,7 +455,8 @@ def _j1(ctx, snap, d, params):
 
 
 @_controllo("J2", "non si piazza una gamba di chiusura se ce n'e' gia' una viva "
-                  "con lo stesso ruolo e ciclo (15/09)")
+                  "con lo stesso ruolo e ciclo (15/09)",
+            quando=lambda ctx, snap, d, p: any(a.role in E.CLOSING_ROLES for a in _piazzamenti(d)))
 def _j2(ctx, snap, d, params):
     for a in _piazzamenti(d):
         if a.role not in E.CLOSING_ROLES:
@@ -437,7 +471,8 @@ def _j2(ctx, snap, d, params):
 
 
 @_controllo("J3", "ogni gamba nasce con un riferimento suo, e nessun riferimento "
-                  "si ripete (15/09)")
+                  "si ripete (15/09)",
+            quando=lambda ctx, snap, d, p: bool(ctx.legs))
 def _j3(ctx, snap, d, params):
     refs = [l.ref for l in ctx.legs]
     if len(refs) != len(set(refs)):
@@ -449,7 +484,8 @@ def _j3(ctx, snap, d, params):
 
 
 @_controllo("J4", "una gamba a esito IGNOTO non viene mai data per annullata "
-                  "(§4.11)")
+                  "(§4.11)",
+            quando=lambda ctx, snap, d, p: any(a.kind == 'cancel' for a in d.actions))
 def _j4(ctx, snap, d, params):
     for a in d.actions:
         if a.kind != "cancel":
@@ -464,7 +500,8 @@ def _j4(ctx, snap, d, params):
 # il giro completo
 # ===========================================================================
 def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
-             params: Dict[str, Any]) -> List[Violazione]:
+             params: Dict[str, Any],
+             sollecitati: Optional[Dict[str, int]] = None) -> List[Violazione]:
     """Tutti i controlli su UNA decisione, prima che venga applicata.
 
     Un controllo che solleva non ferma gli altri e non ferma la certificazione:
@@ -472,8 +509,12 @@ def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
     un'informazione, non un motivo per non sapere niente del resto.
     """
     out: List[Violazione] = []
-    for codice, regola, fn in _REGISTRO:
+    for codice, regola, fn, quando in _REGISTRO:
         try:
+            if quando is not None and not quando(ctx, snap, d, params):
+                continue          # nessun caso: il controllo non ha niente da dire
+            if sollecitati is not None:
+                sollecitati[codice] = sollecitati.get(codice, 0) + 1
             det = fn(ctx, snap, d, params)
         except Exception as ex:  # noqa: BLE001
             out.append(Violazione(f"{codice}-ERRORE", regola,
@@ -487,7 +528,17 @@ def verifica(ctx: E.MatchCtx, snap: E.Snapshot, d: E.Decision,
 
 def elenco_controlli() -> List[Tuple[str, str]]:
     """(codice, regola) di tutto cio' che questa certificazione sa verificare."""
-    return [(c, r) for c, r, _ in _REGISTRO]
+    return [(c, r) for c, r, _fn, _q in _REGISTRO]
+
+
+def mai_sollecitati(sollecitati: Dict[str, int]) -> List[Tuple[str, str]]:
+    """I controlli che non hanno MAI avuto un caso da giudicare.
+
+    Sono il buco vero di un referto: non dicono «il bot e' sano», dicono «non
+    lo so». Vanno letti come lavoro da fare — uno scenario da provocare — non
+    come una garanzia.
+    """
+    return [(c, r) for c, r, _fn, _q in _REGISTRO if not sollecitati.get(c)]
 
 
 # ===========================================================================
@@ -587,6 +638,9 @@ class Referto:
     andamento: "Andamento" = field(default_factory=lambda: Andamento())
     ordini_piazzati: int = 0
     righe_scritte: int = 0
+    # quante volte OGNI controllo ha avuto un caso da giudicare: senza questo,
+    # «zero violazioni» non si sa leggere
+    sollecitati: Dict[str, int] = field(default_factory=dict)
     violazioni: List[Violazione] = field(default_factory=list)
     note: List[str] = field(default_factory=list)
 

@@ -79,6 +79,47 @@ from ...stream.backtest.sim_strategy import _offer_price, _offer_size
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# GLI SCENARI — le condizioni rare non si aspettano, si provocano
+# ---------------------------------------------------------------------------
+# Una registrazione racconta la partita che e' andata come e' andata. Certe
+# regole del bot non si possono mettere alla prova sperando che capiti il caso
+# giusto: il tetto di rischio non scatta mai se il tetto e' spento, e il freno
+# del bot fermo non scatta mai se il bot e' acceso.
+#
+# Questi scenari cambiano SOLO i parametri o la freschezza del feed — mai la
+# partita, mai i prezzi, mai la strategia. Sono le stesse manopole che l'utente
+# ha nella UI, girate apposta per far parlare i controlli che tacciono.
+SCENARI: Dict[str, Dict[str, Any]] = {
+    # come gira in produzione
+    "base": {},
+    # uscita pre-match a mercato invece che appoggiata: e' l'altro ramo della
+    # Fase 1, e senza di esso PRE_GREEN_PENDING non si vede mai
+    "taker": {"pre_exit_mode": "taker"},
+    # tetto di rischio STRETTO: fa parlare il clamp dentro il motore (§4.9)
+    # 12 EUR: lo stake da 10 passa, la copertura no. Con 8 l'ingresso non
+    # avverrebbe proprio e il controllo del tetto non avrebbe MAI un caso.
+    "cap-stretto": {"max_liability_per_match": 12.0},
+    # bot fermo / stop giornaliero: nessuna apertura, le chiusure restano (§5)
+    "bot-fermo": {"pre_enabled": False, "reentry_enabled": False},
+    # seconda puntata spenta: l'altro ramo del gol precoce (§15.3)
+    "senza-seconda-puntata": {"second_entry_enabled": False},
+}
+
+# scenario speciale: non tocca i parametri ma INVECCHIA la riga del feed, per
+# far scattare la regola «feed stantio: nessun ingresso, chiusure permesse».
+SCENARIO_FEED_STANTIO = "feed-stantio"
+
+# scenario speciale: fa FALLIRE i primi piazzamenti con un esito IGNOTO (la
+# stessa eccezione che in produzione arriva da un timeout REST). E' l'unico
+# modo di far nascere le gambe `pending_reconcile`, e quindi di mettere alla
+# prova le regole che le governano: «via le aperture, restano le riduzioni di
+# rischio» (§5) e «una gamba a esito ignoto non si da' mai per annullata»
+# (§4.11). Nel replay non esistono errori di rete: se non li si provoca, quelle
+# due regole non vengono verificate MAI.
+SCENARIO_ESITI_IGNOTI = "esiti-ignoti"
+QUANTI_GUASTI = 3
+
 # le due linee che interessano a Mike, coi nomi di mercato Betfair
 _LINEE = {"OVER_UNDER_35": 3.5, "OVER_UNDER_45": 4.5}
 
@@ -179,6 +220,7 @@ def _crea_strategia():
             self._scores = sorted(scores or [], key=lambda x: x[0])
             self._score_ts = [s[0] for s in self._scores]
             self.ogni_ms = int(ogni_ms)
+            self.invecchia_s = float(kw.pop("invecchia_s", 0.0) or 0.0)
 
             self.blocchi: Dict[str, Dict[str, Any]] = {}
             # i mercati flumine, per market_id: servono per piazzare davvero
@@ -253,7 +295,11 @@ def _crea_strategia():
             inplay = any(bool(b.get("inplay")) for b in self.blocchi.values())
             payload = payload_evento(self.event_id, self.blocchi, self.ko_iso,
                                      self.nome, minuto, gc, gf, inplay)
-            row = {"payload": payload, "updated_at": _iso(pt_ms)}
+            # `invecchia_s` > 0: la riga del feed si dichiara vecchia di tot
+            # secondi. Non cambia NESSUN prezzo: cambia solo da quanto tempo
+            # non arriva, che e' cio' che la regola del feed stantio misura.
+            row = {"payload": payload,
+                   "updated_at": _iso(pt_ms - int(self.invecchia_s * 1000))}
             now = pt_ms / 1000.0
 
             info = F.event_info(self.event_id, payload)
@@ -261,7 +307,10 @@ def _crea_strategia():
                 return                     # senza entrambe le linee Mike non opera
             self._info = info
             snap = F.snapshot_from_row(row, info, now=now, params=self.params,
-                                       scanner_age_s=0.0)
+                                       # con la riga vecchia MA lo scanner vivo il
+                                       # feed resta fresco (write-on-change): per
+                                       # provocare lo stantio invecchiano entrambi
+                                       scanner_age_s=self.invecchia_s or 0.0)
             if snap is None:
                 return
 
@@ -387,7 +436,9 @@ def _crea_strategia():
 # ---------------------------------------------------------------------------
 def certifica_evento(event_id: str, *, data_dir: str,
                      params: Optional[Dict[str, Any]] = None,
-                     ogni_ms: int = 1000) -> CERT.Referto:
+                     ogni_ms: int = 1000,
+                     invecchia_s: float = 0.0,
+                     guasti: int = 0) -> CERT.Referto:
     """Fa rivivere a Mike una partita registrata e ritorna il referto."""
     import flumine.config
     flumine.config.simulated = True
@@ -424,7 +475,7 @@ def certifica_evento(event_id: str, *, data_dir: str,
         d = decide_vero(ctx, snap, params)
         if referti_vivi:
             r = referti_vivi[0]
-            r.violazioni.extend(CERT.verifica(ctx, snap, d, params))
+            r.violazioni.extend(CERT.verifica(ctx, snap, d, params, r.sollecitati))
             # il COMPORTAMENTO nel tempo: i difetti di progettazione non si
             # vedono in un istante, si vedono nella ripetizione
             CERT.osserva(r.andamento, ctx, d)
@@ -440,9 +491,14 @@ def certifica_evento(event_id: str, *, data_dir: str,
     # i limiti di flumine invece di quelli del bot: gli ordini verrebbero
     # rifiutati da fuori e il referto direbbe che Mike non fa niente.
     strategia = Strategia(event_id=str(event_id), params=par, scores=scores,
-                          ogni_ms=ogni_ms, market_filter={"markets": [raw]},
+                          ogni_ms=ogni_ms, invecchia_s=invecchia_s,
+                          market_filter={"markets": [raw]},
                           max_order_exposure=1e9, max_selection_exposure=1e9,
                           max_trade_count=int(1e9), max_live_trade_count=int(1e9))
+    if guasti > 0:
+        # i primi N piazzamenti falliranno con esito IGNOTO: e' cosi' che
+        # nascono le gambe `pending_reconcile` che altrimenti non si vedono mai
+        strategia.mercato.guasti["place_exception"] = int(guasti)
     referti_vivi.append(strategia.referto)
     quadro = FlumineSimulation(client=clients.SimulatedClient())
     quadro.add_market_middleware(SimulatedMiddleware())
@@ -528,6 +584,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--complete", action="store_true",
                    help="solo le registrazioni giudicate COMPLETE")
     p.add_argument("--json", dest="come_json", action="store_true")
+    p.add_argument("--scenari", default="base",
+                   help="elenco separato da virgole, oppure 'tutti': "
+                        + ", ".join(list(SCENARI) + [SCENARIO_FEED_STANTIO,
+                                                     SCENARIO_ESITI_IGNOTI]))
     p.add_argument("--diario", default=None,
                    help="file in cui scrivere il referto DOPO OGNI partita: senza, "
                         "un run lungo resta cieco fino alla fine")
@@ -542,15 +602,46 @@ def main(argv: Optional[List[str]] = None) -> int:
         eventi = [e for e in eventi if verdetti.get(e) == "COMPLETE"]
 
     print(f"REGISTRAZIONI: {len(eventi)} | controlli attivi: {len(CERT.elenco_controlli())}")
+    sollecitati_tot: Dict[str, int] = {}
     print()
+    scelti = (list(SCENARI) + [SCENARIO_FEED_STANTIO, SCENARIO_ESITI_IGNOTI]
+              if a.scenari.strip().lower() == "tutti"
+              else [x.strip() for x in a.scenari.split(",") if x.strip()])
+    for sc in scelti:
+        if sc not in SCENARI and sc not in (SCENARIO_FEED_STANTIO,
+                                            SCENARIO_ESITI_IGNOTI):
+            print(f"scenario sconosciuto: {sc}")
+            return 2
+    coppie = [(ev, sc) for sc in scelti for ev in eventi]
+    if len(scelti) > 1:
+        print(f"SCENARI: {', '.join(scelti)}")
+        print()
+
     referti: List[CERT.Referto] = []
-    for ev in eventi:
+    for ev, sc in coppie:
+        par = dict(C.merge_params(None))
+        par.update(SCENARI.get(sc, {}))
+        # il feed stantio si ottiene invecchiando la riga, non toccando i prezzi
+        # perche' il feed risulti STANTIO devono essere vecchi TUTTI E DUE: la
+        # riga (`feed_max_age_s`) e lo scanner (`scanner_alive_max_s`). Con lo
+        # scanner vivo una riga ferma e' legittima — e' write-on-change, vuol
+        # dire che i prezzi non sono cambiati.
+        vecchio = (max(float(par.get("feed_max_age_s") or 15.0),
+                       float(par.get("scanner_alive_max_s") or 75.0)) * 3.0
+                   if sc == SCENARIO_FEED_STANTIO else 0.0)
         try:
-            r = certifica_evento(ev, data_dir=data_dir, ogni_ms=a.ogni_ms)
+            r = certifica_evento(ev, data_dir=data_dir, ogni_ms=a.ogni_ms,
+                                 params=par, invecchia_s=vecchio,
+                                 guasti=(QUANTI_GUASTI
+                                         if sc == SCENARIO_ESITI_IGNOTI else 0))
         except Exception as ex:  # noqa: BLE001
             r = CERT.Referto(event_id=ev)
             r.note.append(f"replay fallito: {type(ex).__name__}: {ex}")
+        if len(scelti) > 1:
+            r.event_id = f"{ev} [{sc}]"
         referti.append(r)
+        for cod, n in r.sollecitati.items():
+            sollecitati_tot[cod] = sollecitati_tot.get(cod, 0) + n
         if a.diario:
             # si scrive SUBITO, partita per partita: un run da ore che non
             # dice niente finche' non finisce non e' osservabile, e un lavoro
@@ -563,7 +654,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     f.write(f"    {v.codice}: {v.dettaglio}" + chr(10))
                 f.flush()
         segno = "OK " if r.pulita else "KO "
-        print(f"{segno} {ev}  tick={r.tick:>6} decisioni={r.decisioni:>5} "
+        print(f"{segno} {r.event_id}  tick={r.tick:>6} decisioni={r.decisioni:>5} "
               f"azioni={r.azioni:>4} stati={','.join(r.stati_visti) or '-'} "
               f"[{verdetti.get(ev, '?')}]")
         for nota in r.note:
@@ -582,6 +673,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"ESITO: {pulite} partite senza violazioni, "
           f"{len(referti) - pulite - mute} con violazioni, {mute} senza decisioni")
     print(f"       {tot} violazioni totali")
+    print()
+    print("COPERTURA DEI CONTROLLI — quante volte ognuno ha avuto un caso:")
+    for cod, reg in CERT.elenco_controlli():
+        n = sollecitati_tot.get(cod, 0)
+        segno = "  " if n else "??"
+        print(f"  {segno} {cod:3} x{n:<7} {reg[:66]}")
+    mai = CERT.mai_sollecitati(sollecitati_tot)
+    if mai:
+        print()
+        print(f"?? MAI SOLLECITATI: {len(mai)} controlli su {len(CERT.elenco_controlli())}. "
+              f"Su questi il referto NON dice «sano», dice «non lo so»:")
+        for cod, reg in mai:
+            print(f"     {cod}: {reg}")
     if a.come_json:
         print(json.dumps([{
             "event_id": r.event_id, "tick": r.tick, "decisioni": r.decisioni,
